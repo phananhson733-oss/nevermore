@@ -39,6 +39,15 @@ export type {
   IdempotencyStatus,
 } from "./repositories/idempotency.ts";
 export {
+  AsyncRunsRepository,
+  isTerminalStatus,
+} from "./repositories/async-runs.ts";
+export type {
+  AsyncRunRow,
+  RunKind,
+  RunStatus,
+} from "./repositories/async-runs.ts";
+export {
   PGBOSS_SCHEMA,
   QUEUE_CONFIG,
   QUEUE_NAMES,
