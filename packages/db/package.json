@@ -1,0 +1,32 @@
+{
+  "name": "@sf/db",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./client": "./src/client.ts",
+    "./queue": "./src/queue.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "migrate": "tsx src/migrate.ts",
+    "migrate:check": "tsx src/migrate-check.ts",
+    "smoke": "tsx src/smoke.ts"
+  },
+  "dependencies": {
+    "@sf/observability": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "pg": "catalog:",
+    "pg-boss": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "drizzle-kit": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,24 @@
+node_modules/
+.pnpm-store/
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# env / secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# test + tooling artifacts
+playwright-report/
+test-results/
+.vitest/
+
+# OS
+.DS_Store
+
+# generated OpenAPI types are committed on purpose (contracts:check compares them),
+# so they are NOT ignored.

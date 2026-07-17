@@ -1,0 +1,18 @@
+{
+  "purpose": "AC-048 baseline: old SignalFrame repo state captured at WP0 start; compared at WP5 to prove this task introduced no new modifications.",
+  "capturedForSpec": "0.2.0 / 2026-07-18",
+  "oldRepoPath": "/Users/wzb/Code/signalframe",
+  "head": "72af9300c6009a3912973b96b4789c89ad37db01",
+  "branch": "codex/signalframe-app-routing",
+  "porcelainStatus": [
+    " M apps/web/next.config.ts",
+    " M apps/web/package.json",
+    " M pnpm-lock.yaml",
+    "?? .playwright-mcp/",
+    "?? CLAUDE.md",
+    "?? microfrontends.json",
+    "?? signalframe-preview-browser-acceptance.png"
+  ],
+  "diffSha256": "aecfd27f386c2cfb8daab30d449deeed49be7a06696072ddf9c5e5d7e6041f1d",
+  "note": "Old repo may be non-clean; we do not require it to become clean. Only that no NEW diff is introduced by vendor-copy work (copies are one-way reads)."
+}

@@ -1,0 +1,11 @@
+{
+  "purpose": "Provenance manifest for one-way vendor-copies from the old SignalFrame repo (spec §3.1, §7.3). Every entry records the source commit, source path, target path, copy-time sha256, and adaptation note. The old repo is NEVER modified; copied code is maintained by this repo afterwards.",
+  "sourceRepo": "/Users/wzb/Code/signalframe",
+  "sourceRepoHeadAtBaseline": "72af9300c6009a3912973b96b4789c89ad37db01",
+  "allowedSources": [
+    "packages/crawler/src (SSRF/DNS-pinning crawl safety, static HTML fetch)",
+    "packages/audit/src/rules (implementations backing the 11 frozen MVP rules)",
+    "GSC/GA4 OAuth connection patterns"
+  ],
+  "entries": []
+}

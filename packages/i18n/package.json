@@ -1,0 +1,21 @@
+{
+  "name": "@sf/i18n",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./messages/*": "./src/messages/*.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "next-intl": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}

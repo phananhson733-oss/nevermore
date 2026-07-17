@@ -1,0 +1,45 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Single source of truth for pinned dependency versions across the monorepo.
+# Resolved to latest compatible patch at WP0 init and frozen by pnpm-lock.yaml.
+catalog:
+  # Web framework (Next 16.2 stable branch only; 16.3 preview is forbidden by spec §3.2)
+  next: 16.2.10
+  react: 19.2.7
+  react-dom: 19.2.7
+  '@types/react': 19.2.17
+  '@types/react-dom': 19.2.3
+
+  # API contracts + validation
+  zod: 4.4.3
+  openapi-typescript: 7.13.0
+
+  # Data + queue
+  drizzle-orm: 0.45.2
+  drizzle-kit: 0.31.10
+  pg: 8.22.0
+  '@types/pg': 8.15.6
+  pg-boss: 12.26.1
+
+  # Supabase (auth / storage / postgres)
+  '@supabase/supabase-js': 2.110.7
+  '@supabase/ssr': 0.12.3
+
+  # UI data + i18n
+  '@tanstack/react-query': 5.101.2
+  next-intl: 4.13.2
+
+  # Tooling
+  '@types/node': 24.13.3
+  typescript: 5.9.3
+  eslint: 9.39.5
+  eslint-config-next: 16.2.10
+  '@eslint/js': 9.39.5
+  typescript-eslint: 8.39.0
+  vitest: 4.1.10
+  '@vitest/coverage-v8': 4.1.10
+  '@playwright/test': 1.61.1
+  msw: 2.15.0
+  tsx: 4.20.3

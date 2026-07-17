@@ -1,0 +1,107 @@
+{
+  "nav": {
+    "overview": "概览",
+    "context": "背景",
+    "sources": "数据源",
+    "diagnosis": "诊断",
+    "plan": "方案",
+    "studio": "工作台",
+    "report": "报告",
+    "newProject": "新建项目",
+    "logout": "退出登录"
+  },
+  "common": {
+    "loading": "加载中…",
+    "error": "出了点问题",
+    "empty": "暂无内容",
+    "retry": "重试",
+    "save": "保存",
+    "cancel": "取消",
+    "saveDraft": "保存草稿",
+    "markComplete": "标记完成",
+    "back": "上一步",
+    "next": "下一步",
+    "close": "关闭",
+    "none": "无",
+    "unavailable": "不可用",
+    "learnMore": "了解更多"
+  },
+  "runState": {
+    "queued": "排队中",
+    "running": "运行中",
+    "completed": "已完成",
+    "partial": "部分完成",
+    "failed": "失败",
+    "cancelled": "已取消"
+  },
+  "coverage": {
+    "ready": "就绪",
+    "degraded": "降级",
+    "stale": "已过期",
+    "partial": "部分",
+    "missing": "缺失"
+  },
+  "reviewState": {
+    "unreviewed": "未审阅",
+    "confirmed": "已确认",
+    "ignored": "已忽略",
+    "needs_more_data": "需更多数据"
+  },
+  "actionStatus": {
+    "candidate": "候选",
+    "planned": "已计划",
+    "in_progress": "进行中",
+    "blocked": "受阻",
+    "done": "已完成",
+    "dismissed": "已放弃"
+  },
+  "priorityBand": {
+    "critical": "紧急",
+    "high": "高",
+    "medium": "中",
+    "low": "低"
+  },
+  "lane": {
+    "now": "现在",
+    "next": "下一步",
+    "later": "稍后"
+  },
+  "sourceState": {
+    "connecting": "连接中",
+    "connected": "已连接",
+    "syncing": "同步中",
+    "available": "可用",
+    "partial": "部分",
+    "stale": "已过期",
+    "permission_denied": "权限被拒",
+    "unavailable": "不可用",
+    "disconnected": "已断开"
+  },
+  "provider": {
+    "crawl": "站点抓取",
+    "gsc": "Search Console",
+    "ga4": "Google Analytics 4",
+    "csv": "CSV 上传",
+    "dataforseo": "DataForSEO"
+  },
+  "domain": {
+    "technical_seo": "技术 SEO",
+    "search_performance": "搜索表现",
+    "content_intent": "内容与意图",
+    "conversion_journey": "转化路径",
+    "geo_ai": "生成式与 AI 搜索"
+  },
+  "ruleTitle": {
+    "TECH-HTTP-001": "HTTP 状态错误",
+    "TECH-CANONICAL-002": "规范标签冲突",
+    "TECH-LINKGRAPH-005": "内链缺口",
+    "SEARCH-CTR-004": "点击率偏低",
+    "SEARCH-DECAY-002": "流量衰退",
+    "CONTENT-COVERAGE-001": "主题覆盖不足",
+    "CONTENT-GAP-011": "内容缺口",
+    "CRO-PATH-001": "转化路径中断",
+    "CRO-LANDING-003": "落地页表现不佳",
+    "GEO-ENTITY-001": "实体信号缺失",
+    "GEO-CRAWLER-002": "AI 爬虫访问"
+  }
+}

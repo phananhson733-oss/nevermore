@@ -1,0 +1,54 @@
+:root {
+  --sf-bg: #ffffff;
+  --sf-fg: #101828;
+  --sf-muted: #475467;
+  --sf-border: #e4e7ec;
+  --sf-accent: #1849a9;
+  /* Body text >= 14px, table/aux >= 12px (spec §4.4). */
+  --sf-font-body: 15px;
+  --sf-font-aux: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sf-bg: #0c111d;
+    --sf-fg: #f5f6f7;
+    --sf-muted: #98a2b3;
+    --sf-border: #1f2a37;
+    --sf-accent: #84caff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--sf-bg);
+  color: var(--sf-fg);
+  font-size: var(--sf-font-body);
+  line-height: 1.5;
+  font-family:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+a {
+  color: var(--sf-accent);
+}

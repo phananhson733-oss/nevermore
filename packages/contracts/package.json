@@ -1,0 +1,27 @@
+{
+  "name": "@sf/contracts",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./generated/openapi": "./src/generated/openapi.ts",
+    "./zod/common": "./src/zod/common.ts",
+    "./zod/envelope": "./src/zod/envelope.ts",
+    "./zod/problem": "./src/zod/problem.ts",
+    "./zod/health": "./src/zod/health.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "generate": "openapi-typescript ../../openapi/mvp.yaml --output src/generated/openapi.ts",
+    "check": "openapi-typescript ../../openapi/mvp.yaml --output /tmp/sf-openapi-check.ts && diff -u src/generated/openapi.ts /tmp/sf-openapi-check.ts"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "openapi-typescript": "catalog:",
+    "typescript": "catalog:"
+  }
+}

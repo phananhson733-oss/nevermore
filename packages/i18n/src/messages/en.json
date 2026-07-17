@@ -1,0 +1,107 @@
+{
+  "nav": {
+    "overview": "Overview",
+    "context": "Context",
+    "sources": "Sources",
+    "diagnosis": "Diagnosis",
+    "plan": "Plan",
+    "studio": "Studio",
+    "report": "Report",
+    "newProject": "New project",
+    "logout": "Log out"
+  },
+  "common": {
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "empty": "Nothing to show yet",
+    "retry": "Retry",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saveDraft": "Save draft",
+    "markComplete": "Mark complete",
+    "back": "Back",
+    "next": "Next",
+    "close": "Close",
+    "none": "None",
+    "unavailable": "Unavailable",
+    "learnMore": "Learn more"
+  },
+  "runState": {
+    "queued": "Queued",
+    "running": "Running",
+    "completed": "Completed",
+    "partial": "Partial",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "coverage": {
+    "ready": "Ready",
+    "degraded": "Degraded",
+    "stale": "Stale",
+    "partial": "Partial",
+    "missing": "Missing"
+  },
+  "reviewState": {
+    "unreviewed": "Unreviewed",
+    "confirmed": "Confirmed",
+    "ignored": "Ignored",
+    "needs_more_data": "Needs more data"
+  },
+  "actionStatus": {
+    "candidate": "Candidate",
+    "planned": "Planned",
+    "in_progress": "In progress",
+    "blocked": "Blocked",
+    "done": "Done",
+    "dismissed": "Dismissed"
+  },
+  "priorityBand": {
+    "critical": "Critical",
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low"
+  },
+  "lane": {
+    "now": "Now",
+    "next": "Next",
+    "later": "Later"
+  },
+  "sourceState": {
+    "connecting": "Connecting",
+    "connected": "Connected",
+    "syncing": "Syncing",
+    "available": "Available",
+    "partial": "Partial",
+    "stale": "Stale",
+    "permission_denied": "Permission denied",
+    "unavailable": "Unavailable",
+    "disconnected": "Disconnected"
+  },
+  "provider": {
+    "crawl": "Site crawl",
+    "gsc": "Search Console",
+    "ga4": "Google Analytics 4",
+    "csv": "CSV upload",
+    "dataforseo": "DataForSEO"
+  },
+  "domain": {
+    "technical_seo": "Technical SEO",
+    "search_performance": "Search performance",
+    "content_intent": "Content & intent",
+    "conversion_journey": "Conversion journey",
+    "geo_ai": "Generative & AI search"
+  },
+  "ruleTitle": {
+    "TECH-HTTP-001": "HTTP status errors",
+    "TECH-CANONICAL-002": "Canonical conflicts",
+    "TECH-LINKGRAPH-005": "Internal link gaps",
+    "SEARCH-CTR-004": "Low click-through rate",
+    "SEARCH-DECAY-002": "Traffic decay",
+    "CONTENT-COVERAGE-001": "Thin topic coverage",
+    "CONTENT-GAP-011": "Content gaps",
+    "CRO-PATH-001": "Broken conversion paths",
+    "CRO-LANDING-003": "Underperforming landing pages",
+    "GEO-ENTITY-001": "Missing entity signals",
+    "GEO-CRAWLER-002": "AI crawler access"
+  }
+}
