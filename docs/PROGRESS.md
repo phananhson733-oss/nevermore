@@ -72,7 +72,10 @@ The login page + LocaleSwitch render without auth and can be browser-checked now
 - [x] UI: login, new-project, project shell + EN/zh-CN nav, Overview/Context screens, loading/error/empty states — built + browser-verified.
 - Backend: `@sf/sources` url-safety, repos, services, 6 route handlers, idempotency.
 
-### WP2 — 数据中心 (AC-012~020) ⬜
+### WP2 — 数据中心 (AC-012~020) ⏳ FOUNDATION STARTED
+Done: `SourceAdapter<C,P,R>` contract (`@sf/sources/adapter.ts`, §7.1); `AsyncRunsRepository` (atomic enqueue / active-key uniqueness / claim / terminal); `getProjectRun` unified status endpoint (`GET .../runs/{runId}`) + AsyncRun DTO mapper.
+Next, no external creds needed: collection/snapshot/observation repos → `createCollectionRun` atomic enqueue (AC-019 active-key 409) → **crawl adapter** (§7.3, reuses vendored url-safety; vendor-copy crawl logic from old `packages/crawler/src`) → snapshot/observation persistence → CSV preview/confirm (§7.5) → DFS disabled adapter/card (AC-020) → worker job handlers → Sources UI + coverage/freshness states.
+**Blocked on user input**: GSC/GA4 OAuth (AC-014/015) needs a **Google OAuth client id/secret** (`GOOGLE_OAUTH_CLIENT_ID/SECRET`) and a running Supabase (real sessions) — build the adapters offline, but live OAuth sync needs creds.
 ### WP3 — 诊断、审核与计划 (AC-021~030) ⬜
 ### WP4 — Studio、Report 与 Export (AC-031~039) ⬜
 ### WP5 — 硬化与双客户 Pilot Gate (AC-040~048 + DoD) ⬜
