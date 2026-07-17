@@ -47,6 +47,8 @@ export type {
   RunKind,
   RunStatus,
 } from "./repositories/async-runs.ts";
+export { CollectionRunsRepository } from "./repositories/collection-runs.ts";
+export type { CollectionRunRow } from "./repositories/collection-runs.ts";
 export {
   PGBOSS_SCHEMA,
   QUEUE_CONFIG,

@@ -1,5 +1,6 @@
+import { and, desc, eq, sql } from "drizzle-orm";
 import { sourceConnections } from "../schema.ts";
-import { Repository } from "./base.ts";
+import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
 /**
  * `source_connections` covers all five providers (spec §7). WP1 only creates the
@@ -48,5 +49,46 @@ export class SourceConnectionsRepository extends Repository {
       })
       .returning();
     return row as SourceConnectionRow;
+  }
+
+  /** A source connection by id, project-scoped (null when foreign/absent). */
+  async findById(
+    scope: ProjectScope,
+    id: string,
+  ): Promise<SourceConnectionRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(sourceConnections)
+      .where(
+        and(
+          projectPredicate(sourceConnections, scope),
+          eq(sourceConnections.id, id),
+        ),
+      )
+      .limit(1);
+    return (rows[0] as SourceConnectionRow | undefined) ?? null;
+  }
+
+  /**
+   * The most recent non-disconnected connection for a provider (crawl default,
+   * or the connected GSC/GA4 source). Null when none is connected.
+   */
+  async findConnectedByProvider(
+    scope: ProjectScope,
+    provider: string,
+  ): Promise<SourceConnectionRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(sourceConnections)
+      .where(
+        and(
+          projectPredicate(sourceConnections, scope),
+          eq(sourceConnections.provider, provider),
+          sql`${sourceConnections.state} <> 'disconnected'`,
+        ),
+      )
+      .orderBy(desc(sourceConnections.created_at))
+      .limit(1);
+    return (rows[0] as SourceConnectionRow | undefined) ?? null;
   }
 }
