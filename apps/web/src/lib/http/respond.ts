@@ -7,13 +7,17 @@ import {
   type ProblemFieldError,
 } from "@sf/observability";
 
-/** Success envelope `{ data, meta? }` (spec §11.1). */
+/** Success envelope `{ data, meta? }` (spec §11.1). Lists carry OpenAPI PageMeta. */
 export interface Meta {
   readonly nextCursor?: string | null;
+  readonly hasNext?: boolean;
   readonly limit?: number;
 }
 
-function withRequestId(response: NextResponse, requestId: string): NextResponse {
+function withRequestId(
+  response: NextResponse,
+  requestId: string,
+): NextResponse {
   response.headers.set(REQUEST_ID_HEADER, requestId);
   return response;
 }
@@ -26,7 +30,8 @@ export function ok<T>(
 ): NextResponse {
   const body = init?.meta ? { data, meta: init.meta } : { data };
   const response = NextResponse.json(body, { status: init?.status ?? 200 });
-  for (const [k, v] of Object.entries(init?.headers ?? {})) response.headers.set(k, v);
+  for (const [k, v] of Object.entries(init?.headers ?? {}))
+    response.headers.set(k, v);
   return withRequestId(response, requestId);
 }
 
@@ -35,14 +40,18 @@ export function problem(
   code: ProblemCode,
   detail: string,
   requestId: string,
-  init?: { errors?: readonly ProblemFieldError[]; headers?: Record<string, string> },
+  init?: {
+    errors?: readonly ProblemFieldError[];
+    headers?: Record<string, string>;
+  },
 ): NextResponse {
   const body = toProblemBody(code, detail, requestId, init?.errors);
   const response = NextResponse.json(body, {
     status: body.status,
     headers: { "content-type": PROBLEM_CONTENT_TYPE },
   });
-  for (const [k, v] of Object.entries(init?.headers ?? {})) response.headers.set(k, v);
+  for (const [k, v] of Object.entries(init?.headers ?? {}))
+    response.headers.set(k, v);
   return withRequestId(response, requestId);
 }
 

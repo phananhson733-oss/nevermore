@@ -15,6 +15,7 @@
     "@sf/db": "workspace:*",
     "@sf/i18n": "workspace:*",
     "@sf/observability": "workspace:*",
+    "@sf/sources": "workspace:*",
     "@supabase/ssr": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@tanstack/react-query": "catalog:",

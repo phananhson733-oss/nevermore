@@ -75,11 +75,14 @@ export const PROBLEM_STATUS: Record<ProblemCode, number> = {
   FEATURE_DISABLED: 503,
 };
 
-/** A single field-level validation error, JSON-pointer addressed (spec AC-008). */
+/**
+ * A single field-level validation error, JSON-pointer addressed (spec AC-008).
+ * Field names match the OpenAPI `Problem.errors` item exactly: pointer/code/message.
+ */
 export interface ProblemFieldError {
   readonly pointer: string;
   readonly code: string;
-  readonly detail: string;
+  readonly message: string;
 }
 
 /** The problem+json response body shape (spec §11.1). */
@@ -125,7 +128,10 @@ export class ProblemError extends Error {
   constructor(
     code: ProblemCode,
     detail: string,
-    options?: { errors?: readonly ProblemFieldError[]; headers?: Record<string, string> },
+    options?: {
+      errors?: readonly ProblemFieldError[];
+      headers?: Record<string, string>;
+    },
   ) {
     super(detail);
     this.name = "ProblemError";

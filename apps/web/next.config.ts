@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
     "@sf/db",
     "@sf/i18n",
     "@sf/observability",
+    "@sf/sources",
   ],
   // Never bundle the pg / pg-boss native + dynamic-require stack into server output.
   serverExternalPackages: ["pg", "pg-boss", "drizzle-orm"],

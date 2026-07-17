@@ -134,6 +134,9 @@ importers:
       '@sf/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sf/sources':
+        specifier: workspace:*
+        version: link:../../packages/sources
       '@supabase/ssr':
         specifier: 'catalog:'
         version: 0.12.3(@supabase/supabase-js@2.110.7)
@@ -261,6 +264,15 @@ importers:
         version: 5.9.3
 
   packages/observability:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/sources:
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

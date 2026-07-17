@@ -7,5 +7,41 @@
     "packages/audit/src/rules (implementations backing the 11 frozen MVP rules)",
     "GSC/GA4 OAuth connection patterns"
   ],
-  "entries": []
+  "entries": [
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/url-safety/classify-ip.ts",
+      "targetPath": "packages/sources/src/url-safety/classify-ip.ts",
+      "sha256": "114fef14b9e08e55996d29125b2c9dde6d7d3d319e276a0bf2063d64aa6bbb6e",
+      "adaptation": "verbatim"
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/url-safety/normalize.ts",
+      "targetPath": "packages/sources/src/url-safety/normalize.ts",
+      "sha256": "8f8f491eb6c26b3dd28d261bb01d15c749c5d78fba95541af05a5b3d6b5e30ac",
+      "adaptation": "rewrote ./*.js import specifiers to ./*.ts; added spec §6.1 trailing-slash strip for non-root pathname"
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/url-safety/guard.ts",
+      "targetPath": "packages/sources/src/url-safety/guard.ts",
+      "sha256": "fd19991e4da50bb85830ecba9b6a91f523cb9be13b81d1146e23beb9a275faa1",
+      "adaptation": "rewrote ./*.js import specifiers to ./*.ts"
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/url-safety/index.ts",
+      "targetPath": "packages/sources/src/url-safety/index.ts",
+      "sha256": "82c8f85e55d00c9ecdc9e968796d60887c1e4761a99fe311403b1b382dd4aa74",
+      "adaptation": "rewrote ./*.js import specifiers to ./*.ts; dropped `export * from \"./pin-agent\"` (pin-agent.ts not vendored — needs undici, deferred to crawl WP)"
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/url-safety/guard.test.ts",
+      "targetPath": "packages/sources/src/url-safety/guard.test.ts",
+      "sha256": "5b73ad7449446594575f9a1b87820e571a02fe545d5a94653abe8505ff627924",
+      "adaptation": "rewrote ./*.js import specifiers to ./*.ts"
+    }
+  ]
 }

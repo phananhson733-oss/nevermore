@@ -1,10 +1,11 @@
 import { z } from "zod";
 
 // Field-level validation error entry within an RFC9457 problem body.
+// Field names match the OpenAPI `Problem.errors` item exactly (pointer/code/message).
 export const problemErrorItem = z.object({
   pointer: z.string(),
   code: z.string(),
-  detail: z.string(),
+  message: z.string(),
 });
 export type ProblemErrorItem = z.infer<typeof problemErrorItem>;
 

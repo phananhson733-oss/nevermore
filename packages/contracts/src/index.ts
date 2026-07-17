@@ -9,3 +9,5 @@ export * from "./zod/common.ts";
 export * from "./zod/envelope.ts";
 export * from "./zod/problem.ts";
 export * from "./zod/health.ts";
+export * from "./zod/icp.ts";
+export * from "./zod/projects.ts";
