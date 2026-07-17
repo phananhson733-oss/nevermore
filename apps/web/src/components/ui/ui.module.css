@@ -1,0 +1,397 @@
+/*
+ * SignalFrame UI primitive styles. Every color and size is a `var(--sf-*)`
+ * design token from app/globals.css — no hardcoded palette values, so light,
+ * dark, and the zh-CN heading-font swap all come for free. Focus is never
+ * styled here: the global `:focus-visible` ring owns it. Motion respects the
+ * global `prefers-reduced-motion` block.
+ */
+
+/* ---------------------------------------------------------------- Button -- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--sf-font-body);
+  font-weight: 700;
+  line-height: 1.2;
+  border-radius: var(--sf-radius-pill);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.06s ease;
+}
+.btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* sizes (font stays >= body min; sizes vary height + padding) */
+.btnMd {
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: var(--sf-text-base);
+}
+.btnSm {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: var(--sf-text-base);
+}
+
+/* variants — declared after sizes so variant padding overrides win the cascade */
+.btnPrimary {
+  background: var(--sf-accent);
+  color: var(--sf-accent-contrast);
+  box-shadow: var(--sf-shadow-accent);
+}
+.btnPrimary:hover:not(:disabled) {
+  background: var(--sf-cobalt-dark);
+}
+.btnPrimary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btnSecondary {
+  background: var(--sf-surface);
+  color: var(--sf-fg);
+  border-color: var(--sf-border-strong);
+}
+.btnSecondary:hover:not(:disabled) {
+  background: var(--sf-surface-deep);
+  border-color: var(--sf-fg);
+}
+.btnGhost {
+  background: transparent;
+  color: var(--sf-accent);
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.btnGhost:hover:not(:disabled) {
+  background: var(--sf-cobalt-soft);
+}
+
+/* ------------------------------------------------------- Card / Panel ----- */
+.card {
+  background: var(--sf-surface);
+  color: var(--sf-fg);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-card);
+  box-shadow: var(--sf-shadow-sm);
+}
+.padNone {
+  padding: 0;
+}
+.padSm {
+  padding: 12px;
+}
+.padMd {
+  padding: 20px;
+}
+.padLg {
+  padding: 28px;
+}
+
+/* tinted rings — subtle colored border + inset soft glow */
+.toneCobalt {
+  border-color: var(--sf-cobalt);
+  box-shadow: var(--sf-shadow-sm), inset 0 0 0 1px var(--sf-cobalt-soft);
+}
+.toneMint {
+  border-color: var(--sf-mint);
+  box-shadow: var(--sf-shadow-sm), inset 0 0 0 1px var(--sf-mint-soft);
+}
+.toneAmber {
+  border-color: var(--sf-amber);
+  box-shadow: var(--sf-shadow-sm), inset 0 0 0 1px var(--sf-amber-soft);
+}
+.toneCoral {
+  border-color: var(--sf-coral);
+  box-shadow: var(--sf-shadow-sm), inset 0 0 0 1px var(--sf-coral-soft);
+}
+.toneViolet {
+  border-color: var(--sf-violet);
+  box-shadow: var(--sf-shadow-sm), inset 0 0 0 1px var(--sf-violet-soft);
+}
+
+/* inverted "ink" panel — always dark in both themes (fixed ink ramp) */
+.darkPanel {
+  background: var(--sf-ink-900);
+  color: var(--sf-white);
+  border-color: var(--sf-ink-800);
+  box-shadow: var(--sf-shadow-md);
+}
+
+/* ------------------------------------------------------------ StatusPill -- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: var(--sf-radius-pill);
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.pillDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.pillLabel {
+  color: var(--sf-fg);
+}
+.pillSuccess {
+  background: var(--sf-mint-soft);
+  color: var(--sf-mint);
+  border-color: var(--sf-mint);
+}
+.pillWarning {
+  background: var(--sf-amber-soft);
+  color: var(--sf-amber);
+  border-color: var(--sf-amber);
+}
+.pillDanger {
+  background: var(--sf-coral-soft);
+  color: var(--sf-coral);
+  border-color: var(--sf-coral);
+}
+.pillInfo {
+  background: var(--sf-cobalt-soft);
+  color: var(--sf-cobalt);
+  border-color: var(--sf-cobalt);
+}
+.pillPriority {
+  background: var(--sf-violet-soft);
+  color: var(--sf-violet);
+  border-color: var(--sf-violet);
+}
+.pillNeutral {
+  background: var(--sf-surface-deep);
+  color: var(--sf-muted);
+  border-color: var(--sf-border-strong);
+}
+
+/* ----------------------------------------------------------------- Badge -- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--sf-radius-chip);
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+  line-height: 1.4;
+  border: 1px solid var(--sf-border);
+  background: var(--sf-surface-deep);
+  color: var(--sf-muted);
+  white-space: nowrap;
+}
+.badgeAccent {
+  background: var(--sf-cobalt-soft);
+  color: var(--sf-cobalt);
+  border-color: transparent;
+}
+.badgeMint {
+  background: var(--sf-mint-soft);
+  color: var(--sf-mint);
+  border-color: transparent;
+}
+.badgeAmber {
+  background: var(--sf-amber-soft);
+  color: var(--sf-amber);
+  border-color: transparent;
+}
+.badgeCoral {
+  background: var(--sf-coral-soft);
+  color: var(--sf-coral);
+  border-color: transparent;
+}
+.badgeViolet {
+  background: var(--sf-violet-soft);
+  color: var(--sf-violet);
+  border-color: transparent;
+}
+
+/* --------------------------------------------------- Field + controls ----- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fieldLabel {
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  font-weight: 700;
+  color: var(--sf-fg);
+}
+.fieldRequired {
+  color: var(--sf-coral);
+}
+.fieldHelp {
+  margin: 0;
+  font-size: var(--sf-text-xs);
+  color: var(--sf-muted);
+}
+.fieldError {
+  margin: 0;
+  font-size: var(--sf-text-xs);
+  font-weight: 600;
+  color: var(--sf-coral);
+}
+
+.control {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  line-height: 1.4;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: var(--sf-radius-control);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.control::placeholder {
+  color: var(--sf-muted);
+  opacity: 1;
+}
+.control:hover:not(:disabled):not(:focus) {
+  border-color: var(--sf-fg);
+}
+.control:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.controlInvalid {
+  border-color: var(--sf-coral);
+}
+.controlTextarea {
+  min-height: 120px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+/* ------------------------------------------------------------ EmptyState -- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 40px 24px;
+  color: var(--sf-muted);
+}
+.emptyIcon {
+  display: inline-flex;
+  color: var(--sf-muted);
+}
+.emptyIcon svg {
+  width: 32px;
+  height: 32px;
+}
+.emptyTitle {
+  margin: 0;
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-lg);
+  font-weight: 700;
+  color: var(--sf-fg);
+}
+.emptyDesc {
+  margin: 0;
+  max-width: 42ch;
+  font-size: var(--sf-text-base);
+  color: var(--sf-muted);
+}
+.emptyActions {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* --------------------------------------------------------------- Spinner -- */
+.spinnerRoot {
+  display: inline-flex;
+  vertical-align: middle;
+}
+.spinner {
+  display: inline-block;
+  border-radius: 50%;
+  border-style: solid;
+  border-color: var(--sf-border-strong);
+  border-top-color: var(--sf-accent);
+  animation: sf-spin 0.7s linear infinite;
+}
+.spinnerSm {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+.spinnerMd {
+  width: 22px;
+  height: 22px;
+  border-width: 3px;
+}
+.spinnerLg {
+  width: 34px;
+  height: 34px;
+  border-width: 3px;
+}
+@keyframes sf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --------------------------------------------------- LocaleSwitch --------- */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-pill);
+}
+.segment {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--sf-muted);
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  font-weight: 700;
+  min-height: 32px;
+  min-width: 42px;
+  padding: 0 12px;
+  border-radius: var(--sf-radius-pill);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.segment:hover:not(.segmentActive) {
+  color: var(--sf-fg);
+}
+.segmentActive {
+  background: var(--sf-surface);
+  color: var(--sf-fg);
+  box-shadow: var(--sf-shadow-sm);
+}

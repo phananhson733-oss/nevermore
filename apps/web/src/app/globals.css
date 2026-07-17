@@ -1,22 +1,122 @@
+/*
+ * SignalFrame design system (spec §4.4). Visual language adapted from the demo
+ * Artifact: warm cream paper, near-black "ink" panels, electric cobalt as the one
+ * saturated action color; mint/amber/coral reserved for status semantics. The
+ * Artifact's 6–10px type is deliberately rejected — body is >=14px, table/aux
+ * >=12px here. Fonts degrade gracefully to a system stack so builds never depend
+ * on fetching a webfont; Fraunces/Manrope are used when available.
+ */
+
 :root {
-  --sf-bg: #ffffff;
-  --sf-fg: #101828;
-  --sf-muted: #475467;
-  --sf-border: #e4e7ec;
-  --sf-accent: #1849a9;
-  /* Body text >= 14px, table/aux >= 12px (spec §4.4). */
-  --sf-font-body: 15px;
-  --sf-font-aux: 12px;
+  /* Ink ramp — text + dark surfaces */
+  --sf-ink-950: #111923;
+  --sf-ink-900: #17212f;
+  --sf-ink-800: #243143;
+  --sf-ink-700: #39485b;
+  --sf-ink-600: #4d5c6f;
+  --sf-ink-500: #56667a;
+  --sf-ink-400: #5c6c80;
+
+  /* Paper / surfaces */
+  --sf-paper: #f8f6f1;
+  --sf-paper-deep: #f0ece3;
+  --sf-white: #fffefb;
+
+  /* Lines */
+  --sf-line: #ddd8cd;
+  --sf-line-strong: #c9c2b5;
+
+  /* Accents */
+  --sf-cobalt: #315efb;
+  --sf-cobalt-dark: #2348ca;
+  --sf-cobalt-soft: #e7ecff;
+  --sf-coral: #ef6a5a;
+  --sf-coral-soft: #fff0ec;
+  --sf-mint: #26a77b;
+  --sf-mint-soft: #e2f4ec;
+  --sf-mint-bright: #99efcb;
+  --sf-amber: #d78a21;
+  --sf-amber-soft: #fff1d8;
+  --sf-violet: #8468d7;
+  --sf-violet-soft: #eee9ff;
+
+  /* Semantic surface roles (light) */
+  --sf-bg: var(--sf-paper);
+  --sf-surface: var(--sf-white);
+  --sf-surface-deep: var(--sf-paper-deep);
+  --sf-fg: var(--sf-ink-950);
+  --sf-muted: var(--sf-ink-500);
+  --sf-border: var(--sf-line);
+  --sf-border-strong: var(--sf-line-strong);
+  --sf-accent: var(--sf-cobalt);
+  --sf-accent-contrast: #ffffff;
+
+  /* Typography — >=14px body, >=12px aux (spec §4.4) */
+  --sf-font-display: "Fraunces", "Fraunces Variable", Georgia, "Times New Roman", serif;
+  --sf-font-body: "Manrope", "Manrope Variable", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --sf-font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --sf-text-xs: 12px;
+  --sf-text-sm: 13px;
+  --sf-text-base: 15px;
+  --sf-text-lg: 18px;
+  --sf-text-xl: 22px;
+  --sf-text-2xl: 28px;
+  --sf-text-3xl: 38px;
+
+  /* Radius */
+  --sf-radius-pill: 999px;
+  --sf-radius-card: 14px;
+  --sf-radius-control: 10px;
+  --sf-radius-chip: 5px;
+
+  /* Shadow */
+  --sf-shadow-sm: 0 1px 2px rgba(17, 25, 35, 0.05), 0 6px 18px rgba(17, 25, 35, 0.035);
+  --sf-shadow-md: 0 2px 6px rgba(17, 25, 35, 0.08), 0 18px 40px rgba(17, 25, 35, 0.08);
+  --sf-shadow-accent: 0 6px 16px rgba(49, 94, 251, 0.18);
+
+  --sf-focus-ring: 0 0 0 3px rgba(49, 94, 251, 0.28);
 }
 
+/* Locale-aware heading font: Fraunces has no CJK coverage, so zh-CN headings use
+ * the sans CJK stack instead of the serif display face (spec §4.3). */
+:root[lang="zh-CN"] {
+  --sf-font-display: var(--sf-font-cjk);
+}
+
+/* Dark theme: derive surfaces from the ink ramp. Honors the OS preference and an
+ * explicit data-theme toggle (both directions win). */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --sf-bg: #0c111d;
+  :root:not([data-theme="light"]) {
+    --sf-bg: var(--sf-ink-950);
+    --sf-surface: var(--sf-ink-900);
+    --sf-surface-deep: #0c121b;
     --sf-fg: #f5f6f7;
     --sf-muted: #98a2b3;
-    --sf-border: #1f2a37;
-    --sf-accent: #84caff;
+    --sf-border: #26313f;
+    --sf-border-strong: #33414f;
+    --sf-accent: #84a5ff;
+    --sf-accent-contrast: #0c121b;
+    --sf-cobalt-soft: #1b2740;
+    --sf-mint-soft: #10251d;
+    --sf-amber-soft: #2a2113;
+    --sf-coral-soft: #2c1a17;
   }
+}
+:root[data-theme="dark"] {
+  --sf-bg: var(--sf-ink-950);
+  --sf-surface: var(--sf-ink-900);
+  --sf-surface-deep: #0c121b;
+  --sf-fg: #f5f6f7;
+  --sf-muted: #98a2b3;
+  --sf-border: #26313f;
+  --sf-border-strong: #33414f;
+  --sf-accent: #84a5ff;
+  --sf-accent-contrast: #0c121b;
+  --sf-cobalt-soft: #1b2740;
+  --sf-mint-soft: #10251d;
+  --sf-amber-soft: #2a2113;
+  --sf-coral-soft: #2c1a17;
 }
 
 * {
@@ -32,12 +132,40 @@ body {
 body {
   background: var(--sf-bg);
   color: var(--sf-fg);
-  font-size: var(--sf-font-body);
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
   line-height: 1.5;
-  font-family:
-    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--sf-font-display);
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  margin: 0;
+}
+
+/* Uppercase kicker / eyebrow used above most headings. */
+.sf-eyebrow {
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sf-accent);
+}
+
+a {
+  color: var(--sf-accent);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--sf-focus-ring);
+  border-radius: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -46,9 +174,6 @@ body {
   *::after {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
-}
-
-a {
-  color: var(--sf-accent);
 }

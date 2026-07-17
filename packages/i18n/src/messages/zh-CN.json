@@ -103,5 +103,128 @@
     "CRO-LANDING-003": "落地页表现不佳",
     "GEO-ENTITY-001": "实体信号缺失",
     "GEO-CRAWLER-002": "AI 爬虫访问"
+  },
+  "auth": {
+    "title": "操作员登录",
+    "subtitle": "登录你的 SignalFrame 工作区。",
+    "emailLabel": "邮箱",
+    "passwordLabel": "密码",
+    "signInButton": "登录",
+    "signingIn": "登录中…",
+    "signInError": "登录失败。请检查邮箱和密码后重试。",
+    "magicLinkHint": "登录遇到问题？请联系管理员为你发送一次性登录链接。"
+  },
+  "newProject": {
+    "title": "新建项目",
+    "subtitle": "创建一个客户项目，开始采集信号。",
+    "fields": {
+      "clientName": {
+        "label": "客户名称",
+        "placeholder": "Acme Inc.",
+        "help": "本项目服务的公司或品牌。"
+      },
+      "projectName": {
+        "label": "项目名称",
+        "placeholder": "Acme 2026 SEO 项目",
+        "help": "用于识别本项目的内部名称。"
+      },
+      "siteUrl": {
+        "label": "站点网址",
+        "placeholder": "https://www.example.com",
+        "help": "我们将抓取并分析的主域名。"
+      },
+      "marketCodes": {
+        "label": "目标市场",
+        "placeholder": "US, GB, DE",
+        "help": "本项目所面向市场的 ISO 国家代码。"
+      },
+      "siteLanguageCodes": {
+        "label": "站点语言",
+        "placeholder": "en, de",
+        "help": "站点发布内容所用的语言代码。"
+      },
+      "defaultDeliveryLocale": {
+        "label": "交付语言",
+        "placeholder": "en",
+        "help": "面向客户的报告与交付物所用的语言。"
+      }
+    },
+    "createButton": "创建项目",
+    "creating": "创建中…",
+    "createError": "项目创建失败，请重试。",
+    "siteUrlInvalid": "请输入有效的网址，需包含 https://。"
+  },
+  "context": {
+    "title": "背景",
+    "subtitle": "定义作为所有诊断依据的目标客户画像。",
+    "saveDraft": "保存草稿",
+    "markComplete": "标记完成",
+    "saving": "保存中…",
+    "savedJustNow": "刚刚已保存",
+    "unsavedChanges": "有未保存的更改",
+    "saved": "所有更改已保存",
+    "conflictError": "该背景已在别处被更新。请先重新加载查看最新版本，再进行保存。",
+    "sections": {
+      "businessFrame": {
+        "title": "业务框架",
+        "description": "企业销售什么，以及如何进入市场。"
+      },
+      "idealCustomer": {
+        "title": "目标客户",
+        "description": "值得赢得的细分市场、人物画像与使用场景。"
+      },
+      "commercialFocus": {
+        "title": "商业重点",
+        "description": "驱动营收的产品、优先级与转化。"
+      },
+      "successDefinition": {
+        "title": "成功定义",
+        "description": "未来 90 天内成功的项目应是什么样子。"
+      }
+    },
+    "fields": {
+      "productName": "产品或服务名称",
+      "oneLineDescription": "一句话描述",
+      "customerModel": "客户模式",
+      "businessProfile": "业务概况",
+      "businessProfileNote": "用几句话描述商业模式、市场与定位。",
+      "segments": "客户细分",
+      "personas": "人物画像",
+      "useCases": "使用场景",
+      "offers": "产品与方案",
+      "differentiators": "差异化优势",
+      "primaryConversion": "主要转化",
+      "priorityProductsOrServices": "优先产品或服务",
+      "priorityUrls": "优先 URL",
+      "competitors": "竞争对手",
+      "growthQuestions": "增长问题",
+      "ninetyDayGoals": "90 天目标"
+    },
+    "qualificationIncomplete": "请先填写必填字段，再将该背景标记为完成。"
+  },
+  "overview": {
+    "title": "概览",
+    "subtitle": "信号覆盖度、时效性与下一步行动的快照。",
+    "metrics": {
+      "coverage": "覆盖度",
+      "freshness": "时效性",
+      "roadmap": "路线图",
+      "delivery": "交付"
+    },
+    "nextStep": "下一步",
+    "noData": "尚未采集数据",
+    "reviewDiagnosis": "查看诊断",
+    "previewReport": "预览报告"
+  },
+  "appShell": {
+    "projectStage": "项目阶段",
+    "localeSwitch": "切换语言",
+    "comingSoon": "将在后续阶段开放",
+    "skipToContent": "跳到主内容"
+  },
+  "contextStatus": {
+    "missing": "未开始",
+    "draft": "草稿",
+    "complete": "已完成"
   }
 }

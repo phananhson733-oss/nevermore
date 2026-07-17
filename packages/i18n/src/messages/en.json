@@ -103,5 +103,128 @@
     "CRO-LANDING-003": "Underperforming landing pages",
     "GEO-ENTITY-001": "Missing entity signals",
     "GEO-CRAWLER-002": "AI crawler access"
+  },
+  "auth": {
+    "title": "Operator sign-in",
+    "subtitle": "Sign in to your SignalFrame workspace.",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "signInButton": "Sign in",
+    "signingIn": "Signing in…",
+    "signInError": "We couldn't sign you in. Check your email and password and try again.",
+    "magicLinkHint": "Trouble signing in? Ask an administrator to send you a magic link."
+  },
+  "newProject": {
+    "title": "New project",
+    "subtitle": "Set up a client engagement to start collecting signals.",
+    "fields": {
+      "clientName": {
+        "label": "Client name",
+        "placeholder": "Acme Inc.",
+        "help": "The company or brand this engagement is for."
+      },
+      "projectName": {
+        "label": "Project name",
+        "placeholder": "Acme 2026 SEO program",
+        "help": "An internal name to identify this engagement."
+      },
+      "siteUrl": {
+        "label": "Site URL",
+        "placeholder": "https://www.example.com",
+        "help": "The primary domain we'll crawl and analyze."
+      },
+      "marketCodes": {
+        "label": "Target markets",
+        "placeholder": "US, GB, DE",
+        "help": "ISO country codes for the markets this project targets."
+      },
+      "siteLanguageCodes": {
+        "label": "Site languages",
+        "placeholder": "en, de",
+        "help": "Language codes the site publishes content in."
+      },
+      "defaultDeliveryLocale": {
+        "label": "Delivery language",
+        "placeholder": "en",
+        "help": "The language used for client-facing reports and deliverables."
+      }
+    },
+    "createButton": "Create project",
+    "creating": "Creating…",
+    "createError": "We couldn't create the project. Please try again.",
+    "siteUrlInvalid": "Enter a valid URL, including https://."
+  },
+  "context": {
+    "title": "Context",
+    "subtitle": "Define the ideal customer profile that grounds every diagnosis.",
+    "saveDraft": "Save draft",
+    "markComplete": "Mark complete",
+    "saving": "Saving…",
+    "savedJustNow": "Saved just now",
+    "unsavedChanges": "Unsaved changes",
+    "saved": "All changes saved",
+    "conflictError": "This context was updated elsewhere. Reload to see the latest version before saving.",
+    "sections": {
+      "businessFrame": {
+        "title": "Business frame",
+        "description": "What the business sells and how it goes to market."
+      },
+      "idealCustomer": {
+        "title": "Ideal customer",
+        "description": "The segments, personas, and use cases worth winning."
+      },
+      "commercialFocus": {
+        "title": "Commercial focus",
+        "description": "The offers, priorities, and conversions that drive revenue."
+      },
+      "successDefinition": {
+        "title": "Success definition",
+        "description": "What a successful engagement looks like over the next 90 days."
+      }
+    },
+    "fields": {
+      "productName": "Product or service name",
+      "oneLineDescription": "One-line description",
+      "customerModel": "Customer model",
+      "businessProfile": "Business profile",
+      "businessProfileNote": "Describe the business model, market, and positioning in a few sentences.",
+      "segments": "Customer segments",
+      "personas": "Personas",
+      "useCases": "Use cases",
+      "offers": "Offers",
+      "differentiators": "Differentiators",
+      "primaryConversion": "Primary conversion",
+      "priorityProductsOrServices": "Priority products or services",
+      "priorityUrls": "Priority URLs",
+      "competitors": "Competitors",
+      "growthQuestions": "Growth questions",
+      "ninetyDayGoals": "90-day goals"
+    },
+    "qualificationIncomplete": "Complete the required fields before marking this context complete."
+  },
+  "overview": {
+    "title": "Overview",
+    "subtitle": "A snapshot of signal coverage, freshness, and where to go next.",
+    "metrics": {
+      "coverage": "Coverage",
+      "freshness": "Freshness",
+      "roadmap": "Roadmap",
+      "delivery": "Delivery"
+    },
+    "nextStep": "Next step",
+    "noData": "No data collected yet",
+    "reviewDiagnosis": "Review diagnosis",
+    "previewReport": "Preview report"
+  },
+  "appShell": {
+    "projectStage": "Project stage",
+    "localeSwitch": "Switch language",
+    "comingSoon": "Available in a later stage",
+    "skipToContent": "Skip to content"
+  },
+  "contextStatus": {
+    "missing": "Not started",
+    "draft": "Draft",
+    "complete": "Complete"
   }
 }

@@ -1,15 +1,24 @@
 import { redirect } from "next/navigation";
 import { getOperatorContext } from "@/lib/auth/session";
+import { listProjects } from "@/lib/services/projects";
 
 /**
- * Root entry (spec §4.1). Anonymous users are sent to /login (also enforced by
- * middleware). Authenticated routing to the most recent project / new-project
- * lands in WP1; for now authenticated users are directed to /login until the
- * project shell exists.
+ * Root entry (spec §4.1): anonymous → /login (also enforced by middleware);
+ * authenticated → most recent project's overview, or /new-project when the
+ * workspace has no projects yet.
  */
 export default async function HomePage() {
   const operator = await getOperatorContext();
   if (!operator) redirect("/login");
-  // WP1: redirect to most recent project overview or /new-project.
-  redirect("/login");
+
+  const { data } = await listProjects(
+    { workspaceId: operator.workspaceId },
+    { limit: 1, cursor: null, archived: false },
+  );
+  if (data.length > 0 && data[0]) {
+    redirect(`/p/${data[0].id}/overview`);
+  }
+  redirect("/new-project");
 }
+
+export const dynamic = "force-dynamic";

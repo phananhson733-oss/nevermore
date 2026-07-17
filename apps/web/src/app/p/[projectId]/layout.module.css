@@ -1,0 +1,169 @@
+/*
+ * Project app-shell layout. 252px dark sidebar + fluid content column. Colors
+ * are var(--sf-*) tokens (opacity varies the muted states on the dark ink
+ * sidebar). Below ~960px the grid collapses to a single column and the sidebar
+ * becomes a top bar (its nav turns into a horizontal scroller — see nav.module.css).
+ */
+
+.shell {
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--sf-bg);
+}
+
+/* Skip link: off-screen until focused (keyboard entry point to main content). */
+.skipLink {
+  position: fixed;
+  left: 12px;
+  top: -64px;
+  z-index: 30;
+  padding: 9px 16px;
+  border-radius: var(--sf-radius-control);
+  background: var(--sf-accent);
+  color: var(--sf-accent-contrast);
+  font-weight: 700;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skipLink:focus {
+  top: 12px;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px 16px;
+  background: var(--sf-ink-950);
+  color: var(--sf-white);
+  border-right: 1px solid var(--sf-ink-800);
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+}
+.brandMark {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--sf-mint-bright);
+}
+.brandWord {
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--sf-white);
+}
+
+.projectHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--sf-ink-800);
+  border-radius: var(--sf-radius-card);
+  background: var(--sf-ink-900);
+}
+.projectClient {
+  font-size: var(--sf-text-base);
+  font-weight: 700;
+  color: var(--sf-white);
+}
+.projectHost {
+  font-size: var(--sf-text-xs);
+  color: var(--sf-white);
+  opacity: 0.6;
+  word-break: break-all;
+}
+.newProjectLink {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: var(--sf-text-sm);
+  font-weight: 700;
+  color: var(--sf-mint-bright);
+  text-decoration: none;
+}
+.newProjectLink:hover {
+  text-decoration: underline;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 60px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--sf-border);
+  background: color-mix(in srgb, var(--sf-surface) 82%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--sf-text-sm);
+}
+.crumbRoot {
+  overflow: hidden;
+  font-weight: 700;
+  color: var(--sf-fg);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.crumbSep {
+  color: var(--sf-muted);
+}
+.crumbCurrent {
+  font-weight: 600;
+  color: var(--sf-muted);
+  white-space: nowrap;
+}
+
+.topbarActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 960px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar {
+    position: static;
+    height: auto;
+    overflow: visible;
+    gap: 14px;
+    border-right: none;
+    border-bottom: 1px solid var(--sf-ink-800);
+  }
+}

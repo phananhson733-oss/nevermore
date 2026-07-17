@@ -1,0 +1,324 @@
+/*
+ * Context (ICP profile) screen layout. Every color/size is a `var(--sf-*)`
+ * design token from app/globals.css, so light, dark, and the zh-CN heading swap
+ * all come for free. Focus is owned by the global `:focus-visible` ring.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 240px;
+  color: var(--sf-muted);
+}
+
+/* --------------------------------------------------------------- Hero ----- */
+.hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+.heroText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.title {
+  font-size: var(--sf-text-3xl);
+  color: var(--sf-fg);
+}
+.subtitle {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-base);
+}
+
+.saveBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.saveStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--sf-text-sm);
+  font-weight: 700;
+  color: var(--sf-muted);
+  min-height: 22px;
+}
+.saveStatusDirty {
+  color: var(--sf-amber);
+}
+.saveStatusSaved {
+  color: var(--sf-mint);
+}
+.saveButtons {
+  display: flex;
+  gap: 10px;
+}
+
+/* --------------------------------------------------------------- Alert ----- */
+.alert {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--sf-coral);
+  background: var(--sf-coral-soft);
+  color: var(--sf-fg);
+  border-radius: var(--sf-radius-control);
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------- Layout ----- */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+.formCol {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.aside {
+  position: sticky;
+  top: 24px;
+}
+
+/* ------------------------------------------------------------- Section ----- */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sectionHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.sectionNumber {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--sf-cobalt-soft);
+  color: var(--sf-accent);
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-sm);
+  font-weight: 800;
+}
+.sectionTitle {
+  font-size: var(--sf-text-xl);
+  color: var(--sf-fg);
+}
+.sectionDesc {
+  margin: 2px 0 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-sm);
+}
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.row2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 640px) {
+  .row2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* -------------------------------------------------------------- Select ----- */
+.select {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  line-height: 1.4;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: var(--sf-radius-control);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.select:hover:not(:disabled):not(:focus) {
+  border-color: var(--sf-fg);
+}
+.selectInvalid {
+  border-color: var(--sf-coral);
+}
+
+/* ------------------------------------------------------------- Persona ----- */
+.personaList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.personaCard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--sf-surface-deep);
+}
+.personaHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.personaTitle {
+  font-size: var(--sf-text-sm);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+.personaBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.addPersona {
+  align-self: flex-start;
+}
+
+/* ---------------------------------------------------------- Profile lens -- */
+.lens {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.lensEyebrow {
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sf-mint-bright);
+}
+.lensName {
+  margin: 4px 0 0;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-xl);
+  line-height: 1.15;
+  color: var(--sf-white);
+  word-break: break-word;
+}
+.lensDesc {
+  margin: 6px 0 0;
+  font-size: var(--sf-text-sm);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.68);
+}
+.lensMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lensMetaLabel {
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+.lensBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lensBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--sf-radius-chip);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--sf-white);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+}
+.lensEmpty {
+  font-size: var(--sf-text-sm);
+  color: rgba(255, 255, 255, 0.5);
+}
+.lensDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.lensChecklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lensCheckItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--sf-text-sm);
+  color: rgba(255, 255, 255, 0.82);
+}
+.lensCheckMark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  color: transparent;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+.lensCheckMarkDone {
+  background: var(--sf-mint);
+  border-color: var(--sf-mint);
+  color: var(--sf-white);
+}
+.lensStatusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lensStatusLabel {
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}

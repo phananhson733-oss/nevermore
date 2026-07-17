@@ -1,0 +1,75 @@
+/*
+ * Login screen: a single centered Card on warm paper. All colors are
+ * var(--sf-*) tokens, so light + dark come for free.
+ */
+
+.page {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--sf-bg);
+}
+
+.localeSwitch {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.brandMark {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--sf-mint);
+}
+.brandWord {
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-lg);
+  font-weight: 700;
+  color: var(--sf-fg);
+}
+
+.title {
+  margin: 6px 0 6px;
+  font-size: var(--sf-text-2xl);
+}
+.subtitle {
+  margin: 0 0 22px;
+  font-size: var(--sf-text-base);
+  color: var(--sf-muted);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sf-coral);
+  border-radius: var(--sf-radius-control);
+  background: var(--sf-coral-soft);
+  color: var(--sf-coral);
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+}
+
+.submit {
+  width: 100%;
+}

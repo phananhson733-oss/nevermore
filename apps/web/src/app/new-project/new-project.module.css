@@ -1,0 +1,85 @@
+/*
+ * New-project screen: a centered editorial column with a single form Card.
+ * Two-up field grid collapses to one column on narrow viewports. All colors are
+ * var(--sf-*) tokens.
+ */
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 24px 80px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.headerText {
+  min-width: 0;
+}
+.title {
+  margin: 6px 0;
+  font-size: var(--sf-text-3xl);
+}
+.subtitle {
+  margin: 0;
+  font-size: var(--sf-text-lg);
+  color: var(--sf-muted);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.card {
+  width: 100%;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.full {
+  grid-column: 1 / -1;
+}
+
+.generalError {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--sf-coral);
+  border-radius: var(--sf-radius-control);
+  background: var(--sf-coral-soft);
+  color: var(--sf-coral);
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.submit {
+  min-width: 168px;
+}
+
+@media (max-width: 640px) {
+  .header {
+    flex-direction: column;
+  }
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .actions {
+    justify-content: stretch;
+  }
+  .submit {
+    width: 100%;
+  }
+}

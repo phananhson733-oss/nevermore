@@ -1,12 +1,47 @@
+import { getTranslations } from "next-intl/server";
+import { Card, LocaleSwitch } from "@/components/ui";
+import { LoginForm } from "./_form.tsx";
+import styles from "./login.module.css";
+
 /**
- * Login shell (WP0). The Supabase sign-in form and localized copy are wired in
- * WP1; this page exists so the middleware redirect target resolves.
+ * Operator sign-in (spec §4.1, §14.1). Server component: resolves a safe
+ * same-origin `next` path from the query string and hands it to the client form,
+ * which drives the `signInAction` server action. The redirect itself is not an
+ * open-redirect vector — `next` is validated here and again in the action.
  */
-export default function LoginPage() {
+
+/** Same-origin absolute paths only; never a scheme-relative "//host" redirect. */
+function safeNext(raw: string | undefined): string {
+  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
+  const t = await getTranslations("auth");
+  const tShell = await getTranslations("appShell");
+
   return (
-    <main style={{ maxWidth: 420, margin: "10vh auto", padding: "0 24px" }}>
-      <h1 style={{ fontSize: 24, marginBottom: 8 }}>SignalFrame</h1>
-      <p style={{ color: "var(--sf-muted)" }}>Internal delivery workbench.</p>
+    <main className={styles.page}>
+      <div className={styles.localeSwitch}>
+        <LocaleSwitch aria-label={tShell("localeSwitch")} />
+      </div>
+
+      <Card padding="lg" className={styles.card}>
+        <div className={styles.brand}>
+          <span className={styles.brandMark} aria-hidden="true" />
+          <span className={styles.brandWord}>SignalFrame</span>
+        </div>
+
+        <p className="sf-eyebrow">SignalFrame</p>
+        <h1 className={styles.title}>{t("title")}</h1>
+        <p className={styles.subtitle}>{t("subtitle")}</p>
+
+        <LoginForm next={safeNext(next)} />
+      </Card>
     </main>
   );
 }
