@@ -9,9 +9,17 @@
 - **Repo path**: `/Users/wzb/Code/nevermore/signalframe-mvp-app` (independent git repo inside nevermore, per user decision)
 - **Old repo (read-only, vendor-copy source)**: `/Users/wzb/Code/signalframe` @ `72af9300c600` — NEVER modify (AC-048).
 
-## Resume here 👉 **WP1 UI layer** — login / new-project / overview / context screens + i18n parity (AC-011) + Playwright (AC-010 multi-tab)
+## Resume here 👉 **WP2 — 数据中心 (AC-012~020)**
 
-WP0 done. WP1 **backend** done + committed (`dc626fb`): all 6 project/context API operations, repos, services, url-safety vendor, idempotency; AC-007/008/009/010 covered by tests (18 unit + 15 integration passing). Remaining WP1 = the UI (7 screens' shell + login/new-project/overview/context) and AC-011 i18n parity + AC-010 multi-tab Playwright.
+WP0 ✅. WP1 ✅ backend (`dc626fb`) + UI (`e3be3c0`) + browser-verified end-to-end.
+- Backend: 6 project/context API operations, repos, services, url-safety vendor, idempotency; AC-007/008/009/010 tested (21 unit + 15 integration).
+- UI: design system, i18n (6 ns, parity test = AC-011), API hooks, 11 primitives, login/new-project/shell/overview/context. Builds clean; **browser-verified**: login + LocaleSwitch (中↔EN keeps URL, AC-011), new-project form, shell (nav active/disabled + logout), overview (honest empty coverage/metrics), context (ICP form + Profile Lens), and a full-stack **draft save round-trip** (form → PATCH 200 → version 1 → refetch → UI). Screenshots taken during QA.
+- **Dev auth**: local browser QA used a double-gated shim (`apps/web/src/lib/auth/dev.ts`; `NODE_ENV!==production` + `SF_DEV_AUTH=true`, in `.env.local` only). Real auth = Supabase (needs Docker up / hosted).
+
+### WP1 residual polish (non-blocking, fold into WP2 or a cleanup pass)
+- 2 context-form labels ("Target markets"/"Site languages") render static English — add `context.fields.marketCodes/siteLanguageCodes/...` keys and wire them for full zh-CN.
+- Formal Playwright E2E for AC-010 multi-tab + AC-011 switch is deferred until local Supabase (isolation is service-tested: foreign workspace → 404; projectId-in-URL scoping is architectural).
+- `middleware.ts` works in Next 16.2 (labeled "Proxy"); optional rename to `proxy.ts` per Next 16 convention.
 
 ### ICP content-hash decision (WP1)
 `icp_profiles.content_hash = sha256(canonical({status, profile}))`, NOT profile-only. Reconciles append-only + `UNIQUE(project_id, content_hash)` with draft→complete transitions of identical content. Same status+profile re-save → dedup (AC-009); draft→complete of same content → new version. Implemented in `apps/web/src/lib/services/context.ts`.
@@ -55,14 +63,14 @@ The login page + LocaleSwitch render without auth and can be browser-checked now
 - [x] **AC-006** Run + enqueue atomic; failure on either side rolls back whole tx — no queued-without-job / job-without-run (`queue.integration.test.ts`).
 - Notes: worker bootstrap (`apps/worker/src/index.ts`) stands up env fail-fast + pg-boss + graceful shutdown; job handlers land in WP2. `secrets-scan.mjs` + `check-vendor-baseline.mjs` added.
 
-### WP1 — 项目、Context 与 UI shell ⏳ IN PROGRESS (backend done, UI next)
+### WP1 — 项目、Context 与 UI shell ✅ COMPLETE (backend + UI, browser-verified)
 - [x] **AC-007** Safe-URL project create (project + site + crawl source); non-http + SSRF-blocked URLs rejected 422 — `projects.integration.test.ts`. (Full SSRF matrix: vendored `guard.test.ts` 7/7.)
 - [x] **AC-008** `mode=draft` accepts partial/null; `mode=complete` returns pointer-level 422 per missing field — `icp-validation.test.ts`.
 - [x] **AC-009** Same canonical profile → no new version; stale `baseVersion` → 409 — `projects.integration.test.ts`.
 - [x] **AC-010** cross-workspace read → 404 (service level) — `projects.integration.test.ts`. UI multi-tab Playwright still pending.
-- [ ] **AC-011** EN/zh-CN key parity; locale switch keeps URL; artifact/client content unchanged by UI locale. (UI)
-- [ ] UI: login, new-project, project-path shell + EN/zh-CN nav, Overview/Context screens, loading/error/empty states.
-- Backend done: `@sf/sources` url-safety, repos, services, 6 route handlers, idempotency.
+- [x] **AC-011** EN/zh-CN key parity (parity test); locale switch keeps URL (browser-verified). Delivery/artifact content is locale-independent by design (outputLocale ≠ uiLocale).
+- [x] UI: login, new-project, project shell + EN/zh-CN nav, Overview/Context screens, loading/error/empty states — built + browser-verified.
+- Backend: `@sf/sources` url-safety, repos, services, 6 route handlers, idempotency.
 
 ### WP2 — 数据中心 (AC-012~020) ⬜
 ### WP3 — 诊断、审核与计划 (AC-021~030) ⬜

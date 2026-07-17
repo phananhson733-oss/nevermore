@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/refresh";
+import { isDevAuthEnabled } from "@/lib/auth/dev";
 
 /** Public page paths that never require authentication. */
 const PUBLIC_PAGES = ["/login"];
@@ -13,10 +14,20 @@ const PUBLIC_API_PREFIXES = ["/api/mvp/health"];
  * enforced in repositories, not here.
  */
 export async function middleware(request: NextRequest): Promise<NextResponse> {
+  // Local dev only (double-gated): skip Supabase session refresh and gating so the
+  // app is reachable without a running GoTrue instance (spec §14.1). Never in prod.
+  if (isDevAuthEnabled()) {
+    return NextResponse.next({ request });
+  }
+
   const { response, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
 
-  if (PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+  if (
+    PUBLIC_API_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    )
+  ) {
     return response;
   }
   // API auth is enforced by operatorRoute in the handlers; only refresh here.
@@ -24,7 +35,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return response;
   }
 
-  const isPublicPage = PUBLIC_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const isPublicPage = PUBLIC_PAGES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
   if (!user && !isPublicPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
