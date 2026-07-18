@@ -10,8 +10,10 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@sf/contracts": "workspace:*",
     "@sf/db": "workspace:*",
     "@sf/observability": "workspace:*",
+    "@sf/sources": "workspace:*",
     "pg-boss": "catalog:",
     "zod": "catalog:"
   },

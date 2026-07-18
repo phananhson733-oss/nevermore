@@ -1,0 +1,105 @@
+import {
+  AsyncRunsRepository,
+  DataSnapshotsRepository,
+  ProjectsRepository,
+  SourceConnectionsRepository,
+  SourceCredentialsRepository,
+  type AsyncRunRow,
+  type SourceConnectionRow,
+  type WorkspaceScope,
+} from "@sf/db";
+import { ProblemError } from "@sf/observability";
+import { getDb } from "@/lib/db";
+import { toSourceConnectionDto, type SourceConnectionDto } from "./source-mappers";
+
+/**
+ * Sources read model + disconnect (spec §7, §11.2). `listProjectSources` always
+ * returns EXACTLY the five provider slots (crawl, gsc, ga4, csv, dataforseo) —
+ * connected or not — so the UI can render every provider card and distinguish
+ * "not connected" from "connected but no snapshot" (spec §5.2). DataForSEO is
+ * always featureEnabled=false (AC-020).
+ */
+
+const PROVIDER_ORDER = ["crawl", "gsc", "ga4", "csv", "dataforseo"] as const;
+
+function activeRunForProvider(
+  runs: readonly AsyncRunRow[],
+  provider: string,
+): AsyncRunRow | null {
+  return (
+    runs.find((r) => typeof r.active_key === "string" && r.active_key.startsWith(`collect:${provider}:`)) ??
+    null
+  );
+}
+
+export async function listProjectSources(
+  scope: WorkspaceScope,
+  projectId: string,
+): Promise<SourceConnectionDto[]> {
+  const projectScope = { workspaceId: scope.workspaceId, projectId };
+  const { db } = getDb();
+
+  const project = await new ProjectsRepository(db).findById(scope, projectId);
+  if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
+
+  const connectionsRepo = new SourceConnectionsRepository(db);
+  const snapshotsRepo = new DataSnapshotsRepository(db);
+  const connections = await connectionsRepo.listByProject(projectScope);
+  const activeRuns = await new AsyncRunsRepository(db).listActiveByProject(projectScope);
+  const now = Date.now();
+
+  const byProvider = new Map<string, SourceConnectionRow>();
+  for (const c of connections) {
+    // Keep the newest connection per provider (listByProject is created_at DESC).
+    if (!byProvider.has(c.provider)) byProvider.set(c.provider, c);
+  }
+
+  const slots: SourceConnectionDto[] = [];
+  for (const provider of PROVIDER_ORDER) {
+    const connection = byProvider.get(provider) ?? null;
+    const latestSnapshot = connection
+      ? await snapshotsRepo.findLatestByConnection(projectScope, connection.id)
+      : null;
+    slots.push(
+      toSourceConnectionDto({
+        projectId,
+        provider,
+        connection,
+        latestSnapshot,
+        activeRun: activeRunForProvider(activeRuns, provider),
+        featureEnabled: provider !== "dataforseo",
+        now,
+      }),
+    );
+  }
+  return slots;
+}
+
+/**
+ * Disconnect a source (spec §7, §12.3): mark it disconnected and erase its
+ * credential ciphertext immediately; historical snapshots are retained. The
+ * default Crawl source cannot be disconnected (it is the project's base source).
+ */
+export async function disconnectProjectSource(
+  scope: WorkspaceScope,
+  projectId: string,
+  sourceConnectionId: string,
+): Promise<void> {
+  const projectScope = { workspaceId: scope.workspaceId, projectId };
+  const { db } = getDb();
+
+  const connections = new SourceConnectionsRepository(db);
+  const connection = await connections.findById(projectScope, sourceConnectionId);
+  if (!connection) throw new ProblemError("NOT_FOUND", "Source connection not found.");
+  if (connection.provider === "crawl") {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "The default crawl source cannot be disconnected.",
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    await new SourceCredentialsRepository(tx).deleteByConnection(sourceConnectionId);
+    await new SourceConnectionsRepository(tx).disconnect(projectScope, sourceConnectionId);
+  });
+}

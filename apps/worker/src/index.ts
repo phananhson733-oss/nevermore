@@ -7,6 +7,8 @@ import {
 } from "@sf/db";
 import { createLogger } from "@sf/observability";
 import { getWorkerEnv } from "./env.ts";
+import { buildWorkerContext } from "./context.ts";
+import { registerCollectHandlers } from "./handlers/collect.ts";
 
 /**
  * Worker bootstrap (spec §3.1, §13). A long-running Node process that:
@@ -50,11 +52,13 @@ async function start(): Promise<WorkerRuntime> {
   });
 
   await startBoss(boss);
-  logger.info("worker_ready", { contractVersion: CONTRACT_VERSION });
 
-  // WP2+ registers boss.work(queue, handler) for collect.*/diagnose/
-  // artifact.generate/export.bundle here. Handlers are omitted until their
-  // owning work package lands so no queue silently no-ops.
+  // Register job handlers (spec §13). WP2: the four collection queues. WP3/WP4
+  // add diagnose / artifact.generate / export.bundle handlers on this context.
+  const workerCtx = buildWorkerContext({ db, boss, env, logger });
+  await registerCollectHandlers(workerCtx);
+
+  logger.info("worker_ready", { contractVersion: CONTRACT_VERSION });
 
   let stopping = false;
   const stop = async (): Promise<void> => {

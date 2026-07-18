@@ -9,7 +9,16 @@
 - **Repo path**: `/Users/wzb/Code/nevermore/signalframe-mvp-app` (independent git repo inside nevermore, per user decision)
 - **Old repo (read-only, vendor-copy source)**: `/Users/wzb/Code/signalframe` @ `72af9300c600` — NEVER modify (AC-048).
 
-## Resume here 👉 **WP2 — 数据中心 (AC-012~020)**
+## Resume here 👉 **WP2→WP5 full build (code-first, goal-driven 2026-07-18)**
+
+> **Active goal (2026-07-18)**: write ALL WP2–WP5 code first (adapters, engine, rules,
+> artifacts, routes, worker handlers, UI), THEN configure env + land tests. Fan-out
+> subagents + codex allowed. Contract owner (this session) merges DB/OpenAPI/state
+> machine + observation vocabulary (the WP2↔WP3 seam). Keep `pnpm typecheck` green
+> incrementally; defer the full integration/browser debug loop to the final phase.
+>
+> Build order: WP2 spine → adapters (fan-out) → services/routes/worker → Sources UI →
+> WP3 engine/rules → WP4 artifacts/report/export → WP5 hardening + env + tests.
 
 WP0 ✅. WP1 ✅ backend (`dc626fb`) + UI (`e3be3c0`) + browser-verified end-to-end.
 - Backend: 6 project/context API operations, repos, services, url-safety vendor, idempotency; AC-007/008/009/010 tested (21 unit + 15 integration).
@@ -72,10 +81,29 @@ The login page + LocaleSwitch render without auth and can be browser-checked now
 - [x] UI: login, new-project, project shell + EN/zh-CN nav, Overview/Context screens, loading/error/empty states — built + browser-verified.
 - Backend: `@sf/sources` url-safety, repos, services, 6 route handlers, idempotency.
 
-### WP2 — 数据中心 (AC-012~020) ⏳ FOUNDATION STARTED
-Done: `SourceAdapter<C,P,R>` contract (`@sf/sources/adapter.ts`, §7.1); `AsyncRunsRepository` (atomic enqueue / active-key uniqueness / claim / terminal); `getProjectRun` unified status endpoint (`GET .../runs/{runId}`) + AsyncRun DTO mapper.
-Next, no external creds needed: collection/snapshot/observation repos → `createCollectionRun` atomic enqueue (AC-019 active-key 409) → **crawl adapter** (§7.3, reuses vendored url-safety; vendor-copy crawl logic from old `packages/crawler/src`) → snapshot/observation persistence → CSV preview/confirm (§7.5) → DFS disabled adapter/card (AC-020) → worker job handlers → Sources UI + coverage/freshness states.
-**Blocked on user input**: GSC/GA4 OAuth (AC-014/015) needs a **Google OAuth client id/secret** (`GOOGLE_OAUTH_CLIENT_ID/SECRET`) and a running Supabase (real sessions) — build the adapters offline, but live OAuth sync needs creds.
+### WP2 — 数据中心 (AC-012~020) 🟢 BACKEND CODE-COMPLETE (UI pending)
+**Adapters (`@sf/sources`, all typecheck+unit green, 115 pkg tests)**: crawl engine+adapter
+(vendor-copy from old `packages/crawler`, provenance in manifest, 9 entries); GSC adapter
+(`createGscAdapter`+`HttpGscClient`, 56d window, top-10 queries, decay prev-28d); GA4 adapter
+(`createGa4Adapter`+`HttpGa4Client`, session+keyEvent reports, unmapped→null not 0); CSV
+(`parseCsv`/`clusterKey`/`previewCsv`/`normalizeCsv`, RFC4180, cluster_key.v1); DataForSEO
+disabled stub (AC-020); AES-256-GCM credential crypto (§14.3); `BlobStore` (Memory + LocalFs).
+Plus contract seam: `canonical-url.ts` (canonical_url.v1), `observations.ts` (metric vocab).
+**DB repos**: data-snapshots, observations (batch), oauth-intents, import-previews,
+source-credentials, provider-discrepancies; extended source-connections (insert/list/disconnect/
+setLastSnapshot) + collection-runs (finalize/findById) + async-runs (listActive/request_payload).
+**Zod**: connect 3-phase union, ImportConfirmRequest, CreateDiagnosticRunRequest, ReviewFindingRequest.
+**Services + routes**: `GET /sources` (5-slot + freshness/stale), `GET /snapshots`,
+`DELETE /sources/{id}`, `POST /sources/{provider}/connect` (OAuth 3-phase), `GET /oauth/google/callback`
+(303), `POST /sources/csv/import` (preview 200 + confirm 202 atomic enqueue).
+**Worker**: `buildWorkerContext` + `run-collection` dispatcher (all 4 providers) + `persist`
+(upload raw → tx: snapshot+observations+finalize+connection+terminal+telemetry) + `collect.*`
+handlers registered.
+**Still TODO for WP2**: Sources UI (cards, connect flow, CSV upload, coverage/freshness);
+integration/browser tests (AC-012~020); local Supabase for live OAuth; GA4 property timezone
+currently defaults to America/Los_Angeles (refine at env-config).
+**Live-cred items (build done, needs creds to exercise)**: GSC/GA4 OAuth (AC-014/015) needs a real
+`GOOGLE_OAUTH_CLIENT_ID/SECRET` + running Supabase session.
 ### WP3 — 诊断、审核与计划 (AC-021~030) ⬜
 ### WP4 — Studio、Report 与 Export (AC-031~039) ⬜
 ### WP5 — 硬化与双客户 Pilot Gate (AC-040~048 + DoD) ⬜

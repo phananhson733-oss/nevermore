@@ -42,6 +42,34 @@
       "targetPath": "packages/sources/src/url-safety/guard.test.ts",
       "sha256": "5b73ad7449446594575f9a1b87820e571a02fe545d5a94653abe8505ff627924",
       "adaptation": "rewrote ./*.js import specifiers to ./*.ts"
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/page.ts",
+      "targetPath": "packages/sources/src/crawl/parse-page.ts",
+      "sha256": "6b804bd8ed9767c695ce4964e45a86c405be984c4ee7d90ee8b0a02f8c18f547",
+      "adaptation": "Vendored the regex HTML extraction helpers (attr/firstTag/tagText, heading/paragraph/anchor collection, JSON-LD walk) from page.ts plus extractNormalisedBody/decodeHtml from packages/crawler/src/extract.ts. Dropped all @signalframe/core types and inferPageRole (engine infers role later); dropped contentHash (crypto) and the date/claim-cue/image-alt observers not in the CrawlPageProjection contract. Reshaped output to the ParsedPage subset of CrawlPageProjection: link targets are canonicalized via canonicalizeUrl to targetSubjectUrl (same-origin only) instead of raw absolute URLs; robots meta parsed into robotsDirectives[]+robotsIndexable; jsonLd reduced to {types,errorCount}; added bodyExcerpt and bounded paragraph/heading/outlink counts. Rewrote import specifiers to explicit .ts."
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/robots.ts",
+      "targetPath": "packages/sources/src/crawl/robots.ts",
+      "sha256": "817fb630f5a06332e04d019f90f1dbc59cd1ce6f86f94ef62f1617241fe06e50",
+      "adaptation": "Vendored parseGroups/globMatches/longest-match Allow-wins logic from robots.ts and the AI-crawler UA names from packages/crawler/src/ai-bots.ts (OAI-SearchBot, ChatGPT-User, PerplexityBot, ClaudeBot). Dropped @signalframe/core CrawlerAccessRule and the monitored-bot report/kind taxonomy. Reshaped to CrawlRobotsProjection: projection.groups preserve every file user-agent group and guarantee an entry per required AI bot (resolved from its dedicated group else the * group). Added productToken() so the own-crawler gate matches 'SignalFrameBot/0.2' against a 'signalframebot' group; exposed isPathAllowed(groups,ua,path) + emptyRobots()."
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/sitemap.ts",
+      "targetPath": "packages/sources/src/crawl/sitemap.ts",
+      "sha256": "d2ae3cc10bddcbb8b1b4709fe939e2039fafd61c027b3f318455d01c0b48cac6",
+      "adaptation": "Vendored the regex <loc> extraction + urlset/sitemapindex detection + decodeXml from sitemap.ts. Added index recursion, same-origin filtering, canonicalizeUrl-to-subjectUrl mapping, dedupe, and depth/document/url bounds, delegating HTTP to an injected fetchText so every fetch still passes the SSRF guard + shared budget. Output reshaped to CrawlSitemapProjection {fetched,urlCount,subjectUrls}."
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/crawl.ts",
+      "targetPath": "packages/sources/src/crawl/engine.ts",
+      "sha256": "f6497dfd257f2962ea7a3cf78cfc8c038a7f9d6111b2a610e8c848a61fe44bdc",
+      "adaptation": "Vendored the BFS loop, manual-redirect-with-per-hop-guard logic, byte-capped streaming body read, and host-delay pacing from crawl.ts. Replaced the undici fetch + createPinnedAgent transport with the injected CrawlFetcher (default createDefaultCrawlFetcher wraps globalThis.fetch with redirect:'manual' + UA header). Dropped @signalframe/core SiteSnapshot/PageRecord/inferPageRole and the llms.txt + internal-link-depth analytics. Output reshaped to CrawlRaw; all CRAWL_BUDGET limits enforced (maxUrls/maxDepth/wall-clock/maxRedirects+SSRF re-check each hop/maxBodyBytes/perHostConcurrency/minHostDelay/robots); on any budget cut returns availability:'partial' with a specific stopReason and keeps collected pages; fills providerUsage + a non-empty limitation. Guard/now/budget injectable as test-only seams; every crawled URL and link target canonicalized via canonicalizeUrl."
     }
   ]
 }

@@ -49,6 +49,30 @@ export type {
 } from "./repositories/async-runs.ts";
 export { CollectionRunsRepository } from "./repositories/collection-runs.ts";
 export type { CollectionRunRow } from "./repositories/collection-runs.ts";
+export { DataSnapshotsRepository } from "./repositories/data-snapshots.ts";
+export type {
+  DataSnapshotRow,
+  SnapshotListPage,
+} from "./repositories/data-snapshots.ts";
+export { ObservationsRepository } from "./repositories/observations.ts";
+export type {
+  ObservationRow,
+  ObservationInsert,
+} from "./repositories/observations.ts";
+export { OAuthIntentsRepository } from "./repositories/oauth-intents.ts";
+export type {
+  OAuthIntentRow,
+  OAuthIntentStatus,
+} from "./repositories/oauth-intents.ts";
+export { ImportPreviewsRepository } from "./repositories/import-previews.ts";
+export type {
+  ImportPreviewRow,
+  ImportPreviewStatus,
+} from "./repositories/import-previews.ts";
+export { SourceCredentialsRepository } from "./repositories/source-credentials.ts";
+export type { SourceCredentialRow } from "./repositories/source-credentials.ts";
+export { ProviderDiscrepanciesRepository } from "./repositories/provider-discrepancies.ts";
+export type { ProviderDiscrepancyRow } from "./repositories/provider-discrepancies.ts";
 export {
   PGBOSS_SCHEMA,
   QUEUE_CONFIG,

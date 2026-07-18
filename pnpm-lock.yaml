@@ -186,12 +186,18 @@ importers:
 
   apps/worker:
     dependencies:
+      '@sf/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@sf/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@sf/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sf/sources':
+        specifier: workspace:*
+        version: link:../../packages/sources
       pg-boss:
         specifier: 'catalog:'
         version: 12.26.1

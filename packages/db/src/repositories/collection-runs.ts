@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { collectionRuns } from "../schema.ts";
 import { Repository } from "./base.ts";
 
@@ -25,6 +26,16 @@ export interface CollectionRunRow {
 }
 
 export class CollectionRunsRepository extends Repository {
+  /** Load a collection run by id (worker; id = the async run id). */
+  async findById(id: string): Promise<CollectionRunRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(collectionRuns)
+      .where(eq(collectionRuns.id, id))
+      .limit(1);
+    return (rows[0] as CollectionRunRow | undefined) ?? null;
+  }
+
   /** Insert the collection placeholder (id = the async run id). */
   async insertPlaceholder(values: {
     runId: string;
@@ -52,5 +63,30 @@ export class CollectionRunsRepository extends Repository {
       })
       .returning();
     return row as CollectionRunRow;
+  }
+
+  /**
+   * Fill in the collection outcome on completion (worker tx). `source_window`,
+   * `provider_usage`, `row_count` and `stop_reason` come from the adapter's
+   * `CollectionResult`; the run row itself is otherwise immutable.
+   */
+  async finalize(
+    id: string,
+    values: {
+      rowCount: number;
+      sourceWindow: Record<string, unknown>;
+      providerUsage: Record<string, number>;
+      stopReason: string | null;
+    },
+  ): Promise<void> {
+    await this.exec
+      .update(collectionRuns)
+      .set({
+        row_count: values.rowCount,
+        source_window: values.sourceWindow,
+        provider_usage: values.providerUsage,
+        stop_reason: values.stopReason,
+      })
+      .where(eq(collectionRuns.id, id));
   }
 }
