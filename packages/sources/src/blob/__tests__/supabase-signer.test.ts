@@ -40,7 +40,8 @@ describe("createSupabaseDownloadSigner", () => {
     const fetch: typeof globalThis.fetch = async (url, init) => {
       capturedUrl = String(url);
       capturedBody = JSON.parse(String(init?.body));
-      capturedAuth = new Headers(init?.headers).get("authorization") ?? undefined;
+      capturedAuth =
+        new Headers(init?.headers).get("authorization") ?? undefined;
       return jsonResponse({
         signedURL: "/object/sign/exports/export/p1/r1/n1?token=tok",
       });
@@ -79,7 +80,9 @@ describe("createSupabaseDownloadSigner", () => {
     let capturedUrl: string | undefined;
     const fetch: typeof globalThis.fetch = async (url) => {
       capturedUrl = String(url);
-      return jsonResponse({ signedURL: "/object/sign/exports/export/p1/r1/n1?token=t" });
+      return jsonResponse({
+        signedURL: "/object/sign/exports/export/p1/r1/n1?token=t",
+      });
     };
     const signer = createSupabaseDownloadSigner({
       ...BASE_CONFIG,
@@ -99,7 +102,8 @@ describe("createSupabaseDownloadSigner", () => {
   });
 
   it("throws SupabaseSignError when the body has no signedURL", async () => {
-    const fetch: typeof globalThis.fetch = async () => jsonResponse({ nope: true });
+    const fetch: typeof globalThis.fetch = async () =>
+      jsonResponse({ nope: true });
     const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
     await expect(
       signer.signDownloadUrl("export/p1/r1/n1", { expiresInSeconds: 900 }),
@@ -126,7 +130,9 @@ describe("mintExportObjectKey (regenerate)", () => {
 
 describe("assertKeyInProjectScope", () => {
   it("accepts a matching-project key and rejects wrong-project / malformed keys", () => {
-    expect(() => assertKeyInProjectScope("export/p1/r1/n1", "p1")).not.toThrow();
+    expect(() =>
+      assertKeyInProjectScope("export/p1/r1/n1", "p1"),
+    ).not.toThrow();
     expect(() => assertKeyInProjectScope("export/p2/r1/n1", "p1")).toThrow(
       ObjectOutOfProjectScopeError,
     );
@@ -135,6 +141,21 @@ describe("assertKeyInProjectScope", () => {
       ObjectOutOfProjectScopeError,
     );
     expect(() => assertKeyInProjectScope("", "p1")).toThrow(
+      ObjectOutOfProjectScopeError,
+    );
+  });
+
+  it("rejects dot-segment keys that would normalize out of the bucket at fetch time", () => {
+    // `../p1/r1/n1` has 4 segments and a matching projectId at index 1, but the
+    // URL parser normalizes `sign/exports/../p1/...` down to `sign/p1/...`,
+    // signing a different bucket. The dot-segment guard must reject it up front.
+    expect(() => assertKeyInProjectScope("../p1/r1/n1", "p1")).toThrow(
+      ObjectOutOfProjectScopeError,
+    );
+    expect(() => assertKeyInProjectScope("export/p1/../n1", "p1")).toThrow(
+      ObjectOutOfProjectScopeError,
+    );
+    expect(() => assertKeyInProjectScope("export//r1/n1", "")).toThrow(
       ObjectOutOfProjectScopeError,
     );
   });

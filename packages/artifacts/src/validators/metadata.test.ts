@@ -82,4 +82,26 @@ describe("validateMetadata", () => {
     };
     expect(validateMetadata(inArray).length).toBeGreaterThan(0);
   });
+
+  it("rejects an unlisted tag / event-handler payload, not just a fixed tag list (AC-033)", () => {
+    // `<img>` is not in any allow/deny list — the tag-open rule must still catch it.
+    const withImg = {
+      ...validMetadata(),
+      proposedTitle: "<img src=x onerror=alert(1)>Pricing",
+    };
+    expect(validateMetadata(withImg)).toContain(
+      "metadata contains disallowed raw HTML/script (spec §14.4)",
+    );
+    // A bare inline event handler is also rejected.
+    const withHandler = {
+      ...validMetadata(),
+      proposedDescription: "Best plans onload=steal()",
+    };
+    expect(validateMetadata(withHandler).length).toBeGreaterThan(0);
+  });
+
+  it("keeps a plain non-tag `<` in prose valid (no false positive)", () => {
+    const meta = { ...validMetadata(), proposedTitle: "Plans < Pro tier" };
+    expect(validateMetadata(meta)).toEqual([]);
+  });
 });

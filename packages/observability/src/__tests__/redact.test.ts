@@ -34,7 +34,10 @@ describe("redact deep key redaction", () => {
   it("redacts each required key at the top level, case-insensitively", () => {
     for (const key of REQUIRED_KEYS) {
       const upper = key.toUpperCase();
-      const result = redact({ [upper]: FAKE, keep: "visible" }) as Record<string, unknown>;
+      const result = redact({ [upper]: FAKE, keep: "visible" }) as Record<
+        string,
+        unknown
+      >;
       expect(result[upper]).toBe(REDACTED);
       expect(result["keep"]).toBe("visible");
     }
@@ -51,6 +54,23 @@ describe("redact deep key redaction", () => {
     expect(result["Access_Token"]).toBe(REDACTED);
     expect(result["Set-Cookie"]).toBe(REDACTED);
     expect(result["Api_Key"]).toBe(REDACTED);
+  });
+
+  it("redacts camelCase spellings of the mandated snake_case keys (domain is camelCase)", () => {
+    const result = redact({
+      accessToken: FAKE,
+      refreshToken: FAKE,
+      clientSecret: FAKE,
+      apiKey: FAKE,
+      setCookie: FAKE,
+      keep: "visible",
+    }) as Record<string, unknown>;
+    expect(result["accessToken"]).toBe(REDACTED);
+    expect(result["refreshToken"]).toBe(REDACTED);
+    expect(result["clientSecret"]).toBe(REDACTED);
+    expect(result["apiKey"]).toBe(REDACTED);
+    expect(result["setCookie"]).toBe(REDACTED);
+    expect(result["keep"]).toBe("visible");
   });
 
   it("redacts secret keys at arbitrary nesting depth", () => {
@@ -115,7 +135,9 @@ describe("redact deep key redaction", () => {
     expect(redact(undefined)).toBeUndefined();
     expect(redact("plain")).toBe("plain");
     expect(redact(42)).toBe(42);
-    expect(redact({ token: null, access_token: undefined, keep: null })).toEqual({
+    expect(
+      redact({ token: null, access_token: undefined, keep: null }),
+    ).toEqual({
       token: REDACTED,
       access_token: REDACTED,
       keep: null,

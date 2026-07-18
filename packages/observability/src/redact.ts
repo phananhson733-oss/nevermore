@@ -40,6 +40,21 @@ const REDACT_QUERY_PARAMS: ReadonlySet<string> = new Set([
   "key",
 ]);
 
+/**
+ * Normalize a key for matching: lowercase and drop `_`/`-` so the snake, kebab,
+ * and camelCase spellings of one secret (`access_token` / `access-token` /
+ * `accessToken`) all collapse to a single comparable form. The domain speaks
+ * camelCase in JSON, so matching only the snake_case spelling would leak a field
+ * literally named `accessToken` / `refreshToken` / `clientSecret`.
+ */
+const normalizeKey = (key: string): string =>
+  key.toLowerCase().replace(/[_-]/g, "");
+
+/** `REDACT_KEYS` collapsed to the normalized form used for case/-/_-insensitive matching. */
+const REDACT_KEYS_NORMALIZED: ReadonlySet<string> = new Set(
+  [...REDACT_KEYS].map(normalizeKey),
+);
+
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -67,7 +82,10 @@ export function redactUrl(raw: string): string {
  * Deep-redact an arbitrary value for logging. Objects are copied (never mutated);
  * sensitive keys are masked; cycles are guarded.
  */
-export function redact(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+export function redact(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => redact(item, seen));
   }
@@ -76,7 +94,9 @@ export function redact(value: unknown, seen: WeakSet<object> = new WeakSet()): u
     seen.add(value);
     const out: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value)) {
-      out[key] = REDACT_KEYS.has(key.toLowerCase()) ? REDACTED : redact(val, seen);
+      out[key] = REDACT_KEYS_NORMALIZED.has(normalizeKey(key))
+        ? REDACTED
+        : redact(val, seen);
     }
     return out;
   }

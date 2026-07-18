@@ -21,7 +21,7 @@ const base64Bytes = (expected: number) =>
     { message: `must be ${expected}-byte base64` },
   );
 
-const EnvSchema = z
+export const EnvSchema = z
   .object({
     APP_ORIGIN: z.url(),
     DATABASE_URL: z.string().min(1),
@@ -56,11 +56,25 @@ const EnvSchema = z
   })
   .superRefine((env, ctx) => {
     const hasDirect = !!env.OPENAI_API_KEY && !!env.OPENAI_MODEL;
-    const hasAzure =
-      !!env.AZURE_OPENAI_API_KEY &&
-      !!env.AZURE_OPENAI_ENDPOINT &&
-      !!env.AZURE_OPENAI_DEPLOYMENT &&
-      !!env.OPENAI_API_VERSION;
+    const azureFields = [
+      env.AZURE_OPENAI_API_KEY,
+      env.AZURE_OPENAI_ENDPOINT,
+      env.AZURE_OPENAI_DEPLOYMENT,
+      env.OPENAI_API_VERSION,
+    ];
+    const azureCount = azureFields.filter(Boolean).length;
+    const hasAzure = azureCount === azureFields.length;
+    // Fail fast on a PARTIAL Azure set: otherwise `resolveLlmClientConfig` would
+    // silently fall back to direct public OpenAI, concealing a broken Azure
+    // rollout and violating an intended Azure/data-residency configuration.
+    if (azureCount > 0 && !hasAzure) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Azure OpenAI config is partial: set ALL of AZURE_OPENAI_API_KEY + " +
+          "AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT + OPENAI_API_VERSION, or none.",
+      });
+    }
     if (!hasDirect && !hasAzure) {
       ctx.addIssue({
         code: "custom",

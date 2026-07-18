@@ -96,6 +96,11 @@ export function mintExportObjectKey(parts: {
 function projectIdOfKey(key: string): string | null {
   const segments = key.split("/");
   if (segments.length !== OBJECT_KEY_SEGMENT_COUNT) return null;
+  // Reject any empty or dot segment: a `..`/`.`/empty segment survives
+  // encodeURIComponent unchanged and is then normalized by the URL parser at
+  // fetch time (e.g. `sign/exports/../p1/...` -> `sign/p1/...`), escaping the
+  // configured bucket. Defense-in-depth — minted keys never contain these.
+  if (segments.some((s) => s === "" || s === "." || s === "..")) return null;
   const projectId = segments[PROJECT_ID_SEGMENT_INDEX];
   return projectId && projectId.length > 0 ? projectId : null;
 }
@@ -184,7 +189,11 @@ export function createSupabaseDownloadSigner(
   return {
     async signDownloadUrl(key, options): Promise<string> {
       assertKeyInProjectScope(key, config.projectId);
-      const { url, init } = buildSignRequest(config, key, options.expiresInSeconds);
+      const { url, init } = buildSignRequest(
+        config,
+        key,
+        options.expiresInSeconds,
+      );
       let res: Response;
       try {
         res = await fetchImpl(url, init);
@@ -193,7 +202,9 @@ export function createSupabaseDownloadSigner(
         throw new SupabaseSignError(`Supabase sign request failed: ${detail}`);
       }
       if (!res.ok) {
-        throw new SupabaseSignError(`Supabase sign returned HTTP ${res.status}`);
+        throw new SupabaseSignError(
+          `Supabase sign returned HTTP ${res.status}`,
+        );
       }
       let body: unknown;
       try {

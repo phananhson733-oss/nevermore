@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??= "postgres://wzb@localhost:5432/signalframe_mvp_dev";
+process.env["DATABASE_URL"] ??=
+  "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
-process.env["CREDENTIAL_ENCRYPTION_KEY"] ??= Buffer.alloc(32).toString("base64");
+process.env["CREDENTIAL_ENCRYPTION_KEY"] ??=
+  Buffer.alloc(32).toString("base64");
 process.env["GOOGLE_OAUTH_CLIENT_ID"] ??= "id";
 process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ??= "secret";
 process.env["DATAFORSEO_ENABLED"] ??= "false";
@@ -15,7 +17,11 @@ process.env["LOG_LEVEL"] ??= "error";
 
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { workspaces } from "@sf/db/schema";
-import { OAuthIntentsRepository, type OAuthIntentRow, type ProjectScope } from "@sf/db";
+import {
+  OAuthIntentsRepository,
+  type OAuthIntentRow,
+  type ProjectScope,
+} from "@sf/db";
 import { encryptCredential } from "@sf/sources";
 import { ProblemError } from "@sf/observability";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -48,7 +54,8 @@ const safeGuard: UrlGuard = async (url) => ({
   reason: null,
 });
 
-const credentialKey = () => Buffer.from(process.env["CREDENTIAL_ENCRYPTION_KEY"]!, "base64");
+const credentialKey = () =>
+  Buffer.from(process.env["CREDENTIAL_ENCRYPTION_KEY"]!, "base64");
 
 /** An offline OAuth client that never touches the network. */
 const fakeClient = (): GoogleOAuthClient => ({
@@ -59,7 +66,10 @@ const fakeClient = (): GoogleOAuthClient => ({
     scope: "https://www.googleapis.com/auth/webmasters.readonly",
   }),
   listProperties: async (): Promise<GoogleProperty[]> => [
-    { externalPropertyId: "https://seed.example/", displayName: "seed.example" },
+    {
+      externalPropertyId: "https://seed.example/",
+      displayName: "seed.example",
+    },
   ],
 });
 
@@ -79,7 +89,10 @@ async function seedIntent(
     initiatedBy: actor,
     provider: "gsc",
     stateHash: hashState(state),
-    pkceVerifierCipher: encryptCredential(generateCodeVerifier(), credentialKey()),
+    pkceVerifierCipher: encryptCredential(
+      generateCodeVerifier(),
+      credentialKey(),
+    ),
     redirectPath: `/p/${scope.projectId}/sources`,
     expiresAt,
   });
@@ -122,7 +135,13 @@ describeDb("handleGoogleCallback — single-use state (AC-014)", () => {
 
   it("consumes the state once, then rejects a replay as OAUTH_STATE_REPLAYED", async () => {
     const expiresAt = new Date(Date.now() + 600_000).toISOString();
-    const { state, intentId } = await seedIntent(handle, scope, siteId, actor, expiresAt);
+    const { state, intentId } = await seedIntent(
+      handle,
+      scope,
+      siteId,
+      actor,
+      expiresAt,
+    );
     const repo = new OAuthIntentsRepository(handle.db);
 
     // First callback succeeds: state consumed → intent advances to properties_ready.
@@ -131,7 +150,11 @@ describeDb("handleGoogleCallback — single-use state (AC-014)", () => {
       { code: "auth-code", state, error: null },
       { client: fakeClient() },
     );
-    expect(first).toBe(`/p/${scope.projectId}/sources?oauthIntentId=${intentId}`);
+    // The success redirect carries BOTH oauthIntentId and provider so the Sources
+    // screen can open the property picker (source-connect.ts, fix 3aaffbe).
+    expect(first).toBe(
+      `/p/${scope.projectId}/sources?oauthIntentId=${intentId}&provider=gsc`,
+    );
     const afterFirst = (await repo.findById(scope, intentId)) as OAuthIntentRow;
     expect(afterFirst.status).toBe("properties_ready");
 
@@ -143,7 +166,10 @@ describeDb("handleGoogleCallback — single-use state (AC-014)", () => {
     );
     expect(replay).toContain(`/p/${scope.projectId}/sources`);
     expect(replay).toContain("error=OAUTH_STATE_REPLAYED");
-    const afterReplay = (await repo.findById(scope, intentId)) as OAuthIntentRow;
+    const afterReplay = (await repo.findById(
+      scope,
+      intentId,
+    )) as OAuthIntentRow;
     expect(afterReplay.status).toBe("failed");
     expect(afterReplay.failure_code).toBe("OAUTH_STATE_REPLAYED");
   });

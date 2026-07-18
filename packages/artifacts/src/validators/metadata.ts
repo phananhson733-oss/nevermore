@@ -30,11 +30,17 @@ export const metadataRewriteSchema = z.object({
 export type MetadataRewrite = z.infer<typeof metadataRewriteSchema>;
 
 /**
- * Raw HTML / script tags and JS URIs forbidden in ANY string field (spec §14.4).
- * Model output is untrusted; a `<script>` in proposedTitle must never validate.
+ * Raw HTML / script tags, inline event handlers, and JS URIs forbidden in ANY
+ * string field (spec §14.4). Model output is untrusted; an unlisted tag like
+ * `<img src=x onerror=alert(1)>` must never validate, so we reject ANY HTML tag
+ * opener rather than a fixed allow/deny list of tag names.
+ *
+ * `HTML_TAG_PATTERN` encodes the HTML tag-open rule: `<` or `</` IMMEDIATELY
+ * followed by an ASCII letter starts a tag, so plain prose like "plans < pro"
+ * (a space or non-letter after `<`) stays valid — SEO titles rarely need `<`.
  */
-const HTML_TAG_PATTERN =
-  /<\s*\/?\s*(script|html|iframe|style|object|embed|link|meta|svg|form)\b/i;
+const HTML_TAG_PATTERN = /<\/?[a-zA-Z]/;
+const EVENT_HANDLER_PATTERN = /\son[a-z]+\s*=/i;
 const JS_URI_PATTERN = /javascript\s*:/i;
 
 /** Collect every string leaf in the metadata object for sanitization scanning. */
@@ -63,7 +69,11 @@ export function validateMetadata(content: unknown): string[] {
 
   const errors: string[] = [];
   for (const leaf of stringLeaves(content)) {
-    if (HTML_TAG_PATTERN.test(leaf) || JS_URI_PATTERN.test(leaf)) {
+    if (
+      HTML_TAG_PATTERN.test(leaf) ||
+      EVENT_HANDLER_PATTERN.test(leaf) ||
+      JS_URI_PATTERN.test(leaf)
+    ) {
       errors.push("metadata contains disallowed raw HTML/script (spec §14.4)");
       break;
     }
