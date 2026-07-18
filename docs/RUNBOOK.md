@@ -19,9 +19,11 @@ DATABASE_URL=postgres://$USER@localhost:5432/signalframe_mvp_dev pnpm db:migrate
 ln -sf ../../.env.local apps/web/.env.local
 ln -sf ../../.env.local apps/worker/.env.local   # (both are gitignored)
 
-# 3. Web + worker (two terminals)
-pnpm --filter @sf/web dev            # http://localhost:3000
-DATABASE_URL=... pnpm --filter @sf/worker dev
+# 3. Web + worker (two terminals). Both load .env.local from their app dir:
+#    web via Next, worker via `tsx --env-file-if-exists` (see apps/worker/package.json).
+pnpm --filter @sf/web dev            # http://localhost:3000 (Next)
+pnpm --filter @sf/worker dev         # tsx watch; creates the pgboss schema on first run
+# /health/ready is 503 until the worker has created the pgboss schema; start the worker.
 
 # Blob storage is filesystem-backed locally at .data/blob (SF_BLOB_DIR to override);
 # Supabase Storage swaps in at deploy time behind the same BlobStore interface.
