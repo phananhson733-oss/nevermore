@@ -9,7 +9,17 @@
 - **Repo path**: `/Users/wzb/Code/nevermore/signalframe-mvp-app` (independent git repo inside nevermore, per user decision)
 - **Old repo (read-only, vendor-copy source)**: `/Users/wzb/Code/signalframe` @ `72af9300c600` — NEVER modify (AC-048).
 
-## Resume here 👉 **WP2→WP5 full build (code-first, goal-driven 2026-07-18)**
+## Resume here 👉 **All WP1–WP5 code written; env + full E2E landing in progress**
+
+> **Status (2026-07-18)**: WP1–WP4 product code COMPLETE (backend + UI, all 7 screens
+> build, all 26 operationIds routed). Local env ready (.env.local + dev auth shim +
+> local blob). Green: typecheck (8 pkgs) · lint · 267 unit + 24 integration · build ·
+> verify:spec · contracts:check · db:migrate:check · secrets:scan · vendor:check ·
+> i18n parity. Remaining: local boot smoke test; WP5 hardening (SSRF/secret/prompt-
+> injection security tests, Playwright responsive/a11y E2E, B2B/B2C full-chain fixtures).
+> Built via 18 fan-out subagents (5 WP2 adapters · 5 WP3 rule domains · 3 WP4 modules · 5 UI screens).
+
+
 
 > **Active goal (2026-07-18)**: write ALL WP2–WP5 code first (adapters, engine, rules,
 > artifacts, routes, worker handlers, UI), THEN configure env + land tests. Fan-out

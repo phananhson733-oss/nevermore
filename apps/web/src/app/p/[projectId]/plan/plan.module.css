@@ -1,0 +1,285 @@
+/*
+ * Plan (30/60/90) screen styles (spec §4.2, §9.3). Every color and size is a
+ * `var(--sf-*)` design token from app/globals.css — light, dark, and the zh-CN
+ * heading-font swap all come for free. Body/content text stays >=14px; only the
+ * sanctioned uppercase eyebrow/meta labels use the 12px aux size. Focus is owned
+ * by the global `:focus-visible` ring.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* --------------------------------------------------------------- Hero ----- */
+.hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+.heroText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.title {
+  font-size: var(--sf-text-3xl);
+  color: var(--sf-fg);
+}
+.subtitle {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-base);
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------- Loading / error ----- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 64px 24px;
+}
+.stateText {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  color: var(--sf-muted);
+}
+
+/* ---------------------------------------------------------- Lane board ---- */
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1024px) {
+  .board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .board {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lane {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--sf-surface-deep);
+}
+.laneHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.laneTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.laneName {
+  font-size: var(--sf-text-xl);
+  color: var(--sf-fg);
+}
+.laneWindow {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+.laneBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.laneEmpty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--sf-border-strong);
+  border-radius: var(--sf-radius-control);
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  text-align: center;
+}
+
+/* -------------------------------------------------------- Action card ----- */
+.actionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.actionCardBlocked {
+  border-color: var(--sf-coral);
+}
+.actionTopline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.actionTitle {
+  font-size: var(--sf-text-lg);
+  color: var(--sf-fg);
+  line-height: 1.25;
+}
+.actionDesc {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  line-height: 1.5;
+}
+
+/* Distinct treatment for a `blocked` (low-confidence hard gate) action. */
+.blockedNote {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--sf-coral);
+  border-radius: var(--sf-radius-control);
+  background: var(--sf-coral-soft);
+  font-size: var(--sf-text-sm);
+  color: var(--sf-fg);
+  line-height: 1.45;
+}
+.blockedLabel {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-coral);
+}
+
+.actionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0;
+}
+.metaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.metaLabel {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+.metaValue {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+  color: var(--sf-fg);
+}
+
+.outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sf-border);
+}
+.outcomeText {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-fg);
+  line-height: 1.5;
+}
+
+.actionFoot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ----------------------------------------------------- Override form ------ */
+.overrideForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--sf-border-strong);
+}
+.overrideHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.overrideTitle {
+  font-size: var(--sf-text-base);
+  color: var(--sf-fg);
+}
+.overrideDesc {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  line-height: 1.45;
+}
+.overrideGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.overrideKept {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--sf-radius-control);
+  background: var(--sf-cobalt-soft);
+  color: var(--sf-fg);
+  font-size: var(--sf-text-xs);
+  line-height: 1.45;
+}
+.overrideError {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sf-coral);
+  background: var(--sf-coral-soft);
+  border-radius: var(--sf-radius-control);
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+  color: var(--sf-fg);
+}
+.overrideActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Native select, mirroring the Context form's field-wired control. */
+.select {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  line-height: 1.4;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: var(--sf-radius-control);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.select:hover:not(:disabled):not(:focus) {
+  border-color: var(--sf-fg);
+}
+.selectInvalid {
+  border-color: var(--sf-coral);
+}

@@ -32,11 +32,11 @@ interface NavItem {
 const NAV_ITEMS: readonly NavItem[] = [
   { key: "overview", enabled: true },
   { key: "context", enabled: true },
-  { key: "sources", enabled: false },
-  { key: "diagnosis", enabled: false },
-  { key: "plan", enabled: false },
-  { key: "studio", enabled: false },
-  { key: "report", enabled: false },
+  { key: "sources", enabled: true },
+  { key: "diagnosis", enabled: true },
+  { key: "plan", enabled: true },
+  { key: "studio", enabled: true },
+  { key: "report", enabled: true },
 ];
 
 /** The first path segment under `/p/{projectId}/`, or null when not matched. */

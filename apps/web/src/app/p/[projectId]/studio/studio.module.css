@@ -1,0 +1,405 @@
+/*
+ * Studio (execution artifacts) screen styles (spec §4.2). Every color/size is a
+ * `var(--sf-*)` design token from app/globals.css, so light, dark, and the
+ * zh-CN heading-font swap come for free. Body/content text stays >=14px; the
+ * sanctioned uppercase 12px aux size is reserved for eyebrow/meta labels. Focus
+ * is owned by the global `:focus-visible` ring.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* --------------------------------------------------------------- Hero ----- */
+.hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+.heroText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+.title {
+  font-size: var(--sf-text-3xl);
+  color: var(--sf-fg);
+}
+.subtitle {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-base);
+  line-height: 1.4;
+}
+.heroActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.heroNote {
+  margin: 0;
+  max-width: 28ch;
+  font-size: var(--sf-text-xs);
+  color: var(--sf-muted);
+  text-align: right;
+}
+
+/* ------------------------------------------------------------ Run banner -- */
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+.bannerText {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.bannerLabel {
+  font-size: var(--sf-text-base);
+  font-weight: 700;
+  color: var(--sf-fg);
+}
+
+/* ------------------------------------------------------------ Meta labels - */
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.metaLabel {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+
+/* ------------------------------------------------------------- Groups ----- */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.groupTitle {
+  font-size: var(--sf-text-xl);
+  color: var(--sf-fg);
+}
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+/* --------------------------------------------------------- Artifact card -- */
+.artCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.artCardSelected {
+  outline: 2px solid var(--sf-accent);
+  outline-offset: 1px;
+}
+.artHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.artType {
+  font-size: var(--sf-text-base);
+  font-weight: 700;
+  color: var(--sf-fg);
+}
+.artAction {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  line-height: 1.4;
+}
+.artMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.artRun {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.artActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* ------------------------------------------------ Editor / generate panels */
+.editor,
+.generate,
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.editorHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.editorHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.editorTitle {
+  font-size: var(--sf-text-xl);
+  color: var(--sf-fg);
+  word-break: break-word;
+}
+.editorHeadMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.editorBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.editorState {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.editorEmpty {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  color: var(--sf-muted);
+}
+.editorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.readyHint {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+}
+
+/* Model output is untrusted — rendered as plain text in a monospace control,
+ * never as HTML. No mono design token exists, so a system monospace stack is
+ * used here (the only literal in this file). */
+.contentArea {
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  font-size: var(--sf-text-sm);
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+/* ---------------------------------------------------- Metadata JSON fields */
+.fields {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-control);
+  overflow: hidden;
+}
+.fieldRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--sf-border);
+}
+.fieldRow:first-child {
+  border-top: none;
+}
+@media (min-width: 640px) {
+  .fieldRow {
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 16px;
+    align-items: baseline;
+  }
+}
+.fieldKey {
+  margin: 0;
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+.fieldVal {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-fg);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ----------------------------------------------------------- Validation --- */
+.alert {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--sf-coral);
+  background: var(--sf-coral-soft);
+  color: var(--sf-fg);
+  border-radius: var(--sf-radius-control);
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+}
+.errorsBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--sf-coral);
+  background: var(--sf-coral-soft);
+  border-radius: var(--sf-radius-control);
+}
+.errorsTitle {
+  margin: 0;
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-fg);
+}
+.errorsList {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-fg);
+  line-height: 1.4;
+}
+
+/* -------------------------------------------------------- Generate form --- */
+.formGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 640px) {
+  .formGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.staticValue {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 4px;
+  font-size: var(--sf-text-base);
+  font-weight: 600;
+  color: var(--sf-fg);
+}
+.select {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  line-height: 1.4;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: var(--sf-radius-control);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.select:hover:not(:disabled):not(:focus) {
+  border-color: var(--sf-fg);
+}
+
+/* -------------------------------------------------------- Action picker --- */
+.pickerHint {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+}
+.pickerList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pickerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--sf-border);
+}
+.pickerRow:first-child {
+  border-top: none;
+}
+.pickerText {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.pickerTitle {
+  font-size: var(--sf-text-base);
+  font-weight: 600;
+  color: var(--sf-fg);
+}
+.pickerMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------- Loading / error ----- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 56px 24px;
+}
+.stateText {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  color: var(--sf-muted);
+}

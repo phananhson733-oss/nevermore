@@ -1,0 +1,341 @@
+/*
+ * Sources screen styles (spec §4.2, §7). Every colour and size is a `var(--sf-*)`
+ * design token from app/globals.css, so light, dark, and the zh-CN heading-font
+ * swap all come for free. Body/content text stays >=14px; only the sanctioned
+ * uppercase eyebrow/meta labels use the 12px aux size. Focus is owned by the
+ * global `:focus-visible` ring.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* --------------------------------------------------------------- Hero ----- */
+.hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.heroText {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: min(100%, 300px);
+}
+.title {
+  font-size: var(--sf-text-3xl);
+  color: var(--sf-fg);
+}
+.subtitle {
+  margin: 0;
+  max-width: 60ch;
+  font-size: var(--sf-text-lg);
+  color: var(--sf-muted);
+  line-height: 1.4;
+}
+
+/* -------------------------------------------------------------- Alert ------ */
+.alert {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--sf-coral);
+  background: var(--sf-coral-soft);
+  color: var(--sf-fg);
+  border-radius: var(--sf-radius-control);
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------- Cards ------ */
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.cardHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cardTitle {
+  font-size: var(--sf-text-xl);
+  color: var(--sf-fg);
+}
+.cardDesc {
+  margin: 0;
+  max-width: 60ch;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  line-height: 1.4;
+}
+
+.metaLabel {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+
+/* ----------------------------------------------------------- Freshness ---- */
+.freshRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  padding: 12px 0;
+  border-top: 1px solid var(--sf-border);
+  border-bottom: 1px solid var(--sf-border);
+}
+.freshItem {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.freshValue {
+  font-size: var(--sf-text-base);
+  font-weight: 600;
+  color: var(--sf-fg);
+}
+.freshEmpty {
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--sf-border);
+  border-bottom: 1px solid var(--sf-border);
+  font-size: var(--sf-text-base);
+  font-weight: 600;
+  color: var(--sf-muted);
+}
+.snapHistory {
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+}
+
+/* ---------------------------------------------------------- Limitation ---- */
+.limitation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  line-height: 1.4;
+}
+
+/* --------------------------------------------------------- Run progress --- */
+.runRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.runText {
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+}
+.runError {
+  font-size: var(--sf-text-sm);
+  color: var(--sf-coral);
+}
+
+/* ------------------------------------------------------------- Controls --- */
+.cardFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+.controlError {
+  font-size: var(--sf-text-sm);
+  color: var(--sf-coral);
+}
+.controlHint {
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+}
+.disabledNote {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+  color: var(--sf-muted);
+}
+
+/* --------------------------------------------------- Property selection --- */
+.property {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+/* -------------------------------------------------------------- Select ---- */
+.select {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  line-height: 1.4;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: var(--sf-radius-control);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.select:hover:not(:disabled):not(:focus) {
+  border-color: var(--sf-fg);
+}
+
+/* ----------------------------------------------------------- CSV import --- */
+.csv {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+.fileInput {
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-sm);
+  color: var(--sf-fg);
+}
+.fileInput::file-selector-button {
+  margin-right: 12px;
+  padding: 8px 14px;
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-sm);
+  font-weight: 700;
+  color: var(--sf-fg);
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: var(--sf-radius-pill);
+  cursor: pointer;
+}
+.fileInput:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.previewBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.previewMeta {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+  color: var(--sf-muted);
+}
+.msgList {
+  list-style: disc;
+  margin: 0;
+  padding: 0 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--sf-text-sm);
+  line-height: 1.4;
+}
+.msgError {
+  color: var(--sf-coral);
+}
+.msgWarn {
+  color: var(--sf-amber);
+}
+
+.previewWrap {
+  overflow-x: auto;
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-control);
+}
+.previewTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sf-text-sm);
+}
+.previewTable th,
+.previewTable td {
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--sf-border);
+}
+.previewTable th {
+  font-weight: 800;
+  color: var(--sf-muted);
+  background: var(--sf-surface-deep);
+}
+.previewTable td {
+  color: var(--sf-fg);
+}
+.previewTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.mapTitle {
+  margin: 0;
+  font-size: var(--sf-text-lg);
+  color: var(--sf-fg);
+}
+.mapHelp {
+  margin: -8px 0 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  line-height: 1.4;
+}
+.mapGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+@media (min-width: 640px) {
+  .mapGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .mapGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------------------------------------------------- Loading / error ----- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 64px 24px;
+}
+.stateText {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  color: var(--sf-muted);
+}
