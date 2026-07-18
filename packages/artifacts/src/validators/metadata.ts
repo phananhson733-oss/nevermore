@@ -30,21 +30,52 @@ export const metadataRewriteSchema = z.object({
 export type MetadataRewrite = z.infer<typeof metadataRewriteSchema>;
 
 /**
+ * Raw HTML / script tags and JS URIs forbidden in ANY string field (spec §14.4).
+ * Model output is untrusted; a `<script>` in proposedTitle must never validate.
+ */
+const HTML_TAG_PATTERN =
+  /<\s*\/?\s*(script|html|iframe|style|object|embed|link|meta|svg|form)\b/i;
+const JS_URI_PATTERN = /javascript\s*:/i;
+
+/** Collect every string leaf in the metadata object for sanitization scanning. */
+function stringLeaves(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(stringLeaves);
+  if (typeof value === "object" && value !== null) {
+    return Object.values(value).flatMap(stringLeaves);
+  }
+  return [];
+}
+
+/**
  * Validate a metadata_rewrite content object. Returns an array of error strings;
- * an empty array means the object satisfies the schema.
+ * an empty array means the object satisfies the schema AND carries no unsafe
+ * HTML/script (spec §14.4) — a revision with errors can never be set `ready`.
  */
 export function validateMetadata(content: unknown): string[] {
-  if (typeof content !== "object" || content === null || Array.isArray(content)) {
+  if (
+    typeof content !== "object" ||
+    content === null ||
+    Array.isArray(content)
+  ) {
     return ["metadata content must be a JSON object"];
   }
 
-  const result = metadataRewriteSchema.safeParse(content);
-  if (result.success) {
-    return [];
+  const errors: string[] = [];
+  for (const leaf of stringLeaves(content)) {
+    if (HTML_TAG_PATTERN.test(leaf) || JS_URI_PATTERN.test(leaf)) {
+      errors.push("metadata contains disallowed raw HTML/script (spec §14.4)");
+      break;
+    }
   }
 
-  return result.error.issues.map((issue) => {
-    const path = issue.path.length > 0 ? issue.path.map(String).join(".") : "(root)";
-    return `${path}: ${issue.message}`;
-  });
+  const result = metadataRewriteSchema.safeParse(content);
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      const path =
+        issue.path.length > 0 ? issue.path.map(String).join(".") : "(root)";
+      errors.push(`${path}: ${issue.message}`);
+    }
+  }
+  return errors;
 }

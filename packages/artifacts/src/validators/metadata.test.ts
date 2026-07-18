@@ -20,7 +20,11 @@ describe("validateMetadata", () => {
   });
 
   it("allows null current values (never fabricated)", () => {
-    const meta = { ...validMetadata(), currentTitle: null, currentDescription: null };
+    const meta = {
+      ...validMetadata(),
+      currentTitle: null,
+      currentDescription: null,
+    };
     expect(validateMetadata(meta)).toEqual([]);
   });
 
@@ -43,8 +47,39 @@ describe("validateMetadata", () => {
   });
 
   it("rejects a non-object payload", () => {
-    expect(validateMetadata("not-json")).toEqual(["metadata content must be a JSON object"]);
-    expect(validateMetadata(["array"])).toEqual(["metadata content must be a JSON object"]);
-    expect(validateMetadata(null)).toEqual(["metadata content must be a JSON object"]);
+    expect(validateMetadata("not-json")).toEqual([
+      "metadata content must be a JSON object",
+    ]);
+    expect(validateMetadata(["array"])).toEqual([
+      "metadata content must be a JSON object",
+    ]);
+    expect(validateMetadata(null)).toEqual([
+      "metadata content must be a JSON object",
+    ]);
+  });
+
+  it("rejects injected HTML/script in any string field (spec §14.4, AC-033)", () => {
+    const withScript = {
+      ...validMetadata(),
+      proposedTitle: "<script>alert(1)</script>Pricing",
+    };
+    expect(validateMetadata(withScript)).toContain(
+      "metadata contains disallowed raw HTML/script (spec §14.4)",
+    );
+    const withIframe = {
+      ...validMetadata(),
+      proposedDescription: "buy <iframe src=x>",
+    };
+    expect(validateMetadata(withIframe).length).toBeGreaterThan(0);
+    const withJsUri = {
+      ...validMetadata(),
+      rationale: "click javascript:steal()",
+    };
+    expect(validateMetadata(withJsUri).length).toBeGreaterThan(0);
+    const inArray = {
+      ...validMetadata(),
+      targetQueries: ["ok", "<script>x</script>"],
+    };
+    expect(validateMetadata(inArray).length).toBeGreaterThan(0);
   });
 });
