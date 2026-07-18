@@ -22,10 +22,22 @@ export type WorkspaceViewName = "overview" | "plan" | "studio" | "report";
 export interface OverviewView {
   view: "overview";
   project: ProjectDto;
-  coverage: CoverageDto | null;
+  coverage: CoverageDto;
   activeRuns: AsyncRunDto[];
   topActions: ActionDto[];
 }
+
+/**
+ * Honest empty coverage for a project with no diagnostic run yet. The OpenAPI
+ * `OverviewView.coverage` is required + non-nullable, and `overall: "unavailable"`
+ * is the canonical "no data" marker (spec §1.3 — unavailable, never fabricated).
+ * Empty `domains` renders every domain as "missing" in the overview.
+ */
+const EMPTY_COVERAGE: CoverageDto = {
+  overall: "unavailable",
+  domains: {},
+  limitations: [],
+};
 
 export interface PlanView {
   view: "plan";
@@ -55,27 +67,38 @@ export async function getWorkspaceView(
       const projectScope = { workspaceId: scope.workspaceId, projectId };
       const project = await getProject(scope, projectId);
       const { db } = getDb();
-      const activeRunRows = await new AsyncRunsRepository(db).listActiveByProject(projectScope);
+      const activeRunRows = await new AsyncRunsRepository(
+        db,
+      ).listActiveByProject(projectScope);
       const findings = await listProjectFindings(scope, projectId, {
         limit: 1,
         cursor: null,
         activeOnly: true,
       });
-      const plan = await listProjectActions(scope, projectId, { limit: 5, cursor: null });
+      const plan = await listProjectActions(scope, projectId, {
+        limit: 5,
+        cursor: null,
+      });
       return {
         view: "overview",
         project,
-        coverage: findings.meta.coverage,
+        coverage: findings.meta.coverage ?? EMPTY_COVERAGE,
         activeRuns: activeRunRows.map(toAsyncRunDto),
         topActions: plan.data,
       };
     }
     case "plan": {
-      const plan = await listProjectActions(scope, projectId, { limit: 100, cursor: null });
+      const plan = await listProjectActions(scope, projectId, {
+        limit: 100,
+        cursor: null,
+      });
       return { view: "plan", actions: plan.data };
     }
     case "studio": {
-      const studio = await listProjectArtifacts(scope, projectId, { limit: 100, cursor: null });
+      const studio = await listProjectArtifacts(scope, projectId, {
+        limit: 100,
+        cursor: null,
+      });
       return { view: "studio", artifacts: studio.data };
     }
     case "report": {

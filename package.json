@@ -27,6 +27,7 @@
     "vendor:check": "node scripts/check-vendor-baseline.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "catalog:",
     "@playwright/test": "catalog:",
     "@redocly/cli": "2.39.0",
