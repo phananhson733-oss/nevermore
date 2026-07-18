@@ -22,3 +22,7 @@ test-results/
 
 # generated OpenAPI types are committed on purpose (contracts:check compares them),
 # so they are NOT ignored.
+
+# Local blob store runtime output (raw imports / export bundles) — never commit
+.data/
+**/.data/
