@@ -14,6 +14,7 @@ import {
   createGscAdapter,
   csvAdapter,
   decryptCredential,
+  decodeCredentialEnvelope,
   HttpGa4Client,
   HttpGscClient,
   isTransient,
@@ -285,11 +286,15 @@ async function loadConnectionToken(
       "AUTH_REQUIRED",
       "no stored credential; reconnect required",
     );
-  const token = decryptCredential(
-    cred.encrypted_payload,
-    ctx.credentialKey,
-  ).toString("utf8");
-  return { connection, token };
+  // The stored credential is a full envelope (access + refresh + expiry + scope);
+  // collection uses the access token. A legacy bare-token payload decodes to an
+  // envelope carrying only the access token (backward compatible).
+  const envelope = decodeCredentialEnvelope(
+    decryptCredential(cred.encrypted_payload, ctx.credentialKey).toString(
+      "utf8",
+    ),
+  );
+  return { connection, token: envelope.accessToken };
 }
 
 async function loadCsvImport(

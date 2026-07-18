@@ -13,6 +13,12 @@ export {
   encryptCredential,
   decryptCredential,
 } from "./credentials/crypto.ts";
+export {
+  CREDENTIAL_ENVELOPE_VERSION,
+  encodeCredentialEnvelope,
+  decodeCredentialEnvelope,
+  type OAuthCredentialEnvelope,
+} from "./credentials/envelope.ts";
 
 // Blob storage abstraction (spec §7.6, §13.3).
 export { objectKey } from "./storage/types.ts";

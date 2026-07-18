@@ -8,7 +8,12 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import { ProblemError } from "@sf/observability";
-import { encryptCredential, decryptCredential } from "@sf/sources";
+import {
+  encryptCredential,
+  decryptCredential,
+  encodeCredentialEnvelope,
+  decodeCredentialEnvelope,
+} from "@sf/sources";
 import type { ConnectSourceRequest, OAuthProvider } from "@sf/contracts";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/env";
@@ -229,9 +234,13 @@ async function selectProperty(
     );
   }
 
-  // Re-encrypt the token for the connection (the intent cipher is disposable).
+  // Re-encrypt the credential for the connection (the intent cipher is disposable).
+  // The intent stored the FULL token envelope (access + refresh + expiry + scope);
+  // carry it over verbatim, including the real access-token expiry.
   const key = credentialKey();
-  const tokenPlaintext = decryptCredential(intent.token_cipher, key);
+  const envelope = decodeCredentialEnvelope(
+    decryptCredential(intent.token_cipher, key).toString("utf8"),
+  );
   const config: Record<string, unknown> =
     provider === "gsc"
       ? { propertyUrl: chosen.externalPropertyId }
@@ -268,9 +277,12 @@ async function selectProperty(
       workspaceId: scope.workspaceId,
       projectId,
       sourceConnectionId: created.id,
-      encryptedPayload: encryptCredential(tokenPlaintext, key),
+      encryptedPayload: encryptCredential(
+        encodeCredentialEnvelope(envelope),
+        key,
+      ),
       keyVersion: KEY_VERSION,
-      expiresAt: null,
+      expiresAt: envelope.expiresAt,
     });
     await new OAuthIntentsRepository(tx).consume(intent.id);
     return created;
@@ -357,7 +369,18 @@ export async function handleGoogleCallback(
       tokenSet.accessToken,
     );
     await intentsRepo.setPropertiesReady(intent.id, {
-      tokenCipher: encryptCredential(tokenSet.accessToken, key),
+      // Persist the FULL token envelope, not just the access token: Google issues
+      // the refresh token only once (first consent), so discarding it here would
+      // strand the connection ~1h later (spec §14.3).
+      tokenCipher: encryptCredential(
+        encodeCredentialEnvelope({
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          expiresAt: tokenSet.expiresAt,
+          scope: tokenSet.scope,
+        }),
+        key,
+      ),
       candidateProperties: properties,
     });
     // The Sources screen needs BOTH params to open the property picker
