@@ -73,9 +73,17 @@ Full green gate: see `docs/PROGRESS.md` "Full green gate command".
 
 ## Export regeneration
 
-- Export objects live 30 days; signed download URLs expire in 15 minutes.
+- Export objects live 30 days; signed download URLs expire in 15 minutes (900s).
+- The 15-minute URL TTL is enforced in code, per URL, by the export download signer
+  (`createSupabaseDownloadSigner`, `@sf/sources`); `getProjectExport` requests it
+  with `expiresInSeconds: 900`. Signed URLs are project-scoped: a key outside the
+  caller's project is rejected before signing and surfaces as 404, never a URL.
+- The 30-day object retention is a Supabase Storage bucket lifecycle policy on
+  `EXPORT_BUCKET`, configured on the bucket itself (out of application-code scope) —
+  local dev (filesystem store) cannot enforce it.
 - **Regenerate**: POST a new export of the same kind. The bundle checksum +
-  manifest allow corruption detection; a fresh object key is minted each time.
+  manifest allow corruption detection; a fresh, non-overwritable object key is
+  minted each time (`mintExportObjectKey`).
 
 ## Rollback
 

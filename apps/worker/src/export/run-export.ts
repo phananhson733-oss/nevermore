@@ -14,8 +14,8 @@ import {
   type ProjectScope,
 } from "@sf/db";
 import { assembleBundle, type BundleInput } from "@sf/artifacts";
-import { objectKey } from "@sf/sources";
-import { randomBytes } from "node:crypto";
+import { mintExportObjectKey } from "@sf/sources";
+import { redact } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
 
 /**
@@ -24,6 +24,11 @@ import type { WorkerContext } from "../context.ts";
  * logs / notes / provider usage / AnalysisInvocation), assembles the ZIP + manifest
  * via the pure assembler, uploads it to a final key, then finalizes the bundle row
  * and the run in one transaction.
+ *
+ * The assembled input is additionally deep key-redacted (spec §14.3, AC-040) as
+ * a runtime backstop, so no secret-named field smuggled into free-form content
+ * (ICP profile, model artifact JSON, observation value JSON) can leak into the
+ * exported bundle even if the field allowlist misses it.
  */
 
 export interface ExportJobPayload {
@@ -63,9 +68,9 @@ export async function runExport(
     const input = await buildBundleInput(ctx, scope, bundleRow.id, req);
     const assembled = assembleBundle(input);
 
-    // Upload to a final, non-overwritable key BEFORE the tx (spec §13.3).
-    const nonce = randomBytes(12).toString("hex");
-    const key = objectKey({ projectId, runId, kind: "export", nonce });
+    // Upload to a final, non-overwritable key BEFORE the tx (spec §13.3). A fresh
+    // random nonce per run makes every (re)generate land on a distinct key (AC-039).
+    const key = mintExportObjectKey({ projectId, runId });
     const put = await ctx.blobStore.put({
       key,
       body: assembled.zip,
@@ -189,7 +194,8 @@ async function buildBundleInput(
   }
 
   // The DB rows are JSON at runtime; the assembler's strict JsonValue types are
-  // satisfied structurally at the boundary via an explicit cast.
+  // satisfied structurally at the boundary via an explicit cast. `redact` also
+  // strips any secret-named key nested in free-form content (AC-040 backstop).
   const input = {
     exportId,
     projectId: scope.projectId,
@@ -259,5 +265,5 @@ async function buildBundleInput(
     })),
     artifacts,
   };
-  return input as unknown as BundleInput;
+  return redact(input) as unknown as BundleInput;
 }

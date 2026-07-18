@@ -10,9 +10,10 @@ import {
 } from "@sf/db";
 import type { CreateExportRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
+import { ObjectOutOfProjectScopeError } from "@sf/sources";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
-import { getBlobStore } from "@/lib/storage";
+import { getExportDownloadSigner } from "@/lib/storage";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
 /**
@@ -205,10 +206,21 @@ export async function getProjectExport(
   let downloadUrl: string | null = null;
   let downloadExpiresAt: string | null = null;
   if (bundle.object_key && run.status === "completed") {
-    downloadUrl = await getBlobStore().signedUrl(
-      bundle.object_key,
-      SIGNED_URL_TTL_S,
-    );
+    try {
+      // Project-scoped signer: a key outside this project is rejected before
+      // signing, so a wrong-project object can never resolve to a valid URL.
+      downloadUrl = await getExportDownloadSigner(projectId).signDownloadUrl(
+        bundle.object_key,
+        { expiresInSeconds: SIGNED_URL_TTL_S },
+      );
+    } catch (error) {
+      // Map an out-of-project key to 404 (do not leak existence, §12.2), never
+      // a signed URL.
+      if (error instanceof ObjectOutOfProjectScopeError) {
+        throw new ProblemError("NOT_FOUND", "Export not found.");
+      }
+      throw error;
+    }
     downloadExpiresAt = new Date(
       Date.now() + SIGNED_URL_TTL_S * 1000,
     ).toISOString();

@@ -24,6 +24,14 @@ import type { CsvColumnMapping } from "./mapping.ts";
 /** Maximum accepted keyword length (spec §7.5). */
 const MAX_KEYWORD_LENGTH = 500;
 
+/**
+ * The limitation carried by every CSV snapshot + observation (spec §1.3, §7.5).
+ * Must be NON-EMPTY: `data_snapshots.limitation` and
+ * `normalized_observations.limitation` both CHECK `length(btrim(...)) >= 1`.
+ */
+export const CSV_LIMITATION =
+  "Keyword-gap search volumes and ranks are user-provided CSV data; clustering is a heuristic over the imported rows.";
+
 /** Loose BCP-47 shape: a 2-8 letter primary subtag plus optional subtags. */
 const BCP47_RE = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/;
 
@@ -55,7 +63,10 @@ export interface NormalizeCsvResult {
 }
 
 type RowOutcome =
-  | { readonly kind: "observation"; readonly observation: NormalizedObservation }
+  | {
+      readonly kind: "observation";
+      readonly observation: NormalizedObservation;
+    }
   | { readonly kind: "rejected"; readonly reason: string };
 
 const reject = (reason: string): RowOutcome => ({ kind: "rejected", reason });
@@ -112,10 +123,16 @@ function assertMappingComplete(
   languageFallback: string | null,
 ): void {
   if (mapping.keyword === null) {
-    throw new SourceError("INVALID_CONFIGURATION", "keyword column is not mapped");
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "keyword column is not mapped",
+    );
   }
   if (mapping.searchVolume === null) {
-    throw new SourceError("INVALID_CONFIGURATION", "searchVolume column is not mapped");
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "searchVolume column is not mapped",
+    );
   }
   if (mapping.marketCode === null && marketFallback === null) {
     throw new SourceError(
@@ -158,7 +175,8 @@ function normalizeRow(
   if (keyword.length > MAX_KEYWORD_LENGTH) return reject("keyword_too_long");
 
   const providedCluster = cell(mapping.cluster);
-  const cluster = providedCluster !== "" ? providedCluster : clusterKey(keyword);
+  const cluster =
+    providedCluster !== "" ? providedCluster : clusterKey(keyword);
   if (cluster === null) return reject("cluster_no_tokens");
 
   const marketRaw = cell(mapping.marketCode) || (marketFallback ?? "");
@@ -190,7 +208,7 @@ function normalizeRow(
     observedAt,
     availability: "available",
     value: { json: projection },
-    limitation: "",
+    limitation: CSV_LIMITATION,
   });
   return { kind: "observation", observation };
 }
@@ -214,7 +232,13 @@ export function normalizeCsv(
   const rejectedRows: RejectedRow[] = [];
 
   rows.forEach((row, rowIndex) => {
-    const outcome = normalizeRow(row, mapping, marketFallback, languageFallback, observedAt);
+    const outcome = normalizeRow(
+      row,
+      mapping,
+      marketFallback,
+      languageFallback,
+      observedAt,
+    );
     if (outcome.kind === "rejected") {
       rejectedRows.push({ rowIndex, reason: outcome.reason });
     } else {

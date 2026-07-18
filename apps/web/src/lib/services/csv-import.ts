@@ -405,6 +405,8 @@ export async function confirmImport(
         projectId,
         siteId: site.id,
         sourceConnectionId: csvConnection.id,
+        // Required by collection_runs_check for provider='csv' (spec §12.1).
+        importPreviewId: preview.id,
         provider: "csv",
         operation: "keyword_gap_import",
         methodVersion: CSV_METHOD_VERSION,

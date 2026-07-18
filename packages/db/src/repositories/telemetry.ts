@@ -1,3 +1,4 @@
+import { redact } from "@sf/observability";
 import { telemetryEvents } from "../schema.ts";
 import { Repository } from "./base.ts";
 
@@ -6,6 +7,10 @@ import { Repository } from "./base.ts";
  * allowed; `project_id` is nullable (workspace-level events). Properties use a
  * small allowlist and must never carry client content, URLs, query text, or
  * model prompt/output (spec §14.4).
+ *
+ * Properties are deep-redacted before insert (spec §14.3/§15.2) as a runtime
+ * backstop: even if a caller passes a secret-named field, no OAuth token, API
+ * key, cookie, or credential value can reach the telemetry table (AC-040).
  */
 
 export type TelemetryEventName =
@@ -29,7 +34,7 @@ export class TelemetryRepository extends Repository {
       project_id: values.projectId,
       event_name: values.eventName,
       actor_id: values.actorId,
-      properties: values.properties,
+      properties: redact(values.properties) as Record<string, unknown>,
     });
   }
 }

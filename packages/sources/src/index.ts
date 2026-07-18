@@ -25,6 +25,20 @@ export type {
 export { MemoryBlobStore } from "./storage/memory.ts";
 export { LocalFsBlobStore } from "./storage/local-fs.ts";
 
+// Export-bundle download signer (AC-039, spec §10.5, §14.4).
+export {
+  createSupabaseDownloadSigner,
+  blobStoreDownloadSigner,
+  mintExportObjectKey,
+  assertKeyInProjectScope,
+  ObjectOutOfProjectScopeError,
+  SupabaseSignError,
+} from "./blob/supabase-signer.ts";
+export type {
+  DownloadUrlSigner,
+  SupabaseSignerConfig,
+} from "./blob/supabase-signer.ts";
+
 // DataForSEO disabled stub (spec §7.2, AC-020).
 export {
   DATAFORSEO_ENABLED,

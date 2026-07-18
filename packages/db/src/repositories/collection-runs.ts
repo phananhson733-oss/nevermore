@@ -36,7 +36,12 @@ export class CollectionRunsRepository extends Repository {
     return (rows[0] as CollectionRunRow | undefined) ?? null;
   }
 
-  /** Insert the collection placeholder (id = the async run id). */
+  /**
+   * Insert the collection placeholder (id = the async run id). A `csv` provider
+   * MUST carry its `importPreviewId` — the `collection_runs_check` constraint
+   * enforces `(provider = 'csv') = (import_preview_id IS NOT NULL)`, so a CSV
+   * placeholder without it fails at insert (spec §12.1).
+   */
   async insertPlaceholder(values: {
     runId: string;
     workspaceId: string;
@@ -47,6 +52,7 @@ export class CollectionRunsRepository extends Repository {
     operation: string;
     methodVersion: string;
     parametersHash: string;
+    importPreviewId?: string | null;
   }): Promise<CollectionRunRow> {
     const [row] = await this.exec
       .insert(collectionRuns)
@@ -56,6 +62,7 @@ export class CollectionRunsRepository extends Repository {
         project_id: values.projectId,
         site_id: values.siteId,
         source_connection_id: values.sourceConnectionId,
+        import_preview_id: values.importPreviewId ?? null,
         provider: values.provider,
         operation: values.operation,
         method_version: values.methodVersion,

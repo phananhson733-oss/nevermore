@@ -20,7 +20,11 @@ import type {
 import { SourceError } from "../adapter.ts";
 import { parseCsv } from "./parse.ts";
 import { KEYWORD_GAP_TEMPLATE_ID } from "./preview.ts";
-import { normalizeCsv, type NormalizeCsvOptions } from "./normalize.ts";
+import {
+  CSV_LIMITATION,
+  normalizeCsv,
+  type NormalizeCsvOptions,
+} from "./normalize.ts";
 import type { CsvColumnMapping } from "./mapping.ts";
 
 const CSV_PROVIDER: Provider = "csv";
@@ -53,7 +57,10 @@ export const csvAdapter: SourceAdapter<CsvConfig, CsvParams, CsvRaw> = {
 
   async validateConfig(config: unknown): Promise<CsvConfig> {
     if (typeof config !== "object" || config === null) {
-      throw new SourceError("INVALID_CONFIGURATION", "csv config must be an object");
+      throw new SourceError(
+        "INVALID_CONFIGURATION",
+        "csv config must be an object",
+      );
     }
     const templateId = (config as { readonly templateId?: unknown }).templateId;
     if (templateId !== KEYWORD_GAP_TEMPLATE_ID) {
@@ -76,7 +83,10 @@ export const csvAdapter: SourceAdapter<CsvConfig, CsvParams, CsvRaw> = {
     ];
   },
 
-  async collect(params: CsvParams, _ctx: CollectionContext): Promise<CollectionResult<CsvRaw>> {
+  async collect(
+    params: CsvParams,
+    _ctx: CollectionContext,
+  ): Promise<CollectionResult<CsvRaw>> {
     const { rows } = parseCsv(params.text);
     const rowCount = rows.length;
     const capturedAt = new Date().toISOString();
@@ -96,15 +106,22 @@ export const csvAdapter: SourceAdapter<CsvConfig, CsvParams, CsvRaw> = {
       rowCount,
       stopReason: null,
       providerUsage: {},
-      limitation: "",
+      limitation: CSV_LIMITATION,
     };
   },
 
-  async *normalize(raw: CsvRaw, ctx: NormalizeContext): AsyncGenerator<NormalizedObservation> {
+  async *normalize(
+    raw: CsvRaw,
+    ctx: NormalizeContext,
+  ): AsyncGenerator<NormalizedObservation> {
     const options: NormalizeCsvOptions = {
       observedAt: ctx.capturedAt,
-      ...(raw.marketFallback !== null ? { marketFallback: raw.marketFallback } : {}),
-      ...(raw.languageFallback !== null ? { languageFallback: raw.languageFallback } : {}),
+      ...(raw.marketFallback !== null
+        ? { marketFallback: raw.marketFallback }
+        : {}),
+      ...(raw.languageFallback !== null
+        ? { languageFallback: raw.languageFallback }
+        : {}),
     };
     const { observations } = normalizeCsv(raw.text, raw.mapping, options);
     for (const observation of observations) {

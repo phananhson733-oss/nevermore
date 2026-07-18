@@ -130,7 +130,6 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
     await handle.db.execute(
       // collection_runs shares the async_runs id (minimal placeholder).
       // Using drizzle raw insert keeps the test independent of the repo shape.
-      // eslint-disable-next-line
       (await import("drizzle-orm"))
         .sql`insert into app.collection_runs (id, workspace_id, project_id, site_id, provider, operation, method_version, parameters_hash) values (${run!.id}, ${scope.workspaceId}, ${scope.projectId}, ${siteId}, 'crawl', 'site_graph', 'crawl.site_graph.v1', ${contentHash({ x: 1 })})`,
     );
