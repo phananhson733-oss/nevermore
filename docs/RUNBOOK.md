@@ -11,10 +11,13 @@
 createdb signalframe_mvp_dev
 DATABASE_URL=postgres://$USER@localhost:5432/signalframe_mvp_dev pnpm db:migrate
 
-# 2. Env: copy .env.example → .env.local and fill values.
+# 2. Env: copy .env.example → the repo-root .env.local and fill values.
 #    CREDENTIAL_ENCRYPTION_KEY: openssl rand -base64 32
 #    Local QA uses the double-gated dev auth shim: set SF_DEV_AUTH=true (NODE_ENV!=production only).
 #    Google OAuth / OpenAI keys are placeholders until those flows are exercised.
+#    Next loads .env.local from each app dir, so symlink the root file into both apps:
+ln -sf ../../.env.local apps/web/.env.local
+ln -sf ../../.env.local apps/worker/.env.local   # (both are gitignored)
 
 # 3. Web + worker (two terminals)
 pnpm --filter @sf/web dev            # http://localhost:3000

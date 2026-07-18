@@ -15,9 +15,24 @@
 > build, all 26 operationIds routed). Local env ready (.env.local + dev auth shim +
 > local blob). Green: typecheck (8 pkgs) · lint · 267 unit + 24 integration · build ·
 > verify:spec · contracts:check · db:migrate:check · secrets:scan · vendor:check ·
-> i18n parity. Remaining: local boot smoke test; WP5 hardening (SSRF/secret/prompt-
-> injection security tests, Playwright responsive/a11y E2E, B2B/B2C full-chain fixtures).
-> Built via 18 fan-out subagents (5 WP2 adapters · 5 WP3 rule domains · 3 WP4 modules · 5 UI screens).
+> i18n parity. Built via 18 fan-out subagents (5 WP2 adapters · 5 WP3 rule domains ·
+> 3 WP4 modules · 5 UI screens).
+>
+> **Local boot + smoke test DONE**: web dev server boots with the real env (root
+> `.env.local` symlinked into apps/web + apps/worker so Next loads it); the vertical
+> works through real HTTP + DB via the dev-auth shim — create project 201, GET /sources
+> returns the 5 provider slots (dataforseo featureEnabled=false), findings empty with
+> honest meta, report projection, diagnostic-run without a complete ICP → 422
+> CONTEXT_INCOMPLETE. Browser-verified Sources + Diagnosis screens (zh-CN chrome, honest
+> empty/gated states). Two real bugs the smoke/integration tests caught + fixed: evidence
+> link role violated a CHECK constraint (would fail every diagnostic run); the dev server
+> wasn't loading the root .env.local. `/health/ready` is 503 until the worker creates the
+> pgboss schema (start the worker).
+>
+> **Remaining (WP5 hardening — not started)**: SSRF/secret/prompt-injection security test
+> suites; Playwright 390/768/1024/1440 + keyboard/reduced-motion a11y E2E; B2B/B2C
+> full-chain fixtures (AC-044/045); provider failure/retry fixtures; backup drill;
+> live-cred flows (Google OAuth, OpenAI) need real creds + a running Supabase.
 
 
 
