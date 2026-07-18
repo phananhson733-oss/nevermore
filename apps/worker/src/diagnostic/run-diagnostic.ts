@@ -1,4 +1,5 @@
 import {
+  ActionsRepository,
   AsyncRunsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
@@ -211,22 +212,34 @@ async function computeAndPersist(
 
     const findingsRepo = new FindingsRepository(tx);
     const evidenceRepo = new EvidenceRepository(tx);
+    const actionsRepo = new ActionsRepository(tx);
 
     for (const finding of pipeline.findings) {
-      const findingId = await upsertFinding(
+      const { id: findingId, isRehit } = await upsertFinding(
         findingsRepo,
         scope,
         diagRun.id,
         finding,
         now,
       );
-      await persistEvidence(
+      const evidenceIds = await persistEvidence(
         evidenceRepo,
         scope,
         diagRun.id,
         findingId,
         finding,
       );
+      // §9.2: a cross-run re-hit merges the new evidence into an existing,
+      // non-dismissed Action without touching human priority/status.
+      if (isRehit && evidenceIds.length > 0) {
+        const action = await actionsRepo.findActiveByFinding(scope, findingId);
+        if (action) {
+          const merged = [
+            ...new Set([...(action.evidence_refs as string[]), ...evidenceIds]),
+          ];
+          await actionsRepo.mergeEvidenceRefs(action.id, merged);
+        }
+      }
     }
 
     // Cross-run resolve: only a completed (non-partial) run resolves clean rules.
@@ -277,7 +290,7 @@ async function upsertFinding(
   runId: string,
   finding: RunFinding,
   now: string,
-): Promise<string> {
+): Promise<{ id: string; isRehit: boolean }> {
   // Preserve the subject-relevance flag for confirm-time priority (spec §9.3
   // step 4). It has no dedicated column, so it rides in title_args under a
   // reserved key the summary templates ignore.
@@ -308,7 +321,7 @@ async function upsertFinding(
       runId,
       seenAt: now,
     });
-    return row.id;
+    return { id: row.id, isRehit: false };
   }
   // Re-hit: refresh + reactivate, preserve human review state; regressed if resolved.
   const regressed = existing.resolved_at !== null || existing.active === false;
@@ -323,7 +336,7 @@ async function upsertFinding(
     seenAt: now,
     regressed,
   });
-  return existing.id;
+  return { id: existing.id, isRehit: true };
 }
 
 /** Map an evidence support direction to a finding_observations.role (schema CHECK). */
@@ -339,7 +352,7 @@ async function persistEvidence(
   runId: string,
   findingId: string,
   finding: RunFinding,
-): Promise<void> {
+): Promise<string[]> {
   const rows: EvidenceInsert[] = finding.evidence.map((e) => ({
     sourceProvider: e.sourceProvider,
     origin: e.origin,
@@ -375,4 +388,5 @@ async function persistEvidence(
     },
     links,
   );
+  return evidenceIds;
 }

@@ -1,4 +1,6 @@
-"use client";
+// No "use client" here: this component inherits the client boundary from its
+// parent (_diagnosis.tsx). A redundant directive makes it a client ENTRY, which
+// forbids the non-serializable `onRefetch` function prop (Next INVALID_CLIENT_ENTRY_PROP).
 
 /**
  * A single diagnostic finding with its evidence and review controls (spec §8).
@@ -111,7 +113,9 @@ export function FindingCard({
       setMode("idle");
       setText("");
       setCreatedAction(
-        body.reviewState === "confirmed" ? (result.action?.title ?? null) : null,
+        body.reviewState === "confirmed"
+          ? (result.action?.title ?? null)
+          : null,
       );
     } catch (err) {
       handleReviewError(err);
@@ -119,7 +123,10 @@ export function FindingCard({
   }
 
   function onConfirm(): void {
-    void submit({ reviewState: "confirmed", baseRevision: finding.reviewRevision });
+    void submit({
+      reviewState: "confirmed",
+      baseRevision: finding.reviewRevision,
+    });
   }
 
   function onSubmitText(): void {
@@ -158,7 +165,10 @@ export function FindingCard({
 
   return (
     <article
-      className={cx(styles.findingCard, isAutoNeedsData && styles.findingCardMuted)}
+      className={cx(
+        styles.findingCard,
+        isAutoNeedsData && styles.findingCardMuted,
+      )}
       aria-labelledby={`sf-finding-${finding.id}`}
     >
       <header className={styles.findingHead}>
@@ -176,14 +186,18 @@ export function FindingCard({
             <StatusPill tone={reviewStateTone(finding.reviewState)}>
               {tReview(finding.reviewState)}
             </StatusPill>
-            {finding.regressed ? <Badge tone="coral">{t("regressed")}</Badge> : null}
+            {finding.regressed ? (
+              <Badge tone="coral">{t("regressed")}</Badge>
+            ) : null}
           </div>
         </div>
       </header>
 
       <p className={styles.findingSummary}>{finding.summary}</p>
 
-      {isAutoNeedsData ? <p className={styles.autoNote}>{t("autoNote")}</p> : null}
+      {isAutoNeedsData ? (
+        <p className={styles.autoNote}>{t("autoNote")}</p>
+      ) : null}
 
       {finding.subjectRefs.length > 0 ? (
         <div className={styles.subSection}>
@@ -205,10 +219,16 @@ export function FindingCard({
           {finding.evidence.map((ev) => (
             <li key={ev.id} className={styles.evidenceItem}>
               <div className={styles.evidenceHead}>
-                <Badge tone="accent">{t("gradeLabel", { grade: ev.grade })}</Badge>
-                <span className={styles.evidenceOrigin}>{`${ev.origin} · ${ev.method}`}</span>
+                <Badge tone="accent">
+                  {t("gradeLabel", { grade: ev.grade })}
+                </Badge>
+                <span
+                  className={styles.evidenceOrigin}
+                >{`${ev.origin} · ${ev.method}`}</span>
                 {ev.availability === "unavailable" ? (
-                  <StatusPill tone="neutral">{tCommon("unavailable")}</StatusPill>
+                  <StatusPill tone="neutral">
+                    {tCommon("unavailable")}
+                  </StatusPill>
                 ) : null}
               </div>
               <p className={styles.evidenceClaim}>{ev.claim}</p>
@@ -225,7 +245,12 @@ export function FindingCard({
 
       <div className={styles.reviewBar}>
         <div className={styles.reviewButtons}>
-          <Button size="sm" variant="primary" onClick={onConfirm} disabled={busy}>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={onConfirm}
+            disabled={busy}
+          >
             {t("confirm")}
           </Button>
           <Button
@@ -263,7 +288,12 @@ export function FindingCard({
               />
             </Field>
             <div className={styles.reviewActions}>
-              <Button size="sm" variant="primary" onClick={onSubmitText} disabled={busy}>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={onSubmitText}
+                disabled={busy}
+              >
                 {t("submitReview")}
               </Button>
               <Button

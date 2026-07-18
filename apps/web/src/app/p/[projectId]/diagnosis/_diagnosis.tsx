@@ -417,7 +417,15 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
       ? latestRun.id
       : null;
   useEffect(() => {
-    if (inflightRunId !== null && activeRunId === null) {
+    // Do NOT re-resume a run we already drove to terminal: after completion the
+    // terminal effect clears activeRunId while findings.meta.latestRun is still
+    // its stale non-terminal snapshot, which would otherwise restart polling and
+    // wedge the screen "in progress" forever.
+    if (
+      inflightRunId !== null &&
+      activeRunId === null &&
+      inflightRunId !== handledRun.current
+    ) {
       setActiveRunId(inflightRunId);
     }
   }, [inflightRunId, activeRunId]);

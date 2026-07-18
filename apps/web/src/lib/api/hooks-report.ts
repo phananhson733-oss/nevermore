@@ -279,6 +279,9 @@ export function useProjectExport(
     },
     enabled: projectId.length > 0 && exportId.length > 0,
     refetchInterval: (query) => {
+      // Stop polling if the status query itself errors (401/404/5xx) — otherwise
+      // dataUpdateCount stays 0 and the 1s poll would loop forever (spec §11.1).
+      if (query.state.status === "error") return false;
       const bundle = query.state.data;
       if (bundle !== undefined && isTerminalRun(bundle.run.status)) return false;
       const idx = Math.max(0, query.state.dataUpdateCount - 1);
