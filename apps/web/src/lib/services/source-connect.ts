@@ -24,7 +24,10 @@ import {
   type GoogleProperty,
   type GoogleProvider,
 } from "@/lib/oauth/google";
-import { toSourceConnectionDto, type SourceConnectionDto } from "./source-mappers";
+import {
+  toSourceConnectionDto,
+  type SourceConnectionDto,
+} from "./source-mappers";
 
 /**
  * Google OAuth connect flow (spec §7.4). One endpoint, three phases. The DB
@@ -79,9 +82,22 @@ export async function connectProjectSource(
 ): Promise<ConnectResult> {
   switch (body.phase) {
     case "authorize":
-      return authorize(scope, projectId, provider, actorId, body.returnPath, deps);
+      return authorize(
+        scope,
+        projectId,
+        provider,
+        actorId,
+        body.returnPath,
+        deps,
+      );
     case "property_selection":
-      return propertySelection(scope, projectId, provider, body.oauthIntentId, deps);
+      return propertySelection(
+        scope,
+        projectId,
+        provider,
+        body.oauthIntentId,
+        deps,
+      );
     case "select_property":
       return selectProperty(scope, projectId, provider, actorId, body, deps);
   }
@@ -101,9 +117,11 @@ async function authorize(
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
-  if (project.archived_at) throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+  if (project.archived_at)
+    throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
   const site = await new SitesRepository(db).findPrimary(projectScope);
-  if (!site) throw new ProblemError("NOT_FOUND", "Project has no primary site.");
+  if (!site)
+    throw new ProblemError("NOT_FOUND", "Project has no primary site.");
 
   const state = generateState();
   const verifier = generateCodeVerifier();
@@ -145,21 +163,31 @@ async function propertySelection(
   const { db } = getDb();
   const now = deps.now ? deps.now() : Date.now();
 
-  const intent = await new OAuthIntentsRepository(db).findById(projectScope, oauthIntentId);
+  const intent = await new OAuthIntentsRepository(db).findById(
+    projectScope,
+    oauthIntentId,
+  );
   if (!intent || intent.provider !== provider) {
     throw new ProblemError("NOT_FOUND", "OAuth intent not found.");
   }
   if (intent.status !== "properties_ready") {
-    throw new ProblemError("OAUTH_PROPERTY_INVALID", "OAuth intent is not ready for selection.");
+    throw new ProblemError(
+      "OAUTH_PROPERTY_INVALID",
+      "OAuth intent is not ready for selection.",
+    );
   }
-  if (isExpired(intent, now)) throw new ProblemError("OAUTH_STATE_EXPIRED", "OAuth intent expired.");
+  if (isExpired(intent, now))
+    throw new ProblemError("OAUTH_STATE_EXPIRED", "OAuth intent expired.");
 
   const properties = (intent.candidate_properties ?? []) as GoogleProperty[];
   return {
     phase: "property_selection",
     oauthIntentId: intent.id,
     provider,
-    properties: properties.map((p) => ({ id: p.externalPropertyId, displayName: p.displayName })),
+    properties: properties.map((p) => ({
+      id: p.externalPropertyId,
+      displayName: p.displayName,
+    })),
     expiresAt: intent.expires_at,
   };
 }
@@ -182,14 +210,23 @@ async function selectProperty(
     throw new ProblemError("NOT_FOUND", "OAuth intent not found.");
   }
   if (intent.status !== "properties_ready" || !intent.token_cipher) {
-    throw new ProblemError("OAUTH_PROPERTY_INVALID", "OAuth intent is not ready for selection.");
+    throw new ProblemError(
+      "OAUTH_PROPERTY_INVALID",
+      "OAuth intent is not ready for selection.",
+    );
   }
-  if (isExpired(intent, now)) throw new ProblemError("OAUTH_STATE_EXPIRED", "OAuth intent expired.");
+  if (isExpired(intent, now))
+    throw new ProblemError("OAUTH_STATE_EXPIRED", "OAuth intent expired.");
 
   const candidates = (intent.candidate_properties ?? []) as GoogleProperty[];
-  const chosen = candidates.find((c) => c.externalPropertyId === body.externalPropertyId);
+  const chosen = candidates.find(
+    (c) => c.externalPropertyId === body.externalPropertyId,
+  );
   if (!chosen) {
-    throw new ProblemError("OAUTH_PROPERTY_INVALID", "Selected property is not in the candidate list.");
+    throw new ProblemError(
+      "OAUTH_PROPERTY_INVALID",
+      "Selected property is not in the candidate list.",
+    );
   }
 
   // Re-encrypt the token for the connection (the intent cipher is disposable).
@@ -198,8 +235,13 @@ async function selectProperty(
   const config: Record<string, unknown> =
     provider === "gsc"
       ? { propertyUrl: chosen.externalPropertyId }
-      : { propertyId: chosen.externalPropertyId, keyEventNames: body.keyEventNames ?? [] };
-  const scopes = [provider === "gsc" ? "webmasters.readonly" : "analytics.readonly"];
+      : {
+          propertyId: chosen.externalPropertyId,
+          keyEventNames: body.keyEventNames ?? [],
+        };
+  const scopes = [
+    provider === "gsc" ? "webmasters.readonly" : "analytics.readonly",
+  ];
   const limitation =
     provider === "gsc"
       ? "Search Console returns top rows by clicks, not the full query universe."
@@ -267,7 +309,8 @@ export async function handleGoogleCallback(
   const { db } = getDb();
   const now = deps.now ? deps.now() : Date.now();
 
-  if (!params.state) throw new ProblemError("OAUTH_STATE_INVALID", "Missing OAuth state.");
+  if (!params.state)
+    throw new ProblemError("OAUTH_STATE_INVALID", "Missing OAuth state.");
   const stateHash = hashState(params.state);
 
   // The callback is workspace-scoped by session; providers share one endpoint so
@@ -275,10 +318,15 @@ export async function handleGoogleCallback(
   const intentsRepo = new OAuthIntentsRepository(db);
   let intent: OAuthIntentRow | null = null;
   for (const provider of ["gsc", "ga4"] as const) {
-    intent = await intentsRepo.findLiveByStateHash(scope.workspaceId, provider, stateHash);
+    intent = await intentsRepo.findLiveByStateHash(
+      scope.workspaceId,
+      provider,
+      stateHash,
+    );
     if (intent) break;
   }
-  if (!intent) throw new ProblemError("OAUTH_STATE_INVALID", "Unknown OAuth state.");
+  if (!intent)
+    throw new ProblemError("OAUTH_STATE_INVALID", "Unknown OAuth state.");
 
   const sourcesPath = intent.redirect_path;
   const fail = async (code: string): Promise<string> => {
@@ -293,7 +341,10 @@ export async function handleGoogleCallback(
 
   try {
     const key = credentialKey();
-    const verifier = decryptCredential(intent.pkce_verifier_cipher, key).toString("utf8");
+    const verifier = decryptCredential(
+      intent.pkce_verifier_cipher,
+      key,
+    ).toString("utf8");
     const client = deps.client ?? defaultClient();
     const env = getEnv();
     const tokenSet = await client.exchangeCode({
@@ -309,7 +360,9 @@ export async function handleGoogleCallback(
       tokenCipher: encryptCredential(tokenSet.accessToken, key),
       candidateProperties: properties,
     });
-    return `${sourcesPath}?oauthIntentId=${intent.id}`;
+    // The Sources screen needs BOTH params to open the property picker
+    // (it reads `oauthIntentId` + `provider` from the URL, spec §7.4).
+    return `${sourcesPath}?oauthIntentId=${intent.id}&provider=${intent.provider}`;
   } catch {
     return fail("OAUTH_EXCHANGE_FAILED");
   }
