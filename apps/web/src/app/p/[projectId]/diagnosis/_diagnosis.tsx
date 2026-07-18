@@ -445,6 +445,16 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
     }
   }, [polledId, polledStatus, refetchFindings, t]);
 
+  // If the status poll itself errors (network/404/5xx), don't hang "in progress":
+  // clear the active run so the button re-enables and surface the error.
+  useEffect(() => {
+    if (activeRunId !== null && runQuery.isError) {
+      handledRun.current = activeRunId;
+      setActiveRunId(null);
+      setNotice({ kind: "error", text: t("runError") });
+    }
+  }, [activeRunId, runQuery.isError, t]);
+
   function runErrorText(err: unknown): string {
     if (err instanceof ApiError) {
       switch (err.code) {
