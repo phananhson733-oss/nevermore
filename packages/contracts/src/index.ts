@@ -13,3 +13,4 @@ export * from "./zod/icp.ts";
 export * from "./zod/projects.ts";
 export * from "./zod/sources.ts";
 export * from "./zod/diagnostics.ts";
+export * from "./zod/artifacts.ts";

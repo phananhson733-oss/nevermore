@@ -10,6 +10,7 @@ import { getWorkerEnv } from "./env.ts";
 import { buildWorkerContext } from "./context.ts";
 import { registerCollectHandlers } from "./handlers/collect.ts";
 import { registerDiagnoseHandler } from "./handlers/diagnose.ts";
+import { registerArtifactHandlers } from "./handlers/artifact.ts";
 
 /**
  * Worker bootstrap (spec §3.1, §13). A long-running Node process that:
@@ -59,6 +60,7 @@ async function start(): Promise<WorkerRuntime> {
   const workerCtx = buildWorkerContext({ db, boss, env, logger });
   await registerCollectHandlers(workerCtx);
   await registerDiagnoseHandler(workerCtx);
+  await registerArtifactHandlers(workerCtx);
 
   logger.info("worker_ready", { contractVersion: CONTRACT_VERSION });
 

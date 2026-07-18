@@ -122,6 +122,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@sf/artifacts':
+        specifier: workspace:*
+        version: link:../../packages/artifacts
       '@sf/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -189,6 +192,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@sf/artifacts':
+        specifier: workspace:*
+        version: link:../../packages/artifacts
       '@sf/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

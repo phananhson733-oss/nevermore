@@ -88,6 +88,15 @@ export type {
 } from "./repositories/evidence.ts";
 export { ActionsRepository } from "./repositories/actions.ts";
 export type { ActionRow, ActionListPage } from "./repositories/actions.ts";
+export { ExecutionArtifactsRepository } from "./repositories/execution-artifacts.ts";
+export type {
+  ArtifactRow,
+  ArtifactRevisionRow,
+  ArtifactListPage,
+} from "./repositories/execution-artifacts.ts";
+export { AnalysisInvocationsRepository } from "./repositories/analysis-invocations.ts";
+export { ExportBundlesRepository } from "./repositories/export-bundles.ts";
+export type { ExportBundleRow } from "./repositories/export-bundles.ts";
 export {
   PGBOSS_SCHEMA,
   QUEUE_CONFIG,

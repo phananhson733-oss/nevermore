@@ -1,80 +1,48 @@
-import type { WorkspaceScope } from "@sf/db";
+import { AsyncRunsRepository, type WorkspaceScope } from "@sf/db";
+import { getDb } from "@/lib/db";
 import { getProject } from "./projects";
 import type { ProjectDto } from "./mappers";
+import { toAsyncRunDto, type AsyncRunDto } from "./runs";
+import { listProjectActions } from "./actions-service";
+import { listProjectArtifacts } from "./artifacts";
+import { getProjectReport, type ReportDto } from "./report";
+import { listProjectFindings } from "./findings-list";
+import type { ActionDto, CoverageDto } from "./diagnostic-mappers";
+import type { ArtifactDto } from "./artifact-mappers";
 
 /**
- * Workspace aggregate read model (spec §11.3). WP1 implements the `overview`
- * projection (the only screen built in WP1). `plan`/`studio`/`report` return
- * valid empty projections — there are no actions/artifacts/findings until WP3/WP4,
- * where they will share the same projection as the Actions/Artifacts/Report APIs
- * (AC-036). Returning empty is honest for a project without diagnostic data.
+ * Workspace aggregate read model (spec §11.3). Each view is produced by the SAME
+ * canonical projection as its dedicated API (AC-036): `plan` ↔ Actions, `studio`
+ * ↔ Artifacts, `report` ↔ Report. It is a read convenience, never a separate
+ * store, and never recomputes priority.
  */
 
 export type WorkspaceViewName = "overview" | "plan" | "studio" | "report";
 
-const DOMAINS = [
-  "technical_seo",
-  "search_performance",
-  "content_intent",
-  "conversion_journey",
-  "geo_ai",
-] as const;
-
-interface Coverage {
-  overall: "unavailable" | "partial" | "complete";
-  domains: Record<string, "unavailable" | "qualitative" | "partial" | "complete">;
-  limitations: string[];
-}
-
-/** Coverage for a project with no diagnostic run yet: everything unavailable. */
-function emptyCoverage(): Coverage {
-  const domains: Coverage["domains"] = {};
-  for (const d of DOMAINS) domains[d] = "unavailable";
-  return {
-    overall: "unavailable",
-    domains,
-    limitations: ["No data has been collected for this project yet."],
-  };
-}
-
 export interface OverviewView {
   view: "overview";
   project: ProjectDto;
-  coverage: Coverage;
-  activeRuns: unknown[];
-  topActions: unknown[];
+  coverage: CoverageDto | null;
+  activeRuns: AsyncRunDto[];
+  topActions: ActionDto[];
 }
 
 export interface PlanView {
   view: "plan";
-  actions: unknown[];
+  actions: ActionDto[];
 }
 
 export interface StudioView {
   view: "studio";
-  artifacts: unknown[];
+  artifacts: ArtifactDto[];
 }
 
 export interface ReportView {
   view: "report";
-  report: {
-    project: ProjectDto;
-    outputLocale: string;
-    generatedAt: string;
-    coverage: Coverage;
-    findings: unknown[];
-    actions: unknown[];
-    artifacts: unknown[];
-    methodology: string;
-    limitations: string[];
-  };
+  report: ReportDto;
 }
 
 export type WorkspaceView = OverviewView | PlanView | StudioView | ReportView;
-
-const METHODOLOGY =
-  "Findings are derived from deterministic rules over first-party and public evidence; " +
-  "no result, ranking, or revenue outcome is promised.";
 
 export async function getWorkspaceView(
   scope: WorkspaceScope,
@@ -82,35 +50,42 @@ export async function getWorkspaceView(
   view: WorkspaceViewName,
   outputLocale: string | null,
 ): Promise<WorkspaceView> {
-  const project = await getProject(scope, projectId);
-
   switch (view) {
-    case "overview":
+    case "overview": {
+      const projectScope = { workspaceId: scope.workspaceId, projectId };
+      const project = await getProject(scope, projectId);
+      const { db } = getDb();
+      const activeRunRows = await new AsyncRunsRepository(db).listActiveByProject(projectScope);
+      const findings = await listProjectFindings(scope, projectId, {
+        limit: 1,
+        cursor: null,
+        activeOnly: true,
+      });
+      const plan = await listProjectActions(scope, projectId, { limit: 5, cursor: null });
       return {
         view: "overview",
         project,
-        coverage: emptyCoverage(),
-        activeRuns: [],
-        topActions: [],
+        coverage: findings.meta.coverage,
+        activeRuns: activeRunRows.map(toAsyncRunDto),
+        topActions: plan.data,
       };
-    case "plan":
-      return { view: "plan", actions: [] };
-    case "studio":
-      return { view: "studio", artifacts: [] };
-    case "report":
-      return {
-        view: "report",
-        report: {
-          project,
-          outputLocale: outputLocale ?? project.defaultDeliveryLocale,
-          generatedAt: new Date().toISOString(),
-          coverage: emptyCoverage(),
-          findings: [],
-          actions: [],
-          artifacts: [],
-          methodology: METHODOLOGY,
-          limitations: ["No diagnostic run has completed for this project yet."],
-        },
-      };
+    }
+    case "plan": {
+      const plan = await listProjectActions(scope, projectId, { limit: 100, cursor: null });
+      return { view: "plan", actions: plan.data };
+    }
+    case "studio": {
+      const studio = await listProjectArtifacts(scope, projectId, { limit: 100, cursor: null });
+      return { view: "studio", artifacts: studio.data };
+    }
+    case "report": {
+      const report = await getProjectReport(
+        scope,
+        projectId,
+        outputLocale,
+        new Date().toISOString(),
+      );
+      return { view: "report", report };
+    }
   }
 }

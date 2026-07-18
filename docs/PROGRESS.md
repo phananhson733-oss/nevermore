@@ -124,8 +124,29 @@ runPipeline → persist rule results/findings/evidence + cross-run resolve + cov
 **TODO for WP3**: Diagnosis + Plan UI; integration/fixture tests (AC-021~030: 11-rule fixtures,
 B2B/B2C degradation, pipeline-order, merge determinism, priority 8-step).
 
-### WP4 — Studio、Report 与 Export (AC-031~039) ⬜
+### WP4 — Studio、Report 与 Export (AC-031~039) 🟢 BACKEND CODE-COMPLETE (UI pending)
+**`@sf/artifacts` (~70 tests green)**: OpenAI LLM adapter (`createOpenAIClient`, allowlist
+prompt envelope + untrusted-evidence wrapping + reference-integrity check + AnalysisInvocation,
+§10.2/§14.4); deterministic templates (content_brief/technical_ticket markdown + metadata_rewrite
+json, EN/zh-CN, §10.1); validators (markdown section + sanitize + metadata Zod, validation/rollback
+gate §9.3-8); export assembler (dependency-free STORE zip + manifest matching
+service-bundle-manifest.schema.json + client_bundle exclusions, §10.5).
+**DB repos**: execution-artifacts (+revisions), analysis-invocations, export-bundles.
+**Services + routes**: `POST /actions/{id}/artifacts` (async 202, regenerate reuse, ACTION_NOT_EXECUTABLE),
+`GET/PATCH /artifacts/{id}` (revision append, STALE_REVISION, ready-needs-valid),
+`GET /artifacts`, `GET /report` (§10.4 projection), `POST /exports` + `GET /exports/{id}`
+(signed URL 15min). **All 26 operationIds now have route handlers.**
+**Worker**: artifact.generate (build allowlisted prompt → template/LLM → validate → revision +
+invocation) + export.bundle (load+redact → assembleBundle → upload → finalize + telemetry).
+**AC-036 wired**: workspace-view plan/studio/report delegate to the same Actions/Artifacts/Report
+projections.
+**TODO for WP4**: Studio + Report UI (print CSS); AC-031~039 fixture tests.
+
 ### WP5 — 硬化与双客户 Pilot Gate (AC-040~048 + DoD) ⬜
+**TODO**: all UI screens (Sources/Diagnosis/Plan/Studio/Report + nav wiring); env config
+(local Supabase auth/storage, Google OAuth creds, OpenAI key, blob dir); integration/fixture/
+Playwright E2E across AC-012~048; SSRF/secret/prompt-injection security tests; B2B/B2C full-chain
+fixtures; runbook. Backend for WP2/WP3/WP4 is code-complete + typecheck/lint/unit/integration green.
 
 ## Guardrails (do not violate)
 

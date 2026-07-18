@@ -15,6 +15,8 @@ export interface WorkerContext {
   readonly blobStore: BlobStore;
   readonly credentialKey: Buffer;
   readonly appOrigin: string;
+  /** LLM config for artifact generation (spec §10.2); the client is built per job. */
+  readonly openai: { readonly apiKey: string; readonly model: string };
   readonly logger: Logger;
 }
 
@@ -32,6 +34,7 @@ export function buildWorkerContext(input: {
     blobStore: new LocalFsBlobStore(baseDir),
     credentialKey: Buffer.from(input.env.CREDENTIAL_ENCRYPTION_KEY, "base64"),
     appOrigin: input.env.APP_ORIGIN,
+    openai: { apiKey: input.env.OPENAI_API_KEY, model: input.env.OPENAI_MODEL },
     logger: input.logger,
   };
 }

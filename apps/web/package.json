@@ -11,6 +11,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@sf/artifacts": "workspace:*",
     "@sf/contracts": "workspace:*",
     "@sf/db": "workspace:*",
     "@sf/engine": "workspace:*",
