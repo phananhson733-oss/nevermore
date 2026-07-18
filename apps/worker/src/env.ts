@@ -25,6 +25,10 @@ const EnvSchema = z
   .object({
     APP_ORIGIN: z.url(),
     DATABASE_URL: z.string().min(1),
+    // Max connections per pool. Keep low against a connection-limited pooler
+    // (e.g. Supabase session pooler ~15/project): web + worker each run a Drizzle
+    // pool AND a pg-boss pool, so 4 pools must fit under the ceiling.
+    DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
     SUPABASE_URL: z.url(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
     CREDENTIAL_ENCRYPTION_KEY: base64Bytes(32),

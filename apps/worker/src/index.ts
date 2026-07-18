@@ -44,8 +44,8 @@ async function start(): Promise<WorkerRuntime> {
   );
   logger.info("worker_starting", { contractVersion: CONTRACT_VERSION });
 
-  const db = createDbHandle(env.DATABASE_URL);
-  const boss = createBoss(env.DATABASE_URL);
+  const db = createDbHandle(env.DATABASE_URL, env.DB_POOL_MAX);
+  const boss = createBoss(env.DATABASE_URL, { max: env.DB_POOL_MAX });
 
   boss.on("error", (error: unknown) => {
     logger.error("pgboss_error", {

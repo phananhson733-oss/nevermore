@@ -9,7 +9,7 @@ let handle: DbHandle | undefined;
 
 export function getDb(): DbHandle {
   if (!handle) {
-    handle = createDbHandle(getEnv().DATABASE_URL);
+    handle = createDbHandle(getEnv().DATABASE_URL, getEnv().DB_POOL_MAX);
   }
   return handle;
 }

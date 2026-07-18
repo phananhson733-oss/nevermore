@@ -21,6 +21,9 @@ const base64Bytes = (expected: number) =>
 const EnvSchema = z.object({
   APP_ORIGIN: z.url(),
   DATABASE_URL: z.string().min(1),
+  // Max connections per pool; keep low against a connection-limited pooler
+  // (e.g. Supabase session pooler ~15/project). See apps/worker/src/env.ts.
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
   SUPABASE_URL: z.url(),
   SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),

@@ -11,7 +11,10 @@ let bossPromise: Promise<PgBoss> | undefined;
 
 export function getBoss(): Promise<PgBoss> {
   if (!bossPromise) {
-    const boss = createBoss(getEnv().DATABASE_URL, { enqueueOnly: true });
+    const boss = createBoss(getEnv().DATABASE_URL, {
+      enqueueOnly: true,
+      max: getEnv().DB_POOL_MAX,
+    });
     bossPromise = startBoss(boss).then(() => boss);
   }
   return bossPromise;

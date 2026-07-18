@@ -62,6 +62,13 @@ export interface RunJobPayload {
 export interface BossOptions {
   /** Disable background maintenance/scheduling on enqueue-only (web) instances. */
   readonly enqueueOnly?: boolean;
+  /**
+   * Max size of pg-boss's own connection pool. Keep this small when the database
+   * is reached through a connection-limited pooler (e.g. Supabase's session
+   * pooler caps clients per project) so web + worker Drizzle + pg-boss pools all
+   * fit under the ceiling. Defaults to pg-boss's own default when unset.
+   */
+  readonly max?: number;
 }
 
 /** Construct a PgBoss instance bound to the `pgboss` schema. */
@@ -72,6 +79,7 @@ export function createBoss(
   return new PgBoss({
     connectionString,
     schema: PGBOSS_SCHEMA,
+    ...(options?.max ? { max: options.max } : {}),
     ...(options?.enqueueOnly
       ? { supervise: false, schedule: false, monitorStateIntervalSeconds: 0 }
       : {}),
