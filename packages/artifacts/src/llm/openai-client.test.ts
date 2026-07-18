@@ -3,7 +3,9 @@ import type { ArtifactPromptInput } from "../types.ts";
 import { PROMPT_SET_VERSION } from "../types.ts";
 import { LLMError, createOpenAIClient } from "./openai-client.ts";
 
-function makeInput(overrides: Partial<ArtifactPromptInput> = {}): ArtifactPromptInput {
+function makeInput(
+  overrides: Partial<ArtifactPromptInput> = {},
+): ArtifactPromptInput {
   return {
     artifactType: "content_brief",
     outputLocale: "en",
@@ -49,17 +51,32 @@ function makeInput(overrides: Partial<ArtifactPromptInput> = {}): ArtifactPrompt
 
 function chatResponse(
   content: unknown,
-  usage: { prompt_tokens: number; completion_tokens: number } = { prompt_tokens: 120, completion_tokens: 340 },
+  usage: { prompt_tokens: number; completion_tokens: number } = {
+    prompt_tokens: 120,
+    completion_tokens: 340,
+  },
 ): Response {
   const body = {
-    choices: [{ message: { role: "assistant", content: typeof content === "string" ? content : JSON.stringify(content) } }],
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content:
+            typeof content === "string" ? content : JSON.stringify(content),
+        },
+      },
+    ],
     usage,
   };
-  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 const VALID_MARKDOWN = {
-  markdown: "Organic sessions fell 45% last quarter, so we should publish a comparison page.",
+  markdown:
+    "Organic sessions fell 45% last quarter, so we should publish a comparison page.",
   evidenceRefs: ["ev-1"],
   citedNumbers: [{ value: "45%", evidenceId: "ev-1" }],
 };
@@ -68,7 +85,11 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
   it("never hits the real network (fetch is injected)", async () => {
     const globalFetch = vi.spyOn(globalThis, "fetch");
     const fetchImpl = vi.fn().mockResolvedValue(chatResponse(VALID_MARKDOWN));
-    const client = createOpenAIClient({ apiKey: "test-key", model: "gpt-4o-mini", fetchImpl });
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
 
     await client.generateArtifact(makeInput());
 
@@ -78,7 +99,11 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
 
   it("returns markdown content + a succeeded invocation with usage token counts", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(chatResponse(VALID_MARKDOWN));
-    const client = createOpenAIClient({ apiKey: "test-key", model: "gpt-4o-mini", fetchImpl });
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
 
     const result = await client.generateArtifact(makeInput());
 
@@ -102,7 +127,11 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
 
   it("sends the OpenAI Chat Completions request with Bearer auth and a json_object response format", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(chatResponse(VALID_MARKDOWN));
-    const client = createOpenAIClient({ apiKey: "test-key", model: "gpt-4o-mini", fetchImpl });
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
 
     await client.generateArtifact(makeInput());
 
@@ -123,6 +152,31 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     expect(sentBody.messages.map((m) => m.role)).toEqual(["system", "user"]);
   });
 
+  it("targets an Azure OpenAI deployment with the api-key header when authScheme=api-key", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(chatResponse(VALID_MARKDOWN));
+    const azureUrl =
+      "https://res.openai.azure.com/openai/deployments/gpt-4.1-mini/chat/completions?api-version=2025-03-01-preview";
+    const client = createOpenAIClient({
+      apiKey: "azure-key",
+      model: "gpt-4.1-mini",
+      baseUrl: azureUrl,
+      authScheme: "api-key",
+      fetchImpl,
+    });
+
+    const result = await client.generateArtifact(makeInput());
+
+    const call = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(call[0]).toBe(azureUrl);
+    const headers = call[1].headers as Record<string, string>;
+    // Azure authenticates with the `api-key` header, NOT `Authorization: Bearer`.
+    expect(headers["api-key"]).toBe("azure-key");
+    expect(headers.Authorization).toBeUndefined();
+    // Still the OpenAI provider — same models + API shape (spec §10.2).
+    expect(result.invocation.provider).toBe("openai");
+    expect(result.content.contentFormat).toBe("markdown");
+  });
+
   it("builds a metadata JSON object for metadata_rewrite", async () => {
     const validMeta = {
       url: "https://acme.example/",
@@ -136,9 +190,15 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
       citedNumbers: [],
     };
     const fetchImpl = vi.fn().mockResolvedValue(chatResponse(validMeta));
-    const client = createOpenAIClient({ apiKey: "test-key", model: "gpt-4o-mini", fetchImpl });
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
 
-    const result = await client.generateArtifact(makeInput({ artifactType: "metadata_rewrite" }));
+    const result = await client.generateArtifact(
+      makeInput({ artifactType: "metadata_rewrite" }),
+    );
 
     expect(result.content.contentFormat).toBe("json");
     const obj = result.content.content as Record<string, unknown>;
@@ -153,9 +213,15 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
       citedNumbers: [{ value: "80%", evidenceId: "ev-1" }],
     };
     const fetchImpl = vi.fn().mockResolvedValue(chatResponse(fabricated));
-    const client = createOpenAIClient({ apiKey: "test-key", model: "gpt-4o-mini", fetchImpl });
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
 
-    const error = await client.generateArtifact(makeInput()).catch((e: unknown) => e);
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(LLMError);
     const llmError = error as LLMError;
     expect(llmError.code).toBe("REFERENCE_INTEGRITY");
@@ -165,19 +231,35 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
   });
 
   it("maps a non-JSON model body to SCHEMA_INVALID", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(chatResponse("this is not json {"));
-    const client = createOpenAIClient({ apiKey: "test-key", model: "gpt-4o-mini", fetchImpl });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(chatResponse("this is not json {"));
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
 
-    const error = await client.generateArtifact(makeInput()).catch((e: unknown) => e);
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(LLMError);
     expect((error as LLMError).code).toBe("SCHEMA_INVALID");
   });
 
   it("maps an HTTP 429 to RATE_LIMITED with a failed invocation and null tokens", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response("rate limited", { status: 429 }));
-    const client = createOpenAIClient({ apiKey: "test-key", model: "gpt-4o-mini", fetchImpl });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(new Response("rate limited", { status: 429 }));
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
 
-    const error = await client.generateArtifact(makeInput()).catch((e: unknown) => e);
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(LLMError);
     const llmError = error as LLMError;
     expect(llmError.code).toBe("RATE_LIMITED");
@@ -187,13 +269,21 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
 
   it("maps a transport failure to NETWORK_ERROR", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("connection reset"));
-    const client = createOpenAIClient({ apiKey: "test-key", model: "gpt-4o-mini", fetchImpl });
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
 
-    const error = await client.generateArtifact(makeInput()).catch((e: unknown) => e);
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((e: unknown) => e);
     expect((error as LLMError).code).toBe("NETWORK_ERROR");
   });
 
   it("throws CONFIG_INVALID when constructed without an apiKey", () => {
-    expect(() => createOpenAIClient({ apiKey: "", model: "gpt-4o-mini" })).toThrow(LLMError);
+    expect(() =>
+      createOpenAIClient({ apiKey: "", model: "gpt-4o-mini" }),
+    ).toThrow(LLMError);
   });
 });

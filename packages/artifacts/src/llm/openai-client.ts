@@ -33,7 +33,8 @@ import {
 import type { LlmArtifactEnvelope } from "./envelope.ts";
 import { checkReferences } from "./reference-check.ts";
 
-const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_CHAT_COMPLETIONS_URL =
+  "https://api.openai.com/v1/chat/completions";
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -44,7 +45,10 @@ const MAX_DESCRIPTION_CHARS = 2_048;
 const MAX_RATIONALE_CHARS = 8_000;
 
 /** Minimal `fetch` shape so tests can inject a fixture without DOM lib types. */
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+export type FetchLike = (
+  input: string,
+  init?: RequestInit,
+) => Promise<Response>;
 
 export type LLMErrorCode =
   | "CONFIG_INVALID"
@@ -64,7 +68,11 @@ export class LLMError extends Error {
   readonly code: LLMErrorCode;
   readonly invocation: AnalysisInvocationRecord | null;
 
-  constructor(code: LLMErrorCode, message: string, invocation: AnalysisInvocationRecord | null = null) {
+  constructor(
+    code: LLMErrorCode,
+    message: string,
+    invocation: AnalysisInvocationRecord | null = null,
+  ) {
     super(message);
     this.name = "LLMError";
     this.code = code;
@@ -77,8 +85,15 @@ export interface OpenAIClientOptions {
   readonly model: string;
   /** Defaults to the global `fetch`; injected in tests. */
   readonly fetchImpl?: FetchLike;
-  /** Chat Completions endpoint override (tests / self-hosted gateways). */
+  /** Chat Completions endpoint override (tests / Azure OpenAI / self-hosted gateways). */
   readonly baseUrl?: string;
+  /**
+   * Auth header style. `bearer` (default) sends `Authorization: Bearer <key>`
+   * for the OpenAI API; `api-key` sends the `api-key: <key>` header used by an
+   * Azure OpenAI deployment (still the OpenAI provider — same models + API shape,
+   * only the host + auth header differ, spec §10.2).
+   */
+  readonly authScheme?: "bearer" | "api-key";
   /** Sampling temperature; low by default for deterministic artifacts. */
   readonly temperature?: number;
   /** Per-request timeout in ms; aborts the fetch when exceeded. */
@@ -100,7 +115,10 @@ function mapHttpStatus(status: number): LLMErrorCode {
 }
 
 function mapTransportError(error: unknown): LLMErrorCode {
-  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+  if (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  ) {
     return "TIMEOUT";
   }
   return "NETWORK_ERROR";
@@ -113,7 +131,8 @@ function readUsage(data: unknown): Usage {
   const u = usage as Record<string, unknown>;
   return {
     inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
-    outputTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : null,
+    outputTokens:
+      typeof u.completion_tokens === "number" ? u.completion_tokens : null,
   };
 }
 
@@ -132,14 +151,20 @@ function readMessageContent(data: unknown): string | null {
 function safetyErrors(envelope: LlmArtifactEnvelope): readonly string[] {
   if (envelope.kind === "metadata_rewrite") {
     const errors: string[] = [];
-    if (envelope.proposedTitle.length > MAX_TITLE_CHARS) errors.push("proposedTitle exceeds length limit");
-    if (envelope.currentTitle.length > MAX_TITLE_CHARS) errors.push("currentTitle exceeds length limit");
-    if (envelope.proposedDescription.length > MAX_DESCRIPTION_CHARS) errors.push("proposedDescription exceeds length limit");
-    if (envelope.currentDescription.length > MAX_DESCRIPTION_CHARS) errors.push("currentDescription exceeds length limit");
-    if (envelope.rationale.length > MAX_RATIONALE_CHARS) errors.push("rationale exceeds length limit");
+    if (envelope.proposedTitle.length > MAX_TITLE_CHARS)
+      errors.push("proposedTitle exceeds length limit");
+    if (envelope.currentTitle.length > MAX_TITLE_CHARS)
+      errors.push("currentTitle exceeds length limit");
+    if (envelope.proposedDescription.length > MAX_DESCRIPTION_CHARS)
+      errors.push("proposedDescription exceeds length limit");
+    if (envelope.currentDescription.length > MAX_DESCRIPTION_CHARS)
+      errors.push("currentDescription exceeds length limit");
+    if (envelope.rationale.length > MAX_RATIONALE_CHARS)
+      errors.push("rationale exceeds length limit");
     return errors;
   }
-  if (envelope.markdown.length > MAX_MARKDOWN_CHARS) return ["markdown exceeds length limit"];
+  if (envelope.markdown.length > MAX_MARKDOWN_CHARS)
+    return ["markdown exceeds length limit"];
   return [];
 }
 
@@ -173,25 +198,35 @@ export class OpenAIClient implements LLMClient {
   private readonly model: string;
   private readonly fetchImpl: FetchLike;
   private readonly url: string;
+  private readonly authScheme: "bearer" | "api-key";
   private readonly temperature: number;
   private readonly timeoutMs: number;
 
   constructor(options: OpenAIClientOptions) {
     if (options.apiKey.trim() === "") {
-      throw new LLMError("CONFIG_INVALID", "OpenAIClient requires a non-empty apiKey.");
+      throw new LLMError(
+        "CONFIG_INVALID",
+        "OpenAIClient requires a non-empty apiKey.",
+      );
     }
     if (options.model.trim() === "") {
-      throw new LLMError("CONFIG_INVALID", "OpenAIClient requires a non-empty model.");
+      throw new LLMError(
+        "CONFIG_INVALID",
+        "OpenAIClient requires a non-empty model.",
+      );
     }
     this.apiKey = options.apiKey;
     this.model = options.model;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.url = options.baseUrl ?? OPENAI_CHAT_COMPLETIONS_URL;
+    this.authScheme = options.authScheme ?? "bearer";
     this.temperature = options.temperature ?? DEFAULT_TEMPERATURE;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  async generateArtifact(input: ArtifactPromptInput): Promise<LLMArtifactResult> {
+  async generateArtifact(
+    input: ArtifactPromptInput,
+  ): Promise<LLMArtifactResult> {
     const startedAt = Date.now();
     const inputHash = hashPromptInput(input);
 
@@ -200,41 +235,61 @@ export class OpenAIClient implements LLMClient {
 
     const contentText = readMessageContent(raw.data);
     if (contentText === null) {
-      throw this.fail("INVALID_RESPONSE", "OpenAI response had no message content.", { inputHash, usage, startedAt });
+      throw this.fail(
+        "INVALID_RESPONSE",
+        "OpenAI response had no message content.",
+        { inputHash, usage, startedAt },
+      );
     }
 
     let parsedJson: unknown;
     try {
       parsedJson = JSON.parse(contentText);
     } catch {
-      throw this.reject("SCHEMA_INVALID", "Model output was not valid JSON.", { inputHash, usage, startedAt });
+      throw this.reject("SCHEMA_INVALID", "Model output was not valid JSON.", {
+        inputHash,
+        usage,
+        startedAt,
+      });
     }
 
     const parsed = parseEnvelope(input.artifactType, parsedJson);
     if (!parsed.ok) {
-      throw this.reject("SCHEMA_INVALID", `Model envelope failed schema validation: ${parsed.issues.join("; ")}`, {
-        inputHash,
-        usage,
-        startedAt,
-      });
+      throw this.reject(
+        "SCHEMA_INVALID",
+        `Model envelope failed schema validation: ${parsed.issues.join("; ")}`,
+        {
+          inputHash,
+          usage,
+          startedAt,
+        },
+      );
     }
 
     const referenceErrors = checkReferences(input, parsed.envelope);
     if (referenceErrors.length > 0) {
-      throw this.reject("REFERENCE_INTEGRITY", `Reference-integrity check failed: ${referenceErrors.join("; ")}`, {
-        inputHash,
-        usage,
-        startedAt,
-      });
+      throw this.reject(
+        "REFERENCE_INTEGRITY",
+        `Reference-integrity check failed: ${referenceErrors.join("; ")}`,
+        {
+          inputHash,
+          usage,
+          startedAt,
+        },
+      );
     }
 
     const safety = safetyErrors(parsed.envelope);
     if (safety.length > 0) {
-      throw this.reject("SAFETY_VIOLATION", `Safety/length check failed: ${safety.join("; ")}`, {
-        inputHash,
-        usage,
-        startedAt,
-      });
+      throw this.reject(
+        "SAFETY_VIOLATION",
+        `Safety/length check failed: ${safety.join("; ")}`,
+        {
+          inputHash,
+          usage,
+          startedAt,
+        },
+      );
     }
 
     const content: ArtifactContent = toArtifactContent(parsed.envelope);
@@ -274,28 +329,38 @@ export class OpenAIClient implements LLMClient {
       response = await this.fetchImpl(this.url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
+          ...(this.authScheme === "api-key"
+            ? { "api-key": this.apiKey }
+            : { Authorization: `Bearer ${this.apiKey}` }),
           "Content-Type": "application/json",
         },
         body,
         signal: controller.signal,
       });
     } catch (error) {
-      throw this.fail(mapTransportError(error), "OpenAI request failed to reach the API.", {
-        inputHash,
-        usage: NO_USAGE,
-        startedAt,
-      });
+      throw this.fail(
+        mapTransportError(error),
+        "OpenAI request failed to reach the API.",
+        {
+          inputHash,
+          usage: NO_USAGE,
+          startedAt,
+        },
+      );
     } finally {
       clearTimeout(timer);
     }
 
     if (!response.ok) {
-      throw this.fail(mapHttpStatus(response.status), `OpenAI request failed with HTTP ${response.status}.`, {
-        inputHash,
-        usage: NO_USAGE,
-        startedAt,
-      });
+      throw this.fail(
+        mapHttpStatus(response.status),
+        `OpenAI request failed with HTTP ${response.status}.`,
+        {
+          inputHash,
+          usage: NO_USAGE,
+          startedAt,
+        },
+      );
     }
 
     try {
@@ -313,7 +378,11 @@ export class OpenAIClient implements LLMClient {
   private fail(
     code: LLMErrorCode,
     message: string,
-    ctx: { readonly inputHash: string; readonly usage: Usage; readonly startedAt: number },
+    ctx: {
+      readonly inputHash: string;
+      readonly usage: Usage;
+      readonly startedAt: number;
+    },
   ): LLMError {
     return new LLMError(
       code,
@@ -334,7 +403,11 @@ export class OpenAIClient implements LLMClient {
   private reject(
     code: LLMErrorCode,
     message: string,
-    ctx: { readonly inputHash: string; readonly usage: Usage; readonly startedAt: number },
+    ctx: {
+      readonly inputHash: string;
+      readonly usage: Usage;
+      readonly startedAt: number;
+    },
   ): LLMError {
     return new LLMError(
       code,

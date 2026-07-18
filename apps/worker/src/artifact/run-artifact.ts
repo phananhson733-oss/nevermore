@@ -87,6 +87,8 @@ export async function runArtifact(
       const client = createOpenAIClient({
         apiKey: ctx.openai.apiKey,
         model: ctx.openai.model,
+        ...(ctx.openai.baseUrl ? { baseUrl: ctx.openai.baseUrl } : {}),
+        ...(ctx.openai.authScheme ? { authScheme: ctx.openai.authScheme } : {}),
       });
       const result: LLMArtifactResult = await client.generateArtifact(input);
       content = result.content;
