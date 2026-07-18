@@ -13,6 +13,7 @@
   "dependencies": {
     "@sf/contracts": "workspace:*",
     "@sf/db": "workspace:*",
+    "@sf/engine": "workspace:*",
     "@sf/i18n": "workspace:*",
     "@sf/observability": "workspace:*",
     "@sf/sources": "workspace:*",

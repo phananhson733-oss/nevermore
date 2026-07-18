@@ -1,0 +1,79 @@
+import type { RuleId } from "./rule.ts";
+
+/**
+ * Deterministic finding summaries (spec §8.7). Every finding must have a non-empty
+ * summary; the default is a deterministic en / zh-CN template (no model). A later
+ * WP may overwrite with an LLM `finding_summary` for other output locales, but the
+ * deterministic template is the always-available fallback (`summaryLocale=en`).
+ */
+
+export type SummaryLocale = "en" | "zh-CN";
+
+type Args = Record<string, string | number>;
+
+function n(args: Args, key: string): number {
+  const v = args[key];
+  return typeof v === "number" ? v : 0;
+}
+function s(args: Args, key: string): string {
+  const v = args[key];
+  return v === undefined ? "" : String(v);
+}
+
+const TEMPLATES: Record<RuleId, Record<SummaryLocale, (a: Args) => string>> = {
+  "TECH-HTTP-001": {
+    en: (a) => `${n(a, "count")} page(s) return HTTP ${s(a, "status")}, blocking users and crawlers.`,
+    "zh-CN": (a) => `${n(a, "count")} 个页面返回 HTTP ${s(a, "status")}，阻挡用户与爬虫。`,
+  },
+  "TECH-CANONICAL-002": {
+    en: (a) => `Canonical conflicts detected (${s(a, "subtype")}) affecting ${n(a, "count")} page(s).`,
+    "zh-CN": (a) => `检测到 canonical 冲突（${s(a, "subtype")}），影响 ${n(a, "count")} 个页面。`,
+  },
+  "TECH-LINKGRAPH-005": {
+    en: (a) => `${n(a, "affectedCount")} commercial page(s) have fewer than two internal inlinks.`,
+    "zh-CN": (a) => `${n(a, "affectedCount")} 个商业页面的内部入链少于两个。`,
+  },
+  "SEARCH-CTR-004": {
+    en: (a) => `A ranking page has CTR ${s(a, "ctr")} below the benchmark for position ${s(a, "position")}.`,
+    "zh-CN": (a) => `某排名页面点击率 ${s(a, "ctr")} 低于位置 ${s(a, "position")} 的基准。`,
+  },
+  "SEARCH-DECAY-002": {
+    en: (a) => `Clicks fell ${s(a, "delta")} versus the previous 28 days for a page with prior demand.`,
+    "zh-CN": (a) => `某有历史需求的页面点击量较前 28 天下降 ${s(a, "delta")}。`,
+  },
+  "CONTENT-COVERAGE-001": {
+    en: (a) => `No indexable page covers the priority ${s(a, "kind")} "${s(a, "target")}".`,
+    "zh-CN": (a) => `没有可收录页面覆盖优先${s(a, "kind")}“${s(a, "target")}”。`,
+  },
+  "CONTENT-GAP-011": {
+    en: (a) => `Keyword cluster "${s(a, "clusterKey")}" (${n(a, "keywordCount")} keywords) has no matching page.`,
+    "zh-CN": (a) => `关键词簇“${s(a, "clusterKey")}”（${n(a, "keywordCount")} 个词）没有匹配页面。`,
+  },
+  "CRO-PATH-001": {
+    en: (a) => `${n(a, "affectedCount")} commercial page(s) have no direct link to a conversion destination.`,
+    "zh-CN": (a) => `${n(a, "affectedCount")} 个商业页面没有直达转化目标的链接。`,
+  },
+  "CRO-LANDING-003": {
+    en: (a) => `A landing page converts (${s(a, "pageRate")}) well below the site baseline (${s(a, "baseline")}).`,
+    "zh-CN": (a) => `某落地页转化率（${s(a, "pageRate")}）远低于站点基线（${s(a, "baseline")}）。`,
+  },
+  "GEO-ENTITY-001": {
+    en: (a) => `${n(a, "selectedCount")} priority page(s) lack entity coverage or proof blocks for AI citability.`,
+    "zh-CN": (a) => `${n(a, "selectedCount")} 个优先页面缺少实体覆盖或佐证块，影响 AI 可引用性。`,
+  },
+  "GEO-CRAWLER-002": {
+    en: (a) => `robots.txt disallows the AI crawler ${s(a, "userAgent")} (${s(a, "scope")}).`,
+    "zh-CN": (a) => `robots.txt 禁止 AI 爬虫 ${s(a, "userAgent")}（${s(a, "scope")}）。`,
+  },
+};
+
+/** Build the deterministic summary for a finding in the delivery locale. */
+export function buildSummary(
+  ruleId: RuleId,
+  titleArgs: Record<string, string | number>,
+  deliveryLocale: string,
+): { summary: string; summaryLocale: SummaryLocale } {
+  const locale: SummaryLocale = deliveryLocale.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+  const summary = TEMPLATES[ruleId][locale](titleArgs);
+  return { summary, summaryLocale: locale };
+}

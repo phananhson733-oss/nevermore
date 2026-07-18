@@ -1,26 +1,22 @@
 {
-  "name": "@sf/worker",
+  "name": "@sf/artifacts",
   "version": "0.2.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src"
   },
   "dependencies": {
     "@sf/contracts": "workspace:*",
-    "@sf/db": "workspace:*",
     "@sf/engine": "workspace:*",
-    "@sf/observability": "workspace:*",
-    "@sf/sources": "workspace:*",
-    "pg-boss": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "catalog:",
     "typescript": "catalog:"
   }
 }

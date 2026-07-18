@@ -73,6 +73,21 @@ export { SourceCredentialsRepository } from "./repositories/source-credentials.t
 export type { SourceCredentialRow } from "./repositories/source-credentials.ts";
 export { ProviderDiscrepanciesRepository } from "./repositories/provider-discrepancies.ts";
 export type { ProviderDiscrepancyRow } from "./repositories/provider-discrepancies.ts";
+export { DiagnosticRunsRepository } from "./repositories/diagnostic-runs.ts";
+export type {
+  DiagnosticRunRow,
+  RuleResultInsert,
+} from "./repositories/diagnostic-runs.ts";
+export { FindingsRepository } from "./repositories/findings.ts";
+export type { FindingRow, FindingListPage } from "./repositories/findings.ts";
+export { FindingReviewEventsRepository } from "./repositories/findings-review.ts";
+export { EvidenceRepository } from "./repositories/evidence.ts";
+export type {
+  EvidenceInsert,
+  FindingObservationInsert,
+} from "./repositories/evidence.ts";
+export { ActionsRepository } from "./repositories/actions.ts";
+export type { ActionRow, ActionListPage } from "./repositories/actions.ts";
 export {
   PGBOSS_SCHEMA,
   QUEUE_CONFIG,

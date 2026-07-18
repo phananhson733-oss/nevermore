@@ -104,7 +104,26 @@ integration/browser tests (AC-012~020); local Supabase for live OAuth; GA4 prope
 currently defaults to America/Los_Angeles (refine at env-config).
 **Live-cred items (build done, needs creds to exercise)**: GSC/GA4 OAuth (AC-014/015) needs a real
 `GOOGLE_OAUTH_CLIENT_ID/SECRET` + running Supabase session.
-### WP3 — 诊断、审核与计划 (AC-021~030) ⬜
+### WP3 — 诊断、审核与计划 (AC-021~030) 🟢 BACKEND CODE-COMPLETE (UI pending)
+**Engine (`@sf/engine`, pure; 11 test files / 56 tests green)**: 11-rule registry in fixed
+order (tech-http/canonical/linkgraph, search-ctr/decay, content-coverage/gap, cro-path/landing,
+geo-entity/crawler); `DiagnosticContext` (indexed pages/gsc/ga4/csv/robots/sitemap + derived
+internal inlinks + coverage + helpers); util page_role.v1 / intent_match.v1 / ctr-benchmark /
+proof_block / canonical hash; `runPipeline` (§8.2 fixed order → rule results + merged findings +
+coverage); `merge` (run-internal key + cross-run `findingKey` sha256); `confidence` (§8.7,
+low→needs_more_data); `derivePriority` (§9.3 deterministic 8-step); `ACTION_TEMPLATES` (EN/zh-CN);
+`summaries` (deterministic EN/zh-CN).
+**DB repos**: diagnostic-runs (+rule results), findings (cross-run upsert/resolve/regress),
+evidence (+finding_observations), actions (+override audit), finding-review-events.
+**Services + routes**: `POST /diagnostic-runs` (freeze §8.1 manifest, CONTEXT_INCOMPLETE /
+CRAWL_SNAPSHOT_REQUIRED gates), `GET /findings` (+meta: latestRun/coverage/11 ruleResults),
+`PATCH /findings/{id}` (confirm→same-tx Action upsert; ignored/nmd FINDING_ACTION_ACTIVE gate),
+`GET /actions`, `PATCH /actions/{id}` (override + audit, VERSION_CONFLICT).
+**Worker**: `diagnose` handler → `run-diagnostic` (build context from frozen snapshots →
+runPipeline → persist rule results/findings/evidence + cross-run resolve + coverage + telemetry).
+**TODO for WP3**: Diagnosis + Plan UI; integration/fixture tests (AC-021~030: 11-rule fixtures,
+B2B/B2C degradation, pipeline-order, merge determinism, priority 8-step).
+
 ### WP4 — Studio、Report 与 Export (AC-031~039) ⬜
 ### WP5 — 硬化与双客户 Pilot Gate (AC-040~048 + DoD) ⬜
 
