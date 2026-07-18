@@ -97,12 +97,23 @@ export async function reviewProjectFinding(
   const nextRevision = finding.review_revision + 1;
 
   await db.transaction(async (tx) => {
-    await new FindingsRepository(tx).updateReview(projectScope, findingId, {
-      reviewState: body.reviewState,
-      reviewRevision: nextRevision,
-      reason,
-      note,
-    });
+    const ok = await new FindingsRepository(tx).updateReview(
+      projectScope,
+      findingId,
+      {
+        reviewState: body.reviewState,
+        reviewRevision: nextRevision,
+        reason,
+        note,
+        expectedRevision: finding.review_revision,
+      },
+    );
+    if (!ok) {
+      throw new ProblemError(
+        "VERSION_CONFLICT",
+        "Finding was modified; refetch and retry.",
+      );
+    }
     await new FindingReviewEventsRepository(tx).append({
       workspaceId: scope.workspaceId,
       projectId,
@@ -169,12 +180,23 @@ async function confirmFinding(
   const { copy, contentLocale } = resolveActionCopy(template, deliveryLocale);
 
   const action = await db.transaction(async (tx): Promise<ActionRow> => {
-    await new FindingsRepository(tx).updateReview(projectScope, finding.id, {
-      reviewState: "confirmed",
-      reviewRevision: nextRevision,
-      reason: null,
-      note,
-    });
+    const ok = await new FindingsRepository(tx).updateReview(
+      projectScope,
+      finding.id,
+      {
+        reviewState: "confirmed",
+        reviewRevision: nextRevision,
+        reason: null,
+        note,
+        expectedRevision: finding.review_revision,
+      },
+    );
+    if (!ok) {
+      throw new ProblemError(
+        "VERSION_CONFLICT",
+        "Finding was modified; refetch and retry.",
+      );
+    }
     await new FindingReviewEventsRepository(tx).append({
       workspaceId: scope.workspaceId,
       projectId: projectScope.projectId,

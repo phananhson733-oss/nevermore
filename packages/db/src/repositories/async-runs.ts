@@ -148,6 +148,18 @@ export class AsyncRunsRepository extends Repository {
     return (rows[0] as AsyncRunRow | undefined) ?? null;
   }
 
+  /**
+   * Return a claimed run to `queued` before a transient-error retry (spec §13.1).
+   * Without this a rethrow leaves the run stuck `running` — the pg-boss retry
+   * re-runs `claim`, which only wins on `queued`, acks, and never executes.
+   */
+  async resetToQueued(runId: string): Promise<void> {
+    await this.exec
+      .update(asyncRuns)
+      .set({ status: "queued", started_at: null })
+      .where(and(eq(asyncRuns.id, runId), eq(asyncRuns.status, "running")));
+  }
+
   /** Update the progress projection during a running job. */
   async setProgress(
     runId: string,

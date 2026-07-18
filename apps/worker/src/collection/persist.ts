@@ -77,63 +77,81 @@ export async function persistCollectionResult(
   });
 
   // 2. One transaction: snapshot + observations + finalize + connection + terminal.
-  return ctx.db.transaction(async (tx) => {
-    const snapshot = await new DataSnapshotsRepository(tx).insert({
-      workspaceId: run.workspace_id,
-      projectId: run.project_id,
-      siteId: run.site_id,
-      collectionRunId: run.id,
-      sourceConnectionId: run.source_connection_id,
-      provider: run.provider,
-      datasetKey: input.datasetKey,
-      schemaVersion: input.schemaVersion,
-      methodVersion: run.method_version,
-      capturedAt: outcome.capturedAt,
-      sourceWindow: outcome.sourceWindow as unknown as Record<string, unknown>,
-      availability: outcome.availability,
-      limitation: outcome.limitation,
-      rawObjectKey: put.key,
-      rowCount: outcome.rowCount,
-      checksum: put.sha256,
-      ...(outcome.summary ? { summary: outcome.summary } : {}),
-    });
-
-    await new ObservationsRepository(tx).insertMany(scope, snapshot.id, input.observations);
-
-    await new CollectionRunsRepository(tx).finalize(run.id, {
-      rowCount: outcome.rowCount,
-      sourceWindow: outcome.sourceWindow as unknown as Record<string, unknown>,
-      providerUsage: outcome.providerUsage,
-      stopReason: outcome.stopReason,
-    });
-
-    if (run.source_connection_id) {
-      await new SourceConnectionsRepository(tx).setLastSnapshot(
-        run.source_connection_id,
-        snapshot.id,
-        outcome.availability,
-      );
-    }
-
-    await new AsyncRunsRepository(tx).setTerminal(run.id, {
-      status: RUN_STATUS[outcome.availability],
-      resultType: "data_snapshot",
-      resultId: snapshot.id,
-    });
-
-    await new TelemetryRepository(tx).emit({
-      workspaceId: run.workspace_id,
-      projectId: run.project_id,
-      eventName: "source_snapshot_ready",
-      actorId: input.actorId,
-      properties: {
+  // On rollback, best-effort delete the just-uploaded orphan object (spec §13.3);
+  // the daily orphan cleanup is the backstop.
+  try {
+    return await ctx.db.transaction(async (tx) => {
+      const snapshot = await new DataSnapshotsRepository(tx).insert({
+        workspaceId: run.workspace_id,
+        projectId: run.project_id,
+        siteId: run.site_id,
+        collectionRunId: run.id,
+        sourceConnectionId: run.source_connection_id,
         provider: run.provider,
+        datasetKey: input.datasetKey,
+        schemaVersion: input.schemaVersion,
+        methodVersion: run.method_version,
+        capturedAt: outcome.capturedAt,
+        sourceWindow: outcome.sourceWindow as unknown as Record<
+          string,
+          unknown
+        >,
         availability: outcome.availability,
+        limitation: outcome.limitation,
+        rawObjectKey: put.key,
         rowCount: outcome.rowCount,
-        durationBucket: durationBucket(Date.now() - input.startedAtMs),
-      },
-    });
+        checksum: put.sha256,
+        ...(outcome.summary ? { summary: outcome.summary } : {}),
+      });
 
-    return snapshot.id;
-  });
+      await new ObservationsRepository(tx).insertMany(
+        scope,
+        snapshot.id,
+        input.observations,
+      );
+
+      await new CollectionRunsRepository(tx).finalize(run.id, {
+        rowCount: outcome.rowCount,
+        sourceWindow: outcome.sourceWindow as unknown as Record<
+          string,
+          unknown
+        >,
+        providerUsage: outcome.providerUsage,
+        stopReason: outcome.stopReason,
+      });
+
+      if (run.source_connection_id) {
+        await new SourceConnectionsRepository(tx).setLastSnapshot(
+          run.source_connection_id,
+          snapshot.id,
+          outcome.availability,
+        );
+      }
+
+      await new AsyncRunsRepository(tx).setTerminal(run.id, {
+        status: RUN_STATUS[outcome.availability],
+        // result_type CHECK: one of collection_run/diagnostic_run/artifact/export.
+        resultType: "collection_run",
+        resultId: run.id,
+      });
+
+      await new TelemetryRepository(tx).emit({
+        workspaceId: run.workspace_id,
+        projectId: run.project_id,
+        eventName: "source_snapshot_ready",
+        actorId: input.actorId,
+        properties: {
+          provider: run.provider,
+          availability: outcome.availability,
+          rowCount: outcome.rowCount,
+          durationBucket: durationBucket(Date.now() - input.startedAtMs),
+        },
+      });
+
+      return snapshot.id;
+    });
+  } catch (error) {
+    await ctx.blobStore.delete(put.key).catch(() => {});
+    throw error;
+  }
 }

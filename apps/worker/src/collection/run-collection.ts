@@ -90,13 +90,29 @@ export async function runCollection(
     return; // already running or terminal — idempotent ack.
   }
 
-  const collectionRun = await new CollectionRunsRepository(ctx.db).findById(runId);
+  const collectionRun = await new CollectionRunsRepository(ctx.db).findById(
+    runId,
+  );
   const site = await new SitesRepository(ctx.db).findPrimary(scope);
   if (!collectionRun || !site) {
     await runs.setTerminal(runId, {
       status: "failed",
       lastErrorCode: "NOT_FOUND",
       lastErrorSummary: "collection run or site missing",
+    });
+    return;
+  }
+  // Defense: the collection run is loaded by id only; verify it belongs to the
+  // job payload's scope so a crossed payload can never persist under a foreign run.
+  if (
+    collectionRun.workspace_id !== workspaceId ||
+    collectionRun.project_id !== projectId ||
+    collectionRun.site_id !== site.id
+  ) {
+    await runs.setTerminal(runId, {
+      status: "failed",
+      lastErrorCode: "INVALID_CONFIGURATION",
+      lastErrorSummary: "collection run scope mismatch",
     });
     return;
   }
@@ -121,7 +137,12 @@ export async function runCollection(
     });
   } catch (error) {
     if (error instanceof SourceError && isTransient(error.code)) {
-      ctx.logger.warn("collection_transient_error", { runId, code: error.code });
+      ctx.logger.warn("collection_transient_error", {
+        runId,
+        code: error.code,
+      });
+      // Return the run to `queued` so the pg-boss retry can re-claim it (§13.1).
+      await runs.resetToQueued(runId);
       throw error; // let pg-boss retry (spec §13.1).
     }
     const code = error instanceof SourceError ? error.code : "UNAVAILABLE";
@@ -166,18 +187,34 @@ async function collectByProvider(
     }
     case "gsc": {
       const { connection, token } = await loadConnectionToken(ctx, scope, run);
-      const propertyUrl = readConfigString(connection.config, "propertyUrl") ?? connection.external_ref ?? site.origin;
-      const client = new HttpGscClient({ siteUrl: propertyUrl, accessToken: token });
+      const propertyUrl =
+        readConfigString(connection.config, "propertyUrl") ??
+        connection.external_ref ??
+        site.origin;
+      const client = new HttpGscClient({
+        siteUrl: propertyUrl,
+        accessToken: token,
+      });
       const adapter = createGscAdapter(client);
       const result = await adapter.collect({ propertyUrl }, adapterCtx);
-      const observations = await drain(adapter.normalize(result.raw, normalizeCtx(result.capturedAt)));
+      const observations = await drain(
+        adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
+      );
       return { outcome: toOutcome(result), observations };
     }
     case "ga4": {
       const { connection, token } = await loadConnectionToken(ctx, scope, run);
-      const rawId = readConfigString(connection.config, "propertyId") ?? connection.external_ref ?? "";
-      const propertyId = rawId.startsWith("properties/") ? rawId : `properties/${rawId}`;
-      const keyEventNames = readConfigStringArray(connection.config, "keyEventNames");
+      const rawId =
+        readConfigString(connection.config, "propertyId") ??
+        connection.external_ref ??
+        "";
+      const propertyId = rawId.startsWith("properties/")
+        ? rawId
+        : `properties/${rawId}`;
+      const keyEventNames = readConfigStringArray(
+        connection.config,
+        "keyEventNames",
+      );
       const client = new HttpGa4Client({ propertyId, accessToken: token });
       const adapter = createGa4Adapter(client);
       const result = await adapter.collect(
@@ -185,25 +222,40 @@ async function collectByProvider(
           propertyId,
           keyEventNames,
           siteOrigin: site.origin,
-          propertyTimeZone: readConfigString(connection.config, "propertyTimeZone") ?? DEFAULT_GA4_TIMEZONE,
+          propertyTimeZone:
+            readConfigString(connection.config, "propertyTimeZone") ??
+            DEFAULT_GA4_TIMEZONE,
           now: new Date(),
         },
         adapterCtx,
       );
-      const observations = await drain(adapter.normalize(result.raw, normalizeCtx(result.capturedAt)));
+      const observations = await drain(
+        adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
+      );
       return { outcome: toOutcome(result), observations };
     }
     case "csv": {
-      const { text, mapping, marketFallback, languageFallback } = await loadCsvImport(ctx, scope, run);
+      const { text, mapping, marketFallback, languageFallback } =
+        await loadCsvImport(ctx, scope, run);
       const result = await csvAdapter.collect(
-        { text, mapping, ...(marketFallback ? { marketFallback } : {}), ...(languageFallback ? { languageFallback } : {}) },
+        {
+          text,
+          mapping,
+          ...(marketFallback ? { marketFallback } : {}),
+          ...(languageFallback ? { languageFallback } : {}),
+        },
         adapterCtx,
       );
-      const observations = await drain(csvAdapter.normalize(result.raw, normalizeCtx(result.capturedAt)));
+      const observations = await drain(
+        csvAdapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
+      );
       return { outcome: toOutcome(result), observations };
     }
     default:
-      throw new SourceError("FEATURE_DISABLED", `Unsupported collection provider ${run.provider}.`);
+      throw new SourceError(
+        "FEATURE_DISABLED",
+        `Unsupported collection provider ${run.provider}.`,
+      );
   }
 }
 
@@ -213,19 +265,30 @@ async function loadConnectionToken(
   run: CollectionRunRow,
 ): Promise<{ connection: SourceConnectionRow; token: string }> {
   if (!run.source_connection_id) {
-    throw new SourceError("INVALID_CONFIGURATION", "collection run has no source connection");
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "collection run has no source connection",
+    );
   }
   const connection = await new SourceConnectionsRepository(ctx.db).findById(
     scope,
     run.source_connection_id,
   );
-  if (!connection) throw new SourceError("INVALID_CONFIGURATION", "source connection missing");
+  if (!connection)
+    throw new SourceError("INVALID_CONFIGURATION", "source connection missing");
   const cred = await new SourceCredentialsRepository(ctx.db).findByConnection(
     scope,
     run.source_connection_id,
   );
-  if (!cred) throw new SourceError("AUTH_REQUIRED", "no stored credential; reconnect required");
-  const token = decryptCredential(cred.encrypted_payload, ctx.credentialKey).toString("utf8");
+  if (!cred)
+    throw new SourceError(
+      "AUTH_REQUIRED",
+      "no stored credential; reconnect required",
+    );
+  const token = decryptCredential(
+    cred.encrypted_payload,
+    ctx.credentialKey,
+  ).toString("utf8");
   return { connection, token };
 }
 
@@ -241,15 +304,26 @@ async function loadCsvImport(
 }> {
   const { ImportPreviewsRepository } = await import("@sf/db");
   const payload = run.import_preview_id
-    ? await new ImportPreviewsRepository(ctx.db).findById(scope, run.import_preview_id)
+    ? await new ImportPreviewsRepository(ctx.db).findById(
+        scope,
+        run.import_preview_id,
+      )
     : null;
-  if (!payload) throw new SourceError("INVALID_CONFIGURATION", "import preview missing");
+  if (!payload)
+    throw new SourceError("INVALID_CONFIGURATION", "import preview missing");
 
   const raw = await ctx.blobStore.get(payload.raw_object_key);
-  if (!raw) throw new SourceError("UNAVAILABLE", "raw import object missing from storage");
+  if (!raw)
+    throw new SourceError(
+      "UNAVAILABLE",
+      "raw import object missing from storage",
+    );
   const text = raw.toString("utf8");
 
-  const runPayload = await new AsyncRunsRepository(ctx.db).findById(scope, run.id);
+  const runPayload = await new AsyncRunsRepository(ctx.db).findById(
+    scope,
+    run.id,
+  );
   const req = (runPayload?.request_payload ?? {}) as {
     mapping?: Record<string, string | null>;
     marketFallback?: string | null;
@@ -289,12 +363,20 @@ function buildIndexMapping(
   };
 }
 
-function readConfigString(config: Record<string, unknown>, key: string): string | null {
+function readConfigString(
+  config: Record<string, unknown>,
+  key: string,
+): string | null {
   const v = config[key];
   return typeof v === "string" ? v : null;
 }
 
-function readConfigStringArray(config: Record<string, unknown>, key: string): string[] {
+function readConfigStringArray(
+  config: Record<string, unknown>,
+  key: string,
+): string[] {
   const v = config[key];
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  return Array.isArray(v)
+    ? v.filter((x): x is string => typeof x === "string")
+    : [];
 }

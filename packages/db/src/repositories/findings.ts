@@ -48,9 +48,13 @@ export interface FindingListPage {
 }
 
 function encodeCursor(row: { updated_at: string; id: string }): string {
-  return Buffer.from(`${row.updated_at} ${row.id}`, "utf8").toString("base64url");
+  return Buffer.from(`${row.updated_at} ${row.id}`, "utf8").toString(
+    "base64url",
+  );
 }
-function decodeCursor(cursor: string): { updatedAt: string; id: string } | null {
+function decodeCursor(
+  cursor: string,
+): { updatedAt: string; id: string } | null {
   try {
     const raw = Buffer.from(cursor, "base64url").toString("utf8");
     const idx = raw.indexOf(" ");
@@ -62,11 +66,19 @@ function decodeCursor(cursor: string): { updatedAt: string; id: string } | null 
 }
 
 export class FindingsRepository extends Repository {
-  async findByKey(scope: ProjectScope, findingKey: string): Promise<FindingRow | null> {
+  async findByKey(
+    scope: ProjectScope,
+    findingKey: string,
+  ): Promise<FindingRow | null> {
     const rows = await this.exec
       .select()
       .from(findings)
-      .where(and(projectPredicate(findings, scope), eq(findings.finding_key, findingKey)))
+      .where(
+        and(
+          projectPredicate(findings, scope),
+          eq(findings.finding_key, findingKey),
+        ),
+      )
       .limit(1);
     return (rows[0] as FindingRow | undefined) ?? null;
   }
@@ -197,7 +209,13 @@ export class FindingsRepository extends Repository {
     return rows.map((r) => r.id);
   }
 
-  /** Update the review projection in the review mutation tx (spec §9.1). */
+  /**
+   * Update the review projection in the review mutation tx (spec §9.1). The
+   * update is GUARDED by `expectedRevision` (optimistic concurrency); it returns
+   * false when no row matched (a concurrent reviewer already advanced the
+   * revision), which the caller maps to 409 VERSION_CONFLICT. The conditional
+   * UPDATE also takes the row lock, serializing concurrent reviewers.
+   */
   async updateReview(
     scope: ProjectScope,
     id: string,
@@ -206,9 +224,10 @@ export class FindingsRepository extends Repository {
       reviewRevision: number;
       reason: string | null;
       note: string | null;
+      expectedRevision: number;
     },
-  ): Promise<void> {
-    await this.exec
+  ): Promise<boolean> {
+    const rows = (await this.exec
       .update(findings)
       .set({
         review_state: values.reviewState,
@@ -217,7 +236,15 @@ export class FindingsRepository extends Repository {
         review_note: values.note,
         updated_at: sql`now()`,
       })
-      .where(and(projectPredicate(findings, scope), eq(findings.id, id)));
+      .where(
+        and(
+          projectPredicate(findings, scope),
+          eq(findings.id, id),
+          eq(findings.review_revision, values.expectedRevision),
+        ),
+      )
+      .returning({ id: findings.id })) as { id: string }[];
+    return rows.length > 0;
   }
 
   /** Keyset page of a project's findings, newest first (spec §11.3). */
@@ -230,10 +257,15 @@ export class FindingsRepository extends Repository {
       keyset != null
         ? or(
             lt(findings.updated_at, keyset.updatedAt),
-            and(eq(findings.updated_at, keyset.updatedAt), lt(findings.id, keyset.id)),
+            and(
+              eq(findings.updated_at, keyset.updatedAt),
+              lt(findings.id, keyset.id),
+            ),
           )
         : undefined;
-    const activeFilter = opts.activeOnly ? eq(findings.active, true) : undefined;
+    const activeFilter = opts.activeOnly
+      ? eq(findings.active, true)
+      : undefined;
 
     const rows = (await this.exec
       .select()
@@ -245,6 +277,9 @@ export class FindingsRepository extends Repository {
     const hasNext = rows.length > opts.limit;
     const page = hasNext ? rows.slice(0, opts.limit) : rows;
     const last = page[page.length - 1];
-    return { rows: page, nextCursor: hasNext && last ? encodeCursor(last) : null };
+    return {
+      rows: page,
+      nextCursor: hasNext && last ? encodeCursor(last) : null,
+    };
   }
 }

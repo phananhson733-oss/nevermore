@@ -178,8 +178,16 @@ async function computeAndPersist(
     deliveryLocale: diagRun.output_locale,
   });
 
-  const runStatus: "completed" | "partial" =
-    pipeline.coverage.overall === "available" ? "completed" : "partial";
+  // A run is `completed` (and may therefore auto-resolve stale findings, §8.6)
+  // ONLY when every rule actually ran to pass/candidate — a single skipped
+  // (missing dataset) or inconclusive rule makes the whole run `partial`, which
+  // must NOT resolve anything.
+  const allRulesRan = pipeline.ruleResults.every(
+    (r) => r.status === "pass" || r.status === "candidate",
+  );
+  const runStatus: "completed" | "partial" = allRulesRan
+    ? "completed"
+    : "partial";
   const now = new Date().toISOString();
 
   await ctx.db.transaction(async (tx) => {

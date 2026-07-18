@@ -49,11 +49,17 @@ interface RunRequest {
 }
 
 function contentHashOf(content: ArtifactContent): string {
-  const payload = typeof content.content === "string" ? content.content : JSON.stringify(content.content);
+  const payload =
+    typeof content.content === "string"
+      ? content.content
+      : JSON.stringify(content.content);
   return createHash("sha256").update(payload, "utf8").digest("hex");
 }
 
-export async function runArtifact(ctx: WorkerContext, payload: ArtifactJobPayload): Promise<void> {
+export async function runArtifact(
+  ctx: WorkerContext,
+  payload: ArtifactJobPayload,
+): Promise<void> {
   const { runId, workspaceId, projectId } = payload;
   const scope: ProjectScope = { workspaceId, projectId };
   const runs = new AsyncRunsRepository(ctx.db);
@@ -64,7 +70,11 @@ export async function runArtifact(ctx: WorkerContext, payload: ArtifactJobPayloa
   const artifactsRepo = new ExecutionArtifactsRepository(ctx.db);
   const artifact = await artifactsRepo.findById(scope, req.artifactId);
   if (!artifact) {
-    await runs.setTerminal(runId, { status: "failed", lastErrorCode: "NOT_FOUND", lastErrorSummary: "artifact missing" });
+    await runs.setTerminal(runId, {
+      status: "failed",
+      lastErrorCode: "NOT_FOUND",
+      lastErrorSummary: "artifact missing",
+    });
     return;
   }
 
@@ -74,7 +84,10 @@ export async function runArtifact(ctx: WorkerContext, payload: ArtifactJobPayloa
     let invocationId: string | null = null;
 
     if (req.generationMode === "structured_llm") {
-      const client = createOpenAIClient({ apiKey: ctx.openai.apiKey, model: ctx.openai.model });
+      const client = createOpenAIClient({
+        apiKey: ctx.openai.apiKey,
+        model: ctx.openai.model,
+      });
       const result: LLMArtifactResult = await client.generateArtifact(input);
       content = result.content;
       invocationId = await new AnalysisInvocationsRepository(ctx.db).insert({
@@ -112,10 +125,13 @@ export async function runArtifact(ctx: WorkerContext, payload: ArtifactJobPayloa
         artifactId: req.artifactId,
         revision: nextRevision,
         contentFormat: ARTIFACT_FORMAT[req.artifactType],
-        contentText: typeof content.content === "string" ? content.content : null,
-        contentJson: typeof content.content === "string" ? null : content.content,
+        contentText:
+          typeof content.content === "string" ? content.content : null,
+        contentJson:
+          typeof content.content === "string" ? null : content.content,
         contentHash: hash,
-        generatedBy: req.generationMode === "structured_llm" ? "llm" : "template",
+        generatedBy:
+          req.generationMode === "structured_llm" ? "llm" : "template",
         editorId: null,
         analysisInvocationId: invocationId,
         note: null,
@@ -129,15 +145,26 @@ export async function runArtifact(ctx: WorkerContext, payload: ArtifactJobPayloa
       });
       await new AsyncRunsRepository(tx).setTerminal(runId, {
         status: "completed",
-        resultType: "execution_artifact",
+        resultType: "artifact",
         resultId: req.artifactId,
       });
     });
-    ctx.logger.info("artifact_done", { runId, artifactId: req.artifactId, valid: validation.valid });
+    ctx.logger.info("artifact_done", {
+      runId,
+      artifactId: req.artifactId,
+      valid: validation.valid,
+    });
   } catch (error) {
-    ctx.logger.error("artifact_failed", { runId, message: error instanceof Error ? error.message : "unknown" });
+    ctx.logger.error("artifact_failed", {
+      runId,
+      message: error instanceof Error ? error.message : "unknown",
+    });
     await artifactsRepo.setFailed(req.artifactId);
-    await runs.setTerminal(runId, { status: "failed", lastErrorCode: "UNAVAILABLE", lastErrorSummary: "artifact generation failed" });
+    await runs.setTerminal(runId, {
+      status: "failed",
+      lastErrorCode: "UNAVAILABLE",
+      lastErrorSummary: "artifact generation failed",
+    });
   }
 }
 
@@ -148,9 +175,15 @@ async function buildPromptInput(
 ): Promise<ArtifactPromptInput> {
   void ARTIFACT_FORMAT;
   void PROMPT_SET_VERSION;
-  const action = await new ActionsRepository(ctx.db).findById(scope, req.actionId);
+  const action = await new ActionsRepository(ctx.db).findById(
+    scope,
+    req.actionId,
+  );
   if (!action) throw new Error("action missing");
-  const finding = await new FindingsRepository(ctx.db).findById(scope, action.source_finding_id);
+  const finding = await new FindingsRepository(ctx.db).findById(
+    scope,
+    action.source_finding_id,
+  );
   if (!finding) throw new Error("source finding missing");
 
   const project = await new ProjectsRepository(ctx.db).findById(
@@ -158,19 +191,27 @@ async function buildPromptInput(
     scope.projectId,
   );
   const icpRow = project?.current_icp_profile_id
-    ? await new IcpProfilesRepository(ctx.db).findById(scope, project.current_icp_profile_id)
+    ? await new IcpProfilesRepository(ctx.db).findById(
+        scope,
+        project.current_icp_profile_id,
+      )
     : null;
   const icp = parseIcp(icpRow?.profile ?? {});
 
   // Evidence excerpts: claims + grades only (spec §10.2 allowlist).
   const evidenceRepo = new EvidenceRepository(ctx.db);
   const links = await evidenceRepo.listForFindings(scope, [finding.id]);
-  const evidenceRows = await evidenceRepo.findByIds(scope, links.map((l) => l.evidence_id));
+  const evidenceRows = await evidenceRepo.findByIds(
+    scope,
+    links.map((l) => l.evidence_id),
+  );
   const evidence: EvidenceExcerpt[] = evidenceRows.map((e) => ({
     evidenceId: e.id,
     claim: e.claim,
     grade: e.grade,
-    subjectRefs: (e.subject_refs as unknown[]).filter((x): x is string => typeof x === "string"),
+    subjectRefs: (e.subject_refs as unknown[]).filter(
+      (x): x is string => typeof x === "string",
+    ),
     observedAt: e.observed_at,
   }));
 
@@ -201,9 +242,12 @@ async function buildPromptInput(
       summary: finding.summary,
       severity: finding.severity,
       confidence: finding.confidence,
-      subjectRefs: (finding.subject_refs as unknown[]).filter((x): x is string => typeof x === "string"),
+      subjectRefs: (finding.subject_refs as unknown[]).filter(
+        (x): x is string => typeof x === "string",
+      ),
     },
     evidence,
-    requiresValidationRollback: req.artifactType === "technical_ticket" && action.risk === "high",
+    requiresValidationRollback:
+      req.artifactType === "technical_ticket" && action.risk === "high",
   };
 }

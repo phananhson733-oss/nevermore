@@ -34,14 +34,14 @@ export const ReviewFindingRequest = z.discriminatedUnion("reviewState", [
     .object({
       reviewState: z.literal("ignored"),
       baseRevision: z.number().int().min(0),
-      reason: z.string().min(3).max(2000),
+      reason: z.string().trim().min(3).max(2000),
     })
     .strict(),
   z
     .object({
       reviewState: z.literal("needs_more_data"),
       baseRevision: z.number().int().min(0),
-      note: z.string().min(3).max(2000),
+      note: z.string().trim().min(3).max(2000),
     })
     .strict(),
 ]);
@@ -74,7 +74,7 @@ export const UpdateActionRequest = z
     status: ActionStatus.optional(),
     priorityBand: PriorityBand.optional(),
     roadmapLane: RoadmapLane.optional(),
-    reason: z.string().min(3).max(1000),
+    reason: z.string().trim().min(3).max(1000),
     note: z.string().max(4000).nullable().optional(),
   })
   .strict()

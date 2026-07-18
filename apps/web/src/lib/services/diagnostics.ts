@@ -55,16 +55,26 @@ function snapshotManifestEntry(s: DataSnapshotRow) {
 }
 
 function replay(
-  row: { request_hash: string; status: string; resource_id: string | null; response_body: unknown },
+  row: {
+    request_hash: string;
+    status: string;
+    resource_id: string | null;
+    response_body: unknown;
+  },
   requestHash: string,
 ): DiagnosticAcceptedResult | null {
   if (row.request_hash !== requestHash) {
-    throw new ProblemError("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key reused with a different body.");
+    throw new ProblemError(
+      "IDEMPOTENCY_KEY_REUSED",
+      "Idempotency-Key reused with a different body.",
+    );
   }
   if (row.status === "completed" && row.resource_id) {
-    const body = row.response_body as
-      | { run: AsyncRunDto; statusUrl: string; resourceRef: { type: "diagnostic_run"; id: string } }
-      | null;
+    const body = row.response_body as {
+      run: AsyncRunDto;
+      statusUrl: string;
+      resourceRef: { type: "diagnostic_run"; id: string };
+    } | null;
     if (body?.run) {
       return {
         status: 202,
@@ -92,32 +102,63 @@ export async function createDiagnosticRun(
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
-  if (project.archived_at) throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+  if (project.archived_at)
+    throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
 
   // Hard gate 1: a COMPLETE ICP profile is required.
   if (!project.current_icp_profile_id) {
-    throw new ProblemError("CONTEXT_INCOMPLETE", "A complete ICP profile is required to diagnose.");
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "A complete ICP profile is required to diagnose.",
+    );
   }
-  const icp = await new IcpProfilesRepository(db).findById(projectScope, project.current_icp_profile_id);
+  const icp = await new IcpProfilesRepository(db).findById(
+    projectScope,
+    project.current_icp_profile_id,
+  );
   if (!icp || icp.status !== "complete") {
-    throw new ProblemError("CONTEXT_INCOMPLETE", "The ICP profile must be complete to diagnose.");
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "The ICP profile must be complete to diagnose.",
+    );
   }
 
   const site = await new SitesRepository(db).findPrimary(projectScope);
-  if (!site) throw new ProblemError("NOT_FOUND", "Project has no primary site.");
+  if (!site)
+    throw new ProblemError("NOT_FOUND", "Project has no primary site.");
 
   // Load + validate the selected snapshots (project-scoped).
-  const snapshots = await new DataSnapshotsRepository(db).findByIds(projectScope, body.snapshotIds);
+  const snapshots = await new DataSnapshotsRepository(db).findByIds(
+    projectScope,
+    body.snapshotIds,
+  );
   if (snapshots.length !== body.snapshotIds.length) {
-    throw new ProblemError("SNAPSHOT_PROJECT_MISMATCH", "A selected snapshot does not belong to this project.");
+    throw new ProblemError(
+      "SNAPSHOT_PROJECT_MISMATCH",
+      "A selected snapshot does not belong to this project.",
+    );
   }
   // Hard gate 2: at least one crawl snapshot.
   if (!snapshots.some((s) => s.provider === "crawl")) {
-    throw new ProblemError("CRAWL_SNAPSHOT_REQUIRED", "A crawl snapshot is required to diagnose.");
+    throw new ProblemError(
+      "CRAWL_SNAPSHOT_REQUIRED",
+      "A crawl snapshot is required to diagnose.",
+    );
+  }
+  // At most one snapshot per provider — two crawl snapshots would merge into the
+  // same observation maps in unspecified order (evidence-honesty risk).
+  const providers = snapshots.map((s) => s.provider);
+  if (new Set(providers).size !== providers.length) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Select at most one snapshot per provider.",
+    );
   }
 
   // Freeze + hash the input manifest (spec §8.1).
-  const orderedSnapshots = [...snapshots].sort((a, b) => (a.id < b.id ? -1 : 1));
+  const orderedSnapshots = [...snapshots].sort((a, b) =>
+    a.id < b.id ? -1 : 1,
+  );
   const inputManifest = {
     projectId,
     siteId: site.id,
@@ -127,84 +168,139 @@ export async function createDiagnosticRun(
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: body.outputLocale,
   };
-  const inputHash = contentHash(inputManifest as unknown as Parameters<typeof contentHash>[0]);
-  const requestHash = contentHash({ snapshotIds: [...body.snapshotIds].sort(), outputLocale: body.outputLocale });
+  const inputHash = contentHash(
+    inputManifest as unknown as Parameters<typeof contentHash>[0],
+  );
+  const requestHash = contentHash({
+    snapshotIds: [...body.snapshotIds].sort(),
+    outputLocale: body.outputLocale,
+  });
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
   const idem = new IdempotencyRepository(db);
-  const existing = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+  const existing = await idem.find(
+    scope.workspaceId,
+    IDEMPOTENCY_SCOPE,
+    idempotencyKey,
+  );
   if (existing) {
     const replayed = replay(existing, requestHash);
     if (replayed) return replayed;
   }
-  const active = await new AsyncRunsRepository(db).findActive(projectScope, DIAGNOSTIC_ACTIVE_KEY);
+  const active = await new AsyncRunsRepository(db).findActive(
+    projectScope,
+    DIAGNOSTIC_ACTIVE_KEY,
+  );
   if (active) {
-    throw new ProblemError("RUN_ALREADY_ACTIVE", "A diagnostic run is already active.", {
-      headers: { Location: runStatusUrl(projectId, active.id) },
-    });
+    throw new ProblemError(
+      "RUN_ALREADY_ACTIVE",
+      "A diagnostic run is already active.",
+      {
+        headers: { Location: runStatusUrl(projectId, active.id) },
+      },
+    );
   }
 
-  return db.transaction(async (tx) => {
-    const txIdem = new IdempotencyRepository(tx);
-    const reserved = await txIdem.begin({
-      workspaceId: scope.workspaceId,
-      scope: IDEMPOTENCY_SCOPE,
-      key: idempotencyKey,
-      requestHash,
-      expiresAt,
+  try {
+    return await db.transaction(async (tx) => {
+      const txIdem = new IdempotencyRepository(tx);
+      const reserved = await txIdem.begin({
+        workspaceId: scope.workspaceId,
+        scope: IDEMPOTENCY_SCOPE,
+        key: idempotencyKey,
+        requestHash,
+        expiresAt,
+      });
+      if (!reserved) {
+        const now = await txIdem.find(
+          scope.workspaceId,
+          IDEMPOTENCY_SCOPE,
+          idempotencyKey,
+        );
+        const replayed = now ? replay(now, requestHash) : null;
+        if (replayed) return replayed;
+        throw new ProblemError(
+          "IDEMPOTENCY_KEY_REUSED",
+          "Idempotency key is being processed.",
+        );
+      }
+
+      const run = await new AsyncRunsRepository(tx).insertQueued({
+        workspaceId: scope.workspaceId,
+        projectId,
+        kind: "diagnostic",
+        activeKey: DIAGNOSTIC_ACTIVE_KEY,
+        initiatedBy: actorId,
+        contractVersion: CONTRACT_VERSION,
+        requestPayload: {
+          snapshotIds: [...body.snapshotIds],
+          outputLocale: body.outputLocale,
+        },
+      });
+      await new DiagnosticRunsRepository(tx).insert({
+        runId: run.id,
+        workspaceId: scope.workspaceId,
+        projectId,
+        siteId: site.id,
+        icpProfileId: icp.id,
+        icpProfileVersion: icp.version,
+        ruleSetVersion: RULE_SET_VERSION,
+        promptSetVersion: PROMPT_SET_VERSION,
+        outputLocale: body.outputLocale,
+        inputManifest,
+        inputHash,
+      });
+      await enqueueRunInTx(boss, tx, "diagnose", {
+        runId: run.id,
+        workspaceId: scope.workspaceId,
+        projectId,
+        contractVersion: CONTRACT_VERSION,
+      });
+
+      const dto = toAsyncRunDto(run);
+      const statusUrl = runStatusUrl(projectId, run.id);
+      await txIdem.complete(reserved.id, {
+        responseStatus: 202,
+        responseBody: {
+          run: dto,
+          statusUrl,
+          resourceRef: { type: "diagnostic_run", id: run.id },
+        },
+        resourceType: "diagnostic_run",
+        resourceId: run.id,
+      });
+
+      return {
+        status: 202,
+        run: dto,
+        statusUrl,
+        resourceRef: { type: "diagnostic_run" as const, id: run.id },
+        location: statusUrl,
+        replayed: false,
+      };
     });
-    if (!reserved) {
-      const now = await txIdem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
-      const replayed = now ? replay(now, requestHash) : null;
-      if (replayed) return replayed;
-      throw new ProblemError("IDEMPOTENCY_KEY_REUSED", "Idempotency key is being processed.");
+  } catch (error) {
+    // Lost the active-key race: the partial unique index aborted the insert.
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "23505"
+    ) {
+      const winner = await new AsyncRunsRepository(db).findActive(
+        projectScope,
+        DIAGNOSTIC_ACTIVE_KEY,
+      );
+      throw new ProblemError(
+        "RUN_ALREADY_ACTIVE",
+        "A diagnostic run is already active.",
+        {
+          ...(winner
+            ? { headers: { Location: runStatusUrl(projectId, winner.id) } }
+            : {}),
+        },
+      );
     }
-
-    const run = await new AsyncRunsRepository(tx).insertQueued({
-      workspaceId: scope.workspaceId,
-      projectId,
-      kind: "diagnostic",
-      activeKey: DIAGNOSTIC_ACTIVE_KEY,
-      initiatedBy: actorId,
-      contractVersion: CONTRACT_VERSION,
-      requestPayload: { snapshotIds: [...body.snapshotIds], outputLocale: body.outputLocale },
-    });
-    await new DiagnosticRunsRepository(tx).insert({
-      runId: run.id,
-      workspaceId: scope.workspaceId,
-      projectId,
-      siteId: site.id,
-      icpProfileId: icp.id,
-      icpProfileVersion: icp.version,
-      ruleSetVersion: RULE_SET_VERSION,
-      promptSetVersion: PROMPT_SET_VERSION,
-      outputLocale: body.outputLocale,
-      inputManifest,
-      inputHash,
-    });
-    await enqueueRunInTx(boss, tx, "diagnose", {
-      runId: run.id,
-      workspaceId: scope.workspaceId,
-      projectId,
-      contractVersion: CONTRACT_VERSION,
-    });
-
-    const dto = toAsyncRunDto(run);
-    const statusUrl = runStatusUrl(projectId, run.id);
-    await txIdem.complete(reserved.id, {
-      responseStatus: 202,
-      responseBody: { run: dto, statusUrl, resourceRef: { type: "diagnostic_run", id: run.id } },
-      resourceType: "diagnostic_run",
-      resourceId: run.id,
-    });
-
-    return {
-      status: 202,
-      run: dto,
-      statusUrl,
-      resourceRef: { type: "diagnostic_run" as const, id: run.id },
-      location: statusUrl,
-      replayed: false,
-    };
-  });
+    throw error;
+  }
 }

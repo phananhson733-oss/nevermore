@@ -61,81 +61,127 @@ export async function createProjectExport(
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
-  if (project.archived_at) throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+  if (project.archived_at)
+    throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
 
   const activeKey = `export:${body.kind}`;
-  const requestHash = contentHash({ kind: body.kind, outputLocale: body.outputLocale });
+  const requestHash = contentHash({
+    kind: body.kind,
+    outputLocale: body.outputLocale,
+  });
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
   const idem = new IdempotencyRepository(db);
-  const existing = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+  const existing = await idem.find(
+    scope.workspaceId,
+    IDEMPOTENCY_SCOPE,
+    idempotencyKey,
+  );
   if (existing) {
     if (existing.request_hash !== requestHash) {
-      throw new ProblemError("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key reused with a different body.");
+      throw new ProblemError(
+        "IDEMPOTENCY_KEY_REUSED",
+        "Idempotency-Key reused with a different body.",
+      );
     }
     if (existing.status === "completed" && existing.resource_id) {
       const b = existing.response_body as ExportAcceptedResult | null;
       if (b?.run) return { ...b, status: 202 };
     }
   }
-  const active = await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
+  const active = await new AsyncRunsRepository(db).findActive(
+    projectScope,
+    activeKey,
+  );
   if (active) {
-    throw new ProblemError("RUN_ALREADY_ACTIVE", "An export of this kind is already running.", {
-      headers: { Location: runStatusUrl(projectId, active.id) },
-    });
+    throw new ProblemError(
+      "RUN_ALREADY_ACTIVE",
+      "An export of this kind is already running.",
+      {
+        headers: { Location: runStatusUrl(projectId, active.id) },
+      },
+    );
   }
 
-  return db.transaction(async (tx) => {
-    const txIdem = new IdempotencyRepository(tx);
-    const reserved = await txIdem.begin({
-      workspaceId: scope.workspaceId,
-      scope: IDEMPOTENCY_SCOPE,
-      key: idempotencyKey,
-      requestHash,
-      expiresAt,
-    });
-    if (!reserved) throw new ProblemError("IDEMPOTENCY_KEY_REUSED", "Idempotency key is being processed.");
+  try {
+    return await db.transaction(async (tx) => {
+      const txIdem = new IdempotencyRepository(tx);
+      const reserved = await txIdem.begin({
+        workspaceId: scope.workspaceId,
+        scope: IDEMPOTENCY_SCOPE,
+        key: idempotencyKey,
+        requestHash,
+        expiresAt,
+      });
+      if (!reserved)
+        throw new ProblemError(
+          "IDEMPOTENCY_KEY_REUSED",
+          "Idempotency key is being processed.",
+        );
 
-    const run = await new AsyncRunsRepository(tx).insertQueued({
-      workspaceId: scope.workspaceId,
-      projectId,
-      kind: "export",
-      activeKey,
-      initiatedBy: actorId,
-      contractVersion: CONTRACT_VERSION,
-      requestPayload: { kind: body.kind, outputLocale: body.outputLocale },
-    });
-    const bundle = await new ExportBundlesRepository(tx).insert({
-      workspaceId: scope.workspaceId,
-      projectId,
-      asyncRunId: run.id,
-      kind: body.kind,
-      outputLocale: body.outputLocale,
-      createdBy: actorId,
-    });
-    await enqueueRunInTx(boss, tx, "export.bundle", {
-      runId: run.id,
-      workspaceId: scope.workspaceId,
-      projectId,
-      contractVersion: CONTRACT_VERSION,
-    });
+      const run = await new AsyncRunsRepository(tx).insertQueued({
+        workspaceId: scope.workspaceId,
+        projectId,
+        kind: "export",
+        activeKey,
+        initiatedBy: actorId,
+        contractVersion: CONTRACT_VERSION,
+        requestPayload: { kind: body.kind, outputLocale: body.outputLocale },
+      });
+      const bundle = await new ExportBundlesRepository(tx).insert({
+        workspaceId: scope.workspaceId,
+        projectId,
+        asyncRunId: run.id,
+        kind: body.kind,
+        outputLocale: body.outputLocale,
+        createdBy: actorId,
+      });
+      await enqueueRunInTx(boss, tx, "export.bundle", {
+        runId: run.id,
+        workspaceId: scope.workspaceId,
+        projectId,
+        contractVersion: CONTRACT_VERSION,
+      });
 
-    const statusUrl = runStatusUrl(projectId, run.id);
-    const result: ExportAcceptedResult = {
-      status: 202,
-      run: toAsyncRunDto(run),
-      statusUrl,
-      resourceRef: { type: "export_bundle", id: bundle.id },
-      location: statusUrl,
-    };
-    await txIdem.complete(reserved.id, {
-      responseStatus: 202,
-      responseBody: result,
-      resourceType: "export_bundle",
-      resourceId: bundle.id,
+      const statusUrl = runStatusUrl(projectId, run.id);
+      const result: ExportAcceptedResult = {
+        status: 202,
+        run: toAsyncRunDto(run),
+        statusUrl,
+        resourceRef: { type: "export_bundle", id: bundle.id },
+        location: statusUrl,
+      };
+      await txIdem.complete(reserved.id, {
+        responseStatus: 202,
+        responseBody: result,
+        resourceType: "export_bundle",
+        resourceId: bundle.id,
+      });
+      return result;
     });
-    return result;
-  });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "23505"
+    ) {
+      const winner = await new AsyncRunsRepository(db).findActive(
+        projectScope,
+        activeKey,
+      );
+      throw new ProblemError(
+        "RUN_ALREADY_ACTIVE",
+        "An export of this kind is already running.",
+        {
+          ...(winner
+            ? { headers: { Location: runStatusUrl(projectId, winner.id) } }
+            : {}),
+        },
+      );
+    }
+    throw error;
+  }
 }
 
 export async function getProjectExport(
@@ -145,19 +191,35 @@ export async function getProjectExport(
 ): Promise<ExportBundleDto> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
-  const bundle = await new ExportBundlesRepository(db).findById(projectScope, exportId);
+  const bundle = await new ExportBundlesRepository(db).findById(
+    projectScope,
+    exportId,
+  );
   if (!bundle) throw new ProblemError("NOT_FOUND", "Export not found.");
-  const run = await new AsyncRunsRepository(db).findById(projectScope, bundle.async_run_id);
+  const run = await new AsyncRunsRepository(db).findById(
+    projectScope,
+    bundle.async_run_id,
+  );
   if (!run) throw new ProblemError("NOT_FOUND", "Export run not found.");
 
   let downloadUrl: string | null = null;
   let downloadExpiresAt: string | null = null;
   if (bundle.object_key && run.status === "completed") {
-    downloadUrl = await getBlobStore().signedUrl(bundle.object_key, SIGNED_URL_TTL_S);
-    downloadExpiresAt = new Date(Date.now() + SIGNED_URL_TTL_S * 1000).toISOString();
+    downloadUrl = await getBlobStore().signedUrl(
+      bundle.object_key,
+      SIGNED_URL_TTL_S,
+    );
+    downloadExpiresAt = new Date(
+      Date.now() + SIGNED_URL_TTL_S * 1000,
+    ).toISOString();
   }
 
-  return toExportBundleDto(bundle, toAsyncRunDto(run), downloadUrl, downloadExpiresAt);
+  return toExportBundleDto(
+    bundle,
+    toAsyncRunDto(run),
+    downloadUrl,
+    downloadExpiresAt,
+  );
 }
 
 function toExportBundleDto(

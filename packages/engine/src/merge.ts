@@ -1,4 +1,9 @@
-import type { EvidenceDraft, FindingCandidate, RuleId, Severity } from "./rule.ts";
+import type {
+  EvidenceDraft,
+  FindingCandidate,
+  RuleId,
+  Severity,
+} from "./rule.ts";
 import { FINDING_REGISTRY } from "./registry.ts";
 import { canonicalize, contentHash } from "./util/hash.ts";
 
@@ -36,10 +41,11 @@ function sortedSubjectRefs(refs: readonly string[]): string[] {
 
 function mergeKey(ruleId: RuleId, subjectRefs: readonly string[]): string {
   const meta = FINDING_REGISTRY[ruleId];
+  // Canonical field name is `sortedSubjectRefs` per spec §8.6.
   return canonicalize({
     domain: meta.domain,
     ruleFamily: meta.ruleFamily,
-    subjectRefs: sortedSubjectRefs(subjectRefs),
+    sortedSubjectRefs: sortedSubjectRefs(subjectRefs),
     intent: meta.intent,
   });
 }
@@ -55,7 +61,7 @@ export function findingKey(
     projectId,
     domain: meta.domain,
     ruleFamily: meta.ruleFamily,
-    subjectRefs: sortedSubjectRefs(subjectRefs),
+    sortedSubjectRefs: sortedSubjectRefs(subjectRefs),
     intent: meta.intent,
   });
 }
@@ -66,7 +72,10 @@ export function findingKey(
  * preserved for determinism.
  */
 export function mergeRunCandidates(
-  perRule: readonly { ruleId: RuleId; candidates: readonly FindingCandidate[] }[],
+  perRule: readonly {
+    ruleId: RuleId;
+    candidates: readonly FindingCandidate[];
+  }[],
 ): MergedCandidate[] {
   const byKey = new Map<string, MergedCandidate>();
   for (const { ruleId, candidates } of perRule) {

@@ -345,98 +345,122 @@ export async function confirmImport(
     "csv",
   );
 
-  return db.transaction(async (tx) => {
-    const txIdem = new IdempotencyRepository(tx);
-    const reserved = await txIdem.begin({
-      workspaceId: scope.workspaceId,
-      scope: IDEMPOTENCY_SCOPE,
-      key: idempotencyKey,
-      requestHash,
-      expiresAt,
-    });
-    if (!reserved) {
-      const now = await txIdem.find(
-        scope.workspaceId,
-        IDEMPOTENCY_SCOPE,
-        idempotencyKey,
-      );
-      const replay = now ? replayConfirm(now, requestHash) : null;
-      if (replay) return replay;
-      throw new ProblemError(
-        "IDEMPOTENCY_KEY_REUSED",
-        "Idempotency key is being processed.",
-      );
-    }
+  try {
+    return await db.transaction(async (tx) => {
+      const txIdem = new IdempotencyRepository(tx);
+      const reserved = await txIdem.begin({
+        workspaceId: scope.workspaceId,
+        scope: IDEMPOTENCY_SCOPE,
+        key: idempotencyKey,
+        requestHash,
+        expiresAt,
+      });
+      if (!reserved) {
+        const now = await txIdem.find(
+          scope.workspaceId,
+          IDEMPOTENCY_SCOPE,
+          idempotencyKey,
+        );
+        const replay = now ? replayConfirm(now, requestHash) : null;
+        if (replay) return replay;
+        throw new ProblemError(
+          "IDEMPOTENCY_KEY_REUSED",
+          "Idempotency key is being processed.",
+        );
+      }
 
-    const csvConnection =
-      existingCsv ??
-      (await new SourceConnectionsRepository(tx).insertConnection({
+      const csvConnection =
+        existingCsv ??
+        (await new SourceConnectionsRepository(tx).insertConnection({
+          workspaceId: scope.workspaceId,
+          projectId,
+          siteId: site.id,
+          provider: "csv",
+          connectionType: "file_import",
+          state: "connected",
+          limitation: "Keyword-gap CSV provided by the operator.",
+          connectedAt: true,
+          createdBy: actorId,
+        }));
+
+      const run = await new AsyncRunsRepository(tx).insertQueued({
+        workspaceId: scope.workspaceId,
+        projectId,
+        kind: "collection",
+        activeKey: CSV_ACTIVE_KEY,
+        initiatedBy: actorId,
+        contractVersion: CONTRACT_VERSION,
+        requestPayload: {
+          provider: "csv",
+          operation: "keyword_gap_import",
+          importPreviewId: preview.id,
+          mapping,
+          marketFallback: site.market_codes[0] ?? null,
+          languageFallback: site.language_codes[0] ?? null,
+        },
+      });
+      await new CollectionRunsRepository(tx).insertPlaceholder({
+        runId: run.id,
         workspaceId: scope.workspaceId,
         projectId,
         siteId: site.id,
-        provider: "csv",
-        connectionType: "file_import",
-        state: "connected",
-        limitation: "Keyword-gap CSV provided by the operator.",
-        connectedAt: true,
-        createdBy: actorId,
-      }));
-
-    const run = await new AsyncRunsRepository(tx).insertQueued({
-      workspaceId: scope.workspaceId,
-      projectId,
-      kind: "collection",
-      activeKey: CSV_ACTIVE_KEY,
-      initiatedBy: actorId,
-      contractVersion: CONTRACT_VERSION,
-      requestPayload: {
+        sourceConnectionId: csvConnection.id,
         provider: "csv",
         operation: "keyword_gap_import",
-        importPreviewId: preview.id,
-        mapping,
-        marketFallback: site.market_codes[0] ?? null,
-        languageFallback: site.language_codes[0] ?? null,
-      },
-    });
-    await new CollectionRunsRepository(tx).insertPlaceholder({
-      runId: run.id,
-      workspaceId: scope.workspaceId,
-      projectId,
-      siteId: site.id,
-      sourceConnectionId: csvConnection.id,
-      provider: "csv",
-      operation: "keyword_gap_import",
-      methodVersion: CSV_METHOD_VERSION,
-      parametersHash: requestHash,
-    });
-    await new ImportPreviewsRepository(tx).consume(preview.id);
-    await enqueueRunInTx(boss, tx, "collect.csv", {
-      runId: run.id,
-      workspaceId: scope.workspaceId,
-      projectId,
-      contractVersion: CONTRACT_VERSION,
-    });
+        methodVersion: CSV_METHOD_VERSION,
+        parametersHash: requestHash,
+      });
+      await new ImportPreviewsRepository(tx).consume(preview.id);
+      await enqueueRunInTx(boss, tx, "collect.csv", {
+        runId: run.id,
+        workspaceId: scope.workspaceId,
+        projectId,
+        contractVersion: CONTRACT_VERSION,
+      });
 
-    const dto = toAsyncRunDto(run);
-    const statusUrl = runStatusUrl(projectId, run.id);
-    await txIdem.complete(reserved.id, {
-      responseStatus: 202,
-      responseBody: {
+      const dto = toAsyncRunDto(run);
+      const statusUrl = runStatusUrl(projectId, run.id);
+      await txIdem.complete(reserved.id, {
+        responseStatus: 202,
+        responseBody: {
+          run: dto,
+          statusUrl,
+          resourceRef: { type: "collection_run", id: run.id },
+        },
+        resourceType: "collection_run",
+        resourceId: run.id,
+      });
+
+      return {
+        status: 202,
         run: dto,
         statusUrl,
-        resourceRef: { type: "collection_run", id: run.id },
-      },
-      resourceType: "collection_run",
-      resourceId: run.id,
+        resourceRef: { type: "collection_run" as const, id: run.id },
+        location: statusUrl,
+        replayed: false,
+      };
     });
-
-    return {
-      status: 202,
-      run: dto,
-      statusUrl,
-      resourceRef: { type: "collection_run" as const, id: run.id },
-      location: statusUrl,
-      replayed: false,
-    };
-  });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "23505"
+    ) {
+      const winner = await new AsyncRunsRepository(db).findActive(
+        projectScope,
+        CSV_ACTIVE_KEY,
+      );
+      throw new ProblemError(
+        "RUN_ALREADY_ACTIVE",
+        "A CSV import is already running.",
+        {
+          ...(winner
+            ? { headers: { Location: runStatusUrl(projectId, winner.id) } }
+            : {}),
+        },
+      );
+    }
+    throw error;
+  }
 }

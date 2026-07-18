@@ -13,11 +13,20 @@ import type { EvidenceDraft } from "./rule.ts";
 
 export type Confidence = "high" | "medium" | "low";
 
-export function deriveConfidence(evidence: readonly EvidenceDraft[]): Confidence {
+export function deriveConfidence(
+  evidence: readonly EvidenceDraft[],
+): Confidence {
   const supporting = evidence.filter((e) => e.support === "supports");
   if (supporting.length === 0) return "low";
 
+  // §8.7: contradiction, or a key supporting fact that is unavailable, must not
+  // yield a confirmable high/medium finding — route to low → needs_more_data.
   const hasContradiction = evidence.some((e) => e.support === "contradicts");
+  const keyUnavailable = supporting.some(
+    (e) => e.availability === "unavailable",
+  );
+  if (hasContradiction || keyUnavailable) return "low";
+
   const allGenerated = supporting.every((e) => e.method === "generated");
   if (allGenerated) return "low";
   if (supporting.length === 1 && supporting[0]!.grade === "C") return "low";
@@ -30,13 +39,15 @@ export function deriveConfidence(evidence: readonly EvidenceDraft[]): Confidence
   );
   const hasPartial = evidence.some((e) => e.availability === "partial");
 
-  if (hasStrongObserved && !hasContradiction && !restsOnInferred && !hasPartial) {
+  if (hasStrongObserved && !restsOnInferred && !hasPartial) {
     return "high";
   }
   return "medium";
 }
 
 /** Low-confidence candidates auto-route to `needs_more_data` (spec §8.7). */
-export function autoReviewState(confidence: Confidence): "unreviewed" | "needs_more_data" {
+export function autoReviewState(
+  confidence: Confidence,
+): "unreviewed" | "needs_more_data" {
   return confidence === "low" ? "needs_more_data" : "unreviewed";
 }

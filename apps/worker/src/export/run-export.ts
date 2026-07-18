@@ -82,7 +82,7 @@ export async function runExport(
       });
       await new AsyncRunsRepository(tx).setTerminal(runId, {
         status: "completed",
-        resultType: "export_bundle",
+        resultType: "export",
         resultId: bundleRow.id,
       });
       await new TelemetryRepository(tx).emit({
