@@ -29,10 +29,23 @@
 > wasn't loading the root .env.local. `/health/ready` is 503 until the worker creates the
 > pgboss schema (start the worker).
 >
-> **Remaining (WP5 hardening — not started)**: SSRF/secret/prompt-injection security test
-> suites; Playwright 390/768/1024/1440 + keyboard/reduced-motion a11y E2E; B2B/B2C
-> full-chain fixtures (AC-044/045); provider failure/retry fixtures; backup drill;
-> live-cred flows (Google OAuth, OpenAI) need real creds + a running Supabase.
+> **Codex acceptance DONE (2026-07-18)**: read-only codex review of backend (16 findings,
+> 7 P1) + frontend (6, 2 P1). Fixed all P1s + most P2s — notably 3 `async_runs.result_type`
+> CHECK violations that would have rolled back EVERY collection/artifact/export completion,
+> the confidence/contradiction §8.7 gap, cross-run resolve strictness, active-run + review
+> baseRevision TOCTOU→409, transient-retry stuck-running, and the `_finding-card` client
+> ENTRY function-prop error. Regression tests added (confidence, merge, diagnostic-persist).
+> **Live worker E2E**: crawl of example.com completes with result_type='collection_run' +
+> writes a snapshot; diagnostic-persist integration test runs the real pipeline → finding →
+> evidence with a valid role. 6 integration files / 25 tests.
+>
+> **Remaining (WP5 hardening — partial)**: SSRF (crawl engine + url-safety guard tests DONE),
+> LLM allowlist + reference-integrity (DONE), secret scan (gate DONE). NOT DONE: Playwright
+> 390/768/1024/1440 + keyboard/reduced-motion a11y E2E (AC-042/043); B2B/B2C full-chain golden
+> fixtures (AC-044/045); provider failure/retry fixtures (AC-046); backup-restore drill (AC-047).
+> Deferred codex P2s: provider_discrepancies detection (§7.6); studio/sources/report error-state
+> refinements; pipeline async rule contract. Live-cred flows (Google OAuth, OpenAI, hosted
+> Supabase) need real creds.
 
 
 
