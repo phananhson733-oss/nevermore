@@ -9,11 +9,56 @@
 - **Repo path**: `/Users/wzb/Code/nevermore/signalframe-mvp-app` (independent git repo inside nevermore, per user decision)
 - **Old repo (read-only, vendor-copy source)**: `/Users/wzb/Code/signalframe` @ `72af9300c600` — NEVER modify (AC-048).
 
-## Resume here 👉 **WP5 code-complete; only live-cred + staging-deploy + business decisions remain**
+## Resume here 👉 **NEXT: full ship/QA (multi-agent review + full gate + live vertical), then finish live GSC**
 
-> **WP5 gap-close DONE (2026-07-18).** Every code-closable AC from the prior 16/26/6
-> audit is now landed + gated. What remains is genuinely user/business-gated, not code:
-> live provider creds, the staging deploy drill, and the §22 business decisions.
+> **Post-compact resume state (2026-07-18, live env wired to hosted Supabase).**
+> The user chose a FULL ship/QA: **(1) multi-agent code review** of this session's
+> commits (adversarial, ultracode) + **(2) security review** (secret/OAuth-token
+> encryption/SSRF/isolation) + **(3) full green gate** + **(4) live vertical acceptance**
+> (GSC connect → collect → diagnose → artifact → export on real gengrowth.ai data).
+> They said "先 compact" first — so AFTER compaction, run that ship/QA.
+>
+> **LIVE ENV FACTS (critical — .env.local is gitignored, holds all real creds):**
+> - `DATABASE_URL` → gengrowth's **hosted Supabase** `qeeocwurjslqppjxlsbk` **Session
+>   pooler** (`aws-1-us-east-1.pooler.supabase.com:5432`). signalframe lives in the
+>   isolated `app` + `pgboss` schemas; gengrowth's `public`(137 tables)/`signalframe`/
+>   `signalframe_private` schemas are UNTOUCHED. Migration already applied (28 app tables).
+> - **`DB_POOL_MAX=3`** is REQUIRED: the pooler caps clients at ~15; web+worker each run a
+>   Drizzle pool + a pg-boss pool, so keep all four small (commit 3a1570c).
+> - **TEST ISOLATION (do not break):** integration tests MUST run against LOCAL
+>   `postgres://wzb@localhost:5432/signalframe_mvp_dev` (pass it explicitly). NEVER let
+>   `pnpm test:integration` inherit the hosted DATABASE_URL — verified tests leave hosted
+>   `app.workspaces` unchanged.
+> - Creds wired (not in git): Google OAuth (dedicated client `289814295834-...`, redirect
+>   `http://localhost:3000/api/mvp/oauth/google/callback`, scopes webmasters.readonly +
+>   analytics.readonly), Supabase URL/anon/service-role, Azure OpenAI (deployment
+>   `gpt-4.1-mini`; resource `joyocloud05-9398-resource.openai.azure.com` is behind
+>   PRIVATE DNS — unreachable from local, works only in a deploy env; template mode locally).
+> - Running procs (may need restart after compact): web `next dev --port 3000` (hosted,
+>   APP_ORIGIN=localhost:3000 so the OAuth callback matches) + worker `pnpm start` (hosted).
+>   Boot web on 3000 (NOT 3100) for OAuth. ~5 DB connections in use = healthy.
+> - Hosted `app.client_projects`: `6f7ac414-...`=HostedSmoke(example.com, test),
+>   `8f72bd04-337d-480a-8e97-cb18424b98b1`=**gengrowth.ai** (the real one to finish GSC on).
+> - **GSC OAuth state:** consent + token exchange WORK (token listed the user's 4 real GSC
+>   sites incl. `sc-domain:gengrowth.ai`; token stored AES-256-GCM encrypted). It was stuck
+>   at `properties_ready` because the callback redirect omitted `&provider=` so the UI
+>   property picker never opened — **FIXED (commit 3aaffbe)**. User must RETRY Connect GSC
+>   on the gengrowth.ai project → pick `sc-domain:gengrowth.ai` → then trigger collection.
+>
+> **5 real production bugs found+fixed this session** (code-first→test + live QA): CSV
+> missing import_preview_id (CHECK 23514); CSV empty limitation (btrim CHECK); overview
+> null.overall crash (OpenAPI non-null contract); DB pool exhaustion vs Supabase pooler;
+> OAuth callback missing provider param.
+>
+> **Commit chain (this session):** 1ca2405 → da50a64 → 0af359c → fb2d0ef → f6cc39a →
+> 8ada085 → 89c4d2c(Azure LLM) → 3a1570c(DB_POOL_MAX) → 3aaffbe(oauth provider fix).
+> Last full gate GREEN: typecheck(9)·lint·366 unit·81 integration·36 E2E·build·verify:spec·
+> contracts·db:migrate:check(28)·secrets:scan·vendor:check.
+>
+> ---
+> **(historical) WP5 gap-close DONE (2026-07-18).** Every code-closable AC from the prior
+> 16/26/6 audit is now landed + gated. What remains is user/business-gated: live provider
+> creds (in progress above), the staging deploy drill, and the §22 business decisions.
 >
 > **This session closed (all green):**
 > - **AC-042/043 — Playwright E2E harness** (was NONE): `playwright.config` auto-boots
