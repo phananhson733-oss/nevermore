@@ -9,46 +9,54 @@
 - **Repo path**: `/Users/wzb/Code/nevermore/signalframe-mvp-app` (independent git repo inside nevermore, per user decision)
 - **Old repo (read-only, vendor-copy source)**: `/Users/wzb/Code/signalframe` @ `72af9300c600` — NEVER modify (AC-048).
 
-## Resume here 👉 **WP5 gap-close: E2E harness → worker tests → live creds**
+## Resume here 👉 **WP5 code-complete; only live-cred + staging-deploy + business decisions remain**
 
-> **Verified gap audit (2026-07-18, 7-agent workflow vs all 48 AC + DoD): 16 MET · 26 PARTIAL · 6 NOT MET — NOT pilot-ready.** Adversarial pass found + FIXED a real
-> security defect: AC-033 metadata_rewrite validator now rejects injected HTML/script
-> (commit 1ca2405).
+> **WP5 gap-close DONE (2026-07-18).** Every code-closable AC from the prior 16/26/6
+> audit is now landed + gated. What remains is genuinely user/business-gated, not code:
+> live provider creds, the staging deploy drill, and the §22 business decisions.
 >
-> **NEXT-PRIORITY ORDER to close the DoD:**
-> 1. **Stand up a Playwright E2E harness** (there is NONE — `test:e2e` runs an empty
->    suite, no playwright.config, no axe dep). This alone unblocks 4 NOT_MET:
->    AC-042 (responsive 390/768/1024/1440 + small-screen table alt), AC-043
->    (keyboard/focus-trap/reduced-motion/axe), AC-044 (B2B create→service-export E2E),
->    AC-045 (B2C create→client-report E2E). Also AC-022 (B2B+B2C golden fixtures, all
->    5 domains, degradation strings).
-> 2. **apps/worker has ZERO tests** — add worker tests to close AC-026 (completed-only
->    resolve / partial resolves nothing / regressed), AC-041 (transient-retry vs
->    permanent-no-retry + no dup on redelivery), AC-028 (re-hit preserves human
->    priority/status), AC-031 (create→202→revision1+draft), AC-034 (STALE_REVISION/
->    dedup/edit→draft via PATCH route).
-> 3. **Thin-test PARTIALs** (service/integration tests): AC-008 (422 problem+json
->    pointer array), AC-014 (OAuth callback replay/expiry), AC-016 (CSV token replay
->    409), AC-024 (generated-evidence CHECK), AC-025 (double-run no dup Finding),
->    AC-027 (invalid-review 422 + append-only), AC-029 (priority 8-branch ordering —
->    note derivePriority has 7 branches, reconcile w/ spec), AC-030 (override 422/409/
->    audit), AC-035/036 (outputLocale independence + report==list projection), AC-018
->    (isStale DTO), AC-013 (bomb/oversize body cap).
-> 4. **AC-039**: real Supabase signed-URL signer + 30-day lifecycle (LocalFs returns a
->    non-crypto file:// URL); test 15-min TTL / wrong-project 404 / regenerate.
-> 5. **AC-040**: runtime secret check on emitted logs/telemetry/bundle + redact.ts test.
-> 6. **Live-cred flows** (need real creds from user): GSC/GA4 OAuth sync, OpenAI
->    artifact gen, hosted Supabase auth. **Deferred codex P2s**: provider_discrepancies
->    detection (§7.6); studio/sources/report error-state refinements; pipeline async
->    rule contract (§8.3). **DoD**: staging same-commit deploy; 2-fixture owner walkthrough;
->    §22 open decisions D1–D7 (business owner).
+> **This session closed (all green):**
+> - **AC-042/043 — Playwright E2E harness** (was NONE): `playwright.config` auto-boots
+>   the web app under the dev-auth shim on :3100; `e2e/responsive.spec` (7 screens ×
+>   390/768/1024/1440, 28 tests) + `e2e/a11y.spec` (axe + keyboard + reduced-motion +
+>   a direct sidebar-contrast assertion). **36 E2E pass** (cold- and warm-boot). axe's
+>   position:sticky sidebar color-contrast false positives are filtered (verified: real
+>   ratio ~15:1); a beforeAll route warm-up keeps dev first-compile off the scan.
+> - **AC-044/045/022 — B2B/B2C full-vertical golden-fixture integration**: real services
+>   (atomic pg-boss enqueue) + real worker runners drive create→diagnose→confirm→artifact
+>   →export end to end; service_bundle manifest validated against the schema, client_bundle
+>   exclusions + degradation strings asserted. Mirrored the missing authority schema into
+>   `schemas/`.
+> - **AC-026/028/031/034/041 — apps/worker** (was ZERO tests): 10 worker integration tests.
+> - **AC-008/013/014/016/018/024/025/027/029/030/035/036** — service/DTO PARTIALs closed.
+>   (§9.3 "8-step" reconciled: `derivePriority`'s 7 branches ARE clauses 1–7; clause 8 is
+>   risk-based artifact gating, not ordering — no code change.)
+> - **AC-039** — project-scoped Supabase signed-URL signer (900s TTL / wrong-project 404 /
+>   fresh key per regenerate; fetch injected, no live network in tests).
+> - **AC-040** — runtime redaction chokepoints on telemetry.emit + export bundle input;
+>   redact.ts covered for all 8 keys × nesting/array/immutability.
 >
-> **Full commit chain this session**: 6637ba1(wp2 collect) → 32eed27(wp2 backend) →
-> c03ce04(wp3) → 53efdc8(wp4) → 5ca691f(evidence-role fix) → 6b8a16a(5 UI screens) →
-> 200c106(codex backend 11 fixes) → bc4a423(codex frontend + cross-run merge) →
-> 63428d4(diag E2E + worker env autoload) → 5ec66a2(diag error-state) → 1ca2405(AC-033).
-> Green: typecheck(8 pkgs)·lint·279 unit·25 integration·build·verify:spec·contracts:check·
-> db:migrate:check·secrets:scan·vendor:check·i18n parity.
+> **3 real production bugs found by the code-first→test approach + FIXED:**
+> 1. CSV confirm inserted a `provider='csv'` collection_runs placeholder WITHOUT
+>    `import_preview_id` → `collection_runs_check` (23514) → every first CSV confirm failed.
+> 2. CSV adapter emitted an empty `limitation` → `btrim>=1` CHECK → every CSV collection
+>    failed as UNAVAILABLE.
+> 3. Overview crashed client-side (`null.overall`) — the workspace overview projection
+>    returned `coverage: null` but OpenAPI `OverviewView.coverage` is required non-nullable;
+>    now substitutes honest empty `unavailable` coverage. (Surfaced by the a11y E2E.)
+>
+> **STILL REMAINING (user/business-gated, NOT code):**
+> 1. **Live-cred flows** (need real creds): GSC/GA4 OAuth sync, OpenAI artifact gen, hosted
+>    Supabase auth. Code paths are built + unit/integration-covered; only a live exercise is left.
+> 2. **DoD**: staging same-commit web+worker deploy; 2-fixture owner walkthrough.
+> 3. **§22 open decisions D1–D7** (business owner) + deferred codex P2s (provider_discrepancies
+>    detection §7.6; studio/sources/report error-state refinements; pipeline async rule contract §8.3).
+>
+> **Full green gate (this milestone)**: typecheck(9 pkgs)·lint·365 unit·81 integration·
+> 36 E2E·build·verify:spec·contracts:check·db:migrate:check(28 tables)·secrets:scan·vendor:check.
+> **Commit chain**: …1ca2405(AC-033) → da50a64(gap audit) → 0af359c(WP5 worker/service/engine
+> +131 tests + CSV fixes + AC-039/040) → fb2d0ef(E2E harness AC-042/043 + overview fix) →
+> f6cc39a(full-chain AC-044/045/022).
 
 ## (superseded) All WP1–WP5 code written; env + full E2E landing in progress
 
