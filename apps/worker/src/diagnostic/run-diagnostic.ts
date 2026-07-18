@@ -318,6 +318,13 @@ async function upsertFinding(
   return existing.id;
 }
 
+/** Map an evidence support direction to a finding_observations.role (schema CHECK). */
+function evidenceRole(support: string | undefined, index: number): string {
+  if (support === "contradicts") return "contradicting";
+  if (support === "context") return "context";
+  return index === 0 ? "primary" : "supporting";
+}
+
 async function persistEvidence(
   repo: EvidenceRepository,
   scope: ProjectScope,
@@ -345,11 +352,13 @@ async function persistEvidence(
     },
     rows,
   );
-  const links: FindingObservationInsert[] = evidenceIds.map((evidenceId) => ({
-    findingId,
-    evidenceId,
-    role: "support",
-  }));
+  const links: FindingObservationInsert[] = evidenceIds.map(
+    (evidenceId, i) => ({
+      findingId,
+      evidenceId,
+      role: evidenceRole(finding.evidence[i]?.support, i),
+    }),
+  );
   await repo.linkObservations(
     {
       workspaceId: scope.workspaceId,
