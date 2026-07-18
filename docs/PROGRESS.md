@@ -9,14 +9,48 @@
 - **Repo path**: `/Users/wzb/Code/nevermore/signalframe-mvp-app` (independent git repo inside nevermore, per user decision)
 - **Old repo (read-only, vendor-copy source)**: `/Users/wzb/Code/signalframe` @ `72af9300c600` — NEVER modify (AC-048).
 
-## Resume here 👉 **NEXT: full ship/QA (multi-agent review + full gate + live vertical), then finish live GSC**
+## Resume here 👉 **Ship/QA DONE (gate green + live vertical proven). NEXT: user finishes live GSC connect; deploy-stage items (storage wiring, LLM cred, refresh-flow) remain**
 
-> **Post-compact resume state (2026-07-18, live env wired to hosted Supabase).**
-> The user chose a FULL ship/QA: **(1) multi-agent code review** of this session's
-> commits (adversarial, ultracode) + **(2) security review** (secret/OAuth-token
-> encryption/SSRF/isolation) + **(3) full green gate** + **(4) live vertical acceptance**
-> (GSC connect → collect → diagnose → artifact → export on real gengrowth.ai data).
-> They said "先 compact" first — so AFTER compaction, run that ship/QA.
+> **SHIP/QA COMPLETE (2026-07-18).** Full gate GREEN: typecheck · **381 unit** · **82
+> integration** · **36 E2E** (E2E isolated to local DB). Two independent reviews —
+> a 7-dimension adversarial workflow (14 agents) + a codex second opinion — reconciled
+> by reading the code against the spec.
+>
+> **Fixes committed:** `2b6a2d3` (redact camelCase normalization; metadata AC-033 —
+> reject ANY html tag/event-handler not a fixed list; stale oauth-callback assertion;
+> Azure all-or-nothing env guard; supabase-signer dot/empty-segment rejection) and
+> `44dc172` (persist the FULL Google credential envelope — refresh token + real expiry —
+> instead of a bare access token with expires_at=null; tolerant legacy decode).
+> **codex findings OVERRIDDEN per spec (not applied):** replay→failed is intended AC-014
+> single-use state (test asserts it); body-cap "stream the body" would REGRESS the
+> decompression-bomb guard (request.text() decompresses THEN checks byte length).
+>
+> **LIVE VERTICAL ACCEPTANCE — PROVEN on real gengrowth.ai data (project 8f72bd04):**
+> seeded a complete ICP → **real crawl** of gengrowth.ai (334-row snapshot, available) →
+> **diagnose** = `partial` (honest degradation: GSC/GA4/CSV skipped) with **7 real findings**
+> (6× CONTENT-COVERAGE-001, 1× GEO-ENTITY-001) → **confirm** one → Action
+> `create_priority_content.v1` → **artifact** content_brief (template) → **export**
+> `service_bundle` = a real **2.7 MB ZIP**, manifest `signalframe.service-bundle.0.2.0`,
+> itemCounts {findings:7, evidence:7, actions:1, artifacts:1, observations:336, …},
+> evidence honest (grade C, 0 unavailable-as-nonzero). Whole chain ran through the REAL
+> web API + pg-boss + running worker.
+>
+> **Two deploy-gated caveats surfaced by the live run (known, NOT code bugs):**
+> 1. **LLM `structured_llm`**: `OPENAI_API_KEY` returns **OpenAI HTTP 401** (not a valid
+>    api.openai.com direct key) and Azure is DNS-unreachable locally — so the LLM artifact
+>    path can't complete locally. The CODE is correct (calls OpenAI, handles 401 as
+>    UNAVAILABLE/failed). Template mode works fully. Needs a real direct key OR the deploy
+>    env (Azure) to validate the model output. `.env.local` restored to Azure config.
+> 2. **Export download URL 404s** even locally: web signs `apps/web/.data/blob` but the
+>    worker wrote the bundle to `apps/worker/.data/blob` — exactly codex #1 (storage not
+>    wired). Bundle itself is correct. **User decided: wire Supabase Storage at deploy stage.**
+>
+> **STILL user-gated:** finish the live GSC connect in the browser (picker now opens post-3aaffbe):
+> gengrowth.ai → Sources → Connect GSC → consent → pick `sc-domain:gengrowth.ai`.
+> Then collection can run on real GSC data (adds the search/gap/landing rules).
+>
+> ---
+> _Historical (pre-ship/QA) resume note:_
 >
 > **LIVE ENV FACTS (critical — .env.local is gitignored, holds all real creds):**
 > - `DATABASE_URL` → gengrowth's **hosted Supabase** `qeeocwurjslqppjxlsbk` **Session
