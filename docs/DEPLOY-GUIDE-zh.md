@@ -3,7 +3,9 @@
 这是把 SignalFrame 上线到 **gengrowth.ai/app** 的一步步教程。跟着做，做完你就能在
 `https://gengrowth.ai/app/login` 用真实账号登录。
 
-> **你现在的位置**：代码已经写完、冻结成一个可部署的版本 `eabaab3`，本地所有门禁绿。
+> **你现在的位置**：代码已经写完、本地所有门禁绿。**你要部署的是当前 `main` 的 HEAD**
+> （运行 `git rev-parse --short HEAD` 拿到，含 `render.yaml` 和 `/app`）——**不是 `eabaab3`**
+> （那是更早的代码冻结点，还没有 `render.yaml`，Render 会读不到）。
 > 剩下的全是"在各家控制台点几下 + 验证"，不需要再改代码。
 > 每步标了谁来做：**〔你〕** 需要你的账号/权限；**〔我〕** 可以让我帮你验证。
 
@@ -17,7 +19,7 @@
 | **worker** | 常驻后台（抓取、诊断、生成、导出的执行者） | **Render**（Background Worker，一个 Docker 容器） |
 | **数据** | 数据库 + 登录 + 文件存储 | **Supabase**（你已经在用的那个） |
 
-关键规矩：**web 和 worker 必须用同一个版本 `eabaab3`、同一套数据库和密钥**。
+关键规矩：**web 和 worker 必须用同一个 commit（当前 HEAD）、同一套数据库和密钥**。
 
 **针对你的情况（已帮你查过，省不少事）：**
 - ✅ 目标 Supabase **已经迁移好了**（28 张表 + pgboss schema 都在），第 2 步基本免。
@@ -28,20 +30,34 @@
 
 ## 1. 准备（5 分钟）〔你〕
 
-1. 本地能跑命令：在项目目录 `/Users/wzb/Code/nevermore/signalframe-mvp-app` 打开终端。
-2. 确认代码在正确版本、干净：
+1. 本地能跑命令。**注意 git 仓库在 `signalframe-mvp-app` 子目录，不是外层 `nevermore`**
+   （在外层跑 git 会报 `not a git repository`）：
    ```bash
-   git rev-parse HEAD        # 应以 eabaab3 开头
-   git status --porcelain    # 应该没有输出（干净）
+   cd /Users/wzb/Code/nevermore/signalframe-mvp-app
    ```
-   > 如果不是 `eabaab3` 开头，先 `git log --oneline -5` 看一下，别在旧版本上部署。
-3. 生成一把"凭证加密钥匙"（如果你还没有一把要长期用的）：
+2. 记下你要部署的 SHA、确认工作树干净：
+   ```bash
+   git rev-parse --short HEAD   # 记下这串，这就是你要部署的版本（含 render.yaml + /app）
+   git status --porcelain       # 应该没有输出（干净）
+   ```
+3. **把代码推到 GitHub** ⚠️ 必做 —— Vercel 和 Render 都从 Git 仓库拉代码，Render Blueprint
+   还要从仓库读 `render.yaml`。**这个本地仓库现在还没有 remote**，先建一个私有 GitHub 仓库并推上去：
+   ```bash
+   # 用 GitHub CLI 最快（没装就 `brew install gh` 再 `gh auth login`）：
+   gh repo create signalframe-mvp-app --private --source=. --remote=origin --push
+   # 或手动：在 github.com 建一个空私有仓库，然后：
+   #   git remote add origin git@github.com:<你的用户名>/signalframe-mvp-app.git
+   #   git push -u origin main
+   ```
+   > ⚠️ 仓库里有 `docs/vendor` 等，但**密钥都在 gitignore 的 `.env.local` 里、不会被推**（前面已核查）。
+   > 之后 Vercel/Render 在各自面板里 **Import/Connect 这个 GitHub 仓库**即可。
+4. 生成一把"凭证加密钥匙"（如果你还没有一把要长期用的）：
    ```bash
    openssl rand -base64 32
    ```
    把输出**记在密码管理器里**。这就是 `CREDENTIAL_ENCRYPTION_KEY`，web 和 worker 要**填一模一样的值**。
    > ⚠️ 这把钥匙一旦换掉，之前所有连过的 Google 账号都要重新连。**定下来就别改。**
-4. 登录三家控制台，确认你有权限：[Vercel](https://vercel.com)、[Railway](https://railway.app)、[Supabase](https://supabase.com/dashboard)、[Google Cloud Console](https://console.cloud.google.com)。
+5. 登录各家控制台，确认你有权限：[GitHub](https://github.com)、[Vercel](https://vercel.com)、[Render](https://render.com)、[Supabase](https://supabase.com/dashboard)、[Google Cloud Console](https://console.cloud.google.com)。
 
 ---
 
@@ -123,11 +139,12 @@ Dockerfile Path 填 `./Dockerfile.worker` → 然后到 **Environment** 逐条�
 - LLM 二选一：
   - 直连 OpenAI：`LLM_PROVIDER=openai` + `OPENAI_API_KEY` + `OPENAI_MODEL`（如 `gpt-4.1-mini`）
   - 或 Azure：把上面两行注释掉，填**全部四个** `AZURE_OPENAI_*` / `OPENAI_API_VERSION`（要么四个全填，要么一个都别填）
-- `APP_BUILD_SHA=eabaab3`（钉住版本，和 web 一致）
+- `APP_BUILD_SHA` **留空即可** —— Render 会自动带 `RENDER_GIT_COMMIT`，worker 启动日志会
+  报出真实部署的 SHA（代码已支持读它）。只有想手动覆盖时才填。
 - `NEXT_PUBLIC_BASE_PATH` / `SUPABASE_ANON_KEY` **worker 不要填**
 
 触发部署后，看 Render 的 **Logs**，应看到：
-- 启动日志里有版本号（`eabaab3`）
+- 启动日志里有版本号（你部署的那个 SHA，Render 会自动带上）
 - 一次 recovery sweep（恢复扫描）
 - 拿到 **worker readiness lease**（就绪租约）
 - 日志里**不该出现**任何密钥值、模型输出、客户数据。
@@ -155,7 +172,8 @@ Dockerfile Path 填 `./Dockerfile.worker` → 然后到 **Environment** 逐条�
    - `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` = 和 worker 一样
    - `DATAFORSEO_ENABLED=false`、`RAW_IMPORT_BUCKET=raw-imports`、`EXPORT_BUCKET=exports`、
      `SF_BLOB_BACKEND=supabase`、`DB_POOL_MAX=3`、`LOG_LEVEL=info`
-   - `APP_BUILD_SHA=eabaab3`
+   - `APP_BUILD_SHA` **留空即可** —— Vercel 会自动带 `VERCEL_GIT_COMMIT_SHA`，
+     `/health/version` 就报真实部署的 SHA（硬填一个对不上的值反而更糟）。
    - **不要填** `SF_DEV_AUTH`（这是本地免登录后门，生产会忽略它，但保持不填最干净）
    - web **不要填** LLM 相关（那是 worker 的）
 4. **Deploy**。部署成功后，确认 Vercel 构建日志里 base path 是 `/app`。
@@ -174,7 +192,7 @@ Dockerfile Path 填 `./Dockerfile.worker` → 然后到 **Environment** 逐条�
 **6.1 版本对上、/app 生效、根路径不通：**
 ```bash
 curl -s https://gengrowth.ai/app/api/mvp/health/version
-# 期望：返回的版本里带 eabaab3
+# 期望：返回的 buildSha = 你部署的那个 SHA（git rev-parse --short HEAD）
 
 curl -s -o /dev/null -w '%{http_code}\n' https://gengrowth.ai/app/api/mvp/health/live
 # 期望：200

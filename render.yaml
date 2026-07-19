@@ -34,8 +34,8 @@ services:
         sync: false
       - key: OPENAI_MODEL
         sync: false
-      - key: APP_BUILD_SHA             # pin the release SHA (match the web deploy)
-        sync: false
+      # APP_BUILD_SHA intentionally omitted: Render auto-provides RENDER_GIT_COMMIT,
+      # which the version resolver reads, so the worker logs the real deployed SHA.
       # --- fixed, non-secret ---
       - key: APP_ORIGIN
         value: https://gengrowth.ai

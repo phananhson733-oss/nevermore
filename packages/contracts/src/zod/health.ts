@@ -24,6 +24,7 @@ export function resolveBuildMetadata(
     env["APP_BUILD_SHA"],
     env["VERCEL_GIT_COMMIT_SHA"],
     env["RAILWAY_GIT_COMMIT_SHA"],
+    env["RENDER_GIT_COMMIT"],
     env["GITHUB_SHA"],
   ]
     .map((value) => value?.trim())

@@ -27,6 +27,9 @@ describe("build/version metadata", () => {
     expect(
       resolveBuildMetadata("worker", { RAILWAY_GIT_COMMIT_SHA: "railway-sha" }),
     ).toMatchObject({ service: "worker", buildSha: "railway-sha" });
+    expect(
+      resolveBuildMetadata("worker", { RENDER_GIT_COMMIT: "render-sha" }),
+    ).toMatchObject({ service: "worker", buildSha: "render-sha" });
     expect(resolveBuildMetadata("web", {})).toMatchObject({
       service: "web",
       buildSha: "development",

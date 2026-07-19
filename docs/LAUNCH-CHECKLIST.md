@@ -3,8 +3,10 @@
 Operational runbook to take the frozen release candidate live at **`gengrowth.ai/app`**.
 Milestone = a real user logs in at `gengrowth.ai/app/login` and uses the workbench.
 
-- **Release SHA to deploy:** `eabaab3` (freeze `cde8309` + `/app` base path `eabaab3`).
-  Vercel web, the Render worker, and the migration job MUST all resolve to this one SHA.
+- **Release SHA to deploy:** the current `main` HEAD (`git rev-parse --short HEAD`).
+  It must include `render.yaml` + the `/app` base path — so deploy HEAD, NOT the older
+  `eabaab3` (which predates `render.yaml`). Push HEAD to GitHub first; Vercel web, the
+  Render worker, and the migration job MUST all resolve to that one SHA.
 - **Authority:** this checklist operationalizes `docs/DEPLOYMENT.md` and the
   "External / Owner-gated launch checklist" in `docs/PROGRESS.md`. On any conflict,
   the spec (`../signalframe-mvp/implementation-spec-v0.2`) wins.
@@ -65,7 +67,7 @@ Legend: **[Owner]** needs your credentials/authority · **[me]** I can prep/veri
   - Storage: `SF_BLOB_BACKEND=supabase`  (do NOT set `SF_BLOB_DIR` in prod)
   - LLM: `LLM_PROVIDER=openai` + `OPENAI_API_KEY` + `OPENAI_MODEL`
     (or the 4 `AZURE_OPENAI_*`/`OPENAI_API_VERSION` fields — all four, or none)
-  - SHA pin: `APP_BUILD_SHA=eabaab3…`  (explicit, so web+worker match)
+  - SHA: leave `APP_BUILD_SHA` unset — Render's `RENDER_GIT_COMMIT` auto-reports the deploy
   - Worker does NOT need `NEXT_PUBLIC_BASE_PATH` / `SUPABASE_ANON_KEY`
 - [ ] Deploy from the target SHA; confirm startup logs show the SHA, a successful
   recovery sweep, and a held **worker readiness lease** — with NO env values,
@@ -82,7 +84,7 @@ Legend: **[Owner]** needs your credentials/authority · **[me]** I can prep/veri
     `DATAFORSEO_ENABLED=false` · `RAW_IMPORT_BUCKET=raw-imports` · `EXPORT_BUCKET=exports` ·
     `LOG_LEVEL=info`
   - Web: `SUPABASE_ANON_KEY` · `SF_BLOB_BACKEND=supabase`
-  - SHA pin: `APP_BUILD_SHA=eabaab3…` (match the worker)
+  - SHA: leave `APP_BUILD_SHA` unset — Vercel's `VERCEL_GIT_COMMIT_SHA` auto-reports the deploy
   - ⚠ Do NOT set `SF_DEV_AUTH` (prod ignores it, but keep it absent)
 - [ ] Deploy the target SHA; confirm the build succeeded with base path `/app` **[Owner]**
 - [ ] Point the `gengrowth.ai` domain / route so `/app/*` reaches this deployment **[Owner]**
@@ -93,7 +95,7 @@ Run against the live origin. `< >` means expected.
 
 - [ ] Version + SHA match on web **[Owner/me]**:
   ```bash
-  curl -s https://gengrowth.ai/app/api/mvp/health/version   # < reports eabaab3… >
+  curl -s https://gengrowth.ai/app/api/mvp/health/version   # < reports your deployed HEAD SHA >
   curl -s -o /dev/null -w '%{http_code}\n' https://gengrowth.ai/app/api/mvp/health/live   # < 200 >
   curl -s -o /dev/null -w '%{http_code}\n' https://gengrowth.ai/api/mvp/health/live       # < 404 (root not served) >
   ```
