@@ -77,3 +77,22 @@ the same SHA, then verify `/api/mvp/health/ready` and `/api/mvp/health/version`.
 
 Do not promote the implementation as pilot-ready until all seven items have
 evidence tied to the same release SHA.
+
+## Delta 3 — Base path mount (`gengrowth.ai/app`)
+
+- **Override:** the product owner serves the app under a host sub-path so it
+  reuses the `gengrowth.ai/app` route space rather than a bare origin.
+- **Lever:** set `NEXT_PUBLIC_BASE_PATH=/app` at **build time** for the web build.
+  Unset = origin root (local dev, tests, and the current localhost OAuth redirect
+  URI are unchanged). Next auto-prefixes `<Link>`, `redirect()` and assets; the
+  hand-built URLs (OAuth redirect URI, async status/`Location`, the client `fetch`
+  base, the OAuth callback 303) mirror it through `apps/web/src/lib/base-path.ts`.
+- `APP_ORIGIN` stays **origin-only** (`https://gengrowth.ai`); the base path is
+  added by the code, not by `APP_ORIGIN`.
+- **External coupling (Owner action):** register the exact redirect URI
+  `https://gengrowth.ai/app/api/mvp/oauth/google/callback` in Google Cloud Console
+  before the deployed OAuth smoke, or GSC/GA4 connect will fail with a redirect
+  mismatch. Session cookies are path `/`, so they cover `/app/*` without change.
+- **Verify on the deployed origin:** `GET /app/api/mvp/health/live` → 200 and the
+  bare `/api/mvp/health/live` → 404; confirm login lands at `/app/login` and the
+  async status URLs a 202 returns are `/app/api/mvp/...`.

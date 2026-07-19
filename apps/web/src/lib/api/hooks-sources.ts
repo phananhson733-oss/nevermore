@@ -22,8 +22,9 @@ import {
 } from "@tanstack/react-query";
 import { ApiError, apiGet, apiSend } from "./client";
 import type { DataEnvelope, ListEnvelope, ProblemBody } from "./types";
+import { BASE_PATH } from "@/lib/base-path";
 
-const API_BASE = "/api/mvp";
+const API_BASE = `${BASE_PATH}/api/mvp`;
 
 // --------------------------------------------------------------- Enums -------
 

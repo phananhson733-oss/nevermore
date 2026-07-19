@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { ProblemError } from "@sf/observability";
+import { BASE_PATH } from "@/lib/base-path";
 
 /**
  * Google OAuth client for the GSC/GA4 connect flow (spec §7.4). Read-only scopes
@@ -73,7 +74,10 @@ export function hashState(state: string): Buffer {
 /** Constant-time comparison of a candidate state against a stored hash. */
 export function stateMatchesHash(state: string, storedHash: Buffer): boolean {
   const candidate = hashState(state);
-  return candidate.length === storedHash.length && timingSafeEqual(candidate, storedHash);
+  return (
+    candidate.length === storedHash.length &&
+    timingSafeEqual(candidate, storedHash)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +130,10 @@ export interface GoogleOAuthClient {
     codeVerifier: string;
     redirectUri: string;
   }): Promise<GoogleTokenSet>;
-  listProperties(provider: GoogleProvider, accessToken: string): Promise<GoogleProperty[]>;
+  listProperties(
+    provider: GoogleProvider,
+    accessToken: string,
+  ): Promise<GoogleProperty[]>;
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -142,14 +149,27 @@ interface HttpClientDeps {
 
 /** Map a Google API failure to a stable product error without leaking bodies. */
 function oauthError(status: number, context: string): ProblemError {
-  if (status === 401) return new ProblemError("AUTH_REQUIRED", `${context}: authorization expired.`);
-  if (status === 403) return new ProblemError("OAUTH_PROPERTY_INVALID", `${context}: permission denied.`);
-  if (status === 429) return new ProblemError("RATE_LIMITED", `${context}: rate limited.`);
-  return new ProblemError("DEPENDENCY_UNAVAILABLE", `${context}: provider error.`);
+  if (status === 401)
+    return new ProblemError(
+      "AUTH_REQUIRED",
+      `${context}: authorization expired.`,
+    );
+  if (status === 403)
+    return new ProblemError(
+      "OAUTH_PROPERTY_INVALID",
+      `${context}: permission denied.`,
+    );
+  if (status === 429)
+    return new ProblemError("RATE_LIMITED", `${context}: rate limited.`);
+  return new ProblemError(
+    "DEPENDENCY_UNAVAILABLE",
+    `${context}: provider error.`,
+  );
 }
 
 function abortLike(error: unknown): boolean {
-  if (error === null || typeof error !== "object" || !("name" in error)) return false;
+  if (error === null || typeof error !== "object" || !("name" in error))
+    return false;
   return error.name === "AbortError" || error.name === "TimeoutError";
 }
 
@@ -163,7 +183,9 @@ function cancelResponseBody(response: Response): void {
 }
 
 function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException("Google request aborted.", "AbortError");
+  return (
+    signal.reason ?? new DOMException("Google request aborted.", "AbortError")
+  );
 }
 
 async function readResponseChunk(
@@ -204,9 +226,7 @@ async function readResponseChunk(
   );
 }
 
-function cancelReader(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-): void {
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
   try {
     void Promise.resolve(reader.cancel()).catch(() => undefined);
   } catch {
@@ -214,9 +234,7 @@ function cancelReader(
   }
 }
 
-function releaseReader(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-): void {
+function releaseReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
   try {
     const released: unknown = reader.releaseLock();
     void Promise.resolve(released).catch(() => undefined);
@@ -306,9 +324,8 @@ async function mapWithConcurrency<T, R>(
     }
   };
   await Promise.all(
-    Array.from(
-      { length: Math.min(concurrency, values.length) },
-      async () => worker(),
+    Array.from({ length: Math.min(concurrency, values.length) }, async () =>
+      worker(),
     ),
   );
   return results;
@@ -412,13 +429,20 @@ export class HttpGoogleOAuthClient implements GoogleOAuthClient {
       refresh_token?: string;
       expires_in?: number;
       scope?: string;
-    }>(TOKEN_ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    }, "token exchange");
+    }>(
+      TOKEN_ENDPOINT,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      },
+      "token exchange",
+    );
     if (!json.access_token || typeof json.expires_in !== "number") {
-      throw new ProblemError("DEPENDENCY_UNAVAILABLE", "token exchange: malformed response.");
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "token exchange: malformed response.",
+      );
     }
     return {
       accessToken: json.access_token,
@@ -444,13 +468,21 @@ export class HttpGoogleOAuthClient implements GoogleOAuthClient {
   ): Promise<GoogleProperty[]> {
     const json = await this.requestJson<{
       siteEntry?: { siteUrl?: string; permissionLevel?: string }[];
-    }>(GSC_SITES_ENDPOINT, {
-      headers: { authorization: `Bearer ${accessToken}` },
-    }, "list GSC sites", operationSignal);
+    }>(
+      GSC_SITES_ENDPOINT,
+      {
+        headers: { authorization: `Bearer ${accessToken}` },
+      },
+      "list GSC sites",
+      operationSignal,
+    );
     const entries = json.siteEntry ?? [];
     const candidates = entries
       .filter((e) => e.siteUrl && e.permissionLevel !== "siteUnverifiedUser")
-      .map((e) => ({ externalPropertyId: e.siteUrl as string, displayName: e.siteUrl as string }));
+      .map((e) => ({
+        externalPropertyId: e.siteUrl as string,
+        displayName: e.siteUrl as string,
+      }));
     if (candidates.length > GOOGLE_OAUTH_MAX_CANDIDATES) {
       throw candidateLimitError("list GSC sites");
     }
@@ -474,9 +506,14 @@ export class HttpGoogleOAuthClient implements GoogleOAuthClient {
           propertySummaries?: { property?: string; displayName?: string }[];
         }[];
         nextPageToken?: string;
-      }>(url.toString(), {
-        headers: { authorization: `Bearer ${accessToken}` },
-      }, "list GA4 properties", operationSignal);
+      }>(
+        url.toString(),
+        {
+          headers: { authorization: `Bearer ${accessToken}` },
+        },
+        "list GA4 properties",
+        operationSignal,
+      );
       for (const account of json.accountSummaries ?? []) {
         for (const prop of account.propertySummaries ?? []) {
           if (!prop.property) continue;
@@ -486,10 +523,7 @@ export class HttpGoogleOAuthClient implements GoogleOAuthClient {
               "list GA4 properties: malformed property resource.",
             );
           }
-          summaries.set(
-            prop.property,
-            prop.displayName ?? prop.property,
-          );
+          summaries.set(prop.property, prop.displayName ?? prop.property);
           if (summaries.size > GOOGLE_OAUTH_MAX_CANDIDATES) {
             throw candidateLimitError("list GA4 properties");
           }
@@ -547,7 +581,12 @@ function isSupportedTimeZone(value: string): boolean {
   }
 }
 
-/** The callback redirect URI, derived from the app origin (spec §3.4). */
+/** The callback redirect URI, derived from the app origin (spec §3.4). Carries the
+ *  deployment base path so it matches the route when the app is mounted under a
+ *  sub-path (e.g. `/app`); this exact URI must be registered in Google Cloud Console. */
 export function googleRedirectUri(appOrigin: string): string {
-  return new URL("/api/mvp/oauth/google/callback", appOrigin).toString();
+  return new URL(
+    `${BASE_PATH}/api/mvp/oauth/google/callback`,
+    appOrigin,
+  ).toString();
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { REQUEST_ID_HEADER } from "@sf/observability";
 import { operatorRoute } from "@/lib/http/handler";
 import { handleGoogleCallback } from "@/lib/services/source-connect";
+import { withBasePath } from "@/lib/base-path";
 
 /**
  * `GET /api/mvp/oauth/google/callback` — consume one Google OAuth callback and
@@ -20,9 +21,12 @@ export const GET = operatorRoute(async (request, ctx) => {
     },
   );
 
+  // `location` is a base-path-relative app path (e.g. `/p/{id}/sources?...`); the
+  // browser follows this raw Location, so prefix the deployment base path here
+  // (Next auto-prefixes redirect()/Link, but not a hand-set Location header).
   const response = new NextResponse(null, {
     status: 303,
-    headers: { Location: location },
+    headers: { Location: withBasePath(location) },
   });
   response.headers.set(REQUEST_ID_HEADER, ctx.requestId);
   return response;

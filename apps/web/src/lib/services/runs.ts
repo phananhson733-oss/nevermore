@@ -1,6 +1,11 @@
-import { AsyncRunsRepository, type AsyncRunRow, type WorkspaceScope } from "@sf/db";
+import {
+  AsyncRunsRepository,
+  type AsyncRunRow,
+  type WorkspaceScope,
+} from "@sf/db";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
+import { BASE_PATH } from "@/lib/base-path";
 
 /**
  * Unified async-run read model (spec §11.2 getProjectRun). Every collection,
@@ -32,7 +37,8 @@ function toProgress(raw: Record<string, unknown>): RunProgressDto {
   const phase = typeof raw["phase"] === "string" ? raw["phase"] : "queued";
   const current = typeof raw["current"] === "number" ? raw["current"] : 0;
   const total = typeof raw["total"] === "number" ? raw["total"] : null;
-  const messageKey = typeof raw["messageKey"] === "string" ? raw["messageKey"] : "run.queued";
+  const messageKey =
+    typeof raw["messageKey"] === "string" ? raw["messageKey"] : "run.queued";
   return { phase, current, total, messageKey };
 }
 
@@ -56,9 +62,11 @@ export function toAsyncRunDto(row: AsyncRunRow): AsyncRunDto {
   };
 }
 
-/** The same-origin status URL a 202 returns and the client polls. */
+/** The same-origin status URL a 202 returns and the client polls. Carries the
+ *  deployment base path so the client can fetch it and the browser can follow the
+ *  Location header when the app is mounted under a sub-path (e.g. `/app`). */
 export function runStatusUrl(projectId: string, runId: string): string {
-  return `/api/mvp/projects/${projectId}/runs/${runId}`;
+  return `${BASE_PATH}/api/mvp/projects/${projectId}/runs/${runId}`;
 }
 
 /** OpenAPI polling hint: active runs advertise another poll; terminals do not. */

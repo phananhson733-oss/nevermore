@@ -6,8 +6,9 @@
  */
 
 import type { ProblemBody, ProblemFieldError } from "./types";
+import { BASE_PATH } from "@/lib/base-path";
 
-const API_BASE = "/api/mvp";
+const API_BASE = `${BASE_PATH}/api/mvp`;
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
