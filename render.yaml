@@ -38,7 +38,7 @@ services:
       # which the version resolver reads, so the worker logs the real deployed SHA.
       # --- fixed, non-secret ---
       - key: APP_ORIGIN
-        value: https://gengrowth.ai
+        value: https://app.gengrowth.ai
       - key: DB_POOL_MAX
         value: "3"
       - key: DATAFORSEO_ENABLED
