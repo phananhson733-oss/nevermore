@@ -49,6 +49,26 @@ export async function createProject(
   body: CreateProjectRequest,
   guard: UrlGuard = canonicalUrlGuard,
 ): Promise<CreateProjectResult> {
+  const requestHash = contentHash({
+    clientName: body.clientName,
+    projectName: body.projectName,
+    siteUrl: body.siteUrl,
+    marketCodes: [...body.marketCodes],
+    siteLanguageCodes: [...body.siteLanguageCodes],
+    defaultDeliveryLocale: body.defaultDeliveryLocale,
+  });
+  const { db } = getDb();
+
+  // A completed command is immutable. Replay (or reject a different hash)
+  // before DNS/reachability checks whose result can legitimately change after
+  // the original 201 was committed.
+  const idem = new IdempotencyRepository(db);
+  const existing = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+  if (existing) {
+    const replay = replayOrConflict(existing, requestHash);
+    if (replay) return replay;
+  }
+
   // 1. Normalize + validate the submitted URL (scheme, host, trailing slash).
   const normalized = normalizeSiteOrigin(body.siteUrl);
   if (!normalized) {
@@ -70,25 +90,7 @@ export async function createProject(
     });
   }
 
-  const requestHash = contentHash({
-    clientName: body.clientName,
-    projectName: body.projectName,
-    siteUrl: body.siteUrl,
-    marketCodes: [...body.marketCodes],
-    siteLanguageCodes: [...body.siteLanguageCodes],
-    defaultDeliveryLocale: body.defaultDeliveryLocale,
-  });
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
-
-  const { db } = getDb();
-
-  // Fast path: a completed key with the same body replays; a different body 409s.
-  const idem = new IdempotencyRepository(db);
-  const existing = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
-  if (existing) {
-    const replay = replayOrConflict(existing, requestHash);
-    if (replay) return replay;
-  }
 
   return db.transaction(async (tx) => {
     const txIdem = new IdempotencyRepository(tx);

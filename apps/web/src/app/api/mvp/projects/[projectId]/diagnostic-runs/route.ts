@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
 import { CreateDiagnosticRunRequest } from "@sf/contracts";
-import { REQUEST_ID_HEADER } from "@sf/observability";
 import { operatorRoute } from "@/lib/http/handler";
+import { assertWorkspaceRateLimit } from "@/lib/http/rate-limit";
+import { asyncAccepted } from "@/lib/http/respond";
 import { parseJsonBody, parseUuidParam, requireIdempotencyKey } from "@/lib/http/validate";
 import { createDiagnosticRun } from "@/lib/services/diagnostics";
 
@@ -14,6 +14,12 @@ export const POST = operatorRoute<{ projectId: string }>(async (request, ctx, ro
   const { projectId } = await routeCtx.params;
   const id = parseUuidParam(projectId);
   const idempotencyKey = requireIdempotencyKey(request);
+  await assertWorkspaceRateLimit(ctx.operator.workspaceId, {
+    idempotencyKey,
+    scope: "diagnostic_run",
+    maxAttempts: 20,
+    windowMs: 15 * 60 * 1000,
+  });
   const body = await parseJsonBody(request, CreateDiagnosticRunRequest);
 
   const result = await createDiagnosticRun(
@@ -23,14 +29,11 @@ export const POST = operatorRoute<{ projectId: string }>(async (request, ctx, ro
     idempotencyKey,
     body,
   );
-  const response = NextResponse.json(
+  return asyncAccepted(
     { run: result.run, statusUrl: result.statusUrl, resourceRef: result.resourceRef },
-    { status: 202 },
+    ctx.requestId,
+    result.location,
   );
-  response.headers.set("Location", result.location);
-  response.headers.set("Retry-After", "1");
-  response.headers.set(REQUEST_ID_HEADER, ctx.requestId);
-  return response;
 });
 
 export const dynamic = "force-dynamic";

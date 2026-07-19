@@ -28,21 +28,54 @@ interface QueueConfig {
   readonly retryLimit: number;
   /** Exponential backoff with jitter (spec §13.1). */
   readonly retryBackoff: boolean;
+  /** Worker-managed heartbeat; a dead process stops touching the active job. */
+  readonly heartbeatSeconds: number;
 }
 
 /** The seven fixed queues and their timeout/retry contract (spec §13.1). */
 export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
-  "collect.crawl": { expireInSeconds: 900, retryLimit: 2, retryBackoff: true },
-  "collect.gsc": { expireInSeconds: 600, retryLimit: 3, retryBackoff: true },
-  "collect.ga4": { expireInSeconds: 600, retryLimit: 3, retryBackoff: true },
-  "collect.csv": { expireInSeconds: 600, retryLimit: 1, retryBackoff: true },
-  diagnose: { expireInSeconds: 600, retryLimit: 2, retryBackoff: true },
+  "collect.crawl": {
+    expireInSeconds: 900,
+    retryLimit: 2,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
+  "collect.gsc": {
+    expireInSeconds: 600,
+    retryLimit: 3,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
+  "collect.ga4": {
+    expireInSeconds: 600,
+    retryLimit: 3,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
+  "collect.csv": {
+    expireInSeconds: 600,
+    retryLimit: 1,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
+  diagnose: {
+    expireInSeconds: 600,
+    retryLimit: 2,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
   "artifact.generate": {
     expireInSeconds: 300,
     retryLimit: 2,
     retryBackoff: true,
+    heartbeatSeconds: 60,
   },
-  "export.bundle": { expireInSeconds: 300, retryLimit: 2, retryBackoff: true },
+  "export.bundle": {
+    expireInSeconds: 300,
+    retryLimit: 2,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
 };
 
 export const QUEUE_NAMES = Object.keys(QUEUE_CONFIG) as QueueName[];
@@ -98,6 +131,15 @@ export async function startBoss(boss: PgBoss): Promise<void> {
       expireInSeconds: cfg.expireInSeconds,
       retryLimit: cfg.retryLimit,
       retryBackoff: cfg.retryBackoff,
+      heartbeatSeconds: cfg.heartbeatSeconds,
+    });
+    // createQueue is intentionally create-only in pg-boss. Re-apply mutable
+    // policy so an existing production queue receives heartbeat/retry updates.
+    await boss.updateQueue(name, {
+      expireInSeconds: cfg.expireInSeconds,
+      retryLimit: cfg.retryLimit,
+      retryBackoff: cfg.retryBackoff,
+      heartbeatSeconds: cfg.heartbeatSeconds,
     });
   }
 }
@@ -115,9 +157,19 @@ export async function enqueueRunInTx(
   tx: DbTx,
   queue: QueueName,
   payload: RunJobPayload,
-): Promise<string | null> {
-  return boss.send(queue, payload, { db: fromDrizzle(tx, sql) });
+): Promise<string> {
+  const jobId = await boss.send(queue, payload, {
+    id: payload.runId,
+    db: fromDrizzle(tx, sql),
+  });
+  // pg-boss reports an id/singleton conflict as null. Treat that as an enqueue
+  // failure so the surrounding canonical transaction cannot commit a run with
+  // no corresponding queue job.
+  if (jobId === null) {
+    throw new Error("pg-boss rejected the explicit run job id");
+  }
+  return jobId;
 }
 
 export { PgBoss };
-export type { Job, WorkHandler } from "pg-boss";
+export type { Job, JobWithMetadata, WorkHandler } from "pg-boss";

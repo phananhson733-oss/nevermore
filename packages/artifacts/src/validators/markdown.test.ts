@@ -41,6 +41,59 @@ describe("validateMarkdownSections", () => {
     expect(errors.some((e) => e.includes("raw HTML/script"))).toBe(true);
   });
 
+  it.each([
+    ["image with an event handler", "<img src=x onerror=alert(1)>"],
+    ["ordinary anchor", '<a href="https://example.com">read more</a>'],
+    ["mixed-case SVG", '<SvG viewBox="0 0 10 10"><circle /></sVg>'],
+    ["uppercase custom element", "<ACME-CARD>content</ACME-CARD>"],
+    ["closing tag by itself", "safe text</DiV>"],
+  ])("rejects any raw HTML tag opener: %s", (_name, payload) => {
+    const md = `## Objective\n\n${payload}\n\n## Evidence\n\n- [ev1] claim\n`;
+    expect(validateMarkdownSections(md, REQUIRED)).toContain(
+      "markdown contains disallowed raw HTML/script (spec §14.4)",
+    );
+  });
+
+  it.each([
+    ["HTML comment", "<!-- hidden -->"],
+    ["DOCTYPE declaration", "<!DOCTYPE html>"],
+    ["processing instruction", "<?render target?>"],
+    ["CDATA section", "<![CDATA[hidden]]>"],
+  ])("rejects a raw HTML block opener: %s", (_name, payload) => {
+    const md = `## Objective\n\n${payload}\n\n## Evidence\n\n- [ev1] claim\n`;
+    expect(validateMarkdownSections(md, REQUIRED)).toContain(
+      "markdown contains disallowed raw HTML/script (spec §14.4)",
+    );
+  });
+
+  it.each([
+    ["multiline HTML attributes", "<IMG\nSRC=x\nONERROR \t = alert(1)>"],
+    ["bare event handler", "onload\n = steal()"],
+    ["mixed-case JS URI", "[open](JaVaScRiPt \t:\nalert(1))"],
+    ["control whitespace inside JS scheme", "[open](java\nscript:alert(1))"],
+    ["numeric-entity JS colon", "[open](javascript&#x3a;alert(1))"],
+    ["entity-obfuscated JS whitespace", "[open](java&#x09;script&colon;alert(1))"],
+  ])("rejects whitespace-obfuscated active content: %s", (_name, payload) => {
+    const md = `## Objective\n\n${payload}\n\n## Evidence\n\n- [ev1] claim\n`;
+    expect(validateMarkdownSections(md, REQUIRED)).toContain(
+      "markdown contains disallowed raw HTML/script (spec §14.4)",
+    );
+  });
+
+  it("keeps comparison prose and normal markdown sections valid", () => {
+    const md = [
+      "## Objective",
+      "",
+      "Choose plans < pro when team size < 10; keep **normal Markdown**.",
+      "",
+      "## Evidence",
+      "",
+      "- [ev1] [Source](https://example.com) with `inline code`.",
+      "",
+    ].join("\n");
+    expect(validateMarkdownSections(md, REQUIRED)).toEqual([]);
+  });
+
   it("treats empty input as invalid", () => {
     expect(validateMarkdownSections("   ", REQUIRED)).toEqual(["markdown content is empty"]);
   });

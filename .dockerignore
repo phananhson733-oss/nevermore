@@ -1,0 +1,24 @@
+.git
+.gitignore
+node_modules
+**/node_modules
+.pnpm-store
+**/.next
+**/.next-*
+dist
+**/dist
+coverage
+playwright-report
+test-results
+.vitest
+.data
+**/.data
+
+# Never copy local credentials or platform secrets into the build context.
+.env
+.env.local
+.env.*.local
+apps/*/.env.local
+
+.DS_Store
+*.tsbuildinfo

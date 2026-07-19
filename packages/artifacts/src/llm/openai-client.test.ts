@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ArtifactPromptInput } from "../types.ts";
 import { PROMPT_SET_VERSION } from "../types.ts";
-import { LLMError, createOpenAIClient } from "./openai-client.ts";
+import { MAX_EVIDENCE_CLAIM_CHARS } from "./envelope.ts";
+import {
+  LLMError,
+  MAX_OPENAI_RESPONSE_BODY_BYTES,
+  createOpenAIClient,
+} from "./openai-client.ts";
 
 function makeInput(
   overrides: Partial<ArtifactPromptInput> = {},
@@ -56,7 +61,21 @@ function chatResponse(
     completion_tokens: 340,
   },
 ): Response {
-  const body = {
+  return new Response(chatResponseText(content, usage), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function chatResponseText(
+  content: unknown,
+  usage: { prompt_tokens: number; completion_tokens: number } = {
+    prompt_tokens: 120,
+    completion_tokens: 340,
+  },
+  extra: Record<string, unknown> = {},
+): string {
+  return JSON.stringify({
     choices: [
       {
         message: {
@@ -67,10 +86,70 @@ function chatResponse(
       },
     ],
     usage,
-  };
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "content-type": "application/json" },
+    ...extra,
+  });
+}
+
+const EXPECTED_RESPONSE_BODY_LIMIT_BYTES = MAX_OPENAI_RESPONSE_BODY_BYTES;
+
+function streamFixture(input: {
+  readonly status?: number;
+  readonly contentLength?: string;
+  readonly chunks?: readonly Uint8Array[];
+  readonly readError?: Error;
+  readonly legacyJson?: unknown;
+}): {
+  readonly response: Response;
+  readonly bodyCancel: ReturnType<typeof vi.fn>;
+  readonly readerCancel: ReturnType<typeof vi.fn>;
+  readonly read: ReturnType<typeof vi.fn>;
+} {
+  const bodyCancel = vi.fn(async () => undefined);
+  const readerCancel = vi.fn(async () => undefined);
+  const releaseLock = vi.fn();
+  const chunks = [...(input.chunks ?? [])];
+  const read = vi.fn(async () => {
+    if (input.readError) throw input.readError;
+    const value = chunks.shift();
+    return value ? { done: false, value } : { done: true, value: undefined };
+  });
+  const status = input.status ?? 200;
+  const response = {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers(
+      input.contentLength
+        ? { "content-length": input.contentLength }
+        : undefined,
+    ),
+    body: {
+      cancel: bodyCancel,
+      getReader: () => ({ read, cancel: readerCancel, releaseLock }),
+    },
+    // This models the old unbounded path. Hardened code must never call it.
+    json: vi.fn(async () => input.legacyJson),
+  } as unknown as Response;
+  return { response, bodyCancel, readerCancel, read };
+}
+
+const WATCHDOG_EXPIRED = Symbol("watchdog-expired");
+
+function settleBeforeWatchdog(
+  promise: Promise<unknown>,
+  watchdogMs: number,
+): Promise<unknown | typeof WATCHDOG_EXPIRED> {
+  return new Promise((resolve) => {
+    const watchdog = setTimeout(() => resolve(WATCHDOG_EXPIRED), watchdogMs);
+    void promise.then(
+      (value) => {
+        clearTimeout(watchdog);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(watchdog);
+        resolve(error);
+      },
+    );
   });
 }
 
@@ -150,6 +229,82 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     expect(sentBody.response_format.type).toBe("json_object");
     expect(sentBody.temperature).toBeLessThanOrEqual(0.5);
     expect(sentBody.messages.map((m) => m.role)).toEqual(["system", "user"]);
+  });
+
+  it("AC-032 sends only bounded, secret-scrubbed allowlisted data in the real outgoing request", async () => {
+    const oauthToken = `ya29.${"T".repeat(40)}`;
+    const rawCsv = [
+      "keyword,search_volume,customer_email",
+      "private query,999,owner@foreign.example",
+    ].join("\n");
+    const foreignProjectSentinel = "FOREIGN_PROJECT_PRIVATE_CONTEXT";
+    const nonAllowlistedEvidenceSentinel =
+      "NON_ALLOWLISTED_EVIDENCE_LIMITATION";
+    const claimTailSentinel = "CLAIM_MUST_BE_TRUNCATED_BEFORE_THIS_SENTINEL";
+    const longClaim = `${oauthToken} observed claim ${"x".repeat(
+      MAX_EVIDENCE_CLAIM_CHARS + 200,
+    )}${claimTailSentinel}`;
+
+    const pollutedInput = {
+      ...makeInput({
+        evidence: [
+          {
+            evidenceId: "ev-safe",
+            claim: longClaim,
+            grade: "B",
+            subjectRefs: ["url:/pricing"],
+            observedAt: "2026-07-01T00:00:00.000Z",
+            limitation: nonAllowlistedEvidenceSentinel,
+            rawCsv,
+          },
+        ] as unknown as ArtifactPromptInput["evidence"],
+      }),
+      accessToken: oauthToken,
+      rawCsv,
+      foreignProject: {
+        projectId: "project-foreign",
+        privateContext: foreignProjectSentinel,
+      },
+      nonAllowlistedEvidence: nonAllowlistedEvidenceSentinel,
+    } as unknown as ArtifactPromptInput;
+    const fetchImpl = vi.fn().mockResolvedValue(
+      chatResponse({
+        markdown: "Use the supplied evidence excerpt.",
+        evidenceRefs: ["ev-safe"],
+        citedNumbers: [],
+      }),
+    );
+    const client = createOpenAIClient({
+      apiKey: "outgoing-header-only-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
+
+    await client.generateArtifact(pollutedInput);
+
+    const call = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const outgoingBody = String(call[1].body);
+    expect(outgoingBody).not.toContain(oauthToken);
+    expect(outgoingBody).not.toContain(rawCsv);
+    expect(outgoingBody).not.toContain(foreignProjectSentinel);
+    expect(outgoingBody).not.toContain(nonAllowlistedEvidenceSentinel);
+    expect(outgoingBody).not.toContain(claimTailSentinel);
+    expect(outgoingBody).not.toContain("outgoing-header-only-key");
+    expect(outgoingBody).toContain("[redacted]");
+
+    const sentBody = JSON.parse(outgoingBody) as {
+      messages: ReadonlyArray<{ role: string; content: string }>;
+    };
+    const user = sentBody.messages.find((message) => message.role === "user")
+      ?.content;
+    const renderedClaim = user
+      ?.split("\n")
+      .find((line) => line.startsWith("  claim: "))
+      ?.slice("  claim: ".length);
+    expect(renderedClaim).toBeDefined();
+    expect(renderedClaim!.length).toBeLessThanOrEqual(
+      MAX_EVIDENCE_CLAIM_CHARS,
+    );
   });
 
   it("targets an Azure OpenAI deployment with the api-key header when authScheme=api-key", async () => {
@@ -267,6 +422,516 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     expect(llmError.invocation?.inputTokens).toBeNull();
   });
 
+  it("cancels a non-2xx response body without reading it and preserves the HTTP error mapping", async () => {
+    const secret = "NON_2XX_BODY_SECRET";
+    const fixture = streamFixture({
+      status: 429,
+      chunks: [new TextEncoder().encode(secret)],
+      legacyJson: { leaked: secret },
+    });
+    fixture.bodyCancel.mockImplementationOnce(() => {
+      throw new Error("NON_2XX_CANCEL_FAILURE_SECRET");
+    });
+    const client = createOpenAIClient({
+      apiKey: "http-error-api-secret",
+      model: "gpt-4o-mini",
+      fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+    });
+
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(LLMError);
+    expect(error).toMatchObject({
+      code: "RATE_LIMITED",
+      invocation: {
+        status: "failed",
+        errorCode: "RATE_LIMITED",
+        inputTokens: null,
+        outputTokens: null,
+      },
+    });
+    expect(fixture.bodyCancel).toHaveBeenCalledTimes(1);
+    expect(fixture.read).not.toHaveBeenCalled();
+    expect(String((error as Error).message)).not.toContain(secret);
+    expect(String((error as Error).message)).not.toContain(
+      "http-error-api-secret",
+    );
+    expect(String((error as Error).message)).not.toContain(
+      "NON_2XX_CANCEL_FAILURE_SECRET",
+    );
+  });
+
+  it("does not await a non-settling non-2xx body cancellation", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = streamFixture({ status: 429 });
+      fixture.bodyCancel.mockImplementationOnce(
+        () => new Promise<void>(() => undefined),
+      );
+      const client = createOpenAIClient({
+        apiKey: "non-settling-http-cancel-key",
+        model: "gpt-4o-mini",
+        fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+      });
+
+      const outcomePromise = settleBeforeWatchdog(
+        client.generateArtifact(makeInput()),
+        25,
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      const outcome = await outcomePromise;
+
+      expect(outcome).not.toBe(WATCHDOG_EXPIRED);
+      expect(outcome).toMatchObject({
+        code: "RATE_LIMITED",
+        invocation: { status: "failed", errorCode: "RATE_LIMITED" },
+      });
+      expect(fixture.bodyCancel).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects an oversized declared Content-Length before reading and cancels the body", async () => {
+    const secret = "DECLARED_OVERSIZE_BODY_SECRET";
+    const validText = chatResponseText(VALID_MARKDOWN, undefined, {
+      padding: secret,
+    });
+    const fixture = streamFixture({
+      contentLength: String(EXPECTED_RESPONSE_BODY_LIMIT_BYTES + 1),
+      chunks: [new TextEncoder().encode(validText)],
+      legacyJson: JSON.parse(validText),
+    });
+    const client = createOpenAIClient({
+      apiKey: "declared-limit-api-secret",
+      model: "gpt-4o-mini",
+      fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+    });
+
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((caught: unknown) => caught);
+
+    expectInvalidResponse(error);
+    expect(fixture.bodyCancel).toHaveBeenCalledTimes(1);
+    expect(fixture.read).not.toHaveBeenCalled();
+    expect(String((error as Error).message)).not.toContain(secret);
+    expect(String((error as Error).message)).not.toContain(
+      "declared-limit-api-secret",
+    );
+  });
+
+  it("does not await a non-settling cancellation for a declared oversized body", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = streamFixture({
+        contentLength: String(EXPECTED_RESPONSE_BODY_LIMIT_BYTES + 1),
+      });
+      fixture.bodyCancel.mockImplementationOnce(
+        () => new Promise<void>(() => undefined),
+      );
+      const client = createOpenAIClient({
+        apiKey: "non-settling-declared-cancel-key",
+        model: "gpt-4o-mini",
+        fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+      });
+
+      const outcomePromise = settleBeforeWatchdog(
+        client.generateArtifact(makeInput()),
+        25,
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      const outcome = await outcomePromise;
+
+      expect(outcome).not.toBe(WATCHDOG_EXPIRED);
+      expectInvalidResponse(outcome);
+      expect(fixture.bodyCancel).toHaveBeenCalledTimes(1);
+      expect(fixture.read).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not trust a small Content-Length and cancels the decoded stream as soon as actual bytes exceed the cap", async () => {
+    const secret = "STREAM_OVERSIZE_BODY_SECRET";
+    const oversizedText = chatResponseText(VALID_MARKDOWN, undefined, {
+      padding: `${secret}${"x".repeat(EXPECTED_RESPONSE_BODY_LIMIT_BYTES)}`,
+    });
+    const fixture = streamFixture({
+      contentLength: "1",
+      chunks: [new TextEncoder().encode(oversizedText)],
+      legacyJson: JSON.parse(oversizedText),
+    });
+    const client = createOpenAIClient({
+      apiKey: "stream-limit-api-secret",
+      model: "gpt-4o-mini",
+      fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+    });
+
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((caught: unknown) => caught);
+
+    expectInvalidResponse(error);
+    expect(fixture.read).toHaveBeenCalledTimes(1);
+    expect(fixture.readerCancel).toHaveBeenCalledTimes(1);
+    expect(String((error as Error).message)).not.toContain(secret);
+    expect(String((error as Error).message)).not.toContain(
+      "stream-limit-api-secret",
+    );
+  });
+
+  it("does not await a non-settling reader cancellation after actual bytes exceed the cap", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = streamFixture({
+        contentLength: "1",
+        chunks: [new Uint8Array(EXPECTED_RESPONSE_BODY_LIMIT_BYTES + 1)],
+      });
+      fixture.readerCancel.mockImplementationOnce(
+        () => new Promise<void>(() => undefined),
+      );
+      const client = createOpenAIClient({
+        apiKey: "non-settling-reader-cancel-key",
+        model: "gpt-4o-mini",
+        fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+      });
+
+      const outcomePromise = settleBeforeWatchdog(
+        client.generateArtifact(makeInput()),
+        25,
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      const outcome = await outcomePromise;
+
+      expect(outcome).not.toBe(WATCHDOG_EXPIRED);
+      expectInvalidResponse(outcome);
+      expect(fixture.read).toHaveBeenCalledTimes(1);
+      expect(fixture.readerCancel).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("accepts a valid streamed JSON response exactly at the decoded-byte cap", async () => {
+    const emptyPadding = chatResponseText(VALID_MARKDOWN, undefined, {
+      padding: "",
+    });
+    const paddingBytes =
+      EXPECTED_RESPONSE_BODY_LIMIT_BYTES -
+      new TextEncoder().encode(emptyPadding).byteLength;
+    expect(paddingBytes).toBeGreaterThan(0);
+    const boundaryText = chatResponseText(VALID_MARKDOWN, undefined, {
+      padding: "x".repeat(paddingBytes),
+    });
+    const boundaryBytes = new TextEncoder().encode(boundaryText);
+    expect(boundaryBytes.byteLength).toBe(
+      EXPECTED_RESPONSE_BODY_LIMIT_BYTES,
+    );
+    const fixture = streamFixture({
+      contentLength: String(EXPECTED_RESPONSE_BODY_LIMIT_BYTES),
+      chunks: [boundaryBytes],
+      legacyJson: JSON.parse(boundaryText),
+    });
+    const client = createOpenAIClient({
+      apiKey: "boundary-key",
+      model: "gpt-4o-mini",
+      fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+    });
+
+    const result = await client.generateArtifact(makeInput());
+
+    expect(result.invocation.status).toBe("succeeded");
+    expect(fixture.bodyCancel).not.toHaveBeenCalled();
+    expect(fixture.readerCancel).not.toHaveBeenCalled();
+  });
+
+  it("streams a valid response when Content-Length is malformed instead of trusting the header", async () => {
+    const body = chatResponseText(VALID_MARKDOWN);
+    const fixture = streamFixture({
+      contentLength: "not-a-number",
+      chunks: [new TextEncoder().encode(body)],
+      legacyJson: JSON.parse(body),
+    });
+    const client = createOpenAIClient({
+      apiKey: "malformed-length-key",
+      model: "gpt-4o-mini",
+      fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+    });
+
+    const result = await client.generateArtifact(makeInput());
+
+    expect(result.invocation.status).toBe("succeeded");
+    expect(fixture.read).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels and sanitizes failures while acquiring or consuming a response reader", async () => {
+    const acquireCancel = vi.fn(async () => undefined);
+    const acquireResponse = {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: {
+        cancel: acquireCancel,
+        getReader: () => {
+          throw new Error("GET_READER_SECRET");
+        },
+      },
+      json: vi.fn(async () => JSON.parse(chatResponseText(VALID_MARKDOWN))),
+    } as unknown as Response;
+    const invalidChunkCancel = vi.fn(async () => {
+      throw new Error("CANCEL_READER_SECRET");
+    });
+    const invalidChunkResponse = {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: {
+        cancel: vi.fn(async () => undefined),
+        getReader: () => ({
+          read: vi.fn(async () => ({
+            done: false,
+            value: "NON_BYTE_CHUNK_SECRET",
+          })),
+          cancel: invalidChunkCancel,
+          releaseLock: () => {
+            throw new Error("RELEASE_LOCK_SECRET");
+          },
+        }),
+      },
+      json: vi.fn(async () => JSON.parse(chatResponseText(VALID_MARKDOWN))),
+    } as unknown as Response;
+
+    for (const response of [acquireResponse, invalidChunkResponse]) {
+      const client = createOpenAIClient({
+        apiKey: "reader-failure-key",
+        model: "gpt-4o-mini",
+        fetchImpl: vi.fn().mockResolvedValue(response),
+      });
+      const error = await client
+        .generateArtifact(makeInput())
+        .catch((caught: unknown) => caught);
+      expectInvalidResponse(error);
+      expect(
+        JSON.stringify({
+          message: (error as Error).message,
+          invocation: (error as LLMError).invocation,
+        }),
+      ).not.toMatch(
+        /GET_READER_SECRET|CANCEL_READER_SECRET|NON_BYTE_CHUNK_SECRET|RELEASE_LOCK_SECRET|reader-failure-key/,
+      );
+    }
+    expect(acquireCancel).toHaveBeenCalledTimes(1);
+    expect(invalidChunkCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      name: "missing body",
+      response: {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        body: null,
+        json: vi.fn(async () => JSON.parse(chatResponseText(VALID_MARKDOWN))),
+      } as unknown as Response,
+    },
+    {
+      name: "invalid JSON",
+      response: streamFixture({
+        chunks: [new TextEncoder().encode('{"gateway":"broken"')],
+      }).response,
+    },
+    {
+      name: "stream error",
+      response: streamFixture({
+        readError: new Error("UPSTREAM_STREAM_SECRET"),
+        legacyJson: JSON.parse(chatResponseText(VALID_MARKDOWN)),
+      }).response,
+    },
+  ])("maps a $name success response to stable INVALID_RESPONSE", async ({ response }) => {
+    const client = createOpenAIClient({
+      apiKey: "malformed-body-api-secret",
+      model: "gpt-4o-mini",
+      fetchImpl: vi.fn().mockResolvedValue(response),
+    });
+
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((caught: unknown) => caught);
+
+    expectInvalidResponse(error);
+    const serialized = JSON.stringify({
+      message: (error as Error).message,
+      invocation: (error as LLMError).invocation,
+    });
+    expect(serialized).not.toContain("UPSTREAM_STREAM_SECRET");
+    expect(serialized).not.toContain("malformed-body-api-secret");
+  });
+
+  it.each([
+    [401, "AUTH_FAILED"],
+    [403, "AUTH_FAILED"],
+    [400, "BAD_REQUEST"],
+    [500, "SERVER_ERROR"],
+  ] as const)(
+    "preserves HTTP %i -> %s mapping while cancelling the response body",
+    async (status, code) => {
+      const fixture = streamFixture({
+        status,
+        chunks: [new TextEncoder().encode("ignored provider body")],
+      });
+      const client = createOpenAIClient({
+        apiKey: "http-map-key",
+        model: "gpt-4o-mini",
+        fetchImpl: vi.fn().mockResolvedValue(fixture.response),
+      });
+
+      const error = await client
+        .generateArtifact(makeInput())
+        .catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({
+        code,
+        invocation: { status: "failed", errorCode: code },
+      });
+      expect(fixture.bodyCancel).toHaveBeenCalledTimes(1);
+      expect(fixture.read).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps malformed usage fields null after bounded JSON decoding", async () => {
+    const response = new Response(
+      chatResponseText(VALID_MARKDOWN, undefined, {
+        usage: { prompt_tokens: "secret", completion_tokens: null },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    const client = createOpenAIClient({
+      apiKey: "usage-key",
+      model: "gpt-4o-mini",
+      fetchImpl: vi.fn().mockResolvedValue(response),
+    });
+
+    const result = await client.generateArtifact(makeInput());
+
+    expect(result.invocation.inputTokens).toBeNull();
+    expect(result.invocation.outputTokens).toBeNull();
+  });
+
+  it("preserves abort timeout mapping while hardening body decoding", async () => {
+    const fetchImpl = vi.fn(
+      async (_url: string, init?: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("timed out", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const client = createOpenAIClient({
+      apiKey: "timeout-api-secret",
+      model: "gpt-4o-mini",
+      fetchImpl,
+      timeoutMs: 1,
+    });
+
+    const error = await client
+      .generateArtifact(makeInput())
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      code: "TIMEOUT",
+      invocation: { status: "failed", errorCode: "TIMEOUT" },
+    });
+  });
+
+  it("times out after headers when the decoded body never finishes", async () => {
+    vi.useFakeTimers();
+    let removeAbortListener: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      let markReadStarted: (() => void) | undefined;
+      const readStarted = new Promise<void>((resolve) => {
+        markReadStarted = resolve;
+      });
+      const read = vi.fn(() => {
+        markReadStarted?.();
+        return new Promise<{
+          readonly done: boolean;
+          readonly value: Uint8Array | undefined;
+        }>(() => undefined);
+      });
+      const readerCancel = vi.fn(() => new Promise<void>(() => undefined));
+      const releaseLock = vi.fn();
+      const response = {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        body: {
+          cancel: vi.fn(() => new Promise<void>(() => undefined)),
+          getReader: () => ({ read, cancel: readerCancel, releaseLock }),
+        },
+      } as unknown as Response;
+      let requestSignal: AbortSignal | undefined;
+      const fetchImpl = vi.fn(
+        async (_url: string, init?: RequestInit): Promise<Response> => {
+          requestSignal = init?.signal ?? undefined;
+          if (requestSignal) {
+            removeAbortListener = vi.spyOn(
+              requestSignal,
+              "removeEventListener",
+            );
+          }
+          return response;
+        },
+      );
+      const client = createOpenAIClient({
+        apiKey: "body-timeout-api-secret",
+        model: "gpt-4o-mini",
+        fetchImpl,
+        timeoutMs: 50,
+      });
+
+      const outcomePromise = settleBeforeWatchdog(
+        client.generateArtifact(makeInput()),
+        100,
+      );
+      await readStarted;
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(100);
+      const outcome = await outcomePromise;
+
+      expect(outcome).not.toBe(WATCHDOG_EXPIRED);
+      expect(outcome).toMatchObject({
+        code: "TIMEOUT",
+        invocation: {
+          status: "failed",
+          errorCode: "TIMEOUT",
+          inputTokens: null,
+          outputTokens: null,
+          outputHash: null,
+        },
+      });
+      expect(requestSignal?.aborted).toBe(true);
+      expect(readerCancel).toHaveBeenCalledTimes(1);
+      expect(releaseLock).toHaveBeenCalledTimes(1);
+      expect(removeAbortListener).toHaveBeenCalledWith(
+        "abort",
+        expect.any(Function),
+      );
+      expect(vi.getTimerCount()).toBe(0);
+      expect(JSON.stringify(outcome)).not.toContain("body-timeout-api-secret");
+    } finally {
+      removeAbortListener?.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("maps a transport failure to NETWORK_ERROR", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("connection reset"));
     const client = createOpenAIClient({
@@ -286,4 +951,24 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
       createOpenAIClient({ apiKey: "", model: "gpt-4o-mini" }),
     ).toThrow(LLMError);
   });
+
+  it("throws CONFIG_INVALID when constructed without a model", () => {
+    expect(() => createOpenAIClient({ apiKey: "key", model: "" })).toThrow(
+      LLMError,
+    );
+  });
 });
+
+function expectInvalidResponse(error: unknown): void {
+  expect(error).toBeInstanceOf(LLMError);
+  expect(error).toMatchObject({
+    code: "INVALID_RESPONSE",
+    invocation: {
+      status: "failed",
+      errorCode: "INVALID_RESPONSE",
+      inputTokens: null,
+      outputTokens: null,
+      outputHash: null,
+    },
+  });
+}

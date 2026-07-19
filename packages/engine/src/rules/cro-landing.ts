@@ -25,7 +25,7 @@ const BASELINE_UNAVAILABLE = "ga4_baseline_unavailable";
 const GA4_LIMITATION =
   "Conversion rate uses GA4 key events under the project's key-event mapping; pages with unmapped key events are excluded and only pages with at least 500 sessions are evaluated.";
 
-export const croLandingRule: DiagnosticRule = {
+export const croLandingRule = {
   id: "CRO-LANDING-003",
   version: 1,
   domain: "conversion_journey",
@@ -94,4 +94,4 @@ export const croLandingRule: DiagnosticRule = {
     }
     return { status: "candidate", candidates };
   },
-};
+} satisfies DiagnosticRule;

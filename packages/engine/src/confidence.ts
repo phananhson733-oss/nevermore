@@ -13,8 +13,14 @@ import type { EvidenceDraft } from "./rule.ts";
 
 export type Confidence = "high" | "medium" | "low";
 
+export interface ConfidenceOptions {
+  /** An unresolved provider conflict overlaps the finding/evidence subjects. */
+  readonly hasDiscrepancy?: boolean;
+}
+
 export function deriveConfidence(
   evidence: readonly EvidenceDraft[],
+  options: ConfidenceOptions = {},
 ): Confidence {
   const supporting = evidence.filter((e) => e.support === "supports");
   if (supporting.length === 0) return "low";
@@ -40,7 +46,9 @@ export function deriveConfidence(
   const hasPartial = evidence.some((e) => e.availability === "partial");
 
   if (hasStrongObserved && !restsOnInferred && !hasPartial) {
-    return "high";
+    // A provider discrepancy is not itself model evidence and cannot turn a
+    // finding low; it removes the "no discrepancy" prerequisite for high.
+    return options.hasDiscrepancy ? "medium" : "high";
   }
   return "medium";
 }

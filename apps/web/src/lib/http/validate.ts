@@ -21,6 +21,149 @@ import { ProblemError, type ProblemFieldError } from "@sf/observability";
  */
 export const MAX_JSON_BODY_BYTES = 1 * 1024 * 1024;
 
+/**
+ * Space reserved for the multipart boundary, part headers, and the small
+ * `templateId` field around a 20 MiB CSV file. The actual `File.size` is checked
+ * separately by the import route; this allowance only prevents rejecting a
+ * legal file because of its multipart envelope.
+ */
+export const MAX_MULTIPART_BODY_OVERHEAD_BYTES = 64 * 1024;
+
+const BODY_REQUIRED = "A request body is required.";
+const BODY_INVALID = "The request body could not be read.";
+const BODY_TOO_LARGE = "Request body exceeds the size limit.";
+
+/** HTTP media types are case-insensitive; parameters follow the base type. */
+export function isMultipartFormDataContentType(contentType: string): boolean {
+  return /^multipart\/form-data(?:\s*;|$)/i.test(contentType);
+}
+
+function cancelBody(body: ReadableStream<Uint8Array> | null): void {
+  if (!body) return;
+  try {
+    void body.cancel().catch(() => undefined);
+  } catch {
+    // Rejection status must not depend on whether an already-failing transport
+    // also rejects cancellation.
+  }
+}
+
+function declaredBodyBytes(headers: Headers): number | null {
+  const raw = headers.get("content-length");
+  if (raw === null || !/^\d+$/.test(raw)) return null;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+/**
+ * Read the decoded Fetch request stream with a hard byte ceiling. The stream is
+ * cancelled as soon as a chunk would cross the limit, so callers never buffer
+ * an unbounded body and cannot bypass the cap with a false Content-Length.
+ */
+async function readBodyWithinLimit(
+  request: NextRequest,
+  maxBodyBytes: number,
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1) {
+    throw new RangeError("maxBodyBytes must be a positive safe integer");
+  }
+
+  const declared = declaredBodyBytes(request.headers);
+  if (declared !== null && declared > maxBodyBytes) {
+    cancelBody(request.body);
+    throw new ProblemError("IMPORT_TOO_LARGE", BODY_TOO_LARGE);
+  }
+
+  const body = request.body;
+  if (!body) {
+    throw new ProblemError("BAD_REQUEST", BODY_REQUIRED);
+  }
+
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = body.getReader();
+  } catch {
+    throw new ProblemError("BAD_REQUEST", BODY_INVALID);
+  }
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch {
+        // Treat every transport rejection as untrusted input, even if its
+        // rejection value happens to be a ProblemError with another code.
+        throw new ProblemError("BAD_REQUEST", BODY_INVALID);
+      }
+      const { done, value } = result;
+      if (done) break;
+      if (!(value instanceof Uint8Array)) {
+        throw new ProblemError("BAD_REQUEST", BODY_INVALID);
+      }
+      if (value.byteLength > maxBodyBytes - totalBytes) {
+        try {
+          void reader.cancel().catch(() => undefined);
+        } catch {
+          // Keep the stable 413 even if transport cancellation itself fails.
+        }
+        throw new ProblemError("IMPORT_TOO_LARGE", BODY_TOO_LARGE);
+      }
+      if (value.byteLength > 0) {
+        chunks.push(value);
+        totalBytes += value.byteLength;
+      }
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // Do not let transport cleanup replace the stable request problem.
+    }
+  }
+
+  if (totalBytes === 0) {
+    throw new ProblemError("BAD_REQUEST", BODY_REQUIRED);
+  }
+
+  const bytes = new Uint8Array(new ArrayBuffer(totalBytes));
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/**
+ * Parse multipart form data from a byte-limited copy of the decoded request
+ * stream. `request.formData()` is deliberately not used: it would parse and
+ * buffer the untrusted stream before application code could enforce a limit.
+ */
+export async function parseMultipartFormDataWithinLimit(
+  request: NextRequest,
+  maxBodyBytes: number,
+): Promise<FormData> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!isMultipartFormDataContentType(contentType)) {
+    throw new ProblemError("BAD_REQUEST", "Content-Type must be multipart/form-data.");
+  }
+
+  const bytes = await readBodyWithinLimit(request, maxBodyBytes);
+  try {
+    const boundedRequest = new Request(request.url, {
+      method: "POST",
+      headers: { "content-type": contentType },
+      body: bytes,
+    });
+    return await boundedRequest.formData();
+  } catch {
+    throw new ProblemError("BAD_REQUEST", "Request body must be valid multipart form data.");
+  }
+}
+
 /** Map a Zod issue path to an RFC6901 JSON pointer, e.g. ["profile","personas",0] → "/profile/personas/0". */
 function toPointer(path: readonly PropertyKey[]): string {
   if (path.length === 0) return "";
@@ -40,28 +183,15 @@ export async function parseJsonBody<S extends z.ZodTypeAny>(
   request: NextRequest,
   schema: S,
 ): Promise<z.infer<S>> {
-  // Body-size hardening (AC-013, spec §14.2): reject oversized / decompression-bomb
-  // payloads BEFORE JSON parsing or schema validation. A declared Content-Length
-  // over the cap is refused without buffering; the post-read check catches a small
-  // compressed body that inflates past the cap once decoded.
-  const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_JSON_BODY_BYTES) {
-    throw new ProblemError(
-      "IMPORT_TOO_LARGE",
-      "Request body exceeds the size limit.",
-    );
-  }
+  // Fetch exposes the decoded body stream. Count those bytes incrementally so a
+  // chunked or compressed payload cannot force request.text() to buffer past the
+  // cap before validation gets a chance to run.
+  const bytes = await readBodyWithinLimit(request, MAX_JSON_BODY_BYTES);
   let text: string;
   try {
-    text = await request.text();
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     throw new ProblemError("BAD_REQUEST", "Request body must be valid JSON.");
-  }
-  if (Buffer.byteLength(text, "utf8") > MAX_JSON_BODY_BYTES) {
-    throw new ProblemError(
-      "IMPORT_TOO_LARGE",
-      "Request body exceeds the size limit.",
-    );
   }
   let raw: unknown;
   try {

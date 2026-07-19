@@ -5,9 +5,8 @@
  * "next step" for a project. TanStack Query owns the server state (never copied
  * into a hand-rolled store, spec §3.2). For a fresh project every metric is
  * genuinely empty — cards show `noData` / `missing`, never a fabricated number
- * (unavailable != 0, spec §1.3). The diagnosis/report screens do not exist in
- * this stage, so their buttons are DISABLED (not dead links); the real,
- * actionable CTA is completing project context.
+ * (unavailable != 0, spec §1.3). Diagnosis and report are real project screens,
+ * so the hero actions are navigable even while their content is not populated.
  */
 
 import Link from "next/link";
@@ -83,12 +82,6 @@ function contextTone(status: Project["contextStatus"]): StatusTone {
   }
 }
 
-/** Stage is a server projection with no message catalog; humanize the enum. */
-function humanizeStage(stage: string): string {
-  const spaced = stage.replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
 interface MetricItem {
   readonly key: string;
   readonly tone: CardTone;
@@ -101,6 +94,7 @@ function HeroSection({ project }: { readonly project: Project }) {
   const t = useTranslations("overview");
   const tNav = useTranslations("nav");
   const tShell = useTranslations("appShell");
+  const tStage = useTranslations("projectStage");
   const tContextStatus = useTranslations("contextStatus");
   return (
     <header className={styles.hero}>
@@ -112,7 +106,7 @@ function HeroSection({ project }: { readonly project: Project }) {
         <div className={styles.metaRow}>
           <span className={styles.metaItem}>
             <span className={styles.metaLabel}>{tShell("projectStage")}</span>
-            <Badge>{humanizeStage(project.stage)}</Badge>
+            <Badge>{tStage(project.stage)}</Badge>
           </span>
           <span className={styles.metaItem}>
             <span className={styles.metaLabel}>{tNav("context")}</span>
@@ -124,20 +118,19 @@ function HeroSection({ project }: { readonly project: Project }) {
       </div>
       <div className={styles.heroActions}>
         <div className={styles.heroButtons}>
-          <Button
-            variant="secondary"
-            disabled
-            aria-describedby="sf-actions-note"
+          <Link
+            href={`/p/${project.id}/report`}
+            className={cx(styles.heroLink, styles.heroLinkSecondary)}
           >
             {t("previewReport")}
-          </Button>
-          <Button variant="primary" disabled aria-describedby="sf-actions-note">
+          </Link>
+          <Link
+            href={`/p/${project.id}/diagnosis`}
+            className={cx(styles.heroLink, styles.heroLinkPrimary)}
+          >
             {t("reviewDiagnosis")}
-          </Button>
+          </Link>
         </div>
-        <p id="sf-actions-note" className={styles.actionsNote}>
-          {tShell("comingSoon")}
-        </p>
       </div>
     </header>
   );

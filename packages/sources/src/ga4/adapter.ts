@@ -35,13 +35,26 @@ import type {
   Ga4Metric,
   Ga4ReportResponse,
   Ga4ReportRow,
+  Ga4ReportStopReason,
+} from "./client.ts";
+import {
+  GA4_MAX_ROWS,
+  GA4_PAGINATION_CAP_LIMITATION,
+  GA4_PAGINATION_CAP_STOP_REASON,
+  GA4_ROW_CAP_LIMITATION,
+  GA4_ROW_CAP_STOP_REASON,
 } from "./client.ts";
 import type {
   Ga4KeyEventRow,
   Ga4KeyEventStatus,
   Ga4SessionRow,
 } from "./normalize.ts";
-import { GA4_KEY_EVENT_UNMAPPED, keyEventReason, normalizeGa4 } from "./normalize.ts";
+import {
+  GA4_KEY_EVENT_UNMAPPED,
+  GA4_LIMITATION,
+  keyEventReason,
+  normalizeGa4,
+} from "./normalize.ts";
 import type { Ga4Window } from "./window.ts";
 import { computeGa4Window } from "./window.ts";
 
@@ -60,6 +73,11 @@ const KEY_EVENT_DIMENSIONS: readonly Ga4Dimension[] = [
   { name: "eventName" },
 ];
 const KEY_EVENT_METRICS: readonly Ga4Metric[] = [{ name: "keyEvents" }];
+
+export interface Ga4AdapterOptions {
+  /** Testable collection-wide cap; production cannot exceed the §7.2 maximum. */
+  readonly maxRows?: number;
+}
 
 /** Validated GA4 connection config (spec §7.4). */
 export interface Ga4Config {
@@ -90,7 +108,20 @@ export interface Ga4Raw {
   readonly sessionRows: readonly Ga4SessionRow[];
   readonly keyEventRows: readonly Ga4KeyEventRow[];
   readonly keyEventStatus: Ga4KeyEventStatus;
+  readonly sessionReport: Ga4ReportMetadata;
+  readonly keyEventReport: Ga4ReportMetadata | null;
+  readonly availability: Availability;
+  readonly stopReason: Ga4ReportStopReason | null;
+  readonly limitation: string;
   readonly capturedAt: string;
+}
+
+export interface Ga4ReportMetadata {
+  readonly reportedRowCount: number;
+  readonly collectedRowCount: number;
+  readonly truncated: boolean;
+  readonly stopReason: Ga4ReportStopReason | null;
+  readonly limitation: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +244,80 @@ function parseKeyEventRows(response: Ga4ReportResponse): Ga4KeyEventRow[] {
   }));
 }
 
+function maxCollectionRows(value: number | undefined): number {
+  const maxRows = value ?? GA4_MAX_ROWS;
+  if (!Number.isSafeInteger(maxRows) || maxRows <= 0 || maxRows > GA4_MAX_ROWS) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      `GA4 collection maxRows must be an integer between 1 and ${GA4_MAX_ROWS}.`,
+    );
+  }
+  return maxRows;
+}
+
+function limitationForStopReason(stopReason: Ga4ReportStopReason): string {
+  return stopReason === GA4_ROW_CAP_STOP_REASON
+    ? GA4_ROW_CAP_LIMITATION
+    : GA4_PAGINATION_CAP_LIMITATION;
+}
+
+/** Defend the adapter budget even when an alternate injected client is buggy. */
+function enforceReportBudget(
+  response: Ga4ReportResponse,
+  maxRows: number,
+): Ga4ReportResponse {
+  if (!Number.isSafeInteger(response.rowCount) || response.rowCount < 0) {
+    throw new SourceError("INVALID_RESPONSE", "GA4 report has an invalid rowCount.");
+  }
+  if (response.rowCount < response.rows.length) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "GA4 report contains more rows than its reported rowCount.",
+    );
+  }
+
+  const rows = response.rows.slice(0, maxRows);
+  const exceededBudget = response.rows.length > maxRows;
+  const silentlyIncomplete = !response.truncated && response.rowCount > rows.length;
+  const truncated = response.truncated || exceededBudget || silentlyIncomplete;
+  if (!truncated) {
+    return { rows, rowCount: response.rowCount, truncated: false, stopReason: null, limitation: "" };
+  }
+
+  const stopReason = exceededBudget
+    ? GA4_ROW_CAP_STOP_REASON
+    : response.stopReason ?? GA4_PAGINATION_CAP_STOP_REASON;
+  const limitation = response.limitation.trim() || limitationForStopReason(stopReason);
+  return { rows, rowCount: response.rowCount, truncated: true, stopReason, limitation };
+}
+
+function reportMetadata(response: Ga4ReportResponse): Ga4ReportMetadata {
+  return {
+    reportedRowCount: response.rowCount,
+    collectedRowCount: response.rows.length,
+    truncated: response.truncated,
+    stopReason: response.stopReason,
+    limitation: response.limitation,
+  };
+}
+
+function collectionStopReason(
+  stopReasons: readonly Ga4ReportStopReason[],
+): Ga4ReportStopReason | null {
+  if (stopReasons.includes(GA4_ROW_CAP_STOP_REASON)) return GA4_ROW_CAP_STOP_REASON;
+  return stopReasons[0] ?? null;
+}
+
+function collectionLimitation(
+  keyEventStatus: Ga4KeyEventStatus,
+  reportLimitations: readonly string[],
+): string {
+  const values = [keyEventReason(keyEventStatus.state) ?? GA4_LIMITATION, ...reportLimitations]
+    .map((value) => value.trim())
+    .filter((value, index, all) => value !== "" && all.indexOf(value) === index);
+  return values.join(" ");
+}
+
 // ---------------------------------------------------------------------------
 // Adapter factory.
 // ---------------------------------------------------------------------------
@@ -223,7 +328,9 @@ function parseKeyEventRows(response: Ga4ReportResponse): Ga4KeyEventRow[] {
  */
 export function createGa4Adapter(
   client: Ga4Client,
+  options: Ga4AdapterOptions = {},
 ): SourceAdapter<Ga4Config, Ga4Params, Ga4Raw> {
+  const maxRows = maxCollectionRows(options.maxRows);
   return {
     provider: GA4_PROVIDER,
 
@@ -261,7 +368,7 @@ export function createGa4Adapter(
       const dateRanges = [{ startDate: window.startDate, endDate: window.endDate }] as const;
 
       // 1. SESSION report — always collected.
-      const sessionResponse = await client.runReport(
+      const sessionResponse = enforceReportBudget(await client.runReport(
         {
           dateRanges: [...dateRanges],
           dimensions: SESSION_DIMENSIONS,
@@ -269,14 +376,27 @@ export function createGa4Adapter(
           dimensionFilter: organicChannelFilter(),
         },
         ctx.signal,
-      );
+        { maxRows },
+      ), maxRows);
       const sessionRows = parseSessionRows(sessionResponse);
+      const remainingRows = maxRows - sessionRows.length;
+      const reportLimitations: string[] = [];
+      const stopReasons: Ga4ReportStopReason[] = [];
+      if (sessionResponse.truncated) {
+        reportLimitations.push(sessionResponse.limitation);
+        if (sessionResponse.stopReason) stopReasons.push(sessionResponse.stopReason);
+      }
 
       // 2. KEY-EVENT report — behind an unmapped/compatibility gate (spec §7.4).
       let keyEventRows: readonly Ga4KeyEventRow[] = [];
       let keyEventStatus: Ga4KeyEventStatus;
+      let keyEventResponse: Ga4ReportResponse | null = null;
       if (params.keyEventNames.length === 0) {
         keyEventStatus = { state: "unmapped" };
+      } else if (remainingRows === 0) {
+        keyEventStatus = { state: "truncated" };
+        reportLimitations.push(GA4_ROW_CAP_LIMITATION);
+        stopReasons.push(GA4_ROW_CAP_STOP_REASON);
       } else {
         const filter = keyEventFilter(params.keyEventNames);
         const compatibility = await client.checkCompatibility(
@@ -286,7 +406,7 @@ export function createGa4Adapter(
         if (!compatibility.compatible) {
           keyEventStatus = { state: "incompatible" };
         } else {
-          const keyEventResponse = await client.runReport(
+          keyEventResponse = enforceReportBudget(await client.runReport(
             {
               dateRanges: [...dateRanges],
               dimensions: KEY_EVENT_DIMENSIONS,
@@ -294,15 +414,25 @@ export function createGa4Adapter(
               dimensionFilter: filter,
             },
             ctx.signal,
-          );
+            { maxRows: remainingRows },
+          ), remainingRows);
           keyEventRows = parseKeyEventRows(keyEventResponse);
-          keyEventStatus = { state: "available" };
+          if (keyEventResponse.truncated) {
+            keyEventStatus = { state: "truncated" };
+            reportLimitations.push(keyEventResponse.limitation);
+            if (keyEventResponse.stopReason) stopReasons.push(keyEventResponse.stopReason);
+          } else {
+            keyEventStatus = { state: "available" };
+          }
         }
       }
 
+      const stopReason = collectionStopReason(stopReasons);
       const availability: Availability =
-        keyEventStatus.state === "available" ? "available" : "partial";
-      const limitation = keyEventReason(keyEventStatus.state) ?? "";
+        keyEventStatus.state === "available" && stopReason === null
+          ? "available"
+          : "partial";
+      const limitation = collectionLimitation(keyEventStatus, reportLimitations);
       const raw: Ga4Raw = {
         propertyId: params.propertyId,
         propertyTimeZone: params.propertyTimeZone,
@@ -311,6 +441,11 @@ export function createGa4Adapter(
         sessionRows,
         keyEventRows,
         keyEventStatus,
+        sessionReport: reportMetadata(sessionResponse),
+        keyEventReport: keyEventResponse ? reportMetadata(keyEventResponse) : null,
+        availability,
+        stopReason,
+        limitation,
         capturedAt,
       };
       const sourceWindow: SourceWindow = { start: window.startDate, end: window.endDate };
@@ -321,7 +456,7 @@ export function createGa4Adapter(
         capturedAt,
         sourceWindow,
         rowCount: sessionRows.length + keyEventRows.length,
-        stopReason: null,
+        stopReason,
         providerUsage: {
           sessionRows: sessionRows.length,
           keyEventRows: keyEventRows.length,
@@ -341,6 +476,7 @@ export function createGa4Adapter(
         raw.window,
         ctx.capturedAt,
         raw.keyEventStatus,
+        raw.limitation,
       );
       for (const observation of observations) yield observation;
     },

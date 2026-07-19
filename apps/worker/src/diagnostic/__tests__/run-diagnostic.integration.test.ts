@@ -4,8 +4,6 @@ import os from "node:os";
 import path from "node:path";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??=
-  "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
@@ -32,6 +30,7 @@ import {
   FindingsRepository,
   ObservationsRepository,
   ProjectsRepository,
+  ProviderDiscrepanciesRepository,
   SitesRepository,
   contentHash,
   type ObservationInsert,
@@ -101,6 +100,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       ),
       credentialKey: Buffer.alloc(32),
       appOrigin: "http://localhost:3000",
+      googleOAuth: { clientId: "test-client", clientSecret: "test-secret" },
       openai: { apiKey: "sk-test", model: "gpt-4o-mini" },
       logger: testLogger,
     };
@@ -358,6 +358,134 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     const refs = mergedAction?.evidence_refs as string[];
     expect(refs).toContain(existingEvidenceRef);
     expect(refs.length).toBeGreaterThan(1);
+  });
+
+  it("caps confidence only when an unresolved discrepancy overlaps this frozen manifest finding/evidence", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const conflictingSubject = su(`${seed.origin}/conflicting`);
+    const cleanSubject = su(`${seed.origin}/clean-500`);
+    const frozenSnapshotId = await seedSnapshot(handle, seed, [
+      crawlPage(
+        conflictingSubject,
+        mkPage({
+          fetchUrl: conflictingSubject,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+      crawlPage(
+        cleanSubject,
+        mkPage({
+          fetchUrl: cleanSubject,
+          status: 500,
+          finalStatus: 500,
+          robotsIndexable: false,
+        }),
+      ),
+    ]);
+    const comparisonSnapshotId = await seedSnapshot(handle, seed, [
+      crawlPage(
+        conflictingSubject,
+        mkPage({ fetchUrl: conflictingSubject }),
+      ),
+    ]);
+    const frozenRows = await new ObservationsRepository(
+      handle.db,
+    ).listBySnapshotIds(seed.scope, [frozenSnapshotId]);
+    const comparisonRows = await new ObservationsRepository(
+      handle.db,
+    ).listBySnapshotIds(seed.scope, [comparisonSnapshotId]);
+    const left = frozenRows.find(
+      (row) => row.subject_ref === conflictingSubject,
+    );
+    const right = comparisonRows.find(
+      (row) => row.subject_ref === conflictingSubject,
+    );
+    expect(left).toBeDefined();
+    expect(right).toBeDefined();
+    await new ProviderDiscrepanciesRepository(handle.db).insert(seed.scope, {
+      metricKey: METRIC_CRAWL_PAGE,
+      subjectType: "url",
+      subjectRef: conflictingSubject,
+      // Deliberately reverse lexical order; the repository canonicalizes it.
+      leftObservationId: right!.id,
+      rightObservationId: left!.id,
+    });
+
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf(frozenSnapshotId, ["crawl"]),
+      "queued",
+    );
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const conflictingFinding = await new FindingsRepository(
+      handle.db,
+    ).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "TECH-HTTP-001", [
+        "http_status:404",
+      ]),
+    );
+    const cleanFinding = await new FindingsRepository(handle.db).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "TECH-HTTP-001", [
+        "http_status:500",
+      ]),
+    );
+    expect(conflictingFinding?.confidence).toBe("medium");
+    expect(cleanFinding?.confidence).toBe("high");
+
+    // A later run freezes a third snapshot. Although it has the same subjects,
+    // neither side of the recorded pair belongs to that manifest, so confidence
+    // must not be downgraded by stale/non-frozen data.
+    const unrelatedSnapshotId = await seedSnapshot(handle, seed, [
+      crawlPage(
+        conflictingSubject,
+        mkPage({
+          fetchUrl: conflictingSubject,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+      crawlPage(
+        cleanSubject,
+        mkPage({
+          fetchUrl: cleanSubject,
+          status: 500,
+          finalStatus: 500,
+          robotsIndexable: false,
+        }),
+      ),
+    ]);
+    const unrelatedRunId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf(unrelatedSnapshotId, ["crawl"]),
+      "queued",
+    );
+    await runDiagnostic(ctx, {
+      runId: unrelatedRunId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+    const refreshed = await new FindingsRepository(handle.db).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "TECH-HTTP-001", [
+        "http_status:404",
+      ]),
+    );
+    expect(refreshed?.confidence).toBe("high");
   });
 });
 

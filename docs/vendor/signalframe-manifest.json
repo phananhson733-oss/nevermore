@@ -12,43 +12,50 @@
       "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
       "sourcePath": "packages/crawler/src/url-safety/classify-ip.ts",
       "targetPath": "packages/sources/src/url-safety/classify-ip.ts",
-      "sha256": "114fef14b9e08e55996d29125b2c9dde6d7d3d319e276a0bf2063d64aa6bbb6e",
-      "adaptation": "verbatim"
+      "sha256": "b521ef42c5cfbba90bfb6c8880cf4e7547256987bc2f22e4493a78ae1e9ff761",
+      "adaptation": "Vendored the IPv4 normalization and CIDR primitives, then expanded fail-closed RFC 6890 classification for special-use IPv4 and IPv6. IPv4-mapped IPv6 is recursively classified; only IPv6 global unicast 2000::/3 is eligible, with documentation, transition, translation, metadata, local, multicast, reserved, 6to4, and temporary-documentation ranges rejected."
     },
     {
       "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
       "sourcePath": "packages/crawler/src/url-safety/normalize.ts",
       "targetPath": "packages/sources/src/url-safety/normalize.ts",
-      "sha256": "8f8f491eb6c26b3dd28d261bb01d15c749c5d78fba95541af05a5b3d6b5e30ac",
+      "sha256": "10b88714bd346a230a4d85ad8845d910a342453972a01525b98c8a45e5b81350",
       "adaptation": "rewrote ./*.js import specifiers to ./*.ts; added spec §6.1 trailing-slash strip for non-root pathname"
     },
     {
       "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
       "sourcePath": "packages/crawler/src/url-safety/guard.ts",
       "targetPath": "packages/sources/src/url-safety/guard.ts",
-      "sha256": "fd19991e4da50bb85830ecba9b6a91f523cb9be13b81d1146e23beb9a275faa1",
-      "adaptation": "rewrote ./*.js import specifiers to ./*.ts"
+      "sha256": "edbd5598ec6b6bcf7443e52be0d37e43d917c2039f1dd84f70670256490b7fee",
+      "adaptation": "Rewrote ./*.js import specifiers to ./*.ts; added a finite injectable DNS lookup timeout, fixed non-sensitive failure reasons, validation of every returned address, literal-IP fast path, and fail-closed handling for empty, malformed, private, reserved, metadata, rebinding, and timed-out resolution results while preserving the guard-approved pinned address."
     },
     {
       "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
       "sourcePath": "packages/crawler/src/url-safety/index.ts",
       "targetPath": "packages/sources/src/url-safety/index.ts",
-      "sha256": "82c8f85e55d00c9ecdc9e968796d60887c1e4761a99fe311403b1b382dd4aa74",
-      "adaptation": "rewrote ./*.js import specifiers to ./*.ts; dropped `export * from \"./pin-agent\"` (pin-agent.ts not vendored — needs undici, deferred to crawl WP)"
+      "sha256": "e8cc1c0191d42029ef3a464aefc5e3384853db752c88c4a3f83814b197ab276b",
+      "adaptation": "rewrote ./*.js import specifiers to ./*.ts; retained and exports the vendored pin-agent transport"
+    },
+    {
+      "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
+      "sourcePath": "packages/crawler/src/url-safety/pin-agent.ts",
+      "targetPath": "packages/sources/src/url-safety/pin-agent.ts",
+      "sha256": "4d7da4cf20c7b1f226d19d33692d4fd71d2018310ee3b062ef59ae636e1f61e0",
+      "adaptation": "vendored from source sha256 a925ebfddc72f8d7a209510d06237edccab356af0b7a8f10ca671803f8d57d02; rewrote the import specifier to TypeScript; pins a guard-approved IP through a per-request undici Agent; preserves the original hostname for Host, TLS SNI, and certificate validation; uses node:net isIP for the exact address family; strips IPv6 URL brackets; and omits SNI for IP-literal destinations"
     },
     {
       "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
       "sourcePath": "packages/crawler/src/url-safety/guard.test.ts",
       "targetPath": "packages/sources/src/url-safety/guard.test.ts",
-      "sha256": "5b73ad7449446594575f9a1b87820e571a02fe545d5a94653abe8505ff627924",
-      "adaptation": "rewrote ./*.js import specifiers to ./*.ts"
+      "sha256": "784f30c9ecf37d7ade1b3df909dbb8a0e62c77bbb38889f605c7912dd2283ab4",
+      "adaptation": "Rewrote ./*.js import specifiers to ./*.ts and expanded the vendor fixtures with public/private/special IPv4 and IPv6, multi-address rebinding, DNS failure/timeout, late-resolution isolation, hostname-safe errors, literal-IP bypass, and timer-cleanup coverage."
     },
     {
       "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
       "sourcePath": "packages/crawler/src/page.ts",
       "targetPath": "packages/sources/src/crawl/parse-page.ts",
-      "sha256": "6b804bd8ed9767c695ce4964e45a86c405be984c4ee7d90ee8b0a02f8c18f547",
-      "adaptation": "Vendored the regex HTML extraction helpers (attr/firstTag/tagText, heading/paragraph/anchor collection, JSON-LD walk) from page.ts plus extractNormalisedBody/decodeHtml from packages/crawler/src/extract.ts. Dropped all @signalframe/core types and inferPageRole (engine infers role later); dropped contentHash (crypto) and the date/claim-cue/image-alt observers not in the CrawlPageProjection contract. Reshaped output to the ParsedPage subset of CrawlPageProjection: link targets are canonicalized via canonicalizeUrl to targetSubjectUrl (same-origin only) instead of raw absolute URLs; robots meta parsed into robotsDirectives[]+robotsIndexable; jsonLd reduced to {types,errorCount}; added bodyExcerpt and bounded paragraph/heading/outlink counts. Rewrote import specifiers to explicit .ts."
+      "sha256": "4b7920ddce4cff3848db5044e2581867ea57788f73503371ab191144a0f24fa5",
+      "adaptation": "Vendored the regex HTML extraction helpers (attr/firstTag/tagText, heading/paragraph/anchor collection, JSON-LD walk) from page.ts plus extractNormalisedBody/decodeHtml from packages/crawler/src/extract.ts. Dropped all @signalframe/core types and inferPageRole (engine infers role later); dropped contentHash (crypto) and the date/claim-cue/image-alt observers not in the CrawlPageProjection contract. Reshaped output to the ParsedPage subset of CrawlPageProjection: link targets are canonicalized via canonicalizeUrl to targetSubjectUrl (same-origin only) instead of raw absolute URLs; robots meta parsed into robotsDirectives[]+robotsIndexable; jsonLd reduced to {types,errorCount}; added bodyExcerpt and fixed count/element-length caps for every persisted title/meta/H1/heading/paragraph/outlink/anchor/rel/robots/JSON-LD projection, drops overlong URLs, bounds JSON-LD blocks/nodes with an iterative walk, and prioritizes critical robots directives before truncation; hardened hostile numeric HTML entities so invalid Unicode scalar values degrade to U+FFFD instead of aborting a crawl. Rewrote import specifiers to explicit .ts."
     },
     {
       "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
@@ -68,8 +75,8 @@
       "sourceCommit": "72af9300c6009a3912973b96b4789c89ad37db01",
       "sourcePath": "packages/crawler/src/crawl.ts",
       "targetPath": "packages/sources/src/crawl/engine.ts",
-      "sha256": "f6497dfd257f2962ea7a3cf78cfc8c038a7f9d6111b2a610e8c848a61fe44bdc",
-      "adaptation": "Vendored the BFS loop, manual-redirect-with-per-hop-guard logic, byte-capped streaming body read, and host-delay pacing from crawl.ts. Replaced the undici fetch + createPinnedAgent transport with the injected CrawlFetcher (default createDefaultCrawlFetcher wraps globalThis.fetch with redirect:'manual' + UA header). Dropped @signalframe/core SiteSnapshot/PageRecord/inferPageRole and the llms.txt + internal-link-depth analytics. Output reshaped to CrawlRaw; all CRAWL_BUDGET limits enforced (maxUrls/maxDepth/wall-clock/maxRedirects+SSRF re-check each hop/maxBodyBytes/perHostConcurrency/minHostDelay/robots); on any budget cut returns availability:'partial' with a specific stopReason and keeps collected pages; fills providerUsage + a non-empty limitation. Guard/now/budget injectable as test-only seams; every crawled URL and link target canonicalized via canonicalizeUrl."
+      "sha256": "dcf2910813373104056fb1408ec4d5324304197f6e8d0479ba413870f0f69f6c",
+      "adaptation": "Vendored the BFS loop, manual redirects, per-hop guard, pinned undici transport, byte-capped streaming body read, and host-delay pacing from crawl.ts. Retained CrawlFetcher as a fixture seam, while production enforces guard -> fresh createPinnedAgent -> undici fetch for every hop and closes both the response body and Agent after each hop. Dropped @signalframe/core SiteSnapshot/PageRecord/inferPageRole and the llms.txt + internal-link-depth analytics. Output reshaped to CrawlRaw; all CRAWL_BUDGET limits enforced (maxUrls/maxDepth/wall-clock/maxRedirects+SSRF re-check each hop/maxBodyBytes/perHostConcurrency/minHostDelay/robots), including a fixed 128 MiB total decoded-body run cap across robots, sitemaps, rejected responses, and pages. Every decoded chunk synchronously reserves from one shared remaining-byte budget before being accepted; the application-level usage never exceeds the cap, an over-budget body is discarded, other in-flight requests/readers are aborted or cancelled, and no new work launches. The cap has stable stopReason 'max_total_bytes', returns availability:'partial', and retains only pages completed within budget. Redirects now fail closed before guard/transport on any origin change, and every page redirect target is checked against the same robots policy before transport. Page parsing, projection.fetchUrl, and subject identity use the terminal canonical URL while status/finalStatus preserve initial/terminal HTTP facts; concurrent direct and alias journeys are deduplicated by terminal subject with a deterministic total-order winner and minimum-depth frontier updates. Stream reader.read() and text()-fallback operations race the request/operation signal, consume late rejections, and use non-blocking best-effort cancel/drain/aborted close paths so hostile pending or throwing cancellation cannot defeat the wall-clock or external-abort boundary. Guard, fetch, and abort failures use fixed internal kinds without evaluating or persisting dynamic guard/error/signal reasons. Added fixed persisted HTTP-header, robots, sitemap, rule, agent, and URL projection caps; on any budget cut returns partial with a specific stopReason and fills providerUsage + a non-empty limitation. Guard/now/budget injectable as test-only seams; every crawled URL and link target canonicalized via canonicalizeUrl."
     }
   ]
 }

@@ -20,7 +20,11 @@ export {
   encodeProjectCursor,
   decodeProjectCursor,
 } from "./repositories/projects.ts";
-export type { ProjectRow, ProjectListPage } from "./repositories/projects.ts";
+export type {
+  ProjectRow,
+  ProjectListPage,
+  ProjectStage,
+} from "./repositories/projects.ts";
 export { SitesRepository } from "./repositories/sites.ts";
 export type { SiteRow } from "./repositories/sites.ts";
 export { IcpProfilesRepository } from "./repositories/icp-profiles.ts";
@@ -97,6 +101,7 @@ export type {
 export { AnalysisInvocationsRepository } from "./repositories/analysis-invocations.ts";
 export { ExportBundlesRepository } from "./repositories/export-bundles.ts";
 export type { ExportBundleRow } from "./repositories/export-bundles.ts";
+export { StorageObjectReferencesRepository } from "./repositories/storage-object-references.ts";
 export {
   PGBOSS_SCHEMA,
   QUEUE_CONFIG,
@@ -111,5 +116,14 @@ export type {
   RunJobPayload,
   BossOptions,
   Job,
+  JobWithMetadata,
   WorkHandler,
 } from "./queue.ts";
+export {
+  acquireWorkerReadinessLease,
+  checkWorkerReadiness,
+} from "./worker-readiness.ts";
+export type {
+  WorkerReadinessLease,
+  WorkerReadinessPool,
+} from "./worker-readiness.ts";

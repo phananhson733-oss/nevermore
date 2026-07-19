@@ -38,6 +38,13 @@ const OPENAI_CHAT_COMPLETIONS_URL =
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+/**
+ * Maximum decoded HTTP response bytes retained before outer JSON parsing.
+ * Artifact output is capped at 40k characters, so 1 MiB leaves ample protocol
+ * overhead while bounding a hostile/misconfigured OpenAI or Azure gateway.
+ */
+export const MAX_OPENAI_RESPONSE_BODY_BYTES = 1024 * 1024;
+
 /** Safety/length ceilings for the accepted artifact (spec §14.4 step 3). */
 const MAX_MARKDOWN_CHARS = 40_000;
 const MAX_TITLE_CHARS = 512;
@@ -96,7 +103,7 @@ export interface OpenAIClientOptions {
   readonly authScheme?: "bearer" | "api-key";
   /** Sampling temperature; low by default for deterministic artifacts. */
   readonly temperature?: number;
-  /** Per-request timeout in ms; aborts the fetch when exceeded. */
+  /** Per-request timeout in ms, including decoded response-body consumption. */
   readonly timeoutMs?: number;
 }
 
@@ -106,6 +113,166 @@ interface Usage {
 }
 
 const NO_USAGE: Usage = { inputTokens: null, outputTokens: null };
+
+class InvalidResponseBodyError extends Error {
+  constructor() {
+    super("invalid bounded response body");
+    this.name = "InvalidResponseBodyError";
+  }
+}
+
+function cancelBody(body: ReadableStream<Uint8Array> | null): void {
+  if (!body) return;
+  try {
+    const cancellation = body.cancel();
+    void Promise.resolve(cancellation).catch(() => undefined);
+  } catch {
+    // Cancellation is best-effort and must never replace the stable LLM error.
+  }
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("request timed out", "TimeoutError");
+}
+
+/**
+ * Race one stream read against the request deadline. The read promise always
+ * receives handlers, even when abort wins, so a later rejection cannot become
+ * unhandled; the abort listener is removed on every terminal path.
+ */
+function readChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+): Promise<{
+  readonly done: boolean;
+  readonly value: Uint8Array | undefined;
+}> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      reject(abortReason(signal));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    let pendingRead: Promise<{
+      readonly done: boolean;
+      readonly value: Uint8Array | undefined;
+    }>;
+    try {
+      pendingRead = Promise.resolve(reader.read());
+    } catch (error) {
+      signal.removeEventListener("abort", onAbort);
+      reject(error);
+      return;
+    }
+    void pendingRead.then(
+      (result) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(result);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+function declaredContentLength(response: Response): number | null {
+  const raw = response.headers.get("content-length");
+  if (raw === null || !/^\d+$/.test(raw.trim())) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Read the fetch-decoded body incrementally. `Content-Length` is only an early
+ * rejection hint (it can describe compressed or dishonest bytes); streamed
+ * decoded bytes are always counted independently before allocation/JSON parse.
+ */
+async function readBoundedJson(
+  response: Response,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const body = response.body;
+  if (!body) throw new InvalidResponseBodyError();
+
+  const declaredBytes = declaredContentLength(response);
+  if (
+    declaredBytes !== null &&
+    declaredBytes > MAX_OPENAI_RESPONSE_BODY_BYTES
+  ) {
+    cancelBody(body);
+    throw new InvalidResponseBodyError();
+  }
+
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = body.getReader();
+  } catch {
+    cancelBody(body);
+    throw new InvalidResponseBodyError();
+  }
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  let cancelled = false;
+  const cancelReader = (): void => {
+    if (cancelled) return;
+    cancelled = true;
+    try {
+      const cancellation = reader.cancel();
+      void Promise.resolve(cancellation).catch(() => undefined);
+    } catch {
+      // Cancellation is best-effort and must not expose a stream error/body.
+    }
+  };
+
+  try {
+    for (;;) {
+      const next = await readChunk(reader, signal);
+      if (next.done) break;
+      const chunk = next.value;
+      if (!(chunk instanceof Uint8Array)) {
+        cancelReader();
+        throw new InvalidResponseBodyError();
+      }
+      totalBytes += chunk.byteLength;
+      if (totalBytes > MAX_OPENAI_RESPONSE_BODY_BYTES) {
+        cancelReader();
+        throw new InvalidResponseBodyError();
+      }
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    cancelReader();
+    if (signal.aborted) throw abortReason(signal);
+    if (error instanceof InvalidResponseBodyError) throw error;
+    throw new InvalidResponseBodyError();
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // A hostile/errored stream may retain its lock; no body data is exposed.
+    }
+  }
+
+  if (totalBytes === 0) throw new InvalidResponseBodyError();
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new InvalidResponseBodyError();
+  }
+}
 
 function mapHttpStatus(status: number): LLMErrorCode {
   if (status === 401 || status === 403) return "AUTH_FAILED";
@@ -323,54 +490,75 @@ export class OpenAIClient implements LLMClient {
     });
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    let response: Response;
+    let timeoutReached = false;
+    const timer = setTimeout(() => {
+      timeoutReached = true;
+      controller.abort(
+        new DOMException("OpenAI request timed out", "TimeoutError"),
+      );
+    }, this.timeoutMs);
     try {
-      response = await this.fetchImpl(this.url, {
-        method: "POST",
-        headers: {
-          ...(this.authScheme === "api-key"
-            ? { "api-key": this.apiKey }
-            : { Authorization: `Bearer ${this.apiKey}` }),
-          "Content-Type": "application/json",
-        },
-        body,
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw this.fail(
-        mapTransportError(error),
-        "OpenAI request failed to reach the API.",
-        {
+      let response: Response;
+      try {
+        response = await this.fetchImpl(this.url, {
+          method: "POST",
+          headers: {
+            ...(this.authScheme === "api-key"
+              ? { "api-key": this.apiKey }
+              : { Authorization: `Bearer ${this.apiKey}` }),
+            "Content-Type": "application/json",
+          },
+          body,
+          signal: controller.signal,
+        });
+      } catch (error) {
+        const code = timeoutReached ? "TIMEOUT" : mapTransportError(error);
+        throw this.fail(code, "OpenAI request failed to reach the API.", {
           inputHash,
           usage: NO_USAGE,
           startedAt,
-        },
-      );
+        });
+      }
+
+      if (timeoutReached) {
+        cancelBody(response.body);
+        throw this.fail("TIMEOUT", "OpenAI request timed out.", {
+          inputHash,
+          usage: NO_USAGE,
+          startedAt,
+        });
+      }
+
+      if (!response.ok) {
+        cancelBody(response.body);
+        throw this.fail(
+          mapHttpStatus(response.status),
+          `OpenAI request failed with HTTP ${response.status}.`,
+          {
+            inputHash,
+            usage: NO_USAGE,
+            startedAt,
+          },
+        );
+      }
+
+      try {
+        return {
+          data: await readBoundedJson(response, controller.signal),
+        };
+      } catch {
+        const code = timeoutReached ? "TIMEOUT" : "INVALID_RESPONSE";
+        const message = timeoutReached
+          ? "OpenAI request timed out."
+          : "OpenAI returned an invalid response body.";
+        throw this.fail(code, message, {
+          inputHash,
+          usage: NO_USAGE,
+          startedAt,
+        });
+      }
     } finally {
       clearTimeout(timer);
-    }
-
-    if (!response.ok) {
-      throw this.fail(
-        mapHttpStatus(response.status),
-        `OpenAI request failed with HTTP ${response.status}.`,
-        {
-          inputHash,
-          usage: NO_USAGE,
-          startedAt,
-        },
-      );
-    }
-
-    try {
-      return { data: await response.json() };
-    } catch {
-      throw this.fail("INVALID_RESPONSE", "OpenAI returned a non-JSON body.", {
-        inputHash,
-        usage: NO_USAGE,
-        startedAt,
-      });
     }
   }
 

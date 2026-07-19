@@ -96,5 +96,5 @@ export interface DiagnosticRule {
   readonly version: 1;
   readonly domain: DiagnosticDomain;
   readonly requiredDatasets: readonly DatasetRequirement[];
-  evaluate(ctx: DiagnosticContext): RuleResult;
+  evaluate(ctx: DiagnosticContext): RuleResult | Promise<RuleResult>;
 }

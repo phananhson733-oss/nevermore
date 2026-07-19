@@ -26,8 +26,14 @@ import {
   METRIC_CRAWL_SITEMAP,
 } from "../observations.ts";
 import { crawlSite, createDefaultCrawlFetcher } from "./engine.ts";
+import type { CrawlEngineOptions } from "./engine.ts";
 import { CRAWL_DATASET_KEY } from "./types.ts";
-import type { CrawlConfig, CrawlParams, CrawlRaw } from "./types.ts";
+import type {
+  CrawlConfig,
+  CrawlFetcher,
+  CrawlParams,
+  CrawlRaw,
+} from "./types.ts";
 
 /** Published product identity; never advertise a placeholder or impersonate another bot. */
 export const DEFAULT_CRAWL_USER_AGENT = "SignalFrameBot/0.2";
@@ -54,21 +60,6 @@ async function capabilities(_config: CrawlConfig): Promise<Capability[]> {
         "Public crawl within a fixed budget (2000 URLs, depth 6, 15 min); same-origin only, robots-respecting.",
     },
   ];
-}
-
-async function collect(params: CrawlParams, ctx: CollectionContext): Promise<CollectionResult<CrawlRaw>> {
-  const fetcher = createDefaultCrawlFetcher(DEFAULT_CRAWL_USER_AGENT);
-  const raw = await crawlSite(params, { userAgent: DEFAULT_CRAWL_USER_AGENT }, ctx, fetcher);
-  return {
-    availability: raw.availability,
-    raw,
-    capturedAt: raw.capturedAt,
-    sourceWindow: raw.sourceWindow,
-    rowCount: raw.pages.length,
-    stopReason: raw.stopReason,
-    providerUsage: raw.providerUsage,
-    limitation: raw.limitation,
-  };
 }
 
 async function* normalize(raw: CrawlRaw, _ctx: NormalizeContext): AsyncGenerator<NormalizedObservation> {
@@ -106,10 +97,47 @@ async function* normalize(raw: CrawlRaw, _ctx: NormalizeContext): AsyncGenerator
   });
 }
 
-export const crawlAdapter: SourceAdapter<CrawlConfig, CrawlParams, CrawlRaw> = {
-  provider: "crawl",
-  validateConfig,
-  capabilities,
-  collect,
-  normalize,
-};
+/** Optional IO seams used by deterministic fixtures; production passes none. */
+export interface CrawlAdapterOptions {
+  readonly fetcher?: CrawlFetcher;
+  readonly engineOptions?: CrawlEngineOptions;
+}
+
+/** Build a crawl adapter while preserving the production transport by default. */
+export function createCrawlAdapter(
+  options: CrawlAdapterOptions = {},
+): SourceAdapter<CrawlConfig, CrawlParams, CrawlRaw> {
+  return {
+    provider: "crawl",
+    validateConfig,
+    capabilities,
+    async collect(
+      params: CrawlParams,
+      ctx: CollectionContext,
+    ): Promise<CollectionResult<CrawlRaw>> {
+      const fetcher =
+        options.fetcher ??
+        createDefaultCrawlFetcher(DEFAULT_CRAWL_USER_AGENT);
+      const raw = await crawlSite(
+        params,
+        { userAgent: DEFAULT_CRAWL_USER_AGENT },
+        ctx,
+        fetcher,
+        options.engineOptions,
+      );
+      return {
+        availability: raw.availability,
+        raw,
+        capturedAt: raw.capturedAt,
+        sourceWindow: raw.sourceWindow,
+        rowCount: raw.pages.length,
+        stopReason: raw.stopReason,
+        providerUsage: raw.providerUsage,
+        limitation: raw.limitation,
+      };
+    },
+    normalize,
+  };
+}
+
+export const crawlAdapter = createCrawlAdapter();

@@ -14,6 +14,7 @@ import type { CreateCollectionRunRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
+import { isPostgresUniqueViolation } from "./db-errors";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
 const CONTRACT_VERSION = "2026-07-18";
@@ -47,13 +48,11 @@ export interface CollectionAcceptedResult {
   readonly replayed: boolean;
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
-}
-
 function activeConflict(runId: string, projectId: string): ProblemError {
+  const statusUrl = runStatusUrl(projectId, runId);
   return new ProblemError("RUN_ALREADY_ACTIVE", "A collection run is already active.", {
-    headers: { Location: runStatusUrl(projectId, runId) },
+    headers: { Location: statusUrl },
+    current: { runId, statusUrl },
   });
 }
 
@@ -106,18 +105,34 @@ export async function createCollectionRun(
   body: CreateCollectionRunRequest,
 ): Promise<CollectionAcceptedResult> {
   const config = PROVIDER_CONFIG[body.provider];
-  if (body.operation && body.operation !== config.operation) {
+  const operation = body.operation ?? config.operation;
+  const projectScope = { workspaceId: scope.workspaceId, projectId };
+
+  const { db } = getDb();
+  const requestHash = contentHash({
+    projectId,
+    provider: body.provider,
+    operation,
+    sourceConnectionId: body.sourceConnectionId ?? null,
+  });
+
+  // Completed commands replay independently of mutable project/source state.
+  // Including projectId in the stable command hash prevents a workspace-level
+  // key from replaying a response into another project.
+  const idem = new IdempotencyRepository(db);
+  const existingKey = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+  if (existingKey) {
+    const replay = replayCollection(existingKey, requestHash);
+    if (replay) return replay;
+  }
+
+  if (operation !== config.operation) {
     throw new ProblemError(
       "INVALID_COLLECTION_OPERATION",
       `Provider ${body.provider} only supports operation ${config.operation}.`,
     );
   }
-  const operation = config.operation;
   const activeKey = `collect:${body.provider}:${operation}`;
-  const projectScope = { workspaceId: scope.workspaceId, projectId };
-
-  const { db } = getDb();
-  const boss = await getBoss();
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
@@ -140,24 +155,18 @@ export async function createCollectionRun(
     );
   }
 
-  const requestHash = contentHash({
-    provider: body.provider,
-    operation,
-    sourceConnectionId: connection.id,
-  });
   const parametersHash = contentHash({ provider: body.provider, operation, siteId: site.id });
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
-  // Fast-path idempotency replay / active-run conflict.
-  const idem = new IdempotencyRepository(db);
-  const existingKey = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
-  if (existingKey) {
-    const replay = replayCollection(existingKey, requestHash);
-    if (replay) return replay;
-  }
   const active = await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
-  if (active) throw activeConflict(active.id, projectId);
+  if (active) {
+    const now = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+    const replay = now ? replayCollection(now, requestHash) : null;
+    if (replay) return replay;
+    throw activeConflict(active.id, projectId);
+  }
 
+  const boss = await getBoss();
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
@@ -205,6 +214,11 @@ export async function createCollectionRun(
         projectId,
         contractVersion: CONTRACT_VERSION,
       });
+      await new ProjectsRepository(tx).setStage(
+        scope,
+        projectId,
+        "collecting",
+      );
 
       const dto = toAsyncRunDto(run);
       const statusUrl = runStatusUrl(projectId, run.id);
@@ -231,7 +245,12 @@ export async function createCollectionRun(
     });
   } catch (error) {
     // Lost the active-key race: the partial unique index aborted the insert.
-    if (isUniqueViolation(error)) {
+    if (
+      isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")
+    ) {
+      const winnerKey = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+      const replay = winnerKey ? replayCollection(winnerKey, requestHash) : null;
+      if (replay) return replay;
       const existing = await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
       if (existing) throw activeConflict(existing.id, projectId);
       throw new ProblemError("RUN_ALREADY_ACTIVE", "A collection run is already active.");

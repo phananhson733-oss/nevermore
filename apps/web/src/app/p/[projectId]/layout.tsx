@@ -7,6 +7,11 @@ import { signOutAction } from "@/lib/auth/actions";
 import { getOperatorContext } from "@/lib/auth/session";
 import { getProject } from "@/lib/services/projects";
 import { CurrentPageLabel, ProjectNav } from "./_nav.tsx";
+import {
+  E2E_PROJECT_ID,
+  e2eProjectShell,
+  shouldUseE2eProjectShell,
+} from "./_e2e-shell.ts";
 import styles from "./layout.module.css";
 
 /**
@@ -25,12 +30,18 @@ export default async function ProjectLayout({
 }) {
   const { projectId } = await params;
 
-  const operator = await getOperatorContext();
-  if (!operator) notFound();
-
-  const project = await getProject({ workspaceId: operator.workspaceId }, projectId).catch(
-    () => null,
-  );
+  const mockShell = shouldUseE2eProjectShell(process.env, projectId);
+  let project: Awaited<ReturnType<typeof getProject>> | null;
+  if (mockShell) {
+    project = e2eProjectShell(E2E_PROJECT_ID);
+  } else {
+    const operator = await getOperatorContext();
+    if (!operator) notFound();
+    project = await getProject(
+      { workspaceId: operator.workspaceId },
+      projectId,
+    ).catch(() => null);
+  }
   if (!project) notFound();
 
   const tShell = await getTranslations("appShell");

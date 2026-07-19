@@ -1,0 +1,959 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-COVERAGE-001 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "No indexable page covers the core intent tokens of "team collaboration".",
+            "grade": "C",
+            "limitation": "Intent match is an English-only heuristic over URL/title/H1 tokens.",
+            "method": "inferred",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "derived",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "page_set:offer:team-collaboration",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "kind": "offer",
+          "target": "team collaboration",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "page_set:offer:team-collaboration",
+        ],
+        "titleArgs": {
+          "kind": "offer",
+          "target": "team collaboration",
+        },
+      },
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "No indexable page covers the core intent tokens of "remote onboarding".",
+            "grade": "C",
+            "limitation": "Intent match is an English-only heuristic over URL/title/H1 tokens.",
+            "method": "inferred",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "derived",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "page_set:use_case:remote-onboarding",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "kind": "use_case",
+          "target": "remote onboarding",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "page_set:use_case:remote-onboarding",
+        ],
+        "titleArgs": {
+          "kind": "use_case",
+          "target": "remote onboarding",
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "metrics": {
+      "coveredCount": 0,
+    },
+    "status": "pass",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "coveredCount": 1,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-GAP-011 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "Imported keyword cluster "project-management" carries 10 keywords with 1400 combined monthly search volume.",
+            "grade": "C",
+            "limitation": "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "user_provided",
+            "sourceProvider": "csv",
+            "subjectRefs": [
+              "keyword_cluster:project-management",
+            ],
+            "support": "supports",
+          },
+          {
+            "availability": "available",
+            "claim": "No indexable page relates to the "project-management" keyword cluster.",
+            "grade": "C",
+            "limitation": "Intent match is an English-only heuristic over URL/title/H1 tokens.",
+            "method": "inferred",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "derived",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "keyword_cluster:project-management",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "clusterKey": "project-management",
+          "keywordCount": 10,
+          "totalVolume": 1400,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "keyword_cluster:project-management",
+        ],
+        "titleArgs": {
+          "clusterKey": "project-management",
+          "keywordCount": 10,
+          "totalVolume": 1400,
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "Imported keyword cluster "exact-threshold" carries 10 keywords with 500 combined monthly search volume.",
+            "grade": "C",
+            "limitation": "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "user_provided",
+            "sourceProvider": "csv",
+            "subjectRefs": [
+              "keyword_cluster:exact-threshold",
+            ],
+            "support": "supports",
+          },
+          {
+            "availability": "available",
+            "claim": "No indexable page relates to the "exact-threshold" keyword cluster.",
+            "grade": "C",
+            "limitation": "Intent match is an English-only heuristic over URL/title/H1 tokens.",
+            "method": "inferred",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "derived",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "keyword_cluster:exact-threshold",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "clusterKey": "exact-threshold",
+          "keywordCount": 10,
+          "totalVolume": 500,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "keyword_cluster:exact-threshold",
+        ],
+        "titleArgs": {
+          "clusterKey": "exact-threshold",
+          "keywordCount": 10,
+          "totalVolume": 500,
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "qualifyingClusters": 1,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > CRO-LANDING-003 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "Landing page converts key events at 4.00% of sessions versus the 7.27% site baseline (below 70% of baseline).",
+            "grade": "A",
+            "limitation": "Conversion rate uses GA4 key events under the project's key-event mapping; pages with unmapped key events are excluded and only pages with at least 500 sessions are evaluated.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "first_party",
+            "sourceProvider": "ga4",
+            "subjectRefs": [
+              "https://example.com/pricing",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "baseline": 0.07272727272727272,
+          "keyEvents": 40,
+          "pageRate": 0.04,
+          "sessions": 1000,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "https://example.com/pricing",
+        ],
+        "titleArgs": {
+          "baselinePct": 7.27,
+          "pageRatePct": 4,
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "reason": "ga4_baseline_unavailable",
+    "status": "inconclusive",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "baseline": 0.095,
+      "evaluatedKeyEvents": 190,
+      "evaluatedSessions": 2000,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > CRO-PATH-001 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "1 commercial page(s) have no direct internal link to any of the 1 conversion destination(s).",
+            "grade": "B",
+            "limitation": "Internal-link coverage reflects only pages reached in this crawl; pages beyond crawl depth or excluded from crawling are not represented.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "https://example.com/product",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "affectedCount": 1,
+          "destinationCount": 1,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "page_set:missing_conversion_path",
+        ],
+        "titleArgs": {
+          "affectedCount": 1,
+          "destinationCount": 1,
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "reason": "not_applicable",
+    "status": "skipped",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "affectedCount": 0,
+      "destinationCount": 1,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-CRAWLER-002 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "robots.txt disallows the whole site ("Disallow: /") for OAI-SearchBot.",
+            "grade": "B",
+            "limitation": "robots.txt directives are observed as published; individual crawler behavior may differ.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "user_agent:OAI-SearchBot",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "scope": "site",
+          "userAgent": "OAI-SearchBot",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "user_agent:OAI-SearchBot",
+        ],
+        "titleArgs": {
+          "rule": "/",
+          "scope": "site",
+          "userAgent": "OAI-SearchBot",
+        },
+      },
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "robots.txt disallows the whole site ("Disallow: /") for ChatGPT-User.",
+            "grade": "B",
+            "limitation": "robots.txt directives are observed as published; individual crawler behavior may differ.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "user_agent:ChatGPT-User",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "scope": "site",
+          "userAgent": "ChatGPT-User",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "user_agent:ChatGPT-User",
+        ],
+        "titleArgs": {
+          "rule": "/",
+          "scope": "site",
+          "userAgent": "ChatGPT-User",
+        },
+      },
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "robots.txt disallows the whole site ("Disallow: /") for PerplexityBot.",
+            "grade": "B",
+            "limitation": "robots.txt directives are observed as published; individual crawler behavior may differ.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "user_agent:PerplexityBot",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "scope": "site",
+          "userAgent": "PerplexityBot",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "user_agent:PerplexityBot",
+        ],
+        "titleArgs": {
+          "rule": "/",
+          "scope": "site",
+          "userAgent": "PerplexityBot",
+        },
+      },
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "robots.txt disallows the whole site ("Disallow: /") for ClaudeBot.",
+            "grade": "B",
+            "limitation": "robots.txt directives are observed as published; individual crawler behavior may differ.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "user_agent:ClaudeBot",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "scope": "site",
+          "userAgent": "ClaudeBot",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "user_agent:ClaudeBot",
+        ],
+        "titleArgs": {
+          "rule": "/",
+          "scope": "site",
+          "userAgent": "ClaudeBot",
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "robots.txt disallows the whole site ("Disallow: /") for OAI-SearchBot.",
+            "grade": "B",
+            "limitation": "robots.txt directives are observed as published; individual crawler behavior may differ.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "user_agent:OAI-SearchBot",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "scope": "site",
+          "userAgent": "OAI-SearchBot",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "user_agent:OAI-SearchBot",
+        ],
+        "titleArgs": {
+          "rule": "/",
+          "scope": "site",
+          "userAgent": "OAI-SearchBot",
+        },
+      },
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "robots.txt disallows the whole site ("Disallow: /") for ChatGPT-User.",
+            "grade": "B",
+            "limitation": "robots.txt directives are observed as published; individual crawler behavior may differ.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "user_agent:ChatGPT-User",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "scope": "site",
+          "userAgent": "ChatGPT-User",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "user_agent:ChatGPT-User",
+        ],
+        "titleArgs": {
+          "rule": "/",
+          "scope": "site",
+          "userAgent": "ChatGPT-User",
+        },
+      },
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "robots.txt disallows the whole site ("Disallow: /") for PerplexityBot.",
+            "grade": "B",
+            "limitation": "robots.txt directives are observed as published; individual crawler behavior may differ.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "user_agent:PerplexityBot",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "scope": "site",
+          "userAgent": "PerplexityBot",
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "user_agent:PerplexityBot",
+        ],
+        "titleArgs": {
+          "rule": "/",
+          "scope": "site",
+          "userAgent": "PerplexityBot",
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "blockedBotCount": 0,
+      "robotsFetched": 1,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-ENTITY-001 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "Of 2 priority/commercial page(s), 2 expose no structured entity types and 0 contain a proof block (proof coverage 0%).",
+            "grade": "C",
+            "limitation": "Entity/proof detection is an English-only heuristic.",
+            "method": "inferred",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "derived",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "https://example.com/pricing",
+              "https://example.com/product",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "entityMissingCount": 2,
+          "proofCoverageRatio": 0,
+          "selectedCount": 2,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "page_set:priority_commercial",
+        ],
+        "titleArgs": {
+          "entityMissingCount": 2,
+          "proofCoveragePercent": 0,
+          "selectedCount": 2,
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "reason": "proof_detector_english_only",
+    "status": "inconclusive",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "entityMissingCount": 0,
+      "proofCoverageRatio": 1,
+      "selectedCount": 2,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > SEARCH-CTR-004 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "Impression-weighted CTR 1.00% at average position 3.0 is below the positional benchmark 10.00% (under-performance threshold 5.00%). Top queries by impressions: alpha (900 impr), beta (400 impr).",
+            "grade": "A",
+            "limitation": "Search Console returns top rows by clicks, not the full query universe.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "first_party",
+            "sourceProvider": "gsc",
+            "subjectRefs": [
+              "https://example.com/product",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "benchmark": 0.1,
+          "clicks": 20,
+          "ctr": 0.01,
+          "impressions": 2000,
+          "position": 3,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "https://example.com/product",
+        ],
+        "titleArgs": {
+          "url": "https://example.com/product",
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "metrics": {
+      "pagesEvaluated": 1,
+      "triggered": 0,
+    },
+    "status": "pass",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "pagesEvaluated": 1,
+      "triggered": 0,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > SEARCH-DECAY-002 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "Search clicks fell from 200 in the previous 28 days to 100 in the current 28 days, a -50.0% change.",
+            "grade": "A",
+            "limitation": "Search Console returns top rows by clicks, not the full query universe.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "first_party",
+            "sourceProvider": "gsc",
+            "subjectRefs": [
+              "https://example.com/product",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "currentClicks": 100,
+          "delta": -0.5,
+          "previousClicks": 200,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "https://example.com/product",
+        ],
+        "titleArgs": {
+          "url": "https://example.com/product",
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "Search clicks fell from 100 in the previous 28 days to 80 in the current 28 days, a -20.0% change.",
+            "grade": "A",
+            "limitation": "Search Console returns top rows by clicks, not the full query universe.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "first_party",
+            "sourceProvider": "gsc",
+            "subjectRefs": [
+              "https://example.com/threshold",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "currentClicks": 80,
+          "delta": -0.2,
+          "previousClicks": 100,
+        },
+        "severity": "medium",
+        "subjectRefs": [
+          "https://example.com/threshold",
+        ],
+        "titleArgs": {
+          "url": "https://example.com/threshold",
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "pagesEvaluated": 1,
+      "triggered": 0,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-CANONICAL-002 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "2 page(s) form reciprocal canonical loops.",
+            "grade": "B",
+            "limitation": "Canonical relationships reflect the crawl snapshot's HTML; rel=canonical is a hint a search engine may override.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "https://example.com/a",
+              "https://example.com/b",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "count": 2,
+        },
+        "severity": "medium",
+        "subjectRefs": [
+          "canonical_issue:reciprocal",
+        ],
+        "titleArgs": {
+          "count": 2,
+          "subtype": "reciprocal",
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "metrics": {
+      "canonicalIssues": 0,
+    },
+    "status": "pass",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "canonicalIssues": 0,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-HTTP-001 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "1 crawled page(s) returned HTTP 404.",
+            "grade": "B",
+            "limitation": "Status reflects a single crawl fetch of each URL, not every request path, method, or geography.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "https://example.com/pricing",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "count": 1,
+          "statusCode": 404,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "http_status:404",
+        ],
+        "titleArgs": {
+          "count": 1,
+          "status": 404,
+        },
+      },
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "1 crawled page(s) returned HTTP 500.",
+            "grade": "B",
+            "limitation": "Status reflects a single crawl fetch of each URL, not every request path, method, or geography.",
+            "method": "observed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "direct_public",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "https://example.com/about",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "count": 1,
+          "statusCode": 500,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "http_status:500",
+        ],
+        "titleArgs": {
+          "count": 1,
+          "status": 500,
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "metrics": {
+      "brokenCount": 0,
+    },
+    "status": "pass",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "brokenCount": 0,
+    },
+    "status": "pass",
+  },
+}
+`;
+
+exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-LINKGRAPH-005 snapshots actual pass/candidate/missing/edge RuleResult output 1`] = `
+{
+  "candidate": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "available",
+            "claim": "1 commercial page(s) receive fewer than 2 internal inlinks.",
+            "grade": "B",
+            "limitation": "Inlink counts are derived from the crawled internal outlinks only; links from uncrawled pages are not counted.",
+            "method": "computed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "derived",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "https://example.com/pricing",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "affectedCount": 1,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "page_set:low_internal_inlinks",
+        ],
+        "titleArgs": {
+          "affectedCount": 1,
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "reason": "partial_crawl_incomplete_link_graph",
+    "status": "inconclusive",
+  },
+  "missing": {
+    "reason": "missing_dataset",
+    "status": "skipped",
+  },
+  "pass": {
+    "metrics": {
+      "affectedCount": 0,
+    },
+    "status": "pass",
+  },
+}
+`;

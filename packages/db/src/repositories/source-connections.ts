@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { sourceConnections } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
@@ -107,6 +107,26 @@ export class SourceConnectionsRepository extends Repository {
     return (rows[0] as SourceConnectionRow | undefined) ?? null;
   }
 
+  /** Lock an active source through collection persistence vs. disconnect. */
+  async findActiveByIdForUpdate(
+    scope: ProjectScope,
+    id: string,
+  ): Promise<SourceConnectionRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(sourceConnections)
+      .where(
+        and(
+          projectPredicate(sourceConnections, scope),
+          eq(sourceConnections.id, id),
+          isNull(sourceConnections.disconnected_at),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    return (rows[0] as SourceConnectionRow | undefined) ?? null;
+  }
+
   /**
    * The most recent non-disconnected connection for a provider (crawl default, or
    * the connected GSC/GA4 source). Null when none is connected.
@@ -149,19 +169,45 @@ export class SourceConnectionsRepository extends Repository {
     scope: ProjectScope,
     id: string,
     state: string,
+    limitation?: string,
   ): Promise<void> {
     await this.exec
       .update(sourceConnections)
-      .set({ state, updated_at: sql`now()` })
-      .where(and(projectPredicate(sourceConnections, scope), eq(sourceConnections.id, id)));
+      .set({
+        state,
+        ...(limitation !== undefined ? { limitation } : {}),
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(
+          projectPredicate(sourceConnections, scope),
+          eq(sourceConnections.id, id),
+          isNull(sourceConnections.disconnected_at),
+        ),
+      );
   }
 
   /** Point a connection at its latest successful snapshot (worker completion tx). */
-  async setLastSnapshot(id: string, snapshotId: string, state: string): Promise<void> {
+  async setLastSnapshot(
+    id: string,
+    snapshotId: string,
+    state: string,
+    limitation?: string,
+  ): Promise<void> {
     await this.exec
       .update(sourceConnections)
-      .set({ last_successful_snapshot_id: snapshotId, state, updated_at: sql`now()` })
-      .where(eq(sourceConnections.id, id));
+      .set({
+        last_successful_snapshot_id: snapshotId,
+        state,
+        ...(limitation !== undefined ? { limitation } : {}),
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(
+          eq(sourceConnections.id, id),
+          isNull(sourceConnections.disconnected_at),
+        ),
+      );
   }
 
   /** Disconnect: mark disconnected, keep historical snapshots (spec §12.3). */

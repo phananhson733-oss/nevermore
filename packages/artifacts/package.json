@@ -13,6 +13,7 @@
   "dependencies": {
     "@sf/contracts": "workspace:*",
     "@sf/engine": "workspace:*",
+    "@sf/observability": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

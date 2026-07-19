@@ -18,5 +18,6 @@ export const problemBody = z.object({
   detail: z.string(),
   requestId: z.string(),
   errors: z.array(problemErrorItem).optional(),
+  current: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 export type ProblemBody = z.infer<typeof problemBody>;

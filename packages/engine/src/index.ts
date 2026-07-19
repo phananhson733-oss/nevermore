@@ -41,7 +41,7 @@ export type {
 } from "./action-templates.ts";
 
 export { deriveConfidence, autoReviewState } from "./confidence.ts";
-export type { Confidence } from "./confidence.ts";
+export type { Confidence, ConfidenceOptions } from "./confidence.ts";
 
 export { mergeRunCandidates, findingKey } from "./merge.ts";
 export type { MergedCandidate } from "./merge.ts";
@@ -64,6 +64,9 @@ export type {
   RunFinding,
   RuleResultRecord,
   DiagnosticCoverage,
+  FindingSummaryGenerationInput,
+  GeneratedFindingSummary,
+  FindingSummaryGenerator,
 } from "./pipeline.ts";
 
 export { ctrBenchmark, ctrThreshold } from "./util/ctr-benchmark.ts";

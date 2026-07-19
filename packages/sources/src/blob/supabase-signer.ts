@@ -28,8 +28,19 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { objectKey } from "../storage/types.ts";
-import type { BlobStore } from "../storage/types.ts";
+import {
+  BlobObjectNotFoundError,
+  objectKey,
+  parseObjectKey,
+  type BlobStore,
+} from "../storage/types.ts";
+import {
+  ResponseBodyTooLargeError,
+  cancelResponseBody,
+  createRequestAbortScope,
+  readBoundedResponseJson,
+  readBoundedResponseText,
+} from "../storage/bounded-response.ts";
 
 /** The injectable fetch surface (Node global `fetch` by default). */
 export type FetchLike = typeof globalThis.fetch;
@@ -39,9 +50,15 @@ type FetchInit = NonNullable<Parameters<FetchLike>[1]>;
 
 // An object key is `<kind>/<projectId>/<runId>/<nonce>` (see `objectKey`).
 const OBJECT_KEY_SEGMENT_COUNT = 4;
-const PROJECT_ID_SEGMENT_INDEX = 1;
 const EXPORT_KIND = "export";
 const EXPORT_NONCE_BYTES = 12;
+
+/** Export download URLs are always valid for exactly 15 minutes. */
+export const EXPORT_DOWNLOAD_URL_TTL_SECONDS = 15 * 60;
+/** Signing is a small control-plane request and must not hang a web request. */
+export const DEFAULT_SUPABASE_SIGN_TIMEOUT_MS = 15_000;
+/** Both success and error signing envelopes are expected to be tiny JSON. */
+export const SUPABASE_SIGN_RESPONSE_MAX_BYTES = 64 * 1024;
 
 /**
  * Explicit download-URL contract shared by the Supabase signer and the dev stores.
@@ -69,9 +86,27 @@ export class ObjectOutOfProjectScopeError extends Error {
 
 /** Thrown when the Supabase Storage sign request fails or returns an unusable body. */
 export class SupabaseSignError extends Error {
-  constructor(message: string) {
-    super(message);
+  readonly status: number | undefined;
+
+  constructor(message: string, options?: { readonly status?: number; readonly cause?: unknown }) {
+    super(message, {
+      ...(options && "cause" in options ? { cause: options.cause } : {}),
+    });
     this.name = "SupabaseSignError";
+    this.status = options?.status;
+  }
+}
+
+/** A caller tried to weaken or extend the fixed export download lifetime. */
+export class InvalidDownloadUrlTtlError extends Error {
+  readonly requestedSeconds: number;
+
+  constructor(requestedSeconds: number) {
+    super(
+      `export download URL TTL must be exactly ${EXPORT_DOWNLOAD_URL_TTL_SECONDS} seconds`,
+    );
+    this.name = "InvalidDownloadUrlTtlError";
+    this.requestedSeconds = requestedSeconds;
   }
 }
 
@@ -96,13 +131,11 @@ export function mintExportObjectKey(parts: {
 function projectIdOfKey(key: string): string | null {
   const segments = key.split("/");
   if (segments.length !== OBJECT_KEY_SEGMENT_COUNT) return null;
-  // Reject any empty or dot segment: a `..`/`.`/empty segment survives
-  // encodeURIComponent unchanged and is then normalized by the URL parser at
-  // fetch time (e.g. `sign/exports/../p1/...` -> `sign/p1/...`), escaping the
-  // configured bucket. Defense-in-depth — minted keys never contain these.
-  if (segments.some((s) => s === "" || s === "." || s === "..")) return null;
-  const projectId = segments[PROJECT_ID_SEGMENT_INDEX];
-  return projectId && projectId.length > 0 ? projectId : null;
+  try {
+    return parseObjectKey(key).projectId;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -113,6 +146,36 @@ export function assertKeyInProjectScope(key: string, projectId: string): void {
   if (projectIdOfKey(key) !== projectId) {
     throw new ObjectOutOfProjectScopeError(key, projectId);
   }
+}
+
+function assertExportKeyInProjectScope(key: string, projectId: string): void {
+  assertKeyInProjectScope(key, projectId);
+  try {
+    if (parseObjectKey(key).kind !== EXPORT_KIND) {
+      throw new ObjectOutOfProjectScopeError(key, projectId);
+    }
+  } catch (error) {
+    if (error instanceof ObjectOutOfProjectScopeError) throw error;
+    throw new ObjectOutOfProjectScopeError(key, projectId);
+  }
+}
+
+function assertExportDownloadTtl(expiresInSeconds: number): void {
+  if (expiresInSeconds !== EXPORT_DOWNLOAD_URL_TTL_SECONDS) {
+    throw new InvalidDownloadUrlTtlError(expiresInSeconds);
+  }
+}
+
+function isMissingObjectResponse(status: number, body: string): boolean {
+  return (
+    status === 404 ||
+    (status >= 400 &&
+      status < 500 &&
+      status !== 408 &&
+      status !== 409 &&
+      status !== 429 &&
+      /object\s+not\s+found|not_found|"error"\s*:\s*"not.?found"/i.test(body))
+  );
 }
 
 export interface SupabaseSignerConfig {
@@ -126,6 +189,10 @@ export interface SupabaseSignerConfig {
   readonly projectId: string;
   /** Injectable fetch for offline tests (defaults to the Node global). */
   readonly fetch?: FetchLike;
+  /** Per-sign timeout, including bounded response decoding. */
+  readonly requestTimeoutMs?: number;
+  /** Optional caller lifecycle signal composed with the request timeout. */
+  readonly signal?: AbortSignal;
 }
 
 interface SignRequest {
@@ -138,6 +205,14 @@ function encodeKeyPath(key: string): string {
   return key.split("/").map(encodeURIComponent).join("/");
 }
 
+function signerTimeoutMs(value: number | undefined): number {
+  const resolved = value ?? DEFAULT_SUPABASE_SIGN_TIMEOUT_MS;
+  if (!Number.isSafeInteger(resolved) || resolved <= 0) {
+    throw new SupabaseSignError("Supabase signer timeout is invalid");
+  }
+  return resolved;
+}
+
 /** Build the Supabase Storage sign request. Pure: no network, deterministic. */
 export function buildSignRequest(
   config: SupabaseSignerConfig,
@@ -146,8 +221,9 @@ export function buildSignRequest(
 ): SignRequest {
   const base = config.supabaseUrl.replace(/\/+$/, "");
   const path = encodeKeyPath(key);
+  const bucket = encodeURIComponent(config.bucket);
   return {
-    url: `${base}/storage/v1/object/sign/${config.bucket}/${path}`,
+    url: `${base}/storage/v1/object/sign/${bucket}/${path}`,
     init: {
       method: "POST",
       headers: {
@@ -186,33 +262,111 @@ export function createSupabaseDownloadSigner(
   config: SupabaseSignerConfig,
 ): DownloadUrlSigner {
   const fetchImpl = config.fetch ?? globalThis.fetch;
+  const requestTimeoutMs = signerTimeoutMs(config.requestTimeoutMs);
   return {
     async signDownloadUrl(key, options): Promise<string> {
-      assertKeyInProjectScope(key, config.projectId);
+      assertExportKeyInProjectScope(key, config.projectId);
+      assertExportDownloadTtl(options.expiresInSeconds);
       const { url, init } = buildSignRequest(
         config,
         key,
         options.expiresInSeconds,
       );
-      let res: Response;
+      const abortScope = createRequestAbortScope(requestTimeoutMs, [
+        config.signal,
+        init.signal,
+      ]);
+      let responseStatus: number | undefined;
       try {
-        res = await fetchImpl(url, init);
+        if (abortScope.signal.aborted) throw abortScope.signal.reason;
+        const res = await fetchImpl(url, {
+          ...init,
+          signal: abortScope.signal,
+        });
+        responseStatus = res.status;
+        if (!res.ok) {
+          if (res.status === 404) {
+            await cancelResponseBody(res);
+            throw new BlobObjectNotFoundError(key);
+          }
+          let detail: string;
+          try {
+            detail = await readBoundedResponseText(
+              res,
+              SUPABASE_SIGN_RESPONSE_MAX_BYTES,
+              abortScope.signal,
+            );
+          } catch (error) {
+            if (abortScope.timedOut()) {
+              throw new SupabaseSignError("Supabase sign request timed out", {
+                status: 408,
+              });
+            }
+            if (error instanceof ResponseBodyTooLargeError) {
+              throw new SupabaseSignError(
+                "Supabase sign error response exceeded the size limit",
+                { status: res.status },
+              );
+            }
+            throw new SupabaseSignError(
+              "Supabase sign error response could not be read",
+              { status: res.status },
+            );
+          }
+          if (isMissingObjectResponse(res.status, detail)) {
+            throw new BlobObjectNotFoundError(key);
+          }
+          throw new SupabaseSignError(
+            `Supabase sign returned HTTP ${res.status}`,
+            { status: res.status },
+          );
+        }
+
+        let body: unknown;
+        try {
+          body = await readBoundedResponseJson(
+            res,
+            SUPABASE_SIGN_RESPONSE_MAX_BYTES,
+            abortScope.signal,
+          );
+        } catch (error) {
+          if (abortScope.timedOut()) {
+            throw new SupabaseSignError("Supabase sign request timed out", {
+              status: 408,
+            });
+          }
+          if (error instanceof ResponseBodyTooLargeError) {
+            throw new SupabaseSignError(
+              "Supabase sign response exceeded the size limit",
+            );
+          }
+          throw new SupabaseSignError(
+            "Supabase sign returned a non-JSON body",
+          );
+        }
+        return resolveSignedUrl(config.supabaseUrl, body);
       } catch (error) {
-        const detail = error instanceof Error ? error.message : "unknown";
-        throw new SupabaseSignError(`Supabase sign request failed: ${detail}`);
-      }
-      if (!res.ok) {
+        if (
+          error instanceof SupabaseSignError ||
+          error instanceof BlobObjectNotFoundError
+        ) {
+          throw error;
+        }
         throw new SupabaseSignError(
-          `Supabase sign returned HTTP ${res.status}`,
+          abortScope.timedOut()
+            ? "Supabase sign request timed out"
+            : "Supabase sign request failed",
+          {
+            ...(abortScope.timedOut()
+              ? { status: 408 }
+              : responseStatus !== undefined && responseStatus >= 400
+                ? { status: responseStatus }
+                : {}),
+          },
         );
+      } finally {
+        abortScope.dispose();
       }
-      let body: unknown;
-      try {
-        body = await res.json();
-      } catch {
-        throw new SupabaseSignError("Supabase sign returned a non-JSON body");
-      }
-      return resolveSignedUrl(config.supabaseUrl, body);
     },
   };
 }
@@ -228,7 +382,8 @@ export function blobStoreDownloadSigner(
 ): DownloadUrlSigner {
   return {
     async signDownloadUrl(key, options): Promise<string> {
-      assertKeyInProjectScope(key, projectId);
+      assertExportKeyInProjectScope(key, projectId);
+      assertExportDownloadTtl(options.expiresInSeconds);
       return store.signedUrl(key, options.expiresInSeconds);
     },
   };

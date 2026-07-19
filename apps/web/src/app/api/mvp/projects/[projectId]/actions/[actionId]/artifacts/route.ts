@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
 import { CreateArtifactRequest } from "@sf/contracts";
-import { REQUEST_ID_HEADER } from "@sf/observability";
 import { operatorRoute } from "@/lib/http/handler";
+import { assertWorkspaceRateLimit } from "@/lib/http/rate-limit";
+import { asyncAccepted } from "@/lib/http/respond";
 import { parseJsonBody, parseUuidParam, requireIdempotencyKey } from "@/lib/http/validate";
 import { createActionArtifact } from "@/lib/services/artifacts";
 
@@ -15,7 +15,13 @@ export const POST = operatorRoute<{ projectId: string; actionId: string }>(
     const { projectId, actionId } = await routeCtx.params;
     const pid = parseUuidParam(projectId);
     const aid = parseUuidParam(actionId);
-    requireIdempotencyKey(request);
+    const idempotencyKey = requireIdempotencyKey(request);
+    await assertWorkspaceRateLimit(ctx.operator.workspaceId, {
+      idempotencyKey,
+      scope: "artifact_generation",
+      maxAttempts: 20,
+      windowMs: 15 * 60 * 1000,
+    });
     const body = await parseJsonBody(request, CreateArtifactRequest);
 
     const result = await createActionArtifact(
@@ -23,16 +29,14 @@ export const POST = operatorRoute<{ projectId: string; actionId: string }>(
       pid,
       aid,
       ctx.operator.userId,
+      idempotencyKey,
       body,
     );
-    const response = NextResponse.json(
+    return asyncAccepted(
       { run: result.run, statusUrl: result.statusUrl, resourceRef: result.resourceRef },
-      { status: 202 },
+      ctx.requestId,
+      result.location,
     );
-    response.headers.set("Location", result.location);
-    response.headers.set("Retry-After", "1");
-    response.headers.set(REQUEST_ID_HEADER, ctx.requestId);
-    return response;
   },
 );
 

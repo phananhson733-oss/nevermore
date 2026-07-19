@@ -1,13 +1,18 @@
-import path from "node:path";
 import type { Db, DbHandle, PgBoss } from "@sf/db";
-import { LocalFsBlobStore, type BlobStore } from "@sf/sources";
+import {
+  createBlobStoreFromEnv,
+  type BlobStorageEnvironment,
+  type BlobStore,
+  type StorageFetch,
+} from "@sf/sources";
 import type { Logger } from "@sf/observability";
 import { resolveLlmClientConfig, type WorkerEnv } from "./env.ts";
 
 /**
- * Shared worker runtime dependencies threaded into every job handler. The blob
- * store is filesystem-backed for local dev (Supabase Storage swaps in later); the
- * credential key decrypts Google tokens for GSC/GA4 sync (spec §14.3).
+ * Shared worker runtime dependencies threaded into every job handler. Hosted
+ * workers use the same private Supabase buckets as web; local/test workers must
+ * receive the same explicit filesystem path. The credential key decrypts Google
+ * tokens for GSC/GA4 sync (spec §14.3).
  */
 export interface WorkerContext {
   readonly db: Db;
@@ -15,6 +20,10 @@ export interface WorkerContext {
   readonly blobStore: BlobStore;
   readonly credentialKey: Buffer;
   readonly appOrigin: string;
+  readonly googleOAuth: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+  };
   /**
    * LLM config for artifact generation (spec §10.2); the client is built per job.
    * `baseUrl`/`authScheme` are set when the OpenAI provider is reached via an
@@ -29,20 +38,38 @@ export interface WorkerContext {
   readonly logger: Logger;
 }
 
+export interface WorkerStorageFactoryOptions {
+  readonly environment?: string;
+  readonly fetch?: StorageFetch;
+}
+
+export function createWorkerBlobStore(
+  env: BlobStorageEnvironment,
+  options: WorkerStorageFactoryOptions = {},
+): BlobStore {
+  return createBlobStoreFromEnv(env, {
+    environment:
+      options.environment ?? process.env["NODE_ENV"] ?? "development",
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  });
+}
+
 export function buildWorkerContext(input: {
   db: DbHandle;
   boss: PgBoss;
   env: WorkerEnv;
   logger: Logger;
 }): WorkerContext {
-  const baseDir =
-    process.env["SF_BLOB_DIR"] ?? path.join(process.cwd(), ".data", "blob");
   return {
     db: input.db.db,
     boss: input.boss,
-    blobStore: new LocalFsBlobStore(baseDir),
+    blobStore: createWorkerBlobStore(input.env),
     credentialKey: Buffer.from(input.env.CREDENTIAL_ENCRYPTION_KEY, "base64"),
     appOrigin: input.env.APP_ORIGIN,
+    googleOAuth: {
+      clientId: input.env.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: input.env.GOOGLE_OAUTH_CLIENT_SECRET,
+    },
     openai: resolveLlmClientConfig(input.env),
     logger: input.logger,
   };

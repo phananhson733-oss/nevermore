@@ -47,6 +47,12 @@ import {
   type RoadmapLane,
   type Severity,
 } from "@/lib/api/hooks-report";
+import {
+  evidenceForFinding,
+  reportFooterLimitations,
+  uniqueStrings,
+} from "../_view-model.ts";
+import { exportErrorMessageKey } from "../_frontend-error-state.ts";
 import styles from "./report.module.css";
 
 /** The five diagnosis domains, in the spec's canonical order (spec §4.2). */
@@ -259,7 +265,7 @@ function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
         <div className={styles.limitations}>
           <p className={styles.limitationsLabel}>{t("limitations")}</p>
           <ul className={styles.bulletList}>
-            {coverage.limitations.map((text, index) => (
+            {uniqueStrings(coverage.limitations).map((text, index) => (
               <li key={`${index}:${text}`} className={styles.bulletItem}>
                 {text}
               </li>
@@ -302,7 +308,7 @@ function FindingCard({ finding }: { readonly finding: Finding }) {
   const t = useTranslations("report");
   const tDomain = useTranslations("domain");
   const scope = finding.subjectRefs[0];
-  const keyEvidence = finding.evidence.slice(0, 3);
+  const keyEvidence = evidenceForFinding(finding.evidence).slice(0, 3);
   return (
     <article className={styles.card}>
       <div className={styles.cardHead}>
@@ -487,6 +493,10 @@ function ArtifactsSection({
 
 function MethodologySection({ report }: { readonly report: Report }) {
   const t = useTranslations("report");
+  const footerLimitations = reportFooterLimitations(
+    report.coverage.limitations,
+    report.limitations,
+  );
   const paragraphs = report.methodology
     .split(/\n{2,}/)
     .map((block) => block.trim())
@@ -510,11 +520,11 @@ function MethodologySection({ report }: { readonly report: Report }) {
           {text}
         </p>
       ))}
-      {report.limitations.length > 0 ? (
+      {footerLimitations.length > 0 ? (
         <div className={styles.limitations}>
           <p className={styles.limitationsLabel}>{t("limitations")}</p>
           <ul className={styles.bulletList}>
-            {report.limitations.map((text, index) => (
+            {footerLimitations.map((text, index) => (
               <li key={`${index}:${text}`} className={styles.bulletItem}>
                 {text}
               </li>
@@ -545,7 +555,20 @@ function ExportStatus({
   const bundle = query.data;
 
   if (query.error !== null) {
-    return <p className={styles.exportError}>{t("exportFailed")}</p>;
+    return (
+      <div className={styles.exportReady} role="alert">
+        <p className={styles.exportError}>
+          {t(exportErrorMessageKey(query.error))}
+        </p>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void query.refetch()}
+        >
+          {t("retryExportStatus")}
+        </Button>
+      </div>
+    );
   }
   if (bundle === undefined) {
     return (
@@ -570,11 +593,7 @@ function ExportStatus({
     status === "cancelled" ||
     bundle.downloadUrl === null
   ) {
-    return (
-      <p className={styles.exportError}>
-        {bundle.run.lastError?.summary ?? t("exportFailed")}
-      </p>
-    );
+    return <p className={styles.exportError}>{t("exportFailed")}</p>;
   }
   return (
     <div className={styles.exportReady}>
@@ -612,6 +631,7 @@ function ExportSection({
   const [active, setActive] = useState<ActiveExport | null>(null);
 
   function start(kind: ExportKind): void {
+    setActive(null);
     createExport.mutate(
       { kind, outputLocale },
       {
@@ -654,7 +674,9 @@ function ExportSection({
       <p className={styles.clientBundleNote}>{t("clientBundleNote")}</p>
       <div className={styles.exportStatus} aria-live="polite">
         {createExport.isError ? (
-          <p className={styles.exportError}>{t("exportFailed")}</p>
+          <p className={styles.exportError} role="alert">
+            {t(exportErrorMessageKey(createExport.error))}
+          </p>
         ) : null}
         {createExport.isPending && active === null ? (
           <span className={styles.exportBusy}>

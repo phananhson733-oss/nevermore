@@ -6,6 +6,73 @@
 
 const REDACTED = "[redacted]";
 
+/**
+ * Credential-shaped values that must be removed even when a caller places them
+ * under an innocuous key such as `message`, `summary`, or `body`.
+ *
+ * Key-only redaction is insufficient for upstream exceptions: provider clients
+ * can interpolate credentials, Cookie headers, or encrypted payloads into an
+ * `Error.message`. These patterns target credential formats and labelled
+ * assignments rather than arbitrary long strings, so ordinary copy, hashes,
+ * and correlation identifiers survive unchanged.
+ */
+const SECRET_VALUE_PATTERNS: ReadonlyArray<{
+  readonly pattern: RegExp;
+  readonly replacement: string;
+}> = [
+  {
+    pattern:
+      /\b(authorization|token|secret|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|apikey|password|cookie|set[_-]?cookie|session(?:[_-]?cookie)?|sf[_-]?session|encrypted[_-]?payload|pkce[_-]?verifier[_-]?cipher|token[_-]?cipher|ciphertext|credential[_-]?encryption[_-]?key)\b(\s*(?:=|:)\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi,
+    replacement: "$1$2[redacted]",
+  },
+  {
+    pattern: /([?&](?:state|code)=)[^&#\s]+/gi,
+    replacement: "$1[redacted]",
+  },
+  {
+    pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi,
+    replacement: "Bearer [redacted]",
+  },
+  {
+    pattern: /\bBasic\s+[A-Za-z0-9+/]{8,}=*/gi,
+    replacement: "Basic [redacted]",
+  },
+  {
+    pattern: /\bya29\.[0-9A-Za-z_-]{20,}\b/g,
+    replacement: REDACTED,
+  },
+  {
+    pattern: /\b1\/\/[0-9A-Za-z_-]{20,}\b/g,
+    replacement: REDACTED,
+  },
+  {
+    pattern: /\bGOCSPX-[0-9A-Za-z_-]{10,}\b/g,
+    replacement: REDACTED,
+  },
+  {
+    pattern: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g,
+    replacement: REDACTED,
+  },
+  {
+    pattern: /\bAKIA[0-9A-Z]{16}\b/g,
+    replacement: REDACTED,
+  },
+  {
+    pattern: /\bxox[baprs]-[0-9A-Za-z-]{10,}\b/g,
+    replacement: REDACTED,
+  },
+  {
+    pattern:
+      /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+    replacement: REDACTED,
+  },
+  {
+    pattern:
+      /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/g,
+    replacement: REDACTED,
+  },
+];
+
 /** Case-insensitive key names that must never appear in log output. */
 export const REDACT_KEYS: ReadonlySet<string> = new Set([
   "authorization",
@@ -58,6 +125,15 @@ const REDACT_KEYS_NORMALIZED: ReadonlySet<string> = new Set(
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Redact credential-shaped values embedded in arbitrary text. */
+export function redactText(value: string): string {
+  let redacted = value;
+  for (const { pattern, replacement } of SECRET_VALUE_PATTERNS) {
+    redacted = redacted.replace(pattern, replacement);
+  }
+  return redacted;
+}
+
 /**
  * Redact a URL string: keep origin + path, strip obvious token/password/state
  * query parameters (spec §14.2 "URL logging first redaction").
@@ -100,5 +176,5 @@ export function redact(
     }
     return out;
   }
-  return value;
+  return typeof value === "string" ? redactText(value) : value;
 }

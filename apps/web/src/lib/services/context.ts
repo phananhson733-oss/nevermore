@@ -11,6 +11,7 @@ import {
 import type { UpdateContextRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
+import { isPostgresUniqueViolation } from "./db-errors";
 import { toIcpProfileDto, type IcpProfileDto } from "./mappers";
 
 /**
@@ -59,75 +60,101 @@ export async function updateContext(
 ): Promise<IcpProfileDto> {
   const { db } = getDb();
 
-  return db.transaction(async (tx) => {
-    const projects = new ProjectsRepository(tx);
-    const icps = new IcpProfilesRepository(tx);
-    const sites = new SitesRepository(tx);
-    const projectScope = { workspaceId: scope.workspaceId, projectId };
+  try {
+    return await db.transaction(async (tx) => {
+      const projects = new ProjectsRepository(tx);
+      const icps = new IcpProfilesRepository(tx);
+      const sites = new SitesRepository(tx);
+      const projectScope = { workspaceId: scope.workspaceId, projectId };
 
-    const project = await projects.findById(scope, projectId);
-    if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
-    if (project.archived_at) {
-      throw new ProblemError(
-        "PROJECT_ARCHIVED",
-        "Project is archived and read-only.",
-      );
-    }
+      // Compare-and-swap boundary: serialize every context save for this project.
+      // A waiter reads the pointer AFTER the winner commits, so the public result
+      // is a stable 409 VERSION_CONFLICT rather than a raw unique violation.
+      const project = await projects.findByIdForUpdate(scope, projectId);
+      if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
+      if (project.archived_at) {
+        throw new ProblemError(
+          "PROJECT_ARCHIVED",
+          "Project is archived and read-only.",
+        );
+      }
 
-    const current: IcpProfileRow | null = project.current_icp_profile_id
-      ? await icps.findById(projectScope, project.current_icp_profile_id)
-      : null;
-    const currentVersion = current?.version ?? 0;
+      const current: IcpProfileRow | null = project.current_icp_profile_id
+        ? await icps.findById(projectScope, project.current_icp_profile_id)
+        : null;
+      const currentVersion = current?.version ?? 0;
 
-    if (body.baseVersion !== currentVersion) {
+      if (body.baseVersion !== currentVersion) {
+        throw new ProblemError(
+          "VERSION_CONFLICT",
+          `Context was modified; expected version ${currentVersion}, got baseVersion ${body.baseVersion}.`,
+        );
+      }
+
+      const status: IcpStatus = body.mode === "complete" ? "complete" : "draft";
+      const profile: Record<string, unknown> =
+        body.mode === "complete"
+          ? (body.profile as Record<string, unknown>)
+          : mergeDraft(
+              current?.profile ?? {},
+              body.profile as Record<string, unknown>,
+            );
+
+      const hash = contentHash({ status, profile } as CanonicalValue);
+
+      // Semantic no-op: identical content (same status + profile) → existing version.
+      const dup = await icps.findByContentHash(projectScope, hash);
+      if (dup) {
+        if (body.mode === "complete") {
+          await projects.setReadyToDiagnoseIfEligible(scope, projectId);
+        }
+        return toIcpProfileDto(dup);
+      }
+
+      const nextVersion = (await icps.maxVersion(projectScope)) + 1;
+      const inserted = await icps.insertVersion({
+        workspaceId: scope.workspaceId,
+        projectId,
+        version: nextVersion,
+        status,
+        profile,
+        contentHash: hash,
+        createdBy: actorId,
+      });
+      await projects.setCurrentIcpProfile(scope, projectId, inserted.id);
+
+      // A complete save mirrors market/language/delivery-locale onto the read models
+      // (spec §6.2); a draft save only advances the current-profile pointer.
+      if (body.mode === "complete") {
+        const p = body.profile;
+        await sites.updatePrimaryProjections(projectScope, {
+          marketCodes: [...p.marketCodes],
+          languageCodes: [...p.siteLanguageCodes],
+        });
+        await projects.setDeliveryLocale(
+          scope,
+          projectId,
+          p.defaultDeliveryLocale,
+        );
+        await projects.setReadyToDiagnoseIfEligible(scope, projectId);
+      }
+
+      return toIcpProfileDto(inserted);
+    });
+  } catch (error) {
+    // The row lock is the primary CAS. This defensive mapping ensures a future
+    // alternative writer or legacy row can never expose 23505 as an HTTP 500.
+    if (
+      isPostgresUniqueViolation(error, [
+        "icp_profiles_project_id_version_key",
+        "icp_profiles_project_id_content_hash_key",
+      ])
+    ) {
       throw new ProblemError(
         "VERSION_CONFLICT",
-        `Context was modified; expected version ${currentVersion}, got baseVersion ${body.baseVersion}.`,
+        `Context was modified while saving baseVersion ${body.baseVersion}.`,
       );
     }
-
-    const status: IcpStatus = body.mode === "complete" ? "complete" : "draft";
-    const profile: Record<string, unknown> =
-      body.mode === "complete"
-        ? (body.profile as Record<string, unknown>)
-        : mergeDraft(
-            current?.profile ?? {},
-            body.profile as Record<string, unknown>,
-          );
-
-    const hash = contentHash({ status, profile } as CanonicalValue);
-
-    // Semantic no-op: identical content (same status + profile) → existing version.
-    const dup = await icps.findByContentHash(projectScope, hash);
-    if (dup) return toIcpProfileDto(dup);
-
-    const nextVersion = (await icps.maxVersion(projectScope)) + 1;
-    const inserted = await icps.insertVersion({
-      workspaceId: scope.workspaceId,
-      projectId,
-      version: nextVersion,
-      status,
-      profile,
-      contentHash: hash,
-      createdBy: actorId,
-    });
-    await projects.setCurrentIcpProfile(scope, projectId, inserted.id);
-
-    // A complete save mirrors market/language/delivery-locale onto the read models
-    // (spec §6.2); a draft save only advances the current-profile pointer.
-    if (body.mode === "complete") {
-      const p = body.profile;
-      await sites.updatePrimaryProjections(projectScope, {
-        marketCodes: [...p.marketCodes],
-        languageCodes: [...p.siteLanguageCodes],
-      });
-      await projects.setDeliveryLocale(
-        scope,
-        projectId,
-        p.defaultDeliveryLocale,
-      );
-    }
-
-    return toIcpProfileDto(inserted);
-  });
+    throw error;
+  }
 }

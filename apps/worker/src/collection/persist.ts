@@ -4,12 +4,19 @@ import {
   CollectionRunsRepository,
   DataSnapshotsRepository,
   ObservationsRepository,
+  ProjectsRepository,
+  ProviderDiscrepanciesRepository,
   SourceConnectionsRepository,
   TelemetryRepository,
   type CollectionRunRow,
   type ObservationInsert,
 } from "@sf/db";
-import { objectKey, type Availability, type SourceWindow } from "@sf/sources";
+import {
+  objectKey,
+  SourceError,
+  type Availability,
+  type SourceWindow,
+} from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 
 /**
@@ -81,6 +88,29 @@ export async function persistCollectionResult(
   // the daily orphan cleanup is the backstop.
   try {
     return await ctx.db.transaction(async (tx) => {
+      const sources = new SourceConnectionsRepository(tx);
+      if (run.source_connection_id) {
+        const activeSource = await sources.findActiveByIdForUpdate(
+          scope,
+          run.source_connection_id,
+        );
+        if (!activeSource) {
+          throw new SourceError(
+            "AUTH_REQUIRED",
+            "Source was disconnected before the collection result could be saved.",
+          );
+        }
+      }
+
+      const discrepancies = new ProviderDiscrepanciesRepository(tx);
+      // Equal-window collections must not race past one another's uncommitted
+      // observations, otherwise both could miss a real conflict.
+      await discrepancies.lockCollectionWindow(
+        scope,
+        run.provider,
+        outcome.sourceWindow as unknown as Record<string, unknown>,
+      );
+
       const snapshot = await new DataSnapshotsRepository(tx).insert({
         workspaceId: run.workspace_id,
         projectId: run.project_id,
@@ -109,6 +139,7 @@ export async function persistCollectionResult(
         snapshot.id,
         input.observations,
       );
+      await discrepancies.detectForSnapshot(scope, snapshot.id);
 
       await new CollectionRunsRepository(tx).finalize(run.id, {
         rowCount: outcome.rowCount,
@@ -121,10 +152,11 @@ export async function persistCollectionResult(
       });
 
       if (run.source_connection_id) {
-        await new SourceConnectionsRepository(tx).setLastSnapshot(
+        await sources.setLastSnapshot(
           run.source_connection_id,
           snapshot.id,
           outcome.availability,
+          outcome.limitation,
         );
       }
 
@@ -134,6 +166,10 @@ export async function persistCollectionResult(
         resultType: "collection_run",
         resultId: run.id,
       });
+      await new ProjectsRepository(tx).setReadyToDiagnoseIfEligible(
+        { workspaceId: run.workspace_id },
+        run.project_id,
+      );
 
       await new TelemetryRepository(tx).emit({
         workspaceId: run.workspace_id,

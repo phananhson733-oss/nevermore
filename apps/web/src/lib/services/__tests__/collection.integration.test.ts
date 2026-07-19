@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??= "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
@@ -13,9 +12,12 @@ process.env["RAW_IMPORT_BUCKET"] ??= "raw-imports";
 process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
+import { eq, sql } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
-import { workspaces } from "@sf/db/schema";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { IdempotencyRepository, SourceConnectionsRepository } from "@sf/db";
+import { clientProjects, sourceConnections, workspaces } from "@sf/db/schema";
+import { ProblemError } from "@sf/observability";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import { createCollectionRun } from "@/lib/services/collection";
 import { getProjectRun } from "@/lib/services/runs";
@@ -81,6 +83,71 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
     ).rejects.toMatchObject({ code: "RUN_ALREADY_ACTIVE" });
   });
 
+  it("repeatedly returns the winning run metadata and Location during real active-key races", async () => {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const [raceWorkspace] = await handle.db
+        .insert(workspaces)
+        .values({ name: `WS-race-${attempt}-${randomUUID()}` })
+        .returning();
+      const raceProject = await createProject(
+        { workspaceId: raceWorkspace!.id },
+        actor,
+        randomUUID(),
+        {
+          clientName: `Race ${attempt}`,
+          projectName: `Race ${attempt}`,
+          siteUrl: `https://collection-race-${attempt}-${randomUUID()}.example`,
+          marketCodes: ["US"],
+          siteLanguageCodes: ["en"],
+          defaultDeliveryLocale: "en",
+        },
+        safeGuard,
+      );
+
+      const results = await Promise.allSettled([
+        createCollectionRun(
+          { workspaceId: raceWorkspace!.id },
+          raceProject.project.id,
+          actor,
+          randomUUID(),
+          { provider: "crawl" },
+        ),
+        createCollectionRun(
+          { workspaceId: raceWorkspace!.id },
+          raceProject.project.id,
+          actor,
+          randomUUID(),
+          { provider: "crawl" },
+        ),
+      ]);
+      const fulfilled = results.filter(
+        (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof createCollectionRun>>> =>
+          result.status === "fulfilled",
+      );
+      const rejected = results.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+
+      expect(fulfilled, `attempt ${attempt}`).toHaveLength(1);
+      expect(rejected, `attempt ${attempt}`).toHaveLength(1);
+      expect(rejected[0]!.reason).toBeInstanceOf(ProblemError);
+      expect(rejected[0]!.reason).toMatchObject({
+        code: "RUN_ALREADY_ACTIVE",
+        status: 409,
+      });
+
+      const winningRunId = fulfilled[0]!.value.run.id;
+      const winningStatusUrl = `/api/mvp/projects/${raceProject.project.id}/runs/${winningRunId}`;
+      expect(Reflect.get(rejected[0]!.reason, "current")).toEqual({
+        runId: winningRunId,
+        statusUrl: winningStatusUrl,
+      });
+      expect((rejected[0]!.reason as ProblemError).extraHeaders).toEqual({
+        Location: winningStatusUrl,
+      });
+    }
+  });
+
   it("422s when the provider has no connected source (gsc)", async () => {
     await expect(
       createCollectionRun({ workspaceId }, projectId, actor, randomUUID(), { provider: "gsc" }),
@@ -122,5 +189,198 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
     });
     expect(second.replayed).toBe(true);
     expect(second.run.id).toBe(first.run.id);
+
+    const racedFastPath = vi
+      .spyOn(IdempotencyRepository.prototype, "find")
+      .mockResolvedValueOnce(null);
+    try {
+      const afterInitialMiss = await createCollectionRun(
+        { workspaceId: ws2!.id },
+        proj.project.id,
+        actor,
+        key,
+        { provider: "crawl" },
+      );
+      expect(afterInitialMiss).toMatchObject({
+        replayed: true,
+        statusUrl: first.statusUrl,
+        run: { id: first.run.id },
+      });
+    } finally {
+      racedFastPath.mockRestore();
+    }
+  });
+
+  it("returns one accepted result and one replay for concurrent exact retries", async () => {
+    const [concurrentWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `WS-${randomUUID()}` })
+      .returning();
+    const created = await createProject(
+      { workspaceId: concurrentWorkspace!.id },
+      actor,
+      randomUUID(),
+      {
+        clientName: "Concurrent idempotency",
+        projectName: "Concurrent idempotency",
+        siteUrl: "https://collection-concurrent-idem.example",
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    const key = randomUUID();
+    const args = [
+      { workspaceId: concurrentWorkspace!.id },
+      created.project.id,
+      actor,
+      key,
+      { provider: "crawl" as const },
+    ] as const;
+
+    const [left, right] = await Promise.all([
+      createCollectionRun(...args),
+      createCollectionRun(...args),
+    ]);
+    expect(left.run.id).toBe(right.run.id);
+    expect([left.replayed, right.replayed].sort()).toEqual([false, true]);
+  });
+
+  it("rejects a different hash while the idempotency key is still pending", async () => {
+    const [pendingWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `WS-${randomUUID()}` })
+      .returning();
+    const created = await createProject(
+      { workspaceId: pendingWorkspace!.id },
+      actor,
+      randomUUID(),
+      {
+        clientName: "Pending idempotency",
+        projectName: "Pending idempotency",
+        siteUrl: "https://collection-pending-idem.example",
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    const key = randomUUID();
+    await new IdempotencyRepository(handle.db).begin({
+      workspaceId: pendingWorkspace!.id,
+      scope: "createCollectionRun",
+      key,
+      requestHash: "0".repeat(64),
+      expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+    });
+
+    await expect(
+      createCollectionRun(
+        { workspaceId: pendingWorkspace!.id },
+        created.project.id,
+        actor,
+        key,
+        { provider: "crawl" },
+      ),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED", status: 409 });
+  });
+
+  it("replays the accepted command after the project is archived and its source is disconnected", async () => {
+    const replayWorkspaceId = (
+      await handle.db
+        .insert(workspaces)
+        .values({ name: `WS-${randomUUID()}` })
+        .returning()
+    )[0]!.id;
+    const created = await createProject(
+      { workspaceId: replayWorkspaceId },
+      actor,
+      randomUUID(),
+      {
+        clientName: "Mutable replay",
+        projectName: "Mutable replay",
+        siteUrl: "https://collection-mutable-replay.example",
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    const replayProjectId = created.project.id;
+    const projectScope = {
+      workspaceId: replayWorkspaceId,
+      projectId: replayProjectId,
+    };
+    const [crawlSource] = await handle.db
+      .select({ id: sourceConnections.id })
+      .from(sourceConnections)
+      .where(eq(sourceConnections.project_id, replayProjectId));
+    const key = randomUUID();
+    const body = { provider: "crawl" as const };
+
+    const first = await createCollectionRun(
+      { workspaceId: replayWorkspaceId },
+      replayProjectId,
+      actor,
+      key,
+      body,
+    );
+    await new SourceConnectionsRepository(handle.db).disconnect(
+      projectScope,
+      crawlSource!.id,
+    );
+    await handle.db
+      .update(clientProjects)
+      .set({ archived_at: sql`now()` })
+      .where(eq(clientProjects.id, replayProjectId));
+
+    const replay = await createCollectionRun(
+      { workspaceId: replayWorkspaceId },
+      replayProjectId,
+      actor,
+      key,
+      body,
+    );
+    expect(replay).toMatchObject({
+      status: 202,
+      replayed: true,
+      statusUrl: first.statusUrl,
+      run: { id: first.run.id },
+    });
+
+    await expect(
+      createCollectionRun(
+        { workspaceId: replayWorkspaceId },
+        replayProjectId,
+        actor,
+        key,
+        { provider: "crawl", sourceConnectionId: randomUUID() },
+      ),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED", status: 409 });
+
+    const otherProject = await createProject(
+      { workspaceId: replayWorkspaceId },
+      actor,
+      randomUUID(),
+      {
+        clientName: "Other project",
+        projectName: "Other project",
+        siteUrl: "https://collection-other-project.example",
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    await expect(
+      createCollectionRun(
+        { workspaceId: replayWorkspaceId },
+        otherProject.project.id,
+        actor,
+        key,
+        body,
+      ),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED", status: 409 });
   });
 });

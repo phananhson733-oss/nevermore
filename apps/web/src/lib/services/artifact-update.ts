@@ -46,10 +46,7 @@ export async function updateProjectArtifact(
     body.content !== null
   ) {
     if (body.baseRevision !== artifact.current_revision) {
-      throw new ProblemError(
-        "STALE_REVISION",
-        "Artifact was modified; refetch and retry.",
-      );
+      throw staleRevision();
     }
     const content: string | Record<string, unknown> = body.content;
     const hash = contentHash(
@@ -59,10 +56,6 @@ export async function updateProjectArtifact(
         typeof contentHash
       >[0],
     );
-    if (hash === artifact.content_hash) {
-      return getProjectArtifact(scope, projectId, artifactId); // no-op save
-    }
-
     const requiresValidationRollback = await needsValidationRollback(
       projectScope,
       artifact.action_id,
@@ -77,6 +70,25 @@ export async function updateProjectArtifact(
 
     await db.transaction(async (tx) => {
       const txRepo = new ExecutionArtifactsRepository(tx);
+      const locked = await txRepo.findByIdForUpdate(projectScope, artifactId);
+      if (!locked) throw new ProblemError("NOT_FOUND", "Artifact not found.");
+      if (locked.current_revision !== body.baseRevision) {
+        throw staleRevision();
+      }
+      if (hash === locked.content_hash) return; // idempotent no-op save
+
+      const installed = await txRepo.setGeneratedIfRevision(
+        projectScope,
+        artifactId,
+        {
+          status: "draft", // editing always returns to draft
+          currentRevision: nextRevision,
+          expectedRevision: body.baseRevision,
+          validationState: validation.valid ? "valid" : "invalid",
+          contentHash: hash,
+        },
+      );
+      if (!installed) throw staleRevision();
       await txRepo.insertRevision({
         workspaceId: scope.workspaceId,
         projectId,
@@ -92,31 +104,41 @@ export async function updateProjectArtifact(
         note: body.editorNote ?? null,
         validationErrors: [...validation.errors],
       });
-      await txRepo.setGenerated(artifactId, {
-        status: "draft", // editing always returns to draft
-        currentRevision: nextRevision,
-        validationState: validation.valid ? "valid" : "invalid",
-        contentHash: hash,
-      });
     });
     return getProjectArtifact(scope, projectId, artifactId);
   }
 
   // Status change.
   if (body.status !== undefined) {
+    if (body.baseRevision !== artifact.current_revision) {
+      throw staleRevision();
+    }
     if (body.status === "ready" && artifact.validation_state !== "valid") {
       throw new ProblemError(
         "ARTIFACT_VALIDATION_FAILED",
         "Fix validation errors before marking ready.",
       );
     }
-    await repo.setStatus(projectScope, artifactId, body.status);
+    const updated = await repo.setStatusIfRevision(
+      projectScope,
+      artifactId,
+      body.status,
+      body.baseRevision,
+    );
+    if (!updated) throw staleRevision();
     return getProjectArtifact(scope, projectId, artifactId);
   }
 
   throw new ProblemError(
     "VALIDATION_ERROR",
     "Provide content or a status change.",
+  );
+}
+
+function staleRevision(): ProblemError {
+  return new ProblemError(
+    "STALE_REVISION",
+    "Artifact was modified; refetch and retry.",
   );
 }
 

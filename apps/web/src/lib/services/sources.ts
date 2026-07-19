@@ -1,6 +1,7 @@
 import {
   AsyncRunsRepository,
   DataSnapshotsRepository,
+  OAuthIntentsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
   SourceCredentialsRepository,
@@ -99,7 +100,15 @@ export async function disconnectProjectSource(
   }
 
   await db.transaction(async (tx) => {
-    await new SourceCredentialsRepository(tx).deleteByConnection(sourceConnectionId);
+    // Lock/mark the source before erasing related rows. Collection persistence
+    // takes the same row lock and cannot commit a snapshot after this wins.
     await new SourceConnectionsRepository(tx).disconnect(projectScope, sourceConnectionId);
+    await new SourceCredentialsRepository(tx).deleteByConnection(sourceConnectionId);
+    if (connection.provider === "gsc" || connection.provider === "ga4") {
+      await new OAuthIntentsRepository(tx).scrubProjectProvider(
+        projectScope,
+        connection.provider,
+      );
+    }
   });
 }

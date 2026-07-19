@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??=
-  "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
@@ -19,7 +17,9 @@ import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { workspaces } from "@sf/db/schema";
 import {
   OAuthIntentsRepository,
+  SourceConnectionsRepository,
   SourceCredentialsRepository,
+  type OAuthIntentRow,
   type ProjectScope,
 } from "@sf/db";
 import {
@@ -33,6 +33,7 @@ import {
   connectProjectSource,
   handleGoogleCallback,
 } from "@/lib/services/source-connect";
+import { disconnectProjectSource } from "@/lib/services/sources";
 import {
   generateState,
   hashState,
@@ -63,12 +64,12 @@ const credentialKey = () =>
   Buffer.from(process.env["CREDENTIAL_ENCRYPTION_KEY"]!, "base64");
 
 const EXPIRES_AT = new Date(Date.now() + 3600_000).toISOString();
-const REFRESH_TOKEN = "1//fake-refresh-token";
+const FAKE_REFRESH_VALUE = "1//fake-refresh-token";
 
 const fakeClient = (): GoogleOAuthClient => ({
   exchangeCode: async () => ({
     accessToken: "fake-access-token",
-    refreshToken: REFRESH_TOKEN,
+    refreshToken: FAKE_REFRESH_VALUE,
     expiresAt: EXPIRES_AT,
     scope: "https://www.googleapis.com/auth/webmasters.readonly",
   }),
@@ -113,6 +114,83 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     await handle?.end();
   });
 
+  async function isolatedProject(label: string): Promise<{
+    scope: ProjectScope;
+    siteId: string;
+    actorId: string;
+  }> {
+    const actorId = randomUUID();
+    const [workspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `${label}-${randomUUID()}` })
+      .returning();
+    const created = await createProject(
+      { workspaceId: workspace!.id },
+      actorId,
+      randomUUID(),
+      {
+        clientName: label,
+        projectName: label,
+        siteUrl: `https://${label}-${randomUUID()}.example`,
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    return {
+      scope: {
+        workspaceId: workspace!.id,
+        projectId: created.project.id,
+      },
+      siteId: created.project.site.id,
+      actorId,
+    };
+  }
+
+  async function readyGscIntent(project: {
+    scope: ProjectScope;
+    siteId: string;
+    actorId: string;
+  }, expiresAt = new Date(Date.now() + 600_000).toISOString()): Promise<string> {
+    const state = generateState();
+    const intent = await new OAuthIntentsRepository(handle.db).insert({
+      workspaceId: project.scope.workspaceId,
+      projectId: project.scope.projectId,
+      siteId: project.siteId,
+      initiatedBy: project.actorId,
+      provider: "gsc",
+      stateHash: hashState(state),
+      pkceVerifierCipher: encryptCredential(
+        generateCodeVerifier(),
+        credentialKey(),
+      ),
+      redirectPath: `/p/${project.scope.projectId}/sources`,
+      expiresAt,
+    });
+    await handleGoogleCallback(
+      { workspaceId: project.scope.workspaceId },
+      { code: "auth-code", state, error: null },
+      { client: fakeClient() },
+    );
+    return intent.id;
+  }
+
+  function expectScrubbed(
+    intent: OAuthIntentRow | null,
+    status: "consumed" | "expired" | "failed",
+  ): void {
+    expect(intent).toMatchObject({
+      status,
+      token_cipher: null,
+      candidate_properties: null,
+    });
+    expect(intent?.pkce_verifier_cipher).toEqual(Buffer.alloc(32));
+    expect(() =>
+      decryptCredential(intent!.pkce_verifier_cipher, credentialKey()),
+    ).toThrow();
+  }
+
   it("stores the refresh token and the REAL access-token expiry (not null)", async () => {
     // Phase 1: seed an initiated intent, then run the callback (which now stores
     // the full envelope in token_cipher).
@@ -145,7 +223,7 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     const intentEnvelope = decodeCredentialEnvelope(
       decryptCredential(ready!.token_cipher!, credentialKey()).toString("utf8"),
     );
-    expect(intentEnvelope.refreshToken).toBe(REFRESH_TOKEN);
+    expect(intentEnvelope.refreshToken).toBe(FAKE_REFRESH_VALUE);
     expect(intentEnvelope.expiresAt).toBe(EXPIRES_AT);
 
     // Phase 3: select the property → creates the connection + credential.
@@ -177,6 +255,288 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
       ),
     );
     expect(credEnvelope.accessToken).toBe("fake-access-token");
-    expect(credEnvelope.refreshToken).toBe(REFRESH_TOKEN);
+    expect(credEnvelope.refreshToken).toBe(FAKE_REFRESH_VALUE);
+    const consumedIntent = await new OAuthIntentsRepository(handle.db).findById(
+      scope,
+      intent.id,
+    );
+    expectScrubbed(consumedIntent, "consumed");
+  });
+
+  it("persists the selected GA4 property's real timezone in connection config", async () => {
+    const state = generateState();
+    const intent = await new OAuthIntentsRepository(handle.db).insert({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      initiatedBy: actor,
+      provider: "ga4",
+      stateHash: hashState(state),
+      pkceVerifierCipher: encryptCredential(
+        generateCodeVerifier(),
+        credentialKey(),
+      ),
+      redirectPath: `/p/${scope.projectId}/sources`,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    });
+    const client: GoogleOAuthClient = {
+      exchangeCode: async () => ({
+        accessToken: "fake-ga4-access",
+        refreshToken: FAKE_REFRESH_VALUE,
+        expiresAt: EXPIRES_AT,
+        scope: "https://www.googleapis.com/auth/analytics.readonly",
+      }),
+      listProperties: async () => [
+        {
+          externalPropertyId: "123456789",
+          displayName: "GA4 Shop",
+          propertyTimeZone: "Asia/Shanghai",
+        },
+      ],
+    };
+    await handleGoogleCallback(
+      { workspaceId: scope.workspaceId },
+      { code: "auth-code", state, error: null },
+      { client },
+    );
+
+    const result = await connectProjectSource(
+      scope,
+      scope.projectId,
+      "ga4",
+      actor,
+      {
+        phase: "select_property",
+        oauthIntentId: intent.id,
+        externalPropertyId: "123456789",
+        keyEventNames: ["purchase"],
+      },
+    );
+    expect(result.phase).toBe("connected");
+    const sourceId = result.phase === "connected" ? result.source.id : null;
+    expect(sourceId).toBeTruthy();
+    if (!sourceId) throw new Error("GA4 source id was not returned");
+    const stored = await new SourceConnectionsRepository(handle.db).findById(
+      scope,
+      sourceId,
+    );
+    expect(stored?.config).toMatchObject({
+      propertyId: "123456789",
+      propertyTimeZone: "Asia/Shanghai",
+      keyEventNames: ["purchase"],
+    });
+  });
+
+  it("serializes concurrent selection so one connection wins and the replay is a stable 409", async () => {
+    const project = await isolatedProject("select-race");
+    const intentId = await readyGscIntent(project);
+    const select = () =>
+      connectProjectSource(
+        project.scope,
+        project.scope.projectId,
+        "gsc",
+        project.actorId,
+        {
+          phase: "select_property",
+          oauthIntentId: intentId,
+          externalPropertyId: "https://seed.example/",
+        },
+      );
+
+    const results = await Promise.allSettled([select(), select()]);
+    const fulfilled = results.filter(
+      (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof select>>> =>
+        result.status === "fulfilled",
+    );
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    expect(fulfilled).toHaveLength(1);
+    expect(fulfilled[0]!.value.phase).toBe("connected");
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toMatchObject({
+      code: "OAUTH_STATE_REPLAYED",
+      status: 409,
+    });
+
+    const sources = await new SourceConnectionsRepository(handle.db).listByProject(
+      project.scope,
+    );
+    const gscSources = sources.filter((source) => source.provider === "gsc");
+    expect(gscSources).toHaveLength(1);
+    await expect(
+      new SourceCredentialsRepository(handle.db).findByConnection(
+        project.scope,
+        gscSources[0]!.id,
+      ),
+    ).resolves.not.toBeNull();
+    await expect(
+      new OAuthIntentsRepository(handle.db).findById(project.scope, intentId),
+    ).resolves.toMatchObject({ status: "consumed" });
+  });
+
+  it("returns a stable OAuth problem when a different intent targets an already-active provider", async () => {
+    const project = await isolatedProject("active-provider");
+    const firstIntentId = await readyGscIntent(project);
+    await connectProjectSource(
+      project.scope,
+      project.scope.projectId,
+      "gsc",
+      project.actorId,
+      {
+        phase: "select_property",
+        oauthIntentId: firstIntentId,
+        externalPropertyId: "https://seed.example/",
+      },
+    );
+    const competingIntentId = await readyGscIntent(project);
+
+    await expect(
+      connectProjectSource(
+        project.scope,
+        project.scope.projectId,
+        "gsc",
+        project.actorId,
+        {
+          phase: "select_property",
+          oauthIntentId: competingIntentId,
+          externalPropertyId: "https://seed.example/",
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "OAUTH_PROPERTY_INVALID",
+      status: 422,
+    });
+
+    const sources = await new SourceConnectionsRepository(handle.db).listByProject(
+      project.scope,
+    );
+    expect(sources.filter((source) => source.provider === "gsc")).toHaveLength(1);
+    await expect(
+      new OAuthIntentsRepository(handle.db).findById(
+        project.scope,
+        competingIntentId,
+      ),
+    ).resolves.toMatchObject({ status: "properties_ready" });
+  });
+
+  it.each(["property_selection", "select_property"] as const)(
+    "atomically expires and scrubs a ready intent touched through %s",
+    async (phase) => {
+      const project = await isolatedProject(`expired-${phase}`);
+      const expiresAtMs = Date.now() + 60_000;
+      const intentId = await readyGscIntent(
+        project,
+        new Date(expiresAtMs).toISOString(),
+      );
+      const request =
+        phase === "property_selection"
+          ? ({ phase, oauthIntentId: intentId } as const)
+          : ({
+              phase,
+              oauthIntentId: intentId,
+              externalPropertyId: "https://seed.example/",
+            } as const);
+
+      await expect(
+        connectProjectSource(
+          project.scope,
+          project.scope.projectId,
+          "gsc",
+          project.actorId,
+          request,
+          { now: () => expiresAtMs + 1 },
+        ),
+      ).rejects.toMatchObject({ code: "OAUTH_STATE_EXPIRED", status: 400 });
+      const expired = await new OAuthIntentsRepository(handle.db).findById(
+        project.scope,
+        intentId,
+      );
+      expectScrubbed(expired, "expired");
+      expect(expired?.failure_code).toBe("OAUTH_STATE_EXPIRED");
+    },
+  );
+
+  it("batch-scrubs expired ready credentials while leaving a live intent untouched", async () => {
+    const expiredProject = await isolatedProject("sweep-expired");
+    const activeProject = await isolatedProject("sweep-active");
+    const now = Date.now();
+    const expiredIntentId = await readyGscIntent(
+      expiredProject,
+      new Date(now + 60_000).toISOString(),
+    );
+    const activeIntentId = await readyGscIntent(
+      activeProject,
+      new Date(now + 3_600_000).toISOString(),
+    );
+
+    const scrubbedCount = await new OAuthIntentsRepository(handle.db).scrubExpired(
+      new Date(now + 120_000),
+    );
+    expect(scrubbedCount).toBeGreaterThanOrEqual(1);
+    expectScrubbed(
+      await new OAuthIntentsRepository(handle.db).findById(
+        expiredProject.scope,
+        expiredIntentId,
+      ),
+      "expired",
+    );
+    const active = await new OAuthIntentsRepository(handle.db).findById(
+      activeProject.scope,
+      activeIntentId,
+    );
+    expect(active).toMatchObject({
+      status: "properties_ready",
+      failure_code: null,
+    });
+    expect(active?.token_cipher).not.toBeNull();
+    expect(active?.candidate_properties).not.toBeNull();
+  });
+
+  it("disconnect deletes the credential and scrubs all historical intents for the provider", async () => {
+    const project = await isolatedProject("disconnect-scrub");
+    const connectedIntentId = await readyGscIntent(project);
+    const connected = await connectProjectSource(
+      project.scope,
+      project.scope.projectId,
+      "gsc",
+      project.actorId,
+      {
+        phase: "select_property",
+        oauthIntentId: connectedIntentId,
+        externalPropertyId: "https://seed.example/",
+      },
+    );
+    if (connected.phase !== "connected" || !connected.source.id) {
+      throw new Error("GSC connection was not created");
+    }
+    const sourceId = connected.source.id;
+    const pendingIntentId = await readyGscIntent(project);
+
+    await disconnectProjectSource(
+      { workspaceId: project.scope.workspaceId },
+      project.scope.projectId,
+      sourceId,
+    );
+
+    await expect(
+      new SourceCredentialsRepository(handle.db).findByConnection(
+        project.scope,
+        sourceId,
+      ),
+    ).resolves.toBeNull();
+    expectScrubbed(
+      await new OAuthIntentsRepository(handle.db).findById(
+        project.scope,
+        connectedIntentId,
+      ),
+      "consumed",
+    );
+    const pending = await new OAuthIntentsRepository(handle.db).findById(
+      project.scope,
+      pendingIntentId,
+    );
+    expectScrubbed(pending, "failed");
+    expect(pending?.failure_code).toBe("OAUTH_SOURCE_DISCONNECTED");
   });
 });

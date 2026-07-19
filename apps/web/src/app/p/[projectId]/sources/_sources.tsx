@@ -48,6 +48,15 @@ import type {
   SourceConnection,
   SourceState,
 } from "@/lib/api/hooks-sources";
+import {
+  csvPreviewEntries,
+  oauthCallbackMessageKey,
+  sourceCollectLabelKey,
+  sourceHintMessageKey,
+  resolveSourceRunId,
+  sourceRunQueryOutcome,
+} from "../_frontend-error-state.ts";
+import { sourceLimitationForDisplay } from "../_view-model.ts";
 import styles from "./sources.module.css";
 
 /** The five providers in the spec's canonical card order (spec §4.2). */
@@ -67,6 +76,7 @@ function stateTone(state: SourceState): StatusTone {
     case "syncing":
       return "info";
     case "permission_denied":
+    case "unavailable":
       return "danger";
     default:
       return "neutral";
@@ -125,20 +135,35 @@ function RunWatcher({
 }: {
   readonly projectId: string;
   readonly runId: string;
-  readonly onSettled: () => void;
+  readonly onSettled: (
+    outcome: "terminal" | "query_error",
+    runId: string,
+  ) => void;
 }) {
   const t = useTranslations("sources");
   const tRun = useTranslations("runState");
   const query = useProjectRun(projectId, runId);
   const run = query.data;
   const settled = useRef(false);
+  const outcome = sourceRunQueryOutcome(run, query.error);
 
   useEffect(() => {
-    if (run && isTerminalRunStatus(run.status) && !settled.current) {
+    if (
+      (outcome === "terminal" || outcome === "query_error") &&
+      !settled.current
+    ) {
       settled.current = true;
-      onSettled();
+      onSettled(outcome, runId);
     }
-  }, [run, onSettled]);
+  }, [outcome, onSettled, runId]);
+
+  if (outcome === "query_error") {
+    return (
+      <p className={styles.runFailure} role="alert">
+        {t("runStatusUnavailable")}
+      </p>
+    );
+  }
 
   if (!run) {
     return (
@@ -150,15 +175,18 @@ function RunWatcher({
   }
 
   const running = !isTerminalRunStatus(run.status);
-  const counter =
+  const progress =
     run.progress.total !== null
-      ? ` · ${run.progress.current}/${run.progress.total}`
-      : "";
+      ? t("progress", {
+          current: run.progress.current,
+          total: run.progress.total,
+        })
+      : t("inProgress");
   return (
     <div className={styles.runRow} aria-live="polite">
       {running ? <Spinner size="sm" label={tRun(run.status)} /> : null}
       <StatusPill tone={runTone(run.status)}>{tRun(run.status)}</StatusPill>
-      <span className={styles.runText}>{`${run.progress.messageKey}${counter}`}</span>
+      <span className={styles.runText}>{progress}</span>
       {run.lastError !== null ? (
         <span className={styles.runError}>{run.lastError.summary}</span>
       ) : null}
@@ -218,10 +246,12 @@ function CrawlControls({
   projectId,
   onStarted,
   runActive,
+  sourceState,
 }: {
   readonly projectId: string;
   readonly onStarted: (runId: string) => void;
   readonly runActive: boolean;
+  readonly sourceState: SourceState;
 }) {
   const t = useTranslations("sources");
   const mutation = useCreateCollectionRun(projectId);
@@ -235,7 +265,7 @@ function CrawlControls({
   return (
     <div className={styles.controls}>
       <Button variant="primary" onClick={start} disabled={busy || runActive}>
-        {busy ? t("collecting") : t("collectNow")}
+        {busy ? t("collecting") : t(sourceCollectLabelKey(sourceState))}
       </Button>
       {mutation.error !== null ? (
         <span className={styles.controlError} role="alert">
@@ -323,7 +353,7 @@ function PropertySelection({
           <TextInput
             value={keyEvents}
             onChange={(event) => setKeyEvents(event.target.value)}
-            placeholder="purchase, sign_up"
+            placeholder={t("keyEventsPlaceholder")}
           />
         </Field>
       ) : null}
@@ -415,6 +445,10 @@ function OAuthControls({
     );
   }
 
+  if (source.state === "permission_denied") {
+    return null;
+  }
+
   const sourceId = source.id;
   const busy = collect.isPending;
   const start = () => {
@@ -427,7 +461,7 @@ function OAuthControls({
   return (
     <div className={styles.controls}>
       <Button variant="primary" onClick={start} disabled={busy || runActive}>
-        {busy ? t("collecting") : t("collectNow")}
+        {busy ? t("collecting") : t(sourceCollectLabelKey(source.state))}
       </Button>
       {collect.error !== null ? (
         <span className={styles.controlError} role="alert">
@@ -516,37 +550,65 @@ function buildMapping(state: CsvMappingState): CsvColumnMapping | null {
   };
 }
 
-function PreviewTable({
+export function CsvPreview({
   columns,
   rows,
+  caption,
+  rowLabel,
 }: {
   readonly columns: readonly string[];
   readonly rows: readonly Readonly<Record<string, unknown>>[];
+  readonly caption: string;
+  readonly rowLabel: (rowNumber: number) => string;
 }) {
+  const entries = csvPreviewEntries(columns, rows);
   return (
-    <div className={styles.previewWrap}>
-      <table className={styles.previewTable}>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th key={column} scope="col">
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
+    <>
+      <div className={styles.previewWrap}>
+        <table className={styles.previewTable}>
+          <caption>{caption}</caption>
+          <thead>
+            <tr>
               {columns.map((column) => {
-                const value = row[column];
-                return <td key={column}>{value == null ? "" : String(value)}</td>;
+                return (
+                  <th key={column} scope="col">
+                    {column}
+                  </th>
+                );
               })}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                {columns.map((column) => {
+                  const value = row[column];
+                  return <td key={column}>{value == null ? "" : String(value)}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <ol className={styles.previewCards} aria-label={caption}>
+        {entries.map((entry) => (
+          <li
+            key={entry.rowNumber}
+            className={styles.previewCard}
+            aria-label={rowLabel(entry.rowNumber)}
+          >
+            <dl className={styles.previewCardFields}>
+              {entry.fields.map((field) => (
+                <div key={field.label} className={styles.previewCardField}>
+                  <dt>{field.label}</dt>
+                  <dd>{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }
 
@@ -677,7 +739,15 @@ function CsvControls({
             </ul>
           ) : null}
 
-          <PreviewTable columns={preview.detectedColumns} rows={preview.previewRows} />
+          <CsvPreview
+            columns={preview.detectedColumns}
+            rows={preview.previewRows}
+            caption={t("previewTableCaption", {
+              rows: preview.previewRows.length,
+              columns: preview.detectedColumns.length,
+            })}
+            rowLabel={(rowNumber) => t("previewRow", { row: rowNumber })}
+          />
 
           <h3 className={styles.mapTitle}>{t("columnMapping")}</h3>
           <p className={styles.mapHelp}>{t("columnMappingHelp")}</p>
@@ -773,7 +843,12 @@ function SourceControls({
   switch (source.provider) {
     case "crawl":
       return (
-        <CrawlControls projectId={projectId} onStarted={onStarted} runActive={runActive} />
+        <CrawlControls
+          projectId={projectId}
+          onStarted={onStarted}
+          runActive={runActive}
+          sourceState={source.state}
+        />
       );
     case "gsc":
     case "ga4":
@@ -815,21 +890,38 @@ function SourceCard({
   readonly onClearIntent: () => void;
 }) {
   const t = useTranslations("sources");
+  const tCommon = useTranslations("common");
   const tProvider = useTranslations("provider");
   const tState = useTranslations("sourceState");
   const [startedRunId, setStartedRunId] = useState<string | null>(null);
+  const [settledRunId, setSettledRunId] = useState<string | null>(null);
+  const [failedRunId, setFailedRunId] = useState<string | null>(null);
 
-  const activeRunId = startedRunId ?? source.activeRun?.id ?? null;
+  const activeRunId = resolveSourceRunId(
+    startedRunId,
+    source.activeRun?.id ?? null,
+    settledRunId,
+  );
   const runActive = activeRunId !== null;
-  const onStarted = useCallback((runId: string) => setStartedRunId(runId), []);
-  const onSettled = useCallback(() => {
-    setStartedRunId(null);
-    onRefetch();
-  }, [onRefetch]);
+  const onStarted = useCallback((runId: string) => {
+    setSettledRunId(null);
+    setFailedRunId(null);
+    setStartedRunId(runId);
+  }, []);
+  const onSettled = useCallback(
+    (outcome: "terminal" | "query_error", runId: string) => {
+      setStartedRunId(null);
+      setSettledRunId(runId);
+      setFailedRunId(outcome === "query_error" ? runId : null);
+      onRefetch();
+    },
+    [onRefetch],
+  );
 
   const titleId = `source-${source.provider}`;
   const providerLabel = tProvider(source.provider);
   const sourceId = source.id;
+  const hintKey = sourceHintMessageKey(source);
   const disconnectable =
     sourceId !== null &&
     (source.connectionType === "oauth" || source.connectionType === "file_import") &&
@@ -851,11 +943,32 @@ function SourceCard({
 
       <p className={styles.limitation}>
         <span className={styles.metaLabel}>{t("limitationLabel")}</span>
-        <span>{source.limitation}</span>
+        <span>{sourceLimitationForDisplay(source)}</span>
       </p>
+
+      {hintKey !== null ? (
+        <p className={styles.controlHint}>{t(hintKey)}</p>
+      ) : null}
 
       {runActive && activeRunId !== null ? (
         <RunWatcher projectId={projectId} runId={activeRunId} onSettled={onSettled} />
+      ) : null}
+
+      {failedRunId !== null && activeRunId === null ? (
+        <div className={styles.runFailure} role="alert">
+          <span>{t("runStatusUnavailable")}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setStartedRunId(failedRunId);
+              setSettledRunId(null);
+              setFailedRunId(null);
+            }}
+          >
+            {tCommon("retry")}
+          </Button>
+        </div>
       ) : null}
 
       <div className={styles.cardFooter}>
@@ -915,7 +1028,7 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
       window.history.replaceState(null, "", window.location.pathname);
 
     if (oauthError) {
-      setTopAlert(t("oauthError"));
+      setTopAlert(t(oauthCallbackMessageKey(oauthError)));
       strip();
       return;
     }

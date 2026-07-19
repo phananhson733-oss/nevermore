@@ -21,12 +21,30 @@ export default defineConfig({
   resolve: { alias: [...webAlias] },
   test: {
     passWithNoTests: true,
+    coverage: {
+      // Drizzle's table/index callback declarations are exercised by the
+      // migration/schema smoke and Postgres integration gates. Unit coverage
+      // measures repository/runtime behavior rather than those declarations.
+      exclude: ["packages/db/src/schema.ts"],
+      thresholds: {
+        statements: 80,
+        branches: 80,
+        functions: 80,
+        lines: 80,
+      },
+    },
     projects: [
       {
         resolve: { alias: [...webAlias] },
         test: {
           name: "unit",
-          include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
+          include: [
+            "packages/**/*.test.ts",
+            "apps/**/*.test.ts",
+            // Root E2E harness logic is unit-tested without being collected by
+            // Playwright, whose test matcher only includes *.spec / *.test.
+            "e2e/**/*.vitest.ts",
+          ],
           exclude: [
             "**/node_modules/**",
             "**/*.integration.test.ts",
@@ -47,6 +65,7 @@ export default defineConfig({
           environment: "node",
           testTimeout: 60_000,
           hookTimeout: 60_000,
+          setupFiles: ["./packages/db/src/integration-test-setup.ts"],
           // Integration files share one real Postgres and run DDL / role changes
           // (migrations, REVOKE, SET ROLE). Running files concurrently races on
           // the shared schema, so integration runs one file at a time.

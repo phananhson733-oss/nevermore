@@ -29,8 +29,12 @@ import type { Ga4Window } from "./window.ts";
 /** Stable, machine-readable reasons key events are unavailable (spec §7.4). */
 export const GA4_KEY_EVENT_UNMAPPED = "GA4_KEY_EVENT_UNMAPPED";
 export const GA4_KEY_EVENT_REPORT_INCOMPATIBLE = "GA4_KEY_EVENT_REPORT_INCOMPATIBLE";
+export const GA4_KEY_EVENT_REPORT_TRUNCATED = "GA4_KEY_EVENT_REPORT_TRUNCATED";
+/** Stable non-empty provenance limitation for a fully available GA4 row/snapshot. */
+export const GA4_LIMITATION =
+  "GA4 organic landing metrics include only Organic Search traffic and the operator-selected key events.";
 
-export type Ga4KeyEventState = "available" | "unmapped" | "incompatible";
+export type Ga4KeyEventState = "available" | "unmapped" | "incompatible" | "truncated";
 
 export interface Ga4KeyEventStatus {
   readonly state: Ga4KeyEventState;
@@ -64,6 +68,8 @@ export function keyEventReason(state: Ga4KeyEventState): string | null {
       return GA4_KEY_EVENT_UNMAPPED;
     case "incompatible":
       return GA4_KEY_EVENT_REPORT_INCOMPATIBLE;
+    case "truncated":
+      return GA4_KEY_EVENT_REPORT_TRUNCATED;
   }
 }
 
@@ -91,6 +97,7 @@ export function normalizeGa4(
   window: Ga4Window,
   capturedAt: string,
   keyEventStatus: Ga4KeyEventStatus,
+  collectionLimitation?: string,
 ): NormalizedObservation[] {
   const { start, end } = window.current28d;
   const inWindow = (date: string): boolean => date >= start && date <= end;
@@ -151,7 +158,9 @@ export function normalizeGa4(
         availability: "available",
         value: { json: projection },
         unit: null,
-        limitation: keyEventsAvailable ? "" : reason ?? "",
+        limitation:
+          collectionLimitation?.trim() ||
+          (keyEventsAvailable ? GA4_LIMITATION : reason ?? ""),
       }),
     );
   }

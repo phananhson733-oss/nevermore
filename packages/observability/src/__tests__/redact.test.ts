@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { REDACT_KEYS, redact, redactUrl } from "../redact.ts";
+import { REDACT_KEYS, redact, redactText, redactUrl } from "../redact.ts";
 
 /**
  * AC-040: deep redaction must strip every mandated secret key from any structured
@@ -130,6 +130,29 @@ describe("redact deep key redaction", () => {
     expect(result).toEqual(input);
   });
 
+  it("redacts secret material embedded in benign string fields", () => {
+    const oauthToken = `ya29.${"O".repeat(40)}`;
+    const apiKey = `sk-${"A".repeat(32)}`;
+    const cookie = `Cookie: sf_session=${"C".repeat(32)}; theme=dark`;
+    const ciphertext = `encrypted_payload=${Buffer.from(
+      "ciphertext-fixture-that-must-not-leak",
+    ).toString("base64")}`;
+    const input = {
+      message: `provider failed for ${oauthToken} using ${apiKey}`,
+      diagnostic: cookie,
+      note: ciphertext,
+      safe: "ordinary operational summary",
+    };
+
+    const result = redact(input) as typeof input;
+    const serialized = JSON.stringify(result);
+    for (const secret of [oauthToken, apiKey, cookie, ciphertext]) {
+      expect(serialized).not.toContain(secret);
+    }
+    expect(serialized).toContain("[redacted]");
+    expect(result.safe).toBe(input.safe);
+  });
+
   it("handles null, undefined, and primitives without throwing", () => {
     expect(redact(null)).toBeNull();
     expect(redact(undefined)).toBeUndefined();
@@ -159,5 +182,27 @@ describe("redactUrl query redaction (spec §14.2)", () => {
 
   it("returns non-URL input unchanged", () => {
     expect(redactUrl("not-a-url")).toBe("not-a-url");
+  });
+});
+
+describe("redactText value-level redaction", () => {
+  it("scrubs bearer/query/ciphertext values without discarding surrounding context", () => {
+    const bearer = `Bearer ${"B".repeat(36)}`;
+    const refresh = `1//${"R".repeat(36)}`;
+    const slackToken = `xoxb-${"S".repeat(32)}`;
+    const ciphertext = Buffer.from("private-ciphertext-fixture").toString(
+      "base64",
+    );
+    const input =
+      `refresh failed: ${bearer}; refresh_token=${refresh}; ` +
+      `token_cipher=${ciphertext}; token=${slackToken}; keep=request-42`;
+
+    const output = redactText(input);
+    expect(output).not.toContain(bearer);
+    expect(output).not.toContain(refresh);
+    expect(output).not.toContain(slackToken);
+    expect(output).not.toContain(ciphertext);
+    expect(output).toContain("keep=request-42");
+    expect(output).toContain("[redacted]");
   });
 });

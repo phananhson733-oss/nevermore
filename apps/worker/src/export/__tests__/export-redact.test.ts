@@ -18,29 +18,50 @@ const SECRETS = {
   observationToken: "FAKE-observation-token-not-real",
   findingRefresh: "FAKE-finding-refresh-not-real",
   artifactClientSecret: "FAKE-artifact-client-secret-not-real",
+  oauthInMessage: `ya29.${"O".repeat(40)}`,
+  apiKeyInSummary: `sk-${"A".repeat(32)}`,
+  cookieInTitle: `Cookie: sf_session=${"C".repeat(32)}`,
+  ciphertextInArtifact: `encrypted_payload=${Buffer.from(
+    "export-ciphertext-fixture",
+  ).toString("base64")}`,
 } as const;
 
-function craftedInput(): BundleInput {
+function craftedInput(
+  kind: "service_bundle" | "client_bundle" = "service_bundle",
+): BundleInput {
   return {
     exportId: "11111111-1111-4111-8111-111111111111",
     projectId: "22222222-2222-4222-8222-222222222222",
-    kind: "service_bundle",
+    kind,
     generatedAt: "2026-07-18T00:00:00.000Z",
     outputLocale: "en",
     sourceSnapshotIds: ["33333333-3333-4333-8333-333333333333"],
     // Secret smuggled into free-form content the field allowlist may not catch.
-    project: { id: "pr-1", clientName: "ACME", api_key: SECRETS.projectApiKey },
+    project: {
+      id: "pr-1",
+      clientName: `ACME ${SECRETS.oauthInMessage}`,
+      api_key: SECRETS.projectApiKey,
+    },
     context: { profile: { authorization: SECRETS.contextAuth, segment: "b2b" } },
     sources: [],
     snapshots: [],
     observations: [
-      { snapshotId: "snap-1", metricKey: "sessions", value_json: { token: SECRETS.observationToken } },
+      {
+        snapshotId: "snap-1",
+        metricKey: "sessions",
+        value_json: { token: SECRETS.observationToken },
+      },
     ],
     findings: [
-      { id: "f-1", reviewState: "confirmed", summary: "ok", refresh_token: SECRETS.findingRefresh },
+      {
+        id: "f-1",
+        reviewState: "confirmed",
+        summary: `finding ${SECRETS.apiKeyInSummary}`,
+        refresh_token: SECRETS.findingRefresh,
+      },
     ],
     evidence: [],
-    actions: [],
+    actions: [{ id: "action-1", title: SECRETS.cookieInTitle }],
     artifacts: [
       {
         id: "a-1",
@@ -49,7 +70,10 @@ function craftedInput(): BundleInput {
           {
             revision: 1,
             contentFormat: "json",
-            content: { body: "deliverable", client_secret: SECRETS.artifactClientSecret },
+            content: {
+              body: `deliverable ${SECRETS.ciphertextInArtifact}`,
+              client_secret: SECRETS.artifactClientSecret,
+            },
           },
         ],
       },
@@ -58,16 +82,19 @@ function craftedInput(): BundleInput {
 }
 
 describe("export bundle redaction guard", () => {
-  it("strips every secret-named field from the assembled bundle", () => {
-    const input = craftedInput();
-    const safe = redact(input) as unknown as BundleInput;
-    const assembled = assembleBundle(safe);
+  it.each(["service_bundle", "client_bundle"] as const)(
+    "strips secret keys and secret values from the %s ZIP",
+    (kind) => {
+      const input = craftedInput(kind);
+      const safe = redact(input) as unknown as BundleInput;
+      const assembled = assembleBundle(safe);
 
-    for (const secret of Object.values(SECRETS)) {
-      expect(assembled.zip.includes(secret)).toBe(false);
-    }
-    expect(assembled.zip.includes("[redacted]")).toBe(true);
-  });
+      for (const secret of Object.values(SECRETS)) {
+        expect(assembled.zip.includes(secret)).toBe(false);
+      }
+      expect(assembled.zip.includes("[redacted]")).toBe(true);
+    },
+  );
 
   it("would leak those secrets without the redact backstop (guard is load-bearing)", () => {
     // Proves the redaction is necessary: the raw assembler alone lets the crafted

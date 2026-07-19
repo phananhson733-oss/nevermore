@@ -1,4 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ProblemError } from "@sf/observability";
+import {
+  ActionsRepository,
+  AsyncRunsRepository,
+  ProjectsRepository,
+  contentHash,
+} from "@sf/db";
+import { createActionArtifact } from "@/lib/services/artifacts";
+import { createDiagnosticRun } from "@/lib/services/diagnostics";
+import { createProjectExport } from "@/lib/services/export-service";
 import {
   DATABASE_URL,
   DB_AVAILABLE,
@@ -7,11 +18,14 @@ import {
   buildCtx,
   createDbHandle,
   ExecutionArtifactsRepository,
+  getBoss,
   listProjectActions,
   listProjectFindings,
   manifestFilePaths,
   manifestItemCount,
   runCommonChain,
+  runMissingProviderDiagnostic,
+  runArtifact,
   runExportChain,
   stopSharedBoss,
   validateManifest,
@@ -20,6 +34,30 @@ import {
   type ExportChainResult,
   type WorkerContext,
 } from "./full-chain-harness.ts";
+
+const ARTIFACT_ACCEPTANCE_CASES = [
+  {
+    artifactType: "technical_ticket",
+    templateId: "normalize_canonical.v1",
+    sourceRuleId: "TECH-CANONICAL-002",
+    expectedFormat: "markdown",
+    risk: "high",
+  },
+  {
+    artifactType: "metadata_rewrite",
+    templateId: "rewrite_search_metadata.v1",
+    sourceRuleId: "TECH-LINKGRAPH-005",
+    expectedFormat: "json",
+    risk: "low",
+  },
+  {
+    artifactType: "content_brief",
+    templateId: "create_priority_content.v1",
+    sourceRuleId: "CONTENT-COVERAGE-001",
+    expectedFormat: "markdown",
+    risk: "low",
+  },
+] as const;
 
 /**
  * AC-044 — B2B full vertical: createProject → seed complete ICP + golden crawl →
@@ -42,6 +80,7 @@ describeDb(
     let findings: Awaited<ReturnType<typeof listProjectFindings>>;
     let actions: Awaited<ReturnType<typeof listProjectActions>>;
     let serviceBundle: ExportChainResult;
+    let degradedFindings: Awaited<ReturnType<typeof listProjectFindings>>;
 
     beforeAll(async () => {
       handle = createDbHandle(DATABASE_URL);
@@ -64,22 +103,53 @@ describeDb(
         chain.actor,
         "service_bundle",
       );
+      const degraded = await runMissingProviderDiagnostic(
+        handle,
+        ctx,
+        "b2b-missing-providers",
+      );
+      degradedFindings = await listProjectFindings(
+        { workspaceId: degraded.scope.workspaceId },
+        degraded.scope.projectId,
+        { limit: 100, cursor: null, activeOnly: false },
+      );
     });
     afterAll(async () => {
       await handle?.end();
     });
 
-    it("the golden crawl trips findings across MULTIPLE rule domains with honest evidence axes", () => {
+    it("AC-022: the shared Crawl + GSC + GA4 + CSV fixture executes at least one rule in all five domains", () => {
       const byRule = new Map(findings.data.map((f) => [f.ruleId, f]));
-      // Deterministic golden triggers across two+ domains (spec §8.3, §8.4).
+      // Deterministic golden triggers across all five domains (spec §8.3, §8.4).
       expect(byRule.has("TECH-HTTP-001")).toBe(true); // technical_seo
       expect(byRule.has("TECH-CANONICAL-002")).toBe(true); // technical_seo
       expect(byRule.has("TECH-LINKGRAPH-005")).toBe(true); // technical_seo
+      expect(byRule.has("SEARCH-CTR-004")).toBe(true); // search_performance
       expect(byRule.has("CONTENT-COVERAGE-001")).toBe(true); // content_intent
-      const domains = new Set(findings.data.map((f) => f.domain));
-      expect(domains.has("technical_seo")).toBe(true);
-      expect(domains.has("content_intent")).toBe(true);
-      expect(domains.size).toBeGreaterThan(1);
+      expect(byRule.has("CRO-LANDING-003")).toBe(true); // conversion_journey
+      expect(byRule.has("GEO-ENTITY-001")).toBe(true); // geo_ai
+
+      const executableByDomain = new Map<string, number>();
+      for (const result of findings.meta.ruleResults) {
+        if (result.status !== "pass" && result.status !== "candidate") continue;
+        executableByDomain.set(
+          result.domain,
+          (executableByDomain.get(result.domain) ?? 0) + 1,
+        );
+      }
+      expect(Object.fromEntries(executableByDomain)).toMatchObject({
+        technical_seo: expect.any(Number),
+        search_performance: expect.any(Number),
+        content_intent: expect.any(Number),
+        conversion_journey: expect.any(Number),
+        geo_ai: expect.any(Number),
+      });
+      expect([...executableByDomain.values()].every((count) => count >= 1)).toBe(
+        true,
+      );
+      expect(findings.meta.latestRun?.status).toBe("completed");
+      expect(findings.meta.coverage?.overall).toBe("complete");
+      expect(findings.meta.coverage?.limitations).toEqual([]);
 
       // Every finding carries a full, honest evidence-axis set (spec §1.3): a real
       // origin/method/grade/availability/support and a non-empty limitation — never
@@ -103,12 +173,12 @@ describeDb(
       ).toBe(true);
     });
 
-    it("AC-022: the run is `partial`, missing datasets `skipped` (not blocking), degradation strings honest", () => {
+    it("AC-022: a separate missing-provider fixture is `partial` with precise skipped rules and no fabricated defects", () => {
       // A single skipped dataset rule makes the whole run partial (spec §8.6).
-      expect(findings.meta.latestRun?.status).toBe("partial");
+      expect(degradedFindings.meta.latestRun?.status).toBe("partial");
 
       const byRule = new Map(
-        findings.meta.ruleResults.map((r) => [r.ruleId, r]),
+        degradedFindings.meta.ruleResults.map((r) => [r.ruleId, r]),
       );
       // GSC/GA4/CSV are unavailable → their rules skip with `missing_dataset`;
       // they do NOT manufacture a finding (unavailable ≠ 0/defect, spec §1.3).
@@ -118,15 +188,93 @@ describeDb(
       // The crawl rule that CAN run still ran (crawl is available, not skipped).
       expect(byRule.get("TECH-HTTP-001")?.status).toBe("candidate");
       // No search/landing/gap finding was fabricated from the missing datasets.
-      const ruleIds = new Set(findings.data.map((f) => f.ruleId));
+      const ruleIds = new Set(degradedFindings.data.map((f) => f.ruleId));
       expect(ruleIds.has("SEARCH-CTR-004")).toBe(false);
       expect(ruleIds.has("SEARCH-DECAY-002")).toBe(false);
 
       // The coverage projection carries the honest per-dataset degradation strings.
-      const limitations = findings.meta.coverage?.limitations ?? [];
+      const limitations = degradedFindings.meta.coverage?.limitations ?? [];
       for (const expected of DEGRADATION_LIMITATIONS) {
         expect(limitations).toContain(expected);
       }
+    });
+
+    it("AC-025: replaying the same manifest command reuses one run, one queue job, and one Finding", async () => {
+      const before = await handle.pool.query<{
+        id: string;
+        finding_key: string;
+      }>(
+        `SELECT id, finding_key
+           FROM app.findings
+          WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
+        [
+          chain.scope.workspaceId,
+          chain.scope.projectId,
+          chain.httpFindingId,
+        ],
+      );
+      expect(before.rows).toHaveLength(1);
+
+      const replay = await createDiagnosticRun(
+        { workspaceId: chain.scope.workspaceId },
+        chain.scope.projectId,
+        chain.actor,
+        chain.diagnosticIdempotencyKey,
+        { snapshotIds: [...chain.snapshotIds], outputLocale: "en" },
+      );
+
+      expect(replay).toMatchObject({
+        status: 202,
+        replayed: true,
+        run: { id: chain.diagRunId },
+        resourceRef: { type: "diagnostic_run", id: chain.diagRunId },
+      });
+      expect(replay.location).toBe(replay.statusUrl);
+
+      const boss = await getBoss();
+      await expect(
+        boss.findJobs<{ runId: string }>("diagnose", {
+          data: { runId: chain.diagRunId },
+        }),
+      ).resolves.toHaveLength(1);
+
+      const canonicalRows = await handle.pool.query<{
+        async_count: number;
+        diagnostic_count: number;
+        finding_count: number;
+      }>(
+        `SELECT
+           (SELECT count(*)::int FROM app.async_runs WHERE id = $1) AS async_count,
+           (SELECT count(*)::int FROM app.diagnostic_runs WHERE id = $1) AS diagnostic_count,
+           (SELECT count(*)::int
+              FROM app.findings
+             WHERE workspace_id = $2
+               AND project_id = $3
+               AND finding_key = $4) AS finding_count`,
+        [
+          chain.diagRunId,
+          chain.scope.workspaceId,
+          chain.scope.projectId,
+          before.rows[0]!.finding_key,
+        ],
+      );
+      expect(canonicalRows.rows[0]).toEqual({
+        async_count: 1,
+        diagnostic_count: 1,
+        finding_count: 1,
+      });
+
+      const after = await handle.pool.query<{ id: string }>(
+        `SELECT id
+           FROM app.findings
+          WHERE workspace_id = $1 AND project_id = $2 AND finding_key = $3`,
+        [
+          chain.scope.workspaceId,
+          chain.scope.projectId,
+          before.rows[0]!.finding_key,
+        ],
+      );
+      expect(after.rows).toEqual([{ id: chain.httpFindingId }]);
     });
 
     it("confirm → same-tx Action (spec §9.1) → the plan lists it", () => {
@@ -153,6 +301,88 @@ describeDb(
       // Template-generated (deterministic), NOT an LLM invocation.
       expect(revisions[0]?.generated_by).toBe("template");
       expect(revisions[0]?.analysis_invocation_id).toBeNull();
+    });
+
+    it("replays artifact creation for the same Idempotency-Key + request", async () => {
+      const projects = new ProjectsRepository(handle.db);
+      await expect(
+        projects.findById(
+          { workspaceId: chain.scope.workspaceId },
+          chain.scope.projectId,
+        ),
+      ).resolves.toMatchObject({ stage: "executing" });
+
+      // A replay must return before the create transaction, including its
+      // server-owned stage transition. Moving the project back gives the test
+      // an observable guard against accidentally re-running that side effect.
+      await projects.setStage(
+        { workspaceId: chain.scope.workspaceId },
+        chain.scope.projectId,
+        "planning",
+      );
+      const replay = await createActionArtifact(
+        { workspaceId: chain.scope.workspaceId },
+        chain.scope.projectId,
+        chain.actionId,
+        chain.actor,
+        chain.artifactIdempotencyKey,
+        {
+          artifactType: "technical_ticket",
+          generationMode: "template",
+          outputLocale: "en",
+          operatorInstructions: null,
+        },
+      );
+
+      expect(replay.run.id).toBe(chain.artifactRunId);
+      expect(replay.resourceRef).toEqual({
+        type: "artifact",
+        id: chain.artifactId,
+      });
+      await expect(
+        projects.findById(
+          { workspaceId: chain.scope.workspaceId },
+          chain.scope.projectId,
+        ),
+      ).resolves.toMatchObject({ stage: "planning" });
+    });
+
+    it("rejects artifact Idempotency-Key reuse with a different request as a 409 problem", async () => {
+      const promise = createActionArtifact(
+        { workspaceId: chain.scope.workspaceId },
+        chain.scope.projectId,
+        chain.actionId,
+        chain.actor,
+        chain.artifactIdempotencyKey,
+        {
+          artifactType: "technical_ticket",
+          generationMode: "structured_llm",
+          outputLocale: "en",
+          operatorInstructions: null,
+        },
+      );
+      await expect(promise).rejects.toBeInstanceOf(ProblemError);
+      await expect(promise).rejects.toMatchObject({
+        status: 409,
+        code: "IDEMPOTENCY_KEY_REUSED",
+      });
+    });
+
+    it("replays export creation and uses the OpenAPI `export` resource literal", async () => {
+      const replay = await createProjectExport(
+        { workspaceId: chain.scope.workspaceId },
+        chain.scope.projectId,
+        chain.actor,
+        serviceBundle.idempotencyKey,
+        { kind: "service_bundle", outputLocale: "en" },
+      );
+
+      expect(serviceBundle.resourceRefType).toBe("export");
+      expect(replay.run.id).toBe(serviceBundle.runId);
+      expect(replay.resourceRef).toEqual({
+        type: "export",
+        id: serviceBundle.row.id,
+      });
     });
 
     it("the service_bundle finalizes and its manifest validates against the schema", () => {
@@ -191,6 +421,145 @@ describeDb(
       expect(manifestItemCount(serviceBundle.manifest, "findings")).toBe(
         findings.data.length,
       );
+    });
+
+    it.each(ARTIFACT_ACCEPTANCE_CASES)(
+      "AC-031: $artifactType create is 202/statusUrl and the real worker persists draft revision 1",
+      async ({
+        artifactType,
+        templateId,
+        sourceRuleId,
+        expectedFormat,
+        risk,
+      }) => {
+        const sourceFinding = findings.data.find(
+          (finding) => finding.ruleId === sourceRuleId,
+        );
+        if (!sourceFinding) {
+          throw new Error(`golden fixture did not trip ${sourceRuleId}`);
+        }
+        const action = await new ActionsRepository(handle.db).insert({
+          workspaceId: chain.scope.workspaceId,
+          projectId: chain.scope.projectId,
+          sourceFindingId: sourceFinding.id,
+          actionKey: contentHash({
+            acceptance: "AC-031",
+            projectId: chain.scope.projectId,
+            artifactType,
+            nonce: randomUUID(),
+          }),
+          templateId,
+          templateVersion: 1,
+          title: `Generate ${artifactType}`,
+          description: `Produce the ${artifactType} acceptance fixture.`,
+          contentLocale: "en",
+          priorityBand: "high",
+          roadmapLane: "now",
+          status: "planned",
+          effort: "medium",
+          risk,
+          expectedOutcome: `A valid ${artifactType} is available for review.`,
+          evidenceRefs: [],
+          createdBy: chain.actor,
+        });
+
+        const accepted = await createActionArtifact(
+          { workspaceId: chain.scope.workspaceId },
+          chain.scope.projectId,
+          action.id,
+          chain.actor,
+          randomUUID(),
+          {
+            artifactType,
+            generationMode: "template",
+            outputLocale: "en",
+            operatorInstructions: null,
+          },
+        );
+
+        expect(accepted.status).toBe(202);
+        expect(accepted.statusUrl).toBe(
+          `/api/mvp/projects/${chain.scope.projectId}/runs/${accepted.run.id}`,
+        );
+        expect(accepted.location).toBe(accepted.statusUrl);
+        expect(accepted.resourceRef.type).toBe("artifact");
+        await expect(
+          (await getBoss()).findJobs<{ runId: string }>("artifact.generate", {
+            data: { runId: accepted.run.id },
+          }),
+        ).resolves.toHaveLength(1);
+
+        await runArtifact(ctx, {
+          runId: accepted.run.id,
+          workspaceId: chain.scope.workspaceId,
+          projectId: chain.scope.projectId,
+        });
+
+        const repo = new ExecutionArtifactsRepository(handle.db);
+        const stored = await repo.findById(
+          chain.scope,
+          accepted.resourceRef.id,
+        );
+        expect(stored).toMatchObject({
+          artifact_type: artifactType,
+          status: "draft",
+          current_revision: 1,
+          validation_state: "valid",
+        });
+        const revisions = await repo.listRevisions(
+          chain.scope,
+          accepted.resourceRef.id,
+        );
+        expect(revisions).toHaveLength(1);
+        expect(revisions[0]).toMatchObject({
+          revision: 1,
+          content_format: expectedFormat,
+          generated_by: "template",
+          validation_errors: [],
+        });
+        const run = await new AsyncRunsRepository(handle.db).findById(
+          chain.scope,
+          accepted.run.id,
+        );
+        expect(run).toMatchObject({
+          status: "completed",
+          result_type: "artifact",
+          result_id: accepted.resourceRef.id,
+        });
+      },
+    );
+
+    it("stores the actual mode requested by a regeneration", async () => {
+      const regenerated = await createActionArtifact(
+        { workspaceId: chain.scope.workspaceId },
+        chain.scope.projectId,
+        chain.actionId,
+        chain.actor,
+        randomUUID(),
+        {
+          artifactType: "technical_ticket",
+          generationMode: "structured_llm",
+          outputLocale: "zh-CN",
+          operatorInstructions: "Regenerate for operator review.",
+        },
+      );
+
+      expect(regenerated.resourceRef).toEqual({
+        type: "artifact",
+        id: chain.artifactId,
+      });
+      const stored = await new ExecutionArtifactsRepository(handle.db).findById(
+        chain.scope,
+        chain.artifactId,
+      );
+      expect(stored?.generation_mode).toBe("structured_llm");
+      expect(stored?.output_locale).toBe("zh-CN");
+      await expect(
+        new ProjectsRepository(handle.db).findById(
+          { workspaceId: chain.scope.workspaceId },
+          chain.scope.projectId,
+        ),
+      ).resolves.toMatchObject({ stage: "executing" });
     });
   },
 );

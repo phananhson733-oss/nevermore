@@ -4,6 +4,7 @@ import {
   REQUEST_ID_HEADER,
   toProblemBody,
   type ProblemCode,
+  type ProblemCurrent,
   type ProblemFieldError,
 } from "@sf/observability";
 
@@ -35,6 +36,18 @@ export function ok<T>(
   return withRequestId(response, requestId);
 }
 
+/** Shared OpenAPI `AsyncAccepted` response: envelope + canonical poll headers. */
+export function asyncAccepted<T>(
+  data: T,
+  requestId: string,
+  location: string,
+): NextResponse {
+  return ok(data, requestId, {
+    status: 202,
+    headers: { Location: location, "Retry-After": "1" },
+  });
+}
+
 /** Build an RFC 9457 problem+json response from a product error code. */
 export function problem(
   code: ProblemCode,
@@ -43,9 +56,16 @@ export function problem(
   init?: {
     errors?: readonly ProblemFieldError[];
     headers?: Record<string, string>;
+    current?: ProblemCurrent | null;
   },
 ): NextResponse {
-  const body = toProblemBody(code, detail, requestId, init?.errors);
+  const body = toProblemBody(
+    code,
+    detail,
+    requestId,
+    init?.errors,
+    init?.current,
+  );
   const response = NextResponse.json(body, {
     status: body.status,
     headers: { "content-type": PROBLEM_CONTENT_TYPE },

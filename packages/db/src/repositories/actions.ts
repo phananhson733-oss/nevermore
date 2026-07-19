@@ -125,7 +125,10 @@ export class ActionsRepository extends Repository {
       .where(eq(actions.id, id));
   }
 
-  /** Apply a human override (status/priority/lane) with a revision bump (spec §9.3). */
+  /**
+   * Apply a human override with an atomic compare-and-swap revision bump.
+   * Returns false when a concurrent writer has already advanced the revision.
+   */
   async applyOverride(
     scope: ProjectScope,
     id: string,
@@ -134,9 +137,10 @@ export class ActionsRepository extends Repository {
       priorityBand?: string;
       roadmapLane?: string;
       toRevision: number;
+      expectedRevision: number;
     },
-  ): Promise<void> {
-    await this.exec
+  ): Promise<boolean> {
+    const rows = (await this.exec
       .update(actions)
       .set({
         ...(values.status ? { status: values.status } : {}),
@@ -145,7 +149,15 @@ export class ActionsRepository extends Repository {
         revision: values.toRevision,
         updated_at: sql`now()`,
       })
-      .where(and(projectPredicate(actions, scope), eq(actions.id, id)));
+      .where(
+        and(
+          projectPredicate(actions, scope),
+          eq(actions.id, id),
+          eq(actions.revision, values.expectedRevision),
+        ),
+      )
+      .returning({ id: actions.id })) as { id: string }[];
+    return rows.length > 0;
   }
 
   /** Append the override audit row (append-only, spec §9.3). */

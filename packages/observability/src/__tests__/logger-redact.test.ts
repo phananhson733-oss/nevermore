@@ -73,4 +73,27 @@ describe("logger runtime redaction", () => {
     expect(parsed.cookie).toBe("[redacted]");
     expect(parsed.api_key).toBe("[redacted]");
   });
+
+  it("redacts OAuth/API-key/cookie/ciphertext values embedded in error.message", () => {
+    const capture = captureStream(process.stderr);
+    const logger = createLogger(CONTEXT, "debug");
+    const oauthToken = `ya29.${"O".repeat(40)}`;
+    const apiKey = `sk-${"A".repeat(32)}`;
+    const cookie = `Cookie: sf_session=${"C".repeat(32)}`;
+    const ciphertext = `token_cipher=${Buffer.from(
+      "logger-ciphertext-fixture",
+    ).toString("base64")}`;
+
+    logger.error("provider_failed", {
+      message: `upstream ${oauthToken} ${apiKey} ${cookie} ${ciphertext}`,
+      code: "DEPENDENCY_UNAVAILABLE",
+    });
+
+    const output = capture.lines();
+    for (const secret of [oauthToken, apiKey, cookie, ciphertext]) {
+      expect(output).not.toContain(secret);
+    }
+    expect(output).toContain("[redacted]");
+    expect(output).toContain("DEPENDENCY_UNAVAILABLE");
+  });
 });

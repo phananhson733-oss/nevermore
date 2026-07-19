@@ -24,6 +24,7 @@ export interface FindingRow {
   readonly title_args: Record<string, unknown>;
   readonly summary: string;
   readonly summary_locale: string;
+  readonly summary_invocation_id?: string | null;
   readonly subject_refs: unknown[];
   readonly severity: string;
   readonly confidence: string;
@@ -106,6 +107,7 @@ export class FindingsRepository extends Repository {
     titleArgs: Record<string, unknown>;
     summary: string;
     summaryLocale: string;
+    summaryInvocationId?: string | null;
     subjectRefs: unknown[];
     severity: string;
     confidence: string;
@@ -128,6 +130,7 @@ export class FindingsRepository extends Repository {
         title_args: values.titleArgs,
         summary: values.summary,
         summary_locale: values.summaryLocale,
+        summary_invocation_id: values.summaryInvocationId ?? null,
         subject_refs: values.subjectRefs,
         severity: values.severity,
         confidence: values.confidence,
@@ -154,6 +157,7 @@ export class FindingsRepository extends Repository {
       titleArgs: Record<string, unknown>;
       summary: string;
       summaryLocale: string;
+      summaryInvocationId?: string | null;
       subjectRefs: unknown[];
       runId: string;
       seenAt: string;
@@ -168,6 +172,7 @@ export class FindingsRepository extends Repository {
         title_args: values.titleArgs,
         summary: values.summary,
         summary_locale: values.summaryLocale,
+        summary_invocation_id: values.summaryInvocationId ?? null,
         subject_refs: values.subjectRefs,
         last_seen_run_id: values.runId,
         last_seen_at: values.seenAt,

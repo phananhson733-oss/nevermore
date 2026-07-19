@@ -43,4 +43,9 @@ describe("i18n message key parity", () => {
   it("has identical key sets across locales", () => {
     expect(new Set(enPaths)).toEqual(new Set(zhPaths));
   });
+
+  it("localizes the GA4 key-event input placeholder instead of hardcoding UI chrome", () => {
+    expect(en.sources.keyEventsPlaceholder).toBe("purchase, sign_up");
+    expect(zhCN.sources.keyEventsPlaceholder).toBe("购买, 注册");
+  });
 });

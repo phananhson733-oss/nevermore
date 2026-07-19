@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 // Full web env (fail-fast) — set before any service import touches getEnv().
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??= "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
@@ -16,9 +15,14 @@ process.env["LOG_LEVEL"] ??= "error";
 
 import { eq } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
+import {
+  contentHash,
+  ProjectsRepository,
+  type CanonicalValue,
+} from "@sf/db";
 import { sourceConnections, telemetryEvents, workspaces } from "@sf/db/schema";
 import { ProblemError } from "@sf/observability";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProject, getProject, type UrlGuard } from "@/lib/services/projects";
 import { getContext, updateContext } from "@/lib/services/context";
 
@@ -111,17 +115,27 @@ describeDb("createProject (AC-007)", () => {
   it("replays the original 201 for the same Idempotency-Key + body", async () => {
     const key = randomUUID();
     const first = await createProject({ workspaceId }, actor, key, baseBody("https://replay.example"), safeGuard);
-    const second = await createProject({ workspaceId }, actor, key, baseBody("https://replay.example"), safeGuard);
+    const changedDnsGuard = vi.fn(blockGuard);
+    const second = await createProject(
+      { workspaceId },
+      actor,
+      key,
+      baseBody("https://replay.example"),
+      changedDnsGuard,
+    );
     expect(second.replayed).toBe(true);
     expect(second.project.id).toBe(first.project.id);
+    expect(changedDnsGuard).not.toHaveBeenCalled();
   });
 
   it("409s when the same Idempotency-Key is reused with a different body", async () => {
     const key = randomUUID();
     await createProject({ workspaceId }, actor, key, baseBody("https://a.example"), safeGuard);
+    const shouldNotRun = vi.fn(blockGuard);
     await expect(
-      createProject({ workspaceId }, actor, key, baseBody("https://b.example"), safeGuard),
+      createProject({ workspaceId }, actor, key, baseBody("https://b.example"), shouldNotRun),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
+    expect(shouldNotRun).not.toHaveBeenCalled();
   });
 });
 
@@ -209,6 +223,132 @@ describeDb("context versioning (AC-009) and isolation (AC-010)", () => {
         profile: { productName: "Way behind" },
       }),
     ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+  });
+
+  it("serializes two truly concurrent saves so exactly one succeeds and one returns VERSION_CONFLICT", async () => {
+    const concurrentWorkspaceId = await newWorkspace(handle);
+    const created = await createProject(
+      { workspaceId: concurrentWorkspaceId },
+      actor,
+      randomUUID(),
+      baseBody("https://ctx-concurrent.example"),
+      safeGuard,
+    );
+
+    // RED-phase race amplifier: the old implementation used the unlocked
+    // `findById`, so hold both calls after they observed version 0 and release
+    // them together. The fixed implementation must use the FOR UPDATE read and
+    // therefore never enter this unlocked path.
+    const originalFindById = ProjectsRepository.prototype.findById;
+    let unlockedReads = 0;
+    let releaseBoth!: () => void;
+    const bothUnlockedReads = new Promise<void>((resolve) => {
+      releaseBoth = resolve;
+    });
+    const unlockedFind = vi
+      .spyOn(ProjectsRepository.prototype, "findById")
+      .mockImplementation(async function (
+        this: ProjectsRepository,
+        scope,
+        id,
+      ) {
+        const row = await originalFindById.call(this, scope, id);
+        unlockedReads += 1;
+        if (unlockedReads === 2) releaseBoth();
+        await bothUnlockedReads;
+        return row;
+      });
+
+    try {
+      const results = await Promise.allSettled([
+        updateContext(
+          { workspaceId: concurrentWorkspaceId },
+          created.project.id,
+          actor,
+          {
+            mode: "draft",
+            baseVersion: 0,
+            profile: { productName: "Concurrent A" },
+          },
+        ),
+        updateContext(
+          { workspaceId: concurrentWorkspaceId },
+          created.project.id,
+          actor,
+          {
+            mode: "draft",
+            baseVersion: 0,
+            profile: { productName: "Concurrent B" },
+          },
+        ),
+      ]);
+
+      const fulfilled = results.filter(
+        (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof updateContext>>> =>
+          result.status === "fulfilled",
+      );
+      const rejected = results.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+
+      expect(unlockedFind).not.toHaveBeenCalled();
+      expect(fulfilled).toHaveLength(1);
+      expect(fulfilled[0]!.value.version).toBe(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]!.reason).toBeInstanceOf(ProblemError);
+      expect(rejected[0]!.reason).toMatchObject({
+        code: "VERSION_CONFLICT",
+        status: 409,
+      });
+    } finally {
+      unlockedFind.mockRestore();
+    }
+  });
+
+  it("includes immutable status in the version-semantic hash so draft to complete can append", async () => {
+    const statusWorkspaceId = await newWorkspace(handle);
+    const created = await createProject(
+      { workspaceId: statusWorkspaceId },
+      actor,
+      randomUUID(),
+      baseBody("https://ctx-status-hash.example"),
+      safeGuard,
+    );
+    // Draft patches treat null as a delete instruction. Keep this field
+    // concrete so both saves exercise an exactly identical profile payload.
+    const profile = {
+      ...completeProfile(),
+      businessProfileNote: "Not applicable",
+    };
+
+    const draft = await updateContext(
+      { workspaceId: statusWorkspaceId },
+      created.project.id,
+      actor,
+      { mode: "draft", baseVersion: 0, profile },
+    );
+    const complete = await updateContext(
+      { workspaceId: statusWorkspaceId },
+      created.project.id,
+      actor,
+      { mode: "complete", baseVersion: 1, profile },
+    );
+    const replay = await updateContext(
+      { workspaceId: statusWorkspaceId },
+      created.project.id,
+      actor,
+      { mode: "complete", baseVersion: 2, profile },
+    );
+
+    expect(draft.contentHash).toBe(
+      contentHash({ status: "draft", profile } as CanonicalValue),
+    );
+    expect(complete.contentHash).toBe(
+      contentHash({ status: "complete", profile } as CanonicalValue),
+    );
+    expect(complete.contentHash).not.toBe(draft.contentHash);
+    expect(complete.version).toBe(2);
+    expect(replay.version).toBe(2);
   });
 
   it("a complete save creates a new complete version and mirrors projections", async () => {

@@ -1,11 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??=
-  "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
@@ -32,8 +30,10 @@ import {
   CollectionRunsRepository,
   DataSnapshotsRepository,
   ExportBundlesRepository,
+  ImportPreviewsRepository,
   ObservationsRepository,
   ProjectsRepository,
+  SourceConnectionsRepository,
   contentHash,
   type ObservationInsert,
   type PgBoss,
@@ -42,9 +42,15 @@ import {
 import {
   LocalFsBlobStore,
   METRIC_CRAWL_PAGE,
+  METRIC_CSV_KEYWORD_GAP,
+  METRIC_GA4_LANDING,
+  METRIC_GSC_PAGE,
   subjectUrlOf,
   type CrawlLinkProjection,
   type CrawlPageProjection,
+  type CsvKeywordProjection,
+  type Ga4LandingProjection,
+  type GscPageProjection,
 } from "@sf/sources";
 import type { Logger } from "@sf/observability";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
@@ -104,8 +110,82 @@ const safeGuard: UrlGuard = async (url) => ({
   reason: null,
 });
 
-/** An ICP offer no fixture page mentions — guarantees CONTENT-COVERAGE-001. */
-const UNCOVERED_OFFER = "Quantum cryptography residency compliance audit";
+type FixtureVertical = "b2b" | "b2c";
+
+interface VerticalFixture {
+  readonly productName: string;
+  readonly oneLineDescription: string;
+  readonly customerModel: FixtureVertical;
+  readonly businessProfile: "b2b_saas" | "b2c_ecommerce";
+  readonly segment: string;
+  readonly persona: {
+    readonly name: string;
+    readonly roleOrContext: string;
+    readonly jobs: readonly string[];
+    readonly painPoints: readonly string[];
+  };
+  readonly useCase: string;
+  readonly offer: string;
+  readonly differentiator: string;
+  readonly conversionLabel: string;
+  readonly conversionType: "demo" | "purchase";
+  readonly conversionPath: "/demo" | "/checkout";
+  readonly priorityProduct: string;
+  readonly keywordCluster: string;
+  readonly keywordPhrase: string;
+}
+
+const VERTICAL_FIXTURES: Record<FixtureVertical, VerticalFixture> = {
+  b2b: {
+    productName: "Northstar Analytics",
+    oneLineDescription: "B2B revenue analytics for growth and sales teams.",
+    customerModel: "b2b",
+    businessProfile: "b2b_saas",
+    segment: "Mid-market revenue teams",
+    persona: {
+      name: "Revenue operations lead",
+      roleOrContext: "Owns pipeline reporting and forecasting",
+      jobs: ["Unify marketing and sales performance"],
+      painPoints: ["Fragmented attribution data"],
+    },
+    useCase: "Automated revenue forecasting",
+    offer: "Quantum cryptography residency compliance audit",
+    differentiator: "Auditable first-party revenue models",
+    conversionLabel: "Book a demo",
+    conversionType: "demo",
+    conversionPath: "/demo",
+    priorityProduct: "Revenue analytics platform",
+    keywordCluster: "revenue-forecasting-automation",
+    keywordPhrase: "revenue forecasting automation",
+  },
+  b2c: {
+    productName: "TrailGlow Commerce",
+    oneLineDescription:
+      "Direct-to-consumer trail footwear for everyday runners.",
+    customerModel: "b2c",
+    businessProfile: "b2c_ecommerce",
+    segment: "US trail runners buying performance footwear online",
+    persona: {
+      name: "Weekend trail runner",
+      roleOrContext: "Researches and buys running shoes for personal use",
+      jobs: ["Choose durable shoes for mixed terrain"],
+      painPoints: ["Unclear fit and durability claims"],
+    },
+    useCase: "Buy lightweight trail shoes online",
+    offer: "Carbon trail running shoes",
+    differentiator: "30-day outdoor fit guarantee",
+    conversionLabel: "Complete purchase",
+    conversionType: "purchase",
+    conversionPath: "/checkout",
+    priorityProduct: "Trail running shoes",
+    keywordCluster: "luxury-running-shoes",
+    keywordPhrase: "luxury running shoes",
+  },
+};
+
+function verticalFor(label: string): FixtureVertical {
+  return label.startsWith("b2c") ? "b2c" : "b2b";
+}
 
 /** The exact crawl-only degradation strings the pipeline emits (pipeline.ts). */
 export const DEGRADATION_LIMITATIONS: readonly string[] = [
@@ -123,6 +203,7 @@ export function buildCtx(handle: DbHandle): WorkerContext {
     blobStore: new LocalFsBlobStore(process.env["SF_BLOB_DIR"]!),
     credentialKey: Buffer.alloc(32),
     appOrigin: "http://localhost:3000",
+    googleOAuth: { clientId: "test-client", clientSecret: "test-secret" },
     openai: { apiKey: "sk-test", model: "gpt-4o-mini" },
     logger: testLogger,
   };
@@ -199,6 +280,7 @@ function crawlObs(
 function goldenObservations(
   origin: string,
   capturedAt: string,
+  fixture: VerticalFixture,
 ): ObservationInsert[] {
   const home = `${origin}/`;
   const product = `${origin}/product`;
@@ -208,8 +290,8 @@ function goldenObservations(
       su(home),
       mkPage({
         fetchUrl: home,
-        title: "Northstar Analytics — Home",
-        h1: ["Welcome to Northstar"],
+        title: `${fixture.productName} - Home`,
+        h1: [`Welcome to ${fixture.productName}`],
         internalOutlinks: [],
       }),
       capturedAt,
@@ -248,6 +330,7 @@ async function seedCompleteIcp(
   scope: ProjectScope,
   origin: string,
   actor: string,
+  fixture: VerticalFixture,
 ): Promise<void> {
   const [icp] = await handle.db
     .insert(icpProfiles)
@@ -257,23 +340,33 @@ async function seedCompleteIcp(
       version: 1,
       status: "complete",
       profile: {
-        productName: "Northstar Analytics",
-        oneLineDescription: "B2B analytics platform for revenue teams.",
-        customerModel: "b2b",
+        productName: fixture.productName,
+        oneLineDescription: fixture.oneLineDescription,
+        customerModel: fixture.customerModel,
+        businessProfile: fixture.businessProfile,
         siteLanguageCodes: ["en"],
         defaultDeliveryLocale: "en",
         marketCodes: ["US"],
-        // Offer no fixture page covers → CONTENT-COVERAGE-001 candidate.
-        offers: [UNCOVERED_OFFER],
-        useCases: [],
-        differentiators: [],
+        segments: [fixture.segment],
+        personas: [fixture.persona],
+        offers: [fixture.offer],
+        useCases: [fixture.useCase],
+        differentiators: [fixture.differentiator],
         // Marks /product priority + commercial (TECH-LINKGRAPH-005 high severity).
         priorityUrls: [`${origin}/product`],
         primaryConversion: {
-          label: "Book a demo",
-          type: "demo",
-          targetUrl: `${origin}/demo`,
+          label: fixture.conversionLabel,
+          type: fixture.conversionType,
+          targetUrl: `${origin}${fixture.conversionPath}`,
         },
+        priorityProductsOrServices: [fixture.priorityProduct],
+        competitors: [],
+        brandConstraints: [],
+        complianceConstraints: [],
+        technicalConstraints: [],
+        resourceConstraints: [],
+        growthQuestions: ["Which organic opportunities should we prioritize?"],
+        ninetyDayGoals: ["Ship the highest-impact organic growth fixes."],
       },
       content_hash: contentHash({ icp: randomUUID() }),
       created_by: actor,
@@ -293,9 +386,14 @@ async function seedCrawlSnapshot(
   siteId: string,
   origin: string,
   actor: string,
+  fixture: VerticalFixture,
 ): Promise<string> {
   const capturedAt = new Date().toISOString();
   const collectionRunId = randomUUID();
+  const connection = await new SourceConnectionsRepository(
+    handle.db,
+  ).findConnectedByProvider(scope, "crawl");
+  if (!connection) throw new Error("fixture Crawl connection missing");
   await handle.db.insert(asyncRuns).values({
     id: collectionRunId,
     workspace_id: scope.workspaceId,
@@ -311,19 +409,19 @@ async function seedCrawlSnapshot(
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
     siteId,
-    sourceConnectionId: null,
+    sourceConnectionId: connection.id,
     provider: "crawl",
     operation: "site_graph",
     methodVersion: "crawl.site_graph.v1",
     parametersHash: contentHash({ c: collectionRunId }),
   });
-  const observations = goldenObservations(origin, capturedAt);
+  const observations = goldenObservations(origin, capturedAt, fixture);
   const snapshot = await new DataSnapshotsRepository(handle.db).insert({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
     siteId,
     collectionRunId,
-    sourceConnectionId: null,
+    sourceConnectionId: connection.id,
     provider: "crawl",
     datasetKey: "crawl.site_graph.v1",
     schemaVersion: "0.2.0",
@@ -341,7 +439,297 @@ async function seedCrawlSnapshot(
     snapshot.id,
     observations,
   );
+  await new SourceConnectionsRepository(handle.db).setLastSnapshot(
+    connection.id,
+    snapshot.id,
+    "available",
+    snapshot.limitation,
+  );
   return snapshot.id;
+}
+
+function structuredObservation(input: {
+  readonly metricKey: string;
+  readonly subjectType: "url" | "keyword_cluster";
+  readonly subjectRef: string;
+  readonly capturedAt: string;
+  readonly valueJson: GscPageProjection | Ga4LandingProjection | CsvKeywordProjection;
+  readonly provider: "gsc" | "ga4" | "csv";
+  readonly limitation: string;
+}): ObservationInsert {
+  const firstParty = input.provider === "gsc" || input.provider === "ga4";
+  return {
+    metricKey: input.metricKey,
+    subjectType: input.subjectType,
+    subjectRef: input.subjectRef,
+    observedAt: input.capturedAt,
+    availability: "available",
+    valueNumeric: null,
+    valueText: null,
+    valueJson: input.valueJson,
+    unit: null,
+    origin: firstParty ? "first_party" : "user_provided",
+    grade: firstParty ? "A" : "C",
+    support: "supports",
+    limitation: input.limitation,
+  };
+}
+
+function gscObservations(
+  origin: string,
+  capturedAt: string,
+): ObservationInsert[] {
+  return [
+    structuredObservation({
+      provider: "gsc",
+      metricKey: METRIC_GSC_PAGE,
+      subjectType: "url",
+      subjectRef: su(`${origin}/product`),
+      capturedAt,
+      valueJson: {
+        current28d: { clicks: 30, impressions: 2_000, position: 5 },
+        previous28d: { clicks: 120, impressions: 2_400, position: 5 },
+        topQueries: [
+          {
+            query: "best product comparison",
+            clicks: 20,
+            impressions: 1_500,
+            position: 5,
+          },
+        ],
+      },
+      limitation:
+        "Search Console returns top rows by clicks, not the full query universe.",
+    }),
+  ];
+}
+
+function ga4Observations(
+  origin: string,
+  capturedAt: string,
+): ObservationInsert[] {
+  const limitation =
+    "GA4 organic landing sessions use the fixture's selected purchase/demo key event.";
+  return [
+    structuredObservation({
+      provider: "ga4",
+      metricKey: METRIC_GA4_LANDING,
+      subjectType: "url",
+      subjectRef: su(`${origin}/product`),
+      capturedAt,
+      valueJson: {
+        sessions: 1_000,
+        engagedSessions: 650,
+        engagementRate: 0.65,
+        keyEvents: 10,
+        keyEventUnavailableReason: null,
+      },
+      limitation,
+    }),
+    structuredObservation({
+      provider: "ga4",
+      metricKey: METRIC_GA4_LANDING,
+      subjectType: "url",
+      subjectRef: su(`${origin}/`),
+      capturedAt,
+      valueJson: {
+        sessions: 1_000,
+        engagedSessions: 700,
+        engagementRate: 0.7,
+        keyEvents: 100,
+        keyEventUnavailableReason: null,
+      },
+      limitation,
+    }),
+  ];
+}
+
+function csvObservations(
+  fixture: VerticalFixture,
+  capturedAt: string,
+): ObservationInsert[] {
+  return Array.from({ length: 10 }, (_, index) =>
+    structuredObservation({
+      provider: "csv",
+      metricKey: METRIC_CSV_KEYWORD_GAP,
+      subjectType: "keyword_cluster",
+      subjectRef: fixture.keywordCluster,
+      capturedAt,
+      valueJson: {
+        keyword: `${fixture.keywordPhrase} ${index + 1}`,
+        clusterKey: fixture.keywordCluster,
+        searchVolume: 100,
+        currentUrl: null,
+        currentRank: null,
+        competitorDomain: "fixture-competitor.example",
+        competitorRank: 3 + index,
+        marketCode: "US",
+        languageCode: "en",
+      },
+      limitation: "Keyword demand is supplied by a deterministic CSV fixture.",
+    }),
+  );
+}
+
+interface ProviderFixture {
+  readonly provider: "gsc" | "ga4" | "csv";
+  readonly connectionType: "oauth" | "file_import";
+  readonly datasetKey: string;
+  readonly operation: string;
+  readonly methodVersion: string;
+  readonly observations: readonly ObservationInsert[];
+  readonly limitation: string;
+}
+
+async function seedProviderSnapshot(
+  handle: DbHandle,
+  scope: ProjectScope,
+  siteId: string,
+  origin: string,
+  actor: string,
+  fixture: ProviderFixture,
+): Promise<string> {
+  const capturedAt = new Date().toISOString();
+  const connection = await new SourceConnectionsRepository(
+    handle.db,
+  ).insertConnection({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    provider: fixture.provider,
+    connectionType: fixture.connectionType,
+    state: "available",
+    externalRef:
+      fixture.provider === "gsc"
+        ? origin
+        : fixture.provider === "ga4"
+          ? "properties/fixture"
+          : null,
+    config: {},
+    limitation: fixture.limitation,
+    connectedAt: true,
+    createdBy: actor,
+  });
+  const collectionRunId = randomUUID();
+  await handle.db.insert(asyncRuns).values({
+    id: collectionRunId,
+    workspace_id: scope.workspaceId,
+    project_id: scope.projectId,
+    kind: "collection",
+    status: "completed",
+    initiated_by: actor,
+    started_at: capturedAt,
+    completed_at: capturedAt,
+  });
+
+  let importPreviewId: string | null = null;
+  if (fixture.provider === "csv") {
+    const preview = await new ImportPreviewsRepository(handle.db).insert({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      createdBy: actor,
+      tokenHash: randomBytes(32),
+      templateId: "keyword_gap_v1",
+      rawObjectKey: `fixture/${collectionRunId}.csv`,
+      fileChecksum: contentHash({ csv: collectionRunId }),
+      rowCount: fixture.observations.length,
+      detectedColumns: ["keyword", "search_volume", "market_code"],
+      suggestedMapping: {},
+      previewRows: [],
+      validationErrors: [],
+      validationWarnings: [],
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    });
+    importPreviewId = preview.id;
+  }
+
+  await new CollectionRunsRepository(handle.db).insertPlaceholder({
+    runId: collectionRunId,
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    sourceConnectionId: connection.id,
+    importPreviewId,
+    provider: fixture.provider,
+    operation: fixture.operation,
+    methodVersion: fixture.methodVersion,
+    parametersHash: contentHash({ p: collectionRunId }),
+  });
+  const snapshot = await new DataSnapshotsRepository(handle.db).insert({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    collectionRunId,
+    sourceConnectionId: connection.id,
+    provider: fixture.provider,
+    datasetKey: fixture.datasetKey,
+    schemaVersion: "0.2.0",
+    methodVersion: fixture.methodVersion,
+    capturedAt,
+    sourceWindow: {
+      start: "2026-05-23T00:00:00.000Z",
+      end: "2026-07-17T00:00:00.000Z",
+    },
+    availability: "available",
+    limitation: fixture.limitation,
+    rawObjectKey: null,
+    rowCount: fixture.observations.length,
+    checksum: contentHash({ s: collectionRunId }),
+  });
+  await new ObservationsRepository(handle.db).insertMany(
+    scope,
+    snapshot.id,
+    fixture.observations,
+  );
+  await new SourceConnectionsRepository(handle.db).setLastSnapshot(
+    connection.id,
+    snapshot.id,
+    "available",
+    fixture.limitation,
+  );
+  return snapshot.id;
+}
+
+async function seedFullProviderSnapshots(
+  handle: DbHandle,
+  scope: ProjectScope,
+  siteId: string,
+  origin: string,
+  actor: string,
+  fixture: VerticalFixture,
+): Promise<string[]> {
+  const capturedAt = new Date().toISOString();
+  return Promise.all([
+    seedProviderSnapshot(handle, scope, siteId, origin, actor, {
+      provider: "gsc",
+      connectionType: "oauth",
+      datasetKey: "gsc.page_query_daily.v1",
+      operation: "search_analytics",
+      methodVersion: "gsc.search_analytics.v1",
+      observations: gscObservations(origin, capturedAt),
+      limitation:
+        "Search Console returns top rows by clicks, not the full query universe.",
+    }),
+    seedProviderSnapshot(handle, scope, siteId, origin, actor, {
+      provider: "ga4",
+      connectionType: "oauth",
+      datasetKey: "ga4.organic_landing_daily.v1",
+      operation: "organic_landing",
+      methodVersion: "ga4.organic_landing.v1",
+      observations: ga4Observations(origin, capturedAt),
+      limitation: "GA4 organic landing data with mapped fixture key events.",
+    }),
+    seedProviderSnapshot(handle, scope, siteId, origin, actor, {
+      provider: "csv",
+      connectionType: "file_import",
+      datasetKey: "csv.keyword_gap.v1",
+      operation: "keyword_gap_import",
+      methodVersion: "csv.keyword_gap.v1",
+      observations: csvObservations(fixture, capturedAt),
+      limitation: "Keyword demand is supplied by a deterministic CSV fixture.",
+    }),
+  ]);
 }
 
 // --- the shared common chain: seed → diagnose → confirm → artifact ----------
@@ -349,10 +737,15 @@ async function seedCrawlSnapshot(
 export interface ChainResult {
   readonly scope: ProjectScope;
   readonly actor: string;
+  readonly snapshotId: string;
+  readonly snapshotIds: readonly string[];
   readonly diagRunId: string;
+  readonly diagnosticIdempotencyKey: string;
   readonly httpFindingId: string;
   readonly actionId: string;
   readonly artifactId: string;
+  readonly artifactRunId: string;
+  readonly artifactIdempotencyKey: string;
 }
 
 /**
@@ -374,6 +767,7 @@ export async function runCommonChain(
     .returning();
   const workspaceId = ws!.id;
   const origin = `https://${label}-${randomUUID().slice(0, 8)}.example`;
+  const fixture = VERTICAL_FIXTURES[verticalFor(label)];
 
   const created = await createProject(
     { workspaceId },
@@ -392,22 +786,33 @@ export async function runCommonChain(
   const scope: ProjectScope = { workspaceId, projectId: created.project.id };
   const siteId = created.project.site.id;
 
-  await seedCompleteIcp(handle, scope, origin, actor);
+  await seedCompleteIcp(handle, scope, origin, actor, fixture);
   const snapshotId = await seedCrawlSnapshot(
     handle,
     scope,
     siteId,
     origin,
     actor,
+    fixture,
   );
+  const providerSnapshotIds = await seedFullProviderSnapshots(
+    handle,
+    scope,
+    siteId,
+    origin,
+    actor,
+    fixture,
+  );
+  const snapshotIds = [snapshotId, ...providerSnapshotIds];
 
   // createDiagnosticRun freezes the manifest + enqueues (spec §8.1, §13.2).
+  const diagnosticIdempotencyKey = randomUUID();
   const diag = await createDiagnosticRun(
     { workspaceId },
     scope.projectId,
     actor,
-    randomUUID(),
-    { snapshotIds: [snapshotId], outputLocale: "en" },
+    diagnosticIdempotencyKey,
+    { snapshotIds, outputLocale: "en" },
   );
   await runDiagnostic(ctx, {
     runId: diag.run.id,
@@ -435,11 +840,13 @@ export async function runCommonChain(
 
   // Artifact create is ALWAYS async, even in TEMPLATE mode (spec §10.1); the
   // template path (generationMode: "template") never calls OpenAI.
+  const artifactIdempotencyKey = randomUUID();
   const artifact = await createActionArtifact(
     { workspaceId },
     scope.projectId,
     review.action.id,
     actor,
+    artifactIdempotencyKey,
     {
       artifactType: "technical_ticket", // fix_http_status.v1 → technical_ticket
       generationMode: "template",
@@ -456,16 +863,88 @@ export async function runCommonChain(
   return {
     scope,
     actor,
+    snapshotId,
+    snapshotIds,
     diagRunId: diag.run.id,
+    diagnosticIdempotencyKey,
     httpFindingId: httpFinding.id,
     actionId: review.action.id,
     artifactId: artifact.resourceRef.id,
+    artifactRunId: artifact.run.id,
+    artifactIdempotencyKey,
   };
+}
+
+export interface MissingProviderDiagnosticResult {
+  readonly scope: ProjectScope;
+  readonly actor: string;
+  readonly snapshotId: string;
+  readonly diagRunId: string;
+}
+
+/**
+ * Independent crawl-only fixture for the precise missing-provider degradation
+ * contract. Keeping it separate prevents a skipped rule from masquerading as the
+ * AC-022 all-provider golden path.
+ */
+export async function runMissingProviderDiagnostic(
+  handle: DbHandle,
+  ctx: WorkerContext,
+  label: string,
+): Promise<MissingProviderDiagnosticResult> {
+  const actor = randomUUID();
+  const [ws] = await handle.db
+    .insert(workspaces)
+    .values({ name: `WS-${randomUUID()}` })
+    .returning();
+  const workspaceId = ws!.id;
+  const origin = `https://${label}-${randomUUID().slice(0, 8)}.example`;
+  const fixture = VERTICAL_FIXTURES[verticalFor(label)];
+  const created = await createProject(
+    { workspaceId },
+    actor,
+    randomUUID(),
+    {
+      clientName: label,
+      projectName: label,
+      siteUrl: origin,
+      marketCodes: ["US"],
+      siteLanguageCodes: ["en"],
+      defaultDeliveryLocale: "en",
+    },
+    safeGuard,
+  );
+  const scope: ProjectScope = { workspaceId, projectId: created.project.id };
+  await seedCompleteIcp(handle, scope, origin, actor, fixture);
+  const snapshotId = await seedCrawlSnapshot(
+    handle,
+    scope,
+    created.project.site.id,
+    origin,
+    actor,
+    fixture,
+  );
+  const diag = await createDiagnosticRun(
+    { workspaceId },
+    scope.projectId,
+    actor,
+    randomUUID(),
+    { snapshotIds: [snapshotId], outputLocale: "en" },
+  );
+  await runDiagnostic(ctx, {
+    runId: diag.run.id,
+    workspaceId,
+    projectId: scope.projectId,
+  });
+  return { scope, actor, snapshotId, diagRunId: diag.run.id };
 }
 
 export interface ExportChainResult {
   readonly manifest: Record<string, unknown>;
   readonly runStatus: string;
+  readonly runId: string;
+  readonly resourceRefType: string;
+  readonly idempotencyKey: string;
   readonly row: NonNullable<
     Awaited<ReturnType<ExportBundlesRepository["findById"]>>
   >;
@@ -478,11 +957,12 @@ export async function runExportChain(
   actor: string,
   kind: "service_bundle" | "client_bundle",
 ): Promise<ExportChainResult> {
+  const idempotencyKey = randomUUID();
   const created = await createProjectExport(
     { workspaceId: scope.workspaceId },
     scope.projectId,
     actor,
-    randomUUID(),
+    idempotencyKey,
     { kind, outputLocale: "en" },
   );
   await runExport(ctx, {
@@ -502,6 +982,9 @@ export async function runExportChain(
   return {
     manifest: (row.manifest ?? {}) as Record<string, unknown>,
     runStatus: asyncRun?.status ?? "missing",
+    runId: created.run.id,
+    resourceRefType: created.resourceRef.type,
+    idempotencyKey,
     row,
   };
 }
@@ -701,6 +1184,13 @@ export async function stopSharedBoss(): Promise<void> {
 }
 
 // Re-exports so each chain test imports everything from this one harness.
-export { createDbHandle, listProjectFindings, listProjectActions, getProjectReport };
+export {
+  createDbHandle,
+  getBoss,
+  getProjectReport,
+  listProjectActions,
+  listProjectFindings,
+  runArtifact,
+};
 export { ExecutionArtifactsRepository } from "@sf/db";
 export type { DbHandle, ProjectScope, WorkerContext };

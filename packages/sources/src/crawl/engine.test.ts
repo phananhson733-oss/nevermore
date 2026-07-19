@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CollectionContext } from "../adapter.ts";
 import { createCanonicalUrlGuard } from "../url-safety/index.ts";
 import { crawlSite } from "./engine.ts";
-import { CRAWL_BUDGET } from "./types.ts";
+import { CRAWL_BUDGET, CRAWL_PROJECTION_LIMITS } from "./types.ts";
 import type { CrawlFetcher } from "./types.ts";
 
 const PARAMS = { origin: "https://example.com", host: "example.com" } as const;
@@ -23,6 +23,8 @@ const GUARD = createCanonicalUrlGuard({
 });
 
 const FAST_BUDGET = { ...CRAWL_BUDGET, minHostDelayMs: 0 } as const;
+const byteLength = (value: string): number =>
+  new TextEncoder().encode(value).byteLength;
 
 type Route = () => Response;
 
@@ -36,6 +38,55 @@ function xml(body: string): Response {
 
 function text(body: string): Response {
   return new Response(body, { status: 200, headers: { "content-type": "text/plain" } });
+}
+
+function textOnlyHtml(body: string): Response {
+  const response = new Response(null, {
+    status: 200,
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+  Object.defineProperty(response, "text", {
+    value: async () => body,
+  });
+  return response;
+}
+
+async function settleWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<
+  | { readonly kind: "settled"; readonly value: T }
+  | { readonly kind: "timeout" }
+> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
+    void promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve({ kind: "settled", value });
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function stalledBodyResponse(
+  onCancel: () => void | PromiseLike<void>,
+): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => undefined);
+      },
+      cancel() {
+        return onCancel();
+      },
+    }),
+    { headers: { "content-type": "text/plain" } },
+  );
 }
 
 function redirect(location: string): Response {
@@ -86,6 +137,101 @@ const HOME_HTML = `<!doctype html><html lang="en"><head>
 const ABOUT_HTML = `<html><head><title>About</title></head><body><h1>About</h1><p>Since 2020.</p></body></html>`;
 
 describe("crawlSite", () => {
+  it("keeps the frozen URL, response, duration, and total decoded-byte production budgets", () => {
+    expect(CRAWL_BUDGET).toMatchObject({
+      maxUrls: 2_000,
+      maxWallClockMs: 15 * 60 * 1_000,
+      maxBodyBytes: 5 * 1_024 * 1_024,
+      maxTotalBytes: 128 * 1_024 * 1_024,
+    });
+  });
+
+  it("stops before transport when no decoded-byte budget remains", async () => {
+    const { fetcher, calls } = makeFetcher({});
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxTotalBytes: 0,
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.stopReason).toBe("max_total_bytes");
+    expect(raw.availability).toBe("partial");
+    expect(raw.providerUsage.bytesFetched).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  it("re-pins every same-origin redirect hop to its validated IP", async () => {
+    const transportCalls: Array<{
+      url: string;
+      pinnedIp: unknown;
+      dispatcher: unknown;
+    }> = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url, init) {
+        transportCalls.push({
+          url,
+          pinnedIp: Reflect.get(init, "pinnedIp"),
+          dispatcher: Reflect.get(init, "dispatcher"),
+        });
+        if (url === "https://example.com/robots.txt") {
+          return redirect("https://example.com/robots-v2.txt");
+        }
+        if (url === "https://example.com/robots-v2.txt") {
+          return text("User-agent: *\nDisallow:\n");
+        }
+        if (url === "https://example.com/sitemap.xml") {
+          return new Response("not found", { status: 404 });
+        }
+        if (url === "https://example.com/") return html(HOME_HTML);
+        if (url === "https://example.com/about") return html(ABOUT_HTML);
+        return new Response("not found", { status: 404 });
+      },
+    };
+    const guard = createCanonicalUrlGuard({
+      lookup: async (hostname) => {
+        if (hostname === "example.com") return ["93.184.216.34"];
+        throw new Error(`unexpected DNS lookup: ${hostname}`);
+      },
+    });
+
+    await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard,
+      budget: FAST_BUDGET,
+    });
+
+    expect(transportCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: "https://example.com/robots.txt",
+          pinnedIp: "93.184.216.34",
+        }),
+        expect.objectContaining({
+          url: "https://example.com/robots-v2.txt",
+          pinnedIp: "93.184.216.34",
+        }),
+      ]),
+    );
+    const redirectHops = transportCalls.filter((call) =>
+      call.url.includes("/robots"),
+    );
+    expect(redirectHops).toHaveLength(2);
+    expect(redirectHops[0]?.dispatcher).toBeTruthy();
+    expect(redirectHops[1]?.dispatcher).toBeTruthy();
+    expect(redirectHops[0]?.dispatcher).not.toBe(redirectHops[1]?.dispatcher);
+    expect(
+      redirectHops.every(
+        (hop) =>
+          typeof hop.dispatcher === "object" &&
+          hop.dispatcher !== null &&
+          Reflect.get(hop.dispatcher, "closed") === true,
+      ),
+    ).toBe(true);
+  });
+
   it("crawls a normal site into pages, robots, and sitemap", async () => {
     const { fetcher } = makeFetcher({
       "https://example.com/robots.txt": () => text(ROBOTS_TXT),
@@ -123,6 +269,467 @@ describe("crawlSite", () => {
     expect(raw.sitemap.urlCount).toBe(2);
     expect(raw.sitemap.subjectUrls).toContain("https://example.com/about");
     expect(raw.providerUsage.pagesCollected).toBe(2);
+    expect(raw.providerUsage.bytesFetched).toBe(
+      byteLength(ROBOTS_TXT) +
+        byteLength(SITEMAP_XML) +
+        byteLength(HOME_HTML) +
+        byteLength(ABOUT_HTML),
+    );
+  });
+
+  it.each([
+    {
+      boundary: "robots",
+      maxTotalBytes: byteLength(ROBOTS_TXT),
+      expectedCalls: 1,
+      expectedPages: 0,
+    },
+    {
+      boundary: "sitemap",
+      maxTotalBytes: byteLength(ROBOTS_TXT) + byteLength(SITEMAP_XML),
+      expectedCalls: 2,
+      expectedPages: 0,
+    },
+    {
+      boundary: "page",
+      maxTotalBytes:
+        byteLength(ROBOTS_TXT) +
+        byteLength(SITEMAP_XML) +
+        byteLength(HOME_HTML),
+      expectedCalls: 3,
+      expectedPages: 1,
+    },
+  ])(
+    "counts decoded $boundary bytes toward the run cap and keeps completed pages",
+    async ({ maxTotalBytes, expectedCalls, expectedPages }) => {
+      const { fetcher, calls } = makeFetcher({
+        "https://example.com/robots.txt": () => text(ROBOTS_TXT),
+        "https://example.com/sitemap.xml": () => xml(SITEMAP_XML),
+        "https://example.com/": () => html(HOME_HTML),
+        "https://example.com/about": () => html(ABOUT_HTML),
+      });
+
+      const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+        guard: GUARD,
+        budget: {
+          ...FAST_BUDGET,
+          maxTotalBytes,
+          perHostConcurrency: 1,
+        },
+      });
+
+      expect(raw.availability).toBe("partial");
+      expect(raw.stopReason).toBe("max_total_bytes");
+      expect(raw.pages).toHaveLength(expectedPages);
+      expect(calls).toHaveLength(expectedCalls);
+      expect(raw.providerUsage.bytesFetched).toBe(maxTotalBytes);
+      expect(raw.limitation).toContain("max_total_bytes");
+    },
+  );
+
+  it("counts rejected bodies and returns partial before any page succeeds", async () => {
+    const rejectedBody = "not found";
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        new Response(rejectedBody, { status: 404 }),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxTotalBytes: byteLength(rejectedBody),
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.availability).toBe("partial");
+    expect(raw.stopReason).toBe("max_total_bytes");
+    expect(raw.providerUsage.urlsFetched).toBe(1);
+    expect(raw.providerUsage.bytesFetched).toBe(byteLength(rejectedBody));
+    expect(calls).toEqual(["https://example.com/robots.txt"]);
+  });
+
+  it("shares one strict total-byte reservation across concurrent responses", async () => {
+    const concurrency = 3;
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody = `<urlset>${[
+      "https://example.com/",
+      "https://example.com/p1",
+      "https://example.com/p2",
+      "https://example.com/p3",
+      "https://example.com/p4",
+    ]
+      .map((url) => `<url><loc>${url}</loc></url>`)
+      .join("")}</urlset>`;
+    const pageBody = `<html><head><title>Page</title></head><body>${"x".repeat(
+      430,
+    )}</body></html>`;
+    const maxBodyBytes = Math.max(
+      byteLength(robotsBody),
+      byteLength(sitemapBody),
+      byteLength(pageBody),
+    );
+    const preflightBytes = byteLength(robotsBody) + byteLength(sitemapBody);
+    const maxTotalBytes = preflightBytes + byteLength(pageBody);
+    const pageBytes = new TextEncoder().encode(pageBody);
+    const calls: string[] = [];
+    const firstWave: Array<(response: Response) => void> = [];
+    let pageCalls = 0;
+    let abortedPageRequests = 0;
+    let cancelledBodyReaders = 0;
+    let pullCount = 0;
+    let releaseWinningBody: (() => void) | null = null;
+    const concurrentPageResponse = (index: number): Response =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            if (index === 0) {
+              releaseWinningBody = () => {
+                controller.enqueue(pageBytes);
+                controller.close();
+              };
+            }
+          },
+          pull() {
+            pullCount += 1;
+            if (pullCount === concurrency) releaseWinningBody?.();
+          },
+          cancel() {
+            cancelledBodyReaders += 1;
+          },
+        }),
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    const fetcher: CrawlFetcher = {
+      async fetch(url, init) {
+        calls.push(url);
+        if (url.endsWith("/robots.txt")) return text(robotsBody);
+        if (url.endsWith("/sitemap.xml")) return xml(sitemapBody);
+        pageCalls += 1;
+        init.signal?.addEventListener(
+          "abort",
+          () => {
+            abortedPageRequests += 1;
+          },
+          { once: true },
+        );
+        if (pageCalls > concurrency) return html(pageBody);
+        return new Promise<Response>((resolve) => {
+          firstWave.push(resolve);
+          if (firstWave.length === concurrency) {
+            for (const [index, release] of firstWave.entries()) {
+              release(concurrentPageResponse(index));
+            }
+          }
+        });
+      },
+    };
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxBodyBytes,
+        maxTotalBytes,
+        perHostConcurrency: concurrency,
+      },
+    });
+
+    expect(raw.stopReason).toBe("max_total_bytes");
+    expect(raw.availability).toBe("partial");
+    expect(pageCalls).toBe(concurrency);
+    expect(abortedPageRequests).toBe(concurrency - 1);
+    expect(cancelledBodyReaders).toBe(concurrency - 1);
+    expect(raw.pages).toHaveLength(1);
+    expect(raw.providerUsage.bytesFetched).toBe(maxTotalBytes);
+    expect(raw.providerUsage.bytesFetched).toBeLessThanOrEqual(maxTotalBytes);
+    expect(calls).toHaveLength(2 + concurrency);
+  });
+
+  it("drops a page when its next decoded chunk cannot fit the remaining run budget", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody =
+      "<urlset><url><loc>https://example.com/</loc></url></urlset>";
+    const pageBody = `<html><head><title>Too large for remainder</title></head><body>${"x".repeat(
+      100,
+    )}</body></html>`;
+    const preflightBytes = byteLength(robotsBody) + byteLength(sitemapBody);
+    const maxTotalBytes = preflightBytes + 10;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => html(pageBody),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxTotalBytes,
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.stopReason).toBe("max_total_bytes");
+    expect(raw.availability).toBe("partial");
+    expect(raw.pages).toEqual([]);
+    expect(raw.providerUsage.bytesFetched).toBe(maxTotalBytes);
+    expect(raw.providerUsage.bytesFetched).toBeLessThanOrEqual(maxTotalBytes);
+    expect(calls).toEqual([
+      "https://example.com/robots.txt",
+      "https://example.com/sitemap.xml",
+      "https://example.com/",
+    ]);
+  });
+
+  it("drops a multi-chunk page when more data arrives after the cap is exactly reserved", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody =
+      "<urlset><url><loc>https://example.com/</loc></url></urlset>";
+    const firstChunk = new TextEncoder().encode("<html><body>first");
+    const secondChunk = new TextEncoder().encode("-second</body></html>");
+    const preflightBytes = byteLength(robotsBody) + byteLength(sitemapBody);
+    const maxTotalBytes = preflightBytes + firstChunk.byteLength;
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(firstChunk);
+              controller.enqueue(secondChunk);
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "text/html" } },
+        ),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxTotalBytes,
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.stopReason).toBe("max_total_bytes");
+    expect(raw.pages).toEqual([]);
+    expect(raw.providerUsage.bytesFetched).toBe(maxTotalBytes);
+  });
+
+  it("preserves a small page when the response exposes only text()", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody =
+      "<urlset><url><loc>https://example.com/</loc></url></urlset>";
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => textOnlyHtml(HOME_HTML),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(
+      raw.pages.find((page) => page.subjectUrl === "https://example.com/")
+        ?.projection.title,
+    ).toBe("Example Home");
+    expect(raw.stopReason).toBeNull();
+  });
+
+  it("applies the strict remaining-byte reservation to text()-only responses", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody =
+      "<urlset><url><loc>https://example.com/</loc></url></urlset>";
+    const preflightBytes = byteLength(robotsBody) + byteLength(sitemapBody);
+    const maxTotalBytes = preflightBytes + 10;
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => textOnlyHtml(HOME_HTML),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxTotalBytes,
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.stopReason).toBe("max_total_bytes");
+    expect(raw.pages).toEqual([]);
+    expect(raw.providerUsage.bytesFetched).toBe(maxTotalBytes);
+  });
+
+  it("caps persisted HTTP header projections independently of response size", async () => {
+    const longDirective = "d".repeat(
+      CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars + 100,
+    );
+    const xRobotsTag = Array.from(
+      { length: CRAWL_PROJECTION_LIMITS.maxRobotsDirectives + 5 },
+      (_unused, index) => `${index}-${longDirective}`,
+    ).join(",");
+    const contentType = `text/html; profile=${"c".repeat(
+      CRAWL_PROJECTION_LIMITS.maxContentTypeChars + 100,
+    )}`;
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () =>
+        new Response(HOME_HTML, {
+          status: 200,
+          headers: {
+            "content-type": contentType,
+            "x-robots-tag": xRobotsTag,
+          },
+        }),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: FAST_BUDGET,
+    });
+    const projection = raw.pages[0]?.projection;
+
+    expect(projection?.contentType).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxContentTypeChars,
+    );
+    expect(projection?.robotsDirectives).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxRobotsDirectives,
+    );
+    expect(
+      projection?.robotsDirectives.every(
+        (value) =>
+          value.length <= CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars,
+      ),
+    ).toBe(true);
+  });
+
+  it("caps persisted robots groups, rules, agents, and sitemap declarations", async () => {
+    const longRule = `/${"r".repeat(
+      CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars + 100,
+    )}`;
+    const wildcardRules = ["User-agent: *"];
+    for (
+      let index = 0;
+      index < CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup + 5;
+      index += 1
+    ) {
+      wildcardRules.push(`Allow: ${longRule}-${index}`);
+      wildcardRules.push(`Disallow: ${longRule}-private-${index}`);
+    }
+    const extraGroups = Array.from(
+      { length: CRAWL_PROJECTION_LIMITS.maxRobotsGroups + 5 },
+      (_unused, index) =>
+        `User-agent: agent-${index}-${"u".repeat(
+          CRAWL_PROJECTION_LIMITS.maxUserAgentChars + 50,
+        )}\nAllow: /group-${index}`,
+    );
+    const sitemapLines = Array.from(
+      { length: CRAWL_PROJECTION_LIMITS.maxSitemaps + 5 },
+      (_unused, index) =>
+        `Sitemap: https://example.com/sitemap-${index}.xml`,
+    );
+    const robotsBody = [
+      ...wildcardRules,
+      ...extraGroups,
+      ...sitemapLines,
+    ].join("\n");
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxTotalBytes: byteLength(robotsBody),
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.robots.groups).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxRobotsGroups,
+    );
+    expect(raw.robots.sitemaps).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxSitemaps,
+    );
+    expect(
+      raw.robots.groups.every(
+        (group) =>
+          group.userAgent.length <=
+            CRAWL_PROJECTION_LIMITS.maxUserAgentChars &&
+          group.allow.length <=
+            CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup &&
+          group.disallow.length <=
+            CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup &&
+          [...group.allow, ...group.disallow].every(
+            (rule) =>
+              rule.length <= CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars,
+          ),
+      ),
+    ).toBe(true);
+    for (const bot of [
+      "oai-searchbot",
+      "chatgpt-user",
+      "perplexitybot",
+      "claudebot",
+    ]) {
+      expect(
+        raw.robots.groups.some(
+          (group) => group.userAgent.toLowerCase() === bot,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("caps persisted sitemap membership at the crawl URL budget", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody = `<urlset>${Array.from(
+      { length: CRAWL_PROJECTION_LIMITS.maxSitemapUrls + 5 },
+      (_unused, index) =>
+        `<url><loc>https://example.com/page-${index}</loc></url>`,
+    ).join("")}</urlset>`;
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxTotalBytes: byteLength(robotsBody) + byteLength(sitemapBody),
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.sitemap.subjectUrls).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxSitemapUrls,
+    );
+    expect(raw.sitemap.urlCount).toBe(raw.sitemap.subjectUrls.length);
+    expect(
+      raw.sitemap.subjectUrls.every(
+        (url) => url.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars,
+      ),
+    ).toBe(true);
+    expect(raw.stopReason).toBe("max_total_bytes");
   });
 
   it("returns partial with a stopReason and keeps collected pages when a budget is hit", async () => {
@@ -144,6 +751,313 @@ describe("crawlSite", () => {
     expect(raw.pages[0]?.subjectUrl).toBe("https://example.com/");
   });
 
+  it("uses the canonical final redirect URL as page identity and relative-link base", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody = `<urlset>
+      <url><loc>https://example.com/</loc></url>
+      <url><loc>https://example.com/dir/page</loc></url>
+    </urlset>`;
+    const redirectedPage = `<html><head><title>Redirect target</title></head>
+      <body><a href="child">Child</a></body></html>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => redirect("/dir/page"),
+      "https://example.com/dir/page": () => html(redirectedPage),
+      "https://example.com/dir/child": () =>
+        html("<html><head><title>Child</title></head></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+    const targetPages = raw.pages.filter(
+      (page) => page.subjectUrl === "https://example.com/dir/page",
+    );
+
+    expect(targetPages).toHaveLength(1);
+    expect(targetPages[0]?.projection).toMatchObject({
+      fetchUrl: "https://example.com/dir/page",
+      status: 301,
+      finalStatus: 200,
+      redirectChain: ["https://example.com/dir/page"],
+      sitemapMember: true,
+    });
+    expect(targetPages[0]?.projection.internalOutlinks).toContainEqual(
+      expect.objectContaining({
+        targetSubjectUrl: "https://example.com/dir/child",
+      }),
+    );
+    expect(
+      raw.pages.some(
+        (page) => page.subjectUrl === "https://example.com/dir/child",
+      ),
+    ).toBe(true);
+    expect(calls.filter((url) => url === "https://example.com/dir/page"))
+      .toHaveLength(1);
+    expect(calls).not.toContain("https://example.com/child");
+  });
+
+  it("selects one deterministic final-subject winner under concurrent direct and alias fetches", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody = `<urlset>
+      <url><loc>https://example.com/alias-b</loc></url>
+      <url><loc>https://example.com/alias-a</loc></url>
+      <url><loc>https://example.com/dir/page</loc></url>
+    </urlset>`;
+    const finalBody = `<html><head><title>Final</title></head>
+      <body><a href="child">Child</a></body></html>`;
+    let aliasAResolve: ((response: Response) => void) | null = null;
+    let aliasBResolve: ((response: Response) => void) | null = null;
+    let directResolve: ((response: Response) => void) | null = null;
+    let finalCalls = 0;
+    let released = false;
+    const releaseRace = (): void => {
+      if (released || !aliasAResolve || !aliasBResolve || !directResolve) return;
+      released = true;
+      directResolve(html(finalBody));
+      aliasBResolve(
+        new Response(null, {
+          status: 302,
+          headers: { location: "/dir/page" },
+        }),
+      );
+      aliasAResolve(redirect("/dir/page"));
+    };
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        if (url === "https://example.com/robots.txt") return text(robotsBody);
+        if (url === "https://example.com/sitemap.xml") return xml(sitemapBody);
+        if (url === "https://example.com/") {
+          return html("<html><head><title>Root</title></head></html>");
+        }
+        if (url === "https://example.com/alias-a") {
+          return new Promise<Response>((resolve) => {
+            aliasAResolve = resolve;
+            releaseRace();
+          });
+        }
+        if (url === "https://example.com/alias-b") {
+          return new Promise<Response>((resolve) => {
+            aliasBResolve = resolve;
+            releaseRace();
+          });
+        }
+        if (url === "https://example.com/dir/page") {
+          finalCalls += 1;
+          if (finalCalls > 1) return html(finalBody);
+          return new Promise<Response>((resolve) => {
+            directResolve = resolve;
+            releaseRace();
+          });
+        }
+        if (url === "https://example.com/dir/child") {
+          return html("<html><head><title>Child</title></head></html>");
+        }
+        return new Response("not found", { status: 404 });
+      },
+    };
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 3 },
+    });
+    const finalPages = raw.pages.filter(
+      (page) => page.subjectUrl === "https://example.com/dir/page",
+    );
+    const child = raw.pages.find(
+      (page) => page.subjectUrl === "https://example.com/dir/child",
+    );
+
+    expect(finalCalls).toBe(3);
+    expect(finalPages).toHaveLength(1);
+    expect(finalPages[0]?.projection.status).toBe(301);
+    expect(finalPages[0]?.projection.finalStatus).toBe(200);
+    expect(finalPages[0]?.projection.fetchUrl).toBe(
+      "https://example.com/dir/page",
+    );
+    expect(child?.depth).toBe(2);
+    expect(new Set(raw.pages.map((page) => page.subjectUrl)).size).toBe(
+      raw.pages.length,
+    );
+    expect(raw.providerUsage.pagesCollected).toBe(raw.pages.length);
+  });
+
+  it("applies robots rules before transport on every page redirect hop", async () => {
+    const home = `<html><head><title>Home</title></head><body>
+      <a href="/public">Public</a></body></html>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow: /private"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () => html(home),
+      "https://example.com/public": () => redirect("/private/secret"),
+      "https://example.com/private/secret": () =>
+        html("<html><title>Must not be fetched</title></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(calls).toContain("https://example.com/public");
+    expect(calls).not.toContain("https://example.com/private/secret");
+    expect(raw.providerUsage.urlsDisallowed).toBe(1);
+    expect(
+      raw.pages.some((page) => page.subjectUrl.includes("/private")),
+    ).toBe(false);
+  });
+
+  it("fails closed before guard or transport on a cross-origin redirect", async () => {
+    const home = `<html><head><title>Home</title></head><body>
+      <a href="/offsite">Offsite</a></body></html>`;
+    const guardedUrls: string[] = [];
+    const guard = async (url: string) => {
+      guardedUrls.push(url);
+      return GUARD(url);
+    };
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () => html(home),
+      "https://example.com/offsite": () =>
+        redirect("https://outside.example/path"),
+      "https://outside.example/path": () =>
+        html("<html><title>Outside</title></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(calls).not.toContain("https://outside.example/path");
+    expect(guardedUrls).not.toContain("https://outside.example/path");
+    expect(raw.providerUsage.urlsBlocked).toBeGreaterThanOrEqual(1);
+    expect(
+      raw.pages.some((page) => page.subjectUrl.includes("outside.example")),
+    ).toBe(false);
+  });
+
+  it("rejects a guard result that normalizes a same-origin URL across origin", async () => {
+    const { fetcher, calls } = makeFetcher({});
+    const lyingGuard = async () => ({
+      safe: true,
+      normalizedUrl: "https://outside.example/path",
+      pinnedIp: "93.184.216.34",
+      reason: null,
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: lyingGuard,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(calls).toEqual([]);
+    expect(raw.providerUsage.urlsBlocked).toBeGreaterThan(0);
+    expect(raw.pages).toEqual([]);
+  });
+
+  it("never evaluates or exposes an unsafe guard's dynamic reason", async () => {
+    const secret = "customer-content-secret-guard";
+    let reasonReads = 0;
+    const unsafeResult = {
+      safe: false as const,
+      normalizedUrl: null,
+      pinnedIp: null,
+      get reason(): null {
+        reasonReads += 1;
+        throw new Error(secret);
+      },
+    };
+    const { fetcher } = makeFetcher({});
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: async () => unsafeResult,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+    const serialized = JSON.stringify(raw);
+
+    expect(reasonReads).toBe(0);
+    expect(serialized).not.toContain(secret);
+    expect(raw.limitation).not.toContain(secret);
+    expect(raw.providerUsage.urlsBlocked).toBeGreaterThan(0);
+  });
+
+  it("never evaluates or exposes a fetch error's dynamic message", async () => {
+    const secret = "customer-content-secret-fetch";
+    let messageReads = 0;
+    const hostileError = new Error("placeholder");
+    Object.defineProperty(hostileError, "message", {
+      get() {
+        messageReads += 1;
+        throw new Error(secret);
+      },
+    });
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        if (url === "https://example.com/robots.txt") throw hostileError;
+        return new Response("not found", { status: 404 });
+      },
+    };
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+    const serialized = JSON.stringify(raw);
+
+    expect(messageReads).toBe(0);
+    expect(serialized).not.toContain(secret);
+    expect(raw.limitation).not.toContain(secret);
+  });
+
+  it("observes an external abort that races completion of the URL guard", async () => {
+    const controller = new AbortController();
+    let firstGuard = true;
+    const guard = async (url: string) => {
+      if (firstGuard) {
+        firstGuard = false;
+        await new Promise<void>((resolve) => {
+          controller.signal.addEventListener("abort", () => resolve(), {
+            once: true,
+          });
+        });
+      }
+      return GUARD(url);
+    };
+    const { fetcher, calls } = makeFetcher({});
+    const abortTimer = setTimeout(
+      () => controller.abort(new Error("guard race abort")),
+      10,
+    );
+
+    const outcome = await settleWithin(
+      crawlSite(
+        PARAMS,
+        CONFIG,
+        { ...CTX, signal: controller.signal },
+        fetcher,
+        { guard, budget: FAST_BUDGET },
+      ),
+      500,
+    );
+    clearTimeout(abortTimer);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.value.stopReason).toBe("aborted");
+    expect(outcome.value.availability).toBe("partial");
+    expect(calls).toEqual([]);
+  });
+
   it("blocks a redirect to a private address and never fetches it", async () => {
     const homeWithRedirect = `<html><head><title>Home</title></head><body>
       <h1>Home</h1><a href="/go">internal redirect</a></body></html>`;
@@ -162,6 +1076,86 @@ describe("crawlSite", () => {
     expect(raw.pages.map((page) => page.subjectUrl)).toContain("https://example.com/");
   });
 
+  it("fails closed when a guard marks a URL safe without a normalized URL or pin", async () => {
+    const { fetcher, calls } = makeFetcher({});
+    const incompleteGuard = async () => ({
+      safe: true,
+      normalizedUrl: null,
+      pinnedIp: null,
+      reason: null,
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: incompleteGuard,
+      budget: FAST_BUDGET,
+    });
+
+    expect(calls).toEqual([]);
+    expect(raw.availability).toBe("unavailable");
+    expect(raw.providerUsage.urlsBlocked).toBeGreaterThan(0);
+  });
+
+  it("blocks a redirect that downgrades outside HTTP(S)", async () => {
+    const homeWithRedirect = `<html><head><title>Home</title></head><body>
+      <h1>Home</h1><a href="/go">invalid redirect</a></body></html>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("nope", { status: 404 }),
+      "https://example.com/": () => html(homeWithRedirect),
+      "https://example.com/go": () => redirect("file:///etc/passwd"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: FAST_BUDGET,
+    });
+
+    expect(calls.every((url) => url.startsWith("https://"))).toBe(true);
+    expect(raw.providerUsage.urlsBlocked).toBeGreaterThanOrEqual(1);
+  });
+
+  it("applies the body cap to decompressed response bytes", async () => {
+    const decompressed = new TextEncoder().encode(`<h1>${"x".repeat(128)}</h1>`);
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("nope", { status: 404 }),
+      "https://example.com/": () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(decompressed.subarray(0, 32));
+              controller.enqueue(decompressed.subarray(32));
+              controller.close();
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "text/html",
+              "content-encoding": "gzip",
+              // The transport exposes a decompressed stream while this header
+              // can still describe a much smaller compressed representation.
+              "content-length": "16",
+            },
+          },
+        ),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, maxBodyBytes: 64 },
+    });
+
+    expect(
+      raw.pages.some((page) => page.subjectUrl === "https://example.com/"),
+    ).toBe(false);
+    expect(raw.providerUsage.urlsSkipped).toBeGreaterThanOrEqual(1);
+  });
+
   it("skips a non-HTML content type without recording a page", async () => {
     const homeWithPdf = `<html><head><title>Home</title></head><body>
       <h1>Home</h1><a href="/doc.pdf">the doc</a></body></html>`;
@@ -178,5 +1172,260 @@ describe("crawlSite", () => {
     expect(raw.pages.some((page) => page.subjectUrl.endsWith("doc.pdf"))).toBe(false);
     expect(raw.pages.map((page) => page.subjectUrl)).toContain("https://example.com/");
     expect(raw.providerUsage.urlsSkipped).toBeGreaterThanOrEqual(1);
+  });
+
+  it("handles a rejecting text()-only page as a bounded crawl error", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody =
+      "<urlset><url><loc>https://example.com/</loc></url></urlset>";
+    const response = new Response(null, {
+      headers: { "content-type": "text/html" },
+    });
+    Object.defineProperty(response, "text", {
+      value: () => Promise.reject(new Error("text decode failed")),
+    });
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => response,
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(raw.pages).toEqual([]);
+    expect(raw.providerUsage.urlsErrored).toBe(1);
+  });
+
+  it("applies the per-response cap to a text()-only body", async () => {
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody =
+      "<urlset><url><loc>https://example.com/</loc></url></urlset>";
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => textOnlyHtml(HOME_HTML),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxBodyBytes: 10,
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.pages).toEqual([]);
+    expect(raw.providerUsage.urlsSkipped).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not await a pending body cancel after a reader error", async () => {
+    let bodyCancelAttempts = 0;
+    const reader = {
+      read: () => Promise.reject(new Error("reader failed")),
+      cancel: () => Promise.resolve(),
+      releaseLock: () => undefined,
+    };
+    const response = {
+      status: 200,
+      headers: new Headers({ "content-type": "text/html" }),
+      body: {
+        getReader: () => reader,
+        cancel: () => {
+          bodyCancelAttempts += 1;
+          return new Promise<void>(() => undefined);
+        },
+      },
+      text: () => Promise.resolve(""),
+    } as unknown as Response;
+    const robotsBody =
+      "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
+    const sitemapBody =
+      "<urlset><url><loc>https://example.com/</loc></url></urlset>";
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(robotsBody),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => response,
+    });
+
+    const outcome = await settleWithin(
+      crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+        guard: GUARD,
+        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+      }),
+      100,
+    );
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.value.providerUsage.urlsErrored).toBe(1);
+    expect(bodyCancelAttempts).toBe(1);
+  });
+
+  it("converges at a 50ms wall-clock deadline when a body read and cancel never settle", async () => {
+    let cancelAttempts = 0;
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        stalledBodyResponse(() => {
+          cancelAttempts += 1;
+          return new Promise<void>(() => undefined);
+        }),
+    });
+
+    const outcome = await settleWithin(
+      crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+        guard: GUARD,
+        budget: {
+          ...FAST_BUDGET,
+          maxWallClockMs: 50,
+          perHostConcurrency: 1,
+        },
+      }),
+      500,
+    );
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.value.stopReason).toBe("max_duration");
+    expect(outcome.value.availability).toBe("partial");
+    expect(cancelAttempts).toBe(1);
+  });
+
+  it("converges on external abort while text() remains permanently pending", async () => {
+    const controller = new AbortController();
+    const response = new Response(null, {
+      headers: { "content-type": "text/plain" },
+    });
+    Object.defineProperty(response, "text", {
+      value: () => new Promise<string>(() => undefined),
+    });
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () => response,
+    });
+    const abortTimer = setTimeout(
+      () => controller.abort(new Error("fixture abort")),
+      10,
+    );
+
+    const outcome = await settleWithin(
+      crawlSite(
+        PARAMS,
+        CONFIG,
+        { ...CTX, signal: controller.signal },
+        fetcher,
+        { guard: GUARD, budget: FAST_BUDGET },
+      ),
+      500,
+    );
+    clearTimeout(abortTimer);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.value.stopReason).toBe("aborted");
+    expect(outcome.value.availability).toBe("partial");
+    expect(calls).toEqual(["https://example.com/robots.txt"]);
+  });
+
+  it("never stringifies or exposes a hostile external abort reason", async () => {
+    const secret = "customer-content-secret-abort";
+    let toStringCalls = 0;
+    const hostileReason = {
+      toString() {
+        toStringCalls += 1;
+        throw new Error(secret);
+      },
+    };
+    const controller = new AbortController();
+    const response = new Response(null, {
+      headers: { "content-type": "text/plain" },
+    });
+    Object.defineProperty(response, "text", {
+      value: () => new Promise<string>(() => undefined),
+    });
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => response,
+    });
+    const abortTimer = setTimeout(() => controller.abort(hostileReason), 10);
+
+    const outcome = await settleWithin(
+      crawlSite(
+        PARAMS,
+        CONFIG,
+        { ...CTX, signal: controller.signal },
+        fetcher,
+        { guard: GUARD, budget: FAST_BUDGET },
+      ),
+      500,
+    );
+    clearTimeout(abortTimer);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    const serialized = JSON.stringify(outcome.value);
+    expect(toStringCalls).toBe(0);
+    expect(serialized).not.toContain(secret);
+    expect(outcome.value.stopReason).toBe("aborted");
+    expect(outcome.value.limitation).not.toContain(secret);
+  });
+
+  it("consumes late read rejection when abort races hostile cancel and release", async () => {
+    const controller = new AbortController();
+    let cancelAttempts = 0;
+    let releaseAttempts = 0;
+    const lateRead = new Promise<never>((_resolve, reject) => {
+      setTimeout(() => reject(new Error("late hostile read rejection")), 40);
+    });
+    const reader = {
+      read: () => lateRead,
+      cancel: () => {
+        cancelAttempts += 1;
+        return Promise.reject(new Error("hostile cancel rejection"));
+      },
+      releaseLock: () => {
+        releaseAttempts += 1;
+        throw new Error("hostile release failure");
+      },
+    };
+    const response = {
+      status: 200,
+      headers: new Headers({ "content-type": "text/plain" }),
+      body: {
+        getReader: () => reader,
+        cancel: () => new Promise<void>(() => undefined),
+      },
+      text: () => new Promise<string>(() => undefined),
+    } as unknown as Response;
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => response,
+    });
+    const abortTimer = setTimeout(
+      () => controller.abort(new Error("reader race abort")),
+      10,
+    );
+
+    const outcome = await settleWithin(
+      crawlSite(
+        PARAMS,
+        CONFIG,
+        { ...CTX, signal: controller.signal },
+        fetcher,
+        { guard: GUARD, budget: FAST_BUDGET },
+      ),
+      500,
+    );
+    clearTimeout(abortTimer);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.value.stopReason).toBe("aborted");
+    expect(outcome.value.availability).toBe("partial");
+    expect(cancelAttempts).toBe(1);
+    expect(releaseAttempts).toBe(1);
   });
 });

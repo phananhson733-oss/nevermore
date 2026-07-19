@@ -13,13 +13,11 @@
 
 import { canonicalizeUrl } from "../canonical-url.ts";
 import type { CrawlJsonLdProjection, CrawlLinkProjection } from "../observations.ts";
+import { CRAWL_PROJECTION_LIMITS } from "./types.ts";
 
-/** Bounds keep the persisted raw payload finite regardless of page size. */
-const BODY_EXCERPT_MAX_CHARS = 500;
-const MAX_PARAGRAPHS = 200;
-const MAX_PARAGRAPH_CHARS = 1000;
-const MAX_HEADINGS = 300;
-const MAX_INTERNAL_OUTLINKS = 1000;
+function truncate(value: string, maxChars: number): string {
+  return value.slice(0, maxChars);
+}
 
 /** The content-derived fields of `CrawlPageProjection` (HTTP fields added by the engine). */
 export interface ParsedPage {
@@ -60,11 +58,16 @@ function decodeHtml(value: string): string {
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
-    .replace(/&#(x[0-9a-f]+|\d+);/gi, (_match, raw: string) => {
+    .replace(/&#(-?(?:x[0-9a-f]+|\d+));/gi, (_match, raw: string) => {
       const number = raw.toLowerCase().startsWith("x")
         ? Number.parseInt(raw.slice(1), 16)
         : Number.parseInt(raw, 10);
-      return Number.isFinite(number) ? String.fromCodePoint(number) : "";
+      const validScalar =
+        Number.isSafeInteger(number) &&
+        number > 0 &&
+        number <= 0x10ffff &&
+        (number < 0xd800 || number > 0xdfff);
+      return validScalar ? String.fromCodePoint(number) : "\ufffd";
     });
 }
 
@@ -84,14 +87,19 @@ function extractNormalisedBody(html: string): string {
     .trim();
 }
 
-function normalisedAttributeText(value: string | null): string | null {
+function normalisedAttributeText(
+  value: string | null,
+  maxChars: number,
+): string | null {
   const text = extractNormalisedBody(value ?? "");
-  return text || null;
+  return text ? truncate(text, maxChars) : null;
 }
 
-function tagText(html: string, name: string): string | null {
+function tagText(html: string, name: string, maxChars: number): string | null {
   const found = html.match(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)<\\/${name}\\s*>`, "i"))?.[1];
-  return found === undefined ? null : extractNormalisedBody(found) || null;
+  if (found === undefined) return null;
+  const text = extractNormalisedBody(found);
+  return text ? truncate(text, maxChars) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +110,8 @@ function collectH1(html: string): readonly string[] {
   const out: string[] = [];
   for (const match of html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/gi)) {
     const text = extractNormalisedBody(match[1] ?? "");
-    if (text) out.push(text);
+    if (text) out.push(truncate(text, CRAWL_PROJECTION_LIMITS.maxH1Chars));
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxH1) break;
   }
   return out;
 }
@@ -111,8 +120,9 @@ function collectHeadings(html: string): readonly string[] {
   const out: string[] = [];
   for (const match of html.matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi)) {
     const text = extractNormalisedBody(match[2] ?? "");
-    if (text) out.push(text);
-    if (out.length >= MAX_HEADINGS) break;
+    if (text)
+      out.push(truncate(text, CRAWL_PROJECTION_LIMITS.maxHeadingChars));
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxHeadings) break;
   }
   return out;
 }
@@ -121,8 +131,9 @@ function collectParagraphs(html: string): readonly string[] {
   const out: string[] = [];
   for (const match of html.matchAll(/<(?:p|li|blockquote)\b[^>]*>([\s\S]*?)<\/(?:p|li|blockquote)\s*>/gi)) {
     const text = extractNormalisedBody(match[1] ?? "");
-    if (text) out.push(text.slice(0, MAX_PARAGRAPH_CHARS));
-    if (out.length >= MAX_PARAGRAPHS) break;
+    if (text)
+      out.push(truncate(text, CRAWL_PROJECTION_LIMITS.maxParagraphChars));
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxParagraphs) break;
   }
   return out;
 }
@@ -134,15 +145,37 @@ function declaredTypes(value: unknown): readonly string[] {
 }
 
 function collectTypes(value: unknown, types: Set<string>): void {
-  if (Array.isArray(value)) {
-    for (const item of value) collectTypes(item, types);
-    return;
-  }
-  if (value && typeof value === "object") {
-    const object = value as Record<string, unknown>;
-    for (const type of declaredTypes(object["@type"])) types.add(type);
-    for (const [key, nested] of Object.entries(object)) {
-      if (key !== "@type" && key !== "@context") collectTypes(nested, types);
+  const pending: unknown[] = [value];
+  let visited = 0;
+  while (
+    pending.length > 0 &&
+    visited < CRAWL_PROJECTION_LIMITS.maxJsonLdNodes &&
+    types.size < CRAWL_PROJECTION_LIMITS.maxJsonLdTypes
+  ) {
+    const current = pending.pop();
+    visited += 1;
+    if (Array.isArray(current)) {
+      for (let index = current.length - 1; index >= 0; index -= 1) {
+        pending.push(current[index]);
+      }
+      continue;
+    }
+    if (!current || typeof current !== "object") continue;
+    const object = current as Record<string, unknown>;
+    for (const type of declaredTypes(object["@type"])) {
+      if (types.size >= CRAWL_PROJECTION_LIMITS.maxJsonLdTypes) break;
+      const bounded = truncate(
+        type.trim(),
+        CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars,
+      );
+      if (bounded) types.add(bounded);
+    }
+    const entries = Object.entries(object);
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (!entry) continue;
+      const [key, nested] = entry;
+      if (key !== "@type" && key !== "@context") pending.push(nested);
     }
   }
 }
@@ -153,7 +186,10 @@ function collectJsonLd(html: string): CrawlJsonLdProjection {
   const blocks = html.matchAll(
     /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi,
   );
+  let blockCount = 0;
   for (const block of blocks) {
+    if (blockCount >= CRAWL_PROJECTION_LIMITS.maxJsonLdBlocks) break;
+    blockCount += 1;
     try {
       collectTypes(JSON.parse(block[1] ?? ""), types);
     } catch {
@@ -164,12 +200,22 @@ function collectJsonLd(html: string): CrawlJsonLdProjection {
 }
 
 function anchorAccessibleName(openingTag: string, content: string): string | null {
-  const ariaLabel = normalisedAttributeText(attr(openingTag, "aria-label"));
+  const ariaLabel = normalisedAttributeText(
+    attr(openingTag, "aria-label"),
+    CRAWL_PROJECTION_LIMITS.maxAnchorTextChars,
+  );
   if (ariaLabel) return ariaLabel;
   const visibleText = extractNormalisedBody(content);
-  if (visibleText) return visibleText;
+  if (visibleText)
+    return truncate(
+      visibleText,
+      CRAWL_PROJECTION_LIMITS.maxAnchorTextChars,
+    );
   for (const image of content.matchAll(/<img\b[^>]*>/gi)) {
-    const alt = normalisedAttributeText(attr(image[0], "alt"));
+    const alt = normalisedAttributeText(
+      attr(image[0], "alt"),
+      CRAWL_PROJECTION_LIMITS.maxAnchorTextChars,
+    );
     if (alt) return alt;
   }
   return null;
@@ -190,14 +236,15 @@ function collectInternalOutlinks(html: string, pageUrl: string, pageOrigin: stri
       continue;
     }
     if (targetOrigin !== pageOrigin) continue;
+    if (pair.subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) continue;
     if (byTarget.has(pair.subjectUrl)) continue;
     const rel = attr(openingTag, "rel")?.trim();
     byTarget.set(pair.subjectUrl, {
       targetSubjectUrl: pair.subjectUrl,
-      rel: rel ? rel : null,
+      rel: rel ? truncate(rel, CRAWL_PROJECTION_LIMITS.maxRelChars) : null,
       anchorText: anchorAccessibleName(openingTag, match[2] ?? ""),
     });
-    if (byTarget.size >= MAX_INTERNAL_OUTLINKS) break;
+    if (byTarget.size >= CRAWL_PROJECTION_LIMITS.maxInternalOutlinks) break;
   }
   return [...byTarget.values()].sort((left, right) =>
     left.targetSubjectUrl < right.targetSubjectUrl ? -1 : left.targetSubjectUrl > right.targetSubjectUrl ? 1 : 0,
@@ -211,10 +258,19 @@ export function directivesIndexable(directives: readonly string[]): boolean {
 
 function parseRobotsDirectives(content: string | null): readonly string[] {
   if (!content) return [];
-  return content
+  const tokens = content
     .split(",")
     .map((token) => token.trim().toLowerCase())
     .filter((token) => token.length > 0);
+  const critical = tokens.filter(
+    (token) =>
+      token === "noindex" || token === "none" || token === "nofollow",
+  );
+  return [...new Set([...critical, ...tokens])]
+    .slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsDirectives)
+    .map((token) =>
+      truncate(token, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -236,19 +292,29 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
 
   const canonicalTag = firstTag(html, /<link\b[^>]*\brel\s*=\s*["']canonical["'][^>]*>/i);
   const canonicalHref = attr(canonicalTag, "href");
-  const canonicalTarget = canonicalHref ? canonicalizeUrl(canonicalHref, pageUrl)?.subjectUrl ?? null : null;
+  const resolvedCanonical = canonicalHref
+    ? canonicalizeUrl(canonicalHref, pageUrl)?.subjectUrl ?? null
+    : null;
+  const canonicalTarget =
+    resolvedCanonical !== null &&
+    resolvedCanonical.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars
+      ? resolvedCanonical
+      : null;
 
   const metaTags = [...html.matchAll(/<meta\b[^>]*>/gi)].map((tag) => tag[0]);
   const descriptionTag = metaTags.find((tag) => attr(tag, "name")?.toLowerCase() === "description");
   const robotsTag = metaTags.find((tag) => attr(tag, "name")?.toLowerCase() === "robots");
   const robotsDirectives = parseRobotsDirectives(attr(robotsTag, "content"));
 
-  const description = normalisedAttributeText(attr(descriptionTag, "content"));
+  const description = normalisedAttributeText(
+    attr(descriptionTag, "content"),
+    CRAWL_PROJECTION_LIMITS.maxMetaDescriptionChars,
+  );
   const bodyText = extractNormalisedBody(html);
   const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
 
   return {
-    title: tagText(html, "title"),
+    title: tagText(html, "title", CRAWL_PROJECTION_LIMITS.maxTitleChars),
     metaDescription: description,
     canonicalTarget,
     robotsDirectives,
@@ -259,6 +325,8 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
     internalOutlinks: collectInternalOutlinks(html, pageUrl, pageOrigin),
     jsonLd: collectJsonLd(html),
     paragraphs: collectParagraphs(html),
-    bodyExcerpt: bodyText ? bodyText.slice(0, BODY_EXCERPT_MAX_CHARS) : null,
+    bodyExcerpt: bodyText
+      ? truncate(bodyText, CRAWL_PROJECTION_LIMITS.maxBodyExcerptChars)
+      : null,
   };
 }

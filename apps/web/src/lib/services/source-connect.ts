@@ -5,6 +5,7 @@ import {
   SourceConnectionsRepository,
   SourceCredentialsRepository,
   type OAuthIntentRow,
+  type SourceConnectionRow,
   type WorkspaceScope,
 } from "@sf/db";
 import { ProblemError } from "@sf/observability";
@@ -22,6 +23,7 @@ import {
   codeChallengeS256,
   generateCodeVerifier,
   generateState,
+  GOOGLE_OAUTH_MAX_CANDIDATES,
   googleRedirectUri,
   hashState,
   HttpGoogleOAuthClient,
@@ -33,6 +35,7 @@ import {
   toSourceConnectionDto,
   type SourceConnectionDto,
 } from "./source-mappers";
+import { isPostgresUniqueViolation } from "./db-errors";
 
 /**
  * Google OAuth connect flow (spec §7.4). One endpoint, three phases. The DB
@@ -120,6 +123,22 @@ async function authorize(
   const { db } = getDb();
   const now = deps.now ? deps.now() : Date.now();
 
+  if (returnPath !== `/p/${projectId}/sources`) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "OAuth returnPath must target the current project.",
+      {
+        errors: [
+          {
+            pointer: "/returnPath",
+            code: "project_mismatch",
+            message: "returnPath must target the current project.",
+          },
+        ],
+      },
+    );
+  }
+
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
   if (project.archived_at)
@@ -168,21 +187,29 @@ async function propertySelection(
   const { db } = getDb();
   const now = deps.now ? deps.now() : Date.now();
 
-  const intent = await new OAuthIntentsRepository(db).findById(
-    projectScope,
-    oauthIntentId,
-  );
-  if (!intent || intent.provider !== provider) {
-    throw new ProblemError("NOT_FOUND", "OAuth intent not found.");
-  }
-  if (intent.status !== "properties_ready") {
-    throw new ProblemError(
-      "OAUTH_PROPERTY_INVALID",
-      "OAuth intent is not ready for selection.",
-    );
-  }
-  if (isExpired(intent, now))
+  const outcome = await db.transaction(async (tx) => {
+    const intents = new OAuthIntentsRepository(tx);
+    const intent = await intents.findByIdForUpdate(projectScope, oauthIntentId);
+    if (!intent || intent.provider !== provider) {
+      throw new ProblemError("NOT_FOUND", "OAuth intent not found.");
+    }
+    if (intent.status === "expired") return { kind: "expired" as const };
+    if (intent.status !== "properties_ready") {
+      throw new ProblemError(
+        "OAUTH_PROPERTY_INVALID",
+        "OAuth intent is not ready for selection.",
+      );
+    }
+    if (isExpired(intent, now)) {
+      await intents.expireAndScrub(intent.id);
+      return { kind: "expired" as const };
+    }
+    return { kind: "ready" as const, intent };
+  });
+  if (outcome.kind === "expired") {
     throw new ProblemError("OAUTH_STATE_EXPIRED", "OAuth intent expired.");
+  }
+  const intent = outcome.intent;
 
   const properties = (intent.candidate_properties ?? []) as GoogleProperty[];
   return {
@@ -208,85 +235,134 @@ async function selectProperty(
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
   const now = deps.now ? deps.now() : Date.now();
+  let outcome:
+    | { readonly kind: "connected"; readonly connection: SourceConnectionRow }
+    | { readonly kind: "expired" };
+  try {
+    outcome = await db.transaction(async (tx) => {
+      const intentsRepo = new OAuthIntentsRepository(tx);
+      const intent = await intentsRepo.findByIdForUpdate(
+        projectScope,
+        body.oauthIntentId,
+      );
+      if (!intent || intent.provider !== provider) {
+        throw new ProblemError("NOT_FOUND", "OAuth intent not found.");
+      }
+      if (intent.status === "consumed") {
+        throw new ProblemError(
+          "OAUTH_STATE_REPLAYED",
+          "OAuth property selection was already consumed.",
+        );
+      }
+      if (intent.status === "expired") return { kind: "expired" as const };
+      if (intent.status !== "properties_ready" || !intent.token_cipher) {
+        throw new ProblemError(
+          "OAUTH_PROPERTY_INVALID",
+          "OAuth intent is not ready for selection.",
+        );
+      }
+      if (isExpired(intent, now)) {
+        await intentsRepo.expireAndScrub(intent.id);
+        return { kind: "expired" as const };
+      }
 
-  const intentsRepo = new OAuthIntentsRepository(db);
-  const intent = await intentsRepo.findById(projectScope, body.oauthIntentId);
-  if (!intent || intent.provider !== provider) {
-    throw new ProblemError("NOT_FOUND", "OAuth intent not found.");
+      const candidates = (intent.candidate_properties ?? []) as GoogleProperty[];
+      const chosen = candidates.find(
+        (candidate) => candidate.externalPropertyId === body.externalPropertyId,
+      );
+      if (!chosen) {
+        throw new ProblemError(
+          "OAUTH_PROPERTY_INVALID",
+          "Selected property is not in the candidate list.",
+        );
+      }
+
+      // Re-encrypt the credential for the connection (the intent cipher is disposable).
+      // The intent stored the FULL token envelope (access + refresh + expiry + scope);
+      // carry it over verbatim, including the real access-token expiry.
+      const key = credentialKey();
+      const envelope = decodeCredentialEnvelope(
+        decryptCredential(intent.token_cipher, key).toString("utf8"),
+      );
+      const config: Record<string, unknown> =
+        provider === "gsc"
+          ? { propertyUrl: chosen.externalPropertyId }
+          : {
+              propertyId: chosen.externalPropertyId,
+              propertyTimeZone: requireGa4PropertyTimeZone(chosen),
+              keyEventNames: body.keyEventNames ?? [],
+            };
+      const scopes = [
+        provider === "gsc" ? "webmasters.readonly" : "analytics.readonly",
+      ];
+      const limitation =
+        provider === "gsc"
+          ? "Search Console returns top rows by clicks, not the full query universe."
+          : body.keyEventNames && body.keyEventNames.length > 0
+            ? "GA4 organic landing data for the selected key events."
+            : "GA4 connected without key events; conversion metrics will be unavailable.";
+
+      // Different ready intents for the same provider have different row locks.
+      // Locking the parent project serializes their active-provider check + insert.
+      const project = await new ProjectsRepository(tx).findByIdForUpdate(
+        scope,
+        projectId,
+      );
+      if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
+
+      const connectionsRepo = new SourceConnectionsRepository(tx);
+      const active = await connectionsRepo.findConnectedByProvider(
+        projectScope,
+        provider,
+      );
+      if (active) {
+        throw new ProblemError(
+          "OAUTH_PROPERTY_INVALID",
+          "An active source connection already exists for this provider.",
+        );
+      }
+
+      const created = await connectionsRepo.insertConnection({
+        workspaceId: scope.workspaceId,
+        projectId,
+        siteId: intent.site_id,
+        provider,
+        connectionType: "oauth",
+        state: "connected",
+        externalRef: chosen.externalPropertyId,
+        scopes,
+        config,
+        limitation,
+        connectedAt: true,
+        createdBy: actorId,
+      });
+      await new SourceCredentialsRepository(tx).replace({
+        workspaceId: scope.workspaceId,
+        projectId,
+        sourceConnectionId: created.id,
+        encryptedPayload: encryptCredential(
+          encodeCredentialEnvelope(envelope),
+          key,
+        ),
+        keyVersion: KEY_VERSION,
+        expiresAt: envelope.expiresAt,
+      });
+      await intentsRepo.consume(intent.id);
+      return { kind: "connected" as const, connection: created };
+    });
+  } catch (error) {
+    if (isActiveProviderUniqueViolation(error)) {
+      throw new ProblemError(
+        "OAUTH_PROPERTY_INVALID",
+        "An active source connection already exists for this provider.",
+      );
+    }
+    throw error;
   }
-  if (intent.status !== "properties_ready" || !intent.token_cipher) {
-    throw new ProblemError(
-      "OAUTH_PROPERTY_INVALID",
-      "OAuth intent is not ready for selection.",
-    );
-  }
-  if (isExpired(intent, now))
+  if (outcome.kind === "expired") {
     throw new ProblemError("OAUTH_STATE_EXPIRED", "OAuth intent expired.");
-
-  const candidates = (intent.candidate_properties ?? []) as GoogleProperty[];
-  const chosen = candidates.find(
-    (c) => c.externalPropertyId === body.externalPropertyId,
-  );
-  if (!chosen) {
-    throw new ProblemError(
-      "OAUTH_PROPERTY_INVALID",
-      "Selected property is not in the candidate list.",
-    );
   }
-
-  // Re-encrypt the credential for the connection (the intent cipher is disposable).
-  // The intent stored the FULL token envelope (access + refresh + expiry + scope);
-  // carry it over verbatim, including the real access-token expiry.
-  const key = credentialKey();
-  const envelope = decodeCredentialEnvelope(
-    decryptCredential(intent.token_cipher, key).toString("utf8"),
-  );
-  const config: Record<string, unknown> =
-    provider === "gsc"
-      ? { propertyUrl: chosen.externalPropertyId }
-      : {
-          propertyId: chosen.externalPropertyId,
-          keyEventNames: body.keyEventNames ?? [],
-        };
-  const scopes = [
-    provider === "gsc" ? "webmasters.readonly" : "analytics.readonly",
-  ];
-  const limitation =
-    provider === "gsc"
-      ? "Search Console returns top rows by clicks, not the full query universe."
-      : body.keyEventNames && body.keyEventNames.length > 0
-        ? "GA4 organic landing data for the selected key events."
-        : "GA4 connected without key events; conversion metrics will be unavailable.";
-
-  const connection = await db.transaction(async (tx) => {
-    const created = await new SourceConnectionsRepository(tx).insertConnection({
-      workspaceId: scope.workspaceId,
-      projectId,
-      siteId: intent.site_id,
-      provider,
-      connectionType: "oauth",
-      state: "connected",
-      externalRef: chosen.externalPropertyId,
-      scopes,
-      config,
-      limitation,
-      connectedAt: true,
-      createdBy: actorId,
-    });
-    await new SourceCredentialsRepository(tx).replace({
-      workspaceId: scope.workspaceId,
-      projectId,
-      sourceConnectionId: created.id,
-      encryptedPayload: encryptCredential(
-        encodeCredentialEnvelope(envelope),
-        key,
-      ),
-      keyVersion: KEY_VERSION,
-      expiresAt: envelope.expiresAt,
-    });
-    await new OAuthIntentsRepository(tx).consume(intent.id);
-    return created;
-  });
+  const connection = outcome.connection;
 
   return {
     phase: "connected",
@@ -300,6 +376,33 @@ async function selectProperty(
       now,
     }),
   };
+}
+
+function isActiveProviderUniqueViolation(error: unknown): boolean {
+  return isPostgresUniqueViolation(
+    error,
+    "source_connections_one_active_provider_idx",
+  );
+}
+
+function requireGa4PropertyTimeZone(property: GoogleProperty): string {
+  if (!property.propertyTimeZone) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "GA4 property timezone is unavailable; reconnect the source.",
+    );
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: property.propertyTimeZone,
+    }).format(0);
+  } catch {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "GA4 property timezone is invalid; reconnect the source.",
+    );
+  }
+  return property.propertyTimeZone;
 }
 
 // ---------------------------------------------------------------------------
@@ -340,53 +443,90 @@ export async function handleGoogleCallback(
   if (!intent)
     throw new ProblemError("OAUTH_STATE_INVALID", "Unknown OAuth state.");
 
-  const sourcesPath = intent.redirect_path;
-  const fail = async (code: string): Promise<string> => {
-    await intentsRepo.fail(intent!.id, code);
-    return `${sourcesPath}?error=${encodeURIComponent(code)}`;
-  };
-
-  if (intent.status !== "initiated") return fail("OAUTH_STATE_REPLAYED");
-  if (isExpired(intent, now)) return fail("OAUTH_STATE_EXPIRED");
-  if (params.error) return fail("OAUTH_CONSENT_DENIED");
-  if (!params.code) return fail("OAUTH_STATE_INVALID");
-
-  try {
-    const key = credentialKey();
-    const verifier = decryptCredential(
-      intent.pkce_verifier_cipher,
-      key,
-    ).toString("utf8");
-    const client = deps.client ?? defaultClient();
-    const env = getEnv();
-    const tokenSet = await client.exchangeCode({
-      code: params.code,
-      codeVerifier: verifier,
-      redirectUri: googleRedirectUri(env.APP_ORIGIN),
-    });
-    const properties = await client.listProperties(
-      intent.provider as GoogleProvider,
-      tokenSet.accessToken,
+  return db.transaction(async (tx) => {
+    // The row lock is the callback claim. It deliberately spans the bounded
+    // exchange/list calls: a concurrent callback waits, re-reads the committed
+    // ready state, and becomes a harmless replay without exchanging twice.
+    const lockedRepo = new OAuthIntentsRepository(tx);
+    const locked = await lockedRepo.findByIdForUpdate(
+      {
+        workspaceId: scope.workspaceId,
+        projectId: intent.project_id,
+      },
+      intent.id,
     );
-    await intentsRepo.setPropertiesReady(intent.id, {
-      // Persist the FULL token envelope, not just the access token: Google issues
-      // the refresh token only once (first consent), so discarding it here would
-      // strand the connection ~1h later (spec §14.3).
-      tokenCipher: encryptCredential(
-        encodeCredentialEnvelope({
-          accessToken: tokenSet.accessToken,
-          refreshToken: tokenSet.refreshToken,
-          expiresAt: tokenSet.expiresAt,
-          scope: tokenSet.scope,
-        }),
+    if (!locked || locked.provider !== intent.provider) {
+      throw new ProblemError("OAUTH_STATE_INVALID", "Unknown OAuth state.");
+    }
+
+    // Derive the only allowed same-project redirect instead of trusting legacy
+    // rows created before authorize enforced returnPath/project equality.
+    const sourcesPath = `/p/${locked.project_id}/sources`;
+    const failureLocation = (code: string): string =>
+      `${sourcesPath}?error=${encodeURIComponent(code)}`;
+    const failInitiated = async (code: string): Promise<string> => {
+      await lockedRepo.fail(locked.id, code);
+      return failureLocation(code);
+    };
+
+    // Replays never mutate an already-ready/consumed/failed intent. In particular,
+    // a duplicate callback cannot poison properties_ready before selection.
+    if (locked.status === "expired") {
+      return failureLocation("OAUTH_STATE_EXPIRED");
+    }
+    if (locked.status !== "initiated") {
+      return failureLocation("OAUTH_STATE_REPLAYED");
+    }
+    if (isExpired(locked, now)) {
+      await lockedRepo.expireAndScrub(locked.id);
+      return failureLocation("OAUTH_STATE_EXPIRED");
+    }
+    if (params.error) return failInitiated("OAUTH_CONSENT_DENIED");
+    if (!params.code) return failInitiated("OAUTH_STATE_INVALID");
+
+    try {
+      const key = credentialKey();
+      const verifier = decryptCredential(
+        locked.pkce_verifier_cipher,
         key,
-      ),
-      candidateProperties: properties,
-    });
-    // The Sources screen needs BOTH params to open the property picker
-    // (it reads `oauthIntentId` + `provider` from the URL, spec §7.4).
-    return `${sourcesPath}?oauthIntentId=${intent.id}&provider=${intent.provider}`;
-  } catch {
-    return fail("OAUTH_EXCHANGE_FAILED");
-  }
+      ).toString("utf8");
+      const client = deps.client ?? defaultClient();
+      const env = getEnv();
+      const tokenSet = await client.exchangeCode({
+        code: params.code,
+        codeVerifier: verifier,
+        redirectUri: googleRedirectUri(env.APP_ORIGIN),
+      });
+      const properties = await client.listProperties(
+        locked.provider as GoogleProvider,
+        tokenSet.accessToken,
+      );
+      if (properties.length > GOOGLE_OAUTH_MAX_CANDIDATES) {
+        throw new ProblemError(
+          "DEPENDENCY_UNAVAILABLE",
+          "Google property candidate limit exceeded.",
+        );
+      }
+      await lockedRepo.setPropertiesReady(locked.id, {
+        // Persist the FULL token envelope, not just the access token: Google issues
+        // the refresh token only once (first consent), so discarding it here would
+        // strand the connection ~1h later (spec §14.3).
+        tokenCipher: encryptCredential(
+          encodeCredentialEnvelope({
+            accessToken: tokenSet.accessToken,
+            refreshToken: tokenSet.refreshToken,
+            expiresAt: tokenSet.expiresAt,
+            scope: tokenSet.scope,
+          }),
+          key,
+        ),
+        candidateProperties: properties,
+      });
+      // The Sources screen needs BOTH params to open the property picker
+      // (it reads `oauthIntentId` + `provider` from the URL, spec §7.4).
+      return `${sourcesPath}?oauthIntentId=${locked.id}&provider=${locked.provider}`;
+    } catch {
+      return failInitiated("OAUTH_EXCHANGE_FAILED");
+    }
+  });
 }

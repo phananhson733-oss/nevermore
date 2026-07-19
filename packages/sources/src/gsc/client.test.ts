@@ -41,6 +41,60 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function trackedStreamResponse(input: {
+  readonly body: string;
+  readonly status?: number;
+  readonly contentLength?: number;
+}): { readonly response: Response; wasCancelled(): boolean } {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(input.body));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const headers = new Headers({ "content-type": "application/json" });
+  if (input.contentLength !== undefined) {
+    headers.set("content-length", String(input.contentLength));
+  }
+  return {
+    response: new Response(stream, { status: input.status ?? 200, headers }),
+    wasCancelled: () => cancelled,
+  };
+}
+
+function hungFetch(): FetchLike {
+  return async (_input, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) {
+        reject(new Error("missing request signal"));
+        return;
+      }
+      const rejectFromSignal = (): void =>
+        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      if (signal.aborted) rejectFromSignal();
+      else signal.addEventListener("abort", rejectFromSignal, { once: true });
+    });
+}
+
+function delayedBodyFailureResponse(secret: string): Response {
+  let safetyTimer: ReturnType<typeof setTimeout> | undefined;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      safetyTimer = setTimeout(() => controller.error(new Error(secret)), 50);
+    },
+    cancel() {
+      if (safetyTimer) clearTimeout(safetyTimer);
+    },
+  });
+  return new Response(stream, {
+    headers: { "content-type": "application/json" },
+  });
+}
+
 /** A fetch fixture that serves `pages` in order (a missing page = empty rows). */
 function servePages(pages: readonly (readonly ApiRow[])[]): {
   readonly fetchImpl: FetchLike;
@@ -165,6 +219,102 @@ describe("HttpGscClient.querySearchAnalytics", () => {
     const error = await client.querySearchAnalytics(QUERY).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SourceError);
     expect((error as SourceError).code).toBe("NETWORK_ERROR");
+  });
+
+  it("bounds each provider request with an internal timeout", async () => {
+    const client = new HttpGscClient({
+      siteUrl: "https://example.com/",
+      accessToken: "tok",
+      fetchImpl: hungFetch(),
+      requestTimeoutMs: 5,
+    });
+
+    await expect(client.querySearchAnalytics(QUERY)).rejects.toMatchObject({
+      code: "TIMEOUT",
+    });
+  });
+
+  it("times out after headers when an injected response body never completes", async () => {
+    const leakedStreamError = "GSC body stream secret";
+    const client = new HttpGscClient({
+      siteUrl: "https://example.com/",
+      accessToken: "tok",
+      fetchImpl: async () => delayedBodyFailureResponse(leakedStreamError),
+      requestTimeoutMs: 5,
+    });
+
+    const error = await client.querySearchAnalytics(QUERY).catch(
+      (value: unknown) => value,
+    );
+
+    expect(error).toMatchObject({ code: "TIMEOUT" });
+    expect((error as Error).message).not.toContain(leakedStreamError);
+  });
+
+  it("combines an external abort signal with the internal timeout", async () => {
+    const controller = new AbortController();
+    const client = new HttpGscClient({
+      siteUrl: "https://example.com/",
+      accessToken: "tok",
+      fetchImpl: hungFetch(),
+      requestTimeoutMs: 30_000,
+      signal: controller.signal,
+    });
+
+    const pending = client.querySearchAnalytics(QUERY);
+    controller.abort(new DOMException("caller stopped", "AbortError"));
+
+    await expect(pending).rejects.toMatchObject({ code: "TIMEOUT" });
+  });
+
+  it("rejects an oversized declared body before reading and cancels it", async () => {
+    const tracked = trackedStreamResponse({
+      body: JSON.stringify({ rows: [] }),
+      contentLength: 1_024,
+    });
+    const client = new HttpGscClient({
+      siteUrl: "https://example.com/",
+      accessToken: "tok",
+      fetchImpl: async () => tracked.response,
+      maxResponseBytes: 64,
+    });
+
+    await expect(client.querySearchAnalytics(QUERY)).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+    });
+    expect(tracked.wasCancelled()).toBe(true);
+  });
+
+  it("counts streamed bytes instead of trusting an under-reported Content-Length", async () => {
+    const tracked = trackedStreamResponse({
+      body: JSON.stringify({ rows: [], padding: "x".repeat(128) }),
+      contentLength: 1,
+    });
+    const client = new HttpGscClient({
+      siteUrl: "https://example.com/",
+      accessToken: "tok",
+      fetchImpl: async () => tracked.response,
+      maxResponseBytes: 64,
+    });
+
+    await expect(client.querySearchAnalytics(QUERY)).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+    });
+    expect(tracked.wasCancelled()).toBe(true);
+  });
+
+  it("cancels a non-success response body before mapping the status", async () => {
+    const tracked = trackedStreamResponse({ body: "provider prose", status: 403 });
+    const client = new HttpGscClient({
+      siteUrl: "https://example.com/",
+      accessToken: "tok",
+      fetchImpl: async () => tracked.response,
+    });
+
+    await expect(client.querySearchAnalytics(QUERY)).rejects.toMatchObject({
+      code: "PERMISSION_DENIED",
+    });
+    expect(tracked.wasCancelled()).toBe(true);
   });
 
   it("rejects a malformed response body as INVALID_RESPONSE", async () => {

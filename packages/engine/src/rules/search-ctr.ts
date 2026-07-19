@@ -98,7 +98,7 @@ function evaluatePage(
   };
 }
 
-export const searchCtrRule: DiagnosticRule = {
+export const searchCtrRule = {
   id: "SEARCH-CTR-004",
   version: 1,
   domain: "search_performance",
@@ -122,4 +122,4 @@ export const searchCtrRule: DiagnosticRule = {
     }
     return { status: "candidate", candidates };
   },
-};
+} satisfies DiagnosticRule;

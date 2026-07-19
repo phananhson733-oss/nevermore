@@ -1,7 +1,7 @@
 import { operatorRoute } from "@/lib/http/handler";
 import { ok } from "@/lib/http/respond";
 import { parseUuidParam } from "@/lib/http/validate";
-import { getProjectRun } from "@/lib/services/runs";
+import { getProjectRun, runPollingHeaders } from "@/lib/services/runs";
 
 /** `GET /api/mvp/projects/{projectId}/runs/{runId}` — unified async-run status (spec §11.2). */
 export const GET = operatorRoute<{ projectId: string; runId: string }>(
@@ -12,7 +12,9 @@ export const GET = operatorRoute<{ projectId: string; runId: string }>(
       parseUuidParam(projectId),
       parseUuidParam(runId),
     );
-    return ok(run, ctx.requestId);
+    return ok(run, ctx.requestId, {
+      headers: runPollingHeaders(run.status) ?? {},
+    });
   },
 );
 

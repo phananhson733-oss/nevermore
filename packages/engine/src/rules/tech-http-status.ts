@@ -28,7 +28,7 @@ function brokenCode(finalStatus: number | null): number | null {
   return null;
 }
 
-export const techHttpStatusRule: DiagnosticRule = {
+export const techHttpStatusRule = {
   id: "TECH-HTTP-001",
   version: 1,
   domain: "technical_seo",
@@ -83,4 +83,4 @@ export const techHttpStatusRule: DiagnosticRule = {
 
     return { status: "candidate", candidates };
   },
-};
+} satisfies DiagnosticRule;

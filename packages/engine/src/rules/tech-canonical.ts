@@ -39,7 +39,7 @@ function is2xx(status: number | null): boolean {
   return status !== null && status >= 200 && status < 300;
 }
 
-export const techCanonicalRule: DiagnosticRule = {
+export const techCanonicalRule = {
   id: "TECH-CANONICAL-002",
   version: 1,
   domain: "technical_seo",
@@ -109,7 +109,7 @@ export const techCanonicalRule: DiagnosticRule = {
     }
     return { status: "candidate", candidates };
   },
-};
+} satisfies DiagnosticRule;
 
 function buildCandidate(
   ctx: DiagnosticContext,

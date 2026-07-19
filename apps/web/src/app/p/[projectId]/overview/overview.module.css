@@ -74,12 +74,46 @@
   justify-content: flex-end;
   gap: 10px;
 }
-.actionsNote {
-  margin: 0;
-  max-width: 28ch;
-  font-size: var(--sf-text-xs);
-  color: var(--sf-muted);
-  text-align: right;
+.heroLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 18px;
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  font-weight: 700;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  border-radius: var(--sf-radius-pill);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.06s ease;
+}
+.heroLinkPrimary {
+  color: var(--sf-accent-contrast);
+  background: var(--sf-accent);
+  box-shadow: var(--sf-shadow-accent);
+}
+.heroLinkPrimary:hover {
+  background: var(--sf-cobalt-dark);
+}
+.heroLinkPrimary:active {
+  transform: translateY(1px);
+}
+.heroLinkSecondary {
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border-color: var(--sf-border-strong);
+}
+.heroLinkSecondary:hover {
+  background: var(--sf-surface-deep);
+  border-color: var(--sf-fg);
 }
 
 /* ---------------------------------------------------------- Next step ----- */

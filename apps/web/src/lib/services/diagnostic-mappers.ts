@@ -68,6 +68,8 @@ export interface EvidenceRowLike {
   claim: string;
   observed_at: string;
   limitation: string;
+  snapshot_id: string | null;
+  analysis_invocation_id: string | null;
 }
 
 export function toEvidenceDto(row: EvidenceRowLike): EvidenceDto {
@@ -83,8 +85,8 @@ export function toEvidenceDto(row: EvidenceRowLike): EvidenceDto {
     subjectRefs: subjectRefs(row.subject_refs),
     observedAt: row.observed_at,
     limitation: row.limitation,
-    snapshotId: null,
-    analysisInvocationId: null,
+    snapshotId: row.snapshot_id,
+    analysisInvocationId: row.analysis_invocation_id,
   };
 }
 
@@ -219,4 +221,24 @@ export interface RuleResultDto {
   status: string;
   reason: string | null;
   durationMs: number;
+}
+
+export interface RuleResultRowLike {
+  rule_id: string;
+  rule_version: number;
+  domain: string;
+  status: string;
+  reason: string | null;
+  duration_ms: number;
+}
+
+export function toRuleResultDto(row: RuleResultRowLike): RuleResultDto {
+  return {
+    ruleId: row.rule_id,
+    ruleVersion: row.rule_version,
+    domain: row.domain,
+    status: row.status,
+    reason: row.reason,
+    durationMs: row.duration_ms,
+  };
 }

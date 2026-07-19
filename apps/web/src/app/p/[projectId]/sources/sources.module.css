@@ -154,6 +154,20 @@
   font-size: var(--sf-text-sm);
   color: var(--sf-coral);
 }
+.runFailure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sf-coral);
+  background: var(--sf-coral-soft);
+  color: var(--sf-fg);
+  border-radius: var(--sf-radius-control);
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+}
 
 /* ------------------------------------------------------------- Controls --- */
 .cardFooter {
@@ -270,6 +284,7 @@
 }
 
 .previewWrap {
+  display: none;
   overflow-x: auto;
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius-control);
@@ -278,6 +293,14 @@
   width: 100%;
   border-collapse: collapse;
   font-size: var(--sf-text-sm);
+}
+.previewTable caption {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 700;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border-bottom: 1px solid var(--sf-border);
 }
 .previewTable th,
 .previewTable td {
@@ -296,6 +319,60 @@
 }
 .previewTable tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* A table is ideal on wide screens, but forcing it through a 390px viewport
+ * makes operators pan horizontally and separates values from their headers.
+ * The narrow presentation repeats every column label as a semantic dt/dd pair. */
+.previewCards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.previewCard {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-control);
+  background: var(--sf-surface);
+}
+.previewCardFields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.previewCardField {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px;
+  align-items: baseline;
+}
+.previewCardField dt,
+.previewCardField dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.previewCardField dt {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  color: var(--sf-muted);
+}
+.previewCardField dd {
+  font-size: var(--sf-text-sm);
+  color: var(--sf-fg);
+}
+@media (min-width: 640px) {
+  .previewWrap {
+    display: block;
+  }
+  .previewCards {
+    display: none;
+  }
 }
 
 .mapTitle {

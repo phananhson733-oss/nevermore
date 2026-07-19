@@ -16,6 +16,43 @@ import type {
 export const CRAWL_DATASET_KEY = "crawl.site_graph.v1";
 export const CRAWL_METHOD_VERSION = "crawl.site_graph.v1";
 
+/** Defense-in-depth run cap from spec §14.2; counts fetch-decoded body bytes. */
+export const CRAWL_MAX_TOTAL_DECODED_BYTES = 128 * 1024 * 1024;
+
+/**
+ * Fixed persisted-projection bounds. These are deliberately not operator
+ * tunable: a hostile but per-response-valid page must not amplify into an
+ * unbounded snapshot/observation JSON value.
+ */
+export const CRAWL_PROJECTION_LIMITS = {
+  maxUrlChars: 2_048,
+  maxTitleChars: 512,
+  maxMetaDescriptionChars: 2_048,
+  maxRobotsDirectives: 32,
+  maxRobotsDirectiveChars: 128,
+  maxH1: 20,
+  maxH1Chars: 512,
+  maxHeadings: 100,
+  maxHeadingChars: 512,
+  maxParagraphs: 50,
+  maxParagraphChars: 1_000,
+  maxBodyExcerptChars: 500,
+  maxInternalOutlinks: 500,
+  maxAnchorTextChars: 512,
+  maxRelChars: 256,
+  maxJsonLdTypes: 100,
+  maxJsonLdTypeChars: 256,
+  maxJsonLdBlocks: 100,
+  maxJsonLdNodes: 5_000,
+  maxContentTypeChars: 256,
+  maxRobotsGroups: 64,
+  maxRobotsRulesPerGroup: 128,
+  maxRobotsRuleChars: 512,
+  maxUserAgentChars: 256,
+  maxSitemaps: 50,
+  maxSitemapUrls: 2_000,
+} as const;
+
 /** Crawl budget knobs (spec §7.2, §7.3). Overridable only for tests/fixtures. */
 export interface CrawlBudget {
   readonly maxUrls: number;
@@ -23,6 +60,7 @@ export interface CrawlBudget {
   readonly maxWallClockMs: number;
   readonly maxRedirects: number;
   readonly maxBodyBytes: number;
+  readonly maxTotalBytes: number;
   readonly perHostConcurrency: number;
   readonly minHostDelayMs: number;
 }
@@ -34,6 +72,7 @@ export const CRAWL_BUDGET: CrawlBudget = {
   maxWallClockMs: 15 * 60 * 1000,
   maxRedirects: 5,
   maxBodyBytes: 5 * 1024 * 1024,
+  maxTotalBytes: CRAWL_MAX_TOTAL_DECODED_BYTES,
   perHostConcurrency: 5,
   minHostDelayMs: 250,
 };
@@ -50,8 +89,11 @@ export interface CrawlParams {
 }
 
 /**
- * One crawled page. `subjectUrl` is the canonical_url.v1 aggregation key;
- * `projection` is the exact `crawl.page.v1` value emitted as an observation.
+ * One crawled page. `subjectUrl` is the terminal response URL's canonical_url.v1
+ * aggregation key. `projection.fetchUrl` is that terminal content fetch URL,
+ * while projection status/finalStatus describe the initial/terminal responses
+ * of the selected redirect journey. `projection` is the exact `crawl.page.v1`
+ * value emitted as an observation.
  */
 export interface CrawlPageRecord {
   readonly subjectUrl: string;

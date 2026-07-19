@@ -1,8 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isBlockedIp, normaliseIpv4 } from "./classify-ip.ts";
-import { createCanonicalUrlGuard } from "./guard.ts";
+import {
+  createCanonicalUrlGuard,
+  DEFAULT_DNS_LOOKUP_TIMEOUT_MS,
+} from "./guard.ts";
 
 const guard = createCanonicalUrlGuard({ lookup: async () => ["93.184.216.34"] });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("canonical URL guard", () => {
   it("accepts a public HTTPS host and returns a pinned address", async () => {
@@ -44,5 +51,62 @@ describe("canonical URL guard", () => {
     const rebinding = createCanonicalUrlGuard({ lookup: async () => ["93.184.216.34", "127.0.0.1"] });
     expect((await failing("https://example.com/")).safe).toBe(false);
     expect((await rebinding("https://example.com/")).safe).toBe(false);
+  });
+
+  it("defines a finite production DNS lookup timeout shorter than a crawl request", () => {
+    expect(DEFAULT_DNS_LOOKUP_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(DEFAULT_DNS_LOOKUP_TIMEOUT_MS).toBeLessThan(30_000);
+  });
+
+  it("fails closed on DNS timeout without leaking the hostname or consuming a late result", async () => {
+    vi.useFakeTimers();
+    let resolveLookup: ((addresses: readonly string[]) => void) | undefined;
+    const lookup = vi.fn(
+      () =>
+        new Promise<readonly string[]>((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    const timedGuard = createCanonicalUrlGuard({ lookup, dnsTimeoutMs: 25 });
+    const pending = timedGuard("https://customer-secret.example/path");
+
+    await vi.advanceTimersByTimeAsync(25);
+    const result = await pending;
+
+    expect(result).toEqual({
+      safe: false,
+      normalizedUrl: null,
+      pinnedIp: null,
+      reason: "DNS resolution timed out (fail closed)",
+    });
+    expect(result.reason).not.toContain("customer-secret.example");
+
+    let lateAddressesInspected = false;
+    const lateAddresses = new Proxy(["127.0.0.1"], {
+      get(target, property, receiver) {
+        if (property === "length" || property === "some" || property === "0") {
+          lateAddressesInspected = true;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    resolveLookup?.(lateAddresses);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(lateAddressesInspected).toBe(false);
+    expect(result.safe).toBe(false);
+  });
+
+  it("does not invoke DNS lookup or create a DNS timer for an IP literal", async () => {
+    vi.useFakeTimers();
+    const lookup = vi.fn(async () => ["127.0.0.1"]);
+    const literalGuard = createCanonicalUrlGuard({ lookup, dnsTimeoutMs: 25 });
+
+    await expect(literalGuard("https://8.8.8.8/path")).resolves.toMatchObject({
+      safe: true,
+      pinnedIp: "8.8.8.8",
+    });
+    expect(lookup).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

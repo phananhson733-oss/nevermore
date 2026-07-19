@@ -13,6 +13,14 @@
 
 import { SourceError } from "../adapter.ts";
 import type { SourceErrorCode } from "../adapter.ts";
+import {
+  cancelResponseBody,
+  createRequestAbortScope,
+  DEFAULT_PROVIDER_MAX_RESPONSE_BYTES,
+  DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS,
+  isAbortLike,
+  readBoundedJson,
+} from "../provider-http.ts";
 
 const GSC_API_BASE = "https://www.googleapis.com/webmasters/v3/sites";
 const GSC_DIMENSIONS = ["date", "page", "query"] as const;
@@ -57,6 +65,10 @@ export interface HttpGscClientOptions {
   readonly rowLimit?: number;
   /** Total-row cap override; defaults to `GSC_MAX_ROWS`. */
   readonly maxRows?: number;
+  /** Per-page deadline; defaults to 30 seconds. */
+  readonly requestTimeoutMs?: number;
+  /** Maximum decoded JSON bytes per page; defaults to 32 MiB. */
+  readonly maxResponseBytes?: number;
   readonly signal?: AbortSignal;
 }
 
@@ -75,7 +87,7 @@ function mapHttpStatus(status: number): SourceErrorCode {
 
 function toTransportError(error: unknown): SourceError {
   if (error instanceof SourceError) return error;
-  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+  if (isAbortLike(error)) {
     return new SourceError("TIMEOUT", "GSC Search Analytics request aborted or timed out.");
   }
   return new SourceError("NETWORK_ERROR", "GSC Search Analytics request failed to reach the API.");
@@ -121,6 +133,8 @@ export class HttpGscClient implements GscClient {
   private readonly fetchImpl: FetchLike;
   private readonly rowLimit: number;
   private readonly maxRows: number;
+  private readonly requestTimeoutMs: number;
+  private readonly maxResponseBytes: number;
   private readonly signal: AbortSignal | undefined;
 
   constructor(options: HttpGscClientOptions) {
@@ -135,6 +149,8 @@ export class HttpGscClient implements GscClient {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.rowLimit = options.rowLimit ?? GSC_ROW_LIMIT;
     this.maxRows = options.maxRows ?? GSC_MAX_ROWS;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS;
+    this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_PROVIDER_MAX_RESPONSE_BYTES;
     this.signal = options.signal;
   }
 
@@ -164,36 +180,37 @@ export class HttpGscClient implements GscClient {
       rowLimit: this.rowLimit,
       startRow,
     });
-    const init: RequestInit = {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body,
-      ...(this.signal ? { signal: this.signal } : {}),
-    };
-
-    let response: Response;
+    const abortScope = createRequestAbortScope(this.requestTimeoutMs, [this.signal]);
     try {
-      response = await this.fetchImpl(url, init);
+      const response = await this.fetchImpl(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body,
+        signal: abortScope.signal,
+      });
+
+      if (!response.ok) {
+        await cancelResponseBody(response);
+        throw new SourceError(
+          mapHttpStatus(response.status),
+          `GSC Search Analytics failed with HTTP ${response.status}.`,
+        );
+      }
+
+      const payload = await readBoundedJson(
+        response,
+        this.maxResponseBytes,
+        "GSC Search Analytics",
+        abortScope.signal,
+      );
+      return parseRows(payload);
     } catch (error) {
       throw toTransportError(error);
+    } finally {
+      abortScope.cleanup();
     }
-
-    if (!response.ok) {
-      throw new SourceError(
-        mapHttpStatus(response.status),
-        `GSC Search Analytics failed with HTTP ${response.status}.`,
-      );
-    }
-
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new SourceError("INVALID_RESPONSE", "GSC Search Analytics returned a non-JSON body.");
-    }
-    return parseRows(payload);
   }
 }

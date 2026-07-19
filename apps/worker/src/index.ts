@@ -1,16 +1,23 @@
 import {
   createDbHandle,
   createBoss,
+  acquireWorkerReadinessLease,
   startBoss,
   type DbHandle,
   type PgBoss,
 } from "@sf/db";
+import { resolveBuildMetadata } from "@sf/contracts";
 import { createLogger } from "@sf/observability";
 import { getWorkerEnv } from "./env.ts";
 import { buildWorkerContext } from "./context.ts";
 import { registerCollectHandlers } from "./handlers/collect.ts";
 import { registerDiagnoseHandler } from "./handlers/diagnose.ts";
 import { registerArtifactHandlers } from "./handlers/artifact.ts";
+import { startWorkerMaintenance } from "./maintenance.ts";
+import {
+  runtimeFailureMetadata,
+  serializeWorkerBootFailure,
+} from "./runtime-failure.ts";
 
 /**
  * Worker bootstrap (spec §3.1, §13). A long-running Node process that:
@@ -24,8 +31,6 @@ import { registerArtifactHandlers } from "./handlers/artifact.ts";
  * respective work packages (WP2+); WP0 stands up the process, the queue schema,
  * and the lifecycle so `/health/ready` can observe pg-boss (spec §13.3, AC-004).
  */
-
-const CONTRACT_VERSION = "2026-07-18";
 
 interface WorkerRuntime {
   readonly db: DbHandle;
@@ -42,18 +47,25 @@ async function start(): Promise<WorkerRuntime> {
     },
     env.LOG_LEVEL,
   );
-  logger.info("worker_starting", { contractVersion: CONTRACT_VERSION });
+  const build = resolveBuildMetadata("worker");
+  logger.info("worker_starting", build);
 
   const db = createDbHandle(env.DATABASE_URL, env.DB_POOL_MAX);
   const boss = createBoss(env.DATABASE_URL, { max: env.DB_POOL_MAX });
 
   boss.on("error", (error: unknown) => {
-    logger.error("pgboss_error", {
-      message: error instanceof Error ? error.message : String(error),
-    });
+    logger.error(
+      "pgboss_error",
+      runtimeFailureMetadata("PGBOSS_RUNTIME_ERROR", error),
+    );
   });
 
   await startBoss(boss);
+
+  // Hold a dedicated shared advisory-lock session for this process lifetime.
+  // `/health/ready` uses the corresponding exclusive probe, so a dead worker is
+  // detected immediately when PostgreSQL closes its session.
+  const readinessLease = await acquireWorkerReadinessLease(db.pool);
 
   // Register job handlers (spec §13). WP2: the four collection queues. WP3/WP4
   // add diagnose / artifact.generate / export.bundle handlers on this context.
@@ -61,18 +73,27 @@ async function start(): Promise<WorkerRuntime> {
   await registerCollectHandlers(workerCtx);
   await registerDiagnoseHandler(workerCtx);
   await registerArtifactHandlers(workerCtx);
+  const maintenance = await startWorkerMaintenance(workerCtx);
 
-  logger.info("worker_ready", { contractVersion: CONTRACT_VERSION });
+  logger.info("worker_ready", build);
 
   let stopping = false;
   const stop = async (): Promise<void> => {
     if (stopping) return;
     stopping = true;
     logger.info("worker_stopping", {});
+    await maintenance.stop();
     await boss.stop({ graceful: true }).catch((error: unknown) => {
-      logger.error("pgboss_stop_error", {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      logger.error(
+        "pgboss_stop_error",
+        runtimeFailureMetadata("PGBOSS_STOP_FAILED", error),
+      );
+    });
+    await readinessLease.release().catch((error: unknown) => {
+      logger.error(
+        "worker_readiness_lease_release_error",
+        runtimeFailureMetadata("READINESS_LEASE_RELEASE_FAILED", error),
+      );
     });
     await db.end().catch(() => {});
     logger.info("worker_stopped", {});
@@ -89,7 +110,7 @@ async function start(): Promise<WorkerRuntime> {
 
 start().catch((error: unknown) => {
   // Boot failures (bad env, unreachable DB) must crash loudly, not idle.
-  console.error(error);
+  console.error(serializeWorkerBootFailure(error));
   process.exit(1);
 });
 

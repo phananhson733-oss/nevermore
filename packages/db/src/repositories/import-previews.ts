@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { importPreviews } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
@@ -28,7 +28,7 @@ export interface ImportPreviewRow {
   readonly preview_rows: unknown[];
   readonly validation_errors: unknown[];
   readonly validation_warnings: unknown[];
-  readonly status: string;
+  readonly status: ImportPreviewStatus;
   readonly expires_at: string;
   readonly consumed_at: string | null;
   readonly created_at: string;
@@ -102,11 +102,25 @@ export class ImportPreviewsRepository extends Repository {
     return (rows[0] as ImportPreviewRow | undefined) ?? null;
   }
 
-  /** Mark the preview consumed in the confirm transaction (idempotent replay guard). */
-  async consume(id: string): Promise<void> {
-    await this.exec
+  /**
+   * Atomically consume one live preview inside the confirm transaction.
+   * Project scope, state, and DB-clock TTL are all part of the UPDATE predicate,
+   * so a stale application read can never consume a foreign, expired, or
+   * already-consumed token.
+   */
+  async consume(scope: ProjectScope, id: string): Promise<boolean> {
+    const rows = await this.exec
       .update(importPreviews)
       .set({ status: "consumed", consumed_at: sql`now()`, updated_at: sql`now()` })
-      .where(eq(importPreviews.id, id));
+      .where(
+        and(
+          projectPredicate(importPreviews, scope),
+          eq(importPreviews.id, id),
+          eq(importPreviews.status, "previewed"),
+          gt(importPreviews.expires_at, sql`now()`),
+        ),
+      )
+      .returning({ id: importPreviews.id });
+    return rows.length === 1;
   }
 }

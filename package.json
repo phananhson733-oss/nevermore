@@ -8,6 +8,11 @@
     "node": ">=24.12 <25",
     "pnpm": ">=10 <11"
   },
+  "pnpm": {
+    "overrides": {
+      "postcss@<8.5.10": "8.5.19"
+    }
+  },
   "scripts": {
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
@@ -17,12 +22,16 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "playwright test",
     "verify:spec": "node ../signalframe-mvp/implementation-spec-v0.2/scripts/verify-spec.mjs",
-    "openapi:lint": "redocly lint openapi/mvp.yaml --config ../signalframe-mvp/implementation-spec-v0.2/redocly.yaml",
+    "openapi:lint": "redocly lint openapi/mvp.yaml --config openapi/redocly.yaml",
     "contracts:generate": "pnpm --filter @sf/contracts generate",
     "contracts:check": "pnpm --filter @sf/contracts check",
     "db:migrate": "pnpm --filter @sf/db migrate",
     "db:migrate:check": "pnpm --filter @sf/db migrate:check",
     "db:smoke": "pnpm --filter @sf/db smoke",
+    "restore:drill": "node scripts/backup-restore-drill.mjs",
+    "restore:drill:test": "node --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=80 scripts/backup-restore-drill.test.mjs",
+    "implementation:check": "node scripts/verify-implementation.mjs",
+    "deploy:check": "node scripts/verify-deploy-config.mjs",
     "secrets:scan": "node scripts/secrets-scan.mjs",
     "vendor:check": "node scripts/check-vendor-baseline.mjs"
   },

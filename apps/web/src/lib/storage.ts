@@ -1,49 +1,73 @@
-import path from "node:path";
 import {
   blobStoreDownloadSigner,
-  LocalFsBlobStore,
+  createBlobStoreFromEnv,
+  createSupabaseDownloadSigner,
+  resolveBlobStorageBackend,
+  type BlobStorageEnvironment,
   type BlobStore,
   type DownloadUrlSigner,
+  type StorageFetch,
 } from "@sf/sources";
+import { getEnv } from "@/env";
 
 /**
- * Blob storage accessor (spec §7.6, §13.3). LOCAL dev uses a filesystem-backed
- * store under `.data/blob`; the hosted deployment swaps in a Supabase Storage
- * implementation of the same `BlobStore` interface (the swap point is here). Raw
- * imports and export bundles are the only blobs; the DB keeps only the object key
- * + sha256 (never the payload).
+ * Web and worker consume this identical environment contract. Production always
+ * uses the two configured private Supabase buckets; local/test mode requires one
+ * explicit absolute `SF_BLOB_DIR` shared by both processes.
  */
+export interface WebStorageFactoryOptions {
+  readonly environment?: string;
+  readonly fetch?: StorageFetch;
+}
+
+function environmentOf(options: WebStorageFactoryOptions): string {
+  return options.environment ?? process.env["NODE_ENV"] ?? "development";
+}
+
+export function createWebBlobStore(
+  env: BlobStorageEnvironment,
+  options: WebStorageFactoryOptions = {},
+): BlobStore {
+  return createBlobStoreFromEnv(env, {
+    environment: environmentOf(options),
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  });
+}
+
+/**
+ * Create the project-scoped export signer for the selected backend. Hosted mode
+ * signs only from `EXPORT_BUCKET`; local mode retains the same project and fixed
+ * 900-second TTL checks through the BlobStore adapter.
+ */
+export function createWebExportDownloadSigner(
+  env: BlobStorageEnvironment,
+  projectId: string,
+  options: WebStorageFactoryOptions = {},
+): DownloadUrlSigner {
+  const environment = environmentOf(options);
+  const backend = resolveBlobStorageBackend({
+    environment,
+    ...(env.SF_BLOB_BACKEND ? { backend: env.SF_BLOB_BACKEND } : {}),
+  });
+  if (backend === "supabase") {
+    return createSupabaseDownloadSigner({
+      supabaseUrl: env.SUPABASE_URL,
+      serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+      bucket: env.EXPORT_BUCKET,
+      projectId,
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+    });
+  }
+  return blobStoreDownloadSigner(createWebBlobStore(env, options), projectId);
+}
 
 let store: BlobStore | undefined;
 
 export function getBlobStore(): BlobStore {
-  if (!store) {
-    const baseDir =
-      process.env["SF_BLOB_DIR"] ?? path.join(process.cwd(), ".data", "blob");
-    store = new LocalFsBlobStore(baseDir);
-  }
+  store ??= createWebBlobStore(getEnv());
   return store;
 }
 
-/**
- * Project-scoped export-bundle download signer (AC-039, spec §10.5, §14.4). Local
- * dev signs the on-disk object through the filesystem store's dev URL, wrapped in
- * the explicit `{ expiresInSeconds }` TTL contract and project-scope check (an
- * out-of-project key rejects, which the caller maps to 404 — never a signed URL).
- *
- * The hosted deployment swaps the body here for the real Supabase signer — the same
- * `DownloadUrlSigner` seam — mirroring `getBlobStore()`:
- *   const { getEnv } = await import("@/env");
- *   const env = getEnv();
- *   return createSupabaseDownloadSigner({
- *     supabaseUrl: env.SUPABASE_URL,
- *     serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
- *     bucket: env.EXPORT_BUCKET,
- *     projectId,
- *   });
- * That path signs a 900s URL via `POST /storage/v1/object/sign/{bucket}/{path}`; the
- * 30-day object retention is a Supabase bucket lifecycle policy (out of code scope).
- */
 export function getExportDownloadSigner(projectId: string): DownloadUrlSigner {
-  return blobStoreDownloadSigner(getBlobStore(), projectId);
+  return createWebExportDownloadSigner(getEnv(), projectId);
 }

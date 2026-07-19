@@ -1,10 +1,10 @@
 /**
  * The SSRF-safe crawl engine (spec §7.2, §7.3). Vendor-copied and reshaped from
  * the old `packages/crawler/src/crawl.ts` BFS loop (commit 72af9300…): the
- * `undici` pinned-agent transport is replaced by the injected `CrawlFetcher`
- * (defaults to native `globalThis.fetch` with `redirect: "manual"`), the old
- * `@signalframe/core` `SiteSnapshot` shape is replaced by `CrawlRaw`, and every
- * budget from `CRAWL_BUDGET` is enforced.
+ * `undici` pinned-agent transport is retained behind the injected
+ * `CrawlFetcher` (the default uses manual redirects and a fresh pinned Agent for
+ * every hop), the old `@signalframe/core` `SiteSnapshot` shape is replaced by
+ * `CrawlRaw`, and every budget from `CRAWL_BUDGET` is enforced.
  *
  * The engine records RAW facts only (no page-role inference). On any budget cut
  * it returns `availability: "partial"` with a specific `stopReason` and KEEPS
@@ -13,15 +13,26 @@
  * refused and never fetched.
  */
 
-import { canonicalizeUrl } from "../canonical-url.ts";
+import { fetch as undiciFetch } from "undici";
+import type { Dispatcher } from "undici";
 import type { Availability, CollectionContext } from "../adapter.ts";
-import type { CrawlPageProjection } from "../observations.ts";
-import { canonicalUrlGuard } from "../url-safety/index.ts";
+import { canonicalizeUrl } from "../canonical-url.ts";
+import type {
+  CrawlPageProjection,
+  CrawlRobotsProjection,
+  CrawlSitemapProjection,
+} from "../observations.ts";
+import { canonicalUrlGuard, createPinnedAgent } from "../url-safety/index.ts";
 import type { UrlGuardResult } from "../url-safety/index.ts";
 import { directivesIndexable, parsePage } from "./parse-page.ts";
-import { emptyRobots, isPathAllowed, parseRobots } from "./robots.ts";
+import {
+  AI_BOT_USER_AGENTS,
+  emptyRobots,
+  isPathAllowed,
+  parseRobots,
+} from "./robots.ts";
 import { collectSitemap } from "./sitemap.ts";
-import { CRAWL_BUDGET } from "./types.ts";
+import { CRAWL_BUDGET, CRAWL_PROJECTION_LIMITS } from "./types.ts";
 import type {
   CrawlConfig,
   CrawlFetcher,
@@ -38,6 +49,8 @@ const PER_REQUEST_TIMEOUT_MS = 30_000;
 const STOP_MAX_URLS = "max_urls";
 const STOP_MAX_DEPTH = "max_depth";
 const STOP_MAX_DURATION = "max_duration";
+const STOP_MAX_TOTAL_BYTES = "max_total_bytes";
+const STOP_ABORTED = "aborted";
 
 /** The crawl budget shape with widened numeric fields (CRAWL_BUDGET is assignable). */
 export interface CrawlBudgetLimits {
@@ -46,6 +59,7 @@ export interface CrawlBudgetLimits {
   readonly maxWallClockMs: number;
   readonly maxRedirects: number;
   readonly maxBodyBytes: number;
+  readonly maxTotalBytes: number;
   readonly perHostConcurrency: number;
   readonly minHostDelayMs: number;
 }
@@ -59,17 +73,40 @@ export interface CrawlEngineOptions {
 }
 
 /**
- * The default `CrawlFetcher`: native `fetch` with MANUAL redirect handling (so
- * the engine re-runs the SSRF guard on each hop) and the product user agent.
+ * Extra transport values are kept internal so fixture CrawlFetchers can retain
+ * the small public interface while production is required to use a pinned
+ * dispatcher created from the guard result.
+ */
+interface PinnedCrawlFetchInit {
+  readonly signal: AbortSignal;
+  readonly pinnedIp: string;
+  readonly dispatcher: Dispatcher;
+}
+
+type PinnedCrawlFetch = (
+  url: string,
+  init: PinnedCrawlFetchInit,
+) => Promise<Response>;
+
+/**
+ * The default `CrawlFetcher`: undici with MANUAL redirect handling (so the
+ * engine re-runs the SSRF guard and creates a new pinned Agent on each hop).
  */
 export function createDefaultCrawlFetcher(userAgent: string): CrawlFetcher {
   return {
     fetch(url, init) {
-      return globalThis.fetch(url, {
+      const pinned = init as Partial<PinnedCrawlFetchInit>;
+      if (!pinned.pinnedIp || !pinned.dispatcher) {
+        return Promise.reject(
+          new Error("Crawl transport requires a guard-pinned dispatcher"),
+        );
+      }
+      return undiciFetch(url, {
         signal: init.signal,
         redirect: "manual",
+        dispatcher: pinned.dispatcher,
         headers: { "user-agent": userAgent },
-      });
+      }) as unknown as Promise<Response>;
     },
   };
 }
@@ -110,16 +147,97 @@ function mergeRobotsDirectives(
         .map((token) => token.trim().toLowerCase())
         .filter((token) => token.length > 0)
     : [];
-  return [...new Set([...meta, ...header])];
+  const all = [...new Set([...meta, ...header])];
+  const critical = all.filter(
+    (token) =>
+      token === "noindex" || token === "none" || token === "nofollow",
+  );
+  return [...new Set([...critical, ...all])]
+    .slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsDirectives)
+    .map((token) =>
+      token.slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
+    );
+}
+
+function boundedRules(values: readonly string[]): readonly string[] {
+  return values
+    .slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup)
+    .map((value) =>
+      value.slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars),
+    );
+}
+
+function boundedRobotsProjection(
+  projection: CrawlRobotsProjection,
+): CrawlRobotsProjection {
+  const requiredAgents = new Set(
+    AI_BOT_USER_AGENTS.map((agent) => agent.toLowerCase()),
+  );
+  const ordered = [
+    ...projection.groups.filter((group) =>
+      requiredAgents.has(group.userAgent.toLowerCase()),
+    ),
+    ...projection.groups.filter(
+      (group) => !requiredAgents.has(group.userAgent.toLowerCase()),
+    ),
+  ];
+  const seen = new Set<string>();
+  const groups: CrawlRobotsProjection["groups"][number][] = [];
+  for (const group of ordered) {
+    const userAgent = group.userAgent.slice(
+      0,
+      CRAWL_PROJECTION_LIMITS.maxUserAgentChars,
+    );
+    const key = userAgent.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    groups.push({
+      userAgent,
+      disallow: boundedRules(group.disallow),
+      allow: boundedRules(group.allow),
+    });
+    if (groups.length >= CRAWL_PROJECTION_LIMITS.maxRobotsGroups) break;
+  }
+  return {
+    fetched: projection.fetched,
+    groups,
+    sitemaps: projection.sitemaps
+      .filter((url) => url.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars)
+      .slice(0, CRAWL_PROJECTION_LIMITS.maxSitemaps),
+  };
+}
+
+function boundedSitemapProjection(
+  projection: CrawlSitemapProjection,
+): CrawlSitemapProjection {
+  const subjectUrls = projection.subjectUrls
+    .filter((url) => url.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars)
+    .slice(0, CRAWL_PROJECTION_LIMITS.maxSitemapUrls);
+  return {
+    fetched: projection.fetched,
+    urlCount: subjectUrls.length,
+    subjectUrls,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Guarded fetch with manual redirect following and a byte-capped body read.
 // ---------------------------------------------------------------------------
 
+type DecodedBudgetOwner = symbol;
+
+interface DecodedByteBudget {
+  readonly exhausted: () => boolean;
+  readonly register: (cancel: () => void) => DecodedBudgetOwner;
+  readonly unregister: (owner: DecodedBudgetOwner) => void;
+  readonly reserve: (owner: DecodedBudgetOwner, bytes: number) => boolean;
+}
+
 interface GuardedFetchDeps {
   readonly fetcher: CrawlFetcher;
   readonly guard: (url: string) => Promise<UrlGuardResult>;
+  readonly allowedOrigin: string;
+  readonly allowUrl: ((url: string) => boolean) | undefined;
   readonly maxRedirects: number;
   readonly maxBodyBytes: number;
   readonly maxWallClockMs: number;
@@ -127,6 +245,7 @@ interface GuardedFetchDeps {
   readonly nowMs: () => number;
   readonly startMs: number;
   readonly wantBody: (contentType: string | null) => boolean;
+  readonly decodedByteBudget: DecodedByteBudget;
 }
 
 type GuardedFetch =
@@ -142,27 +261,35 @@ type GuardedFetch =
       readonly body: string | null;
       readonly bytes: number;
     }
-  | { readonly kind: "blocked"; readonly reason: string }
+  | { readonly kind: "blocked" }
+  | { readonly kind: "disallowed" }
   | { readonly kind: "redirect_limit" }
   | { readonly kind: "too_large" }
-  | { readonly kind: "error"; readonly reason: string };
+  | { readonly kind: "run_limit" }
+  | { readonly kind: "aborted" }
+  | { readonly kind: "error" };
 
 function makeRequestSignal(
   remainingMs: number,
   ctxSignal: AbortSignal | undefined,
-): { readonly signal: AbortSignal; readonly clear: () => void } {
+): {
+  readonly signal: AbortSignal;
+  readonly abort: () => void;
+  readonly clear: () => void;
+} {
   const controller = new AbortController();
   const timer = setTimeout(
-    () => controller.abort(new Error("request timeout")),
+    () => controller.abort(),
     Math.max(1, Math.min(remainingMs, PER_REQUEST_TIMEOUT_MS)),
   );
-  const onAbort = () => controller.abort(ctxSignal?.reason);
+  const onAbort = () => controller.abort();
   if (ctxSignal) {
-    if (ctxSignal.aborted) controller.abort(ctxSignal.reason);
+    if (ctxSignal.aborted) controller.abort();
     else ctxSignal.addEventListener("abort", onAbort, { once: true });
   }
   return {
     signal: controller.signal,
+    abort: () => controller.abort(),
     clear: () => {
       clearTimeout(timer);
       if (ctxSignal) ctxSignal.removeEventListener("abort", onAbort);
@@ -170,24 +297,62 @@ function makeRequestSignal(
   };
 }
 
-async function drain(response: Response): Promise<void> {
+type SignalRace<T> =
+  | { readonly kind: "value"; readonly value: T }
+  | { readonly kind: "error"; readonly error: unknown }
+  | { readonly kind: "aborted" };
+
+function raceWithSignal<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<SignalRace<T>> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: SignalRace<T>): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      resolve(result);
+    };
+    const onAbort = (): void => finish({ kind: "aborted" });
+    signal.addEventListener("abort", onAbort, { once: true });
+    void operation.then(
+      (value) => finish({ kind: "value", value }),
+      (error: unknown) => finish({ kind: "error", error }),
+    );
+    if (signal.aborted) onAbort();
+  });
+}
+
+function cancelBestEffort(cancel: () => unknown): void {
   try {
-    await response.body?.cancel();
+    void Promise.resolve(cancel()).catch(() => undefined);
   } catch {
-    /* a hostile stream may refuse cancellation; ignore */
+    /* hostile cancellation may throw synchronously; never block termination */
   }
+}
+
+function drain(response: Response): void {
+  if (response.body) cancelBestEffort(() => response.body?.cancel());
 }
 
 async function readCappedBody(
   response: Response,
   maxBytes: number,
+  decodedByteBudget: DecodedByteBudget,
+  budgetOwner: DecodedBudgetOwner,
+  isBudgetCancelled: () => boolean,
+  setBodyCancel: (cancel: (() => void) | null) => void,
+  signal: AbortSignal,
 ): Promise<
   | { readonly body: string; readonly bytes: number }
   | { readonly tooLarge: true }
+  | { readonly runLimit: true }
+  | { readonly aborted: true }
 > {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) {
-    await drain(response);
+    drain(response);
     return { tooLarge: true };
   }
   const stream = response.body;
@@ -196,23 +361,58 @@ async function readCappedBody(
       ? stream.getReader()
       : null;
   if (!reader) {
-    const text = await response.text();
+    if (isBudgetCancelled()) return { runLimit: true };
+    const textResult = await raceWithSignal(
+      Promise.resolve().then(() => response.text()),
+      signal,
+    );
+    if (textResult.kind === "aborted") {
+      drain(response);
+      return { aborted: true };
+    }
+    if (textResult.kind === "error") throw textResult.error;
+    const text = textResult.value;
+    if (isBudgetCancelled()) return { runLimit: true };
     const bytes = new TextEncoder().encode(text).byteLength;
+    if (!decodedByteBudget.reserve(budgetOwner, bytes)) {
+      return { runLimit: true };
+    }
     if (bytes > maxBytes) return { tooLarge: true };
     return { body: text, bytes };
   }
   const decoder = new TextDecoder();
   let text = "";
   let bytes = 0;
+  setBodyCancel(() => {
+    cancelBestEffort(() => reader.cancel());
+  });
   try {
     for (;;) {
-      const next = await reader.read();
+      if (isBudgetCancelled()) return { runLimit: true };
+      const readResult = await raceWithSignal(
+        Promise.resolve().then(() => reader.read()),
+        signal,
+      );
+      if (readResult.kind === "aborted") {
+        cancelBestEffort(() => reader.cancel());
+        return { aborted: true };
+      }
+      if (readResult.kind === "error") {
+        if (isBudgetCancelled()) return { runLimit: true };
+        throw readResult.error;
+      }
+      const next = readResult.value;
+      if (isBudgetCancelled()) return { runLimit: true };
       if (next.done) break;
       const value = next.value;
       if (!value) continue;
+      if (!decodedByteBudget.reserve(budgetOwner, value.byteLength)) {
+        cancelBestEffort(() => reader.cancel());
+        return { runLimit: true };
+      }
       bytes += value.byteLength;
       if (bytes > maxBytes) {
-        await reader.cancel().catch(() => undefined);
+        cancelBestEffort(() => reader.cancel());
         return { tooLarge: true };
       }
       text += decoder.decode(value, { stream: true });
@@ -220,6 +420,7 @@ async function readCappedBody(
     text += decoder.decode();
     return { body: text, bytes };
   } finally {
+    setBodyCancel(null);
     try {
       reader.releaseLock();
     } catch {
@@ -238,85 +439,166 @@ async function guardedFetch(
   let redirects = 0;
   for (;;) {
     if (deps.nowMs() - deps.startMs >= deps.maxWallClockMs) {
-      return { kind: "error", reason: "wall clock exceeded" };
+      return { kind: "error" };
+    }
+    if (originOf(current) !== deps.allowedOrigin) {
+      return { kind: "blocked" };
     }
     const guarded = await deps.guard(current);
-    if (!guarded.safe)
-      return { kind: "blocked", reason: guarded.reason ?? "unsafe url" };
+    if (!guarded.safe || !guarded.normalizedUrl || !guarded.pinnedIp) {
+      return { kind: "blocked" };
+    }
+
+    current = guarded.normalizedUrl;
+    if (originOf(current) !== deps.allowedOrigin) {
+      return { kind: "blocked" };
+    }
+    if (deps.allowUrl && !deps.allowUrl(current)) {
+      return { kind: "disallowed" };
+    }
+    let target: URL;
+    try {
+      target = new URL(current);
+    } catch {
+      return { kind: "blocked" };
+    }
+
+    let dispatcher: Dispatcher;
+    try {
+      dispatcher = createPinnedAgent(target.hostname, guarded.pinnedIp);
+    } catch {
+      return { kind: "blocked" };
+    }
 
     const remaining = deps.maxWallClockMs - (deps.nowMs() - deps.startMs);
-    const { signal, clear } = makeRequestSignal(remaining, deps.ctxSignal);
-    let response: Response;
+    const { signal, abort, clear } = makeRequestSignal(
+      remaining,
+      deps.ctxSignal,
+    );
+    let budgetCancelled = deps.decodedByteBudget.exhausted();
+    let cancelBody: (() => void) | null = null;
+    const budgetOwner = deps.decodedByteBudget.register(() => {
+      budgetCancelled = true;
+      abort();
+      cancelBody?.();
+    });
     try {
-      response = await deps.fetcher.fetch(current, { signal });
-    } catch (error) {
-      clear();
-      return {
-        kind: "error",
-        reason: error instanceof Error ? error.message : "fetch failed",
-      };
-    }
-
-    const status = response.status;
-    if (firstStatus === null) firstStatus = status;
-
-    if (REDIRECT_STATUSES.has(status)) {
-      const location = response.headers.get("location");
-      if (location) {
-        await drain(response);
-        clear();
-        if (redirects >= deps.maxRedirects) return { kind: "redirect_limit" };
-        const next = canonicalizeUrl(location, current);
-        if (!next)
-          return { kind: "blocked", reason: "unparseable redirect location" };
-        chain.push(next.subjectUrl);
-        current = next.fetchUrl;
-        redirects += 1;
-        continue;
+      if (budgetCancelled) return { kind: "run_limit" };
+      if (signal.aborted) {
+        return { kind: "aborted" };
       }
-    }
+      let response: Response;
+      try {
+        response = await (deps.fetcher.fetch as PinnedCrawlFetch).call(
+          deps.fetcher,
+          current,
+          { signal, pinnedIp: guarded.pinnedIp, dispatcher },
+        );
+      } catch {
+        if (budgetCancelled || deps.decodedByteBudget.exhausted()) {
+          return { kind: "run_limit" };
+        }
+        if (signal.aborted) {
+          return { kind: "aborted" };
+        }
+        return { kind: "error" };
+      }
+      if (budgetCancelled || deps.decodedByteBudget.exhausted()) {
+        drain(response);
+        return { kind: "run_limit" };
+      }
+      if (signal.aborted) {
+        drain(response);
+        return { kind: "aborted" };
+      }
 
-    const contentType = response.headers.get("content-type");
-    const xRobotsTag = response.headers.get("x-robots-tag");
-    if (!deps.wantBody(contentType)) {
-      await drain(response);
-      clear();
-      return {
-        kind: "ok",
-        firstStatus: firstStatus ?? status,
-        finalStatus: status,
-        finalUrl: current,
-        redirectChain: chain,
-        contentType,
-        xRobotsTag,
-        bodyWanted: false,
-        body: null,
-        bytes: 0,
-      };
-    }
+      const status = response.status;
+      if (firstStatus === null) firstStatus = status;
 
-    try {
-      const read = await readCappedBody(response, deps.maxBodyBytes);
-      if ("tooLarge" in read) return { kind: "too_large" };
-      return {
-        kind: "ok",
-        firstStatus: firstStatus ?? status,
-        finalStatus: status,
-        finalUrl: current,
-        redirectChain: chain,
-        contentType,
-        xRobotsTag,
-        bodyWanted: true,
-        body: read.body,
-        bytes: read.bytes,
-      };
-    } catch (error) {
-      return {
-        kind: "error",
-        reason: error instanceof Error ? error.message : "body read failed",
-      };
+      if (REDIRECT_STATUSES.has(status)) {
+        const location = response.headers.get("location");
+        if (location) {
+          drain(response);
+          if (redirects >= deps.maxRedirects) {
+            return { kind: "redirect_limit" };
+          }
+          const next = canonicalizeUrl(location, current);
+          if (!next) {
+            return { kind: "blocked" };
+          }
+          chain.push(next.fetchUrl);
+          current = next.fetchUrl;
+          redirects += 1;
+          continue;
+        }
+      }
+
+      const contentType = response.headers.get("content-type");
+      const xRobotsTag = response.headers.get("x-robots-tag");
+      if (!deps.wantBody(contentType)) {
+        drain(response);
+        return {
+          kind: "ok",
+          firstStatus: firstStatus ?? status,
+          finalStatus: status,
+          finalUrl: current,
+          redirectChain: chain,
+          contentType,
+          xRobotsTag,
+          bodyWanted: false,
+          body: null,
+          bytes: 0,
+        };
+      }
+
+      try {
+        const read = await readCappedBody(
+          response,
+          deps.maxBodyBytes,
+          deps.decodedByteBudget,
+          budgetOwner,
+          () => budgetCancelled,
+          (cancel) => {
+            cancelBody = cancel;
+          },
+          signal,
+        );
+        if ("aborted" in read) {
+          if (budgetCancelled || deps.decodedByteBudget.exhausted()) {
+            return { kind: "run_limit" };
+          }
+          return { kind: "aborted" };
+        }
+        if ("runLimit" in read) return { kind: "run_limit" };
+        if ("tooLarge" in read) return { kind: "too_large" };
+        return {
+          kind: "ok",
+          firstStatus: firstStatus ?? status,
+          finalStatus: status,
+          finalUrl: current,
+          redirectChain: chain,
+          contentType,
+          xRobotsTag,
+          bodyWanted: true,
+          body: read.body,
+          bytes: read.bytes,
+        };
+      } catch {
+        if (budgetCancelled || deps.decodedByteBudget.exhausted()) {
+          return { kind: "run_limit" };
+        }
+        if (signal.aborted) {
+          return { kind: "aborted" };
+        }
+        drain(response);
+        return { kind: "error" };
+      }
     } finally {
+      deps.decodedByteBudget.unregister(budgetOwner);
       clear();
+      const closing = dispatcher.close().catch(() => undefined);
+      if (signal.aborted) void closing;
+      else await closing;
     }
   }
 }
@@ -381,12 +663,69 @@ export async function crawlSite(
   let stopReason: string | null = null;
   let hitDepthLimit = false;
   const deadlineHit = (): boolean => nowMs() - startMs >= budget.maxWallClockMs;
+  const markOperationStop = (): boolean => {
+    if (ctx.signal?.aborted) {
+      stopReason ??= STOP_ABORTED;
+      return true;
+    }
+    if (deadlineHit()) {
+      stopReason ??= STOP_MAX_DURATION;
+      return true;
+    }
+    return false;
+  };
+  const activeByteConsumers = new Map<DecodedBudgetOwner, () => void>();
+  const totalDecodedBudgetExhausted = (): boolean =>
+    usage.bytesFetched >= budget.maxTotalBytes;
+  const cancelOtherByteConsumers = (owner: DecodedBudgetOwner): void => {
+    for (const [activeOwner, cancel] of activeByteConsumers) {
+      if (activeOwner === owner) continue;
+      try {
+        cancel();
+      } catch {
+        /* cancellation is best-effort; the synchronous reservation still wins */
+      }
+    }
+  };
+  const decodedByteBudget: DecodedByteBudget = {
+    exhausted: totalDecodedBudgetExhausted,
+    register(cancel) {
+      const owner = Symbol("crawl-decoded-byte-consumer");
+      activeByteConsumers.set(owner, cancel);
+      if (totalDecodedBudgetExhausted()) {
+        stopReason ??= STOP_MAX_TOTAL_BYTES;
+        cancel();
+      }
+      return owner;
+    },
+    unregister(owner) {
+      activeByteConsumers.delete(owner);
+    },
+    reserve(owner, bytes) {
+      if (totalDecodedBudgetExhausted()) return false;
+      const remaining = Math.max(
+        0,
+        budget.maxTotalBytes - usage.bytesFetched,
+      );
+      const reserved = Math.min(bytes, remaining);
+      usage.bytesFetched += reserved;
+      const fits = bytes <= remaining;
+      if (!fits || totalDecodedBudgetExhausted()) {
+        stopReason ??= STOP_MAX_TOTAL_BYTES;
+        cancelOtherByteConsumers(owner);
+      }
+      return fits;
+    },
+  };
 
   const fetchDeps = (
     wantBody: (contentType: string | null) => boolean,
+    allowUrl?: (url: string) => boolean,
   ): GuardedFetchDeps => ({
     fetcher,
     guard,
+    allowedOrigin: crawlOrigin,
+    allowUrl,
     maxRedirects: budget.maxRedirects,
     maxBodyBytes: budget.maxBodyBytes,
     maxWallClockMs: budget.maxWallClockMs,
@@ -394,14 +733,12 @@ export async function crawlSite(
     nowMs,
     startMs,
     wantBody,
+    decodedByteBudget,
   });
 
   // Guarded text fetch for robots.txt + sitemaps (any text/xml body accepted).
   const fetchText = async (url: string): Promise<string | null> => {
-    if (stopReason || deadlineHit()) {
-      stopReason ??= STOP_MAX_DURATION;
-      return null;
-    }
+    if (stopReason || markOperationStop()) return null;
     const result = await guardedFetch(
       url,
       fetchDeps(() => true),
@@ -410,9 +747,12 @@ export async function crawlSite(
       usage.urlsBlocked += 1;
       return null;
     }
+    if (result.kind === "aborted") {
+      if (!markOperationStop()) usage.urlsErrored += 1;
+      return null;
+    }
     if (result.kind !== "ok") return null;
     usage.urlsFetched += 1;
-    usage.bytesFetched += result.bytes;
     usage.redirectsFollowed += result.redirectChain.length;
     if (
       result.finalStatus < 200 ||
@@ -429,6 +769,7 @@ export async function crawlSite(
   const robotsBody = await fetchText(robotsUrl);
   const robots =
     robotsBody !== null ? parseRobots(robotsBody, origin, true) : emptyRobots();
+  const robotsProjection = boundedRobotsProjection(robots.projection);
   if (robotsBody !== null) usage.robotsFetched = 1;
 
   // Sitemaps (from robots, else the conventional path).
@@ -436,14 +777,16 @@ export async function crawlSite(
     robots.projection.sitemaps.length > 0
       ? robots.projection.sitemaps
       : [`${origin}/sitemap.xml`];
-  const sitemap = await collectSitemap(crawlOrigin, sitemapSeeds, {
-    fetchText,
-  });
+  const sitemap = boundedSitemapProjection(
+    await collectSitemap(crawlOrigin, sitemapSeeds, {
+      fetchText,
+    }),
+  );
   usage.sitemapUrlCount = sitemap.urlCount;
   const sitemapMembers = new Set(sitemap.subjectUrls);
 
   // Seed the BFS frontier.
-  const seen = new Set<string>();
+  const seenDepth = new Map<string, number>();
   const queue: QueueEntry[] = [];
   const enqueue = (
     subjectUrl: string,
@@ -451,12 +794,25 @@ export async function crawlSite(
     depth: number,
   ): void => {
     if (originOf(subjectUrl) !== crawlOrigin) return;
+    if (
+      subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
+      fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars
+    )
+      return;
     if (depth > budget.maxDepth) {
       hitDepthLimit = true;
       return;
     }
-    if (seen.has(subjectUrl)) return;
-    seen.add(subjectUrl);
+    const previousDepth = seenDepth.get(subjectUrl);
+    if (previousDepth !== undefined && previousDepth <= depth) return;
+    seenDepth.set(subjectUrl, depth);
+    const queuedIndex = queue.findIndex(
+      (entry) => entry.subjectUrl === subjectUrl,
+    );
+    if (queuedIndex >= 0) {
+      queue[queuedIndex] = { fetchUrl, subjectUrl, depth };
+      return;
+    }
     queue.push({ fetchUrl, subjectUrl, depth });
   };
 
@@ -467,7 +823,42 @@ export async function crawlSite(
     if (pair) enqueue(pair.subjectUrl, pair.fetchUrl, 1);
   }
 
-  const pages: CrawlPageRecord[] = [];
+  interface PageCandidate {
+    readonly record: CrawlPageRecord;
+    readonly journeySubjectUrl: string;
+    readonly journeyFetchUrl: string;
+    readonly redirectCount: number;
+  }
+  const pagesBySubject = new Map<string, PageCandidate>();
+  const compareAscii = (left: string, right: string): number =>
+    left < right ? -1 : left > right ? 1 : 0;
+  const comparePageCandidates = (
+    left: PageCandidate,
+    right: PageCandidate,
+  ): number => {
+    if (left.record.depth !== right.record.depth) {
+      return left.record.depth - right.record.depth;
+    }
+    if (left.redirectCount !== right.redirectCount) {
+      return right.redirectCount - left.redirectCount;
+    }
+    const subjectOrder = compareAscii(
+      left.journeySubjectUrl,
+      right.journeySubjectUrl,
+    );
+    if (subjectOrder !== 0) return subjectOrder;
+    return compareAscii(left.journeyFetchUrl, right.journeyFetchUrl);
+  };
+  const upsertPage = (candidate: PageCandidate): boolean => {
+    const existing = pagesBySubject.get(candidate.record.subjectUrl);
+    if (existing && comparePageCandidates(candidate, existing) >= 0) {
+      usage.urlsSkipped += 1;
+      return false;
+    }
+    pagesBySubject.set(candidate.record.subjectUrl, candidate);
+    usage.pagesCollected = pagesBySubject.size;
+    return true;
+  };
   let crawledCount = 0;
   let inFlight = 0;
   let nextLaunchAt = 0;
@@ -481,26 +872,26 @@ export async function crawlSite(
   };
 
   const processEntry = async (entry: QueueEntry): Promise<void> => {
-    if (
-      !isPathAllowed(
-        robots.groups,
-        config.userAgent,
-        robotsPath(entry.fetchUrl),
-      )
-    ) {
-      usage.urlsDisallowed += 1;
+    const existingPage = pagesBySubject.get(entry.subjectUrl);
+    if (existingPage && existingPage.record.depth < entry.depth) {
+      usage.urlsSkipped += 1;
       return;
     }
     crawledCount += 1;
     await acquireHostSlot();
-    if (stopReason || deadlineHit()) {
-      stopReason ??= STOP_MAX_DURATION;
-      return;
-    }
+    if (stopReason || markOperationStop()) return;
     const started = nowMs();
     const result = await guardedFetch(
       entry.fetchUrl,
-      fetchDeps((ct) => isHtmlContentType(ct)),
+      fetchDeps(
+        (ct) => isHtmlContentType(ct),
+        (url) =>
+          isPathAllowed(
+            robots.groups,
+            config.userAgent,
+            robotsPath(url),
+          ),
+      ),
     );
     const responseMs = Math.max(0, nowMs() - started);
 
@@ -508,8 +899,20 @@ export async function crawlSite(
       usage.urlsBlocked += 1;
       return;
     }
-    if (result.kind === "redirect_limit" || result.kind === "too_large") {
+    if (result.kind === "disallowed") {
+      usage.urlsDisallowed += 1;
+      return;
+    }
+    if (
+      result.kind === "redirect_limit" ||
+      result.kind === "too_large" ||
+      result.kind === "run_limit"
+    ) {
       usage.urlsSkipped += 1;
+      return;
+    }
+    if (result.kind === "aborted") {
+      if (!markOperationStop()) usage.urlsErrored += 1;
       return;
     }
     if (result.kind === "error") {
@@ -517,23 +920,42 @@ export async function crawlSite(
       return;
     }
     usage.urlsFetched += 1;
-    usage.bytesFetched += result.bytes;
     usage.redirectsFollowed += result.redirectChain.length;
     if (!result.bodyWanted || result.body === null) {
       usage.urlsSkipped += 1;
       return;
     }
 
-    const parsed = parsePage(result.body, entry.fetchUrl);
+    const finalPair = canonicalizeUrl(result.finalUrl);
+    if (
+      !finalPair ||
+      originOf(finalPair.subjectUrl) !== crawlOrigin ||
+      finalPair.subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
+      finalPair.fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars
+    ) {
+      usage.urlsBlocked += 1;
+      return;
+    }
+    const finalSubjectUrl = finalPair.subjectUrl;
+    const finalFetchUrl = finalPair.fetchUrl;
+    const previousFinalDepth = seenDepth.get(finalSubjectUrl);
+    if (previousFinalDepth === undefined || entry.depth < previousFinalDepth) {
+      seenDepth.set(finalSubjectUrl, entry.depth);
+    }
+
+    const parsed = parsePage(result.body, finalFetchUrl);
     const robotsDirectives = mergeRobotsDirectives(
       parsed.robotsDirectives,
       result.xRobotsTag,
     );
     const projection: CrawlPageProjection = {
-      fetchUrl: entry.fetchUrl,
+      // HTTP semantics: final content URL, initial journey status, terminal status.
+      fetchUrl: finalFetchUrl,
       status: result.firstStatus,
       finalStatus: result.finalStatus,
-      redirectChain: result.redirectChain,
+      redirectChain: result.redirectChain.filter(
+        (url) => url.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars,
+      ),
       canonicalTarget: parsed.canonicalTarget,
       robotsIndexable: directivesIndexable(robotsDirectives),
       robotsDirectives,
@@ -544,18 +966,30 @@ export async function crawlSite(
       wordCount: parsed.wordCount,
       internalOutlinks: parsed.internalOutlinks,
       jsonLd: parsed.jsonLd,
-      sitemapMember: sitemapMembers.has(entry.subjectUrl),
+      sitemapMember:
+        sitemapMembers.has(entry.subjectUrl) ||
+        sitemapMembers.has(finalSubjectUrl),
       bodyExcerpt: parsed.bodyExcerpt,
       paragraphs: parsed.paragraphs,
       responseMs,
-      contentType: result.contentType,
+      contentType:
+        result.contentType?.slice(
+          0,
+          CRAWL_PROJECTION_LIMITS.maxContentTypeChars,
+        ) ?? null,
     };
-    pages.push({
-      subjectUrl: entry.subjectUrl,
-      depth: entry.depth,
-      projection,
+    const accepted = upsertPage({
+      record: {
+        // Aggregation identity follows the terminal URL, never its redirect alias.
+        subjectUrl: finalSubjectUrl,
+        depth: entry.depth,
+        projection,
+      },
+      journeySubjectUrl: entry.subjectUrl,
+      journeyFetchUrl: entry.fetchUrl,
+      redirectCount: result.redirectChain.length,
     });
-    usage.pagesCollected += 1;
+    if (!accepted) return;
 
     if (result.finalStatus >= 200 && result.finalStatus < 300) {
       for (const link of parsed.internalOutlinks) {
@@ -572,10 +1006,7 @@ export async function crawlSite(
   const worker = async (): Promise<void> => {
     for (;;) {
       if (stopReason) return;
-      if (deadlineHit()) {
-        stopReason ??= STOP_MAX_DURATION;
-        return;
-      }
+      if (markOperationStop()) return;
       const entry = queue.shift();
       if (!entry) {
         if (inFlight === 0) return;
@@ -600,11 +1031,14 @@ export async function crawlSite(
 
   if (!stopReason && hitDepthLimit) stopReason = STOP_MAX_DEPTH;
 
+  const pages = [...pagesBySubject.values()].map(
+    (candidate) => candidate.record,
+  );
   const reachedNothing = pages.length === 0 && usage.urlsFetched === 0;
-  const availability: Availability = reachedNothing
-    ? "unavailable"
-    : stopReason
-      ? "partial"
+  const availability: Availability = stopReason
+    ? "partial"
+    : reachedNothing
+      ? "unavailable"
       : "available";
 
   const limitation = stopReason
@@ -625,7 +1059,7 @@ export async function crawlSite(
     origin,
     host,
     pages: orderedPages,
-    robots: robots.projection,
+    robots: robotsProjection,
     sitemap,
     availability,
     capturedAt,

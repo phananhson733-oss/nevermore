@@ -28,6 +28,7 @@ import {
   type ReviewFindingRequest,
   type Severity,
 } from "@/lib/api/hooks-diagnosis";
+import { evidenceForFinding } from "../_view-model.ts";
 import styles from "./diagnosis.module.css";
 
 function severityTone(severity: Severity): StatusTone {
@@ -216,7 +217,7 @@ export function FindingCard({
       <div className={styles.subSection}>
         <span className={styles.subLabel}>{t("evidenceLabel")}</span>
         <ul className={styles.evidenceList}>
-          {finding.evidence.map((ev) => (
+          {evidenceForFinding(finding.evidence).map((ev) => (
             <li key={ev.id} className={styles.evidenceItem}>
               <div className={styles.evidenceHead}>
                 <Badge tone="accent">

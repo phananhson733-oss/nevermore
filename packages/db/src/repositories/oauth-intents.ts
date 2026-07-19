@@ -1,6 +1,10 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { oauthIntents } from "../schema.ts";
-import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
+import {
+  Repository,
+  projectPredicate,
+  type ProjectScope,
+} from "./base.ts";
 
 /**
  * `oauth_intents` backs the strict three-phase Google OAuth connect flow (spec
@@ -15,7 +19,15 @@ export type OAuthIntentStatus =
   | "initiated"
   | "properties_ready"
   | "consumed"
+  | "expired"
   | "failed";
+
+/**
+ * Terminal intents retain a non-null PKCE column only because the frozen schema
+ * requires it. This is deliberately not a valid credential ciphertext and cannot
+ * be decrypted by the credential envelope implementation.
+ */
+const OAUTH_INTENT_CIPHER_TOMBSTONE = Buffer.alloc(32);
 
 export interface OAuthIntentRow {
   readonly id: string;
@@ -78,9 +90,26 @@ export class OAuthIntentsRepository extends Repository {
   }
 
   /**
-   * The still-live intent matching a callback state hash (workspace-scoped by the
-   * caller). Must be unconsumed and unexpired; otherwise the caller returns a
-   * replay/expired error. Callback is the one GET that consumes external state.
+   * Lock an intent while callback exchange or property selection advances it.
+   * Callers must hold the surrounding transaction through the terminal update.
+   */
+  async findByIdForUpdate(
+    scope: ProjectScope,
+    id: string,
+  ): Promise<OAuthIntentRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(oauthIntents)
+      .where(and(projectPredicate(oauthIntents, scope), eq(oauthIntents.id, id)))
+      .limit(1)
+      .for("update");
+    return (rows[0] as OAuthIntentRow | undefined) ?? null;
+  }
+
+  /**
+   * Find the intent matching a callback state hash, scoped to the authenticated
+   * workspace. Status and expiry are deliberately adjudicated after the caller
+   * locks this row so replays receive their stable replay/expired result.
    */
   async findLiveByStateHash(
     workspaceId: string,
@@ -121,7 +150,14 @@ export class OAuthIntentsRepository extends Repository {
   async consume(id: string): Promise<void> {
     await this.exec
       .update(oauthIntents)
-      .set({ status: "consumed", consumed_at: sql`now()`, updated_at: sql`now()` })
+      .set({
+        status: "consumed",
+        token_cipher: null,
+        candidate_properties: null,
+        pkce_verifier_cipher: OAUTH_INTENT_CIPHER_TOMBSTONE,
+        consumed_at: sql`now()`,
+        updated_at: sql`now()`,
+      })
       .where(eq(oauthIntents.id, id));
   }
 
@@ -129,7 +165,82 @@ export class OAuthIntentsRepository extends Repository {
   async fail(id: string, failureCode: string): Promise<void> {
     await this.exec
       .update(oauthIntents)
-      .set({ status: "failed", failure_code: failureCode, updated_at: sql`now()` })
+      .set({
+        status: "failed",
+        failure_code: failureCode,
+        token_cipher: null,
+        candidate_properties: null,
+        pkce_verifier_cipher: OAUTH_INTENT_CIPHER_TOMBSTONE,
+        updated_at: sql`now()`,
+      })
       .where(eq(oauthIntents.id, id));
+  }
+
+  /** Expire one locked live intent and irreversibly scrub all temporary secrets. */
+  async expireAndScrub(id: string): Promise<void> {
+    await this.exec
+      .update(oauthIntents)
+      .set({
+        status: "expired",
+        failure_code: "OAUTH_STATE_EXPIRED",
+        token_cipher: null,
+        candidate_properties: null,
+        pkce_verifier_cipher: OAUTH_INTENT_CIPHER_TOMBSTONE,
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(
+          eq(oauthIntents.id, id),
+          inArray(oauthIntents.status, ["initiated", "properties_ready"]),
+        ),
+      );
+  }
+
+  /**
+   * Trusted worker maintenance sweep. It returns only a count (never tenant rows
+   * or ciphertext), while one set-based UPDATE scrubs every expired live intent.
+   */
+  async scrubExpired(now: Date): Promise<number> {
+    const rows = await this.exec
+      .update(oauthIntents)
+      .set({
+        status: "expired",
+        failure_code: "OAUTH_STATE_EXPIRED",
+        token_cipher: null,
+        candidate_properties: null,
+        pkce_verifier_cipher: OAUTH_INTENT_CIPHER_TOMBSTONE,
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(
+          inArray(oauthIntents.status, ["initiated", "properties_ready"]),
+          lte(oauthIntents.expires_at, now.toISOString()),
+        ),
+      )
+      .returning({ id: oauthIntents.id });
+    return rows.length;
+  }
+
+  /** Scrub every historical intent for a disconnected project/provider. */
+  async scrubProjectProvider(
+    scope: ProjectScope,
+    provider: string,
+  ): Promise<void> {
+    await this.exec
+      .update(oauthIntents)
+      .set({
+        status: sql`case when ${oauthIntents.status} in ('initiated', 'properties_ready') then 'failed' else ${oauthIntents.status} end`,
+        failure_code: sql`case when ${oauthIntents.status} in ('initiated', 'properties_ready') then 'OAUTH_SOURCE_DISCONNECTED' else ${oauthIntents.failure_code} end`,
+        token_cipher: null,
+        candidate_properties: null,
+        pkce_verifier_cipher: OAUTH_INTENT_CIPHER_TOMBSTONE,
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(
+          projectPredicate(oauthIntents, scope),
+          eq(oauthIntents.provider, provider),
+        ),
+      );
   }
 }

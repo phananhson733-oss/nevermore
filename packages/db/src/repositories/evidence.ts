@@ -121,6 +121,8 @@ export class EvidenceRepository extends Repository {
       claim: string;
       observed_at: string;
       limitation: string;
+      snapshot_id: string | null;
+      analysis_invocation_id: string | null;
     }[]
   > {
     if (ids.length === 0) return [];
@@ -139,6 +141,8 @@ export class EvidenceRepository extends Repository {
       claim: string;
       observed_at: string;
       limitation: string;
+      snapshot_id: string | null;
+      analysis_invocation_id: string | null;
     }[];
   }
 }

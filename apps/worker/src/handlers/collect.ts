@@ -1,6 +1,7 @@
-import type { Job, QueueName } from "@sf/db";
+import type { JobWithMetadata, QueueName } from "@sf/db";
 import type { WorkerContext } from "../context.ts";
 import { runCollection, type CollectJobPayload } from "../collection/run-collection.ts";
+import { prepareRunDelivery } from "./recovery.ts";
 
 /**
  * Register the four collection queue workers (spec §13.1). Each job payload is
@@ -17,11 +18,17 @@ const COLLECT_QUEUES: readonly QueueName[] = [
 
 export async function registerCollectHandlers(ctx: WorkerContext): Promise<void> {
   for (const queue of COLLECT_QUEUES) {
-    await ctx.boss.work(queue, async (jobs: Job<CollectJobPayload>[]) => {
-      for (const job of jobs) {
-        await runCollection(ctx, job.data);
-      }
-    });
+    await ctx.boss.work(
+      queue,
+      { includeMetadata: true },
+      async (jobs: JobWithMetadata<CollectJobPayload>[]) => {
+        for (const job of jobs) {
+          await prepareRunDelivery(ctx, job, (payload) =>
+            runCollection(ctx, payload),
+          );
+        }
+      },
+    );
   }
   ctx.logger.info("collect_handlers_registered", { queues: COLLECT_QUEUES.length });
 }

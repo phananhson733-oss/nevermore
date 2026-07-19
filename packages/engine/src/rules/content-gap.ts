@@ -18,7 +18,7 @@ import { matchIntent, pageFieldBag } from "../util/intent-match.ts";
 const MIN_KEYWORDS = 10;
 const MIN_TOTAL_VOLUME = 500;
 
-export const contentGapRule: DiagnosticRule = {
+export const contentGapRule = {
   id: "CONTENT-GAP-011",
   version: 1,
   domain: "content_intent",
@@ -67,7 +67,7 @@ export const contentGapRule: DiagnosticRule = {
     }
     return { status: "pass", metrics: { qualifyingClusters } };
   },
-};
+} satisfies DiagnosticRule;
 
 interface ClusterSummary {
   readonly totalVolume: number;

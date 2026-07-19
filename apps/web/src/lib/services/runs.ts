@@ -61,6 +61,15 @@ export function runStatusUrl(projectId: string, runId: string): string {
   return `/api/mvp/projects/${projectId}/runs/${runId}`;
 }
 
+/** OpenAPI polling hint: active runs advertise another poll; terminals do not. */
+export function runPollingHeaders(
+  status: string,
+): Record<string, string> | undefined {
+  return status === "queued" || status === "running"
+    ? { "Retry-After": "1" }
+    : undefined;
+}
+
 /** `GET /projects/{projectId}/runs/{runId}` — unified status (404 when foreign/absent). */
 export async function getProjectRun(
   scope: WorkspaceScope,

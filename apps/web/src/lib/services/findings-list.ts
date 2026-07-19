@@ -12,6 +12,7 @@ import { loadEvidenceByFinding } from "./diagnostic-load";
 import {
   toCoverageDto,
   toFindingDto,
+  toRuleResultDto,
   type CoverageDto,
   type FindingDto,
   type RuleResultDto,
@@ -63,14 +64,7 @@ export async function listProjectFindings(
     latestRun = asyncRun ? toAsyncRunDto(asyncRun) : null;
     coverage = toCoverageDto(latest.coverage);
     const rows = await diagRepo.listRuleResults(latest.id);
-    ruleResults = rows.map((r) => ({
-      ruleId: r.rule_id,
-      ruleVersion: r.rule_version,
-      domain: r.domain,
-      status: r.status,
-      reason: r.reason,
-      durationMs: 0,
-    }));
+    ruleResults = rows.map(toRuleResultDto);
   }
 
   return {

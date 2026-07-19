@@ -112,6 +112,25 @@ export class ExecutionArtifactsRepository extends Repository {
     return (rows[0] as ArtifactRow | undefined) ?? null;
   }
 
+  /** Lock one artifact row for an atomic no-op / compare-and-swap decision. */
+  async findByIdForUpdate(
+    scope: ProjectScope,
+    id: string,
+  ): Promise<ArtifactRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(executionArtifacts)
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          eq(executionArtifacts.id, id),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    return (rows[0] as ArtifactRow | undefined) ?? null;
+  }
+
   /** A non-archived artifact for an action + type (regenerate reuse, spec §10.1). */
   async findLiveByActionType(
     scope: ProjectScope,
@@ -134,12 +153,22 @@ export class ExecutionArtifactsRepository extends Repository {
   }
 
   /** Point an existing artifact at a new generation run (regenerate). */
-  async startRegeneration(id: string, runId: string): Promise<void> {
+  async startRegeneration(
+    id: string,
+    runId: string,
+    values?: { generationMode: string; outputLocale: string },
+  ): Promise<void> {
     await this.exec
       .update(executionArtifacts)
       .set({
         status: "generating",
         latest_generation_run_id: runId,
+        ...(values
+          ? {
+              generation_mode: values.generationMode,
+              output_locale: values.outputLocale,
+            }
+          : {}),
         updated_at: sql`now()`,
       })
       .where(eq(executionArtifacts.id, id));
@@ -167,6 +196,82 @@ export class ExecutionArtifactsRepository extends Repository {
       .where(eq(executionArtifacts.id, id));
   }
 
+  /**
+   * Atomically install a manually edited revision if `expectedRevision` is
+   * still current. The conditional UPDATE takes the row lock, so two editors
+   * cannot both advance the same base revision.
+   */
+  async setGeneratedIfRevision(
+    scope: ProjectScope,
+    id: string,
+    values: {
+      status: string;
+      currentRevision: number;
+      expectedRevision: number;
+      validationState: string;
+      contentHash: string;
+    },
+  ): Promise<boolean> {
+    const rows = (await this.exec
+      .update(executionArtifacts)
+      .set({
+        status: values.status,
+        current_revision: values.currentRevision,
+        validation_state: values.validationState,
+        content_hash: values.contentHash,
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          eq(executionArtifacts.id, id),
+          eq(executionArtifacts.current_revision, values.expectedRevision),
+        ),
+      )
+      .returning({ id: executionArtifacts.id })) as { id: string }[];
+    return rows.length > 0;
+  }
+
+  /**
+   * Worker completion CAS. The worker may install generated content only while
+   * the scoped artifact is still owned by this exact generation run, remains in
+   * `generating`, and has not advanced beyond the revision observed before the
+   * potentially long-running generation step.
+   */
+  async setGeneratedForGenerationRun(
+    scope: ProjectScope,
+    id: string,
+    runId: string,
+    values: {
+      status: string;
+      currentRevision: number;
+      expectedRevision: number;
+      validationState: string;
+      contentHash: string;
+    },
+  ): Promise<boolean> {
+    const rows = await this.exec
+      .update(executionArtifacts)
+      .set({
+        status: values.status,
+        current_revision: values.currentRevision,
+        validation_state: values.validationState,
+        content_hash: values.contentHash,
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          eq(executionArtifacts.id, id),
+          eq(executionArtifacts.latest_generation_run_id, runId),
+          eq(executionArtifacts.status, "generating"),
+          eq(executionArtifacts.current_revision, values.expectedRevision),
+        ),
+      )
+      .returning({ id: executionArtifacts.id });
+    return rows.length === 1;
+  }
+
   async setStatus(
     scope: ProjectScope,
     id: string,
@@ -183,11 +288,61 @@ export class ExecutionArtifactsRepository extends Repository {
       );
   }
 
+  /** Status compare-and-swap against the caller's current content revision. */
+  async setStatusIfRevision(
+    scope: ProjectScope,
+    id: string,
+    status: string,
+    expectedRevision: number,
+  ): Promise<boolean> {
+    const rows = (await this.exec
+      .update(executionArtifacts)
+      .set({ status, updated_at: sql`now()` })
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          eq(executionArtifacts.id, id),
+          eq(executionArtifacts.current_revision, expectedRevision),
+        ),
+      )
+      .returning({ id: executionArtifacts.id })) as { id: string }[];
+    return rows.length > 0;
+  }
+
   async setFailed(id: string): Promise<void> {
     await this.exec
       .update(executionArtifacts)
       .set({ status: "failed", updated_at: sql`now()` })
       .where(eq(executionArtifacts.id, id));
+  }
+
+  /**
+   * Fail only the scoped artifact still owned by this exact generation run. A
+   * live worker supplies `expectedRevision`; queue recovery may omit it because
+   * it has no pre-generation snapshot, while retaining scope/run/status guards.
+   */
+  async setFailedForGenerationRun(
+    scope: ProjectScope,
+    id: string,
+    runId: string,
+    expectedRevision?: number,
+  ): Promise<boolean> {
+    const rows = await this.exec
+      .update(executionArtifacts)
+      .set({ status: "failed", updated_at: sql`now()` })
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          eq(executionArtifacts.id, id),
+          eq(executionArtifacts.latest_generation_run_id, runId),
+          eq(executionArtifacts.status, "generating"),
+          expectedRevision === undefined
+            ? undefined
+            : eq(executionArtifacts.current_revision, expectedRevision),
+        ),
+      )
+      .returning({ id: executionArtifacts.id });
+    return rows.length === 1;
   }
 
   // --- revisions ----------------------------------------------------------

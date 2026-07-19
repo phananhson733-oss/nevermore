@@ -103,7 +103,12 @@ export type SourceErrorCode = (typeof SOURCE_ERROR_CODES)[number];
 
 /** Whether an error is transient and safe to retry (spec §13.1). */
 export function isTransient(code: SourceErrorCode): boolean {
-  return code === "RATE_LIMITED" || code === "NETWORK_ERROR" || code === "TIMEOUT";
+  return (
+    code === "RATE_LIMITED" ||
+    code === "NETWORK_ERROR" ||
+    code === "TIMEOUT" ||
+    code === "UNAVAILABLE"
+  );
 }
 
 export class SourceError extends Error {

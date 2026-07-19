@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Ga4LandingProjection } from "../observations.ts";
 import type { NormalizedObservation } from "../adapter.ts";
 import {
+  GA4_KEY_EVENT_REPORT_TRUNCATED,
+  GA4_LIMITATION,
   normalizeGa4,
   type Ga4KeyEventRow,
   type Ga4KeyEventStatus,
@@ -59,6 +61,7 @@ describe("normalizeGa4", () => {
     expect(projection.engagementRate).toBeCloseTo(20 / 30);
     expect(projection.keyEvents).toBe(6); // 2 + 3 + 1 across eventName rows
     expect(projection.keyEventUnavailableReason).toBeNull();
+    expect(pricing.limitation).toBe(GA4_LIMITATION);
   });
 
   it("treats a compatible page with no key-event rows as a real observed 0", () => {
@@ -100,6 +103,25 @@ describe("normalizeGa4", () => {
     expect(projection.keyEvents).toBeNull();
     expect(projection.keyEventUnavailableReason).toBe("GA4_KEY_EVENT_REPORT_INCOMPATIBLE");
     expect(observations[0]!.limitation).toBe("GA4_KEY_EVENT_REPORT_INCOMPATIBLE");
+  });
+
+  it("never treats absent rows from a truncated key-event report as real zeroes", () => {
+    const sessionRows: readonly Ga4SessionRow[] = [
+      { date: "2026-07-01", landingPage: "/pricing", sessions: 8, engagedSessions: 4, engagementRate: 0.5 },
+    ];
+    const observations = normalizeGa4(
+      sessionRows,
+      [],
+      ORIGIN,
+      WINDOW,
+      CAPTURED_AT,
+      { state: "truncated" },
+    );
+
+    const projection = projectionOf(observations[0]!);
+    expect(projection.keyEvents).toBeNull();
+    expect(projection.keyEventUnavailableReason).toBe(GA4_KEY_EVENT_REPORT_TRUNCATED);
+    expect(observations[0]!.limitation).toBe(GA4_KEY_EVENT_REPORT_TRUNCATED);
   });
 
   it("skips (not set) landing pages and canonicalizes paths (stripping utm)", () => {

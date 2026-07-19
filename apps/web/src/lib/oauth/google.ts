@@ -20,6 +20,27 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GSC_SITES_ENDPOINT = "https://www.googleapis.com/webmasters/v3/sites";
 const GA4_ACCOUNT_SUMMARIES =
   "https://analyticsadmin.googleapis.com/v1beta/accountSummaries";
+const GA4_ADMIN_BASE = "https://analyticsadmin.googleapis.com/v1beta";
+const GA4_ACCOUNT_PAGE_SIZE = 200;
+
+/** Every OAuth/Admin API request is bounded so a provider stall cannot pin a web request. */
+export const GOOGLE_OAUTH_HTTP_TIMEOUT_MS = 10_000;
+
+/** Cap decoded Google JSON before parsing; provider bodies are never logged or echoed. */
+export const GOOGLE_OAUTH_MAX_RESPONSE_BYTES = 1 * 1024 * 1024;
+
+/** Bound the complete property-discovery chain, not merely each individual fetch. */
+export const GOOGLE_OAUTH_OPERATION_TIMEOUT_MS = 30_000;
+
+/** Maximum picker/intent payload for either provider. */
+export const GOOGLE_OAUTH_MAX_CANDIDATES = 500;
+
+/** Parallelize GA4 timezone reads without an unbounded provider fan-out. */
+export const GA4_PROPERTY_DETAIL_CONCURRENCY = 8;
+
+const GA4_ACCOUNT_PAGE_LIMIT = Math.ceil(
+  GOOGLE_OAUTH_MAX_CANDIDATES / GA4_ACCOUNT_PAGE_SIZE,
+);
 
 // ---------------------------------------------------------------------------
 // PKCE + state (pure).
@@ -95,6 +116,8 @@ export interface GoogleProperty {
   /** GSC siteUrl or GA4 numeric propertyId. */
   readonly externalPropertyId: string;
   readonly displayName: string;
+  /** Present for GA4 and sourced from the Admin API property resource. */
+  readonly propertyTimeZone?: string;
 }
 
 export interface GoogleOAuthClient {
@@ -112,6 +135,9 @@ interface HttpClientDeps {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly fetchImpl?: FetchLike;
+  readonly timeoutMs?: number;
+  readonly operationTimeoutMs?: number;
+  readonly maxResponseBytes?: number;
 }
 
 /** Map a Google API failure to a stable product error without leaking bodies. */
@@ -122,10 +148,250 @@ function oauthError(status: number, context: string): ProblemError {
   return new ProblemError("DEPENDENCY_UNAVAILABLE", `${context}: provider error.`);
 }
 
+function abortLike(error: unknown): boolean {
+  if (error === null || typeof error !== "object" || !("name" in error)) return false;
+  return error.name === "AbortError" || error.name === "TimeoutError";
+}
+
+function cancelResponseBody(response: Response): void {
+  if (!response.body) return;
+  try {
+    void Promise.resolve(response.body.cancel()).catch(() => undefined);
+  } catch {
+    // Cancellation is resource cleanup only; the stable provider error wins.
+  }
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("Google request aborted.", "AbortError");
+}
+
+async function readResponseChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+): Promise<Awaited<ReturnType<typeof reader.read>>> {
+  if (signal.aborted) throw abortReason(signal);
+
+  return new Promise<Awaited<ReturnType<typeof reader.read>>>(
+    (resolve, reject) => {
+      let settled = false;
+      const cleanup = (): void => {
+        signal.removeEventListener("abort", onAbort);
+      };
+      const resolveOnce = (
+        value: Awaited<ReturnType<typeof reader.read>>,
+      ): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+      const rejectOnce = (error: unknown): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+      const onAbort = (): void => rejectOnce(abortReason(signal));
+
+      signal.addEventListener("abort", onAbort, { once: true });
+      try {
+        void reader.read().then(resolveOnce, rejectOnce);
+      } catch (error) {
+        rejectOnce(error);
+      }
+    },
+  );
+}
+
+function cancelReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): void {
+  try {
+    void Promise.resolve(reader.cancel()).catch(() => undefined);
+  } catch {
+    // Cancellation cannot replace the stable timeout/size/transport problem.
+  }
+}
+
+function releaseReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): void {
+  try {
+    const released: unknown = reader.releaseLock();
+    void Promise.resolve(released).catch(() => undefined);
+  } catch {
+    // Releasing a broken provider stream must not replace the stable problem.
+  }
+}
+
+async function readBoundedJson(
+  response: Response,
+  maxBytes: number,
+  context: string,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    cancelResponseBody(response);
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      `${context}: response exceeded the size limit.`,
+    );
+  }
+  if (!response.body) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      `${context}: malformed response.`,
+    );
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await readResponseChunk(reader, signal);
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        throw new ProblemError(
+          "DEPENDENCY_UNAVAILABLE",
+          `${context}: response exceeded the size limit.`,
+        );
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    cancelReader(reader);
+    throw error;
+  } finally {
+    releaseReader(reader);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  } catch {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      `${context}: malformed response.`,
+    );
+  }
+}
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  map: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  let stopped = false;
+  const worker = async (): Promise<void> => {
+    while (!stopped && nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        results[index] = await map(values[index]!);
+      } catch (error) {
+        stopped = true;
+        throw error;
+      }
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, values.length) },
+      async () => worker(),
+    ),
+  );
+  return results;
+}
+
+function candidateLimitError(context: string): ProblemError {
+  return new ProblemError(
+    "DEPENDENCY_UNAVAILABLE",
+    `${context}: provider candidate limit exceeded.`,
+  );
+}
+
 export class HttpGoogleOAuthClient implements GoogleOAuthClient {
   private readonly fetchImpl: FetchLike;
+  private readonly timeoutMs: number;
+  private readonly operationTimeoutMs: number;
+  private readonly maxResponseBytes: number;
+
   constructor(private readonly deps: HttpClientDeps) {
     this.fetchImpl = deps.fetchImpl ?? ((i, init) => fetch(i, init));
+    this.timeoutMs = deps.timeoutMs ?? GOOGLE_OAUTH_HTTP_TIMEOUT_MS;
+    this.operationTimeoutMs =
+      deps.operationTimeoutMs ?? GOOGLE_OAUTH_OPERATION_TIMEOUT_MS;
+    this.maxResponseBytes =
+      deps.maxResponseBytes ?? GOOGLE_OAUTH_MAX_RESPONSE_BYTES;
+    if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "Google OAuth HTTP timeout is misconfigured.",
+      );
+    }
+    if (!Number.isFinite(this.maxResponseBytes) || this.maxResponseBytes <= 0) {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "Google OAuth response limit is misconfigured.",
+      );
+    }
+    if (
+      !Number.isFinite(this.operationTimeoutMs) ||
+      this.operationTimeoutMs <= 0
+    ) {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "Google OAuth operation timeout is misconfigured.",
+      );
+    }
+  }
+
+  private async requestJson<T>(
+    input: string,
+    init: RequestInit,
+    context: string,
+    operationSignal?: AbortSignal,
+  ): Promise<T> {
+    const requestSignal = AbortSignal.timeout(this.timeoutMs);
+    const signal = operationSignal
+      ? AbortSignal.any([requestSignal, operationSignal])
+      : requestSignal;
+    try {
+      const response = await this.fetchImpl(input, { ...init, signal });
+      if (!response.ok) {
+        cancelResponseBody(response);
+        throw oauthError(response.status, context);
+      }
+      return (await readBoundedJson(
+        response,
+        this.maxResponseBytes,
+        context,
+        signal,
+      )) as T;
+    } catch (error) {
+      if (error instanceof ProblemError) throw error;
+      if (signal.aborted || abortLike(error)) {
+        throw new ProblemError(
+          "DEPENDENCY_UNAVAILABLE",
+          `${context}: provider request timed out.`,
+        );
+      }
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        `${context}: provider request failed.`,
+      );
+    }
   }
 
   async exchangeCode(input: {
@@ -141,18 +407,16 @@ export class HttpGoogleOAuthClient implements GoogleOAuthClient {
       client_secret: this.deps.clientSecret,
       code_verifier: input.codeVerifier,
     });
-    const res = await this.fetchImpl(TOKEN_ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
-    if (!res.ok) throw oauthError(res.status, "token exchange");
-    const json = (await res.json()) as {
+    const json = await this.requestJson<{
       access_token?: string;
       refresh_token?: string;
       expires_in?: number;
       scope?: string;
-    };
+    }>(TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    }, "token exchange");
     if (!json.access_token || typeof json.expires_in !== "number") {
       throw new ProblemError("DEPENDENCY_UNAVAILABLE", "token exchange: malformed response.");
     }
@@ -164,45 +428,122 @@ export class HttpGoogleOAuthClient implements GoogleOAuthClient {
     };
   }
 
-  async listProperties(provider: GoogleProvider, accessToken: string): Promise<GoogleProperty[]> {
+  async listProperties(
+    provider: GoogleProvider,
+    accessToken: string,
+  ): Promise<GoogleProperty[]> {
+    const operationSignal = AbortSignal.timeout(this.operationTimeoutMs);
     return provider === "gsc"
-      ? this.listGscSites(accessToken)
-      : this.listGa4Properties(accessToken);
+      ? this.listGscSites(accessToken, operationSignal)
+      : this.listGa4Properties(accessToken, operationSignal);
   }
 
-  private async listGscSites(accessToken: string): Promise<GoogleProperty[]> {
-    const res = await this.fetchImpl(GSC_SITES_ENDPOINT, {
-      headers: { authorization: `Bearer ${accessToken}` },
-    });
-    if (!res.ok) throw oauthError(res.status, "list GSC sites");
-    const json = (await res.json()) as {
+  private async listGscSites(
+    accessToken: string,
+    operationSignal: AbortSignal,
+  ): Promise<GoogleProperty[]> {
+    const json = await this.requestJson<{
       siteEntry?: { siteUrl?: string; permissionLevel?: string }[];
-    };
+    }>(GSC_SITES_ENDPOINT, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }, "list GSC sites", operationSignal);
     const entries = json.siteEntry ?? [];
-    return entries
+    const candidates = entries
       .filter((e) => e.siteUrl && e.permissionLevel !== "siteUnverifiedUser")
       .map((e) => ({ externalPropertyId: e.siteUrl as string, displayName: e.siteUrl as string }));
+    if (candidates.length > GOOGLE_OAUTH_MAX_CANDIDATES) {
+      throw candidateLimitError("list GSC sites");
+    }
+    return candidates;
   }
 
-  private async listGa4Properties(accessToken: string): Promise<GoogleProperty[]> {
-    const res = await this.fetchImpl(GA4_ACCOUNT_SUMMARIES, {
-      headers: { authorization: `Bearer ${accessToken}` },
-    });
-    if (!res.ok) throw oauthError(res.status, "list GA4 properties");
-    const json = (await res.json()) as {
-      accountSummaries?: {
-        propertySummaries?: { property?: string; displayName?: string }[];
-      }[];
-    };
-    const out: GoogleProperty[] = [];
-    for (const account of json.accountSummaries ?? []) {
-      for (const prop of account.propertySummaries ?? []) {
-        if (!prop.property) continue;
-        const id = prop.property.replace(/^properties\//, "");
-        out.push({ externalPropertyId: id, displayName: prop.displayName ?? prop.property });
+  private async listGa4Properties(
+    accessToken: string,
+    operationSignal: AbortSignal,
+  ): Promise<GoogleProperty[]> {
+    const summaries = new Map<string, string>();
+    const seenPageTokens = new Set<string>();
+    let pageToken: string | undefined;
+
+    for (let page = 0; page < GA4_ACCOUNT_PAGE_LIMIT; page += 1) {
+      const url = new URL(GA4_ACCOUNT_SUMMARIES);
+      url.searchParams.set("pageSize", String(GA4_ACCOUNT_PAGE_SIZE));
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+      const json = await this.requestJson<{
+        accountSummaries?: {
+          propertySummaries?: { property?: string; displayName?: string }[];
+        }[];
+        nextPageToken?: string;
+      }>(url.toString(), {
+        headers: { authorization: `Bearer ${accessToken}` },
+      }, "list GA4 properties", operationSignal);
+      for (const account of json.accountSummaries ?? []) {
+        for (const prop of account.propertySummaries ?? []) {
+          if (!prop.property) continue;
+          if (!/^properties\/\d+$/.test(prop.property)) {
+            throw new ProblemError(
+              "DEPENDENCY_UNAVAILABLE",
+              "list GA4 properties: malformed property resource.",
+            );
+          }
+          summaries.set(
+            prop.property,
+            prop.displayName ?? prop.property,
+          );
+          if (summaries.size > GOOGLE_OAUTH_MAX_CANDIDATES) {
+            throw candidateLimitError("list GA4 properties");
+          }
+        }
       }
+
+      const next = json.nextPageToken;
+      if (!next) break;
+      if (seenPageTokens.has(next) || page === GA4_ACCOUNT_PAGE_LIMIT - 1) {
+        throw new ProblemError(
+          "DEPENDENCY_UNAVAILABLE",
+          "list GA4 properties: pagination did not terminate.",
+        );
+      }
+      seenPageTokens.add(next);
+      pageToken = next;
     }
-    return out;
+
+    return mapWithConcurrency(
+      [...summaries.entries()],
+      GA4_PROPERTY_DETAIL_CONCURRENCY,
+      async ([resourceName, displayName]) => {
+        const detail = await this.requestJson<{ timeZone?: unknown }>(
+          `${GA4_ADMIN_BASE}/${resourceName}`,
+          { headers: { authorization: `Bearer ${accessToken}` } },
+          "read GA4 property metadata",
+          operationSignal,
+        );
+        const propertyTimeZone = detail.timeZone;
+        if (
+          typeof propertyTimeZone !== "string" ||
+          !isSupportedTimeZone(propertyTimeZone)
+        ) {
+          throw new ProblemError(
+            "DEPENDENCY_UNAVAILABLE",
+            "read GA4 property metadata: timezone unavailable.",
+          );
+        }
+        return {
+          externalPropertyId: resourceName.replace(/^properties\//, ""),
+          displayName,
+          propertyTimeZone,
+        };
+      },
+    );
+  }
+}
+
+function isSupportedTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(0);
+    return true;
+  } catch {
+    return false;
   }
 }
 

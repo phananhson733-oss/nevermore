@@ -65,12 +65,19 @@ export async function updateProjectAction(
 
   await db.transaction(async (tx) => {
     const repo = new ActionsRepository(tx);
-    await repo.applyOverride(projectScope, actionId, {
+    const applied = await repo.applyOverride(projectScope, actionId, {
       ...(body.status ? { status: body.status } : {}),
       ...(body.priorityBand ? { priorityBand: body.priorityBand } : {}),
       ...(body.roadmapLane ? { roadmapLane: body.roadmapLane } : {}),
       toRevision,
+      expectedRevision: action.revision,
     });
+    if (!applied) {
+      throw new ProblemError(
+        "VERSION_CONFLICT",
+        "Action was modified; refetch and retry.",
+      );
+    }
     await repo.appendOverrideAudit({
       workspaceId: scope.workspaceId,
       projectId,

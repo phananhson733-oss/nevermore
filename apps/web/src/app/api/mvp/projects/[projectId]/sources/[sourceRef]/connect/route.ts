@@ -1,6 +1,7 @@
 import { ConnectSourceRequest, OAuthProvider } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { operatorRoute } from "@/lib/http/handler";
+import { assertWorkspaceAttemptRateLimit } from "@/lib/http/rate-limit";
 import { ok } from "@/lib/http/respond";
 import { parseJsonBody, parseUuidParam } from "@/lib/http/validate";
 import { connectProjectSource } from "@/lib/services/source-connect";
@@ -18,6 +19,11 @@ export const POST = operatorRoute<{ projectId: string; sourceRef: string }>(
     if (!provider.success) {
       throw new ProblemError("NOT_FOUND", "Unknown OAuth provider.");
     }
+    await assertWorkspaceAttemptRateLimit(ctx.operator.workspaceId, {
+      scope: "source_oauth_connect",
+      maxAttempts: 30,
+      windowMs: 15 * 60 * 1000,
+    });
     const body = await parseJsonBody(request, ConnectSourceRequest);
 
     const result = await connectProjectSource(

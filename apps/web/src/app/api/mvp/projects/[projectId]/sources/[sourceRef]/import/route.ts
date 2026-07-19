@@ -1,9 +1,19 @@
-import { NextResponse } from "next/server";
 import { ImportConfirmRequest } from "@sf/contracts";
-import { ProblemError, REQUEST_ID_HEADER } from "@sf/observability";
+import { ProblemError } from "@sf/observability";
 import { operatorRoute } from "@/lib/http/handler";
-import { ok } from "@/lib/http/respond";
-import { parseJsonBody, parseUuidParam, requireIdempotencyKey } from "@/lib/http/validate";
+import {
+  assertWorkspaceAttemptRateLimit,
+  assertWorkspaceRateLimit,
+} from "@/lib/http/rate-limit";
+import { asyncAccepted, ok } from "@/lib/http/respond";
+import {
+  MAX_MULTIPART_BODY_OVERHEAD_BYTES,
+  isMultipartFormDataContentType,
+  parseJsonBody,
+  parseMultipartFormDataWithinLimit,
+  parseUuidParam,
+  requireIdempotencyKey,
+} from "@/lib/http/validate";
 import { confirmImport, previewImport, MAX_IMPORT_BYTES } from "@/lib/services/csv-import";
 
 /**
@@ -21,8 +31,16 @@ export const POST = operatorRoute<{ projectId: string; sourceRef: string }>(
     const scope = { workspaceId: ctx.operator.workspaceId };
     const contentType = request.headers.get("content-type") ?? "";
 
-    if (contentType.includes("multipart/form-data")) {
-      const form = await request.formData();
+    if (isMultipartFormDataContentType(contentType)) {
+      await assertWorkspaceAttemptRateLimit(ctx.operator.workspaceId, {
+        scope: "csv_import_preview",
+        maxAttempts: 20,
+        windowMs: 15 * 60 * 1000,
+      });
+      const form = await parseMultipartFormDataWithinLimit(
+        request,
+        MAX_IMPORT_BYTES + MAX_MULTIPART_BODY_OVERHEAD_BYTES,
+      );
       const file = form.get("file");
       if (!(file instanceof File)) {
         throw new ProblemError("VALIDATION_ERROR", "A CSV file field is required.");
@@ -38,15 +56,18 @@ export const POST = operatorRoute<{ projectId: string; sourceRef: string }>(
 
     const body = await parseJsonBody(request, ImportConfirmRequest);
     const idempotencyKey = requireIdempotencyKey(request);
+    await assertWorkspaceRateLimit(ctx.operator.workspaceId, {
+      idempotencyKey,
+      scope: "csv_import_confirm",
+      maxAttempts: 10,
+      windowMs: 15 * 60 * 1000,
+    });
     const result = await confirmImport(scope, id, ctx.operator.userId, idempotencyKey, body);
-    const response = NextResponse.json(
+    return asyncAccepted(
       { run: result.run, statusUrl: result.statusUrl, resourceRef: result.resourceRef },
-      { status: 202 },
+      ctx.requestId,
+      result.location,
     );
-    response.headers.set("Location", result.location);
-    response.headers.set("Retry-After", "1");
-    response.headers.set(REQUEST_ID_HEADER, ctx.requestId);
-    return response;
   },
 );
 

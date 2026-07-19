@@ -9,31 +9,91 @@
  * Two guards run:
  *   1. Declared-citation check — every `evidenceRef` and every `citedNumbers`
  *      entry must point at a real `evidenceId`, and each cited number must
- *      actually appear in that evidence's claim text.
- *   2. Body scan — any statistical figure in the artifact body that is not
- *      present anywhere in the allowlisted input (evidence + ICP/action/finding)
- *      is treated as fabricated. Values written as `unknown`/`待确认` are allowed.
+ *      actually appear as an exact number token in the evidence excerpt the
+ *      model received.
+ *   2. Body scan — every factual number in the artifact body must have a valid
+ *      `citedNumbers` entry. ICP/action/finding/operator prose is context, never
+ *      numeric evidence. Values written as `unknown`/`待确认` are allowed.
  */
 
 import type { ArtifactPromptInput } from "../types.ts";
-import { UNKNOWN_PLACEHOLDERS } from "./envelope.ts";
+import {
+  safeEvidenceClaimExcerpt,
+  UNKNOWN_PLACEHOLDERS,
+} from "./envelope.ts";
 import type { LlmArtifactEnvelope } from "./envelope.ts";
 
 /**
- * Matches statistical figures that would be fabrication risks: thousands-grouped
- * integers (`1,204`), decimals (`3.5`), percentages (`45%`), and multipliers
- * (`2x`). Bare small integers, list indices, and 4-digit years are intentionally
- * NOT matched so structural numbers do not raise false positives.
+ * Candidate numeric tokens. Bare integers are included so prose such as
+ * `3 users`, `500 users`, and factual years cannot bypass reference integrity.
+ * Explicit Markdown list/step markers are removed before tokenization.
  */
-const FACTUAL_NUMBER_RE = /\d{1,3}(?:,\d{3})+|\d+\.\d+%?|\d+%|\d+(?:\.\d+)?x/gi;
+const FACTUAL_NUMBER_RE =
+  /(?:(?:[-−][ \t]*[$€£¥]?|[$€£¥][ \t]*[-−]?)[ \t]*)?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)(?:%|[x×])?/giu;
 
-function normalizeNumber(token: string): string {
-  return token.toLowerCase().replace(/,/g, "");
+const ORDERED_LIST_MARKER_RE = /^(\s{0,3})\d{1,9}[.)](?=[ \t]+|$)[ \t]*/;
+const STRUCTURAL_STEP_MARKER_RE =
+  /\b((?:step|phase|section)[ \t]+)\d{1,3}(?=[ \t]*[:.)-])/giu;
+const WORD_CHARACTER_RE = /[\p{L}\p{N}_]/u;
+const CURRENCY_RE = /[$€£¥]/u;
+const SIGN_RE = /[-−]/u;
+
+interface FactualNumberToken {
+  readonly raw: string;
+  readonly canonical: string;
 }
 
-function extractFactualNumbers(text: string): readonly string[] {
-  const matches = text.match(FACTUAL_NUMBER_RE);
-  return matches === null ? [] : matches.map(normalizeNumber);
+function stripStructuralNumberMarkers(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(ORDERED_LIST_MARKER_RE, "$1")
+        .replace(STRUCTURAL_STEP_MARKER_RE, "$1"),
+    )
+    .join("\n");
+}
+
+function normalizeNumber(token: string): string | null {
+  const compact = token.replace(/[ \t]/g, "").toLowerCase();
+  const currency = compact.match(CURRENCY_RE)?.[0] ?? "";
+  const negative = SIGN_RE.test(compact);
+  const suffixMatch = compact.match(/(%|x|×)$/u);
+  const suffix = suffixMatch?.[1] === "×" ? "x" : (suffixMatch?.[1] ?? "");
+  const numericText = compact
+    .replace(CURRENCY_RE, "")
+    .replace(SIGN_RE, "")
+    .replace(/(%|x|×)$/u, "")
+    .replace(/,/g, "");
+  const [integerPart = "0", fractionPart] = numericText.split(".");
+  const integer = integerPart.replace(/^0+(?=\d)/u, "") || "0";
+  const fraction = fractionPart?.replace(/0+$/u, "") ?? "";
+  const normalizedNumeric = fraction.length > 0 ? `${integer}.${fraction}` : integer;
+
+  const sign = negative && normalizedNumeric !== "0" ? "-" : "";
+  return `${sign}${currency}${normalizedNumeric}${suffix}`;
+}
+
+function extractFactualNumbers(text: string): readonly FactualNumberToken[] {
+  const scanText = stripStructuralNumberMarkers(text);
+  const tokens: FactualNumberToken[] = [];
+  for (const match of scanText.matchAll(FACTUAL_NUMBER_RE)) {
+    const matched = match[0];
+    const start = match.index;
+    const before = start > 0 ? scanText[start - 1] : undefined;
+    const after = scanText[start + matched.length];
+    if (
+      (before !== undefined && WORD_CHARACTER_RE.test(before)) ||
+      (after !== undefined && WORD_CHARACTER_RE.test(after))
+    ) {
+      continue;
+    }
+
+    const raw = matched.trim();
+    const canonical = normalizeNumber(raw);
+    if (canonical !== null) tokens.push({ raw, canonical });
+  }
+  return tokens;
 }
 
 function isUnknownPlaceholder(value: string): boolean {
@@ -41,8 +101,19 @@ function isUnknownPlaceholder(value: string): boolean {
   return UNKNOWN_PLACEHOLDERS.some((p) => v === p.toLowerCase());
 }
 
+function singleFactualNumber(value: string): FactualNumberToken | null {
+  const tokens = extractFactualNumbers(value);
+  const token = tokens[0];
+  return tokens.length === 1 && token?.raw === value.trim() ? token : null;
+}
+
 function claimContainsNumber(claim: string, value: string): boolean {
-  return normalizeNumber(claim).includes(normalizeNumber(value));
+  const cited = singleFactualNumber(value);
+  if (cited === null) return false;
+  const claimNumbers = new Set(
+    extractFactualNumbers(claim).map((token) => token.canonical),
+  );
+  return claimNumbers.has(cited.canonical);
 }
 
 /** The text a model authored, used for the body scan. */
@@ -60,29 +131,10 @@ function bodyText(envelope: LlmArtifactEnvelope): string {
   return envelope.markdown;
 }
 
-/** Every factual figure present in the allowlisted input — the legitimate sources. */
-function allowedNumbers(input: ArtifactPromptInput): ReadonlySet<string> {
-  const parts: string[] = [
-    input.operatorInstructions ?? "",
-    input.icp.productName,
-    input.icp.oneLineDescription,
-    ...input.icp.offers,
-    ...input.icp.useCases,
-    ...input.icp.differentiators,
-    input.action.title,
-    input.action.description,
-    input.action.expectedOutcome,
-    input.finding.summary,
-    ...input.evidence.map((e) => e.claim),
-  ];
-  const set = new Set<string>();
-  for (const num of extractFactualNumbers(parts.join("\n"))) set.add(num);
-  return set;
-}
-
 export function checkReferences(input: ArtifactPromptInput, envelope: LlmArtifactEnvelope): readonly string[] {
   const errors: string[] = [];
   const evidenceById = new Map(input.evidence.map((e) => [e.evidenceId, e]));
+  const validCitedNumbers = new Set<string>();
 
   for (const ref of envelope.evidenceRefs) {
     if (!evidenceById.has(ref)) {
@@ -97,15 +149,26 @@ export function checkReferences(input: ArtifactPromptInput, envelope: LlmArtifac
       errors.push(`cited number "${cited.value}" references evidenceId "${cited.evidenceId}" that was not provided`);
       continue;
     }
-    if (!claimContainsNumber(evidence.claim, cited.value)) {
+    const excerpt = safeEvidenceClaimExcerpt(evidence.claim);
+    if (!claimContainsNumber(excerpt, cited.value)) {
       errors.push(`cited number "${cited.value}" does not appear in evidence "${cited.evidenceId}"`);
+      continue;
     }
+    const token = singleFactualNumber(cited.value);
+    if (token !== null) validCitedNumbers.add(token.canonical);
   }
 
-  const allowed = allowedNumbers(input);
-  for (const num of extractFactualNumbers(bodyText(envelope))) {
-    if (!allowed.has(num)) {
-      errors.push(`factual number "${num}" in the artifact is not supported by any provided evidence`);
+  const bodyNumbers = new Map<string, string>();
+  for (const token of extractFactualNumbers(bodyText(envelope))) {
+    if (!bodyNumbers.has(token.canonical)) {
+      bodyNumbers.set(token.canonical, token.raw);
+    }
+  }
+  for (const [canonical, raw] of bodyNumbers) {
+    if (!validCitedNumbers.has(canonical)) {
+      errors.push(
+        `factual number "${raw}" in the artifact is not supported by any provided evidence citation`,
+      );
     }
   }
 

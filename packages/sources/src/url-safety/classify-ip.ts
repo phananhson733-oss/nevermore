@@ -105,9 +105,14 @@ export function isBlockedIp(ip: string): boolean {
     ].some(([base, prefix]) => inV4Cidr(ip, base as string, prefix as number));
   }
   if (isIP(ip) === 6) {
+    // Fail closed: IPv6 global unicast is 2000::/3. IPv4-mapped addresses were
+    // already recursively classified above; translation/local/multicast and all
+    // other non-global prefixes must never be used as crawl egress targets.
+    if (!inV6Cidr(ip, "2000::", 3)) return true;
     return [
-      ["::1", 128], ["::", 128], ["fc00::", 7], ["fe80::", 10],
-      ["ff00::", 8], ["2001:db8::", 32],
+      // IANA special-purpose umbrella, documentation, transition, and the
+      // temporary documentation prefix (RFC 2928/3849/3056/9637).
+      ["2001::", 23], ["2001:db8::", 32], ["2002::", 16], ["3fff::", 20],
     ].some(([base, prefix]) => inV6Cidr(ip, base as string, prefix as number));
   }
   return true;

@@ -112,7 +112,7 @@ function evaluate(ctx: DiagnosticContext): RuleResult {
   return { status: "candidate", candidates: [candidate] };
 }
 
-export const geoEntityRule: DiagnosticRule = {
+export const geoEntityRule = {
   id: "GEO-ENTITY-001",
   version: 1,
   domain: "geo_ai",
@@ -121,4 +121,4 @@ export const geoEntityRule: DiagnosticRule = {
     { dataset: "icp", required: true },
   ],
   evaluate,
-};
+} satisfies DiagnosticRule;

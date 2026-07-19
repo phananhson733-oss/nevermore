@@ -16,6 +16,7 @@ import type { CreateDiagnosticRunRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
+import { isPostgresUniqueViolation } from "./db-errors";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
 /**
@@ -30,6 +31,10 @@ const CONTRACT_VERSION = "2026-07-18";
 const IDEMPOTENCY_SCOPE = "createDiagnosticRun";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const DIAGNOSTIC_ACTIVE_KEY = "diagnostic";
+
+type DiagnosticRunCommand = Omit<CreateDiagnosticRunRequest, "snapshotIds"> & {
+  readonly snapshotIds: readonly string[];
+};
 
 export interface DiagnosticAcceptedResult {
   readonly status: 202;
@@ -94,11 +99,29 @@ export async function createDiagnosticRun(
   projectId: string,
   actorId: string,
   idempotencyKey: string,
-  body: CreateDiagnosticRunRequest,
+  body: DiagnosticRunCommand,
 ): Promise<DiagnosticAcceptedResult> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
-  const boss = await getBoss();
+  const requestHash = contentHash({
+    projectId,
+    snapshotIds: [...body.snapshotIds].sort(),
+    outputLocale: body.outputLocale,
+  });
+
+  // The accepted command is stable even if the project, ICP pointer, or
+  // snapshots later change. Consult its workspace-scoped key first; projectId
+  // in the hash prevents cross-project response replay.
+  const idem = new IdempotencyRepository(db);
+  const existing = await idem.find(
+    scope.workspaceId,
+    IDEMPOTENCY_SCOPE,
+    idempotencyKey,
+  );
+  if (existing) {
+    const replayed = replay(existing, requestHash);
+    if (replayed) return replayed;
+  }
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
@@ -171,27 +194,20 @@ export async function createDiagnosticRun(
   const inputHash = contentHash(
     inputManifest as unknown as Parameters<typeof contentHash>[0],
   );
-  const requestHash = contentHash({
-    snapshotIds: [...body.snapshotIds].sort(),
-    outputLocale: body.outputLocale,
-  });
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
-  const idem = new IdempotencyRepository(db);
-  const existing = await idem.find(
-    scope.workspaceId,
-    IDEMPOTENCY_SCOPE,
-    idempotencyKey,
-  );
-  if (existing) {
-    const replayed = replay(existing, requestHash);
-    if (replayed) return replayed;
-  }
   const active = await new AsyncRunsRepository(db).findActive(
     projectScope,
     DIAGNOSTIC_ACTIVE_KEY,
   );
   if (active) {
+    const now = await idem.find(
+      scope.workspaceId,
+      IDEMPOTENCY_SCOPE,
+      idempotencyKey,
+    );
+    const replayed = now ? replay(now, requestHash) : null;
+    if (replayed) return replayed;
     throw new ProblemError(
       "RUN_ALREADY_ACTIVE",
       "A diagnostic run is already active.",
@@ -201,6 +217,7 @@ export async function createDiagnosticRun(
     );
   }
 
+  const boss = await getBoss();
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
@@ -256,6 +273,11 @@ export async function createDiagnosticRun(
         projectId,
         contractVersion: CONTRACT_VERSION,
       });
+      await new ProjectsRepository(tx).setStage(
+        scope,
+        projectId,
+        "diagnosing",
+      );
 
       const dto = toAsyncRunDto(run);
       const statusUrl = runStatusUrl(projectId, run.id);
@@ -282,11 +304,15 @@ export async function createDiagnosticRun(
   } catch (error) {
     // Lost the active-key race: the partial unique index aborted the insert.
     if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "23505"
+      isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")
     ) {
+      const winnerKey = await idem.find(
+        scope.workspaceId,
+        IDEMPOTENCY_SCOPE,
+        idempotencyKey,
+      );
+      const replayed = winnerKey ? replay(winnerKey, requestHash) : null;
+      if (replayed) return replayed;
       const winner = await new AsyncRunsRepository(db).findActive(
         projectScope,
         DIAGNOSTIC_ACTIVE_KEY,

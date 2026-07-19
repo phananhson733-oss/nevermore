@@ -1,10 +1,11 @@
 import pg from "pg";
+import { serializeDbProcessFailure } from "./runtime-failure.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 28 app tables, the active-run uniqueness index, and append-only
- * triggers. Exits non-zero on drift. This is a fast structural gate, not a full
- * DDL diff.
+ * exactly 28 app tables plus every named index and trigger in the frozen SQL
+ * contract. Exits non-zero on drift. This is a structural object-presence gate;
+ * the byte-for-byte migration/spec gate separately prevents definition drift.
  */
 
 const EXPECTED_TABLES = [
@@ -38,8 +39,58 @@ const EXPECTED_TABLES = [
   "telemetry_events",
 ] as const;
 
-const REQUIRED_INDEXES = ["async_runs_one_active_key_idx", "sites_one_primary_per_project_idx"];
-const REQUIRED_TRIGGERS = ["evidence_append_only", "findings_set_updated_at"];
+const REQUIRED_INDEXES = [
+  "client_projects_workspace_updated_idx",
+  "sites_one_primary_per_project_idx",
+  "source_connections_one_active_provider_idx",
+  "source_connections_project_idx",
+  "oauth_intents_expiry_idx",
+  "import_previews_expiry_idx",
+  "async_runs_one_active_key_idx",
+  "async_runs_project_status_idx",
+  "data_snapshots_project_provider_idx",
+  "normalized_observations_lookup_idx",
+  "normalized_observations_snapshot_idx",
+  "provider_discrepancies_pair_idx",
+  "analysis_invocations_project_idx",
+  "evidence_run_idx",
+  "findings_project_filter_idx",
+  "finding_observations_finding_run_idx",
+  "actions_plan_idx",
+  "execution_artifacts_one_active_type_idx",
+  "execution_artifacts_project_idx",
+  "export_bundles_project_idx",
+  "idempotency_keys_expiry_idx",
+  "telemetry_events_name_created_idx",
+] as const;
+
+const REQUIRED_TRIGGERS = [
+  "workspaces_set_updated_at",
+  "operator_profiles_set_updated_at",
+  "client_projects_set_updated_at",
+  "sites_set_updated_at",
+  "source_connections_set_updated_at",
+  "source_credentials_set_updated_at",
+  "oauth_intents_set_updated_at",
+  "import_previews_set_updated_at",
+  "async_runs_set_updated_at",
+  "provider_discrepancies_set_updated_at",
+  "findings_set_updated_at",
+  "actions_set_updated_at",
+  "execution_artifacts_set_updated_at",
+  "idempotency_keys_set_updated_at",
+  "icp_profiles_append_only",
+  "data_snapshots_append_only",
+  "normalized_observations_append_only",
+  "diagnostic_run_rules_append_only",
+  "analysis_invocations_append_only",
+  "evidence_append_only",
+  "finding_observations_append_only",
+  "finding_review_events_append_only",
+  "action_override_audit_append_only",
+  "artifact_revisions_append_only",
+  "telemetry_events_append_only",
+] as const;
 
 export interface MigrateCheckResult {
   ok: boolean;
@@ -99,12 +150,15 @@ async function main(): Promise<void> {
     for (const p of result.problems) console.error(`- ${p}`);
     process.exit(1);
   }
-  console.log("Migration check passed: 28 app tables, required indexes and triggers present.");
+  console.log(
+    `Migration check passed: ${EXPECTED_TABLES.length} app tables, ` +
+      `${REQUIRED_INDEXES.length} indexes, and ${REQUIRED_TRIGGERS.length} triggers present.`,
+  );
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error: unknown) => {
-    console.error(error);
+    console.error(serializeDbProcessFailure("migrate-check", error));
     process.exit(1);
   });
 }

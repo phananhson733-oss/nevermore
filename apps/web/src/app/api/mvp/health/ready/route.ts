@@ -1,14 +1,19 @@
-import { PGBOSS_SCHEMA } from "@sf/db";
+import { checkWorkerReadiness, PGBOSS_SCHEMA } from "@sf/db";
 import { route } from "@/lib/http/handler";
 import { getDb } from "@/lib/db";
 import { ok, problem } from "@/lib/http/respond";
 
 /**
- * Readiness: database reachable and the pg-boss schema installed (spec §13.3).
- * Worker heartbeat is added once the worker registers heartbeats (WP2+).
+ * Readiness requires the database, pg-boss schema, and a live worker database
+ * session. Merely seeing queue tables is insufficient: a crashed worker leaves
+ * those tables behind (spec §13.3, DoD §18.8).
  */
 export const GET = route(async (_request, ctx) => {
-  const checks: Record<string, boolean> = { database: false, pgbossSchema: false };
+  const checks: Record<string, boolean> = {
+    database: false,
+    pgbossSchema: false,
+    worker: false,
+  };
   try {
     const { pool } = getDb();
     await pool.query("SELECT 1");
@@ -18,13 +23,17 @@ export const GET = route(async (_request, ctx) => {
       [PGBOSS_SCHEMA],
     );
     checks.pgbossSchema = (schemaRes.rowCount ?? 0) > 0;
-  } catch (error) {
+    if (checks.pgbossSchema) {
+      checks.worker = await checkWorkerReadiness(pool);
+    }
+  } catch {
     ctx.logger.warn("readiness_check_failed", {
-      message: error instanceof Error ? error.message : String(error),
+      code: "DEPENDENCY_UNAVAILABLE",
+      type: "dependency",
     });
   }
 
-  const ready = checks.database && checks.pgbossSchema;
+  const ready = checks.database && checks.pgbossSchema && checks.worker;
   if (!ready) {
     return problem("DEPENDENCY_UNAVAILABLE", "Service dependencies are not ready.", ctx.requestId);
   }

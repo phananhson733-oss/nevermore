@@ -43,6 +43,17 @@ describe("deriveConfidence (spec §8.7)", () => {
     expect(deriveConfidence(evidence)).toBe("medium");
   });
 
+  it("an overlapping provider discrepancy caps otherwise-high confidence at medium", () => {
+    expect(deriveConfidence([ev({ grade: "A" })], { hasDiscrepancy: true })).toBe(
+      "medium",
+    );
+    expect(
+      deriveConfidence([ev({ grade: "C", method: "inferred" })], {
+        hasDiscrepancy: true,
+      }),
+    ).toBe("low");
+  });
+
   it("only generated support → low", () => {
     expect(
       deriveConfidence([ev({ origin: "generated", method: "generated", grade: "C" })]),

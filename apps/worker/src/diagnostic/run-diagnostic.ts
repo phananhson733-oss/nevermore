@@ -6,6 +6,8 @@ import {
   FindingsRepository,
   IcpProfilesRepository,
   ObservationsRepository,
+  ProjectsRepository,
+  ProviderDiscrepanciesRepository,
   TelemetryRepository,
   type DiagnosticRunRow,
   type EvidenceInsert,
@@ -22,7 +24,13 @@ import {
   type ObservationView,
   type RunFinding,
 } from "@sf/engine";
+import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
+import {
+  isTransientInfrastructureError,
+  transientFailureCode,
+} from "../handlers/transient-errors.ts";
+import { runtimeFailureMetadata } from "../runtime-failure.ts";
 
 /**
  * Diagnostic job runner (spec §8.2, §8.6). Loads the frozen manifest + its
@@ -36,6 +44,25 @@ export interface DiagnoseJobPayload {
   readonly runId: string;
   readonly workspaceId: string;
   readonly projectId: string;
+}
+
+export function warnOnSlowRules(
+  logger: Logger,
+  runId: string,
+  ruleResults: readonly {
+    readonly ruleId: string;
+    readonly durationMs: number;
+  }[],
+): void {
+  for (const rule of ruleResults) {
+    if (rule.durationMs > 250) {
+      logger.warn("diagnostic_rule_slow", {
+        runId,
+        ruleId: rule.ruleId,
+        durationMs: rule.durationMs,
+      });
+    }
+  }
 }
 
 interface ManifestSnapshot {
@@ -122,9 +149,17 @@ export async function runDiagnostic(
       findingCount: result.findingCount,
     });
   } catch (error) {
+    if (isTransientInfrastructureError(error)) {
+      ctx.logger.warn("diagnostic_transient_error", {
+        runId,
+        code: transientFailureCode(error),
+      });
+      await runs.resetToQueued(runId);
+      throw error;
+    }
     ctx.logger.error("diagnostic_failed", {
       runId,
-      message: error instanceof Error ? error.message : "unknown",
+      ...runtimeFailureMetadata("UNAVAILABLE", error),
     });
     await runs.setTerminal(runId, {
       status: "failed",
@@ -153,6 +188,9 @@ async function computeAndPersist(
   const observationRows = await new ObservationsRepository(
     ctx.db,
   ).listBySnapshotIds(scope, snapshotIds);
+  const discrepancyRows = await new ProviderDiscrepanciesRepository(
+    ctx.db,
+  ).listUnresolvedBySnapshotIds(scope, snapshotIds);
   const observations: ObservationView[] = observationRows.map((o) => ({
     metricKey: o.metric_key,
     subjectType: o.subject_type,
@@ -172,12 +210,16 @@ async function computeAndPersist(
     capturedAt,
   });
 
-  const pipeline = runPipeline({
+  const pipeline = await runPipeline({
     projectId: scope.projectId,
     ctx: diagCtx,
     rules: ALL_RULES,
     deliveryLocale: diagRun.output_locale,
+    discrepancySubjectRefs: [
+      ...new Set(discrepancyRows.map((row) => row.subject_ref)),
+    ],
   });
+  warnOnSlowRules(ctx.logger, diagRun.id, pipeline.ruleResults);
 
   // A run is `completed` (and may therefore auto-resolve stale findings, §8.6)
   // ONLY when every rule actually ran to pass/candidate — a single skipped
@@ -266,6 +308,11 @@ async function computeAndPersist(
       resultType: "diagnostic_run",
       resultId: diagRun.id,
     });
+    await new ProjectsRepository(tx).setStage(
+      { workspaceId: scope.workspaceId },
+      scope.projectId,
+      "planning",
+    );
 
     await new TelemetryRepository(tx).emit({
       workspaceId: scope.workspaceId,
@@ -314,6 +361,7 @@ async function upsertFinding(
       titleArgs,
       summary: finding.summary,
       summaryLocale: finding.summaryLocale,
+      summaryInvocationId: finding.summaryInvocationId,
       subjectRefs: [...finding.subjectRefs],
       severity: finding.severity,
       confidence: finding.confidence,
@@ -331,6 +379,7 @@ async function upsertFinding(
     titleArgs,
     summary: finding.summary,
     summaryLocale: finding.summaryLocale,
+    summaryInvocationId: finding.summaryInvocationId,
     subjectRefs: [...finding.subjectRefs],
     runId,
     seenAt: now,

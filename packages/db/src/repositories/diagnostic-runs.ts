@@ -139,6 +139,7 @@ export class DiagnosticRunsRepository extends Repository {
       status: string;
       reason: string | null;
       metrics: Record<string, unknown>;
+      duration_ms: number;
     }[]
   > {
     return (await this.exec
@@ -151,6 +152,7 @@ export class DiagnosticRunsRepository extends Repository {
       status: string;
       reason: string | null;
       metrics: Record<string, unknown>;
+      duration_ms: number;
     }[];
   }
 }

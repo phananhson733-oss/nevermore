@@ -11,8 +11,26 @@
 
 import type { SourceErrorCode } from "../adapter.ts";
 import { SourceError } from "../adapter.ts";
+import {
+  cancelResponseBody,
+  createRequestAbortScope,
+  DEFAULT_PROVIDER_MAX_RESPONSE_BYTES,
+  DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS,
+  isAbortLike,
+  readBoundedJson,
+} from "../provider-http.ts";
 
 export const GA4_API_BASE = "https://analyticsdata.googleapis.com/v1beta";
+/** Spec §7.2: one GA4 collection run may ingest at most 200,000 provider rows. */
+export const GA4_MAX_ROWS = 200_000;
+/** Bounds the whole multi-page report, not each page independently. */
+export const DEFAULT_GA4_REPORT_TIMEOUT_MS = 120_000;
+export const GA4_ROW_CAP_STOP_REASON = "row_cap_reached" as const;
+export const GA4_PAGINATION_CAP_STOP_REASON = "pagination_cap_reached" as const;
+export const GA4_ROW_CAP_LIMITATION =
+  "GA4_ROW_CAP_REACHED: GA4 collection stopped at the 200,000-row run budget; collected metrics are incomplete.";
+export const GA4_PAGINATION_CAP_LIMITATION =
+  "GA4_PAGINATION_CAP_REACHED: GA4 report pagination did not finish within its safety limit; collected metrics are incomplete.";
 
 /** GA4 default page size; a single organic-landing window stays well under this. */
 const DEFAULT_PAGE_SIZE = 100_000;
@@ -81,10 +99,22 @@ export interface Ga4ReportRow {
   readonly metricValues: readonly Ga4ReportCell[];
 }
 
-/** All pages merged: `rows` is the concatenation, `rowCount` GA4's reported total. */
+export type Ga4ReportStopReason =
+  | typeof GA4_ROW_CAP_STOP_REASON
+  | typeof GA4_PAGINATION_CAP_STOP_REASON;
+
+/** All pages merged; `rowCount` remains GA4's reported total for honest coverage. */
 export interface Ga4ReportResponse {
   readonly rows: readonly Ga4ReportRow[];
   readonly rowCount: number;
+  readonly truncated: boolean;
+  readonly stopReason: Ga4ReportStopReason | null;
+  readonly limitation: string;
+}
+
+export interface Ga4RunReportOptions {
+  /** Remaining rows in the adapter's collection-wide budget. */
+  readonly maxRows?: number;
 }
 
 export interface Ga4CompatibilityRequest {
@@ -100,7 +130,11 @@ export interface Ga4CompatibilityResponse {
 
 /** The transport contract the adapter depends on (injectable, offline-testable). */
 export interface Ga4Client {
-  runReport(request: Ga4RunReportRequest, signal?: AbortSignal): Promise<Ga4ReportResponse>;
+  runReport(
+    request: Ga4RunReportRequest,
+    signal?: AbortSignal,
+    options?: Ga4RunReportOptions,
+  ): Promise<Ga4ReportResponse>;
   checkCompatibility(
     request: Ga4CompatibilityRequest,
     signal?: AbortSignal,
@@ -116,6 +150,16 @@ export interface HttpGa4ClientOptions {
   readonly baseUrl?: string;
   readonly pageSize?: number;
   readonly maxPages?: number;
+  /** Per-report row cap. Cannot exceed the §7.2 collection cap. */
+  readonly maxRows?: number;
+  /** Per-request deadline; defaults to 30 seconds. */
+  readonly requestTimeoutMs?: number;
+  /** Deadline for the complete multi-page `runReport` chain. */
+  readonly reportTimeoutMs?: number;
+  /** Maximum decoded JSON bytes per response; defaults to 32 MiB. */
+  readonly maxResponseBytes?: number;
+  /** Optional client-lifetime cancellation, combined with per-call signals. */
+  readonly signal?: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,10 +198,6 @@ function mapStatus(status: number): SourceErrorCode {
   return "INVALID_RESPONSE";
 }
 
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 function normalizeCell(cell: RawReportCell | undefined): Ga4ReportCell {
   return { value: typeof cell?.value === "string" ? cell.value : "" };
 }
@@ -166,6 +206,69 @@ function normalizeRow(row: RawReportRow): Ga4ReportRow {
   return {
     dimensionValues: (row.dimensionValues ?? []).map(normalizeCell),
     metricValues: (row.metricValues ?? []).map(normalizeCell),
+  };
+}
+
+function positiveSafeInteger(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new SourceError("INVALID_CONFIGURATION", `${label} must be a positive integer.`);
+  }
+  return value;
+}
+
+function nonNegativeSafeInteger(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new SourceError("INVALID_CONFIGURATION", `${label} must be a non-negative integer.`);
+  }
+  return value;
+}
+
+function reportPage(value: unknown): {
+  readonly rows: readonly RawReportRow[];
+  readonly rowCount: number;
+} {
+  if (typeof value !== "object" || value === null) {
+    throw new SourceError("INVALID_RESPONSE", "GA4 report response must be an object.");
+  }
+  const response = value as RawReportResponse;
+  const rowCount = response.rowCount;
+  if (!Number.isSafeInteger(rowCount) || rowCount === undefined || rowCount < 0) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "GA4 report response has an invalid rowCount.",
+    );
+  }
+  if (response.rows !== undefined && !Array.isArray(response.rows)) {
+    throw new SourceError("INVALID_RESPONSE", "GA4 report response rows must be an array.");
+  }
+  const rows = response.rows ?? [];
+  if (rows.some((row) => typeof row !== "object" || row === null)) {
+    throw new SourceError("INVALID_RESPONSE", "GA4 report response contains an invalid row.");
+  }
+  return { rows, rowCount };
+}
+
+function completedReport(
+  rows: readonly Ga4ReportRow[],
+  rowCount: number,
+): Ga4ReportResponse {
+  return { rows, rowCount, truncated: false, stopReason: null, limitation: "" };
+}
+
+function truncatedReport(
+  rows: readonly Ga4ReportRow[],
+  rowCount: number,
+  stopReason: Ga4ReportStopReason,
+): Ga4ReportResponse {
+  return {
+    rows,
+    rowCount,
+    truncated: true,
+    stopReason,
+    limitation:
+      stopReason === GA4_ROW_CAP_STOP_REASON
+        ? GA4_ROW_CAP_LIMITATION
+        : GA4_PAGINATION_CAP_LIMITATION,
   };
 }
 
@@ -180,37 +283,113 @@ export class HttpGa4Client implements Ga4Client {
   private readonly baseUrl: string;
   private readonly pageSize: number;
   private readonly maxPages: number;
+  private readonly maxRows: number;
+  private readonly requestTimeoutMs: number;
+  private readonly reportTimeoutMs: number;
+  private readonly maxResponseBytes: number;
+  private readonly signal: AbortSignal | undefined;
 
   constructor(options: HttpGa4ClientOptions) {
     this.propertyId = options.propertyId;
     this.accessToken = options.accessToken;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.baseUrl = options.baseUrl ?? GA4_API_BASE;
-    this.pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
-    this.maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
+    this.pageSize = positiveSafeInteger(options.pageSize ?? DEFAULT_PAGE_SIZE, "GA4 pageSize");
+    this.maxPages = positiveSafeInteger(options.maxPages ?? DEFAULT_MAX_PAGES, "GA4 maxPages");
+    this.maxRows = positiveSafeInteger(options.maxRows ?? GA4_MAX_ROWS, "GA4 maxRows");
+    if (this.maxRows > GA4_MAX_ROWS) {
+      throw new SourceError(
+        "INVALID_CONFIGURATION",
+        `GA4 maxRows cannot exceed ${GA4_MAX_ROWS}.`,
+      );
+    }
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS;
+    this.reportTimeoutMs = options.reportTimeoutMs ?? DEFAULT_GA4_REPORT_TIMEOUT_MS;
+    this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_PROVIDER_MAX_RESPONSE_BYTES;
+    this.signal = options.signal;
   }
 
   async runReport(
     request: Ga4RunReportRequest,
     signal?: AbortSignal,
+    options?: Ga4RunReportOptions,
   ): Promise<Ga4ReportResponse> {
-    const limit = request.limit ?? this.pageSize;
-    let offset = request.offset ?? 0;
+    const requestedPageSize = positiveSafeInteger(
+      request.limit ?? this.pageSize,
+      "GA4 report limit",
+    );
+    const requestedMaxRows = positiveSafeInteger(
+      options?.maxRows ?? this.maxRows,
+      "GA4 report maxRows",
+    );
+    const maxRows = Math.min(requestedMaxRows, this.maxRows, GA4_MAX_ROWS);
+    let offset = nonNegativeSafeInteger(request.offset ?? 0, "GA4 report offset");
     const rows: Ga4ReportRow[] = [];
-    let rowCount = 0;
+    let rowCount: number | null = null;
+    const reportScope = createRequestAbortScope(this.reportTimeoutMs, [this.signal, signal]);
 
-    for (let page = 0; page < this.maxPages; page += 1) {
-      const body = this.buildReportBody(request, limit, offset);
-      const resp = await this.post<RawReportResponse>(":runReport", body, signal);
-      const pageRows = resp.rows ?? [];
-      for (const row of pageRows) rows.push(normalizeRow(row));
-      rowCount = typeof resp.rowCount === "number" ? resp.rowCount : rows.length;
-      // Last page: GA4 returned fewer than a full page, or we have everything.
-      if (pageRows.length < limit || rows.length >= rowCount) break;
-      offset += limit;
+    try {
+      for (let page = 0; page < this.maxPages; page += 1) {
+        const remainingBudget = maxRows - rows.length;
+        if (remainingBudget === 0) {
+          return rowCount !== null && offset >= rowCount
+            ? completedReport(rows, rowCount)
+            : truncatedReport(rows, rowCount ?? offset, GA4_ROW_CAP_STOP_REASON);
+        }
+
+        const remainingProviderRows = rowCount === null ? null : Math.max(0, rowCount - offset);
+        if (remainingProviderRows === 0 && rowCount !== null) {
+          return completedReport(rows, rowCount);
+        }
+        const pageLimit = Math.min(
+          requestedPageSize,
+          remainingBudget,
+          remainingProviderRows ?? Number.POSITIVE_INFINITY,
+        );
+        const body = this.buildReportBody(request, pageLimit, offset);
+        const pageResponse = reportPage(
+          await this.post<unknown>(":runReport", body, reportScope.signal),
+        );
+
+        if (rowCount !== null && pageResponse.rowCount !== rowCount) {
+          throw new SourceError(
+            "INVALID_RESPONSE",
+            "GA4 report rowCount changed during pagination.",
+          );
+        }
+        rowCount = pageResponse.rowCount;
+        const expectedOnOrAfterOffset = Math.max(0, rowCount - offset);
+        if (
+          pageResponse.rows.length > pageLimit ||
+          pageResponse.rows.length > expectedOnOrAfterOffset
+        ) {
+          throw new SourceError(
+            "INVALID_RESPONSE",
+            "GA4 report returned more rows than requested or reported.",
+          );
+        }
+
+        for (const row of pageResponse.rows) rows.push(normalizeRow(row));
+        offset += pageResponse.rows.length;
+
+        // Check provider completion before the cap so exactly-at-cap remains complete.
+        if (offset >= rowCount) return completedReport(rows, rowCount);
+        if (rows.length >= maxRows) {
+          return truncatedReport(rows, rowCount, GA4_ROW_CAP_STOP_REASON);
+        }
+        if (pageResponse.rows.length === 0) {
+          return truncatedReport(rows, rowCount, GA4_PAGINATION_CAP_STOP_REASON);
+        }
+      }
+
+      return truncatedReport(
+        rows,
+        rowCount ?? offset,
+        GA4_PAGINATION_CAP_STOP_REASON,
+      );
+    } finally {
+      reportScope.cleanup();
     }
-
-    return { rows, rowCount };
   }
 
   async checkCompatibility(
@@ -255,30 +434,40 @@ export class HttpGa4Client implements Ga4Client {
   }
 
   private async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-    let res: Response;
+    const abortScope = createRequestAbortScope(this.requestTimeoutMs, [this.signal, signal]);
     try {
-      res = await this.fetchImpl(`${this.baseUrl}/${this.propertyId}${path}`, {
+      const response = await this.fetchImpl(`${this.baseUrl}/${this.propertyId}${path}`, {
         method: "POST",
         headers: {
           authorization: `Bearer ${this.accessToken}`,
           "content-type": "application/json",
         },
         body: JSON.stringify(body),
-        signal: signal ?? null,
+        signal: abortScope.signal,
       });
-    } catch (err) {
-      if (err instanceof SourceError) throw err;
-      throw new SourceError("NETWORK_ERROR", `GA4 request failed: ${errMessage(err)}`);
-    }
 
-    if (!res.ok) {
-      throw new SourceError(mapStatus(res.status), `GA4 API ${res.status} on ${path}`);
-    }
+      if (!response.ok) {
+        await cancelResponseBody(response);
+        throw new SourceError(
+          mapStatus(response.status),
+          `GA4 API ${response.status} on ${path}`,
+        );
+      }
 
-    try {
-      return (await res.json()) as T;
-    } catch {
-      throw new SourceError("INVALID_RESPONSE", `GA4 returned a non-JSON body on ${path}`);
+      return (await readBoundedJson(
+        response,
+        this.maxResponseBytes,
+        `GA4 API ${path}`,
+        abortScope.signal,
+      )) as T;
+    } catch (error) {
+      if (error instanceof SourceError) throw error;
+      if (isAbortLike(error)) {
+        throw new SourceError("TIMEOUT", "GA4 request aborted or timed out.");
+      }
+      throw new SourceError("NETWORK_ERROR", "GA4 request failed to reach the API.");
+    } finally {
+      abortScope.cleanup();
     }
   }
 }

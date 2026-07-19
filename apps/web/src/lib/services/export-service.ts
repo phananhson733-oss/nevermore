@@ -10,10 +10,16 @@ import {
 } from "@sf/db";
 import type { CreateExportRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
-import { ObjectOutOfProjectScopeError } from "@sf/sources";
+import {
+  BlobObjectNotFoundError,
+  ObjectOutOfProjectScopeError,
+  SupabaseSignError,
+  SupabaseStorageError,
+} from "@sf/sources";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
 import { getExportDownloadSigner } from "@/lib/storage";
+import { isPostgresUniqueViolation } from "./db-errors";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
 /**
@@ -32,8 +38,56 @@ export interface ExportAcceptedResult {
   readonly status: 202;
   readonly run: AsyncRunDto;
   readonly statusUrl: string;
-  readonly resourceRef: { type: "export_bundle"; id: string };
+  readonly resourceRef: { type: "export"; id: string };
   readonly location: string;
+}
+
+function replayExport(
+  row: {
+    request_hash: string;
+    status: string;
+    resource_id: string | null;
+    response_body: unknown;
+  },
+  requestHash: string,
+): ExportAcceptedResult | null {
+  if (row.request_hash !== requestHash) {
+    throw new ProblemError(
+      "IDEMPOTENCY_KEY_REUSED",
+      "Idempotency-Key reused with a different request.",
+    );
+  }
+  if (row.status !== "completed" || !row.resource_id) return null;
+  const body = row.response_body as
+    | {
+        run: AsyncRunDto;
+        statusUrl: string;
+        resourceRef?: { id?: string };
+      }
+    | null;
+  if (!body?.run || !body.statusUrl) return null;
+  return {
+    status: 202,
+    run: body.run,
+    statusUrl: body.statusUrl,
+    resourceRef: {
+      type: "export",
+      id: body.resourceRef?.id ?? row.resource_id,
+    },
+    location: body.statusUrl,
+  };
+}
+
+function activeExportConflict(projectId: string, runId?: string): ProblemError {
+  return new ProblemError(
+    "RUN_ALREADY_ACTIVE",
+    "An export of this kind is already running.",
+    {
+      ...(runId
+        ? { headers: { Location: runStatusUrl(projectId, runId) } }
+        : {}),
+    },
+  );
 }
 
 export interface ExportBundleDto {
@@ -58,20 +112,14 @@ export async function createProjectExport(
 ): Promise<ExportAcceptedResult> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
-  const boss = await getBoss();
 
-  const project = await new ProjectsRepository(db).findById(scope, projectId);
-  if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
-  if (project.archived_at)
-    throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
-
-  const activeKey = `export:${body.kind}`;
+  // Completed commands replay independently of later project lifecycle state.
+  // The project is still validated for every genuinely new request below.
   const requestHash = contentHash({
+    projectId,
     kind: body.kind,
     outputLocale: body.outputLocale,
   });
-  const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
-
   const idem = new IdempotencyRepository(db);
   const existing = await idem.find(
     scope.workspaceId,
@@ -79,31 +127,33 @@ export async function createProjectExport(
     idempotencyKey,
   );
   if (existing) {
-    if (existing.request_hash !== requestHash) {
-      throw new ProblemError(
-        "IDEMPOTENCY_KEY_REUSED",
-        "Idempotency-Key reused with a different body.",
-      );
-    }
-    if (existing.status === "completed" && existing.resource_id) {
-      const b = existing.response_body as ExportAcceptedResult | null;
-      if (b?.run) return { ...b, status: 202 };
-    }
+    const replay = replayExport(existing, requestHash);
+    if (replay) return replay;
   }
+
+  const project = await new ProjectsRepository(db).findById(scope, projectId);
+  if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
+  if (project.archived_at)
+    throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+
+  const activeKey = `export:${body.kind}`;
+  const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
   const active = await new AsyncRunsRepository(db).findActive(
     projectScope,
     activeKey,
   );
   if (active) {
-    throw new ProblemError(
-      "RUN_ALREADY_ACTIVE",
-      "An export of this kind is already running.",
-      {
-        headers: { Location: runStatusUrl(projectId, active.id) },
-      },
+    const now = await idem.find(
+      scope.workspaceId,
+      IDEMPOTENCY_SCOPE,
+      idempotencyKey,
     );
+    const replay = now ? replayExport(now, requestHash) : null;
+    if (replay) return replay;
+    throw activeExportConflict(projectId, active.id);
   }
 
+  const boss = await getBoss();
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
@@ -114,11 +164,19 @@ export async function createProjectExport(
         requestHash,
         expiresAt,
       });
-      if (!reserved)
+      if (!reserved) {
+        const winner = await txIdem.find(
+          scope.workspaceId,
+          IDEMPOTENCY_SCOPE,
+          idempotencyKey,
+        );
+        const replay = winner ? replayExport(winner, requestHash) : null;
+        if (replay) return replay;
         throw new ProblemError(
           "IDEMPOTENCY_KEY_REUSED",
           "Idempotency key is being processed.",
         );
+      }
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
@@ -149,37 +207,33 @@ export async function createProjectExport(
         status: 202,
         run: toAsyncRunDto(run),
         statusUrl,
-        resourceRef: { type: "export_bundle", id: bundle.id },
+        resourceRef: { type: "export", id: bundle.id },
         location: statusUrl,
       };
       await txIdem.complete(reserved.id, {
         responseStatus: 202,
         responseBody: result,
-        resourceType: "export_bundle",
+        resourceType: "export",
         resourceId: bundle.id,
       });
       return result;
     });
   } catch (error) {
     if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "23505"
+      isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")
     ) {
+      const winnerKey = await idem.find(
+        scope.workspaceId,
+        IDEMPOTENCY_SCOPE,
+        idempotencyKey,
+      );
+      const replay = winnerKey ? replayExport(winnerKey, requestHash) : null;
+      if (replay) return replay;
       const winner = await new AsyncRunsRepository(db).findActive(
         projectScope,
         activeKey,
       );
-      throw new ProblemError(
-        "RUN_ALREADY_ACTIVE",
-        "An export of this kind is already running.",
-        {
-          ...(winner
-            ? { headers: { Location: runStatusUrl(projectId, winner.id) } }
-            : {}),
-        },
-      );
+      throw activeExportConflict(projectId, winner?.id);
     }
     throw error;
   }
@@ -206,6 +260,10 @@ export async function getProjectExport(
   let downloadUrl: string | null = null;
   let downloadExpiresAt: string | null = null;
   if (bundle.object_key && run.status === "completed") {
+    // Anchor the advertised upper bound before the signing round-trip. If the
+    // storage dependency is slow, calculating it after await would overstate
+    // the URL's real 900-second lifetime by the request latency.
+    const signingStartedAtMs = Date.now();
     try {
       // Project-scoped signer: a key outside this project is rejected before
       // signing, so a wrong-project object can never resolve to a valid URL.
@@ -214,15 +272,28 @@ export async function getProjectExport(
         { expiresInSeconds: SIGNED_URL_TTL_S },
       );
     } catch (error) {
-      // Map an out-of-project key to 404 (do not leak existence, §12.2), never
-      // a signed URL.
-      if (error instanceof ObjectOutOfProjectScopeError) {
+      // Missing/out-of-project objects are non-enumerable 404s (§12.2).
+      // Known provider failures become a sanitized 503; configuration and
+      // unknown programmer errors remain distinct and fail through unchanged.
+      if (
+        error instanceof ObjectOutOfProjectScopeError ||
+        error instanceof BlobObjectNotFoundError
+      ) {
         throw new ProblemError("NOT_FOUND", "Export not found.");
+      }
+      if (
+        error instanceof SupabaseSignError ||
+        error instanceof SupabaseStorageError
+      ) {
+        throw new ProblemError(
+          "DEPENDENCY_UNAVAILABLE",
+          "Export storage is temporarily unavailable.",
+        );
       }
       throw error;
     }
     downloadExpiresAt = new Date(
-      Date.now() + SIGNED_URL_TTL_S * 1000,
+      signingStartedAtMs + SIGNED_URL_TTL_S * 1000,
     ).toISOString();
   }
 

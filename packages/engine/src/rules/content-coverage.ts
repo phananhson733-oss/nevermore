@@ -19,7 +19,7 @@ interface CoverageTarget {
   readonly kind: TargetKind;
 }
 
-export const contentCoverageRule: DiagnosticRule = {
+export const contentCoverageRule = {
   id: "CONTENT-COVERAGE-001",
   version: 1,
   domain: "content_intent",
@@ -58,7 +58,7 @@ export const contentCoverageRule: DiagnosticRule = {
     }
     return { status: "pass", metrics: { coveredCount } };
   },
-};
+} satisfies DiagnosticRule;
 
 /** Token field bags for every eligible indexable page (dropping null bags). */
 function buildPageBags(ctx: DiagnosticContext): ReadonlySet<string>[] {

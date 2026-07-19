@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??=
-  "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
@@ -185,7 +183,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
   });
 
   /** Run the real 11-rule pipeline over the seeded 404-page snapshot. */
-  function runOnce(snapshotId: string, observations: ObservationView[]) {
+  async function runOnce(snapshotId: string, observations: ObservationView[]) {
     void snapshotId;
     const capturedAt = new Date().toISOString();
     const ctx = DiagnosticContext.build({
@@ -319,8 +317,8 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     }));
 
     // Run the PURE pipeline twice over the same inputs.
-    const pipelineA = runOnce(snapshot.id, observations);
-    const pipelineB = runOnce(snapshot.id, observations);
+    const pipelineA = await runOnce(snapshot.id, observations);
+    const pipelineB = await runOnce(snapshot.id, observations);
     const findA = pipelineA.findings.find((f) => f.ruleId === "TECH-HTTP-001");
     const findB = pipelineB.findings.find((f) => f.ruleId === "TECH-HTTP-001");
     expect(findA, "run A should surface TECH-HTTP-001").toBeDefined();
@@ -357,7 +355,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
   it("the DB backstops dedup: a duplicate (project, finding_key) insert is rejected", async () => {
     // Even if code forgot findByKey, UNIQUE (project_id, finding_key) prevents a
     // second row for the same finding identity (migration 0001_init.sql:442).
-    const pipeline = runOnce("noop", [
+    const pipeline = await runOnce("noop", [
       {
         metricKey: METRIC_CRAWL_PAGE,
         subjectType: "url",

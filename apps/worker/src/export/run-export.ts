@@ -17,6 +17,11 @@ import { assembleBundle, type BundleInput } from "@sf/artifacts";
 import { mintExportObjectKey } from "@sf/sources";
 import { redact } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
+import {
+  isTransientInfrastructureError,
+  transientFailureCode,
+} from "../handlers/transient-errors.ts";
+import { runtimeFailureMetadata } from "../runtime-failure.ts";
 
 /**
  * Export job (spec §10.5, §13.3). Loads canonical objects, applies field-level
@@ -40,6 +45,65 @@ export interface ExportJobPayload {
 interface ExportRequest {
   kind: "service_bundle" | "client_bundle";
   outputLocale: string;
+}
+
+const SNAPSHOT_PAGE_SIZE = 100;
+const EXPORT_ENTITY_PAGE_SIZE = 500;
+const EXPORT_LOOKUP_CHUNK_SIZE = 100;
+
+interface CursorPage<T> {
+  readonly rows: readonly T[];
+  readonly nextCursor: string | null;
+}
+
+/** Exhaust a trusted keyset paginator; reject a repeated cursor instead of hanging. */
+async function collectAllPages<T>(
+  loadPage: (cursor: string | null) => Promise<CursorPage<T>>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+
+  for (;;) {
+    const page = await loadPage(cursor);
+    rows.push(...page.rows);
+    if (page.nextCursor === null) return rows;
+    if (seenCursors.has(page.nextCursor)) {
+      throw new Error("export pagination returned a repeated cursor");
+    }
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
+}
+
+/** Keep project-scoped `IN (...)` lookups below driver/database bind limits. */
+async function collectInChunks<T, R>(
+  values: readonly T[],
+  loadChunk: (chunk: readonly T[]) => Promise<readonly R[]>,
+): Promise<R[]> {
+  const rows: R[] = [];
+  for (let index = 0; index < values.length; index += EXPORT_LOOKUP_CHUNK_SIZE) {
+    const chunk = values.slice(index, index + EXPORT_LOOKUP_CHUNK_SIZE);
+    rows.push(...(await loadChunk(chunk)));
+  }
+  return rows;
+}
+
+async function deleteUncommittedExport(
+  ctx: WorkerContext,
+  runId: string,
+  key: string,
+): Promise<void> {
+  try {
+    await ctx.blobStore.delete(key);
+  } catch {
+    // Do not expose an object key or storage exception: either may contain
+    // customer identifiers. The transaction error remains the primary failure.
+    ctx.logger.error("export_orphan_cleanup_failed", {
+      runId,
+      code: "STORAGE_DELETE_FAILED",
+    });
+  }
 }
 
 export async function runExport(
@@ -77,41 +141,61 @@ export async function runExport(
       contentType: "application/zip",
     });
 
-    await ctx.db.transaction(async (tx) => {
-      await new ExportBundlesRepository(tx).finalize(bundleRow.id, {
-        objectKey: put.key,
-        checksum: assembled.checksum,
-        byteSize: put.bytes,
-        itemCounts: assembled.itemCounts,
-        manifest: assembled.manifest as unknown as Record<string, unknown>,
-      });
-      await new AsyncRunsRepository(tx).setTerminal(runId, {
-        status: "completed",
-        resultType: "export",
-        resultId: bundleRow.id,
-      });
-      await new TelemetryRepository(tx).emit({
-        workspaceId,
-        projectId,
-        eventName: "export_ready",
-        actorId: claimed.initiated_by,
-        properties: {
-          kind: req.kind,
+    try {
+      await ctx.db.transaction(async (tx) => {
+        await new ExportBundlesRepository(tx).finalize(bundleRow.id, {
+          objectKey: put.key,
+          checksum: assembled.checksum,
+          byteSize: put.bytes,
           itemCounts: assembled.itemCounts,
-          sizeBucket:
-            put.bytes < 1_000_000
-              ? "under_1mb"
-              : put.bytes < 10_000_000
-                ? "under_10mb"
-                : "over_10mb",
-        },
+          manifest: assembled.manifest as unknown as Record<string, unknown>,
+        });
+        await new AsyncRunsRepository(tx).setTerminal(runId, {
+          status: "completed",
+          resultType: "export",
+          resultId: bundleRow.id,
+        });
+        if (req.kind === "client_bundle") {
+          await new ProjectsRepository(tx).setStage(
+            { workspaceId },
+            projectId,
+            "delivered",
+          );
+        }
+        await new TelemetryRepository(tx).emit({
+          workspaceId,
+          projectId,
+          eventName: "export_ready",
+          actorId: claimed.initiated_by,
+          properties: {
+            kind: req.kind,
+            itemCounts: assembled.itemCounts,
+            sizeBucket:
+              put.bytes < 1_000_000
+                ? "under_1mb"
+                : put.bytes < 10_000_000
+                  ? "under_10mb"
+                  : "over_10mb",
+          },
+        });
       });
-    });
+    } catch (error) {
+      await deleteUncommittedExport(ctx, runId, put.key);
+      throw error;
+    }
     ctx.logger.info("export_done", { runId, kind: req.kind, bytes: put.bytes });
   } catch (error) {
+    if (isTransientInfrastructureError(error)) {
+      ctx.logger.warn("export_transient_error", {
+        runId,
+        code: transientFailureCode(error),
+      });
+      await runs.resetToQueued(runId);
+      throw error;
+    }
     ctx.logger.error("export_failed", {
       runId,
-      message: error instanceof Error ? error.message : "unknown",
+      ...runtimeFailureMetadata("UNAVAILABLE", error),
     });
     await runs.setTerminal(runId, {
       status: "failed",
@@ -141,43 +225,55 @@ async function buildBundleInput(
   const sources = await new SourceConnectionsRepository(ctx.db).listByProject(
     scope,
   );
-  const snapshotPage = await new DataSnapshotsRepository(ctx.db).listByProject(
-    scope,
-    { limit: 100, cursor: null },
+  const snapshotsRepo = new DataSnapshotsRepository(ctx.db);
+  const snapshots = await collectAllPages((cursor) =>
+    snapshotsRepo.listByProject(scope, {
+      limit: SNAPSHOT_PAGE_SIZE,
+      cursor,
+    }),
   );
-  const snapshotIds = snapshotPage.rows.map((s) => s.id);
+  const snapshotIds = snapshots.map((snapshot) => snapshot.id);
+  const observationsRepo = new ObservationsRepository(ctx.db);
   const observations =
     req.kind === "service_bundle"
-      ? await new ObservationsRepository(ctx.db).listBySnapshotIds(
-          scope,
-          snapshotIds,
+      ? await collectInChunks(snapshotIds, (ids) =>
+          observationsRepo.listBySnapshotIds(scope, ids),
         )
       : [];
-  const findingPage = await new FindingsRepository(ctx.db).list(scope, {
-    limit: 500,
-    cursor: null,
-    activeOnly: false,
-  });
-  const evidenceRepo = new EvidenceRepository(ctx.db);
-  const links = await evidenceRepo.listForFindings(
-    scope,
-    findingPage.rows.map((f) => f.id),
+  const findingsRepo = new FindingsRepository(ctx.db);
+  const findings = await collectAllPages((cursor) =>
+    findingsRepo.list(scope, {
+      limit: EXPORT_ENTITY_PAGE_SIZE,
+      cursor,
+      activeOnly: false,
+    }),
   );
-  const evidenceRows = await evidenceRepo.findByIds(scope, [
-    ...new Set(links.map((l) => l.evidence_id)),
-  ]);
-  const actionPage = await new ActionsRepository(ctx.db).list(scope, {
-    limit: 500,
-    cursor: null,
-  });
+  const evidenceRepo = new EvidenceRepository(ctx.db);
+  const links = await collectInChunks(
+    findings.map((finding) => finding.id),
+    (findingIds) => evidenceRepo.listForFindings(scope, findingIds),
+  );
+  const evidenceRows = await collectInChunks(
+    [...new Set(links.map((link) => link.evidence_id))],
+    (evidenceIds) => evidenceRepo.findByIds(scope, evidenceIds),
+  );
+  const actionsRepo = new ActionsRepository(ctx.db);
+  const actions = await collectAllPages((cursor) =>
+    actionsRepo.list(scope, {
+      limit: EXPORT_ENTITY_PAGE_SIZE,
+      cursor,
+    }),
+  );
   const artifactRepo = new ExecutionArtifactsRepository(ctx.db);
-  const artifactPage = await artifactRepo.listByProject(scope, {
-    limit: 500,
-    cursor: null,
-  });
+  const artifactRows = await collectAllPages((cursor) =>
+    artifactRepo.listByProject(scope, {
+      limit: EXPORT_ENTITY_PAGE_SIZE,
+      cursor,
+    }),
+  );
 
   const artifacts = [];
-  for (const a of artifactPage.rows) {
+  for (const a of artifactRows) {
     const revs = await artifactRepo.listRevisions(scope, a.id);
     artifacts.push({
       id: a.id,
@@ -221,7 +317,7 @@ async function buildBundleInput(
       state: s.state,
       limitation: s.limitation,
     })),
-    snapshots: snapshotPage.rows.map((s) => ({
+    snapshots: snapshots.map((s) => ({
       id: s.id,
       provider: s.provider,
       datasetKey: s.dataset_key,
@@ -237,7 +333,7 @@ async function buildBundleInput(
       availability: o.availability,
       valueJson: o.value_json,
     })),
-    findings: findingPage.rows.map((f) => ({
+    findings: findings.map((f) => ({
       id: f.id,
       ruleId: f.rule_id,
       domain: f.domain,
@@ -255,7 +351,7 @@ async function buildBundleInput(
       subjectRefs: e.subject_refs,
       observedAt: e.observed_at,
     })),
-    actions: actionPage.rows.map((a) => ({
+    actions: actions.map((a) => ({
       id: a.id,
       templateId: a.template_id,
       title: a.title,

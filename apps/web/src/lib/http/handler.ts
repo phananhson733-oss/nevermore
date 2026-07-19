@@ -4,6 +4,35 @@ import { getOperatorContext, type OperatorContext } from "@/lib/auth/session";
 import { buildRequestContext, type RequestContext } from "./context";
 import { internalError, problem } from "./respond";
 
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Reject browser cross-site mutations before they reach a service transaction.
+ * Browser-controlled Fetch Metadata is checked even if Origin is absent; when
+ * Origin is present it must exactly match the request origin. Requests from
+ * non-browser workers/CLI clients may omit both headers and remain supported.
+ */
+export function assertSameOriginMutation(request: NextRequest): void {
+  if (SAFE_METHODS.has(request.method.toUpperCase())) return;
+
+  if (request.headers.get("sec-fetch-site") === "cross-site") {
+    throw new ProblemError("BAD_REQUEST", "Cross-origin mutation is not allowed.");
+  }
+
+  const origin = request.headers.get("origin");
+  if (!origin) return;
+
+  let parsedOrigin: string;
+  try {
+    parsedOrigin = new URL(origin).origin;
+  } catch {
+    throw new ProblemError("BAD_REQUEST", "Cross-origin mutation is not allowed.");
+  }
+  if (parsedOrigin !== new URL(request.url).origin) {
+    throw new ProblemError("BAD_REQUEST", "Cross-origin mutation is not allowed.");
+  }
+}
+
 /**
  * Next.js App Router passes dynamic segments as the second handler argument,
  * with `params` resolved asynchronously (Next 16). Route handlers receive it as
@@ -32,10 +61,12 @@ function handleError(error: unknown, ctx: RequestContext): NextResponse {
     return problem(error.code, error.message, ctx.requestId, {
       ...(error.fieldErrors ? { errors: error.fieldErrors } : {}),
       ...(error.extraHeaders ? { headers: error.extraHeaders } : {}),
+      ...(error.current !== undefined ? { current: error.current } : {}),
     });
   }
   ctx.logger.error("unhandled_error", {
-    message: error instanceof Error ? error.message : String(error),
+    code: "INTERNAL_ERROR",
+    type: error instanceof Error ? "internal" : "unknown",
   });
   return internalError(ctx.requestId);
 }
@@ -67,6 +98,7 @@ export function operatorRoute<P extends Record<string, string> = Record<string, 
       if (!operator) {
         return problem("AUTH_REQUIRED", "Authentication required.", ctx.requestId);
       }
+      assertSameOriginMutation(request);
       return await handler(
         request,
         { ...ctx, operator },

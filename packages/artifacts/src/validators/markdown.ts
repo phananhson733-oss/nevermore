@@ -21,9 +21,61 @@ export interface MarkdownValidationOptions {
   readonly allowHtml?: boolean;
 }
 
-/** Raw HTML / script tags that spec §14.4 forbids in rendered markdown. */
-const HTML_TAG_PATTERN = /<\s*\/?\s*(script|html|iframe|style|object|embed|link|meta|svg|form)\b/i;
-const JS_URI_PATTERN = /javascript\s*:/i;
+/**
+ * Any raw-HTML opener forbidden by spec §14.4: start/end tags, comments,
+ * declarations, processing instructions, and CDATA sections. Real tag names
+ * begin immediately after `<` / `</` with an ASCII letter; the other branches
+ * mirror CommonMark raw-HTML block openers. Requiring a concrete opener keeps
+ * comparison prose such as `plans < pro` valid.
+ */
+const RAW_HTML_PATTERN = /<(?:\/?[a-z]|!--|\?|![a-z]|!\[cdata\[)/i;
+
+/** Inline `on*=` handler syntax, including mixed case and line whitespace. */
+const EVENT_HANDLER_PATTERN = /(?:^|[\s"'`/])on[a-z][a-z0-9_-]*[ \t\r\n]*=/i;
+
+/**
+ * A javascript URI, allowing tabs/newlines between scheme characters because
+ * URL preprocessing can discard those control characters before evaluation.
+ */
+const JS_URI_PATTERN =
+  /j[\t\r\n]*a[\t\r\n]*v[\t\r\n]*a[\t\r\n]*s[\t\r\n]*c[\t\r\n]*r[\t\r\n]*i[\t\r\n]*p[\t\r\n]*t[ \t\r\n]*:/i;
+
+const NUMERIC_CHARACTER_REFERENCE =
+  /&#(?:x([0-9a-f]{1,6})|([0-9]{1,7}));?/gi;
+const SECURITY_NAMED_REFERENCE = /&(colon|tab|newline);/gi;
+
+/** Decode only character references relevant to active URI/handler scanning. */
+function decodeSecurityCharacterReferences(value: string): string {
+  return value
+    .replace(
+      NUMERIC_CHARACTER_REFERENCE,
+      (reference, hex: string | undefined, decimal: string | undefined) => {
+        const digits = hex ?? decimal;
+        if (digits === undefined) return reference;
+        const codePoint = Number.parseInt(digits, hex === undefined ? 10 : 16);
+        if (
+          !Number.isFinite(codePoint) ||
+          codePoint > 0x10ffff ||
+          (codePoint >= 0xd800 && codePoint <= 0xdfff)
+        ) {
+          return reference;
+        }
+        return String.fromCodePoint(codePoint);
+      },
+    )
+    .replace(SECURITY_NAMED_REFERENCE, (_reference, name: string) => {
+      switch (name.toLowerCase()) {
+        case "colon":
+          return ":";
+        case "tab":
+          return "\t";
+        case "newline":
+          return "\n";
+        default:
+          return _reference;
+      }
+    });
+}
 
 interface ParsedSection {
   readonly heading: string;
@@ -98,7 +150,12 @@ export function validateMarkdownSections(
   const errors: string[] = [];
 
   if (opts?.allowHtml !== true) {
-    if (HTML_TAG_PATTERN.test(markdown) || JS_URI_PATTERN.test(markdown)) {
+    const activeContent = decodeSecurityCharacterReferences(markdown);
+    if (
+      RAW_HTML_PATTERN.test(markdown) ||
+      EVENT_HANDLER_PATTERN.test(activeContent) ||
+      JS_URI_PATTERN.test(activeContent)
+    ) {
       errors.push("markdown contains disallowed raw HTML/script (spec §14.4)");
     }
   }

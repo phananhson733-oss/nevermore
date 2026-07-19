@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??=
-  "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
@@ -199,7 +197,7 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
       },
       capturedAt: { crawl: capturedAt },
     });
-    const result = runPipeline({
+    const result = await runPipeline({
       projectId: scope.projectId,
       ctx,
       rules: ALL_RULES,

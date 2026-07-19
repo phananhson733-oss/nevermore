@@ -7,6 +7,7 @@ import {
   enqueueRunInTx,
   PGBOSS_SCHEMA,
   PgBoss,
+  QUEUE_CONFIG,
   startBoss,
 } from "../queue.ts";
 import { asyncRuns, clientProjects, workspaces } from "../schema.ts";
@@ -50,13 +51,8 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
     await handle?.end();
   });
 
-  const countJobs = async (runId: string): Promise<number> => {
-    const res = await handle.pool.query<{ c: string }>(
-      `SELECT count(*)::int AS c FROM ${PGBOSS_SCHEMA}.job WHERE data->>'runId' = $1`,
-      [runId],
-    );
-    return Number(res.rows[0]?.c ?? 0);
-  };
+  const jobsForRun = (runId: string) =>
+    boss.findJobs<{ runId: string }>("diagnose", { data: { runId } });
   const countRuns = async (runId: string): Promise<number> => {
     const res = await handle.pool.query<{ c: string }>(
       `SELECT count(*)::int AS c FROM app.async_runs WHERE id = $1`,
@@ -84,10 +80,16 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
        WHERE table_schema = 'app' AND table_name LIKE '%job%'`,
     );
     expect(Number(leaked.rows[0]!.c)).toBe(0);
+
+    const queue = await boss.getQueue("diagnose");
+    expect(queue?.heartbeatSeconds).toBe(
+      QUEUE_CONFIG.diagnose.heartbeatSeconds,
+    );
   });
 
   it("AC-006 (commit): run row and its job are both persisted", async () => {
     const runId = randomUUID();
+    let jobId: string | null = null;
     await handle.db.transaction(async (tx) => {
       await tx.insert(asyncRuns).values({
         id: runId,
@@ -97,7 +99,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
         active_key: `diagnostic:${runId}`,
         initiated_by: actor,
       });
-      await enqueueRunInTx(boss, tx, "diagnose", {
+      jobId = await enqueueRunInTx(boss, tx, "diagnose", {
         runId,
         workspaceId,
         projectId,
@@ -106,7 +108,13 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
     });
 
     expect(await countRuns(runId)).toBe(1);
-    expect(await countJobs(runId)).toBe(1);
+    expect(jobId).toBe(runId);
+    const direct = await boss.getJobById<{ runId: string }>(
+      "diagnose",
+      runId,
+    );
+    expect(direct?.data.runId).toBe(runId);
+    expect(await jobsForRun(runId)).toHaveLength(1);
   });
 
   it("AC-006 (rollback): a failure after enqueue leaves neither run nor job", async () => {
@@ -133,6 +141,38 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
 
     // Neither a queued-without-run nor a run-without-job may exist.
     expect(await countRuns(runId)).toBe(0);
-    expect(await countJobs(runId)).toBe(0);
+    expect(await boss.getJobById("diagnose", runId)).toBeNull();
+    expect(await jobsForRun(runId)).toHaveLength(0);
+  });
+
+  it("rolls the canonical transaction back when the explicit job id is rejected", async () => {
+    const runId = randomUUID();
+    await boss.send(
+      "diagnose",
+      { runId, workspaceId, projectId, contractVersion: "0.2.0" },
+      { id: runId },
+    );
+
+    await expect(
+      handle.db.transaction(async (tx) => {
+        await tx.insert(asyncRuns).values({
+          id: runId,
+          workspace_id: workspaceId,
+          project_id: projectId,
+          kind: "diagnostic",
+          active_key: `diagnostic:${runId}`,
+          initiated_by: actor,
+        });
+        await enqueueRunInTx(boss, tx, "diagnose", {
+          runId,
+          workspaceId,
+          projectId,
+          contractVersion: "0.2.0",
+        });
+      }),
+    ).rejects.toThrow(/explicit run job id/i);
+
+    expect(await countRuns(runId)).toBe(0);
+    expect(await jobsForRun(runId)).toHaveLength(1);
   });
 });

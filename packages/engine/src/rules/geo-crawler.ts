@@ -134,10 +134,10 @@ function evaluate(ctx: DiagnosticContext): RuleResult {
   return { status: "candidate", candidates };
 }
 
-export const geoCrawlerRule: DiagnosticRule = {
+export const geoCrawlerRule = {
   id: "GEO-CRAWLER-002",
   version: 1,
   domain: "geo_ai",
   requiredDatasets: [{ dataset: "crawl", required: true }],
   evaluate,
-};
+} satisfies DiagnosticRule;

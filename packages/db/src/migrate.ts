@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { serializeDbProcessFailure } from "./runtime-failure.ts";
 
 /**
  * Apply the authoritative SQL contract. The `schema.sql`-derived migrations are
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error: unknown) => {
-    console.error(error);
+    console.error(serializeDbProcessFailure("migrate", error));
     process.exit(1);
   });
 }

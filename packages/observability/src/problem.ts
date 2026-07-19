@@ -85,6 +85,9 @@ export interface ProblemFieldError {
   readonly message: string;
 }
 
+/** Optional conflict metadata from the OpenAPI `Problem.current` extension. */
+export type ProblemCurrent = Readonly<Record<string, unknown>>;
+
 /** The problem+json response body shape (spec §11.1). */
 export interface ProblemBody {
   readonly type: string;
@@ -94,6 +97,7 @@ export interface ProblemBody {
   readonly detail: string;
   readonly requestId: string;
   readonly errors?: readonly ProblemFieldError[];
+  readonly current?: ProblemCurrent | null;
 }
 
 const TITLES: Partial<Record<ProblemCode, string>> = {
@@ -124,6 +128,7 @@ export class ProblemError extends Error {
   readonly status: number;
   readonly fieldErrors: readonly ProblemFieldError[] | undefined;
   readonly extraHeaders: Readonly<Record<string, string>> | undefined;
+  readonly current: ProblemCurrent | null | undefined;
 
   constructor(
     code: ProblemCode,
@@ -131,6 +136,7 @@ export class ProblemError extends Error {
     options?: {
       errors?: readonly ProblemFieldError[];
       headers?: Record<string, string>;
+      current?: ProblemCurrent | null;
     },
   ) {
     super(detail);
@@ -139,6 +145,7 @@ export class ProblemError extends Error {
     this.status = PROBLEM_STATUS[code];
     this.fieldErrors = options?.errors;
     this.extraHeaders = options?.headers;
+    this.current = options?.current;
   }
 }
 
@@ -148,6 +155,7 @@ export function toProblemBody(
   detail: string,
   requestId: string,
   errors?: readonly ProblemFieldError[],
+  current?: ProblemCurrent | null,
 ): ProblemBody {
   const status = PROBLEM_STATUS[code];
   return {
@@ -158,5 +166,6 @@ export function toProblemBody(
     detail,
     requestId,
     ...(errors && errors.length > 0 ? { errors } : {}),
+    ...(current !== undefined ? { current } : {}),
   };
 }

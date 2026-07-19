@@ -54,6 +54,7 @@ import type {
   RunStatus,
   ValidationState,
 } from "@/lib/api/hooks-studio";
+import { studioRunQueryOutcome } from "../_frontend-error-state.ts";
 import styles from "./studio.module.css";
 
 // ----------------------------------------------------------- Tone helpers ----
@@ -793,8 +794,10 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   );
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [failedRunId, setFailedRunId] = useState<string | null>(null);
 
   const runQuery = useProjectRun(projectId, activeRunId);
+  const runOutcome = studioRunQueryOutcome(runQuery.data, runQuery.error);
   // Runs already observed terminal, so a stale artifact list can't re-seed them.
   const finishedRuns = useRef<Set<string>>(new Set<string>());
 
@@ -811,16 +814,34 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   }, [artifactsQuery.data, activeRunId]);
 
   // When the tracked run reaches a terminal state, refetch and stop polling.
+  // A final status-query error follows the same cleanup path, but leaves a
+  // visible, actionable notice and prevents a stale artifact projection from
+  // immediately re-seeding the same failed poll.
   useEffect(() => {
     const run = runQuery.data;
-    if (run && isTerminalRun(run.status)) {
+    if (runOutcome === "terminal" && run) {
       finishedRuns.current.add(run.id);
+      setFailedRunId(null);
       void queryClient.invalidateQueries({
         queryKey: ["artifacts", projectId],
       });
       setActiveRunId(null);
+      return;
     }
-  }, [runQuery.data, queryClient, projectId]);
+    if (
+      runOutcome === "query_error" &&
+      activeRunId !== null &&
+      !finishedRuns.current.has(activeRunId)
+    ) {
+      finishedRuns.current.add(activeRunId);
+      setFailedRunId(activeRunId);
+      void queryClient.invalidateQueries({
+        queryKey: ["artifacts", projectId],
+        refetchType: "active",
+      });
+      setActiveRunId(null);
+    }
+  }, [runOutcome, runQuery.data, activeRunId, queryClient, projectId]);
 
   if (artifactsQuery.isLoading) {
     return (
@@ -868,6 +889,7 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   }
 
   function onQueued(run: AsyncRun, artifactId: string | null): void {
+    setFailedRunId(null);
     setActiveRunId(run.id);
     setGenerateAction(null);
     setPickerOpen(false);
@@ -906,6 +928,27 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
 
       {activeRunId !== null && runQuery.data !== undefined ? (
         <RunBanner run={runQuery.data} message={t("generating")} />
+      ) : null}
+
+      {failedRunId !== null ? (
+        <Panel
+          tone="coral"
+          padding="md"
+          className={styles.banner}
+          role="alert"
+        >
+          <span className={styles.bannerLabel}>{t("runStatusUnavailable")}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setFailedRunId(null);
+              void artifactsQuery.refetch();
+            }}
+          >
+            {t("refreshArtifacts")}
+          </Button>
+        </Panel>
       ) : null}
 
       {generateAction !== null ? (

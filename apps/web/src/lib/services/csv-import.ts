@@ -18,6 +18,7 @@ import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
 import { getBlobStore } from "@/lib/storage";
+import { isPostgresUniqueViolation } from "./db-errors";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
 /**
@@ -25,7 +26,8 @@ import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
  *  - preview: parse safely (no canonical write), store the raw file privately,
  *    return the first 20 rows + a 30-minute importToken (the DB keeps its hash).
  *  - confirm: validate the token (project/TTL/unconsumed), atomically enqueue a
- *    CSV collection run, mark the token consumed. Replay ⇒ 409 IMPORT_TOKEN_REPLAYED.
+ *    CSV collection run, mark the token consumed. A completed exact idempotency
+ *    retry replays its 202; a new command using the token is rejected.
  */
 
 const CONTRACT_VERSION = "2026-07-18";
@@ -178,45 +180,53 @@ export async function previewImport(
   // Store the raw object privately (spec §7.5); the DB keeps only the key + sha256.
   const nonce = randomBytes(16).toString("hex");
   const key = objectKey({ projectId, runId: nonce, kind: "raw-import", nonce });
-  const put = await getBlobStore().put({
+  const blobStore = getBlobStore();
+  const put = await blobStore.put({
     key,
     body: file.bytes,
     contentType: "text/csv",
   });
 
-  const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(Date.now() + PREVIEW_TTL_MS).toISOString();
+  try {
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + PREVIEW_TTL_MS).toISOString();
 
-  const mapped = mapPreview(preview);
-  const { db } = getDb();
-  await new ImportPreviewsRepository(db).insert({
-    workspaceId: scope.workspaceId,
-    projectId,
-    siteId: site.id,
-    createdBy: actorId,
-    tokenHash: sha256Buf(token),
-    templateId: file.templateId,
-    rawObjectKey: put.key,
-    fileChecksum: put.sha256,
-    rowCount: preview.rowCount,
-    detectedColumns: mapped.detectedColumns,
-    suggestedMapping: mapped.suggestedMapping,
-    previewRows: mapped.previewRows,
-    validationErrors: mapped.errors,
-    validationWarnings: mapped.warnings,
-    expiresAt,
-  });
+    const mapped = mapPreview(preview);
+    const { db } = getDb();
+    await new ImportPreviewsRepository(db).insert({
+      workspaceId: scope.workspaceId,
+      projectId,
+      siteId: site.id,
+      createdBy: actorId,
+      tokenHash: sha256Buf(token),
+      templateId: file.templateId,
+      rawObjectKey: put.key,
+      fileChecksum: put.sha256,
+      rowCount: preview.rowCount,
+      detectedColumns: mapped.detectedColumns,
+      suggestedMapping: mapped.suggestedMapping,
+      previewRows: mapped.previewRows,
+      validationErrors: mapped.errors,
+      validationWarnings: mapped.warnings,
+      expiresAt,
+    });
 
-  return {
-    importToken: token,
-    expiresAt,
-    rowCount: preview.rowCount,
-    previewRows: mapped.previewRows,
-    detectedColumns: mapped.detectedColumns,
-    suggestedMapping: mapped.suggestedMapping,
-    errors: mapped.errors,
-    warnings: mapped.warnings,
-  };
+    return {
+      importToken: token,
+      expiresAt,
+      rowCount: preview.rowCount,
+      previewRows: mapped.previewRows,
+      detectedColumns: mapped.detectedColumns,
+      suggestedMapping: mapped.suggestedMapping,
+      errors: mapped.errors,
+      warnings: mapped.warnings,
+    };
+  } catch (error) {
+    // The DB never referenced this object. Cleanup is best-effort and must not
+    // expose the private key/file or replace the primary preview failure.
+    await blobStore.delete(put.key).catch(() => undefined);
+    throw error;
+  }
 }
 
 function replayConfirm(
@@ -263,9 +273,30 @@ export async function confirmImport(
   body: ImportConfirmRequest,
 ): Promise<ImportConfirmResult> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
-  const { site } = await requireLiveProject(scope, projectId);
+  const mapping = cleanMapping(body.mapping);
+  const requestHash = contentHash({
+    projectId,
+    mode: body.mode,
+    importToken: body.importToken,
+    mapping,
+  });
   const { db } = getDb();
-  const boss = await getBoss();
+
+  // A committed command can be replayed without re-reading the single-use
+  // preview. The project id is part of the hash so a workspace-level key cannot
+  // return one project's run from another project route.
+  const idem = new IdempotencyRepository(db);
+  const existingKey = await idem.find(
+    scope.workspaceId,
+    IDEMPOTENCY_SCOPE,
+    idempotencyKey,
+  );
+  if (existingKey) {
+    const replay = replayConfirm(existingKey, requestHash);
+    if (replay) return replay;
+  }
+
+  const { site } = await requireLiveProject(scope, projectId);
 
   const previews = new ImportPreviewsRepository(db);
   const preview = await previews.findByTokenHash(
@@ -275,15 +306,21 @@ export async function confirmImport(
   if (!preview)
     throw new ProblemError("IMPORT_TOKEN_INVALID", "Import token is invalid.");
   if (preview.status === "consumed") {
+    // The winner may have committed after the initial idempotency fast-path
+    // miss but before this preview read. Prefer its completed exact replay over
+    // reporting the token-level conflict to the same command.
+    const now = await idem.find(
+      scope.workspaceId,
+      IDEMPOTENCY_SCOPE,
+      idempotencyKey,
+    );
+    const replay = now ? replayConfirm(now, requestHash) : null;
+    if (replay) return replay;
     throw new ProblemError(
       "IMPORT_TOKEN_REPLAYED",
       "Import token was already used.",
     );
   }
-  if (Date.parse(preview.expires_at) <= Date.now()) {
-    throw new ProblemError("IMPORT_TOKEN_EXPIRED", "Import token has expired.");
-  }
-
   // Validate the operator's column mapping against the detected headers.
   const headers = new Set(preview.detected_columns.map((c) => String(c)));
   for (const field of [
@@ -310,25 +347,20 @@ export async function confirmImport(
     }
   }
 
-  const mapping = cleanMapping(body.mapping);
-  const requestHash = contentHash({ importPreviewId: preview.id, mapping });
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
-  const idem = new IdempotencyRepository(db);
-  const existingKey = await idem.find(
-    scope.workspaceId,
-    IDEMPOTENCY_SCOPE,
-    idempotencyKey,
-  );
-  if (existingKey) {
-    const replay = replayConfirm(existingKey, requestHash);
-    if (replay) return replay;
-  }
   const active = await new AsyncRunsRepository(db).findActive(
     projectScope,
     CSV_ACTIVE_KEY,
   );
   if (active) {
+    const now = await idem.find(
+      scope.workspaceId,
+      IDEMPOTENCY_SCOPE,
+      idempotencyKey,
+    );
+    const replay = now ? replayConfirm(now, requestHash) : null;
+    if (replay) return replay;
     throw new ProblemError(
       "RUN_ALREADY_ACTIVE",
       "A CSV import is already running.",
@@ -345,6 +377,7 @@ export async function confirmImport(
     "csv",
   );
 
+  const boss = await getBoss();
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
@@ -366,6 +399,40 @@ export async function confirmImport(
         throw new ProblemError(
           "IDEMPOTENCY_KEY_REUSED",
           "Idempotency key is being processed.",
+        );
+      }
+
+      // Re-check single-use and TTL against the database clock inside the same
+      // transaction that creates the run. This closes the stale-read window
+      // between the preflight preview lookup and command persistence.
+      const txPreviews = new ImportPreviewsRepository(tx);
+      const consumed = await txPreviews.consume(projectScope, preview.id);
+      if (!consumed) {
+        const current = await txPreviews.findById(projectScope, preview.id);
+        if (!current) {
+          throw new ProblemError(
+            "IMPORT_TOKEN_INVALID",
+            "Import token is invalid.",
+          );
+        }
+        if (current.status === "consumed") {
+          throw new ProblemError(
+            "IMPORT_TOKEN_REPLAYED",
+            "Import token was already used.",
+          );
+        }
+        // If the scoped row is still previewed, the only remaining failed CAS
+        // predicate is `expires_at > DB now()`, so classify it as expired
+        // without relying on application/DB clock agreement.
+        if (current.status === "expired" || current.status === "previewed") {
+          throw new ProblemError(
+            "IMPORT_TOKEN_EXPIRED",
+            "Import token has expired.",
+          );
+        }
+        throw new ProblemError(
+          "IMPORT_TOKEN_INVALID",
+          "Import token is invalid.",
         );
       }
 
@@ -412,13 +479,17 @@ export async function confirmImport(
         methodVersion: CSV_METHOD_VERSION,
         parametersHash: requestHash,
       });
-      await new ImportPreviewsRepository(tx).consume(preview.id);
       await enqueueRunInTx(boss, tx, "collect.csv", {
         runId: run.id,
         workspaceId: scope.workspaceId,
         projectId,
         contractVersion: CONTRACT_VERSION,
       });
+      await new ProjectsRepository(tx).setStage(
+        scope,
+        projectId,
+        "collecting",
+      );
 
       const dto = toAsyncRunDto(run);
       const statusUrl = runStatusUrl(projectId, run.id);
@@ -444,11 +515,18 @@ export async function confirmImport(
     });
   } catch (error) {
     if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "23505"
+      isPostgresUniqueViolation(error, [
+        "async_runs_one_active_key_idx",
+        "source_connections_one_active_provider_idx",
+      ])
     ) {
+      const winnerKey = await idem.find(
+        scope.workspaceId,
+        IDEMPOTENCY_SCOPE,
+        idempotencyKey,
+      );
+      const replay = winnerKey ? replayConfirm(winnerKey, requestHash) : null;
+      if (replay) return replay;
       const winner = await new AsyncRunsRepository(db).findActive(
         projectScope,
         CSV_ACTIVE_KEY,

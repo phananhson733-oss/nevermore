@@ -94,6 +94,7 @@ export interface ProblemBody {
   readonly detail: string;
   readonly requestId: string;
   readonly errors?: readonly ProblemFieldError[];
+  readonly current?: Readonly<Record<string, unknown>> | null;
 }
 
 /** Success envelope for a single resource: `{ data }`. */

@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
-process.env["DATABASE_URL"] ??=
-  "postgres://wzb@localhost:5432/signalframe_mvp_dev";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
@@ -22,6 +20,7 @@ import {
   contentHash,
   DiagnosticRunsRepository,
   EvidenceRepository,
+  ExecutionArtifactsRepository,
   FindingsRepository,
 } from "@sf/db";
 import { UpdateActionRequest } from "@sf/contracts";
@@ -30,6 +29,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import { reviewProjectFinding } from "@/lib/services/finding-review";
 import { updateProjectAction } from "@/lib/services/actions-service";
+import { updateProjectArtifact } from "@/lib/services/artifact-update";
 import { parseJsonBody } from "@/lib/http/validate";
 
 /**
@@ -212,6 +212,7 @@ describeDb(
     let workspaceId: string;
     let projectId: string;
     let actionId: string;
+    let artifactId: string;
     const actor = randomUUID();
 
     beforeAll(async () => {
@@ -257,6 +258,55 @@ describeDb(
       // Derived priority for high/high is high/now (spec §9.3 clause 2).
       expect(confirmed.action!.roadmapLane).toBe("now");
       expect(confirmed.action!.revision).toBe(1);
+
+      const nowTs = new Date().toISOString();
+      const [artifactRun] = await handle.db
+        .insert(asyncRuns)
+        .values({
+          workspace_id: workspaceId,
+          project_id: projectId,
+          kind: "artifact_generation",
+          status: "completed",
+          initiated_by: actor,
+          started_at: nowTs,
+          completed_at: nowTs,
+        })
+        .returning();
+      const artifactRepo = new ExecutionArtifactsRepository(handle.db);
+      const artifact = await artifactRepo.insert({
+        workspaceId,
+        projectId,
+        actionId,
+        artifactType: "technical_ticket",
+        generationMode: "template",
+        outputLocale: "en",
+        latestGenerationRunId: artifactRun!.id,
+        createdBy: actor,
+      });
+      artifactId = artifact.id;
+      const initialContent = ticket("initial");
+      const initialHash = contentHash({ text: initialContent });
+      await artifactRepo.insertRevision({
+        workspaceId,
+        projectId,
+        artifactId,
+        revision: 1,
+        contentFormat: "markdown",
+        contentText: initialContent,
+        contentJson: null,
+        contentHash: initialHash,
+        generatedBy: "template",
+        editorId: null,
+        analysisInvocationId: null,
+        note: null,
+        validationErrors: [],
+      });
+      await artifactRepo.setGenerated(artifactId, {
+        status: "draft",
+        currentRevision: 1,
+        validationState: "valid",
+        contentHash: initialHash,
+      });
     });
 
     afterAll(async () => {
@@ -320,6 +370,205 @@ describeDb(
       expect(row.reason).toContain("next window");
     });
 
+    it("two concurrent overrides with one baseRevision yield one commit and one atomic 409", async () => {
+      const results = await Promise.allSettled([
+        updateProjectAction(
+          { workspaceId },
+          projectId,
+          actionId,
+          actor,
+          {
+            baseRevision: 2,
+            priorityBand: "critical",
+            reason: "the first concurrent operator escalated this",
+          },
+        ),
+        updateProjectAction(
+          { workspaceId },
+          projectId,
+          actionId,
+          actor,
+          {
+            baseRevision: 2,
+            priorityBand: "medium",
+            reason: "the second concurrent operator reprioritized this",
+          },
+        ),
+      ]);
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected",
+      );
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]!.reason).toBeInstanceOf(ProblemError);
+      expect(rejected[0]!.reason).toMatchObject({
+        status: 409,
+        code: "VERSION_CONFLICT",
+      });
+
+      const stored = await handle.pool.query<{ revision: number }>(
+        `SELECT revision FROM app.actions WHERE id = $1`,
+        [actionId],
+      );
+      expect(stored.rows[0]?.revision).toBe(3);
+      const audits = await handle.pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM app.action_override_audit WHERE action_id = $1`,
+        [actionId],
+      );
+      expect(audits.rows[0]?.count).toBe("2");
+    });
+
+    it("a stale baseRevision rejects an artifact status update with STALE_REVISION", async () => {
+      const promise = updateProjectArtifact(
+        { workspaceId },
+        projectId,
+        artifactId,
+        actor,
+        { baseRevision: 0, status: "ready" },
+      );
+      await expect(promise).rejects.toBeInstanceOf(ProblemError);
+      await expect(promise).rejects.toMatchObject({
+        status: 409,
+        code: "STALE_REVISION",
+      });
+    });
+
+    it("two concurrent artifact edits append one revision and map the loser to atomic 409", async () => {
+      const results = await Promise.allSettled([
+        updateProjectArtifact(
+          { workspaceId },
+          projectId,
+          artifactId,
+          actor,
+          {
+            baseRevision: 1,
+            contentFormat: "markdown",
+            content: ticket("operator-a"),
+          },
+        ),
+        updateProjectArtifact(
+          { workspaceId },
+          projectId,
+          artifactId,
+          actor,
+          {
+            baseRevision: 1,
+            contentFormat: "markdown",
+            content: ticket("operator-b"),
+          },
+        ),
+      ]);
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected",
+      );
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]!.reason).toBeInstanceOf(ProblemError);
+      expect(rejected[0]!.reason).toMatchObject({
+        status: 409,
+        code: "STALE_REVISION",
+      });
+
+      const repo = new ExecutionArtifactsRepository(handle.db);
+      const artifact = await repo.findById(
+        { workspaceId, projectId },
+        artifactId,
+      );
+      expect(artifact?.current_revision).toBe(2);
+      await expect(
+        repo.listRevisions({ workspaceId, projectId }, artifactId),
+      ).resolves.toHaveLength(2);
+    });
+
+    it("AC-034: READY same-hash save is a true no-op, stale edit is 409, and a valid edit returns to draft", async () => {
+      const scope = { workspaceId, projectId };
+      const repo = new ExecutionArtifactsRepository(handle.db);
+      const before = await repo.findById(scope, artifactId);
+      expect(before?.current_revision).toBe(2);
+      const current = await repo.findRevision(
+        scope,
+        artifactId,
+        before!.current_revision,
+      );
+      expect(current?.content_text).not.toBeNull();
+      const immutableHash = current!.content_hash;
+
+      const ready = await updateProjectArtifact(
+        { workspaceId },
+        projectId,
+        artifactId,
+        actor,
+        { baseRevision: 2, status: "ready" },
+      );
+      expect(ready.status).toBe("ready");
+
+      // Saving byte-identical content must preserve both revision and READY.
+      const noOp = await updateProjectArtifact(
+        { workspaceId },
+        projectId,
+        artifactId,
+        actor,
+        {
+          baseRevision: 2,
+          contentFormat: "markdown",
+          content: current!.content_text!,
+        },
+      );
+      expect(noOp.currentRevision).toBe(2);
+      expect(noOp.status).toBe("ready");
+      await expect(repo.listRevisions(scope, artifactId)).resolves.toHaveLength(
+        2,
+      );
+
+      const stale = updateProjectArtifact(
+        { workspaceId },
+        projectId,
+        artifactId,
+        actor,
+        {
+          baseRevision: 1,
+          contentFormat: "markdown",
+          content: ticket("stale-editor"),
+        },
+      );
+      await expect(stale).rejects.toBeInstanceOf(ProblemError);
+      await expect(stale).rejects.toMatchObject({
+        status: 409,
+        code: "STALE_REVISION",
+      });
+      await expect(repo.findById(scope, artifactId)).resolves.toMatchObject({
+        status: "ready",
+        current_revision: 2,
+      });
+
+      const edited = await updateProjectArtifact(
+        { workspaceId },
+        projectId,
+        artifactId,
+        actor,
+        {
+          baseRevision: 2,
+          contentFormat: "markdown",
+          content: ticket("ready-editor"),
+        },
+      );
+      expect(edited.currentRevision).toBe(3);
+      expect(edited.status).toBe("draft");
+
+      const revisions = await repo.listRevisions(scope, artifactId);
+      expect(revisions.map((revision) => revision.revision).sort()).toEqual([
+        1, 2, 3,
+      ]);
+      expect(
+        (await repo.findRevision(scope, artifactId, 2))?.content_hash,
+      ).toBe(immutableHash);
+      expect(
+        (await repo.findRevision(scope, artifactId, 3))?.generated_by,
+      ).toBe("operator");
+    });
+
     it("the override audit row is append-only (cannot be updated)", async () => {
       await expect(
         handle.pool.query(
@@ -330,3 +579,20 @@ describeDb(
     });
   },
 );
+
+function ticket(marker: string): string {
+  return [
+    "## Problem",
+    marker,
+    "## Affected Scope",
+    "- /pricing",
+    "## Evidence",
+    "- [evidence] observed issue",
+    "## Implementation Steps",
+    "1. Apply the change.",
+    "## Acceptance Tests",
+    "- [ ] Verified",
+    "## Risk",
+    "medium",
+  ].join("\n\n");
+}

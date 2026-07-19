@@ -56,6 +56,7 @@ export interface RunFinding {
   readonly titleArgs: Record<string, string | number>;
   readonly summary: string;
   readonly summaryLocale: string;
+  readonly summaryInvocationId: string | null;
   readonly reviewState: "unreviewed" | "needs_more_data";
   readonly priorityRelevant: boolean;
   readonly evidence: readonly EvidenceDraft[];
@@ -73,6 +74,29 @@ export interface PipelineResult {
   readonly coverage: DiagnosticCoverage;
 }
 
+export interface FindingSummaryGenerationInput {
+  readonly projectId: string;
+  readonly findingKey: string;
+  readonly ruleId: RuleId;
+  readonly subjectRefs: readonly string[];
+  readonly titleArgs: Readonly<Record<string, string | number>>;
+  readonly evidence: readonly EvidenceDraft[];
+  readonly outputLocale: string;
+  readonly fallbackSummary: string;
+  readonly fallbackLocale: string;
+}
+
+export interface GeneratedFindingSummary {
+  readonly summary: string;
+  readonly summaryLocale: string;
+  readonly invocationId: string;
+}
+
+/** Optional, caller-owned LLM stage. Omit it to keep diagnosis deterministic. */
+export type FindingSummaryGenerator = (
+  input: FindingSummaryGenerationInput,
+) => Promise<GeneratedFindingSummary | null>;
+
 const DOMAINS: readonly DiagnosticDomain[] = [
   "technical_seo",
   "search_performance",
@@ -81,16 +105,16 @@ const DOMAINS: readonly DiagnosticDomain[] = [
   "geo_ai",
 ];
 
-function safeEvaluate(
+async function safeEvaluate(
   rule: DiagnosticRule,
   ctx: DiagnosticContext,
-): RuleResult {
+): Promise<RuleResult> {
   try {
-    return rule.evaluate(ctx);
-  } catch (error) {
+    return await rule.evaluate(ctx);
+  } catch {
     return {
       status: "inconclusive",
-      reason: `rule_error:${error instanceof Error ? error.message : "unknown"}`,
+      reason: "rule_error",
     };
   }
 }
@@ -106,20 +130,38 @@ function priorityRelevant(
   return false;
 }
 
-export function runPipeline(input: {
+export async function runPipeline(input: {
   projectId: string;
   ctx: DiagnosticContext;
   rules: readonly DiagnosticRule[];
   deliveryLocale: string;
-}): PipelineResult {
-  const { projectId, ctx, rules, deliveryLocale } = input;
+  /** Unresolved discrepancies already filtered to this frozen manifest. */
+  discrepancySubjectRefs?: readonly string[];
+  /**
+   * Optional allowlisted finding-summary stage. It is invoked only for locales
+   * outside the deterministic en/zh-CN registry, and only after every rule has
+   * finished. Failures/invalid output fall back without failing diagnosis.
+   */
+  summaryGenerator?: FindingSummaryGenerator;
+}): Promise<PipelineResult> {
+  const {
+    projectId,
+    ctx,
+    rules,
+    deliveryLocale,
+    discrepancySubjectRefs = [],
+    summaryGenerator,
+  } = input;
 
   const ruleResults: RuleResultRecord[] = [];
   const buckets: { ruleId: RuleId; candidates: FindingCandidate[] }[] = [];
 
   for (const rule of rules) {
     const start = performance.now();
-    const result = safeEvaluate(rule, ctx);
+    // Rules are awaited serially to preserve the fixed registry order. Both a
+    // synchronous throw and an asynchronous rejection are contained by
+    // safeEvaluate and make only that rule inconclusive (spec §8.3).
+    const result = await safeEvaluate(rule, ctx);
     const durationMs = Math.round(performance.now() - start);
 
     let metrics: Record<string, number | string | null> = {};
@@ -143,20 +185,74 @@ export function runPipeline(input: {
 
   // Step 8: merge candidates within the run.
   const merged = mergeRunCandidates(buckets);
+  const discrepancySubjects = new Set(discrepancySubjectRefs);
+
+  const summaries = new Map<
+    string,
+    { summary: string; summaryLocale: string; summaryInvocationId: string | null }
+  >();
+  for (const candidate of merged) {
+    const key = findingKey(projectId, candidate.ruleId, candidate.subjectRefs);
+    const fallback = buildSummary(
+      candidate.ruleId,
+      candidate.titleArgs,
+      deliveryLocale,
+    );
+    let selected: {
+      summary: string;
+      summaryLocale: string;
+      summaryInvocationId: string | null;
+    } = {
+      summary: fallback.summary,
+      summaryLocale: fallback.summaryLocale,
+      summaryInvocationId: null as string | null,
+    };
+    if (summaryGenerator && needsGeneratedSummary(deliveryLocale)) {
+      try {
+        const generated = await summaryGenerator({
+          projectId,
+          findingKey: key,
+          ruleId: candidate.ruleId,
+          subjectRefs: candidate.subjectRefs,
+          titleArgs: candidate.titleArgs,
+          evidence: candidate.evidence,
+          outputLocale: deliveryLocale,
+          fallbackSummary: fallback.summary,
+          fallbackLocale: fallback.summaryLocale,
+        });
+        if (isValidGeneratedSummary(generated)) {
+          selected = {
+            summary: generated.summary.trim(),
+            summaryLocale: generated.summaryLocale,
+            summaryInvocationId: generated.invocationId,
+          };
+        }
+      } catch {
+        // Finding summaries are optional. The deterministic fallback is part of
+        // the contract and an LLM/provider failure must not fail diagnosis.
+      }
+    }
+    summaries.set(key, selected);
+  }
 
   // Step 10: derive confidence; build the run findings.
   const findings: RunFinding[] = merged
     .filter((c) => c.evidence.length > 0) // step 7: a finding must have evidence
     .map((c) => {
-      const confidence = deriveConfidence(c.evidence);
+      const hasDiscrepancy =
+        c.subjectRefs.some((ref) => discrepancySubjects.has(ref)) ||
+        c.evidence.some((evidence) =>
+          evidence.subjectRefs.some((ref) => discrepancySubjects.has(ref)),
+        );
+      const confidence = deriveConfidence(c.evidence, { hasDiscrepancy });
       const meta = FINDING_REGISTRY[c.ruleId];
-      const { summary, summaryLocale } = buildSummary(
-        c.ruleId,
-        c.titleArgs,
-        deliveryLocale,
-      );
+      const key = findingKey(projectId, c.ruleId, c.subjectRefs);
+      const summary = summaries.get(key) ?? {
+        ...buildSummary(c.ruleId, c.titleArgs, deliveryLocale),
+        summaryInvocationId: null,
+      };
       return {
-        findingKey: findingKey(projectId, c.ruleId, c.subjectRefs),
+        findingKey: key,
         ruleId: c.ruleId,
         ruleVersion: 1,
         ruleFamily: meta.ruleFamily,
@@ -167,8 +263,9 @@ export function runPipeline(input: {
         confidence,
         titleKey: meta.titleKey,
         titleArgs: c.titleArgs,
-        summary,
-        summaryLocale,
+        summary: summary.summary,
+        summaryLocale: summary.summaryLocale,
+        summaryInvocationId: summary.summaryInvocationId,
         reviewState: autoReviewState(confidence),
         priorityRelevant: priorityRelevant(ctx, c),
         evidence: c.evidence,
@@ -178,13 +275,31 @@ export function runPipeline(input: {
   return {
     ruleResults,
     findings,
-    coverage: buildCoverage(ruleResults, ctx),
+    coverage: buildCoverage(ruleResults, ctx, deliveryLocale),
   };
+}
+
+function needsGeneratedSummary(locale: string): boolean {
+  const normalized = locale.toLowerCase();
+  return normalized !== "en" && !normalized.startsWith("en-") && normalized !== "zh-cn";
+}
+
+function isValidGeneratedSummary(
+  value: GeneratedFindingSummary | null,
+): value is GeneratedFindingSummary {
+  if (!value || value.summary.trim().length === 0) return false;
+  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value.summaryLocale)) {
+    return false;
+  }
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.invocationId,
+  );
 }
 
 function buildCoverage(
   results: readonly RuleResultRecord[],
   ctx: DiagnosticContext,
+  deliveryLocale: string,
 ): DiagnosticCoverage {
   const domains = {} as Record<DiagnosticDomain, DatasetAvailability>;
   for (const domain of DOMAINS) {
@@ -210,17 +325,30 @@ function buildCoverage(
         : "unavailable";
 
   const limitations: string[] = [];
+  const zh = deliveryLocale.toLowerCase().startsWith("zh");
   if (ctx.coverage.crawl === "partial")
     limitations.push(
-      "Crawl was partial; some link-graph views are incomplete.",
+      zh
+        ? "Crawl 采集不完整；部分链接图视图可能缺失。"
+        : "Crawl was partial; some link-graph views are incomplete.",
     );
   if (ctx.coverage.gsc === "unavailable")
     limitations.push(
-      "Search Console not connected; search rules were skipped.",
+      zh
+        ? "未连接 Google Search Console；搜索规则已跳过。"
+        : "Search Console not connected; search rules were skipped.",
     );
   if (ctx.coverage.ga4 === "unavailable")
-    limitations.push("GA4 not connected; landing conversion was skipped.");
+    limitations.push(
+      zh
+        ? "未连接 GA4；落地页转化规则已跳过。"
+        : "GA4 not connected; landing conversion was skipped.",
+    );
   if (ctx.coverage.csv === "unavailable")
-    limitations.push("No keyword-gap CSV; content gap was skipped.");
+    limitations.push(
+      zh
+        ? "未提供关键词差距 CSV；内容差距规则已跳过。"
+        : "No keyword-gap CSV; content gap was skipped.",
+    );
   return { overall, domains, limitations };
 }

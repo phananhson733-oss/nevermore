@@ -71,6 +71,62 @@ export class SourceCredentialsRepository extends Repository {
     return (rows[0] as SourceCredentialRow | undefined) ?? null;
   }
 
+  /**
+   * Lock one credential row for an OAuth refresh. The caller MUST use a DB
+   * transaction and hold it through the provider refresh + `updateAfterRefresh`.
+   * Waiting transactions then observe the winner's fresh ciphertext instead of
+   * issuing a second refresh grant.
+   */
+  async findByConnectionForUpdate(
+    scope: ProjectScope,
+    sourceConnectionId: string,
+  ): Promise<SourceCredentialRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(sourceCredentials)
+      .where(
+        and(
+          projectPredicate(sourceCredentials, scope),
+          eq(sourceCredentials.source_connection_id, sourceConnectionId),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    return (rows[0] as SourceCredentialRow | undefined) ?? null;
+  }
+
+  /** Update the row already locked by `findByConnectionForUpdate` in place. */
+  async updateAfterRefresh(values: {
+    scope: ProjectScope;
+    credentialId: string;
+    sourceConnectionId: string;
+    encryptedPayload: Buffer;
+    keyVersion: string;
+    cipherVersion: number;
+    expiresAt: string;
+  }): Promise<SourceCredentialRow | null> {
+    const rows = await this.exec
+      .update(sourceCredentials)
+      .set({
+        encrypted_payload: values.encryptedPayload,
+        key_version: values.keyVersion,
+        cipher_version: values.cipherVersion,
+        expires_at: values.expiresAt,
+      })
+      .where(
+        and(
+          projectPredicate(sourceCredentials, values.scope),
+          eq(sourceCredentials.id, values.credentialId),
+          eq(
+            sourceCredentials.source_connection_id,
+            values.sourceConnectionId,
+          ),
+        ),
+      )
+      .returning();
+    return (rows[0] as SourceCredentialRow | undefined) ?? null;
+  }
+
   /** Erase the credential on disconnect (ciphertext cleared immediately, §12.3). */
   async deleteByConnection(sourceConnectionId: string): Promise<void> {
     await this.exec

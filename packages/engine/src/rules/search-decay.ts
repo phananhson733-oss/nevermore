@@ -73,7 +73,7 @@ function evaluatePage(
   };
 }
 
-export const searchDecayRule: DiagnosticRule = {
+export const searchDecayRule = {
   id: "SEARCH-DECAY-002",
   version: 1,
   domain: "search_performance",
@@ -97,4 +97,4 @@ export const searchDecayRule: DiagnosticRule = {
     }
     return { status: "candidate", candidates };
   },
-};
+} satisfies DiagnosticRule;

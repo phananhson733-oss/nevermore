@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { idempotencyKeys } from "../schema.ts";
 import { Repository } from "./base.ts";
 
@@ -40,6 +40,7 @@ export class IdempotencyRepository extends Repository {
           eq(idempotencyKeys.workspace_id, workspaceId),
           eq(idempotencyKeys.scope, scope),
           eq(idempotencyKeys.idempotency_key, key),
+          gt(idempotencyKeys.expires_at, sql`now()`),
         ),
       )
       .limit(1);
@@ -47,9 +48,10 @@ export class IdempotencyRepository extends Repository {
   }
 
   /**
-   * Reserve the key with status `in_progress`. Returns the inserted row, or null
-   * if another transaction already holds the key (UNIQUE conflict → caller reads
-   * the existing row and replays / conflicts).
+   * Reserve the key with status `in_progress`. `expiresAt` is an internal
+   * contract and must be in the future (product callers use +24h). An expired
+   * unique row is atomically reset as a fresh lifecycle; an unexpired conflict
+   * returns null so the caller can read and replay/conflict with the winner.
    */
   async begin(values: {
     workspaceId: string;
@@ -67,7 +69,28 @@ export class IdempotencyRepository extends Repository {
         request_hash: values.requestHash,
         expires_at: values.expiresAt,
       })
-      .onConflictDoNothing()
+      .onConflictDoUpdate({
+        target: [
+          idempotencyKeys.workspace_id,
+          idempotencyKeys.scope,
+          idempotencyKeys.idempotency_key,
+        ],
+        set: {
+          request_hash: values.requestHash,
+          status: "in_progress",
+          response_status: null,
+          response_body: null,
+          resource_type: null,
+          resource_id: null,
+          expires_at: values.expiresAt,
+          created_at: sql`now()`,
+          updated_at: sql`now()`,
+        },
+        // PostgreSQL evaluates this while holding the unique-conflict row lock.
+        // Exactly one concurrent caller can replace an expired lifecycle; a
+        // later contender observes the refreshed expiry and returns no row.
+        setWhere: lte(idempotencyKeys.expires_at, sql`now()`),
+      })
       .returning();
     return (rows[0] as IdempotencyRow | undefined) ?? null;
   }
@@ -92,5 +115,37 @@ export class IdempotencyRepository extends Repository {
         resource_id: values.resourceId,
       })
       .where(eq(idempotencyKeys.id, id));
+  }
+
+  /**
+   * Bounded capacity cleanup for the shared maintenance sweep. The second
+   * expiry predicate protects a row that was atomically refreshed between the
+   * candidate read and delete, so pruning cannot erase a newly reused key.
+   */
+  async pruneExpired(limit = 1_000): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0) {
+      throw new RangeError("idempotency prune limit must be a positive integer");
+    }
+    const candidates = await this.exec
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(lte(idempotencyKeys.expires_at, sql`now()`))
+      .orderBy(asc(idempotencyKeys.expires_at), asc(idempotencyKeys.id))
+      .limit(limit);
+    if (candidates.length === 0) return 0;
+
+    const deleted = await this.exec
+      .delete(idempotencyKeys)
+      .where(
+        and(
+          inArray(
+            idempotencyKeys.id,
+            candidates.map((row) => row.id),
+          ),
+          lte(idempotencyKeys.expires_at, sql`now()`),
+        ),
+      )
+      .returning({ id: idempotencyKeys.id });
+    return deleted.length;
   }
 }

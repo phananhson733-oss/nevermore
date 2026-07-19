@@ -1,12 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { BlobObjectNotFoundError } from "../../storage/types.ts";
 import {
   assertKeyInProjectScope,
   blobStoreDownloadSigner,
   buildSignRequest,
   createSupabaseDownloadSigner,
+  DEFAULT_SUPABASE_SIGN_TIMEOUT_MS,
+  EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+  InvalidDownloadUrlTtlError,
   mintExportObjectKey,
   ObjectOutOfProjectScopeError,
   resolveSignedUrl,
+  SUPABASE_SIGN_RESPONSE_MAX_BYTES,
   SupabaseSignError,
   type SupabaseSignerConfig,
 } from "../supabase-signer.ts";
@@ -32,16 +37,59 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function oversizedResponse(status: number): {
+  readonly response: Response;
+  readonly wasCancelled: () => boolean;
+} {
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(
+          `sign-body-secret-${"x".repeat(SUPABASE_SIGN_RESPONSE_MAX_BYTES)}`,
+        ),
+      );
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  return {
+    response: new Response(body, { status }),
+    wasCancelled: () => cancelled,
+  };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("createSupabaseDownloadSigner", () => {
+  it("uses a finite default request timeout", () => {
+    expect(DEFAULT_SUPABASE_SIGN_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(DEFAULT_SUPABASE_SIGN_TIMEOUT_MS).toBeLessThanOrEqual(60_000);
+  });
+
+  it("rejects attempts to disable the signer timeout", () => {
+    expect(() =>
+      createSupabaseDownloadSigner({
+        ...BASE_CONFIG,
+        requestTimeoutMs: 0,
+      }),
+    ).toThrow(SupabaseSignError);
+  });
+
   it("(a) signs with an exactly 900s TTL and returns the absolute signed URL", async () => {
     let capturedUrl: string | undefined;
     let capturedBody: unknown;
     let capturedAuth: string | undefined;
+    let capturedSignal: AbortSignal | undefined;
     const fetch: typeof globalThis.fetch = async (url, init) => {
       capturedUrl = String(url);
       capturedBody = JSON.parse(String(init?.body));
       capturedAuth =
         new Headers(init?.headers).get("authorization") ?? undefined;
+      capturedSignal = init?.signal ?? undefined;
       return jsonResponse({
         signedURL: "/object/sign/exports/export/p1/r1/n1?token=tok",
       });
@@ -57,8 +105,176 @@ describe("createSupabaseDownloadSigner", () => {
       "https://proj.supabase.co/storage/v1/object/sign/exports/export/p1/r1/n1",
     );
     expect(capturedAuth).toBe("Bearer svc-role-key");
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    expect(capturedSignal?.aborted).toBe(false);
     expect(url).toBe(
       "https://proj.supabase.co/storage/v1/object/sign/exports/export/p1/r1/n1?token=tok",
+    );
+  });
+
+  it("maps a hanging sign request to a stable timeout without leaking secrets", async () => {
+    vi.useFakeTimers();
+    const fetch: typeof globalThis.fetch = async (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) throw new Error("missing sign signal");
+        const rejectAbort = () => reject(signal.reason);
+        if (signal.aborted) rejectAbort();
+        else signal.addEventListener("abort", rejectAbort, { once: true });
+      });
+    const signer = createSupabaseDownloadSigner({
+      ...BASE_CONFIG,
+      fetch,
+      requestTimeoutMs: 25,
+    });
+
+    const pending = signer.signDownloadUrl("export/p1/r1/sign-key-secret", {
+      expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+    });
+    const assertion = expect(pending).rejects.toMatchObject({
+      name: "SupabaseSignError",
+      status: 408,
+    });
+    await vi.advanceTimersByTimeAsync(25);
+    await assertion;
+    await expect(pending).rejects.not.toThrow(
+      /sign-key-secret|svc-role-key/,
+    );
+  });
+
+  it("composes a caller signal with the signer timeout and sanitizes its reason", async () => {
+    const caller = new AbortController();
+    let received: AbortSignal | undefined;
+    const fetch: typeof globalThis.fetch = async (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        received = init?.signal ?? undefined;
+        if (!received) throw new Error("missing composed signal");
+        received.addEventListener("abort", () => reject(received!.reason), {
+          once: true,
+        });
+      });
+    const signer = createSupabaseDownloadSigner({
+      ...BASE_CONFIG,
+      fetch,
+      signal: caller.signal,
+      requestTimeoutMs: 60_000,
+    });
+
+    const pending = signer.signDownloadUrl("export/p1/r1/caller-key-secret", {
+      expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+    });
+    caller.abort(new Error("caller-reason-secret"));
+
+    await expect(pending).rejects.toMatchObject({
+      name: "SupabaseSignError",
+      status: undefined,
+    });
+    expect(received).toBeInstanceOf(AbortSignal);
+    expect(received).not.toBe(caller.signal);
+    expect(received?.aborted).toBe(true);
+    await expect(pending).rejects.not.toThrow(
+      /caller-reason-secret|caller-key-secret|svc-role-key/,
+    );
+  });
+
+  it("times out and cancels a sign JSON body that hangs after response headers", async () => {
+    vi.useFakeTimers();
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetch: typeof globalThis.fetch = async () =>
+      new Response(body, { status: 200 });
+    const signer = createSupabaseDownloadSigner({
+      ...BASE_CONFIG,
+      fetch,
+      requestTimeoutMs: 25,
+    });
+
+    const pending = signer.signDownloadUrl("export/p1/r1/hanging-body", {
+      expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+    });
+    const assertion = expect(pending).rejects.toMatchObject({
+      name: "SupabaseSignError",
+      status: 408,
+    });
+    await vi.advanceTimersByTimeAsync(25);
+    await assertion;
+    expect(cancelled).toBe(true);
+  });
+
+  it("bounds and cancels an oversized non-success response body", async () => {
+    const oversized = oversizedResponse(503);
+    const fetch: typeof globalThis.fetch = async () => oversized.response;
+    const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
+
+    const pending = signer.signDownloadUrl("export/p1/r1/error-key-secret", {
+      expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+    });
+    await expect(pending).rejects.toMatchObject({
+      name: "SupabaseSignError",
+      status: 503,
+    });
+    expect(oversized.wasCancelled()).toBe(true);
+    await expect(pending).rejects.not.toThrow(
+      /sign-body-secret|error-key-secret|svc-role-key/,
+    );
+  });
+
+  it.each([408, 429, 503])(
+    "does not downgrade transient HTTP %i from a contradictory missing-object body",
+    async (status) => {
+      const fetch: typeof globalThis.fetch = async () =>
+        jsonResponse(
+          { error: "not_found", message: "Object not found" },
+          status,
+        );
+      const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
+
+      const pending = signer.signDownloadUrl("export/p1/r1/transient", {
+        expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+      });
+      await expect(pending).rejects.toMatchObject({
+        name: "SupabaseSignError",
+        status,
+      });
+      await expect(pending).rejects.not.toBeInstanceOf(
+        BlobObjectNotFoundError,
+      );
+    },
+  );
+
+  it("bounds and cancels oversized successful sign JSON", async () => {
+    const oversized = oversizedResponse(200);
+    const fetch: typeof globalThis.fetch = async () => oversized.response;
+    const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
+
+    const pending = signer.signDownloadUrl("export/p1/r1/json-key-secret", {
+      expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+    });
+    await expect(pending).rejects.toBeInstanceOf(SupabaseSignError);
+    expect(oversized.wasCancelled()).toBe(true);
+    await expect(pending).rejects.not.toThrow(
+      /sign-body-secret|json-key-secret|svc-role-key/,
+    );
+  });
+
+  it("does not copy a fetch failure message containing secrets into SupabaseSignError", async () => {
+    const fetch: typeof globalThis.fetch = async () => {
+      throw new Error(
+        "network exposed svc-role-key export/p1/r1/key-secret body-secret",
+      );
+    };
+    const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
+
+    const pending = signer.signDownloadUrl("export/p1/r1/key-secret", {
+      expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+    });
+    await expect(pending).rejects.toBeInstanceOf(SupabaseSignError);
+    await expect(pending).rejects.not.toThrow(
+      /svc-role-key|key-secret|body-secret/,
     );
   });
 
@@ -72,6 +288,22 @@ describe("createSupabaseDownloadSigner", () => {
 
     await expect(
       signer.signDownloadUrl("export/OTHER/r1/n1", { expiresInSeconds: 900 }),
+    ).rejects.toBeInstanceOf(ObjectOutOfProjectScopeError);
+    expect(called).toBe(false);
+  });
+
+  it("rejects a non-export key before it can be signed from the export bucket", async () => {
+    let called = false;
+    const fetch: typeof globalThis.fetch = async () => {
+      called = true;
+      return jsonResponse({ signedURL: "/x" });
+    };
+    const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
+
+    await expect(
+      signer.signDownloadUrl("snapshot-raw/p1/r1/n1", {
+        expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+      }),
     ).rejects.toBeInstanceOf(ObjectOutOfProjectScopeError);
     expect(called).toBe(false);
   });
@@ -108,6 +340,32 @@ describe("createSupabaseDownloadSigner", () => {
     await expect(
       signer.signDownloadUrl("export/p1/r1/n1", { expiresInSeconds: 900 }),
     ).rejects.toBeInstanceOf(SupabaseSignError);
+  });
+
+  it("maps an absent object to BlobObjectNotFoundError, not a generic sign failure", async () => {
+    const fetch: typeof globalThis.fetch = async () =>
+      jsonResponse({ error: "not_found", message: "Object not found" }, 404);
+    const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
+
+    await expect(
+      signer.signDownloadUrl("export/p1/r1/missing", {
+        expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+      }),
+    ).rejects.toBeInstanceOf(BlobObjectNotFoundError);
+  });
+
+  it("fails closed when a caller requests anything other than the fixed 900s TTL", async () => {
+    let called = false;
+    const fetch: typeof globalThis.fetch = async () => {
+      called = true;
+      return jsonResponse({ signedURL: "/x" });
+    };
+    const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
+
+    await expect(
+      signer.signDownloadUrl("export/p1/r1/n1", { expiresInSeconds: 60 }),
+    ).rejects.toBeInstanceOf(InvalidDownloadUrlTtlError);
+    expect(called).toBe(false);
   });
 });
 
@@ -181,6 +439,15 @@ describe("buildSignRequest (pure)", () => {
       "https://proj.supabase.co/storage/v1/object/sign/exports/export/p1/r1/n1",
     );
   });
+
+  it("encodes a malformed bucket value instead of allowing path escape", () => {
+    const req = buildSignRequest(
+      { ...BASE_CONFIG, bucket: "exports/../other" },
+      "export/p1/r1/n1",
+      900,
+    );
+    expect(req.url).toContain("/object/sign/exports%2F..%2Fother/export/");
+  });
 });
 
 describe("resolveSignedUrl (pure)", () => {
@@ -222,5 +489,23 @@ describe("blobStoreDownloadSigner (dev seam)", () => {
       signer.signDownloadUrl("export/p2/r1/n1", { expiresInSeconds: 900 }),
     ).rejects.toBeInstanceOf(ObjectOutOfProjectScopeError);
     expect(calls).toHaveLength(1); // out-of-scope key never reached the store
+  });
+
+  it("enforces the same fixed 900s TTL before reaching the local store", async () => {
+    let called = false;
+    const signer = blobStoreDownloadSigner(
+      {
+        async signedUrl(): Promise<string> {
+          called = true;
+          return "memory://unexpected";
+        },
+      },
+      "p1",
+    );
+
+    await expect(
+      signer.signDownloadUrl("export/p1/r1/n1", { expiresInSeconds: 901 }),
+    ).rejects.toBeInstanceOf(InvalidDownloadUrlTtlError);
+    expect(called).toBe(false);
   });
 });

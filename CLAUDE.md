@@ -60,7 +60,7 @@ pnpm contracts:check       # 生成物与 openapi 无 drift（CI 门禁，不得
 pnpm typecheck             # 全 workspace tsc --noEmit
 pnpm lint                  # 全 workspace eslint
 pnpm test                  # vitest unit project（无需数据库）
-pnpm test:integration      # vitest integration project（*.integration.test.ts，需 DATABASE_URL；串行跑）
+pnpm test:integration      # 需显式 loopback disposable DATABASE_URL（signalframe_ci/e2e/codex*）；串行跑
 pnpm test:e2e              # Playwright
 pnpm build                 # 全 workspace（apps/web next build）
 pnpm secrets:scan          # AC-040/DoD：扫描 OAuth token / API key / 私钥 / JWT / 密钥赋值
@@ -72,7 +72,7 @@ pnpm db:migrate:check      # AC-003：断言 28 表 + 必需索引 + append-only
 pnpm db:smoke              # 约束 smoke test（fixtures 最终 ROLLBACK）
 ```
 
-本地起库（当前 Docker/colima 未运行，用裸 Postgres 5432）：`createdb signalframe_mvp_dev && DATABASE_URL=... pnpm db:migrate`。集成测试 `DATABASE_URL` 未设时自动 skip（`describe.skip`），CI 单元测试不需要数据库。
+本地开发库可用裸 Postgres 5432：`createdb signalframe_mvp_dev && DATABASE_URL=... pnpm db:migrate`。集成测试不得复用该库：必须显式传入 loopback 且库名以 `signalframe_ci`、`signalframe_e2e` 或 `signalframe_codex` 开头的可丢弃数据库；缺失或不安全 URL 会在任何测试文件打开连接前直接失败。CI 单元测试不需要数据库。
 
 ## 架构大图
 

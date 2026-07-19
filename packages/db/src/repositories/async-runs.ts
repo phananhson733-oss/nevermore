@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, lte, or, sql } from "drizzle-orm";
 import { asyncRuns } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
@@ -149,14 +149,62 @@ export class AsyncRunsRepository extends Repository {
   }
 
   /**
+   * Validate an actual pg-boss delivery before invoking a runner. An initial
+   * queued delivery is eligible. A canonical row left `running` by a crashed
+   * worker is reset only when pg-boss metadata proves this is a later retry and
+   * the stale attempt has not already advanced beyond that retry count.
+   *
+   * The workspace/project predicates and retry guard live in the same UPDATE so
+   * a delayed delivery cannot race an active newer attempt or cross scope.
+   */
+  async prepareDelivery(
+    scope: ProjectScope,
+    runId: string,
+    retryCount: number,
+  ): Promise<AsyncRunRow | null> {
+    if (!Number.isInteger(retryCount) || retryCount < 0) return null;
+    const rows = await this.exec
+      .update(asyncRuns)
+      .set({ status: "queued", started_at: null })
+      .where(
+        and(
+          projectPredicate(asyncRuns, scope),
+          eq(asyncRuns.id, runId),
+          or(
+            eq(asyncRuns.status, "queued"),
+            and(
+              eq(asyncRuns.status, "running"),
+              sql`${retryCount} > 0`,
+              lte(asyncRuns.attempt_count, retryCount),
+            ),
+          ),
+        ),
+      )
+      .returning();
+    return (rows[0] as AsyncRunRow | undefined) ?? null;
+  }
+
+  /**
    * Return a claimed run to `queued` before a transient-error retry (spec §13.1).
    * Without this a rethrow leaves the run stuck `running` — the pg-boss retry
    * re-runs `claim`, which only wins on `queued`, acks, and never executes.
    */
-  async resetToQueued(runId: string): Promise<void> {
+  async resetToQueued(
+    runId: string,
+    error?: { readonly code: string; readonly summary: string },
+  ): Promise<void> {
     await this.exec
       .update(asyncRuns)
-      .set({ status: "queued", started_at: null })
+      .set({
+        status: "queued",
+        started_at: null,
+        ...(error
+          ? {
+              last_error_code: error.code,
+              last_error_summary: error.summary,
+            }
+          : {}),
+      })
       .where(and(eq(asyncRuns.id, runId), eq(asyncRuns.status, "running")));
   }
 
@@ -200,5 +248,65 @@ export class AsyncRunsRepository extends Repository {
           : {}),
       })
       .where(eq(asyncRuns.id, runId));
+  }
+
+  /**
+   * Operational worker scan across both canonical active states. Production
+   * passes no scope and re-asserts each returned row's immutable scope during
+   * compare-and-set; integration/operations callers may constrain the scan to
+   * one project without weakening that mutation guard.
+   */
+  async listActiveForRecovery(
+    scope: ProjectScope | null = null,
+    limit = 100,
+  ): Promise<AsyncRunRow[]> {
+    const active = sql`${asyncRuns.status} in ('queued','running')`;
+    return (await this.exec
+      .select()
+      .from(asyncRuns)
+      .where(
+        scope
+          ? and(projectPredicate(asyncRuns, scope), active)
+          : active,
+      )
+      .orderBy(
+        asc(sql`coalesce(${asyncRuns.started_at}, ${asyncRuns.queued_at})`),
+        asc(asyncRuns.id),
+      )
+      .limit(limit)) as AsyncRunRow[];
+  }
+
+  /**
+   * Reconciler-only compare-and-set across queued/running. A runner that
+   * committed a terminal state after the scan wins; recovery never overwrites
+   * it. Including queued is essential after a transient runner resets itself
+   * immediately before pg-boss exhausts the final retry.
+   */
+  async reconcileActiveToTerminal(
+    scope: ProjectScope,
+    runId: string,
+    values: {
+      status: "failed" | "cancelled";
+      lastErrorCode: string;
+      lastErrorSummary: string;
+    },
+  ): Promise<boolean> {
+    const rows = await this.exec
+      .update(asyncRuns)
+      .set({
+        status: values.status,
+        completed_at: sql`now()`,
+        last_error_code: values.lastErrorCode,
+        last_error_summary: values.lastErrorSummary,
+      })
+      .where(
+        and(
+          projectPredicate(asyncRuns, scope),
+          eq(asyncRuns.id, runId),
+          sql`${asyncRuns.status} in ('queued','running')`,
+        ),
+      )
+      .returning({ id: asyncRuns.id });
+    return rows.length === 1;
   }
 }

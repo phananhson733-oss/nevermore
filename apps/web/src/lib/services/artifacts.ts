@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import {
   ActionsRepository,
   AsyncRunsRepository,
+  contentHash,
   enqueueRunInTx,
   ExecutionArtifactsRepository,
+  IdempotencyRepository,
   ProjectsRepository,
   type WorkspaceScope,
 } from "@sf/db";
@@ -12,6 +14,7 @@ import type { CreateArtifactRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
+import { isPostgresUniqueViolation } from "./db-errors";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 import { toArtifactDto, type ArtifactDto } from "./artifact-mappers";
 
@@ -24,6 +27,8 @@ import { toArtifactDto, type ArtifactDto } from "./artifact-mappers";
  */
 
 const CONTRACT_VERSION = "2026-07-18";
+const IDEMPOTENCY_SCOPE = "createActionArtifact";
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Reverse map: action templateId → its fixed artifact type (spec §9.2, §10.1). */
 const ARTIFACT_TYPE_BY_TEMPLATE: Record<string, string> = Object.fromEntries(
@@ -34,8 +39,56 @@ export interface ArtifactAcceptedResult {
   readonly status: 202;
   readonly run: AsyncRunDto;
   readonly statusUrl: string;
-  readonly resourceRef: { type: "execution_artifact"; id: string };
+  readonly resourceRef: { type: "artifact"; id: string };
   readonly location: string;
+}
+
+function replayArtifact(
+  row: {
+    request_hash: string;
+    status: string;
+    resource_id: string | null;
+    response_body: unknown;
+  },
+  requestHash: string,
+): ArtifactAcceptedResult | null {
+  if (row.request_hash !== requestHash) {
+    throw new ProblemError(
+      "IDEMPOTENCY_KEY_REUSED",
+      "Idempotency-Key reused with a different request.",
+    );
+  }
+  if (row.status !== "completed" || !row.resource_id) return null;
+  const body = row.response_body as
+    | {
+        run: AsyncRunDto;
+        statusUrl: string;
+        resourceRef?: { id?: string };
+      }
+    | null;
+  if (!body?.run || !body.statusUrl) return null;
+  return {
+    status: 202,
+    run: body.run,
+    statusUrl: body.statusUrl,
+    resourceRef: {
+      type: "artifact",
+      id: body.resourceRef?.id ?? row.resource_id,
+    },
+    location: body.statusUrl,
+  };
+}
+
+function activeArtifactConflict(projectId: string, runId?: string): ProblemError {
+  return new ProblemError(
+    "RUN_ALREADY_ACTIVE",
+    "This artifact is already generating.",
+    {
+      ...(runId
+        ? { headers: { Location: runStatusUrl(projectId, runId) } }
+        : {}),
+    },
+  );
 }
 
 export async function createActionArtifact(
@@ -43,11 +96,33 @@ export async function createActionArtifact(
   projectId: string,
   actionId: string,
   actorId: string,
+  idempotencyKey: string,
   body: CreateArtifactRequest,
 ): Promise<ArtifactAcceptedResult> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
-  const boss = await getBoss();
+
+  // A completed key is an immutable record of an already accepted command.
+  // Consult it before mutable project/action validation so a safe retry still
+  // replays after the project is archived or the action is later dismissed.
+  const requestHash = contentHash({
+    projectId,
+    actionId,
+    artifactType: body.artifactType,
+    generationMode: body.generationMode,
+    outputLocale: body.outputLocale,
+    operatorInstructions: body.operatorInstructions ?? null,
+  });
+  const idem = new IdempotencyRepository(db);
+  const existingKey = await idem.find(
+    scope.workspaceId,
+    IDEMPOTENCY_SCOPE,
+    idempotencyKey,
+  );
+  if (existingKey) {
+    const replay = replayArtifact(existingKey, requestHash);
+    if (replay) return replay;
+  }
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
@@ -67,6 +142,8 @@ export async function createActionArtifact(
     );
   }
 
+  const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
+
   const artifactsRepo = new ExecutionArtifactsRepository(db);
   const existing = await artifactsRepo.findLiveByActionType(projectScope, actionId, body.artifactType);
   const artifactId = existing ? existing.id : randomUUID();
@@ -74,13 +151,43 @@ export async function createActionArtifact(
 
   const active = await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
   if (active) {
-    throw new ProblemError("RUN_ALREADY_ACTIVE", "This artifact is already generating.", {
-      headers: { Location: runStatusUrl(projectId, active.id) },
-    });
+    // Close the read-then-active race for identical idempotent requests: the
+    // winner may have committed between the two reads above.
+    const now = await idem.find(
+      scope.workspaceId,
+      IDEMPOTENCY_SCOPE,
+      idempotencyKey,
+    );
+    const replay = now ? replayArtifact(now, requestHash) : null;
+    if (replay) return replay;
+    throw activeArtifactConflict(projectId, active.id);
   }
 
+  const boss = await getBoss();
   try {
     return await db.transaction(async (tx) => {
+      const txIdem = new IdempotencyRepository(tx);
+      const reserved = await txIdem.begin({
+        workspaceId: scope.workspaceId,
+        scope: IDEMPOTENCY_SCOPE,
+        key: idempotencyKey,
+        requestHash,
+        expiresAt,
+      });
+      if (!reserved) {
+        const winner = await txIdem.find(
+          scope.workspaceId,
+          IDEMPOTENCY_SCOPE,
+          idempotencyKey,
+        );
+        const replay = winner ? replayArtifact(winner, requestHash) : null;
+        if (replay) return replay;
+        throw new ProblemError(
+          "IDEMPOTENCY_KEY_REUSED",
+          "Idempotency key is being processed.",
+        );
+      }
+
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
         projectId,
@@ -99,7 +206,14 @@ export async function createActionArtifact(
       });
 
       if (existing) {
-        await new ExecutionArtifactsRepository(tx).startRegeneration(artifactId, run.id);
+        await new ExecutionArtifactsRepository(tx).startRegeneration(
+          artifactId,
+          run.id,
+          {
+            generationMode: body.generationMode,
+            outputLocale: body.outputLocale,
+          },
+        );
       } else {
         await new ExecutionArtifactsRepository(tx).insert({
           id: artifactId,
@@ -119,24 +233,62 @@ export async function createActionArtifact(
         projectId,
         contractVersion: CONTRACT_VERSION,
       });
+      const stageUpdated = await new ProjectsRepository(tx).setStage(
+        scope,
+        projectId,
+        "executing",
+      );
+      if (!stageUpdated) {
+        throw new ProblemError("NOT_FOUND", "Project not found.");
+      }
 
       const statusUrl = runStatusUrl(projectId, run.id);
-      return {
+      const result: ArtifactAcceptedResult = {
         status: 202,
         run: toAsyncRunDto(run),
         statusUrl,
-        resourceRef: { type: "execution_artifact" as const, id: artifactId },
+        resourceRef: { type: "artifact", id: artifactId },
         location: statusUrl,
       };
+      await txIdem.complete(reserved.id, {
+        responseStatus: 202,
+        responseBody: {
+          run: result.run,
+          statusUrl: result.statusUrl,
+          resourceRef: result.resourceRef,
+        },
+        resourceType: "artifact",
+        resourceId: artifactId,
+      });
+      return result;
     });
   } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
-      const existingRun = await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
-      if (existingRun) {
-        throw new ProblemError("RUN_ALREADY_ACTIVE", "This artifact is already generating.", {
-          headers: { Location: runStatusUrl(projectId, existingRun.id) },
-        });
-      }
+    if (
+      isPostgresUniqueViolation(error, [
+        "async_runs_one_active_key_idx",
+        "execution_artifacts_one_active_type_idx",
+      ])
+    ) {
+      const winnerKey = await idem.find(
+        scope.workspaceId,
+        IDEMPOTENCY_SCOPE,
+        idempotencyKey,
+      );
+      const replay = winnerKey ? replayArtifact(winnerKey, requestHash) : null;
+      if (replay) return replay;
+
+      const winnerArtifact = await artifactsRepo.findLiveByActionType(
+        projectScope,
+        actionId,
+        body.artifactType,
+      );
+      const winnerRun = winnerArtifact
+        ? await new AsyncRunsRepository(db).findActive(
+            projectScope,
+            `artifact:${winnerArtifact.id}`,
+          )
+        : await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
+      throw activeArtifactConflict(projectId, winnerRun?.id);
     }
     throw error;
   }

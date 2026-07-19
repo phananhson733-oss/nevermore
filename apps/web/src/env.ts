@@ -34,6 +34,10 @@ const EnvSchema = z.object({
   DATAFORSEO_ENABLED: z.literal("false"),
   RAW_IMPORT_BUCKET: z.string().min(1),
   EXPORT_BUCKET: z.string().min(1),
+  // Production is always Supabase. Local/test may opt into Supabase, otherwise
+  // they must provide one explicit absolute directory shared with the worker.
+  SF_BLOB_BACKEND: z.enum(["local", "supabase"]).optional(),
+  SF_BLOB_DIR: z.string().min(1).optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 

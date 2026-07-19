@@ -22,7 +22,7 @@ const MIN_INTERNAL_INLINKS = 2;
 const LINKGRAPH_LIMITATION =
   "Inlink counts are derived from the crawled internal outlinks only; links from uncrawled pages are not counted.";
 
-export const techLinkgraphRule: DiagnosticRule = {
+export const techLinkgraphRule = {
   id: "TECH-LINKGRAPH-005",
   version: 1,
   domain: "technical_seo",
@@ -77,4 +77,4 @@ export const techLinkgraphRule: DiagnosticRule = {
     };
     return { status: "candidate", candidates: [candidate] };
   },
-};
+} satisfies DiagnosticRule;

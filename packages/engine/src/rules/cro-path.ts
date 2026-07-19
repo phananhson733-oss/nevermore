@@ -22,7 +22,7 @@ const CANDIDATE_KEY = "page_set:missing_conversion_path";
 const CRAWL_LIMITATION =
   "Internal-link coverage reflects only pages reached in this crawl; pages beyond crawl depth or excluded from crawling are not represented.";
 
-export const croPathRule: DiagnosticRule = {
+export const croPathRule = {
   id: "CRO-PATH-001",
   version: 1,
   domain: "conversion_journey",
@@ -82,4 +82,4 @@ export const croPathRule: DiagnosticRule = {
     };
     return { status: "candidate", candidates: [candidate] };
   },
-};
+} satisfies DiagnosticRule;
