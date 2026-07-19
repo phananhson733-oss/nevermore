@@ -1,8 +1,9 @@
 /*
- * Project sidebar navigation. Sits on the dark ink sidebar, so foreground is
- * var(--sf-white) with opacity for the muted/active states (color stays
- * token-driven; only opacity varies). Below ~960px the list becomes a
- * horizontal scroller so the sidebar can collapse into a top bar.
+ * Project sidebar navigation (visual language from the delivery Artifact). Sits
+ * on the dark ink sidebar: muted white foreground, a mint left-accent bar on the
+ * active row, uppercase group labels dividing Workspace / Evidence / Delivery.
+ * Below ~960px the whole thing becomes a horizontal scroller so the sidebar can
+ * collapse into a top bar (group labels + accent hidden in that mode).
  */
 
 .nav {
@@ -11,50 +12,74 @@
   gap: 2px;
 }
 
-.item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--sf-radius-control);
-  font-family: var(--sf-font-body);
-  font-size: var(--sf-text-base);
-  font-weight: 700;
-  color: var(--sf-white);
-  text-decoration: none;
-  white-space: nowrap;
-  opacity: 0.72;
-  transition:
-    background-color 0.15s ease,
-    opacity 0.15s ease;
+.entry {
+  display: contents;
 }
 
-.link:hover {
-  opacity: 1;
-  background: var(--sf-ink-900);
+.groupLabel {
+  margin: 16px 11px 6px;
+  color: rgba(255, 255, 255, 0.42);
+  font-family: var(--sf-font-body);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.entry:first-child .groupLabel {
+  margin-top: 0;
+}
+
+.item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  color: rgba(255, 255, 255, 0.62);
+  font-family: var(--sf-font-body);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.item::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: -16px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--sf-mint-bright);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.item:hover {
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.item svg {
+  color: currentColor;
 }
 
 .active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.095);
+}
+
+.active::before {
   opacity: 1;
-  background: var(--sf-ink-800);
-}
-
-.disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
-}
-
-/* Accessible-but-invisible text (the "coming soon" note on disabled items). */
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
 @media (max-width: 960px) {
@@ -65,7 +90,18 @@
     padding-bottom: 4px;
     -webkit-overflow-scrolling: touch;
   }
+  .entry {
+    display: block;
+    flex: none;
+  }
+  .groupLabel {
+    display: none;
+  }
   .item {
     flex: none;
+    min-height: 36px;
+  }
+  .item::before {
+    display: none;
   }
 }

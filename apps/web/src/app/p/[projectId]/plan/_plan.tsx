@@ -15,6 +15,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslations } from "next-intl";
+import { Flame, Layers3, Rocket, ShieldCheck } from "lucide-react";
 import {
   Badge,
   Button,
@@ -80,7 +81,12 @@ const STATUS_OPTIONS: readonly ActionStatus[] = [
   "done",
   "dismissed",
 ];
-const PRIORITY_OPTIONS: readonly PriorityBand[] = ["critical", "high", "medium", "low"];
+const PRIORITY_OPTIONS: readonly PriorityBand[] = [
+  "critical",
+  "high",
+  "medium",
+  "low",
+];
 const LANE_OPTIONS: readonly Lane[] = ["now", "next", "later"];
 
 interface SelectOption {
@@ -89,7 +95,9 @@ interface SelectOption {
 }
 
 /** Partition actions into the three lanes by server-assigned `roadmapLane`. */
-function groupByLane(actions: readonly Action[]): Record<Lane, readonly Action[]> {
+function groupByLane(
+  actions: readonly Action[],
+): Record<Lane, readonly Action[]> {
   return {
     now: actions.filter((action) => action.roadmapLane === "now"),
     next: actions.filter((action) => action.roadmapLane === "next"),
@@ -144,7 +152,12 @@ interface OverrideFormProps {
  * with a reason (min 3 chars). Submits `baseRevision = action.revision`; a 409
  * VERSION_CONFLICT refetches the plan and informs the operator.
  */
-function OverrideForm({ projectId, action, onClose, onConflict }: OverrideFormProps) {
+function OverrideForm({
+  projectId,
+  action,
+  onClose,
+  onConflict,
+}: OverrideFormProps) {
   const t = useTranslations("plan");
   const tCommon = useTranslations("common");
   const tStatus = useTranslations("actionStatus");
@@ -159,20 +172,26 @@ function OverrideForm({ projectId, action, onClose, onConflict }: OverrideFormPr
   const [note, setNote] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  const statusOptions: readonly SelectOption[] = STATUS_OPTIONS.map((value) => ({
-    value,
-    label: tStatus(value),
-  }));
-  const priorityOptions: readonly SelectOption[] = PRIORITY_OPTIONS.map((value) => ({
-    value,
-    label: tPriority(value),
-  }));
+  const statusOptions: readonly SelectOption[] = STATUS_OPTIONS.map(
+    (value) => ({
+      value,
+      label: tStatus(value),
+    }),
+  );
+  const priorityOptions: readonly SelectOption[] = PRIORITY_OPTIONS.map(
+    (value) => ({
+      value,
+      label: tPriority(value),
+    }),
+  );
   const laneOptions: readonly SelectOption[] = LANE_OPTIONS.map((value) => ({
     value,
     label: tLane(value),
   }));
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
     event.preventDefault();
     setError(null);
 
@@ -348,7 +367,9 @@ function ActionCard({ projectId, action, onConflict }: ActionCardProps) {
       <dl className={styles.actionMeta}>
         <div className={styles.metaItem}>
           <dt className={styles.metaLabel}>{t("effort")}</dt>
-          <dd className={styles.metaValue}>{t(`effortValue.${action.effort}`)}</dd>
+          <dd className={styles.metaValue}>
+            {t(`effortValue.${action.effort}`)}
+          </dd>
         </div>
         <div className={styles.metaItem}>
           <dt className={styles.metaLabel}>{t("risk")}</dt>
@@ -389,11 +410,19 @@ function ActionCard({ projectId, action, onConflict }: ActionCardProps) {
 interface LaneColumnProps {
   readonly projectId: string;
   readonly lane: Lane;
+  /** Two-digit ordinal ("01"/"02"/"03") shown as the lane's Fraunces index. */
+  readonly index: string;
   readonly actions: readonly Action[];
   readonly onConflict: () => void;
 }
 
-function LaneColumn({ projectId, lane, actions, onConflict }: LaneColumnProps) {
+function LaneColumn({
+  projectId,
+  lane,
+  index,
+  actions,
+  onConflict,
+}: LaneColumnProps) {
   const t = useTranslations("plan");
   const tLane = useTranslations("lane");
   return (
@@ -403,11 +432,16 @@ function LaneColumn({ projectId, lane, actions, onConflict }: LaneColumnProps) {
       aria-label={`${tLane(lane)} — ${t(LANE_WINDOW_KEY[lane])}`}
     >
       <header className={styles.laneHead}>
-        <div className={styles.laneTitleRow}>
-          <h2 className={styles.laneName}>{tLane(lane)}</h2>
-          <Badge>{actions.length}</Badge>
+        <span className={styles.laneIndex} aria-hidden="true">
+          {index}
+        </span>
+        <div className={styles.laneHeadText}>
+          <div className={styles.laneTitleRow}>
+            <h2 className={styles.laneName}>{tLane(lane)}</h2>
+            <Badge>{actions.length}</Badge>
+          </div>
+          <span className={styles.laneWindow}>{t(LANE_WINDOW_KEY[lane])}</span>
         </div>
-        <span className={styles.laneWindow}>{t(LANE_WINDOW_KEY[lane])}</span>
       </header>
       <div className={styles.laneBody}>
         {actions.length === 0 ? (
@@ -467,6 +501,13 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
 
   const actions = query.data.data;
   const grouped = groupByLane(actions);
+  const highPriorityCount = actions.filter(
+    (action) =>
+      action.priorityBand === "critical" || action.priorityBand === "high",
+  ).length;
+  const inDeliveryCount = actions.filter(
+    (action) => action.status === "in_progress" || action.status === "done",
+  ).length;
   const onConflict = () => {
     void query.refetch();
   };
@@ -484,17 +525,75 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
       {actions.length === 0 ? (
         <EmptyState title={t("emptyTitle")} description={t("emptyHint")} />
       ) : (
-        <div className={styles.board}>
-          {LANES.map((lane) => (
-            <LaneColumn
-              key={lane}
-              projectId={projectId}
-              lane={lane}
-              actions={grouped[lane]}
-              onConflict={onConflict}
-            />
-          ))}
-        </div>
+        <>
+          <section
+            className={styles.summaryStrip}
+            aria-label={t("summaryTitle")}
+          >
+            <article className={styles.summaryCard}>
+              <span className={styles.summaryIcon}>
+                <Layers3 aria-hidden="true" size={18} />
+              </span>
+              <span className={styles.summaryMetric}>{actions.length}</span>
+              <div className={styles.summaryText}>
+                <span className={styles.summaryLabel}>
+                  {t("summaryPrioritized")}
+                </span>
+                <p className={styles.summaryHint}>
+                  {t("summaryPrioritizedHint")}
+                </p>
+              </div>
+            </article>
+            <article className={styles.summaryCard}>
+              <span className={cx(styles.summaryIcon, styles.summaryIconAmber)}>
+                <Flame aria-hidden="true" size={18} />
+              </span>
+              <span className={styles.summaryMetric}>{highPriorityCount}</span>
+              <div className={styles.summaryText}>
+                <span className={styles.summaryLabel}>
+                  {t("summaryHighPriority")}
+                </span>
+                <p className={styles.summaryHint}>
+                  {t("summaryHighPriorityHint")}
+                </p>
+              </div>
+            </article>
+            <article className={styles.summaryCard}>
+              <span className={cx(styles.summaryIcon, styles.summaryIconMint)}>
+                <Rocket aria-hidden="true" size={18} />
+              </span>
+              <span className={styles.summaryMetric}>{inDeliveryCount}</span>
+              <div className={styles.summaryText}>
+                <span className={styles.summaryLabel}>
+                  {t("summaryInDelivery")}
+                </span>
+                <p className={styles.summaryHint}>
+                  {t("summaryInDeliveryHint")}
+                </p>
+              </div>
+            </article>
+            <article className={cx(styles.summaryCard, styles.methodCard)}>
+              <span className={styles.methodHead}>
+                <ShieldCheck aria-hidden="true" size={16} />
+                <span className={styles.methodTitle}>{t("methodTitle")}</span>
+              </span>
+              <p className={styles.methodCopy}>{t("methodCopy")}</p>
+            </article>
+          </section>
+
+          <div className={styles.board}>
+            {LANES.map((lane, index) => (
+              <LaneColumn
+                key={lane}
+                projectId={projectId}
+                lane={lane}
+                index={String(index + 1).padStart(2, "0")}
+                actions={grouped[lane]}
+                onConflict={onConflict}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

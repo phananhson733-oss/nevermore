@@ -86,6 +86,7 @@ export function FindingCard({
   const tReview = useTranslations("reviewState");
   const tSeverity = useTranslations("priorityBand");
   const tRule = useTranslations("ruleTitle");
+  const tDomain = useTranslations("domain");
   const review = useReviewFinding(projectId);
 
   const [mode, setMode] = useState<ReviewMode>("idle");
@@ -174,6 +175,9 @@ export function FindingCard({
     >
       <header className={styles.findingHead}>
         <div className={styles.findingTitleWrap}>
+          <span className={styles.findingEyebrow}>
+            {`${tDomain(finding.domain)} · ${finding.ruleId}`}
+          </span>
           <h3 id={`sf-finding-${finding.id}`} className={styles.findingTitle}>
             {tRule(finding.ruleId)}
           </h3>

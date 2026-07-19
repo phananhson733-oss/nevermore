@@ -59,6 +59,70 @@
   gap: 12px;
 }
 
+/* -------------------------------------------------------- Summary strip ----- */
+/* At-a-glance counts of what this report contains — confirmed findings, planned
+ * actions, ready deliverables. All derived from the read-only report projection
+ * (spec §10.4); no re-ranking, no fabricated totals. */
+.summaryStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 560px) {
+  .summaryStrip {
+    grid-template-columns: 1fr;
+  }
+}
+.summaryCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-card);
+  box-shadow: var(--sf-shadow-sm);
+}
+.summaryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 10px;
+  color: var(--sf-cobalt);
+  background: var(--sf-cobalt-soft);
+}
+.summaryIconAmber {
+  color: var(--sf-amber);
+  background: var(--sf-amber-soft);
+}
+.summaryIconMint {
+  color: var(--sf-mint);
+  background: var(--sf-mint-soft);
+}
+.summaryBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.summaryMetric {
+  font-family: var(--sf-font-display);
+  font-size: clamp(26px, 3.4vw, 34px);
+  font-weight: 560;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--sf-fg);
+  font-variant-numeric: tabular-nums;
+}
+.summaryLabel {
+  font-size: var(--sf-text-sm);
+  font-weight: 700;
+  color: var(--sf-muted);
+}
+
 /* ------------------------------------------------------- Output locale ----- */
 .localeField {
   display: flex;
@@ -498,6 +562,7 @@
   .panel,
   .footerPanel,
   .card,
+  .summaryCard,
   .noPromise {
     background: #fff !important;
     border: 1px solid #d0d0d0 !important;
@@ -517,13 +582,16 @@
   .laneTitle,
   .methodologyText,
   .noPromise,
-  .outcomeLabel {
+  .outcomeLabel,
+  .summaryMetric,
+  .summaryLabel {
     color: #111 !important;
   }
 
   /* Keep logical blocks together across page breaks. */
   .panel,
   .card,
+  .summaryCard,
   .lane,
   .evidenceRow,
   .artifactRow {

@@ -19,6 +19,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { FileCheck2, Route, ScanSearch } from "lucide-react";
 import { LOCALES } from "@sf/i18n/config";
 import {
   Badge,
@@ -711,6 +712,9 @@ function ReportContent({
     report.findings.length === 0 &&
     report.actions.length === 0 &&
     report.artifacts.length === 0;
+  const readyDeliverables = report.artifacts.filter(
+    (artifact) => artifact.status === "ready",
+  ).length;
 
   return (
     <div className={styles.page}>
@@ -720,6 +724,45 @@ function ReportContent({
         onOutputLocaleChange={onOutputLocaleChange}
         onPrint={() => window.print()}
       />
+      {!isEmpty ? (
+        <section className={styles.summaryStrip} aria-label={t("summaryTitle")}>
+          <article className={styles.summaryCard}>
+            <span className={styles.summaryIcon}>
+              <ScanSearch aria-hidden="true" size={19} />
+            </span>
+            <span className={styles.summaryBody}>
+              <span className={styles.summaryMetric}>
+                {report.findings.length}
+              </span>
+              <span className={styles.summaryLabel}>
+                {t("summaryFindings")}
+              </span>
+            </span>
+          </article>
+          <article className={styles.summaryCard}>
+            <span className={cx(styles.summaryIcon, styles.summaryIconAmber)}>
+              <Route aria-hidden="true" size={19} />
+            </span>
+            <span className={styles.summaryBody}>
+              <span className={styles.summaryMetric}>
+                {report.actions.length}
+              </span>
+              <span className={styles.summaryLabel}>{t("summaryActions")}</span>
+            </span>
+          </article>
+          <article className={styles.summaryCard}>
+            <span className={cx(styles.summaryIcon, styles.summaryIconMint)}>
+              <FileCheck2 aria-hidden="true" size={19} />
+            </span>
+            <span className={styles.summaryBody}>
+              <span className={styles.summaryMetric}>{readyDeliverables}</span>
+              <span className={styles.summaryLabel}>
+                {t("summaryDeliverables")}
+              </span>
+            </span>
+          </article>
+        </section>
+      ) : null}
       <CoverageSection coverage={report.coverage} />
       {isEmpty ? (
         <Panel className={styles.panel} padding="lg">

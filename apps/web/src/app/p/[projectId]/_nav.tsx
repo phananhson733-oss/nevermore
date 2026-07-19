@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  Database,
+  FileText,
+  LayoutDashboard,
+  ListTodo,
+  PenTool,
+  Search,
+  Target,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -7,12 +17,11 @@ import { cx } from "@/components/ui";
 import styles from "./nav.module.css";
 
 /**
- * Project section navigation (client) for the app-shell sidebar. `usePathname`
- * marks the active tab with `aria-current="page"`. Overview + Context are live
- * links; the remaining sections activate in later work packages and render as
- * non-interactive, muted, `aria-disabled` items with a visually-hidden
- * "coming soon" note — they are intentionally not linked (their routes do not
- * exist yet).
+ * Project section navigation (client) for the app-shell sidebar. Grouped into
+ * Workspace / Evidence & Diagnosis / Execution & Delivery (visual language from
+ * the delivery Artifact). `usePathname` marks the active tab with
+ * `aria-current="page"`, which drives the mint left-accent. Every section is a
+ * live route.
  */
 
 type NavKey =
@@ -24,19 +33,22 @@ type NavKey =
   | "studio"
   | "report";
 
+type NavGroup = "workspace" | "evidence" | "delivery";
+
 interface NavItem {
   readonly key: NavKey;
-  readonly enabled: boolean;
+  readonly group: NavGroup;
+  readonly icon: LucideIcon;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
-  { key: "overview", enabled: true },
-  { key: "context", enabled: true },
-  { key: "sources", enabled: true },
-  { key: "diagnosis", enabled: true },
-  { key: "plan", enabled: true },
-  { key: "studio", enabled: true },
-  { key: "report", enabled: true },
+  { key: "overview", group: "workspace", icon: LayoutDashboard },
+  { key: "context", group: "workspace", icon: Target },
+  { key: "sources", group: "evidence", icon: Database },
+  { key: "diagnosis", group: "evidence", icon: Search },
+  { key: "plan", group: "delivery", icon: ListTodo },
+  { key: "studio", group: "delivery", icon: PenTool },
+  { key: "report", group: "delivery", icon: FileText },
 ];
 
 /** The first path segment under `/p/{projectId}/`, or null when not matched. */
@@ -49,42 +61,31 @@ function activeSegment(pathname: string, projectId: string): string | null {
 
 export function ProjectNav({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("nav");
-  const tShell = useTranslations("appShell");
   const pathname = usePathname();
   const active = activeSegment(pathname, projectId);
-  const comingSoon = tShell("comingSoon");
+  let lastGroup: NavGroup | "" = "";
 
   return (
     <nav className={styles.nav} aria-label="Project sections">
       {NAV_ITEMS.map((item) => {
-        const label = t(item.key);
-        if (item.enabled) {
-          const isActive = active === item.key;
-          return (
+        const isActive = active === item.key;
+        const Icon = item.icon;
+        const showGroup = item.group !== lastGroup;
+        lastGroup = item.group;
+        return (
+          <div className={styles.entry} key={item.key}>
+            {showGroup ? (
+              <p className={styles.groupLabel}>{t(item.group)}</p>
+            ) : null}
             <Link
-              key={item.key}
               href={`/p/${projectId}/${item.key}`}
-              className={cx(
-                styles.item,
-                styles.link,
-                isActive && styles.active,
-              )}
+              className={cx(styles.item, isActive && styles.active)}
               aria-current={isActive ? "page" : undefined}
             >
-              {label}
+              <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
+              <span>{t(item.key)}</span>
             </Link>
-          );
-        }
-        return (
-          <span
-            key={item.key}
-            className={cx(styles.item, styles.disabled)}
-            aria-disabled="true"
-            title={comingSoon}
-          >
-            {label}
-            <span className={styles.srOnly}>{` — ${comingSoon}`}</span>
-          </span>
+          </div>
         );
       })}
     </nav>

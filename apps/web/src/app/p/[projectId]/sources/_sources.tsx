@@ -15,6 +15,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import {
+  BarChart3,
+  Database,
+  FileUp,
+  Globe2,
+  Search,
+  type LucideIcon,
+} from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -60,7 +68,22 @@ import { sourceLimitationForDisplay } from "../_view-model.ts";
 import styles from "./sources.module.css";
 
 /** The five providers in the spec's canonical card order (spec §4.2). */
-const PROVIDER_ORDER: readonly Provider[] = ["crawl", "gsc", "ga4", "csv", "dataforseo"];
+const PROVIDER_ORDER: readonly Provider[] = [
+  "crawl",
+  "gsc",
+  "ga4",
+  "csv",
+  "dataforseo",
+];
+
+/** Per-provider glyph for the card logo (visual language from the Artifact). */
+const PROVIDER_ICON: Record<Provider, LucideIcon> = {
+  crawl: Globe2,
+  gsc: Search,
+  ga4: BarChart3,
+  csv: FileUp,
+  dataforseo: Database,
+};
 
 // ------------------------------------------------------------- Tone helpers --
 
@@ -213,29 +236,35 @@ function Freshness({
   }
 
   return (
-    <div className={styles.freshRow}>
-      <div className={styles.freshItem}>
-        <span className={styles.metaLabel}>{t("lastCollected")}</span>
-        <span className={styles.freshValue}>{formatDateTime(snap.capturedAt, locale)}</span>
-      </div>
-      <div className={styles.freshItem}>
-        <span className={styles.metaLabel}>{t("availabilityLabel")}</span>
-        <StatusPill tone={availabilityTone(snap.availability)}>
-          {tState(snap.availability)}
-        </StatusPill>
-      </div>
-      {source.state === "stale" ? (
-        <StatusPill tone="warning">{tState("stale")}</StatusPill>
-      ) : null}
-      <div className={styles.freshItem}>
+    <div className={styles.freshBlock}>
+      <div className={styles.metricBig}>
         <span className={styles.metaLabel}>{t("rows")}</span>
-        <span className={styles.freshValue}>{snap.rowCount}</span>
+        <strong className={styles.metricValue}>
+          {new Intl.NumberFormat(locale).format(snap.rowCount)}
+        </strong>
       </div>
-      {snapshotCount > 0 ? (
-        <span className={styles.snapHistory}>
-          {t("snapshotHistory", { count: snapshotCount })}
-        </span>
-      ) : null}
+      <div className={styles.freshRow}>
+        <div className={styles.freshItem}>
+          <span className={styles.metaLabel}>{t("lastCollected")}</span>
+          <span className={styles.freshValue}>
+            {formatDateTime(snap.capturedAt, locale)}
+          </span>
+        </div>
+        <div className={styles.freshItem}>
+          <span className={styles.metaLabel}>{t("availabilityLabel")}</span>
+          <StatusPill tone={availabilityTone(snap.availability)}>
+            {tState(snap.availability)}
+          </StatusPill>
+        </div>
+        {source.state === "stale" ? (
+          <StatusPill tone="warning">{tState("stale")}</StatusPill>
+        ) : null}
+        {snapshotCount > 0 ? (
+          <span className={styles.snapHistory}>
+            {t("snapshotHistory", { count: snapshotCount })}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -292,7 +321,9 @@ function PropertySelection({
   const t = useTranslations("sources");
   const tCommon = useTranslations("common");
   const connect = useConnectSource(projectId);
-  const [selected, setSelected] = useState<string>(intent.properties[0]?.id ?? "");
+  const [selected, setSelected] = useState<string>(
+    intent.properties[0]?.id ?? "",
+  );
   const [keyEvents, setKeyEvents] = useState<string>("");
   const busy = connect.isPending;
   const selectId = `${provider}-property`;
@@ -334,7 +365,11 @@ function PropertySelection({
 
   return (
     <div className={styles.property}>
-      <Field label={t("selectProperty")} help={t("selectPropertyHelp")} htmlFor={selectId}>
+      <Field
+        label={t("selectProperty")}
+        help={t("selectPropertyHelp")}
+        htmlFor={selectId}
+      >
         <select
           id={selectId}
           className={styles.select}
@@ -420,7 +455,10 @@ function OAuthControls({
       connect.mutate(
         {
           provider,
-          request: { phase: "authorize", returnPath: `/p/${projectId}/sources` },
+          request: {
+            phase: "authorize",
+            returnPath: `/p/${projectId}/sources`,
+          },
         },
         {
           onSuccess: (data) => {
@@ -487,7 +525,10 @@ type CsvFieldKey =
 
 type CsvMappingState = Record<CsvFieldKey, string>;
 
-const CSV_FIELDS: readonly { readonly key: CsvFieldKey; readonly required: boolean }[] = [
+const CSV_FIELDS: readonly {
+  readonly key: CsvFieldKey;
+  readonly required: boolean;
+}[] = [
   { key: "keyword", required: true },
   { key: "searchVolume", required: true },
   { key: "marketCode", required: true },
@@ -533,10 +574,16 @@ function prefillMapping(
 }
 
 function buildMapping(state: CsvMappingState): CsvColumnMapping | null {
-  if (!state.keyword || !state.searchVolume || !state.marketCode || !state.languageCode) {
+  if (
+    !state.keyword ||
+    !state.searchVolume ||
+    !state.marketCode ||
+    !state.languageCode
+  ) {
     return null;
   }
-  const optional = (value: string): string | null => (value.length > 0 ? value : null);
+  const optional = (value: string): string | null =>
+    value.length > 0 ? value : null;
   return {
     keyword: state.keyword,
     searchVolume: state.searchVolume,
@@ -583,7 +630,9 @@ export function CsvPreview({
               <tr key={index}>
                 {columns.map((column) => {
                   const value = row[column];
-                  return <td key={column}>{value == null ? "" : String(value)}</td>;
+                  return (
+                    <td key={column}>{value == null ? "" : String(value)}</td>
+                  );
                 })}
               </tr>
             ))}
@@ -667,7 +716,10 @@ function CsvControls({
   const fileId = "csv-file-input";
 
   useEffect(() => {
-    if (preview) setMapping(prefillMapping(preview.detectedColumns, preview.suggestedMapping));
+    if (preview)
+      setMapping(
+        prefillMapping(preview.detectedColumns, preview.suggestedMapping),
+      );
   }, [preview]);
 
   const onFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -722,7 +774,10 @@ function CsvControls({
       {preview ? (
         <div className={styles.previewBlock}>
           <p className={styles.previewMeta}>
-            {t("previewMeta", { shown: preview.previewRows.length, total: preview.rowCount })}
+            {t("previewMeta", {
+              shown: preview.previewRows.length,
+              total: preview.rowCount,
+            })}
           </p>
           {preview.errors.length > 0 ? (
             <ul className={cx(styles.msgList, styles.msgError)}>
@@ -754,7 +809,9 @@ function CsvControls({
           <MappingEditor
             detected={preview.detectedColumns}
             state={mapping}
-            onChange={(key, value) => setMapping((prev) => ({ ...prev, [key]: value }))}
+            onChange={(key, value) =>
+              setMapping((prev) => ({ ...prev, [key]: value }))
+            }
           />
 
           <div className={styles.controls}>
@@ -771,7 +828,9 @@ function CsvControls({
               {importer.confirm.isPending ? t("importing") : t("confirmImport")}
             </Button>
             {confirmMapping === null ? (
-              <span className={styles.controlHint}>{t("confirmDisabledHint")}</span>
+              <span className={styles.controlHint}>
+                {t("confirmDisabledHint")}
+              </span>
             ) : null}
           </div>
           {importer.confirm.error !== null ? (
@@ -865,7 +924,11 @@ function SourceControls({
       );
     case "csv":
       return (
-        <CsvControls projectId={projectId} onStarted={onStarted} runActive={runActive} />
+        <CsvControls
+          projectId={projectId}
+          onStarted={onStarted}
+          runActive={runActive}
+        />
       );
     default:
       return <DisabledControls />;
@@ -924,19 +987,28 @@ function SourceCard({
   const hintKey = sourceHintMessageKey(source);
   const disconnectable =
     sourceId !== null &&
-    (source.connectionType === "oauth" || source.connectionType === "file_import") &&
+    (source.connectionType === "oauth" ||
+      source.connectionType === "file_import") &&
     source.state !== "disconnected";
+  const ProviderIcon = PROVIDER_ICON[source.provider];
 
   return (
     <Panel padding="lg" className={styles.card} aria-labelledby={titleId}>
       <div className={styles.cardHead}>
+        <span className={styles.sourceLogo} aria-hidden="true">
+          <ProviderIcon size={20} strokeWidth={1.8} />
+        </span>
         <div className={styles.cardHeadText}>
           <h2 id={titleId} className={styles.cardTitle}>
             {providerLabel}
           </h2>
-          <p className={styles.cardDesc}>{t(`description.${source.provider}`)}</p>
+          <p className={styles.cardDesc}>
+            {t(`description.${source.provider}`)}
+          </p>
         </div>
-        <StatusPill tone={stateTone(source.state)}>{tState(source.state)}</StatusPill>
+        <StatusPill tone={stateTone(source.state)}>
+          {tState(source.state)}
+        </StatusPill>
       </div>
 
       <Freshness source={source} snapshotCount={snapshotCount} />
@@ -951,7 +1023,11 @@ function SourceCard({
       ) : null}
 
       {runActive && activeRunId !== null ? (
-        <RunWatcher projectId={projectId} runId={activeRunId} onSettled={onSettled} />
+        <RunWatcher
+          projectId={projectId}
+          runId={activeRunId}
+          onSettled={onSettled}
+        />
       ) : null}
 
       {failedRunId !== null && activeRunId === null ? (
@@ -1035,7 +1111,10 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     if (oauthIntentId && provider) {
       strip();
       connect
-        .mutateAsync({ provider, request: { phase: "property_selection", oauthIntentId } })
+        .mutateAsync({
+          provider,
+          request: { phase: "property_selection", oauthIntentId },
+        })
         .then((data) => {
           if (data.phase === "property_selection") setIntent(data);
         })
@@ -1075,7 +1154,10 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
   if (sources.error !== null || sources.data === undefined) {
     return (
       <div className={styles.state}>
-        <EmptyState title={tCommon("error")} description={sources.error?.message}>
+        <EmptyState
+          title={tCommon("error")}
+          description={sources.error?.message}
+        >
           <Button
             variant="secondary"
             onClick={() => {

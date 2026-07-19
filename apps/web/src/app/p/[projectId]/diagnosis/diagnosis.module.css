@@ -259,9 +259,19 @@
 .findingTitleWrap {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+.findingEyebrow {
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--sf-accent);
 }
 .findingTitle {
+  margin-top: -2px;
   font-size: var(--sf-text-lg);
   color: var(--sf-fg);
 }

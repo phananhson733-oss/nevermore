@@ -168,9 +168,36 @@
   margin: 0;
 }
 .metric {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow: hidden;
+}
+/* Subtle tone-matched corner ring (visual signature from the Artifact). */
+.metric::after {
+  content: "";
+  position: absolute;
+  right: -22px;
+  bottom: -28px;
+  width: 78px;
+  height: 78px;
+  border: 17px solid var(--metric-accent, var(--sf-border-strong));
+  border-radius: 50%;
+  opacity: 0.06;
+  pointer-events: none;
+}
+.metricCobalt {
+  --metric-accent: var(--sf-cobalt);
+}
+.metricMint {
+  --metric-accent: var(--sf-mint);
+}
+.metricAmber {
+  --metric-accent: var(--sf-amber);
+}
+.metricCoral {
+  --metric-accent: var(--sf-coral);
 }
 .metricLabel {
   margin: 0;

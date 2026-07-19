@@ -18,6 +18,15 @@ import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  CircleCheckBig,
+  ClipboardList,
+  FilePenLine,
+  FileStack,
+  FileText,
+  SquarePen,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import {
   Badge,
   Button,
   Card,
@@ -64,6 +73,13 @@ const ARTIFACT_TYPES: readonly ArtifactType[] = [
   "metadata_rewrite",
   "technical_ticket",
 ];
+
+/** Per-type lucide glyph — a quiet visual anchor on cards and group heads. */
+const ARTIFACT_TYPE_ICON: Record<ArtifactType, LucideIcon> = {
+  content_brief: FileText,
+  metadata_rewrite: SquarePen,
+  technical_ticket: ClipboardList,
+};
 
 const GENERATION_MODES: readonly GenerationMode[] = [
   "template",
@@ -248,6 +264,7 @@ function ArtifactCard({
   const tRun = useTranslations("runState");
   const generating =
     artifact.status === "generating" || artifact.activeRun !== null;
+  const TypeIcon = ARTIFACT_TYPE_ICON[artifact.artifactType];
 
   return (
     <Card
@@ -255,8 +272,13 @@ function ArtifactCard({
       className={cx(styles.artCard, selected && styles.artCardSelected)}
     >
       <div className={styles.artHead}>
-        <span className={styles.artType}>
-          {t(`artifactType.${artifact.artifactType}`)}
+        <span className={styles.artTypeWrap}>
+          <span className={styles.artIcon}>
+            <TypeIcon aria-hidden="true" size={16} />
+          </span>
+          <span className={styles.artType}>
+            {t(`artifactType.${artifact.artifactType}`)}
+          </span>
         </span>
         <StatusPill tone={artifactStatusTone(artifact.status)}>
           {t(`status.${artifact.status}`)}
@@ -882,6 +904,8 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   );
   const selected = artifacts.find((a) => a.id === selectedId) ?? null;
   const groups = groupByType(artifacts);
+  const readyCount = artifacts.filter((a) => a.status === "ready").length;
+  const draftCount = artifacts.filter((a) => a.status === "draft").length;
 
   function openGenerate(action: ArtifactAction): void {
     setGenerateAction(action);
@@ -926,18 +950,41 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
         </div>
       </header>
 
+      {artifacts.length > 0 ? (
+        <section className={styles.statStrip} aria-label={t("summaryTitle")}>
+          <article className={styles.statCard}>
+            <span className={styles.statIcon}>
+              <FileStack aria-hidden="true" size={18} />
+            </span>
+            <span className={styles.statMetric}>{artifacts.length}</span>
+            <span className={styles.statLabel}>{t("statOutputs")}</span>
+          </article>
+          <article className={styles.statCard}>
+            <span className={cx(styles.statIcon, styles.statIconMint)}>
+              <CircleCheckBig aria-hidden="true" size={18} />
+            </span>
+            <span className={styles.statMetric}>{readyCount}</span>
+            <span className={styles.statLabel}>{t("statReady")}</span>
+          </article>
+          <article className={styles.statCard}>
+            <span className={cx(styles.statIcon, styles.statIconAmber)}>
+              <FilePenLine aria-hidden="true" size={18} />
+            </span>
+            <span className={styles.statMetric}>{draftCount}</span>
+            <span className={styles.statLabel}>{t("statDrafts")}</span>
+          </article>
+        </section>
+      ) : null}
+
       {activeRunId !== null && runQuery.data !== undefined ? (
         <RunBanner run={runQuery.data} message={t("generating")} />
       ) : null}
 
       {failedRunId !== null ? (
-        <Panel
-          tone="coral"
-          padding="md"
-          className={styles.banner}
-          role="alert"
-        >
-          <span className={styles.bannerLabel}>{t("runStatusUnavailable")}</span>
+        <Panel tone="coral" padding="md" className={styles.banner} role="alert">
+          <span className={styles.bannerLabel}>
+            {t("runStatusUnavailable")}
+          </span>
           <Button
             variant="secondary"
             size="sm"
@@ -983,39 +1030,45 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
         </StateWrap>
       ) : (
         <div className={styles.groups}>
-          {groups.map(([type, list]) => (
-            <section
-              key={type}
-              className={styles.group}
-              aria-label={t(`artifactType.${type}`)}
-            >
-              <div className={styles.groupHead}>
-                <h2 className={styles.groupTitle}>
-                  {t(`artifactType.${type}`)}
-                </h2>
-                <Badge>{String(list.length)}</Badge>
-              </div>
-              <div className={styles.cardGrid}>
-                {list.map((artifact) => {
-                  const action = actionById.get(artifact.actionId);
-                  return (
-                    <ArtifactCard
-                      key={artifact.id}
-                      artifact={artifact}
-                      actionTitle={action?.title}
-                      selected={selected?.id === artifact.id}
-                      onOpen={() => setSelectedId(artifact.id)}
-                      onRegenerate={
-                        action !== undefined && action.status !== "dismissed"
-                          ? () => openGenerate(action)
-                          : undefined
-                      }
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+          {groups.map(([type, list]) => {
+            const GroupIcon = ARTIFACT_TYPE_ICON[type];
+            return (
+              <section
+                key={type}
+                className={styles.group}
+                aria-label={t(`artifactType.${type}`)}
+              >
+                <div className={styles.groupHead}>
+                  <span className={styles.groupIcon}>
+                    <GroupIcon aria-hidden="true" size={18} />
+                  </span>
+                  <h2 className={styles.groupTitle}>
+                    {t(`artifactType.${type}`)}
+                  </h2>
+                  <Badge>{String(list.length)}</Badge>
+                </div>
+                <div className={styles.cardGrid}>
+                  {list.map((artifact) => {
+                    const action = actionById.get(artifact.actionId);
+                    return (
+                      <ArtifactCard
+                        key={artifact.id}
+                        artifact={artifact}
+                        actionTitle={action?.title}
+                        selected={selected?.id === artifact.id}
+                        onOpen={() => setSelectedId(artifact.id)}
+                        onRegenerate={
+                          action !== undefined && action.status !== "dismissed"
+                            ? () => openGenerate(action)
+                            : undefined
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

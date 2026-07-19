@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
@@ -54,18 +55,27 @@ export default async function ProjectLayout({
       </a>
 
       <aside className={styles.sidebar}>
-        <div className={styles.brand}>
-          <span className={styles.brandMark} aria-hidden="true" />
-          <span className={styles.brandWord}>SignalFrame</span>
+        <div className={styles.brand} aria-label="SignalFrame">
+          <span className={styles.brandMark} aria-hidden="true">
+            <Sparkles size={17} strokeWidth={2.2} />
+          </span>
+          <span className={styles.brandWord}>signalframe</span>
         </div>
 
-        <div className={styles.projectHeader}>
-          <span className={styles.projectClient}>{project.clientName}</span>
-          <span className={styles.projectHost}>{project.site.host}</span>
-          <Link href="/new-project" className={styles.newProjectLink}>
-            {tNav("newProject")}
-          </Link>
+        <div className={styles.projectCard}>
+          <span className={styles.projectAvatar} aria-hidden="true">
+            {project.clientName.trim().charAt(0).toUpperCase() || "•"}
+          </span>
+          <span className={styles.projectCopy}>
+            <strong className={styles.projectClient}>
+              {project.clientName}
+            </strong>
+            <small className={styles.projectHost}>{project.site.host}</small>
+          </span>
         </div>
+        <Link href="/new-project" className={styles.newProjectLink}>
+          {tNav("newProject")}
+        </Link>
 
         <ProjectNav projectId={project.id} />
       </aside>
@@ -77,7 +87,10 @@ export default async function ProjectLayout({
             <span className={styles.crumbSep} aria-hidden="true">
               /
             </span>
-            <CurrentPageLabel projectId={project.id} className={styles.crumbCurrent} />
+            <CurrentPageLabel
+              projectId={project.id}
+              className={styles.crumbCurrent}
+            />
           </nav>
 
           <div className={styles.topbarActions}>

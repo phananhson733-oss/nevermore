@@ -52,6 +52,62 @@
   text-align: right;
 }
 
+/* --------------------------------------------------------- Output summary -- */
+/* Honest, derived-only counts (spec §1.3): total outputs, ready-for-handoff and
+ * in-draft all come straight from the loaded artifacts. */
+.statStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 560px) {
+  .statStrip {
+    grid-template-columns: 1fr;
+  }
+}
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-card);
+  box-shadow: var(--sf-shadow-sm);
+}
+.statIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--sf-cobalt);
+  background: var(--sf-cobalt-soft);
+}
+.statIconMint {
+  color: var(--sf-mint);
+  background: var(--sf-mint-soft);
+}
+.statIconAmber {
+  color: var(--sf-amber);
+  background: var(--sf-amber-soft);
+}
+.statMetric {
+  font-family: var(--sf-font-display);
+  font-size: clamp(26px, 3.4vw, 36px);
+  font-weight: 560;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--sf-fg);
+  font-variant-numeric: tabular-nums;
+}
+.statLabel {
+  font-size: var(--sf-text-sm);
+  font-weight: 700;
+  color: var(--sf-fg);
+}
+
 /* ------------------------------------------------------------ Run banner -- */
 .banner {
   display: flex;
@@ -101,6 +157,12 @@
   align-items: center;
   gap: 10px;
 }
+.groupIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sf-accent);
+}
 .groupTitle {
   font-size: var(--sf-text-xl);
   color: var(--sf-fg);
@@ -126,6 +188,23 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.artTypeWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.artIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 9px;
+  color: var(--sf-cobalt);
+  background: var(--sf-cobalt-soft);
 }
 .artType {
   font-size: var(--sf-text-base);

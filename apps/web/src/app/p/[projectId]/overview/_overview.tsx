@@ -90,6 +90,14 @@ interface MetricItem {
   readonly empty: boolean;
 }
 
+/** Tone → corner-accent modifier class for a metric card. */
+const METRIC_TONE_CLASS: Record<string, string | undefined> = {
+  cobalt: styles.metricCobalt,
+  mint: styles.metricMint,
+  amber: styles.metricAmber,
+  coral: styles.metricCoral,
+};
+
 function HeroSection({ project }: { readonly project: Project }) {
   const t = useTranslations("overview");
   const tNav = useTranslations("nav");
@@ -215,7 +223,7 @@ function MetricStrip({
           key={metric.key}
           tone={metric.tone}
           padding="md"
-          className={styles.metric}
+          className={cx(styles.metric, METRIC_TONE_CLASS[metric.tone])}
         >
           <dt className={styles.metricLabel}>{metric.label}</dt>
           <dd

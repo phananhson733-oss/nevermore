@@ -13,6 +13,7 @@ coverage/
 .env
 .env.local
 .env.*.local
+.env.local.bak-*
 
 # test + tooling artifacts
 playwright-report/
@@ -28,3 +29,4 @@ test-results/
 # Local blob store runtime output (raw imports / export bundles) — never commit
 .data/
 **/.data/
+.vercel

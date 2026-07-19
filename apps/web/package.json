@@ -22,6 +22,7 @@
     "@supabase/supabase-js": "catalog:",
     "@tanstack/react-query": "catalog:",
     "drizzle-orm": "catalog:",
+    "lucide-react": "^1.25.0",
     "next": "catalog:",
     "next-intl": "catalog:",
     "react": "catalog:",

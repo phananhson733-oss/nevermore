@@ -38,6 +38,105 @@
   line-height: 1.5;
 }
 
+/* --------------------------------------------------------- Summary strip --- */
+/* Honest, derived-only counts (spec §1.3): every figure comes from the loaded
+ * actions — total, high-priority, in-delivery — never a fabricated or weighted
+ * number. The fourth cell restates the deterministic-priority method. */
+.summaryStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .summaryStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .summaryStrip {
+    grid-template-columns: 1fr;
+  }
+}
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-card);
+  box-shadow: var(--sf-shadow-sm);
+}
+.summaryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--sf-cobalt);
+  background: var(--sf-cobalt-soft);
+}
+.summaryIconMint {
+  color: var(--sf-mint);
+  background: var(--sf-mint-soft);
+}
+.summaryIconAmber {
+  color: var(--sf-amber);
+  background: var(--sf-amber-soft);
+}
+.summaryMetric {
+  font-family: var(--sf-font-display);
+  font-size: clamp(28px, 3.6vw, 38px);
+  font-weight: 560;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--sf-fg);
+  font-variant-numeric: tabular-nums;
+}
+.summaryText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.summaryLabel {
+  font-size: var(--sf-text-sm);
+  font-weight: 700;
+  color: var(--sf-fg);
+}
+.summaryHint {
+  margin: 0;
+  font-size: var(--sf-text-xs);
+  color: var(--sf-muted);
+  line-height: 1.4;
+}
+/* Method note cell — the transparent-priority reminder (spec §1.3). */
+.methodCard {
+  gap: 8px;
+  background: var(--sf-surface-deep);
+  border-style: dashed;
+  border-color: var(--sf-border-strong);
+  box-shadow: none;
+}
+.methodHead {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sf-accent);
+}
+.methodTitle {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.methodCopy {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  line-height: 1.5;
+}
+
 /* ---------------------------------------------------- Loading / error ----- */
 .state {
   display: flex;
@@ -79,8 +178,25 @@
 }
 .laneHead {
   display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+.laneIndex {
+  flex: none;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-2xl);
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--sf-cobalt);
+  font-variant-numeric: tabular-nums;
+}
+.laneHeadText {
+  display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 .laneTitleRow {
   display: flex;
