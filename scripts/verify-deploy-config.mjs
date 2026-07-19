@@ -8,6 +8,30 @@ import { fileURLToPath } from "node:url";
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const read = (path) => readFileSync(join(root, path), "utf8");
 
+// Worker host is a persistent container built from Dockerfile.worker. Render is
+// the primary host (render.yaml); railway.json is kept as an equivalent fallback.
+const render = read("render.yaml");
+assert.match(render, /type:\s*worker/, "render.yaml must declare a worker service");
+assert.match(render, /runtime:\s*docker/, "render.yaml worker must use the docker runtime");
+assert.match(
+  render,
+  /dockerfilePath:\s*\.\/Dockerfile\.worker/,
+  "render.yaml must build Dockerfile.worker",
+);
+for (const secret of [
+  "DATABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "CREDENTIAL_ENCRYPTION_KEY",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "OPENAI_API_KEY",
+]) {
+  assert.match(
+    render,
+    new RegExp(`key:\\s*${secret}\\b[^\\n]*\\n\\s*sync:\\s*false`),
+    `${secret} must be sync:false (a dashboard secret, never a committed value) in render.yaml`,
+  );
+}
+
 const railway = JSON.parse(read("railway.json"));
 assert.equal(railway.build?.builder, "DOCKERFILE");
 assert.equal(railway.build?.dockerfilePath, "Dockerfile.worker");
@@ -38,5 +62,5 @@ const nextConfig = read("apps/web/next.config.ts");
 assert.match(nextConfig, /outputFileTracingRoot:\s*monorepoRoot/);
 
 console.log(
-  "Deploy config passed: Vercel web + Railway worker, Node 24, frozen pnpm, PID 1, secret-safe context.",
+  "Deploy config passed: Vercel web + Render/Railway worker, Node 24, frozen pnpm, PID 1, secret-safe context.",
 );

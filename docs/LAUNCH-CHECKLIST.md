@@ -4,12 +4,12 @@ Operational runbook to take the frozen release candidate live at **`gengrowth.ai
 Milestone = a real user logs in at `gengrowth.ai/app/login` and uses the workbench.
 
 - **Release SHA to deploy:** `eabaab3` (freeze `cde8309` + `/app` base path `eabaab3`).
-  Vercel web, Railway worker, and the migration job MUST all resolve to this one SHA.
+  Vercel web, the Render worker, and the migration job MUST all resolve to this one SHA.
 - **Authority:** this checklist operationalizes `docs/DEPLOYMENT.md` and the
   "External / Owner-gated launch checklist" in `docs/PROGRESS.md`. On any conflict,
   the spec (`../signalframe-mvp/implementation-spec-v0.2`) wins.
 - **Secrets:** never paste real secret values into git, logs, or a shared channel.
-  Set them only in the Vercel / Railway / Supabase / Google dashboards.
+  Set them only in the Vercel / Render / Supabase / Google dashboards.
 - Local gates already green at this SHA: `typecheck · ~1082 unit · verify:spec ·
   implementation:check · deploy:check · vendor:check`.
 
@@ -52,10 +52,11 @@ Legend: **[Owner]** needs your credentials/authority · **[me]** I can prep/veri
 - [ ] Confirm the OAuth consent screen lists the read-only scopes
   `webmasters.readonly` + `analytics.readonly` **[Owner]**
 
-## Phase 3 — Railway worker (persistent pg-boss consumer)
+## Phase 3 — Render worker (persistent pg-boss consumer)
 
-- [ ] Service builds `Dockerfile.worker` (already declared in `railway.json`) **[Owner]**
-- [ ] Set worker env vars (Railway dashboard) **[Owner]**:
+- [ ] Create a **Render Background Worker** from `render.yaml` (Blueprint) — builds
+  `Dockerfile.worker`, no HTTP port. (Railway `railway.json` is an equal fallback.) **[Owner]**
+- [ ] Set worker env vars (`deploy/worker.env.template`; Blueprint prompts the secrets) **[Owner]**:
   - Shared: `APP_ORIGIN=https://gengrowth.ai` · `DATABASE_URL=<session-mode>` ·
     `DB_POOL_MAX=3` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` ·
     `CREDENTIAL_ENCRYPTION_KEY` · `GOOGLE_OAUTH_CLIENT_ID` · `GOOGLE_OAUTH_CLIENT_SECRET` ·

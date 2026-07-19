@@ -16,8 +16,9 @@ fixed environment decision is authoritative and recorded here).
 
 - Spec §3.2 fixes deployment to **Railway** (two services `web` + `worker`, same
   image/commit).
-- **Override:** web runs on **Vercel**, the persistent worker runs on **Railway**,
-  and Supabase remains the shared Auth/Postgres/Storage substrate.
+- **Override:** web runs on **Vercel**, the persistent worker runs on **Render**
+  (Background Worker; `railway.json` is kept as an equivalent fallback host), and
+  Supabase remains the shared Auth/Postgres/Storage substrate.
 - Both compute services must be built from the same immutable commit even though
   they use different build artifacts.
 
@@ -26,9 +27,12 @@ fixed environment decision is authoritative and recorded here).
 1. **Web → Vercel.** `apps/web/vercel.json` selects Next.js; the Vercel project
    uses `apps/web` as its Root Directory and includes workspace sources outside
    that directory. Next's standalone trace root is the monorepo root.
-2. **Worker → Railway.** `railway.json` builds `Dockerfile.worker`. Node is PID 1,
+2. **Worker → Render.** `render.yaml` declares a Background Worker built from
+   `Dockerfile.worker` (Railway `railway.json` is an equal fallback). Node is PID 1,
    so SIGTERM reaches the worker's pg-boss and readiness-lease shutdown handler.
-   This process intentionally has no HTTP healthcheck port.
+   This process intentionally has no HTTP healthcheck port. `pnpm deploy:check`
+   validates render.yaml (worker type, docker runtime, Dockerfile, secrets as
+   `sync:false`) and railway.json.
 3. **State → Supabase.** Both services share the same database, encryption key,
    OAuth configuration, service role, and private raw/export Storage buckets.
    Local filesystem blob storage is rejected in production.
@@ -54,14 +58,14 @@ the same SHA, then verify `/api/mvp/health/ready` and `/api/mvp/health/version`.
 
 ### Promotion evidence (required, not satisfied by a local build)
 
-1. Commit and record one immutable SHA. The Vercel deployment, Railway image and
-   migration job must all resolve to that SHA; a dirty local worktree is not a
-   release identifier.
+1. Commit and record one immutable SHA. The Vercel deployment, Render (worker)
+   image and migration job must all resolve to that SHA; a dirty local worktree is
+   not a release identifier.
 2. Run the additive migration job against the intended Supabase project before
    promoting worker or web traffic. Record the successful migrate-check without
    exposing the database URL.
-3. Start Railway and confirm its startup/ready logs report the immutable SHA,
-   successful recovery sweep and a held worker readiness lease. Logs must not
+3. Start the Render worker and confirm its startup/ready logs report the immutable
+   SHA, successful recovery sweep and a held worker readiness lease. Logs must not
    contain env values, provider bodies, model output or customer content.
 4. Verify web `/api/mvp/health/version` reports the same SHA. Verify
    `/api/mvp/health/ready` returns 200 only after DB, pg-boss schema and the live

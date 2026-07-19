@@ -1,0 +1,55 @@
+# Render Blueprint — SignalFrame WORKER (persistent pg-boss consumer).
+#
+# Deploy: Render Dashboard → New → Blueprint → pick this repo. Render reads this
+# file and creates one Background Worker (a long-running process, NO HTTP port —
+# exactly what the worker is). Secrets are `sync: false`: enter them in the Render
+# dashboard, never in git. The web service runs on Vercel (apps/web/vercel.json),
+# not here. See docs/DEPLOY-GUIDE-zh.md step 4.
+#
+# (railway.json is kept as an equivalent fallback host — same Dockerfile.worker.)
+
+services:
+  - type: worker                       # Background Worker: always-on, no port
+    name: signalframe-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile.worker
+    dockerContext: .
+    plan: starter                      # always-on; a worker cannot scale to zero
+    autoDeploy: false                  # promote a chosen SHA deliberately
+    envVars:
+      # --- secrets: set in the Render dashboard, never committed ---
+      - key: DATABASE_URL              # Supabase SESSION/direct mode (not tx pooler)
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CREDENTIAL_ENCRYPTION_KEY # MUST equal the web (Vercel) value
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY            # or use the 4 AZURE_OPENAI_* vars instead
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: APP_BUILD_SHA             # pin the release SHA (match the web deploy)
+        sync: false
+      # --- fixed, non-secret ---
+      - key: APP_ORIGIN
+        value: https://gengrowth.ai
+      - key: DB_POOL_MAX
+        value: "3"
+      - key: DATAFORSEO_ENABLED
+        value: "false"
+      - key: RAW_IMPORT_BUCKET
+        value: raw-imports
+      - key: EXPORT_BUCKET
+        value: exports
+      - key: SF_BLOB_BACKEND
+        value: supabase
+      - key: LLM_PROVIDER
+        value: openai
+      - key: LOG_LEVEL
+        value: info

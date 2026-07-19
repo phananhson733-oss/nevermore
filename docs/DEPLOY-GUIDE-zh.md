@@ -14,7 +14,7 @@
 | 部件 | 跑什么 | 放哪 |
 |---|---|---|
 | **web** | 网站本体（登录页、界面、`/api/mvp` 接口） | **Vercel** |
-| **worker** | 常驻后台（抓取、诊断、生成、导出的执行者） | **Railway**（一个 Docker 容器） |
+| **worker** | 常驻后台（抓取、诊断、生成、导出的执行者） | **Render**（Background Worker，一个 Docker 容器） |
 | **数据** | 数据库 + 登录 + 文件存储 | **Supabase**（你已经在用的那个） |
 
 关键规矩：**web 和 worker 必须用同一个版本 `eabaab3`、同一套数据库和密钥**。
@@ -94,33 +94,47 @@ lifecycle/retention 设置）。这是规格要求的导出留存策略。
 
 ---
 
-## 4. Railway：部署 worker（15 分钟）〔你〕
+## 4. Render：部署 worker（15 分钟）〔你〕
 
-worker 是个常驻后台进程，Vercel 跑不了常驻进程，所以放 Railway。
+worker 是个常驻后台进程，Vercel 跑不了常驻进程，所以放 Render 的 **Background Worker**
+（专为"没有网页、只后台干活"的进程设计的服务类型）。
 
-1. [Railway](https://railway.app) → **New Project** → **Deploy from GitHub repo** → 选中这个仓库。
-2. Railway 会读仓库里的 `railway.json`，自动用 **Dockerfile.worker** 构建。（无需你配 build 命令。）
-3. 进入这个 service → **Variables** → 把 `deploy/railway.worker.env.template` 里的变量一条条填进去。
-   **要点：**
-   - `DATABASE_URL` = 第 2.1 步那串 Session 模式连接串
-   - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` = Supabase → Settings → API 里拿
-     （service_role 是**密钥**，别外泄）
-   - `CREDENTIAL_ENCRYPTION_KEY` = 第 1.3 步生成的那把（**待会 web 填一样的**）
-   - `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` = Google 那个客户端的
-   - `SF_BLOB_BACKEND=supabase`（生产必须是这个，不能 local）
-   - `DB_POOL_MAX=3`（连接池小一点，别把 Supabase 连接数打满）
-   - LLM 二选一：
-     - 直连 OpenAI：`LLM_PROVIDER=openai` + `OPENAI_API_KEY` + `OPENAI_MODEL`（如 `gpt-4.1-mini`）
-     - 或 Azure：把上面两行注释掉，填**全部四个** `AZURE_OPENAI_*` / `OPENAI_API_VERSION`（要么四个全填，要么一个都别填）
-   - `APP_BUILD_SHA=eabaab3`（钉住版本，和 web 一致）
-   - `NEXT_PUBLIC_BASE_PATH` / `SUPABASE_ANON_KEY` **worker 不要填**
-4. 触发部署。部署后看 **Deploy Logs**，应看到：
-   - 启动日志里有版本号（`eabaab3`）
-   - 一次 recovery sweep（恢复扫描）
-   - 拿到 **worker readiness lease**（就绪租约）
-   - 日志里**不该出现**任何密钥值、模型输出、客户数据。
+> 成本提醒：常驻 worker 不能缩到 0，**是付费实例**（Render 免费档只给能休眠的 web 服务），
+> 起步约几美元/月。任何平台的常驻 worker 都一样，这不是 Render 特有。
+
+**方式 A（推荐，最省事）—— 用 Blueprint 一键建：**
+1. [Render](https://render.com) → **New** → **Blueprint** → 选中这个 GitHub 仓库。
+2. Render 读仓库里的 `render.yaml`，自动创建名为 `signalframe-worker` 的 Background Worker，
+   用 **Dockerfile.worker** 构建。
+3. 它会提示你填所有 `sync: false` 的密钥（下面"要点"里那几个）。非密钥的固定值
+   （`APP_ORIGIN`、`DB_POOL_MAX=3`、桶名等）blueprint 已带好。
+
+**方式 B（手动建）：** New → **Background Worker** → 连仓库 → Runtime 选 **Docker** →
+Dockerfile Path 填 `./Dockerfile.worker` → 然后到 **Environment** 逐条填变量。
+
+**变量要点**（完整清单见 `deploy/worker.env.template`）：
+- `DATABASE_URL` = 第 2.1 步那串 Session 模式连接串
+- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` = Supabase → Settings → API 里拿
+  （service_role 是**密钥**，别外泄）
+- `CREDENTIAL_ENCRYPTION_KEY` = 第 1.3 步生成的那把（**待会 web 填一样的**）
+- `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` = Google 那个客户端的
+- `SF_BLOB_BACKEND=supabase`（生产必须是这个，不能 local）
+- `DB_POOL_MAX=3`（连接池小一点，别把 Supabase 连接数打满）
+- LLM 二选一：
+  - 直连 OpenAI：`LLM_PROVIDER=openai` + `OPENAI_API_KEY` + `OPENAI_MODEL`（如 `gpt-4.1-mini`）
+  - 或 Azure：把上面两行注释掉，填**全部四个** `AZURE_OPENAI_*` / `OPENAI_API_VERSION`（要么四个全填，要么一个都别填）
+- `APP_BUILD_SHA=eabaab3`（钉住版本，和 web 一致）
+- `NEXT_PUBLIC_BASE_PATH` / `SUPABASE_ANON_KEY` **worker 不要填**
+
+触发部署后，看 Render 的 **Logs**，应看到：
+- 启动日志里有版本号（`eabaab3`）
+- 一次 recovery sweep（恢复扫描）
+- 拿到 **worker readiness lease**（就绪租约）
+- 日志里**不该出现**任何密钥值、模型输出、客户数据。
 
 > worker 没有网页、没有健康检查端口，这是正常的——它就是个默默干活的后台。
+> （不想用 Render 也行：`Dockerfile.worker` 是标准容器，Railway/Fly.io/自有服务器都能跑，
+> 仓库里 `railway.json` 就是 Railway 的等价配置。）
 
 ---
 
@@ -202,7 +216,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://gengrowth.ai/app/api/mvp/health
 |---|---|---|
 | 登录后 Google 连不上，报 `redirect_uri_mismatch` | 第 3 步 `/app` 回调没加/没生效 | 回 Google Console 加那条带 `/app` 的，等几分钟 |
 | `/app/...` 打不开、根路径反而能开 | Vercel 没设 `NEXT_PUBLIC_BASE_PATH=/app`，或改了没重新部署 | 补上并重新 Deploy |
-| `/health/ready` 一直 503 | worker 没起来/没拿到租约 | 看 Railway 日志；确认 `DATABASE_URL` 是 Session 模式 |
+| `/health/ready` 一直 503 | worker 没起来/没拿到租约 | 看 Render 日志；确认 `DATABASE_URL` 是 Session 模式 |
 | worker 或 web 启动就崩 | 环境变量缺/错（会 fail-fast 报哪个字段） | 照模板补齐；Azure 四个字段要么全填要么全不填 |
 | 导出能生成但下载 404 | `SF_BLOB_BACKEND` 没设成 `supabase`，或桶没建 | 两边都设 `supabase`，建好 `raw-imports`/`exports` |
 | 连接数报错/打满 | `DB_POOL_MAX` 太大 | web 和 worker 都设 `3` |

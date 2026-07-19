@@ -26,5 +26,6 @@ COPY . .
 ENV NODE_ENV=production
 USER node
 
-# Node is PID 1 so Railway SIGTERM reaches the worker's graceful shutdown hook.
+# Node is PID 1 so the host's SIGTERM (Render/Railway) reaches the worker's
+# graceful shutdown hook (pg-boss stop + readiness-lease release).
 CMD ["node", "--enable-source-maps", "--import", "tsx", "apps/worker/src/index.ts"]
