@@ -40,17 +40,11 @@
    git rev-parse --short HEAD   # 记下这串，这就是你要部署的版本（含 render.yaml + /app）
    git status --porcelain       # 应该没有输出（干净）
    ```
-3. **把代码推到 GitHub** ⚠️ 必做 —— Vercel 和 Render 都从 Git 仓库拉代码，Render Blueprint
-   还要从仓库读 `render.yaml`。**这个本地仓库现在还没有 remote**，先建一个私有 GitHub 仓库并推上去：
-   ```bash
-   # 用 GitHub CLI 最快（没装就 `brew install gh` 再 `gh auth login`）：
-   gh repo create signalframe-mvp-app --private --source=. --remote=origin --push
-   # 或手动：在 github.com 建一个空私有仓库，然后：
-   #   git remote add origin git@github.com:<你的用户名>/signalframe-mvp-app.git
-   #   git push -u origin main
-   ```
-   > ⚠️ 仓库里有 `docs/vendor` 等，但**密钥都在 gitignore 的 `.env.local` 里、不会被推**（前面已核查）。
-   > 之后 Vercel/Render 在各自面板里 **Import/Connect 这个 GitHub 仓库**即可。
+3. **代码已推到 GitHub** ✅ —— 私有仓库 **`xdawayer/nevermore`**（default 分支 `main`，
+   remote `origin` 已配好、跟踪 `main`；密钥都在 gitignore 的 `.env.local`、没被推）。
+   仓库根目录就是本项目根（`package.json` / `apps/` / `render.yaml` 都在根）。
+   > 以后本地有改动，`git push` 推到 `origin/main`，Vercel/Render 会自动重新部署（若开了自动部署）。
+   > **下面第 4、5 步在 Vercel/Render 面板里 Import/Connect 的就是 `xdawayer/nevermore` 这个仓库。**
 4. 生成一把"凭证加密钥匙"（如果你还没有一把要长期用的）：
    ```bash
    openssl rand -base64 32
@@ -119,7 +113,7 @@ worker 是个常驻后台进程，Vercel 跑不了常驻进程，所以放 Rende
 > 起步约几美元/月。任何平台的常驻 worker 都一样，这不是 Render 特有。
 
 **方式 A（推荐，最省事）—— 用 Blueprint 一键建：**
-1. [Render](https://render.com) → **New** → **Blueprint** → 选中这个 GitHub 仓库。
+1. [Render](https://render.com) → **New** → **Blueprint** → 选 **`xdawayer/nevermore`** 仓库。
 2. Render 读仓库里的 `render.yaml`，自动创建名为 `signalframe-worker` 的 Background Worker，
    用 **Dockerfile.worker** 构建。
 3. 它会提示你填所有 `sync: false` 的密钥（下面"要点"里那几个）。非密钥的固定值
@@ -157,7 +151,7 @@ Dockerfile Path 填 `./Dockerfile.worker` → 然后到 **Environment** 逐条�
 
 ## 5. Vercel：部署 web + 挂到 /app（15 分钟）〔你〕
 
-1. [Vercel](https://vercel.com) → **Add New… → Project** → **Import** 这个 GitHub 仓库。
+1. [Vercel](https://vercel.com) → **Add New… → Project** → **Import** **`xdawayer/nevermore`** 仓库。
 2. 关键设置：
    - **Root Directory** 选 **`apps/web`**（点 Edit 选到这个子目录）。
    - Framework 会自动识别 **Next.js**。（`apps/web/vercel.json` 已声明。）
