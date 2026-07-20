@@ -43,6 +43,11 @@ describe("web production URL environment policy", () => {
     ).toBe(true);
   });
 
+  it("defaults each serverless database pool to one connection", () => {
+    expect(production.parse(BASE).DB_POOL_MAX).toBe(1);
+    expect(production.parse({ ...BASE, DB_POOL_MAX: "2" }).DB_POOL_MAX).toBe(2);
+  });
+
   it.each([
     ["APP_ORIGIN", "http://app.example.com"],
     ["APP_ORIGIN", "http://localhost:3000"],

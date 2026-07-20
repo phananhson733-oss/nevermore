@@ -52,7 +52,11 @@ connection. The web readiness probe also acquires and releases a session
 advisory lock on one checked-out connection. Therefore both `DATABASE_URL`
 values must use Supabase direct/session mode (or the session pooler), never the
 transaction pooler. Keep `DB_POOL_MAX` conservative and monitor connection
-saturation.
+saturation. The production connection budget is asymmetric by design:
+`DB_POOL_MAX=1` on each horizontally scaled Vercel Web instance and
+`DB_POOL_MAX=2` on the single persistent Railway Worker. The worker minimum is
+two because its readiness session advisory lease checks out one Drizzle pool
+connection for the worker lifetime, leaving the second for normal job queries.
 
 Keep `raw-imports` and `exports` private. The worker service role must be able to
 create, read, list and delete objects in both buckets. Listing and deletion are

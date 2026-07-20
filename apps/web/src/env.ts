@@ -43,9 +43,10 @@ export function createWebEnvSchema(environment: string | undefined) {
   return z.object({
     APP_ORIGIN: runtimeUrl(environment, { originOnly: true }),
     DATABASE_URL: postgresUrl(),
-    // Max connections per pool; keep low against a connection-limited pooler
-    // (e.g. Supabase session pooler ~15/project). See apps/worker/src/env.ts.
-    DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
+    // Each warm serverless instance owns a Drizzle pool and may lazily start a
+    // second enqueue-only pg-boss pool. One connection per pool keeps horizontal
+    // scaling inside the shared Supabase session-pool budget.
+    DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(1),
     SUPABASE_URL: runtimeUrl(environment),
     SUPABASE_ANON_KEY: z.string().min(1),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),

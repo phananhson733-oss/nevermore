@@ -47,6 +47,12 @@ describe("worker production URL environment policy", () => {
     expect(production.safeParse({ ...BASE, ...AZURE }).success).toBe(true);
   });
 
+  it("defaults each persistent worker database pool to two connections", () => {
+    expect(production.parse(BASE).DB_POOL_MAX).toBe(2);
+    expect(production.parse({ ...BASE, DB_POOL_MAX: "3" }).DB_POOL_MAX).toBe(3);
+    expect(production.safeParse({ ...BASE, DB_POOL_MAX: "1" }).success).toBe(false);
+  });
+
   it("defaults finding summaries on and accepts only explicit true/false values", () => {
     expect(production.parse(BASE).FINDING_SUMMARIES_ENABLED).toBe("true");
     expect(

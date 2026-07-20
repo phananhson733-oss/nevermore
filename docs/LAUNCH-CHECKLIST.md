@@ -105,7 +105,7 @@ Deploy the worker before the web promotion gate.
   **[Owner]**
 - [ ] Set the variables from `deploy/worker.env.template`. In particular:
   `APP_ORIGIN=https://app.gengrowth.ai`, session-mode `DATABASE_URL`,
-  `DB_POOL_MAX=3`, shared Supabase/OAuth/encryption values,
+  `DB_POOL_MAX=2`, shared Supabase/OAuth/encryption values,
   `SF_BLOB_BACKEND=supabase`, the two bucket names, and the selected worker-only
   LLM configuration **[Owner]**
 - [ ] Leave `APP_BUILD_SHA` unset so `RAILWAY_GIT_COMMIT_SHA` reports the actual
@@ -127,7 +127,7 @@ probe.
   Variables enabled **[Owner]**
 - [ ] Set Production variables from the approved web template/dashboard:
   `APP_ORIGIN=https://app.gengrowth.ai`, session-mode `DATABASE_URL`,
-  `DB_POOL_MAX=3`, the same Supabase/OAuth/encryption/bucket settings,
+  `DB_POOL_MAX=1`, the same Supabase/OAuth/encryption/bucket settings,
   `SUPABASE_ANON_KEY`, and `SF_BLOB_BACKEND=supabase` **[Owner]**
 - [ ] Leave `NEXT_PUBLIC_BASE_PATH` unset. Do not set `/app`; this release serves
   the root of `app.gengrowth.ai` **[Owner]**

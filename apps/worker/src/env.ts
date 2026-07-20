@@ -47,10 +47,10 @@ export function createWorkerEnvSchema(environment: string | undefined) {
     .object({
       APP_ORIGIN: runtimeUrl(environment, { originOnly: true }),
       DATABASE_URL: postgresUrl(),
-      // Max connections per pool. Keep low against a connection-limited pooler
-      // (e.g. Supabase session pooler ~15/project): web + worker each run a Drizzle
-      // pool AND a pg-boss pool, so 4 pools must fit under the ceiling.
-      DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
+      // The persistent worker owns both a Drizzle pool and a pg-boss pool. The
+      // readiness lease permanently checks out one Drizzle client, so two is the
+      // safe minimum while preserving capacity for normal worker queries.
+      DB_POOL_MAX: z.coerce.number().int().min(2).max(50).default(2),
       SUPABASE_URL: runtimeUrl(environment),
       SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
       CREDENTIAL_ENCRYPTION_KEY: base64Bytes(32),

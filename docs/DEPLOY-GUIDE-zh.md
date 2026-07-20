@@ -53,7 +53,12 @@ Web 和 Worker 的 `DATABASE_URL` 必须使用 Supabase **Direct connection / Se
 pooler**，不能使用 Transaction pooler。pg-boss、Worker readiness session advisory lease，
 以及 Web readiness 的 session lock 都要求会话语义。
 
-建议 Web 和 Worker 都从 `DB_POOL_MAX=3` 起步，并观察 Supabase 连接数。
+当前共享 Supabase session pool 的上限为 15。Worker 常驻一个 Drizzle pool 和一个
+pg-boss pool；每个 Vercel warm instance 常驻一个 Drizzle pool，并可能按需启动第二个
+enqueue-only pg-boss pool。因此生产基线固定为 Web `DB_POOL_MAX=1`、Worker
+`DB_POOL_MAX=2`，同时持续观察连接数。不要把两端设成同一个较大值：Vercel 横向扩容会
+让每个实例分别创建连接池。Worker 不允许低于 2，因为 readiness session advisory lease
+会在 Worker 生命周期内占用 Drizzle pool 的一个连接，另一个连接用于正常任务查询。
 
 ### 1.2 先做可恢复的备份
 
@@ -132,7 +137,7 @@ Worker，不能回退到 Next.js Web CMD。
 
 - `APP_ORIGIN=https://app.gengrowth.ai`
 - `DATABASE_URL=<Supabase session/direct-mode URL>`
-- `DB_POOL_MAX=3`
+- `DB_POOL_MAX=2`
 - `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`
 - `CREDENTIAL_ENCRYPTION_KEY`（与 Vercel Web 完全相同）
 - `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`（与 Web 相同）
@@ -176,7 +181,7 @@ Worker 没有可 curl 的 URL；它的在线证据是 Supabase 中的 live sessi
 Production 环境至少需要：
 
 - `APP_ORIGIN=https://app.gengrowth.ai`
-- 与 Worker 相同的 session-mode `DATABASE_URL`、`DB_POOL_MAX=3`
+- 与 Worker 相同的 session-mode `DATABASE_URL`，但 Web 使用 `DB_POOL_MAX=1`
 - 与 Worker相同的 `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`、
   `CREDENTIAL_ENCRYPTION_KEY`、Google OAuth 字段、bucket 字段
 - Web-only `SUPABASE_ANON_KEY`
@@ -252,7 +257,7 @@ origin，则保留唯一 URL 的所有健康与只读检查，并在 promote 后
 | 页面被挂到 `/app` | Vercel 残留 `NEXT_PUBLIC_BASE_PATH=/app` | 删除该变量并从同一 SHA 重新创建、验证 unique deployment |
 | Google 报 `redirect_uri_mismatch` | OAuth client 仍配置旧 `/app` URI或缺少新 URI | 新增 `https://app.gengrowth.ai/api/mvp/oauth/google/callback`，等待生效 |
 | 导出生成但下载失败 | bucket 未建/不私有、service role 权限不足或 backend 不是 Supabase | 核对两个私有 bucket、create/read/list/delete 与 `SF_BLOB_BACKEND=supabase` |
-| Supabase 连接耗尽 | pool 过大或误用连接模式 | 从 Web/Worker `DB_POOL_MAX=3` 起步并监控 session 连接 |
+| Supabase 连接耗尽 | Web 横向实例各自建池、pool 过大或误用连接模式 | 固定 Web `DB_POOL_MAX=1`、Worker `DB_POOL_MAX=2`；确认 session/direct mode 并监控 session 连接 |
 
 配套文档：`docs/DEPLOYMENT.md`（权威拓扑与发布顺序）、
 `docs/LAUNCH-CHECKLIST.md`（逐项勾选）、`docs/RUNBOOK.md`（故障与回滚）、
