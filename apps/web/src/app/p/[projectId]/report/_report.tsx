@@ -571,6 +571,10 @@ function PlanSection({ actions }: { readonly actions: readonly Action[] }) {
             className={styles.lane}
             key={action.id}
             data-report-roadmap-lane={action.roadmapLane}
+            role="group"
+            aria-label={`${tLane(action.roadmapLane)} · ${t(
+              `laneCaption.${action.roadmapLane}`,
+            )}`}
           >
             <div className={styles.laneHead}>
               <span className={styles.laneTitle}>
