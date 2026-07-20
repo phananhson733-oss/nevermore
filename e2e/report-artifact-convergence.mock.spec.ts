@@ -272,6 +272,9 @@ test("one populated lane uses the report canvas without relabeling its actions",
   await expect(
     reportDocument.locator('[data-report-roadmap-lane="later"]'),
   ).toHaveCount(7);
+  await expect(
+    reportDocument.locator('[data-report-roadmap-lane="later"]').first(),
+  ).toHaveAttribute("aria-label", "Later · Days 61–90");
 
   const roadmapColumns = await roadmap.evaluate(
     (node) => getComputedStyle(node).gridTemplateColumns,
@@ -290,6 +293,35 @@ test("one populated lane uses the report canvas without relabeling its actions",
       nodes.map((node) => node.getAttribute("data-report-roadmap-lane")),
     );
   expect(new Set(laneValues)).toEqual(new Set(["later"]));
+});
+
+test("390px overrides the compact single-lane desktop grid to one column", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await serveReport(page, reportFixture({ singleLane: true }));
+  await openReport(page);
+
+  const reportDocument = page.locator("[data-report-document]");
+  const roadmap = reportDocument.locator("[data-report-roadmap]");
+  await expect(roadmap).toHaveAttribute("data-report-active-lanes", "1");
+  const roadmapColumns = await roadmap.evaluate(
+    (node) => getComputedStyle(node).gridTemplateColumns,
+  );
+  expect(roadmapColumns.trim().split(/\s+/)).toHaveLength(1);
+
+  const actionXs = await reportDocument
+    .locator("[data-report-action-id]")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => Math.round(node.getBoundingClientRect().x)),
+    );
+  expect(new Set(actionXs).size).toBe(1);
+
+  const overflow = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
 });
 
 test("an empty canonical projection stays explicit and never invents report totals", async ({

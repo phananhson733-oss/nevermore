@@ -982,7 +982,10 @@
   .roadmapLegend {
     display: none;
   }
-  .lanes {
+  .lanes,
+  .lanes[data-report-active-lanes="1"],
+  .lanes[data-report-active-lanes="2"],
+  .lanes[data-report-active-lanes="3"] {
     grid-template-columns: minmax(0, 1fr);
     grid-auto-flow: row;
   }
