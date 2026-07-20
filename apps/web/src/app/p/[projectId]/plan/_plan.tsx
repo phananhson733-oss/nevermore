@@ -511,6 +511,9 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
 
   const actions = uniqueCursorItems(query.data);
   const grouped = groupByLane(actions);
+  const visibleLanes = LANES.flatMap((lane, index) =>
+    grouped[lane].length > 0 ? [{ lane, index }] : [],
+  );
   const highPriorityCount = actions.filter(
     (action) =>
       action.priorityBand === "critical" || action.priorityBand === "high",
@@ -600,8 +603,12 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
             </article>
           </section>
 
-          <div className={styles.board}>
-            {LANES.map((lane, index) => (
+          <div
+            className={styles.board}
+            data-testid="plan-board"
+            data-lane-count={visibleLanes.length}
+          >
+            {visibleLanes.map(({ lane, index }) => (
               <LaneColumn
                 key={lane}
                 projectId={projectId}
