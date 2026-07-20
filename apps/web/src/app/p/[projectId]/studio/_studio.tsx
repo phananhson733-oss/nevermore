@@ -872,13 +872,16 @@ function ArtifactEditor({
 interface GenerateFormProps {
   readonly projectId: string;
   readonly action: ArtifactAction;
-  readonly project: Project | undefined;
   readonly onQueued: (run: AsyncRun, artifactId: string | null) => void;
   readonly onCancel: () => void;
 }
 
-function localeOptions(project: Project | undefined): readonly string[] {
+function localeOptions(
+  project: Project | undefined,
+  actionLocale: string,
+): readonly string[] {
   const set = new Set<string>();
+  set.add(actionLocale);
   if (project) {
     set.add(project.defaultDeliveryLocale);
     for (const code of project.site.languageCodes) set.add(code);
@@ -905,23 +908,28 @@ function normalizeTemplateOutputLocale(value: string): "en" | "zh-CN" | null {
 function GenerateForm({
   projectId,
   action,
-  project,
   onQueued,
   onCancel,
 }: GenerateFormProps) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
   const create = useCreateArtifact(projectId, action.id);
+  // Project metadata is needed only after the operator chooses an action. Keep
+  // it out of Studio's first-paint request set; the action locale remains a
+  // truthful immediate fallback while the richer project recommendations load.
+  const projectQuery = useProject(projectId);
+  const project = projectQuery.data;
 
   const expected = expectedArtifactType(action);
-  const locales = localeOptions(project);
+  const locales = localeOptions(project, action.contentLocale);
   const [artifactType, setArtifactType] = useState<ArtifactType>(
     expected ?? "content_brief",
   );
   const [mode, setMode] = useState<GenerationMode>("template");
   const [locale, setLocale] = useState<string>(
-    project?.defaultDeliveryLocale ?? locales[0] ?? "en",
+    project?.defaultDeliveryLocale ?? action.contentLocale,
   );
+  const localeEdited = useRef(false);
   const [instructions, setInstructions] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [problemError, setProblemError] = useState<unknown | null>(null);
@@ -941,6 +949,12 @@ function GenerateForm({
         : null;
   const submittedLocale =
     mode === "template" ? templateLocale : normalizedLocale;
+
+  useEffect(() => {
+    if (project !== undefined && !localeEdited.current) {
+      setLocale(project.defaultDeliveryLocale);
+    }
+  }, [project]);
 
   async function onSubmit(): Promise<void> {
     setError(null);
@@ -1041,7 +1055,10 @@ function GenerateForm({
             id={localeId}
             value={locale}
             list={locales.length > 0 ? localeListId : undefined}
-            onChange={(event) => setLocale(event.target.value)}
+            onChange={(event) => {
+              localeEdited.current = true;
+              setLocale(event.target.value);
+            }}
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
@@ -1201,7 +1218,6 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
 
   const artifactsQuery = useProjectArtifacts(projectId);
   const actionsQuery = useProjectActions(projectId);
-  const projectQuery = useProject(projectId);
   const queryClient = useQueryClient();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1269,35 +1285,16 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     }
   }, [runOutcome, runQuery.data, activeRunId, queryClient, projectId]);
 
-  if (artifactsQuery.isLoading || actionsQuery.isLoading) {
-    return (
-      <StateWrap>
-        <Spinner size="lg" label={tCommon("loading")} />
-        <p className={styles.stateText}>{tCommon("loading")}</p>
-      </StateWrap>
-    );
-  }
-
-  if (
-    (artifactsQuery.isError && artifactsQuery.data === undefined) ||
-    (actionsQuery.isError && actionsQuery.data === undefined)
-  ) {
-    const screenError =
-      artifactsQuery.error ?? actionsQuery.error ?? new Error("unknown");
-    return (
-      <StateWrap>
-        <ProblemState
-          error={screenError}
-          onRetry={() =>
-            void Promise.all([artifactsQuery.refetch(), actionsQuery.refetch()])
-          }
-        />
-      </StateWrap>
-    );
-  }
-
   const artifacts = uniqueCursorItems(artifactsQuery.data);
   const actions = uniqueCursorItems(actionsQuery.data);
+  const artifactsInitialLoading =
+    artifactsQuery.isLoading && artifactsQuery.data === undefined;
+  const artifactsInitialError =
+    artifactsQuery.isError && artifactsQuery.data === undefined;
+  const actionsInitialLoading =
+    actionsQuery.isLoading && actionsQuery.data === undefined;
+  const actionsInitialError =
+    actionsQuery.isError && actionsQuery.data === undefined;
   const actionById = new Map(
     actions.map((action) => [action.id, action] as const),
   );
@@ -1315,6 +1312,11 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   const draftCount = artifacts.filter((a) => a.status === "draft").length;
   const selectedEditorDirty =
     selectedId !== null && dirtyArtifactId === selectedId;
+  const generationUnavailable =
+    artifactsInitialLoading ||
+    artifactsInitialError ||
+    actionsInitialLoading ||
+    actionsInitialError;
 
   function confirmEditorDiscard(): boolean {
     return canDiscardArtifactChanges(selectedEditorDirty, () =>
@@ -1370,23 +1372,43 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
               setGenerateAction(null);
             }}
             disabled={
-              eligibleActions.length === 0 && !actionsQuery.hasNextPage
+              generationUnavailable ||
+              (eligibleActions.length === 0 && !actionsQuery.hasNextPage)
             }
+            aria-busy={generationUnavailable}
             aria-describedby={
-              eligibleActions.length === 0 && !actionsQuery.hasNextPage
+              actionsInitialLoading ||
+              (!actionsInitialError &&
+                eligibleActions.length === 0 &&
+                !actionsQuery.hasNextPage)
                 ? "sf-gen-note"
                 : undefined
             }
           >
             {t("generate")}
           </Button>
-          {eligibleActions.length === 0 && !actionsQuery.hasNextPage ? (
+          {actionsInitialLoading ? (
+            <p id="sf-gen-note" className={styles.heroNote}>
+              {tCommon("loading")}
+            </p>
+          ) : !actionsInitialError &&
+            eligibleActions.length === 0 &&
+            !actionsQuery.hasNextPage ? (
             <p id="sf-gen-note" className={styles.heroNote}>
               {t("noActions")}
             </p>
           ) : null}
         </div>
       </header>
+
+      {actionsInitialError ? (
+        <ProblemNotice
+          error={actionsQuery.error ?? new Error("unknown")}
+          message={tCommon("errorHint")}
+          onRetry={() => void actionsQuery.refetch()}
+          compact
+        />
+      ) : null}
 
       {artifacts.length > 0 ? (
         <section className={styles.statStrip} aria-label={t("summaryTitle")}>
@@ -1446,7 +1468,6 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
         <GenerateForm
           projectId={projectId}
           action={generateAction}
-          project={projectQuery.data}
           onQueued={onQueued}
           onCancel={() => setGenerateAction(null)}
         />
@@ -1473,7 +1494,19 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
         />
       ) : null}
 
-      {artifacts.length === 0 ? (
+      {artifactsInitialLoading ? (
+        <StateWrap>
+          <Spinner size="lg" label={tCommon("loading")} />
+          <p className={styles.stateText}>{tCommon("loading")}</p>
+        </StateWrap>
+      ) : artifactsInitialError ? (
+        <StateWrap>
+          <ProblemState
+            error={artifactsQuery.error ?? new Error("unknown")}
+            onRetry={() => void artifactsQuery.refetch()}
+          />
+        </StateWrap>
+      ) : artifacts.length === 0 ? (
         <StateWrap>
           <EmptyState title={t("emptyTitle")} description={t("emptyHint")} />
         </StateWrap>

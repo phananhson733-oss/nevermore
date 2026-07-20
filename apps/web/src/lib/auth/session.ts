@@ -1,4 +1,5 @@
 import { eq, sql } from "drizzle-orm";
+import { cache } from "react";
 import { operatorProfiles, workspaces } from "@sf/db/schema";
 import { getDb } from "@/lib/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -89,7 +90,7 @@ async function ensureDevelopmentOperator(
  * Resolve the operator context for the current request, or null if the caller is
  * not authenticated. Route handlers translate null into 401 (spec §14.1).
  */
-export async function getOperatorContext(): Promise<OperatorContext | null> {
+async function resolveOperatorContext(): Promise<OperatorContext | null> {
   // Local dev only (double-gated): skip Supabase and use a fixed operator so the
   // authenticated screens work without a running GoTrue instance (spec §14.1).
   if (isDevAuthEnabled()) {
@@ -99,3 +100,12 @@ export async function getOperatorContext(): Promise<OperatorContext | null> {
   if (!userId) return null;
   return findOperator(userId);
 }
+
+/**
+ * Request-scoped operator lookup for server components. React's server `cache`
+ * is reset for every RSC request, so sibling layouts and pages share one
+ * auth/database lookup without ever reusing an identity across requests. When
+ * called outside an RSC renderer (for example from a route handler or a unit
+ * test), React delegates directly to the resolver instead of process-caching it.
+ */
+export const getOperatorContext = cache(resolveOperatorContext);

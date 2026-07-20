@@ -12,6 +12,7 @@ import {
   useQuery,
   useQueryClient,
   type UseMutationResult,
+  type UseQueryOptions,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import type {
@@ -67,11 +68,17 @@ export function useProject(
   });
 }
 
-/** Fetch the current ICP context profile (may be `null` when unset). */
-export function useProjectContext(
+/**
+ * Build the Context query while distinguishing an SSR-provided `null` profile
+ * from the absence of SSR data. A server value skips only the redundant mount
+ * refetch; invalidation, focus refetches, explicit refetches, and mutation cache
+ * semantics remain owned by TanStack Query.
+ */
+export function buildProjectContextQueryOptions(
   projectId: string,
-): UseQueryResult<IcpProfile | null, ApiError> {
-  return useQuery({
+  initialData?: IcpProfile | null,
+): UseQueryOptions<IcpProfile | null, ApiError> {
+  const base: UseQueryOptions<IcpProfile | null, ApiError> = {
     queryKey: ["context", projectId],
     queryFn: async () => {
       const res = await apiGet<DataEnvelope<IcpProfile | null>>(
@@ -80,15 +87,32 @@ export function useProjectContext(
       return res.data;
     },
     enabled: projectId.length > 0,
-  });
+  };
+
+  return initialData === undefined
+    ? base
+    : { ...base, initialData, refetchOnMount: false };
 }
 
-/** Fetch a workspace projection. WP1 exposes only the `overview` view. */
-export function useWorkspaceView(
+/** Fetch the current ICP context profile (may be `null` when unset). */
+export function useProjectContext(
+  projectId: string,
+  initialData?: IcpProfile | null,
+): UseQueryResult<IcpProfile | null, ApiError> {
+  return useQuery(buildProjectContextQueryOptions(projectId, initialData));
+}
+
+/**
+ * Build the Overview query, optionally seeding it from the canonical Server
+ * Component read. Supplying server data skips only the redundant mount fetch;
+ * invalidation, focus refetches, and explicit retries remain available.
+ */
+export function buildWorkspaceViewQueryOptions(
   projectId: string,
   view: "overview" = "overview",
-): UseQueryResult<OverviewView, ApiError> {
-  return useQuery({
+  initialData?: OverviewView,
+): UseQueryOptions<OverviewView, ApiError> {
+  const base: UseQueryOptions<OverviewView, ApiError> = {
     queryKey: ["workspace", projectId, view],
     queryFn: async () => {
       const res = await apiGet<DataEnvelope<OverviewView>>(
@@ -97,7 +121,22 @@ export function useWorkspaceView(
       return res.data;
     },
     enabled: projectId.length > 0,
-  });
+  };
+
+  return initialData === undefined
+    ? base
+    : { ...base, initialData, refetchOnMount: false };
+}
+
+/** Fetch the Overview workspace projection. */
+export function useWorkspaceView(
+  projectId: string,
+  view: "overview" = "overview",
+  initialData?: OverviewView,
+): UseQueryResult<OverviewView, ApiError> {
+  return useQuery(
+    buildWorkspaceViewQueryOptions(projectId, view, initialData),
+  );
 }
 
 /**

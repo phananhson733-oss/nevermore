@@ -930,9 +930,15 @@ function OverviewContent({
   );
 }
 
-export function OverviewClient({ projectId }: { readonly projectId: string }) {
+export function OverviewClient({
+  projectId,
+  initialView,
+}: {
+  readonly projectId: string;
+  readonly initialView?: OverviewView;
+}) {
   const tCommon = useTranslations("common");
-  const query = useWorkspaceView(projectId, "overview");
+  const query = useWorkspaceView(projectId, "overview", initialView);
 
   if (query.isLoading) {
     return (

@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
@@ -36,6 +37,7 @@ import type {
   Persona,
   UpdateContextRequest,
 } from "@sf/contracts";
+import type { IcpProfile } from "@/lib/api/types";
 import { ProblemNotice, ProblemState } from "../_problem-display";
 import { setUnsavedContextChanges } from "../_context-navigation-guard";
 import { mapContextFieldErrors } from "./_context-form-errors";
@@ -340,6 +342,10 @@ function serialize(form: FormState): string {
   return JSON.stringify(form);
 }
 
+function profileIdentity(profile: IcpProfile | null): string {
+  return profile ? `${profile.id}@${profile.version}` : "missing";
+}
+
 // --------------------------------------------------------------- Controls ---
 
 interface TextFieldProps {
@@ -464,25 +470,75 @@ const STATUS_TONE: Record<"missing" | "draft" | "complete", StatusTone> = {
 
 export interface ContextFormProps {
   readonly projectId: string;
+  /** Canonical server read; `undefined` is reserved for the mock browser harness. */
+  readonly initialProfile?: IcpProfile | null;
 }
 
-export function ContextForm({ projectId }: ContextFormProps) {
+export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
   const t = useTranslations("context");
   const tCommon = useTranslations("common");
   const tStatus = useTranslations("contextStatus");
 
-  const query = useProjectContext(projectId);
+  const query = useProjectContext(projectId, initialProfile);
+  const queryClient = useQueryClient();
   const update = useUpdateContext(projectId);
-  const currentProfile = query.data ?? null;
+  const queriedProfile = query.data ?? null;
+  const initialHandoffToken =
+    initialProfile === undefined
+      ? null
+      : `${projectId}:${profileIdentity(initialProfile)}`;
+  const queryMatchesInitial =
+    initialProfile !== undefined &&
+    profileIdentity(queriedProfile) === profileIdentity(initialProfile);
+  const [handedOffInitialToken, setHandedOffInitialToken] = useState<string | null>(
+    () => (queryMatchesInitial ? initialHandoffToken : null),
+  );
+  const initialHandoffComplete =
+    initialHandoffToken === null ||
+    handedOffInitialToken === initialHandoffToken ||
+    queryMatchesInitial;
+  const currentProfile = initialHandoffComplete
+    ? queriedProfile
+    : (initialProfile ?? null);
 
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [baseline, setBaseline] = useState<string>(serialize(EMPTY_FORM));
+  const [form, setForm] = useState<FormState>(() =>
+    initialProfile ? fromProfile(initialProfile.profile) : EMPTY_FORM,
+  );
+  const [baseline, setBaseline] = useState<string>(() =>
+    serialize(initialProfile ? fromProfile(initialProfile.profile) : EMPTY_FORM),
+  );
   const [justSaved, setJustSaved] = useState<boolean>(false);
   const [savingMode, setSavingMode] = useState<SaveMode | null>(null);
   const [topAlert, setTopAlert] = useState<string | null>(null);
   const [topProblem, setTopProblem] = useState<unknown | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const syncedKey = useRef<string | null>(null);
+  const syncedKey = useRef<string | null>(
+    initialProfile ? `${initialProfile.id}@${initialProfile.version}` : null,
+  );
+
+  // `initialData` initializes an empty Query cache but deliberately does not
+  // replace an older cache entry. Seed the canonical server read after mount in
+  // that revisit case, while rendering it immediately so stale cached content
+  // can never flash or become the form's concurrency baseline.
+  useEffect(() => {
+    if (
+      initialHandoffToken === null ||
+      handedOffInitialToken === initialHandoffToken
+    ) {
+      return;
+    }
+    if (!queryMatchesInitial) {
+      queryClient.setQueryData(["context", projectId], initialProfile);
+    }
+    setHandedOffInitialToken(initialHandoffToken);
+  }, [
+    handedOffInitialToken,
+    initialHandoffToken,
+    initialProfile,
+    projectId,
+    queryClient,
+    queryMatchesInitial,
+  ]);
 
   // Prefill (and reload-on-conflict) from the server, once per version. Our own
   // saves pre-mark `syncedKey`, so the post-save refetch never clobbers edits.
