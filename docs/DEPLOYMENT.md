@@ -1,152 +1,169 @@
-# Deployment decision record — authority and prepared candidates
+# Production deployment decision — Vercel + Supabase + Railway
 
-The frozen implementation spec remains authoritative: §3.2 requires Railway
-`web` + `worker` services built from the same image/commit. This repository also
-contains a prepared Vercel-web + Render-worker candidate and optional `/app`
-mount support. The repository does **not** contain independently verifiable
-Owner approval for those topology changes, so their presence is not an
-override. Before any hosted mutation, the Owner must choose one topology and
-record that decision with the immutable release SHA. Until then, use the frozen
-Railway topology as the release authority and treat the alternative files below
-as unapproved candidates.
+## Approved production topology (Owner decision, 2026-07-20)
 
-## Frozen-spec Railway topology
+The Owner approved the following topology for the current production release:
 
-The repository contains one shared-image path for the two required Railway
-services:
+| Responsibility | Production platform | Boundary |
+|---|---|---|
+| Next.js web and `/api/mvp` routes | **Vercel** | One web deployment at `https://app.gengrowth.ai` |
+| Auth, PostgreSQL and private object storage | **Supabase** | One production project shared by web and worker |
+| Persistent pg-boss consumer | **Railway Hobby** | One always-on worker service; no web service, domain or HTTP healthcheck |
 
-1. Both `web` and `worker` use the repository root, `/railway.json`, and the
-   same immutable commit. `railway.json` builds `Dockerfile.railway`; that image
-   contains both the prebuilt Next application and the worker workspace.
-2. The `web` service uses the image default command,
-   `node apps/web/.next/standalone/apps/web/server.js`. The image copies Next's
-   static assets into the standalone tree, and the server reads Railway's
-   injected `PORT`. `/api/mvp/health/live` is liveness only: use it, if needed,
-   to restart a wedged container, but never as hosted promotion evidence.
-   Promotion must prove `/api/mvp/health/ready`.
-3. The `worker` service overrides only its service-level start command in the
-   Railway dashboard with
-   `node --enable-source-maps --import tsx apps/worker/src/index.ts`. It has no
-   domain or HTTP healthcheck.
-4. Do not put a `startCommand` in shared `railway.json`: Railway supports
-   service-level start-command overrides for shared monorepos, and a Docker
-   override replaces the image command in exec form. Record both deployed image
-   digests and verify they resolve to the same source SHA before promotion.
+This dated Owner decision supersedes frozen implementation-spec §3.2 for this
+production release. The frozen spec's Railway `web` + `worker` shared-image
+topology remains useful historical context, and the repository's Render
+Background Worker configuration remains a prepared historical alternative.
+Neither is the current launch target: **Railway does not host the web, and
+Render does not host the production worker.**
 
-The local build proves both entrypoints exist in one image. Creating the hosted
-services, setting their commands/secrets, and proving image/SHA/readiness remain
-external launch gates.
+The release identity is one clean immutable commit, written below as
+`<release SHA>`. The Vercel web deployment, Railway worker deployment and
+migration evidence must all resolve to that same SHA. Do not promote a dirty
+worktree, a branch name, or `latest` as a release identifier.
 
-## Delta 1 — Repository location
-- Spec §3.1 fixes the path to `/Users/wzb/Code/signalframe-mvp-app`.
-- **Current workspace placement:** development occurs inside the local `nevermore` workspace at
-  `/Users/wzb/Code/nevermore/signalframe-mvp-app`.
-- Everything else in §3.1 still holds: independent Git repo, **zero runtime/build
-  dependency** on `/Users/wzb/Code/signalframe`, vendor-copy only.
+## Production topology details
 
-## Candidate delta 2 — Deployment substrate (Owner decision pending)
+### Web — Vercel only
 
-- Spec §3.2 fixes deployment to **Railway** (two services `web` + `worker`, same
-  image/commit).
-- **Prepared candidate:** web runs on **Vercel**, the persistent worker runs on **Render**
-  (Background Worker), and
-  Supabase remains the shared Auth/Postgres/Storage substrate.
-- Both compute services must be built from the same immutable commit even though
-  they use different build artifacts.
+1. Connect the repository at `<release SHA>` and set the Vercel project Root
+   Directory to `apps/web` with the Next.js framework preset.
+2. Enable source files outside the Root Directory so the monorepo workspace
+   packages are available during the build. Leave install, build and output
+   overrides empty unless a separately reviewed release requires them.
+3. Serve this release at the origin root: `https://app.gengrowth.ai`.
+   Set `APP_ORIGIN=https://app.gengrowth.ai` and leave
+   `NEXT_PUBLIC_BASE_PATH` unset. The production Google OAuth callback is
+   `https://app.gengrowth.ai/api/mvp/oauth/google/callback`.
+4. Enable Vercel system environment variables. The version resolver reads
+   `VERCEL_GIT_COMMIT_SHA`; leave `APP_BUILD_SHA` unset unless deliberately
+   pinning the exact same `<release SHA>`.
+5. First deploy to a unique Vercel deployment URL. Smoke that immutable URL
+   before assigning or promoting `app.gengrowth.ai`.
 
-### Prepared candidate topology
+### State — Supabase only
 
-1. **Web → Vercel.** `apps/web/vercel.json` selects Next.js; the Vercel project
-   uses `apps/web` as its Root Directory and includes workspace sources outside
-   that directory. Next's standalone trace root is the monorepo root.
-2. **Worker → Render.** `render.yaml` declares a Background Worker built from
-   `Dockerfile.worker`. Node is PID 1,
-   so SIGTERM reaches the worker's pg-boss and readiness-lease shutdown handler.
-   This process intentionally has no HTTP healthcheck port. `pnpm deploy:check`
-   validates render.yaml (worker type, docker runtime, Dockerfile, secrets as
-   `sync:false`) as well as the separate shared-image Railway path.
-3. **State → Supabase.** Both services share the same database, encryption key,
-   OAuth configuration, service role, and private raw/export Storage buckets.
-   Local filesystem blob storage is rejected in production.
-
-The worker service role must be able to create/read/list/delete objects in both
-private buckets. Listing and delete are required by the conservative orphan
-maintenance and application-owned retention loops, not just by user-facing
-uploads/downloads. Keep both buckets private. The worker enforces raw-family
-90-day byte retention and dual-anchored export 30-day byte retention from the
-database clock; do not replace lifecycle/recovery policy with public object
-URLs. The current pilot sweep has a hard 100,000-object-per-kind capacity bound
-and no durable resume cursor. Before promotion, prove each of `raw`,
-`raw-import`, `snapshot-raw`, and `export` is at or below that bound, configure a
-warning from aggregate successful-sweep counts, and alert on
-`ORPHAN_CLEANUP_CAPACITY_EXCEEDED` and
-`STORAGE_RETENTION_CAPACITY_EXCEEDED`. A capacity event is a release/operations
-failure, not a self-healing retry state.
-
-### Connection routing
+Both compute services use the same Supabase project for Authentication,
+PostgreSQL and Storage. They must receive identical database,
+credential-encryption, OAuth, service-role and bucket settings where applicable.
 
 pg-boss and the live-worker readiness lease require a **session-mode** database
-connection. The web readiness probe also acquires and releases a session advisory
-lock on one checked-out connection. Therefore both service `DATABASE_URL` values
-must use Supabase direct/session mode (or the session pooler), never the
-transaction pooler. Keep web and worker pool sizes conservative and monitor
-Supabase connection saturation.
+connection. The web readiness probe also acquires and releases a session
+advisory lock on one checked-out connection. Therefore both `DATABASE_URL`
+values must use Supabase direct/session mode (or the session pooler), never the
+transaction pooler. Keep `DB_POOL_MAX` conservative and monitor connection
+saturation.
 
-Run `pnpm deploy:check` and build the selected topology's Dockerfile before
-release. Deployment itself remains an external launch gate: migration first,
-then worker and web from the same SHA, then verify `/api/mvp/health/version`
-and require `/api/mvp/health/ready` before promotion. A 200 from
-`/api/mvp/health/live` proves only process liveness.
+Keep `raw-imports` and `exports` private. The worker service role must be able to
+create, read, list and delete objects in both buckets. Listing and deletion are
+required by application-owned retention and conservative orphan cleanup, not
+only by upload/download flows. The application enforces 90-day raw-family byte
+retention and dual-anchored 30-day export-byte retention from the database
+clock. Supabase database backup evidence does not replace separate Storage-byte
+recovery evidence.
 
-### Promotion evidence (required, not satisfied by a local build)
+The pilot cleanup sweep has a hard 100,000-object-per-kind capacity boundary
+and no durable resume cursor. Before promotion, prove each of `raw`,
+`raw-import`, `snapshot-raw` and `export` is at or below the boundary. Alert on
+`ORPHAN_CLEANUP_CAPACITY_EXCEEDED` and
+`STORAGE_RETENTION_CAPACITY_EXCEEDED`; these are operations failures, not
+self-healing retry states.
 
-1. Commit and record one immutable SHA. The Vercel deployment, Render (worker)
-   image and migration job must all resolve to that SHA; a dirty local worktree is
-   not a release identifier.
-2. Run the additive migration job against the intended Supabase project before
-   promoting worker or web traffic. Record the successful migrate-check without
-   exposing the database URL.
-3. Start the Render worker and confirm its startup/ready logs report the immutable
-   SHA, successful recovery sweep and a held worker readiness lease. Logs must not
-   contain env values, provider bodies, model output or customer content.
-4. Verify web `/api/mvp/health/version` reports the same SHA. Verify
-   `/api/mvp/health/ready` returns 200 only after DB, pg-boss schema and the live
-   worker lease are all present; a local/hosted 503 without a worker is expected
-   fail-closed behavior, not evidence to waive the gate.
-5. Disable public Supabase Auth signup, pre-provision each approved Auth user in
-   `app.operator_profiles`, and prove an unprovisioned valid user remains denied
-   without creating a workspace/profile. Then complete deployed-origin Auth,
-   Google GSC/GA4 and the selected LLM smoke flow with
-   Owner-approved test data.
-6. Verify both buckets are private, signed downloads expire in 900 seconds, the
-   worker reports successful aggregate retention/orphan sweeps, and it can perform
-   bounded list and idempotent delete operations. Verify a database-clock-expired
-   export is not signed and is reported as regeneratable. Record per-kind object
-   counts at or below 100,000 and prove the two capacity-exceeded codes are wired
-   to operator alerting before promotion.
-7. Retain the production PITR and separate Storage-byte recovery evidence from
-   `docs/RESTORE-DRILL.md`, plus the EN/zh-CN B2B/B2C Owner walkthrough sign-off.
+### Worker — Railway Hobby only
 
-Do not promote the implementation as pilot-ready until all seven items have
-evidence tied to the same release SHA.
+1. Create one Railway service named for the SignalFrame worker from the same
+   repository and `<release SHA>` used by Vercel.
+2. Build from the repository root with committed `railway.json`, which selects
+   `Dockerfile.worker`. Config-as-code also pins the worker start command, so a
+   dashboard default cannot accidentally start a web process.
+3. Verify the effective Railway start command is:
 
-## Candidate delta 3 — Base path mount (`gengrowth.ai/app`, Owner decision pending)
+   ```text
+   node --enable-source-maps --import tsx apps/worker/src/index.ts
+   ```
 
-- **Prepared candidate:** serve the app under a host sub-path so it
-  reuses the `gengrowth.ai/app` route space rather than a bare origin.
-- **Lever:** set `NEXT_PUBLIC_BASE_PATH=/app` at **build time** for the web build.
-  Unset = origin root (local dev, tests, and the current localhost OAuth redirect
-  URI are unchanged). Next auto-prefixes `<Link>`, `redirect()` and assets; the
-  hand-built URLs (OAuth redirect URI, async status/`Location`, the client `fetch`
-  base, the OAuth callback 303) mirror it through `apps/web/src/lib/base-path.ts`.
-- `APP_ORIGIN` stays **origin-only** (`https://gengrowth.ai`); the base path is
-  added by the code, not by `APP_ORIGIN`.
-- **External coupling (Owner action):** register the exact redirect URI
-  `https://gengrowth.ai/app/api/mvp/oauth/google/callback` in Google Cloud Console
-  before the deployed OAuth smoke, or GSC/GA4 connect will fail with a redirect
-  mismatch. Session cookies are path `/`, so they cover `/app/*` without change.
-- **Verify on the deployed origin:** `GET /app/api/mvp/health/live` → 200 and the
-  bare `/api/mvp/health/live` → 404; this confirms the mount and liveness only.
-  Promotion still requires `GET /app/api/mvp/health/ready` → 200. Confirm login
-  lands at `/app/login` and the async status URLs a 202 returns are
-  `/app/api/mvp/...`.
+4. Do not attach a domain, public port or HTTP healthcheck. The worker is a
+   persistent queue consumer, not an HTTP service. Railway's restart policy may
+   restart a failed process; application readiness remains fail-closed through
+   the PostgreSQL worker lease.
+5. Set `APP_ORIGIN=https://app.gengrowth.ai`. Use the production variable list
+   in `deploy/worker.env.template`. Railway provides
+   `RAILWAY_GIT_COMMIT_SHA`; leave `APP_BUILD_SHA` unset unless it is explicitly
+   the exact same `<release SHA>`.
+6. Confirm sanitized startup logs report `<release SHA>`, the recovery sweep
+   completes, pg-boss starts and the worker holds its readiness lease. Logs must
+   not expose environment values, provider bodies, model output or customer
+   content.
+
+The worker has no URL to probe. Its production health signal is the live
+session advisory lease in Supabase. The Vercel web endpoint
+`/api/mvp/health/ready` verifies the database, pg-boss schema and that lease.
+A 503 while the worker is absent is correct fail-closed behavior.
+
+## Required release order
+
+Do not reorder these gates:
+
+1. **Freeze and verify `<release SHA>`.** Review the diff, run the full release
+   verification, commit and push the exact SHA that both platforms will deploy.
+2. **Back up Supabase, then migrate.** Capture and restore-verify the logical
+   database backup. Run the additive migrations against the intended production
+   project, then run `pnpm db:migrate:check` and the production-safe smoke check.
+3. **Deploy the Railway worker.** Deploy `<release SHA>`, then prove startup
+   recovery, pg-boss operation and a held readiness lease in Supabase.
+4. **Create the Vercel unique deployment.** Deploy the same `<release SHA>`
+   without assigning the production domain. Verify its version and liveness,
+   then run authenticated application smoke tests against the unique URL where
+   the configured Auth redirect policy permits it.
+5. **Verify readiness and promote.** Confirm the web reports `<release SHA>`,
+   `/api/mvp/health/ready` returns 200 because the Railway worker lease is live,
+   and the Railway logs report the same SHA. Only then promote or alias the
+   verified deployment to `https://app.gengrowth.ai`.
+6. **Run deployed-origin acceptance.** Repeat version, readiness, real Auth and
+   the approved provider/business walkthroughs on the production origin.
+
+Migrations are never run after traffic promotion. The worker is brought up
+before the unique web deployment so readiness is a meaningful promotion gate.
+
+## Promotion evidence
+
+Bind every item to `<release SHA>` and retain sanitized output:
+
+1. A restore-verified logical backup plus the successful production migration,
+   idempotent migration rerun and schema check.
+2. Railway build/source evidence and worker logs showing the exact SHA,
+   successful recovery and a held readiness lease.
+3. The unique Vercel deployment's
+   `/api/mvp/health/version` response showing the same SHA; liveness 200 is only
+   a process check.
+4. `/api/mvp/health/ready` returning 200 with database, pg-boss schema and the
+   worker lease all ready, both before and after promotion.
+5. Public Supabase Auth signup disabled; approved users pre-provisioned in
+   `app.operator_profiles`; an unprovisioned valid user remains denied without
+   creating a workspace or profile.
+6. Both Storage buckets private; signed downloads expire after 900 seconds;
+   bounded retention/orphan sweeps succeed without capacity events; an expired
+   export is not signed and is reported as regeneratable.
+7. Deployed-origin Auth, GSC/GA4, selected LLM, EN/zh-CN and B2B/B2C walkthrough
+   evidence, plus the database and Storage recovery evidence from
+   `docs/RESTORE-DRILL.md`.
+
+Do not describe the release as pilot-ready until all applicable launch gates in
+`docs/LAUNCH-CHECKLIST.md` are satisfied.
+
+## Historical alternatives, retained for traceability
+
+- **Frozen-spec Railway web + worker:** §3.2 originally required two Railway
+  services built from the same `Dockerfile.railway` image. The shared image and
+  default web command remain in the repository, but the 2026-07-20 decision
+  authorizes only the worker service on Railway for this production release.
+- **Retired Vercel + Render + `/app` candidate:** the auto-discovered
+  `render.yaml` Blueprint was removed so it cannot be imported accidentally.
+  Generic `NEXT_PUBLIC_BASE_PATH` code support remains for non-production tests,
+  but it is not read by the current production path. Do not create a Render worker, do not mount this release at
+  `gengrowth.ai/app`, and do not set `NEXT_PUBLIC_BASE_PATH=/app` for the
+  approved `app.gengrowth.ai` deployment.
+
+Changing away from the approved topology requires a new explicit Owner decision
+and a new release record; repository support for an alternative is not by
+itself deployment authorization.

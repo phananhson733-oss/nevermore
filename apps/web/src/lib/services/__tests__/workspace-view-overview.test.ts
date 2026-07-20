@@ -38,6 +38,8 @@ function snapshot(
   id: string,
   capturedAt: string,
   availability = "available",
+  sourceWindow: DataSnapshotDto["sourceWindow"] = { start: null, end: null },
+  limitation = "Static HTML only.",
 ): DataSnapshotDto {
   return {
     id,
@@ -46,9 +48,9 @@ function snapshot(
     schemaVersion: "1.0.0",
     methodVersion: "crawl-v1",
     capturedAt,
-    sourceWindow: { start: null, end: null },
+    sourceWindow,
     availability,
-    limitation: "Static HTML only.",
+    limitation,
     rowCount: 12,
     checksum: `sha256:${id}`,
   };
@@ -184,5 +186,32 @@ describe("buildOverviewHighlights", () => {
     expect(result.topActions).toEqual([blocked]);
     expect(result.topActionEvidence).toEqual([]);
     expect(result.deliveryFocus).toBeNull();
+  });
+
+  it("preserves the latest snapshot's canonical analysis window and limitation for the evidence footer", () => {
+    const sourceWindow = {
+      start: "2026-07-01T00:00:00.000Z",
+      end: "2026-07-17T23:59:59.000Z",
+    };
+    const canonical = snapshot(
+      "snapshot-windowed",
+      NOW,
+      "partial",
+      sourceWindow,
+      "Search Console coverage is unavailable.",
+    );
+
+    const result = buildOverviewHighlights({
+      actions: [],
+      snapshots: [canonical],
+      findings: [],
+      artifacts: [],
+    });
+
+    expect(result.latestSnapshot).toBe(canonical);
+    expect(result.latestSnapshot?.sourceWindow).toEqual(sourceWindow);
+    expect(result.latestSnapshot?.limitation).toBe(
+      "Search Console coverage is unavailable.",
+    );
   });
 });

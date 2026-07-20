@@ -5,10 +5,9 @@ ENV PATH=/pnpm:$PATH
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
-# One immutable image contains both the prebuilt Next web service and the
-# persistent worker. Railway's two services build this same file from the same
-# commit; the web uses the default CMD and the worker overrides only its start
-# command in Service Settings, as documented in docs/DEPLOYMENT.md.
+# Historical frozen-spec compatibility image containing both the prebuilt Next
+# web service and worker dependencies. The approved production topology does not
+# build this file: Vercel hosts the web and railway.json selects Dockerfile.worker.
 RUN npm install --global corepack@0.34.5 && corepack enable pnpm
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
@@ -26,8 +25,8 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-# The frozen Railway topology serves the web app at the origin root. The
-# Owner-pending Vercel candidate owns the optional NEXT_PUBLIC_BASE_PATH build.
+# Historical standalone web build. The approved Vercel deployment serves the
+# application at app.gengrowth.ai with NEXT_PUBLIC_BASE_PATH unset.
 RUN pnpm --filter @sf/web build \
   && cp -R apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
 

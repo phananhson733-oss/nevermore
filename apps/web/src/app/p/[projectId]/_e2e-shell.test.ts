@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   E2E_PROJECT_ID,
   e2eProjectShell,
+  e2eProjectShellProjection,
   shouldUseE2eProjectShell,
 } from "./_e2e-shell.ts";
 
@@ -55,5 +56,23 @@ describe("isolated E2E project shell gate", () => {
     expect(project.clientName).toBe("E2E Client");
     expect(project.site.host).toBe("example.test");
     expect(project.contextStatus).toBe("complete");
+  });
+
+  it("builds explicit non-authoritative cockpit data for the browser harness", () => {
+    const shell = e2eProjectShellProjection(E2E_PROJECT_ID);
+
+    expect(shell.currentProject.id).toBe(E2E_PROJECT_ID);
+    expect(shell.projectOptions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: E2E_PROJECT_ID, selected: true }),
+        expect.objectContaining({ id: expect.any(String), selected: false }),
+      ]),
+    );
+    expect(shell.navigationBadges).toEqual({ diagnosis: 1, studio: 1 });
+    expect(shell.program).toEqual({
+      day: 30,
+      totalDays: 90,
+      progressPercent: 33,
+    });
   });
 });

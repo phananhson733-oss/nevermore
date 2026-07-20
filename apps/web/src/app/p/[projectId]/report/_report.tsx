@@ -49,7 +49,6 @@ import {
   type Finding,
   type PriorityBand,
   type Report,
-  type RoadmapLane,
   type Severity,
 } from "@/lib/api/hooks-report";
 import {
@@ -69,9 +68,6 @@ const DOMAIN_KEYS = [
   "conversion_journey",
   "geo_ai",
 ] as const;
-
-/** 30/60/90 plan lanes in order (spec §10.4). */
-const LANE_ORDER: readonly RoadmapLane[] = ["now", "next", "later"];
 
 const MANIFEST_ITEM_ORDER = [
   "projects",
@@ -285,49 +281,53 @@ function OutputLocaleSelect({
 
 // ------------------------------------------------------------- Header --------
 
-function ReportHeader({
-  report,
-  outputLocale,
-  outputLocaleSuggestions,
-  onOutputLocaleChange,
-  onOutputLocaleCommit,
-  onOutputLocaleReset,
-  onPrint,
-}: {
-  readonly report: Report;
-  readonly outputLocale: string;
-  readonly outputLocaleSuggestions: readonly string[];
-  readonly onOutputLocaleChange: (locale: string) => void;
-  readonly onOutputLocaleCommit: () => void;
-  readonly onOutputLocaleReset: () => void;
-  readonly onPrint: () => void;
-}) {
+function ReportHeader({ report }: { readonly report: Report }) {
   const t = useTranslations("report");
   const uiLocale = useLocale();
   const { project } = report;
   return (
-    <div className={styles.header}>
+    <header className={styles.header} data-report-cover="">
       <div className={styles.headerText}>
         <span className="sf-eyebrow">{project.clientName}</span>
         <h1 className={styles.title}>{project.projectName}</h1>
         <p className={styles.host}>{project.site.host}</p>
         <p className={styles.subtitle}>{t("subtitle")}</p>
-        <p className={styles.reportDate}>
+        <p
+          className={styles.reportDate}
+          data-testid="report-dynamic-value"
+        >
           {t("reportDate")}: {formatDate(report.generatedAt, uiLocale)}
         </p>
       </div>
-      <div className={cx(styles.headerActions, styles.noPrint)}>
-        <OutputLocaleSelect
-          value={outputLocale}
-          suggestions={outputLocaleSuggestions}
-          onChange={onOutputLocaleChange}
-          onCommit={onOutputLocaleCommit}
-          onReset={onOutputLocaleReset}
-        />
-        <Button variant="secondary" onClick={onPrint}>
-          {t("print")}
-        </Button>
+      <div className={styles.coverLocale}>
+        <span className={styles.coverLocaleLabel}>{t("outputLocale")}</span>
+        <strong>{report.outputLocale}</strong>
       </div>
+    </header>
+  );
+}
+
+function ReportSectionTitle({
+  number,
+  id,
+  children,
+}: {
+  readonly number: string;
+  readonly id: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className={styles.sectionTitleGroup}>
+      <span
+        className={styles.sectionNumber}
+        data-report-section-number=""
+        aria-hidden="true"
+      >
+        {number}
+      </span>
+      <h2 id={id} className={styles.panelTitle}>
+        {children}
+      </h2>
     </div>
   );
 }
@@ -344,11 +344,12 @@ function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
       className={styles.panel}
       padding="lg"
       aria-labelledby="sf-coverage-title"
+      data-report-section="coverage"
     >
       <div className={styles.panelHead}>
-        <h2 id="sf-coverage-title" className={styles.panelTitle}>
+        <ReportSectionTitle number="01" id="sf-coverage-title">
           {t("dataCoverage")}
-        </h2>
+        </ReportSectionTitle>
         <StatusPill tone={overall.tone}>
           {tCoverage(overall.labelKey)}
         </StatusPill>
@@ -416,7 +417,10 @@ function FindingCard({ finding }: { readonly finding: Finding }) {
   const scope = finding.subjectRefs[0];
   const keyEvidence = evidenceForFinding(finding.evidence).slice(0, 3);
   return (
-    <article className={styles.card}>
+    <article
+      className={styles.card}
+      data-report-finding-id={finding.id}
+    >
       <div className={styles.cardHead}>
         <span className="sf-eyebrow">{tDomain(finding.domain)}</span>
         <StatusPill tone={bandTone(finding.severity)}>
@@ -462,11 +466,12 @@ function FindingsSection({
       className={styles.panel}
       padding="lg"
       aria-labelledby="sf-findings-title"
+      data-report-section="findings"
     >
       <div className={styles.panelHead}>
-        <h2 id="sf-findings-title" className={styles.panelTitle}>
+        <ReportSectionTitle number="02" id="sf-findings-title">
           {t("findings")}
-        </h2>
+        </ReportSectionTitle>
       </div>
       <p className={styles.panelNote}>{t("findingsNote")}</p>
       <div className={styles.cardList}>
@@ -484,9 +489,9 @@ function ActionCard({ action }: { readonly action: Action }) {
   const t = useTranslations("report");
   const tPriority = useTranslations("priorityBand");
   return (
-    <article className={styles.card}>
+    <article className={styles.card} data-report-action-id={action.id}>
       <div className={styles.cardHead}>
-        <h4 className={styles.actionTitle}>{action.title}</h4>
+        <h3 className={styles.actionTitle}>{action.title}</h3>
         <StatusPill tone={bandTone(action.priorityBand)}>
           {tPriority(action.priorityBand)}
         </StatusPill>
@@ -503,51 +508,35 @@ function ActionCard({ action }: { readonly action: Action }) {
   );
 }
 
-function PlanLane({
-  lane,
-  actions,
-}: {
-  readonly lane: RoadmapLane;
-  readonly actions: readonly Action[];
-}) {
-  const t = useTranslations("report");
-  const tLane = useTranslations("lane");
-  return (
-    <div className={styles.lane}>
-      <div className={styles.laneHead}>
-        <h3 className={styles.laneTitle}>{tLane(lane)}</h3>
-        <span className={styles.laneCaption}>{t(`laneCaption.${lane}`)}</span>
-      </div>
-      <div className={styles.cardList}>
-        {actions.map((action) => (
-          <ActionCard key={action.id} action={action} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function PlanSection({ actions }: { readonly actions: readonly Action[] }) {
   const t = useTranslations("report");
-  const lanes = LANE_ORDER.map((lane) => ({
-    lane,
-    items: actions.filter((action) => action.roadmapLane === lane),
-  })).filter((group) => group.items.length > 0);
+  const tLane = useTranslations("lane");
   return (
     <Panel
       className={styles.panel}
       padding="lg"
       aria-labelledby="sf-plan-title"
+      data-report-section="plan"
     >
       <div className={styles.panelHead}>
-        <h2 id="sf-plan-title" className={styles.panelTitle}>
+        <ReportSectionTitle number="03" id="sf-plan-title">
           {t("plan")}
-        </h2>
+        </ReportSectionTitle>
       </div>
       <p className={styles.panelNote}>{t("planNote")}</p>
       <div className={styles.lanes}>
-        {lanes.map((group) => (
-          <PlanLane key={group.lane} lane={group.lane} actions={group.items} />
+        {actions.map((action) => (
+          <div className={styles.lane} key={action.id}>
+            <div className={styles.laneHead}>
+              <span className={styles.laneTitle}>
+                {tLane(action.roadmapLane)}
+              </span>
+              <span className={styles.laneCaption}>
+                {t(`laneCaption.${action.roadmapLane}`)}
+              </span>
+            </div>
+            <ActionCard action={action} />
+          </div>
         ))}
       </div>
     </Panel>
@@ -569,17 +558,22 @@ function ArtifactsSection({
       className={styles.panel}
       padding="lg"
       aria-labelledby="sf-artifacts-title"
+      data-report-section="artifacts"
     >
       <div className={styles.panelHead}>
-        <h2 id="sf-artifacts-title" className={styles.panelTitle}>
+        <ReportSectionTitle number="04" id="sf-artifacts-title">
           {t("artifacts")}
-        </h2>
+        </ReportSectionTitle>
       </div>
       <p className={styles.panelNote}>{t("artifactsNote")}</p>
       {ready.length > 0 ? (
         <ul className={styles.artifactList}>
           {ready.map((artifact) => (
-            <li key={artifact.id} className={styles.artifactRow}>
+            <li
+              key={artifact.id}
+              className={styles.artifactRow}
+              data-report-artifact-id={artifact.id}
+            >
               <div className={styles.artifactMeta}>
                 <Badge tone="violet">
                   {t(`artifactType.${artifact.artifactType}`)}
@@ -593,7 +587,10 @@ function ArtifactsSection({
                   })}
                 </span>
               </div>
-              <span className={styles.artifactDate}>
+              <span
+                className={styles.artifactDate}
+                data-testid="report-dynamic-value"
+              >
                 {formatDate(artifact.updatedAt, uiLocale)}
               </span>
             </li>
@@ -623,11 +620,12 @@ function MethodologySection({ report }: { readonly report: Report }) {
       className={cx(styles.panel, styles.footerPanel)}
       padding="lg"
       aria-labelledby="sf-methodology-title"
+      data-report-section="methodology"
     >
       <div className={styles.panelHead}>
-        <h2 id="sf-methodology-title" className={styles.panelTitle}>
+        <ReportSectionTitle number="05" id="sf-methodology-title">
           {t("methodology")}
-        </h2>
+        </ReportSectionTitle>
       </div>
       {paragraphs.map((text, index) => (
         <p
@@ -694,11 +692,13 @@ function ExportManifest({
         </div>
         <div className={styles.manifestFact}>
           <dt>{t("createdAt")}</dt>
-          <dd>{formatDateTime(bundle.createdAt, uiLocale)}</dd>
+          <dd data-testid="report-dynamic-value">
+            {formatDateTime(bundle.createdAt, uiLocale)}
+          </dd>
         </div>
         <div className={cx(styles.manifestFact, styles.manifestChecksum)}>
           <dt>{t("checksum")}</dt>
-          <dd>
+          <dd data-testid="report-dynamic-value">
             {bundle.checksum === null ? (
               t("notAvailable")
             ) : (
@@ -729,7 +729,7 @@ function ExportManifest({
                   ? t(`manifestItems.${key}`)
                   : key}
               </span>
-              <strong>{count}</strong>
+              <strong data-testid="report-dynamic-value">{count}</strong>
             </li>
           ))}
         </ul>
@@ -803,7 +803,10 @@ function ExportStatus({
           {t("download", { kind: t(`kind.${bundle.kind}`) })}
         </a>
         {bundle.downloadExpiresAt !== null ? (
-          <span className={styles.expiresAt}>
+          <span
+            className={styles.expiresAt}
+            data-testid="report-dynamic-value"
+          >
             {t("expiresAt")}: {formatDateTime(bundle.downloadExpiresAt, uiLocale)}
           </span>
         ) : null}
@@ -819,10 +822,22 @@ interface ActiveExport {
 
 function ExportSection({
   projectId,
+  exportOutputLocale,
   outputLocale,
+  outputLocaleSuggestions,
+  onOutputLocaleChange,
+  onOutputLocaleCommit,
+  onOutputLocaleReset,
+  onPrint,
 }: {
   readonly projectId: string;
+  readonly exportOutputLocale: string;
   readonly outputLocale: string;
+  readonly outputLocaleSuggestions: readonly string[];
+  readonly onOutputLocaleChange: (locale: string) => void;
+  readonly onOutputLocaleCommit: () => void;
+  readonly onOutputLocaleReset: () => void;
+  readonly onPrint: () => void;
 }) {
   const t = useTranslations("report");
   const createExport = useCreateExport(projectId);
@@ -831,7 +846,7 @@ function ExportSection({
   function start(kind: ExportKind): void {
     setActive(null);
     createExport.mutate(
-      { kind, outputLocale },
+      { kind, outputLocale: exportOutputLocale },
       {
         onSuccess: (data) => {
           if (data.resourceRef !== null) {
@@ -844,7 +859,7 @@ function ExportSection({
 
   return (
     <Panel
-      className={cx(styles.panel, styles.noPrint)}
+      className={cx(styles.panel, styles.exportPanel)}
       padding="lg"
       aria-labelledby="sf-export-title"
     >
@@ -853,6 +868,19 @@ function ExportSection({
           {t("export")}
         </h2>
       </div>
+      <div className={styles.deliveryControls} data-report-controls="">
+        <OutputLocaleSelect
+          value={outputLocale}
+          suggestions={outputLocaleSuggestions}
+          onChange={onOutputLocaleChange}
+          onCommit={onOutputLocaleCommit}
+          onReset={onOutputLocaleReset}
+        />
+        <Button variant="secondary" onClick={onPrint}>
+          {t("print")}
+        </Button>
+      </div>
+      <div className={styles.exportDivider} />
       <div className={styles.exportButtons}>
         <Button
           variant="primary"
@@ -925,75 +953,92 @@ function ReportContent({
 
   return (
     <div className={styles.page} data-report-page="">
-      <ReportHeader
-        report={report}
-        outputLocale={outputLocale}
-        outputLocaleSuggestions={outputLocaleSuggestions}
-        onOutputLocaleChange={onOutputLocaleChange}
-        onOutputLocaleCommit={onOutputLocaleCommit}
-        onOutputLocaleReset={onOutputLocaleReset}
-        onPrint={() => window.print()}
-      />
-      {!isEmpty ? (
-        <section className={styles.summaryStrip} aria-label={t("summaryTitle")}>
-          <article className={styles.summaryCard}>
-            <span className={styles.summaryIcon}>
-              <ScanSearch aria-hidden="true" size={19} />
-            </span>
-            <span className={styles.summaryBody}>
-              <span className={styles.summaryMetric}>
-                {report.findings.length}
-              </span>
-              <span className={styles.summaryLabel}>
-                {t("summaryFindings")}
-              </span>
-            </span>
-          </article>
-          <article className={styles.summaryCard}>
-            <span className={cx(styles.summaryIcon, styles.summaryIconAmber)}>
-              <Route aria-hidden="true" size={19} />
-            </span>
-            <span className={styles.summaryBody}>
-              <span className={styles.summaryMetric}>
-                {report.actions.length}
-              </span>
-              <span className={styles.summaryLabel}>{t("summaryActions")}</span>
-            </span>
-          </article>
-          <article className={styles.summaryCard}>
-            <span className={cx(styles.summaryIcon, styles.summaryIconMint)}>
-              <FileCheck2 aria-hidden="true" size={19} />
-            </span>
-            <span className={styles.summaryBody}>
-              <span className={styles.summaryMetric}>{readyDeliverables}</span>
-              <span className={styles.summaryLabel}>
-                {t("summaryDeliverables")}
-              </span>
-            </span>
-          </article>
-        </section>
-      ) : null}
-      <CoverageSection coverage={report.coverage} />
-      {isEmpty ? (
-        <Panel className={styles.panel} padding="lg">
-          <EmptyState title={t("emptyTitle")} description={t("emptyHint")} />
-        </Panel>
-      ) : (
-        <>
-          {report.findings.length > 0 ? (
-            <FindingsSection findings={report.findings} />
+      <div className={styles.workspace} data-report-workspace="">
+        <article className={styles.document} data-report-document="">
+          <ReportHeader report={report} />
+          {!isEmpty ? (
+            <section
+              className={styles.summaryStrip}
+              aria-label={t("summaryTitle")}
+            >
+              <div className={styles.summaryCard}>
+                <span className={styles.summaryIcon}>
+                  <ScanSearch aria-hidden="true" size={19} />
+                </span>
+                <span className={styles.summaryBody}>
+                  <span className={styles.summaryMetric}>
+                    {report.findings.length}
+                  </span>
+                  <span className={styles.summaryLabel}>
+                    {t("summaryFindings")}
+                  </span>
+                </span>
+              </div>
+              <div className={styles.summaryCard}>
+                <span
+                  className={cx(styles.summaryIcon, styles.summaryIconAmber)}
+                >
+                  <Route aria-hidden="true" size={19} />
+                </span>
+                <span className={styles.summaryBody}>
+                  <span className={styles.summaryMetric}>
+                    {report.actions.length}
+                  </span>
+                  <span className={styles.summaryLabel}>
+                    {t("summaryActions")}
+                  </span>
+                </span>
+              </div>
+              <div className={styles.summaryCard}>
+                <span className={cx(styles.summaryIcon, styles.summaryIconMint)}>
+                  <FileCheck2 aria-hidden="true" size={19} />
+                </span>
+                <span className={styles.summaryBody}>
+                  <span className={styles.summaryMetric}>{readyDeliverables}</span>
+                  <span className={styles.summaryLabel}>
+                    {t("summaryDeliverables")}
+                  </span>
+                </span>
+              </div>
+            </section>
           ) : null}
-          {report.actions.length > 0 ? (
-            <PlanSection actions={report.actions} />
-          ) : null}
-          <ArtifactsSection artifacts={report.artifacts} />
+          <div className={styles.documentSections}>
+            <CoverageSection coverage={report.coverage} />
+            {isEmpty ? (
+              <Panel className={styles.emptyPanel} padding="lg">
+                <EmptyState title={t("emptyTitle")} description={t("emptyHint")} />
+              </Panel>
+            ) : (
+              <>
+                {report.findings.length > 0 ? (
+                  <FindingsSection findings={report.findings} />
+                ) : null}
+                {report.actions.length > 0 ? (
+                  <PlanSection actions={report.actions} />
+                ) : null}
+                <ArtifactsSection artifacts={report.artifacts} />
+              </>
+            )}
+            <MethodologySection report={report} />
+          </div>
+        </article>
+        <aside
+          className={cx(styles.manifestRail, styles.noPrint)}
+          data-report-manifest-rail=""
+          aria-label={t("export")}
+        >
           <ExportSection
             projectId={projectId}
-            outputLocale={exportOutputLocale}
+            exportOutputLocale={exportOutputLocale}
+            outputLocale={outputLocale}
+            outputLocaleSuggestions={outputLocaleSuggestions}
+            onOutputLocaleChange={onOutputLocaleChange}
+            onOutputLocaleCommit={onOutputLocaleCommit}
+            onOutputLocaleReset={onOutputLocaleReset}
+            onPrint={() => window.print()}
           />
-        </>
-      )}
-      <MethodologySection report={report} />
+        </aside>
+      </div>
     </div>
   );
 }

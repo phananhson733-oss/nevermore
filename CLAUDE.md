@@ -29,7 +29,7 @@ SignalFrame Service Delivery MVP 0.2.0——面向欧美 B2B/B2C 客户的**内�
 - Auth：Supabase Auth，same-origin HttpOnly session cookie
 - Object storage：Supabase Storage 私有 bucket（raw imports / export bundles）
 - UI data：TanStack Query（server state 不复制进自建全局 store）；i18n：next-intl（`en` / `zh-CN`）
-- 部署：规格定为 Railway 两 service（`web` + `worker`，同镜像/commit）。**本项目实际计划 Vercel + Supabase 上线**——Supabase 完全契合；但 worker 是常驻 pg-boss 消费者，Vercel serverless 不跑常驻进程，worker 的托管方式是“上线阶段”待决项（见 `docs/PROGRESS.md`）。代码层 worker 是独立 Node 进程，保持部署可移植。
+- 部署：Owner 于 2026-07-20 决定本次生产拓扑为 **Vercel Web + Supabase Auth/PostgreSQL/Storage + Railway Hobby 常驻 Worker**。Railway 不承载 Web，Render 不参与本次生产发布，生产根路径为 `https://app.gengrowth.ai` 且不设置 `/app` base path。Vercel 与 Railway 必须部署同一不可变 commit（见 `docs/DEPLOYMENT.md`）。
 - 测试：Vitest（unit + integration 双 project）、Playwright、MSW/HTTP fixture、真实临时 PostgreSQL
 
 ## 代码结构与依赖方向
@@ -110,7 +110,7 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 - 版本化字面量：持久化结构带 `.v1`（methodVersion/schemaVersion/hash domain），身份用 `id@version`；算法变化必须 bump version。
 - 生成文件（`packages/contracts/src/generated/openapi.ts`）只能由 `contracts:generate` 产出，禁止手改。
 - 脚本（`scripts/*.mjs`）只用 Node 标准库，CI 不装依赖即可跑。
-- Secret 只存 Railway/Supabase secret store 与本地未提交 `.env.local`；日志 redact key 至少含 `authorization,token,access_token,refresh_token,client_secret,cookie,set-cookie,api_key`。
+- Secret 只存 Vercel/Railway/Supabase secret store 与本地未提交 `.env.local`；日志 redact key 至少含 `authorization,token,access_token,refresh_token,client_secret,cookie,set-cookie,api_key`。
 
 ## 核心原则（本仓库特有，优先于通用规则）
 

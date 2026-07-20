@@ -102,5 +102,23 @@ describe("i18n message key parity", () => {
     expect(zhCN.context.leaveWarning).toContain("未保存");
     expect(zhCN.appShell.projectSections).toBe("项目分区");
     expect(zhCN.appShell.breadcrumb).toBe("面包屑导航");
+    expect(zhCN.appShell).toMatchObject({
+      switchProject: "切换项目",
+      programTitle: "90 天计划",
+      programProgress: "90 天计划进度",
+      help: "帮助",
+      settings: "设置",
+      account: "账户",
+    });
+    expect(en.overview.footer).toEqual({
+      analysisWindow: "Analysis window",
+      latestSnapshot: "Latest snapshot",
+      limitations: "Limitations",
+    });
+    expect(zhCN.overview.footer).toEqual({
+      analysisWindow: "分析窗口",
+      latestSnapshot: "最新快照",
+      limitations: "限制说明",
+    });
   });
 });

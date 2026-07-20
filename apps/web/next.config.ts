@@ -8,10 +8,10 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 // Pin the workspace root so Next does not infer it from an unrelated lockfile.
 const monorepoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
-// Mount the whole app under a host sub-path (e.g. `gengrowth.ai/app`) when
-// NEXT_PUBLIC_BASE_PATH is set at build time. Unset → served at the origin root,
-// so local dev and the current OAuth redirect URI are unchanged. Hand-built URLs
-// mirror this via src/lib/base-path.ts (Next only auto-prefixes Link/redirect/assets).
+// Optional generic self-hosting support for a host sub-path. The approved
+// app.gengrowth.ai production deployment leaves NEXT_PUBLIC_BASE_PATH unset and
+// serves at the origin root. Hand-built URLs mirror this via src/lib/base-path.ts
+// (Next only auto-prefixes Link/redirect/assets).
 const rawBasePath = process.env.NEXT_PUBLIC_BASE_PATH?.replace(
   /^\/+|\/+$/g,
   "",

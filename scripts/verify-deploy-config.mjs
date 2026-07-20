@@ -28,49 +28,36 @@ assert.equal(
   "playwright test --config=playwright.mock.config.ts",
 );
 
-// Validate both prepared worker-host configurations. The Owner/topology decision
-// remains an external release gate documented in docs/DEPLOYMENT.md.
-const render = read("render.yaml");
-assert.match(render, /type:\s*worker/, "render.yaml must declare a worker service");
-assert.match(render, /runtime:\s*docker/, "render.yaml worker must use the docker runtime");
-assert.match(
-  render,
-  /dockerfilePath:\s*\.\/Dockerfile\.worker/,
-  "render.yaml must build Dockerfile.worker",
-);
-for (const dashboardValue of [
-  "APP_ORIGIN",
-  "DATABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "CREDENTIAL_ENCRYPTION_KEY",
-  "GOOGLE_OAUTH_CLIENT_SECRET",
-  "OPENAI_API_KEY",
-]) {
-  assert.match(
-    render,
-    new RegExp(`key:\\s*${dashboardValue}\\b[^\\n]*\\n\\s*sync:\\s*false`),
-    `${dashboardValue} must be an explicit dashboard value (sync:false) in render.yaml`,
-  );
-}
-assert.match(
-  render,
-  /key:\s*FINDING_SUMMARIES_ENABLED\b[^\n]*\n\s*value:\s*["']?true["']?/,
-  "the prepared Render worker must explicitly enable budgeted Finding summaries",
-);
-
 const railway = JSON.parse(read("railway.json"));
 assert.equal(railway.build?.builder, "DOCKERFILE");
-assert.equal(railway.build?.dockerfilePath, "Dockerfile.railway");
+assert.equal(railway.build?.dockerfilePath, "Dockerfile.worker");
 assert.equal(
   railway.deploy?.startCommand,
-  undefined,
-  "the shared Railway config must let web use the image CMD and worker use its service-level override",
+  "node --enable-source-maps --import tsx apps/worker/src/index.ts",
+  "Railway must start the persistent worker directly; it must never fall back to a web CMD",
 );
 assert.equal(railway.deploy?.restartPolicyType, "ON_FAILURE");
 assert.ok(railway.deploy?.restartPolicyMaxRetries >= 3);
 
 const vercel = JSON.parse(read("apps/web/vercel.json"));
 assert.equal(vercel.framework, "nextjs");
+
+const vercelEnvironment = read("deploy/vercel.web.env.template");
+assert.match(
+  vercelEnvironment,
+  /^APP_ORIGIN=https:\/\/app\.gengrowth\.ai\s/m,
+  "the Vercel template must use the approved production origin root",
+);
+assert.doesNotMatch(
+  vercelEnvironment,
+  /^\s*NEXT_PUBLIC_BASE_PATH\s*=/m,
+  "the approved Vercel deployment must leave NEXT_PUBLIC_BASE_PATH unset",
+);
+assert.doesNotMatch(
+  vercelEnvironment,
+  /gengrowth\.ai\/app\b/,
+  "the approved Vercel deployment must not use the retired /app mount",
+);
 
 const dockerfile = read("Dockerfile.worker");
 assert.match(dockerfile, /^FROM node:24-/m);
@@ -81,28 +68,6 @@ assert.match(
 );
 assert.doesNotMatch(
   dockerfile,
-  /(?:OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY|GOOGLE_OAUTH_CLIENT_SECRET)\s*=/,
-);
-
-const railwayDockerfile = read("Dockerfile.railway");
-assert.match(railwayDockerfile, /^FROM node:24-/m);
-assert.match(railwayDockerfile, /pnpm install --frozen-lockfile/);
-assert.match(railwayDockerfile, /pnpm --filter @sf\/web build/);
-assert.match(
-  railwayDockerfile,
-  /cp -R apps\/web\/\.next\/static apps\/web\/\.next\/standalone\/apps\/web\/\.next\/static/,
-);
-assert.match(
-  railwayDockerfile,
-  /CMD \["node", "apps\/web\/\.next\/standalone\/apps\/web\/server\.js"\]/,
-);
-assert.match(
-  railwayDockerfile,
-  /apps\/worker\/package\.json/,
-  "the shared Railway image must contain the worker workspace",
-);
-assert.doesNotMatch(
-  railwayDockerfile,
   /(?:OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY|GOOGLE_OAUTH_CLIENT_SECRET)\s*=/,
 );
 
@@ -140,22 +105,6 @@ assert.match(
   /docker build --pull=false --file Dockerfile\.worker --tag signalframe-worker:verify \./,
   "CI must build Dockerfile.worker",
 );
-assert.match(
-  ciWorkflow,
-  /docker build --pull=false --file Dockerfile\.railway --tag signalframe-railway:verify \./,
-  "CI must build Dockerfile.railway",
-);
-assert.match(
-  ciWorkflow,
-  /name: Smoke the frozen Railway web runtime[\s\S]*signalframe-railway:verify[\s\S]*\/api\/mvp\/health\/live/,
-  "CI must boot the Railway image and probe web liveness",
-);
-assert.match(
-  ciWorkflow,
-  /name: Smoke both worker image entrypoints[\s\S]*signalframe-worker:verify[\s\S]*signalframe-railway:verify[\s\S]*apps\/worker\/src\/index\.ts/,
-  "CI must execute both worker image entrypoints",
-);
-
 console.log(
-  "Deploy configs passed: CI builds the worker and frozen Railway images, the shared-image Railway web/worker path and Owner-pending Vercel/Render candidate stay explicit, Node 24 and frozen pnpm are pinned, and configuration remains secret-safe.",
+  "Deploy configs passed: Vercel is web-only at app.gengrowth.ai, Supabase owns state, Railway builds and starts the worker-only image, Node 24 and frozen pnpm are pinned, and configuration remains secret-safe.",
 );

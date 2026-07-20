@@ -321,12 +321,28 @@
       "empty": "No artifact is associated with this action yet.",
       "openStudio": "Open Studio"
     },
+    "footer": {
+      "analysisWindow": "Analysis window",
+      "latestSnapshot": "Latest snapshot",
+      "limitations": "Limitations"
+    },
     "reviewDiagnosis": "Review diagnosis",
     "previewReport": "Preview report"
   },
   "appShell": {
     "projectStage": "Project stage",
     "localeSwitch": "Switch language",
+    "switchProject": "Switch project",
+    "programTitle": "90-day program",
+    "programDay": "Day {day} of {total}",
+    "programProgress": "90-day program progress",
+    "diagnosisBadge": "{count, plural, one {# confirmed finding} other {# confirmed findings}}",
+    "studioBadge": "{count, plural, one {# artifact} other {# artifacts}}",
+    "productTools": "Product tools",
+    "help": "Help",
+    "settings": "Settings",
+    "account": "Account",
+    "accountMenu": "Account menu",
     "comingSoon": "Available in a later stage",
     "skipToContent": "Skip to content",
     "projectSections": "Project sections",

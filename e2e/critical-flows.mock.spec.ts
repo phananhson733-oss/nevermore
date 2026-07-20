@@ -23,19 +23,25 @@ test("project navigation exposes live destinations and localizes stage chrome", 
     "href",
     `/p/${E2E_PROJECT_ID}/report`,
   );
-  await expect(page.getByRole("link", { name: "Review diagnosis" })).toHaveAttribute(
-    "href",
-    `/p/${E2E_PROJECT_ID}/diagnosis`,
-  );
-  await expect(page.getByText("Planning", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Review diagnosis" }).first(),
+  ).toHaveAttribute("href", `/p/${E2E_PROJECT_ID}/diagnosis`);
+  const mainContent = page.locator("#main-content");
+  await expect(
+    mainContent.getByText("Planning", { exact: true }),
+  ).toBeVisible();
 
   const urlBeforeLocaleSwitch = page.url();
   await page.getByRole("button", { name: "简体中文" }).click();
-  await expect(page.getByText("规划中", { exact: true })).toBeVisible();
-  await expect(page.getByText("Planning", { exact: true })).toHaveCount(0);
+  await expect(
+    mainContent.getByText("规划中", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    mainContent.getByText("Planning", { exact: true }),
+  ).toHaveCount(0);
   expect(page.url()).toBe(urlBeforeLocaleSwitch);
 
-  await page.getByRole("link", { name: "数据源" }).click();
+  await page.getByRole("link", { name: "数据源", exact: true }).click();
   await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
   const dataForSeo = page.getByRole("region", { name: "DataForSEO" });
   await expect(dataForSeo).toContainText("本 MVP 暂不提供。");
@@ -296,7 +302,11 @@ test("report output locale deep-links on first load, survives refresh, and drive
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByText("de-DE", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "导出清单" })
+      .getByText("de-DE", { exact: true }),
+  ).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
   await downloadLink.click();

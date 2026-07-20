@@ -53,6 +53,7 @@ import type {
   Provider,
   PropertySelectionPhase,
   RunStatus,
+  SnapshotWindow,
   SourceConnection,
   SourceState,
 } from "@/lib/api/hooks-sources";
@@ -66,16 +67,14 @@ import {
 } from "../_frontend-error-state.ts";
 import { ProblemNotice, ProblemState } from "../_problem-display";
 import { sourceLimitationForDisplay } from "../_view-model.ts";
+import {
+  SOURCE_PROVIDER_ORDER,
+  abbreviateChecksum,
+  deriveSourcesReadiness,
+  sourceAcquisitionMode,
+  type SourceAcquisitionMode,
+} from "./_sources-readiness.ts";
 import styles from "./sources.module.css";
-
-/** The five providers in the spec's canonical card order (spec §4.2). */
-const PROVIDER_ORDER: readonly Provider[] = [
-  "crawl",
-  "gsc",
-  "ga4",
-  "csv",
-  "dataforseo",
-];
 
 /** Per-provider glyph for the card logo (visual language from the Artifact). */
 const PROVIDER_ICON: Record<Provider, LucideIcon> = {
@@ -85,6 +84,141 @@ const PROVIDER_ICON: Record<Provider, LucideIcon> = {
   csv: FileUp,
   dataforseo: Database,
 };
+
+interface SourcesPresentationCopy {
+  readonly readinessEyebrow: string;
+  readonly readinessTitle: string;
+  readonly readinessDescription: string;
+  readonly readinessComplete: string;
+  readonly readinessPartial: string;
+  readonly readinessUnavailable: string;
+  readonly families: string;
+  readonly connected: string;
+  readonly usable: string;
+  readonly partial: string;
+  readonly unavailable: string;
+  readonly immutableSnapshots: string;
+  readonly historyUnavailable: string;
+  readonly coverageGap: string;
+  readonly coverageGapDescription: string;
+  readonly coverageComplete: string;
+  readonly noUsableSnapshots: string;
+  readonly partialSnapshot: string;
+  readonly noUsableSnapshot: string;
+  readonly missingFamily: string;
+  readonly latestImmutableSnapshot: string;
+  readonly provenanceUnavailable: string;
+  readonly dataset: string;
+  readonly schema: string;
+  readonly method: string;
+  readonly sourceWindow: string;
+  readonly capturedAt: string;
+  readonly checksum: string;
+  readonly windowUnavailable: string;
+  readonly windowFrom: (start: string) => string;
+  readonly windowThrough: (end: string) => string;
+  readonly mode: Readonly<Record<SourceAcquisitionMode, string>>;
+  readonly footerAria: string;
+  readonly snapshotsExact: (count: number) => string;
+  readonly snapshotsPartial: (count: number) => string;
+  readonly immutablePolicy: string;
+  readonly credentialsPolicy: string;
+}
+
+const EN_SOURCES_COPY: SourcesPresentationCopy = {
+  readinessEyebrow: "Evidence coverage",
+  readinessTitle: "Source readiness",
+  readinessDescription:
+    "Counts come from canonical source slots and their latest snapshots. Connections alone never count as usable data.",
+  readinessComplete: "Enabled sources usable",
+  readinessPartial: "Coverage has gaps",
+  readinessUnavailable: "No usable snapshots yet",
+  families: "Canonical families",
+  connected: "Connected",
+  usable: "Usable",
+  partial: "Partial",
+  unavailable: "Unavailable",
+  immutableSnapshots: "Immutable snapshots",
+  historyUnavailable: "History unavailable",
+  coverageGap: "Coverage gap",
+  coverageGapDescription:
+    "Enabled families without a fully usable latest snapshot:",
+  coverageComplete: "Every enabled source family has a usable snapshot.",
+  noUsableSnapshots: "No usable snapshots yet",
+  partialSnapshot: "Partial snapshot",
+  noUsableSnapshot: "No usable snapshot",
+  missingFamily: "Canonical family missing",
+  latestImmutableSnapshot: "Latest immutable snapshot",
+  provenanceUnavailable: "Provenance is unavailable until a snapshot is captured.",
+  dataset: "Dataset",
+  schema: "Schema",
+  method: "Method",
+  sourceWindow: "Source window",
+  capturedAt: "Captured",
+  checksum: "Checksum",
+  windowUnavailable: "Not provided",
+  windowFrom: (start) => `From ${start}`,
+  windowThrough: (end) => `Through ${end}`,
+  mode: { live: "Live", manual: "Manual", disabled: "Disabled" },
+  footerAria: "Snapshot provenance policy",
+  snapshotsExact: (count) =>
+    `${count} immutable ${count === 1 ? "snapshot" : "snapshots"}`,
+  snapshotsPartial: (count) =>
+    `At least ${count} immutable ${count === 1 ? "snapshot" : "snapshots"} loaded`,
+  immutablePolicy:
+    "Snapshot history is append-only evidence; each capture keeps its dataset, method, window, and checksum.",
+  credentialsPolicy:
+    "Credentials are never rendered. Connection secrets remain outside this read model.",
+};
+
+const ZH_SOURCES_COPY: SourcesPresentationCopy = {
+  readinessEyebrow: "证据覆盖",
+  readinessTitle: "数据源就绪度",
+  readinessDescription:
+    "计数仅来自规范数据源槽位及其最新快照。仅有连接绝不计为可用数据。",
+  readinessComplete: "已启用数据源均可用",
+  readinessPartial: "覆盖仍有缺口",
+  readinessUnavailable: "尚无可用快照",
+  families: "规范数据源类别",
+  connected: "已连接",
+  usable: "可用",
+  partial: "部分可用",
+  unavailable: "不可用",
+  immutableSnapshots: "不可变快照",
+  historyUnavailable: "历史暂不可用",
+  coverageGap: "覆盖缺口",
+  coverageGapDescription: "以下已启用类别尚无完全可用的最新快照：",
+  coverageComplete: "每个已启用的数据源类别都有可用快照。",
+  noUsableSnapshots: "尚无可用快照",
+  partialSnapshot: "部分可用快照",
+  noUsableSnapshot: "无可用快照",
+  missingFamily: "缺少规范数据源类别",
+  latestImmutableSnapshot: "最新不可变快照",
+  provenanceUnavailable: "捕获快照前，来源元数据不可用。",
+  dataset: "数据集",
+  schema: "Schema",
+  method: "方法",
+  sourceWindow: "数据窗口",
+  capturedAt: "捕获时间",
+  checksum: "校验和",
+  windowUnavailable: "未提供",
+  windowFrom: (start) => `自 ${start}`,
+  windowThrough: (end) => `截至 ${end}`,
+  mode: { live: "实时采集", manual: "手动导入", disabled: "未启用" },
+  footerAria: "快照来源策略",
+  snapshotsExact: (count) => `${count} 个不可变快照`,
+  snapshotsPartial: (count) => `已加载至少 ${count} 个不可变快照`,
+  immutablePolicy:
+    "快照历史是仅追加证据；每次捕获都保留数据集、方法、数据窗口与校验和。",
+  credentialsPolicy:
+    "页面绝不呈现凭据；连接密钥不属于此只读模型。",
+};
+
+function sourcesPresentationCopy(locale: string): SourcesPresentationCopy {
+  return locale.toLowerCase().startsWith("zh")
+    ? ZH_SOURCES_COPY
+    : EN_SOURCES_COPY;
+}
 
 // ------------------------------------------------------------- Tone helpers --
 
@@ -143,6 +277,31 @@ function formatDateTime(iso: string, locale: string): string {
   } catch {
     return iso;
   }
+}
+
+function formatDateOnly(value: string, locale: string): string {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+function formatSourceWindow(
+  window: SnapshotWindow,
+  locale: string,
+  copy: SourcesPresentationCopy,
+): string {
+  const start =
+    window.start === null ? null : formatDateOnly(window.start, locale);
+  const end = window.end === null ? null : formatDateOnly(window.end, locale);
+  if (start !== null && end !== null) return `${start} – ${end}`;
+  if (start !== null) return copy.windowFrom(start);
+  if (end !== null) return copy.windowThrough(end);
+  return copy.windowUnavailable;
 }
 
 // --------------------------------------------------------------- Run watcher --
@@ -232,33 +391,31 @@ function Freshness({
   const t = useTranslations("sources");
   const tState = useTranslations("sourceState");
   const locale = useLocale();
+  const copy = sourcesPresentationCopy(locale);
   const snap = source.latestSnapshot;
 
   if (!snap) {
-    return <p className={styles.freshEmpty}>{t("noSnapshot")}</p>;
+    return (
+      <div className={styles.freshEmpty}>
+        <strong>{t("noSnapshot")}</strong>
+        <span>{copy.provenanceUnavailable}</span>
+      </div>
+    );
   }
 
   return (
-    <div className={styles.freshBlock}>
-      <div className={styles.metricBig}>
-        <span className={styles.metaLabel}>{t("rows")}</span>
-        <strong className={styles.metricValue}>
-          {new Intl.NumberFormat(locale).format(snap.rowCount)}
-        </strong>
-      </div>
-      <div className={styles.freshRow}>
-        <div className={styles.freshItem}>
-          <span className={styles.metaLabel}>{t("lastCollected")}</span>
-          <span className={styles.freshValue}>
-            {formatDateTime(snap.capturedAt, locale)}
-          </span>
-        </div>
-        <div className={styles.freshItem}>
-          <span className={styles.metaLabel}>{t("availabilityLabel")}</span>
-          <StatusPill tone={availabilityTone(snap.availability)}>
-            {tState(snap.availability)}
-          </StatusPill>
-        </div>
+    <section
+      className={styles.provenance}
+      aria-label={copy.latestImmutableSnapshot}
+    >
+      <div className={styles.provenanceHead}>
+        <h3 className={styles.provenanceTitle}>
+          {copy.latestImmutableSnapshot}
+        </h3>
+        <span className={styles.metaLabel}>{t("availabilityLabel")}</span>
+        <StatusPill tone={availabilityTone(snap.availability)}>
+          {tState(snap.availability)}
+        </StatusPill>
         {source.state === "stale" ? (
           <StatusPill tone="warning">{tState("stale")}</StatusPill>
         ) : null}
@@ -274,7 +431,52 @@ function Freshness({
           </span>
         ) : null}
       </div>
-    </div>
+
+      <dl className={styles.provenanceGrid}>
+        <div className={styles.provenanceItem}>
+          <dt>{copy.dataset}</dt>
+          <dd data-testid="source-provenance-dynamic">{snap.datasetKey}</dd>
+        </div>
+        <div className={styles.provenanceItem}>
+          <dt>{copy.schema}</dt>
+          <dd data-testid="source-provenance-dynamic">{snap.schemaVersion}</dd>
+        </div>
+        <div className={styles.provenanceItem}>
+          <dt>{copy.method}</dt>
+          <dd data-testid="source-provenance-dynamic">{snap.methodVersion}</dd>
+        </div>
+        <div className={styles.provenanceItem}>
+          <dt>{copy.sourceWindow}</dt>
+          <dd data-testid="source-provenance-dynamic">
+            {formatSourceWindow(snap.sourceWindow, locale, copy)}
+          </dd>
+        </div>
+        <div className={styles.provenanceItem}>
+          <dt>{t("lastCollected")}</dt>
+          <dd data-testid="source-provenance-dynamic">
+            {formatDateTime(snap.capturedAt, locale)}
+          </dd>
+        </div>
+        <div className={styles.provenanceItem}>
+          <dt>{t("rows")}</dt>
+          <dd
+            className={styles.provenanceRows}
+            data-testid="source-provenance-dynamic"
+          >
+            {new Intl.NumberFormat(locale).format(snap.rowCount)}
+          </dd>
+        </div>
+        <div className={styles.provenanceItem}>
+          <dt>{copy.checksum}</dt>
+          <dd
+            className={styles.provenanceChecksum}
+            data-testid="source-provenance-dynamic"
+          >
+            {abbreviateChecksum(snap.checksum)}
+          </dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 
@@ -986,6 +1188,8 @@ function SourceCard({
   const tCommon = useTranslations("common");
   const tProvider = useTranslations("provider");
   const tState = useTranslations("sourceState");
+  const locale = useLocale();
+  const copy = sourcesPresentationCopy(locale);
   const [startedRunId, setStartedRunId] = useState<string | null>(null);
   const [settledRunId, setSettledRunId] = useState<string | null>(null);
   const [failedRunId, setFailedRunId] = useState<string | null>(null);
@@ -1021,6 +1225,7 @@ function SourceCard({
       source.connectionType === "file_import") &&
     source.state !== "disconnected";
   const ProviderIcon = PROVIDER_ICON[source.provider];
+  const acquisitionMode = sourceAcquisitionMode(source);
 
   return (
     <Panel padding="lg" className={styles.card} aria-labelledby={titleId}>
@@ -1036,9 +1241,22 @@ function SourceCard({
             {t(`description.${source.provider}`)}
           </p>
         </div>
-        <StatusPill tone={stateTone(source.state)}>
-          {tState(source.state)}
-        </StatusPill>
+        <div className={styles.cardStatuses}>
+          <StatusPill
+            tone={
+              acquisitionMode === "live"
+                ? "info"
+                : acquisitionMode === "manual"
+                  ? "warning"
+                  : "neutral"
+            }
+          >
+            {copy.mode[acquisitionMode]}
+          </StatusPill>
+          <StatusPill tone={stateTone(source.state)}>
+            {tState(source.state)}
+          </StatusPill>
+        </div>
       </div>
 
       <Freshness
@@ -1101,6 +1319,180 @@ function SourceCard({
         ) : null}
       </div>
     </Panel>
+  );
+}
+
+// ---------------------------------------------------------- Readiness summary --
+
+function ReadinessSummary({
+  sources,
+  snapshotCount,
+  snapshotHistoryComplete,
+}: {
+  readonly sources: readonly SourceConnection[];
+  readonly snapshotCount: number | null;
+  readonly snapshotHistoryComplete: boolean;
+}) {
+  const locale = useLocale();
+  const tProvider = useTranslations("provider");
+  const copy = sourcesPresentationCopy(locale);
+  const readiness = deriveSourcesReadiness(sources);
+  const sourceByProvider = new Map(
+    sources.map((source) => [source.provider, source] as const),
+  );
+  const hasGaps =
+    readiness.gapProviders.length > 0 ||
+    readiness.missingProviders.length > 0;
+  const hasUsableSnapshots = readiness.usableCount > 0;
+  const overallLabel = !hasUsableSnapshots
+    ? copy.readinessUnavailable
+    : hasGaps
+      ? copy.readinessPartial
+      : copy.readinessComplete;
+  const overallTone: StatusTone = !hasUsableSnapshots
+    ? "danger"
+    : hasGaps
+      ? "warning"
+      : "success";
+  const historyValue =
+    snapshotCount === null
+      ? "—"
+      : snapshotHistoryComplete
+        ? String(snapshotCount)
+        : `≥ ${snapshotCount}`;
+
+  return (
+    <Panel
+      padding="lg"
+      className={styles.readiness}
+      aria-labelledby="source-readiness-title"
+    >
+      <div className={styles.readinessHead}>
+        <div className={styles.readinessLead}>
+          <span className="sf-eyebrow">{copy.readinessEyebrow}</span>
+          <h2 id="source-readiness-title" className={styles.readinessTitle}>
+            {copy.readinessTitle}
+          </h2>
+          <p className={styles.readinessDescription}>
+            {copy.readinessDescription}
+          </p>
+        </div>
+        <StatusPill tone={overallTone}>{overallLabel}</StatusPill>
+      </div>
+
+      <dl className={styles.readinessMetrics}>
+        <div className={styles.readinessMetric}>
+          <dt>{copy.families}</dt>
+          <dd data-testid="source-readiness-dynamic">
+            {readiness.familyCount} / {readiness.expectedFamilyCount}
+          </dd>
+        </div>
+        <div className={styles.readinessMetric}>
+          <dt>{copy.connected}</dt>
+          <dd data-testid="source-readiness-dynamic">
+            {readiness.connectedCount}
+          </dd>
+        </div>
+        <div className={styles.readinessMetric}>
+          <dt>{copy.usable}</dt>
+          <dd data-testid="source-readiness-dynamic">{readiness.usableCount}</dd>
+        </div>
+        <div className={styles.readinessMetric}>
+          <dt>{copy.partial}</dt>
+          <dd data-testid="source-readiness-dynamic">
+            {readiness.partialCount}
+          </dd>
+        </div>
+        <div className={styles.readinessMetric}>
+          <dt>{copy.unavailable}</dt>
+          <dd data-testid="source-readiness-dynamic">
+            {readiness.unavailableCount}
+          </dd>
+        </div>
+        <div className={styles.readinessMetric}>
+          <dt>{copy.immutableSnapshots}</dt>
+          <dd data-testid="source-readiness-dynamic">{historyValue}</dd>
+          {snapshotCount === null ? <small>{copy.historyUnavailable}</small> : null}
+        </div>
+      </dl>
+
+      {hasGaps ? (
+        <aside
+          className={styles.gapCallout}
+          role="note"
+          aria-label={copy.coverageGap}
+        >
+          <div className={styles.gapCopy}>
+            <strong>{copy.coverageGap}</strong>
+            <p>
+              {!hasUsableSnapshots
+                ? copy.noUsableSnapshots
+                : copy.coverageGapDescription}
+            </p>
+          </div>
+          <ul className={styles.gapList}>
+            {readiness.gapProviders.map((provider) => {
+              const availability =
+                sourceByProvider.get(provider)?.latestSnapshot?.availability;
+              return (
+                <li key={provider}>
+                  <span>{tProvider(provider)}</span>
+                  <StatusPill
+                    tone={availability === "partial" ? "warning" : "neutral"}
+                  >
+                    {availability === "partial"
+                      ? copy.partialSnapshot
+                      : copy.noUsableSnapshot}
+                  </StatusPill>
+                </li>
+              );
+            })}
+            {readiness.missingProviders.map((provider) => (
+              <li key={`missing-${provider}`}>
+                <span>{tProvider(provider)}</span>
+                <StatusPill tone="danger">{copy.missingFamily}</StatusPill>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      ) : (
+        <p className={styles.coverageComplete}>{copy.coverageComplete}</p>
+      )}
+    </Panel>
+  );
+}
+
+function SnapshotPolicyFootline({
+  snapshotCount,
+  snapshotHistoryComplete,
+}: {
+  readonly snapshotCount: number | null;
+  readonly snapshotHistoryComplete: boolean;
+}) {
+  const locale = useLocale();
+  const copy = sourcesPresentationCopy(locale);
+  const countLabel =
+    snapshotCount === null
+      ? copy.historyUnavailable
+      : snapshotHistoryComplete
+        ? copy.snapshotsExact(snapshotCount)
+        : copy.snapshotsPartial(snapshotCount);
+
+  return (
+    <footer
+      className={styles.footline}
+      role="contentinfo"
+      aria-label={copy.footerAria}
+    >
+      <Database size={18} strokeWidth={1.8} aria-hidden="true" />
+      <div className={styles.footlineCopy}>
+        <p>
+          <strong data-testid="source-provenance-dynamic">{countLabel}</strong>
+          <span>{copy.immutablePolicy}</span>
+        </p>
+        <p>{copy.credentialsPolicy}</p>
+      </div>
+    </footer>
   );
 }
 
@@ -1173,6 +1565,9 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     return counts;
   }, [loadedSnapshots]);
   const snapshotHistoryAvailable = snapshots.data !== undefined;
+  const snapshotHistoryCount = snapshotHistoryAvailable
+    ? loadedSnapshots.length
+    : null;
   const snapshotHistoryComplete =
     snapshotHistoryAvailable &&
     !snapshots.hasNextPage &&
@@ -1183,7 +1578,7 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
 
   const ordered = useMemo(() => {
     const list = sources.data ?? [];
-    return PROVIDER_ORDER.map((provider) =>
+    return SOURCE_PROVIDER_ORDER.map((provider) =>
       list.find((source) => source.provider === provider),
     ).filter((source): source is SourceConnection => source !== undefined);
   }, [sources.data]);
@@ -1214,6 +1609,12 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
           <p className={styles.subtitle}>{t("subtitle")}</p>
         </div>
       </header>
+
+      <ReadinessSummary
+        sources={sources.data}
+        snapshotCount={snapshotHistoryCount}
+        snapshotHistoryComplete={snapshotHistoryComplete}
+      />
 
       {topAlert !== null ? (
         <p className={styles.alert} role="alert">
@@ -1279,6 +1680,11 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
           ) : null}
         </div>
       ) : null}
+
+      <SnapshotPolicyFootline
+        snapshotCount={snapshotHistoryCount}
+        snapshotHistoryComplete={snapshotHistoryComplete}
+      />
     </div>
   );
 }

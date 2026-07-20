@@ -1,263 +1,259 @@
-# gengrowth.ai/app 候选部署指南（中文版）
+# app.gengrowth.ai 生产部署指南（Vercel + Supabase + Railway）
 
-这是把 SignalFrame 上线到 **gengrowth.ai/app** 的候选教程。冻结规格 §3.2 仍要求
-Railway web + worker；仓库里的 Vercel + Render + `/app` 配置尚无可核验的 Owner
-批准记录。Owner 必须先明确选择并记录拓扑；如果没有批准候选方案，请停止使用本指南，
-按冻结规格部署 Railway 双服务，仓库内共享镜像和两个入口的操作说明见
-`docs/DEPLOYMENT.md` 的 “Frozen-spec Railway topology”。
+Owner 已于 **2026-07-20** 批准本次生产拓扑：
 
-> **当前状态**：本地实现仍在共享脏工作树中进行最终复验，没有可部署的 immutable SHA。
-> 先完成全部本地门禁、形成干净 commit，再部署该精确 SHA。外部 Supabase、Storage、
-> OAuth、provider 和 Owner 验收均必须现场验证，不能由仓库文档代替。
-> 每步标了谁来做：**〔你〕** 需要你的账号/权限；**〔我〕** 可以让我帮你验证。
-
----
-
-## 0. 先搞清三个东西是干嘛的（30 秒）
-
-| 部件 | 跑什么 | 放哪 |
+| 部件 | 平台 | 生产边界 |
 |---|---|---|
-| **web** | 网站本体（登录页、界面、`/api/mvp` 接口） | **Vercel** |
-| **worker** | 常驻后台（抓取、诊断、生成、导出的执行者） | **Render**（Background Worker，一个 Docker 容器） |
-| **数据** | 数据库 + 登录 + 文件存储 | **Supabase**（目标项目待 Owner 核验） |
+| Next.js Web 与 `/api/mvp` | **Vercel** | `https://app.gengrowth.ai` 根路径 |
+| 登录、PostgreSQL、私有文件存储 | **Supabase** | Web 与 Worker 共用同一个生产项目 |
+| 常驻 pg-boss Worker | **Railway Hobby** | 只建一个 Worker 服务；无域名、无 HTTP 健康检查 |
 
-关键规矩：**web、worker 和 migration job 必须用同一个已冻结 commit、同一套数据库和密钥**。
+Railway **不承载 Web**，Render **不承载本次生产 Worker**。冻结规格中 Railway
+`web + worker` 双服务以及仓库里准备过的 Vercel + Render + `/app` 方案仅保留为历史背景；
+本次上线以 `docs/DEPLOYMENT.md` 记录的 2026-07-20 Owner 决策为准。
 
-下列外部状态全部视为**未验证**：目标 Supabase migration、pg-boss schema、两个私有
-Storage bucket、Google OAuth client/redirect、GitHub remote 以及现有部署。只有 Owner
-控制台证据和针对同一 release SHA 的实际检查才能把对应门禁改为完成。
+最重要的约束只有两个：
 
----
+1. Vercel Web、Railway Worker 和生产 migration 证据必须对应同一个干净、不可变的
+   `<release SHA>`。
+2. 顺序必须是：**Supabase 备份并迁移 → Railway Worker 拿到 lease → Vercel 唯一 URL
+   部署并冒烟 → 验证 readiness → promote 到 `app.gengrowth.ai`**。
 
-## 1. 准备（5 分钟）〔你〕
-
-1. 本地能跑命令。**注意 git 仓库在 `signalframe-mvp-app` 子目录，不是外层 `nevermore`**
-   （在外层跑 git 会报 `not a git repository`）：
-   ```bash
-   cd /Users/wzb/Code/nevermore/signalframe-mvp-app
-   ```
-2. 记下你要部署的 SHA、确认工作树干净：
-   ```bash
-   git rev-parse --short HEAD   # 记下这串，这就是你要部署的版本（含 render.yaml + /app）
-   git status --porcelain       # 应该没有输出（干净）
-   ```
-3. 由 Owner 确认目标 Git remote、默认分支和平台连接的仓库，并核对部署平台解析到
-   第 2 步记录的精确 SHA。不要从本文推断某个私有仓库或自动部署已经存在。
-4. 生成一把"凭证加密钥匙"（如果你还没有一把要长期用的）：
-   ```bash
-   openssl rand -base64 32
-   ```
-   把输出**记在密码管理器里**。这就是 `CREDENTIAL_ENCRYPTION_KEY`，web 和 worker 要**填一模一样的值**。
-   > ⚠️ 这把钥匙一旦换掉，之前所有连过的 Google 账号都要重新连。**定下来就别改。**
-5. 登录各家控制台，确认你有权限：[GitHub](https://github.com)、[Vercel](https://vercel.com)、[Render](https://render.com)、[Supabase](https://supabase.com/dashboard)、[Google Cloud Console](https://console.cloud.google.com)。
+不要在文档中预填尚未形成的 SHA。完成全量验证并 push 后，再把真实 commit 记作
+`<release SHA>`。所有秘密只放在密码管理器或平台环境变量中，不要贴进 git、日志、截图或群聊。
 
 ---
 
-## 2. Supabase：确认数据库 + 建两个私有桶（10 分钟）〔你〕
+## 0. 冻结同一个发布版本
 
-**2.1 确认数据库已就绪（当前未验证）**
+仓库位于：
 
-你要的连接串是 **Session 模式**（不是 Transaction 模式）。在 Supabase → 你的项目 →
-顶部 **Connect** → 选 **Session pooler**，复制那串 `postgresql://...:5432/postgres`。
-把 `[YOUR-PASSWORD]` 换成数据库密码。
-
-在本地终端确认表结构在（把下面的 `<串>` 换成你复制的、已填好密码的连接串）：
 ```bash
-DATABASE_URL='<串>' pnpm db:migrate:check
-```
-- 期望：通过，提示 28 张表 + 索引 + 触发器都在。
-- 如果它说要迁移，就先跑 `DATABASE_URL='<串>' pnpm db:migrate` 再 check 一次（幂等，重复跑没事）。
-
-> 只有这次针对目标项目的命令输出才能证明数据库已就绪；本地 disposable DB 的通过
-> 记录不能替代生产检查。
-
-**2.2 建两个私有 Storage 桶** ⚠️ 必做
-
-Supabase → 左侧 **Storage** → **New bucket**，建两个，**Public 开关都保持关闭（私有）**：
-- 桶名 `raw-imports`
-- 桶名 `exports`
-
-> 不要修改任何不属于 SignalFrame 的现有 bucket。
-
-**2.3 确认 worker 拥有列表/删除权限**（上线前必做）
-
-Supabase 的 S3 兼容接口不支持 lifecycle 配置，不要在控制台伪造一个“已启用
-30 天生命周期”的验收结果。当前实现由 worker 按数据库时钟执行应用内留存：
-raw/import/snapshot 字节 90 天，export 字节 30 天。因此 service role 必须能够对两个私有桶
-create/read/**list**/delete，并在 worker 日志中验证只有聚合计数的 retention/orphan sweep 成功事件。
-
-当前 pilot sweep 对 `raw`、`raw-import`、`snapshot-raw`、`export` 每一类都有
-100,000 对象硬上限，而且没有持久化续扫游标。上线前必须记录每类对象数均不超过该上限，
-根据成功 sweep 的聚合 `scannedCount` 提前告警，并把
-`ORPHAN_CLEANUP_CAPACITY_EXCEEDED` 与
-`STORAGE_RETENTION_CAPACITY_EXCEEDED` 接入值班告警。出现这些事件后不会靠每日重试或重启
-自动恢复；扩容前必须先评审并实现 durable cursor/window 方案。
-
----
-
-## 3. Google Cloud Console：加一条 /app 回调（3 分钟）〔你〕
-
-登录时不需要 Google，但**连 GSC/GA4 需要**，而且回调地址必须和线上完全一致，否则报
-`redirect_uri_mismatch`。
-
-1. [Google Cloud Console](https://console.cloud.google.com) → 选到含这个 OAuth 客户端的项目
-   → **APIs & Services** → **Credentials**。
-2. 选择 Owner 明确批准用于该环境的 **OAuth 2.0 Client ID**；不要假设本地客户端已存在。
-3. 在 **Authorized redirect URIs** 里，**新增一条**（不要删 localhost 那条）：
-   ```
-   https://gengrowth.ai/app/api/mvp/oauth/google/callback
-   ```
-   注意中间的 **`/app`**，少了它线上连 Google 会失败。
-4. **Save**。（Google 有时要几分钟生效。）
-
----
-
-## 4. Render：部署 worker（15 分钟）〔你〕
-
-worker 是个常驻后台进程，Vercel 跑不了常驻进程，所以放 Render 的 **Background Worker**
-（专为"没有网页、只后台干活"的进程设计的服务类型）。
-
-> 成本提醒：常驻 worker 不能缩到 0，**是付费实例**（Render 免费档只给能休眠的 web 服务），
-> 起步约几美元/月。任何平台的常驻 worker 都一样，这不是 Render 特有。
-
-**方式 A（推荐，最省事）—— 用 Blueprint 一键建：**
-1. [Render](https://render.com) → **New** → **Blueprint** → 选 **`xdawayer/nevermore`** 仓库。
-2. Render 读仓库里的 `render.yaml`，自动创建名为 `signalframe-worker` 的 Background Worker，
-   用 **Dockerfile.worker** 构建。
-3. 它会提示你填所有 `sync: false` 的值，包括 origin-only 的 `APP_ORIGIN` 和下面
-   “要点”里的密钥。`DB_POOL_MAX=3`、桶名、backend 与日志级别等固定值由 Blueprint 提供。
-
-**方式 B（手动建）：** New → **Background Worker** → 连仓库 → Runtime 选 **Docker** →
-Dockerfile Path 填 `./Dockerfile.worker` → 然后到 **Environment** 逐条填变量。
-
-**变量要点**（完整清单见 `deploy/worker.env.template`）：
-- `DATABASE_URL` = 第 2.1 步那串 Session 模式连接串
-- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` = Supabase → Settings → API 里拿
-  （service_role 是**密钥**，别外泄）
-- `CREDENTIAL_ENCRYPTION_KEY` = 第 1.3 步生成的那把（**待会 web 填一样的**）
-- `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` = Google 那个客户端的
-- `SF_BLOB_BACKEND=supabase`（生产必须是这个，不能 local）
-- `DB_POOL_MAX=3`（连接池小一点，别把 Supabase 连接数打满）
-- 这个已准备的 Blueprint 固定走直连 OpenAI：`LLM_PROVIDER=openai` +
-  `OPENAI_API_KEY` + `OPENAI_MODEL`（如 `gpt-4.1-mini`）。运行时代码也支持
-  Azure，但 `render.yaml` 没有编码该变体；若 Owner 选择 Azure，必须脱离本
-  Blueprint 手工移除直连字段、填写全部四个 Azure 字段，并另做配置审查和部署验证。
-- `FINDING_SUMMARIES_ENABLED=true` 会为非 English/`zh-CN` Finding 启用有预算的
-  本地化摘要；若合规或成本策略要求关闭，显式设为 `false`，诊断会使用诚实标注为
-  English 的确定性 fallback，Artifact LLM 配置不受影响。
-- `APP_BUILD_SHA` **留空即可** —— Render 会自动带 `RENDER_GIT_COMMIT`，worker 启动日志会
-  报出真实部署的 SHA（代码已支持读它）。只有想手动覆盖时才填。
-- `NEXT_PUBLIC_BASE_PATH` / `SUPABASE_ANON_KEY` **worker 不要填**
-
-触发部署后，看 Render 的 **Logs**，应看到：
-- 启动日志里有版本号（你部署的那个 SHA，Render 会自动带上）
-- 一次 recovery sweep（恢复扫描）
-- 拿到 **worker readiness lease**（就绪租约）
-- 日志里**不该出现**任何密钥值、模型输出、客户数据。
-
-> worker 没有网页、没有健康检查端口，这是正常的——它就是个默默干活的后台。
-> 冻结规格的 Railway 双服务不是 Render worker 的“等价替换”：它使用
-> `Dockerfile.railway` 同一镜像承载 web 与 worker，具体命令见 `docs/DEPLOYMENT.md`。
-
----
-
-## 5. Vercel：部署 web + 挂到 /app（15 分钟）〔你〕
-
-1. [Vercel](https://vercel.com) → **Add New… → Project** → **Import** **`xdawayer/nevermore`** 仓库。
-2. 关键设置：
-   - **Root Directory** 选 **`apps/web`**（点 Edit 选到这个子目录）。
-   - Framework 会自动识别 **Next.js**。（`apps/web/vercel.json` 已声明。）
-   - 它是 pnpm monorepo，Vercel 一般能自动装好 workspace 依赖；若构建报找不到 `@sf/*` 包，
-     在 Project Settings 里确认允许"包含 Root Directory 外的源码"。
-3. **Environment Variables**（Production 环境）→ 照 `deploy/vercel.web.env.template` 填：
-   - **`NEXT_PUBLIC_BASE_PATH=/app`** ← 这条最关键，它让整个站挂到 `/app` 下（构建期生效）
-   - `APP_ORIGIN=https://gengrowth.ai` ← **只写到域名，不要带 `/app`**
-   - `DATABASE_URL` / `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` = 和 worker **一样**
-   - `SUPABASE_ANON_KEY` = Supabase → Settings → API 里的 anon key（web 专用）
-   - `CREDENTIAL_ENCRYPTION_KEY` = **和 worker 填的一模一样**
-   - `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` = 和 worker 一样
-   - `DATAFORSEO_ENABLED=false`、`RAW_IMPORT_BUCKET=raw-imports`、`EXPORT_BUCKET=exports`、
-     `SF_BLOB_BACKEND=supabase`、`DB_POOL_MAX=3`、`LOG_LEVEL=info`
-   - `APP_BUILD_SHA` **留空即可** —— Vercel 会自动带 `VERCEL_GIT_COMMIT_SHA`，
-     `/health/version` 会在 `buildSha` 里报真实部署的 SHA（硬填一个对不上的值反而更糟）。
-   - **不要填** `SF_DEV_AUTH`（它只允许在显式本地 loopback development 场景启用；托管环境保持缺省）
-   - web **不要填** LLM 相关（那是 worker 的）
-4. **Deploy**。部署成功后，确认 Vercel 构建日志里 base path 是 `/app`。
-5. **绑定域名/路由**：让 `gengrowth.ai` 的 `/app/*` 指向这个 Vercel 部署
-   （在 Vercel 的 Domains 里绑 `gengrowth.ai`，或在你现有 gengrowth 站点里把 `/app` 反代到这个部署——
-   取决于 gengrowth.ai 现在怎么托管的，这一步按你现有架构来）。
-
-> 改了环境变量后，Vercel 要**重新部署**才生效（尤其 `NEXT_PUBLIC_BASE_PATH` 是构建期变量）。
-
----
-
-## 6. 验证：登录能用了吗（5 分钟）〔我可帮你跑〕
-
-在**部署好的线上地址**上跑（把域名换成你实际绑的）。
-
-**6.1 版本对上、/app 生效、根路径不通：**
-```bash
-curl -s https://gengrowth.ai/app/api/mvp/health/version
-# 期望：返回 JSON 里的 buildSha = 你实际部署的 release SHA
-
-curl -s -o /dev/null -w '%{http_code}\n' https://gengrowth.ai/app/api/mvp/health/live
-# 期望：200；这只证明 web 进程活着，不代表可以放量
-
-curl -s -o /dev/null -w '%{http_code}\n' https://gengrowth.ai/api/mvp/health/live
-# 期望：404（说明确实挂在 /app 下，根路径没暴露）
+cd /Users/wzb/Code/nevermore/signalframe-mvp-app
+git status --short
+git rev-parse HEAD
 ```
 
-**6.2 后台就绪（要 worker 活着才 200）：**
+上线前应完成：
+
+1. 检查完整 diff，运行项目的 lint、typecheck、测试、构建与部署配置检查。
+2. commit 并 push 干净工作树。
+3. 记录完整 40 位 commit 为 `<release SHA>`。
+4. 后续在 Railway 与 Vercel 控制台逐一确认平台实际解析到这个 SHA，而不是只看分支名。
+
+`APP_BUILD_SHA` 一般留空：Vercel 会提供 `VERCEL_GIT_COMMIT_SHA`，Railway 会提供
+`RAILWAY_GIT_COMMIT_SHA`。只有确需手工覆盖时，才把它设置成完全相同的
+`<release SHA>`；填错比不填更危险。
+
+## 1. Supabase：先备份，再迁移
+
+### 1.1 确认连接模式
+
+Web 和 Worker 的 `DATABASE_URL` 必须使用 Supabase **Direct connection / Session
+pooler**，不能使用 Transaction pooler。pg-boss、Worker readiness session advisory lease，
+以及 Web readiness 的 session lock 都要求会话语义。
+
+建议 Web 和 Worker 都从 `DB_POOL_MAX=3` 起步，并观察 Supabase 连接数。
+
+### 1.2 先做可恢复的备份
+
+在任何生产 migration 之前：
+
+1. 对目标 Supabase PostgreSQL 做 logical dump。
+2. 把备份存到仓库外、权限受限的位置，记录时间、项目 ref 与 SHA-256；不要记录连接串。
+3. 恢复到一个名称明确的 disposable 本地数据库。
+4. 验证 schema、表数和关键 canonical row count 后，删除这个 disposable 数据库。
+
+Supabase 数据库备份不包含 Storage object bytes；Storage 恢复证据仍需按
+`docs/RESTORE-DRILL.md` 独立完成。
+
+### 1.3 从 `<release SHA>` 运行迁移
+
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://gengrowth.ai/app/api/mvp/health/ready
-# 期望：200。如果是 503，说明 worker 没连上——回第 4 步看 Render 日志，别跳过这关。
+DATABASE_URL='<生产 session-mode URL>' pnpm db:migrate
+DATABASE_URL='<生产 session-mode URL>' pnpm db:migrate
+DATABASE_URL='<生产 session-mode URL>' pnpm db:migrate:check
+DATABASE_URL='<生产 session-mode URL>' pnpm db:smoke
 ```
 
-**不要把 `/health/live` 当成上线放量凭据。** 真正的 promotion gate 是：
-- `/health/version` 的 `buildSha` 对上目标 SHA
-- `/health/ready` 返回 200
-- worker 日志也报同一个 SHA 且拿到了 readiness lease
+第二次 migrate 用来证明幂等；保留脱敏后的 migration version、schema check 与 smoke
+结果。不要让 URL 或密码进入终端截图。
 
-**6.3 真实登录（里程碑）：**
-浏览器打开 `https://gengrowth.ai/app/login`，用已预配的 Supabase operator 账号登录 → 应进入应用。
-（登出应回到登录页；会话 cookie 是 HttpOnly/Secure。）
+### 1.4 Auth 与 Storage
 
-> 生产必须在 Supabase Auth 设置中关闭公开注册。账号由 Owner 在
-> **Authentication → Users** 创建，然后使用该用户 UUID，按
-> `docs/LAUNCH-CHECKLIST.md` Phase 1 的 SQL 写入 `app.operator_profiles`。
-> 只有 Auth 用户而没有 operator profile 时，应用会拒绝访问且不会自动授权。
+- 在 Supabase Auth 关闭公开注册。
+- 由 Owner 创建批准的 Auth 用户，并显式写入 `app.operator_profiles`；生产应用不能自动授予成员身份。
+- 确认 `raw-imports`、`exports` 两个 bucket 都存在且为私有。
+- Worker 使用的 service role 必须能 create/read/list/delete 两个 bucket。list/delete 是
+  retention 与 orphan cleanup 必需权限。
+- 上线前记录 `raw`、`raw-import`、`snapshot-raw`、`export` 每类对象聚合数，均不得超过
+  100,000 的 pilot 硬边界；为
+  `ORPHAN_CLEANUP_CAPACITY_EXCEEDED` 和
+  `STORAGE_RETENTION_CAPACITY_EXCEEDED` 配置告警。
 
-**6.1 和 6.2 的 curl 你可以直接发给我，我帮你判读。** 走到这只表示
-`gengrowth.ai/app` 的部署、后台依赖与真实登录链路已经验证；**还不能称为
-pilot 上线或开始放量**。继续完成第 7 节以及
-`docs/LAUNCH-CHECKLIST.md` Phase 5–6 的托管 provider、恢复和 Owner 验收门禁。
+## 2. Google OAuth：登记生产根域回调
 
----
+在获批的 Google OAuth 2.0 Client 中新增这一条精确 URI；不要删除仍需使用的 localhost
+回调：
 
-## 7. 完整 pilot 还要过的（登录之后，不阻塞登录本身）〔你〕
+```text
+https://app.gengrowth.ai/api/mvp/oauth/google/callback
+```
 
-- 线上连 **GSC**（选 `sc-domain:gengrowth.ai`）跑一次真实采集
-- 线上连 **GA4**
-- 用本候选的直连 **OpenAI** 真实生成一个 Artifact（线上要用 Owner 提供的真 key）；
-  若另选 Azure，先完成上面说明的手工配置审查
-- 验证**导出下载**能下（签名 URL 15 分钟过期）、两个桶确认私有
-- 做一次**恢复演练**（见 `docs/RESTORE-DRILL.md`）
-- 你亲自走一遍**中英文 / B2B+B2C** 的输出，满意了签字
+本次生产地址没有 `/app` 前缀。确认 consent screen 包含只读的
+`webmasters.readonly` 与 `analytics.readonly` scope。Google 配置可能需要几分钟生效。
 
----
+## 3. Railway Hobby：只部署常驻 Worker
 
-## 常见坑速查
+### 3.1 创建服务
 
-| 现象 | 多半是 | 怎么修 |
+在已开通 Hobby 的目标 Railway workspace 中：
+
+1. 新建或选择一个 SignalFrame 项目。
+2. **只创建一个 Worker 服务，不创建 Web 服务。**
+3. 连接同一个 Git 仓库和 `<release SHA>`，Root Directory 使用仓库根目录。
+4. 使用仓库已有 `railway.json`；它会构建 `Dockerfile.worker`，并通过
+   config-as-code 固定 Worker Start Command。
+5. 在 deployment details 中确认最终 Start Command 为：
+
+   ```text
+   node --enable-source-maps --import tsx apps/worker/src/index.ts
+   ```
+
+6. 不生成 domain，不暴露 public port，不设置 HTTP healthcheck。Worker 本身没有 HTTP
+   路由，这是预期行为。
+
+仓库级配置已经 fail-safe：即使 Railway 控制台没有手工覆盖命令，也只能构建并启动
+Worker，不能回退到 Next.js Web CMD。
+
+### 3.2 设置 Worker 变量
+
+完整清单见 `deploy/worker.env.template`。关键值如下：
+
+- `APP_ORIGIN=https://app.gengrowth.ai`
+- `DATABASE_URL=<Supabase session/direct-mode URL>`
+- `DB_POOL_MAX=3`
+- `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`
+- `CREDENTIAL_ENCRYPTION_KEY`（与 Vercel Web 完全相同）
+- `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`（与 Web 相同）
+- `DATAFORSEO_ENABLED=false`
+- `RAW_IMPORT_BUCKET=raw-imports`、`EXPORT_BUCKET=exports`
+- `SF_BLOB_BACKEND=supabase`
+- `LOG_LEVEL=info`
+- Worker-only LLM：`LLM_PROVIDER` 及对应的完整 provider 字段
+- `FINDING_SUMMARIES_ENABLED=true|false`，按已经确认的成本/合规策略设置
+
+Worker 不需要 `SUPABASE_ANON_KEY`、`NEXT_PUBLIC_BASE_PATH`，也不能设置本地专用的
+`SF_DEV_AUTH` 或 `SF_BLOB_DIR`。
+
+### 3.3 先证明 Worker lease
+
+从 `<release SHA>` 部署后检查 Railway 日志，必须看到脱敏的：
+
+- 实际 `buildSha` 等于 `<release SHA>`；
+- startup recovery sweep 完成；
+- pg-boss 启动；
+- Worker 成功持有 readiness lease。
+
+日志不能出现环境变量值、token、provider body、模型输出、object key 或客户内容。
+Worker 没有可 curl 的 URL；它的在线证据是 Supabase 中的 live session advisory lease。
+
+## 4. Vercel：先部署唯一 URL，不要直接切生产域名
+
+### 4.1 项目配置
+
+在目标 Vercel 项目中确认：
+
+- Root Directory：`apps/web`
+- Framework Preset：Next.js
+- Node：`24.x`
+- 允许构建读取 Root Directory 外的 monorepo source
+- 启用 System Environment Variables
+- install/build/output override 保持缺省，除非另有经过评审的发布变更
+
+### 4.2 Web 环境变量
+
+Production 环境至少需要：
+
+- `APP_ORIGIN=https://app.gengrowth.ai`
+- 与 Worker 相同的 session-mode `DATABASE_URL`、`DB_POOL_MAX=3`
+- 与 Worker相同的 `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`、
+  `CREDENTIAL_ENCRYPTION_KEY`、Google OAuth 字段、bucket 字段
+- Web-only `SUPABASE_ANON_KEY`
+- `SF_BLOB_BACKEND=supabase`
+- `DATAFORSEO_ENABLED=false`、`LOG_LEVEL=info`
+
+**不要设置 `NEXT_PUBLIC_BASE_PATH=/app`。** 本次应用直接服务于
+`https://app.gengrowth.ai` 根路径。也不要在 Vercel 设置 Worker-only LLM 变量、
+`SF_DEV_AUTH` 或 `SF_BLOB_DIR`。
+
+### 4.3 创建 unique deployment 并冒烟
+
+部署 `<release SHA>`，但先保持 Vercel 提供的唯一 deployment URL，**不要立即 promote
+`app.gengrowth.ai`**。在唯一 URL 检查：
+
+```bash
+curl -fsS https://<unique-vercel-url>/api/mvp/health/version
+curl -fsS https://<unique-vercel-url>/api/mvp/health/live
+curl -fsS https://<unique-vercel-url>/api/mvp/health/ready
+```
+
+期望：
+
+- version 中 `buildSha` 精确等于 `<release SHA>`；
+- live 为 200，但它只证明 Web 进程活着；
+- ready 为 200，且其中 DB、pg-boss schema、Railway Worker lease 都 ready。
+
+如果 ready 为 503，回 Railway 检查 Worker 和 session-mode 数据库连接，不能跳过或豁免。
+在 Auth redirect allowlist 允许的情况下，再对唯一 URL 做登录和关键路由冒烟；若只能使用正式
+origin，则保留唯一 URL 的所有健康与只读检查，并在 promote 后立即补做真实登录。
+
+## 5. Promote 到 app.gengrowth.ai
+
+只有当 Supabase backup/migration、Railway Worker lease、唯一 Vercel deployment 都指向
+同一个 `<release SHA>` 并通过后，才执行：
+
+1. 把**刚验证过的现有 Vercel deployment** promote/alias 到
+   `https://app.gengrowth.ai`，不要另触发一次未验证 rebuild。
+2. 在生产 origin 重跑：
+
+   ```bash
+   curl -fsS https://app.gengrowth.ai/api/mvp/health/version
+   curl -fsS https://app.gengrowth.ai/api/mvp/health/live
+   curl -fsS https://app.gengrowth.ai/api/mvp/health/ready
+   ```
+
+3. 再次确认 Web `buildSha` 与 Railway 日志中的 SHA 完全一致、ready 仍为 200。
+4. 打开 `https://app.gengrowth.ai/login`，用已预配的 Supabase operator 完成真实登录、应用访问和登出。
+5. 用一个有效但未预配的 Auth 测试用户证明访问被拒绝，而且不会创建 workspace 或
+   `operator_profiles` 记录。
+6. 完成关键页面、CSP、会话与移动端冒烟。
+
+完成这一节只能说明“已部署并完成生产 origin 验证”；完整 pilot-ready 仍需下一节。
+
+## 6. 完整 pilot 验收
+
+- 用 Owner 批准的真实数据走通 Google OAuth → GSC property → collection。
+- 走通 GA4 property 与 key-event sync。
+- 用 Railway Worker 的正式 LLM 配置生成 structured Artifact。
+- 验证 export signed URL 可下载、900 秒过期、bucket 保持私有。
+- 验证 retention/orphan sweep 只有聚合脱敏日志：raw-family 90 天，export 需同时满足
+  Storage 与 canonical run 30 天锚点。
+- 按 `docs/RESTORE-DRILL.md` 完成数据库/PITR 与独立 Storage-byte 恢复证据。
+- Owner 走查并签字确认 EN/zh-CN、B2B/B2C 的 evidence、priority、Action、Artifact 与两种 bundle。
+
+## 常见问题
+
+| 现象 | 常见原因 | 处理 |
 |---|---|---|
-| 登录后 Google 连不上，报 `redirect_uri_mismatch` | 第 3 步 `/app` 回调没加/没生效 | 回 Google Console 加那条带 `/app` 的，等几分钟 |
-| `/app/...` 打不开、根路径反而能开 | Vercel 没设 `NEXT_PUBLIC_BASE_PATH=/app`，或改了没重新部署 | 补上并重新 Deploy |
-| `/health/ready` 一直 503 | worker 没起来/没拿到租约 | 看 Render 日志；确认 `DATABASE_URL` 是 Session 模式 |
-| worker 或 web 启动就崩 | 环境变量缺/错（会 fail-fast 报哪个字段） | 照模板补齐；Azure 四个字段要么全填要么全不填 |
-| 导出能生成但下载 404 | `SF_BLOB_BACKEND` 没设成 `supabase`，或桶没建 | 两边都设 `supabase`，建好 `raw-imports`/`exports` |
-| 连接数报错/打满 | `DB_POOL_MAX` 太大 | web 和 worker 都设 `3` |
+| Railway 启动成网页或很快退出 | 没有覆盖 service Start Command | 设为 `node --enable-source-maps --import tsx apps/worker/src/index.ts` |
+| `/api/mvp/health/ready` 为 503 | Worker 未持有 lease、连接了 transaction pooler 或 pg-boss schema 不完整 | 看 Railway 脱敏日志；改用 session/direct mode；重做 schema check |
+| `buildSha` 不一致 | 两个平台部署了同一分支的不同 commit | 停止 promote，重新让两边都固定到同一个 `<release SHA>` |
+| 页面被挂到 `/app` | Vercel 残留 `NEXT_PUBLIC_BASE_PATH=/app` | 删除该变量并从同一 SHA 重新创建、验证 unique deployment |
+| Google 报 `redirect_uri_mismatch` | OAuth client 仍配置旧 `/app` URI或缺少新 URI | 新增 `https://app.gengrowth.ai/api/mvp/oauth/google/callback`，等待生效 |
+| 导出生成但下载失败 | bucket 未建/不私有、service role 权限不足或 backend 不是 Supabase | 核对两个私有 bucket、create/read/list/delete 与 `SF_BLOB_BACKEND=supabase` |
+| Supabase 连接耗尽 | pool 过大或误用连接模式 | 从 Web/Worker `DB_POOL_MAX=3` 起步并监控 session 连接 |
 
-**顺序别乱**：先 Supabase（第 2 步）→ 再 Google（第 3 步）→ 再 worker（第 4 步）→ 再 web（第 5 步）→ 验证（第 6 步）。worker 先于 web 起来，`/health/ready` 才会 200。
-
-参考：`docs/LAUNCH-CHECKLIST.md`（勾选版）、`docs/DEPLOYMENT.md`（拓扑与 Delta）、
-`deploy/*.env.template`（变量模板）。
+配套文档：`docs/DEPLOYMENT.md`（权威拓扑与发布顺序）、
+`docs/LAUNCH-CHECKLIST.md`（逐项勾选）、`docs/RUNBOOK.md`（故障与回滚）、
+`deploy/worker.env.template`（Railway Worker 变量模板）。

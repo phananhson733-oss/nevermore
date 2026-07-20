@@ -42,9 +42,9 @@ test("ready Overview renders the canonical signal → action → delivery chain"
   await expect(delivery.getByText("EN", { exact: true })).toHaveCount(0);
 
   const rail = page.getByRole("region", { name: "Signal rail" });
-  await expect(rail).toContainText("Diagnosis");
-  await expect(rail).toContainText("Action");
-  await expect(rail).toContainText("Delivery");
+  for (const stage of ["Context", "Sources", "Diagnosis", "Plan", "Delivery"]) {
+    await expect(rail.getByRole("link", { name: new RegExp(stage) })).toBeVisible();
+  }
 
   const action = page.getByRole("region", { name: "Highest-priority action" });
   await expect(action).toContainText("Fix the failing product page");
@@ -55,6 +55,7 @@ test("ready Overview renders the canonical signal → action → delivery chain"
   const evidence = page.getByRole("region", { name: "Evidence focus" });
   await expect(evidence).toContainText("crawl");
   await expect(evidence).toContainText("Jul 18, 2026");
+  await expect(evidence).toContainText("The URL returned HTTP 500.");
 
   const focus = page.getByRole("region", { name: "Delivery focus" });
   await expect(focus).toContainText("Technical ticket");
@@ -85,6 +86,22 @@ test("empty and partial Overview states stay explicit about unavailable links", 
   await expect(page.getByRole("region", { name: "Signal rail" })).toContainText(
     "No diagnosis data",
   );
+  const emptyRail = page.getByRole("region", { name: "Signal rail" });
+  for (const stage of ["Context", "Sources", "Diagnosis", "Plan", "Delivery"]) {
+    await expect(
+      emptyRail.getByRole("link", { name: new RegExp(stage) }),
+    ).toBeVisible();
+  }
+  await expect(
+    page.getByRole("region", { name: "Highest-priority action" }),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Evidence focus" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Delivery focus" })).toBeVisible();
+  await expect(page.getByTestId("overview-evidence-footer")).toContainText(
+    "Unavailable",
+  );
+  await expect(page.locator("body")).not.toContainText("38.6k");
+  await expect(page.locator("body")).not.toContainText("83%");
 
   await page.unroute(WORKSPACE_ROUTE);
   const partial = overviewWorkspaceFixture({
@@ -100,12 +117,50 @@ test("empty and partial Overview states stay explicit about unavailable links", 
   await expect(
     page.getByRole("region", { name: "Highest-priority action" }),
   ).toContainText("Fix the failing product page");
+  const partialRail = page.getByRole("region", { name: "Signal rail" });
+  for (const stage of ["Context", "Sources", "Diagnosis", "Plan", "Delivery"]) {
+    await expect(
+      partialRail.getByRole("link", { name: new RegExp(stage) }),
+    ).toBeVisible();
+  }
   await expect(page.getByRole("region", { name: "Evidence focus" })).toContainText(
     "Unavailable",
   );
   await expect(page.getByRole("region", { name: "Delivery focus" })).toContainText(
     "Unavailable",
   );
+});
+
+test("Overview footer exposes only the canonical analysis window, capture time, and limitations", async ({
+  page,
+}) => {
+  const ready = overviewWorkspaceFixture();
+  await serveOverview(
+    page,
+    overviewWorkspaceFixture({
+      latestSnapshot: {
+        ...ready.latestSnapshot,
+        sourceWindow: {
+          start: "2026-07-01T00:00:00.000Z",
+          end: "2026-07-17T23:59:59.000Z",
+        },
+      },
+    }),
+  );
+  await openOverview(page);
+
+  const footer = page.getByTestId("overview-evidence-footer");
+  await expect(footer).toContainText("Analysis window");
+  await expect(footer).toContainText("Latest snapshot");
+  await expect(footer).toContainText("Limitations");
+  await expect(footer).toContainText("Jul 1, 2026");
+  await expect(footer).toContainText("Jul 17, 2026");
+  await expect(footer).toContainText("Jul 18, 2026");
+  await expect(footer).toContainText("GSC unavailable");
+  await expect(footer).toContainText(
+    "Static HTML only; JavaScript-rendered content may be absent.",
+  );
+  await expect(footer.getByText("GSC unavailable", { exact: true })).toHaveCount(1);
 });
 
 test("Overview chrome localizes to zh-CN while canonical content stays intact", async ({
@@ -122,9 +177,14 @@ test("Overview chrome localizes to zh-CN while canonical content stays intact", 
   await expect(page.getByRole("region", { name: "交付焦点" })).toContainText(
     "草稿",
   );
+  const footer = page.getByTestId("overview-evidence-footer");
+  await expect(footer).toContainText("分析窗口");
+  await expect(footer).toContainText("最新快照");
+  await expect(footer).toContainText("限制说明");
 });
 
 for (const viewport of [
+  { width: 1920, height: 1080 },
   { width: 1440, height: 1000 },
   { width: 390, height: 844 },
 ] as const) {

@@ -20,6 +20,7 @@ import {
   type RealVertical,
   type VerticalDefinition,
 } from "./real-chain-fixture.ts";
+import { ACTION_TEMPLATES } from "../packages/engine/src/index.ts";
 
 const PORT = Number(process.env["E2E_PORT"] ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
@@ -45,6 +46,37 @@ interface PreviewData {
   readonly rowCount: number;
   readonly errors: readonly unknown[];
 }
+
+interface FixtureFinding {
+  readonly id: string;
+  readonly ruleId: string;
+  readonly summary: string;
+  readonly reviewState: "unreviewed" | "confirmed" | "ignored" | "needs_more_data";
+  readonly reviewRevision: number;
+}
+
+interface FixtureAction {
+  readonly id: string;
+  readonly findingId: string;
+  readonly templateId: string;
+  readonly priorityBand: "critical" | "high" | "medium" | "low";
+  readonly revision: number;
+}
+
+interface FixtureArtifact {
+  readonly id: string;
+  readonly actionId: string;
+  readonly status: "generating" | "draft" | "ready" | "failed" | "archived";
+  readonly currentRevision: number;
+  readonly validationState: "pending" | "valid" | "invalid";
+}
+
+const ARTIFACT_TYPE_BY_TEMPLATE = new Map(
+  Object.values(ACTION_TEMPLATES).map((template) => [
+    template.templateId,
+    template.artifactType,
+  ]),
+);
 
 function configureWorkerEnvironment(): void {
   if (!DATABASE_URL) throw new Error("E2E_DATABASE_URL is required");
@@ -181,6 +213,159 @@ async function waitForRun(
   return observed;
 }
 
+/**
+ * Enrich the RelayOps visual fixture through the same authenticated APIs used
+ * by the product. The provider boundary remains deterministic/offline, while
+ * finding review, Action creation, artifact generation, validation, and ready
+ * transitions all cross their canonical service/queue/database paths.
+ */
+async function enrichCanonicalDeliveryFixture(
+  request: APIRequestContext,
+  projectId: string,
+): Promise<void> {
+  const findingsResponse = await request.get(
+    `/api/mvp/projects/${projectId}/findings?activeOnly=true&limit=100`,
+  );
+  const findings = await responseJson<DataEnvelope<readonly FixtureFinding[]>>(
+    findingsResponse,
+    "list findings for canonical fixture",
+  );
+  const orderedFindings = [...findings.data].sort(
+    (left, right) =>
+      left.ruleId.localeCompare(right.ruleId) ||
+      left.summary.localeCompare(right.summary),
+  );
+  for (const finding of orderedFindings) {
+    if (finding.reviewState !== "unreviewed") continue;
+    const response = await request.patch(
+      `/api/mvp/projects/${projectId}/findings/${finding.id}`,
+      {
+        data: {
+          reviewState: "confirmed",
+          baseRevision: finding.reviewRevision,
+        },
+      },
+    );
+    await responseJson<DataEnvelope<unknown>>(
+      response,
+      `confirm finding ${finding.id}`,
+    );
+  }
+
+  const actionsResponse = await request.get(
+    `/api/mvp/projects/${projectId}/actions?limit=100`,
+  );
+  const actions = await responseJson<DataEnvelope<readonly FixtureAction[]>>(
+    actionsResponse,
+    "list actions for canonical fixture",
+  );
+  const findingOrder = new Map(
+    orderedFindings.map((finding, index) => [finding.id, index] as const),
+  );
+  const deterministicActions = [...actions.data].sort(
+    (left, right) =>
+      (findingOrder.get(left.findingId) ?? Number.MAX_SAFE_INTEGER) -
+        (findingOrder.get(right.findingId) ?? Number.MAX_SAFE_INTEGER) ||
+      left.templateId.localeCompare(right.templateId),
+  );
+  const leadTemplateId = "improve_landing_conversion.v1";
+  if (!deterministicActions.some((action) => action.templateId === leadTemplateId)) {
+    throw new Error(`Canonical lead action ${leadTemplateId} was not generated`);
+  }
+  // The repository intentionally returns recency order. Apply one real,
+  // audited human override to every canonical Action in reverse presentation
+  // order so equal-priority rows and their downstream artifacts remain stable
+  // across databases. One uniquely critical lead makes Overview selection
+  // deterministic without teaching the UI to re-score persisted authority.
+  for (const action of [...deterministicActions].reverse()) {
+    const response = await request.patch(
+      `/api/mvp/projects/${projectId}/actions/${action.id}`,
+      {
+        data: {
+          baseRevision: action.revision,
+          priorityBand:
+            action.templateId === leadTemplateId
+              ? "critical"
+              : action.priorityBand,
+          reason: "Canonical acceptance fixture ordering",
+          note: null,
+        },
+      },
+    );
+    await responseJson<DataEnvelope<unknown>>(
+      response,
+      `order canonical action ${action.id}`,
+    );
+  }
+  const existingResponse = await request.get(
+    `/api/mvp/projects/${projectId}/artifacts?limit=100`,
+  );
+  const existing = await responseJson<DataEnvelope<readonly FixtureArtifact[]>>(
+    existingResponse,
+    "list artifacts for canonical fixture",
+  );
+  const coveredActions = new Set(existing.data.map((artifact) => artifact.actionId));
+
+  for (const action of deterministicActions) {
+    if (coveredActions.has(action.id)) continue;
+    const artifactType = ARTIFACT_TYPE_BY_TEMPLATE.get(action.templateId);
+    if (!artifactType) {
+      throw new Error(`No artifact type for canonical action template ${action.templateId}`);
+    }
+    const response = await request.post(
+      `/api/mvp/projects/${projectId}/actions/${action.id}/artifacts`,
+      {
+        headers: { "Idempotency-Key": randomUUID() },
+        data: {
+          artifactType,
+          generationMode: "template",
+          outputLocale: "en",
+          operatorInstructions: null,
+        },
+      },
+    );
+    expect(response.status()).toBe(202);
+    const accepted = await responseJson<DataEnvelope<AcceptedRun>>(
+      response,
+      `generate artifact for action ${action.id}`,
+    );
+    await waitForRun(request, accepted.data.statusUrl, ["completed"]);
+  }
+
+  const generatedResponse = await request.get(
+    `/api/mvp/projects/${projectId}/artifacts?limit=100`,
+  );
+  const generated = await responseJson<DataEnvelope<readonly FixtureArtifact[]>>(
+    generatedResponse,
+    "list generated canonical artifacts",
+  );
+  for (const artifact of generated.data) {
+    if (artifact.status !== "draft" || artifact.validationState !== "valid") continue;
+    const response = await request.patch(
+      `/api/mvp/projects/${projectId}/artifacts/${artifact.id}`,
+      {
+        data: {
+          baseRevision: artifact.currentRevision,
+          status: "ready",
+        },
+      },
+    );
+    await responseJson<DataEnvelope<unknown>>(
+      response,
+      `mark artifact ${artifact.id} ready`,
+    );
+  }
+
+  const readyResponse = await request.get(
+    `/api/mvp/projects/${projectId}/artifacts?status=ready&limit=100`,
+  );
+  const ready = await responseJson<DataEnvelope<readonly FixtureArtifact[]>>(
+    readyResponse,
+    "list ready canonical artifacts",
+  );
+  expect(ready.data.length).toBeGreaterThanOrEqual(3);
+}
+
 async function importCsvThroughRealWorker(
   request: APIRequestContext,
   projectId: string,
@@ -234,7 +419,7 @@ async function runDiagnosisAndConfirmFinding(
   if (keyboard) {
     await run.focus();
     await expect(run).toBeFocused();
-    await page.keyboard.press("Enter");
+    await run.press("Enter");
   } else {
     await run.click();
   }
@@ -264,12 +449,22 @@ async function runDiagnosisAndConfirmFinding(
   await expect(evidence).toHaveAttribute("aria-expanded", "false");
 
   const confirm = finding.getByRole("button", { name: "Confirm" });
+  await expect(confirm).toBeEnabled();
+  const reviewResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "PATCH" &&
+      url.pathname.startsWith(`/api/mvp/projects/${projectId}/findings/`)
+    );
+  });
   if (keyboard) {
     await confirm.focus();
-    await page.keyboard.press("Enter");
+    await expect(confirm).toBeFocused();
+    await confirm.press("Enter");
   } else {
     await confirm.click();
   }
+  expect((await reviewResponse).status()).toBe(200);
   await expect(finding.getByText("Confirmed", { exact: true })).toBeVisible();
   await expect(finding.getByText(/Action created:/)).toBeVisible();
 }
@@ -282,7 +477,8 @@ async function generateReadyArtifact(
   const studioLink = page.getByRole("link", { name: "Studio", exact: true });
   if (keyboard) {
     await studioLink.focus();
-    await page.keyboard.press("Enter");
+    await expect(studioLink).toBeFocused();
+    await studioLink.press("Enter");
     await page.waitForURL(`/p/${projectId}/studio`);
   } else {
     await studioLink.click();
@@ -310,7 +506,8 @@ async function generateReadyArtifact(
   await expect(markReady).toBeEnabled();
   if (keyboard) {
     await markReady.focus();
-    await page.keyboard.press("Enter");
+    await expect(markReady).toBeFocused();
+    await markReady.press("Enter");
   } else {
     await markReady.click();
   }
@@ -337,7 +534,8 @@ async function verifyReportAndExport(
   const reportLink = page.getByRole("link", { name: "Report", exact: true });
   if (keyboard) {
     await reportLink.focus();
-    await page.keyboard.press("Enter");
+    await expect(reportLink).toBeFocused();
+    await reportLink.press("Enter");
     await page.waitForURL(`/p/${projectId}/report`);
   } else {
     await reportLink.click();
@@ -346,15 +544,21 @@ async function verifyReportAndExport(
   const findings = page.getByRole("region", { name: "Findings" });
   await expect(findings.getByRole("heading", { name: "Findings" })).toBeVisible();
   await expect(findings.getByText(/return HTTP 404/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Deliverables" })).toBeVisible();
-  await expect(page.getByText("Technical ticket", { exact: true })).toBeVisible();
+  const deliverables = page.getByRole("region", { name: "Deliverables" });
+  await expect(
+    deliverables.getByRole("heading", { name: "Deliverables" }),
+  ).toBeVisible();
+  await expect(
+    deliverables.getByText("Technical ticket", { exact: true }).first(),
+  ).toBeVisible();
   await expectNoDocumentOverflow(page);
 
   const label = kind === "service" ? "Service bundle" : "Client bundle";
   const button = page.getByRole("button", { name: label, exact: true });
   if (keyboard) {
     await button.focus();
-    await page.keyboard.press("Enter");
+    await expect(button).toBeFocused();
+    await button.press("Enter");
   } else {
     await button.click();
   }
@@ -371,11 +575,13 @@ async function exerciseVertical(input: {
   readonly request: APIRequestContext;
   readonly db: DbHandle;
   readonly vertical: RealVertical;
+  readonly suffix?: string;
+  readonly enrichVisualFixture?: boolean;
   readonly mobile: boolean;
   readonly keyboard: boolean;
   readonly exportKind: "service" | "client";
-}): Promise<void> {
-  const suffix = randomUUID().slice(0, 8);
+}): Promise<{ readonly projectId: string; readonly definition: VerticalDefinition }> {
+  const suffix = input.suffix ?? randomUUID().slice(0, 8);
   const definition = verticalDefinition(input.vertical, suffix);
   if (input.mobile) {
     await input.page.setViewportSize({ width: 390, height: 844 });
@@ -391,6 +597,9 @@ async function exerciseVertical(input: {
 
   await runDiagnosisAndConfirmFinding(input.page, projectId, input.keyboard);
   await generateReadyArtifact(input.page, projectId, input.keyboard);
+  if (input.enrichVisualFixture) {
+    await enrichCanonicalDeliveryFixture(input.request, projectId);
+  }
   await verifyReportAndExport(
     input.page,
     projectId,
@@ -399,6 +608,74 @@ async function exerciseVertical(input: {
     input.keyboard,
   );
   await expectNoDocumentOverflow(input.page);
+  return { projectId, definition };
+}
+
+const CANONICAL_VISUAL_SCREENS = [
+  "overview",
+  "sources",
+  "studio",
+  "report",
+] as const;
+
+const CANONICAL_VISUAL_VIEWPORTS = [
+  { label: "wide", width: 1920, height: 1080 },
+  { label: "desktop", width: 1440, height: 1000 },
+  { label: "mobile", width: 390, height: 844 },
+] as const;
+
+async function waitForCanonicalScreenReady(
+  page: Page,
+  screen: (typeof CANONICAL_VISUAL_SCREENS)[number],
+): Promise<void> {
+  const landmark =
+    screen === "overview"
+      ? page.getByRole("region", { name: "Signal rail" })
+      : screen === "sources"
+        ? page.getByRole("region", { name: "Source readiness" })
+        : screen === "studio"
+          ? page.getByRole("region", { name: "Technical ticket" }).first()
+          : page.locator("[data-report-document]");
+  await expect(landmark).toBeVisible();
+  // These pages hydrate their canonical read models with client-side queries.
+  // Capturing `main` alone can freeze the transient loading state on the first
+  // viewport while later cached viewports contain data. Wait until the query
+  // traffic has settled so every baseline represents the same ready state.
+  await page.waitForLoadState("networkidle");
+}
+
+/**
+ * Screenshot the real canonical project created above. Runtime provenance stays
+ * readable in the UI, but is masked here so capture timestamps, checksums, and
+ * export expiry values do not turn deterministic visual review into noise.
+ */
+async function assertCanonicalVisualRegression(
+  page: Page,
+  projectId: string,
+): Promise<void> {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const viewport of CANONICAL_VISUAL_VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const screen of CANONICAL_VISUAL_SCREENS) {
+      await page.goto(`/p/${projectId}/${screen}`);
+      await waitForCanonicalScreenReady(page, screen);
+      await expectNoDocumentOverflow(page);
+      await expect(page).toHaveScreenshot(
+        `canonical-relayops-${screen}-${viewport.label}.png`,
+        {
+          animations: "disabled",
+          caret: "hide",
+          fullPage: true,
+          mask: [
+            page.locator("time"),
+            page.locator('[data-testid="overview-dynamic-value"]'),
+            page.locator('[data-testid="source-provenance-dynamic"]'),
+            page.locator('[data-testid="report-dynamic-value"]'),
+          ],
+        },
+      );
+    }
+  }
 }
 
 test.describe.serial(
@@ -432,17 +709,20 @@ test.describe.serial(
       page,
       request,
     }) => {
-      test.setTimeout(120_000);
+      test.setTimeout(240_000);
       if (!db) throw new Error("real E2E fixture database did not start");
-      await exerciseVertical({
+      const fixture = await exerciseVertical({
         page,
         request,
         db,
         vertical: "b2b",
+        suffix: "c0ffee00",
+        enrichVisualFixture: true,
         mobile: false,
         keyboard: true,
         exportKind: "service",
       });
+      await assertCanonicalVisualRegression(page, fixture.projectId);
     });
 
     test("AC-045 B2C fixture: 390px app chain with offline provider seam -> client report/export", async ({

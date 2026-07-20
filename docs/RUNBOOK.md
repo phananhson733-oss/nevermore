@@ -44,40 +44,38 @@ see `docs/PROGRESS.md`.
 
 ## Production topology and deploy
 
-- **Authority / decision gate**: frozen spec §3.2 requires Railway web+worker
-  from the same image/commit. Vercel web + Render worker + `/app` is a prepared
-  candidate only. Do not mutate hosted state until the Owner records one choice
-  and the exact release SHA; see `docs/DEPLOYMENT.md`.
-- **Frozen Railway path**: create `web` and `worker` from the repository root,
-  the same SHA and `/railway.json`; both build `Dockerfile.railway`. Web uses the
-  image CMD. Worker must use the service-level override
-  `node --enable-source-maps --import tsx apps/worker/src/index.ts` and must not
-  have an HTTP healthcheck. Verify both hosted image/SHA identities before
-  promotion; exact steps are in `docs/DEPLOYMENT.md`.
-- **Candidate web — Vercel**: create the project with Root Directory `apps/web`, Framework
-  Preset `Next.js`, Node `24.x`, and enable both “Include source files outside of
-  the Root Directory in the Build Step” and System Environment Variables. Leave
-  install/build/output overrides empty so Vercel/Next monorepo detection and the
-  root `packageManager` pin select pnpm `10.32.1`; set
-  `ENABLE_EXPERIMENTAL_COREPACK=1` if the project does not already use Corepack.
-- **Candidate worker — Render**: use the repository root and committed
-  `render.yaml` Background Worker. It builds `Dockerfile.worker`; Node (not pnpm)
-  is PID 1 and receives SIGTERM for graceful pg-boss/readiness-lease shutdown.
-  The worker has no HTTP port. This Blueprint prepares the direct OpenAI path;
-  Azure is a runtime-supported manual variant, not an encoded Blueprint option.
-- **State — Supabase**: run `pnpm db:migrate` as a one-off release job before
-  promoting web/worker. Auth, Postgres, and both private Storage buckets live in
-  the same Supabase project; web and worker must receive the same database,
-  credential-encryption, OAuth, service-role, and bucket configuration.
-- Vercel exposes `VERCEL_GIT_COMMIT_SHA` when System Environment Variables are
-  enabled; Render exposes `RENDER_GIT_COMMIT`; Railway exposes
-  `RAILWAY_GIT_COMMIT_SHA`.
-  `/api/mvp/health/version` and worker startup/ready logs report that immutable
-  SHA (or explicit `APP_BUILD_SHA`).
+- **Approved authority:** the Owner's 2026-07-20 decision selects **Vercel for
+  the Next.js web, Supabase for Auth/PostgreSQL/Storage, and one Railway Hobby
+  service for the persistent pg-boss worker**. Railway does not host the web and
+  Render is not the current production worker target. The frozen-spec Railway
+  `web` + `worker` path and prepared Vercel + Render + `/app` candidate are
+  retained only as historical alternatives; see `docs/DEPLOYMENT.md`.
+- **Web — Vercel:** use Root Directory `apps/web`, Framework Preset `Next.js`,
+  Node `24.x`, source files outside the Root Directory, and System Environment
+  Variables. Serve the origin root at `https://app.gengrowth.ai`, set
+  `APP_ORIGIN=https://app.gengrowth.ai`, and leave `NEXT_PUBLIC_BASE_PATH`
+  unset. Vercel exposes `VERCEL_GIT_COMMIT_SHA` for release identity.
+- **Worker — Railway Hobby:** create one service from the repository root and
+  committed `railway.json`/`Dockerfile.worker`. Config-as-code pins
+  `node --enable-source-maps --import tsx apps/worker/src/index.ts`; verify that
+  effective command in deployment details. Do not add
+  a public domain, HTTP port or HTTP healthcheck. Railway exposes
+  `RAILWAY_GIT_COMMIT_SHA`; sanitized startup/ready logs must report it and a
+  held worker lease.
+- **State — Supabase:** Auth, PostgreSQL and both private Storage buckets live
+  in one production project. Web and worker use the same session/direct-mode
+  database, credential-encryption, OAuth, service-role and bucket configuration
+  where applicable. Never use the transaction pooler for pg-boss/readiness.
+- **One immutable release:** Vercel, Railway and migration evidence must resolve
+  to the same `<release SHA>`. Leave `APP_BUILD_SHA` unset so platform commit
+  variables report the deployed source, or set it only to that exact SHA.
 
-Run `pnpm deploy:check` before release. Deploy migrations, worker, then web; only
-promote traffic after `/api/mvp/health/ready` reports database, pg-boss schema,
-and the live worker advisory lease as ready.
+Run `pnpm deploy:check` before release. The required hosted order is: take and
+restore-verify the Supabase backup; run and check migrations; deploy the Railway
+worker and prove its lease; create and smoke a unique Vercel deployment from the
+same SHA; verify `/api/mvp/health/version` and
+`/api/mvp/health/ready`; then promote that exact deployment to
+`https://app.gengrowth.ai`. Liveness alone never authorizes promotion.
 
 ## Provider outage (Google GSC/GA4, OpenAI)
 
@@ -274,13 +272,17 @@ and the live worker advisory lease as ready.
 
 ## Rollback
 
-- Deploy order: migration job first, then web + worker on the same commit
-  (§15.3). Known legacy pg-boss jobs with random IDs are recovered through their
+- Deploy order remains backup/migration first, then the Railway worker, then a
+  unique Vercel web deployment from the same commit. Known legacy pg-boss jobs
+  with random IDs are recovered through their
   exact scoped payload. Do not infer general previous-payload compatibility;
   perform the active CSV audit above and review every payload change before an
   upgrade or rollback.
-- **Rollback**: redeploy the previous commit's web + worker together. Schema
-  changes are append-only / additive in the MVP; no destructive down-migration is
-  required for a same-minor rollback. Verify web `/api/mvp/health/version` and
-  worker startup/ready logs both report the exact expected rollback `buildSha`
-  (not merely product version `0.2.0`) before declaring the rollback complete.
+- **Rollback**: redeploy the previous immutable commit to Railway worker and a
+  unique Vercel web deployment together. Schema changes are append-only /
+  additive in the MVP; no destructive down-migration is required for a
+  same-minor rollback. First prove the rollback worker holds the readiness lease,
+  then verify web `/api/mvp/health/version` and
+  `/api/mvp/health/ready` on the unique deployment. Promote it to
+  `app.gengrowth.ai` only after the worker logs and web both report the exact
+  expected rollback `buildSha` (not merely product version `0.2.0`).

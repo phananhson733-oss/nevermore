@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, type MouseEvent } from "react";
 import { cx } from "@/components/ui";
+import type { ProjectShellProjection } from "@/lib/services/project-shell";
 import {
   hasUnsavedContextChanges,
   shouldConfirmContextNavigation,
@@ -68,7 +69,13 @@ function activeSegment(pathname: string, projectId: string): string | null {
   return seg.length > 0 ? seg : null;
 }
 
-export function ProjectNav({ projectId }: { readonly projectId: string }) {
+export function ProjectNav({
+  projectId,
+  navigationBadges,
+}: {
+  readonly projectId: string;
+  readonly navigationBadges: ProjectShellProjection["navigationBadges"];
+}) {
   const t = useTranslations("nav");
   const tContext = useTranslations("context");
   const tShell = useTranslations("appShell");
@@ -129,6 +136,13 @@ export function ProjectNav({ projectId }: { readonly projectId: string }) {
       {NAV_ITEMS.map((item) => {
         const isActive = active === item.key;
         const Icon = item.icon;
+        const badge =
+          item.key === "diagnosis"
+            ? navigationBadges.diagnosis
+            : item.key === "studio"
+              ? navigationBadges.studio
+              : null;
+        const badgeDescriptionId = `sf-${item.key}-nav-count`;
         const showGroup = item.group !== lastGroup;
         lastGroup = item.group;
         return (
@@ -140,11 +154,24 @@ export function ProjectNav({ projectId }: { readonly projectId: string }) {
               href={`/p/${projectId}/${item.key}`}
               className={cx(styles.item, isActive && styles.active)}
               aria-current={isActive ? "page" : undefined}
+              aria-describedby={badge === null ? undefined : badgeDescriptionId}
               onClick={(event) => confirmNavigation(event, isActive)}
             >
               <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
               <span>{t(item.key)}</span>
+              {badge === null ? null : (
+                <span data-nav-count="" aria-hidden="true">
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </Link>
+            {badge === null ? null : (
+              <span id={badgeDescriptionId} data-nav-count-label="">
+                {item.key === "diagnosis"
+                  ? tShell("diagnosisBadge", { count: badge })
+                  : tShell("studioBadge", { count: badge })}
+              </span>
+            )}
           </div>
         );
       })}

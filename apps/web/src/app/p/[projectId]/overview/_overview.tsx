@@ -10,8 +10,16 @@
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import {
+  Database,
+  FileCheck2,
+  ListTodo,
+  SearchCheck,
+  Target,
+  type LucideIcon,
+} from "lucide-react";
+import {
   Badge,
-  Card,
+  DarkPanel,
   Panel,
   Spinner,
   StatusPill,
@@ -77,6 +85,19 @@ function contextTone(status: Project["contextStatus"]): StatusTone {
     case "complete":
       return "success";
     case "draft":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+function snapshotTone(
+  availability: NonNullable<OverviewView["latestSnapshot"]>["availability"],
+): StatusTone {
+  switch (availability) {
+    case "available":
+      return "success";
+    case "partial":
       return "warning";
     default:
       return "neutral";
@@ -311,10 +332,8 @@ function MetricStrip({ view }: { readonly view: OverviewView }) {
   return (
     <dl className={styles.metrics}>
       {metrics.map((metric) => (
-        <Card
+        <div
           key={metric.key}
-          tone={metric.tone}
-          padding="md"
           role="group"
           aria-label={metric.label}
           className={cx(styles.metric, METRIC_TONE_CLASS[metric.tone])}
@@ -335,22 +354,66 @@ function MetricStrip({ view }: { readonly view: OverviewView }) {
           {metric.detail ? (
             <dd className={styles.metricDetail}>{metric.detail}</dd>
           ) : null}
-        </Card>
+        </div>
       ))}
     </dl>
   );
 }
 
-function SignalRail({ view }: { readonly view: OverviewView }) {
+interface SignalStep {
+  readonly key: "context" | "sources" | "diagnosis" | "plan" | "delivery";
+  readonly href: string;
+  readonly label: string;
+  readonly detail: string;
+  readonly tone: StatusTone;
+  readonly available: boolean;
+  readonly icon: LucideIcon;
+}
+
+function SignalRail({
+  projectId,
+  view,
+}: {
+  readonly projectId: string;
+  readonly view: OverviewView;
+}) {
   const t = useTranslations("overview");
+  const tNav = useTranslations("nav");
+  const tContextStatus = useTranslations("contextStatus");
   const tCoverage = useTranslations("coverage");
   const tActionStatus = useTranslations("actionStatus");
   const tStudio = useTranslations("studio");
   const overall = coverageOverallMeta(view.coverage.overall);
   const action = view.topActions[0] ?? null;
-  const steps = [
+  const snapshot = view.latestSnapshot;
+  const steps: readonly SignalStep[] = [
+    {
+      key: "context",
+      href: `/p/${projectId}/context`,
+      label: tNav("context"),
+      tone: contextTone(view.project.contextStatus),
+      available: view.project.contextStatus === "complete",
+      detail: tContextStatus(view.project.contextStatus),
+      icon: Target,
+    },
+    {
+      key: "sources",
+      href: `/p/${projectId}/sources`,
+      label: tNav("sources"),
+      tone: snapshot ? snapshotTone(snapshot.availability) : "neutral",
+      available: snapshot !== null && snapshot.availability !== "unavailable",
+      detail: snapshot
+        ? snapshot.availability === "available"
+          ? t("available")
+          : snapshot.availability === "partial"
+            ? tCoverage("partial")
+            : t("unavailable")
+        : t("unavailable"),
+      icon: Database,
+    },
     {
       key: "diagnosis",
+      href: `/p/${projectId}/diagnosis`,
       label: t("signalRail.diagnosis"),
       tone: overall.tone,
       available: view.coverage.overall !== "unavailable",
@@ -358,16 +421,20 @@ function SignalRail({ view }: { readonly view: OverviewView }) {
         view.coverage.overall !== "unavailable"
           ? tCoverage(overall.labelKey)
           : t("signalRail.noDiagnosis"),
+      icon: SearchCheck,
     },
     {
-      key: "action",
-      label: t("signalRail.action"),
+      key: "plan",
+      href: `/p/${projectId}/plan`,
+      label: tNav("plan"),
       tone: action ? ACTION_STATUS_TONE[action.status] : "neutral",
       available: action !== null,
       detail: action ? tActionStatus(action.status) : t("signalRail.noAction"),
+      icon: ListTodo,
     },
     {
       key: "delivery",
+      href: `/p/${projectId}/studio`,
       label: t("signalRail.delivery"),
       tone: view.deliveryFocus
         ? artifactStatusTone(view.deliveryFocus.status)
@@ -376,8 +443,9 @@ function SignalRail({ view }: { readonly view: OverviewView }) {
       detail: view.deliveryFocus
         ? tStudio(`status.${view.deliveryFocus.status}`)
         : t("signalRail.noDelivery"),
+      icon: FileCheck2,
     },
-  ] as const;
+  ];
 
   return (
     <Panel
@@ -396,23 +464,34 @@ function SignalRail({ view }: { readonly view: OverviewView }) {
         </div>
       </div>
       <ol className={styles.signalRail}>
-        {steps.map((step, index) => (
-          <li
-            key={step.key}
-            className={cx(
-              styles.signalStep,
-              !step.available && styles.signalStepUnavailable,
-            )}
-          >
-            <span className={styles.signalNumber} aria-hidden="true">
-              {index + 1}
-            </span>
-            <div className={styles.signalCopy}>
-              <span className={styles.signalLabel}>{step.label}</span>
-              <StatusPill tone={step.tone}>{step.detail}</StatusPill>
-            </div>
-          </li>
-        ))}
+        {steps.map((step, index) => {
+          const Icon = step.icon;
+          return (
+            <li
+              key={step.key}
+              className={cx(
+                styles.signalStep,
+                !step.available && styles.signalStepUnavailable,
+              )}
+            >
+              <Link href={step.href} className={styles.signalLink}>
+                <span className={styles.signalNumber} aria-hidden="true">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span className={styles.signalTrack} aria-hidden="true">
+                  <span className={styles.signalIcon}>
+                    <Icon size={18} strokeWidth={1.8} />
+                  </span>
+                </span>
+                <span className={styles.signalCopy}>
+                  <span className={styles.signalLabel}>{step.label}</span>
+                  <strong className={styles.signalDetail}>{step.detail}</strong>
+                </span>
+                <StatusPill tone={step.tone}>{step.detail}</StatusPill>
+              </Link>
+            </li>
+          );
+        })}
       </ol>
     </Panel>
   );
@@ -431,15 +510,17 @@ function HighestActionPanel({
   const tActionStatus = useTranslations("actionStatus");
   const tPriority = useTranslations("priorityBand");
   return (
-    <Panel
-      tone="amber"
+    <DarkPanel
       padding="lg"
       className={styles.actionPanel}
       aria-labelledby="sf-highest-action-title"
     >
+      <span className={styles.actionOrbit} aria-hidden="true" />
       <div className={styles.sectionHead}>
         <div>
-          <span className="sf-eyebrow">{t("highestAction.eyebrow")}</span>
+          <span className={styles.actionEyebrow}>
+            {t("highestAction.eyebrow")}
+          </span>
           <h2 id="sf-highest-action-title" className={styles.panelTitle}>
             {t("highestAction.title")}
           </h2>
@@ -485,15 +566,26 @@ function HighestActionPanel({
           </div>
         </div>
       ) : (
-        <p className={styles.unavailableCopy}>{t("highestAction.empty")}</p>
+        <div className={styles.actionEmpty}>
+          <p className={styles.unavailableCopy}>{t("highestAction.empty")}</p>
+          <Link
+            href={`/p/${projectId}/diagnosis`}
+            className={styles.inlineLink}
+          >
+            {t("reviewDiagnosis")}
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
       )}
-    </Panel>
+    </DarkPanel>
   );
 }
 
 function EvidenceFocusPanel({
+  projectId,
   evidence,
 }: {
+  readonly projectId: string;
   readonly evidence: readonly OverviewEvidence[];
 }) {
   const t = useTranslations("overview");
@@ -526,18 +618,20 @@ function EvidenceFocusPanel({
       </div>
       {evidence.length > 0 ? (
         <div className={styles.focusBody}>
-          <strong className={styles.focusValue}>
-            {t("evidenceFocus.count", { count: evidence.length })}
-          </strong>
-          {observed && latestIso ? (
-            <p className={styles.focusMeta}>
-              {t("evidenceFocus.latestObserved", { date: observed })}
-            </p>
-          ) : null}
-          <div className={styles.providerRow}>
-            <span className={styles.detailLabel}>
-              {t("evidenceFocus.sources")}
-            </span>
+          <div className={styles.focusSummary}>
+            <div>
+              <strong className={styles.focusValue}>
+                {t("evidenceFocus.count", { count: evidence.length })}
+              </strong>
+              {observed && latestIso ? (
+                <p
+                  className={styles.focusMeta}
+                  data-testid="overview-dynamic-value"
+                >
+                  {t("evidenceFocus.latestObserved", { date: observed })}
+                </p>
+              ) : null}
+            </div>
             <span className={styles.badgeRow}>
               {providers.map((provider) => (
                 <Badge key={provider} tone="accent">
@@ -546,9 +640,55 @@ function EvidenceFocusPanel({
               ))}
             </span>
           </div>
+          <ul className={styles.evidenceList}>
+            {evidence.map((item) => {
+              const itemDate = formatDate(item.observedAt, locale);
+              return (
+                <li key={item.id} className={styles.evidenceItem}>
+                  <span
+                    className={cx(
+                      styles.evidenceMark,
+                      item.availability === "available" &&
+                        styles.evidenceMarkReady,
+                    )}
+                    aria-hidden="true"
+                  />
+                  <div className={styles.evidenceCopy}>
+                    <span className={styles.evidenceMeta}>
+                      {providerLabel(item.sourceProvider, tProvider)}
+                      {itemDate ? (
+                        <span data-testid="overview-dynamic-value">
+                          {` · ${itemDate}`}
+                        </span>
+                      ) : null}
+                    </span>
+                    <strong>{item.claim}</strong>
+                    <span>{item.method}</span>
+                  </div>
+                  <Badge>{item.grade}</Badge>
+                </li>
+              );
+            })}
+          </ul>
+          <Link
+            href={`/p/${projectId}/diagnosis`}
+            className={styles.inlineLink}
+          >
+            {t("reviewDiagnosis")}
+            <span aria-hidden="true">→</span>
+          </Link>
         </div>
       ) : (
-        <p className={styles.unavailableCopy}>{t("evidenceFocus.empty")}</p>
+        <div className={styles.focusEmpty}>
+          <p className={styles.unavailableCopy}>{t("evidenceFocus.empty")}</p>
+          <Link
+            href={`/p/${projectId}/diagnosis`}
+            className={styles.inlineLink}
+          >
+            {t("reviewDiagnosis")}
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
       )}
     </Panel>
   );
@@ -591,21 +731,37 @@ function DeliveryFocusPanel({
       </div>
       {delivery ? (
         <div className={styles.focusBody}>
-          <strong className={styles.focusValue}>
-            {tStudio(`artifactType.${delivery.artifactType}`)}
-          </strong>
-          {updated ? (
-            <p className={styles.focusMeta}>
-              {t("deliveryFocus.updated", { date: updated })}
-            </p>
-          ) : null}
+          <div className={styles.deliveryCard}>
+            <span className={styles.deliveryMark} aria-hidden="true">
+              <FileCheck2 size={19} strokeWidth={1.8} />
+            </span>
+            <div className={styles.deliveryCopy}>
+              <strong className={styles.focusValue}>
+                {tStudio(`artifactType.${delivery.artifactType}`)}
+              </strong>
+              {updated ? (
+                <p
+                  className={styles.focusMeta}
+                  data-testid="overview-dynamic-value"
+                >
+                  {t("deliveryFocus.updated", { date: updated })}
+                </p>
+              ) : null}
+            </div>
+          </div>
           <Link href={`/p/${projectId}/studio`} className={styles.inlineLink}>
             {t("deliveryFocus.openStudio")}
             <span aria-hidden="true">→</span>
           </Link>
         </div>
       ) : (
-        <p className={styles.unavailableCopy}>{t("deliveryFocus.empty")}</p>
+        <div className={styles.focusEmpty}>
+          <p className={styles.unavailableCopy}>{t("deliveryFocus.empty")}</p>
+          <Link href={`/p/${projectId}/studio`} className={styles.inlineLink}>
+            {t("deliveryFocus.openStudio")}
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
       )}
     </Panel>
   );
@@ -659,6 +815,80 @@ function CoveragePanel({ coverage }: { readonly coverage: Coverage }) {
   );
 }
 
+function EvidenceFooter({ view }: { readonly view: OverviewView }) {
+  const t = useTranslations("overview");
+  const locale = useLocale();
+  const snapshot = view.latestSnapshot;
+  const windowStart = snapshot?.sourceWindow.start
+    ? formatDate(snapshot.sourceWindow.start, locale)
+    : null;
+  const windowEnd = snapshot?.sourceWindow.end
+    ? formatDate(snapshot.sourceWindow.end, locale)
+    : null;
+  const captured = snapshot ? formatDate(snapshot.capturedAt, locale) : null;
+  const limitations = [
+    ...view.coverage.limitations,
+    ...(snapshot?.limitation ? [snapshot.limitation] : []),
+  ].filter((value, index, values) => {
+    const normalized = value.trim();
+    return normalized.length > 0 && values.indexOf(value) === index;
+  });
+
+  return (
+    <footer
+      className={styles.evidenceFooter}
+      data-testid="overview-evidence-footer"
+    >
+      <div className={styles.footerFact}>
+        <span className={styles.footerLabel}>
+          {t("footer.analysisWindow")}
+        </span>
+        <strong className={styles.footerValue}>
+          {windowStart || windowEnd ? (
+            <>
+              {windowStart && snapshot?.sourceWindow.start ? (
+                <time dateTime={snapshot.sourceWindow.start}>{windowStart}</time>
+              ) : null}
+              {windowStart && windowEnd ? (
+                <span aria-hidden="true"> — </span>
+              ) : null}
+              {windowEnd && snapshot?.sourceWindow.end ? (
+                <time dateTime={snapshot.sourceWindow.end}>{windowEnd}</time>
+              ) : null}
+            </>
+          ) : (
+            t("unavailable")
+          )}
+        </strong>
+      </div>
+      <div className={styles.footerFact}>
+        <span className={styles.footerLabel}>
+          {t("footer.latestSnapshot")}
+        </span>
+        <strong className={styles.footerValue}>
+          {captured && snapshot ? (
+            <time dateTime={snapshot.capturedAt}>{captured}</time>
+          ) : (
+            t("unavailable")
+          )}
+        </strong>
+      </div>
+      <div className={cx(styles.footerFact, styles.footerLimitations)}>
+        <span className={styles.footerLabel}>{t("footer.limitations")}</span>
+        {limitations.length > 0 ? (
+          <ul className={styles.footerLimitationList}>
+            {limitations.map((limitation) => (
+              <li key={limitation}>{limitation}</li>
+            ))}
+          </ul>
+        ) : (
+          <strong className={styles.footerValue}>{t("unavailable")}</strong>
+        )}
+      </div>
+    </footer>
+  );
+}
+
 function OverviewContent({
   projectId,
   view,
@@ -676,20 +906,26 @@ function OverviewContent({
         />
       ) : null}
       <MetricStrip view={view} />
-      <SignalRail view={view} />
-      <HighestActionPanel
-        projectId={projectId}
-        action={view.topActions[0] ?? null}
-        evidenceCount={view.topActionEvidence.length}
-      />
+      <div className={styles.narrativeGrid}>
+        <SignalRail projectId={projectId} view={view} />
+        <HighestActionPanel
+          projectId={projectId}
+          action={view.topActions[0] ?? null}
+          evidenceCount={view.topActionEvidence.length}
+        />
+      </div>
       <div className={styles.focusGrid}>
-        <EvidenceFocusPanel evidence={view.topActionEvidence} />
+        <EvidenceFocusPanel
+          projectId={projectId}
+          evidence={view.topActionEvidence}
+        />
         <DeliveryFocusPanel
           projectId={projectId}
           delivery={view.deliveryFocus}
         />
       </div>
       <CoveragePanel coverage={view.coverage} />
+      <EvidenceFooter view={view} />
     </div>
   );
 }

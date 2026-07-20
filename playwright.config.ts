@@ -38,7 +38,21 @@ export default defineConfig({
     ? [["./e2e/real-global-teardown.ts"], ["github"], ["list"]]
     : [["./e2e/real-global-teardown.ts"], ["list"]],
   timeout: 60_000,
-  expect: { timeout: 10_000 },
+  expect: {
+    timeout: 10_000,
+    toHaveScreenshot: {
+      // CI runs Chromium on Linux while product review runs on macOS. The
+      // bundled web fonts keep layout stable; a small pixel ratio absorbs only
+      // platform rasterisation noise while still failing structural drift.
+      pathTemplate:
+        "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}",
+      threshold: 0.2,
+      maxDiffPixelRatio: 0.02,
+      animations: "disabled",
+      caret: "hide",
+      scale: "css",
+    },
+  },
   use: {
     baseURL: BASE_URL,
     trace: "on-first-retry",

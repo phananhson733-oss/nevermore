@@ -321,12 +321,28 @@
       "empty": "该行动尚未关联交付物。",
       "openStudio": "打开 Studio"
     },
+    "footer": {
+      "analysisWindow": "分析窗口",
+      "latestSnapshot": "最新快照",
+      "limitations": "限制说明"
+    },
     "reviewDiagnosis": "查看诊断",
     "previewReport": "预览报告"
   },
   "appShell": {
     "projectStage": "项目阶段",
     "localeSwitch": "切换语言",
+    "switchProject": "切换项目",
+    "programTitle": "90 天计划",
+    "programDay": "第 {day} 天，共 {total} 天",
+    "programProgress": "90 天计划进度",
+    "diagnosisBadge": "已确认诊断 {count} 项",
+    "studioBadge": "执行物 {count} 项",
+    "productTools": "产品工具",
+    "help": "帮助",
+    "settings": "设置",
+    "account": "账户",
+    "accountMenu": "账户菜单",
     "comingSoon": "将在后续阶段开放",
     "skipToContent": "跳到主内容",
     "projectSections": "项目分区",

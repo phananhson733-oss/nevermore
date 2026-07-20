@@ -82,28 +82,32 @@ export function verticalDefinition(
   if (vertical === "b2b") {
     return {
       vertical,
-      clientName: `Northstar ${suffix}`,
-      projectName: `Northstar B2B acceptance ${suffix}`,
+      clientName: `RelayOps ${suffix}`,
+      projectName: `RelayOps growth workspace ${suffix}`,
       // Public address literals avoid both DNS and outbound HTTP in this suite.
       siteUrl: fixtureOrigin,
-      productName: "Northstar Analytics",
-      oneLineDescription: "B2B revenue analytics for growth and sales teams.",
+      productName: "RelayOps",
+      oneLineDescription:
+        "A B2B revenue operations workspace that turns first-party evidence into accountable growth workflows.",
       customerModel: "b2b",
       businessProfile: "b2b_saas",
-      segment: "Mid-market revenue teams",
-      personaName: "Revenue operations lead",
-      personaContext: "Owns pipeline reporting and forecasting",
-      personaJob: "Unify marketing and sales performance",
-      personaPain: "Fragmented attribution data",
-      useCase: "Automated revenue forecasting",
-      offer: "Quantum cryptography residency compliance audit",
-      differentiator: "Auditable first-party revenue models",
+      segment: "Mid-market B2B software companies with distributed revenue teams",
+      personaName: "Revenue operations director",
+      personaContext:
+        "Owns pipeline quality, lifecycle reporting, and the handoff between marketing and sales",
+      personaJob: "Turn fragmented growth signals into an execution-ready operating plan",
+      personaPain:
+        "Qualified demand is hidden across disconnected analytics, content, and conversion workflows",
+      useCase: "Prioritize and ship evidence-backed organic growth work",
+      offer: "A 90-day connected growth program for revenue operations teams",
+      differentiator:
+        "Every recommendation is traceable to immutable first-party evidence and an accountable owner",
       conversionLabel: "Book a demo",
       conversionType: "demo",
       conversionPath: "/demo",
-      priorityProduct: "Revenue analytics platform",
-      keywordCluster: "revenue-forecasting-automation",
-      keywordPhrase: "revenue forecasting automation",
+      priorityProduct: "Revenue operations workflow platform",
+      keywordCluster: "revenue-operations-workflow",
+      keywordPhrase: "revenue operations workflow",
     };
   }
   return {
