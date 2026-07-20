@@ -105,7 +105,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/signalframe_ci
-      E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/signalframe_ci
+      E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/signalframe_e2e_ci
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -175,8 +175,24 @@ jobs:
       - name: Install Chromium for real responsive and a11y E2E
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Prepare isolated database for real browser E2E
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          PGPASSWORD: postgres
+        run: |
+          createdb --host 127.0.0.1 --port 5432 --username postgres signalframe_e2e_ci
+          pnpm db:migrate
+
       - name: Run database-backed responsive and a11y E2E
         run: pnpm test:e2e:real
+
+      - name: Drop isolated real browser E2E database
+        if: ${{ always() }}
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          dropdb --if-exists --force --host 127.0.0.1 --port 5432
+          --username postgres signalframe_e2e_ci
 
   build-and-mock-e2e:
     name: Production build, worker image, and isolated mock E2E
