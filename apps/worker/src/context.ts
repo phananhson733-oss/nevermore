@@ -35,7 +35,37 @@ export interface WorkerContext {
     readonly baseUrl?: string;
     readonly authScheme?: "bearer" | "api-key";
   };
+  /** Whether optional non-English/Chinese finding localization may call an LLM. */
+  readonly findingSummariesEnabled: boolean;
   readonly logger: Logger;
+  /** Aborted synchronously when process shutdown begins. */
+  readonly signal?: AbortSignal;
+}
+
+/** Canonical correlation keys carried by every project-scoped queue job. */
+export interface RunContextPayload {
+  readonly runId: string;
+  readonly workspaceId: string;
+  readonly projectId: string;
+}
+
+/**
+ * Bind canonical queue correlation keys to the logger context. The structured
+ * logger deliberately drops these reserved keys from ordinary event fields,
+ * so passing them only as fields would make production job logs untraceable.
+ */
+export function withRunContext(
+  ctx: WorkerContext,
+  payload: RunContextPayload,
+): WorkerContext {
+  return {
+    ...ctx,
+    logger: ctx.logger.child({
+      runId: payload.runId,
+      workspaceId: payload.workspaceId,
+      projectId: payload.projectId,
+    }),
+  };
 }
 
 export interface WorkerStorageFactoryOptions {
@@ -59,6 +89,7 @@ export function buildWorkerContext(input: {
   boss: PgBoss;
   env: WorkerEnv;
   logger: Logger;
+  signal: AbortSignal;
 }): WorkerContext {
   return {
     db: input.db.db,
@@ -71,6 +102,9 @@ export function buildWorkerContext(input: {
       clientSecret: input.env.GOOGLE_OAUTH_CLIENT_SECRET,
     },
     openai: resolveLlmClientConfig(input.env),
+    findingSummariesEnabled:
+      input.env.FINDING_SUMMARIES_ENABLED === "true",
     logger: input.logger,
+    signal: input.signal,
   };
 }

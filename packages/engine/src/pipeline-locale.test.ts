@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { ACTION_TEMPLATES, resolveActionCopy } from "./action-templates.ts";
 import { DiagnosticContext } from "./context.ts";
 import { parseIcp } from "./icp.ts";
 import { runPipeline } from "./pipeline.ts";
+import { buildSummary } from "./summaries.ts";
 
 async function coverageFor(locale: string) {
   const ctx = DiagnosticContext.build({
@@ -40,4 +42,41 @@ describe("diagnostic coverage output locale", () => {
       "Crawl was partial; some link-graph views are incomplete.",
     );
   });
+
+  it.each(["zh-TW", "zh-HK", "zh-Hant", "fr-FR"])(
+    "does not mislabel Simplified-Chinese coverage copy as %s",
+    async (locale) => {
+      expect((await coverageFor(locale)).limitations[0]).toBe(
+        "Crawl was partial; some link-graph views are incomplete.",
+      );
+    },
+  );
+});
+
+describe("deterministic delivery-locale fallbacks", () => {
+  const template = ACTION_TEMPLATES["TECH-HTTP-001"];
+
+  it.each(["zh-CN", "ZH-cn"])(
+    "uses the zh-CN registry only for semantic zh-CN (%s)",
+    (locale) => {
+      expect(resolveActionCopy(template, locale)).toMatchObject({
+        contentLocale: "zh-CN",
+        copy: { title: "修复 HTTP 错误响应" },
+      });
+      expect(buildSummary("TECH-HTTP-001", { count: 1, status: 404 }, locale))
+        .toMatchObject({ summaryLocale: "zh-CN" });
+    },
+  );
+
+  it.each(["en", "fr-FR", "zh-TW", "zh-HK", "zh-Hant"])(
+    "uses the English action/finding fallback for %s",
+    (locale) => {
+      expect(resolveActionCopy(template, locale)).toMatchObject({
+        contentLocale: "en",
+        copy: { title: "Fix broken or error HTTP responses" },
+      });
+      expect(buildSummary("TECH-HTTP-001", { count: 1, status: 404 }, locale))
+        .toMatchObject({ summaryLocale: "en" });
+    },
+  );
 });

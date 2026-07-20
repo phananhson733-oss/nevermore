@@ -1,0 +1,188 @@
+import { describe, expect, it } from "vitest";
+import type { ArtifactDto } from "@/lib/services/artifact-mappers";
+import type {
+  ActionDto,
+  FindingDto,
+} from "@/lib/services/diagnostic-mappers";
+import type { DataSnapshotDto } from "@/lib/services/source-mappers";
+import { buildOverviewHighlights } from "@/lib/services/workspace-view";
+
+const NOW = "2026-07-18T12:00:00.000Z";
+
+function action(
+  id: string,
+  findingId: string,
+  priorityBand: string,
+  status = "planned",
+): ActionDto {
+  return {
+    id,
+    findingId,
+    templateId: "fix_http_status.v1",
+    title: `Action ${id}`,
+    description: "Canonical action copy.",
+    contentLocale: "en",
+    priorityBand,
+    roadmapLane: "now",
+    status,
+    effort: "small",
+    risk: "low",
+    expectedOutcome: "Canonical outcome.",
+    revision: 1,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
+function snapshot(
+  id: string,
+  capturedAt: string,
+  availability = "available",
+): DataSnapshotDto {
+  return {
+    id,
+    provider: "crawl",
+    datasetKey: "crawl_pages",
+    schemaVersion: "1.0.0",
+    methodVersion: "crawl-v1",
+    capturedAt,
+    sourceWindow: { start: null, end: null },
+    availability,
+    limitation: "Static HTML only.",
+    rowCount: 12,
+    checksum: `sha256:${id}`,
+  };
+}
+
+function finding(id: string, evidenceId: string): FindingDto {
+  return {
+    id,
+    ruleId: "TECH-HTTP-001",
+    ruleVersion: 1,
+    domain: "technical_seo",
+    titleKey: "finding.tech.http_status",
+    titleArgs: {},
+    summary: "A product page returned a server error.",
+    summaryLocale: "en",
+    severity: "high",
+    confidence: "high",
+    reviewState: "confirmed",
+    reviewRevision: 1,
+    active: true,
+    regressed: false,
+    subjectRefs: [],
+    evidence: [
+      {
+        id: evidenceId,
+        sourceProvider: "crawl",
+        origin: "crawl_pages",
+        method: "HTTP response inspection",
+        grade: "A",
+        availability: "available",
+        support: "supports",
+        claim: "The URL returned HTTP 500.",
+        subjectRefs: [],
+        observedAt: NOW,
+        limitation: "One captured response.",
+        snapshotId: "snapshot-new",
+        analysisInvocationId: null,
+      },
+    ],
+    firstSeenAt: NOW,
+    lastSeenAt: NOW,
+    resolvedAt: null,
+  };
+}
+
+function artifact(
+  id: string,
+  actionId: string,
+  status = "draft",
+): ArtifactDto {
+  return {
+    id,
+    actionId,
+    artifactType: "technical_ticket",
+    status,
+    generationMode: "template",
+    outputLocale: "en",
+    currentRevision: 1,
+    validationState: "valid",
+    current: null,
+    activeRun: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
+describe("buildOverviewHighlights", () => {
+  it("projects a ready snapshot → highest-priority action → evidence → delivery chain", () => {
+    const medium = action("medium", "finding-medium", "medium");
+    const critical = action("critical", "finding-critical", "critical", "in_progress");
+    const result = buildOverviewHighlights({
+      // Repository order is update recency, not priority. The read model must
+      // select from the canonical persisted bands without re-deriving a score.
+      actions: [medium, critical],
+      snapshots: [
+        snapshot("snapshot-old", "2026-07-17T12:00:00.000Z"),
+        snapshot("snapshot-new", NOW),
+      ],
+      findings: [
+        finding("finding-medium", "evidence-medium"),
+        finding("finding-critical", "evidence-critical"),
+      ],
+      artifacts: [
+        artifact("artifact-medium", medium.id, "ready"),
+        artifact("artifact-critical", critical.id, "draft"),
+      ],
+    });
+
+    expect(result.topActions.map((item) => item.id)).toEqual([
+      "critical",
+      "medium",
+    ]);
+    expect(result.latestSnapshot?.id).toBe("snapshot-new");
+    expect(result.topActionEvidence.map((item) => item.id)).toEqual([
+      "evidence-critical",
+    ]);
+    expect(result.deliveryFocus).toEqual({
+      artifactId: "artifact-critical",
+      actionId: "critical",
+      artifactType: "technical_ticket",
+      status: "draft",
+      updatedAt: NOW,
+    });
+  });
+
+  it("keeps a genuinely empty project unavailable instead of inventing values", () => {
+    expect(
+      buildOverviewHighlights({
+        actions: [],
+        snapshots: [],
+        findings: [],
+        artifacts: [],
+      }),
+    ).toEqual({
+      topActions: [],
+      latestSnapshot: null,
+      topActionEvidence: [],
+      deliveryFocus: null,
+    });
+  });
+
+  it("keeps partial source data while leaving missing evidence and delivery unavailable", () => {
+    const blocked = action("blocked", "missing-finding", "high", "blocked");
+    const partial = snapshot("snapshot-partial", NOW, "partial");
+    const result = buildOverviewHighlights({
+      actions: [blocked],
+      snapshots: [partial],
+      findings: [],
+      artifacts: [],
+    });
+
+    expect(result.latestSnapshot).toBe(partial);
+    expect(result.topActions).toEqual([blocked]);
+    expect(result.topActionEvidence).toEqual([]);
+    expect(result.deliveryFocus).toBeNull();
+  });
+});

@@ -10,11 +10,33 @@ import { CompleteIcpProfileInput, DraftIcpProfilePatch } from "./icp.ts";
 
 const unique = <T>(items: readonly T[]): boolean => new Set(items).size === items.length;
 
-export const CreateProjectRequest = z
+const SiteUrl = z.url().max(2048);
+
+function isSiteOriginUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username === "" &&
+      url.password === "" &&
+      url.pathname === "/" &&
+      url.search === "" &&
+      url.hash === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validated historical wire shape. The route preserves a previously accepted
+ * URL value until the service has checked for a completed idempotency replay.
+ */
+export const CreateProjectWireRequest = z
   .object({
     clientName: z.string().min(1).max(160),
     projectName: z.string().min(1).max(160),
-    siteUrl: z.url().max(2048),
+    siteUrl: SiteUrl,
     marketCodes: z
       .array(MarketCode)
       .min(1)
@@ -28,6 +50,22 @@ export const CreateProjectRequest = z
     defaultDeliveryLocale: Bcp47Locale,
   })
   .strict();
+export type CreateProjectWireRequest = z.infer<
+  typeof CreateProjectWireRequest
+>;
+
+/** New project commands must preserve the submitted target as an HTTP(S) origin. */
+export const CreateProjectRequest = CreateProjectWireRequest.superRefine(
+  (value, ctx) => {
+    if (!isSiteOriginUrl(value.siteUrl)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["siteUrl"],
+        message: "siteUrl must be an origin-only http(s) URL",
+      });
+    }
+  },
+);
 export type CreateProjectRequest = z.infer<typeof CreateProjectRequest>;
 
 /** Optimistic-concurrency draft save; `baseVersion` is carried in the body (spec §5.3). */

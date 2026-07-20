@@ -391,10 +391,41 @@ VALUES (
   '00000000-0000-4000-8000-000000000101'
 );
 
+INSERT INTO app.async_runs (
+  id, workspace_id, project_id, kind, status, active_key, attempt_count,
+  initiated_by, started_at, completed_at
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000603',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    'artifact_generation',
+    'failed',
+    NULL,
+    1,
+    '00000000-0000-4000-8000-000000000101',
+    now(),
+    now()
+  ),
+  (
+    '00000000-0000-4000-8000-000000000604',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    'artifact_generation',
+    'queued',
+    'artifact:smoke-regeneration',
+    0,
+    '00000000-0000-4000-8000-000000000101',
+    NULL,
+    NULL
+  );
+
 -- A failed generation is allowed to have no revision; ready is not.
 INSERT INTO app.execution_artifacts (
   id, workspace_id, project_id, action_id, artifact_type, status,
-  generation_mode, output_locale, current_revision, validation_state, created_by
+  generation_mode, output_locale, current_revision, validation_state,
+  latest_generation_run_id, created_by
 )
 VALUES (
   '00000000-0000-4000-8000-000000001201',
@@ -407,6 +438,7 @@ VALUES (
   'en',
   0,
   'invalid',
+  '00000000-0000-4000-8000-000000000603',
   '00000000-0000-4000-8000-000000000101'
 );
 
@@ -436,6 +468,265 @@ BEGIN
   END;
   IF NOT rejected THEN
     RAISE EXCEPTION 'ready artifact without a revision was accepted';
+  END IF;
+END;
+$$;
+
+-- The database itself rejects bypasses of the frozen Artifact state machine.
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    UPDATE app.execution_artifacts
+    SET status = 'ready', current_revision = 1, validation_state = 'valid'
+    WHERE id = '00000000-0000-4000-8000-000000001201';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM = 'artifact status transition is not allowed' THEN
+      rejected := true;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'failed artifact transitioned directly to ready';
+  END IF;
+END;
+$$;
+
+-- Merely reusing the failed owner is not a regeneration claim.
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    UPDATE app.execution_artifacts
+    SET status = 'generating'
+    WHERE id = '00000000-0000-4000-8000-000000001201';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM = 'artifact status transition is not allowed' THEN
+      rejected := true;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'failed artifact reused its old generation Run';
+  END IF;
+END;
+$$;
+
+-- A fresh generation Run is the one legal exit from failed.
+UPDATE app.execution_artifacts
+SET status = 'generating',
+    latest_generation_run_id = '00000000-0000-4000-8000-000000000604'
+WHERE id = '00000000-0000-4000-8000-000000001201';
+
+-- Generation completion must advance exactly one revision, not jump pointers.
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    UPDATE app.execution_artifacts
+    SET status = 'draft', current_revision = 2,
+        validation_state = 'valid', content_hash = repeat('7', 64)
+    WHERE id = '00000000-0000-4000-8000-000000001201';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM = 'artifact status transition is not allowed' THEN
+      rejected := true;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'generation completion jumped more than one revision';
+  END IF;
+END;
+$$;
+
+INSERT INTO app.artifact_revisions (
+  workspace_id, project_id, artifact_id, revision, output_locale,
+  content_format, content_text, content_hash, generated_by, validation_errors
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000001201',
+  1,
+  'en',
+  'markdown',
+  '# Smoke ticket revision one',
+  repeat('7', 64),
+  'template',
+  '[]'::jsonb
+);
+
+UPDATE app.execution_artifacts
+SET status = 'draft', current_revision = 1,
+    validation_state = 'valid', content_hash = repeat('7', 64)
+WHERE id = '00000000-0000-4000-8000-000000001201';
+
+-- A status-only transition cannot smuggle a revision-pointer change.
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    UPDATE app.execution_artifacts
+    SET status = 'ready', current_revision = 2
+    WHERE id = '00000000-0000-4000-8000-000000001201';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM = 'artifact status transition is not allowed' THEN
+      rejected := true;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'draft to ready changed the revision pointer';
+  END IF;
+END;
+$$;
+
+UPDATE app.execution_artifacts
+SET status = 'ready'
+WHERE id = '00000000-0000-4000-8000-000000001201';
+
+-- Editing READY content must append exactly one new revision.
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    UPDATE app.execution_artifacts
+    SET status = 'draft'
+    WHERE id = '00000000-0000-4000-8000-000000001201';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM = 'artifact status transition is not allowed' THEN
+      rejected := true;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'ready artifact returned to draft without a revision';
+  END IF;
+END;
+$$;
+
+INSERT INTO app.artifact_revisions (
+  workspace_id, project_id, artifact_id, revision, output_locale,
+  content_format, content_text, content_hash, generated_by, validation_errors
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000001201',
+  2,
+  'zh-CN',
+  'markdown',
+  '# Smoke ticket revision two',
+  repeat('8', 64),
+  'operator',
+  '[]'::jsonb
+);
+
+UPDATE app.execution_artifacts
+SET status = 'draft', current_revision = 2,
+    validation_state = 'valid', content_hash = repeat('8', 64)
+WHERE id = '00000000-0000-4000-8000-000000001201';
+
+DO $$
+BEGIN
+  IF (
+    SELECT array_agg(output_locale ORDER BY revision)
+    FROM app.artifact_revisions
+    WHERE artifact_id = '00000000-0000-4000-8000-000000001201'
+  ) IS DISTINCT FROM ARRAY['en', 'zh-CN']::text[] THEN
+    RAISE EXCEPTION 'artifact revision output locale was not preserved';
+  END IF;
+END;
+$$;
+
+UPDATE app.execution_artifacts
+SET status = 'ready'
+WHERE id = '00000000-0000-4000-8000-000000001201';
+
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    UPDATE app.execution_artifacts
+    SET status = 'archived', current_revision = 3
+    WHERE id = '00000000-0000-4000-8000-000000001201';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM = 'artifact status transition is not allowed' THEN
+      rejected := true;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'ready to archived changed the revision pointer';
+  END IF;
+END;
+$$;
+
+UPDATE app.execution_artifacts
+SET status = 'archived'
+WHERE id = '00000000-0000-4000-8000-000000001201';
+
+DO $$
+DECLARE
+  locale_constraint_count integer;
+BEGIN
+  IF NOT app.is_bcp47_language_tag('en-US-u-hc-h12')
+     OR NOT app.is_bcp47_language_tag('x-private')
+     OR NOT app.is_bcp47_language_tag('i-klingon')
+     OR app.is_bcp47_language_tag('de-1901-1901')
+     OR app.is_bcp47_language_tag('en-a-first-a-second')
+     OR app.is_bcp47_language_tag('en-u') THEN
+    RAISE EXCEPTION 'RFC 5646 locale validation is inconsistent';
+  END IF;
+  IF NOT app.are_bcp47_language_tags(
+    ARRAY['en-US-u-hc-h12', 'x-private']::text[]
+  ) OR app.are_bcp47_language_tags(
+    ARRAY['en', 'de-1901-1901']::text[]
+  ) THEN
+    RAISE EXCEPTION 'RFC 5646 locale array validation is inconsistent';
+  END IF;
+  SELECT count(*)
+  INTO locale_constraint_count
+  FROM pg_constraint
+  WHERE connamespace = 'app'::regnamespace
+    AND conname = ANY (ARRAY[
+      'client_projects_default_delivery_locale_check',
+      'sites_language_codes_bcp47_check',
+      'diagnostic_runs_output_locale_check',
+      'findings_summary_locale_check',
+      'actions_content_locale_check',
+      'execution_artifacts_output_locale_check',
+      'artifact_revisions_output_locale_check',
+      'export_bundles_output_locale_check'
+    ]::text[])
+    AND pg_get_constraintdef(oid) LIKE '%bcp47_language_tag%';
+  IF locale_constraint_count <> 8 THEN
+    RAISE EXCEPTION 'expected eight canonical RFC 5646 constraints, found %',
+      locale_constraint_count;
+  END IF;
+  IF (
+    SELECT contract_version
+    FROM app.async_runs
+    WHERE id = '00000000-0000-4000-8000-000000000601'
+  ) IS DISTINCT FROM '2026-07-18' THEN
+    RAISE EXCEPTION 'async run contract-version default is stale';
+  END IF;
+  IF (
+    SELECT migration_version FROM app.schema_migration_version
+  ) IS DISTINCT FROM '0009_async_run_contract_version' THEN
+    RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;
 $$;

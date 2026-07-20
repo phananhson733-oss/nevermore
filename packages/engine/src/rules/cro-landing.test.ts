@@ -136,4 +136,19 @@ describe("croLandingRule (CRO-LANDING-003)", () => {
     if (result.status !== "skipped") throw new Error("expected skipped");
     expect(result.reason).toBe("missing_dataset");
   });
+
+  it("does not emit available evidence from a partial GA4 snapshot", () => {
+    const ctx = buildCtx({
+      observations: [
+        ga4Obs("https://x.com/good", landing(1000, 100)),
+        ga4Obs("https://x.com/pricing", landing(1000, 20)),
+      ],
+      coverage: { ga4: "partial" },
+    });
+
+    expect(croLandingRule.evaluate(ctx)).toEqual({
+      status: "skipped",
+      reason: "missing_dataset",
+    });
+  });
 });

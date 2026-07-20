@@ -22,8 +22,18 @@
 import { createHash } from "node:crypto";
 import { redactText } from "@sf/observability";
 import { z } from "zod";
-import type { ArtifactContent, ArtifactPromptInput, ArtifactType } from "../types.ts";
-import { ARTIFACT_FORMAT } from "../types.ts";
+import type {
+  ArtifactContent,
+  ArtifactPromptInput,
+  ArtifactType,
+  EvidenceExcerpt,
+  PromptCurrentMetadata,
+} from "../types.ts";
+import {
+  ARTIFACT_FORMAT,
+  MAX_ARTIFACT_COLLECTION_ITEMS,
+  MAX_ARTIFACT_EVIDENCE_ROWS,
+} from "../types.ts";
 
 /** Placeholder tokens a model MUST use when a value is not sourced from evidence. */
 export const UNKNOWN_PLACEHOLDERS: readonly string[] = ["unknown", "待确认", "tbd", "n/a", "未知"];
@@ -35,9 +45,57 @@ export const UNTRUSTED_CLOSE = "</UNTRUSTED_EVIDENCE>";
 /** Evidence sent to a model is an excerpt, never an unbounded canonical claim. */
 export const MAX_EVIDENCE_CLAIM_CHARS = 500;
 
+/** Crawl projection bounds mirrored at the prompt trust boundary. */
+export const MAX_CURRENT_METADATA_URL_CHARS = 2_048;
+export const MAX_CURRENT_METADATA_TITLE_CHARS = 512;
+export const MAX_CURRENT_METADATA_DESCRIPTION_CHARS = 2_048;
+
 const MAX_PROMPT_FIELD_CHARS = 4_000;
+const MAX_TARGET_QUERY_CHARS = 500;
+const MAX_EVIDENCE_REF_CHARS = 256;
+const MAX_CITED_NUMBER_FIELD_CHARS = 256;
+const MAX_RATIONALE_CHARS = 8_000;
 const UNTRUSTED_DELIMITER_VARIANT =
   /<\s*\/?\s*untrusted[\s_-]*evidence\s*>/giu;
+
+const boundedTrimmedString = (maxChars: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maxChars)
+    .refine((value) => value.trim() === value, {
+      message: "must not have leading or trailing whitespace",
+    });
+
+function assertCollectionSize(name: string, size: number, max: number): void {
+  if (size > max) {
+    throw new RangeError(`${name} must contain at most ${max} items`);
+  }
+}
+
+function assertPromptSectionSize(name: string, values: readonly string[]): void {
+  assertCollectionSize(name, values.length, MAX_ARTIFACT_COLLECTION_ITEMS);
+}
+
+function assertPromptEvidenceSize(evidence: readonly EvidenceExcerpt[]): void {
+  assertCollectionSize(
+    "prompt evidence",
+    evidence.length,
+    MAX_ARTIFACT_EVIDENCE_ROWS,
+  );
+  for (const [index, row] of evidence.entries()) {
+    assertPromptSectionSize(`evidence[${index}].subjectRefs`, row.subjectRefs);
+  }
+}
+
+function assertPromptInputCardinality(input: ArtifactPromptInput): void {
+  assertPromptSectionSize("icp.offers", input.icp.offers);
+  assertPromptSectionSize("icp.useCases", input.icp.useCases);
+  assertPromptSectionSize("icp.differentiators", input.icp.differentiators);
+  assertPromptSectionSize("icp.marketCodes", input.icp.marketCodes);
+  assertPromptSectionSize("finding.subjectRefs", input.finding.subjectRefs);
+  assertPromptEvidenceSize(input.evidence);
+}
 
 /**
  * Preserve hostile delimiter text as visible data without allowing it to become
@@ -72,36 +130,86 @@ function safePromptList(values: readonly string[]): string[] {
   return values.map((value) => safePromptText(value));
 }
 
+/** Convert model-style unknown tokens to the canonical nullable metadata form. */
+export function canonicalizeCurrentMetadataValue(
+  value: string | null,
+): string | null {
+  if (value === null) return null;
+  const normalized = value.trim().toLowerCase();
+  return UNKNOWN_PLACEHOLDERS.some(
+    (placeholder) => normalized === placeholder.toLowerCase(),
+  )
+    ? null
+    : value;
+}
+
+/** The exact bounded/sanitized current metadata exposed to and echoed by a model. */
+export function safePromptCurrentMetadata(
+  value: PromptCurrentMetadata,
+): PromptCurrentMetadata {
+  const safeValue = (raw: string | null, maxChars: number): string | null =>
+    raw === null ? null : safePromptText(raw, maxChars);
+  return {
+    url: safeValue(value.url, MAX_CURRENT_METADATA_URL_CHARS),
+    currentTitle: safeValue(
+      value.currentTitle,
+      MAX_CURRENT_METADATA_TITLE_CHARS,
+    ),
+    currentDescription: safeValue(
+      value.currentDescription,
+      MAX_CURRENT_METADATA_DESCRIPTION_CHARS,
+    ),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Output envelope schema (what the model returns)
 // ---------------------------------------------------------------------------
 
-const citedNumberSchema = z.object({
-  /** The exact number as it appears in the artifact body, e.g. "45%", "1,204". */
-  value: z.string().min(1),
-  /** The `evidenceId` this number was taken from. Must exist in the input. */
-  evidenceId: z.string().min(1),
-});
+const citedNumberSchema = z
+  .object({
+    /** The exact number as it appears in the artifact body, e.g. "45%", "1,204". */
+    value: boundedTrimmedString(MAX_CITED_NUMBER_FIELD_CHARS),
+    /** The `evidenceId` this number was taken from. Must exist in the input. */
+    evidenceId: boundedTrimmedString(MAX_CITED_NUMBER_FIELD_CHARS),
+  })
+  .strict();
 
 /** Envelope for `content_brief` / `technical_ticket`: a markdown body + citations. */
-export const markdownEnvelopeSchema = z.object({
-  markdown: z.string().min(1),
-  evidenceRefs: z.array(z.string().min(1)),
-  citedNumbers: z.array(citedNumberSchema),
-});
+export const markdownEnvelopeSchema = z
+  .object({
+    markdown: z.string().min(1),
+    evidenceRefs: z
+      .array(boundedTrimmedString(MAX_EVIDENCE_REF_CHARS))
+      .max(MAX_ARTIFACT_COLLECTION_ITEMS),
+    citedNumbers: z.array(citedNumberSchema).max(MAX_ARTIFACT_COLLECTION_ITEMS),
+  })
+  .strict();
 
 /** Envelope for `metadata_rewrite`: a structured JSON rewrite + citations. */
-export const metadataEnvelopeSchema = z.object({
-  url: z.string().min(1),
-  currentTitle: z.string(),
-  currentDescription: z.string(),
-  proposedTitle: z.string().min(1),
-  proposedDescription: z.string().min(1),
-  targetQueries: z.array(z.string()),
-  rationale: z.string(),
-  evidenceRefs: z.array(z.string().min(1)),
-  citedNumbers: z.array(citedNumberSchema),
-});
+export const metadataEnvelopeSchema = z
+  .object({
+    url: boundedTrimmedString(MAX_CURRENT_METADATA_URL_CHARS).nullable(),
+    currentTitle: boundedTrimmedString(
+      MAX_CURRENT_METADATA_TITLE_CHARS,
+    ).nullable(),
+    currentDescription: boundedTrimmedString(
+      MAX_CURRENT_METADATA_DESCRIPTION_CHARS,
+    ).nullable(),
+    proposedTitle: boundedTrimmedString(MAX_CURRENT_METADATA_TITLE_CHARS),
+    proposedDescription: boundedTrimmedString(
+      MAX_CURRENT_METADATA_DESCRIPTION_CHARS,
+    ),
+    targetQueries: z
+      .array(boundedTrimmedString(MAX_TARGET_QUERY_CHARS))
+      .max(MAX_ARTIFACT_COLLECTION_ITEMS),
+    rationale: boundedTrimmedString(MAX_RATIONALE_CHARS),
+    evidenceRefs: z
+      .array(boundedTrimmedString(MAX_EVIDENCE_REF_CHARS))
+      .max(MAX_ARTIFACT_COLLECTION_ITEMS),
+    citedNumbers: z.array(citedNumberSchema).max(MAX_ARTIFACT_COLLECTION_ITEMS),
+  })
+  .strict();
 
 export interface CitedNumber {
   readonly value: string;
@@ -146,8 +254,8 @@ function toCitedNumbers(raw: ReadonlyArray<{ value: string; evidenceId: string }
 }
 
 /**
- * Schema-validate the raw JSON the model returned for `artifactType`. Extra keys
- * are stripped (Zod default); shape/length failures are returned as issue strings
+ * Schema-validate the raw JSON the model returned for `artifactType`. Unknown
+ * keys, cardinality overflow, and shape/length failures are returned as issue strings
  * so the caller can raise a typed error instead of returning unvalidated content.
  */
 export function parseEnvelope(artifactType: ArtifactType, raw: unknown): ParseEnvelopeResult {
@@ -159,9 +267,12 @@ export function parseEnvelope(artifactType: ArtifactType, raw: unknown): ParseEn
       ok: true,
       envelope: {
         kind: "metadata_rewrite",
-        url: d.url,
-        currentTitle: d.currentTitle,
-        currentDescription: d.currentDescription,
+        // Keep the internal envelope string-safe for the downstream length
+        // gate; nullable/placeholder values become canonical null only when
+        // materialized against the source input below.
+        url: d.url ?? "unknown",
+        currentTitle: d.currentTitle ?? "unknown",
+        currentDescription: d.currentDescription ?? "unknown",
         proposedTitle: d.proposedTitle,
         proposedDescription: d.proposedDescription,
         targetQueries: [...d.targetQueries],
@@ -187,14 +298,31 @@ export function parseEnvelope(artifactType: ArtifactType, raw: unknown): ParseEn
 }
 
 /** Project a validated envelope into the persisted `ArtifactContent` (spec §10.1). */
-export function toArtifactContent(envelope: LlmArtifactEnvelope): ArtifactContent {
+export function toArtifactContent(
+  envelope: LlmArtifactEnvelope,
+  input?: ArtifactPromptInput,
+): ArtifactContent {
   if (envelope.kind === "metadata_rewrite") {
+    const source =
+      input?.artifactType === "metadata_rewrite"
+        ? input.currentMetadata
+        : null;
+    const persistedValue = (
+      field: keyof PromptCurrentMetadata,
+      value: string | null,
+    ): string | null =>
+      source?.[field] !== null && source?.[field] !== undefined
+        ? source[field]
+        : canonicalizeCurrentMetadataValue(value);
     return {
       contentFormat: ARTIFACT_FORMAT.metadata_rewrite,
       content: {
-        url: envelope.url,
-        currentTitle: envelope.currentTitle,
-        currentDescription: envelope.currentDescription,
+        url: persistedValue("url", envelope.url),
+        currentTitle: persistedValue("currentTitle", envelope.currentTitle),
+        currentDescription: persistedValue(
+          "currentDescription",
+          envelope.currentDescription,
+        ),
         proposedTitle: envelope.proposedTitle,
         proposedDescription: envelope.proposedDescription,
         targetQueries: [...envelope.targetQueries],
@@ -239,6 +367,7 @@ export function sha256Hex(input: string): string {
 
 /** sha256 of the canonical prompt input — the `inputHash` in the invocation record. */
 export function hashPromptInput(input: ArtifactPromptInput): string {
+  assertPromptInputCardinality(input);
   return sha256Hex(canonicalize(input));
 }
 
@@ -279,9 +408,9 @@ function markdownOutputContract(artifactType: ArtifactType): string {
   if (artifactType === "metadata_rewrite") {
     return [
       "Return JSON with exactly these keys:",
-      '  "url": string (the page being rewritten),',
-      '  "currentTitle": string (existing <title>, or "unknown"/"待确认" if not provided),',
-      '  "currentDescription": string (existing meta description, or "unknown"/"待确认"),',
+      '  "url": string | null (copy currentMetadata.url exactly; use null or "unknown"/"待确认" only when it is null),',
+      '  "currentTitle": string | null (copy currentMetadata.currentTitle exactly; use null or "unknown"/"待确认" only when it is null),',
+      '  "currentDescription": string | null (copy currentMetadata.currentDescription exactly; use null or "unknown"/"待确认" only when it is null),',
       '  "proposedTitle": string,',
       '  "proposedDescription": string,',
       '  "targetQueries": string[] (queries the rewrite targets),',
@@ -360,6 +489,9 @@ function buildAllowlistedContext(input: ArtifactPromptInput): Record<string, unk
       confidence: safePromptText(input.finding.confidence),
       subjectRefs: safePromptList(input.finding.subjectRefs),
     },
+    ...(input.artifactType === "metadata_rewrite"
+      ? { currentMetadata: safePromptCurrentMetadata(input.currentMetadata) }
+      : {}),
   };
 }
 
@@ -368,6 +500,7 @@ function buildAllowlistedContext(input: ArtifactPromptInput): Record<string, unk
  * UNTRUSTED block; the rest of the allowlisted context is inline JSON.
  */
 export function buildMessages(input: ArtifactPromptInput): { readonly system: string; readonly user: string } {
+  assertPromptInputCardinality(input);
   const context = buildAllowlistedContext(input);
   const operatorRequest =
     input.operatorInstructions === null

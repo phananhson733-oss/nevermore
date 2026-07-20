@@ -1,12 +1,13 @@
 import type { ProjectDto } from "@/lib/services/mappers";
+import { isLoopbackDevelopmentRuntime } from "@/lib/auth/dev";
 
 /** Reserved id used only by the database-free Playwright harness. */
 export const E2E_PROJECT_ID = "00000000-0000-4000-8000-000000000042";
 
 /**
- * The shell bypass is intentionally triple-gated: an explicit flag,
- * non-production runtime, and one reserved project id. It cannot authenticate
- * or expose a real project and is inert in every production build.
+ * The shell bypass is intentionally gated by an explicit flag, an exact
+ * loopback development origin, and one reserved project id. It cannot
+ * authenticate or expose a real project and is inert in shared environments.
  */
 export function shouldUseE2eProjectShell(
   env: Readonly<Record<string, string | undefined>>,
@@ -14,7 +15,7 @@ export function shouldUseE2eProjectShell(
 ): boolean {
   return (
     env["SF_E2E_MOCK_API"] === "true" &&
-    env["NODE_ENV"] !== "production" &&
+    isLoopbackDevelopmentRuntime(env) &&
     projectId === E2E_PROJECT_ID
   );
 }

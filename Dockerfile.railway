@@ -1,0 +1,38 @@
+FROM node:24-bookworm-slim
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+ENV NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app
+
+# One immutable image contains both the prebuilt Next web service and the
+# persistent worker. Railway's two services build this same file from the same
+# commit; the web uses the default CMD and the worker overrides only its start
+# command in Service Settings, as documented in docs/DEPLOYMENT.md.
+RUN npm install --global corepack@0.34.5 && corepack enable pnpm
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/web/package.json apps/web/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/artifacts/package.json packages/artifacts/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/db/package.json packages/db/package.json
+COPY packages/engine/package.json packages/engine/package.json
+COPY packages/i18n/package.json packages/i18n/package.json
+COPY packages/observability/package.json packages/observability/package.json
+COPY packages/sources/package.json packages/sources/package.json
+
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+# The frozen Railway topology serves the web app at the origin root. The
+# Owner-pending Vercel candidate owns the optional NEXT_PUBLIC_BASE_PATH build.
+RUN pnpm --filter @sf/web build \
+  && cp -R apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
+
+ENV NODE_ENV=production
+USER node
+
+# The standalone server reads Railway's injected PORT. Node remains PID 1.
+CMD ["node", "apps/web/.next/standalone/apps/web/server.js"]

@@ -2,6 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { signInFailed, type SignInState } from "./action-state.ts";
+import { safePostLoginPath } from "./redirect.ts";
 
 /**
  * Supabase Auth server actions (spec §14.1). Sign-in rotates the session cookie
@@ -9,16 +11,6 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * post-login redirect target is validated to be a same-origin path so it can't
  * be turned into an open redirect.
  */
-
-export interface SignInState {
-  readonly error: string | null;
-}
-
-function safeNext(raw: FormDataEntryValue | null): string {
-  const value = typeof raw === "string" ? raw : "";
-  // Only same-origin absolute paths; never a scheme-relative "//host" redirect.
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/";
-}
 
 /** `useActionState`-compatible email/password sign-in. */
 export async function signInAction(
@@ -28,15 +20,15 @@ export async function signInAction(
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   if (!email || !password) {
-    return { error: "Email and password are required." };
+    return signInFailed();
   }
-  const next = safeNext(formData.get("next"));
+  const next = safePostLoginPath(formData.get("next"));
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     // Do not leak provider internals; a generic message avoids user enumeration.
-    return { error: "Invalid email or password." };
+    return signInFailed();
   }
   redirect(next);
 }

@@ -25,9 +25,9 @@ import {
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
+import { uniqueCursorItems } from "@/lib/api/cursor-pages";
 import {
   Button,
-  EmptyState,
   Field,
   Panel,
   Spinner,
@@ -64,6 +64,7 @@ import {
   resolveSourceRunId,
   sourceRunQueryOutcome,
 } from "../_frontend-error-state.ts";
+import { ProblemNotice, ProblemState } from "../_problem-display";
 import { sourceLimitationForDisplay } from "../_view-model.ts";
 import styles from "./sources.module.css";
 
@@ -222,9 +223,11 @@ function RunWatcher({
 function Freshness({
   source,
   snapshotCount,
+  snapshotHistoryComplete,
 }: {
   readonly source: SourceConnection;
-  readonly snapshotCount: number;
+  readonly snapshotCount: number | null;
+  readonly snapshotHistoryComplete: boolean;
 }) {
   const t = useTranslations("sources");
   const tState = useTranslations("sourceState");
@@ -259,9 +262,15 @@ function Freshness({
         {source.state === "stale" ? (
           <StatusPill tone="warning">{tState("stale")}</StatusPill>
         ) : null}
-        {snapshotCount > 0 ? (
+        {snapshotCount === null ? (
           <span className={styles.snapHistory}>
-            {t("snapshotHistory", { count: snapshotCount })}
+            {t("snapshotHistoryUnavailable")}
+          </span>
+        ) : snapshotCount > 0 ? (
+          <span className={styles.snapHistory}>
+            {snapshotHistoryComplete
+              ? t("snapshotHistory", { count: snapshotCount })
+              : t("snapshotHistoryPartial", { count: snapshotCount })}
           </span>
         ) : null}
       </div>
@@ -297,9 +306,12 @@ function CrawlControls({
         {busy ? t("collecting") : t(sourceCollectLabelKey(sourceState))}
       </Button>
       {mutation.error !== null ? (
-        <span className={styles.controlError} role="alert">
-          {mutation.error.message}
-        </span>
+        <ProblemNotice
+          className={styles.controlError}
+          error={mutation.error}
+          message={t("runStatusUnavailable")}
+          compact
+        />
       ) : null}
     </div>
   );
@@ -405,9 +417,12 @@ function PropertySelection({
         </Button>
       </div>
       {connect.error !== null ? (
-        <span className={styles.controlError} role="alert">
-          {connect.error.message}
-        </span>
+        <ProblemNotice
+          className={styles.controlError}
+          error={connect.error}
+          message={t("oauthError")}
+          compact
+        />
       ) : null}
     </div>
   );
@@ -475,9 +490,12 @@ function OAuthControls({
           {busy ? t("authorizing") : t("connect")}
         </Button>
         {connect.error !== null ? (
-          <span className={styles.controlError} role="alert">
-            {connect.error.message}
-          </span>
+          <ProblemNotice
+            className={styles.controlError}
+            error={connect.error}
+            message={t("oauthError")}
+            compact
+          />
         ) : null}
       </div>
     );
@@ -502,9 +520,12 @@ function OAuthControls({
         {busy ? t("collecting") : t(sourceCollectLabelKey(source.state))}
       </Button>
       {collect.error !== null ? (
-        <span className={styles.controlError} role="alert">
-          {collect.error.message}
-        </span>
+        <ProblemNotice
+          className={styles.controlError}
+          error={collect.error}
+          message={t("runStatusUnavailable")}
+          compact
+        />
       ) : null}
     </div>
   );
@@ -710,6 +731,7 @@ function CsvControls({
   readonly runActive: boolean;
 }) {
   const t = useTranslations("sources");
+  const tCommon = useTranslations("common");
   const importer = useImportCsv(projectId);
   const [mapping, setMapping] = useState<CsvMappingState>(EMPTY_CSV_MAPPING);
   const preview = importer.preview.data;
@@ -766,9 +788,12 @@ function CsvControls({
       ) : null}
 
       {importer.preview.error !== null ? (
-        <p className={styles.alert} role="alert">
-          {importer.preview.error.message}
-        </p>
+        <ProblemNotice
+          className={styles.alert}
+          error={importer.preview.error}
+          message={tCommon("error")}
+          compact
+        />
       ) : null}
 
       {preview ? (
@@ -834,9 +859,12 @@ function CsvControls({
             ) : null}
           </div>
           {importer.confirm.error !== null ? (
-            <span className={styles.controlError} role="alert">
-              {importer.confirm.error.message}
-            </span>
+            <ProblemNotice
+              className={styles.controlError}
+              error={importer.confirm.error}
+              message={tCommon("error")}
+              compact
+            />
           ) : null}
         </div>
       ) : null}
@@ -941,13 +969,15 @@ function SourceCard({
   source,
   projectId,
   snapshotCount,
+  snapshotHistoryComplete,
   onRefetch,
   intent,
   onClearIntent,
 }: {
   readonly source: SourceConnection;
   readonly projectId: string;
-  readonly snapshotCount: number;
+  readonly snapshotCount: number | null;
+  readonly snapshotHistoryComplete: boolean;
   readonly onRefetch: () => void;
   readonly intent: PropertySelectionPhase | null;
   readonly onClearIntent: () => void;
@@ -1011,7 +1041,11 @@ function SourceCard({
         </StatusPill>
       </div>
 
-      <Freshness source={source} snapshotCount={snapshotCount} />
+      <Freshness
+        source={source}
+        snapshotCount={snapshotCount}
+        snapshotHistoryComplete={snapshotHistoryComplete}
+      />
 
       <p className={styles.limitation}>
         <span className={styles.metaLabel}>{t("limitationLabel")}</span>
@@ -1127,13 +1161,25 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     void queryClient.invalidateQueries({ queryKey: ["snapshots", projectId] });
   }, [queryClient, projectId]);
 
+  const loadedSnapshots = useMemo(
+    () => uniqueCursorItems(snapshots.data),
+    [snapshots.data],
+  );
   const snapshotCounts = useMemo(() => {
     const counts = new Map<Provider, number>();
-    for (const snapshot of snapshots.data?.data ?? []) {
+    for (const snapshot of loadedSnapshots) {
       counts.set(snapshot.provider, (counts.get(snapshot.provider) ?? 0) + 1);
     }
     return counts;
-  }, [snapshots.data]);
+  }, [loadedSnapshots]);
+  const snapshotHistoryAvailable = snapshots.data !== undefined;
+  const snapshotHistoryComplete =
+    snapshotHistoryAvailable &&
+    !snapshots.hasNextPage &&
+    !snapshots.isError &&
+    !snapshots.isFetchNextPageError;
+  const snapshotHistoryLoadError =
+    snapshots.isError || snapshots.isFetchNextPageError;
 
   const ordered = useMemo(() => {
     const list = sources.data ?? [];
@@ -1154,19 +1200,7 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
   if (sources.error !== null || sources.data === undefined) {
     return (
       <div className={styles.state}>
-        <EmptyState
-          title={tCommon("error")}
-          description={sources.error?.message}
-        >
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void sources.refetch();
-            }}
-          >
-            {tCommon("retry")}
-          </Button>
-        </EmptyState>
+        <ProblemState error={sources.error} onRetry={() => void sources.refetch()} />
       </div>
     );
   }
@@ -1193,13 +1227,58 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
             key={source.provider}
             source={source}
             projectId={projectId}
-            snapshotCount={snapshotCounts.get(source.provider) ?? 0}
+            snapshotCount={
+              snapshotHistoryAvailable
+                ? (snapshotCounts.get(source.provider) ?? 0)
+                : null
+            }
+            snapshotHistoryComplete={snapshotHistoryComplete}
             onRefetch={refetchSources}
             intent={intent?.provider === source.provider ? intent : null}
             onClearIntent={() => setIntent(null)}
           />
         ))}
       </div>
+
+      {snapshots.isLoading ||
+      snapshotHistoryLoadError ||
+      snapshots.hasNextPage ? (
+        <div className={styles.pagination} aria-live="polite">
+          {snapshots.isLoading ? (
+            <span className={styles.paginationStatus}>
+              <Spinner size="sm" label={t("loadingHistory")} />
+              {t("loadingHistory")}
+            </span>
+          ) : null}
+          {snapshotHistoryLoadError ? (
+            <p className={styles.paginationError} role="alert">
+              {tCommon("loadMoreError")}
+            </p>
+          ) : null}
+          {!snapshots.isLoading &&
+          (snapshots.hasNextPage || snapshotHistoryLoadError) ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (snapshots.isFetchNextPageError) {
+                  void snapshots.fetchNextPage();
+                } else if (snapshotHistoryLoadError) {
+                  void snapshots.refetch();
+                } else {
+                  void snapshots.fetchNextPage();
+                }
+              }}
+              disabled={snapshots.isFetchingNextPage || snapshots.isFetching}
+            >
+              {snapshots.isFetchingNextPage || snapshots.isFetching
+                ? tCommon("loadingMore")
+                : snapshotHistoryLoadError
+                  ? tCommon("retry")
+                  : t("loadMoreHistory")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

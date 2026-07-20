@@ -24,7 +24,7 @@ import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
  * manifest (complete ICP version + selected snapshots + rule/prompt set versions
  * + delivery locale), hashes it, and atomically enqueues the diagnostic run.
  * Hard gates: a complete ICP is required (422 CONTEXT_INCOMPLETE) and at least one
- * crawl snapshot must be selected (422 CRAWL_SNAPSHOT_REQUIRED).
+ * available/partial crawl snapshot must be selected (422 CRAWL_SNAPSHOT_REQUIRED).
  */
 
 const CONTRACT_VERSION = "2026-07-18";
@@ -103,9 +103,11 @@ export async function createDiagnosticRun(
 ): Promise<DiagnosticAcceptedResult> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
+  // Request array order is part of the wire body. The immutable input manifest
+  // is sorted separately after a replay miss.
   const requestHash = contentHash({
     projectId,
-    snapshotIds: [...body.snapshotIds].sort(),
+    snapshotIds: body.snapshotIds,
     outputLocale: body.outputLocale,
   });
 
@@ -161,8 +163,14 @@ export async function createDiagnosticRun(
       "A selected snapshot does not belong to this project.",
     );
   }
-  // Hard gate 2: at least one crawl snapshot.
-  if (!snapshots.some((s) => s.provider === "crawl")) {
+  // Hard gate 2: at least one usable crawl snapshot.
+  if (
+    !snapshots.some(
+      (s) =>
+        s.provider === "crawl" &&
+        (s.availability === "available" || s.availability === "partial"),
+    )
+  ) {
     throw new ProblemError(
       "CRAWL_SNAPSHOT_REQUIRED",
       "A crawl snapshot is required to diagnose.",
@@ -178,22 +186,6 @@ export async function createDiagnosticRun(
     );
   }
 
-  // Freeze + hash the input manifest (spec §8.1).
-  const orderedSnapshots = [...snapshots].sort((a, b) =>
-    a.id < b.id ? -1 : 1,
-  );
-  const inputManifest = {
-    projectId,
-    siteId: site.id,
-    icp: { id: icp.id, version: icp.version, contentHash: icp.content_hash },
-    snapshots: orderedSnapshots.map(snapshotManifestEntry),
-    ruleSetVersion: RULE_SET_VERSION,
-    promptSetVersion: PROMPT_SET_VERSION,
-    deliveryLocale: body.outputLocale,
-  };
-  const inputHash = contentHash(
-    inputManifest as unknown as Parameters<typeof contentHash>[0],
-  );
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
   const active = await new AsyncRunsRepository(db).findActive(
@@ -221,6 +213,10 @@ export async function createDiagnosticRun(
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
+      const txProjects = new ProjectsRepository(tx);
+      const txIcp = new IcpProfilesRepository(tx);
+      const txSites = new SitesRepository(tx);
+      const txSnapshots = new DataSnapshotsRepository(tx);
       const reserved = await txIdem.begin({
         workspaceId: scope.workspaceId,
         scope: IDEMPOTENCY_SCOPE,
@@ -242,6 +238,87 @@ export async function createDiagnosticRun(
         );
       }
 
+      const currentProject = await txProjects.findByIdForUpdate(scope, projectId);
+      if (!currentProject) {
+        throw new ProblemError("NOT_FOUND", "Project not found.");
+      }
+      if (currentProject.archived_at) {
+        throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+      }
+      if (!currentProject.current_icp_profile_id) {
+        throw new ProblemError(
+          "CONTEXT_INCOMPLETE",
+          "A complete ICP profile is required to diagnose.",
+        );
+      }
+
+      const currentIcp = await txIcp.findById(
+        projectScope,
+        currentProject.current_icp_profile_id,
+      );
+      if (!currentIcp || currentIcp.status !== "complete") {
+        throw new ProblemError(
+          "CONTEXT_INCOMPLETE",
+          "The ICP profile must be complete to diagnose.",
+        );
+      }
+
+      const currentSite = await txSites.findPrimary(projectScope);
+      if (!currentSite) {
+        throw new ProblemError("NOT_FOUND", "Project has no primary site.");
+      }
+
+      const currentSnapshots = await txSnapshots.findByIds(
+        projectScope,
+        body.snapshotIds,
+      );
+      if (currentSnapshots.length !== body.snapshotIds.length) {
+        throw new ProblemError(
+          "SNAPSHOT_PROJECT_MISMATCH",
+          "A selected snapshot does not belong to this project.",
+        );
+      }
+      if (
+        !currentSnapshots.some(
+          (snapshot) =>
+            snapshot.provider === "crawl" &&
+            (snapshot.availability === "available" ||
+              snapshot.availability === "partial"),
+        )
+      ) {
+        throw new ProblemError(
+          "CRAWL_SNAPSHOT_REQUIRED",
+          "A crawl snapshot is required to diagnose.",
+        );
+      }
+      const currentProviders = currentSnapshots.map((snapshot) => snapshot.provider);
+      if (new Set(currentProviders).size !== currentProviders.length) {
+        throw new ProblemError(
+          "VALIDATION_ERROR",
+          "Select at most one snapshot per provider.",
+        );
+      }
+
+      const orderedCurrentSnapshots = [...currentSnapshots].sort((a, b) =>
+        a.id < b.id ? -1 : 1,
+      );
+      const currentInputManifest = {
+        projectId,
+        siteId: currentSite.id,
+        icp: {
+          id: currentIcp.id,
+          version: currentIcp.version,
+          contentHash: currentIcp.content_hash,
+        },
+        snapshots: orderedCurrentSnapshots.map(snapshotManifestEntry),
+        ruleSetVersion: RULE_SET_VERSION,
+        promptSetVersion: PROMPT_SET_VERSION,
+        deliveryLocale: body.outputLocale,
+      };
+      const currentInputHash = contentHash(
+        currentInputManifest as unknown as Parameters<typeof contentHash>[0],
+      );
+
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
         projectId,
@@ -258,14 +335,14 @@ export async function createDiagnosticRun(
         runId: run.id,
         workspaceId: scope.workspaceId,
         projectId,
-        siteId: site.id,
-        icpProfileId: icp.id,
-        icpProfileVersion: icp.version,
+        siteId: currentSite.id,
+        icpProfileId: currentIcp.id,
+        icpProfileVersion: currentIcp.version,
         ruleSetVersion: RULE_SET_VERSION,
         promptSetVersion: PROMPT_SET_VERSION,
         outputLocale: body.outputLocale,
-        inputManifest,
-        inputHash,
+        inputManifest: currentInputManifest,
+        inputHash: currentInputHash,
       });
       await enqueueRunInTx(boss, tx, "diagnose", {
         runId: run.id,

@@ -19,23 +19,36 @@ process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { CONTRACT_VERSION } from "@sf/contracts";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { asyncRuns, icpProfiles, workspaces } from "@sf/db/schema";
 import {
   ActionsRepository,
   AsyncRunsRepository,
+  CollectionRunsRepository,
+  DataSnapshotsRepository,
   DiagnosticRunsRepository,
+  EvidenceRepository,
   ExecutionArtifactsRepository,
   FindingsRepository,
+  ObservationsRepository,
   ProjectsRepository,
   SitesRepository,
   contentHash,
+  toRunAttempt,
+  type FindingRow,
   type PgBoss,
   type JobWithMetadata,
+  type ObservationInsert,
   type ProjectScope,
 } from "@sf/db";
 import { FINDING_REGISTRY } from "@sf/engine";
-import { LocalFsBlobStore } from "@sf/sources";
+import { MAX_ARTIFACT_EVIDENCE_ROWS } from "@sf/artifacts";
+import {
+  LocalFsBlobStore,
+  METRIC_CRAWL_PAGE,
+  type CrawlPageProjection,
+} from "@sf/sources";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../../context.ts";
 import { runArtifact } from "../run-artifact.ts";
@@ -67,6 +80,26 @@ interface ArtifactFixture {
   readonly actor: string;
   readonly artifactId: string;
   readonly actionId: string;
+  readonly artifactType:
+    | "content_brief"
+    | "metadata_rewrite"
+    | "technical_ticket";
+  readonly findingId: string;
+  readonly diagnosticRunIds: readonly string[];
+  readonly subjectUrl: string;
+}
+
+interface DiagnosticSeedContext {
+  readonly scope: ProjectScope;
+  readonly siteId: string;
+  readonly actor: string;
+  readonly origin: string;
+  readonly subjectUrl: string;
+}
+
+interface PreparedDiagnosticInputs {
+  readonly inputManifests: readonly Record<string, unknown>[];
+  readonly subjectRefs: readonly string[];
 }
 
 describeDb("artifact runner (spec §10)", () => {
@@ -85,6 +118,7 @@ describeDb("artifact runner (spec §10)", () => {
       appOrigin: "http://localhost:3000",
       googleOAuth: { clientId: "test-client", clientSecret: "test-secret" },
       openai: { apiKey: "sk-test", model: "gpt-4o-mini" },
+      findingSummariesEnabled: true,
       logger: testLogger,
     };
   });
@@ -143,11 +177,20 @@ describeDb("artifact runner (spec §10)", () => {
     });
     const rev1 = await repo.findRevision(fx.scope, fx.artifactId, 1);
     expect(rev1).not.toBeNull();
+    expect(rev1?.output_locale).toBe("en");
     const rev1Hash = rev1?.content_hash;
 
     // Regenerate: point the artifact at a fresh run (status → generating).
-    const secondRunId = await queueArtifactRun(handle, fx);
-    await repo.startRegeneration(fx.artifactId, secondRunId);
+    const secondRunId = await queueArtifactRun(
+      handle,
+      fx,
+      "template",
+      "zh-CN",
+    );
+    await repo.startRegeneration(fx.artifactId, secondRunId, {
+      generationMode: "template",
+      outputLocale: "zh-CN",
+    });
     await runArtifact(ctx, {
       runId: secondRunId,
       workspaceId: fx.scope.workspaceId,
@@ -166,6 +209,466 @@ describeDb("artifact runner (spec §10)", () => {
     expect(rev1After?.content_hash).toBe(rev1Hash);
     const rev2 = await repo.findRevision(fx.scope, fx.artifactId, 2);
     expect(rev2?.generated_by).toBe("template");
+    expect(rev2?.output_locale).toBe("zh-CN");
+    expect(artifact?.output_locale).toBe("zh-CN");
+  });
+
+  it("loads metadata through the finding's last-seen diagnostic and its frozen crawl snapshot", async () => {
+    let firstSeenSnapshotId = "";
+    let frozenSnapshotId = "";
+    let newerSnapshotId = "";
+    const fx = await seedArtifact(handle, {
+      artifactType: "metadata_rewrite",
+      prepareDiagnosticInputs: async (seed) => {
+        firstSeenSnapshotId = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T01:00:00.000Z",
+          pages: [
+            {
+              url: seed.subjectUrl,
+              title: "First-seen pricing title",
+              metaDescription: "First-seen pricing description.",
+            },
+          ],
+        });
+        frozenSnapshotId = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T02:00:00.000Z",
+          pages: [
+            {
+              url: seed.subjectUrl,
+              title: "Frozen pricing title",
+              metaDescription: "Frozen pricing description.",
+            },
+            {
+              url: `${seed.origin}/another-page`,
+              title: "Another page title",
+              metaDescription: "Another page description.",
+            },
+          ],
+        });
+        newerSnapshotId = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T03:00:00.000Z",
+          pages: [
+            {
+              url: seed.subjectUrl,
+              title: "Newer pricing title that must not be used",
+              metaDescription:
+                "Newer pricing description that must not be used.",
+            },
+          ],
+        });
+        return {
+          inputManifests: [
+            crawlManifest(firstSeenSnapshotId, "2026-07-20T01:00:00.000Z"),
+            crawlManifest(frozenSnapshotId, "2026-07-20T02:00:00.000Z"),
+          ],
+          subjectRefs: [seed.subjectUrl],
+        };
+      },
+    });
+
+    const finding = await new FindingsRepository(handle.db).findById(
+      fx.scope,
+      fx.findingId,
+    );
+    expect(finding?.first_seen_run_id).toBe(fx.diagnosticRunIds[0]);
+    expect(finding?.last_seen_run_id).toBe(fx.diagnosticRunIds[1]);
+    expect(finding?.last_seen_run_id).not.toBe(finding?.first_seen_run_id);
+    const frozenDiagnostic = await new DiagnosticRunsRepository(
+      handle.db,
+    ).findById(fx.scope, finding!.last_seen_run_id);
+    expect(frozenDiagnostic?.input_manifest).toEqual(
+      crawlManifest(frozenSnapshotId, "2026-07-20T02:00:00.000Z"),
+    );
+
+    const content = await generateTemplateRevision(handle, ctx, fx);
+    expect(content).toMatchObject({
+      url: fx.subjectUrl,
+      currentTitle: "Frozen pricing title",
+      currentDescription: "Frozen pricing description.",
+    });
+    expect(JSON.stringify(content)).not.toContain("First-seen pricing");
+    expect(JSON.stringify(content)).not.toContain("Newer pricing");
+    expect(JSON.stringify(content)).not.toContain("Another page");
+
+    expect(firstSeenSnapshotId).not.toBe(frozenSnapshotId);
+    expect(newerSnapshotId).not.toBe(frozenSnapshotId);
+  });
+
+  it("fails closed when the frozen snapshot contains duplicate exact crawl page observations", async () => {
+    let frozenSnapshotId = "";
+    const fx = await seedArtifact(handle, {
+      artifactType: "metadata_rewrite",
+      prepareDiagnosticInputs: async (seed) => {
+        frozenSnapshotId = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T04:00:00.000Z",
+          pages: [
+            {
+              url: seed.subjectUrl,
+              title: "Duplicate title A",
+              metaDescription: "Duplicate description A.",
+            },
+            {
+              url: seed.subjectUrl,
+              title: "Duplicate title B",
+              metaDescription: "Duplicate description B.",
+            },
+          ],
+        });
+        return {
+          inputManifests: [
+            crawlManifest(frozenSnapshotId, "2026-07-20T04:00:00.000Z"),
+          ],
+          subjectRefs: [seed.subjectUrl],
+        };
+      },
+    });
+
+    const exactRows = (
+      await new ObservationsRepository(handle.db).listBySnapshotIds(fx.scope, [
+        frozenSnapshotId,
+      ])
+    ).filter(
+      (row) =>
+        row.provider === "crawl" &&
+        row.metric_key === METRIC_CRAWL_PAGE &&
+        row.subject_type === "url" &&
+        row.subject_ref === fx.subjectUrl,
+    );
+    expect(exactRows).toHaveLength(2);
+    await expect(
+      new ObservationsRepository(handle.db).findBySnapshotMetricSubject(
+        fx.scope,
+        {
+          snapshotId: frozenSnapshotId,
+          provider: "crawl",
+          metricKey: METRIC_CRAWL_PAGE,
+          subjectType: "url",
+          subjectRef: fx.subjectUrl,
+        },
+      ),
+    ).resolves.toBeNull();
+
+    const content = await generateTemplateRevision(handle, ctx, fx);
+    expect(content).toMatchObject({
+      url: fx.subjectUrl,
+      currentTitle: null,
+      currentDescription: null,
+    });
+  });
+
+  it("fails closed when the last-seen diagnostic manifest contains multiple crawl snapshots", async () => {
+    let crawlSnapshotA = "";
+    let crawlSnapshotB = "";
+    const fx = await seedArtifact(handle, {
+      artifactType: "metadata_rewrite",
+      prepareDiagnosticInputs: async (seed) => {
+        crawlSnapshotA = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T05:00:00.000Z",
+          pages: [
+            {
+              url: seed.subjectUrl,
+              title: "Ambiguous title A",
+              metaDescription: "Ambiguous description A.",
+            },
+          ],
+        });
+        crawlSnapshotB = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T06:00:00.000Z",
+          pages: [
+            {
+              url: seed.subjectUrl,
+              title: "Ambiguous title B",
+              metaDescription: "Ambiguous description B.",
+            },
+          ],
+        });
+        return {
+          inputManifests: [
+            crawlManifest(
+              [crawlSnapshotA, crawlSnapshotB],
+              [
+                "2026-07-20T05:00:00.000Z",
+                "2026-07-20T06:00:00.000Z",
+              ],
+            ),
+          ],
+          subjectRefs: [seed.subjectUrl],
+        };
+      },
+    });
+
+    const snapshots = await new DataSnapshotsRepository(handle.db).findByIds(
+      fx.scope,
+      [crawlSnapshotA, crawlSnapshotB],
+    );
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots.every((snapshot) => snapshot.provider === "crawl")).toBe(
+      true,
+    );
+
+    const content = await generateTemplateRevision(handle, ctx, fx);
+    expect(content).toMatchObject({
+      url: fx.subjectUrl,
+      currentTitle: null,
+      currentDescription: null,
+    });
+  });
+
+  it("sends only evidence linked to the finding's last-seen diagnostic run", async () => {
+    const fx = await seedArtifact(handle, {
+      generationMode: "structured_llm",
+      prepareDiagnosticInputs: async (seed) => ({
+        inputManifests: [{ snapshots: [] }, { snapshots: [] }],
+        subjectRefs: [seed.subjectUrl],
+      }),
+    });
+    expect(fx.diagnosticRunIds).toHaveLength(2);
+    const evidence = new EvidenceRepository(handle.db);
+    const [oldEvidenceId] = await evidence.insertMany(
+      {
+        workspaceId: fx.scope.workspaceId,
+        projectId: fx.scope.projectId,
+        diagnosticRunId: fx.diagnosticRunIds[0]!,
+      },
+      [
+        {
+          sourceProvider: "crawl",
+          origin: "direct_public",
+          method: "observed",
+          grade: "B",
+          availability: "available",
+          support: "context",
+          subjectRefs: [fx.subjectUrl],
+          claim: "OLD_RUN_EVIDENCE_MUST_NOT_REACH_THE_PROMPT",
+          observedAt: "2026-07-20T07:00:00.000Z",
+          limitation: "historical fixture",
+        },
+      ],
+    );
+    const [frozenEvidenceId] = await evidence.insertMany(
+      {
+        workspaceId: fx.scope.workspaceId,
+        projectId: fx.scope.projectId,
+        diagnosticRunId: fx.diagnosticRunIds[1]!,
+      },
+      [
+        {
+          sourceProvider: "crawl",
+          origin: "direct_public",
+          method: "observed",
+          grade: "A",
+          availability: "available",
+          support: "supports",
+          subjectRefs: [fx.subjectUrl],
+          claim: "FROZEN_LAST_SEEN_EVIDENCE_REACHES_THE_PROMPT",
+          observedAt: "2026-07-20T08:00:00.000Z",
+          limitation: "last-seen fixture",
+        },
+      ],
+    );
+    await evidence.linkObservations(
+      {
+        workspaceId: fx.scope.workspaceId,
+        projectId: fx.scope.projectId,
+        diagnosticRunId: fx.diagnosticRunIds[0]!,
+      },
+      [
+        {
+          findingId: fx.findingId,
+          evidenceId: oldEvidenceId!,
+          role: "context",
+        },
+      ],
+    );
+    await evidence.linkObservations(
+      {
+        workspaceId: fx.scope.workspaceId,
+        projectId: fx.scope.projectId,
+        diagnosticRunId: fx.diagnosticRunIds[1]!,
+      },
+      [
+        {
+          findingId: fx.findingId,
+          evidenceId: frozenEvidenceId!,
+          role: "primary",
+        },
+      ],
+    );
+
+    const runId = await queueArtifactRun(handle, fx, "structured_llm");
+    const artifacts = new ExecutionArtifactsRepository(handle.db);
+    await artifacts.startRegeneration(fx.artifactId, runId, {
+      generationMode: "structured_llm",
+      outputLocale: "en",
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(validChatResponse("# Frozen evidence artifact"));
+    let requestBody = "";
+    try {
+      await runArtifact(ctx, { runId, ...fx.scope });
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      requestBody = String(fetchSpy.mock.calls[0]?.[1]?.body ?? "");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    expect(requestBody).toContain(
+      "FROZEN_LAST_SEEN_EVIDENCE_REACHES_THE_PROMPT",
+    );
+    expect(requestBody).not.toContain(
+      "OLD_RUN_EVIDENCE_MUST_NOT_REACH_THE_PROMPT",
+    );
+    expect(await artifacts.findById(fx.scope, fx.artifactId)).toMatchObject({
+      current_revision: 1,
+      latest_generation_run_id: runId,
+    });
+  });
+
+  it("fails before an external call when the frozen run has 101 evidence links", async () => {
+    const fx = await seedArtifact(handle, {
+      generationMode: "structured_llm",
+    });
+    const evidence = new EvidenceRepository(handle.db);
+    const evidenceIds = await evidence.insertMany(
+      {
+        workspaceId: fx.scope.workspaceId,
+        projectId: fx.scope.projectId,
+        diagnosticRunId: fx.diagnosticRunIds[0]!,
+      },
+      Array.from(
+        { length: MAX_ARTIFACT_EVIDENCE_ROWS + 1 },
+        (_unused, index) => ({
+          sourceProvider: "crawl",
+          origin: "direct_public",
+          method: "observed",
+          grade: "B",
+          availability: "available",
+          support: "context",
+          subjectRefs: [fx.subjectUrl],
+          claim: `Frozen overflow evidence ${String(index)}`,
+          observedAt: "2026-07-20T09:00:00.000Z",
+          limitation: "overflow fixture",
+        }),
+      ),
+    );
+    await evidence.linkObservations(
+      {
+        workspaceId: fx.scope.workspaceId,
+        projectId: fx.scope.projectId,
+        diagnosticRunId: fx.diagnosticRunIds[0]!,
+      },
+      evidenceIds.map((evidenceId) => ({
+        findingId: fx.findingId,
+        evidenceId,
+        role: "context",
+      })),
+    );
+
+    const runId = await queueArtifactRun(handle, fx, "structured_llm");
+    const artifacts = new ExecutionArtifactsRepository(handle.db);
+    await artifacts.startRegeneration(fx.artifactId, runId, {
+      generationMode: "structured_llm",
+      outputLocale: "en",
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(validChatResponse("# Must not be generated"));
+    try {
+      await runArtifact(ctx, { runId, ...fx.scope });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    expect(await artifacts.findById(fx.scope, fx.artifactId)).toMatchObject({
+      status: "failed",
+      current_revision: 0,
+      latest_generation_run_id: runId,
+    });
+    expect(
+      await new AsyncRunsRepository(handle.db).findById(fx.scope, runId),
+    ).toMatchObject({ status: "failed", last_error_code: "UNAVAILABLE" });
+  });
+
+  it("fails before an external call when a frozen link points to cross-run evidence", async () => {
+    const fx = await seedArtifact(handle, {
+      generationMode: "structured_llm",
+      prepareDiagnosticInputs: async (seed) => ({
+        inputManifests: [{ snapshots: [] }, { snapshots: [] }],
+        subjectRefs: [seed.subjectUrl],
+      }),
+    });
+    const evidence = new EvidenceRepository(handle.db);
+    const [oldRunEvidenceId] = await evidence.insertMany(
+      {
+        workspaceId: fx.scope.workspaceId,
+        projectId: fx.scope.projectId,
+        diagnosticRunId: fx.diagnosticRunIds[0]!,
+      },
+      [
+        {
+          sourceProvider: "crawl",
+          origin: "direct_public",
+          method: "observed",
+          grade: "B",
+          availability: "available",
+          support: "context",
+          subjectRefs: [fx.subjectUrl],
+          claim: "Cross-run evidence must fail the integrity check",
+          observedAt: "2026-07-20T10:00:00.000Z",
+          limitation: "cross-run fixture",
+        },
+      ],
+    );
+    // Deliberately model a corrupted-but-FK-valid relationship: the link is
+    // stamped with the last-seen run while its evidence row belongs to the
+    // earlier run. The worker must verify both sides, not trust the link alone.
+    await evidence.linkObservations(
+      {
+        workspaceId: fx.scope.workspaceId,
+        projectId: fx.scope.projectId,
+        diagnosticRunId: fx.diagnosticRunIds[1]!,
+      },
+      [
+        {
+          findingId: fx.findingId,
+          evidenceId: oldRunEvidenceId!,
+          role: "primary",
+        },
+      ],
+    );
+
+    const runId = await queueArtifactRun(handle, fx, "structured_llm");
+    const artifacts = new ExecutionArtifactsRepository(handle.db);
+    await artifacts.startRegeneration(fx.artifactId, runId, {
+      generationMode: "structured_llm",
+      outputLocale: "en",
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(validChatResponse("# Must not be generated"));
+    try {
+      await runArtifact(ctx, { runId, ...fx.scope });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    expect(await artifacts.findById(fx.scope, fx.artifactId)).toMatchObject({
+      status: "failed",
+      current_revision: 0,
+      latest_generation_run_id: runId,
+    });
+    expect(
+      await new AsyncRunsRepository(handle.db).findById(fx.scope, runId),
+    ).toMatchObject({ status: "failed", last_error_code: "UNAVAILABLE" });
   });
 
   it("AC-032: persists a failed model invocation and does not create a fake fallback revision", async () => {
@@ -231,8 +734,9 @@ describeDb("artifact runner (spec §10)", () => {
     await artifacts.startRegeneration(fx.artifactId, runId);
     const runs = new AsyncRunsRepository(handle.db);
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      expect(await runs.claim(runId)).not.toBeNull();
-      await runs.resetToQueued(runId);
+      const claimed = await runs.claim(fx.scope, runId);
+      expect(claimed).not.toBeNull();
+      await runs.resetToQueued(toRunAttempt(claimed!));
     }
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -323,6 +827,7 @@ describeDb("artifact runner (spec §10)", () => {
           status: "draft",
           currentRevision: 1,
           expectedRevision: 0,
+          expectedStatus: "generating",
           validationState: "valid",
           contentHash: manualHash,
         }),
@@ -332,6 +837,7 @@ describeDb("artifact runner (spec §10)", () => {
         projectId: fx.scope.projectId,
         artifactId: fx.artifactId,
         revision: 1,
+        outputLocale: "en",
         contentFormat: "markdown",
         contentText: manualText,
         contentJson: null,
@@ -436,9 +942,14 @@ async function seedArtifact(
   handle: DbHandle,
   options?: {
     readonly generationMode?: "template" | "structured_llm";
+    readonly artifactType?: ArtifactFixture["artifactType"];
+    readonly prepareDiagnosticInputs?: (
+      seed: DiagnosticSeedContext,
+    ) => Promise<PreparedDiagnosticInputs>;
   },
 ): Promise<ArtifactFixture> {
   const actor = randomUUID();
+  const artifactType = options?.artifactType ?? "content_brief";
   const [ws] = await handle.db
     .insert(workspaces)
     .values({ name: `WS-${randomUUID()}` })
@@ -453,10 +964,12 @@ async function seedArtifact(
   });
   const scope: ProjectScope = { workspaceId, projectId: project.id };
   const host = `art-${randomUUID().slice(0, 8)}.example`;
+  const origin = `https://${host}`;
+  const subjectUrl = `${origin}/pricing`;
   const site = await new SitesRepository(handle.db).insertPrimary({
     workspaceId,
     projectId: project.id,
-    origin: `https://${host}`,
+    origin,
     host,
     marketCodes: ["US"],
     languageCodes: ["en"],
@@ -464,60 +977,118 @@ async function seedArtifact(
 
   // A finding + action are the artifact's allowlisted prompt source (spec §10.2).
   const icpId = await seedIcp(handle, scope, actor);
-  const diagRunId = await seedDiagnosticRun(
-    handle,
-    scope,
-    site.id,
-    actor,
-    icpId,
-  );
-  const finding = await seedFinding(handle, scope, diagRunId);
+  const prepared = options?.prepareDiagnosticInputs
+    ? await options.prepareDiagnosticInputs({
+        scope,
+        siteId: site.id,
+        actor,
+        origin,
+        subjectUrl,
+      })
+    : {
+        inputManifests: [{ snapshots: [] }],
+        subjectRefs: ["http_status:404"],
+      };
+  if (prepared.inputManifests.length === 0) {
+    throw new Error("artifact fixture requires at least one diagnostic run");
+  }
+  const diagnosticRunIds: string[] = [];
+  for (const inputManifest of prepared.inputManifests) {
+    diagnosticRunIds.push(
+      await seedDiagnosticRun(
+        handle,
+        scope,
+        site.id,
+        actor,
+        icpId,
+        inputManifest,
+      ),
+    );
+  }
+  const finding = await seedFinding(handle, scope, diagnosticRunIds[0]!, {
+    ruleId:
+      artifactType === "metadata_rewrite"
+        ? "SEARCH-CTR-004"
+        : "TECH-HTTP-001",
+    subjectRefs: prepared.subjectRefs,
+  });
+  for (let index = 1; index < diagnosticRunIds.length; index += 1) {
+    await new FindingsRepository(handle.db).touchSeen(finding.id, {
+      severity: finding.severity,
+      confidence: finding.confidence,
+      titleArgs: finding.title_args,
+      summary: finding.summary,
+      summaryLocale: finding.summary_locale,
+      subjectRefs: [...prepared.subjectRefs],
+      runId: diagnosticRunIds[index]!,
+      seenAt: new Date(Date.now() + index).toISOString(),
+      regressed: false,
+    });
+  }
+  const metadataRewrite = artifactType === "metadata_rewrite";
   const action = await new ActionsRepository(handle.db).insert({
     workspaceId,
     projectId: project.id,
     sourceFindingId: finding.id,
     actionKey: contentHash({ action: finding.id }),
-    templateId: "tech-http-fix",
+    templateId: metadataRewrite
+      ? "rewrite_search_metadata.v1"
+      : "tech-http-fix",
     templateVersion: 1,
-    title: "Fix broken pages",
-    description: "Repair the 404 responses on the affected URLs.",
+    title: metadataRewrite
+      ? "Rewrite title and description for CTR"
+      : "Fix broken pages",
+    description: metadataRewrite
+      ? "Rewrite the page title and meta description to better match intent."
+      : "Repair the 404 responses on the affected URLs.",
     contentLocale: "en",
     priorityBand: "high",
     roadmapLane: "now",
     status: "planned",
     effort: "small",
     risk: "low",
-    expectedOutcome: "The affected pages return HTTP 200.",
+    expectedOutcome: metadataRewrite
+      ? "The search snippet earns more relevant clicks."
+      : "The affected pages return HTTP 200.",
     evidenceRefs: [],
     createdBy: actor,
   });
 
   const artifactId = randomUUID();
-  const seedRunId = await queueArtifactRun(handle, {
+  const fixture: ArtifactFixture = {
     scope,
     actor,
     artifactId,
     actionId: action.id,
-  });
+    artifactType,
+    findingId: finding.id,
+    diagnosticRunIds,
+    subjectUrl,
+  };
+  const seedRunId = await queueArtifactRun(handle, fixture);
   await new ExecutionArtifactsRepository(handle.db).insert({
     id: artifactId,
     workspaceId,
     projectId: project.id,
     actionId: action.id,
-    artifactType: "content_brief",
+    artifactType,
     generationMode: options?.generationMode ?? "template",
     outputLocale: "en",
     latestGenerationRunId: seedRunId,
     createdBy: actor,
   });
 
-  return { scope, actor, artifactId, actionId: action.id };
+  return fixture;
 }
 
 async function queueArtifactRun(
   handle: DbHandle,
-  fx: Pick<ArtifactFixture, "scope" | "actor" | "artifactId" | "actionId">,
+  fx: Pick<
+    ArtifactFixture,
+    "scope" | "actor" | "artifactId" | "actionId" | "artifactType"
+  >,
   generationMode: "template" | "structured_llm" = "template",
+  outputLocale = "en",
 ): Promise<string> {
   const runId = randomUUID();
   await handle.db.insert(asyncRuns).values({
@@ -530,9 +1101,9 @@ async function queueArtifactRun(
     request_payload: {
       artifactId: fx.artifactId,
       actionId: fx.actionId,
-      artifactType: "content_brief",
+      artifactType: fx.artifactType,
       generationMode,
-      outputLocale: "en",
+      outputLocale,
       operatorInstructions: null,
     },
   });
@@ -565,6 +1136,7 @@ async function seedDiagnosticRun(
   siteId: string,
   actor: string,
   icpProfileId: string,
+  inputManifest: Record<string, unknown> = { snapshots: [] },
 ): Promise<string> {
   const runId = randomUUID();
   const at = new Date().toISOString();
@@ -588,7 +1160,7 @@ async function seedDiagnosticRun(
     ruleSetVersion: "mvp.rules.0.2.0",
     promptSetVersion: "mvp.prompts.0.2.0",
     outputLocale: "en",
-    inputManifest: { snapshots: [] },
+    inputManifest,
     inputHash: contentHash({ r: runId }),
   });
   return runId;
@@ -598,29 +1170,190 @@ async function seedFinding(
   handle: DbHandle,
   scope: ProjectScope,
   runId: string,
-): Promise<{ id: string }> {
-  const meta = FINDING_REGISTRY["TECH-HTTP-001"];
+  options?: {
+    readonly ruleId?: "TECH-HTTP-001" | "SEARCH-CTR-004";
+    readonly subjectRefs?: readonly string[];
+  },
+): Promise<FindingRow> {
+  const ruleId = options?.ruleId ?? "TECH-HTTP-001";
+  const meta = FINDING_REGISTRY[ruleId];
   const row = await new FindingsRepository(handle.db).insert({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
     findingKey: contentHash({ finding: randomUUID() }),
-    ruleId: "TECH-HTTP-001",
+    ruleId,
     ruleVersion: 1,
     ruleFamily: meta.ruleFamily,
     intent: meta.intent,
     domain: meta.domain,
     titleKey: meta.titleKey,
     titleArgs: {},
-    summary: "Broken pages returned 404.",
+    summary:
+      ruleId === "SEARCH-CTR-004"
+        ? "The pricing page has low organic search CTR."
+        : "Broken pages returned 404.",
     summaryLocale: "en",
-    subjectRefs: ["http_status:404"],
+    subjectRefs: [...(options?.subjectRefs ?? ["http_status:404"])],
     severity: "high",
     confidence: "high",
     reviewState: "confirmed",
     runId,
     seenAt: new Date().toISOString(),
   });
-  return { id: row.id };
+  return row;
+}
+
+async function generateTemplateRevision(
+  handle: DbHandle,
+  ctx: WorkerContext,
+  fx: ArtifactFixture,
+): Promise<unknown> {
+  const runId = await queueArtifactRun(handle, fx);
+  const artifacts = new ExecutionArtifactsRepository(handle.db);
+  await artifacts.startRegeneration(fx.artifactId, runId, {
+    generationMode: "template",
+    outputLocale: "en",
+  });
+  await runArtifact(ctx, { runId, ...fx.scope });
+  const revision = await artifacts.findRevision(fx.scope, fx.artifactId, 1);
+  expect(revision).toMatchObject({
+    content_format: "json",
+    generated_by: "template",
+    validation_errors: [],
+  });
+  return revision?.content_json;
+}
+
+function crawlManifest(
+  snapshotIds: string | readonly string[],
+  capturedAts: string | readonly string[],
+): Record<string, unknown> {
+  const ids = typeof snapshotIds === "string" ? [snapshotIds] : snapshotIds;
+  const times = typeof capturedAts === "string" ? [capturedAts] : capturedAts;
+  if (ids.length !== times.length) {
+    throw new Error("crawl manifest fixture lengths differ");
+  }
+  return {
+    snapshots: ids.map((snapshotId, index) => ({
+      snapshotId,
+      provider: "crawl",
+      availability: "available",
+      capturedAt: times[index],
+    })),
+  };
+}
+
+async function seedCrawlSnapshot(
+  handle: DbHandle,
+  input: {
+    readonly scope: ProjectScope;
+    readonly siteId: string;
+    readonly actor: string;
+    readonly capturedAt: string;
+    readonly pages: readonly {
+      readonly url: string;
+      readonly title: string;
+      readonly metaDescription: string;
+    }[];
+  },
+): Promise<string> {
+  const collectionRunId = randomUUID();
+  await handle.db.insert(asyncRuns).values({
+    id: collectionRunId,
+    workspace_id: input.scope.workspaceId,
+    project_id: input.scope.projectId,
+    kind: "collection",
+    status: "completed",
+    contract_version: "2026-07-18",
+    initiated_by: input.actor,
+    started_at: input.capturedAt,
+    completed_at: input.capturedAt,
+  });
+  const collections = new CollectionRunsRepository(handle.db);
+  await collections.insertPlaceholder({
+    runId: collectionRunId,
+    workspaceId: input.scope.workspaceId,
+    projectId: input.scope.projectId,
+    siteId: input.siteId,
+    sourceConnectionId: null,
+    provider: "crawl",
+    operation: "site_graph",
+    methodVersion: "crawl.site_graph.v1",
+    parametersHash: contentHash({ collectionRunId }),
+  });
+  await collections.finalize(collectionRunId, {
+    rowCount: input.pages.length,
+    sourceWindow: { start: null, end: null },
+    providerUsage: {},
+    stopReason: null,
+  });
+  const snapshot = await new DataSnapshotsRepository(handle.db).insert({
+    workspaceId: input.scope.workspaceId,
+    projectId: input.scope.projectId,
+    siteId: input.siteId,
+    collectionRunId,
+    sourceConnectionId: null,
+    provider: "crawl",
+    datasetKey: "crawl.site_graph.v1",
+    schemaVersion: "0.2.0",
+    methodVersion: "crawl.site_graph.v1",
+    capturedAt: input.capturedAt,
+    sourceWindow: { start: null, end: null },
+    availability: "available",
+    limitation: "isolated metadata integration fixture",
+    rawObjectKey: null,
+    rowCount: input.pages.length,
+    checksum: contentHash({ collectionRunId, capturedAt: input.capturedAt }),
+  });
+  const observations: ObservationInsert[] = input.pages.map((page) => ({
+    metricKey: METRIC_CRAWL_PAGE,
+    subjectType: "url",
+    subjectRef: page.url,
+    observedAt: input.capturedAt,
+    availability: "available",
+    valueNumeric: null,
+    valueText: null,
+    valueJson: crawlPageProjection(page),
+    unit: null,
+    origin: "direct_public",
+    grade: "B",
+    support: "context",
+    limitation: "static public crawl fixture",
+  }));
+  await new ObservationsRepository(handle.db).insertMany(
+    input.scope,
+    snapshot.id,
+    observations,
+  );
+  return snapshot.id;
+}
+
+function crawlPageProjection(input: {
+  readonly url: string;
+  readonly title: string;
+  readonly metaDescription: string;
+}): CrawlPageProjection {
+  return {
+    fetchUrl: input.url,
+    status: 200,
+    finalStatus: 200,
+    redirectChain: [],
+    canonicalTarget: null,
+    robotsIndexable: true,
+    robotsDirectives: [],
+    title: input.title,
+    metaDescription: input.metaDescription,
+    h1: [input.title],
+    headings: [input.title],
+    wordCount: 300,
+    internalOutlinks: [],
+    jsonLd: { types: [], errorCount: 0 },
+    sitemapMember: true,
+    bodyExcerpt: null,
+    paragraphs: [],
+    responseMs: 20,
+    contentType: "text/html",
+  };
 }
 
 function finalMetadataJob(
@@ -630,11 +1363,12 @@ function finalMetadataJob(
   runId: string;
   workspaceId: string;
   projectId: string;
+  contractVersion: string;
 }> {
   return {
     id: runId,
     name: "artifact.generate",
-    data: { runId, ...scope },
+    data: { runId, ...scope, contractVersion: CONTRACT_VERSION },
     expireInSeconds: 300,
     heartbeatSeconds: 60,
     signal: new AbortController().signal,

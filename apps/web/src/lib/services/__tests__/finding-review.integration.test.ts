@@ -26,6 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ProblemError } from "@sf/observability";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import { reviewProjectFinding } from "@/lib/services/finding-review";
+import { archiveWinsProjectRace } from "./project-archive-race";
 
 const DATABASE_URL = process.env["DATABASE_URL"]!;
 const describeDb = process.env["DATABASE_URL"] ? describe : describe.skip;
@@ -262,6 +263,93 @@ describeDb(
           reason: "not relevant right now",
         }),
       ).rejects.toMatchObject({ code: "FINDING_ACTION_ACTIVE" });
+    });
+
+    it("lets an archive winner block review writes and audit rows", async () => {
+      const suffix = randomUUID();
+      const [raceWorkspace] = await handle.db
+        .insert(workspaces)
+        .values({ name: `Finding-archive-${suffix}` })
+        .returning();
+      const created = await createProject(
+        { workspaceId: raceWorkspace!.id },
+        actor,
+        randomUUID(),
+        {
+          clientName: "Finding archive race",
+          projectName: "Finding archive race",
+          siteUrl: `https://finding-archive-${suffix}.example`,
+          marketCodes: ["US"],
+          siteLanguageCodes: ["en"],
+          defaultDeliveryLocale: "en",
+        },
+        safeGuard,
+      );
+      const raceFindingId = await seedFinding(
+        handle,
+        { workspaceId: raceWorkspace!.id, projectId: created.project.id },
+        created.project.site.id,
+        actor,
+      );
+
+      const result = await archiveWinsProjectRace(
+        handle,
+        created.project.id,
+        () =>
+          reviewProjectFinding(
+            { workspaceId: raceWorkspace!.id },
+            created.project.id,
+            raceFindingId,
+            actor,
+            { reviewState: "confirmed", baseRevision: 0 },
+          ),
+      );
+
+      expect(result.status).toBe("rejected");
+      if (result.status === "fulfilled") {
+        throw new Error("archived finding review unexpectedly committed");
+      }
+      expect(result.reason).toBeInstanceOf(ProblemError);
+      expect(result.reason).toMatchObject({
+        code: "PROJECT_ARCHIVED",
+        status: 422,
+      });
+
+      const state = await handle.pool.query<{
+        review_state: string;
+        review_revision: number;
+      }>(
+        `select review_state, review_revision
+           from app.findings
+          where id = $1`,
+        [raceFindingId],
+      );
+      expect(state.rows[0]).toEqual({
+        review_state: "unreviewed",
+        review_revision: 0,
+      });
+      const writes = await handle.pool.query<{
+        event_count: number;
+        action_count: number;
+        telemetry_count: number;
+      }>(
+        `select
+           (select count(*)::int
+              from app.finding_review_events
+             where finding_id = $1) as event_count,
+           (select count(*)::int
+              from app.actions
+             where source_finding_id = $1) as action_count,
+           (select count(*)::int
+              from app.telemetry_events
+             where project_id = $2 and event_name = 'action_confirmed') as telemetry_count`,
+        [raceFindingId, created.project.id],
+      );
+      expect(writes.rows[0]).toEqual({
+        event_count: 0,
+        action_count: 0,
+        telemetry_count: 0,
+      });
     });
   },
 );

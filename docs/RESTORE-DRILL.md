@@ -22,9 +22,11 @@ The drill performs these steps in order:
 3. Read the source inventory and create a private custom-format `pg_dump`.
 4. Create the generated target with `createdb` and restore it with
    `pg_restore --exit-on-error --single-transaction`.
-5. Reapply `packages/db/migrations/0001_init.sql` to prove migration
-   idempotency, then run `packages/db/migrations/schema-smoke.sql`. The smoke
-   transaction rolls back its fixtures.
+5. Discover every regular `*.sql` migration under `packages/db/migrations/`,
+   excluding `schema-smoke.sql`, and replay the complete set in lexical order.
+   Discovery rejects symlinks/path traversal and the drill stops at the first
+   failed migration. Then run `packages/db/migrations/schema-smoke.sql`; the
+   smoke transaction rolls back its fixtures.
 6. Compare source and restored inventories:
    - row counts for exactly all 28 `app` tables;
    - SHA-256 of every table's canonical JSON row stream, sorted by canonical

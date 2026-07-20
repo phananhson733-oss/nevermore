@@ -9,8 +9,8 @@
  * optimistic concurrency; a 409 `VERSION_CONFLICT` refetches the list + informs.
  */
 
-import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useEffect, useRef, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Badge,
   Button,
@@ -23,11 +23,15 @@ import {
 import { ApiError } from "@/lib/api";
 import {
   useReviewFinding,
+  type Availability,
   type Confidence,
+  type Evidence,
+  type EvidenceSupport,
   type Finding,
   type ReviewFindingRequest,
   type Severity,
 } from "@/lib/api/hooks-diagnosis";
+import { ProblemNotice } from "../_problem-display";
 import { evidenceForFinding } from "../_view-model.ts";
 import styles from "./diagnosis.module.css";
 
@@ -70,6 +74,165 @@ function reviewStateTone(state: Finding["reviewState"]): StatusTone {
   }
 }
 
+function availabilityTone(availability: Availability): StatusTone {
+  switch (availability) {
+    case "available":
+      return "success";
+    case "partial":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+function supportTone(support: EvidenceSupport): StatusTone {
+  switch (support) {
+    case "supports":
+      return "success";
+    case "contradicts":
+      return "danger";
+    default:
+      return "info";
+  }
+}
+
+function formatObservedAt(value: string, locale: string): string | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function EvidenceTrace({
+  evidence,
+  findingId,
+  open,
+  onOpenChange,
+}: {
+  readonly evidence: Evidence;
+  readonly findingId: string;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const t = useTranslations("diagnosis");
+  const tCommon = useTranslations("common");
+  const tProvider = useTranslations("provider");
+  const tSourceState = useTranslations("sourceState");
+  const locale = useLocale();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const detailsId = `sf-finding-${findingId}-evidence-${evidence.id}-details`;
+  const observedAt = formatObservedAt(evidence.observedAt, locale);
+  const sourceProvider =
+    evidence.sourceProvider === "system" || evidence.sourceProvider === "llm"
+      ? t(`evidence.provider.${evidence.sourceProvider}`)
+      : tProvider(evidence.sourceProvider);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnEscape(event: KeyboardEvent): void {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onOpenChange(false);
+      requestAnimationFrame(() => triggerRef.current?.focus());
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onOpenChange, open]);
+
+  return (
+    <li className={styles.evidenceItem}>
+      <div
+        className={styles.evidenceTrace}
+        role="group"
+        aria-label={t("evidence.cardLabel", { claim: evidence.claim })}
+      >
+        <div className={styles.evidenceHead}>
+          <Badge
+            aria-label={`${t("evidence.sourceProvider")}: ${sourceProvider}`}
+          >
+            {sourceProvider}
+          </Badge>
+          <StatusPill
+            tone={availabilityTone(evidence.availability)}
+            aria-label={`${t("evidence.availability")}: ${tSourceState(evidence.availability)}`}
+          >
+            {tSourceState(evidence.availability)}
+          </StatusPill>
+          <StatusPill
+            tone={supportTone(evidence.support)}
+            aria-label={`${t("evidence.supportLabel")}: ${t(`evidence.support.${evidence.support}`)}`}
+          >
+            {t(`evidence.support.${evidence.support}`)}
+          </StatusPill>
+          <Badge>{t("gradeLabel", { grade: evidence.grade })}</Badge>
+        </div>
+        <p className={styles.evidenceClaim}>{evidence.claim}</p>
+        <p className={styles.evidenceObserved}>
+          {t("evidence.observedAt", {
+            date: observedAt ?? tCommon("unavailable"),
+          })}
+        </p>
+        <Button
+          ref={triggerRef}
+          size="sm"
+          variant="ghost"
+          className={styles.evidenceToggle}
+          aria-expanded={open}
+          aria-controls={detailsId}
+          onClick={() => onOpenChange(!open)}
+        >
+          {open ? t("evidence.hideDetails") : t("evidence.showDetails")}
+        </Button>
+        <div
+          id={detailsId}
+          className={styles.evidenceDetails}
+          role="region"
+          aria-label={t("evidence.detailsLabel", { claim: evidence.claim })}
+          hidden={!open}
+        >
+          <dl className={styles.evidenceDetailList}>
+            <div className={styles.evidenceDetailRow}>
+              <dt>{t("evidence.origin")}</dt>
+              <dd>{evidence.origin || tCommon("unavailable")}</dd>
+            </div>
+            <div className={styles.evidenceDetailRow}>
+              <dt>{t("evidence.method")}</dt>
+              <dd>{evidence.method || tCommon("unavailable")}</dd>
+            </div>
+            <div className={styles.evidenceDetailRow}>
+              <dt>{t("evidence.limitation")}</dt>
+              <dd>{evidence.limitation || tCommon("unavailable")}</dd>
+            </div>
+          </dl>
+          <div className={styles.evidenceSubjects}>
+            <span className={styles.subLabel}>{t("evidence.subjects")}</span>
+            {evidence.subjectRefs.length > 0 ? (
+              <ul className={styles.subjectList}>
+                {evidence.subjectRefs.map((subject, index) => (
+                  <li
+                    key={`${subject.type}:${subject.value}:${index}`}
+                    className={styles.subjectItem}
+                  >
+                    <Badge>{subject.type}</Badge>
+                    <span className={styles.subjectValue}>{subject.value}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.evidenceEmptyDetail}>
+                {t("evidence.noSubjects")}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 type ReviewMode = "idle" | "ignore" | "needs_more_data";
 
 export function FindingCard({
@@ -92,24 +255,31 @@ export function FindingCard({
   const [mode, setMode] = useState<ReviewMode>("idle");
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [problemError, setProblemError] = useState<unknown | null>(null);
   const [createdAction, setCreatedAction] = useState<string | null>(null);
+  const [expandedEvidenceId, setExpandedEvidenceId] = useState<string | null>(
+    null,
+  );
 
   function handleReviewError(err: unknown): void {
     if (err instanceof ApiError) {
       if (err.code === "VERSION_CONFLICT") {
         setError(t("reviewConflict"));
+        setProblemError(err);
         onRefetch();
         return;
       }
-      const fieldErrors = err.fieldErrors();
-      setError(fieldErrors[0]?.message ?? err.message);
+      setError(t("reviewError"));
+      setProblemError(err);
       return;
     }
     setError(t("reviewError"));
+    setProblemError(null);
   }
 
   async function submit(body: ReviewFindingRequest): Promise<void> {
     setError(null);
+    setProblemError(null);
     try {
       const result = await review.mutateAsync({ findingId: finding.id, body });
       setMode("idle");
@@ -119,6 +289,7 @@ export function FindingCard({
           ? (result.action?.title ?? null)
           : null,
       );
+      onRefetch();
     } catch (err) {
       handleReviewError(err);
     }
@@ -136,6 +307,7 @@ export function FindingCard({
     if (mode === "ignore") {
       if (trimmed.length < 3) {
         setError(t("reasonTooShort"));
+        setProblemError(null);
         return;
       }
       void submit({
@@ -146,6 +318,7 @@ export function FindingCard({
     } else if (mode === "needs_more_data") {
       if (trimmed.length < 3) {
         setError(t("noteTooShort"));
+        setProblemError(null);
         return;
       }
       void submit({
@@ -160,16 +333,17 @@ export function FindingCard({
     setMode(next);
     setText("");
     setError(null);
+    setProblemError(null);
   }
 
-  const isAutoNeedsData = finding.reviewState === "needs_more_data";
+  const isNeedsData = finding.reviewState === "needs_more_data";
   const busy = review.isPending;
 
   return (
     <article
       className={cx(
         styles.findingCard,
-        isAutoNeedsData && styles.findingCardMuted,
+        isNeedsData && styles.findingCardMuted,
       )}
       aria-labelledby={`sf-finding-${finding.id}`}
     >
@@ -200,10 +374,6 @@ export function FindingCard({
 
       <p className={styles.findingSummary}>{finding.summary}</p>
 
-      {isAutoNeedsData ? (
-        <p className={styles.autoNote}>{t("autoNote")}</p>
-      ) : null}
-
       {finding.subjectRefs.length > 0 ? (
         <div className={styles.subSection}>
           <span className={styles.subLabel}>{t("subjectsLabel")}</span>
@@ -220,26 +390,23 @@ export function FindingCard({
 
       <div className={styles.subSection}>
         <span className={styles.subLabel}>{t("evidenceLabel")}</span>
-        <ul className={styles.evidenceList}>
-          {evidenceForFinding(finding.evidence).map((ev) => (
-            <li key={ev.id} className={styles.evidenceItem}>
-              <div className={styles.evidenceHead}>
-                <Badge tone="accent">
-                  {t("gradeLabel", { grade: ev.grade })}
-                </Badge>
-                <span
-                  className={styles.evidenceOrigin}
-                >{`${ev.origin} · ${ev.method}`}</span>
-                {ev.availability === "unavailable" ? (
-                  <StatusPill tone="neutral">
-                    {tCommon("unavailable")}
-                  </StatusPill>
-                ) : null}
-              </div>
-              <p className={styles.evidenceClaim}>{ev.claim}</p>
-            </li>
-          ))}
-        </ul>
+        {finding.evidence.length > 0 ? (
+          <ul className={styles.evidenceList}>
+            {evidenceForFinding(finding.evidence).map((ev) => (
+              <EvidenceTrace
+                key={ev.id}
+                evidence={ev}
+                findingId={finding.id}
+                open={expandedEvidenceId === ev.id}
+                onOpenChange={(nextOpen) =>
+                  setExpandedEvidenceId(nextOpen ? ev.id : null)
+                }
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className={styles.evidenceEmpty}>{t("evidence.none")}</p>
+        )}
       </div>
 
       {createdAction !== null ? (
@@ -314,9 +481,18 @@ export function FindingCard({
         ) : null}
 
         {mode === "idle" && error !== null ? (
-          <p className={styles.reviewError} role="alert">
-            {error}
-          </p>
+          problemError !== null ? (
+            <ProblemNotice
+              className={styles.reviewError}
+              error={problemError}
+              message={error}
+              compact
+            />
+          ) : (
+            <p className={styles.reviewError} role="alert">
+              {error}
+            </p>
+          )
         ) : null}
       </div>
     </article>

@@ -3,6 +3,7 @@ import { ProblemError } from "@sf/observability";
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import {
+  BODY_READ_TIMEOUT_MS,
   MAX_JSON_BODY_BYTES,
   parseJsonBody,
   parseMultipartFormDataWithinLimit,
@@ -183,6 +184,7 @@ function requestWithReader(
     releaseLock: () => void;
   },
   headers?: HeadersInit,
+  signal?: AbortSignal,
 ): NextRequest {
   return {
     url: "http://localhost/api/mvp/projects/project/sources/csv/import",
@@ -192,10 +194,72 @@ function requestWithReader(
       ...headers,
     }),
     body: { getReader: () => reader },
+    signal,
   } as unknown as NextRequest;
 }
 
 describe("multipart body-size cap", () => {
+  it("fails within an absolute deadline when the transport never finishes", async () => {
+    vi.useFakeTimers();
+    try {
+      const cancel = vi.fn(async () => undefined);
+      const releaseLock = vi.fn();
+      const request = requestWithReader({
+        read: () => new Promise(() => undefined),
+        cancel,
+        releaseLock,
+      });
+
+      const pending = parseMultipartFormDataWithinLimit(request, 16).catch(
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(BODY_READ_TIMEOUT_MS);
+      const outcome = await Promise.race([
+        pending,
+        Promise.resolve("still-pending"),
+      ]);
+
+      expect(outcome).not.toBe("still-pending");
+      expect(outcome).toMatchObject({ code: "BAD_REQUEST", status: 400 });
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(releaseLock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops reading when the caller aborts without reflecting its reason", async () => {
+    const controller = new AbortController();
+    const cancel = vi.fn(async () => undefined);
+    const releaseLock = vi.fn();
+    const request = requestWithReader(
+      {
+        read: () => new Promise(() => undefined),
+        cancel,
+        releaseLock,
+      },
+      undefined,
+      controller.signal,
+    );
+
+    const pending = parseMultipartFormDataWithinLimit(request, 16).catch(
+      (error: unknown) => error,
+    );
+    controller.abort(new Error("secret-abort-reason"));
+    const outcome = await Promise.race([
+      pending,
+      new Promise<string>((resolve) =>
+        setTimeout(() => resolve("still-pending"), 0),
+      ),
+    ]);
+
+    expect(outcome).not.toBe("still-pending");
+    expect(outcome).toMatchObject({ code: "BAD_REQUEST", status: 400 });
+    expect((outcome as Error).message).not.toContain("secret-abort-reason");
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(releaseLock).toHaveBeenCalledTimes(1);
+  });
+
   it("parses form data only from the bounded byte copy", async () => {
     const outbound = new FormData();
     outbound.set("templateId", "keyword_gap_v1");

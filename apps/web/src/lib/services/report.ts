@@ -3,8 +3,10 @@ import {
   DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
   FindingsRepository,
+  type DbTx,
   type WorkspaceScope,
 } from "@sf/db";
+import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getProject } from "./projects";
 import type { ProjectDto } from "./mappers";
@@ -26,9 +28,101 @@ import { toArtifactDto, type ArtifactDto } from "./artifact-mappers";
  * artifacts are excluded from the client view). It never recomputes priority.
  */
 
-const METHODOLOGY =
+const EN_METHODOLOGY =
   "Findings are derived from deterministic rules over first-party and public evidence; " +
   "no result, ranking, or revenue outcome is promised.";
+const ZH_CN_METHODOLOGY =
+  "发现由确定性规则基于第一方和公开证据得出；不承诺任何结果、排名或收入表现。";
+
+const REPORT_PAGE_SIZE = 100;
+const REPORT_MAX_PAGES_PER_RESOURCE = 100;
+const REPORT_MAX_ITEMS_PER_RESOURCE =
+  REPORT_PAGE_SIZE * REPORT_MAX_PAGES_PER_RESOURCE;
+const REPORT_MAX_BYTES_PER_RESOURCE = 16 * 1024 * 1024;
+const REPORT_MAX_EVIDENCE_LINKS = 50_000;
+const REPORT_MAX_EVIDENCE_ROWS = 50_000;
+
+type ReportResource = "findings" | "actions" | "artifacts";
+
+function reportBudgetExceeded(resource: ReportResource): never {
+  throw new ProblemError(
+    "DEPENDENCY_UNAVAILABLE",
+    `Report ${resource} projection exceeded its safety budget.`,
+  );
+}
+
+/** Incrementally measures the exact JSON-array contribution of final DTOs. */
+class ReportResourceBudget {
+  readonly #encoder = new TextEncoder();
+  #items = 0;
+  #bytes = 2; // JSON array brackets.
+
+  constructor(private readonly resource: ReportResource) {}
+
+  consume(value: unknown): void {
+    const serialized = JSON.stringify(value);
+    this.#bytes +=
+      (this.#items === 0 ? 0 : 1) + this.#encoder.encode(serialized).byteLength;
+    this.#items += 1;
+    if (
+      this.#items > REPORT_MAX_ITEMS_PER_RESOURCE ||
+      this.#bytes > REPORT_MAX_BYTES_PER_RESOURCE
+    ) {
+      reportBudgetExceeded(this.resource);
+    }
+  }
+}
+
+/**
+ * Methodology is frozen delivery copy, not UI chrome. Only the reviewed en and
+ * zh-CN variants are represented as localized. Every other valid BCP-47 request
+ * receives an explicitly labelled English fallback so the API never implies
+ * that untranslated English was authored in the requested language.
+ */
+function methodologyForOutputLocale(locale: string): string {
+  const normalized = locale.toLowerCase();
+  if (normalized === "en") return EN_METHODOLOGY;
+  if (normalized === "zh-cn") return ZH_CN_METHODOLOGY;
+  return (
+    `A localized methodology is not available for ${locale}; ` +
+    `the following text is the frozen English fallback. ${EN_METHODOLOGY}`
+  );
+}
+
+async function loadAllPages<Row>(
+  resource: ReportResource,
+  load: (
+    cursor: string | null,
+  ) => Promise<{ rows: Row[]; nextCursor: string | null }>,
+): Promise<Row[]> {
+  const rows: Row[] = [];
+  const seenCursors = new Set<string>();
+  const scanBudget = new ReportResourceBudget(resource);
+  let cursor: string | null = null;
+  let pagesRead = 0;
+
+  while (true) {
+    const page = await load(cursor);
+    pagesRead += 1;
+    for (const row of page.rows) {
+      scanBudget.consume(row);
+      rows.push(row);
+    }
+    if (page.nextCursor === null) return rows;
+    if (
+      page.nextCursor === cursor ||
+      seenCursors.has(page.nextCursor) ||
+      pagesRead >= REPORT_MAX_PAGES_PER_RESOURCE
+    ) {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        `Report ${resource} pagination did not complete safely.`,
+      );
+    }
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
+}
 
 export interface ReportDto {
   project: ProjectDto;
@@ -56,6 +150,96 @@ function emptyCoverage(): CoverageDto {
   };
 }
 
+interface ReportSnapshot {
+  readonly project: ProjectDto;
+  readonly coverage: CoverageDto;
+  readonly findings: FindingDto[];
+  readonly actions: ActionDto[];
+  readonly artifacts: ArtifactDto[];
+}
+
+async function loadReportSnapshot(
+  tx: DbTx,
+  scope: WorkspaceScope,
+  projectScope: { readonly workspaceId: string; readonly projectId: string },
+): Promise<ReportSnapshot> {
+  const project = await getProject(scope, projectScope.projectId, tx);
+  const latest = await new DiagnosticRunsRepository(tx).findLatest(projectScope);
+  const coverage = latest ? toCoverageDto(latest.coverage) : emptyCoverage();
+
+  // Confirmed + active findings (client-readable), with key evidence.
+  const findingsRepo = new FindingsRepository(tx);
+  const findingRows = await loadAllPages("findings", (cursor) =>
+    findingsRepo.list(projectScope, {
+      limit: REPORT_PAGE_SIZE,
+      cursor,
+      activeOnly: true,
+    }),
+  );
+  const confirmed = findingRows.filter((f) => f.review_state === "confirmed");
+  const evidenceByFinding = await loadEvidenceByFinding(
+    tx,
+    projectScope,
+    confirmed.map((f) => f.id),
+    {
+      maxLinks: REPORT_MAX_EVIDENCE_LINKS,
+      maxEvidenceRows: REPORT_MAX_EVIDENCE_ROWS,
+      maxEvidenceBytes: REPORT_MAX_BYTES_PER_RESOURCE,
+      onExceeded: () => reportBudgetExceeded("findings"),
+    },
+  );
+  const findingBudget = new ReportResourceBudget("findings");
+  const findings: FindingDto[] = [];
+  for (const finding of confirmed) {
+    const dto = toFindingDto(
+      finding,
+      evidenceByFinding.get(finding.id) ?? [],
+    );
+    findingBudget.consume(dto);
+    findings.push(dto);
+  }
+
+  // Non-dismissed actions (the 30/60/90 plan).
+  const actionsRepo = new ActionsRepository(tx);
+  const actionRows = await loadAllPages("actions", (cursor) =>
+    actionsRepo.list(projectScope, { limit: REPORT_PAGE_SIZE, cursor }),
+  );
+  const actionBudget = new ReportResourceBudget("actions");
+  const actions: ActionDto[] = [];
+  for (const action of actionRows) {
+    if (action.status === "dismissed") continue;
+    const dto = toActionDto(action);
+    actionBudget.consume(dto);
+    actions.push(dto);
+  }
+
+  // READY artifacts only (draft artifacts stay out of the client view).
+  const artifactsRepo = new ExecutionArtifactsRepository(tx);
+  const artifactRows = await loadAllPages("artifacts", (cursor) =>
+    artifactsRepo.listByProject(projectScope, {
+      limit: REPORT_PAGE_SIZE,
+      cursor,
+    }),
+  );
+  const readyArtifacts = artifactRows.filter((a) => a.status === "ready");
+  const artifactBudget = new ReportResourceBudget("artifacts");
+  const artifacts: ArtifactDto[] = [];
+  for (const artifact of readyArtifacts) {
+    const current = artifact.current_revision > 0
+      ? await artifactsRepo.findRevision(
+          projectScope,
+          artifact.id,
+          artifact.current_revision,
+        )
+      : null;
+    const dto = toArtifactDto(artifact, current, null);
+    artifactBudget.consume(dto);
+    artifacts.push(dto);
+  }
+
+  return { project, coverage, findings, actions, artifacts };
+}
+
 export async function getProjectReport(
   scope: WorkspaceScope,
   projectId: string,
@@ -65,53 +249,21 @@ export async function getProjectReport(
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
 
-  const project = await getProject(scope, projectId);
-  const locale = outputLocale ?? project.defaultDeliveryLocale;
-
-  const latest = await new DiagnosticRunsRepository(db).findLatest(projectScope);
-  const coverage = latest ? toCoverageDto(latest.coverage) : emptyCoverage();
-
-  // Confirmed + active findings (client-readable), with key evidence.
-  const findingPage = await new FindingsRepository(db).list(projectScope, {
-    limit: 100,
-    cursor: null,
-    activeOnly: true,
-  });
-  const confirmed = findingPage.rows.filter((f) => f.review_state === "confirmed");
-  const evidenceByFinding = await loadEvidenceByFinding(
-    db,
-    projectScope,
-    confirmed.map((f) => f.id),
+  const snapshot = await db.transaction(
+    (tx) => loadReportSnapshot(tx, scope, projectScope),
+    { isolationLevel: "repeatable read", accessMode: "read only" },
   );
-  const findings = confirmed.map((f) => toFindingDto(f, evidenceByFinding.get(f.id) ?? []));
-
-  // Non-dismissed actions (the 30/60/90 plan).
-  const actionPage = await new ActionsRepository(db).list(projectScope, { limit: 100, cursor: null });
-  const actions = actionPage.rows
-    .filter((a) => a.status !== "dismissed")
-    .map(toActionDto);
-
-  // READY artifacts only (draft artifacts stay out of the client view).
-  const artifactsRepo = new ExecutionArtifactsRepository(db);
-  const artifactPage = await artifactsRepo.listByProject(projectScope, { limit: 100, cursor: null });
-  const readyArtifacts = artifactPage.rows.filter((a) => a.status === "ready");
-  const artifacts: ArtifactDto[] = [];
-  for (const a of readyArtifacts) {
-    const current = a.current_revision > 0
-      ? await artifactsRepo.findRevision(projectScope, a.id, a.current_revision)
-      : null;
-    artifacts.push(toArtifactDto(a, current, null));
-  }
+  const locale = outputLocale ?? snapshot.project.defaultDeliveryLocale;
 
   return {
-    project,
+    project: snapshot.project,
     outputLocale: locale,
     generatedAt,
-    coverage,
-    findings,
-    actions,
-    artifacts,
-    methodology: METHODOLOGY,
-    limitations: coverage.limitations,
+    coverage: snapshot.coverage,
+    findings: snapshot.findings,
+    actions: snapshot.actions,
+    artifacts: snapshot.artifacts,
+    methodology: methodologyForOutputLocale(locale),
+    limitations: snapshot.coverage.limitations,
   };
 }

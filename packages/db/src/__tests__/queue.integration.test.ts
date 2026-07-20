@@ -103,7 +103,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
         runId,
         workspaceId,
         projectId,
-        contractVersion: "0.2.0",
+        contractVersion: "2026-07-18",
       });
     });
 
@@ -133,7 +133,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
           runId,
           workspaceId,
           projectId,
-          contractVersion: "0.2.0",
+          contractVersion: "2026-07-18",
         });
         throw new Error("forced failure after enqueue");
       }),
@@ -149,7 +149,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
     const runId = randomUUID();
     await boss.send(
       "diagnose",
-      { runId, workspaceId, projectId, contractVersion: "0.2.0" },
+      { runId, workspaceId, projectId, contractVersion: "2026-07-18" },
       { id: runId },
     );
 
@@ -167,7 +167,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
           runId,
           workspaceId,
           projectId,
-          contractVersion: "0.2.0",
+          contractVersion: "2026-07-18",
         });
       }),
     ).rejects.toThrow(/explicit run job id/i);

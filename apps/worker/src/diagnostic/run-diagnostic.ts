@@ -1,5 +1,6 @@
 import {
   ActionsRepository,
+  AnalysisInvocationsRepository,
   AsyncRunsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
@@ -9,11 +10,20 @@ import {
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
   TelemetryRepository,
+  toRunAttempt,
   type DiagnosticRunRow,
   type EvidenceInsert,
   type FindingObservationInsert,
   type ProjectScope,
+  type RunAttempt,
 } from "@sf/db";
+import {
+  LLMError,
+  createOpenAIFindingSummaryClient,
+  type AnalysisInvocationRecord,
+  type FindingSummaryClient,
+  type FindingSummaryClientOptions,
+} from "@sf/artifacts";
 import {
   ALL_RULES,
   DiagnosticContext,
@@ -21,6 +31,7 @@ import {
   runPipeline,
   type CoverageInput,
   type DatasetAvailability,
+  type FindingSummaryGenerator,
   type ObservationView,
   type RunFinding,
 } from "@sf/engine";
@@ -44,6 +55,217 @@ export interface DiagnoseJobPayload {
   readonly runId: string;
   readonly workspaceId: string;
   readonly projectId: string;
+}
+
+export interface FindingSummaryGeneratorDependencies {
+  readonly createClient?: (
+    options: FindingSummaryClientOptions,
+  ) => FindingSummaryClient;
+}
+
+export const MAX_FINDING_SUMMARY_INVOCATIONS_PER_RUN = 8;
+export const FINDING_SUMMARY_REQUEST_TIMEOUT_MS = 30_000;
+
+export type FindingSummaryGeneratorStage = FindingSummaryGenerator & {
+  /** Throws after the pipeline when invocation accounting is not trustworthy. */
+  assertHealthy(): void;
+};
+
+const INVOCATION_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function needsGeneratedSummary(locale: string): boolean {
+  const normalized = locale.toLowerCase();
+  return (
+    normalized !== "en" &&
+    !normalized.startsWith("en-") &&
+    normalized !== "zh-cn"
+  );
+}
+
+async function persistFindingSummaryInvocation(
+  ctx: WorkerContext,
+  scope: ProjectScope,
+  runId: string,
+  invocation: AnalysisInvocationRecord,
+): Promise<string | null> {
+  try {
+    const invocationId = await new AnalysisInvocationsRepository(ctx.db).insert({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      asyncRunId: runId,
+      task: "finding_summary",
+      provider: invocation.provider,
+      model: invocation.model,
+      promptSetVersion: invocation.promptSetVersion,
+      inputHash: invocation.inputHash,
+      outputHash: invocation.outputHash,
+      status: invocation.status,
+      inputTokens: invocation.inputTokens,
+      outputTokens: invocation.outputTokens,
+      costUsd: invocation.costUsd,
+      latencyMs: invocation.latencyMs,
+      errorCode: invocation.errorCode,
+    });
+    if (!INVOCATION_UUID_RE.test(invocationId)) return null;
+    try {
+      ctx.logger.info("finding_summary_invocation_recorded", {
+        task: "finding_summary",
+        status: invocation.status,
+      });
+    } catch {
+      // Observability cannot turn an optional localized summary into a run error.
+    }
+    return invocationId;
+  } catch (error) {
+    // Do not expose DB/provider detail, but do preserve the error for the run-level
+    // health latch: a real model call without its immutable audit row must prevent
+    // the diagnostic from reaching completed.
+    try {
+      ctx.logger.warn("finding_summary_invocation_persist_failed", {
+        task: "finding_summary",
+        status: invocation.status,
+      });
+    } catch {
+      // A failing log sink cannot replace the original infrastructure failure.
+    }
+    throw error;
+  }
+}
+
+/**
+ * Worker-owned adapter between the engine hook and the model client. A real
+ * invocation id is returned only after its immutable row exists. Model failures
+ * return null so the engine selects the honestly labelled English fallback;
+ * invocation count/persistence failures additionally trip the run-level health
+ * latch so the engine's optional-summary fallback cannot complete the run.
+ */
+export function createFindingSummaryGenerator(
+  ctx: WorkerContext,
+  scope: ProjectScope,
+  runId: string,
+  dependencies: FindingSummaryGeneratorDependencies = {},
+): FindingSummaryGeneratorStage {
+  const createClient =
+    dependencies.createClient ?? createOpenAIFindingSummaryClient;
+  let client: FindingSummaryClient | null = null;
+  let clientCreationFailed = false;
+  let attemptedInvocations = 0;
+  let persistedInvocationCount: Promise<number> | null = null;
+  let healthFailed = false;
+  let fatalHealthError: unknown;
+
+  const generator: FindingSummaryGeneratorStage = Object.assign(async (
+    input: Parameters<FindingSummaryGenerator>[0],
+  ) => {
+    if (ctx.signal?.aborted) return null;
+    if (healthFailed) return null;
+    if (clientCreationFailed) return null;
+    if (!needsGeneratedSummary(input.outputLocale)) return null;
+
+    persistedInvocationCount ??= new AnalysisInvocationsRepository(
+      ctx.db,
+    ).countByAsyncRunTask(scope, runId, "finding_summary");
+    let historicalInvocations: number;
+    try {
+      historicalInvocations = await persistedInvocationCount;
+    } catch (error) {
+      healthFailed = true;
+      fatalHealthError = error;
+      try {
+        ctx.logger.warn("finding_summary_invocation_count_failed", {
+          task: "finding_summary",
+        });
+      } catch {
+        // Optional summaries fail closed even if logging is unavailable.
+      }
+      return null;
+    }
+
+    if (ctx.signal?.aborted) return null;
+    if (
+      historicalInvocations + attemptedInvocations >=
+      MAX_FINDING_SUMMARY_INVOCATIONS_PER_RUN
+    ) {
+      return null;
+    }
+
+    if (client === null) {
+      try {
+        client = createClient({
+          apiKey: ctx.openai.apiKey,
+          model: ctx.openai.model,
+          ...(ctx.openai.baseUrl ? { baseUrl: ctx.openai.baseUrl } : {}),
+          ...(ctx.openai.authScheme
+            ? { authScheme: ctx.openai.authScheme }
+            : {}),
+          timeoutMs: FINDING_SUMMARY_REQUEST_TIMEOUT_MS,
+          ...(ctx.signal ? { signal: ctx.signal } : {}),
+        });
+      } catch {
+        clientCreationFailed = true;
+        return null;
+      }
+    }
+
+    if (ctx.signal?.aborted) return null;
+    attemptedInvocations += 1;
+    let result: Awaited<ReturnType<FindingSummaryClient["generateSummary"]>>;
+    try {
+      result = await client.generateSummary(input);
+    } catch (error) {
+      if (error instanceof LLMError && error.invocation) {
+        try {
+          await persistFindingSummaryInvocation(
+            ctx,
+            scope,
+            runId,
+            error.invocation,
+          );
+        } catch (persistenceError) {
+          healthFailed = true;
+          fatalHealthError = persistenceError;
+        }
+      }
+      return null;
+    }
+
+    let invocationId: string | null;
+    try {
+      invocationId = await persistFindingSummaryInvocation(
+        ctx,
+        scope,
+        runId,
+        result.invocation,
+      );
+    } catch (error) {
+      healthFailed = true;
+      fatalHealthError = error;
+      return null;
+    }
+    if (invocationId === null) return null;
+    return {
+      summary: result.summary,
+      summaryLocale: result.summaryLocale,
+      invocationId,
+    };
+  }, {
+    assertHealthy(): void {
+      if (healthFailed) throw fatalHealthError;
+    },
+  });
+
+  return generator;
+}
+
+export function createFindingSummaryGeneratorForRun(
+  ctx: WorkerContext,
+  scope: ProjectScope,
+  runId: string,
+  dependencies: FindingSummaryGeneratorDependencies = {},
+): FindingSummaryGeneratorStage | undefined {
+  if (!ctx.findingSummariesEnabled) return undefined;
+  return createFindingSummaryGenerator(ctx, scope, runId, dependencies);
 }
 
 export function warnOnSlowRules(
@@ -120,15 +342,16 @@ export async function runDiagnostic(
   const scope: ProjectScope = { workspaceId, projectId };
   const runs = new AsyncRunsRepository(ctx.db);
 
-  const claimed = await runs.claim(runId);
+  const claimed = await runs.claim(scope, runId);
   if (!claimed) return;
+  const attempt = toRunAttempt(claimed);
 
   const diagRun = await new DiagnosticRunsRepository(ctx.db).findById(
     scope,
     runId,
   );
   if (!diagRun) {
-    await runs.setTerminal(runId, {
+    await runs.setTerminal(attempt, {
       status: "failed",
       lastErrorCode: "NOT_FOUND",
       lastErrorSummary: "diagnostic run missing",
@@ -142,7 +365,9 @@ export async function runDiagnostic(
       scope,
       diagRun,
       claimed.initiated_by,
+      attempt,
     );
+    if (result === null) return;
     ctx.logger.info("diagnostic_done", {
       runId,
       status: result.status,
@@ -150,22 +375,29 @@ export async function runDiagnostic(
     });
   } catch (error) {
     if (isTransientInfrastructureError(error)) {
-      ctx.logger.warn("diagnostic_transient_error", {
-        runId,
-        code: transientFailureCode(error),
-      });
-      await runs.resetToQueued(runId);
+      const code = transientFailureCode(error);
+      if (!(await runs.resetToQueued(attempt))) {
+        ctx.logger.info("diagnostic_skip_stale_attempt", { code });
+        return;
+      }
+      ctx.logger.warn("diagnostic_transient_error", { code });
       throw error;
     }
-    ctx.logger.error("diagnostic_failed", {
-      runId,
-      ...runtimeFailureMetadata("UNAVAILABLE", error),
-    });
-    await runs.setTerminal(runId, {
+    const terminalized = await runs.setTerminal(attempt, {
       status: "failed",
       lastErrorCode: "UNAVAILABLE",
       lastErrorSummary: "diagnostic failed",
     });
+    if (!terminalized) {
+      ctx.logger.info("diagnostic_skip_stale_attempt", {
+        code: "UNAVAILABLE",
+      });
+      return;
+    }
+    ctx.logger.error(
+      "diagnostic_failed",
+      runtimeFailureMetadata("UNAVAILABLE", error),
+    );
   }
 }
 
@@ -174,7 +406,8 @@ async function computeAndPersist(
   scope: ProjectScope,
   diagRun: DiagnosticRunRow,
   actorId: string,
-): Promise<{ status: "completed" | "partial"; findingCount: number }> {
+  attempt: RunAttempt,
+): Promise<{ status: "completed" | "partial"; findingCount: number } | null> {
   const manifestSnaps = readManifestSnapshots(diagRun.input_manifest);
   const snapshotIds = manifestSnaps.map((s) => s.snapshotId);
 
@@ -210,6 +443,11 @@ async function computeAndPersist(
     capturedAt,
   });
 
+  const summaryGenerator = createFindingSummaryGeneratorForRun(
+    ctx,
+    scope,
+    diagRun.id,
+  );
   const pipeline = await runPipeline({
     projectId: scope.projectId,
     ctx: diagCtx,
@@ -218,7 +456,12 @@ async function computeAndPersist(
     discrepancySubjectRefs: [
       ...new Set(discrepancyRows.map((row) => row.subject_ref)),
     ],
+    ...(summaryGenerator ? { summaryGenerator } : {}),
   });
+  // The engine deliberately contains optional generator failures. Invocation
+  // persistence is different: losing an immutable audit row is fatal and must
+  // be surfaced before the canonical persistence transaction can complete.
+  summaryGenerator?.assertHealthy();
   warnOnSlowRules(ctx.logger, diagRun.id, pipeline.ruleResults);
 
   // A run is `completed` (and may therefore auto-resolve stale findings, §8.6)
@@ -233,7 +476,22 @@ async function computeAndPersist(
     : "partial";
   const now = new Date().toISOString();
 
-  await ctx.db.transaction(async (tx) => {
+  const persisted = await ctx.db.transaction(async (tx) => {
+    const asyncRunsRepo = new AsyncRunsRepository(tx);
+    if (!(await asyncRunsRepo.lockAttemptForUpdate(attempt))) return false;
+    // Match web mutation order after fencing the accepted attempt: project
+    // before finding/action children. Archival freezes only the project stage;
+    // diagnostic history, findings/evidence, and run terminalization converge.
+    const projects = new ProjectsRepository(tx);
+    const project = await projects.findByIdForUpdate(
+      { workspaceId: scope.workspaceId },
+      scope.projectId,
+    );
+    if (!project) {
+      throw new Error("diagnostic project disappeared while terminalizing");
+    }
+    const projectionsMutable = project.archived_at === null;
+
     // Rule results (append-only ledger).
     await new DiagnosticRunsRepository(tx).insertRuleResults(
       {
@@ -303,16 +561,21 @@ async function computeAndPersist(
       pipeline.coverage as unknown as Record<string, unknown>,
     );
 
-    await new AsyncRunsRepository(tx).setTerminal(diagRun.id, {
+    const terminalized = await asyncRunsRepo.setTerminal(attempt, {
       status: runStatus,
       resultType: "diagnostic_run",
       resultId: diagRun.id,
     });
-    await new ProjectsRepository(tx).setStage(
-      { workspaceId: scope.workspaceId },
-      scope.projectId,
-      "planning",
-    );
+    if (!terminalized) {
+      throw new Error("diagnostic attempt ownership changed while locked");
+    }
+    if (projectionsMutable) {
+      await projects.setStage(
+        { workspaceId: scope.workspaceId },
+        scope.projectId,
+        "planning",
+      );
+    }
 
     await new TelemetryRepository(tx).emit({
       workspaceId: scope.workspaceId,
@@ -326,7 +589,10 @@ async function computeAndPersist(
         durationBucket: "under_10m",
       },
     });
+    return true;
   });
+
+  if (!persisted) return null;
 
   return { status: runStatus, findingCount: pipeline.findings.length };
 }

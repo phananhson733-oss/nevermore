@@ -22,6 +22,16 @@ describe("transient infrastructure classification", () => {
     ).toBe(true);
     expect(
       isTransientInfrastructureError(
+        Object.assign(new Error("lock timeout"), { code: "55P03" }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientInfrastructureError(
+        Object.assign(new Error("statement timeout"), { code: "57014" }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientInfrastructureError(
         new Error("outer", {
           cause: Object.assign(new Error("socket"), { code: "ECONNRESET" }),
         }),

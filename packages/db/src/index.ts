@@ -1,9 +1,30 @@
-export { createDbHandle, pgTypes } from "./client.ts";
-export type { Db, DbTx, DbHandle, Pool, PoolClient } from "./client.ts";
+export {
+  createDbHandle,
+  DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  DB_LOCK_TIMEOUT_MS,
+  DB_STATEMENT_TIMEOUT_MS,
+  getDbPoolStats,
+  pgTypes,
+} from "./client.ts";
+export type {
+  Db,
+  DbTx,
+  DbHandle,
+  DbInstrumentation,
+  DbPoolStats,
+  Pool,
+  PoolClient,
+  SlowQueryEvent,
+} from "./client.ts";
 export * as schemaTables from "./schema.ts";
 export { schema } from "./schema.ts";
 export { canonicalize, sha256Hex, contentHash } from "./hash.ts";
 export type { CanonicalValue } from "./hash.ts";
+export {
+  LATEST_APP_MIGRATION,
+  readMigrationVersion,
+} from "./migration-version.ts";
+export { isTimestampUuidCursorValid } from "./repositories/cursor.ts";
 export {
   Repository,
   workspacePredicate,
@@ -45,9 +66,12 @@ export type {
 export {
   AsyncRunsRepository,
   isTerminalStatus,
+  toRunAttempt,
 } from "./repositories/async-runs.ts";
 export type {
   AsyncRunRow,
+  QueueTechnicalMetric,
+  RunAttempt,
   RunKind,
   RunStatus,
 } from "./repositories/async-runs.ts";
@@ -101,7 +125,19 @@ export type {
 export { AnalysisInvocationsRepository } from "./repositories/analysis-invocations.ts";
 export { ExportBundlesRepository } from "./repositories/export-bundles.ts";
 export type { ExportBundleRow } from "./repositories/export-bundles.ts";
-export { StorageObjectReferencesRepository } from "./repositories/storage-object-references.ts";
+export {
+  StorageObjectReferencesRepository,
+  STORAGE_RETENTION_DAY_MS,
+  RAW_OBJECT_RETENTION_DAYS,
+  EXPORT_OBJECT_RETENTION_DAYS,
+  RAW_OBJECT_RETENTION_MS,
+  EXPORT_OBJECT_RETENTION_MS,
+  isStorageObjectExpired,
+} from "./repositories/storage-object-references.ts";
+export type {
+  ExportObjectDeletionFence,
+  ExportObjectDeletionCandidate,
+} from "./repositories/storage-object-references.ts";
 export {
   PGBOSS_SCHEMA,
   QUEUE_CONFIG,
@@ -122,8 +158,12 @@ export type {
 export {
   acquireWorkerReadinessLease,
   checkWorkerReadiness,
+  WorkerReadinessError,
 } from "./worker-readiness.ts";
 export type {
+  WorkerReadinessErrorCode,
+  WorkerReadinessFailure,
   WorkerReadinessLease,
+  WorkerReadinessOptions,
   WorkerReadinessPool,
 } from "./worker-readiness.ts";

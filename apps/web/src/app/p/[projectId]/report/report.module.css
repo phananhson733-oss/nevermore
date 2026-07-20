@@ -91,15 +91,15 @@
   height: 38px;
   flex: none;
   border-radius: 10px;
-  color: var(--sf-cobalt);
+  color: var(--sf-cobalt-text);
   background: var(--sf-cobalt-soft);
 }
 .summaryIconAmber {
-  color: var(--sf-amber);
+  color: var(--sf-amber-text);
   background: var(--sf-amber-soft);
 }
 .summaryIconMint {
-  color: var(--sf-mint);
+  color: var(--sf-mint-text);
   background: var(--sf-mint-soft);
 }
 .summaryBody {
@@ -135,6 +135,13 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--sf-muted);
+}
+.localeHelp {
+  max-width: 44ch;
+  margin: 0;
+  font-size: var(--sf-text-xs);
+  color: var(--sf-muted);
+  line-height: 1.45;
 }
 .segmented {
   display: inline-flex;
@@ -288,6 +295,13 @@
   font-size: var(--sf-text-base);
   color: var(--sf-fg);
   line-height: 1.5;
+}
+.contentLocale {
+  margin: 0;
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+  color: var(--sf-muted);
+  line-height: 1.4;
 }
 .actionTitle {
   font-size: var(--sf-text-lg);
@@ -474,9 +488,135 @@
 }
 .exportReady {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+.exportDownload {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
+}
+.manifest {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: var(--sf-radius-card);
+}
+.manifestHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.manifestTitle {
+  margin: 0;
+  font-size: var(--sf-text-lg);
+  color: var(--sf-fg);
+}
+.manifestDescription {
+  margin: 4px 0 0;
+  max-width: 64ch;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  line-height: 1.5;
+}
+.manifestFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  background: var(--sf-border);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-control);
+}
+.manifestFact {
+  min-width: 0;
+  padding: 12px;
+  background: var(--sf-surface);
+}
+.manifestFact dt,
+.manifestBoundaryLabel,
+.manifestItemsTitle {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+.manifestFact dd {
+  margin: 4px 0 0;
+  font-size: var(--sf-text-sm);
+  font-weight: 650;
+  color: var(--sf-fg);
+}
+.manifestChecksum {
+  grid-column: 1 / -1;
+}
+.manifestChecksum code {
+  overflow-wrap: anywhere;
+  font-family: var(--sf-font-mono);
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+}
+.manifestBoundary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.manifestBoundary > div {
+  padding: 12px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-control);
+}
+.manifestBoundary p {
+  margin: 5px 0 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-fg);
+  line-height: 1.45;
+}
+.manifestItemsTitle {
+  margin: 0 0 8px;
+}
+.manifestItems {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.manifestItems li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-muted);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-control);
+}
+.manifestItems strong {
+  color: var(--sf-fg);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 680px) {
+  .manifestFacts,
+  .manifestBoundary,
+  .manifestItems {
+    grid-template-columns: 1fr;
+  }
+  .manifestChecksum {
+    grid-column: auto;
+  }
 }
 .downloadLink {
   display: inline-flex;
@@ -506,7 +646,7 @@
 .exportError {
   margin: 0;
   font-size: var(--sf-text-base);
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
 }
 
 /* ---------------------------------------------------- Loading / error ----- */
@@ -539,11 +679,6 @@
 
 /* ------------------------------------------------------------- Print ------- */
 @media print {
-  /* Hide the app shell chrome (sidebar + sticky topbar) and every control. */
-  :global(aside),
-  :global(header) {
-    display: none !important;
-  }
   .noPrint {
     display: none !important;
   }

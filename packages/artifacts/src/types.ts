@@ -18,6 +18,12 @@ export const ARTIFACT_FORMAT: Record<ArtifactType, ContentFormat> = {
 
 export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 
+/** Maximum items accepted by any bounded artifact prompt/output collection. */
+export const MAX_ARTIFACT_COLLECTION_ITEMS = 100;
+
+/** Maximum evidence rows admitted to one artifact-generation prompt. */
+export const MAX_ARTIFACT_EVIDENCE_ROWS = 100;
+
 /** A short evidence excerpt allowlisted into the prompt (numbers + claim only). */
 export interface EvidenceExcerpt {
   readonly evidenceId: string;
@@ -56,6 +62,13 @@ export interface PromptFinding {
   readonly subjectRefs: readonly string[];
 }
 
+/** Frozen crawl metadata for a metadata rewrite target; unknown values stay null. */
+export interface PromptCurrentMetadata {
+  readonly url: string | null;
+  readonly currentTitle: string | null;
+  readonly currentDescription: string | null;
+}
+
 /** The full allowlisted artifact generation input. */
 export interface ArtifactPromptInput {
   readonly artifactType: ArtifactType;
@@ -64,6 +77,7 @@ export interface ArtifactPromptInput {
   readonly icp: PromptIcp;
   readonly action: PromptAction;
   readonly finding: PromptFinding;
+  readonly currentMetadata: PromptCurrentMetadata;
   readonly evidence: readonly EvidenceExcerpt[];
   /** Whether the source action is a high-risk technical change (spec §9.3 step 8). */
   readonly requiresValidationRollback: boolean;

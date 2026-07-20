@@ -14,11 +14,15 @@ test-results
 .data
 **/.data
 
-# Never copy local credentials or platform secrets into the build context.
-.env
-.env.local
-.env.*.local
-apps/*/.env.local
+# Operator documentation and local verification evidence are not runtime build
+# inputs. Excluding them also lets docs record an image digest without changing
+# that same image on the next reproducible build.
+docs
+
+# Never copy local credentials, backups, or future env-file variants into the
+# build context. Docker builds do not need env examples at runtime.
+.env*
+**/.env*
 
 .DS_Store
 *.tsbuildinfo

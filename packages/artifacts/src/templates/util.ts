@@ -4,9 +4,43 @@
  * what makes the generated content hashable and reproducible (spec §10.3).
  */
 
-/** zh-CN (or any `zh-*`) locale selects Chinese headings/body; else English. */
+export type TemplateArtifactLocale = "en" | "zh-CN";
+
+export const UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE =
+  "Template generation supports only en or zh-CN. Use structured_llm for other locales.";
+
+/** A stable, input-free error for both request and legacy-worker defenses. */
+export class UnsupportedTemplateLocaleError extends Error {
+  readonly code = "UNSUPPORTED_TEMPLATE_LOCALE";
+
+  constructor() {
+    super(UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE);
+    this.name = "UnsupportedTemplateLocaleError";
+  }
+}
+
+/** Resolve case-insensitive semantic en / zh-CN to their canonical labels. */
+export function normalizeTemplateArtifactLocale(
+  locale: string,
+): TemplateArtifactLocale | null {
+  const normalized = typeof locale === "string" ? locale.toLowerCase() : "";
+  if (normalized === "en") return "en";
+  if (normalized === "zh-cn") return "zh-CN";
+  return null;
+}
+
+/** Fail closed before deterministic copy can be labelled as another locale. */
+export function assertTemplateArtifactLocale(
+  locale: string,
+): TemplateArtifactLocale {
+  const normalized = normalizeTemplateArtifactLocale(locale);
+  if (!normalized) throw new UnsupportedTemplateLocaleError();
+  return normalized;
+}
+
+/** Only semantic zh-CN selects the Simplified-Chinese template copy. */
 export function isZh(locale: string): boolean {
-  return locale.toLowerCase().startsWith("zh");
+  return assertTemplateArtifactLocale(locale) === "zh-CN";
 }
 
 /** Locale-select helper: pick the Chinese or English variant. */

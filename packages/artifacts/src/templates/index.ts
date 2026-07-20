@@ -10,10 +10,19 @@ import { ARTIFACT_FORMAT } from "../types.ts";
 import { build as buildContentBrief } from "./content-brief.ts";
 import { build as buildMetadataRewrite } from "./metadata-rewrite.ts";
 import { build as buildTechnicalTicket } from "./technical-ticket.ts";
+import { assertTemplateArtifactLocale } from "./util.ts";
 
 export { buildContentBrief, buildMetadataRewrite, buildTechnicalTicket };
+export {
+  assertTemplateArtifactLocale,
+  normalizeTemplateArtifactLocale,
+  UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE,
+  UnsupportedTemplateLocaleError,
+} from "./util.ts";
+export type { TemplateArtifactLocale } from "./util.ts";
 
 export function buildTemplateArtifact(input: ArtifactPromptInput): ArtifactContent {
+  assertTemplateArtifactLocale(input.outputLocale);
   const contentFormat = ARTIFACT_FORMAT[input.artifactType];
   switch (input.artifactType) {
     case "content_brief":

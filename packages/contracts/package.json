@@ -9,7 +9,8 @@
     "./zod/common": "./src/zod/common.ts",
     "./zod/envelope": "./src/zod/envelope.ts",
     "./zod/problem": "./src/zod/problem.ts",
-    "./zod/health": "./src/zod/health.ts"
+    "./zod/health": "./src/zod/health.ts",
+    "./runtime-url": "./src/runtime-url.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -13,10 +13,20 @@
  * `validationErrors` set (422 `ARTIFACT_VALIDATION_FAILED` → surface the errors).
  */
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  Bcp47Locale,
+  MAX_ARTIFACT_CONTENT_CHARS,
+} from "@sf/contracts";
 import {
   CircleCheckBig,
   ClipboardList,
@@ -35,6 +45,7 @@ import {
   Panel,
   Spinner,
   StatusPill,
+  TextInput,
   TextArea,
   cx,
   useFieldControl,
@@ -42,6 +53,7 @@ import {
 } from "@/components/ui";
 import { ApiError, useProject } from "@/lib/api";
 import type { Project } from "@/lib/api";
+import { uniqueCursorItems } from "@/lib/api/cursor-pages";
 import {
   expectedArtifactType,
   isTerminalRun,
@@ -63,7 +75,17 @@ import type {
   RunStatus,
   ValidationState,
 } from "@/lib/api/hooks-studio";
+import { ProblemNotice, ProblemState } from "../_problem-display";
 import { studioRunQueryOutcome } from "../_frontend-error-state.ts";
+import {
+  projectHistoryPosition,
+  projectHistoryTraversalDelta,
+} from "../_project-history-position.ts";
+import {
+  canDiscardArtifactChanges,
+  isArtifactEditorDirty,
+  shouldConfirmArtifactNavigation,
+} from "./_artifact-editor-state.ts";
 import styles from "./studio.module.css";
 
 // ----------------------------------------------------------- Tone helpers ----
@@ -181,6 +203,177 @@ function groupByType(
   return ARTIFACT_TYPES.map(
     (type) => [type, artifacts.filter((a) => a.artifactType === type)] as const,
   ).filter(([, list]) => list.length > 0);
+}
+
+/**
+ * Guard browser unloads and in-app anchor navigation while this mounted editor
+ * owns unsaved state. This is intentionally local to Studio and independent of
+ * the Context editor's browser-local navigation bridge.
+ */
+function useUnsavedArtifactNavigationGuard(
+  dirty: boolean,
+  confirmationMessage: string,
+  discardChanges: () => void,
+): void {
+  useLayoutEffect(() => {
+    if (!dirty) return;
+    const guardedUrl = window.location.href;
+    const guardedState: unknown = window.history.state;
+    const guardedPosition = projectHistoryPosition(window.history.state);
+    const guardedNavigationIndex = browserNavigationIndex();
+    let restoringTraversal = false;
+    let guardActive = true;
+
+    function beforeUnload(event: BeforeUnloadEvent): void {
+      if (!guardActive) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    function documentClick(event: MouseEvent): void {
+      if (
+        !guardActive ||
+        event.defaultPrevented ||
+        !(event.target instanceof Element)
+      ) {
+        return;
+      }
+      const anchor = event.target.closest<HTMLAnchorElement>("a[href]");
+      if (anchor === null) return;
+
+      const current = new URL(window.location.href);
+      const destination = new URL(anchor.href, current);
+      const sameDocument =
+        destination.origin === current.origin &&
+        destination.pathname === current.pathname &&
+        destination.search === current.search;
+      const internalNavigation = destination.origin === current.origin;
+      const target = anchor.getAttribute("target");
+      const modified =
+        event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
+
+      if (
+        !shouldConfirmArtifactNavigation({
+          dirty,
+          willLeaveEditor: internalNavigation && !sameDocument,
+          button: event.button,
+          modified,
+          opensNewContext: target !== null && target !== "" && target !== "_self",
+          download: anchor.hasAttribute("download"),
+        })
+      ) {
+        return;
+      }
+      if (window.confirm(confirmationMessage)) {
+        guardActive = false;
+        discardChanges();
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }
+
+    function popState(event: PopStateEvent): void {
+      if (!guardActive) return;
+      if (restoringTraversal) {
+        restoringTraversal = false;
+        return;
+      }
+      const delta = projectHistoryTraversalDelta(
+        guardedPosition,
+        event.state,
+        guardedNavigationIndex,
+        browserNavigationIndex(),
+      );
+      if (delta === 0) {
+        return;
+      }
+      if (delta === null) {
+        // Older browsers may expose neither Navigation API indices nor a stamp
+        // on the entry that predates the project shell. Never interpret that
+        // uncertainty as permission to discard edits. If the operator cancels,
+        // suppress downstream router listeners and recreate the guarded entry
+        // from its exact Next history state without reloading the document.
+        if (window.confirm(confirmationMessage)) {
+          guardActive = false;
+          discardChanges();
+          return;
+        }
+        event.stopImmediatePropagation();
+        window.history.pushState(guardedState, "", guardedUrl);
+        return;
+      }
+      if (window.confirm(confirmationMessage)) {
+        guardActive = false;
+        discardChanges();
+        return;
+      }
+
+      // popstate itself is not cancelable. Stop Next's restore handler, then
+      // traverse the exact inverse delta. The restoration event is allowed
+      // through so router state and URL settle back on the guarded entry.
+      event.stopImmediatePropagation();
+      restoringTraversal = true;
+      window.history.go(-delta);
+    }
+
+    function navigate(event: Event): void {
+      if (!guardActive) return;
+      const navigationEvent = event as BrowserNavigateEvent;
+      if (
+        navigationEvent.navigationType !== "traverse" ||
+        !navigationEvent.destination.sameDocument
+      ) {
+        return;
+      }
+      if (window.confirm(confirmationMessage)) {
+        guardActive = false;
+        discardChanges();
+        return;
+      }
+      if (event.cancelable) event.preventDefault();
+    }
+
+    const navigation = browserNavigation();
+    window.addEventListener("beforeunload", beforeUnload);
+    window.addEventListener("popstate", popState, true);
+    navigation?.addEventListener("navigate", navigate);
+    document.addEventListener("click", documentClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      window.removeEventListener("popstate", popState, true);
+      navigation?.removeEventListener("navigate", navigate);
+      document.removeEventListener("click", documentClick, true);
+    };
+  }, [confirmationMessage, dirty, discardChanges]);
+}
+
+interface BrowserNavigateEvent extends Event {
+  readonly navigationType: string;
+  readonly destination: {
+    readonly sameDocument: boolean;
+  };
+}
+
+interface BrowserNavigation extends EventTarget {
+  readonly currentEntry?: {
+    readonly index: number;
+  };
+}
+
+function browserNavigation(): BrowserNavigation | undefined {
+  return (
+    window as typeof window & { readonly navigation?: BrowserNavigation }
+  ).navigation;
+}
+
+/** Navigation API fallback for entries created before the project shell. */
+function browserNavigationIndex(): number | null {
+  const navigation = browserNavigation();
+  const index = navigation?.currentEntry?.index;
+  return typeof index === "number" && index >= 0 ? index : null;
 }
 
 // ------------------------------------------------------------- Select --------
@@ -340,6 +533,7 @@ interface ArtifactEditorProps {
   readonly projectId: string;
   readonly artifact: Artifact;
   readonly onClose: () => void;
+  readonly onDirtyChange: (artifactId: string, dirty: boolean) => void;
 }
 
 interface EditorFeedback {
@@ -350,68 +544,138 @@ interface EditorFeedback {
 const NO_FEEDBACK: EditorFeedback = { top: null, errors: [] };
 
 /**
- * Detail + editor for one artifact. Mounted with a
- * `${id}:${currentRevision}` key so a saved revision remounts fresh, but typing
- * (which never changes `currentRevision`) is preserved across background
- * refetches.
+ * Detail + editor for one artifact. It remains mounted across revision
+ * refetches so a background server update can never erase the local draft.
  */
-function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
+function ArtifactEditor({
+  projectId,
+  artifact,
+  onClose,
+  onDirtyChange,
+}: ArtifactEditorProps) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
   const queryClient = useQueryClient();
   const update = useUpdateArtifact(projectId, artifact.id);
 
   const current = artifact.current;
-  const [draft, setDraft] = useState<string>(
-    current ? contentToText(current.content) : "",
-  );
+  const initialDraft = current ? contentToText(current.content) : "";
+  const [draft, setDraft] = useState<string>(initialDraft);
+  const [savedDraft, setSavedDraft] = useState<string>(initialDraft);
   const [note, setNote] = useState<string>("");
+  const [baseRevision, setBaseRevision] = useState<number>(
+    artifact.currentRevision,
+  );
   const [feedback, setFeedback] = useState<EditorFeedback>(NO_FEEDBACK);
+  const [feedbackProblem, setFeedbackProblem] = useState<unknown | null>(null);
+  const awaitingRevision = useRef<number | null>(null);
 
   const busy = update.isPending;
+  const dirty = isArtifactEditorDirty({ draft, note, savedDraft });
   const validationErrors = current?.validationErrors ?? [];
   const cannotReady =
     artifact.validationState === "invalid" || validationErrors.length > 0;
   const isJson = current?.contentFormat === "json";
 
+  const discardLocalChanges = useCallback((): void => {
+    setDraft(savedDraft);
+    setNote("");
+  }, [savedDraft]);
+
+  useUnsavedArtifactNavigationGuard(
+    dirty,
+    t("unsavedLeaveWarning"),
+    discardLocalChanges,
+  );
+
+  useEffect(() => {
+    onDirtyChange(artifact.id, dirty);
+  }, [artifact.id, dirty, onDirtyChange]);
+
+  useEffect(
+    () => () => onDirtyChange(artifact.id, false),
+    [artifact.id, onDirtyChange],
+  );
+
+  // Adopt a newer server revision only while clean. While dirty, keep both the
+  // local text and its original baseRevision so optimistic concurrency fails
+  // safely instead of overwriting somebody else's edit.
+  useEffect(() => {
+    if (
+      dirty ||
+      current === null ||
+      artifact.currentRevision === baseRevision ||
+      (awaitingRevision.current !== null &&
+        artifact.currentRevision < awaitingRevision.current)
+    ) {
+      return;
+    }
+    const nextDraft = contentToText(current.content);
+    setDraft(nextDraft);
+    setSavedDraft(nextDraft);
+    setNote("");
+    setBaseRevision(artifact.currentRevision);
+    awaitingRevision.current = null;
+    setFeedback(NO_FEEDBACK);
+    setFeedbackProblem(null);
+  }, [artifact.currentRevision, baseRevision, current, dirty]);
+
   function handleError(error: unknown): void {
     if (error instanceof ApiError) {
       if (error.status === 409 || error.code === "STALE_REVISION") {
         setFeedback({ top: t("staleRevision"), errors: [] });
+        setFeedbackProblem(error);
         void queryClient.invalidateQueries({
           queryKey: ["artifacts", projectId],
         });
         return;
       }
       if (error.code === "ARTIFACT_VALIDATION_FAILED" || error.status === 422) {
-        const errors = error
-          .fieldErrors()
-          .map((fieldError) => fieldError.message);
-        setFeedback({ top: t("validationFailed"), errors });
+        setFeedback({ top: t("validationFailed"), errors: [] });
+        setFeedbackProblem(error);
         return;
       }
-      setFeedback({ top: error.message, errors: [] });
+      setFeedback({ top: tCommon("error"), errors: [] });
+      setFeedbackProblem(error);
       return;
     }
     setFeedback({ top: tCommon("error"), errors: [] });
+    setFeedbackProblem(null);
   }
 
   async function onSaveRevision(): Promise<void> {
     if (!current) return;
+    if (draft.length > MAX_ARTIFACT_CONTENT_CHARS) {
+      setFeedback({ top: t("contentTooLong"), errors: [] });
+      setFeedbackProblem(null);
+      return;
+    }
     const parsed = parseEditedContent(draft, current.contentFormat);
     if (!parsed.ok) {
       setFeedback({ top: t("jsonInvalid"), errors: [] });
+      setFeedbackProblem(null);
       return;
     }
     setFeedback(NO_FEEDBACK);
+    setFeedbackProblem(null);
     const trimmedNote = note.trim();
     try {
-      await update.mutateAsync({
-        baseRevision: artifact.currentRevision,
+      const updated = await update.mutateAsync({
+        baseRevision,
         contentFormat: current.contentFormat,
         content: parsed.content,
         ...(trimmedNote.length > 0 ? { editorNote: trimmedNote } : {}),
       });
+      const nextSavedDraft = updated.current
+        ? contentToText(updated.current.content)
+        : contentToText(parsed.content);
+      awaitingRevision.current = updated.currentRevision;
+      setBaseRevision(updated.currentRevision);
+      setSavedDraft(nextSavedDraft);
+      // Preserve any keystrokes that happened after submission; otherwise the
+      // accepted server projection becomes the clean baseline immediately.
+      setDraft((value) => (value === draft ? nextSavedDraft : value));
+      setNote((value) => (value === note ? "" : value));
     } catch (error) {
       handleError(error);
     }
@@ -420,10 +684,12 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
   async function onSetStatus(
     status: "draft" | "ready" | "archived",
   ): Promise<void> {
+    if (dirty) return;
     setFeedback(NO_FEEDBACK);
+    setFeedbackProblem(null);
     try {
       await update.mutateAsync({
-        baseRevision: artifact.currentRevision,
+        baseRevision,
         status,
       });
     } catch (error) {
@@ -453,6 +719,11 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
           <StatusPill tone={validationTone(artifact.validationState)}>
             {t(`validationState.${artifact.validationState}`)}
           </StatusPill>
+          <span aria-live="polite">
+            <StatusPill tone={dirty ? "warning" : "success"}>
+              {dirty ? t("editorUnsaved") : t("editorSaved")}
+            </StatusPill>
+          </span>
           <Button variant="text" size="sm" onClick={onClose}>
             {tCommon("close")}
           </Button>
@@ -460,9 +731,18 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
       </div>
 
       {feedback.top !== null ? (
-        <p className={styles.alert} role="alert">
-          {feedback.top}
-        </p>
+        feedbackProblem !== null ? (
+          <ProblemNotice
+            className={styles.alert}
+            error={feedbackProblem}
+            message={feedback.top}
+            compact
+          />
+        ) : (
+          <p className={styles.alert} role="alert">
+            {feedback.top}
+          </p>
+        )
       ) : null}
 
       {validationErrors.length > 0 || feedback.errors.length > 0 ? (
@@ -505,9 +785,11 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
               id="sf-artifact-content"
               className={styles.contentArea}
               rows={isJson ? 12 : 16}
+              maxLength={MAX_ARTIFACT_CONTENT_CHARS}
               spellCheck={false}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
+              disabled={busy}
             />
           </Field>
 
@@ -517,6 +799,7 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
               rows={2}
               value={note}
               onChange={(event) => setNote(event.target.value)}
+              disabled={busy}
             />
           </Field>
 
@@ -524,7 +807,7 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
             <Button
               variant="secondary"
               onClick={() => void onSaveRevision()}
-              disabled={busy}
+              disabled={busy || !dirty}
             >
               {t("saveRevision")}
             </Button>
@@ -532,7 +815,8 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
               <Button
                 variant="ghost"
                 onClick={() => void onSetStatus("draft")}
-                disabled={busy}
+                disabled={busy || dirty}
+                aria-describedby={dirty ? "sf-status-dirty-hint" : undefined}
               >
                 {t("backToDraft")}
               </Button>
@@ -540,9 +824,21 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
               <Button
                 variant="primary"
                 onClick={() => void onSetStatus("ready")}
-                disabled={busy || cannotReady}
-                aria-describedby={cannotReady ? "sf-ready-hint" : undefined}
-                title={cannotReady ? t("markReadyHint") : undefined}
+                disabled={busy || dirty || cannotReady}
+                aria-describedby={
+                  dirty
+                    ? "sf-status-dirty-hint"
+                    : cannotReady
+                      ? "sf-ready-hint"
+                      : undefined
+                }
+                title={
+                  dirty
+                    ? t("saveBeforeStatusChange")
+                    : cannotReady
+                      ? t("markReadyHint")
+                      : undefined
+                }
               >
                 {t("markReady")}
               </Button>
@@ -550,12 +846,17 @@ function ArtifactEditor({ projectId, artifact, onClose }: ArtifactEditorProps) {
             <Button
               variant="text"
               onClick={() => void onSetStatus("archived")}
-              disabled={busy}
+              disabled={busy || dirty}
+              aria-describedby={dirty ? "sf-status-dirty-hint" : undefined}
             >
               {t("archive")}
             </Button>
           </div>
-          {cannotReady ? (
+          {dirty ? (
+            <p id="sf-status-dirty-hint" className={styles.readyHint}>
+              {t("saveBeforeStatusChange")}
+            </p>
+          ) : cannotReady ? (
             <p id="sf-ready-hint" className={styles.readyHint}>
               {t("markReadyHint")}
             </p>
@@ -586,6 +887,21 @@ function localeOptions(project: Project | undefined): readonly string[] {
   return [...set];
 }
 
+function normalizeStudioOutputLocale(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const parsed = Bcp47Locale.safeParse(trimmed);
+  return parsed.success ? parsed.data : null;
+}
+
+/** Deterministic templates have reviewed copy only for these two locales. */
+function normalizeTemplateOutputLocale(value: string): "en" | "zh-CN" | null {
+  const normalized = value.toLowerCase();
+  if (normalized === "en") return "en";
+  if (normalized === "zh-cn") return "zh-CN";
+  return null;
+}
+
 function GenerateForm({
   projectId,
   action,
@@ -608,23 +924,46 @@ function GenerateForm({
   );
   const [instructions, setInstructions] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [problemError, setProblemError] = useState<unknown | null>(null);
   const type = expected ?? artifactType;
+  const localeId = "sf-generate-output-locale";
+  const localeListId = "sf-generate-output-locale-options";
+  const normalizedLocale = normalizeStudioOutputLocale(locale);
+  const templateLocale =
+    normalizedLocale === null
+      ? null
+      : normalizeTemplateOutputLocale(normalizedLocale);
+  const localeError =
+    normalizedLocale === null
+      ? t("invalidOutputLocale")
+      : mode === "template" && templateLocale === null
+        ? t("templateLocaleRequiresStructuredLlm")
+        : null;
+  const submittedLocale =
+    mode === "template" ? templateLocale : normalizedLocale;
 
   async function onSubmit(): Promise<void> {
     setError(null);
+    setProblemError(null);
     const trimmed = instructions.trim();
+    if (localeError !== null || submittedLocale === null) return;
     try {
       const data = await create.mutateAsync({
         artifactType: type,
         generationMode: mode,
-        outputLocale: locale,
+        outputLocale: submittedLocale,
         ...(trimmed.length > 0 ? { operatorInstructions: trimmed } : {}),
       });
       const artifactId =
         data.resourceRef?.type === "artifact" ? data.resourceRef.id : null;
       onQueued(data.run, artifactId);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : tCommon("error"));
+      if (caught instanceof ApiError) {
+        setError(tCommon("error"));
+        setProblemError(caught);
+        return;
+      }
+      setError(tCommon("error"));
     }
   }
 
@@ -647,9 +986,18 @@ function GenerateForm({
       </div>
 
       {error !== null ? (
-        <p className={styles.alert} role="alert">
-          {error}
-        </p>
+        problemError !== null ? (
+          <ProblemNotice
+            className={styles.alert}
+            error={problemError}
+            message={error}
+            compact
+          />
+        ) : (
+          <p className={styles.alert} role="alert">
+            {error}
+          </p>
+        )
       ) : null}
 
       <div className={styles.formGrid}>
@@ -683,12 +1031,28 @@ function GenerateForm({
           />
         </Field>
 
-        <Field label={t("outputLocale")}>
-          <StudioSelect
+        <Field
+          label={t("outputLocale")}
+          help={t("outputLocaleHelp")}
+          error={localeError}
+          htmlFor={localeId}
+        >
+          <TextInput
+            id={localeId}
             value={locale}
-            onChange={setLocale}
-            options={locales.map((value) => ({ value, label: value }))}
+            list={locales.length > 0 ? localeListId : undefined}
+            onChange={(event) => setLocale(event.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
           />
+          {locales.length > 0 ? (
+            <datalist id={localeListId}>
+              {locales.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+          ) : null}
         </Field>
       </div>
 
@@ -709,7 +1073,7 @@ function GenerateForm({
         <Button
           variant="primary"
           onClick={() => void onSubmit()}
-          disabled={create.isPending}
+          disabled={create.isPending || localeError !== null}
         >
           {create.isPending ? t("generating") : t("generateSubmit")}
         </Button>
@@ -726,14 +1090,22 @@ function GenerateForm({
 interface ActionPickerProps {
   readonly actions: readonly ArtifactAction[];
   readonly liveKeys: ReadonlySet<string>;
+  readonly hasMore: boolean;
+  readonly loadingMore: boolean;
+  readonly loadMoreError: boolean;
   readonly onPick: (action: ArtifactAction) => void;
+  readonly onLoadMore: () => void;
   readonly onCancel: () => void;
 }
 
 function ActionPicker({
   actions,
   liveKeys,
+  hasMore,
+  loadingMore,
+  loadMoreError,
   onPick,
+  onLoadMore,
   onCancel,
 }: ActionPickerProps) {
   const t = useTranslations("studio");
@@ -760,7 +1132,9 @@ function ActionPicker({
       </div>
 
       {actions.length === 0 ? (
-        <p className={styles.editorEmpty}>{t("noActions")}</p>
+        <p className={styles.editorEmpty}>
+          {hasMore ? t("moreActionsHint") : t("noActions")}
+        </p>
       ) : (
         <ul className={styles.pickerList}>
           {actions.map((action) => {
@@ -791,6 +1165,26 @@ function ActionPicker({
           })}
         </ul>
       )}
+      {hasMore || loadMoreError ? (
+        <div className={styles.pagination}>
+          {loadMoreError ? (
+            <p className={styles.paginationError} role="alert">
+              {tCommon("loadMoreError")}
+            </p>
+          ) : null}
+          <Button
+            variant="secondary"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore
+              ? tCommon("loadingMore")
+              : loadMoreError
+                ? tCommon("retry")
+                : tCommon("loadMore")}
+          </Button>
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -811,12 +1205,22 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   const queryClient = useQueryClient();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dirtyArtifactId, setDirtyArtifactId] = useState<string | null>(null);
   const [generateAction, setGenerateAction] = useState<ArtifactAction | null>(
     null,
   );
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [failedRunId, setFailedRunId] = useState<string | null>(null);
+  const onEditorDirtyChange = useCallback(
+    (artifactId: string, dirty: boolean): void => {
+      setDirtyArtifactId((value) => {
+        if (dirty) return artifactId;
+        return value === artifactId ? null : value;
+      });
+    },
+    [],
+  );
 
   const runQuery = useProjectRun(projectId, activeRunId);
   const runOutcome = studioRunQueryOutcome(runQuery.data, runQuery.error);
@@ -826,7 +1230,7 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   // Resume polling a run that is still generating on load.
   useEffect(() => {
     if (activeRunId !== null) return;
-    const live = (artifactsQuery.data?.data ?? []).find(
+    const live = uniqueCursorItems(artifactsQuery.data).find(
       (a) =>
         a.activeRun !== null &&
         !isTerminalRun(a.activeRun.status) &&
@@ -865,7 +1269,7 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     }
   }, [runOutcome, runQuery.data, activeRunId, queryClient, projectId]);
 
-  if (artifactsQuery.isLoading) {
+  if (artifactsQuery.isLoading || actionsQuery.isLoading) {
     return (
       <StateWrap>
         <Spinner size="lg" label={tCommon("loading")} />
@@ -874,23 +1278,26 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     );
   }
 
-  if (artifactsQuery.error !== null || artifactsQuery.data === undefined) {
+  if (
+    (artifactsQuery.isError && artifactsQuery.data === undefined) ||
+    (actionsQuery.isError && actionsQuery.data === undefined)
+  ) {
+    const screenError =
+      artifactsQuery.error ?? actionsQuery.error ?? new Error("unknown");
     return (
       <StateWrap>
-        <EmptyState title={tCommon("error")}>
-          <Button
-            variant="secondary"
-            onClick={() => void artifactsQuery.refetch()}
-          >
-            {tCommon("retry")}
-          </Button>
-        </EmptyState>
+        <ProblemState
+          error={screenError}
+          onRetry={() =>
+            void Promise.all([artifactsQuery.refetch(), actionsQuery.refetch()])
+          }
+        />
       </StateWrap>
     );
   }
 
-  const artifacts = artifactsQuery.data.data;
-  const actions = actionsQuery.data?.data ?? [];
+  const artifacts = uniqueCursorItems(artifactsQuery.data);
+  const actions = uniqueCursorItems(actionsQuery.data);
   const actionById = new Map(
     actions.map((action) => [action.id, action] as const),
   );
@@ -906,6 +1313,25 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   const groups = groupByType(artifacts);
   const readyCount = artifacts.filter((a) => a.status === "ready").length;
   const draftCount = artifacts.filter((a) => a.status === "draft").length;
+  const selectedEditorDirty =
+    selectedId !== null && dirtyArtifactId === selectedId;
+
+  function confirmEditorDiscard(): boolean {
+    return canDiscardArtifactChanges(selectedEditorDirty, () =>
+      window.confirm(t("unsavedLeaveWarning")),
+    );
+  }
+
+  function selectArtifact(artifactId: string): void {
+    if (artifactId === selectedId) return;
+    if (!confirmEditorDiscard()) return;
+    setSelectedId(artifactId);
+  }
+
+  function closeEditor(): void {
+    if (!confirmEditorDiscard()) return;
+    setSelectedId(null);
+  }
 
   function openGenerate(action: ArtifactAction): void {
     setGenerateAction(action);
@@ -917,7 +1343,15 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     setActiveRunId(run.id);
     setGenerateAction(null);
     setPickerOpen(false);
-    if (artifactId !== null) setSelectedId(artifactId);
+    if (artifactId !== null) selectArtifact(artifactId);
+  }
+
+  function retryFailedRun(): void {
+    if (failedRunId === null) return;
+    finishedRuns.current.delete(failedRunId);
+    setActiveRunId(failedRunId);
+    setFailedRunId(null);
+    void artifactsQuery.refetch();
   }
 
   return (
@@ -935,14 +1369,18 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
               setPickerOpen(true);
               setGenerateAction(null);
             }}
-            disabled={eligibleActions.length === 0}
+            disabled={
+              eligibleActions.length === 0 && !actionsQuery.hasNextPage
+            }
             aria-describedby={
-              eligibleActions.length === 0 ? "sf-gen-note" : undefined
+              eligibleActions.length === 0 && !actionsQuery.hasNextPage
+                ? "sf-gen-note"
+                : undefined
             }
           >
             {t("generate")}
           </Button>
-          {eligibleActions.length === 0 ? (
+          {eligibleActions.length === 0 && !actionsQuery.hasNextPage ? (
             <p id="sf-gen-note" className={styles.heroNote}>
               {t("noActions")}
             </p>
@@ -956,21 +1394,30 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
             <span className={styles.statIcon}>
               <FileStack aria-hidden="true" size={18} />
             </span>
-            <span className={styles.statMetric}>{artifacts.length}</span>
+            <span className={styles.statMetric}>
+              {artifacts.length}
+              {artifactsQuery.hasNextPage ? "+" : ""}
+            </span>
             <span className={styles.statLabel}>{t("statOutputs")}</span>
           </article>
           <article className={styles.statCard}>
             <span className={cx(styles.statIcon, styles.statIconMint)}>
               <CircleCheckBig aria-hidden="true" size={18} />
             </span>
-            <span className={styles.statMetric}>{readyCount}</span>
+            <span className={styles.statMetric}>
+              {readyCount}
+              {artifactsQuery.hasNextPage ? "+" : ""}
+            </span>
             <span className={styles.statLabel}>{t("statReady")}</span>
           </article>
           <article className={styles.statCard}>
             <span className={cx(styles.statIcon, styles.statIconAmber)}>
               <FilePenLine aria-hidden="true" size={18} />
             </span>
-            <span className={styles.statMetric}>{draftCount}</span>
+            <span className={styles.statMetric}>
+              {draftCount}
+              {artifactsQuery.hasNextPage ? "+" : ""}
+            </span>
             <span className={styles.statLabel}>{t("statDrafts")}</span>
           </article>
         </section>
@@ -988,12 +1435,9 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-              setFailedRunId(null);
-              void artifactsQuery.refetch();
-            }}
+            onClick={retryFailedRun}
           >
-            {t("refreshArtifacts")}
+            {t("retryGenerationStatus")}
           </Button>
         </Panel>
       ) : null}
@@ -1010,17 +1454,22 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
         <ActionPicker
           actions={eligibleActions}
           liveKeys={liveKeys}
+          hasMore={actionsQuery.hasNextPage}
+          loadingMore={actionsQuery.isFetchingNextPage}
+          loadMoreError={actionsQuery.isFetchNextPageError}
           onPick={openGenerate}
+          onLoadMore={() => void actionsQuery.fetchNextPage()}
           onCancel={() => setPickerOpen(false)}
         />
       ) : null}
 
       {selected !== null ? (
         <ArtifactEditor
-          key={`${selected.id}:${selected.currentRevision}`}
+          key={selected.id}
           projectId={projectId}
           artifact={selected}
-          onClose={() => setSelectedId(null)}
+          onClose={closeEditor}
+          onDirtyChange={onEditorDirtyChange}
         />
       ) : null}
 
@@ -1045,7 +1494,10 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
                   <h2 className={styles.groupTitle}>
                     {t(`artifactType.${type}`)}
                   </h2>
-                  <Badge>{String(list.length)}</Badge>
+                  <Badge>
+                    {String(list.length)}
+                    {artifactsQuery.hasNextPage ? "+" : ""}
+                  </Badge>
                 </div>
                 <div className={styles.cardGrid}>
                   {list.map((artifact) => {
@@ -1056,7 +1508,7 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
                         artifact={artifact}
                         actionTitle={action?.title}
                         selected={selected?.id === artifact.id}
-                        onOpen={() => setSelectedId(artifact.id)}
+                        onOpen={() => selectArtifact(artifact.id)}
                         onRegenerate={
                           action !== undefined && action.status !== "dismissed"
                             ? () => openGenerate(action)
@@ -1071,6 +1523,26 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
           })}
         </div>
       )}
+      {artifactsQuery.hasNextPage || artifactsQuery.isFetchNextPageError ? (
+        <div className={styles.pagination}>
+          {artifactsQuery.isFetchNextPageError ? (
+            <p className={styles.paginationError} role="alert">
+              {tCommon("loadMoreError")}
+            </p>
+          ) : null}
+          <Button
+            variant="secondary"
+            onClick={() => void artifactsQuery.fetchNextPage()}
+            disabled={artifactsQuery.isFetchingNextPage}
+          >
+            {artifactsQuery.isFetchingNextPage
+              ? tCommon("loadingMore")
+              : artifactsQuery.isFetchNextPageError
+                ? tCommon("retry")
+                : tCommon("loadMore")}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

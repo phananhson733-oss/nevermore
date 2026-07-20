@@ -65,7 +65,7 @@
   border: 1px solid var(--sf-coral);
   border-radius: var(--sf-radius-control);
   background: var(--sf-coral-soft);
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
   font-size: var(--sf-text-sm);
   font-weight: 600;
 }

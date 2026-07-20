@@ -89,20 +89,40 @@ export async function disconnectProjectSource(
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
 
-  const connections = new SourceConnectionsRepository(db);
-  const connection = await connections.findById(projectScope, sourceConnectionId);
-  if (!connection) throw new ProblemError("NOT_FOUND", "Source connection not found.");
-  if (connection.provider === "crawl") {
-    throw new ProblemError(
-      "VALIDATION_ERROR",
-      "The default crawl source cannot be disconnected.",
-    );
-  }
-
   await db.transaction(async (tx) => {
-    // Lock/mark the source before erasing related rows. Collection persistence
-    // takes the same row lock and cannot commit a snapshot after this wins.
-    await new SourceConnectionsRepository(tx).disconnect(projectScope, sourceConnectionId);
+    // All project mutations lock in project → child order. A disconnect waiting
+    // behind archival therefore re-reads the committed archived projection and
+    // performs no source/credential/OAuth writes.
+    const project = await new ProjectsRepository(tx).findByIdForUpdate(
+      scope,
+      projectId,
+    );
+    if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
+    if (project.archived_at) {
+      throw new ProblemError(
+        "PROJECT_ARCHIVED",
+        "Project is archived and read-only.",
+      );
+    }
+
+    const connections = new SourceConnectionsRepository(tx);
+    const connection = await connections.findActiveByIdForUpdate(
+      projectScope,
+      sourceConnectionId,
+    );
+    if (!connection) {
+      throw new ProblemError("NOT_FOUND", "Source connection not found.");
+    }
+    if (connection.provider === "crawl") {
+      throw new ProblemError(
+        "VALIDATION_ERROR",
+        "The default crawl source cannot be disconnected.",
+      );
+    }
+
+    // Collection persistence takes the same source row lock and cannot commit
+    // a snapshot after this winner marks the connection disconnected.
+    await connections.disconnect(projectScope, sourceConnectionId);
     await new SourceCredentialsRepository(tx).deleteByConnection(sourceConnectionId);
     if (connection.provider === "gsc" || connection.provider === "ga4") {
       await new OAuthIntentsRepository(tx).scrubProjectProvider(

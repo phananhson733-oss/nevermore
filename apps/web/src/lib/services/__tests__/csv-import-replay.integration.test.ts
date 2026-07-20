@@ -45,6 +45,7 @@ import type { WorkerContext } from "../../../../../worker/src/context.ts";
 import { runCollection } from "../../../../../worker/src/collection/run-collection.ts";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import { confirmImport, previewImport } from "@/lib/services/csv-import";
+import { archiveWinsProjectRace } from "./project-archive-race";
 
 const queueFixture = vi.hoisted(() => {
   const jobs: Array<{
@@ -497,6 +498,23 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
       },
     ]);
 
+    const queuedCanonical = await new AsyncRunsRepository(handle.db).findById(
+      chainScope,
+      confirmed.run.id,
+    );
+    const [collectionPlaceholder] = await handle.db
+      .select({ sourceConnectionId: collectionRuns.source_connection_id })
+      .from(collectionRuns)
+      .where(eq(collectionRuns.id, confirmed.run.id));
+    expect(collectionPlaceholder?.sourceConnectionId).toEqual(
+      expect.any(String),
+    );
+    expect(queuedCanonical?.request_payload).toMatchObject({
+      provider: "csv",
+      operation: "keyword_gap_import",
+      sourceConnectionId: collectionPlaceholder!.sourceConnectionId,
+    });
+
     const lostResponseRetry = await confirmImport(
       { workspaceId: chainWorkspaceId },
       chainScope.projectId,
@@ -513,6 +531,23 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     });
     expect(queueFixture.send).toHaveBeenCalledTimes(1);
     expect(await countCollectionRuns(handle, chainScope.projectId)).toBe(1);
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(
+        chainScope,
+        lostResponseRetry.run.id,
+      ),
+    ).resolves.toMatchObject({
+      id: confirmed.run.id,
+      request_payload: {
+        provider: "csv",
+        operation: "keyword_gap_import",
+        sourceConnectionId: collectionPlaceholder!.sourceConnectionId,
+        importPreviewId: expect.any(String),
+        mapping: expect.any(Object),
+        marketFallback: "US",
+        languageFallback: "en",
+      },
+    });
 
     const racedFastPath = vi
       .spyOn(IdempotencyRepository.prototype, "find")
@@ -603,6 +638,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
       appOrigin: "http://localhost:3000",
       googleOAuth: { clientId: "test", clientSecret: "test" },
       openai: { apiKey: "sk-test", model: "gpt-4o-mini" },
+      findingSummariesEnabled: false,
       logger: testLogger,
     };
     await runCollection(workerContext, {
@@ -645,6 +681,70 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     expect(queueFixture.send).toHaveBeenCalledTimes(1);
     expect(await countCollectionRuns(handle, chainScope.projectId)).toBe(1);
     expect(await observationCount(handle, chainScope)).toBe(25);
+  });
+
+  it("removes the upload and writes no preview when archive wins the insert race", async () => {
+    const suffix = randomUUID();
+    const raceActor = randomUUID();
+    const [workspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `CSV-preview-archive-${suffix}` })
+      .returning();
+    const created = await createProject(
+      { workspaceId: workspace!.id },
+      raceActor,
+      randomUUID(),
+      {
+        clientName: "CSV preview archive race",
+        projectName: "CSV preview archive race",
+        siteUrl: `https://csv-preview-archive-${suffix}.example`,
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    const deleteObject = vi.spyOn(LocalFsBlobStore.prototype, "delete");
+
+    try {
+      const result = await archiveWinsProjectRace(
+        handle,
+        created.project.id,
+        () =>
+          previewImport(
+            { workspaceId: workspace!.id },
+            created.project.id,
+            raceActor,
+            {
+              bytes: Buffer.from(
+                "keyword,search_volume,market,language\nrace,100,US,en",
+                "utf8",
+              ),
+              templateId: "keyword_gap_v1",
+            },
+          ),
+      );
+
+      expect(result.status).toBe("rejected");
+      if (result.status === "fulfilled") {
+        throw new Error("archived CSV preview unexpectedly committed");
+      }
+      expect(result.reason).toBeInstanceOf(ProblemError);
+      expect(result.reason).toMatchObject({
+        code: "PROJECT_ARCHIVED",
+        status: 422,
+      });
+      expect(deleteObject).toHaveBeenCalledOnce();
+      expect(deleteObject.mock.calls[0]?.[0]).toContain(created.project.id);
+    } finally {
+      deleteObject.mockRestore();
+    }
+
+    const previews = await handle.db
+      .select({ id: importPreviews.id })
+      .from(importPreviews)
+      .where(eq(importPreviews.project_id, created.project.id));
+    expect(previews).toHaveLength(0);
   });
 
   it("rejects a stale preview read when another transaction consumes the token before confirm CAS", async () => {

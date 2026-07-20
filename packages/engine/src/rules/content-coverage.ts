@@ -34,7 +34,7 @@ export const contentCoverageRule = {
     }
     // `intent_match.v1` is an English-only heuristic (spec §8.4).
     if (!ctx.isEnglish()) {
-      return { status: "skipped", reason: "unsupported_language" };
+      return { status: "inconclusive", reason: "unsupported_language" };
     }
 
     const bags = buildPageBags(ctx);
@@ -42,6 +42,7 @@ export const contentCoverageRule = {
 
     const candidates: FindingCandidate[] = [];
     let coveredCount = 0;
+    let inconclusiveCount = 0;
     for (const target of targets) {
       const outcome = matchIntent(target.text, bags);
       if (outcome === "covered") {
@@ -49,12 +50,18 @@ export const contentCoverageRule = {
         continue;
       }
       // "inconclusive": empty target tokens or no eligible pages → not a defect.
-      if (outcome === "inconclusive") continue;
+      if (outcome === "inconclusive") {
+        inconclusiveCount += 1;
+        continue;
+      }
       candidates.push(buildCandidate(ctx, target));
     }
 
     if (candidates.length > 0) {
       return { status: "candidate", candidates };
+    }
+    if (inconclusiveCount > 0) {
+      return { status: "inconclusive", reason: "intent_match_unavailable" };
     }
     return { status: "pass", metrics: { coveredCount } };
   },
@@ -91,7 +98,8 @@ function buildCandidate(ctx: DiagnosticContext, target: CoverageTarget): Finding
     origin: "derived",
     method: "inferred",
     grade: "C",
-    availability: "available",
+    availability:
+      ctx.datasetAvailability("crawl") === "partial" ? "partial" : "available",
     support: "supports",
     subjectRefs: [subjectRef],
     claim: `No indexable page covers the core intent tokens of "${target.text}".`,

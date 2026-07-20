@@ -14,9 +14,16 @@ process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
 import { createDbHandle, type DbHandle } from "@sf/db/client";
-import { workspaces } from "@sf/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import {
+  clientProjects,
+  oauthIntents,
+  sourceCredentials,
+  workspaces,
+} from "@sf/db/schema";
 import {
   OAuthIntentsRepository,
+  ProjectsRepository,
   SourceConnectionsRepository,
   SourceCredentialsRepository,
   type OAuthIntentRow,
@@ -27,7 +34,7 @@ import {
   decryptCredential,
   decodeCredentialEnvelope,
 } from "@sf/sources";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import {
   connectProjectSource,
@@ -41,6 +48,7 @@ import {
   type GoogleOAuthClient,
   type GoogleProperty,
 } from "@/lib/oauth/google";
+import { archiveWinsProjectRace } from "./project-archive-race";
 
 /**
  * Spec §14.3 (#4 fix): the connect flow must persist the FULL Google credential
@@ -190,6 +198,182 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
       decryptCredential(intent!.pkce_verifier_cipher, credentialKey()),
     ).toThrow();
   }
+
+  async function connectedGscFixture(label: string) {
+    const project = await isolatedProject(label);
+    const connectedIntentId = await readyGscIntent(project);
+    const connected = await connectProjectSource(
+      project.scope,
+      project.scope.projectId,
+      "gsc",
+      project.actorId,
+      {
+        phase: "select_property",
+        oauthIntentId: connectedIntentId,
+        externalPropertyId: "https://seed.example/",
+      },
+    );
+    if (connected.phase !== "connected" || !connected.source.id) {
+      throw new Error("GSC connection was not created");
+    }
+    const pendingIntentId = await readyGscIntent(project);
+    return {
+      ...project,
+      sourceId: connected.source.id,
+      intentIds: [connectedIntentId, pendingIntentId] as const,
+    };
+  }
+
+  async function disconnectState(fixture: {
+    scope: ProjectScope;
+    sourceId: string;
+    intentIds: readonly string[];
+  }) {
+    return {
+      source: await new SourceConnectionsRepository(handle.db).findById(
+        fixture.scope,
+        fixture.sourceId,
+      ),
+      credential: await new SourceCredentialsRepository(
+        handle.db,
+      ).findByConnection(fixture.scope, fixture.sourceId),
+      intents: await Promise.all(
+        fixture.intentIds.map((id) =>
+          new OAuthIntentsRepository(handle.db).findById(fixture.scope, id),
+        ),
+      ),
+    };
+  }
+
+  async function archiveProject(projectScope: ProjectScope): Promise<void> {
+    await handle.db
+      .update(clientProjects)
+      .set({ archived_at: sql`now()` })
+      .where(
+        and(
+          eq(clientProjects.workspace_id, projectScope.workspaceId),
+          eq(clientProjects.id, projectScope.projectId),
+        ),
+      );
+  }
+
+  async function projectIntentCount(projectScope: ProjectScope): Promise<number> {
+    const rows = await handle.db
+      .select({ id: oauthIntents.id })
+      .from(oauthIntents)
+      .where(
+        and(
+          eq(oauthIntents.workspace_id, projectScope.workspaceId),
+          eq(oauthIntents.project_id, projectScope.projectId),
+        ),
+      );
+    return rows.length;
+  }
+
+  it("rejects authorize on an archived project without creating an OAuth intent", async () => {
+    const project = await isolatedProject("authorize-archived");
+    await archiveProject(project.scope);
+
+    await expect(
+      connectProjectSource(
+        project.scope,
+        project.scope.projectId,
+        "gsc",
+        project.actorId,
+        {
+          phase: "authorize",
+          returnPath: `/p/${project.scope.projectId}/sources`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "PROJECT_ARCHIVED", status: 422 });
+    await expect(projectIntentCount(project.scope)).resolves.toBe(0);
+  });
+
+  it("waits behind a concurrent archive and creates no OAuth intent when archival wins", async () => {
+    const project = await isolatedProject("authorize-archive-race");
+    const result = await archiveWinsProjectRace(
+      handle,
+      project.scope.projectId,
+      () =>
+        connectProjectSource(
+          project.scope,
+          project.scope.projectId,
+          "gsc",
+          project.actorId,
+          {
+            phase: "authorize",
+            returnPath: `/p/${project.scope.projectId}/sources`,
+          },
+        ),
+    );
+
+    expect(result).toMatchObject({
+      status: "rejected",
+      reason: expect.objectContaining({ code: "PROJECT_ARCHIVED" }),
+    });
+    await expect(projectIntentCount(project.scope)).resolves.toBe(0);
+  });
+
+  it("keeps property selection read-only when the project is archived", async () => {
+    const project = await isolatedProject("property-selection-archived");
+    const expiresAtMs = Date.now() + 60_000;
+    const intentId = await readyGscIntent(
+      project,
+      new Date(expiresAtMs).toISOString(),
+    );
+    const repo = new OAuthIntentsRepository(handle.db);
+    const before = await repo.findById(project.scope, intentId);
+    await archiveProject(project.scope);
+
+    await expect(
+      connectProjectSource(
+        project.scope,
+        project.scope.projectId,
+        "gsc",
+        project.actorId,
+        { phase: "property_selection", oauthIntentId: intentId },
+        { now: () => expiresAtMs + 1 },
+      ),
+    ).rejects.toMatchObject({ code: "PROJECT_ARCHIVED", status: 422 });
+    await expect(repo.findById(project.scope, intentId)).resolves.toEqual(before);
+  });
+
+  it("creates no source or credential when selecting on an archived project", async () => {
+    const project = await isolatedProject("select-archived");
+    const intentId = await readyGscIntent(project);
+    const repo = new OAuthIntentsRepository(handle.db);
+    const before = await repo.findById(project.scope, intentId);
+    await archiveProject(project.scope);
+
+    await expect(
+      connectProjectSource(
+        project.scope,
+        project.scope.projectId,
+        "gsc",
+        project.actorId,
+        {
+          phase: "select_property",
+          oauthIntentId: intentId,
+          externalPropertyId: "https://seed.example/",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "PROJECT_ARCHIVED", status: 422 });
+    const sources = await new SourceConnectionsRepository(handle.db).listByProject(
+      project.scope,
+    );
+    expect(sources.filter((source) => source.provider === "gsc")).toHaveLength(0);
+    const credentials = await handle.db
+      .select({ id: sourceCredentials.id })
+      .from(sourceCredentials)
+      .where(
+        and(
+          eq(sourceCredentials.workspace_id, project.scope.workspaceId),
+          eq(sourceCredentials.project_id, project.scope.projectId),
+        ),
+      );
+    expect(credentials).toHaveLength(0);
+    await expect(repo.findById(project.scope, intentId)).resolves.toEqual(before);
+  });
 
   it("stores the refresh token and the REAL access-token expiry (not null)", async () => {
     // Phase 1: seed an initiated intent, then run the callback (which now stores
@@ -538,5 +722,172 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     );
     expectScrubbed(pending, "failed");
     expect(pending?.failure_code).toBe("OAUTH_SOURCE_DISCONNECTED");
+  });
+
+  it("keeps the default crawl source connected when disconnect is rejected", async () => {
+    const project = await isolatedProject("disconnect-crawl");
+    const crawl = (
+      await new SourceConnectionsRepository(handle.db).listByProject(
+        project.scope,
+      )
+    ).find((source) => source.provider === "crawl");
+    if (!crawl) throw new Error("default crawl source missing");
+
+    await expect(
+      disconnectProjectSource(
+        { workspaceId: project.scope.workspaceId },
+        project.scope.projectId,
+        crawl.id,
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    await expect(
+      new SourceConnectionsRepository(handle.db).findById(
+        project.scope,
+        crawl.id,
+      ),
+    ).resolves.toEqual(crawl);
+  });
+
+  it("returns scoped not-found without changing the project when the source is absent", async () => {
+    const project = await isolatedProject("disconnect-missing-source");
+    const before = await new SourceConnectionsRepository(
+      handle.db,
+    ).listByProject(project.scope);
+
+    await expect(
+      disconnectProjectSource(
+        { workspaceId: project.scope.workspaceId },
+        project.scope.projectId,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    await expect(
+      new SourceConnectionsRepository(handle.db).listByProject(project.scope),
+    ).resolves.toEqual(before);
+  });
+
+  it("rejects disconnect for an archived project without changing source, credential, or OAuth intents", async () => {
+    const fixture = await connectedGscFixture("disconnect-archived");
+    const before = await disconnectState(fixture);
+    await handle.db
+      .update(clientProjects)
+      .set({ archived_at: sql`now()` })
+      .where(
+        and(
+          eq(clientProjects.workspace_id, fixture.scope.workspaceId),
+          eq(clientProjects.id, fixture.scope.projectId),
+        ),
+      );
+
+    await expect(
+      disconnectProjectSource(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+        fixture.sourceId,
+      ),
+    ).rejects.toMatchObject({ code: "PROJECT_ARCHIVED" });
+
+    await expect(disconnectState(fixture)).resolves.toEqual(before);
+  });
+
+  it("waits behind project archival and performs zero disconnect writes when archive commits first", async () => {
+    const fixture = await connectedGscFixture("disconnect-archive-race");
+    const before = await disconnectState(fixture);
+    let archiveLockedResolve!: () => void;
+    const archiveLocked = new Promise<void>((resolve) => {
+      archiveLockedResolve = resolve;
+    });
+    let releaseArchiveResolve!: () => void;
+    const releaseArchive = new Promise<void>((resolve) => {
+      releaseArchiveResolve = resolve;
+    });
+    const archivePromise = handle.db.transaction(async (tx) => {
+      const project = await new ProjectsRepository(tx).findByIdForUpdate(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+      );
+      if (!project) throw new Error("archive race project missing");
+      archiveLockedResolve();
+      await releaseArchive;
+      await tx
+        .update(clientProjects)
+        .set({ archived_at: sql`now()` })
+        .where(
+          and(
+            eq(clientProjects.workspace_id, fixture.scope.workspaceId),
+            eq(clientProjects.id, fixture.scope.projectId),
+          ),
+        );
+    });
+    await archiveLocked;
+
+    const originalProjectLock = ProjectsRepository.prototype.findByIdForUpdate;
+    const originalDisconnect = SourceConnectionsRepository.prototype.disconnect;
+    let projectLockAttemptedResolve!: (path: "project") => void;
+    const projectLockAttempted = new Promise<"project">((resolve) => {
+      projectLockAttemptedResolve = resolve;
+    });
+    let sourceWriteAttemptedResolve!: (path: "source") => void;
+    const sourceWriteAttempted = new Promise<"source">((resolve) => {
+      sourceWriteAttemptedResolve = resolve;
+    });
+    const projectLockSpy = vi
+      .spyOn(ProjectsRepository.prototype, "findByIdForUpdate")
+      .mockImplementation(async function (
+        this: ProjectsRepository,
+        lookupScope,
+        lookupProjectId,
+      ) {
+        if (lookupProjectId === fixture.scope.projectId) {
+          projectLockAttemptedResolve("project");
+        }
+        return originalProjectLock.call(this, lookupScope, lookupProjectId);
+      });
+    const sourceWriteSpy = vi
+      .spyOn(SourceConnectionsRepository.prototype, "disconnect")
+      .mockImplementation(async function (
+        this: SourceConnectionsRepository,
+        lookupScope,
+        sourceId,
+      ) {
+        if (sourceId === fixture.sourceId) {
+          sourceWriteAttemptedResolve("source");
+        }
+        return originalDisconnect.call(this, lookupScope, sourceId);
+      });
+
+    let firstPath: "project" | "source" | undefined;
+    let disconnectResult: PromiseSettledResult<void> | undefined;
+    let sourceWriteCalls: number | undefined;
+    try {
+      const disconnectPromise = disconnectProjectSource(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+        fixture.sourceId,
+      );
+      firstPath = await Promise.race([
+        projectLockAttempted,
+        sourceWriteAttempted,
+      ]);
+      releaseArchiveResolve();
+      await archivePromise;
+      [disconnectResult] = await Promise.allSettled([disconnectPromise]);
+      sourceWriteCalls = sourceWriteSpy.mock.calls.length;
+    } finally {
+      releaseArchiveResolve();
+      await archivePromise.catch(() => undefined);
+      projectLockSpy.mockRestore();
+      sourceWriteSpy.mockRestore();
+    }
+
+    expect(firstPath).toBe("project");
+    expect(sourceWriteCalls).toBe(0);
+    expect(disconnectResult).toMatchObject({
+      status: "rejected",
+      reason: expect.objectContaining({ code: "PROJECT_ARCHIVED" }),
+    });
+    await expect(disconnectState(fixture)).resolves.toEqual(before);
   });
 });

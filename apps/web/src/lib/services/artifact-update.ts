@@ -6,11 +6,18 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import { validateArtifact, type ArtifactType } from "@sf/artifacts";
-import type { UpdateArtifactRequest } from "@sf/contracts";
+import {
+  isArtifactContentWithinBudget,
+  type UpdateArtifactRequest,
+} from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getProjectArtifact } from "./artifacts";
 import { type ArtifactDto } from "./artifact-mappers";
+import {
+  isArtifactContentEditAllowed,
+  isManualArtifactStatusTransitionAllowed,
+} from "./artifact-state";
 
 /**
  * Manual artifact revision + status change (spec §10.3). Each content PATCH
@@ -27,6 +34,18 @@ export async function updateProjectArtifact(
   actorId: string,
   body: UpdateArtifactRequest,
 ): Promise<ArtifactDto> {
+  // The API route already parses UpdateArtifactRequest. Keep the resource
+  // budget here too so a future internal caller cannot bypass the HTTP schema.
+  if (
+    "contentFormat" in body &&
+    !isArtifactContentWithinBudget(body.content)
+  ) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Request failed validation.",
+    );
+  }
+
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
 
@@ -40,13 +59,12 @@ export async function updateProjectArtifact(
   if (!artifact) throw new ProblemError("NOT_FOUND", "Artifact not found.");
 
   // Content update: append a new immutable revision.
-  if (
-    body.contentFormat !== undefined &&
-    body.content !== undefined &&
-    body.content !== null
-  ) {
+  if ("contentFormat" in body) {
     if (body.baseRevision !== artifact.current_revision) {
       throw staleRevision();
+    }
+    if (!isArtifactContentEditAllowed(artifact.status)) {
+      throw artifactStateConflict();
     }
     const content: string | Record<string, unknown> = body.content;
     const hash = contentHash(
@@ -69,13 +87,43 @@ export async function updateProjectArtifact(
     const nextRevision = artifact.current_revision + 1;
 
     await db.transaction(async (tx) => {
+      const currentProject = await new ProjectsRepository(tx).findByIdForUpdate(
+        scope,
+        projectId,
+      );
+      if (!currentProject) {
+        throw new ProblemError("NOT_FOUND", "Project not found.");
+      }
+      if (currentProject.archived_at) {
+        throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+      }
+
       const txRepo = new ExecutionArtifactsRepository(tx);
       const locked = await txRepo.findByIdForUpdate(projectScope, artifactId);
       if (!locked) throw new ProblemError("NOT_FOUND", "Artifact not found.");
       if (locked.current_revision !== body.baseRevision) {
         throw staleRevision();
       }
-      if (hash === locked.content_hash) return; // idempotent no-op save
+      if (
+        locked.status !== artifact.status ||
+        !isArtifactContentEditAllowed(locked.status)
+      ) {
+        throw artifactStateConflict();
+      }
+      if (hash === locked.content_hash) {
+        const current = await txRepo.findRevision(
+          projectScope,
+          artifactId,
+          locked.current_revision,
+        );
+        if (!current) {
+          throw new Error("artifact current revision is unavailable");
+        }
+        // Content bytes alone do not identify a revision: the format controls
+        // validation and downstream serialization. Only the exact same bytes
+        // in the exact same format are an idempotent no-op.
+        if (current.content_format === body.contentFormat) return;
+      }
 
       const installed = await txRepo.setGeneratedIfRevision(
         projectScope,
@@ -84,6 +132,7 @@ export async function updateProjectArtifact(
           status: "draft", // editing always returns to draft
           currentRevision: nextRevision,
           expectedRevision: body.baseRevision,
+          expectedStatus: locked.status,
           validationState: validation.valid ? "valid" : "invalid",
           contentHash: hash,
         },
@@ -94,7 +143,8 @@ export async function updateProjectArtifact(
         projectId,
         artifactId,
         revision: nextRevision,
-        contentFormat: body.contentFormat!,
+        outputLocale: locked.output_locale,
+        contentFormat: body.contentFormat,
         contentText: typeof content === "string" ? content : null,
         contentJson: typeof content === "string" ? null : content,
         contentHash: hash,
@@ -108,30 +158,70 @@ export async function updateProjectArtifact(
     return getProjectArtifact(scope, projectId, artifactId);
   }
 
-  // Status change.
-  if (body.status !== undefined) {
-    if (body.baseRevision !== artifact.current_revision) {
+  // Status change. Status does not bump the content revision, so the current
+  // status is part of the CAS predicate as well as baseRevision.
+  if (body.baseRevision !== artifact.current_revision) {
+    throw staleRevision();
+  }
+  await db.transaction(async (tx) => {
+    const currentProject = await new ProjectsRepository(tx).findByIdForUpdate(
+      scope,
+      projectId,
+    );
+    if (!currentProject) {
+      throw new ProblemError("NOT_FOUND", "Project not found.");
+    }
+    if (currentProject.archived_at) {
+      throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+    }
+
+    const txRepo = new ExecutionArtifactsRepository(tx);
+    const locked = await txRepo.findByIdForUpdate(projectScope, artifactId);
+    if (!locked) throw new ProblemError("NOT_FOUND", "Artifact not found.");
+    if (locked.current_revision !== body.baseRevision) {
       throw staleRevision();
     }
-    if (body.status === "ready" && artifact.validation_state !== "valid") {
-      throw new ProblemError(
-        "ARTIFACT_VALIDATION_FAILED",
-        "Fix validation errors before marking ready.",
-      );
+    if (locked.status !== artifact.status) {
+      throw artifactStateConflict();
     }
-    const updated = await repo.setStatusIfRevision(
+
+    // Safe retries of an already-applied status command are true no-ops.
+    if (body.status === locked.status) {
+      if (body.status === "ready" && locked.validation_state !== "valid") {
+        throw artifactValidationFailed();
+      }
+      return;
+    }
+    if (!isManualArtifactStatusTransitionAllowed(locked.status, body.status)) {
+      throw artifactStateConflict();
+    }
+    if (body.status === "ready" && locked.validation_state !== "valid") {
+      throw artifactValidationFailed();
+    }
+
+    const updated = await txRepo.setStatusIfRevision(
       projectScope,
       artifactId,
       body.status,
       body.baseRevision,
+      locked.status,
     );
-    if (!updated) throw staleRevision();
-    return getProjectArtifact(scope, projectId, artifactId);
-  }
+    if (!updated) throw artifactStateConflict();
+  });
+  return getProjectArtifact(scope, projectId, artifactId);
+}
 
-  throw new ProblemError(
-    "VALIDATION_ERROR",
-    "Provide content or a status change.",
+function artifactStateConflict(): ProblemError {
+  return new ProblemError(
+    "VERSION_CONFLICT",
+    "Requested artifact state transition is not allowed.",
+  );
+}
+
+function artifactValidationFailed(): ProblemError {
+  return new ProblemError(
+    "ARTIFACT_VALIDATION_FAILED",
+    "Fix validation errors before marking ready.",
   );
 }
 

@@ -336,6 +336,9 @@ importers:
 
   packages/sources:
     dependencies:
+      '@sf/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       undici:
         specifier: 'catalog:'
         version: 7.28.0

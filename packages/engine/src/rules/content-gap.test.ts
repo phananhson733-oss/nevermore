@@ -6,6 +6,7 @@ import {
   type ObservationView,
 } from "../context.ts";
 import { parseIcp, type EngineIcp } from "../icp.ts";
+import { runPipeline } from "../pipeline.ts";
 import { contentGapRule } from "./content-gap.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00.000Z";
@@ -22,6 +23,13 @@ const QUALIFYING_CLUSTER: readonly (readonly [string, number | null])[] = [
   ["kanban board", 100],
   ["sprint planning", 100],
   ["work management", 100],
+];
+const DIVERGENT_CLUSTER: readonly (readonly [string, number])[] = [
+  ["cheap seo tool", 1_000],
+  ...Array.from({ length: 9 }, (_, index) => [
+    `enterprise platform variant ${index}`,
+    100,
+  ] as const),
 ];
 
 function icpOf(overrides: Record<string, unknown>): EngineIcp {
@@ -186,6 +194,131 @@ describe("contentGapRule (CONTENT-GAP-011)", () => {
     expect(result.metrics).toEqual({ qualifyingClusters: 1 });
   });
 
+  it("matches the frozen cluster key rather than the highest-volume keyword", () => {
+    const ctx = buildContext({
+      icp: icpOf({}),
+      observations: [
+        ...clusterObs("enterprise-seo-platform", DIVERGENT_CLUSTER),
+        crawlObs(
+          "https://example.com/cheap-seo-tool",
+          makePage({
+            fetchUrl: "https://example.com/cheap-seo-tool",
+            title: "Cheap SEO Tool",
+            h1: ["Cheap SEO Tool"],
+          }),
+        ),
+      ],
+    });
+
+    const result = contentGapRule.evaluate(ctx);
+    expect(result.status).toBe("candidate");
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.subjectRefs).toEqual([
+      "keyword_cluster:enterprise-seo-platform",
+    ]);
+  });
+
+  it("passes when the frozen cluster key is covered despite a divergent top keyword", () => {
+    const ctx = buildContext({
+      icp: icpOf({}),
+      observations: [
+        ...clusterObs("enterprise-seo-platform", DIVERGENT_CLUSTER),
+        crawlObs(
+          "https://example.com/enterprise-seo-platform",
+          makePage({
+            fetchUrl: "https://example.com/enterprise-seo-platform",
+            title: "Enterprise SEO Platform",
+            h1: ["Enterprise SEO Platform"],
+          }),
+        ),
+      ],
+    });
+
+    expect(contentGapRule.evaluate(ctx)).toEqual({
+      status: "pass",
+      metrics: { qualifyingClusters: 1 },
+    });
+  });
+
+  it("is inconclusive when no page has a title or H1", () => {
+    const ctx = buildContext({
+      icp: icpOf({}),
+      observations: [
+        ...clusterObs("project-management", QUALIFYING_CLUSTER),
+        crawlObs(
+          "https://example.com/pricing",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: null,
+            h1: [],
+          }),
+        ),
+      ],
+    });
+
+    expect(contentGapRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "intent_match_unavailable",
+    });
+  });
+
+  it("marks partial CSV evidence partial and derives medium confidence", async () => {
+    const ctx = buildContext({
+      icp: icpOf({}),
+      observations: [
+        ...clusterObs("project-management", QUALIFYING_CLUSTER),
+        crawlObs(
+          "https://example.com/pricing",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing",
+            h1: ["Pricing"],
+          }),
+        ),
+      ],
+      coverage: { csv: "partial" },
+    });
+
+    const result = contentGapRule.evaluate(ctx);
+    expect(result.status).toBe("candidate");
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.evidence[0]?.availability).toBe("partial");
+    expect(result.candidates[0]?.evidence[0]?.limitation).toContain(
+      "snapshot is partial",
+    );
+
+    const pipeline = await runPipeline({
+      projectId: "00000000-0000-4000-8000-000000000001",
+      ctx,
+      rules: [contentGapRule],
+      deliveryLocale: "en",
+    });
+    expect(pipeline.findings[0]?.confidence).toBe("medium");
+  });
+
+  it("does not report a clean pass from a partial CSV snapshot", () => {
+    const ctx = buildContext({
+      icp: icpOf({}),
+      observations: [
+        ...clusterObs("project-management", QUALIFYING_CLUSTER),
+        crawlObs(
+          "https://example.com/project-management",
+          makePage({
+            fetchUrl: "https://example.com/project-management",
+            title: "Project Management",
+            h1: ["Project Management"],
+          }),
+        ),
+      ],
+      coverage: { csv: "partial" },
+    });
+
+    expect(contentGapRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "partial_csv_snapshot",
+    });
+  });
+
   it("does not flag a cluster below the qualification thresholds", () => {
     // Only 5 keywords → fails the >= 10 keyword gate even at high volume.
     const smallCluster: readonly (readonly [string, number])[] = [
@@ -212,14 +345,14 @@ describe("contentGapRule (CONTENT-GAP-011)", () => {
     expect(result.metrics).toEqual({ qualifyingClusters: 0 });
   });
 
-  it("skips non-English projects with unsupported_language", () => {
+  it("is inconclusive for non-English projects", () => {
     const ctx = buildContext({
       icp: icpOf({ siteLanguageCodes: ["fr"] }),
       observations: [...clusterObs("project-management", QUALIFYING_CLUSTER)],
     });
 
     expect(contentGapRule.evaluate(ctx)).toEqual({
-      status: "skipped",
+      status: "inconclusive",
       reason: "unsupported_language",
     });
   });

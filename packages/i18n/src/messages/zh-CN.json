@@ -16,6 +16,7 @@
   "common": {
     "loading": "加载中…",
     "error": "出了点问题",
+    "errorHint": "请重试请求；若仍失败，请记录稳定错误码和请求 ID。",
     "empty": "暂无内容",
     "retry": "重试",
     "save": "保存",
@@ -27,7 +28,13 @@
     "close": "关闭",
     "none": "无",
     "unavailable": "不可用",
-    "learnMore": "了解更多"
+    "learnMore": "了解更多",
+    "problemDetails": "错误详情",
+    "errorCode": "错误码",
+    "requestId": "请求 ID",
+    "loadMore": "加载更多",
+    "loadingMore": "正在加载更多…",
+    "loadMoreError": "无法加载下一页；已加载的内容仍会保留显示。"
   },
   "runState": {
     "queued": "排队中",
@@ -210,8 +217,59 @@
       "priorityUrls": "优先 URL",
       "competitors": "竞争对手",
       "growthQuestions": "增长问题",
-      "ninetyDayGoals": "90 天目标"
+      "ninetyDayGoals": "90 天目标",
+      "marketCodes": "目标市场",
+      "siteLanguageCodes": "网站语言",
+      "defaultDeliveryLocale": "默认交付语言",
+      "brandConstraints": "品牌约束",
+      "complianceConstraints": "合规约束",
+      "technicalConstraints": "技术约束",
+      "resourceConstraints": "资源约束",
+      "personaName": "姓名",
+      "personaRole": "角色或背景",
+      "personaJobs": "待完成任务",
+      "personaPains": "痛点",
+      "conversionLabel": "转化名称",
+      "conversionType": "转化类型",
+      "conversionTargetUrl": "目标 URL"
     },
+    "help": {
+      "perLine": "每行一项。",
+      "markets": "每行一个——使用大写 ISO-2 代码（例如 US、GB）。",
+      "languages": "每行一个——使用 BCP-47 标签（例如 zh-CN、en-US）。",
+      "locale": "BCP-47 标签（例如 zh-CN）。",
+      "urls": "每行一个 URL。"
+    },
+    "options": {
+      "customerModel": {
+        "b2b": "B2B",
+        "b2c": "B2C",
+        "hybrid": "混合模式"
+      },
+      "businessProfile": {
+        "b2b_saas": "B2B SaaS",
+        "b2b_services": "B2B 服务",
+        "b2c_ecommerce": "B2C 电商",
+        "b2c_subscription": "B2C 订阅",
+        "marketplace": "平台型市场",
+        "publisher": "内容发布",
+        "other": "其他"
+      },
+      "conversionType": {
+        "demo": "演示",
+        "signup": "注册",
+        "trial": "试用",
+        "purchase": "购买",
+        "lead": "销售线索",
+        "contact": "联系",
+        "subscribe": "订阅",
+        "offline": "线下转化",
+        "other": "其他"
+      }
+    },
+    "version": "版本 {version}",
+    "newVersion": "新建",
+    "leaveWarning": "你有未保存的更改。确定离开此页面并放弃这些更改吗？",
     "qualificationIncomplete": "请先填写必填字段，再将该背景标记为完成。"
   },
   "overview": {
@@ -225,6 +283,44 @@
     },
     "nextStep": "下一步",
     "noData": "尚未采集数据",
+    "unavailable": "不可用",
+    "available": "可用",
+    "snapshotDetail": "{provider}快照",
+    "signalRail": {
+      "title": "信号链",
+      "description": "从已采集信号到诊断、行动与交付的规范主链。",
+      "diagnosis": "诊断",
+      "action": "行动",
+      "delivery": "交付",
+      "noDiagnosis": "暂无诊断数据",
+      "noAction": "暂无选定行动",
+      "noDelivery": "该行动暂无交付物"
+    },
+    "highestAction": {
+      "eyebrow": "最高杠杆",
+      "title": "最高优先级行动",
+      "description": "当前规范计划中持久化优先级最高的行动。",
+      "empty": "暂无可用行动。请先确认诊断发现，以生成规范计划。",
+      "evidenceCount": "{count} 条关联证据",
+      "noEvidence": "该行动暂无可用的关联证据。",
+      "expectedOutcome": "预期结果",
+      "viewPlan": "查看计划"
+    },
+    "evidenceFocus": {
+      "title": "证据焦点",
+      "description": "与最高优先级行动的来源发现相关联的证据。",
+      "count": "{count} 条规范证据",
+      "latestObserved": "最近观测于 {date}",
+      "sources": "来源",
+      "empty": "该行动暂无可用的规范证据关联。"
+    },
+    "deliveryFocus": {
+      "title": "交付焦点",
+      "description": "与最高优先级行动关联的最新交付物。",
+      "updated": "更新于 {date}",
+      "empty": "该行动尚未关联交付物。",
+      "openStudio": "打开 Studio"
+    },
     "reviewDiagnosis": "查看诊断",
     "previewReport": "预览报告"
   },
@@ -232,7 +328,9 @@
     "projectStage": "项目阶段",
     "localeSwitch": "切换语言",
     "comingSoon": "将在后续阶段开放",
-    "skipToContent": "跳到主内容"
+    "skipToContent": "跳到主内容",
+    "projectSections": "项目分区",
+    "breadcrumb": "面包屑导航"
   },
   "contextStatus": {
     "missing": "未开始",
@@ -253,6 +351,10 @@
     "availabilityLabel": "可用性",
     "rows": "行数",
     "snapshotHistory": "已采集 {count} 个快照",
+    "snapshotHistoryPartial": "当前已加载至少 {count} 个快照",
+    "snapshotHistoryUnavailable": "快照历史暂时不可用",
+    "loadingHistory": "正在加载快照历史…",
+    "loadMoreHistory": "加载更多快照历史",
     "inProgress": "进行中",
     "progress": "进度：{current}/{total}",
     "runStatusUnavailable": "无法刷新本次任务的状态。数据源已重新刷新；开始其他任务前，请重试状态检查。",
@@ -314,6 +416,7 @@
     "needsContext": "诊断前需要完整的 ICP 上下文。请先完善项目上下文。",
     "runActive": "该项目已有一次诊断正在进行中。",
     "runError": "诊断运行未能完成。请查看运行状态后重试。",
+    "statusReadError": "运行状态暂时不可用。在确认其状态前，本次运行将保持锁定。",
     "coverageTitle": "证据覆盖度",
     "ruleBoard": "规则看板",
     "ruleBoardEmpty": "规则看板将在首次诊断运行后生成。",
@@ -330,6 +433,7 @@
     "notDiagnosedHint": "运行诊断以呈现发现及其证据。",
     "noFindings": "未产生任何发现",
     "noFindingsHint": "诊断运行已完成，未发现需要关注的问题。",
+    "moreFindingsHint": "下一页还有更多发现。",
     "severityLabel": "严重度",
     "confidenceLabel": "置信度",
     "confidence": {
@@ -341,8 +445,44 @@
     "subjectsLabel": "涉及对象",
     "evidenceLabel": "证据",
     "gradeLabel": "{grade} 级",
+    "filters": {
+      "title": "筛选发现",
+      "domain": "诊断域",
+      "severity": "严重度筛选",
+      "allDomains": "全部诊断域",
+      "allSeverities": "全部严重度",
+      "results": "显示 {shown}/{total} 条发现",
+      "resultsPartial": "当前已加载 {total} 条，显示其中 {shown} 条",
+      "empty": "没有符合当前筛选条件的发现。",
+      "emptyPartial": "已加载内容中暂无匹配发现；请加载更多以继续查找。",
+      "clear": "清除筛选"
+    },
+    "evidence": {
+      "cardLabel": "证据：{claim}",
+      "detailsLabel": "证据详情：{claim}",
+      "showDetails": "展开证据详情",
+      "hideDetails": "收起证据详情",
+      "sourceProvider": "数据来源",
+      "provider": {
+        "system": "SignalFrame 系统",
+        "llm": "语言模型"
+      },
+      "availability": "可用性",
+      "supportLabel": "支持方向",
+      "support": {
+        "supports": "支持",
+        "contradicts": "反驳",
+        "context": "上下文"
+      },
+      "observedAt": "观测于 {date}",
+      "origin": "来源对象",
+      "method": "方法",
+      "limitation": "局限",
+      "subjects": "证据对象",
+      "noSubjects": "未关联对象引用。",
+      "none": "该发现未关联规范证据。"
+    },
     "regressed": "复现",
-    "autoNote": "因置信度偏低，已自动标记为“需要更多数据”。",
     "actionCreated": "已创建行动：",
     "confirm": "确认",
     "ignore": "忽略",
@@ -374,6 +514,7 @@
     "laneNextWindow": "31–60 天",
     "laneLaterWindow": "61–90 天",
     "laneEmpty": "该窗口暂无排期的行动。",
+    "laneEmptyPartial": "已加载内容中此窗口暂无行动；后续页面仍有更多行动。",
     "priority": "优先级",
     "status": "状态",
     "effort": "工作量",
@@ -426,7 +567,7 @@
     "generateSubmit": "生成",
     "generating": "生成中…",
     "runStatusUnavailable": "无法刷新生成状态。执行物列表已刷新；再次生成前请先核对列表。",
-    "refreshArtifacts": "刷新执行物",
+    "retryGenerationStatus": "重试生成状态",
     "regenerate": "重新生成",
     "open": "打开",
     "openSelected": "打开",
@@ -434,6 +575,9 @@
     "revision": "版本",
     "revisionLabel": "版本 {n}",
     "outputLocale": "输出语言",
+    "outputLocaleHelp": "模板方式仅支持 en 与 zh-CN；结构化 LLM 接受任意合法的 BCP-47 语言标签。推荐值来自项目交付语言与站点语言。",
+    "invalidOutputLocale": "请输入合法的 BCP-47 语言标签，例如 en、zh-CN 或 fr-FR。",
+    "templateLocaleRequiresStructuredLlm": "模板生成仅支持 en 与 zh-CN。其他语言请选择结构化 LLM。",
     "artifactTypeLabel": "执行物类型",
     "generationMode": "生成方式",
     "generationModeHelp": "模板方式为确定性输出；结构化 LLM 会基于同一证据生成更丰富的文案。",
@@ -442,9 +586,14 @@
     "operatorInstructions": "操作者说明",
     "operatorInstructionsHelp": "本次生成的可选指引。用于调整语气与侧重，绝不凭空编造证据。",
     "editContent": "内容",
-    "editContentHelp": "模型输出以纯文本展示。在此编辑即可保存新版本。",
+    "editContentHelp": "模型输出以纯文本展示。在此编辑即可保存新版本（最多 40,000 个字符）。",
+    "contentTooLong": "内容不能超过 40,000 个字符。",
     "editorNote": "版本备注",
     "saveRevision": "保存版本",
+    "editorUnsaved": "有未保存的更改",
+    "editorSaved": "所有更改均已保存",
+    "unsavedLeaveWarning": "执行物还有未保存的编辑。要离开并丢弃这些更改吗？",
+    "saveBeforeStatusChange": "请先保存或丢弃编辑，再更改此执行物的状态。",
     "markReady": "标记为就绪",
     "markReadyHint": "请先解决校验错误，才能将此执行物标记为就绪。",
     "backToDraft": "退回草稿",
@@ -457,6 +606,7 @@
     "pickAction": "选择一个行动",
     "pickActionHelp": "选择一个已确认的行动来生成其交付物。",
     "noActions": "暂无可执行的行动。",
+    "moreActionsHint": "下一页还有更多可执行行动。",
     "emptyTitle": "尚无执行物",
     "emptyHint": "请先确认发现并制定计划。",
     "artifactType": {
@@ -485,7 +635,11 @@
     "summaryActions": "计划行动",
     "summaryDeliverables": "已就绪交付物",
     "reportDate": "报告日期",
-    "outputLocale": "报告语言",
+    "outputLocale": "请求的方法论语言",
+    "outputLocaleHelp": "该请求会本地化方法论，并设置下一次导出的语言；清空后使用项目交付语言。发现、行动与交付物保留各自记录的实际语言，详见下方标注。",
+    "summaryContentLocale": "摘要语言：{locale}",
+    "actionContentLocale": "行动语言：{locale}",
+    "artifactContentLocale": "交付物语言：{locale}",
     "locale": {
       "en": "英语",
       "zh-CN": "简体中文"
@@ -528,7 +682,7 @@
     "export": "导出",
     "exportServiceBundle": "服务包",
     "exportClientBundle": "客户包",
-    "clientBundleNote": "客户包不含内部观测数据、批注、供应商用量和未确认发现，仅包含可对客户公开的内容；服务包包含完整的内部记录。",
+    "clientBundleNote": "客户包不含内部观测数据、批注、供应商用量、已忽略或需补充数据的发现，以及未定稿交付物；服务包包含完整的内部记录。",
     "kind": {
       "service_bundle": "服务包",
       "client_bundle": "客户包"
@@ -536,6 +690,32 @@
     "preparing": "正在准备导出…",
     "download": "下载{kind}",
     "expiresAt": "链接有效期至",
+    "manifestTitle": "导出清单",
+    "manifestDescription": "本次生成包的规范内容范围与完整性元数据。",
+    "schemaVersion": "架构版本",
+    "bundleLocale": "内容语言",
+    "createdAt": "创建时间",
+    "checksum": "归档校验和",
+    "notAvailable": "暂无",
+    "included": "包含",
+    "excluded": "不包含",
+    "clientIncluded": "可安全交付客户的报告数据与已就绪交付物",
+    "clientExcluded": "内部观测、批注与未定稿内容",
+    "serviceIncluded": "规范服务数据、观测、证据、行动与交付物版本",
+    "serviceExcluded": "密钥、凭据、令牌与受限供应商用量明细",
+    "itemCounts": "对象数量",
+    "manifestItems": {
+      "projects": "项目",
+      "contexts": "客户背景",
+      "sources": "数据源",
+      "snapshots": "快照",
+      "observations": "观测",
+      "findings": "发现",
+      "evidence": "证据",
+      "actions": "行动",
+      "artifacts": "交付物",
+      "artifactRevisions": "交付物版本"
+    },
     "exportAlreadyActive": "该项目已有导出任务正在准备。请等待任务完成后刷新导出状态。",
     "exportDependencyUnavailable": "导出服务暂时不可用，请稍后重试。",
     "retryExportStatus": "重试状态检查",

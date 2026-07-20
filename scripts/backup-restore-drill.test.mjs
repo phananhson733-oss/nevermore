@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   mkdtemp,
   mkdir,
@@ -11,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   APP_TABLES,
@@ -27,6 +30,126 @@ import {
 
 const SOURCE_URL =
   "postgres://local_user:super-secret@localhost:5432/signalframe_ci";
+const SCRIPT_PATH = fileURLToPath(
+  new URL("./backup-restore-drill.mjs", import.meta.url),
+);
+const MIGRATIONS_DIRECTORY = path.resolve(
+  fileURLToPath(new URL("../packages/db/migrations/", import.meta.url)),
+);
+const FAKE_PG_FIXTURE = new URL(
+  "./fixtures/restore-drill-fake-pg.cjs",
+  import.meta.url,
+);
+const EXPECTED_PASSFILE =
+  "localhost:5432:*:local_user:super-secret\n";
+const EXPECTED_MIGRATION_FILES = [
+  "0001_init.sql",
+  "0002_async_run_terminal_invariant.sql",
+  "0003_artifact_status_transition.sql",
+  "0004_artifact_revision_output_locale.sql",
+  "0005_artifact_transition_invariants.sql",
+  "0006_observability_metrics.sql",
+  "0007_export_bundle_invariants.sql",
+  "0008_bcp47_locale_grammar.sql",
+  "0009_async_run_contract_version.sql",
+];
+const CHILD_ENV_ALLOWLIST = new Set([
+  "COMSPEC",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  // Injected by Node's experimental test coverage harness after spawn.
+  "NODE_V8_COVERAGE",
+  "PATH",
+  "PATHEXT",
+  "PGAPPNAME",
+  "PGCONNECT_TIMEOUT",
+  "PGPASSFILE",
+  "PGSSLMODE",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "WINDIR",
+  // macOS CoreFoundation injects this after exec even when it is not supplied.
+  "__CF_USER_TEXT_ENCODING",
+]);
+
+async function createFakePgToolchain(state = {}, skippedTools = []) {
+  const root = await mkdtemp(path.join(tmpdir(), "signalframe-fake-pg-"));
+  const bin = path.join(root, "bin");
+  const reportDir = path.join(root, "reports");
+  const statePath = path.join(root, "state.json");
+  const fakeClient = await readFile(FAKE_PG_FIXTURE, "utf8");
+  await mkdir(bin, { recursive: true });
+  await writeFile(
+    statePath,
+    JSON.stringify({
+      exists: false,
+      observations: [],
+      expectedPassfileHash: createHash("sha256")
+        .update(EXPECTED_PASSFILE)
+        .digest("hex"),
+      ...state,
+    }),
+  );
+  for (const tool of ["psql", "pg_dump", "createdb", "pg_restore", "dropdb"]) {
+    if (!skippedTools.includes(tool)) {
+      await writeFile(path.join(bin, tool), fakeClient, { mode: 0o755 });
+    }
+  }
+  return {
+    root,
+    bin,
+    reportDir,
+    statePath,
+    readState: async () => JSON.parse(await readFile(statePath, "utf8")),
+  };
+}
+
+async function withAmbientEnvironment(values, callback) {
+  const previous = new Map(
+    Object.keys(values).map((name) => [name, process.env[name]]),
+  );
+  Object.assign(process.env, values);
+  try {
+    return await callback();
+  } finally {
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
+function hostileThrownValue(sentinel) {
+  return new Proxy(Object.create(null), {
+    get() {
+      throw new Error(sentinel);
+    },
+    getOwnPropertyDescriptor() {
+      throw new Error(sentinel);
+    },
+    getPrototypeOf() {
+      throw new Error(sentinel);
+    },
+    has() {
+      throw new Error(sentinel);
+    },
+    ownKeys() {
+      throw new Error(sentinel);
+    },
+  });
+}
+
+async function capturedFailure(run) {
+  try {
+    await run();
+  } catch (error) {
+    return error;
+  }
+  assert.fail("expected restore drill to fail");
+}
 
 function emptyInventory() {
   return {
@@ -43,6 +166,7 @@ function emptyInventory() {
 async function fakeHarness({
   databaseExistsResults = [false, true, false],
   failTool,
+  toolFailure,
   restoredInventory = emptyInventory(),
 } = {}) {
   const reportDir = await mkdtemp(
@@ -76,7 +200,10 @@ async function fakeHarness({
           await writeFile(args[fileIndex + 1], "sensitive custom dump");
         }
         if (tool === failTool) {
-          throw new Error(`${tool} deliberately failed with super-secret`);
+          throw (
+            toolFailure ??
+            new Error(`${tool} deliberately failed with super-secret`)
+          );
         }
       },
     },
@@ -129,6 +256,13 @@ test("parseSourceDatabaseUrl rejects missing, hosted, and system databases", () 
   assert.throws(
     () => parseSourceDatabaseUrl("postgres://user@localhost:5432/customer_prod"),
     /disposable|allowlist/i,
+  );
+  assert.throws(
+    () =>
+      parseSourceDatabaseUrl(
+        "postgres://user:line%0Abreak@localhost:5432/signalframe_ci",
+      ),
+    /control character/i,
   );
   assert.equal(
     parseSourceDatabaseUrl(
@@ -268,8 +402,34 @@ test("redactSensitiveText removes passwords and PostgreSQL URLs", () => {
   assert.match(redacted, /\[REDACTED_DATABASE_URL\]/);
 });
 
+test("redactSensitiveText never invokes hostile getters or toString", () => {
+  const sentinel = "HOSTILE_REDACTION_VALUE_MUST_NOT_ESCAPE";
+  const hostileAccessor = Object.create(null);
+  Object.defineProperty(hostileAccessor, "toString", {
+    get() {
+      throw new Error(sentinel);
+    },
+  });
+
+  assert.doesNotThrow(() => redactSensitiveText(hostileAccessor));
+  assert.doesNotThrow(() => redactSensitiveText(hostileThrownValue(sentinel)));
+  assert.equal(redactSensitiveText(hostileAccessor), "[UNAVAILABLE]");
+  assert.equal(redactSensitiveText(hostileThrownValue(sentinel)), "[UNAVAILABLE]");
+});
+
 test("runRestoreDrill verifies then drops only its generated target and writes safe evidence", async () => {
   const { reportDir, calls, overrides } = await fakeHarness();
+  let migrationDiscoveryCalled = false;
+  overrides.readMigrationDirectory = async (directory, options) => {
+    migrationDiscoveryCalled = true;
+    assert.equal(directory, MIGRATIONS_DIRECTORY);
+    assert.deepEqual(options, { withFileTypes: true });
+    return [
+      ...EXPECTED_MIGRATION_FILES.toReversed(),
+      "schema-smoke.sql",
+      "README.md",
+    ].map((name) => ({ name, isFile: () => true }));
+  };
 
   const result = await runRestoreDrill(
     {
@@ -282,6 +442,7 @@ test("runRestoreDrill verifies then drops only its generated target and writes s
   const target = "signalframe_restore_drill_20260718t123456_0123456789ab";
   assert.equal(result.status, "passed");
   assert.equal(result.targetDatabase, target);
+  assert.equal(migrationDiscoveryCalled, true);
   assert.deepEqual(
     calls.filter((call) => call.operation === "inventory"),
     [
@@ -318,73 +479,136 @@ test("runRestoreDrill verifies then drops only its generated target and writes s
 
   const toolNames = calls.map((call) => call.operation);
   assert.ok(toolNames.includes("pg_restore"));
-  assert.equal(
-    calls.filter(
+  const replayAndSmokePaths = calls
+    .filter(
       (call) =>
         call.operation === "psql" && call.args.includes("--file"),
-    ).length,
-    2,
-    "migration replay and schema smoke must both run",
+    )
+    .map((call) => call.args[call.args.indexOf("--file") + 1]);
+  assert.deepEqual(
+    replayAndSmokePaths.map((filePath) => path.basename(filePath)),
+    [...EXPECTED_MIGRATION_FILES, "schema-smoke.sql"],
+    "all migrations must replay in production order before schema smoke",
   );
+  for (const filePath of replayAndSmokePaths) {
+    assert.equal(path.isAbsolute(filePath), true);
+    assert.equal(path.dirname(filePath), MIGRATIONS_DIRECTORY);
+  }
   assert.deepEqual(
     (await readdir(reportDir)).sort(),
     [path.basename(result.reportPaths.json), path.basename(result.reportPaths.markdown)].sort(),
   );
 });
 
-test("default PostgreSQL process adapters run through a private fake client toolchain", async () => {
-  const fakeRoot = await mkdtemp(path.join(tmpdir(), "signalframe-fake-pg-"));
-  const fakeBin = path.join(fakeRoot, "bin");
-  const reportDir = path.join(fakeRoot, "reports");
-  const statePath = path.join(fakeRoot, "state.json");
-  await mkdir(fakeBin, { recursive: true });
-  await writeFile(statePath, JSON.stringify({ exists: false }));
-
-  const fakeClient = `#!/usr/bin/env node
-const fs = require("node:fs");
-const path = require("node:path");
-const tool = path.basename(process.argv[1]);
-const args = process.argv.slice(2);
-const statePath = process.env.FAKE_PG_STATE;
-const readState = () => JSON.parse(fs.readFileSync(statePath, "utf8"));
-const writeState = (state) => fs.writeFileSync(statePath, JSON.stringify(state));
-const argAfter = (flag) => args[args.indexOf(flag) + 1];
-if (tool === "pg_dump") {
-  fs.writeFileSync(argAfter("--file"), "fake custom dump");
-} else if (tool === "createdb") {
-  writeState({ exists: true });
-} else if (tool === "dropdb") {
-  writeState({ exists: false });
-} else if (tool === "pg_restore") {
-  if (!fs.existsSync(args.at(-1))) process.exit(2);
-} else if (tool === "psql") {
-  const commandIndex = args.indexOf("--command");
-  if (commandIndex >= 0) {
-    const sql = args[commandIndex + 1];
-    if (sql.includes("from pg_database")) {
-      process.stdout.write((readState().exists ? "yes" : "no") + "\\t1\\n");
-    } else if (sql.includes("count(*)::text")) {
-      for (const match of sql.matchAll(/select '([a-z_]+)' as key/g)) {
-        process.stdout.write(match[1] + "\\t0\\n");
-      }
-    } else if (sql.startsWith("copy (")) {
-      process.stdout.write("stable canonical row\\n");
+test("migration replay stops at the first failed ordered migration and still cleans only its target", async () => {
+  const sentinel = "FAILED_MIGRATION_RAW_DETAIL_MUST_NOT_ESCAPE";
+  const { reportDir, calls, overrides } = await fakeHarness();
+  const runTool = overrides.runTool;
+  overrides.runTool = async (request) => {
+    await runTool(request);
+    const fileIndex = request.args.indexOf("--file");
+    if (
+      request.tool === "psql" &&
+      fileIndex >= 0 &&
+      path.basename(request.args[fileIndex + 1]) ===
+        "0004_artifact_revision_output_locale.sql"
+    ) {
+      throw new Error(`${sentinel} super-secret`);
     }
-  }
-}
-`;
-  for (const tool of ["psql", "pg_dump", "createdb", "pg_restore", "dropdb"]) {
-    await writeFile(path.join(fakeBin, tool), fakeClient, { mode: 0o755 });
-  }
+  };
 
-  process.env.FAKE_PG_STATE = statePath;
   try {
-    const result = await runRestoreDrill({
-      sourceUrl: SOURCE_URL,
-      reportDir,
-      pgBinDir: fakeBin,
-    });
+    const caught = await capturedFailure(() =>
+      runRestoreDrill({ sourceUrl: SOURCE_URL, reportDir }, overrides),
+    );
+    const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+    const replayedFiles = calls
+      .filter(
+        (call) =>
+          call.operation === "psql" && call.args.includes("--file"),
+      )
+      .map((call) =>
+        path.basename(call.args[call.args.indexOf("--file") + 1]),
+      );
+    const dropCalls = calls.filter((call) => call.operation === "dropdb");
+
+    assert.deepEqual(replayedFiles, EXPECTED_MIGRATION_FILES.slice(0, 4));
+    assert.equal(report.verification.migrationReplay, "failed");
+    assert.equal(report.verification.schemaSmoke, "not_run");
+    assert.deepEqual(report.failures, [
+      {
+        type: "postgres_process",
+        code: "PG_TOOL_UNKNOWN_FAILURE",
+        tool: "psql",
+        termination: "unknown",
+      },
+    ]);
+    assert.equal(report.cleanup.targetDatabaseDropped, true);
+    assert.equal(report.cleanup.targetDatabaseAbsentAfterCleanup, true);
+    assert.equal(report.cleanup.dumpDirectoryRemoved, true);
+    assert.equal(report.cleanup.credentialDirectoryRemoved, true);
+    assert.equal(dropCalls.length, 1);
+    assert.equal(dropCalls[0].args.at(-1), report.targetDatabase);
+    assert.equal(dropCalls[0].args.includes("signalframe_ci"), false);
+    assert.doesNotMatch(caught.message, new RegExp(sentinel));
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(sentinel));
+  } finally {
+    await rm(reportDir, { recursive: true, force: true });
+  }
+});
+
+test("migration discovery rejects path traversal before any database tool runs", async () => {
+  const sentinel = "UNSAFE_MIGRATION_PATH_MUST_NOT_ESCAPE";
+  const { reportDir, calls, overrides } = await fakeHarness();
+  overrides.readMigrationDirectory = async () => [
+    { name: `../${sentinel}.sql`, isFile: () => true },
+  ];
+
+  try {
+    const caught = await capturedFailure(() =>
+      runRestoreDrill({ sourceUrl: SOURCE_URL, reportDir }, overrides),
+    );
+    const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+
+    assert.deepEqual(calls, []);
+    assert.deepEqual(report.failures, [
+      {
+        type: "restore_drill",
+        code: "RESTORE_MIGRATION_PATH_UNSAFE",
+      },
+    ]);
+    assert.equal(report.cleanup.targetDatabaseDropped, false);
+    assert.equal(report.cleanup.dumpDirectoryRemoved, true);
+    assert.equal(report.cleanup.credentialDirectoryRemoved, true);
+    assert.doesNotMatch(caught.message, new RegExp(sentinel));
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(sentinel));
+  } finally {
+    await rm(reportDir, { recursive: true, force: true });
+  }
+});
+
+test("default PostgreSQL process adapters run through a private fake client toolchain", async () => {
+  const fake = await createFakePgToolchain();
+  try {
+    const result = await withAmbientEnvironment(
+      {
+        AZURE_OPENAI_API_KEY: "ambient-azure-secret",
+        CI_JOB_JWT: "ambient-ci-secret",
+        GITHUB_TOKEN: "ambient-github-secret",
+        GOOGLE_OAUTH_CLIENT_SECRET: "ambient-oauth-secret",
+        OPENAI_API_KEY: "ambient-openai-secret",
+        PGPASSWORD: "ambient-pg-password",
+        PGSERVICE: "ambient-pg-service",
+      },
+      () =>
+        runRestoreDrill({
+          sourceUrl: SOURCE_URL,
+          reportDir: fake.reportDir,
+          pgBinDir: fake.bin,
+        }),
+    );
     const report = JSON.parse(await readFile(result.reportPaths.json, "utf8"));
+    const state = await fake.readState();
 
     assert.equal(result.status, "passed");
     assert.equal(report.verification.appTableCount, 28);
@@ -393,12 +617,306 @@ if (tool === "pg_dump") {
     assert.equal(report.cleanup.targetDatabaseDropped, true);
     assert.equal(report.cleanup.targetDatabaseAbsentAfterCleanup, true);
     assert.equal(report.cleanup.dumpDirectoryRemoved, true);
-    assert.deepEqual(JSON.parse(await readFile(statePath, "utf8")), {
-      exists: false,
+    assert.equal(report.cleanup.credentialDirectoryRemoved, true);
+    assert.equal(state.exists, false);
+    assert.ok(state.observations.length > 0);
+    for (const observation of state.observations) {
+      assert.equal(observation.hasPgPassword, false);
+      assert.equal(observation.passfileMode, 0o600);
+      assert.equal(observation.passfileHashMatches, true);
+      assert.ok(observation.passfilePath);
+      assert.ok(
+        observation.envKeys.every((name) => CHILD_ENV_ALLOWLIST.has(name)),
+        `unexpected child env keys: ${observation.envKeys.filter((name) => !CHILD_ENV_ALLOWLIST.has(name)).join(", ")}`,
+      );
+      for (const forbidden of [
+        "AZURE_OPENAI_API_KEY",
+        "CI_JOB_JWT",
+        "DATABASE_URL",
+        "GITHUB_TOKEN",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "OPENAI_API_KEY",
+        "PGPASSWORD",
+        "PGSERVICE",
+      ]) {
+        assert.equal(observation.envKeys.includes(forbidden), false);
+      }
+    }
+    const passfilePaths = new Set(
+      state.observations.map((observation) => observation.passfilePath),
+    );
+    assert.equal(passfilePaths.size, 1);
+    await assert.rejects(stat([...passfilePaths][0]), { code: "ENOENT" });
+  } finally {
+    await rm(fake.root, { recursive: true, force: true });
+  }
+});
+
+test("non-zero PostgreSQL exits use fixed evidence and discard raw stderr", async () => {
+  const sentinel = "RAW_STDERR_MUST_NEVER_REACH_EVIDENCE";
+  const fake = await createFakePgToolchain({
+    failureTool: "psql",
+    failureKind: "exit",
+    exitCode: 23,
+    rawStderr: `${sentinel}\n# hostile markdown\n\u001b[31mred\u001b[0m`,
+  });
+  try {
+    const caught = await capturedFailure(() =>
+      runRestoreDrill({
+        sourceUrl: SOURCE_URL,
+        reportDir: fake.reportDir,
+        pgBinDir: fake.bin,
+      }),
+    );
+    const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+    const markdown = await readFile(caught.reportPaths.markdown, "utf8");
+    const state = await fake.readState();
+
+    assert.deepEqual(report.failures, [
+      {
+        type: "postgres_process",
+        code: "PG_TOOL_EXIT_NONZERO",
+        tool: "psql",
+        termination: "exit",
+        exitCode: 23,
+      },
+    ]);
+    assert.equal(report.cleanup.dumpDirectoryRemoved, true);
+    assert.equal(report.cleanup.credentialDirectoryRemoved, true);
+    assert.doesNotMatch(caught.message, new RegExp(sentinel));
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(sentinel));
+    assert.doesNotMatch(markdown, new RegExp(sentinel));
+    assert.equal(state.observations.length, 1);
+    await assert.rejects(stat(state.observations[0].passfilePath), {
+      code: "ENOENT",
     });
   } finally {
-    delete process.env.FAKE_PG_STATE;
-    await rm(fakeRoot, { recursive: true });
+    await rm(fake.root, { recursive: true, force: true });
+  }
+});
+
+test("checksum subprocess signal termination is classified without stderr", async () => {
+  const sentinel = "SIGNAL_STDERR_MUST_NEVER_REACH_EVIDENCE";
+  const fake = await createFakePgToolchain({
+    failureTool: "psql",
+    failureWhen: "checksum",
+    failureKind: "signal",
+    signal: "SIGTERM",
+    rawStderr: sentinel,
+  });
+  try {
+    const caught = await capturedFailure(() =>
+      runRestoreDrill({
+        sourceUrl: SOURCE_URL,
+        reportDir: fake.reportDir,
+        pgBinDir: fake.bin,
+      }),
+    );
+    const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+    const state = await fake.readState();
+
+    assert.deepEqual(report.failures, [
+      {
+        type: "postgres_process",
+        code: "PG_TOOL_SIGNAL",
+        tool: "psql",
+        termination: "signal",
+        signal: "SIGTERM",
+      },
+    ]);
+    assert.equal(report.cleanup.dumpDirectoryRemoved, true);
+    assert.equal(report.cleanup.credentialDirectoryRemoved, true);
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(sentinel));
+    await assert.rejects(stat(state.observations.at(-1).passfilePath), {
+      code: "ENOENT",
+    });
+  } finally {
+    await rm(fake.root, { recursive: true, force: true });
+  }
+});
+
+test("spawn error and synchronous spawn throw have distinct fixed classifications", async (t) => {
+  await t.test("asynchronous spawn error", async () => {
+    const fake = await createFakePgToolchain({}, ["psql"]);
+    try {
+      const caught = await capturedFailure(() =>
+        runRestoreDrill({
+          sourceUrl: SOURCE_URL,
+          reportDir: fake.reportDir,
+          pgBinDir: fake.bin,
+        }),
+      );
+      const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+
+      assert.deepEqual(report.failures, [
+        {
+          type: "postgres_process",
+          code: "PG_TOOL_SPAWN_ERROR",
+          tool: "psql",
+          termination: "spawn_error",
+        },
+      ]);
+      assert.equal(report.cleanup.dumpDirectoryRemoved, true);
+      assert.equal(report.cleanup.credentialDirectoryRemoved, true);
+    } finally {
+      await rm(fake.root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("synchronous spawn throw", async () => {
+    const fake = await createFakePgToolchain();
+    try {
+      const caught = await capturedFailure(() =>
+        runRestoreDrill({
+          sourceUrl: SOURCE_URL,
+          reportDir: fake.reportDir,
+          pgBinDir: path.join(fake.root, "invalid\0pg-bin"),
+        }),
+      );
+      const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+
+      assert.deepEqual(report.failures, [
+        {
+          type: "postgres_process",
+          code: "PG_TOOL_SPAWN_THROW",
+          tool: "psql",
+          termination: "spawn_throw",
+        },
+      ]);
+      assert.equal(report.cleanup.dumpDirectoryRemoved, true);
+      assert.equal(report.cleanup.credentialDirectoryRemoved, true);
+    } finally {
+      await rm(fake.root, { recursive: true, force: true });
+    }
+  });
+});
+
+test("hostile operation and cleanup failures cannot break evidence generation", async (t) => {
+  const sentinel = "HOSTILE_ERROR_TRAP_MUST_NOT_ESCAPE";
+
+  await t.test("operation failure", async () => {
+    const { reportDir, overrides } = await fakeHarness({
+      failTool: "pg_dump",
+      toolFailure: hostileThrownValue(sentinel),
+    });
+    try {
+      const caught = await capturedFailure(() =>
+        runRestoreDrill({ sourceUrl: SOURCE_URL, reportDir }, overrides),
+      );
+      const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+
+      assert.deepEqual(report.failures, [
+        {
+          type: "postgres_process",
+          code: "PG_TOOL_UNKNOWN_FAILURE",
+          tool: "pg_dump",
+          termination: "unknown",
+        },
+      ]);
+      assert.doesNotMatch(caught.message, new RegExp(sentinel));
+      assert.doesNotMatch(JSON.stringify(report), new RegExp(sentinel));
+    } finally {
+      await rm(reportDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("cleanup failure", async () => {
+    const { reportDir, calls, overrides } = await fakeHarness();
+    overrides.removeDumpDirectory = async () => {
+      throw hostileThrownValue(sentinel);
+    };
+    try {
+      const caught = await capturedFailure(() =>
+        runRestoreDrill({ sourceUrl: SOURCE_URL, reportDir }, overrides),
+      );
+      const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+
+      assert.deepEqual(report.failures, [
+        {
+          type: "cleanup",
+          code: "RESTORE_DUMP_CLEANUP_FAILED",
+        },
+      ]);
+      assert.equal(report.cleanup.credentialDirectoryRemoved, true);
+      assert.doesNotMatch(caught.message, new RegExp(sentinel));
+      assert.doesNotMatch(JSON.stringify(report), new RegExp(sentinel));
+    } finally {
+      const dumpCall = calls.find((call) => call.operation === "pg_dump");
+      const dumpPath = dumpCall.args[dumpCall.args.indexOf("--file") + 1];
+      await rm(path.dirname(dumpPath), { recursive: true, force: true });
+      await rm(reportDir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("credential cleanup failure", async () => {
+    const { reportDir, overrides } = await fakeHarness();
+    let credentialDirectory;
+    overrides.removePgpassDirectory = async (directory) => {
+      credentialDirectory = directory;
+      throw hostileThrownValue(sentinel);
+    };
+    try {
+      const caught = await capturedFailure(() =>
+        runRestoreDrill({ sourceUrl: SOURCE_URL, reportDir }, overrides),
+      );
+      const report = JSON.parse(await readFile(caught.reportPaths.json, "utf8"));
+
+      assert.deepEqual(report.failures, [
+        {
+          type: "cleanup",
+          code: "RESTORE_CREDENTIAL_CLEANUP_FAILED",
+        },
+      ]);
+      assert.equal(report.cleanup.dumpDirectoryRemoved, true);
+      assert.equal(report.cleanup.credentialDirectoryRemoved, false);
+      assert.doesNotMatch(caught.message, new RegExp(sentinel));
+      assert.doesNotMatch(JSON.stringify(report), new RegExp(sentinel));
+    } finally {
+      if (credentialDirectory) {
+        await rm(credentialDirectory, { recursive: true, force: true });
+      }
+      await rm(reportDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test("CLI failure output contains only fixed process classification", async () => {
+  const sentinel = "CLI_RAW_STDERR_MUST_NOT_ESCAPE";
+  const fake = await createFakePgToolchain({
+    failureTool: "psql",
+    failureKind: "exit",
+    exitCode: 29,
+    rawStderr: sentinel,
+  });
+  try {
+    const child = spawnSync(process.execPath, [SCRIPT_PATH], {
+      encoding: "utf8",
+      env: {
+        DATABASE_URL: SOURCE_URL,
+        PATH: process.env.PATH,
+        RESTORE_DRILL_PG_BIN: fake.bin,
+        RESTORE_DRILL_REPORT_DIR: fake.reportDir,
+      },
+    });
+
+    assert.equal(child.status, 1);
+    assert.match(child.stderr, /type=postgres_process/);
+    assert.match(child.stderr, /code=PG_TOOL_EXIT_NONZERO/);
+    assert.match(child.stderr, /tool=psql/);
+    assert.match(child.stderr, /termination=exit/);
+    assert.match(child.stderr, /exit_code=29/);
+    assert.doesNotMatch(child.stderr, new RegExp(sentinel));
+
+    const evidence = (await readdir(fake.reportDir)).filter((name) =>
+      name.endsWith(".json"),
+    );
+    assert.equal(evidence.length, 1);
+    assert.doesNotMatch(
+      await readFile(path.join(fake.reportDir, evidence[0]), "utf8"),
+      new RegExp(sentinel),
+    );
+  } finally {
+    await rm(fake.root, { recursive: true, force: true });
   }
 });
 
@@ -443,7 +961,7 @@ test("an existing generated-name collision is never reused or dropped", async ()
 
   await assert.rejects(
     runRestoreDrill({ sourceUrl: SOURCE_URL, reportDir }, overrides),
-    /already exists|refusing/i,
+    /code=RESTORE_TARGET_COLLISION/,
   );
   assert.equal(calls.some((call) => call.operation === "createdb"), false);
   assert.equal(calls.some((call) => call.operation === "dropdb"), false);
@@ -504,6 +1022,12 @@ test("a restored inventory mismatch fails with explicit corruption evidence", as
 
 test("KEEP_BACKUP is the only explicit mode that retains a private dump", async () => {
   const { reportDir, calls, overrides } = await fakeHarness();
+  let credentialDirectory;
+  overrides.removePgpassDirectory = async (directory) => {
+    credentialDirectory = directory;
+    assert.equal((await stat(path.join(directory, "pgpass"))).mode & 0o777, 0o600);
+    await rm(directory, { recursive: true });
+  };
 
   const result = await runRestoreDrill(
     { sourceUrl: SOURCE_URL, reportDir, keepBackup: true },
@@ -514,8 +1038,10 @@ test("KEEP_BACKUP is the only explicit mode that retains a private dump", async 
   const dumpPath = dumpCall.args[dumpCall.args.indexOf("--file") + 1];
 
   assert.equal(report.cleanup.dumpDirectoryRemoved, false);
+  assert.equal(report.cleanup.credentialDirectoryRemoved, true);
   assert.equal(report.artifacts.backupRetained, true);
   assert.equal(report.artifacts.backupPath, dumpPath);
   assert.equal((await stat(dumpPath)).isFile(), true);
+  await assert.rejects(stat(credentialDirectory), { code: "ENOENT" });
   await rm(path.dirname(dumpPath), { recursive: true });
 });

@@ -3,11 +3,12 @@ import { requireSafeTestDatabaseUrl } from "./packages/db/src/test-database-safe
 
 /**
  * Playwright E2E harness (spec §16, DoD AC-042/043/044/045). The web app boots
- * under the double-gated dev-auth shim (`SF_DEV_AUTH=true`, `NODE_ENV!=production`)
- * on port 3100 so the authenticated screens are reachable without a running
- * Supabase Auth (GoTrue) instance. Specs that exercise async jobs (collection /
- * diagnostic / artifact / export) additionally boot the worker in their own
- * global-setup; the responsive + a11y specs need only the web server.
+ * under the loopback-only dev-auth shim (`SF_DEV_AUTH=true`, explicit Next
+ * development runtime, and loopback `APP_ORIGIN`) on port 3100 so the screens
+ * are reachable without a running
+ * Supabase Auth (GoTrue) instance. The serial real-vertical spec boots and stops
+ * the real worker in its own suite lifecycle for collection / diagnostic /
+ * artifact / export jobs; responsive + a11y specs need only the web server.
  *
  * The dev operator auto-provisions the singleton "SignalFrame" workspace on the
  * first request (see apps/web/src/lib/auth/session.ts), so specs can seed a
@@ -50,11 +51,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // `next dev` sets NODE_ENV=development, satisfying the dev-auth gate. The web
+    // `next dev` sets NODE_ENV=development, satisfying the dev-auth gate.
     // Every stateful dependency is overridden here. The explicit disposable DB
     // guard above prevents a developer's hosted `.env.local` from being used by
     // this mutating harness.
-    command: `pnpm --filter @sf/web dev --port ${PORT}`,
+    command: `pnpm --filter @sf/web dev --webpack --port ${PORT}`,
     url: `${BASE_URL}/api/mvp/health/live`,
     // Never reuse an unknown local process: it may have been started with a
     // hosted DATABASE_URL. A port collision must fail closed instead of sending

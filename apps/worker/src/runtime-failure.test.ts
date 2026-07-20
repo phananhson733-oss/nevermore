@@ -24,6 +24,25 @@ describe("runtimeFailureMetadata", () => {
     expect(failure).toEqual({ code: "UNAVAILABLE", type: "unknown" });
     expect(JSON.stringify(failure)).not.toContain("customer-content-secret");
   });
+
+  it("does not throw when Error classification triggers a hostile Proxy trap", () => {
+    let prototypeReads = 0;
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          prototypeReads += 1;
+          throw new Error("hostile-prototype-marker");
+        },
+      },
+    );
+
+    expect(runtimeFailureMetadata("UNAVAILABLE", hostile)).toEqual({
+      code: "UNAVAILABLE",
+      type: "unknown",
+    });
+    expect(prototypeReads).toBe(1);
+  });
 });
 
 describe("serializeWorkerBootFailure", () => {
@@ -74,5 +93,23 @@ describe("serializeWorkerBootFailure", () => {
       '{"event":"worker_boot_failed","code":"WORKER_BOOT_FAILED","type":"unknown"}',
     );
     expect(line).not.toContain("customer-content-secret");
+  });
+
+  it("serializes a hostile Proxy as a fixed unknown boot failure", () => {
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error("hostile-boot-prototype-marker");
+        },
+      },
+    );
+
+    const line = serializeWorkerBootFailure(hostile);
+
+    expect(line).toBe(
+      '{"event":"worker_boot_failed","code":"WORKER_BOOT_FAILED","type":"unknown"}',
+    );
+    expect(line).not.toContain("hostile-boot-prototype-marker");
   });
 });

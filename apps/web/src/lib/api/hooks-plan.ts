@@ -12,14 +12,16 @@
  */
 
 import {
+  useInfiniteQuery,
   useMutation,
-  useQuery,
   useQueryClient,
+  type InfiniteData,
+  type UseInfiniteQueryResult,
   type UseMutationResult,
-  type UseQueryResult,
 } from "@tanstack/react-query";
 import { apiGet, apiSend, type ApiError } from "./client";
 import type { DataEnvelope, ListEnvelope } from "./types";
+import { cursorPageUrl, nextCursorPageParam } from "./cursor-pages";
 
 export type PriorityBand = "critical" | "high" | "medium" | "low";
 export type RoadmapLane = "now" | "next" | "later";
@@ -60,13 +62,21 @@ export function actionsQueryKey(projectId: string) {
   return ["actions", projectId] as const;
 }
 
-/** List a project's 30/60/90 actions. Data is the full `{ data, meta }` envelope. */
+/** List a project's 30/60/90 actions as bounded cursor pages. */
 export function useProjectActions(
   projectId: string,
-): UseQueryResult<ListEnvelope<Action>, ApiError> {
-  return useQuery({
+): UseInfiniteQueryResult<
+  InfiniteData<ListEnvelope<Action>, string | null>,
+  ApiError
+> {
+  return useInfiniteQuery({
     queryKey: actionsQueryKey(projectId),
-    queryFn: () => apiGet<ListEnvelope<Action>>(`/projects/${projectId}/actions`),
+    queryFn: ({ pageParam }) =>
+      apiGet<ListEnvelope<Action>>(
+        cursorPageUrl(`/projects/${projectId}/actions`, pageParam),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: nextCursorPageParam,
     enabled: projectId.length > 0,
   });
 }

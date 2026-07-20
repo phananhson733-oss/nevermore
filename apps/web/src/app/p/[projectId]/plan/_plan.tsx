@@ -31,6 +31,7 @@ import {
   type StatusTone,
 } from "@/components/ui";
 import { ApiError } from "@/lib/api";
+import { uniqueCursorItems } from "@/lib/api/cursor-pages";
 import {
   useProjectActions,
   useUpdateAction,
@@ -39,6 +40,8 @@ import {
   type PriorityBand,
   type RoadmapLane,
 } from "@/lib/api/hooks-plan";
+import { ProblemNotice, ProblemState } from "../_problem-display";
+import { allowedActionStatusTargets } from "./_action-status-transitions";
 import styles from "./plan.module.css";
 
 /** The three delivery windows, in the spec's canonical order (spec §9.3). */
@@ -73,14 +76,6 @@ const STATUS_TONE: Record<ActionStatus, StatusTone> = {
   dismissed: "neutral",
 };
 
-const STATUS_OPTIONS: readonly ActionStatus[] = [
-  "candidate",
-  "planned",
-  "in_progress",
-  "blocked",
-  "done",
-  "dismissed",
-];
 const PRIORITY_OPTIONS: readonly PriorityBand[] = [
   "critical",
   "high",
@@ -171,12 +166,11 @@ function OverrideForm({
   const [reason, setReason] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [problemError, setProblemError] = useState<unknown | null>(null);
 
-  const statusOptions: readonly SelectOption[] = STATUS_OPTIONS.map(
-    (value) => ({
-      value,
-      label: tStatus(value),
-    }),
+  const allowedStatusTargets = allowedActionStatusTargets(action.status);
+  const statusOptions: readonly SelectOption[] = allowedStatusTargets.map(
+    (value) => ({ value, label: tStatus(value) }),
   );
   const priorityOptions: readonly SelectOption[] = PRIORITY_OPTIONS.map(
     (value) => ({
@@ -194,10 +188,12 @@ function OverrideForm({
   ): Promise<void> {
     event.preventDefault();
     setError(null);
+    setProblemError(null);
 
     const trimmedReason = reason.trim();
     if (trimmedReason.length < 3) {
       setError(t("reasonRequired"));
+      setProblemError(null);
       return;
     }
 
@@ -207,7 +203,10 @@ function OverrideForm({
       priorityBand?: PriorityBand;
       roadmapLane?: RoadmapLane;
     } = {};
-    if (statusSel !== "" && statusSel !== action.status) {
+    if (
+      statusSel !== "" &&
+      allowedStatusTargets.includes(statusSel as ActionStatus)
+    ) {
       changes.status = statusSel as ActionStatus;
     }
     if (prioritySel !== "" && prioritySel !== action.priorityBand) {
@@ -218,6 +217,7 @@ function OverrideForm({
     }
     if (Object.keys(changes).length === 0) {
       setError(t("noChange"));
+      setProblemError(null);
       return;
     }
 
@@ -236,14 +236,17 @@ function OverrideForm({
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === "VERSION_CONFLICT") {
         setError(t("conflict"));
+        setProblemError(caught);
         onConflict();
         return;
       }
       if (caught instanceof ApiError) {
-        setError(caught.message);
+        setError(tCommon("error"));
+        setProblemError(caught);
         return;
       }
       setError(tCommon("error"));
+      setProblemError(null);
     }
   }
 
@@ -266,7 +269,7 @@ function OverrideForm({
             value={statusSel}
             onChange={setStatusSel}
             options={statusOptions}
-            keepLabel={t("keepUnchanged")}
+            keepLabel={`${t("keepUnchanged")} — ${tStatus(action.status)}`}
           />
         </Field>
         <Field label={t("newPriority")}>
@@ -308,9 +311,18 @@ function OverrideForm({
       <p className={styles.overrideKept}>{t("overrideKept")}</p>
 
       {error !== null ? (
-        <p className={styles.overrideError} role="alert">
-          {error}
-        </p>
+        problemError !== null ? (
+          <ProblemNotice
+            className={styles.overrideError}
+            error={problemError}
+            message={error}
+            compact
+          />
+        ) : (
+          <p className={styles.overrideError} role="alert">
+            {error}
+          </p>
+        )
       ) : null}
 
       <div className={styles.overrideActions}>
@@ -413,6 +425,7 @@ interface LaneColumnProps {
   /** Two-digit ordinal ("01"/"02"/"03") shown as the lane's Fraunces index. */
   readonly index: string;
   readonly actions: readonly Action[];
+  readonly hasMore: boolean;
   readonly onConflict: () => void;
 }
 
@@ -421,6 +434,7 @@ function LaneColumn({
   lane,
   index,
   actions,
+  hasMore,
   onConflict,
 }: LaneColumnProps) {
   const t = useTranslations("plan");
@@ -438,14 +452,19 @@ function LaneColumn({
         <div className={styles.laneHeadText}>
           <div className={styles.laneTitleRow}>
             <h2 className={styles.laneName}>{tLane(lane)}</h2>
-            <Badge>{actions.length}</Badge>
+            <Badge>
+              {actions.length}
+              {hasMore ? "+" : ""}
+            </Badge>
           </div>
           <span className={styles.laneWindow}>{t(LANE_WINDOW_KEY[lane])}</span>
         </div>
       </header>
       <div className={styles.laneBody}>
         {actions.length === 0 ? (
-          <p className={styles.laneEmpty}>{t("laneEmpty")}</p>
+          <p className={styles.laneEmpty}>
+            {hasMore ? t("laneEmptyPartial") : t("laneEmpty")}
+          </p>
         ) : (
           actions.map((action) => (
             <ActionCard
@@ -482,24 +501,15 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
     );
   }
 
-  if (query.error !== null || query.data === undefined) {
+  if (query.isError && query.data === undefined) {
     return (
       <div className={styles.state}>
-        <EmptyState title={tCommon("error")} description={query.error?.message}>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void query.refetch();
-            }}
-          >
-            {tCommon("retry")}
-          </Button>
-        </EmptyState>
+        <ProblemState error={query.error} onRetry={() => void query.refetch()} />
       </div>
     );
   }
 
-  const actions = query.data.data;
+  const actions = uniqueCursorItems(query.data);
   const grouped = groupByLane(actions);
   const highPriorityCount = actions.filter(
     (action) =>
@@ -534,7 +544,10 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
               <span className={styles.summaryIcon}>
                 <Layers3 aria-hidden="true" size={18} />
               </span>
-              <span className={styles.summaryMetric}>{actions.length}</span>
+              <span className={styles.summaryMetric}>
+                {actions.length}
+                {query.hasNextPage ? "+" : ""}
+              </span>
               <div className={styles.summaryText}>
                 <span className={styles.summaryLabel}>
                   {t("summaryPrioritized")}
@@ -548,7 +561,10 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
               <span className={cx(styles.summaryIcon, styles.summaryIconAmber)}>
                 <Flame aria-hidden="true" size={18} />
               </span>
-              <span className={styles.summaryMetric}>{highPriorityCount}</span>
+              <span className={styles.summaryMetric}>
+                {highPriorityCount}
+                {query.hasNextPage ? "+" : ""}
+              </span>
               <div className={styles.summaryText}>
                 <span className={styles.summaryLabel}>
                   {t("summaryHighPriority")}
@@ -562,7 +578,10 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
               <span className={cx(styles.summaryIcon, styles.summaryIconMint)}>
                 <Rocket aria-hidden="true" size={18} />
               </span>
-              <span className={styles.summaryMetric}>{inDeliveryCount}</span>
+              <span className={styles.summaryMetric}>
+                {inDeliveryCount}
+                {query.hasNextPage ? "+" : ""}
+              </span>
               <div className={styles.summaryText}>
                 <span className={styles.summaryLabel}>
                   {t("summaryInDelivery")}
@@ -589,10 +608,31 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
                 lane={lane}
                 index={String(index + 1).padStart(2, "0")}
                 actions={grouped[lane]}
+                hasMore={query.hasNextPage}
                 onConflict={onConflict}
               />
             ))}
           </div>
+          {query.hasNextPage || query.isFetchNextPageError ? (
+            <div className={styles.pagination}>
+              {query.isFetchNextPageError ? (
+                <p className={styles.paginationError} role="alert">
+                  {tCommon("loadMoreError")}
+                </p>
+              ) : null}
+              <Button
+                variant="secondary"
+                onClick={() => void query.fetchNextPage()}
+                disabled={query.isFetchingNextPage}
+              >
+                {query.isFetchingNextPage
+                  ? tCommon("loadingMore")
+                  : query.isFetchNextPageError
+                    ? tCommon("retry")
+                    : tCommon("loadMore")}
+              </Button>
+            </div>
+          ) : null}
         </>
       )}
     </div>

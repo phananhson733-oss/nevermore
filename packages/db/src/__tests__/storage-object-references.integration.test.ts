@@ -54,6 +54,7 @@ describeDb("canonical storage object references", () => {
     const snapshotId = randomUUID();
     const exportRunId = randomUUID();
     const exportBundleId = randomUUID();
+    const exportCompletedAt = "2026-07-19T12:00:00.000Z";
     const snapshotKey = `snapshot-raw/${projectId}/${collectionRunId}/snapshot.json`;
     const previewKey = `raw-import/${projectId}/${importPreviewId}/preview.csv`;
     const exportKey = `export/${projectId}/${exportRunId}/bundle.zip`;
@@ -151,9 +152,22 @@ describeDb("canonical storage object references", () => {
           async_run_id: exportRunId,
           kind: "service_bundle",
           output_locale: "en",
-          object_key: exportKey,
           created_by: actorId,
         });
+        await tx
+          .update(exportBundles)
+          .set({
+            object_key: exportKey,
+            checksum: HASH,
+            byte_size: 1,
+            item_counts: {},
+            manifest: {},
+          })
+          .where(eq(exportBundles.id, exportBundleId));
+        await tx
+          .update(asyncRuns)
+          .set({ status: "completed", completed_at: exportCompletedAt })
+          .where(eq(asyncRuns.id, exportRunId));
 
         const repository = new StorageObjectReferencesRepository(tx);
         await expect(repository.findReferencedKeys([])).resolves.toEqual(
@@ -178,6 +192,27 @@ describeDb("canonical storage object references", () => {
         await expect(
           repository.findReferencedKeys(candidates),
         ).resolves.toEqual(new Set([snapshotKey, previewKey, exportKey]));
+        await expect(
+          repository.findExportDeletionFences([
+            {
+              key: exportKey,
+              projectId,
+              runId: exportRunId,
+            },
+            {
+              key: "export/not-a-uuid/not-a-uuid/orphan.zip",
+              projectId: "not-a-uuid",
+              runId: "not-a-uuid",
+            },
+          ]),
+        ).resolves.toEqual(
+          new Map([
+            [
+              exportKey,
+              { referenced: true, completedAt: exportCompletedAt },
+            ],
+          ]),
+        );
         assertionsCompleted = true;
         throw rollback;
       }),

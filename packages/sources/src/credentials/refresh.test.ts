@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { SourceError } from "../adapter.ts";
 import type { OAuthCredentialEnvelope } from "./envelope.ts";
@@ -68,6 +70,51 @@ function delayedBodyFailureResponse(secret: string): Response {
   });
 }
 
+async function withRedirectServer(
+  run: (
+    baseUrl: string,
+    hits: { readonly redirect: number; readonly followed: number },
+  ) => Promise<void>,
+): Promise<void> {
+  const hits = { redirect: 0, followed: 0 };
+  const server = createServer((request, response) => {
+    if (request.url === "/redirect") {
+      hits.redirect += 1;
+      response.statusCode = 302;
+      response.setHeader("location", "/followed");
+      response.end();
+      return;
+    }
+    if (request.url === "/followed") {
+      hits.followed += 1;
+      response.statusCode = 200;
+      response.end(
+        JSON.stringify({ access_token: "redirected-token", expires_in: 3_600 }),
+      );
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    throw new Error("redirect test server did not expose a TCP port");
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await run(baseUrl, hits);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
 describe("shouldRefreshCredential", () => {
   it("refreshes inside the pre-expiry safety window, including its boundary", () => {
     const atBoundary = credential({
@@ -116,6 +163,7 @@ describe("HttpGoogleTokenRefresher", () => {
     const [input, init] = fetchMock.mock.calls[0]!;
     expect(String(input)).toBe(GOOGLE_OAUTH_TOKEN_ENDPOINT);
     expect(init?.method).toBe("POST");
+    expect(init?.redirect).toBe("error");
     expect(init?.headers).toEqual({
       "content-type": "application/x-www-form-urlencoded",
     });
@@ -131,6 +179,22 @@ describe("HttpGoogleTokenRefresher", () => {
       refreshToken: "refresh-fixture-before",
       expiresAt: "2026-07-18T09:00:00.000Z",
       scope: "scope.one scope.two",
+    });
+  });
+
+  it("fails on the first redirect hop and never forwards the refresh grant", async () => {
+    await withRedirectServer(async (baseUrl, hits) => {
+      const refresher = new HttpGoogleTokenRefresher({
+        clientId: "client-id-fixture",
+        clientSecret: "client-secret-fixture",
+        fetch: async (_input, init) => fetch(`${baseUrl}/redirect`, init),
+        now: () => NOW,
+      });
+
+      await expect(refresher.refresh(credential())).rejects.toMatchObject({
+        code: "NETWORK_ERROR",
+      });
+      expect(hits).toEqual({ redirect: 1, followed: 0 });
     });
   });
 
@@ -295,6 +359,50 @@ describe("HttpGoogleTokenRefresher", () => {
     await expect(refresher.refresh(credential())).rejects.toMatchObject({
       code: "TIMEOUT",
     });
+  });
+
+  it("combines a caller abort with its timeout without exposing the abort reason", async () => {
+    let reasonReads = 0;
+    const hostileReason = new Proxy(
+      {},
+      {
+        get() {
+          reasonReads += 1;
+          throw new Error("caller abort reason must not be read");
+        },
+      },
+    );
+    const controller = new AbortController();
+    const refresher = new HttpGoogleTokenRefresher({
+      clientId: "client-id-fixture",
+      clientSecret: "client-secret-fixture",
+      timeoutMs: 250,
+      fetch: async (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("missing combined signal"));
+            return;
+          }
+          const rejectFromSignal = (): void => reject(signal.reason);
+          if (signal.aborted) rejectFromSignal();
+          else signal.addEventListener("abort", rejectFromSignal, { once: true });
+        }),
+    });
+
+    const pending = refresher.refresh(credential(), controller.signal);
+    controller.abort(hostileReason);
+    const outcome = await Promise.race([
+      pending.catch((error: unknown) => error),
+      new Promise<"still-pending">((resolve) => {
+        setTimeout(() => resolve("still-pending"), 100);
+      }),
+    ]);
+
+    expect(outcome).not.toBe("still-pending");
+    expect(outcome).toMatchObject({ code: "TIMEOUT" });
+    expect((outcome as Error).message).toBe("Google token refresh timed out.");
+    expect(reasonReads).toBe(0);
   });
 
   it("times out after headers when the token response body never completes", async () => {

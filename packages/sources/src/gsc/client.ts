@@ -49,7 +49,10 @@ export interface GscQueryParams {
 
 /** The injectable seam the adapter depends on. Bound to a site + token upstream. */
 export interface GscClient {
-  querySearchAnalytics(params: GscQueryParams): Promise<readonly GscRow[]>;
+  querySearchAnalytics(
+    params: GscQueryParams,
+    signal?: AbortSignal,
+  ): Promise<readonly GscRow[]>;
 }
 
 /** Minimal `fetch` shape so tests can inject a fixture without DOM lib types. */
@@ -154,11 +157,14 @@ export class HttpGscClient implements GscClient {
     this.signal = options.signal;
   }
 
-  async querySearchAnalytics(params: GscQueryParams): Promise<readonly GscRow[]> {
+  async querySearchAnalytics(
+    params: GscQueryParams,
+    signal?: AbortSignal,
+  ): Promise<readonly GscRow[]> {
     const collected: GscRow[] = [];
     let startRow = 0;
     while (collected.length < this.maxRows) {
-      const page = await this.fetchPage(params, startRow);
+      const page = await this.fetchPage(params, startRow, signal);
       if (page.length === 0) break;
       for (const row of page) {
         collected.push(row);
@@ -170,7 +176,11 @@ export class HttpGscClient implements GscClient {
     return collected;
   }
 
-  private async fetchPage(params: GscQueryParams, startRow: number): Promise<readonly GscRow[]> {
+  private async fetchPage(
+    params: GscQueryParams,
+    startRow: number,
+    signal?: AbortSignal,
+  ): Promise<readonly GscRow[]> {
     const url = `${GSC_API_BASE}/${encodeURIComponent(this.siteUrl)}/searchAnalytics/query`;
     const body = JSON.stringify({
       startDate: params.startDate,
@@ -180,7 +190,10 @@ export class HttpGscClient implements GscClient {
       rowLimit: this.rowLimit,
       startRow,
     });
-    const abortScope = createRequestAbortScope(this.requestTimeoutMs, [this.signal]);
+    const abortScope = createRequestAbortScope(this.requestTimeoutMs, [
+      this.signal,
+      signal,
+    ]);
     try {
       const response = await this.fetchImpl(url, {
         method: "POST",
@@ -189,6 +202,7 @@ export class HttpGscClient implements GscClient {
           "Content-Type": "application/json",
         },
         body,
+        redirect: "error",
         signal: abortScope.signal,
       });
 

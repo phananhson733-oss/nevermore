@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { seedProject } from "./fixtures.ts";
+import { publicFixtureOrigin, seedProject } from "./fixtures.ts";
 
 function projectApiRequests(page: Page): string[] {
   const urls: string[] = [];
@@ -18,12 +18,12 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
     seedProject(request, {
       clientName: "Isolation Client A",
       projectName: "Isolation Project A",
-      siteUrl: "https://example.com",
+      siteUrl: publicFixtureOrigin("isolation-a"),
     }),
     seedProject(request, {
       clientName: "Isolation Client B",
       projectName: "Isolation Project B",
-      siteUrl: "https://www.iana.org",
+      siteUrl: publicFixtureOrigin("isolation-b"),
     }),
   ]);
 

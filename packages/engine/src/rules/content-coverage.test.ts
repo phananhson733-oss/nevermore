@@ -135,7 +135,7 @@ describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
     expect(result.metrics).toEqual({ coveredCount: 1 });
   });
 
-  it("passes (inconclusive, no defect) when no page has a title or H1", () => {
+  it("is inconclusive when no page has a title or H1", () => {
     const ctx = buildContext({
       icp: icpOf({ offers: ["team collaboration"] }),
       observations: [
@@ -146,13 +146,34 @@ describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
       ],
     });
 
-    const result = contentCoverageRule.evaluate(ctx);
-    expect(result.status).toBe("pass");
-    if (result.status !== "pass") throw new Error("unreachable");
-    expect(result.metrics).toEqual({ coveredCount: 0 });
+    expect(contentCoverageRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "intent_match_unavailable",
+    });
   });
 
-  it("skips non-English projects with unsupported_language", () => {
+  it("is inconclusive when an intent contains no matchable tokens", () => {
+    const ctx = buildContext({
+      icp: icpOf({ offers: ["the and"] }),
+      observations: [
+        crawlObs(
+          "https://example.com/pricing",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing",
+            h1: ["Pricing"],
+          }),
+        ),
+      ],
+    });
+
+    expect(contentCoverageRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "intent_match_unavailable",
+    });
+  });
+
+  it("is inconclusive for non-English projects", () => {
     const ctx = buildContext({
       icp: icpOf({ offers: ["team collaboration"], siteLanguageCodes: ["zh-CN"] }),
       observations: [
@@ -164,7 +185,7 @@ describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
     });
 
     expect(contentCoverageRule.evaluate(ctx)).toEqual({
-      status: "skipped",
+      status: "inconclusive",
       reason: "unsupported_language",
     });
   });

@@ -13,7 +13,16 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useEffect, useRef, type MouseEvent } from "react";
 import { cx } from "@/components/ui";
+import {
+  hasUnsavedContextChanges,
+  shouldConfirmContextNavigation,
+} from "./_context-navigation-guard";
+import {
+  projectHistoryPosition,
+  withProjectHistoryPosition,
+} from "./_project-history-position.ts";
 import styles from "./nav.module.css";
 
 /**
@@ -61,12 +70,62 @@ function activeSegment(pathname: string, projectId: string): string | null {
 
 export function ProjectNav({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("nav");
+  const tContext = useTranslations("context");
+  const tShell = useTranslations("appShell");
   const pathname = usePathname();
   const active = activeSegment(pathname, projectId);
+  const historyPositionRef = useRef<number | null>(null);
+  const historyPathRef = useRef<string | null>(null);
   let lastGroup: NavGroup | "" = "";
 
+  // Give every project-shell entry a position without pushing a duplicate
+  // entry. Studio can then reverse a cancelled Back or Forward traversal while
+  // preserving Next's opaque router state and the browser's forward history.
+  useEffect(() => {
+    const existing = projectHistoryPosition(window.history.state);
+    const previousPath = historyPathRef.current;
+    if (previousPath === pathname) return;
+
+    if (
+      existing !== null &&
+      (previousPath === null || existing !== historyPositionRef.current)
+    ) {
+      historyPositionRef.current = existing;
+      historyPathRef.current = pathname;
+      return;
+    }
+    // A push may preserve the custom state from the prior entry. Equal to the
+    // previous position on a new pathname means inherited, not a traversal.
+    const next = (historyPositionRef.current ?? -1) + 1;
+    window.history.replaceState(
+      withProjectHistoryPosition(window.history.state, next),
+      "",
+    );
+    historyPositionRef.current = next;
+    historyPathRef.current = pathname;
+  }, [pathname]);
+
+  function confirmNavigation(
+    event: MouseEvent<HTMLAnchorElement>,
+    current: boolean,
+  ): void {
+    const modified =
+      event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
+    if (
+      !shouldConfirmContextNavigation({
+        dirty: hasUnsavedContextChanges(),
+        current,
+        button: event.button,
+        modified,
+      })
+    ) {
+      return;
+    }
+    if (!window.confirm(tContext("leaveWarning"))) event.preventDefault();
+  }
+
   return (
-    <nav className={styles.nav} aria-label="Project sections">
+    <nav className={styles.nav} aria-label={tShell("projectSections")}>
       {NAV_ITEMS.map((item) => {
         const isActive = active === item.key;
         const Icon = item.icon;
@@ -81,6 +140,7 @@ export function ProjectNav({ projectId }: { readonly projectId: string }) {
               href={`/p/${projectId}/${item.key}`}
               className={cx(styles.item, isActive && styles.active)}
               aria-current={isActive ? "page" : undefined}
+              onClick={(event) => confirmNavigation(event, isActive)}
             >
               <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
               <span>{t(item.key)}</span>

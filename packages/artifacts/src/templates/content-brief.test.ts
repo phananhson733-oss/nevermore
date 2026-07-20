@@ -28,10 +28,20 @@ describe("content-brief template", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("emits English headings for a non-zh locale", () => {
-    const markdown = build(makePromptInput("content_brief", { outputLocale: "en-US" }));
+  it.each(["fr-FR", "zh-TW", "zh-Hant", "en-US"])(
+    "fails closed instead of mislabelling deterministic copy as %s",
+    (locale) => {
+      expect(() =>
+        build(makePromptInput("content_brief", { outputLocale: locale })),
+      ).toThrow(/structured_llm/u);
+    },
+  );
+
+  it("accepts case-insensitive semantic en", () => {
+    const markdown = build(
+      makePromptInput("content_brief", { outputLocale: "EN" }),
+    );
     expect(markdown).toContain("## Objective");
-    expect(markdown).toContain("## Conversion Path");
     expect(markdown).not.toContain("## 目标");
   });
 

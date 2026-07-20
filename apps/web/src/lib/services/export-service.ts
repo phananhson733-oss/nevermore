@@ -3,8 +3,12 @@ import {
   contentHash,
   enqueueRunInTx,
   ExportBundlesRepository,
+  EXPORT_OBJECT_RETENTION_DAYS,
+  EXPORT_OBJECT_RETENTION_MS,
   IdempotencyRepository,
   ProjectsRepository,
+  StorageObjectReferencesRepository,
+  isStorageObjectExpired,
   type ExportBundleRow,
   type WorkspaceScope,
 } from "@sf/db";
@@ -157,6 +161,7 @@ export async function createProjectExport(
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
+      const txProjects = new ProjectsRepository(tx);
       const reserved = await txIdem.begin({
         workspaceId: scope.workspaceId,
         scope: IDEMPOTENCY_SCOPE,
@@ -176,6 +181,14 @@ export async function createProjectExport(
           "IDEMPOTENCY_KEY_REUSED",
           "Idempotency key is being processed.",
         );
+      }
+
+      const currentProject = await txProjects.findByIdForUpdate(scope, projectId);
+      if (!currentProject) {
+        throw new ProblemError("NOT_FOUND", "Project not found.");
+      }
+      if (currentProject.archived_at) {
+        throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
       }
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
@@ -260,6 +273,38 @@ export async function getProjectExport(
   let downloadUrl: string | null = null;
   let downloadExpiresAt: string | null = null;
   if (bundle.object_key && run.status === "completed") {
+    if (run.completed_at === null) {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "Export metadata is temporarily unavailable.",
+      );
+    }
+    const databaseNow = await new StorageObjectReferencesRepository(
+      db,
+    ).databaseNow();
+    // The object is uploaded immediately before bundle finalization and run
+    // completion in the same worker attempt. The API promises 30 days from that
+    // canonical completion commit; storage cleanup independently requires both
+    // this anchor and Storage's immutable blob `createdAt` to reach the boundary.
+    if (
+      isStorageObjectExpired(
+        run.completed_at,
+        databaseNow,
+        EXPORT_OBJECT_RETENTION_MS,
+      )
+    ) {
+      throw new ProblemError(
+        "NOT_FOUND",
+        "Export has expired. Generate a new export.",
+        {
+          current: {
+            reason: "retention_expired",
+            regeneratable: true,
+            retentionDays: EXPORT_OBJECT_RETENTION_DAYS,
+          },
+        },
+      );
+    }
     // Anchor the advertised upper bound before the signing round-trip. If the
     // storage dependency is slow, calculating it after await would overstate
     // the URL's real 900-second lifetime by the request latency.

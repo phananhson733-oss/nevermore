@@ -44,6 +44,39 @@ export interface AsyncRunRow {
   readonly completed_at: string | null;
 }
 
+/**
+ * Fencing identity for one successful queued→running claim. `attempt_count` is
+ * the monotonic epoch: after a queue retry reclaims the run, every mutation from
+ * an older epoch must become a no-op.
+ */
+export interface RunAttempt {
+  readonly workspaceId: string;
+  readonly projectId: string;
+  readonly runId: string;
+  readonly attemptCount: number;
+}
+
+/** Metadata-only 24h operations projection; never returns payloads or IDs. */
+export interface QueueTechnicalMetric {
+  readonly kind: RunKind;
+  readonly queuedDepth: number;
+  readonly runningDepth: number;
+  readonly oldestQueuedAgeMs: number;
+  readonly averageRunDurationMs24h: number;
+  readonly maxRunDurationMs24h: number;
+  readonly retryCount24h: number;
+  readonly failureCount24h: number;
+}
+
+export function toRunAttempt(run: AsyncRunRow): RunAttempt {
+  return {
+    workspaceId: run.workspace_id,
+    projectId: run.project_id,
+    runId: run.id,
+    attemptCount: run.attempt_count,
+  };
+}
+
 const TERMINAL: ReadonlySet<string> = new Set([
   "completed",
   "partial",
@@ -55,6 +88,88 @@ export function isTerminalStatus(status: string): boolean {
 }
 
 export class AsyncRunsRepository extends Repository {
+  /**
+   * Global worker health aggregate (spec §15.2). It intentionally crosses
+   * workspaces only after aggregation and exposes no identifiers, payloads,
+   * errors, or customer fields. Active depth is current; duration/retry/failure
+   * counters use a fixed 24-hour window so the snapshot stays operationally
+   * meaningful instead of growing forever.
+   */
+  async technicalMetrics(): Promise<QueueTechnicalMetric[]> {
+    const result = await this.exec.execute<{
+      kind: unknown;
+      queued_depth: unknown;
+      running_depth: unknown;
+      oldest_queued_age_ms: unknown;
+      average_run_duration_ms_24h: unknown;
+      max_run_duration_ms_24h: unknown;
+      retry_count_24h: unknown;
+      failure_count_24h: unknown;
+    }>(sql`
+      with run_kinds(kind) as (
+        values
+          ('collection'::text),
+          ('diagnostic'::text),
+          ('artifact_generation'::text),
+          ('export'::text)
+      )
+      select
+        run_kinds.kind,
+        count(async_runs.id) filter (where async_runs.status = 'queued') as queued_depth,
+        count(async_runs.id) filter (where async_runs.status = 'running') as running_depth,
+        coalesce(
+          extract(epoch from (clock_timestamp() - min(async_runs.queued_at)
+            filter (where async_runs.status = 'queued'))) * 1000,
+          0
+        ) as oldest_queued_age_ms,
+        coalesce(
+          avg(extract(epoch from (async_runs.completed_at - async_runs.started_at)) * 1000)
+            filter (
+              where async_runs.completed_at >= now() - interval '24 hours'
+                and async_runs.started_at is not null
+            ),
+          0
+        ) as average_run_duration_ms_24h,
+        coalesce(
+          max(extract(epoch from (async_runs.completed_at - async_runs.started_at)) * 1000)
+            filter (
+              where async_runs.completed_at >= now() - interval '24 hours'
+                and async_runs.started_at is not null
+            ),
+          0
+        ) as max_run_duration_ms_24h,
+        count(async_runs.id) filter (
+          where async_runs.queued_at >= now() - interval '24 hours'
+            and async_runs.attempt_count > 1
+        ) as retry_count_24h,
+        count(async_runs.id) filter (
+          where async_runs.completed_at >= now() - interval '24 hours'
+            and async_runs.status = 'failed'
+        ) as failure_count_24h
+      from run_kinds
+      left join app.async_runs as async_runs on async_runs.kind = run_kinds.kind
+      group by run_kinds.kind
+      order by run_kinds.kind
+    `);
+
+    return result.rows.flatMap((row) => {
+      const kind = runKind(row.kind);
+      if (kind === null) return [];
+      return [{
+        kind,
+        queuedDepth: nonNegativeMetric(row.queued_depth),
+        runningDepth: nonNegativeMetric(row.running_depth),
+        oldestQueuedAgeMs: nonNegativeMetric(row.oldest_queued_age_ms),
+        averageRunDurationMs24h: nonNegativeMetric(
+          row.average_run_duration_ms_24h,
+        ),
+        maxRunDurationMs24h: nonNegativeMetric(row.max_run_duration_ms_24h),
+        retryCount24h: nonNegativeMetric(row.retry_count_24h),
+        failureCount24h: nonNegativeMetric(row.failure_count_24h),
+      }];
+    });
+  }
+
   /** Insert a queued run inside the atomic enqueue transaction (spec §13.2). */
   async insertQueued(values: {
     workspaceId: string;
@@ -62,7 +177,12 @@ export class AsyncRunsRepository extends Repository {
     kind: RunKind;
     activeKey: string;
     initiatedBy: string;
-    contractVersion?: string;
+    /**
+     * Job/API contract revision chosen by the caller. The frozen baseline SQL
+     * used the product version by mistake; migration 0009 repairs the database
+     * default, while canonical application writes remain explicit.
+     */
+    contractVersion: string;
     requestPayload?: Record<string, unknown>;
   }): Promise<AsyncRunRow> {
     const [row] = await this.exec
@@ -73,9 +193,7 @@ export class AsyncRunsRepository extends Repository {
         kind: values.kind,
         active_key: values.activeKey,
         initiated_by: values.initiatedBy,
-        ...(values.contractVersion
-          ? { contract_version: values.contractVersion }
-          : {}),
+        contract_version: values.contractVersion,
         ...(values.requestPayload
           ? { request_payload: values.requestPayload }
           : {}),
@@ -132,10 +250,13 @@ export class AsyncRunsRepository extends Repository {
   /**
    * Worker claim: transition queued→running for the winner only, stamping
    * started_at and incrementing attempt_count (spec §13.3). Returns the row when
-   * this call won the claim, else null (already running/terminal). Must run inside
-   * a transaction that first `SELECT ... FOR UPDATE`s the row.
+   * this scoped atomic UPDATE won the claim, else null (already
+   * running/terminal or outside the delivery scope).
    */
-  async claim(runId: string): Promise<AsyncRunRow | null> {
+  async claim(
+    scope: ProjectScope,
+    runId: string,
+  ): Promise<AsyncRunRow | null> {
     const rows = await this.exec
       .update(asyncRuns)
       .set({
@@ -143,8 +264,57 @@ export class AsyncRunsRepository extends Repository {
         started_at: sql`now()`,
         attempt_count: sql`${asyncRuns.attempt_count} + 1`,
       })
-      .where(and(eq(asyncRuns.id, runId), eq(asyncRuns.status, "queued")))
+      .where(
+        and(
+          projectPredicate(asyncRuns, scope),
+          eq(asyncRuns.id, runId),
+          eq(asyncRuns.status, "queued"),
+        ),
+      )
       .returning();
+    return (rows[0] as AsyncRunRow | undefined) ?? null;
+  }
+
+  /**
+   * Lock and validate a claimed attempt before any canonical domain writes.
+   * Completion transactions call this first; a retry/recovery transition on the
+   * same run either happens before this lock (and makes it return null) or waits
+   * until the owned completion commits.
+   */
+  async lockAttemptForUpdate(
+    attempt: RunAttempt,
+  ): Promise<AsyncRunRow | null> {
+    if (!validAttemptCount(attempt.attemptCount)) return null;
+    const rows = await this.exec
+      .select()
+      .from(asyncRuns)
+      .where(runAttemptPredicate(attempt))
+      .limit(1)
+      .for("update");
+    return (rows[0] as AsyncRunRow | undefined) ?? null;
+  }
+
+  /**
+   * Recovery-only pure row lock across both canonical active states. Unlike a
+   * status UPDATE, this does not change the partial active-key index while the
+   * reconciler is still waiting to lock the project and child projections.
+   */
+  async lockActiveForRecovery(
+    scope: ProjectScope,
+    runId: string,
+  ): Promise<AsyncRunRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(asyncRuns)
+      .where(
+        and(
+          projectPredicate(asyncRuns, scope),
+          eq(asyncRuns.id, runId),
+          sql`${asyncRuns.status} in ('queued','running')`,
+        ),
+      )
+      .limit(1)
+      .for("update");
     return (rows[0] as AsyncRunRow | undefined) ?? null;
   }
 
@@ -190,10 +360,11 @@ export class AsyncRunsRepository extends Repository {
    * re-runs `claim`, which only wins on `queued`, acks, and never executes.
    */
   async resetToQueued(
-    runId: string,
+    attempt: RunAttempt,
     error?: { readonly code: string; readonly summary: string },
-  ): Promise<void> {
-    await this.exec
+  ): Promise<boolean> {
+    if (!validAttemptCount(attempt.attemptCount)) return false;
+    const rows = await this.exec
       .update(asyncRuns)
       .set({
         status: "queued",
@@ -205,23 +376,28 @@ export class AsyncRunsRepository extends Repository {
             }
           : {}),
       })
-      .where(and(eq(asyncRuns.id, runId), eq(asyncRuns.status, "running")));
+      .where(runAttemptPredicate(attempt))
+      .returning({ id: asyncRuns.id });
+    return rows.length === 1;
   }
 
   /** Update the progress projection during a running job. */
   async setProgress(
-    runId: string,
+    attempt: RunAttempt,
     progress: Record<string, unknown>,
-  ): Promise<void> {
-    await this.exec
+  ): Promise<boolean> {
+    if (!validAttemptCount(attempt.attemptCount)) return false;
+    const rows = await this.exec
       .update(asyncRuns)
       .set({ progress })
-      .where(eq(asyncRuns.id, runId));
+      .where(runAttemptPredicate(attempt))
+      .returning({ id: asyncRuns.id });
+    return rows.length === 1;
   }
 
   /** Write a terminal status + result/error in the same tx as the domain write. */
   async setTerminal(
-    runId: string,
+    attempt: RunAttempt,
     values: {
       status: Extract<
         RunStatus,
@@ -232,22 +408,21 @@ export class AsyncRunsRepository extends Repository {
       lastErrorCode?: string;
       lastErrorSummary?: string;
     },
-  ): Promise<void> {
-    await this.exec
+  ): Promise<boolean> {
+    if (!validAttemptCount(attempt.attemptCount)) return false;
+    const rows = await this.exec
       .update(asyncRuns)
       .set({
         status: values.status,
         completed_at: sql`now()`,
         ...(values.resultType ? { result_type: values.resultType } : {}),
         ...(values.resultId ? { result_id: values.resultId } : {}),
-        ...(values.lastErrorCode
-          ? { last_error_code: values.lastErrorCode }
-          : {}),
-        ...(values.lastErrorSummary
-          ? { last_error_summary: values.lastErrorSummary }
-          : {}),
+        last_error_code: values.lastErrorCode ?? null,
+        last_error_summary: values.lastErrorSummary ?? null,
       })
-      .where(eq(asyncRuns.id, runId));
+      .where(runAttemptPredicate(attempt))
+      .returning({ id: asyncRuns.id });
+    return rows.length === 1;
   }
 
   /**
@@ -309,4 +484,39 @@ export class AsyncRunsRepository extends Repository {
       .returning({ id: asyncRuns.id });
     return rows.length === 1;
   }
+}
+
+function validAttemptCount(attemptCount: number): boolean {
+  return Number.isSafeInteger(attemptCount) && attemptCount > 0;
+}
+
+function runKind(value: unknown): RunKind | null {
+  return value === "collection" ||
+    value === "diagnostic" ||
+    value === "artifact_generation" ||
+    value === "export"
+    ? value
+    : null;
+}
+
+function nonNegativeMetric(value: unknown): number {
+  let parsed: number;
+  if (typeof value === "number") parsed = value;
+  else if (typeof value === "string" || typeof value === "bigint") {
+    parsed = Number(value);
+  } else return 0;
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.round(parsed * 100) / 100;
+}
+
+function runAttemptPredicate(attempt: RunAttempt) {
+  return and(
+    projectPredicate(asyncRuns, {
+      workspaceId: attempt.workspaceId,
+      projectId: attempt.projectId,
+    }),
+    eq(asyncRuns.id, attempt.runId),
+    eq(asyncRuns.status, "running"),
+    eq(asyncRuns.attempt_count, attempt.attemptCount),
+  );
 }

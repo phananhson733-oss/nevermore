@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -276,5 +284,172 @@ describe("LocalFsBlobStore", () => {
     expect(page2.objects).toHaveLength(1);
     expect(page2.objects[0]).toMatchObject({ key: second });
     expect(page2.nextCursor).toBeNull();
+  });
+
+  it("stops filesystem traversal after the requested page and one lookahead object", async () => {
+    const isolatedDir = await mkdtemp(join(tmpdir(), "sf-blob-page-"));
+    const isolatedStore = new LocalFsBlobStore(isolatedDir);
+    const first = objectKey({
+      kind: "raw-import",
+      projectId: "a-project",
+      runId: "run",
+      nonce: "a.csv",
+    });
+    const second = objectKey({
+      kind: "raw-import",
+      projectId: "a-project",
+      runId: "run",
+      nonce: "b.csv",
+    });
+    const unreadableDirectory = join(isolatedDir, "raw-import", "z-project");
+
+    try {
+      await isolatedStore.put({
+        key: first,
+        body: Buffer.from("a"),
+        contentType: "text/csv",
+      });
+      await isolatedStore.put({
+        key: second,
+        body: Buffer.from("b"),
+        contentType: "text/csv",
+      });
+      await mkdir(unreadableDirectory, { recursive: true });
+      await chmod(unreadableDirectory, 0o000);
+
+      await expect(
+        isolatedStore.list({
+          kind: "raw-import",
+          cursor: null,
+          limit: 1,
+        }),
+      ).resolves.toEqual({
+        objects: [{ key: first, createdAt: expect.any(String) }],
+        nextCursor: first,
+      });
+    } finally {
+      await chmod(unreadableDirectory, 0o700).catch(() => undefined);
+      await rm(isolatedDir, { recursive: true, force: true });
+    }
+  });
+
+  it("honors an already-aborted maintenance signal before list or delete I/O", async () => {
+    const isolatedDir = await mkdtemp(join(tmpdir(), "sf-blob-abort-"));
+    const isolatedStore = new LocalFsBlobStore(isolatedDir);
+    const key = objectKey({
+      kind: "raw",
+      projectId: "abort-project",
+      runId: "run",
+      nonce: "object.csv",
+    });
+    const controller = new AbortController();
+
+    try {
+      await isolatedStore.put({
+        key,
+        body: Buffer.from("retained"),
+        contentType: "text/csv",
+      });
+      controller.abort();
+
+      await expect(
+        isolatedStore.list({
+          kind: "raw",
+          cursor: null,
+          limit: 1,
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      await expect(
+        isolatedStore.delete(key, { signal: controller.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      await expect(
+        isolatedStore.get(key, { signal: controller.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      expect(await isolatedStore.get(key)).not.toBeNull();
+    } finally {
+      await rm(isolatedDir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores symlinked paths during listing instead of traversing or returning them", async () => {
+    const isolatedDir = await mkdtemp(join(tmpdir(), "sf-blob-symlink-"));
+    const isolatedStore = new LocalFsBlobStore(isolatedDir);
+    const realKey = objectKey({
+      kind: "raw",
+      projectId: "safe-project",
+      runId: "run",
+      nonce: "real.csv",
+    });
+    const linkTarget = join(isolatedDir, "outside-target.txt");
+    const linkPath = join(
+      isolatedDir,
+      "raw",
+      "symlink-project",
+      "run",
+      "linked.csv",
+    );
+
+    try {
+      await isolatedStore.put({
+        key: realKey,
+        body: Buffer.from("real"),
+        contentType: "text/csv",
+      });
+      await mkdir(join(isolatedDir, "raw", "symlink-project", "run"), {
+        recursive: true,
+      });
+      await rm(linkPath, { force: true });
+      await rm(linkTarget, { force: true });
+      await writeFile(linkTarget, "linked", "utf8");
+      await symlink(linkTarget, linkPath);
+
+      await expect(
+        isolatedStore.list({
+          kind: "raw",
+          cursor: null,
+          limit: 10,
+        }),
+      ).resolves.toEqual({
+        objects: [{ key: realKey, createdAt: expect.any(String) }],
+        nextCursor: null,
+      });
+    } finally {
+      await rm(isolatedDir, { recursive: true, force: true });
+    }
+  });
+
+  it("treats a missing kind as empty and never follows file symlinks", async () => {
+    const isolatedDir = await mkdtemp(join(tmpdir(), "sf-blob-symlink-"));
+    const externalDir = await mkdtemp(join(tmpdir(), "sf-blob-external-"));
+    const isolatedStore = new LocalFsBlobStore(isolatedDir);
+    const externalFile = join(externalDir, "customer-secret.csv");
+    const linkedKey = objectKey({
+      kind: "raw",
+      projectId: "symlink-project",
+      runId: "run",
+      nonce: "linked.csv",
+    });
+
+    try {
+      await expect(
+        isolatedStore.list({ kind: "export", cursor: null, limit: 10 }),
+      ).resolves.toEqual({ objects: [], nextCursor: null });
+      await writeFile(externalFile, "external-customer-bytes");
+      await mkdir(join(isolatedDir, "raw", "symlink-project", "run"), {
+        recursive: true,
+      });
+      await symlink(externalFile, join(isolatedDir, linkedKey));
+
+      await expect(
+        isolatedStore.list({ kind: "raw", cursor: null, limit: 10 }),
+      ).resolves.toEqual({ objects: [], nextCursor: null });
+      expect(await readFile(externalFile, "utf8")).toBe(
+        "external-customer-bytes",
+      );
+    } finally {
+      await rm(isolatedDir, { recursive: true, force: true });
+      await rm(externalDir, { recursive: true, force: true });
+    }
   });
 });

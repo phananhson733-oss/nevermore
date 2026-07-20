@@ -224,6 +224,7 @@ describe("artifact and run read-model mappers", () => {
   const textRevision = {
     id: "revision-1",
     revision: 1,
+    output_locale: "en",
     content_format: "markdown",
     content_text: "# Brief",
     content_json: null,
@@ -248,6 +249,7 @@ describe("artifact and run read-model mappers", () => {
 
   it("chooses text, JSON, then an empty object for revision content", () => {
     expect(toArtifactRevisionDto(textRevision)).toMatchObject({
+      outputLocale: "en",
       content: "# Brief",
       validationErrors: ["Missing CTA"],
     });

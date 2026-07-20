@@ -34,10 +34,11 @@ describe("web security headers", () => {
     expect(csp).not.toContain("'unsafe-inline'");
   });
 
-  it("adds eval only for the Next development runtime", () => {
+  it("adds only the development relaxations required by the Next runtime", () => {
     const csp = buildContentSecurityPolicy(true, "nonce-value");
     expect(csp).toContain("'unsafe-eval'");
-    expect(csp).toContain("style-src 'self' 'nonce-nonce-value' 'unsafe-inline'");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    expect(csp).not.toContain("style-src 'self' 'nonce-nonce-value'");
   });
 
   it("rejects a nonce that could inject another CSP directive", () => {

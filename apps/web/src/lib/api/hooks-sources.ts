@@ -14,15 +14,19 @@
  */
 
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
+  type InfiniteData,
+  type UseInfiniteQueryResult,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { ApiError, apiGet, apiSend } from "./client";
 import type { DataEnvelope, ListEnvelope, ProblemBody } from "./types";
 import { BASE_PATH } from "@/lib/base-path";
+import { cursorPageUrl, nextCursorPageParam } from "./cursor-pages";
 
 const API_BASE = `${BASE_PATH}/api/mvp`;
 
@@ -270,14 +274,21 @@ export function useProjectSources(
   });
 }
 
-/** The immutable snapshot history (cursor-paginated). Keeps the `meta` envelope. */
+/** Immutable snapshot history as bounded pages with each page's `meta` envelope. */
 export function useProjectSnapshots(
   projectId: string,
-): UseQueryResult<ListEnvelope<DataSnapshot>, ApiError> {
-  return useQuery({
+): UseInfiniteQueryResult<
+  InfiniteData<ListEnvelope<DataSnapshot>, string | null>,
+  ApiError
+> {
+  return useInfiniteQuery({
     queryKey: snapshotsKey(projectId),
-    queryFn: () =>
-      apiGet<ListEnvelope<DataSnapshot>>(`/projects/${projectId}/snapshots`),
+    queryFn: ({ pageParam }) =>
+      apiGet<ListEnvelope<DataSnapshot>>(
+        cursorPageUrl(`/projects/${projectId}/snapshots`, pageParam),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: nextCursorPageParam,
     enabled: projectId.length > 0,
   });
 }

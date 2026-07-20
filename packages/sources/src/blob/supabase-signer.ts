@@ -17,9 +17,9 @@
  *    so an object cannot be signed out of a different bucket.
  *
  * Object lifecycle (spec §12.3): signed URLs have a 15-minute (900s) TTL — enforced
- * here, per URL — while the 30-day object retention is a Supabase bucket lifecycle
- * policy configured on the bucket (out of application-code scope; local dev cannot
- * enforce it). See docs/RUNBOOK.md "Export regeneration".
+ * here, per URL. The worker's application-owned retention sweep deletes export
+ * bytes at the database-clock 30-day boundary because Supabase's S3-compatible
+ * API does not expose lifecycle configuration. See docs/RUNBOOK.md.
  *
  * Signing uses the Supabase Storage REST endpoint
  * `POST /storage/v1/object/sign/{bucket}/{path}` with the service-role bearer, via
@@ -281,6 +281,7 @@ export function createSupabaseDownloadSigner(
         if (abortScope.signal.aborted) throw abortScope.signal.reason;
         const res = await fetchImpl(url, {
           ...init,
+          redirect: init.redirect ?? "error",
           signal: abortScope.signal,
         });
         responseStatus = res.status;

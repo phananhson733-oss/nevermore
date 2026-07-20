@@ -31,17 +31,25 @@ import type { Coverage } from "@/lib/api";
 import {
   hasCrawlSnapshot,
   isRunTerminal,
+  mergeFindingPages,
   selectLatestSnapshotIds,
   useCreateDiagnosticRun,
   useProjectFindings,
   useProjectRun,
   useProjectSnapshots,
+  type DiagnosticDomain,
   type DiagnosticRuleResult,
   type Finding,
   type RuleStatus,
   type RunStatus,
+  type Severity,
 } from "@/lib/api/hooks-diagnosis";
+import { ProblemState } from "../_problem-display";
 import { FindingCard } from "./_finding-card.tsx";
+import {
+  filterCanonicalFindings,
+  type FindingFilters,
+} from "./_diagnosis-view-model.ts";
 import styles from "./diagnosis.module.css";
 
 /** The five diagnosis domains, in the spec's canonical order (spec §4.2). */
@@ -52,6 +60,8 @@ const DOMAIN_KEYS = [
   "conversion_journey",
   "geo_ai",
 ] as const;
+
+const SEVERITY_KEYS = ["critical", "high", "medium", "low"] as const;
 
 type CoverageLabelKey = "ready" | "degraded" | "partial" | "missing";
 
@@ -129,11 +139,14 @@ interface RunHeaderProps {
   readonly polling: boolean;
   readonly pending: boolean;
   readonly runStatus: RunStatus | null;
+  readonly statusPollError: boolean;
+  readonly statusPollRetrying: boolean;
   readonly notice: {
     readonly kind: "error" | "info";
     readonly text: string;
   } | null;
   readonly onRun: () => void;
+  readonly onRetryStatus: () => void;
 }
 
 function RunHeader({
@@ -144,10 +157,14 @@ function RunHeader({
   polling,
   pending,
   runStatus,
+  statusPollError,
+  statusPollRetrying,
   notice,
   onRun,
+  onRetryStatus,
 }: RunHeaderProps) {
   const t = useTranslations("diagnosis");
+  const tCommon = useTranslations("common");
   const tRun = useTranslations("runState");
   const tNav = useTranslations("nav");
   const buttonLabel = polling
@@ -219,6 +236,23 @@ function RunHeader({
             {notice.text}
           </p>
         ) : null}
+        {statusPollError ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onRetryStatus}
+            disabled={statusPollRetrying}
+          >
+            {statusPollRetrying ? (
+              <Spinner
+                size="sm"
+                label={tCommon("loading")}
+                className={styles.btnSpinner}
+              />
+            ) : null}
+            {tCommon("retry")}
+          </Button>
+        ) : null}
       </div>
     </header>
   );
@@ -231,6 +265,7 @@ function CoveragePanel({ coverage }: { readonly coverage: Coverage }) {
   const tCoverage = useTranslations("coverage");
   const tDomain = useTranslations("domain");
   const overall = coverageOverallMeta(coverage.overall);
+  const limitations = [...new Set(coverage.limitations)];
   return (
     <Panel
       className={styles.panel}
@@ -258,9 +293,9 @@ function CoveragePanel({ coverage }: { readonly coverage: Coverage }) {
           );
         })}
       </ul>
-      {coverage.limitations.length > 0 ? (
+      {limitations.length > 0 ? (
         <ul className={styles.limitationList}>
-          {coverage.limitations.map((text, index) => (
+          {limitations.map((text, index) => (
             <li key={`${index}:${text}`} className={styles.limitationItem}>
               {text}
             </li>
@@ -344,14 +379,36 @@ function FindingsSection({
   projectId,
   findings,
   hasEverRun,
+  hasMore,
+  loadingMore,
+  loadMoreError,
+  onLoadMore,
   onRefetch,
 }: {
   readonly projectId: string;
   readonly findings: readonly Finding[];
   readonly hasEverRun: boolean;
+  readonly hasMore: boolean;
+  readonly loadingMore: boolean;
+  readonly loadMoreError: boolean;
+  readonly onLoadMore: () => void;
   readonly onRefetch: () => void;
 }) {
   const t = useTranslations("diagnosis");
+  const tCommon = useTranslations("common");
+  const tDomain = useTranslations("domain");
+  const tSeverity = useTranslations("priorityBand");
+  const [domain, setDomain] = useState<FindingFilters["domain"]>("all");
+  const [severity, setSeverity] =
+    useState<FindingFilters["severity"]>("all");
+  const filtered = filterCanonicalFindings(findings, { domain, severity });
+  const filtersActive = domain !== "all" || severity !== "all";
+
+  function clearFilters(): void {
+    setDomain("all");
+    setSeverity("all");
+  }
+
   return (
     <section
       className={styles.findingsSection}
@@ -361,19 +418,111 @@ function FindingsSection({
         <h2 id="sf-findings-title" className={styles.panelTitle}>
           {t("findings")}
         </h2>
+        {findings.length > 0 ? (
+          <span className={styles.filterCount} aria-live="polite">
+            {hasMore
+              ? t("filters.resultsPartial", {
+                  shown: filtered.length,
+                  total: findings.length,
+                })
+              : t("filters.results", {
+                  shown: filtered.length,
+                  total: findings.length,
+                })}
+          </span>
+        ) : null}
       </div>
+      {findings.length > 0 ? (
+        <Panel
+          padding="md"
+          className={styles.filterPanel}
+          aria-labelledby="sf-finding-filters-title"
+        >
+          <h3 id="sf-finding-filters-title" className={styles.filterTitle}>
+            {t("filters.title")}
+          </h3>
+          <div className={styles.filterControls}>
+            <label className={styles.filterField}>
+              <span className={styles.filterLabel}>{t("filters.domain")}</span>
+              <select
+                className={styles.filterSelect}
+                value={domain}
+                onChange={(event) =>
+                  setDomain(event.target.value as DiagnosticDomain | "all")
+                }
+              >
+                <option value="all">{t("filters.allDomains")}</option>
+                {DOMAIN_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {tDomain(key)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={styles.filterField}>
+              <span className={styles.filterLabel}>
+                {t("filters.severity")}
+              </span>
+              <select
+                className={styles.filterSelect}
+                value={severity}
+                onChange={(event) =>
+                  setSeverity(event.target.value as Severity | "all")
+                }
+              >
+                <option value="all">{t("filters.allSeverities")}</option>
+                {SEVERITY_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {tSeverity(key)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {filtersActive ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className={styles.filterClear}
+                onClick={clearFilters}
+              >
+                {t("filters.clear")}
+              </Button>
+            ) : null}
+          </div>
+        </Panel>
+      ) : null}
       {findings.length === 0 ? (
         <Panel padding="lg">
           <EmptyState
-            title={hasEverRun ? t("noFindings") : t("notDiagnosed")}
+            title={
+              hasMore
+                ? t("moreFindingsHint")
+                : hasEverRun
+                  ? t("noFindings")
+                  : t("notDiagnosed")
+            }
             description={
-              hasEverRun ? t("noFindingsHint") : t("notDiagnosedHint")
+              hasMore
+                ? undefined
+                : hasEverRun
+                  ? t("noFindingsHint")
+                  : t("notDiagnosedHint")
             }
           />
         </Panel>
+      ) : filtered.length === 0 ? (
+        <Panel padding="lg">
+          <EmptyState
+            title={hasMore ? t("filters.emptyPartial") : t("filters.empty")}
+          >
+            <Button variant="secondary" onClick={clearFilters}>
+              {t("filters.clear")}
+            </Button>
+          </EmptyState>
+        </Panel>
       ) : (
         <div className={styles.findingList}>
-          {findings.map((finding) => (
+          {filtered.map((finding) => (
             <FindingCard
               key={finding.id}
               projectId={projectId}
@@ -383,6 +532,26 @@ function FindingsSection({
           ))}
         </div>
       )}
+      {hasMore || loadMoreError ? (
+        <div className={styles.pagination}>
+          {loadMoreError ? (
+            <p className={styles.paginationError} role="alert">
+              {tCommon("loadMoreError")}
+            </p>
+          ) : null}
+          <Button
+            variant="secondary"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore
+              ? tCommon("loadingMore")
+              : loadMoreError
+                ? tCommon("retry")
+                : tCommon("loadMore")}
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -397,8 +566,11 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
   const findings = useProjectFindings(projectId);
   const snapshots = useProjectSnapshots(projectId);
   const createRun = useCreateDiagnosticRun(projectId);
+  const findingEnvelope = mergeFindingPages(findings.data);
 
   const { refetch: refetchFindings } = findings;
+  const { refetch: refetchProject } = project;
+  const { refetch: refetchSnapshots } = snapshots;
 
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{
@@ -407,7 +579,7 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
   } | null>(null);
   const handledRun = useRef<string | null>(null);
 
-  const meta = findings.data?.meta;
+  const meta = findingEnvelope?.meta;
   const latestRun = meta?.latestRun ?? null;
   const runQuery = useProjectRun(projectId, activeRunId);
 
@@ -445,15 +617,20 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
     }
   }, [polledId, polledStatus, refetchFindings, t]);
 
-  // If the status poll itself errors (network/404/5xx), don't hang "in progress":
-  // clear the active run so the button re-enables and surface the error.
+  // A failed status read does not prove the run stopped. Keep the active-run
+  // fence in place and let the operator retry the status read explicitly.
   useEffect(() => {
     if (activeRunId !== null && runQuery.isError) {
-      handledRun.current = activeRunId;
-      setActiveRunId(null);
-      setNotice({ kind: "error", text: t("runError") });
+      setNotice({ kind: "error", text: t("statusReadError") });
     }
   }, [activeRunId, runQuery.isError, t]);
+
+  async function onRetryStatus(): Promise<void> {
+    const result = await runQuery.refetch();
+    if (result.data !== undefined && result.data.status !== "failed") {
+      setNotice(null);
+    }
+  }
 
   function runErrorText(err: unknown): string {
     if (err instanceof ApiError) {
@@ -465,7 +642,7 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
         case "RUN_ALREADY_ACTIVE":
           return t("runActive");
         default:
-          return err.message;
+          return tCommon("error");
       }
     }
     return tCommon("error");
@@ -489,7 +666,7 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
   }
 
   // Whole-screen loading / error mirror the overview conventions.
-  if (findings.isLoading || project.isLoading) {
+  if (findings.isLoading || project.isLoading || snapshots.isLoading) {
     return (
       <div className={styles.state}>
         <Spinner size="lg" label={tCommon("loading")} />
@@ -498,36 +675,48 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
     );
   }
 
-  if (findings.error !== null || findings.data === undefined) {
+  if (
+    (findings.isError && findingEnvelope === undefined) ||
+    project.error !== null ||
+    snapshots.error !== null ||
+    findingEnvelope === undefined ||
+    project.data === undefined ||
+    snapshots.data === undefined
+  ) {
+    const screenError =
+      findings.error ?? project.error ?? snapshots.error ?? new Error("unknown");
     return (
       <div className={styles.state}>
-        <EmptyState title={tCommon("error")}>
-          <Button variant="secondary" onClick={() => void refetchFindings()}>
-            {tCommon("retry")}
-          </Button>
-        </EmptyState>
+        <ProblemState
+          error={screenError}
+          onRetry={() =>
+            void Promise.all([
+              refetchFindings(),
+              refetchProject(),
+              refetchSnapshots(),
+            ])
+          }
+        />
       </div>
     );
   }
 
-  const findingMeta = findings.data.meta;
+  const findingMeta = findingEnvelope.meta;
   const coverage = findingMeta.coverage;
   const ruleResults = findingMeta.ruleResults;
   const hasEverRun = latestRun !== null;
 
-  const snapshotsLoaded = snapshots.data !== undefined;
-  const contextComplete = project.data?.contextStatus === "complete";
-  const crawlReady = snapshotsLoaded && hasCrawlSnapshot(snapshots.data ?? []);
+  const contextComplete = project.data.contextStatus === "complete";
+  const crawlReady = hasCrawlSnapshot(snapshots.data);
   const polling = activeRunId !== null;
   const gate: RunGate = !contextComplete
     ? "context"
-    : snapshotsLoaded && !crawlReady
+    : !crawlReady
       ? "crawl"
       : null;
   const canRun = Boolean(
     contextComplete &&
     crawlReady &&
-    snapshotsLoaded &&
     !polling &&
     !createRun.isPending,
   );
@@ -545,15 +734,22 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
         polling={polling}
         pending={createRun.isPending}
         runStatus={headerRunStatus}
+        statusPollError={polling && runQuery.isError}
+        statusPollRetrying={runQuery.isFetching}
         notice={notice}
         onRun={() => void onRun()}
+        onRetryStatus={() => void onRetryStatus()}
       />
       {coverage !== null ? <CoveragePanel coverage={coverage} /> : null}
       <RuleBoard rules={ruleResults} />
       <FindingsSection
         projectId={projectId}
-        findings={findings.data.data}
+        findings={findingEnvelope.data}
         hasEverRun={hasEverRun}
+        hasMore={findings.hasNextPage}
+        loadingMore={findings.isFetchingNextPage}
+        loadMoreError={findings.isFetchNextPageError}
+        onLoadMore={() => void findings.fetchNextPage()}
         onRefetch={() => void refetchFindings()}
       />
     </div>

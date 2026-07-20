@@ -5,9 +5,9 @@
  *
  * A cluster QUALIFIES when it has >= 10 keywords AND >= 500 combined available
  * search volume (null volumes are skipped, never counted as 0 — spec §1.3). For a
- * qualifying cluster the representative demand (its highest-volume keyword, else
- * the cluster key as words) is matched against crawled pages via `intent_match.v1`
- * (English only). Only a confident `uncovered` verdict is a defect.
+ * qualifying cluster the frozen `cluster_key.v1` is matched against crawled pages
+ * via `intent_match.v1` (English only). Only a confident `uncovered` verdict is a
+ * defect.
  */
 
 import type { CsvKeywordProjection } from "@sf/sources";
@@ -17,6 +17,10 @@ import { matchIntent, pageFieldBag } from "../util/intent-match.ts";
 
 const MIN_KEYWORDS = 10;
 const MIN_TOTAL_VOLUME = 500;
+const CSV_LIMITATION =
+  "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows.";
+const INTENT_LIMITATION =
+  "Intent match is an English-only heuristic over URL/title/H1 tokens.";
 
 export const contentGapRule = {
   id: "CONTENT-GAP-011",
@@ -28,8 +32,9 @@ export const contentGapRule = {
     { dataset: "csv", required: true },
   ],
   evaluate(ctx) {
+    const csvAvailability = ctx.datasetAvailability("csv");
     // CSV is the demand side of this rule; without it there is nothing to check.
-    if (!ctx.hasDataset("csv")) {
+    if (csvAvailability === "unavailable") {
       return { status: "skipped", reason: "missing_dataset" };
     }
     // Crawl is the supply side (the pages we match demand against).
@@ -38,56 +43,54 @@ export const contentGapRule = {
     }
     // `intent_match.v1` is an English-only heuristic (spec §8.4).
     if (!ctx.isEnglish()) {
-      return { status: "skipped", reason: "unsupported_language" };
+      return { status: "inconclusive", reason: "unsupported_language" };
     }
 
     const bags = buildPageBags(ctx);
 
     const candidates: FindingCandidate[] = [];
     let qualifyingClusters = 0;
+    let inconclusiveCount = 0;
     for (const [clusterKey, keywords] of ctx.csvClusters) {
-      const summary = summarizeCluster(keywords);
+      const totalVolume = totalAvailableVolume(keywords);
       const qualifies =
-        keywords.length >= MIN_KEYWORDS && summary.totalVolume >= MIN_TOTAL_VOLUME;
+        keywords.length >= MIN_KEYWORDS && totalVolume >= MIN_TOTAL_VOLUME;
       if (!qualifies) continue;
       qualifyingClusters += 1;
 
-      const target = summary.topKeyword ?? clusterKey.replace(/-/g, " ");
-      const outcome = matchIntent(target, bags);
-      // "covered" / "inconclusive" → not a defect.
-      if (outcome !== "uncovered") continue;
+      const outcome = matchIntent(clusterKey, bags);
+      if (outcome === "covered") continue;
+      if (outcome === "inconclusive") {
+        inconclusiveCount += 1;
+        continue;
+      }
 
       candidates.push(
-        buildCandidate(ctx, clusterKey, keywords.length, summary.totalVolume),
+        buildCandidate(ctx, clusterKey, keywords.length, totalVolume),
       );
     }
 
     if (candidates.length > 0) {
       return { status: "candidate", candidates };
     }
+    if (csvAvailability === "partial") {
+      return { status: "inconclusive", reason: "partial_csv_snapshot" };
+    }
+    if (inconclusiveCount > 0) {
+      return { status: "inconclusive", reason: "intent_match_unavailable" };
+    }
     return { status: "pass", metrics: { qualifyingClusters } };
   },
 } satisfies DiagnosticRule;
 
-interface ClusterSummary {
-  readonly totalVolume: number;
-  readonly topKeyword: string | null;
-}
-
-/** Sum available volume (skip nulls) and pick the highest-volume keyword text. */
-function summarizeCluster(keywords: readonly CsvKeywordProjection[]): ClusterSummary {
+/** Sum available volume, skipping nulls rather than fabricating zero values. */
+function totalAvailableVolume(keywords: readonly CsvKeywordProjection[]): number {
   let totalVolume = 0;
-  let topKeyword: string | null = null;
-  let topVolume = -1;
   for (const kw of keywords) {
     if (kw.searchVolume === null) continue;
     totalVolume += kw.searchVolume;
-    if (kw.searchVolume > topVolume) {
-      topVolume = kw.searchVolume;
-      topKeyword = kw.keyword;
-    }
   }
-  return { totalVolume, topKeyword };
+  return totalVolume;
 }
 
 /** Token field bags for every eligible indexable page (dropping null bags). */
@@ -113,30 +116,35 @@ function buildCandidate(
   totalVolume: number,
 ): FindingCandidate {
   const subjectRef = `keyword_cluster:${clusterKey}`;
+  const csvPartial = ctx.datasetAvailability("csv") === "partial";
+  const crawlPartial = ctx.datasetAvailability("crawl") === "partial";
   const csvEvidence: EvidenceDraft = {
     sourceProvider: "csv",
     origin: "user_provided",
     method: "observed",
     grade: "C",
-    availability: "available",
+    availability: csvPartial ? "partial" : "available",
     support: "supports",
     subjectRefs: [subjectRef],
     claim: `Imported keyword cluster "${clusterKey}" carries ${keywordCount} keywords with ${totalVolume} combined monthly search volume.`,
     observedAt: ctx.observedAt("csv"),
-    limitation:
-      "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows.",
+    limitation: csvPartial
+      ? `${CSV_LIMITATION} The selected CSV snapshot is partial, so omitted rows may affect completeness.`
+      : CSV_LIMITATION,
   };
   const contentEvidence: EvidenceDraft = {
     sourceProvider: "crawl",
     origin: "derived",
     method: "inferred",
     grade: "C",
-    availability: "available",
+    availability: crawlPartial ? "partial" : "available",
     support: "supports",
     subjectRefs: [subjectRef],
     claim: `No indexable page relates to the "${clusterKey}" keyword cluster.`,
     observedAt: ctx.observedAt("crawl"),
-    limitation: "Intent match is an English-only heuristic over URL/title/H1 tokens.",
+    limitation: crawlPartial
+      ? `${INTENT_LIMITATION} The selected crawl snapshot is partial, so omitted pages may affect completeness.`
+      : INTENT_LIMITATION,
   };
   return {
     subjectRefs: [subjectRef],

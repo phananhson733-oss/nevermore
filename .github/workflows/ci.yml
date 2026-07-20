@@ -52,6 +52,9 @@ jobs:
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify the pinned frozen specification contract
+        run: pnpm verify:spec
+
       - name: Verify implementation constants and provenance
         run: pnpm implementation:check
 
@@ -64,7 +67,7 @@ jobs:
       - name: Lint the clone-local OpenAPI contract
         run: pnpm openapi:lint
 
-      - name: Scan for committed secrets
+      - name: Scan committed secrets and verify runtime redaction boundaries
         run: pnpm secrets:scan
 
       - name: Audit moderate, high, and critical dependency vulnerabilities
@@ -173,7 +176,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run database-backed responsive and a11y E2E
-        run: pnpm exec playwright test --config playwright.config.ts
+        run: pnpm test:e2e:real
 
   build-and-mock-e2e:
     name: Production build, worker image, and isolated mock E2E
@@ -250,8 +253,63 @@ jobs:
       - name: Build the production worker image
         run: docker build --pull=false --file Dockerfile.worker --tag signalframe-worker:verify .
 
+      - name: Build the frozen Railway shared image
+        run: docker build --pull=false --file Dockerfile.railway --tag signalframe-railway:verify .
+
+      - name: Smoke the frozen Railway web runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="signalframe-railway-web-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm --force "$container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run --detach --name "$container" \
+            --add-host host.docker.internal:host-gateway \
+            --publish 127.0.0.1:3100:3000 \
+            --env PORT=3000 \
+            --env APP_ORIGIN=https://app.example \
+            --env DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/signalframe_ci \
+            --env SUPABASE_URL=https://supabase.invalid \
+            --env SUPABASE_ANON_KEY=ci-local-only \
+            --env SUPABASE_SERVICE_ROLE_KEY=ci-local-only \
+            --env CREDENTIAL_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+            --env GOOGLE_OAUTH_CLIENT_ID=ci-local-only \
+            --env GOOGLE_OAUTH_CLIENT_SECRET=ci-local-only \
+            --env DATAFORSEO_ENABLED=false \
+            --env RAW_IMPORT_BUCKET=raw-imports \
+            --env EXPORT_BUCKET=exports \
+            --env SF_BLOB_BACKEND=supabase \
+            --env LOG_LEVEL=warn \
+            signalframe-railway:verify
+          for attempt in {1..30}; do
+            if curl --silent --show-error --fail http://127.0.0.1:3100/api/mvp/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
+      - name: Smoke both worker image entrypoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          assert_safe_boot_failure() {
+            set +e
+            output="$(docker run --rm "$@" 2>&1)"
+            status=$?
+            set -e
+            test "$status" -ne 0
+            printf '%s\n' "$output" | grep --extended-regexp --quiet '^\{"event":"worker_boot_failed","code":"WORKER_BOOT_FAILED","type":"(internal|unknown)"\}$'
+          }
+          assert_safe_boot_failure signalframe-worker:verify
+          assert_safe_boot_failure signalframe-railway:verify \
+            node --enable-source-maps --import tsx apps/worker/src/index.ts
+
       - name: Install Chromium for mock E2E
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run database-free critical-flow mock E2E
-        run: pnpm exec playwright test --config playwright.mock.config.ts
+        run: pnpm test:e2e:mock

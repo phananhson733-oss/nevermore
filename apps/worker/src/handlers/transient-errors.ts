@@ -12,6 +12,7 @@ const TRANSIENT_DATABASE_CODES = new Set([
   "57P01", // admin_shutdown
   "57P02", // crash_shutdown
   "57P03", // cannot_connect_now
+  "57014", // query_canceled (statement timeout / operator cancellation)
   "58000", // system_error
   "58030", // io_error
 ]);

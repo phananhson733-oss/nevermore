@@ -86,13 +86,16 @@ export function createGscAdapter(client: GscClient): SourceAdapter<GscConfig, Gs
     validateConfig,
     capabilities,
 
-    async collect(params: GscParams, _ctx: CollectionContext): Promise<CollectionResult<GscRaw>> {
+    async collect(params: GscParams, ctx: CollectionContext): Promise<CollectionResult<GscRaw>> {
       const now = params.now ?? new Date();
       const window = computeGscWindow(now, params.timeZone);
-      const rows = await client.querySearchAnalytics({
-        startDate: window.startDate,
-        endDate: window.endDate,
-      });
+      const rows = await client.querySearchAnalytics(
+        {
+          startDate: window.startDate,
+          endDate: window.endDate,
+        },
+        ctx.signal,
+      );
 
       const truncated = rows.length >= GSC_MAX_ROWS;
       const availability: Availability = truncated ? "partial" : "available";

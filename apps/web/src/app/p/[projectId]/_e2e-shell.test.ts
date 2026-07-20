@@ -6,27 +6,45 @@ import {
 } from "./_e2e-shell.ts";
 
 describe("isolated E2E project shell gate", () => {
-  it("is enabled only for the reserved project in non-production", () => {
+  const localDevelopment = {
+    NODE_ENV: "development",
+    APP_ORIGIN: "http://localhost:3200",
+    SF_E2E_MOCK_API: "true",
+  } as const;
+
+  it("is enabled only for the reserved project on loopback development", () => {
     expect(
-      shouldUseE2eProjectShell(
-        { NODE_ENV: "test", SF_E2E_MOCK_API: "true" },
-        E2E_PROJECT_ID,
-      ),
+      shouldUseE2eProjectShell(localDevelopment, E2E_PROJECT_ID),
     ).toBe(true);
     expect(
       shouldUseE2eProjectShell(
-        { NODE_ENV: "production", SF_E2E_MOCK_API: "true" },
+        { ...localDevelopment, NODE_ENV: "production" },
         E2E_PROJECT_ID,
       ),
     ).toBe(false);
     expect(
       shouldUseE2eProjectShell(
-        { NODE_ENV: "test", SF_E2E_MOCK_API: "true" },
+        { ...localDevelopment, NODE_ENV: "test" },
+        E2E_PROJECT_ID,
+      ),
+    ).toBe(false);
+    expect(
+      shouldUseE2eProjectShell(
+        { ...localDevelopment, APP_ORIGIN: "https://staging.example.com" },
+        E2E_PROJECT_ID,
+      ),
+    ).toBe(false);
+    expect(
+      shouldUseE2eProjectShell(
+        localDevelopment,
         "another-project",
       ),
     ).toBe(false);
     expect(
-      shouldUseE2eProjectShell({ NODE_ENV: "test" }, E2E_PROJECT_ID),
+      shouldUseE2eProjectShell(
+        { NODE_ENV: "development", APP_ORIGIN: "http://localhost:3200" },
+        E2E_PROJECT_ID,
+      ),
     ).toBe(false);
   });
 

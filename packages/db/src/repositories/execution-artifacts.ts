@@ -1,6 +1,10 @@
 import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { artifactRevisions, executionArtifacts } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
+import {
+  decodeTimestampUuidCursor,
+  encodeTimestampUuidCursor,
+} from "./cursor.ts";
 
 /**
  * `execution_artifacts` + `artifact_revisions` (spec §10.1, §10.3). An artifact is
@@ -34,6 +38,7 @@ export interface ArtifactRevisionRow {
   readonly project_id: string;
   readonly artifact_id: string;
   readonly revision: number;
+  readonly output_locale: string;
   readonly content_format: string;
   readonly content_text: string | null;
   readonly content_json: unknown;
@@ -51,22 +56,27 @@ export interface ArtifactListPage {
   readonly nextCursor: string | null;
 }
 
+export interface ArtifactRevisionListPage {
+  readonly rows: ArtifactRevisionRow[];
+  /** Last revision returned by the preceding descending-revision page. */
+  readonly nextCursor: number | null;
+}
+
+export interface ArtifactRevisionListPageOptions {
+  readonly limit: number;
+  readonly cursor: number | null;
+}
+
 function encodeCursor(row: { updated_at: string; id: string }): string {
-  return Buffer.from(`${row.updated_at} ${row.id}`, "utf8").toString(
-    "base64url",
-  );
+  return encodeTimestampUuidCursor(row.updated_at, row.id);
 }
 function decodeCursor(
   cursor: string,
 ): { updatedAt: string; id: string } | null {
-  try {
-    const raw = Buffer.from(cursor, "base64url").toString("utf8");
-    const idx = raw.indexOf(" ");
-    if (idx < 0) return null;
-    return { updatedAt: raw.slice(0, idx), id: raw.slice(idx + 1) };
-  } catch {
-    return null;
-  }
+  const decoded = decodeTimestampUuidCursor(cursor);
+  return decoded
+    ? { updatedAt: decoded.timestamp, id: decoded.id }
+    : null;
 }
 
 export class ExecutionArtifactsRepository extends Repository {
@@ -174,6 +184,36 @@ export class ExecutionArtifactsRepository extends Repository {
       .where(eq(executionArtifacts.id, id));
   }
 
+  /**
+   * Service-side regeneration claim. A stale pre-transaction lookup must not
+   * resurrect an artifact that was archived before the command commits.
+   */
+  async startRegenerationIfLive(
+    scope: ProjectScope,
+    id: string,
+    runId: string,
+    values: { generationMode: string; outputLocale: string },
+  ): Promise<boolean> {
+    const rows = await this.exec
+      .update(executionArtifacts)
+      .set({
+        status: "generating",
+        latest_generation_run_id: runId,
+        generation_mode: values.generationMode,
+        output_locale: values.outputLocale,
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          eq(executionArtifacts.id, id),
+          sql`${executionArtifacts.status} <> 'archived'`,
+        ),
+      )
+      .returning({ id: executionArtifacts.id });
+    return rows.length === 1;
+  }
+
   /** Worker completion: bump current revision + status + validation state. */
   async setGenerated(
     id: string,
@@ -208,6 +248,7 @@ export class ExecutionArtifactsRepository extends Repository {
       status: string;
       currentRevision: number;
       expectedRevision: number;
+      expectedStatus: string;
       validationState: string;
       contentHash: string;
     },
@@ -226,6 +267,7 @@ export class ExecutionArtifactsRepository extends Repository {
           projectPredicate(executionArtifacts, scope),
           eq(executionArtifacts.id, id),
           eq(executionArtifacts.current_revision, values.expectedRevision),
+          eq(executionArtifacts.status, values.expectedStatus),
         ),
       )
       .returning({ id: executionArtifacts.id })) as { id: string }[];
@@ -294,6 +336,7 @@ export class ExecutionArtifactsRepository extends Repository {
     id: string,
     status: string,
     expectedRevision: number,
+    expectedStatus: string,
   ): Promise<boolean> {
     const rows = (await this.exec
       .update(executionArtifacts)
@@ -303,6 +346,7 @@ export class ExecutionArtifactsRepository extends Repository {
           projectPredicate(executionArtifacts, scope),
           eq(executionArtifacts.id, id),
           eq(executionArtifacts.current_revision, expectedRevision),
+          eq(executionArtifacts.status, expectedStatus),
         ),
       )
       .returning({ id: executionArtifacts.id })) as { id: string }[];
@@ -352,6 +396,7 @@ export class ExecutionArtifactsRepository extends Repository {
     projectId: string;
     artifactId: string;
     revision: number;
+    outputLocale: string;
     contentFormat: string;
     contentText: string | null;
     contentJson: unknown | null;
@@ -369,6 +414,7 @@ export class ExecutionArtifactsRepository extends Repository {
         project_id: values.projectId,
         artifact_id: values.artifactId,
         revision: values.revision,
+        output_locale: values.outputLocale,
         content_format: values.contentFormat,
         content_text: values.contentText,
         content_json: values.contentJson,
@@ -418,11 +464,59 @@ export class ExecutionArtifactsRepository extends Repository {
       .orderBy(desc(artifactRevisions.revision))) as ArtifactRevisionRow[];
   }
 
+  /**
+   * Bounded revision reader for export assembly. `artifact_id` plus the
+   * monotonically increasing revision is unique, and the artifact predicate is
+   * fixed for the whole walk, so `revision < cursor` is a stable descending
+   * keyset inside the caller's repeatable-read snapshot.
+   */
+  async listRevisionsPage(
+    scope: ProjectScope,
+    artifactId: string,
+    options: ArtifactRevisionListPageOptions,
+  ): Promise<ArtifactRevisionListPage> {
+    if (!Number.isSafeInteger(options.limit) || options.limit <= 0) {
+      throw new RangeError("limit must be a positive safe integer");
+    }
+    if (
+      options.cursor !== null &&
+      (!Number.isSafeInteger(options.cursor) || options.cursor <= 0)
+    ) {
+      throw new RangeError("cursor must be a positive safe integer or null");
+    }
+    const rows = (await this.exec
+      .select()
+      .from(artifactRevisions)
+      .where(
+        and(
+          projectPredicate(artifactRevisions, scope),
+          eq(artifactRevisions.artifact_id, artifactId),
+          options.cursor === null
+            ? undefined
+            : lt(artifactRevisions.revision, options.cursor),
+        ),
+      )
+      .orderBy(desc(artifactRevisions.revision))
+      .limit(options.limit + 1)) as ArtifactRevisionRow[];
+    const hasNext = rows.length > options.limit;
+    const page = hasNext ? rows.slice(0, options.limit) : rows;
+    return {
+      rows: page,
+      nextCursor: hasNext ? (page[page.length - 1]?.revision ?? null) : null,
+    };
+  }
+
   async listByProject(
     scope: ProjectScope,
-    opts: { limit: number; cursor: string | null },
+    opts: {
+      limit: number;
+      cursor: string | null;
+      artifactType?: string | null;
+      status?: string | null;
+    },
   ): Promise<ArtifactListPage> {
     const keyset = opts.cursor ? decodeCursor(opts.cursor) : null;
+    if (opts.cursor && !keyset) return { rows: [], nextCursor: null };
     const after =
       keyset != null
         ? or(
@@ -433,10 +527,23 @@ export class ExecutionArtifactsRepository extends Repository {
             ),
           )
         : undefined;
+    const typeFilter = opts.artifactType
+      ? eq(executionArtifacts.artifact_type, opts.artifactType)
+      : undefined;
+    const statusFilter = opts.status
+      ? eq(executionArtifacts.status, opts.status)
+      : undefined;
     const rows = (await this.exec
       .select()
       .from(executionArtifacts)
-      .where(and(projectPredicate(executionArtifacts, scope), after))
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          typeFilter,
+          statusFilter,
+          after,
+        ),
+      )
       .orderBy(desc(executionArtifacts.updated_at), desc(executionArtifacts.id))
       .limit(opts.limit + 1)) as ArtifactRow[];
     const hasNext = rows.length > opts.limit;

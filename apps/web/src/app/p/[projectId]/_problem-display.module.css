@@ -1,0 +1,61 @@
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.noticeCompact {
+  gap: 8px;
+}
+
+.message {
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  color: var(--sf-fg);
+  line-height: 1.5;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+  font-size: var(--sf-text-xs);
+}
+
+.metaGroup {
+  display: contents;
+}
+
+.metaLabel {
+  margin: 0;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+
+.metaValue {
+  margin: 0;
+  min-width: 0;
+  color: var(--sf-fg);
+}
+
+.code {
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  font-size: inherit;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.emptyBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}

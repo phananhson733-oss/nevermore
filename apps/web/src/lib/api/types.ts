@@ -62,13 +62,95 @@ export interface Coverage {
   readonly limitations: readonly string[];
 }
 
+export type OverviewPriorityBand = "critical" | "high" | "medium" | "low";
+export type OverviewRoadmapLane = "now" | "next" | "later";
+export type OverviewActionStatus =
+  | "candidate"
+  | "planned"
+  | "in_progress"
+  | "blocked"
+  | "done"
+  | "dismissed";
+
+/** Canonical persisted Action DTO surfaced by the Overview read model. */
+export interface OverviewAction {
+  readonly id: string;
+  readonly findingId: string;
+  readonly templateId: string;
+  readonly title: string;
+  readonly description: string;
+  readonly contentLocale: string;
+  readonly priorityBand: OverviewPriorityBand;
+  readonly roadmapLane: OverviewRoadmapLane;
+  readonly status: OverviewActionStatus;
+  readonly effort: "small" | "medium" | "large";
+  readonly risk: "low" | "medium" | "high";
+  readonly expectedOutcome: string;
+  readonly revision: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** Latest immutable source snapshot selected by its real capture timestamp. */
+export interface OverviewSnapshot {
+  readonly id: string;
+  readonly provider: string;
+  readonly datasetKey: string;
+  readonly schemaVersion: string;
+  readonly methodVersion: string;
+  readonly capturedAt: string;
+  readonly sourceWindow: {
+    readonly start: string | null;
+    readonly end: string | null;
+  };
+  readonly availability: "available" | "partial" | "unavailable";
+  readonly limitation: string;
+  readonly rowCount: number;
+  readonly checksum: string;
+}
+
+/** Evidence rows explicitly associated with the highest-priority Action. */
+export interface OverviewEvidence {
+  readonly id: string;
+  readonly sourceProvider: string;
+  readonly origin: string;
+  readonly method: string;
+  readonly grade: string;
+  readonly availability: "available" | "partial" | "unavailable";
+  readonly support: string;
+  readonly claim: string;
+  readonly subjectRefs: readonly {
+    readonly type: string;
+    readonly value: string;
+  }[];
+  readonly observedAt: string;
+  readonly limitation: string;
+  readonly snapshotId?: string | null;
+  readonly analysisInvocationId?: string | null;
+}
+
+/** Minimal canonical Artifact projection used by Overview's delivery focus. */
+export interface OverviewDeliveryFocus {
+  readonly artifactId: string;
+  readonly actionId: string;
+  readonly artifactType:
+    | "content_brief"
+    | "metadata_rewrite"
+    | "technical_ticket";
+  readonly status: "generating" | "draft" | "ready" | "failed" | "archived";
+  readonly updatedAt: string;
+}
+
 /** The `overview` workspace projection (spec §11.3). */
 export interface OverviewView {
   readonly view: "overview";
   readonly project: Project;
   readonly coverage: Coverage;
   readonly activeRuns: readonly unknown[];
-  readonly topActions: readonly unknown[];
+  readonly topActions: readonly OverviewAction[];
+  readonly latestSnapshot: OverviewSnapshot | null;
+  readonly topActionEvidence: readonly OverviewEvidence[];
+  readonly deliveryFocus: OverviewDeliveryFocus | null;
 }
 
 /** Pagination metadata carried alongside list payloads (OpenAPI `PageMeta`). */

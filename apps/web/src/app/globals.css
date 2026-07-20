@@ -30,15 +30,20 @@
   --sf-cobalt: #315efb;
   --sf-cobalt-dark: #2348ca;
   --sf-cobalt-soft: #e7ecff;
+  --sf-cobalt-text: #2348ca;
   --sf-coral: #ef6a5a;
   --sf-coral-soft: #fff0ec;
+  --sf-coral-text: #a33a2b;
   --sf-mint: #26a77b;
   --sf-mint-soft: #e2f4ec;
   --sf-mint-bright: #99efcb;
+  --sf-mint-text: #08795a;
   --sf-amber: #d78a21;
   --sf-amber-soft: #fff1d8;
+  --sf-amber-text: #805000;
   --sf-violet: #8468d7;
   --sf-violet-soft: #eee9ff;
+  --sf-violet-text: #6448b5;
 
   /* Semantic surface roles (light) */
   --sf-bg: var(--sf-paper);
@@ -99,9 +104,15 @@
     --sf-accent: #84a5ff;
     --sf-accent-contrast: #0c121b;
     --sf-cobalt-soft: #1b2740;
+    --sf-cobalt-text: #84a5ff;
     --sf-mint-soft: #10251d;
+    --sf-mint-text: #70d6ae;
     --sf-amber-soft: #2a2113;
+    --sf-amber-text: #f4bd63;
     --sf-coral-soft: #2c1a17;
+    --sf-coral-text: #ff9a8d;
+    --sf-violet-soft: #241d3b;
+    --sf-violet-text: #c0afff;
   }
 }
 :root[data-theme="dark"] {
@@ -115,9 +126,15 @@
   --sf-accent: #84a5ff;
   --sf-accent-contrast: #0c121b;
   --sf-cobalt-soft: #1b2740;
+  --sf-cobalt-text: #84a5ff;
   --sf-mint-soft: #10251d;
+  --sf-mint-text: #70d6ae;
   --sf-amber-soft: #2a2113;
+  --sf-amber-text: #f4bd63;
   --sf-coral-soft: #2c1a17;
+  --sf-coral-text: #ff9a8d;
+  --sf-violet-soft: #241d3b;
+  --sf-violet-text: #c0afff;
 }
 
 * {
@@ -156,17 +173,27 @@ h3 {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--sf-accent);
+  color: var(--sf-cobalt-text);
 }
 
 a {
-  color: var(--sf-accent);
+  color: var(--sf-cobalt-text);
 }
 
 :focus-visible {
   outline: none;
   box-shadow: var(--sf-focus-ring);
   border-radius: 4px;
+}
+
+/* A printed report contains the report itself, but not the persistent project
+ * navigation or sticky application toolbar. Stable data attributes keep this
+ * global rule narrowly scoped without relying on CSS Module class names. */
+@media print {
+  body:has([data-report-page]) [data-app-shell-sidebar],
+  body:has([data-report-page]) [data-app-shell-topbar] {
+    display: none !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

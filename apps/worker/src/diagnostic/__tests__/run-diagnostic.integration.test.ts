@@ -41,10 +41,12 @@ import { FINDING_REGISTRY, findingKey, type RuleId } from "@sf/engine";
 import {
   LocalFsBlobStore,
   METRIC_CRAWL_PAGE,
+  METRIC_CRAWL_ROBOTS,
   METRIC_GA4_LANDING,
   subjectUrlOf,
   type CrawlLinkProjection,
   type CrawlPageProjection,
+  type CrawlRobotsProjection,
   type Ga4LandingProjection,
 } from "@sf/sources";
 import type { Logger } from "@sf/observability";
@@ -102,6 +104,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       appOrigin: "http://localhost:3000",
       googleOAuth: { clientId: "test-client", clientSecret: "test-secret" },
       openai: { apiKey: "sk-test", model: "gpt-4o-mini" },
+      findingSummariesEnabled: true,
       logger: testLogger,
     };
   });
@@ -487,6 +490,62 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     );
     expect(refreshed?.confidence).toBe("high");
   });
+
+  it("finishes an accepted diagnostic after archive while keeping the project stage frozen", async () => {
+    const seed = await seedProject(handle);
+    const projects = new ProjectsRepository(handle.db);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const snapshotId = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(`${seed.origin}/archived-diagnostic`),
+        mkPage({
+          fetchUrl: `${seed.origin}/archived-diagnostic`,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+    ]);
+    await projects.setStage(
+      { workspaceId: seed.scope.workspaceId },
+      seed.scope.projectId,
+      "diagnosing",
+    );
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf(snapshotId, ["crawl"]),
+      "queued",
+    );
+    await handle.pool.query(
+      `update app.client_projects
+          set archived_at = now()
+        where workspace_id = $1
+          and id = $2`,
+      [seed.scope.workspaceId, seed.scope.projectId],
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    expect(await runStatusOf(handle, seed.scope, runId)).toBe("partial");
+    expect(
+      await new DiagnosticRunsRepository(handle.db).listRuleResults(runId),
+    ).not.toHaveLength(0);
+    await expect(
+      projects.findById(
+        { workspaceId: seed.scope.workspaceId },
+        seed.scope.projectId,
+      ),
+    ).resolves.toMatchObject({
+      stage: "diagnosing",
+      archived_at: expect.any(String),
+    });
+  });
 });
 
 // --- seeding helpers --------------------------------------------------------
@@ -730,6 +789,7 @@ function cleanObservations(origin: string): ObservationInsert[] {
   const home = su(`${origin}/`);
   const about = su(`${origin}/about`);
   return [
+    crawlRobots(origin),
     crawlPage(
       pricing,
       mkPage({
@@ -761,6 +821,28 @@ function cleanObservations(origin: string): ObservationInsert[] {
       keyEventUnavailableReason: null,
     }),
   ];
+}
+
+function crawlRobots(subjectRef: string): ObservationInsert {
+  return {
+    metricKey: METRIC_CRAWL_ROBOTS,
+    subjectType: "site",
+    subjectRef,
+    observedAt: OBSERVED_AT,
+    availability: "available",
+    valueNumeric: null,
+    valueText: null,
+    valueJson: {
+      fetched: true,
+      groups: [{ userAgent: "*", disallow: [], allow: [] }],
+      sitemaps: [],
+    } satisfies CrawlRobotsProjection,
+    unit: null,
+    origin: "direct_public",
+    grade: "B",
+    support: "supports",
+    limitation: "public robots.txt fetch",
+  };
 }
 
 function su(url: string): string {

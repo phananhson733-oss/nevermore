@@ -214,6 +214,7 @@ async function seedReadyArtifact(
     projectId: scope.projectId,
     artifactId: artifact.id,
     revision: 1,
+    outputLocale: ARTIFACT_OUTPUT_LOCALE,
     contentFormat: "markdown",
     contentText: ARTIFACT_ZH_CONTENT,
     contentJson: null,
@@ -225,11 +226,12 @@ async function seedReadyArtifact(
     validationErrors: [],
   });
   await repo.setGenerated(artifact.id, {
-    status: "ready",
+    status: "draft",
     currentRevision: 1,
     validationState: "valid",
     contentHash: hash,
   });
+  await repo.setStatus(scope, artifact.id, "ready");
   return artifact.id;
 }
 

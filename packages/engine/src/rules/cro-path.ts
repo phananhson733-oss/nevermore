@@ -34,6 +34,9 @@ export const croPathRule = {
     if (!ctx.hasDataset("crawl")) {
       return { status: "skipped", reason: "missing_dataset" };
     }
+    if (ctx.crawlPartial()) {
+      return { status: "inconclusive", reason: "partial_crawl_link_graph" };
+    }
 
     const dests = ctx.conversionDestinations();
     if (dests.size === 0) {

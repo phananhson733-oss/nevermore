@@ -25,8 +25,6 @@ describe("buildPsqlSmokeSpawnConfig", () => {
     expect(config.args).toEqual([
       "--no-psqlrc",
       "--no-password",
-      "--dbname",
-      expect.any(String),
       "-v",
       "ON_ERROR_STOP=1",
       "-f",
@@ -40,6 +38,11 @@ describe("buildPsqlSmokeSpawnConfig", () => {
       PATH: "/safe/bin",
       HOME: "/safe/home",
       LANG: "en_US.UTF-8",
+      PGDATABASE: "db name",
+      PGHOST: "db.example",
+      PGPORT: "6543",
+      PGSSLMODE: "verify-full",
+      PGUSER: "user@tenant",
       PGAPPNAME: "signalframe_schema_smoke",
       PGPASSFILE: "/tmp/signalframe-smoke-test/.pgpass",
     });
@@ -47,12 +50,6 @@ describe("buildPsqlSmokeSpawnConfig", () => {
     expect(config.env).not.toHaveProperty("OPENAI_API_KEY");
     expect(config.env).not.toHaveProperty("PGPASSWORD");
 
-    const sanitized = new URL(config.args[3]!);
-    expect(sanitized.username).toBe("user%40tenant");
-    expect(sanitized.password).toBe("");
-    expect(sanitized.pathname).toBe("/db%20name");
-    expect(sanitized.searchParams.get("sslmode")).toBe("verify-full");
-    expect(sanitized.searchParams.get("application_name")).toBe("smoke test");
     expect(config.pgPassContents).toBe("*:*:*:*:p\\:a\\\\ss\n");
   });
 
@@ -68,16 +65,57 @@ describe("buildPsqlSmokeSpawnConfig", () => {
     );
 
     expect(JSON.stringify(config.args)).not.toContain(connectionString);
-    expect(config.args[3]).not.toContain("query%3Asecret");
-    const sanitized = new URL(config.args[3]!);
-    expect(sanitized.searchParams.get("host")).toBe(
-      "/var/run/postgresql",
-    );
-    expect(sanitized.searchParams.get("user")).toBe("smoke@operator");
-    expect(sanitized.searchParams.get("password")).toBeNull();
-    expect(sanitized.searchParams.get("sslmode")).toBe("disable");
+    expect(config.env).toMatchObject({
+      PGDATABASE: "signalframe_ci",
+      PGHOST: "/var/run/postgresql",
+      PGSSLMODE: "disable",
+      PGUSER: "smoke@operator",
+    });
     expect(config.pgPassContents).toBe("*:*:*:*:query\\:secret\n");
   });
+
+  it("fails closed on secret-bearing libpq parameters without reflecting their values", () => {
+    const secret = "customer-private-key-passphrase";
+    let thrown: unknown;
+    try {
+      buildPsqlSmokeSpawnConfig(
+        `postgresql://smoke@localhost/signalframe_ci?sslmode=verify-full&sslpassword=${secret}`,
+        "/tmp/signalframe-smoke-test/.pgpass",
+        { PATH: "/safe/bin" },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toMatch(/unsupported connection parameter/u);
+    expect((thrown as Error).message).not.toContain(secret);
+  });
+
+  it.each(["options", "service", "servicefile", "passfile"])(
+    "fails closed on the %s connection parameter without reflecting its value",
+    (parameter) => {
+      const secret = "customer-secret-value";
+      expect(() =>
+        buildPsqlSmokeSpawnConfig(
+          `postgresql://smoke@localhost/signalframe_ci?${parameter}=${secret}`,
+          "/tmp/signalframe-smoke-test/.pgpass",
+          { PATH: "/safe/bin" },
+        ),
+      ).toThrow("unsupported connection parameter for schema smoke");
+
+      try {
+        buildPsqlSmokeSpawnConfig(
+          `postgresql://smoke@localhost/signalframe_ci?${parameter}=${secret}`,
+          "/tmp/signalframe-smoke-test/.pgpass",
+          { PATH: "/safe/bin" },
+        );
+      } catch (error) {
+        expect((error as Error).message).not.toContain(secret);
+        expect((error as Error).message).not.toContain(parameter);
+      }
+    },
+  );
 });
 
 describe("runSmoke", () => {

@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash, randomBytes as nodeRandomBytes } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
-const migrationPath = path.resolve(
+const migrationsDirectory = path.resolve(
   scriptDirectory,
-  "../packages/db/migrations/0001_init.sql",
+  "../packages/db/migrations",
 );
 const schemaSmokePath = path.resolve(
-  scriptDirectory,
-  "../packages/db/migrations/schema-smoke.sql",
+  migrationsDirectory,
+  "schema-smoke.sql",
 );
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -26,6 +31,23 @@ const SAFE_SOURCE_DATABASE =
 const GENERATED_TARGET_NAME =
   /^signalframe_restore_drill_\d{8}t\d{6}_[a-f0-9]{12}$/;
 const DUMP_DIRECTORY_PREFIX = "signalframe-restore-drill-";
+const PGPASS_DIRECTORY_PREFIX = "signalframe-restore-pgpass-";
+const MAX_POSTGRES_OUTPUT_BYTES = 16 * 1024 * 1024;
+const POSTGRES_ENV_ALLOWLIST = [
+  "COMSPEC",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "WINDIR",
+];
+const trustedFailures = new WeakMap();
+const failureReportPaths = new WeakMap();
 
 export const APP_TABLES = [
   "workspaces",
@@ -108,16 +130,131 @@ function normalizedHostname(hostname) {
   return hostname.replace(/^\[|\]$/g, "").toLowerCase();
 }
 
+function containsAsciiControl(value) {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
+function safeText(value) {
+  if (value === null || value === undefined) return "";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint" ||
+    typeof value === "symbol"
+  ) {
+    return String(value);
+  }
+  return "[UNAVAILABLE]";
+}
+
 export function redactSensitiveText(value, secrets = []) {
-  let redacted = String(value ?? "");
+  let redacted = safeText(value);
   redacted = redacted.replace(
     /\bpostgres(?:ql)?:\/\/[^\s'"`]+/gi,
     "[REDACTED_DATABASE_URL]",
   );
-  for (const secret of secrets) {
-    if (secret) redacted = redacted.split(secret).join("[REDACTED]");
+  try {
+    for (const secret of secrets) {
+      if (typeof secret === "string" && secret) {
+        redacted = redacted.split(secret).join("[REDACTED]");
+      }
+    }
+  } catch {
+    // Redaction is best-effort for caller-provided secret collections.
   }
   return redacted;
+}
+
+function isObjectLike(value) {
+  return (
+    (typeof value === "object" && value !== null) ||
+    typeof value === "function"
+  );
+}
+
+function failureRecord(fields) {
+  return Object.freeze({ ...fields });
+}
+
+function formatFailure(failure) {
+  const fields = [`type=${failure.type}`, `code=${failure.code}`];
+  if (failure.tool) fields.push(`tool=${failure.tool}`);
+  if (failure.termination) {
+    fields.push(`termination=${failure.termination}`);
+  }
+  if (failure.exitCode !== undefined) {
+    fields.push(`exit_code=${failure.exitCode}`);
+  }
+  if (failure.signal) fields.push(`signal=${failure.signal}`);
+  return fields.join(" ");
+}
+
+function createFailureError(fields) {
+  const failure = failureRecord(fields);
+  const error = new Error(formatFailure(failure));
+  trustedFailures.set(error, failure);
+  return error;
+}
+
+function normalizeFailure(value, fallback) {
+  if (isObjectLike(value)) {
+    const trusted = trustedFailures.get(value);
+    if (trusted) return trusted;
+  }
+  return failureRecord(fallback);
+}
+
+function ensureFailureError(value, fallback) {
+  if (isObjectLike(value) && trustedFailures.has(value)) return value;
+  return createFailureError(fallback);
+}
+
+async function listMigrationPaths(readMigrationDirectory) {
+  let entries;
+  try {
+    entries = await readMigrationDirectory(migrationsDirectory, {
+      withFileTypes: true,
+    });
+  } catch {
+    throw createFailureError({
+      type: "restore_drill",
+      code: "RESTORE_MIGRATION_DISCOVERY_FAILED",
+    });
+  }
+
+  const migrationEntries = entries
+    .filter(
+      (entry) =>
+        entry.name.endsWith(".sql") && entry.name !== "schema-smoke.sql",
+    )
+    .sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+    );
+  if (migrationEntries.length === 0) {
+    throw createFailureError({
+      type: "restore_drill",
+      code: "RESTORE_MIGRATION_SET_EMPTY",
+    });
+  }
+
+  return migrationEntries.map((entry) => {
+    const migrationPath = path.resolve(migrationsDirectory, entry.name);
+    if (
+      !entry.isFile() ||
+      path.dirname(migrationPath) !== migrationsDirectory
+    ) {
+      throw createFailureError({
+        type: "restore_drill",
+        code: "RESTORE_MIGRATION_PATH_UNSAFE",
+      });
+    }
+    return migrationPath;
+  });
 }
 
 export function assertSafeGeneratedTargetName(name) {
@@ -163,7 +300,23 @@ export function parseSourceDatabaseUrl(value, variableName = "DATABASE_URL") {
     );
   }
 
-  const database = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+  let database;
+  let username;
+  let password;
+  try {
+    database = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+    username = parsed.username
+      ? decodeURIComponent(parsed.username)
+      : process.env["USER"] || "postgres";
+    password = decodeURIComponent(parsed.password || "");
+  } catch {
+    throw new Error(`${variableName} contains invalid URL encoding.`);
+  }
+  if (containsAsciiControl(username) || containsAsciiControl(password)) {
+    throw new Error(
+      `${variableName} credentials must not contain ASCII control characters.`,
+    );
+  }
   if (!database) {
     throw new Error(`${variableName} must include a source database name.`);
   }
@@ -184,10 +337,8 @@ export function parseSourceDatabaseUrl(value, variableName = "DATABASE_URL") {
   return {
     hostname,
     port: parsed.port || "5432",
-    username: decodeURIComponent(
-      parsed.username || process.env["USER"] || "postgres",
-    ),
-    password: decodeURIComponent(parsed.password || ""),
+    username,
+    password,
     database,
     displayName: `${hostname}:${parsed.port || "5432"}/${database}`,
   };
@@ -307,14 +458,20 @@ function connectionArgs(connection, database) {
   ];
 }
 
-function postgresEnvironment(connection) {
-  return {
-    ...process.env,
-    PGPASSWORD: connection.password,
-    PGAPPNAME: "signalframe_restore_drill",
-    PGCONNECT_TIMEOUT: "10",
-    PGSSLMODE: "disable",
-  };
+function postgresEnvironment(passfilePath) {
+  const environment = {};
+  for (const name of POSTGRES_ENV_ALLOWLIST) {
+    const value = process.env[name];
+    if (typeof value === "string" && value !== "") {
+      environment[name] = value;
+    }
+  }
+  environment.PATH ??= "/usr/local/bin:/usr/bin:/bin";
+  environment.PGAPPNAME = "signalframe_restore_drill";
+  environment.PGCONNECT_TIMEOUT = "10";
+  environment.PGPASSFILE = passfilePath;
+  environment.PGSSLMODE = "disable";
+  return environment;
 }
 
 function resolvePgTool(tool, pgBinDir) {
@@ -325,29 +482,153 @@ function resolvePgTool(tool, pgBinDir) {
   return path.join(pgBinDir, tool);
 }
 
-async function defaultRunTool({ tool, args, connection, pgBinDir }) {
-  try {
-    await execFileAsync(resolvePgTool(tool, pgBinDir), args, {
-      env: postgresEnvironment(connection),
-      maxBuffer: 16 * 1024 * 1024,
-    });
-  } catch (error) {
-    const stderr =
-      error && typeof error === "object" && "stderr" in error
-        ? String(error.stderr).trim()
-        : "";
-    const exitCode =
-      error && typeof error === "object" && "code" in error
-        ? ` (exit ${String(error.code)})`
-        : "";
-    throw new Error(`${tool} failed${exitCode}${stderr ? `: ${stderr}` : ""}`);
-  }
+function stableSignal(signal) {
+  return typeof signal === "string" && /^SIG[A-Z0-9]+$/.test(signal)
+    ? signal
+    : "UNKNOWN_SIGNAL";
 }
 
-async function defaultRunQuery({ connection, database, sqlText, pgBinDir }) {
-  const { stdout } = await execFileAsync(
-    resolvePgTool("psql", pgBinDir),
-    [
+function postgresProcessFailure(tool, code, termination, details = {}) {
+  return createFailureError({
+    type: "postgres_process",
+    code,
+    tool,
+    termination,
+    ...details,
+  });
+}
+
+function runPostgresProcess({
+  tool,
+  args,
+  environment,
+  pgBinDir,
+  output = "ignore",
+}) {
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn(resolvePgTool(tool, pgBinDir), args, {
+        env: environment,
+        stdio: ["ignore", output === "ignore" ? "ignore" : "pipe", "ignore"],
+      });
+    } catch {
+      reject(postgresProcessFailure(tool, "PG_TOOL_SPAWN_THROW", "spawn_throw"));
+      return;
+    }
+
+    const chunks = [];
+    const hash = output === "hash" ? createHash("sha256") : null;
+    let outputBytes = 0;
+    let outputLimitExceeded = false;
+    let settled = false;
+
+    const fail = (error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
+
+    try {
+      if (output !== "ignore") {
+        child.stdout.on("data", (value) => {
+          const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+          outputBytes += chunk.length;
+          if (outputBytes > MAX_POSTGRES_OUTPUT_BYTES) {
+            outputLimitExceeded = true;
+            try {
+              child.kill("SIGKILL");
+            } catch {
+              // The close/error event still settles the process state.
+            }
+            return;
+          }
+          if (hash) hash.update(chunk);
+          else chunks.push(chunk);
+        });
+        child.stdout.once("error", () => {
+          fail(
+            postgresProcessFailure(
+              tool,
+              "PG_TOOL_STDOUT_ERROR",
+              "stream_error",
+            ),
+          );
+        });
+      }
+
+      child.once("error", () => {
+        fail(postgresProcessFailure(tool, "PG_TOOL_SPAWN_ERROR", "spawn_error"));
+      });
+      child.once("close", (code, signal) => {
+        if (settled) return;
+        if (outputLimitExceeded) {
+          fail(
+            postgresProcessFailure(
+              tool,
+              "PG_TOOL_OUTPUT_LIMIT",
+              "output_limit",
+            ),
+          );
+          return;
+        }
+        if (signal !== null && signal !== undefined) {
+          fail(
+            postgresProcessFailure(tool, "PG_TOOL_SIGNAL", "signal", {
+              signal: stableSignal(signal),
+            }),
+          );
+          return;
+        }
+        if (code !== 0) {
+          if (Number.isSafeInteger(code)) {
+            fail(
+              postgresProcessFailure(tool, "PG_TOOL_EXIT_NONZERO", "exit", {
+                exitCode: code,
+              }),
+            );
+          } else {
+            fail(
+              postgresProcessFailure(
+                tool,
+                "PG_TOOL_CLOSE_UNKNOWN",
+                "unknown",
+              ),
+            );
+          }
+          return;
+        }
+
+        settled = true;
+        if (hash) resolve(hash.digest("hex"));
+        else if (output === "buffer") {
+          resolve(Buffer.concat(chunks).toString("utf8"));
+        } else resolve(undefined);
+      });
+    } catch {
+      fail(postgresProcessFailure(tool, "PG_TOOL_SPAWN_ERROR", "spawn_error"));
+    }
+  });
+}
+
+async function defaultRunTool({ tool, args, environment, pgBinDir }) {
+  await runPostgresProcess({ tool, args, environment, pgBinDir });
+}
+
+async function defaultRunQuery({
+  connection,
+  database,
+  sqlText,
+  environment,
+  pgBinDir,
+}) {
+  return await runPostgresProcess({
+    tool: "psql",
+    pgBinDir,
+    environment,
+    output: "buffer",
+    args: [
       ...connectionArgs(connection, database),
       "--no-psqlrc",
       "--tuples-only",
@@ -359,68 +640,44 @@ async function defaultRunQuery({ connection, database, sqlText, pgBinDir }) {
       "--command",
       sqlText,
     ],
-    {
-      env: postgresEnvironment(connection),
-      maxBuffer: 16 * 1024 * 1024,
-    },
-  );
-  return stdout;
-}
-
-async function defaultHashQuery({ connection, database, sqlText, pgBinDir }) {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(
-      resolvePgTool("psql", pgBinDir),
-      [
-        ...connectionArgs(connection, database),
-        "--no-psqlrc",
-        "--quiet",
-        "--set",
-        "ON_ERROR_STOP=1",
-        "--command",
-        sqlText,
-      ],
-      { env: postgresEnvironment(connection), stdio: ["ignore", "pipe", "pipe"] },
-    );
-    const hash = createHash("sha256");
-    const stderr = [];
-    let stderrSize = 0;
-    let settled = false;
-
-    child.stdout.on("data", (chunk) => hash.update(chunk));
-    child.stderr.on("data", (chunk) => {
-      if (stderrSize < 64 * 1024) {
-        stderr.push(chunk);
-        stderrSize += chunk.length;
-      }
-    });
-    child.once("error", (error) => {
-      if (!settled) {
-        settled = true;
-        reject(error);
-      }
-    });
-    child.once("close", (code) => {
-      if (settled) return;
-      settled = true;
-      if (code === 0) {
-        resolve(hash.digest("hex"));
-      } else {
-        reject(
-          new Error(
-            `psql checksum query exited ${code}: ${Buffer.concat(stderr).toString("utf8")}`,
-          ),
-        );
-      }
-    });
   });
 }
 
-async function defaultCollectInventory({ connection, database, pgBinDir }) {
+async function defaultHashQuery({
+  connection,
+  database,
+  sqlText,
+  environment,
+  pgBinDir,
+}) {
+  return await runPostgresProcess({
+    tool: "psql",
+    pgBinDir,
+    environment,
+    output: "hash",
+    args: [
+      ...connectionArgs(connection, database),
+      "--no-psqlrc",
+      "--quiet",
+      "--set",
+      "ON_ERROR_STOP=1",
+      "--command",
+      sqlText,
+    ],
+  });
+}
+
+async function defaultCollectInventory({
+  connection,
+  database,
+  environment,
+  pgBinDir,
+}) {
   const tableCounts = parseKeyValueRows(
     await defaultRunQuery({
       connection,
       database,
+      environment,
       pgBinDir,
       sqlText: buildTableCountSql(),
     }),
@@ -430,6 +687,7 @@ async function defaultCollectInventory({ connection, database, pgBinDir }) {
     tableChecksums[table] = await defaultHashQuery({
       connection,
       database,
+      environment,
       pgBinDir,
       sqlText: buildCanonicalCopySql(table),
     });
@@ -439,6 +697,7 @@ async function defaultCollectInventory({ connection, database, pgBinDir }) {
     integrityChecksums[probe.id] = await defaultHashQuery({
       connection,
       database,
+      environment,
       pgBinDir,
       sqlText: buildIntegrityCopySql(probe),
     });
@@ -446,11 +705,17 @@ async function defaultCollectInventory({ connection, database, pgBinDir }) {
   return validateInventory({ tableCounts, tableChecksums, integrityChecksums });
 }
 
-async function defaultDatabaseExists({ connection, targetDatabase, pgBinDir }) {
+async function defaultDatabaseExists({
+  connection,
+  targetDatabase,
+  environment,
+  pgBinDir,
+}) {
   assertSafeGeneratedTargetName(targetDatabase);
   const output = await defaultRunQuery({
     connection,
     database: "postgres",
+    environment,
     pgBinDir,
     sqlText: `select case when exists (select 1 from pg_database where datname = '${targetDatabase}') then 'yes' else 'no' end as key, '1' as value`,
   });
@@ -476,6 +741,42 @@ async function defaultRemoveDumpDirectory(directory) {
   await rm(assertSafeDumpDirectory(directory), { recursive: true, force: false });
 }
 
+function assertSafePgpassDirectory(directory) {
+  const resolved = path.resolve(directory);
+  if (
+    path.dirname(resolved) !== path.resolve(tmpdir()) ||
+    !path.basename(resolved).startsWith(PGPASS_DIRECTORY_PREFIX)
+  ) {
+    throw new Error(
+      "Refusing to clean an untrusted restore drill credential directory.",
+    );
+  }
+  return resolved;
+}
+
+async function defaultRemovePgpassDirectory(directory) {
+  await rm(assertSafePgpassDirectory(directory), {
+    recursive: true,
+    force: false,
+  });
+}
+
+function escapePgpassField(value) {
+  return value.replaceAll("\\", "\\\\").replaceAll(":", "\\:");
+}
+
+function postgresPassfileContents(connection) {
+  return `${[
+    connection.hostname,
+    connection.port,
+    "*",
+    connection.username,
+    connection.password,
+  ]
+    .map(escapePgpassField)
+    .join(":")}\n`;
+}
+
 function markdownReport(report) {
   const lines = [
     "# SignalFrame Restore Drill",
@@ -488,6 +789,7 @@ function markdownReport(report) {
     `- Target dropped by tool: ${report.cleanup.targetDatabaseDropped ? "yes" : "no"}`,
     `- Target confirmed absent: ${report.cleanup.targetDatabaseAbsentAfterCleanup ? "yes" : "no"}`,
     `- Temporary dump removed: ${report.cleanup.dumpDirectoryRemoved ? "yes" : "no"}`,
+    `- Temporary credential passfile removed: ${report.cleanup.credentialDirectoryRemoved ? "yes" : "no"}`,
     `- Backup explicitly retained: ${report.artifacts.backupRetained ? "yes" : "no"}`,
     "",
     "## Verification gates",
@@ -550,21 +852,16 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
   const now = overrides.now ?? (() => new Date());
   const randomBytes = overrides.randomBytes ?? nodeRandomBytes;
   const pgBinDir = options.pgBinDir;
+  resolvePgTool("psql", pgBinDir);
   const keepBackup = isExplicitKeepBackup(options.keepBackup);
-  const collectInventory =
-    overrides.collectInventory ??
-    (({ database }) =>
-      defaultCollectInventory({ connection: source, database, pgBinDir }));
-  const databaseExists =
-    overrides.databaseExists ??
-    (({ targetDatabase }) =>
-      defaultDatabaseExists({ connection: source, targetDatabase, pgBinDir }));
-  const runTool =
-    overrides.runTool ??
-    (({ tool, args }) =>
-      defaultRunTool({ tool, args, connection: source, pgBinDir }));
+  const collectInventoryOverride = overrides.collectInventory;
+  const databaseExistsOverride = overrides.databaseExists;
+  const runToolOverride = overrides.runTool;
+  const readMigrationDirectory = overrides.readMigrationDirectory ?? readdir;
   const removeDumpDirectory =
     overrides.removeDumpDirectory ?? defaultRemoveDumpDirectory;
+  const removePgpassDirectory =
+    overrides.removePgpassDirectory ?? defaultRemovePgpassDirectory;
 
   const started = now();
   const startedAt = started.toISOString();
@@ -574,36 +871,93 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
   const reportDir = path.resolve(
     options.reportDir ?? path.join(process.cwd(), ".data", "restore-drills"),
   );
-  const dumpDirectory = await mkdtemp(
-    path.join(tmpdir(), DUMP_DIRECTORY_PREFIX),
-  );
-  await chmod(dumpDirectory, 0o700);
-  const dumpPath = path.join(dumpDirectory, "backup.dump");
   const secrets = [source.password, sourceUrl].filter(Boolean);
 
+  let collectInventory;
+  let databaseExists;
+  let runTool;
+  let dumpDirectory = null;
+  let dumpPath = null;
+  let pgpassDirectory = null;
   let sourceInventory = null;
   let restoredInventory = null;
   let differences = [];
-  let operationError = null;
+  let operationFailure = null;
   let targetCreateAttempted = false;
   let targetCreated = false;
   let dumpCreated = false;
   let verificationSucceeded = false;
   let migrationReplay = "not_run";
   let schemaSmoke = "not_run";
-  const cleanupErrors = [];
+  const cleanupFailures = [];
   const cleanup = {
     targetDatabaseDropped: false,
     targetDatabaseAbsentAfterCleanup: false,
     dumpDirectoryRemoved: false,
+    credentialDirectoryRemoved: false,
   };
   const artifacts = {
     backupRetained: false,
   };
 
   try {
+    const migrationPaths = await listMigrationPaths(readMigrationDirectory);
+    dumpDirectory = await mkdtemp(path.join(tmpdir(), DUMP_DIRECTORY_PREFIX));
+    await chmod(dumpDirectory, 0o700);
+    dumpPath = path.join(dumpDirectory, "backup.dump");
+
+    pgpassDirectory = await mkdtemp(
+      path.join(tmpdir(), PGPASS_DIRECTORY_PREFIX),
+    );
+    await chmod(pgpassDirectory, 0o700);
+    const pgpassPath = path.join(pgpassDirectory, "pgpass");
+    await writeFile(pgpassPath, postgresPassfileContents(source), {
+      mode: 0o600,
+      flag: "wx",
+    });
+    await chmod(pgpassPath, 0o600);
+    const environment = postgresEnvironment(pgpassPath);
+
+    collectInventory =
+      collectInventoryOverride ??
+      (({ database }) =>
+        defaultCollectInventory({
+          connection: source,
+          database,
+          environment,
+          pgBinDir,
+        }));
+    databaseExists =
+      databaseExistsOverride ??
+      (({ targetDatabase: candidate }) =>
+        defaultDatabaseExists({
+          connection: source,
+          targetDatabase: candidate,
+          environment,
+          pgBinDir,
+        }));
+    const rawRunTool =
+      runToolOverride ??
+      (({ tool, args }) =>
+        defaultRunTool({ tool, args, environment, pgBinDir }));
+    runTool = async ({ tool, args }) => {
+      try {
+        await rawRunTool({ tool, args });
+      } catch (error) {
+        throw ensureFailureError(error, {
+          type: "postgres_process",
+          code: "PG_TOOL_UNKNOWN_FAILURE",
+          tool,
+          termination: "unknown",
+        });
+      }
+    };
+
     if (await databaseExists({ targetDatabase })) {
-      throw new Error("Generated restore target already exists; refusing to reuse it.");
+      throw createFailureError({
+        type: "restore_drill",
+        code: "RESTORE_TARGET_COLLISION",
+      });
     }
 
     sourceInventory = validateInventory(
@@ -654,17 +1008,19 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
       ],
     });
     migrationReplay = "failed";
-    await runTool({
-      tool: "psql",
-      args: [
-        ...connectionArgs(source, targetDatabase),
-        "--no-psqlrc",
-        "--set",
-        "ON_ERROR_STOP=1",
-        "--file",
-        migrationPath,
-      ],
-    });
+    for (const migrationPath of migrationPaths) {
+      await runTool({
+        tool: "psql",
+        args: [
+          ...connectionArgs(source, targetDatabase),
+          "--no-psqlrc",
+          "--set",
+          "ON_ERROR_STOP=1",
+          "--file",
+          migrationPath,
+        ],
+      });
+    }
     migrationReplay = "passed";
     schemaSmoke = "failed";
     await runTool({
@@ -685,14 +1041,17 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
     );
     differences = compareInventories(sourceInventory, restoredInventory);
     if (differences.length > 0) {
-      throw new Error("Restored database inventory does not match the source.");
+      throw createFailureError({
+        type: "restore_drill",
+        code: "RESTORE_INVENTORY_MISMATCH",
+      });
     }
     verificationSucceeded = true;
   } catch (error) {
-    operationError = redactSensitiveText(
-      error instanceof Error ? error.message : String(error),
-      secrets,
-    );
+    operationFailure = normalizeFailure(error, {
+      type: "restore_drill",
+      code: "RESTORE_DRILL_OPERATION_FAILED",
+    });
   } finally {
     if (targetCreateAttempted) {
       try {
@@ -700,8 +1059,11 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
         if (!existsBeforeCleanup) {
           cleanup.targetDatabaseAbsentAfterCleanup = true;
           if (targetCreated) {
-            cleanupErrors.push(
-              "Generated target was missing before controlled cleanup; cleanup provenance is unverified.",
+            cleanupFailures.push(
+              failureRecord({
+                type: "cleanup",
+                code: "RESTORE_CLEANUP_TARGET_MISSING",
+              }),
             );
           }
         } else if (existsBeforeCleanup) {
@@ -723,8 +1085,13 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
             });
             cleanup.targetDatabaseDropped = true;
           } catch (error) {
-            cleanupErrors.push(
-              `dropdb failed: ${redactSensitiveText(error instanceof Error ? error.message : String(error), secrets)}`,
+            cleanupFailures.push(
+              normalizeFailure(error, {
+                type: "postgres_process",
+                code: "PG_TOOL_UNKNOWN_FAILURE",
+                tool: "dropdb",
+                termination: "unknown",
+              }),
             );
           }
 
@@ -733,19 +1100,28 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
               targetDatabase,
             }));
             if (!cleanup.targetDatabaseAbsentAfterCleanup) {
-              cleanupErrors.push(
-                "Generated target still exists after the cleanup attempt.",
+              cleanupFailures.push(
+                failureRecord({
+                  type: "cleanup",
+                  code: "RESTORE_CLEANUP_TARGET_STILL_PRESENT",
+                }),
               );
             }
           } catch (error) {
-            cleanupErrors.push(
-              `Could not verify target absence after cleanup: ${redactSensitiveText(error instanceof Error ? error.message : String(error), secrets)}`,
+            cleanupFailures.push(
+              normalizeFailure(error, {
+                type: "cleanup",
+                code: "RESTORE_CLEANUP_VERIFY_FAILED",
+              }),
             );
           }
         }
       } catch (error) {
-        cleanupErrors.push(
-          `Could not inspect generated target before cleanup: ${redactSensitiveText(error instanceof Error ? error.message : String(error), secrets)}`,
+        cleanupFailures.push(
+          normalizeFailure(error, {
+            type: "cleanup",
+            code: "RESTORE_CLEANUP_INSPECT_FAILED",
+          }),
         );
       }
     }
@@ -753,15 +1129,36 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
     if (keepBackup && dumpCreated) {
       artifacts.backupRetained = true;
       artifacts.backupPath = dumpPath;
-    } else {
+    } else if (dumpDirectory) {
       try {
         await removeDumpDirectory(dumpDirectory);
         cleanup.dumpDirectoryRemoved = true;
       } catch (error) {
-        cleanupErrors.push(
-          `Could not remove temporary dump directory: ${redactSensitiveText(error instanceof Error ? error.message : String(error), secrets)}`,
+        cleanupFailures.push(
+          normalizeFailure(error, {
+            type: "cleanup",
+            code: "RESTORE_DUMP_CLEANUP_FAILED",
+          }),
         );
       }
+    } else {
+      cleanup.dumpDirectoryRemoved = true;
+    }
+
+    if (pgpassDirectory) {
+      try {
+        await removePgpassDirectory(pgpassDirectory);
+        cleanup.credentialDirectoryRemoved = true;
+      } catch (error) {
+        cleanupFailures.push(
+          normalizeFailure(error, {
+            type: "cleanup",
+            code: "RESTORE_CREDENTIAL_CLEANUP_FAILED",
+          }),
+        );
+      }
+    } else {
+      cleanup.credentialDirectoryRemoved = true;
     }
   }
 
@@ -777,15 +1174,16 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
   const cleanupComplete =
     cleanup.targetDatabaseAbsentAfterCleanup &&
     (cleanup.dumpDirectoryRemoved || artifacts.backupRetained) &&
-    cleanupErrors.length === 0;
+    cleanup.credentialDirectoryRemoved &&
+    cleanupFailures.length === 0;
+  const failures = [
+    ...(operationFailure ? [operationFailure] : []),
+    ...cleanupFailures,
+  ];
   const status =
-    verificationSucceeded && !operationError && cleanupComplete
+    verificationSucceeded && failures.length === 0 && cleanupComplete
       ? "passed"
       : "failed";
-  const failureParts = [
-    operationError,
-    ...cleanupErrors.map((error) => `cleanup: ${error}`),
-  ].filter(Boolean);
   const report = {
     schemaVersion: "signalframe.restore-drill.1",
     status,
@@ -814,7 +1212,10 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
     differences,
     cleanup,
     artifacts,
-    ...(failureParts.length > 0 ? { error: failureParts.join("; ") } : {}),
+    failures,
+    ...(failures.length > 0
+      ? { error: failures.map(formatFailure).join("; ") }
+      : {}),
   };
   const reportPaths = await writeReports(
     reportDir,
@@ -831,7 +1232,15 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
   };
 
   if (status === "failed") {
-    const error = new Error(report.error ?? "Restore drill failed.");
+    const primaryFailure =
+      failures[0] ??
+      failureRecord({
+        type: "restore_drill",
+        code: "RESTORE_DRILL_FAILED",
+      });
+    const error = new Error(report.error ?? formatFailure(primaryFailure));
+    trustedFailures.set(error, primaryFailure);
+    failureReportPaths.set(error, reportPaths);
     error.reportPaths = reportPaths;
     error.result = result;
     throw error;
@@ -865,10 +1274,17 @@ async function main() {
       console.log(`Private backup retained by explicit KEEP_BACKUP=1: ${result.artifacts.backupPath}`);
     }
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    if (error?.reportPaths) {
-      console.error(`JSON evidence: ${error.reportPaths.json}`);
-      console.error(`Markdown evidence: ${error.reportPaths.markdown}`);
+    const failure = normalizeFailure(error, {
+      type: "restore_drill",
+      code: "RESTORE_DRILL_FAILED",
+    });
+    console.error(formatFailure(failure));
+    const reportPaths = isObjectLike(error)
+      ? failureReportPaths.get(error)
+      : undefined;
+    if (reportPaths) {
+      console.error(`JSON evidence: ${reportPaths.json}`);
+      console.error(`Markdown evidence: ${reportPaths.markdown}`);
     }
     process.exitCode = 1;
   }

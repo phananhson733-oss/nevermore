@@ -19,10 +19,16 @@ export function buildContentSecurityPolicy(
     "'strict-dynamic'",
     ...(development ? ["'unsafe-eval'"] : []),
   ];
+  const styleSources = development
+    ? "'self' 'unsafe-inline'"
+    : `'self' 'nonce-${nonce}'`;
   return [
     "default-src 'self'",
     `script-src ${scriptSources.join(" ")}`,
-    `style-src 'self' 'nonce-${nonce}'${development ? " 'unsafe-inline'" : ""}`,
+    // Next DevTools injects nonce-less development styles. A nonce alongside
+    // unsafe-inline makes browsers ignore the latter, so the development
+    // directive omits the nonce; production remains nonce-gated.
+    `style-src ${styleSources}`,
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com",

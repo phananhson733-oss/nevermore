@@ -5,31 +5,204 @@ import { buildRequestContext, type RequestContext } from "./context";
 import { internalError, problem } from "./respond";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const LOGGABLE_METHODS = new Set([
+  "GET",
+  "HEAD",
+  "OPTIONS",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+]);
+
+const UNKNOWN_API_ROUTE = "/api/mvp/:unknown";
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Convert a concrete request path into one of the checked-in API route shapes.
+ *
+ * This intentionally does not log the original pathname, query, or URL. Dynamic
+ * path values are customer-controlled identifiers, and malformed identifiers
+ * can contain arbitrary text before path validation rejects them. An unknown
+ * shape therefore collapses to one fixed marker instead of reflecting input.
+ */
+export function apiRouteTemplate(rawUrl: string): string {
+  let segments: string[];
+  try {
+    const pathname = new URL(rawUrl).pathname;
+    const all = pathname.split("/").filter((segment) => segment.length > 0);
+    const apiIndex = all.findIndex(
+      (segment, index) => segment === "api" && all[index + 1] === "mvp",
+    );
+    if (apiIndex < 0) return UNKNOWN_API_ROUTE;
+    segments = all.slice(apiIndex + 2);
+  } catch {
+    return UNKNOWN_API_ROUTE;
+  }
+
+  const exact = segments.join("/");
+  if (
+    exact === "health/live" ||
+    exact === "health/ready" ||
+    exact === "health/version" ||
+    exact === "oauth/google/callback"
+  ) {
+    return `/api/mvp/${exact}`;
+  }
+  if (segments[0] !== "projects") return UNKNOWN_API_ROUTE;
+  if (segments.length === 1) return "/api/mvp/projects";
+
+  const base = "/api/mvp/projects/:projectId";
+  if (segments.length === 2) return base;
+
+  const resource = segments[2];
+  if (
+    segments.length === 3 &&
+    (resource === "context" ||
+      resource === "workspace" ||
+      resource === "collection-runs" ||
+      resource === "diagnostic-runs" ||
+      resource === "snapshots" ||
+      resource === "findings" ||
+      resource === "actions" ||
+      resource === "artifacts" ||
+      resource === "report" ||
+      resource === "exports" ||
+      resource === "sources")
+  ) {
+    return `${base}/${resource}`;
+  }
+  if (
+    segments.length === 4 &&
+    (resource === "findings" ||
+      resource === "actions" ||
+      resource === "artifacts" ||
+      resource === "exports" ||
+      resource === "runs")
+  ) {
+    const parameter =
+      resource === "findings"
+        ? ":findingId"
+        : resource === "actions"
+          ? ":actionId"
+          : resource === "artifacts"
+            ? ":artifactId"
+            : resource === "exports"
+              ? ":exportId"
+              : ":runId";
+    return `${base}/${resource}/${parameter}`;
+  }
+  if (resource === "sources" && segments.length === 4) {
+    return `${base}/sources/:sourceRef`;
+  }
+  if (
+    resource === "sources" &&
+    segments.length === 5 &&
+    (segments[4] === "connect" || segments[4] === "import")
+  ) {
+    return `${base}/sources/:sourceRef/${segments[4]}`;
+  }
+  if (
+    resource === "actions" &&
+    segments.length === 5 &&
+    segments[4] === "artifacts"
+  ) {
+    return `${base}/actions/:actionId/artifacts`;
+  }
+  return UNKNOWN_API_ROUTE;
+}
+
+function safeMethod(method: string): string {
+  const normalized = method.toUpperCase();
+  return LOGGABLE_METHODS.has(normalized) ? normalized : "OTHER";
+}
+
+function elapsedMilliseconds(startedAt: number): number {
+  const elapsed = performance.now() - startedAt;
+  if (!Number.isFinite(elapsed) || elapsed < 0) return 0;
+  return Math.round(elapsed * 100) / 100;
+}
+
+function parseConfiguredOrigin(value: string): URL {
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.pathname !== "/" ||
+      url.search !== "" ||
+      url.hash !== ""
+    ) {
+      throw new Error("invalid origin");
+    }
+    return url;
+  } catch {
+    // Configuration errors are internal and must never reflect the raw value,
+    // which could contain URL credentials.
+    throw new Error("Invalid APP_ORIGIN configuration.");
+  }
+}
+
+function configuredMutationOrigin(request: NextRequest): string {
+  const configured = process.env["APP_ORIGIN"];
+  if (configured) return parseConfiguredOrigin(configured).origin;
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error("Invalid APP_ORIGIN configuration.");
+  }
+  // Local/unit callers may omit the full server environment. Production never
+  // falls back to attacker-influenced request metadata.
+  return new URL(request.url).origin;
+}
+
+function rejectCrossOriginMutation(): never {
+  throw new ProblemError("BAD_REQUEST", "Cross-origin mutation is not allowed.");
+}
 
 /**
  * Reject browser cross-site mutations before they reach a service transaction.
- * Browser-controlled Fetch Metadata is checked even if Origin is absent; when
- * Origin is present it must exactly match the request origin. Requests from
- * non-browser workers/CLI clients may omit both headers and remain supported.
+ * Both the effective Host and any Origin header are anchored to the configured
+ * public APP_ORIGIN, rather than trusting an attacker-controlled Host to define
+ * what "same origin" means. Headerless CLI clients remain supported only on the
+ * configured effective host.
  */
-export function assertSameOriginMutation(request: NextRequest): void {
+export function assertSameOriginMutation(
+  request: NextRequest,
+  expectedOrigin = configuredMutationOrigin(request),
+): void {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return;
 
-  if (request.headers.get("sec-fetch-site") === "cross-site") {
-    throw new ProblemError("BAD_REQUEST", "Cross-origin mutation is not allowed.");
+  const expected = parseConfiguredOrigin(expectedOrigin);
+  const requestUrl = new URL(request.url);
+  if (requestUrl.origin !== expected.origin) rejectCrossOriginMutation();
+
+  const host = request.headers.get("host");
+  if (host !== null && host.toLowerCase() !== expected.host.toLowerCase()) {
+    rejectCrossOriginMutation();
+  }
+
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite !== null && fetchSite !== "same-origin") {
+    rejectCrossOriginMutation();
   }
 
   const origin = request.headers.get("origin");
   if (!origin) return;
 
-  let parsedOrigin: string;
+  let parsedOrigin: URL;
   try {
-    parsedOrigin = new URL(origin).origin;
+    parsedOrigin = new URL(origin);
   } catch {
-    throw new ProblemError("BAD_REQUEST", "Cross-origin mutation is not allowed.");
+    rejectCrossOriginMutation();
   }
-  if (parsedOrigin !== new URL(request.url).origin) {
-    throw new ProblemError("BAD_REQUEST", "Cross-origin mutation is not allowed.");
+  if (
+    origin !== parsedOrigin.origin ||
+    parsedOrigin.username !== "" ||
+    parsedOrigin.password !== "" ||
+    parsedOrigin.origin !== expected.origin
+  ) {
+    rejectCrossOriginMutation();
   }
 }
 
@@ -56,22 +229,105 @@ export type OperatorRouteHandler<P extends Record<string, string> = Record<strin
   routeCtx: RouteContext<P>,
 ) => Promise<NextResponse> | NextResponse;
 
-function handleError(error: unknown, ctx: RequestContext): NextResponse {
-  if (error instanceof ProblemError) {
-    return problem(error.code, error.message, ctx.requestId, {
-      ...(error.fieldErrors ? { errors: error.fieldErrors } : {}),
-      ...(error.extraHeaders ? { headers: error.extraHeaders } : {}),
-      ...(error.current !== undefined ? { current: error.current } : {}),
-    });
+type ErrorClassification =
+  | Readonly<{ kind: "problem"; response: NextResponse }>
+  | Readonly<{ kind: "unexpected"; type: "internal" | "unknown" }>;
+
+/**
+ * Build a product response or a fixed unexpected-error classification in one
+ * guarded operation. Both `instanceof` and property access can execute Proxy
+ * traps, so a hostile thrown value must fall back to the generic 500 path rather
+ * than escape this error boundary with a second exception.
+ */
+function classifyError(
+  error: unknown,
+  ctx: RequestContext,
+): ErrorClassification {
+  try {
+    if (error instanceof ProblemError) {
+      return {
+        kind: "problem",
+        response: problem(error.code, error.message, ctx.requestId, {
+          ...(error.fieldErrors ? { errors: error.fieldErrors } : {}),
+          ...(error.extraHeaders ? { headers: error.extraHeaders } : {}),
+          ...(error.current !== undefined ? { current: error.current } : {}),
+        }),
+      };
+    }
+    return {
+      kind: "unexpected",
+      type: error instanceof Error ? "internal" : "unknown",
+    };
+  } catch {
+    return { kind: "unexpected", type: "unknown" };
   }
-  ctx.logger.error("unhandled_error", {
-    code: "INTERNAL_ERROR",
-    type: error instanceof Error ? "internal" : "unknown",
-  });
+}
+
+function handleError(error: unknown, ctx: RequestContext): NextResponse {
+  const classified = classifyError(error, ctx);
+  if (classified.kind === "problem") {
+    return classified.response;
+  }
+  try {
+    ctx.logger.error("unhandled_error", {
+      code: "INTERNAL_ERROR",
+      type: classified.type,
+    });
+  } catch {
+    // Returning the fixed 500 takes precedence over a broken logging sink.
+  }
   return internalError(ctx.requestId);
 }
 
 const emptyRouteCtx: RouteContext = { params: Promise.resolve({}) };
+
+/**
+ * Next may pass an empty context object for a static App Router endpoint even
+ * though dynamic endpoints receive `params`. Route parameters are used here
+ * only to enrich trusted logging context, so a missing/hostile/rejected value
+ * must degrade to no project id rather than prevent the actual handler running.
+ */
+async function projectIdForLogging(routeCtx: unknown): Promise<string | null> {
+  try {
+    if (typeof routeCtx !== "object" || routeCtx === null) return null;
+    const rawParams = (routeCtx as { readonly params?: unknown }).params;
+    const params = await rawParams;
+    if (typeof params !== "object" || params === null) return null;
+    const projectId = (params as Record<string, unknown>)["projectId"];
+    return typeof projectId === "string" && UUID.test(projectId)
+      ? projectId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function executeRoute(
+  request: NextRequest,
+  context: () => RequestContext,
+  operation: () => Promise<NextResponse> | NextResponse,
+): Promise<NextResponse> {
+  const startedAt = performance.now();
+  let response: NextResponse;
+  try {
+    response = await operation();
+  } catch (error) {
+    response = handleError(error, context());
+  }
+
+  try {
+    context().logger.info("http_request_completed", {
+      method: safeMethod(request.method),
+      route: apiRouteTemplate(request.url),
+      statusCode: response.status,
+      durationMs: elapsedMilliseconds(startedAt),
+    });
+  } catch {
+    // Metrics must never become the request failure path. The logger itself is
+    // fail-closed, but this guard also protects an injected/test logger.
+  }
+  return response;
+}
 
 /** Wrap a route: build context, map ProblemError → problem+json, catch unknowns. */
 export function route<P extends Record<string, string> = Record<string, string>>(
@@ -79,11 +335,9 @@ export function route<P extends Record<string, string> = Record<string, string>>
 ) {
   return async (request: NextRequest, routeCtx?: RouteContext<P>): Promise<NextResponse> => {
     const ctx = buildRequestContext(request.headers);
-    try {
-      return await handler(request, ctx, routeCtx ?? (emptyRouteCtx as RouteContext<P>));
-    } catch (error) {
-      return handleError(error, ctx);
-    }
+    return executeRoute(request, () => ctx, () =>
+      handler(request, ctx, routeCtx ?? (emptyRouteCtx as RouteContext<P>)),
+    );
   };
 }
 
@@ -93,19 +347,30 @@ export function operatorRoute<P extends Record<string, string> = Record<string, 
 ) {
   return async (request: NextRequest, routeCtx?: RouteContext<P>): Promise<NextResponse> => {
     const ctx = buildRequestContext(request.headers);
-    try {
+    let activeCtx: RequestContext = ctx;
+    return executeRoute(request, () => activeCtx, async () => {
       const operator = await getOperatorContext();
       if (!operator) {
         return problem("AUTH_REQUIRED", "Authentication required.", ctx.requestId);
       }
       assertSameOriginMutation(request);
-      return await handler(
-        request,
-        { ...ctx, operator },
-        routeCtx ?? (emptyRouteCtx as RouteContext<P>),
-      );
-    } catch (error) {
-      return handleError(error, ctx);
-    }
+      const activeRouteCtx =
+        routeCtx ?? (emptyRouteCtx as RouteContext<P>);
+      let operatorCtx: RequestContext & { operator: OperatorContext } = {
+        ...ctx,
+        operator,
+        logger: ctx.logger.child({ workspaceId: operator.workspaceId }),
+      };
+      activeCtx = operatorCtx;
+      const projectId = await projectIdForLogging(activeRouteCtx);
+      if (projectId !== null) {
+        operatorCtx = {
+          ...operatorCtx,
+          logger: operatorCtx.logger.child({ projectId }),
+        };
+      }
+      activeCtx = operatorCtx;
+      return await handler(request, operatorCtx, activeRouteCtx);
+    });
   };
 }

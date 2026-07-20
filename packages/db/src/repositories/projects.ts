@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import {
   asyncRuns,
   clientProjects,
@@ -223,6 +223,7 @@ export class ProjectsRepository extends Repository {
         and(
           workspacePredicate(clientProjects, scope),
           eq(clientProjects.id, projectId),
+          isNull(clientProjects.archived_at),
         ),
       )
       .returning({ id: clientProjects.id });
@@ -245,6 +246,7 @@ export class ProjectsRepository extends Repository {
         and(
           workspacePredicate(clientProjects, scope),
           eq(clientProjects.id, projectId),
+          isNull(clientProjects.archived_at),
           sql`exists (
             select 1
               from ${icpProfiles}
@@ -391,6 +393,7 @@ export class ProjectsRepository extends Repository {
         from latest
        where ${clientProjects.workspace_id} = ${scope.workspaceId}
          and ${clientProjects.id} = ${projectId}
+         and ${clientProjects.archived_at} is null
     `);
 
     return (await this.findById(scope, projectId))?.stage ?? null;

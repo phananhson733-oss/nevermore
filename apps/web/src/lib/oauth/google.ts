@@ -385,7 +385,11 @@ export class HttpGoogleOAuthClient implements GoogleOAuthClient {
       ? AbortSignal.any([requestSignal, operationSignal])
       : requestSignal;
     try {
-      const response = await this.fetchImpl(input, { ...init, signal });
+      const response = await this.fetchImpl(input, {
+        ...init,
+        redirect: init.redirect ?? "error",
+        signal,
+      });
       if (!response.ok) {
         cancelResponseBody(response);
         throw oauthError(response.status, context);

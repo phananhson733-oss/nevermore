@@ -1,6 +1,10 @@
-import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, notInArray, or, sql } from "drizzle-orm";
 import { findings } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
+import {
+  decodeTimestampUuidCursor,
+  encodeTimestampUuidCursor,
+} from "./cursor.ts";
 
 /**
  * `findings` is the projection of the cross-run finding identity (spec §8.6).
@@ -49,21 +53,15 @@ export interface FindingListPage {
 }
 
 function encodeCursor(row: { updated_at: string; id: string }): string {
-  return Buffer.from(`${row.updated_at} ${row.id}`, "utf8").toString(
-    "base64url",
-  );
+  return encodeTimestampUuidCursor(row.updated_at, row.id);
 }
 function decodeCursor(
   cursor: string,
 ): { updatedAt: string; id: string } | null {
-  try {
-    const raw = Buffer.from(cursor, "base64url").toString("utf8");
-    const idx = raw.indexOf(" ");
-    if (idx < 0) return null;
-    return { updatedAt: raw.slice(0, idx), id: raw.slice(idx + 1) };
-  } catch {
-    return null;
-  }
+  const decoded = decodeTimestampUuidCursor(cursor);
+  return decoded
+    ? { updatedAt: decoded.timestamp, id: decoded.id }
+    : null;
 }
 
 export class FindingsRepository extends Repository {
@@ -255,9 +253,17 @@ export class FindingsRepository extends Repository {
   /** Keyset page of a project's findings, newest first (spec §11.3). */
   async list(
     scope: ProjectScope,
-    opts: { limit: number; cursor: string | null; activeOnly: boolean },
+    opts: {
+      limit: number;
+      cursor: string | null;
+      activeOnly: boolean;
+      domain?: string | null;
+      reviewState?: string | null;
+      excludedReviewStates?: readonly string[];
+    },
   ): Promise<FindingListPage> {
     const keyset = opts.cursor ? decodeCursor(opts.cursor) : null;
+    if (opts.cursor && !keyset) return { rows: [], nextCursor: null };
     const after =
       keyset != null
         ? or(
@@ -271,11 +277,29 @@ export class FindingsRepository extends Repository {
     const activeFilter = opts.activeOnly
       ? eq(findings.active, true)
       : undefined;
+    const domainFilter = opts.domain
+      ? eq(findings.domain, opts.domain)
+      : undefined;
+    const reviewStateFilter = opts.reviewState
+      ? eq(findings.review_state, opts.reviewState)
+      : undefined;
+    const excludedReviewStatesFilter = opts.excludedReviewStates?.length
+      ? notInArray(findings.review_state, [...opts.excludedReviewStates])
+      : undefined;
 
     const rows = (await this.exec
       .select()
       .from(findings)
-      .where(and(projectPredicate(findings, scope), activeFilter, after))
+      .where(
+        and(
+          projectPredicate(findings, scope),
+          activeFilter,
+          domainFilter,
+          reviewStateFilter,
+          excludedReviewStatesFilter,
+          after,
+        ),
+      )
       .orderBy(desc(findings.updated_at), desc(findings.id))
       .limit(opts.limit + 1)) as FindingRow[];
 

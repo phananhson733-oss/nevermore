@@ -5,6 +5,7 @@ import {
   ExportBundlesRepository,
   IdempotencyRepository,
   ProjectsRepository,
+  StorageObjectReferencesRepository,
   type AsyncRunRow,
   type ExportBundleRow,
   type IdempotencyRow,
@@ -132,9 +133,16 @@ beforeEach(() => {
   );
   vi.spyOn(IdempotencyRepository.prototype, "complete").mockResolvedValue();
   vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue(project);
+  vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue(
+    project,
+  );
   vi.spyOn(AsyncRunsRepository.prototype, "findActive").mockResolvedValue(null);
   vi.spyOn(AsyncRunsRepository.prototype, "insertQueued").mockResolvedValue(run);
   vi.spyOn(ExportBundlesRepository.prototype, "insert").mockResolvedValue(bundle);
+  vi.spyOn(
+    StorageObjectReferencesRepository.prototype,
+    "databaseNow",
+  ).mockResolvedValue(new Date("2026-07-19T00:00:00.000Z"));
 });
 
 afterEach(() => {
@@ -347,6 +355,29 @@ describe("getProjectExport", () => {
     expect(mocks.signDownloadUrl).not.toHaveBeenCalled();
   });
 
+  it("fails closed when a completed export is missing its completion anchor", async () => {
+    vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValue({
+      ...bundle,
+      object_key: "exports/project-1/run-1/archive.zip",
+    });
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue({
+      ...run,
+      status: "completed",
+      completed_at: null,
+    });
+
+    await expect(
+      getProjectExport(scope, projectId, bundle.id),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      message: "Export metadata is temporarily unavailable.",
+    });
+    expect(
+      StorageObjectReferencesRepository.prototype.databaseNow,
+    ).not.toHaveBeenCalled();
+    expect(mocks.signDownloadUrl).not.toHaveBeenCalled();
+  });
+
   it("signs completed bundles and filters malformed item counts", async () => {
     vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValue({
       ...bundle,
@@ -401,15 +432,92 @@ describe("getProjectExport", () => {
     );
   });
 
+  it("re-signs a completed object before its 30-day retention boundary", async () => {
+    const ageDays = 29;
+    const completedAt = new Date(bundle.created_at);
+    const now = new Date(
+      completedAt.getTime() + ageDays * 24 * 60 * 60 * 1000,
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    vi.mocked(
+      StorageObjectReferencesRepository.prototype.databaseNow,
+    ).mockResolvedValue(now);
+    vi.spyOn(
+      ExportBundlesRepository.prototype,
+      "findById",
+    ).mockResolvedValue({
+      ...bundle,
+      object_key: "export/project-1/run-1/archive.zip",
+    });
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue({
+      ...run,
+      status: "completed",
+      completed_at: completedAt.toISOString(),
+    });
+    mocks.signDownloadUrl.mockResolvedValueOnce(
+      `https://signed.example/export?ageDays=${ageDays}`,
+    );
+
+    const result = await getProjectExport(scope, projectId, bundle.id);
+
+    expect(result.downloadUrl).toContain(`ageDays=${ageDays}`);
+    expect(result.downloadExpiresAt).toBe(
+      new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
+    );
+    expect(mocks.signDownloadUrl).toHaveBeenCalledWith(
+      "export/project-1/run-1/archive.zip",
+      { expiresInSeconds: 900 },
+    );
+  });
+
+  it("starts the 30-day visibility window when a delayed worker commits the upload", async () => {
+    const placeholderCreatedAt = new Date(bundle.created_at);
+    const completedAt = new Date(
+      placeholderCreatedAt.getTime() + 2 * 24 * 60 * 60 * 1000,
+    );
+    const databaseNow = new Date(
+      completedAt.getTime() + 29 * 24 * 60 * 60 * 1000,
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(databaseNow);
+    vi.mocked(
+      StorageObjectReferencesRepository.prototype.databaseNow,
+    ).mockResolvedValue(databaseNow);
+    vi.spyOn(
+      ExportBundlesRepository.prototype,
+      "findById",
+    ).mockResolvedValue({
+      ...bundle,
+      object_key: "export/project-1/run-1/archive.zip",
+    });
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue({
+      ...run,
+      status: "completed",
+      completed_at: completedAt.toISOString(),
+    });
+
+    const result = await getProjectExport(scope, projectId, bundle.id);
+
+    expect(result.downloadUrl).toBe("https://signed.example/export");
+    expect(mocks.signDownloadUrl).toHaveBeenCalledWith(
+      "export/project-1/run-1/archive.zip",
+      { expiresInSeconds: 900 },
+    );
+  });
+
   it.each([30, 31])(
-    "re-signs a retained completed object %i days later with a fresh 15-minute URL",
+    "rejects an expired completed object at age %i days with stable regeneration metadata",
     async (ageDays) => {
-      const generatedAt = new Date(bundle.created_at);
-      const now = new Date(
-        generatedAt.getTime() + ageDays * 24 * 60 * 60 * 1000,
+      const completedAt = new Date(
+        new Date(bundle.created_at).getTime() + 24 * 60 * 60 * 1000,
       );
-      vi.useFakeTimers();
-      vi.setSystemTime(now);
+      const databaseNow = new Date(
+        completedAt.getTime() + ageDays * 24 * 60 * 60 * 1000,
+      );
+      vi.mocked(
+        StorageObjectReferencesRepository.prototype.databaseNow,
+      ).mockResolvedValue(databaseNow);
       vi.spyOn(
         ExportBundlesRepository.prototype,
         "findById",
@@ -420,22 +528,21 @@ describe("getProjectExport", () => {
       vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue({
         ...run,
         status: "completed",
-        completed_at: bundle.created_at,
+        completed_at: completedAt.toISOString(),
       });
-      mocks.signDownloadUrl.mockResolvedValueOnce(
-        `https://signed.example/export?ageDays=${ageDays}`,
-      );
 
-      const result = await getProjectExport(scope, projectId, bundle.id);
+      const response = getProjectExport(scope, projectId, bundle.id);
 
-      expect(result.downloadUrl).toContain(`ageDays=${ageDays}`);
-      expect(result.downloadExpiresAt).toBe(
-        new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
-      );
-      expect(mocks.signDownloadUrl).toHaveBeenCalledWith(
-        "export/project-1/run-1/archive.zip",
-        { expiresInSeconds: 900 },
-      );
+      await expect(response).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Export has expired. Generate a new export.",
+        current: {
+          reason: "retention_expired",
+          regeneratable: true,
+          retentionDays: 30,
+        },
+      });
+      expect(mocks.signDownloadUrl).not.toHaveBeenCalled();
     },
   );
 

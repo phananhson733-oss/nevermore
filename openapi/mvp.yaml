@@ -57,6 +57,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ProjectListResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ValidationError' }
     post:
       tags: [Projects]
       summary: Create a client project, primary site, and default crawl source
@@ -135,6 +136,9 @@ paths:
                 - $ref: '#/components/schemas/CompleteContextRequest'
               discriminator:
                 propertyName: mode
+                mapping:
+                  draft: '#/components/schemas/DraftContextRequest'
+                  complete: '#/components/schemas/CompleteContextRequest'
       responses:
         '200':
           description: Current profile; semantic no-op may return the existing version.
@@ -214,6 +218,10 @@ paths:
                 - $ref: '#/components/schemas/SelectPropertyRequest'
               discriminator:
                 propertyName: phase
+                mapping:
+                  authorize: '#/components/schemas/AuthorizeSourceRequest'
+                  property_selection: '#/components/schemas/GetPropertySelectionRequest'
+                  select_property: '#/components/schemas/SelectPropertyRequest'
       responses:
         '200':
           description: Authorization URL or connected source; response is discriminated by phase.
@@ -360,6 +368,7 @@ paths:
               schema: { $ref: '#/components/schemas/SnapshotListResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /projects/{projectId}/runs/{runId}:
     get:
@@ -433,6 +442,7 @@ paths:
               schema: { $ref: '#/components/schemas/FindingListResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /projects/{projectId}/findings/{findingId}:
     patch:
@@ -487,6 +497,7 @@ paths:
               schema: { $ref: '#/components/schemas/ActionListResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /projects/{projectId}/actions/{actionId}:
     patch:
@@ -541,6 +552,7 @@ paths:
               schema: { $ref: '#/components/schemas/ArtifactListResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /projects/{projectId}/actions/{actionId}/artifacts:
     post:
@@ -586,6 +598,7 @@ paths:
               schema: { $ref: '#/components/schemas/ArtifactDetailResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
     patch:
       tags: [Artifacts]
       summary: Create an immutable manual revision or change validated status
@@ -859,8 +872,10 @@ components:
     LocaleCode:
       type: string
       minLength: 2
-      maxLength: 35
-      pattern: '^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$'
+      maxLength: 255
+      pattern: '^(?!(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4}|[A-Za-z]{5,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*-((?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*-\1(?:-|$))(?!(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4}|[A-Za-z]{5,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*-([0-9A-WY-Za-wy-z])(?:-[A-Za-z0-9]{2,8})+(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*-\2(?:-|$))(?:(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4}|[A-Za-z]{5,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*(?:-[Xx](?:-[A-Za-z0-9]{1,8})+)?|[Xx](?:-[A-Za-z0-9]{1,8})+|[Ee][Nn]-[Gg][Bb]-[Oo][Ee][Dd]|[Ii]-(?:[Aa][Mm][Ii]|[Bb][Nn][Nn]|[Dd][Ee][Ff][Aa][Uu][Ll][Tt]|[Ee][Nn][Oo][Cc][Hh][Ii][Aa][Nn]|[Hh][Aa][Kk]|[Kk][Ll][Ii][Nn][Gg][Oo][Nn]|[Ll][Uu][Xx]|[Mm][Ii][Nn][Gg][Oo]|[Nn][Aa][Vv][Aa][Jj][Oo]|[Pp][Ww][Nn]|[Tt][Aa][Oo]|[Tt][Aa][Yy]|[Tt][Ss][Uu])|[Ss][Gg][Nn]-(?:[Bb][Ee]-(?:[Ff][Rr]|[Nn][Ll])|[Cc][Hh]-[Dd][Ee]))$'
+      description: Structurally valid RFC 5646 / BCP-47 language tag. The portable schema enforces subtag order, private use, irregular grandfathered tags, and same-case duplicate rejection; runtime and database validation additionally reject mixed-case duplicate variants or extension singletons. This API documents a 255-character protocol ceiling.
+      x-signalframe-runtime-refinement: isBcp47LanguageTag
     MarketCode:
       type: string
       pattern: '^[A-Z]{2}$'
@@ -951,7 +966,11 @@ components:
       properties:
         clientName: { type: string, minLength: 1, maxLength: 160 }
         projectName: { type: string, minLength: 1, maxLength: 160 }
-        siteUrl: { type: string, format: uri, maxLength: 2048 }
+        siteUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Origin-only http(s) URL; paths, query, fragment, and userinfo are rejected. Production probes HTTPS before upgrading submitted HTTP.
         marketCodes:
           type: array
           minItems: 1
@@ -1351,6 +1370,10 @@ components:
             - $ref: '#/components/schemas/ConnectedPhase'
           discriminator:
             propertyName: phase
+            mapping:
+              authorization: '#/components/schemas/AuthorizationPhase'
+              property_selection: '#/components/schemas/PropertySelectionPhase'
+              connected: '#/components/schemas/ConnectedPhase'
 
     ImportPreviewRequest:
       type: object
@@ -1714,17 +1737,23 @@ components:
       required: [artifactType, generationMode, outputLocale]
       properties:
         artifactType: { $ref: '#/components/schemas/ArtifactType' }
-        generationMode: { type: string, enum: [template, structured_llm] }
-        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        generationMode:
+          type: string
+          enum: [template, structured_llm]
+          description: Template generation supports only en and zh-CN; use structured_llm for every other valid BCP-47 output locale.
+        outputLocale:
+          $ref: '#/components/schemas/LocaleCode'
+          description: Template generation supports only en and zh-CN; use structured_llm for every other valid BCP-47 output locale.
         operatorInstructions: { type: [string, 'null'], maxLength: 4000 }
 
     ArtifactRevision:
       type: object
       additionalProperties: false
-      required: [id, revision, contentFormat, content, contentHash, validationErrors, note, createdAt]
+      required: [id, revision, outputLocale, contentFormat, content, contentHash, validationErrors, note, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         revision: { type: integer, minimum: 1 }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
         contentFormat: { $ref: '#/components/schemas/ContentFormat' }
         content:
           oneOf:
@@ -1772,23 +1801,28 @@ components:
       properties:
         data: { $ref: '#/components/schemas/Artifact' }
     UpdateArtifactRequest:
-      type: object
-      additionalProperties: false
-      required: [baseRevision]
-      properties:
-        baseRevision: { type: integer, minimum: 0 }
-        contentFormat: { $ref: '#/components/schemas/ContentFormat' }
-        content:
-          oneOf:
-            - type: string
-            - type: object
-              additionalProperties: true
-            - type: 'null'
-        status: { type: string, enum: [draft, ready, archived] }
-        editorNote: { type: [string, 'null'], maxLength: 4000 }
-      anyOf:
-        - required: [contentFormat, content]
-        - required: [status]
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [baseRevision, contentFormat, content]
+          properties:
+            baseRevision: { type: integer, minimum: 0 }
+            contentFormat: { $ref: '#/components/schemas/ContentFormat' }
+            content:
+              description: String content and the compact serialized JSON object are limited to 40000 characters.
+              x-signalframe-max-serialized-chars: 40000
+              oneOf:
+                - type: string
+                  maxLength: 40000
+                - type: object
+                  additionalProperties: true
+            editorNote: { type: [string, 'null'], maxLength: 4000 }
+        - type: object
+          additionalProperties: false
+          required: [baseRevision, status]
+          properties:
+            baseRevision: { type: integer, minimum: 0 }
+            status: { type: string, enum: [draft, ready, archived] }
 
     CreateExportRequest:
       type: object
@@ -1858,7 +1892,7 @@ components:
     OverviewView:
       type: object
       additionalProperties: false
-      required: [view, project, coverage, activeRuns, topActions]
+      required: [view, project, coverage, activeRuns, topActions, latestSnapshot, topActionEvidence, deliveryFocus]
       properties:
         view: { const: overview }
         project: { $ref: '#/components/schemas/Project' }
@@ -1868,6 +1902,27 @@ components:
           maxItems: 20
           items: { $ref: '#/components/schemas/AsyncRun' }
         topActions: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/Action' } }
+        latestSnapshot:
+          oneOf:
+            - $ref: '#/components/schemas/DataSnapshot'
+            - type: 'null'
+        topActionEvidence:
+          type: array
+          items: { $ref: '#/components/schemas/Evidence' }
+        deliveryFocus:
+          oneOf:
+            - $ref: '#/components/schemas/OverviewDeliveryFocus'
+            - type: 'null'
+    OverviewDeliveryFocus:
+      type: object
+      additionalProperties: false
+      required: [artifactId, actionId, artifactType, status, updatedAt]
+      properties:
+        artifactId: { $ref: '#/components/schemas/Uuid' }
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        artifactType: { $ref: '#/components/schemas/ArtifactType' }
+        status: { $ref: '#/components/schemas/ArtifactStatus' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
     PlanView:
       type: object
       additionalProperties: false
@@ -1902,3 +1957,8 @@ components:
             - $ref: '#/components/schemas/ReportView'
           discriminator:
             propertyName: view
+            mapping:
+              overview: '#/components/schemas/OverviewView'
+              plan: '#/components/schemas/PlanView'
+              studio: '#/components/schemas/StudioView'
+              report: '#/components/schemas/ReportView'

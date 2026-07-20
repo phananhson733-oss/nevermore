@@ -42,12 +42,14 @@ import {
 import {
   LocalFsBlobStore,
   METRIC_CRAWL_PAGE,
+  METRIC_CRAWL_ROBOTS,
   METRIC_CSV_KEYWORD_GAP,
   METRIC_GA4_LANDING,
   METRIC_GSC_PAGE,
   subjectUrlOf,
   type CrawlLinkProjection,
   type CrawlPageProjection,
+  type CrawlRobotsProjection,
   type CsvKeywordProjection,
   type Ga4LandingProjection,
   type GscPageProjection,
@@ -205,6 +207,7 @@ export function buildCtx(handle: DbHandle): WorkerContext {
     appOrigin: "http://localhost:3000",
     googleOAuth: { clientId: "test-client", clientSecret: "test-secret" },
     openai: { apiKey: "sk-test", model: "gpt-4o-mini" },
+    findingSummariesEnabled: false,
     logger: testLogger,
   };
 }
@@ -286,6 +289,7 @@ function goldenObservations(
   const product = `${origin}/product`;
   const gone = `${origin}/gone`;
   return [
+    crawlRobotsObs(origin, capturedAt),
     crawlObs(
       su(home),
       mkPage({
@@ -320,6 +324,31 @@ function goldenObservations(
       capturedAt,
     ),
   ];
+}
+
+function crawlRobotsObs(
+  subjectRef: string,
+  capturedAt: string,
+): ObservationInsert {
+  return {
+    metricKey: METRIC_CRAWL_ROBOTS,
+    subjectType: "site",
+    subjectRef,
+    observedAt: capturedAt,
+    availability: "available",
+    valueNumeric: null,
+    valueText: null,
+    valueJson: {
+      fetched: true,
+      groups: [{ userAgent: "*", disallow: [], allow: [] }],
+      sitemaps: [],
+    } satisfies CrawlRobotsProjection,
+    unit: null,
+    origin: "direct_public",
+    grade: "B",
+    support: "supports",
+    limitation: "deterministic public robots.txt fixture",
+  };
 }
 
 // --- persistence seeding ----------------------------------------------------

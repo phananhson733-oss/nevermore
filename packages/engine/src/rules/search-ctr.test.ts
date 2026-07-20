@@ -4,6 +4,7 @@ import type { GscPageProjection, GscTopQuery } from "@sf/sources";
 import { DiagnosticContext } from "../context.ts";
 import type { CoverageInput, ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
+import { runPipeline } from "../pipeline.ts";
 import { searchCtrRule } from "./search-ctr.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00Z";
@@ -140,5 +141,45 @@ describe("searchCtrRule (SEARCH-CTR-004)", () => {
     expect(result.status).toBe("skipped");
     if (result.status !== "skipped") throw new Error("expected skipped");
     expect(result.reason).toBe("missing_dataset");
+  });
+
+  it("marks partial GSC evidence partial and derives medium confidence", async () => {
+    const page = gscPage({ clicks: 20, impressions: 2000, position: 3 });
+    const ctx = buildCtx({
+      observations: [observation(PAGE_URL, page)],
+      gscAvailability: "partial",
+      priorityUrls: [PAGE_URL],
+    });
+
+    const result = searchCtrRule.evaluate(ctx);
+    expect(result.status).toBe("candidate");
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.evidence[0]).toMatchObject({
+      availability: "partial",
+    });
+    expect(result.candidates[0]?.evidence[0]?.limitation).toContain(
+      "snapshot is partial",
+    );
+
+    const pipeline = await runPipeline({
+      projectId: "00000000-0000-4000-8000-000000000001",
+      ctx,
+      rules: [searchCtrRule],
+      deliveryLocale: "en",
+    });
+    expect(pipeline.findings[0]?.confidence).toBe("medium");
+  });
+
+  it("does not report a clean pass from a partial GSC snapshot", () => {
+    const page = gscPage({ clicks: 400, impressions: 2000, position: 3 });
+    const ctx = buildCtx({
+      observations: [observation(PAGE_URL, page)],
+      gscAvailability: "partial",
+    });
+
+    expect(searchCtrRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "partial_gsc_snapshot",
+    });
   });
 });

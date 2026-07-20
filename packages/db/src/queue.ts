@@ -12,6 +12,9 @@ import type { DbTx } from "./client.ts";
 
 export const PGBOSS_SCHEMA = "pgboss";
 
+/** Frozen spec §13.1 queue window. Provider work must finish before this cap. */
+export const COLLECT_CRAWL_JOB_EXPIRY_SECONDS = 15 * 60;
+
 export type QueueName =
   | "collect.crawl"
   | "collect.gsc"
@@ -35,7 +38,7 @@ interface QueueConfig {
 /** The seven fixed queues and their timeout/retry contract (spec §13.1). */
 export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
   "collect.crawl": {
-    expireInSeconds: 900,
+    expireInSeconds: COLLECT_CRAWL_JOB_EXPIRY_SECONDS,
     retryLimit: 2,
     retryBackoff: true,
     heartbeatSeconds: 60,

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { APIRequestContext } from "@playwright/test";
 
 /**
@@ -27,9 +27,24 @@ export interface SeededProject {
 }
 
 /**
+ * Public IP literals keep the SSRF guard exercised without depending on live DNS.
+ * Hashing accepts human-readable deterministic seeds without collapsing them
+ * through partial hexadecimal parsing. The 24-bit host space makes accidental
+ * collisions negligible for this serial suite, but callers that require distinct
+ * deterministic origins should still provide distinct seeds.
+ */
+export function publicFixtureOrigin(seed: string = randomUUID()): string {
+  const digest = createHash("sha256").update(seed).digest();
+  const octets = [digest[0], digest[1], digest[2]].map(
+    (value) => ((value ?? 0) % 254) + 1,
+  );
+  return `https://11.${octets.join(".")}`;
+}
+
+/**
  * Create a project (+ primary site + default Crawl source) via `POST
- * /api/mvp/projects` and return its id. `example.com` resolves to a real public
- * IP so the server-side SSRF guard admits it (spec §7.1).
+ * /api/mvp/projects` and return its id. A public IP literal avoids transient DNS
+ * failures while still exercising the server-side SSRF guard (spec §7.1).
  */
 export async function seedProject(
   request: APIRequestContext,
@@ -39,7 +54,7 @@ export async function seedProject(
     siteUrl: string;
   }> = {},
 ): Promise<SeededProject> {
-  const siteUrl = overrides.siteUrl ?? "https://example.com";
+  const siteUrl = overrides.siteUrl ?? publicFixtureOrigin();
   const response = await request.post("/api/mvp/projects", {
     headers: { "Idempotency-Key": randomUUID() },
     data: {

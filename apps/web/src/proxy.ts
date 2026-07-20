@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { NextResponse, type NextRequest } from "next/server";
 import { isDevAuthEnabled } from "@/lib/auth/dev";
+import { safePostLoginPath } from "@/lib/auth/redirect";
 import { updateSession } from "@/lib/supabase/refresh";
 import { buildContentSecurityPolicy } from "../security-headers.ts";
 
@@ -32,6 +33,12 @@ function secure(response: NextResponse, csp: string): NextResponse {
   return response;
 }
 
+function loginRedirectTarget(request: NextRequest): string {
+  return safePostLoginPath(
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
+}
+
 /**
  * Request boundary for session refresh, page auth gating, and nonce-based CSP.
  * Next.js 16 calls this convention `proxy`; API handlers still enforce their
@@ -40,7 +47,7 @@ function secure(response: NextResponse, csp: string): NextResponse {
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = buildContentSecurityPolicy(
-    process.env["NODE_ENV"] !== "production",
+    process.env["NODE_ENV"] === "development",
     nonce,
   );
   const overrides = requestHeaderOverrides(nonce, csp);
@@ -79,7 +86,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
-    url.searchParams.set("next", pathname);
+    url.searchParams.set("next", loginRedirectTarget(request));
     const redirect = NextResponse.redirect(url);
     // Preserve refreshed/cleared Supabase cookies across the redirect.
     for (const cookie of response.cookies.getAll()) {

@@ -127,19 +127,19 @@ describe("GEO-CRAWLER-002", () => {
     });
   });
 
-  it("passes when robots.txt was not fetched", () => {
+  it("is inconclusive when robots.txt was not fetched", () => {
     const ctx = buildContext({ robots: robots([], false) });
     expect(geoCrawlerRule.evaluate(ctx)).toEqual({
-      status: "pass",
-      metrics: { robotsFetched: 0 },
+      status: "inconclusive",
+      reason: "robots_unavailable",
     });
   });
 
-  it("passes when there is no robots observation", () => {
+  it("is inconclusive when there is no robots observation", () => {
     const ctx = buildContext({});
     expect(geoCrawlerRule.evaluate(ctx)).toEqual({
-      status: "pass",
-      metrics: { robotsFetched: 0 },
+      status: "inconclusive",
+      reason: "robots_unavailable",
     });
   });
 

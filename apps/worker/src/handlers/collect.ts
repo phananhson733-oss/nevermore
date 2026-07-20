@@ -23,8 +23,11 @@ export async function registerCollectHandlers(ctx: WorkerContext): Promise<void>
       { includeMetadata: true },
       async (jobs: JobWithMetadata<CollectJobPayload>[]) => {
         for (const job of jobs) {
-          await prepareRunDelivery(ctx, job, (payload) =>
-            runCollection(ctx, payload),
+          await prepareRunDelivery(ctx, job, (payload, runCtx) =>
+            runCollection(runCtx, payload, {
+              retryCount: job.retryCount,
+              retryLimit: job.retryLimit,
+            }),
           );
         }
       },

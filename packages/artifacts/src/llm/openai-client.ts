@@ -22,6 +22,7 @@ import type {
   LLMArtifactResult,
   LLMClient,
 } from "../types.ts";
+import { MAX_ARTIFACT_CONTENT_CHARS } from "@sf/contracts";
 import { PROMPT_SET_VERSION } from "../types.ts";
 import {
   buildMessages,
@@ -46,7 +47,6 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 export const MAX_OPENAI_RESPONSE_BODY_BYTES = 1024 * 1024;
 
 /** Safety/length ceilings for the accepted artifact (spec §14.4 step 3). */
-const MAX_MARKDOWN_CHARS = 40_000;
 const MAX_TITLE_CHARS = 512;
 const MAX_DESCRIPTION_CHARS = 2_048;
 const MAX_RATIONALE_CHARS = 8_000;
@@ -105,14 +105,16 @@ export interface OpenAIClientOptions {
   readonly temperature?: number;
   /** Per-request timeout in ms, including decoded response-body consumption. */
   readonly timeoutMs?: number;
+  /** Optional worker-lifecycle signal; composed with the per-request timeout. */
+  readonly signal?: AbortSignal;
 }
 
-interface Usage {
+export interface OpenAIUsage {
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
 }
 
-const NO_USAGE: Usage = { inputTokens: null, outputTokens: null };
+const NO_USAGE: OpenAIUsage = { inputTokens: null, outputTokens: null };
 
 class InvalidResponseBodyError extends Error {
   constructor() {
@@ -291,7 +293,7 @@ function mapTransportError(error: unknown): LLMErrorCode {
   return "NETWORK_ERROR";
 }
 
-function readUsage(data: unknown): Usage {
+function readUsage(data: unknown): OpenAIUsage {
   if (typeof data !== "object" || data === null) return NO_USAGE;
   const usage = (data as { usage?: unknown }).usage;
   if (typeof usage !== "object" || usage === null) return NO_USAGE;
@@ -315,22 +317,184 @@ function readMessageContent(data: unknown): string | null {
   return typeof content === "string" ? content : null;
 }
 
+export interface OpenAIChatMessages {
+  readonly system: string;
+  readonly user: string;
+}
+
+export interface OpenAIChatCompletion {
+  readonly content: string | null;
+  readonly usage: OpenAIUsage;
+}
+
+/**
+ * Low-level, body-free transport failure. Callers attach their task-specific
+ * AnalysisInvocationRecord before allowing the error to cross their boundary.
+ */
+export class OpenAITransportError extends Error {
+  readonly code: LLMErrorCode;
+
+  constructor(code: LLMErrorCode, message: string) {
+    super(message);
+    this.name = "OpenAITransportError";
+    this.code = code;
+  }
+}
+
+/**
+ * Shared bounded Chat Completions transport. Artifact and finding-summary
+ * adapters reuse this exact path so redirect, timeout, decoded-body, and auth
+ * safeguards cannot drift between the two first-release LLM tasks.
+ */
+export class OpenAIChatCompletionsTransport {
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly fetchImpl: FetchLike;
+  private readonly url: string;
+  private readonly authScheme: "bearer" | "api-key";
+  private readonly temperature: number;
+  private readonly timeoutMs: number;
+  private readonly externalSignal: AbortSignal | undefined;
+
+  constructor(options: OpenAIClientOptions) {
+    this.apiKey = options.apiKey;
+    this.model = options.model;
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.url = options.baseUrl ?? OPENAI_CHAT_COMPLETIONS_URL;
+    this.authScheme = options.authScheme ?? "bearer";
+    this.temperature = options.temperature ?? DEFAULT_TEMPERATURE;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.externalSignal = options.signal;
+  }
+
+  async complete(messages: OpenAIChatMessages): Promise<OpenAIChatCompletion> {
+    const body = JSON.stringify({
+      model: this.model,
+      temperature: this.temperature,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: messages.system },
+        { role: "user", content: messages.user },
+      ],
+    });
+
+    const controller = new AbortController();
+    let timeoutReached = false;
+    let externalAbortReached = false;
+    const onExternalAbort = (): void => {
+      externalAbortReached = true;
+      controller.abort(
+        new DOMException("OpenAI request aborted", "AbortError"),
+      );
+    };
+    if (this.externalSignal) {
+      this.externalSignal.addEventListener("abort", onExternalAbort, {
+        once: true,
+      });
+      if (this.externalSignal.aborted) onExternalAbort();
+    }
+    const timer = setTimeout(() => {
+      timeoutReached = true;
+      controller.abort(
+        new DOMException("OpenAI request timed out", "TimeoutError"),
+      );
+    }, this.timeoutMs);
+    try {
+      if (externalAbortReached) {
+        throw new OpenAITransportError(
+          "TIMEOUT",
+          "OpenAI request was aborted.",
+        );
+      }
+      let response: Response;
+      try {
+        response = await this.fetchImpl(this.url, {
+          method: "POST",
+          headers: {
+            ...(this.authScheme === "api-key"
+              ? { "api-key": this.apiKey }
+              : { Authorization: `Bearer ${this.apiKey}` }),
+            "Content-Type": "application/json",
+          },
+          body,
+          redirect: "error",
+          signal: controller.signal,
+        });
+      } catch (error) {
+        const code =
+          timeoutReached || externalAbortReached
+            ? "TIMEOUT"
+            : mapTransportError(error);
+        throw new OpenAITransportError(
+          code,
+          "OpenAI request failed to reach the API.",
+        );
+      }
+
+      if (timeoutReached || externalAbortReached) {
+        cancelBody(response.body);
+        throw new OpenAITransportError(
+          "TIMEOUT",
+          timeoutReached
+            ? "OpenAI request timed out."
+            : "OpenAI request was aborted.",
+        );
+      }
+
+      if (!response.ok) {
+        cancelBody(response.body);
+        throw new OpenAITransportError(
+          mapHttpStatus(response.status),
+          `OpenAI request failed with HTTP ${response.status}.`,
+        );
+      }
+
+      let data: unknown;
+      try {
+        data = await readBoundedJson(response, controller.signal);
+      } catch {
+        const requestAborted = timeoutReached || externalAbortReached;
+        const code = requestAborted ? "TIMEOUT" : "INVALID_RESPONSE";
+        const message = requestAborted
+          ? timeoutReached
+            ? "OpenAI request timed out."
+            : "OpenAI request was aborted."
+          : "OpenAI returned an invalid response body.";
+        throw new OpenAITransportError(code, message);
+      }
+      return {
+        content: readMessageContent(data),
+        usage: readUsage(data),
+      };
+    } finally {
+      clearTimeout(timer);
+      this.externalSignal?.removeEventListener("abort", onExternalAbort);
+    }
+  }
+}
+
 function safetyErrors(envelope: LlmArtifactEnvelope): readonly string[] {
   if (envelope.kind === "metadata_rewrite") {
     const errors: string[] = [];
     if (envelope.proposedTitle.length > MAX_TITLE_CHARS)
       errors.push("proposedTitle exceeds length limit");
-    if (envelope.currentTitle.length > MAX_TITLE_CHARS)
+    if (
+      envelope.currentTitle !== null &&
+      envelope.currentTitle.length > MAX_TITLE_CHARS
+    )
       errors.push("currentTitle exceeds length limit");
     if (envelope.proposedDescription.length > MAX_DESCRIPTION_CHARS)
       errors.push("proposedDescription exceeds length limit");
-    if (envelope.currentDescription.length > MAX_DESCRIPTION_CHARS)
+    if (
+      envelope.currentDescription !== null &&
+      envelope.currentDescription.length > MAX_DESCRIPTION_CHARS
+    )
       errors.push("currentDescription exceeds length limit");
     if (envelope.rationale.length > MAX_RATIONALE_CHARS)
       errors.push("rationale exceeds length limit");
     return errors;
   }
-  if (envelope.markdown.length > MAX_MARKDOWN_CHARS)
+  if (envelope.markdown.length > MAX_ARTIFACT_CONTENT_CHARS)
     return ["markdown exceeds length limit"];
   return [];
 }
@@ -340,7 +504,7 @@ function buildInvocation(params: {
   readonly inputHash: string;
   readonly outputHash: string | null;
   readonly status: AnalysisInvocationRecord["status"];
-  readonly usage: Usage;
+  readonly usage: OpenAIUsage;
   readonly latencyMs: number;
   readonly errorCode: LLMErrorCode | null;
 }): AnalysisInvocationRecord {
@@ -361,13 +525,8 @@ function buildInvocation(params: {
 }
 
 export class OpenAIClient implements LLMClient {
-  private readonly apiKey: string;
   private readonly model: string;
-  private readonly fetchImpl: FetchLike;
-  private readonly url: string;
-  private readonly authScheme: "bearer" | "api-key";
-  private readonly temperature: number;
-  private readonly timeoutMs: number;
+  private readonly transport: OpenAIChatCompletionsTransport;
 
   constructor(options: OpenAIClientOptions) {
     if (options.apiKey.trim() === "") {
@@ -382,13 +541,8 @@ export class OpenAIClient implements LLMClient {
         "OpenAIClient requires a non-empty model.",
       );
     }
-    this.apiKey = options.apiKey;
     this.model = options.model;
-    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
-    this.url = options.baseUrl ?? OPENAI_CHAT_COMPLETIONS_URL;
-    this.authScheme = options.authScheme ?? "bearer";
-    this.temperature = options.temperature ?? DEFAULT_TEMPERATURE;
-    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.transport = new OpenAIChatCompletionsTransport(options);
   }
 
   async generateArtifact(
@@ -398,9 +552,9 @@ export class OpenAIClient implements LLMClient {
     const inputHash = hashPromptInput(input);
 
     const raw = await this.callApi(input, inputHash, startedAt);
-    const usage = readUsage(raw.data);
+    const usage = raw.usage;
 
-    const contentText = readMessageContent(raw.data);
+    const contentText = raw.content;
     if (contentText === null) {
       throw this.fail(
         "INVALID_RESPONSE",
@@ -459,7 +613,7 @@ export class OpenAIClient implements LLMClient {
       );
     }
 
-    const content: ArtifactContent = toArtifactContent(parsed.envelope);
+    const content: ArtifactContent = toArtifactContent(parsed.envelope, input);
     const invocation = buildInvocation({
       model: this.model,
       inputHash,
@@ -477,88 +631,22 @@ export class OpenAIClient implements LLMClient {
     input: ArtifactPromptInput,
     inputHash: string,
     startedAt: number,
-  ): Promise<{ readonly data: unknown }> {
-    const { system, user } = buildMessages(input);
-    const body = JSON.stringify({
-      model: this.model,
-      temperature: this.temperature,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    });
-
-    const controller = new AbortController();
-    let timeoutReached = false;
-    const timer = setTimeout(() => {
-      timeoutReached = true;
-      controller.abort(
-        new DOMException("OpenAI request timed out", "TimeoutError"),
-      );
-    }, this.timeoutMs);
+  ): Promise<OpenAIChatCompletion> {
     try {
-      let response: Response;
-      try {
-        response = await this.fetchImpl(this.url, {
-          method: "POST",
-          headers: {
-            ...(this.authScheme === "api-key"
-              ? { "api-key": this.apiKey }
-              : { Authorization: `Bearer ${this.apiKey}` }),
-            "Content-Type": "application/json",
-          },
-          body,
-          signal: controller.signal,
-        });
-      } catch (error) {
-        const code = timeoutReached ? "TIMEOUT" : mapTransportError(error);
-        throw this.fail(code, "OpenAI request failed to reach the API.", {
+      return await this.transport.complete(buildMessages(input));
+    } catch (error) {
+      if (error instanceof OpenAITransportError) {
+        throw this.fail(error.code, error.message, {
           inputHash,
           usage: NO_USAGE,
           startedAt,
         });
       }
-
-      if (timeoutReached) {
-        cancelBody(response.body);
-        throw this.fail("TIMEOUT", "OpenAI request timed out.", {
-          inputHash,
-          usage: NO_USAGE,
-          startedAt,
-        });
-      }
-
-      if (!response.ok) {
-        cancelBody(response.body);
-        throw this.fail(
-          mapHttpStatus(response.status),
-          `OpenAI request failed with HTTP ${response.status}.`,
-          {
-            inputHash,
-            usage: NO_USAGE,
-            startedAt,
-          },
-        );
-      }
-
-      try {
-        return {
-          data: await readBoundedJson(response, controller.signal),
-        };
-      } catch {
-        const code = timeoutReached ? "TIMEOUT" : "INVALID_RESPONSE";
-        const message = timeoutReached
-          ? "OpenAI request timed out."
-          : "OpenAI returned an invalid response body.";
-        throw this.fail(code, message, {
-          inputHash,
-          usage: NO_USAGE,
-          startedAt,
-        });
-      }
-    } finally {
-      clearTimeout(timer);
+      throw this.fail("NETWORK_ERROR", "OpenAI request failed.", {
+        inputHash,
+        usage: NO_USAGE,
+        startedAt,
+      });
     }
   }
 
@@ -568,7 +656,7 @@ export class OpenAIClient implements LLMClient {
     message: string,
     ctx: {
       readonly inputHash: string;
-      readonly usage: Usage;
+      readonly usage: OpenAIUsage;
       readonly startedAt: number;
     },
   ): LLMError {
@@ -593,7 +681,7 @@ export class OpenAIClient implements LLMClient {
     message: string,
     ctx: {
       readonly inputHash: string;
-      readonly usage: Usage;
+      readonly usage: OpenAIUsage;
       readonly startedAt: number;
     },
   ): LLMError {

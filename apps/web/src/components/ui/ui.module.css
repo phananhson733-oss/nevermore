@@ -69,7 +69,7 @@
 }
 .btnGhost {
   background: transparent;
-  color: var(--sf-accent);
+  color: var(--sf-cobalt-text);
   padding-left: 10px;
   padding-right: 10px;
 }
@@ -154,27 +154,27 @@
 }
 .pillSuccess {
   background: var(--sf-mint-soft);
-  color: var(--sf-mint);
+  color: var(--sf-mint-text);
   border-color: var(--sf-mint);
 }
 .pillWarning {
   background: var(--sf-amber-soft);
-  color: var(--sf-amber);
+  color: var(--sf-amber-text);
   border-color: var(--sf-amber);
 }
 .pillDanger {
   background: var(--sf-coral-soft);
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
   border-color: var(--sf-coral);
 }
 .pillInfo {
   background: var(--sf-cobalt-soft);
-  color: var(--sf-cobalt);
+  color: var(--sf-cobalt-text);
   border-color: var(--sf-cobalt);
 }
 .pillPriority {
   background: var(--sf-violet-soft);
-  color: var(--sf-violet);
+  color: var(--sf-violet-text);
   border-color: var(--sf-violet);
 }
 .pillNeutral {
@@ -201,27 +201,27 @@
 }
 .badgeAccent {
   background: var(--sf-cobalt-soft);
-  color: var(--sf-cobalt);
+  color: var(--sf-cobalt-text);
   border-color: transparent;
 }
 .badgeMint {
   background: var(--sf-mint-soft);
-  color: var(--sf-mint);
+  color: var(--sf-mint-text);
   border-color: transparent;
 }
 .badgeAmber {
   background: var(--sf-amber-soft);
-  color: var(--sf-amber);
+  color: var(--sf-amber-text);
   border-color: transparent;
 }
 .badgeCoral {
   background: var(--sf-coral-soft);
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
   border-color: transparent;
 }
 .badgeViolet {
   background: var(--sf-violet-soft);
-  color: var(--sf-violet);
+  color: var(--sf-violet-text);
   border-color: transparent;
 }
 
@@ -238,7 +238,7 @@
   color: var(--sf-fg);
 }
 .fieldRequired {
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
 }
 .fieldHelp {
   margin: 0;
@@ -249,7 +249,7 @@
   margin: 0;
   font-size: var(--sf-text-xs);
   font-weight: 600;
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
 }
 
 .control {

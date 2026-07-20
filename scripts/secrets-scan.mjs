@@ -8,14 +8,16 @@
 // The MVP invariant is that OAuth/API-key/cookie/ciphertext material never lands
 // in source, logs, telemetry, reports, or exports (spec §1.3, §14, §15.3).
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 // Directories and files never scanned: build output, VCS, dependency trees, the
-// lockfile, and the local-only secret store (.env.local is gitignored by design).
+// lockfile, generated local data stores, and the local-only secret store
+// (.env.local is gitignored by design). All remaining text files are scanned
+// regardless of size so a large first-party source file cannot evade the gate.
 const IGNORE_DIRS = new Set([
   "node_modules",
   ".git",
@@ -24,11 +26,20 @@ const IGNORE_DIRS = new Set([
   "coverage",
   ".turbo",
   ".vercel",
+  ".data",
   "playwright-report",
   "test-results",
 ]);
-const IGNORE_FILES = new Set(["pnpm-lock.yaml", "secrets-scan.mjs"]);
-const isLocalEnv = (name) => name === ".env.local" || name.endsWith(".local");
+const IGNORE_RELATIVE_FILES = new Set([
+  "pnpm-lock.yaml",
+  "scripts/secrets-scan.mjs",
+]);
+const isIgnoredRuntimeDir = (name) =>
+  name.startsWith(".next-e2e-") || name.startsWith("blob-");
+const isLocalEnv = (name) =>
+  name === ".env.local" ||
+  /^\.env\..+\.local$/.test(name) ||
+  /^\.env\.local\.bak-/.test(name);
 
 // Skip binary/asset extensions.
 const BINARY_EXT =
@@ -55,29 +66,48 @@ const RULES = [
   },
 ];
 
-// The scanner's own rule table and docs that quote these patterns are exempt.
-const ALLOW_PATH = (rel) =>
-  rel.startsWith("scripts/") || rel.startsWith("docs/vendor/");
+// The scanner itself is excluded by exact repository-relative path because its
+// rule table must contain the signatures it detects. No source or documentation
+// subtree is allowlisted: release scripts and provenance metadata are scanned too.
 
 const findings = [];
 
 function walk(dir) {
   for (const entry of readdirSync(dir)) {
     const abs = join(dir, entry);
-    const st = statSync(abs);
+    // Never follow a repository symlink outside the checkout. Git commits the
+    // link target text, not the target bytes, so scan that text in place.
+    let st;
+    try {
+      st = lstatSync(abs);
+    } catch (error) {
+      if (error && typeof error === "object" && error.code === "ENOENT") {
+        // Ephemeral build/test outputs can disappear between readdir and lstat.
+        // Treat vanished paths as absent so the scan remains stable.
+        continue;
+      }
+      throw error;
+    }
     if (st.isDirectory()) {
-      if (!IGNORE_DIRS.has(entry)) walk(abs);
+      if (!IGNORE_DIRS.has(entry) && !isIgnoredRuntimeDir(entry)) walk(abs);
       continue;
     }
-    if (IGNORE_FILES.has(entry) || isLocalEnv(entry) || BINARY_EXT.test(entry)) continue;
+    if (!st.isFile() && !st.isSymbolicLink()) continue;
     const rel = relative(ROOT, abs);
-    if (ALLOW_PATH(rel)) continue;
-    if (st.size > 2_000_000) continue; // skip very large files
-
+    if (
+      IGNORE_RELATIVE_FILES.has(rel) ||
+      isLocalEnv(entry) ||
+      BINARY_EXT.test(entry)
+    ) {
+      continue;
+    }
     let text;
     try {
-      text = readFileSync(abs, "utf8");
+      text = st.isSymbolicLink() ? readlinkSync(abs) : readFileSync(abs, "utf8");
     } catch {
+      // An unreadable in-scope file is an unknown secret boundary. Fail closed
+      // without reflecting the OS exception or any file content.
+      findings.push({ file: rel, line: 0, rule: "unreadable-file" });
       continue;
     }
     const lines = text.split("\n");
@@ -96,7 +126,8 @@ walk(ROOT);
 if (findings.length > 0) {
   console.error(`Secret scan FAILED: ${findings.length} potential secret(s) found.`);
   for (const f of findings) {
-    console.error(`- ${f.file}:${f.line} [${f.rule}]`);
+    const location = f.line > 0 ? `${f.file}:${f.line}` : f.file;
+    console.error(`- ${location} [${f.rule}]`);
   }
   process.exit(1);
 }

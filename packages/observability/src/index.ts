@@ -1,4 +1,12 @@
-export { redact, redactText, redactUrl, REDACT_KEYS } from "./redact.ts";
+export {
+  LOG_REDACT_LIMITS,
+  REDACT_KEYS,
+  REDACT_LIMITS,
+  redact,
+  redactText,
+  redactUrl,
+} from "./redact.ts";
+export type { RedactLimits } from "./redact.ts";
 export { REQUEST_ID_HEADER, newRequestId, normalizeRequestId } from "./request-id.ts";
 export {
   PROBLEM_CONTENT_TYPE,

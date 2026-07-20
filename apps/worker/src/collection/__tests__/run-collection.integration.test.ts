@@ -19,6 +19,7 @@ process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { CONTRACT_VERSION } from "@sf/contracts";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { asyncRuns, collectionRuns, workspaces } from "@sf/db/schema";
 import {
@@ -32,6 +33,7 @@ import {
   SourceConnectionsRepository,
   SourceCredentialsRepository,
   contentHash,
+  toRunAttempt,
   type PgBoss,
   type ProjectScope,
 } from "@sf/db";
@@ -52,6 +54,7 @@ import {
 } from "@sf/sources";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../../context.ts";
+import { registerCollectHandlers } from "../../handlers/collect.ts";
 import { runCollection } from "../run-collection.ts";
 
 /**
@@ -171,6 +174,28 @@ function captureLogger(): { readonly logger: Logger; readonly lines: string[] } 
   return { logger, lines };
 }
 
+function providerMetricLines(
+  lines: readonly string[],
+): readonly Record<string, unknown>[] {
+  return lines
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          readonly event?: unknown;
+          readonly fields?: Record<string, unknown>;
+        },
+    )
+    .filter((line) => line.event === "provider_collection_metric")
+    .map((line) => line.fields ?? {});
+}
+
+function capturedEventNames(lines: readonly string[]): readonly string[] {
+  return lines.map(
+    (line) =>
+      (JSON.parse(line) as { readonly event?: unknown }).event,
+  ).filter((event): event is string => typeof event === "string");
+}
+
 describeDb("collection runner (spec §13)", () => {
   let handle: DbHandle;
   let ctx: WorkerContext;
@@ -190,6 +215,7 @@ describeDb("collection runner (spec §13)", () => {
         clientSecret: "worker-client-secret-fixture",
       },
       openai: { apiKey: "sk-test", model: "gpt-4o-mini" },
+      findingSummariesEnabled: true,
       logger: testLogger,
     };
   });
@@ -340,9 +366,11 @@ describeDb("collection runner (spec §13)", () => {
         minHostDelayMs: 0,
       },
     };
+    const captured = captureLogger();
     const offlineCtx = {
       ...ctx,
       crawl: { fetcher, engineOptions },
+      logger: captured.logger,
     };
 
     await runCollection(offlineCtx, {
@@ -355,6 +383,20 @@ describeDb("collection runner (spec §13)", () => {
       `${seed.siteOrigin}/robots.txt`,
       `${seed.siteOrigin}/sitemap.xml`,
       `${seed.siteOrigin}/`,
+    ]);
+    expect(providerMetricLines(captured.lines)).toEqual([
+      {
+        provider: "crawl",
+        outcome: "success",
+        errorCode: "NONE",
+        requestCount: 3,
+        rateLimitCount: 0,
+        quotaCount: 0,
+        rowCount: 1,
+        rowCountAvailable: true,
+        urlCount: 3,
+        urlCountAvailable: true,
+      },
     ]);
     const run = await new AsyncRunsRepository(handle.db).findById(
       seed.scope,
@@ -463,8 +505,8 @@ describeDb("collection runner (spec §13)", () => {
     });
 
     const runs = new AsyncRunsRepository(handle.db);
-    const first = await runs.claim(runId);
-    const second = await runs.claim(runId);
+    const first = await runs.claim(seed.scope, runId);
+    const second = await runs.claim(seed.scope, runId);
     expect(first?.status).toBe("running");
     expect(second).toBeNull();
   });
@@ -559,6 +601,163 @@ describeDb("collection runner (spec §13)", () => {
     expect(run?.status).toBe("queued");
     expect(run?.started_at).toBeNull();
     expect(await snapshotCount(handle, seed.scope)).toBe(0);
+  });
+
+  it.each([
+    ["transient", 429, "RATE_LIMITED"],
+    ["permanent", 403, "PERMISSION_DENIED"],
+  ] as const)(
+    "classifies a resumed stale attempt's %s provider failure only as stale_attempt",
+    async (_kind, status, expectedCode) => {
+      const seed = await seedProject(handle);
+      const runId = randomUUID();
+      await seedGoogleCollection(handle, seed, runId, {
+        provider: "gsc",
+        envelope: {
+          accessToken: "access-stale-failure-fixture",
+          refreshToken: "refresh-stale-failure-fixture",
+          expiresAt: "2026-07-18T10:00:00.000Z",
+          scope: "scope.stale.failure.fixture",
+        },
+      });
+      let markProviderStarted: (() => void) | undefined;
+      const providerStarted = new Promise<void>((resolve) => {
+        markProviderStarted = resolve;
+      });
+      let releaseProvider: (() => void) | undefined;
+      const providerReleased = new Promise<void>((resolve) => {
+        releaseProvider = resolve;
+      });
+      const fetchMock = vi.fn<GoogleFetch>(async () => {
+        markProviderStarted?.();
+        await providerReleased;
+        return jsonResponse({ error: "customer provider error detail" }, status);
+      });
+      const captured = captureLogger();
+      const pending = runCollection(
+        oauthContext(ctx, fetchMock, captured.logger),
+        {
+          runId,
+          workspaceId: seed.scope.workspaceId,
+          projectId: seed.scope.projectId,
+        },
+      );
+      await providerStarted;
+
+      const runs = new AsyncRunsRepository(handle.db);
+      expect(await runs.prepareDelivery(seed.scope, runId, 1)).not.toBeNull();
+      const newerClaim = await runs.claim(seed.scope, runId);
+      expect(newerClaim?.attempt_count).toBe(2);
+      expect(
+        await runs.setTerminal(toRunAttempt(newerClaim!), {
+          status: "failed",
+          lastErrorCode: "NEWER_ATTEMPT_RESULT",
+          lastErrorSummary: "newer attempt won the fixture race",
+        }),
+      ).toBe(true);
+      releaseProvider?.();
+
+      await expect(pending).resolves.toBeUndefined();
+      expect(providerMetricLines(captured.lines)).toEqual([
+        expect.objectContaining({
+          provider: "gsc",
+          outcome: "stale_attempt",
+          errorCode: expectedCode,
+          requestCount: 1,
+        }),
+      ]);
+      const events = capturedEventNames(captured.lines);
+      expect(events).toContain("collection_skip_stale_attempt");
+      expect(events).not.toContain("collection_transient_error");
+      expect(events).not.toContain("collection_failed");
+      expect(await runs.findById(seed.scope, runId)).toMatchObject({
+        status: "failed",
+        attempt_count: 2,
+        last_error_code: "NEWER_ATTEMPT_RESULT",
+      });
+    },
+  );
+
+  it("labels a real registered handler's non-final pg-boss retry as retry_scheduled", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    await seedGoogleCollection(handle, seed, runId, {
+      provider: "gsc",
+      envelope: {
+        accessToken: "access-handler-retry-fixture",
+        refreshToken: "refresh-handler-retry-fixture",
+        expiresAt: "2026-07-18T10:00:00.000Z",
+        scope: "scope.handler.retry.fixture",
+      },
+    });
+    const runs = new AsyncRunsRepository(handle.db);
+    expect(await runs.claim(seed.scope, runId)).not.toBeNull();
+
+    type Delivery = {
+      readonly data: {
+        readonly runId: string;
+        readonly workspaceId: string;
+        readonly projectId: string;
+        readonly contractVersion: string;
+      };
+      readonly retryCount: number;
+      readonly retryLimit: number;
+    };
+    type DeliveryHandler = (jobs: Delivery[]) => Promise<void>;
+    let gscHandler: DeliveryHandler | undefined;
+    const boss = {
+      work: vi.fn(
+        async (
+          queue: string,
+          _options: unknown,
+          handler: DeliveryHandler,
+        ) => {
+          if (queue === "collect.gsc") gscHandler = handler;
+          return "worker-id";
+        },
+      ),
+    } as unknown as PgBoss;
+    const fetchMock = vi.fn<GoogleFetch>(async () =>
+      jsonResponse({ error: "rate limited customer detail" }, 429),
+    );
+    const captured = captureLogger();
+    const worker = oauthContext(
+      { ...ctx, boss },
+      fetchMock,
+      captured.logger,
+    );
+    await registerCollectHandlers(worker);
+    expect(gscHandler).toEqual(expect.any(Function));
+    if (!gscHandler) throw new Error("collect.gsc handler was not registered");
+
+    const job: Delivery = {
+      data: {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+        contractVersion: CONTRACT_VERSION,
+      },
+      retryCount: 1,
+      retryLimit: 3,
+    };
+    await expect(gscHandler([job])).rejects.toMatchObject({
+      code: "RATE_LIMITED",
+    });
+
+    expect(providerMetricLines(captured.lines)).toEqual([
+      expect.objectContaining({
+        provider: "gsc",
+        outcome: "retry_scheduled",
+        errorCode: "RATE_LIMITED",
+        requestCount: 1,
+        rateLimitCount: 1,
+      }),
+    ]);
+    expect(await runs.findById(seed.scope, runId)).toMatchObject({
+      status: "queued",
+      attempt_count: 2,
+      last_error_code: "RATE_LIMITED",
+    });
   });
 
   it.each([
@@ -783,14 +982,45 @@ describeDb("collection runner (spec §13)", () => {
       }
       throw new Error(`unexpected mocked URL: ${String(input)}`);
     });
-
-    await withMockedGlobalFetch(fetchMock, () =>
-      runCollection(oauthContext(ctx, fetchMock), {
-        runId,
-        workspaceId: seed.scope.workspaceId,
-        projectId: seed.scope.projectId,
-      }),
+    const attemptLockSpy = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "lockAttemptForUpdate",
     );
+    const projectLockSpy = vi.spyOn(
+      ProjectsRepository.prototype,
+      "findByIdForUpdate",
+    );
+    const sourceUpdateSpy = vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "updateState",
+    );
+    const terminalSpy = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "setTerminal",
+    );
+    let failureOrder: readonly number[] = [];
+    try {
+      await withMockedGlobalFetch(fetchMock, () =>
+        runCollection(oauthContext(ctx, fetchMock), {
+          runId,
+          workspaceId: seed.scope.workspaceId,
+          projectId: seed.scope.projectId,
+        }),
+      );
+      failureOrder = [
+        attemptLockSpy.mock.invocationCallOrder.at(-1)!,
+        projectLockSpy.mock.invocationCallOrder.at(-1)!,
+        sourceUpdateSpy.mock.invocationCallOrder.at(-1)!,
+        terminalSpy.mock.invocationCallOrder.at(-1)!,
+      ];
+    } finally {
+      attemptLockSpy.mockRestore();
+      projectLockSpy.mockRestore();
+      sourceUpdateSpy.mockRestore();
+      terminalSpy.mockRestore();
+    }
+
+    expect(failureOrder).toEqual([...failureOrder].sort((a, b) => a - b));
 
     const run = await new AsyncRunsRepository(handle.db).findById(
       seed.scope,
@@ -815,6 +1045,70 @@ describeDb("collection runner (spec §13)", () => {
     expect(await snapshotCount(handle, seed.scope)).toBe(0);
   });
 
+  it("terminalizes an accepted provider failure after archive without changing its source projection", async () => {
+    const seed = await seedProject(handle);
+    const projects = new ProjectsRepository(handle.db);
+    await projects.setStage(
+      { workspaceId: seed.scope.workspaceId },
+      seed.scope.projectId,
+      "collecting",
+    );
+    const runId = randomUUID();
+    const { connectionId } = await seedGoogleCollection(handle, seed, runId, {
+      provider: "gsc",
+      envelope: {
+        accessToken: "access-archived-permission-fixture",
+        refreshToken: "refresh-archived-permission-fixture",
+        expiresAt: "2026-07-18T10:00:00.000Z",
+        scope: "scope.archived.permission.fixture",
+      },
+    });
+    await handle.pool.query(
+      `update app.client_projects
+          set archived_at = now()
+        where workspace_id = $1
+          and id = $2`,
+      [seed.scope.workspaceId, seed.scope.projectId],
+    );
+    const sources = new SourceConnectionsRepository(handle.db);
+    const sourceBefore = await sources.findById(seed.scope, connectionId);
+    const fetchMock = vi.fn<GoogleFetch>(async (input) => {
+      if (String(input).includes("/searchAnalytics/query")) {
+        return jsonResponse({ error: "forbidden provider detail" }, 403);
+      }
+      throw new Error(`unexpected mocked URL: ${String(input)}`);
+    });
+
+    await withMockedGlobalFetch(fetchMock, () =>
+      runCollection(oauthContext(ctx, fetchMock), {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+      }),
+    );
+
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(seed.scope, runId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      last_error_code: "PERMISSION_DENIED",
+      completed_at: expect.any(String),
+    });
+    await expect(sources.findById(seed.scope, connectionId)).resolves.toEqual(
+      sourceBefore,
+    );
+    await expect(
+      projects.findById(
+        { workspaceId: seed.scope.workspaceId },
+        seed.scope.projectId,
+      ),
+    ).resolves.toMatchObject({
+      stage: "collecting",
+      archived_at: expect.any(String),
+    });
+    expect(await snapshotCount(handle, seed.scope)).toBe(0);
+  });
+
   it("AC-046: a provider rate limit persists queued retry metadata and keeps the source syncing", async () => {
     const seed = await seedProject(handle);
     const runId = randomUUID();
@@ -833,16 +1127,48 @@ describeDb("collection runner (spec §13)", () => {
       }
       throw new Error(`unexpected mocked URL: ${String(input)}`);
     });
+    const captured = captureLogger();
+    const attemptLockSpy = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "lockAttemptForUpdate",
+    );
+    const projectLockSpy = vi.spyOn(
+      ProjectsRepository.prototype,
+      "findByIdForUpdate",
+    );
+    const sourceUpdateSpy = vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "updateState",
+    );
+    const resetSpy = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "resetToQueued",
+    );
+    let retryOrder: readonly number[] = [];
+    try {
+      await expect(
+        withMockedGlobalFetch(fetchMock, () =>
+          runCollection(oauthContext(ctx, fetchMock, captured.logger), {
+            runId,
+            workspaceId: seed.scope.workspaceId,
+            projectId: seed.scope.projectId,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+      retryOrder = [
+        attemptLockSpy.mock.invocationCallOrder.at(-1)!,
+        projectLockSpy.mock.invocationCallOrder.at(-1)!,
+        sourceUpdateSpy.mock.invocationCallOrder.at(-1)!,
+        resetSpy.mock.invocationCallOrder.at(-1)!,
+      ];
+    } finally {
+      attemptLockSpy.mockRestore();
+      projectLockSpy.mockRestore();
+      sourceUpdateSpy.mockRestore();
+      resetSpy.mockRestore();
+    }
 
-    await expect(
-      withMockedGlobalFetch(fetchMock, () =>
-        runCollection(oauthContext(ctx, fetchMock), {
-          runId,
-          workspaceId: seed.scope.workspaceId,
-          projectId: seed.scope.projectId,
-        }),
-      ),
-    ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(retryOrder).toEqual([...retryOrder].sort((a, b) => a - b));
 
     const run = await new AsyncRunsRepository(handle.db).findById(
       seed.scope,
@@ -865,6 +1191,66 @@ describeDb("collection runner (spec §13)", () => {
       limitation: "Provider rate limit reached; automatic retry is scheduled.",
     });
     expect(await snapshotCount(handle, seed.scope)).toBe(0);
+    expect(providerMetricLines(captured.lines)).toEqual([
+      {
+        provider: "gsc",
+        outcome: "transient_failure",
+        errorCode: "RATE_LIMITED",
+        requestCount: 1,
+        rateLimitCount: 1,
+        quotaCount: 0,
+        rowCount: 0,
+        rowCountAvailable: false,
+        urlCount: 0,
+        urlCountAvailable: false,
+      },
+    ]);
+  });
+
+  it("marks a final provider rate-limit delivery as retry exhausted without persisting delivery metadata", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    await seedGoogleCollection(handle, seed, runId, {
+      provider: "gsc",
+      envelope: {
+        accessToken: "access-rate-exhausted-fixture",
+        refreshToken: "refresh-rate-exhausted-fixture",
+        expiresAt: "2026-07-18T10:00:00.000Z",
+        scope: "scope.rate.exhausted.fixture",
+      },
+    });
+    const fetchMock = vi.fn<GoogleFetch>(async () =>
+      jsonResponse({ error: "rate exhausted customer detail" }, 429),
+    );
+    const captured = captureLogger();
+
+    await expect(
+      runCollection(
+        oauthContext(ctx, fetchMock, captured.logger),
+        {
+          runId,
+          workspaceId: seed.scope.workspaceId,
+          projectId: seed.scope.projectId,
+        },
+        { retryCount: 3, retryLimit: 3 },
+      ),
+    ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+
+    expect(providerMetricLines(captured.lines)).toEqual([
+      expect.objectContaining({
+        provider: "gsc",
+        outcome: "retry_exhausted",
+        errorCode: "RATE_LIMITED",
+        requestCount: 1,
+        rateLimitCount: 1,
+      }),
+    ]);
+    const canonical = await new AsyncRunsRepository(handle.db).findById(
+      seed.scope,
+      runId,
+    );
+    expect(canonical?.request_payload).not.toHaveProperty("retryCount");
+    expect(canonical?.request_payload).not.toHaveProperty("retryLimit");
   });
 
   it("refreshes an access token inside the expiry window before calling GSC and persists the complete rotated envelope", async () => {
@@ -905,7 +1291,8 @@ describeDb("collection runner (spec §13)", () => {
       }
       throw new Error(`unexpected mocked URL: ${url}`);
     });
-    const worker = oauthContext(ctx, fetchMock);
+    const captured = captureLogger();
+    const worker = oauthContext(ctx, fetchMock, captured.logger);
 
     await withMockedGlobalFetch(fetchMock, () =>
       runCollection(worker, {
@@ -941,6 +1328,20 @@ describeDb("collection runner (spec §13)", () => {
       expiresAt: "2026-07-18T09:00:00.000Z",
       scope: "scope.rotated.fixture",
     });
+    expect(providerMetricLines(captured.lines)).toEqual([
+      {
+        provider: "gsc",
+        outcome: "success",
+        errorCode: "NONE",
+        requestCount: 2,
+        rateLimitCount: 0,
+        quotaCount: 0,
+        rowCount: 0,
+        rowCountAvailable: true,
+        urlCount: 0,
+        urlCountAvailable: false,
+      },
+    ]);
   });
 
   it("does not persist an in-flight Google result after its source is disconnected", async () => {
@@ -1270,6 +1671,20 @@ describeDb("collection runner (spec §13)", () => {
     expect(serializedLogs).not.toContain(providerDescription);
     expect(serializedLogs).not.toContain("refresh-invalid-grant-fixture");
     expect(serializedLogs).not.toContain("worker-client-secret-fixture");
+    expect(providerMetricLines(captured.lines)).toEqual([
+      {
+        provider: "gsc",
+        outcome: "permanent_failure",
+        errorCode: "AUTH_REQUIRED",
+        requestCount: 1,
+        rateLimitCount: 0,
+        quotaCount: 0,
+        rowCount: 0,
+        rowCountAvailable: false,
+        urlCount: 0,
+        urlCountAvailable: false,
+      },
+    ]);
   });
 
   it("replays a provider request only once when the refreshed access token is also rejected", async () => {

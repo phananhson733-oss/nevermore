@@ -266,7 +266,7 @@ export const asyncRuns = app.table("async_runs", {
   kind: text().notNull(),
   status: text().notNull().default("queued"),
   active_key: text(),
-  contract_version: text().notNull().default("0.2.0"),
+  contract_version: text().notNull().default("2026-07-18"),
   request_payload: jsonb()
     .$type<JsonObject>()
     .notNull()
@@ -733,6 +733,7 @@ export const artifactRevisions = app.table("artifact_revisions", {
     .notNull()
     .references(() => executionArtifacts.id),
   revision: integer().notNull(),
+  output_locale: text().notNull(),
   content_format: text().notNull(),
   content_text: text(),
   content_json: jsonb().$type<unknown>(),

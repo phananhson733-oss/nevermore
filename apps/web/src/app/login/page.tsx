@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { Card, LocaleSwitch } from "@/components/ui";
+import { safePostLoginPath } from "@/lib/auth/redirect";
 import { LoginForm } from "./_form.tsx";
 import styles from "./login.module.css";
 
@@ -9,11 +10,6 @@ import styles from "./login.module.css";
  * which drives the `signInAction` server action. The redirect itself is not an
  * open-redirect vector — `next` is validated here and again in the action.
  */
-
-/** Same-origin absolute paths only; never a scheme-relative "//host" redirect. */
-function safeNext(raw: string | undefined): string {
-  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
-}
 
 export default async function LoginPage({
   searchParams,
@@ -40,7 +36,7 @@ export default async function LoginPage({
         <h1 className={styles.title}>{t("title")}</h1>
         <p className={styles.subtitle}>{t("subtitle")}</p>
 
-        <LoginForm next={safeNext(next)} />
+        <LoginForm next={safePostLoginPath(next)} />
       </Card>
     </main>
   );

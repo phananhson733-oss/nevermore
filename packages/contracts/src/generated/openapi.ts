@@ -410,6 +410,7 @@ export interface components {
         Uuid: string;
         /** Format: date-time */
         Timestamp: string;
+        /** @description Structurally valid RFC 5646 / BCP-47 language tag. The portable schema enforces subtag order, private use, irregular grandfathered tags, and same-case duplicate rejection; runtime and database validation additionally reject mixed-case duplicate variants or extension singletons. This API documents a 255-character protocol ceiling. */
         LocaleCode: string;
         MarketCode: string;
         /** @enum {string} */
@@ -467,7 +468,10 @@ export interface components {
         CreateProjectRequest: {
             clientName: string;
             projectName: string;
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @description Origin-only http(s) URL; paths, query, fragment, and userinfo are rejected. Production probes HTTPS before upgrading submitted HTTP.
+             */
             siteUrl: string;
             marketCodes: components["schemas"]["MarketCode"][];
             siteLanguageCodes: components["schemas"]["LocaleCode"][];
@@ -576,7 +580,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            mode: "DraftContextRequest";
+            mode: "draft";
             baseVersion: number;
             profile: components["schemas"]["DraftIcpProfilePatch"];
         };
@@ -585,7 +589,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            mode: "CompleteContextRequest";
+            mode: "complete";
             baseVersion: number;
             profile: components["schemas"]["CompleteIcpProfileInput"];
         };
@@ -632,7 +636,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            phase: "AuthorizeSourceRequest";
+            phase: "authorize";
             returnPath: string;
         };
         GetPropertySelectionRequest: {
@@ -640,7 +644,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            phase: "GetPropertySelectionRequest";
+            phase: "property_selection";
             oauthIntentId: components["schemas"]["Uuid"];
         };
         SelectPropertyRequest: {
@@ -648,7 +652,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            phase: "SelectPropertyRequest";
+            phase: "select_property";
             oauthIntentId: components["schemas"]["Uuid"];
             externalPropertyId: string;
             /** @description GA4 only; ignored for GSC. */
@@ -659,7 +663,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            phase: "AuthorizationPhase";
+            phase: "authorization";
             /** Format: uri */
             authorizationUrl: string;
             expiresAt: components["schemas"]["Timestamp"];
@@ -669,7 +673,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            phase: "PropertySelectionPhase";
+            phase: "property_selection";
             oauthIntentId: components["schemas"]["Uuid"];
             /** @enum {string} */
             provider: "gsc" | "ga4";
@@ -684,7 +688,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            phase: "ConnectedPhase";
+            phase: "connected";
             source: components["schemas"]["SourceConnection"];
         };
         ConnectSourceResponse: {
@@ -924,14 +928,19 @@ export interface components {
         } | unknown | unknown | unknown;
         CreateArtifactRequest: {
             artifactType: components["schemas"]["ArtifactType"];
-            /** @enum {string} */
+            /**
+             * @description Template generation supports only en and zh-CN; use structured_llm for every other valid BCP-47 output locale.
+             * @enum {string}
+             */
             generationMode: "template" | "structured_llm";
+            /** @description Template generation supports only en and zh-CN; use structured_llm for every other valid BCP-47 output locale. */
             outputLocale: components["schemas"]["LocaleCode"];
             operatorInstructions?: string | null;
         };
         ArtifactRevision: {
             id: components["schemas"]["Uuid"];
             revision: number;
+            outputLocale: components["schemas"]["LocaleCode"];
             contentFormat: components["schemas"]["ContentFormat"];
             content: string | {
                 [key: string]: unknown;
@@ -966,14 +975,17 @@ export interface components {
         };
         UpdateArtifactRequest: {
             baseRevision: number;
-            contentFormat?: components["schemas"]["ContentFormat"];
-            content?: string | {
+            contentFormat: components["schemas"]["ContentFormat"];
+            /** @description String content and the compact serialized JSON object are limited to 40000 characters. */
+            content: string | {
                 [key: string]: unknown;
-            } | null;
-            /** @enum {string} */
-            status?: "draft" | "ready" | "archived";
+            };
             editorNote?: string | null;
-        } | unknown | unknown;
+        } | {
+            baseRevision: number;
+            /** @enum {string} */
+            status: "draft" | "ready" | "archived";
+        };
         CreateExportRequest: {
             /** @enum {string} */
             kind: "service_bundle" | "client_bundle";
@@ -1026,18 +1038,28 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            view: "OverviewView";
+            view: "overview";
             project: components["schemas"]["Project"];
             coverage: components["schemas"]["Coverage"];
             activeRuns: components["schemas"]["AsyncRun"][];
             topActions: components["schemas"]["Action"][];
+            latestSnapshot: components["schemas"]["DataSnapshot"] | null;
+            topActionEvidence: components["schemas"]["Evidence"][];
+            deliveryFocus: components["schemas"]["OverviewDeliveryFocus"] | null;
+        };
+        OverviewDeliveryFocus: {
+            artifactId: components["schemas"]["Uuid"];
+            actionId: components["schemas"]["Uuid"];
+            artifactType: components["schemas"]["ArtifactType"];
+            status: components["schemas"]["ArtifactStatus"];
+            updatedAt: components["schemas"]["Timestamp"];
         };
         PlanView: {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            view: "PlanView";
+            view: "plan";
             actions: components["schemas"]["Action"][];
         };
         StudioView: {
@@ -1045,7 +1067,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            view: "StudioView";
+            view: "studio";
             artifacts: components["schemas"]["Artifact"][];
         };
         ReportView: {
@@ -1053,7 +1075,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            view: "ReportView";
+            view: "report";
             report: components["schemas"]["Report"];
         };
         WorkspaceViewResponse: {
@@ -1207,6 +1229,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["ValidationError"];
         };
     };
     createProject: {
@@ -1561,6 +1584,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     getProjectRun: {
@@ -1647,6 +1671,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     reviewProjectFinding: {
@@ -1712,6 +1737,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     updateProjectAction: {
@@ -1777,6 +1803,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     createActionArtifact: {
@@ -1832,6 +1859,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     updateProjectArtifact: {

@@ -11,6 +11,7 @@
  * cluster key, or an invalid/missing market or language code (spec §7.5).
  */
 
+import { isBcp47LanguageTag } from "@sf/contracts";
 import {
   buildObservation,
   METRIC_CSV_KEYWORD_GAP,
@@ -31,9 +32,6 @@ const MAX_KEYWORD_LENGTH = 500;
  */
 export const CSV_LIMITATION =
   "Keyword-gap search volumes and ranks are user-provided CSV data; clustering is a heuristic over the imported rows.";
-
-/** Loose BCP-47 shape: a 2-8 letter primary subtag plus optional subtags. */
-const BCP47_RE = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/;
 
 /** ISO 3166-1 alpha-2: exactly two ASCII letters. */
 const MARKET_CODE_RE = /^[A-Za-z]{2}$/;
@@ -72,7 +70,8 @@ type RowOutcome =
 const reject = (reason: string): RowOutcome => ({ kind: "rejected", reason });
 
 const isMarketCode = (value: string): boolean => MARKET_CODE_RE.test(value);
-const isLanguageTag = (value: string): boolean => BCP47_RE.test(value);
+const isLanguageTag = (value: string): boolean =>
+  isBcp47LanguageTag(value);
 
 /** Parse a non-negative integer cell; empty or invalid -> null (never 0). */
 function parseSearchVolume(raw: string): number | null {

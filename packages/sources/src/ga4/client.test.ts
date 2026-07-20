@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { SourceError } from "../adapter.ts";
 import {
@@ -72,6 +74,49 @@ function delayedBodyFailureResponse(secret: string): Response {
   return new Response(stream, {
     headers: { "content-type": "application/json" },
   });
+}
+
+async function withRedirectServer(
+  run: (
+    baseUrl: string,
+    hits: { readonly redirect: number; readonly followed: number },
+  ) => Promise<void>,
+): Promise<void> {
+  const hits = { redirect: 0, followed: 0 };
+  const server = createServer((request, response) => {
+    if (request.url === "/redirect") {
+      hits.redirect += 1;
+      response.statusCode = 302;
+      response.setHeader("location", "/followed");
+      response.end();
+      return;
+    }
+    if (request.url === "/followed") {
+      hits.followed += 1;
+      response.statusCode = 200;
+      response.end(JSON.stringify({ rows: [], rowCount: 0 }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    throw new Error("redirect test server did not expose a TCP port");
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await run(baseUrl, hits);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
 }
 
 function row(
@@ -257,9 +302,11 @@ describe("HttpGa4Client", () => {
 
   it("attaches the Bearer access token", async () => {
     let authorization = "";
+    let redirect: string | undefined;
     const fetchImpl: typeof fetch = async (_input, init) => {
       authorization =
         (init?.headers as Record<string, string>).authorization ?? "";
+      redirect = init?.redirect;
       return jsonResponse({ rows: [], rowCount: 0 });
     };
     const client = new HttpGa4Client({
@@ -269,6 +316,22 @@ describe("HttpGa4Client", () => {
     });
     await client.runReport(REQ);
     expect(authorization).toBe("Bearer secret-token");
+    expect(redirect).toBe("error");
+  });
+
+  it("fails on the first redirect hop and never follows a Bearer-authenticated request", async () => {
+    await withRedirectServer(async (baseUrl, hits) => {
+      const client = new HttpGa4Client({
+        propertyId: "properties/1",
+        accessToken: "t",
+        fetch: (_input, init) => fetch(`${baseUrl}/redirect`, init),
+      });
+
+      await expect(client.runReport(REQ)).rejects.toMatchObject({
+        code: "NETWORK_ERROR",
+      });
+      expect(hits).toEqual({ redirect: 1, followed: 0 });
+    });
   });
 
   it("maps 403 to PERMISSION_DENIED", async () => {

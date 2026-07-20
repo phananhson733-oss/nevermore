@@ -48,4 +48,59 @@ describe("i18n message key parity", () => {
     expect(en.sources.keyEventsPlaceholder).toBe("purchase, sign_up");
     expect(zhCN.sources.keyEventsPlaceholder).toBe("购买, 注册");
   });
+
+  it("localizes every Context control group and app-shell accessibility name", () => {
+    expect(en.context.fields.marketCodes).toBe("Target markets");
+    expect(zhCN.context.fields).toMatchObject({
+      marketCodes: "目标市场",
+      siteLanguageCodes: "网站语言",
+      defaultDeliveryLocale: "默认交付语言",
+      brandConstraints: "品牌约束",
+      complianceConstraints: "合规约束",
+      technicalConstraints: "技术约束",
+      resourceConstraints: "资源约束",
+      personaName: "姓名",
+      personaRole: "角色或背景",
+      personaJobs: "待完成任务",
+      personaPains: "痛点",
+      conversionLabel: "转化名称",
+      conversionType: "转化类型",
+      conversionTargetUrl: "目标 URL",
+    });
+    expect(zhCN.context.help).toEqual({
+      perLine: "每行一项。",
+      markets: "每行一个——使用大写 ISO-2 代码（例如 US、GB）。",
+      languages: "每行一个——使用 BCP-47 标签（例如 zh-CN、en-US）。",
+      locale: "BCP-47 标签（例如 zh-CN）。",
+      urls: "每行一个 URL。",
+    });
+    expect(zhCN.context.options).toEqual({
+      customerModel: { b2b: "B2B", b2c: "B2C", hybrid: "混合模式" },
+      businessProfile: {
+        b2b_saas: "B2B SaaS",
+        b2b_services: "B2B 服务",
+        b2c_ecommerce: "B2C 电商",
+        b2c_subscription: "B2C 订阅",
+        marketplace: "平台型市场",
+        publisher: "内容发布",
+        other: "其他",
+      },
+      conversionType: {
+        demo: "演示",
+        signup: "注册",
+        trial: "试用",
+        purchase: "购买",
+        lead: "销售线索",
+        contact: "联系",
+        subscribe: "订阅",
+        offline: "线下转化",
+        other: "其他",
+      },
+    });
+    expect(zhCN.context.version).toContain("{version}");
+    expect(zhCN.context.newVersion).toBe("新建");
+    expect(zhCN.context.leaveWarning).toContain("未保存");
+    expect(zhCN.appShell.projectSections).toBe("项目分区");
+    expect(zhCN.appShell.breadcrumb).toBe("面包屑导航");
+  });
 });

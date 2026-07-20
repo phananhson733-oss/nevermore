@@ -12,6 +12,7 @@ import {
   parseObjectKey,
   type BlobListInput,
   type BlobListPage,
+  type BlobGetOptions,
   type BlobPutInput,
   type BlobPutResult,
   type BlobStore,
@@ -42,9 +43,15 @@ export class MemoryBlobStore implements BlobStore {
     };
   }
 
-  async get(key: string): Promise<Buffer | null> {
+  async get(
+    key: string,
+    options: BlobGetOptions = {},
+  ): Promise<Buffer | null> {
+    options.signal?.throwIfAborted();
     const found = this.#objects.get(key);
-    return found ? Buffer.from(found.body) : null;
+    const body = found ? Buffer.from(found.body) : null;
+    options.signal?.throwIfAborted();
+    return body;
   }
 
   async signedUrl(key: string, _ttlSeconds: number): Promise<string> {

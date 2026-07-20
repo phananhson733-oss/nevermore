@@ -9,10 +9,11 @@ import {
   ProjectsRepository,
   SitesRepository,
   SourceConnectionsRepository,
+  StorageObjectReferencesRepository,
   type WorkspaceScope,
 } from "@sf/db";
 import { previewCsv, objectKey, KEYWORD_GAP_TEMPLATE_ID } from "@sf/sources";
-import type { CsvPreviewResult } from "@sf/sources";
+import type { BlobPutResult, CsvPreviewResult } from "@sf/sources";
 import type { ImportConfirmRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
@@ -164,7 +165,7 @@ export async function previewImport(
       ],
     });
   }
-  const { site } = await requireLiveProject(scope, projectId);
+  await requireLiveProject(scope, projectId);
   const text = file.bytes.toString("utf8");
 
   let preview;
@@ -181,34 +182,69 @@ export async function previewImport(
   const nonce = randomBytes(16).toString("hex");
   const key = objectKey({ projectId, runId: nonce, kind: "raw-import", nonce });
   const blobStore = getBlobStore();
-  const put = await blobStore.put({
-    key,
-    body: file.bytes,
-    contentType: "text/csv",
-  });
-
+  let put: BlobPutResult | undefined;
+  let transactionCallbackCompleted = false;
   try {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + PREVIEW_TTL_MS).toISOString();
 
     const mapped = mapPreview(preview);
     const { db } = getDb();
-    await new ImportPreviewsRepository(db).insert({
-      workspaceId: scope.workspaceId,
-      projectId,
-      siteId: site.id,
-      createdBy: actorId,
-      tokenHash: sha256Buf(token),
-      templateId: file.templateId,
-      rawObjectKey: put.key,
-      fileChecksum: put.sha256,
-      rowCount: preview.rowCount,
-      detectedColumns: mapped.detectedColumns,
-      suggestedMapping: mapped.suggestedMapping,
-      previewRows: mapped.previewRows,
-      validationErrors: mapped.errors,
-      validationWarnings: mapped.warnings,
-      expiresAt,
+    await db.transaction(async (tx) => {
+      // The orphan sweep takes the same transaction-scoped key lock around its
+      // final reference recheck and external delete. Holding it from upload
+      // through preview commit makes upload->reference atomic with respect to
+      // cleanup without treating Storage as a transactional database.
+      await new StorageObjectReferencesRepository(
+        tx,
+      ).lockObjectKeysForTransaction([key]);
+      put = await blobStore.put({
+        key,
+        body: file.bytes,
+        contentType: "text/csv",
+      });
+      const uploaded = put;
+
+      const currentProject = await new ProjectsRepository(tx).findByIdForUpdate(
+        scope,
+        projectId,
+      );
+      if (!currentProject) {
+        throw new ProblemError("NOT_FOUND", "Project not found.");
+      }
+      if (currentProject.archived_at) {
+        throw new ProblemError(
+          "PROJECT_ARCHIVED",
+          "Project is archived and read-only.",
+        );
+      }
+
+      const currentSite = await new SitesRepository(tx).findPrimary({
+        workspaceId: scope.workspaceId,
+        projectId,
+      });
+      if (!currentSite) {
+        throw new ProblemError("NOT_FOUND", "Project has no primary site.");
+      }
+
+      await new ImportPreviewsRepository(tx).insert({
+        workspaceId: scope.workspaceId,
+        projectId,
+        siteId: currentSite.id,
+        createdBy: actorId,
+        tokenHash: sha256Buf(token),
+        templateId: file.templateId,
+        rawObjectKey: uploaded.key,
+        fileChecksum: uploaded.sha256,
+        rowCount: preview.rowCount,
+        detectedColumns: mapped.detectedColumns,
+        suggestedMapping: mapped.suggestedMapping,
+        previewRows: mapped.previewRows,
+        validationErrors: mapped.errors,
+        validationWarnings: mapped.warnings,
+        expiresAt,
+      });
+      transactionCallbackCompleted = true;
     });
 
     return {
@@ -222,9 +258,13 @@ export async function previewImport(
       warnings: mapped.warnings,
     };
   } catch (error) {
-    // The DB never referenced this object. Cleanup is best-effort and must not
-    // expose the private key/file or replace the primary preview failure.
-    await blobStore.delete(put.key).catch(() => undefined);
+    // A failure inside the transaction callback is a definite rollback, so the
+    // upload is an orphan and can be removed immediately. Once the callback has
+    // completed, a rejected COMMIT may be only an acknowledgement loss: the DB
+    // may already reference the object. Keep it for the delayed orphan sweep.
+    if (!transactionCallbackCompleted && put !== undefined) {
+      await blobStore.delete(put.key).catch(() => undefined);
+    }
     throw error;
   }
 }
@@ -296,7 +336,7 @@ export async function confirmImport(
     if (replay) return replay;
   }
 
-  const { site } = await requireLiveProject(scope, projectId);
+  await requireLiveProject(scope, projectId);
 
   const previews = new ImportPreviewsRepository(db);
   const preview = await previews.findByTokenHash(
@@ -370,17 +410,13 @@ export async function confirmImport(
     );
   }
 
-  // Find-or-create the csv source connection so the snapshot can attach to a slot.
-  const connections = new SourceConnectionsRepository(db);
-  const existingCsv = await connections.findConnectedByProvider(
-    projectScope,
-    "csv",
-  );
-
   const boss = await getBoss();
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
+      const txProjects = new ProjectsRepository(tx);
+      const txSites = new SitesRepository(tx);
+      const txConnections = new SourceConnectionsRepository(tx);
       const reserved = await txIdem.begin({
         workspaceId: scope.workspaceId,
         scope: IDEMPOTENCY_SCOPE,
@@ -400,6 +436,22 @@ export async function confirmImport(
           "IDEMPOTENCY_KEY_REUSED",
           "Idempotency key is being processed.",
         );
+      }
+
+      const currentProject = await txProjects.findByIdForUpdate(scope, projectId);
+      if (!currentProject) {
+        throw new ProblemError("NOT_FOUND", "Project not found.");
+      }
+      if (currentProject.archived_at) {
+        throw new ProblemError(
+          "PROJECT_ARCHIVED",
+          "Project is archived and read-only.",
+        );
+      }
+
+      const currentSite = await txSites.findPrimary(projectScope);
+      if (!currentSite) {
+        throw new ProblemError("NOT_FOUND", "Project has no primary site.");
       }
 
       // Re-check single-use and TTL against the database clock inside the same
@@ -437,11 +489,14 @@ export async function confirmImport(
       }
 
       const csvConnection =
-        existingCsv ??
-        (await new SourceConnectionsRepository(tx).insertConnection({
+        (await txConnections.findConnectedByProviderForUpdate(
+          projectScope,
+          "csv",
+        )) ??
+        (await txConnections.insertConnection({
           workspaceId: scope.workspaceId,
           projectId,
-          siteId: site.id,
+          siteId: currentSite.id,
           provider: "csv",
           connectionType: "file_import",
           state: "connected",
@@ -460,17 +515,18 @@ export async function confirmImport(
         requestPayload: {
           provider: "csv",
           operation: "keyword_gap_import",
+          sourceConnectionId: csvConnection.id,
           importPreviewId: preview.id,
           mapping,
-          marketFallback: site.market_codes[0] ?? null,
-          languageFallback: site.language_codes[0] ?? null,
+          marketFallback: currentSite.market_codes[0] ?? null,
+          languageFallback: currentSite.language_codes[0] ?? null,
         },
       });
       await new CollectionRunsRepository(tx).insertPlaceholder({
         runId: run.id,
         workspaceId: scope.workspaceId,
         projectId,
-        siteId: site.id,
+        siteId: currentSite.id,
         sourceConnectionId: csvConnection.id,
         // Required by collection_runs_check for provider='csv' (spec §12.1).
         importPreviewId: preview.id,

@@ -7,14 +7,17 @@ import {
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
   SourceConnectionsRepository,
+  StorageObjectReferencesRepository,
   TelemetryRepository,
   type CollectionRunRow,
   type ObservationInsert,
+  type RunAttempt,
 } from "@sf/db";
 import {
   objectKey,
   SourceError,
   type Availability,
+  type BlobPutResult,
   type SourceWindow,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
@@ -24,8 +27,8 @@ import type { WorkerContext } from "../context.ts";
  * uploaded to a final, unguessable Storage key BEFORE the transaction; then, in
  * ONE transaction, the immutable snapshot + observations are written, the run is
  * finalized, the source connection's state/last-snapshot are updated, the async
- * run is set terminal, and a `source_snapshot_ready` event is emitted. A retry
- * cannot duplicate the snapshot because the run is claimed (queued→running) once.
+ * run is set terminal, and a `source_snapshot_ready` event is emitted. The
+ * monotonic claim epoch fences a resumed older attempt before canonical writes.
  */
 
 export interface CollectionOutcome {
@@ -62,14 +65,18 @@ export async function persistCollectionResult(
     schemaVersion: string;
     actorId: string;
     startedAtMs: number;
+    attempt: RunAttempt;
     outcome: CollectionOutcome;
     observations: readonly ObservationInsert[];
   },
-): Promise<string> {
+): Promise<string | null> {
   const { collectionRun: run, outcome } = input;
   const scope = { workspaceId: run.workspace_id, projectId: run.project_id };
 
-  // 1. Upload raw to a final, non-overwritable key (spec §13.3) BEFORE the tx.
+  // The key is known before either side touches Storage, so the writer and
+  // orphan cleanup can serialize their final decisions on the same advisory
+  // lock. Storage still does not participate in the SQL transaction: upload is
+  // external, then canonical writes commit only after the complete bytes exist.
   const nonce = randomBytes(12).toString("hex");
   const key = objectKey({
     projectId: run.project_id,
@@ -77,17 +84,47 @@ export async function persistCollectionResult(
     kind: "snapshot-raw",
     nonce,
   });
-  const put = await ctx.blobStore.put({
-    key,
-    body: Buffer.from(JSON.stringify(outcome.raw), "utf8"),
-    contentType: "application/json",
-  });
+  let put: BlobPutResult | undefined;
 
-  // 2. One transaction: snapshot + observations + finalize + connection + terminal.
+  // One transaction-scoped key lock spans external upload and canonical commit.
+  // Cleanup takes the same lock around final recheck + delete, so neither side
+  // can create a dangling reference even if a project/run lock is contended.
   // On rollback, best-effort delete the just-uploaded orphan object (spec §13.3);
   // the daily orphan cleanup is the backstop.
+  let transactionCallbackCompleted = false;
   try {
-    return await ctx.db.transaction(async (tx) => {
+    const snapshotId = await ctx.db.transaction(async (tx) => {
+      await new StorageObjectReferencesRepository(
+        tx,
+      ).lockObjectKeysForTransaction([key]);
+      put = await ctx.blobStore.put({
+        key,
+        body: Buffer.from(JSON.stringify(outcome.raw), "utf8"),
+        contentType: "application/json",
+      });
+      const uploaded = put;
+
+      const asyncRunsRepo = new AsyncRunsRepository(tx);
+      if (!(await asyncRunsRepo.lockAttemptForUpdate(input.attempt))) {
+        transactionCallbackCompleted = true;
+        return null;
+      }
+
+      // Worker terminal transactions take the accepted run first, then the
+      // project, then mutable child projections. Archival therefore either
+      // commits first and freezes those projections, or waits for this accepted
+      // completion; immutable snapshot/history and the canonical run still
+      // converge in both cases.
+      const projects = new ProjectsRepository(tx);
+      const project = await projects.findByIdForUpdate(
+        { workspaceId: run.workspace_id },
+        run.project_id,
+      );
+      if (!project) {
+        throw new Error("collection project disappeared while terminalizing");
+      }
+      const projectionsMutable = project.archived_at === null;
+
       const sources = new SourceConnectionsRepository(tx);
       if (run.source_connection_id) {
         const activeSource = await sources.findActiveByIdForUpdate(
@@ -128,9 +165,9 @@ export async function persistCollectionResult(
         >,
         availability: outcome.availability,
         limitation: outcome.limitation,
-        rawObjectKey: put.key,
+        rawObjectKey: uploaded.key,
         rowCount: outcome.rowCount,
-        checksum: put.sha256,
+        checksum: uploaded.sha256,
         ...(outcome.summary ? { summary: outcome.summary } : {}),
       });
 
@@ -151,7 +188,7 @@ export async function persistCollectionResult(
         stopReason: outcome.stopReason,
       });
 
-      if (run.source_connection_id) {
+      if (projectionsMutable && run.source_connection_id) {
         await sources.setLastSnapshot(
           run.source_connection_id,
           snapshot.id,
@@ -160,16 +197,21 @@ export async function persistCollectionResult(
         );
       }
 
-      await new AsyncRunsRepository(tx).setTerminal(run.id, {
+      const terminalized = await asyncRunsRepo.setTerminal(input.attempt, {
         status: RUN_STATUS[outcome.availability],
         // result_type CHECK: one of collection_run/diagnostic_run/artifact/export.
         resultType: "collection_run",
         resultId: run.id,
       });
-      await new ProjectsRepository(tx).setReadyToDiagnoseIfEligible(
-        { workspaceId: run.workspace_id },
-        run.project_id,
-      );
+      if (!terminalized) {
+        throw new Error("collection attempt ownership changed while locked");
+      }
+      if (projectionsMutable) {
+        await projects.setReadyToDiagnoseIfEligible(
+          { workspaceId: run.workspace_id },
+          run.project_id,
+        );
+      }
 
       await new TelemetryRepository(tx).emit({
         workspaceId: run.workspace_id,
@@ -184,10 +226,24 @@ export async function persistCollectionResult(
         },
       });
 
+      // Drizzle invokes this callback before issuing COMMIT. A later transport
+      // error makes the commit result unknowable, so cleanup must not delete an
+      // object that the database may now reference.
+      transactionCallbackCompleted = true;
       return snapshot.id;
     });
+    if (snapshotId === null) {
+      // This attempt lost ownership before any canonical write. Its nonce-keyed
+      // upload cannot be referenced by another attempt and is safe to remove.
+      if (put !== undefined) {
+        await ctx.blobStore.delete(put.key).catch(() => {});
+      }
+    }
+    return snapshotId;
   } catch (error) {
-    await ctx.blobStore.delete(put.key).catch(() => {});
+    if (!transactionCallbackCompleted && put !== undefined) {
+      await ctx.blobStore.delete(put.key).catch(() => {});
+    }
     throw error;
   }
 }

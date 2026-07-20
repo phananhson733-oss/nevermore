@@ -27,6 +27,106 @@ BEGIN
 END;
 $$;
 
+-- Final defense for the Artifact state machine. Besides constraining the legal
+-- status edges, it binds each content-producing edge to exactly one immutable
+-- revision and each regeneration edge to a fresh owning AsyncRun.
+CREATE OR REPLACE FUNCTION app.enforce_artifact_status_transition()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- A content edit while already draft is a same-status revision update. Other
+  -- same-status metadata updates are deliberately outside this status guard.
+  IF NEW.status IS NOT DISTINCT FROM OLD.status THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.status = 'generating' AND NEW.status = 'draft'
+     AND NEW.current_revision = OLD.current_revision + 1 THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.status = 'ready' AND NEW.status = 'draft'
+     AND NEW.current_revision = OLD.current_revision + 1 THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.status = 'generating' AND NEW.status = 'failed'
+     AND NEW.current_revision = OLD.current_revision THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.status = 'draft' AND NEW.status IN ('ready', 'archived')
+     AND NEW.current_revision = OLD.current_revision THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.status = 'ready' AND NEW.status = 'archived'
+     AND NEW.current_revision = OLD.current_revision THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.status IN ('draft', 'ready', 'failed') AND NEW.status = 'generating'
+     AND NEW.current_revision = OLD.current_revision
+     AND NEW.latest_generation_run_id IS NOT NULL
+     AND NEW.latest_generation_run_id IS DISTINCT FROM OLD.latest_generation_run_id THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'artifact status transition is not allowed'
+    USING ERRCODE = '23514';
+END;
+$$;
+
+-- Export bytes are uploaded before the canonical database commit. Bind the
+-- eventual object reference to exactly one bundle/run/project and permit only
+-- the single placeholder -> finalized transition. This keeps a same-project
+-- wrong-run key from being signed or retained as somebody else's bundle.
+CREATE OR REPLACE FUNCTION app.enforce_export_bundle_invariants()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  run_matches boolean;
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+       OR NEW.project_id IS DISTINCT FROM OLD.project_id
+       OR NEW.async_run_id IS DISTINCT FROM OLD.async_run_id
+       OR NEW.kind IS DISTINCT FROM OLD.kind
+       OR NEW.schema_version IS DISTINCT FROM OLD.schema_version
+       OR NEW.output_locale IS DISTINCT FROM OLD.output_locale
+       OR NEW.created_by IS DISTINCT FROM OLD.created_by
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+      RAISE EXCEPTION 'export bundle identity is immutable'
+        USING ERRCODE = '23514';
+    END IF;
+
+    IF OLD.object_key IS NOT NULL OR NEW.object_key IS NULL THEN
+      RAISE EXCEPTION 'export bundle may be finalized exactly once'
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM app.async_runs AS run
+    WHERE run.id = NEW.async_run_id
+      AND run.workspace_id = NEW.workspace_id
+      AND run.project_id = NEW.project_id
+      AND run.kind = 'export'
+  ) INTO run_matches;
+
+  IF NOT run_matches THEN
+    RAISE EXCEPTION 'export bundle run scope is invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS app.workspaces (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL CHECK (length(btrim(name)) BETWEEN 1 AND 160),
@@ -559,6 +659,7 @@ CREATE TABLE IF NOT EXISTS app.artifact_revisions (
   project_id uuid NOT NULL REFERENCES app.client_projects(id) ON DELETE RESTRICT,
   artifact_id uuid NOT NULL REFERENCES app.execution_artifacts(id) ON DELETE RESTRICT,
   revision integer NOT NULL CHECK (revision >= 1),
+  output_locale text NOT NULL CHECK (output_locale ~ '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$'),
   content_format text NOT NULL CHECK (content_format IN ('markdown','json','csv')),
   content_text text,
   content_json jsonb,
@@ -593,7 +694,29 @@ CREATE TABLE IF NOT EXISTS app.export_bundles (
   item_counts jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(item_counts) = 'object'),
   manifest jsonb CHECK (manifest IS NULL OR jsonb_typeof(manifest) = 'object'),
   created_by uuid NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT export_bundles_object_key_invariant CHECK (
+    (
+      object_key IS NULL
+      AND checksum IS NULL
+      AND byte_size IS NULL
+      AND manifest IS NULL
+    )
+    OR
+    (
+      object_key IS NOT NULL
+      AND checksum IS NOT NULL
+      AND byte_size IS NOT NULL
+      AND manifest IS NOT NULL
+      AND octet_length(object_key) <= 1024
+      AND cardinality(string_to_array(object_key, '/')) = 4
+      AND object_key =
+        'export/' || project_id::text || '/' || async_run_id::text || '/' ||
+        split_part(object_key, '/', 4)
+      AND split_part(object_key, '/', 4) ~ '^[A-Za-z0-9._-]+$'
+      AND split_part(object_key, '/', 4) NOT IN ('.', '..')
+    )
+  )
 );
 
 CREATE INDEX IF NOT EXISTS export_bundles_project_idx
@@ -698,6 +821,14 @@ CREATE TRIGGER actions_set_updated_at BEFORE UPDATE ON app.actions
 DROP TRIGGER IF EXISTS execution_artifacts_set_updated_at ON app.execution_artifacts;
 CREATE TRIGGER execution_artifacts_set_updated_at BEFORE UPDATE ON app.execution_artifacts
   FOR EACH ROW EXECUTE FUNCTION app.set_updated_at();
+DROP TRIGGER IF EXISTS execution_artifacts_status_transition_guard ON app.execution_artifacts;
+CREATE TRIGGER execution_artifacts_status_transition_guard
+  BEFORE UPDATE OF status ON app.execution_artifacts
+  FOR EACH ROW EXECUTE FUNCTION app.enforce_artifact_status_transition();
+DROP TRIGGER IF EXISTS export_bundles_invariant_guard ON app.export_bundles;
+CREATE TRIGGER export_bundles_invariant_guard
+  BEFORE INSERT OR UPDATE ON app.export_bundles
+  FOR EACH ROW EXECUTE FUNCTION app.enforce_export_bundle_invariants();
 DROP TRIGGER IF EXISTS idempotency_keys_set_updated_at ON app.idempotency_keys;
 CREATE TRIGGER idempotency_keys_set_updated_at BEFORE UPDATE ON app.idempotency_keys
   FOR EACH ROW EXECUTE FUNCTION app.set_updated_at();
@@ -736,6 +867,11 @@ CREATE TRIGGER artifact_revisions_append_only BEFORE UPDATE OR DELETE ON app.art
 DROP TRIGGER IF EXISTS telemetry_events_append_only ON app.telemetry_events;
 CREATE TRIGGER telemetry_events_append_only BEFORE UPDATE OR DELETE ON app.telemetry_events
   FOR EACH ROW EXECUTE FUNCTION app.reject_append_only_mutation();
+
+-- Runtime-safe migration identity for technical health signals (spec §15.2).
+-- A view keeps the frozen 28-table application inventory unchanged.
+CREATE OR REPLACE VIEW app.schema_migration_version AS
+  SELECT '0001_init'::text AS migration_version;
 
 -- The browser must not access canonical tables directly through the Supabase Data API.
 DO $$

@@ -115,7 +115,7 @@ function evaluate(ctx: DiagnosticContext): RuleResult {
 
   const robots = ctx.robots;
   if (robots === null || !robots.fetched) {
-    return { status: "pass", metrics: { robotsFetched: 0 } };
+    return { status: "inconclusive", reason: "robots_unavailable" };
   }
 
   const candidates: FindingCandidate[] = [];

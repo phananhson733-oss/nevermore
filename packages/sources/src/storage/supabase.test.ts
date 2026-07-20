@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -53,6 +55,49 @@ function oversizedResponse(status: number): {
   };
 }
 
+async function withRedirectServer(
+  run: (
+    baseUrl: string,
+    hits: { readonly redirect: number; readonly followed: number },
+  ) => Promise<void>,
+): Promise<void> {
+  const hits = { redirect: 0, followed: 0 };
+  const server = createServer((request, response) => {
+    if (request.url === "/redirect") {
+      hits.redirect += 1;
+      response.statusCode = 302;
+      response.setHeader("location", "/followed");
+      response.end();
+      return;
+    }
+    if (request.url === "/followed") {
+      hits.followed += 1;
+      response.statusCode = 200;
+      response.end("{}");
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    throw new Error("redirect test server did not expose a TCP port");
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await run(baseUrl, hits);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
 async function runStorageOperation(
   store: SupabaseBlobStore,
   operation: "put" | "get" | "sign" | "delete" | "list",
@@ -104,6 +149,7 @@ describe("SupabaseBlobStore", () => {
     ];
     const fetch: typeof globalThis.fetch = async (_url, init) => {
       expect(init?.signal).toBeInstanceOf(AbortSignal);
+      expect(init?.redirect).toBe("error");
       signals.push(init!.signal!);
       return responses.shift()!;
     };
@@ -121,6 +167,22 @@ describe("SupabaseBlobStore", () => {
 
     expect(signals).toHaveLength(5);
     expect(signals.every((signal) => !signal.aborted)).toBe(true);
+  });
+
+  it("fails on the first redirect hop and never follows a service-role storage request", async () => {
+    await withRedirectServer(async (baseUrl, hits) => {
+      const store = new SupabaseBlobStore({
+        ...BASE,
+        fetch: (_url, init) => fetch(`${baseUrl}/redirect`, init),
+      });
+
+      await expect(store.get("export/p1/r1/redirected")).rejects.toMatchObject({
+        name: "SupabaseStorageError",
+        operation: "get",
+        status: undefined,
+      });
+      expect(hits).toEqual({ redirect: 1, followed: 0 });
+    });
   });
 
   it.each(["put", "get", "sign", "delete", "list"] as const)(
@@ -169,11 +231,12 @@ describe("SupabaseBlobStore", () => {
     const store = new SupabaseBlobStore({
       ...BASE,
       fetch,
-      signal: caller.signal,
       requestTimeoutMs: 60_000,
     });
 
-    const pending = store.get("export/p1/r1/caller-key-secret");
+    const pending = store.get("export/p1/r1/caller-key-secret", {
+      signal: caller.signal,
+    });
     caller.abort(new Error("caller-reason-secret"));
 
     await expect(pending).rejects.toMatchObject({

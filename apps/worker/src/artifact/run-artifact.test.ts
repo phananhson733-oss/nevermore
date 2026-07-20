@@ -3,20 +3,30 @@ import {
   ActionsRepository,
   AnalysisInvocationsRepository,
   AsyncRunsRepository,
+  DiagnosticRunsRepository,
   EvidenceRepository,
   ExecutionArtifactsRepository,
   FindingsRepository,
   IcpProfilesRepository,
+  ObservationsRepository,
   ProjectsRepository,
+  toRunAttempt,
   type ActionRow,
   type ArtifactRow,
   type AsyncRunRow,
+  type DiagnosticRunRow,
   type FindingRow,
   type IcpProfileRow,
+  type ObservationRow,
   type ProjectRow,
 } from "@sf/db";
-import { LLMError, type AnalysisInvocationRecord } from "@sf/artifacts";
+import {
+  LLMError,
+  MAX_ARTIFACT_EVIDENCE_ROWS,
+  type AnalysisInvocationRecord,
+} from "@sf/artifacts";
 import type { Logger } from "@sf/observability";
+import { CRAWL_PROJECTION_LIMITS } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 
 const mocks = vi.hoisted(() => ({
@@ -49,6 +59,9 @@ vi.mock("@sf/engine", async () => {
 const { runArtifact } = await import("./run-artifact.ts");
 
 const scope = { workspaceId: "workspace-1", projectId: "project-1" };
+const frozenSnapshotId = "00000000-0000-4000-8000-000000000201";
+const laterSnapshotId = "00000000-0000-4000-8000-000000000202";
+const duplicateSnapshotId = "00000000-0000-4000-8000-000000000203";
 const request = {
   artifactId: "artifact-1",
   actionId: "action-1",
@@ -77,6 +90,7 @@ const run = {
   started_at: "2026-07-18T12:00:01.000Z",
   completed_at: null,
 } satisfies AsyncRunRow;
+const attempt = toRunAttempt(run);
 const artifact = {
   id: request.artifactId,
   workspace_id: scope.workspaceId,
@@ -148,6 +162,69 @@ const finding = {
   created_at: "2026-07-18T11:00:00.000Z",
   updated_at: "2026-07-18T11:00:00.000Z",
 } satisfies FindingRow;
+const frozenEvidenceRow = {
+  id: "evidence-1",
+  diagnostic_run_id: finding.last_seen_run_id,
+  source_provider: "crawl",
+  origin: "observed",
+  method: "deterministic",
+  grade: "A",
+  availability: "available",
+  support: "supports",
+  subject_refs: ["https://example.com/pricing", 42],
+  claim: "Pricing returned 503",
+  observed_at: "2026-07-18T11:00:00.000Z",
+  limitation: "Static HTML",
+  snapshot_id: "snapshot-1",
+  analysis_invocation_id: null,
+};
+const diagnosticRun = {
+  id: finding.last_seen_run_id,
+  workspace_id: scope.workspaceId,
+  project_id: scope.projectId,
+  site_id: "site-1",
+  icp_profile_id: "icp-1",
+  icp_profile_version: 1,
+  rule_set_version: "rules-1",
+  prompt_set_version: "prompts-1",
+  output_locale: "en",
+  input_manifest: {
+    snapshots: [
+      {
+        snapshotId: frozenSnapshotId,
+        provider: "crawl",
+        availability: "available",
+      },
+    ],
+  },
+  input_hash: "diagnostic-input-hash",
+  coverage: {},
+  created_at: "2026-07-18T11:00:00.000Z",
+} satisfies DiagnosticRunRow;
+const crawlObservation = {
+  id: "observation-frozen",
+  workspace_id: scope.workspaceId,
+  project_id: scope.projectId,
+  snapshot_id: frozenSnapshotId,
+  provider: "crawl",
+  metric_key: "crawl.page.v1",
+  subject_type: "url",
+  subject_ref: "https://example.com/pricing",
+  observed_at: "2026-07-18T10:00:00.000Z",
+  availability: "available",
+  value_numeric: null,
+  value_text: null,
+  value_json: {
+    title: "Frozen pricing title",
+    metaDescription: "Frozen pricing description.",
+  },
+  unit: null,
+  origin: "direct_public",
+  method: "observed",
+  grade: "A",
+  support: "supports",
+  limitation: "Static HTML",
+} satisfies ObservationRow;
 const project = {
   id: scope.projectId,
   workspace_id: scope.workspaceId,
@@ -203,6 +280,7 @@ const ctx: WorkerContext = {
   appOrigin: "https://app.example",
   googleOAuth: { clientId: "google-id", clientSecret: "google-secret" },
   openai: { apiKey: "openai-key", model: "gpt-test" },
+  findingSummariesEnabled: true,
   logger,
 };
 
@@ -231,14 +309,15 @@ beforeEach(() => {
   });
   mocks.info.mockReset();
   mocks.error.mockReset();
+  vi.mocked(logger.warn).mockClear();
 
   vi.spyOn(AsyncRunsRepository.prototype, "claim").mockResolvedValue(run);
-  vi.spyOn(AsyncRunsRepository.prototype, "resetToQueued").mockResolvedValue();
-  vi.spyOn(AsyncRunsRepository.prototype, "setTerminal").mockResolvedValue();
   vi.spyOn(
     AsyncRunsRepository.prototype,
-    "reconcileActiveToTerminal",
-  ).mockResolvedValue(true);
+    "lockAttemptForUpdate",
+  ).mockResolvedValue(run);
+  vi.spyOn(AsyncRunsRepository.prototype, "resetToQueued").mockResolvedValue(true);
+  vi.spyOn(AsyncRunsRepository.prototype, "setTerminal").mockResolvedValue(true);
   vi.spyOn(ExecutionArtifactsRepository.prototype, "findById").mockResolvedValue(
     artifact,
   );
@@ -261,27 +340,20 @@ beforeEach(() => {
   ).mockResolvedValue(true);
   vi.spyOn(ActionsRepository.prototype, "findById").mockResolvedValue(action);
   vi.spyOn(FindingsRepository.prototype, "findById").mockResolvedValue(finding);
+  vi.spyOn(DiagnosticRunsRepository.prototype, "findById").mockResolvedValue(
+    null,
+  );
+  vi.spyOn(
+    ObservationsRepository.prototype,
+    "findBySnapshotMetricSubject",
+  ).mockResolvedValue(null);
   vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue(project);
   vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue(icpRow);
   vi.spyOn(EvidenceRepository.prototype, "listForFindings").mockResolvedValue([
     { finding_id: finding.id, evidence_id: "evidence-1", role: "primary" },
   ]);
   vi.spyOn(EvidenceRepository.prototype, "findByIds").mockResolvedValue([
-    {
-      id: "evidence-1",
-      source_provider: "crawl",
-      origin: "observed",
-      method: "deterministic",
-      grade: "A",
-      availability: "available",
-      support: "supports",
-      subject_refs: ["https://example.com/pricing", 42],
-      claim: "Pricing returned 503",
-      observed_at: "2026-07-18T11:00:00.000Z",
-      limitation: "Static HTML",
-      snapshot_id: "snapshot-1",
-      analysis_invocation_id: null,
-    },
+    frozenEvidenceRow,
   ]);
   vi.spyOn(AnalysisInvocationsRepository.prototype, "insert").mockResolvedValue(
     "invocation-1",
@@ -300,7 +372,7 @@ describe("runArtifact", () => {
       null,
     );
     await runArtifact(ctx, { runId: run.id, ...scope });
-    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(run.id, {
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(attempt, {
       status: "failed",
       lastErrorCode: "NOT_FOUND",
       lastErrorSummary: "artifact missing",
@@ -310,6 +382,14 @@ describe("runArtifact", () => {
 
   it("builds an allowlisted high-risk template prompt and commits a text revision", async () => {
     await runArtifact(ctx, { runId: run.id, ...scope });
+    expect(EvidenceRepository.prototype.listForFindings).toHaveBeenCalledWith(
+      scope,
+      [finding.id],
+      {
+        diagnosticRunId: finding.last_seen_run_id,
+        maxRows: MAX_ARTIFACT_EVIDENCE_ROWS + 1,
+      },
+    );
     expect(mocks.buildTemplateArtifact).toHaveBeenCalledWith(
       expect.objectContaining({
         requiresValidationRollback: true,
@@ -322,11 +402,21 @@ describe("runArtifact", () => {
             subjectRefs: ["https://example.com/pricing"],
           }),
         ],
+        currentMetadata: {
+          url: null,
+          currentTitle: null,
+          currentDescription: null,
+        },
       }),
     );
+    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).not.toHaveBeenCalled();
     expect(ExecutionArtifactsRepository.prototype.insertRevision).toHaveBeenCalledWith(
       expect.objectContaining({
         revision: 1,
+        outputLocale: "en",
         contentText: "# Technical ticket",
         contentJson: null,
         generatedBy: "template",
@@ -343,7 +433,7 @@ describe("runArtifact", () => {
       contentHash: expect.any(String),
     });
     expect(ExecutionArtifactsRepository.prototype.setGenerated).not.toHaveBeenCalled();
-    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(run.id, {
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(attempt, {
       status: "completed",
       resultType: "artifact",
       resultId: artifact.id,
@@ -351,6 +441,482 @@ describe("runArtifact", () => {
     expect(mocks.info).toHaveBeenCalledWith(
       "artifact_done",
       expect.objectContaining({ valid: true }),
+    );
+  });
+
+  it("fails before loading evidence rows or creating an external client when the frozen link budget overflows", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, generationMode: "structured_llm" },
+    });
+    vi.mocked(EvidenceRepository.prototype.listForFindings).mockResolvedValueOnce(
+      Array.from(
+        { length: MAX_ARTIFACT_EVIDENCE_ROWS + 1 },
+        (_unused, index) => ({
+          finding_id: finding.id,
+          evidence_id: `evidence-${String(index)}`,
+          role: "supporting",
+        }),
+      ),
+    );
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(EvidenceRepository.prototype.findByIds).not.toHaveBeenCalled();
+    expect(mocks.createOpenAIClient).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(ExecutionArtifactsRepository.prototype.insertRevision).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it.each([
+    {
+      name: "missing",
+      rows: [],
+    },
+    {
+      name: "from another diagnostic run",
+      rows: [
+        {
+          ...frozenEvidenceRow,
+          diagnostic_run_id: "diagnostic-old",
+          claim: "Old-run claim",
+          observed_at: "2026-07-17T11:00:00.000Z",
+          snapshot_id: "snapshot-old",
+        },
+      ],
+    },
+    {
+      name: "duplicated by the evidence lookup",
+      rows: [frozenEvidenceRow, { ...frozenEvidenceRow }],
+    },
+    {
+      name: "mixed with an unexpected evidence id",
+      rows: [
+        frozenEvidenceRow,
+        { ...frozenEvidenceRow, id: "evidence-unexpected" },
+      ],
+    },
+  ])("fails before generation when frozen evidence is $name", async ({ rows }) => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, generationMode: "structured_llm" },
+    });
+    vi.mocked(EvidenceRepository.prototype.findByIds).mockResolvedValueOnce(rows);
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(EvidenceRepository.prototype.findByIds).toHaveBeenCalledWith(scope, [
+      "evidence-1",
+    ]);
+    expect(mocks.createOpenAIClient).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(ExecutionArtifactsRepository.prototype.insertRevision).not.toHaveBeenCalled();
+  });
+
+  it("loads metadata from the exact crawl snapshot frozen in the finding's last-seen run", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, artifactType: "metadata_rewrite" },
+    });
+    vi.mocked(FindingsRepository.prototype.findById).mockResolvedValueOnce({
+      ...finding,
+      subject_refs: [
+        "not-a-url",
+        "https://example.com/pricing",
+        "https://example.com/later-subject",
+      ],
+    });
+    vi.mocked(DiagnosticRunsRepository.prototype.findById).mockResolvedValueOnce(
+      diagnosticRun,
+    );
+    vi.mocked(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).mockImplementationOnce(async (_scope, lookup) =>
+      lookup.snapshotId === frozenSnapshotId
+        ? crawlObservation
+        : {
+            ...crawlObservation,
+            snapshot_id: laterSnapshotId,
+            value_json: {
+              title: "Later title that must be ignored",
+              metaDescription: "Later description that must be ignored.",
+            },
+          },
+    );
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(DiagnosticRunsRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      finding.last_seen_run_id,
+    );
+    expect(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).toHaveBeenCalledWith(scope, {
+      snapshotId: frozenSnapshotId,
+      provider: "crawl",
+      metricKey: "crawl.page.v1",
+      subjectType: "url",
+      subjectRef: "https://example.com/pricing",
+    });
+    expect(mocks.buildTemplateArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMetadata: {
+          url: "https://example.com/pricing",
+          currentTitle: "Frozen pricing title",
+          currentDescription: "Frozen pricing description.",
+        },
+      }),
+    );
+  });
+
+  it("falls back to the primary conversion only when no finding subject is a valid URL", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, artifactType: "metadata_rewrite" },
+    });
+    vi.mocked(FindingsRepository.prototype.findById).mockResolvedValueOnce({
+      ...finding,
+      subject_refs: ["/relative", "mailto:operator@example.com", 42],
+    });
+    mocks.parseIcp.mockReturnValueOnce({
+      productName: "SignalFrame",
+      oneLineDescription: "Evidence-led growth",
+      offers: ["Audit"],
+      useCases: ["SEO"],
+      differentiators: ["Evidence"],
+      primaryConversion: {
+        label: "Book",
+        type: "demo",
+        targetUrl: "https://example.com/signup",
+      },
+      marketCodes: ["US"],
+    });
+    vi.mocked(DiagnosticRunsRepository.prototype.findById).mockResolvedValueOnce(
+      diagnosticRun,
+    );
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).toHaveBeenCalledWith(
+      scope,
+      expect.objectContaining({ subjectRef: "https://example.com/signup" }),
+    );
+    expect(mocks.buildTemplateArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMetadata: {
+          url: "https://example.com/signup",
+          currentTitle: null,
+          currentDescription: null,
+        },
+      }),
+    );
+  });
+
+  it("returns null current fields for missing or malformed frozen crawl data", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, artifactType: "metadata_rewrite" },
+    });
+    vi.mocked(DiagnosticRunsRepository.prototype.findById).mockResolvedValueOnce({
+      ...diagnosticRun,
+      input_manifest: {
+        snapshots: [
+          { snapshotId: frozenSnapshotId, provider: "crawl" },
+          { snapshotId: laterSnapshotId, provider: "gsc" },
+        ],
+      },
+    });
+    vi.mocked(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).mockResolvedValueOnce({
+      ...crawlObservation,
+      value_json: {
+        title: 42,
+        metaDescription: { unexpected: true },
+      },
+    });
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(mocks.buildTemplateArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMetadata: {
+          url: "https://example.com/pricing",
+          currentTitle: null,
+          currentDescription: null,
+        },
+      }),
+    );
+  });
+
+  it("fails closed on oversized crawl title and description values", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, artifactType: "metadata_rewrite" },
+    });
+    vi.mocked(DiagnosticRunsRepository.prototype.findById).mockResolvedValueOnce(
+      diagnosticRun,
+    );
+    vi.mocked(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).mockResolvedValueOnce({
+      ...crawlObservation,
+      value_json: {
+        title: "T".repeat(CRAWL_PROJECTION_LIMITS.maxTitleChars + 1),
+        metaDescription: "D".repeat(
+          CRAWL_PROJECTION_LIMITS.maxMetaDescriptionChars + 1,
+        ),
+      },
+    });
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(mocks.buildTemplateArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMetadata: {
+          url: "https://example.com/pricing",
+          currentTitle: null,
+          currentDescription: null,
+        },
+      }),
+    );
+  });
+
+  it.each([
+    [{ snapshots: [null] }],
+    [
+      {
+        snapshots: [
+          { snapshotId: frozenSnapshotId, provider: "crawl" },
+          { snapshotId: duplicateSnapshotId, provider: "crawl" },
+        ],
+      },
+    ],
+    [{ snapshots: [{ snapshotId: "", provider: "crawl" }] }],
+    [{ snapshots: [{ snapshotId: "not-a-uuid", provider: "crawl" }] }],
+  ])("fails closed on a malformed or ambiguous frozen manifest", async (inputManifest) => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, artifactType: "metadata_rewrite" },
+    });
+    vi.mocked(DiagnosticRunsRepository.prototype.findById).mockResolvedValueOnce({
+      ...diagnosticRun,
+      input_manifest: inputManifest,
+    });
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMetadata: {
+          url: "https://example.com/pricing",
+          currentTitle: null,
+          currentDescription: null,
+        },
+      }),
+    );
+  });
+
+  it("reads evidence links only from the finding's exact frozen diagnostic run", async () => {
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(EvidenceRepository.prototype.listForFindings).toHaveBeenCalledWith(
+      scope,
+      [finding.id],
+      {
+        diagnosticRunId: finding.last_seen_run_id,
+        maxRows: MAX_ARTIFACT_EVIDENCE_ROWS + 1,
+      },
+    );
+  });
+
+  it("fails closed before loading evidence bodies when the frozen link set exceeds the budget", async () => {
+    vi.mocked(EvidenceRepository.prototype.listForFindings).mockResolvedValueOnce(
+      Array.from(
+        { length: MAX_ARTIFACT_EVIDENCE_ROWS + 1 },
+        (_unused, index) => ({
+          finding_id: finding.id,
+          evidence_id: `evidence-${index + 1}`,
+          role: "primary",
+        }),
+      ),
+    );
+    const findByIds = vi.spyOn(EvidenceRepository.prototype, "findByIds");
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(findByIds).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(
+      ExecutionArtifactsRepository.prototype.setFailedForGenerationRun,
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when any loaded evidence row comes from a different diagnostic run", async () => {
+    vi.mocked(EvidenceRepository.prototype.findByIds).mockResolvedValueOnce([
+      {
+        id: "evidence-1",
+        diagnostic_run_id: "diagnostic-other",
+        source_provider: "crawl",
+        origin: "observed",
+        method: "deterministic",
+        grade: "A",
+        availability: "available",
+        support: "supports",
+        subject_refs: ["https://example.com/pricing"],
+        claim: "Pricing returned 503",
+        observed_at: "2026-07-18T11:00:00.000Z",
+        limitation: "Static HTML",
+        snapshot_id: "snapshot-1",
+        analysis_invocation_id: null,
+      },
+    ]);
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(
+      ExecutionArtifactsRepository.prototype.setFailedForGenerationRun,
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when a frozen evidence id disappears before the body lookup", async () => {
+    vi.mocked(EvidenceRepository.prototype.findByIds).mockResolvedValueOnce([]);
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(
+      ExecutionArtifactsRepository.prototype.setFailedForGenerationRun,
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("does not query a crawl observation when every target URL candidate is malformed", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, artifactType: "metadata_rewrite" },
+    });
+    vi.mocked(FindingsRepository.prototype.findById).mockResolvedValueOnce({
+      ...finding,
+      subject_refs: [
+        "/relative",
+        "javascript:alert(1)",
+        "https://user:secret@example.com/pricing",
+        `https://example.com/${"a".repeat(CRAWL_PROJECTION_LIMITS.maxUrlChars)}`,
+        42,
+      ],
+    });
+    mocks.parseIcp.mockReturnValueOnce({
+      productName: "SignalFrame",
+      oneLineDescription: "Evidence-led growth",
+      offers: ["Audit"],
+      useCases: ["SEO"],
+      differentiators: ["Evidence"],
+      primaryConversion: {
+        label: "Book",
+        type: "demo",
+        targetUrl: "/also-relative",
+      },
+      marketCodes: ["US"],
+    });
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(
+      ObservationsRepository.prototype.findBySnapshotMetricSubject,
+    ).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMetadata: {
+          url: null,
+          currentTitle: null,
+          currentDescription: null,
+        },
+      }),
+    );
+  });
+
+  it.each(["fr-FR", "zh-TW", "zh-Hant"])(
+    "fails a legacy template request for unsupported locale %s without saving a revision",
+    async (outputLocale) => {
+      vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+        ...run,
+        request_payload: { ...request, outputLocale },
+      });
+
+      await runArtifact(ctx, { runId: run.id, ...scope });
+
+      expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+      expect(ExecutionArtifactsRepository.prototype.insertRevision).not.toHaveBeenCalled();
+      expect(
+        ExecutionArtifactsRepository.prototype.setFailedForGenerationRun,
+      ).toHaveBeenCalledWith(scope, artifact.id, run.id, 0);
+      expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+        attempt,
+        expect.objectContaining({
+          status: "failed",
+          lastErrorCode: "UNSUPPORTED_TEMPLATE_LOCALE",
+        }),
+      );
+      expect(mocks.error).toHaveBeenCalledWith("artifact_failed", {
+        runId: run.id,
+        code: "UNSUPPORTED_TEMPLATE_LOCALE",
+        type: "internal",
+      });
+      expect(JSON.stringify(mocks.error.mock.calls)).not.toContain(outputLocale);
+    },
+  );
+
+  it("canonicalizes a legacy semantic zh-CN template locale before generation and persistence", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, outputLocale: "ZH-cn" },
+    });
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(mocks.buildTemplateArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ outputLocale: "zh-CN" }),
+    );
+    expect(ExecutionArtifactsRepository.prototype.insertRevision).toHaveBeenCalledWith(
+      expect.objectContaining({ outputLocale: "zh-CN" }),
+    );
+  });
+
+  it("does not write an artifact revision after this attempt loses its epoch", async () => {
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockAttemptForUpdate,
+    ).mockResolvedValueOnce(null);
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(
+      ExecutionArtifactsRepository.prototype.setGeneratedForGenerationRun,
+    ).not.toHaveBeenCalled();
+    expect(
+      ExecutionArtifactsRepository.prototype.insertRevision,
+    ).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).not.toHaveBeenCalled();
+    expect(mocks.info).not.toHaveBeenCalledWith(
+      "artifact_done",
+      expect.anything(),
     );
   });
 
@@ -369,9 +935,7 @@ describe("runArtifact", () => {
 
     expect(ExecutionArtifactsRepository.prototype.insertRevision).not.toHaveBeenCalled();
     expect(ExecutionArtifactsRepository.prototype.setGenerated).not.toHaveBeenCalled();
-    expect(
-      AsyncRunsRepository.prototype.reconcileActiveToTerminal,
-    ).toHaveBeenCalledWith(scope, run.id, {
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(attempt, {
       status: "cancelled",
       lastErrorCode: "ARTIFACT_GENERATION_SUPERSEDED",
       lastErrorSummary: "Artifact generation was superseded.",
@@ -464,6 +1028,78 @@ describe("runArtifact", () => {
         analysisInvocationId: "invocation-1",
       }),
     );
+    expect(mocks.info).toHaveBeenCalledWith("llm_invocation_recorded", {
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      runId: run.id,
+      provider: "openai",
+      model: "gpt-test",
+      status: "succeeded",
+      inputTokens: 10,
+      outputTokens: 20,
+      latencyMs: 50,
+      validationFailure: false,
+      costUsd: 0.01,
+      costAvailable: true,
+      errorCode: null,
+    });
+    const invocationLog = mocks.info.mock.calls.find(
+      ([event]) => event === "llm_invocation_recorded",
+    );
+    expect(JSON.stringify(invocationLog)).not.toContain(invocation.inputHash);
+    expect(JSON.stringify(invocationLog)).not.toContain(invocation.outputHash);
+  });
+
+  it.each(["fr-FR", "zh-TW", "zh-Hant"])(
+    "preserves valid structured_llm locale %s",
+    async (outputLocale) => {
+      vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+        ...run,
+        request_payload: {
+          ...request,
+          generationMode: "structured_llm",
+          outputLocale,
+        },
+      });
+      mocks.generateArtifact.mockResolvedValueOnce({
+        content: { contentFormat: "markdown", content: "# LLM ticket" },
+        invocation,
+      });
+
+      await runArtifact(ctx, { runId: run.id, ...scope });
+
+      expect(mocks.generateArtifact).toHaveBeenCalledWith(
+        expect.objectContaining({ outputLocale }),
+      );
+      expect(ExecutionArtifactsRepository.prototype.insertRevision).toHaveBeenCalledWith(
+        expect.objectContaining({ outputLocale, generatedBy: "llm" }),
+      );
+    },
+  );
+
+  it("keeps LLM telemetry observational when the logger fails", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, generationMode: "structured_llm" },
+    });
+    mocks.generateArtifact.mockResolvedValueOnce({
+      content: { contentFormat: "markdown", content: "# LLM ticket" },
+      invocation,
+    });
+    mocks.info.mockImplementationOnce(() => {
+      throw new Error("telemetry sink unavailable");
+    });
+
+    await expect(
+      runArtifact(ctx, { runId: run.id, ...scope }),
+    ).resolves.toBeUndefined();
+    expect(ExecutionArtifactsRepository.prototype.insertRevision).toHaveBeenCalledWith(
+      expect.objectContaining({ analysisInvocationId: "invocation-1" }),
+    );
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
+    );
   });
 
   it("audits a failed model invocation and leaves no fabricated revision", async () => {
@@ -487,6 +1123,14 @@ describe("runArtifact", () => {
     await runArtifact(ctx, { runId: run.id, ...scope });
     expect(AnalysisInvocationsRepository.prototype.insert).toHaveBeenCalledWith(
       expect.objectContaining({ status: "failed", errorCode: "AUTH_FAILED" }),
+    );
+    expect(mocks.info).toHaveBeenCalledWith(
+      "llm_invocation_recorded",
+      expect.objectContaining({
+        status: "failed",
+        validationFailure: false,
+        errorCode: "AUTH_FAILED",
+      }),
     );
     expect(ExecutionArtifactsRepository.prototype.insertRevision).not.toHaveBeenCalled();
     expect(
@@ -526,9 +1170,7 @@ describe("runArtifact", () => {
     expect(
       ExecutionArtifactsRepository.prototype.setFailedForGenerationRun,
     ).not.toHaveBeenCalled();
-    expect(
-      AsyncRunsRepository.prototype.reconcileActiveToTerminal,
-    ).toHaveBeenCalledWith(scope, run.id, {
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(attempt, {
       status: "cancelled",
       lastErrorCode: "ARTIFACT_GENERATION_SUPERSEDED",
       lastErrorSummary: "Artifact generation was superseded.",
@@ -560,7 +1202,7 @@ describe("runArtifact", () => {
       expect.objectContaining({ status: "failed", errorCode: "RATE_LIMITED" }),
     );
     expect(AsyncRunsRepository.prototype.resetToQueued).toHaveBeenCalledWith(
-      run.id,
+      attempt,
     );
     expect(AsyncRunsRepository.prototype.setTerminal).not.toHaveBeenCalled();
     expect(ExecutionArtifactsRepository.prototype.setFailed).not.toHaveBeenCalled();
@@ -568,6 +1210,30 @@ describe("runArtifact", () => {
       "artifact_failed",
       expect.anything(),
     );
+  });
+
+  it("does not emit a transient alert after a newer artifact attempt wins", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: { ...request, generationMode: "structured_llm" },
+    });
+    vi.mocked(
+      AsyncRunsRepository.prototype.resetToQueued,
+    ).mockResolvedValueOnce(false);
+    const rateLimited = new LLMError("RATE_LIMITED", "provider returned 429");
+    mocks.generateArtifact.mockRejectedValueOnce(rateLimited);
+
+    await expect(
+      runArtifact(ctx, { runId: run.id, ...scope }),
+    ).resolves.toBeUndefined();
+
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      "artifact_transient_error",
+      expect.anything(),
+    );
+    expect(mocks.info).toHaveBeenCalledWith("artifact_skip_stale_attempt", {
+      code: "RATE_LIMITED",
+    });
   });
 
   it("rethrows an LLM network error without an invocation but terminalizes an opaque failure", async () => {
@@ -582,7 +1248,7 @@ describe("runArtifact", () => {
     ).rejects.toBe(networkError);
     expect(AnalysisInvocationsRepository.prototype.insert).not.toHaveBeenCalled();
     expect(AsyncRunsRepository.prototype.resetToQueued).toHaveBeenCalledWith(
-      run.id,
+      attempt,
     );
     expect(AsyncRunsRepository.prototype.setTerminal).not.toHaveBeenCalled();
 

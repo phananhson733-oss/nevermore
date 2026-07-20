@@ -6,6 +6,7 @@ export interface CriticalFlowApiState {
   readonly collectionRequests: unknown[];
   readonly diagnosticRequests: unknown[];
   readonly findingReviewRequests: unknown[];
+  readonly artifactCreateRequests: unknown[];
   readonly artifactPatchRequests: unknown[];
   readonly exportRequests: unknown[];
   sourceReads: number;
@@ -134,6 +135,8 @@ const evidence = {
   subjectRefs: [{ type: "url", value: "https://example.test/product" }],
   observedAt: NOW,
   limitation: "One captured response.",
+  snapshotId: crawlSnapshot.id,
+  analysisInvocationId: null,
 };
 
 function finding(reviewState: "unreviewed" | "confirmed") {
@@ -157,6 +160,44 @@ function finding(reviewState: "unreviewed" | "confirmed") {
     firstSeenAt: NOW,
     lastSeenAt: NOW,
     resolvedAt: null,
+  };
+}
+
+/** Canonical Finding fixture with shallow overrides for focused UI tests. */
+export function diagnosisFindingFixture(
+  overrides: Readonly<Record<string, unknown>> = {},
+) {
+  return {
+    ...finding("unreviewed"),
+    ...overrides,
+  };
+}
+
+/** Complete findings envelope used by the Diagnosis mock read model. */
+export function diagnosisFindingsEnvelopeFixture(
+  findings: readonly ReturnType<typeof diagnosisFindingFixture>[] = [
+    diagnosisFindingFixture(),
+  ],
+) {
+  return {
+    data: findings,
+    meta: {
+      nextCursor: null,
+      hasNext: false,
+      limit: 100,
+      latestRun: asyncRun("diagnostic-run", "diagnostic", "completed"),
+      coverage,
+      ruleResults: [
+        {
+          ruleId: "TECH-HTTP-001",
+          ruleVersion: 1,
+          domain: "technical_seo",
+          status: "candidate",
+          reason: null,
+          durationMs: 12,
+        },
+      ],
+    },
   };
 }
 
@@ -202,6 +243,34 @@ const artifact = {
   updatedAt: NOW,
 };
 
+/**
+ * Canonical ready Overview fixture. Tests may replace individual links with
+ * null/empty values to exercise honest partial states without involving a DB.
+ */
+export function overviewWorkspaceFixture(
+  overrides: Readonly<Record<string, unknown>> = {},
+) {
+  return {
+    view: "overview",
+    project,
+    coverage,
+    activeRuns: [],
+    topActions: [action],
+    latestSnapshot: crawlSnapshot,
+    // One canonical evidence id even though the Diagnosis fixture intentionally
+    // includes a duplicate row to test its own per-finding de-duplication.
+    topActionEvidence: [evidence],
+    deliveryFocus: {
+      artifactId: artifact.id,
+      actionId: artifact.actionId,
+      artifactType: artifact.artifactType,
+      status: artifact.status,
+      updatedAt: artifact.updatedAt,
+    },
+    ...overrides,
+  };
+}
+
 function listEnvelope(data: readonly unknown[]) {
   return { data, meta: { nextCursor: null, hasNext: false, limit: 100 } };
 }
@@ -232,6 +301,7 @@ export async function installCriticalFlowApi(
     collectionRequests: [],
     diagnosticRequests: [],
     findingReviewRequests: [],
+    artifactCreateRequests: [],
     artifactPatchRequests: [],
     exportRequests: [],
     sourceReads: 0,
@@ -260,13 +330,7 @@ export async function installCriticalFlowApi(
 
     if (method === "GET" && path === `${BASE}/workspace`) {
       await json(route, {
-        data: {
-          view: "overview",
-          project,
-          coverage,
-          activeRuns: [],
-          topActions: [action],
-        },
+        data: overviewWorkspaceFixture(),
       });
       return;
     }
@@ -381,26 +445,12 @@ export async function installCriticalFlowApi(
     }
 
     if (method === "GET" && path === `${BASE}/findings`) {
-      await json(route, {
-        data: [finding(findingConfirmed ? "confirmed" : "unreviewed")],
-        meta: {
-          nextCursor: null,
-          hasNext: false,
-          limit: 100,
-          latestRun: asyncRun("diagnostic-run", "diagnostic", "completed"),
-          coverage,
-          ruleResults: [
-            {
-              ruleId: "TECH-HTTP-001",
-              ruleVersion: 1,
-              domain: "technical_seo",
-              status: "candidate",
-              reason: null,
-              durationMs: 12,
-            },
-          ],
-        },
-      });
+      await json(
+        route,
+        diagnosisFindingsEnvelopeFixture([
+          finding(findingConfirmed ? "confirmed" : "unreviewed"),
+        ]),
+      );
       return;
     }
 
@@ -419,6 +469,33 @@ export async function installCriticalFlowApi(
 
     if (method === "GET" && path === `${BASE}/artifacts`) {
       await json(route, listEnvelope([artifact]));
+      return;
+    }
+
+    if (
+      method === "POST" &&
+      path === `${BASE}/actions/${action.id}/artifacts`
+    ) {
+      state.artifactCreateRequests.push(request.postDataJSON());
+      const run = asyncRun("artifact-run", "artifact_generation", "queued");
+      await json(
+        route,
+        {
+          data: {
+            run,
+            statusUrl: `${BASE}/runs/${run.id}`,
+            resourceRef: { type: "artifact", id: artifact.id },
+          },
+        },
+        202,
+      );
+      return;
+    }
+
+    if (method === "GET" && path === `${BASE}/runs/artifact-run`) {
+      await json(route, {
+        data: asyncRun("artifact-run", "artifact_generation", "completed"),
+      });
       return;
     }
 
@@ -473,12 +550,15 @@ export async function installCriticalFlowApi(
     }
 
     if (method === "GET" && path === `${BASE}/exports/export-bundle`) {
+      const latestExportRequest = state.exportRequests.at(-1) as
+        | { readonly outputLocale?: string }
+        | undefined;
       await json(route, {
         data: {
           id: "export-bundle",
           kind: "client_bundle",
           schemaVersion: "1.0.0",
-          outputLocale: "en",
+          outputLocale: latestExportRequest?.outputLocale ?? "en",
           run: asyncRun("export-run", "export", "completed"),
           checksum: "sha256:e2e-export",
           itemCounts: { findings: 1, actions: 1, artifacts: 1 },

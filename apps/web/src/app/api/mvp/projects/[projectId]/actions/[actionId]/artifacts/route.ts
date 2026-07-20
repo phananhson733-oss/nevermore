@@ -1,4 +1,4 @@
-import { CreateArtifactRequest } from "@sf/contracts";
+import { CreateArtifactWireRequest } from "@sf/contracts";
 import { operatorRoute } from "@/lib/http/handler";
 import { assertWorkspaceRateLimit } from "@/lib/http/rate-limit";
 import { asyncAccepted } from "@/lib/http/respond";
@@ -22,7 +22,10 @@ export const POST = operatorRoute<{ projectId: string; actionId: string }>(
       maxAttempts: 20,
       windowMs: 15 * 60 * 1000,
     });
-    const body = await parseJsonBody(request, CreateArtifactRequest);
+    // Preserve the exact, valid wire locale until the service has checked for
+    // a completed historical idempotency record. The service applies the
+    // template-locale policy and canonicalization only to new commands.
+    const body = await parseJsonBody(request, CreateArtifactWireRequest);
 
     const result = await createActionArtifact(
       { workspaceId: ctx.operator.workspaceId },

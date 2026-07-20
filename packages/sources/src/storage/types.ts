@@ -23,6 +23,11 @@ export interface BlobPutResult {
   readonly bytes: number;
 }
 
+/** Optional caller-lifetime cancellation for one blob read. */
+export interface BlobGetOptions {
+  readonly signal?: AbortSignal;
+}
+
 /** The only append-only object families stored in the two private buckets. */
 export const PRIVATE_BLOB_OBJECT_KINDS = [
   "raw",
@@ -59,7 +64,7 @@ export interface BlobStore {
   /** Store bytes at `key`. Rejects if `key` already exists (append-only). */
   put(input: BlobPutInput): Promise<BlobPutResult>;
   /** Fetch bytes, or `null` if the key does not exist. */
-  get(key: string): Promise<Buffer | null>;
+  get(key: string, options?: BlobGetOptions): Promise<Buffer | null>;
   /** A time-limited URL for private read access. */
   signedUrl(key: string, ttlSeconds: number): Promise<string>;
   /** Remove the object. Idempotent: deleting a missing key is a no-op. */

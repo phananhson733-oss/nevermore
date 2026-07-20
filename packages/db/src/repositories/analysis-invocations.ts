@@ -1,5 +1,10 @@
+import { and, eq, sql } from "drizzle-orm";
 import { analysisInvocations } from "../schema.ts";
-import { Repository } from "./base.ts";
+import {
+  Repository,
+  projectPredicate,
+  type ProjectScope,
+} from "./base.ts";
 
 /**
  * `analysis_invocations` is append-only (spec §10.2). One row per model call with
@@ -9,6 +14,40 @@ import { Repository } from "./base.ts";
  */
 
 export class AnalysisInvocationsRepository extends Repository {
+  /**
+   * Count persisted calls for one run/task without loading append-only rows.
+   * PostgreSQL returns bigint counts as strings; reject every non-canonical or
+   * unsafe value so a malformed/overflowing result can never reopen a budget.
+   */
+  async countByAsyncRunTask(
+    scope: ProjectScope,
+    asyncRunId: string,
+    task: "finding_summary",
+  ): Promise<number> {
+    const rows = (await this.exec
+      .select({ count: sql<string>`count(*)::text` })
+      .from(analysisInvocations)
+      .where(
+        and(
+          projectPredicate(analysisInvocations, scope),
+          eq(analysisInvocations.async_run_id, asyncRunId),
+          eq(analysisInvocations.task, task),
+        ),
+      )) as Array<{ readonly count: unknown }>;
+    if (rows.length !== 1) {
+      throw new Error("invalid analysis invocation count");
+    }
+    const raw = rows[0]?.count;
+    if (typeof raw !== "string" || !/^(?:0|[1-9]\d*)$/u.test(raw)) {
+      throw new Error("invalid analysis invocation count");
+    }
+    const count = Number(raw);
+    if (!Number.isSafeInteger(count)) {
+      throw new Error("invalid analysis invocation count");
+    }
+    return count;
+  }
+
   async insert(values: {
     workspaceId: string;
     projectId: string;

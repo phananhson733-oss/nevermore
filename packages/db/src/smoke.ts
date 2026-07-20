@@ -42,15 +42,48 @@ export interface PsqlSmokeSpawnConfig {
   readonly pgPassContents: string;
 }
 
+const SAFE_CONNECTION_PARAMETER_ENV = {
+  channel_binding: "PGCHANNELBINDING",
+  client_encoding: "PGCLIENTENCODING",
+  connect_timeout: "PGCONNECT_TIMEOUT",
+  gssencmode: "PGGSSENCMODE",
+  host: "PGHOST",
+  hostaddr: "PGHOSTADDR",
+  keepalives: "PGKEEPALIVES",
+  keepalives_count: "PGKEEPALIVESCOUNT",
+  keepalives_idle: "PGKEEPALIVESIDLE",
+  keepalives_interval: "PGKEEPALIVESINTERVAL",
+  krbsrvname: "PGKRBSRVNAME",
+  port: "PGPORT",
+  requirepeer: "PGREQUIREPEER",
+  sslcert: "PGSSLCERT",
+  sslcrl: "PGSSLCRL",
+  sslcrldir: "PGSSLCRLDIR",
+  sslkey: "PGSSLKEY",
+  sslmaxprotocolversion: "PGSSLMAXPROTOCOLVERSION",
+  sslminprotocolversion: "PGSSLMINPROTOCOLVERSION",
+  sslmode: "PGSSLMODE",
+  sslrootcert: "PGSSLROOTCERT",
+  target_session_attrs: "PGTARGETSESSIONATTRS",
+  tcp_user_timeout: "PGTCPUSER_TIMEOUT",
+  user: "PGUSER",
+  dbname: "PGDATABASE",
+} as const satisfies Readonly<Record<string, string>>;
+
+const IGNORED_SAFE_CONNECTION_PARAMETERS = new Set([
+  "application_name",
+  "fallback_application_name",
+]);
+
 function escapePgPassPassword(password: string): string {
   return password.replaceAll("\\", "\\\\").replaceAll(":", "\\:");
 }
 
 /**
  * Build a minimal psql environment without copying unrelated process secrets.
- * The sanitized URI passed through `--dbname` has its database password
- * removed; authentication uses a short-lived mode-0600 PGPASSFILE instead.
- * The complete secret-bearing DATABASE_URL is therefore never placed in argv.
+ * Connection coordinates are passed through an explicit libpq environment
+ * allowlist, while authentication uses a short-lived mode-0600 PGPASSFILE.
+ * No connection URI (sanitized or otherwise) is placed in process argv.
  */
 export function buildPsqlSmokeSpawnConfig(
   connectionString: string,
@@ -58,13 +91,19 @@ export function buildPsqlSmokeSpawnConfig(
   inheritedEnv: NodeJS.ProcessEnv = process.env,
 ): PsqlSmokeSpawnConfig {
   const parsed = new URL(connectionString);
-  const queryPassword = parsed.searchParams.get("password");
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
+    throw new Error("unsupported database connection protocol");
+  }
+
+  const queryPasswords = parsed.searchParams.getAll("password");
+  if (queryPasswords.length > 1) {
+    throw new Error("unsupported connection parameter for schema smoke");
+  }
+  const queryPassword = queryPasswords[0];
   const authorityPassword = parsed.password
     ? decodeURIComponent(parsed.password)
     : "";
   const password = queryPassword ?? authorityPassword;
-  parsed.password = "";
-  parsed.searchParams.delete("password");
 
   const env: NodeJS.ProcessEnv = {};
   for (const key of SAFE_CHILD_ENV_KEYS) {
@@ -74,13 +113,32 @@ export function buildPsqlSmokeSpawnConfig(
   env.PGPASSFILE = pgPassFile;
   env.PGAPPNAME = "signalframe_schema_smoke";
 
+  if (parsed.hostname) env.PGHOST = parsed.hostname;
+  if (parsed.port) env.PGPORT = parsed.port;
+  if (parsed.username) env.PGUSER = decodeURIComponent(parsed.username);
+  if (parsed.pathname && parsed.pathname !== "/") {
+    env.PGDATABASE = decodeURIComponent(parsed.pathname.slice(1));
+  }
+
+  for (const [parameter, value] of parsed.searchParams) {
+    if (parameter === "password") continue;
+    if (IGNORED_SAFE_CONNECTION_PARAMETERS.has(parameter)) continue;
+
+    const envKey = SAFE_CONNECTION_PARAMETER_ENV[
+      parameter as keyof typeof SAFE_CONNECTION_PARAMETER_ENV
+    ];
+    if (!envKey) {
+      // Do not reflect an untrusted parameter name or value in this error.
+      throw new Error("unsupported connection parameter for schema smoke");
+    }
+    env[envKey] = value;
+  }
+
   return {
     command: "psql",
     args: [
       "--no-psqlrc",
       "--no-password",
-      "--dbname",
-      parsed.toString(),
       "-v",
       "ON_ERROR_STOP=1",
       "-f",

@@ -3,10 +3,12 @@
 import { useActionState } from "react";
 import { useTranslations } from "next-intl";
 import { Button, Field, TextInput } from "@/components/ui";
-import { signInAction, type SignInState } from "@/lib/auth/actions";
+import { signInAction } from "@/lib/auth/actions";
+import { type SignInState } from "@/lib/auth/action-state";
+import { loginErrorMessageKey } from "./_form-state";
 import styles from "./login.module.css";
 
-const INITIAL_STATE: SignInState = { error: null };
+const INITIAL_STATE: SignInState = { errorCode: null };
 
 /**
  * Email/password sign-in form (client). Wraps the `signInAction` server action
@@ -16,6 +18,7 @@ const INITIAL_STATE: SignInState = { error: null };
 export function LoginForm({ next }: { readonly next: string }) {
   const t = useTranslations("auth");
   const [state, action, pending] = useActionState(signInAction, INITIAL_STATE);
+  const errorMessageKey = loginErrorMessageKey(state);
 
   return (
     <form action={action} className={styles.form}>
@@ -34,9 +37,9 @@ export function LoginForm({ next }: { readonly next: string }) {
 
       <input type="hidden" name="next" value={next} />
 
-      {state.error ? (
+      {errorMessageKey ? (
         <p className={styles.error} role="alert">
-          {state.error || t("signInError")}
+          {t(errorMessageKey)}
         </p>
       ) : null}
 

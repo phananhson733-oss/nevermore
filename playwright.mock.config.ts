@@ -33,7 +33,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm --filter @sf/web dev --port ${PORT}`,
+    command: `pnpm --filter @sf/web dev --webpack --port ${PORT}`,
     url: `${BASE_URL}/api/mvp/health/live`,
     reuseExistingServer: false,
     timeout: 120_000,

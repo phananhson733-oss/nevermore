@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DbTx } from "./client.ts";
 import {
+  COLLECT_CRAWL_JOB_EXPIRY_SECONDS,
   createBoss,
   enqueueRunInTx,
   PgBoss,
@@ -14,10 +15,17 @@ const PAYLOAD: RunJobPayload = {
   runId: "00000000-0000-4000-8000-000000000001",
   workspaceId: "00000000-0000-4000-8000-000000000002",
   projectId: "00000000-0000-4000-8000-000000000003",
-  contractVersion: "0.2.0",
+  contractVersion: "2026-07-18",
 };
 
 describe("pg-boss queue contract", () => {
+  it("keeps the frozen crawl job window at fifteen minutes", () => {
+    expect(COLLECT_CRAWL_JOB_EXPIRY_SECONDS).toBe(15 * 60);
+    expect(QUEUE_CONFIG["collect.crawl"].expireInSeconds).toBe(
+      COLLECT_CRAWL_JOB_EXPIRY_SECONDS,
+    );
+  });
+
   it("constructs normal and enqueue-only clients without opening connections", () => {
     expect(createBoss("postgres://user@localhost/db")).toBeInstanceOf(PgBoss);
     expect(

@@ -1,21 +1,17 @@
 "use client";
 
 /**
- * Overview client view (spec §4.2): stage, evidence coverage, and the honest
- * "next step" for a project. TanStack Query owns the server state (never copied
- * into a hand-rolled store, spec §3.2). For a fresh project every metric is
- * genuinely empty — cards show `noData` / `missing`, never a fabricated number
- * (unavailable != 0, spec §1.3). Diagnosis and report are real project screens,
- * so the hero actions are navigable even while their content is not populated.
+ * Overview client view. Every value comes from the canonical workspace read
+ * model: snapshots drive freshness, persisted priority bands select the focus
+ * Action, its source Finding supplies evidence, and its Artifact supplies the
+ * delivery state. Missing links stay explicitly unavailable.
  */
 
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Badge,
-  Button,
   Card,
-  EmptyState,
   Panel,
   Spinner,
   StatusPill,
@@ -24,10 +20,19 @@ import {
   type StatusTone,
 } from "@/components/ui";
 import { useWorkspaceView } from "@/lib/api";
-import type { Coverage, OverviewView, Project } from "@/lib/api";
+import type {
+  Coverage,
+  OverviewAction,
+  OverviewActionStatus,
+  OverviewDeliveryFocus,
+  OverviewEvidence,
+  OverviewPriorityBand,
+  OverviewView,
+  Project,
+} from "@/lib/api";
+import { ProblemState } from "../_problem-display";
 import styles from "./overview.module.css";
 
-/** The five diagnosis domains, in the spec's canonical order (spec §4.2). */
 const DOMAIN_KEYS = [
   "technical_seo",
   "search_performance",
@@ -36,7 +41,6 @@ const DOMAIN_KEYS = [
   "geo_ai",
 ] as const;
 
-/** `coverage.*` message key (label text is never conveyed by color alone). */
 type CoverageLabelKey = "ready" | "degraded" | "partial" | "missing";
 
 interface CoverageMeta {
@@ -44,7 +48,6 @@ interface CoverageMeta {
   readonly labelKey: CoverageLabelKey;
 }
 
-/** Domain-level status → pill tone + label. Unknown/undefined → neutral missing. */
 function domainStatusMeta(status: string | undefined): CoverageMeta {
   switch (status) {
     case "complete":
@@ -58,7 +61,6 @@ function domainStatusMeta(status: string | undefined): CoverageMeta {
   }
 }
 
-/** Overall coverage → pill tone + label (unavailable is the honest default). */
 function coverageOverallMeta(overall: Coverage["overall"]): CoverageMeta {
   switch (overall) {
     case "complete":
@@ -70,7 +72,6 @@ function coverageOverallMeta(overall: Coverage["overall"]): CoverageMeta {
   }
 }
 
-/** Context status → pill tone (missing neutral, draft warning, complete success). */
 function contextTone(status: Project["contextStatus"]): StatusTone {
   switch (status) {
     case "complete":
@@ -82,15 +83,88 @@ function contextTone(status: Project["contextStatus"]): StatusTone {
   }
 }
 
+const PRIORITY_TONE: Readonly<Record<OverviewPriorityBand, StatusTone>> = {
+  critical: "danger",
+  high: "warning",
+  medium: "info",
+  low: "neutral",
+};
+
+const ACTION_STATUS_TONE: Readonly<Record<OverviewActionStatus, StatusTone>> = {
+  candidate: "neutral",
+  planned: "info",
+  in_progress: "priority",
+  blocked: "danger",
+  done: "success",
+  dismissed: "neutral",
+};
+
+function artifactStatusTone(
+  status: OverviewDeliveryFocus["status"],
+): StatusTone {
+  switch (status) {
+    case "ready":
+      return "success";
+    case "draft":
+      return "warning";
+    case "failed":
+      return "danger";
+    case "generating":
+      return "info";
+    default:
+      return "neutral";
+  }
+}
+
+function formatDate(iso: string, locale: string): string | null {
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return null;
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(value);
+}
+
+function latestEvidenceDate(
+  evidence: readonly OverviewEvidence[],
+): string | null {
+  let latest: { readonly time: number; readonly iso: string } | null = null;
+  for (const item of evidence) {
+    const time = Date.parse(item.observedAt);
+    if (Number.isNaN(time)) continue;
+    if (latest === null || time > latest.time) latest = { time, iso: item.observedAt };
+  }
+  return latest?.iso ?? null;
+}
+
+function providerLabel(
+  provider: string,
+  translate: (key: "crawl" | "gsc" | "ga4" | "csv" | "dataforseo") => string,
+): string {
+  switch (provider) {
+    case "crawl":
+    case "gsc":
+    case "ga4":
+    case "csv":
+    case "dataforseo":
+      return translate(provider);
+    default:
+      return provider;
+  }
+}
+
 interface MetricItem {
   readonly key: string;
   readonly tone: CardTone;
   readonly label: string;
   readonly value: string;
+  readonly detail?: string | undefined;
+  readonly dateTime?: string | undefined;
   readonly empty: boolean;
 }
 
-/** Tone → corner-accent modifier class for a metric card. */
 const METRIC_TONE_CLASS: Record<string, string | undefined> = {
   cobalt: styles.metricCobalt,
   mint: styles.metricMint,
@@ -174,46 +248,64 @@ function NextStepBanner({
   );
 }
 
-function MetricStrip({
-  project,
-  coverage,
-  roadmapCount,
-}: {
-  readonly project: Project;
-  readonly coverage: Coverage;
-  readonly roadmapCount: number;
-}) {
+function MetricStrip({ view }: { readonly view: OverviewView }) {
   const t = useTranslations("overview");
   const tCoverage = useTranslations("coverage");
-  const overall = coverageOverallMeta(coverage.overall);
+  const tActionStatus = useTranslations("actionStatus");
+  const tStudio = useTranslations("studio");
+  const tProvider = useTranslations("provider");
+  const locale = useLocale();
+  const overall = coverageOverallMeta(view.coverage.overall);
+  const topAction = view.topActions[0] ?? null;
+  const captured = view.latestSnapshot
+    ? formatDate(view.latestSnapshot.capturedAt, locale)
+    : null;
+  const snapshotAvailability = view.latestSnapshot
+    ? view.latestSnapshot.availability === "available"
+      ? t("available")
+      : view.latestSnapshot.availability === "partial"
+        ? tCoverage("partial")
+        : t("unavailable")
+    : null;
   const metrics: readonly MetricItem[] = [
     {
       key: "coverage",
       tone: "cobalt",
       label: t("metrics.coverage"),
       value: tCoverage(overall.labelKey),
-      empty: coverage.overall === "unavailable",
+      empty: view.coverage.overall === "unavailable",
     },
     {
       key: "freshness",
       tone: "mint",
       label: t("metrics.freshness"),
-      value: t("noData"),
-      empty: true,
+      value: captured ?? t("unavailable"),
+      detail: view.latestSnapshot
+        ? `${t("snapshotDetail", {
+            provider: providerLabel(view.latestSnapshot.provider, tProvider),
+          })} · ${snapshotAvailability}`
+        : undefined,
+      dateTime: captured ? view.latestSnapshot?.capturedAt : undefined,
+      empty: captured === null,
     },
     {
       key: "roadmap",
       tone: "amber",
       label: t("metrics.roadmap"),
-      value: roadmapCount > 0 ? String(roadmapCount) : t("noData"),
-      empty: roadmapCount === 0,
+      value: topAction ? tActionStatus(topAction.status) : t("noData"),
+      empty: topAction === null,
     },
     {
       key: "delivery",
       tone: "coral",
       label: t("metrics.delivery"),
-      value: project.defaultDeliveryLocale.toUpperCase(),
-      empty: false,
+      value: view.deliveryFocus
+        ? tStudio(`status.${view.deliveryFocus.status}`)
+        : t("unavailable"),
+      detail: view.deliveryFocus
+        ? tStudio(`artifactType.${view.deliveryFocus.artifactType}`)
+        : undefined,
+      empty: view.deliveryFocus === null,
     },
   ];
   return (
@@ -223,6 +315,8 @@ function MetricStrip({
           key={metric.key}
           tone={metric.tone}
           padding="md"
+          role="group"
+          aria-label={metric.label}
           className={cx(styles.metric, METRIC_TONE_CLASS[metric.tone])}
         >
           <dt className={styles.metricLabel}>{metric.label}</dt>
@@ -232,11 +326,288 @@ function MetricStrip({
               metric.empty && styles.metricValueEmpty,
             )}
           >
-            {metric.value}
+            {metric.dateTime ? (
+              <time dateTime={metric.dateTime}>{metric.value}</time>
+            ) : (
+              metric.value
+            )}
           </dd>
+          {metric.detail ? (
+            <dd className={styles.metricDetail}>{metric.detail}</dd>
+          ) : null}
         </Card>
       ))}
     </dl>
+  );
+}
+
+function SignalRail({ view }: { readonly view: OverviewView }) {
+  const t = useTranslations("overview");
+  const tCoverage = useTranslations("coverage");
+  const tActionStatus = useTranslations("actionStatus");
+  const tStudio = useTranslations("studio");
+  const overall = coverageOverallMeta(view.coverage.overall);
+  const action = view.topActions[0] ?? null;
+  const steps = [
+    {
+      key: "diagnosis",
+      label: t("signalRail.diagnosis"),
+      tone: overall.tone,
+      available: view.coverage.overall !== "unavailable",
+      detail:
+        view.coverage.overall !== "unavailable"
+          ? tCoverage(overall.labelKey)
+          : t("signalRail.noDiagnosis"),
+    },
+    {
+      key: "action",
+      label: t("signalRail.action"),
+      tone: action ? ACTION_STATUS_TONE[action.status] : "neutral",
+      available: action !== null,
+      detail: action ? tActionStatus(action.status) : t("signalRail.noAction"),
+    },
+    {
+      key: "delivery",
+      label: t("signalRail.delivery"),
+      tone: view.deliveryFocus
+        ? artifactStatusTone(view.deliveryFocus.status)
+        : "neutral",
+      available: view.deliveryFocus !== null,
+      detail: view.deliveryFocus
+        ? tStudio(`status.${view.deliveryFocus.status}`)
+        : t("signalRail.noDelivery"),
+    },
+  ] as const;
+
+  return (
+    <Panel
+      padding="lg"
+      className={styles.signalPanel}
+      aria-labelledby="sf-signal-rail-title"
+    >
+      <div className={styles.sectionHead}>
+        <div>
+          <h2 id="sf-signal-rail-title" className={styles.panelTitle}>
+            {t("signalRail.title")}
+          </h2>
+          <p className={styles.sectionDescription}>
+            {t("signalRail.description")}
+          </p>
+        </div>
+      </div>
+      <ol className={styles.signalRail}>
+        {steps.map((step, index) => (
+          <li
+            key={step.key}
+            className={cx(
+              styles.signalStep,
+              !step.available && styles.signalStepUnavailable,
+            )}
+          >
+            <span className={styles.signalNumber} aria-hidden="true">
+              {index + 1}
+            </span>
+            <div className={styles.signalCopy}>
+              <span className={styles.signalLabel}>{step.label}</span>
+              <StatusPill tone={step.tone}>{step.detail}</StatusPill>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Panel>
+  );
+}
+
+function HighestActionPanel({
+  projectId,
+  action,
+  evidenceCount,
+}: {
+  readonly projectId: string;
+  readonly action: OverviewAction | null;
+  readonly evidenceCount: number;
+}) {
+  const t = useTranslations("overview");
+  const tActionStatus = useTranslations("actionStatus");
+  const tPriority = useTranslations("priorityBand");
+  return (
+    <Panel
+      tone="amber"
+      padding="lg"
+      className={styles.actionPanel}
+      aria-labelledby="sf-highest-action-title"
+    >
+      <div className={styles.sectionHead}>
+        <div>
+          <span className="sf-eyebrow">{t("highestAction.eyebrow")}</span>
+          <h2 id="sf-highest-action-title" className={styles.panelTitle}>
+            {t("highestAction.title")}
+          </h2>
+          <p className={styles.sectionDescription}>
+            {t("highestAction.description")}
+          </p>
+        </div>
+        {action ? (
+          <div className={styles.statusCluster}>
+            <StatusPill tone={PRIORITY_TONE[action.priorityBand]}>
+              {tPriority(action.priorityBand)}
+            </StatusPill>
+            <StatusPill tone={ACTION_STATUS_TONE[action.status]}>
+              {tActionStatus(action.status)}
+            </StatusPill>
+          </div>
+        ) : (
+          <StatusPill tone="neutral">{t("unavailable")}</StatusPill>
+        )}
+      </div>
+      {action ? (
+        <div className={styles.actionBody}>
+          <div className={styles.actionCopy}>
+            <h3 className={styles.actionTitle}>{action.title}</h3>
+            <p className={styles.actionDescription}>{action.description}</p>
+            <div className={styles.outcome}>
+              <span className={styles.detailLabel}>
+                {t("highestAction.expectedOutcome")}
+              </span>
+              <p>{action.expectedOutcome}</p>
+            </div>
+          </div>
+          <div className={styles.actionMeta}>
+            <p className={styles.evidenceAssociation}>
+              {evidenceCount > 0
+                ? t("highestAction.evidenceCount", { count: evidenceCount })
+                : t("highestAction.noEvidence")}
+            </p>
+            <Link href={`/p/${projectId}/plan`} className={styles.inlineLink}>
+              {t("highestAction.viewPlan")}
+              <span aria-hidden="true">→</span>
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <p className={styles.unavailableCopy}>{t("highestAction.empty")}</p>
+      )}
+    </Panel>
+  );
+}
+
+function EvidenceFocusPanel({
+  evidence,
+}: {
+  readonly evidence: readonly OverviewEvidence[];
+}) {
+  const t = useTranslations("overview");
+  const tProvider = useTranslations("provider");
+  const locale = useLocale();
+  const providers = [
+    ...new Set(evidence.map((item) => item.sourceProvider)),
+  ];
+  const latestIso = latestEvidenceDate(evidence);
+  const observed = latestIso ? formatDate(latestIso, locale) : null;
+  return (
+    <Panel
+      tone="mint"
+      padding="lg"
+      className={styles.focusPanel}
+      aria-labelledby="sf-evidence-focus-title"
+    >
+      <div className={styles.sectionHead}>
+        <div>
+          <h2 id="sf-evidence-focus-title" className={styles.panelTitle}>
+            {t("evidenceFocus.title")}
+          </h2>
+          <p className={styles.sectionDescription}>
+            {t("evidenceFocus.description")}
+          </p>
+        </div>
+        <StatusPill tone={evidence.length > 0 ? "success" : "neutral"}>
+          {evidence.length > 0 ? t("available") : t("unavailable")}
+        </StatusPill>
+      </div>
+      {evidence.length > 0 ? (
+        <div className={styles.focusBody}>
+          <strong className={styles.focusValue}>
+            {t("evidenceFocus.count", { count: evidence.length })}
+          </strong>
+          {observed && latestIso ? (
+            <p className={styles.focusMeta}>
+              {t("evidenceFocus.latestObserved", { date: observed })}
+            </p>
+          ) : null}
+          <div className={styles.providerRow}>
+            <span className={styles.detailLabel}>
+              {t("evidenceFocus.sources")}
+            </span>
+            <span className={styles.badgeRow}>
+              {providers.map((provider) => (
+                <Badge key={provider} tone="accent">
+                  {providerLabel(provider, tProvider)}
+                </Badge>
+              ))}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <p className={styles.unavailableCopy}>{t("evidenceFocus.empty")}</p>
+      )}
+    </Panel>
+  );
+}
+
+function DeliveryFocusPanel({
+  projectId,
+  delivery,
+}: {
+  readonly projectId: string;
+  readonly delivery: OverviewDeliveryFocus | null;
+}) {
+  const t = useTranslations("overview");
+  const tStudio = useTranslations("studio");
+  const locale = useLocale();
+  const updated = delivery ? formatDate(delivery.updatedAt, locale) : null;
+  return (
+    <Panel
+      tone="coral"
+      padding="lg"
+      className={styles.focusPanel}
+      aria-labelledby="sf-delivery-focus-title"
+    >
+      <div className={styles.sectionHead}>
+        <div>
+          <h2 id="sf-delivery-focus-title" className={styles.panelTitle}>
+            {t("deliveryFocus.title")}
+          </h2>
+          <p className={styles.sectionDescription}>
+            {t("deliveryFocus.description")}
+          </p>
+        </div>
+        <StatusPill
+          tone={delivery ? artifactStatusTone(delivery.status) : "neutral"}
+        >
+          {delivery
+            ? tStudio(`status.${delivery.status}`)
+            : t("unavailable")}
+        </StatusPill>
+      </div>
+      {delivery ? (
+        <div className={styles.focusBody}>
+          <strong className={styles.focusValue}>
+            {tStudio(`artifactType.${delivery.artifactType}`)}
+          </strong>
+          {updated ? (
+            <p className={styles.focusMeta}>
+              {t("deliveryFocus.updated", { date: updated })}
+            </p>
+          ) : null}
+          <Link href={`/p/${projectId}/studio`} className={styles.inlineLink}>
+            {t("deliveryFocus.openStudio")}
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
+      ) : (
+        <p className={styles.unavailableCopy}>{t("deliveryFocus.empty")}</p>
+      )}
+    </Panel>
   );
 }
 
@@ -245,13 +616,14 @@ function CoveragePanel({ coverage }: { readonly coverage: Coverage }) {
   const tCoverage = useTranslations("coverage");
   const tDomain = useTranslations("domain");
   const overall = coverageOverallMeta(coverage.overall);
+  const limitations = [...new Set(coverage.limitations)];
   return (
     <Panel
       className={styles.panel}
       padding="lg"
       aria-labelledby="sf-coverage-title"
     >
-      <div className={styles.panelHead}>
+      <div className={styles.sectionHead}>
         <h2 id="sf-coverage-title" className={styles.panelTitle}>
           {t("metrics.coverage")}
         </h2>
@@ -272,10 +644,10 @@ function CoveragePanel({ coverage }: { readonly coverage: Coverage }) {
           );
         })}
       </ul>
-      {coverage.limitations.length > 0 ? (
+      {limitations.length > 0 ? (
         <div className={styles.limitations}>
           <ul className={styles.limitationList}>
-            {coverage.limitations.map((text, index) => (
+            {limitations.map((text, index) => (
               <li key={`${index}:${text}`} className={styles.limitationItem}>
                 {text}
               </li>
@@ -303,21 +675,25 @@ function OverviewContent({
           contextStatus={view.project.contextStatus}
         />
       ) : null}
-      <MetricStrip
-        project={view.project}
-        coverage={view.coverage}
-        roadmapCount={view.topActions.length}
+      <MetricStrip view={view} />
+      <SignalRail view={view} />
+      <HighestActionPanel
+        projectId={projectId}
+        action={view.topActions[0] ?? null}
+        evidenceCount={view.topActionEvidence.length}
       />
+      <div className={styles.focusGrid}>
+        <EvidenceFocusPanel evidence={view.topActionEvidence} />
+        <DeliveryFocusPanel
+          projectId={projectId}
+          delivery={view.deliveryFocus}
+        />
+      </div>
       <CoveragePanel coverage={view.coverage} />
     </div>
   );
 }
 
-/**
- * Overview entry: owns the `overview` workspace query and renders the loading /
- * error / ready states. The project shell layout provides the chrome; this
- * renders content only.
- */
 export function OverviewClient({ projectId }: { readonly projectId: string }) {
   const tCommon = useTranslations("common");
   const query = useWorkspaceView(projectId, "overview");
@@ -334,16 +710,7 @@ export function OverviewClient({ projectId }: { readonly projectId: string }) {
   if (query.error !== null || query.data === undefined) {
     return (
       <div className={styles.state}>
-        <EmptyState title={tCommon("error")}>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void query.refetch();
-            }}
-          >
-            {tCommon("retry")}
-          </Button>
-        </EmptyState>
+        <ProblemState error={query.error} onRetry={() => void query.refetch()} />
       </div>
     );
   }

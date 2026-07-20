@@ -14,13 +14,22 @@
 
 import {
   useMutation,
+  useInfiniteQuery,
   useQuery,
   useQueryClient,
+  type InfiniteData,
   type UseMutationResult,
+  type UseInfiniteQueryResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { apiGet, apiSend, type ApiError } from "./client";
 import type { Coverage, DataEnvelope, ListEnvelope } from "./types";
+import {
+  collectAllCursorItems,
+  cursorPageUrl,
+  nextCursorPageParam,
+  uniqueCursorItems,
+} from "./cursor-pages";
 
 /* --------------------------------------------------------------- enums ----- */
 
@@ -40,6 +49,7 @@ export type FindingReviewState =
   | "needs_more_data";
 export type EvidenceGrade = "A" | "B" | "C";
 export type Availability = "available" | "partial" | "unavailable";
+export type EvidenceSupport = "supports" | "contradicts" | "context";
 export type RuleStatus = "pass" | "candidate" | "skipped" | "inconclusive";
 export type RunStatus =
   | "queued"
@@ -50,6 +60,7 @@ export type RunStatus =
   | "cancelled";
 export type RunKind = "collection" | "diagnostic" | "artifact_generation" | "export";
 export type Provider = "crawl" | "gsc" | "ga4" | "csv" | "dataforseo";
+export type EvidenceSourceProvider = Provider | "system" | "llm";
 
 /* ----------------------------------------------------------------- DTOs ---- */
 
@@ -63,16 +74,18 @@ export interface SubjectRef {
  * unavailable measure is `"unavailable"`, never coerced to 0 (spec §1.3). */
 export interface Evidence {
   readonly id: string;
-  readonly sourceProvider: string;
+  readonly sourceProvider: EvidenceSourceProvider;
   readonly origin: string;
   readonly method: string;
   readonly grade: EvidenceGrade;
   readonly availability: Availability;
-  readonly support: string;
+  readonly support: EvidenceSupport;
   readonly claim: string;
   readonly subjectRefs: readonly SubjectRef[];
   readonly observedAt: string;
   readonly limitation: string;
+  readonly snapshotId: string | null;
+  readonly analysisInvocationId: string | null;
 }
 
 /** A diagnostic finding with its evidence summary (OpenAPI `Finding`). */
@@ -256,36 +269,72 @@ export function hasCrawlSnapshot(snapshots: readonly DataSnapshot[]): boolean {
   return snapshots.some((snapshot) => snapshot.provider === "crawl");
 }
 
+/**
+ * Merge loaded findings while keeping the first page's run/coverage/rule-board
+ * sidecar canonical. Later pages contribute findings and current pagination
+ * fields only; they cannot replace the run/coverage/rule projection that
+ * described the list read which opened the screen.
+ */
+export function mergeFindingPages(
+  data: InfiniteData<FindingListEnvelope, string | null> | undefined,
+): FindingListEnvelope | undefined {
+  const pages = data?.pages;
+  if (pages === undefined) return undefined;
+  const first = pages[0];
+  if (first === undefined) return undefined;
+  const last = pages.at(-1) ?? first;
+  return {
+    data: uniqueCursorItems(data),
+    meta: {
+      ...first.meta,
+      nextCursor: last.meta.nextCursor,
+      hasNext: last.meta.hasNext,
+    },
+  };
+}
+
 /* ---------------------------------------------------------------- hooks ---- */
 
 /**
- * List findings with their run/coverage/rule-board sidecar. The full
- * `{ data, meta }` envelope is returned so the screen can read `meta.latestRun`,
- * `meta.coverage`, and `meta.ruleResults` alongside the findings.
+ * List findings with their run/coverage/rule-board sidecar. Each bounded page
+ * keeps its `{ data, meta }` envelope; {@link mergeFindingPages} preserves the
+ * first canonical sidecar while combining the loaded finding rows.
  */
 export function useProjectFindings(
   projectId: string,
-): UseQueryResult<FindingListEnvelope, ApiError> {
-  return useQuery({
+): UseInfiniteQueryResult<
+  InfiniteData<FindingListEnvelope, string | null>,
+  ApiError
+> {
+  return useInfiniteQuery({
     queryKey: ["findings", projectId],
-    queryFn: () =>
-      apiGet<FindingListEnvelope>(`/projects/${projectId}/findings`),
+    queryFn: ({ pageParam }) =>
+      apiGet<FindingListEnvelope>(
+        cursorPageUrl(`/projects/${projectId}/findings`, pageParam),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: nextCursorPageParam,
     enabled: projectId.length > 0,
   });
 }
 
-/** List immutable snapshots — used to gather the run's `snapshotIds`. */
+/**
+ * Load the complete immutable snapshot chain before selecting diagnostic input.
+ * The list cursor is ordered by persistence time, while diagnosis chooses by
+ * `capturedAt`; exhausting every bounded page is therefore the only client-side
+ * way to prove that no provider's newest captured snapshot was omitted.
+ */
 export function useProjectSnapshots(
   projectId: string,
 ): UseQueryResult<readonly DataSnapshot[], ApiError> {
   return useQuery({
-    queryKey: ["snapshots", projectId],
-    queryFn: async () => {
-      const res = await apiGet<ListEnvelope<DataSnapshot>>(
-        `/projects/${projectId}/snapshots`,
-      );
-      return res.data;
-    },
+    queryKey: ["snapshots", projectId, "complete-for-diagnosis"],
+    queryFn: () =>
+      collectAllCursorItems((cursor) =>
+        apiGet<ListEnvelope<DataSnapshot>>(
+          cursorPageUrl(`/projects/${projectId}/snapshots`, cursor),
+        ),
+      ),
     enabled: projectId.length > 0,
   });
 }

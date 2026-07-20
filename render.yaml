@@ -6,7 +6,8 @@
 # dashboard, never in git. The web service runs on Vercel (apps/web/vercel.json),
 # not here. See docs/DEPLOY-GUIDE-zh.md step 4.
 #
-# (railway.json is kept as an equivalent fallback host — same Dockerfile.worker.)
+# The frozen Railway topology is separate: railway.json builds one shared
+# Dockerfile.railway image for both the web and worker services.
 
 services:
   - type: worker                       # Background Worker: always-on, no port
@@ -30,7 +31,10 @@ services:
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
-      - key: OPENAI_API_KEY            # or use the 4 AZURE_OPENAI_* vars instead
+      # This prepared Blueprint is the frozen-spec direct OpenAI path. The
+      # runtime also supports Azure, but that manual variant is not encoded by
+      # this Blueprint; see deploy/worker.env.template.
+      - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
         sync: false
@@ -38,7 +42,7 @@ services:
       # which the version resolver reads, so the worker logs the real deployed SHA.
       # --- fixed, non-secret ---
       - key: APP_ORIGIN
-        value: https://app.gengrowth.ai
+        sync: false                    # explicit origin-only value; candidate docs use https://gengrowth.ai
       - key: DB_POOL_MAX
         value: "3"
       - key: DATAFORSEO_ENABLED
@@ -51,5 +55,7 @@ services:
         value: supabase
       - key: LLM_PROVIDER
         value: openai
+      - key: FINDING_SUMMARIES_ENABLED
+        value: "true"                 # set false to use deterministic English fallbacks only
       - key: LOG_LEVEL
         value: info

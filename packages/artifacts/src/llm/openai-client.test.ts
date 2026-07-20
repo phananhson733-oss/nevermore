@@ -1,7 +1,12 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import type { ArtifactPromptInput } from "../types.ts";
 import { PROMPT_SET_VERSION } from "../types.ts";
-import { MAX_EVIDENCE_CLAIM_CHARS } from "./envelope.ts";
+import {
+  MAX_EVIDENCE_CLAIM_CHARS,
+  safePromptCurrentMetadata,
+} from "./envelope.ts";
 import {
   LLMError,
   MAX_OPENAI_RESPONSE_BODY_BYTES,
@@ -39,6 +44,11 @@ function makeInput(
       severity: "high",
       confidence: "b",
       subjectRefs: ["url:/"],
+    },
+    currentMetadata: {
+      url: null,
+      currentTitle: null,
+      currentDescription: null,
     },
     evidence: [
       {
@@ -153,6 +163,49 @@ function settleBeforeWatchdog(
   });
 }
 
+async function withRedirectServer(
+  run: (
+    baseUrl: string,
+    hits: { readonly redirect: number; readonly followed: number },
+  ) => Promise<void>,
+): Promise<void> {
+  const hits = { redirect: 0, followed: 0 };
+  const server = createServer((request, response) => {
+    if (request.url === "/redirect") {
+      hits.redirect += 1;
+      response.statusCode = 302;
+      response.setHeader("location", "/followed");
+      response.end();
+      return;
+    }
+    if (request.url === "/followed") {
+      hits.followed += 1;
+      response.statusCode = 200;
+      response.end(chatResponseText(VALID_MARKDOWN));
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    throw new Error("redirect test server did not expose a TCP port");
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await run(baseUrl, hits);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
 const VALID_MARKDOWN = {
   markdown:
     "Organic sessions fell 45% last quarter, so we should publish a comparison page.",
@@ -219,6 +272,7 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     expect(call[0]).toBe("https://api.openai.com/v1/chat/completions");
     const headers = call[1].headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer test-key");
+    expect(call[1].redirect).toBe("error");
     const sentBody = JSON.parse(call[1].body as string) as {
       model: string;
       temperature: number;
@@ -332,9 +386,59 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     expect(result.content.contentFormat).toBe("markdown");
   });
 
+  it("fails on the first redirect hop and never follows an OpenAI credential-bearing request", async () => {
+    await withRedirectServer(async (baseUrl, hits) => {
+      const client = createOpenAIClient({
+        apiKey: "test-key",
+        model: "gpt-4o-mini",
+        fetchImpl: (_input, init) => fetch(`${baseUrl}/redirect`, init),
+      });
+
+      await expect(client.generateArtifact(makeInput())).rejects.toMatchObject({
+        code: "NETWORK_ERROR",
+      });
+      expect(hits).toEqual({ redirect: 1, followed: 0 });
+    });
+  });
+
+  it("aborts an in-flight provider request when the worker signal is aborted", async () => {
+    const shutdown = new AbortController();
+    const fetchImpl = vi.fn((_input: string, init?: RequestInit) => {
+      const signal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            reject(
+              signal.reason ?? new DOMException("worker aborted", "AbortError"),
+            );
+          },
+          { once: true },
+        );
+      });
+    });
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+      signal: shutdown.signal,
+    });
+
+    const pending = client.generateArtifact(makeInput());
+    shutdown.abort(new DOMException("worker shutting down", "AbortError"));
+
+    await expect(pending).rejects.toMatchObject({
+      code: "TIMEOUT",
+      invocation: {
+        status: "failed",
+        errorCode: "TIMEOUT",
+      },
+    });
+  });
+
   it("builds a metadata JSON object for metadata_rewrite", async () => {
     const validMeta = {
-      url: "https://acme.example/",
+      url: "unknown",
       currentTitle: "unknown",
       currentDescription: "unknown",
       proposedTitle: "Acme Analytics vs Competitors",
@@ -359,6 +463,89 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     const obj = result.content.content as Record<string, unknown>;
     expect(obj.proposedTitle).toBe("Acme Analytics vs Competitors");
     expect(obj.evidenceRefs).toEqual(["ev-1"]);
+    expect(obj.url).toBeNull();
+    expect(obj.currentTitle).toBeNull();
+    expect(obj.currentDescription).toBeNull();
+  });
+
+  it("preserves literal placeholder-like metadata when it is the known frozen input", async () => {
+    const frozenMetadata = {
+      url: "https://acme.example/unknown",
+      currentTitle: "Unknown",
+      currentDescription:
+        "N/A <script>api_key=customer-secret-current-metadata</script>",
+    };
+    const echoedMetadata = safePromptCurrentMetadata(frozenMetadata);
+    const validMeta = {
+      ...echoedMetadata,
+      proposedTitle: "Clarify Acme plans",
+      proposedDescription: "Choose the right Acme plan for your team.",
+      targetQueries: ["acme pricing"],
+      rationale: "Known current metadata must be preserved exactly.",
+      evidenceRefs: [],
+      citedNumbers: [],
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(chatResponse(validMeta));
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
+
+    const result = await client.generateArtifact(
+      makeInput({
+        artifactType: "metadata_rewrite",
+        evidence: [],
+        currentMetadata: frozenMetadata,
+      }),
+    );
+
+    expect(result.content.contentFormat).toBe("json");
+    const obj = result.content.content as Record<string, unknown>;
+    expect(obj.url).toBe("https://acme.example/unknown");
+    expect(obj.currentTitle).toBe("Unknown");
+    expect(obj.currentDescription).toBe(frozenMetadata.currentDescription);
+  });
+
+  it("rejects a model change to known frozen metadata with REFERENCE_INTEGRITY", async () => {
+    const changedMeta = {
+      url: "https://acme.example/other",
+      currentTitle: "Invented current title",
+      currentDescription: "Current plan comparison.",
+      proposedTitle: "Compare Acme plans",
+      proposedDescription: "Choose the Acme plan that fits your team.",
+      targetQueries: ["acme pricing"],
+      rationale: "Clarifies the page metadata.",
+      evidenceRefs: [],
+      citedNumbers: [],
+    };
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl: vi.fn().mockResolvedValue(chatResponse(changedMeta)),
+    });
+
+    const error = await client
+      .generateArtifact(
+        makeInput({
+          artifactType: "metadata_rewrite",
+          evidence: [],
+          currentMetadata: {
+            url: "https://acme.example/pricing",
+            currentTitle: "Acme Pricing",
+            currentDescription: "Current plan comparison.",
+          },
+        }),
+      )
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      code: "REFERENCE_INTEGRITY",
+      invocation: {
+        status: "rejected",
+        errorCode: "REFERENCE_INTEGRITY",
+      },
+    });
   });
 
   it("rejects a fabricated-evidence envelope with REFERENCE_INTEGRITY (rejected invocation)", async () => {

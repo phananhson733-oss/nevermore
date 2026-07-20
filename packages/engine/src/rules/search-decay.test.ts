@@ -126,4 +126,16 @@ describe("searchDecayRule (SEARCH-DECAY-002)", () => {
     if (result.status !== "skipped") throw new Error("expected skipped");
     expect(result.reason).toBe("missing_dataset");
   });
+
+  it("does not emit available evidence from a partial GSC snapshot", () => {
+    const ctx = buildCtx({
+      observations: [observation(PAGE_URL, gscPage(100, 200))],
+      gscAvailability: "partial",
+    });
+
+    expect(searchDecayRule.evaluate(ctx)).toEqual({
+      status: "skipped",
+      reason: "missing_dataset",
+    });
+  });
 });

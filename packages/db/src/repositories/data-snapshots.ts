@@ -1,6 +1,10 @@
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { dataSnapshots } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
+import {
+  decodeTimestampUuidCursor,
+  encodeTimestampUuidCursor,
+} from "./cursor.ts";
 
 /**
  * `data_snapshots` is append-only (spec §7.6, §12.3): a snapshot is written once
@@ -37,22 +41,16 @@ export interface SnapshotListPage {
 }
 
 function encodeCursor(row: { created_at: string; id: string }): string {
-  return Buffer.from(`${row.created_at} ${row.id}`, "utf8").toString(
-    "base64url",
-  );
+  return encodeTimestampUuidCursor(row.created_at, row.id);
 }
 
 function decodeCursor(
   cursor: string,
 ): { createdAt: string; id: string } | null {
-  try {
-    const raw = Buffer.from(cursor, "base64url").toString("utf8");
-    const idx = raw.indexOf(" ");
-    if (idx < 0) return null;
-    return { createdAt: raw.slice(0, idx), id: raw.slice(idx + 1) };
-  } catch {
-    return null;
-  }
+  const decoded = decodeTimestampUuidCursor(cursor);
+  return decoded
+    ? { createdAt: decoded.timestamp, id: decoded.id }
+    : null;
 }
 
 export class DataSnapshotsRepository extends Repository {
@@ -174,9 +172,14 @@ export class DataSnapshotsRepository extends Repository {
   /** Keyset page of a project's snapshots, newest first (spec §11.1 pagination). */
   async listByProject(
     scope: ProjectScope,
-    opts: { limit: number; cursor: string | null },
+    opts: {
+      limit: number;
+      cursor: string | null;
+      provider?: string | null;
+    },
   ): Promise<SnapshotListPage> {
     const keyset = opts.cursor ? decodeCursor(opts.cursor) : null;
+    if (opts.cursor && !keyset) return { rows: [], nextCursor: null };
     const after =
       keyset != null
         ? or(
@@ -188,10 +191,16 @@ export class DataSnapshotsRepository extends Repository {
           )
         : undefined;
 
+    const providerFilter = opts.provider
+      ? eq(dataSnapshots.provider, opts.provider)
+      : undefined;
+
     const rows = (await this.exec
       .select()
       .from(dataSnapshots)
-      .where(and(projectPredicate(dataSnapshots, scope), after))
+      .where(
+        and(projectPredicate(dataSnapshots, scope), providerFilter, after),
+      )
       .orderBy(desc(dataSnapshots.created_at), desc(dataSnapshots.id))
       .limit(opts.limit + 1)) as DataSnapshotRow[];
 

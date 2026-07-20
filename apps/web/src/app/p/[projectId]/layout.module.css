@@ -193,17 +193,48 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .sidebar {
-    position: static;
-    height: auto;
-    overflow: visible;
-    gap: 14px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: 52px;
+    gap: 0;
+    padding: 8px 12px 0;
+    overflow: hidden;
     border-right: none;
     border-bottom: 1px solid var(--sf-ink-800);
   }
+  .sidebar nav {
+    min-width: 0;
+    margin-top: 0;
+  }
+  .brand,
+  .projectCard,
+  .newProjectLink {
+    display: none;
+  }
   .topbar {
+    top: 52px;
+    z-index: 15;
     padding: 12px 20px;
   }
   .main {
     padding: 20px 20px 40px;
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar {
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  .crumbRoot,
+  .crumbSep {
+    display: none;
+  }
+  .topbarActions {
+    gap: 8px;
+  }
+  .main {
+    padding: 18px 14px 36px;
   }
 }

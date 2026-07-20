@@ -106,6 +106,64 @@ describeDb("createProject (AC-007)", () => {
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 
+  it("rejects a non-root path/query instead of silently changing the submitted target", async () => {
+    const guard = vi.fn(safeGuard);
+    await expect(
+      createProject(
+        { workspaceId },
+        actor,
+        randomUUID(),
+        baseBody("https://example.com/customer-path?campaign=private"),
+        guard,
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      fieldErrors: [expect.objectContaining({ pointer: "/siteUrl" })],
+    });
+    expect(guard).not.toHaveBeenCalled();
+  });
+
+  it("probes a DNS-pinned HTTPS origin before upgrading production HTTP input", async () => {
+    const guard = vi.fn(safeGuard);
+    const siteOriginProbe = vi.fn(async () => true);
+    const result = await createProject(
+      { workspaceId },
+      actor,
+      randomUUID(),
+      baseBody("http://Upgrade.Example/"),
+      guard,
+      { environment: "production", siteOriginProbe },
+    );
+
+    expect(result.project.site.origin).toBe("https://upgrade.example");
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(guard).toHaveBeenCalledWith("https://upgrade.example");
+    expect(siteOriginProbe).toHaveBeenCalledWith({
+      origin: "https://upgrade.example",
+      pinnedIp: "93.184.216.34",
+    });
+  });
+
+  it("fails closed when the production HTTPS upgrade is not reachable", async () => {
+    const siteOriginProbe = vi.fn(async () => false);
+    await expect(
+      createProject(
+        { workspaceId },
+        actor,
+        randomUUID(),
+        baseBody("http://unreachable.example"),
+        safeGuard,
+        { environment: "production", siteOriginProbe },
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      fieldErrors: [
+        expect.objectContaining({ code: "https_unreachable" }),
+      ],
+    });
+    expect(siteOriginProbe).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects a URL the SSRF guard blocks (private/metadata) with 422", async () => {
     await expect(
       createProject({ workspaceId }, actor, randomUUID(), baseBody("http://10.0.0.1"), blockGuard),

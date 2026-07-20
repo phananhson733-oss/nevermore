@@ -44,6 +44,7 @@ function ctrEvidence(
   threshold: number,
   queries: readonly GscTopQuery[],
 ): EvidenceDraft {
+  const availability = ctx.datasetAvailability("gsc");
   const top = topByImpressions(queries);
   const queryList =
     top.length === 0
@@ -59,12 +60,15 @@ function ctrEvidence(
     origin: "first_party",
     method: "observed",
     grade: "A",
-    availability: "available",
+    availability: availability === "partial" ? "partial" : "available",
     support: "supports",
     subjectRefs: [subjectUrl],
     claim,
     observedAt: ctx.observedAt("gsc"),
-    limitation: GSC_LIMITATION,
+    limitation:
+      availability === "partial"
+        ? `${GSC_LIMITATION} The selected snapshot is partial, so omitted rows may affect completeness.`
+        : GSC_LIMITATION,
   };
 }
 
@@ -104,7 +108,8 @@ export const searchCtrRule = {
   domain: "search_performance",
   requiredDatasets: [{ dataset: "gsc", required: true }],
   evaluate(ctx: DiagnosticContext): RuleResult {
-    if (!ctx.hasDataset("gsc")) {
+    const availability = ctx.datasetAvailability("gsc");
+    if (availability === "unavailable") {
       return { status: "skipped", reason: "missing_dataset" };
     }
 
@@ -115,6 +120,9 @@ export const searchCtrRule = {
     }
 
     if (candidates.length === 0) {
+      if (availability === "partial") {
+        return { status: "inconclusive", reason: "partial_gsc_snapshot" };
+      }
       return {
         status: "pass",
         metrics: { pagesEvaluated: ctx.gsc.size, triggered: 0 },

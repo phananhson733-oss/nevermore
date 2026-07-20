@@ -1,5 +1,6 @@
 import pg from "pg";
 import { serializeDbProcessFailure } from "./runtime-failure.ts";
+import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
@@ -74,10 +75,13 @@ const REQUIRED_TRIGGERS = [
   "oauth_intents_set_updated_at",
   "import_previews_set_updated_at",
   "async_runs_set_updated_at",
+  "async_runs_terminal_status_immutable",
   "provider_discrepancies_set_updated_at",
   "findings_set_updated_at",
   "actions_set_updated_at",
   "execution_artifacts_set_updated_at",
+  "execution_artifacts_status_transition_guard",
+  "export_bundles_invariant_guard",
   "idempotency_keys_set_updated_at",
   "icp_profiles_append_only",
   "data_snapshots_append_only",
@@ -131,6 +135,20 @@ export async function checkMigrations(connectionString: string): Promise<Migrate
     const trgSet = new Set(triggers.rows.map((r) => r.tgname));
     for (const trg of REQUIRED_TRIGGERS) {
       if (!trgSet.has(trg)) problems.push(`missing trigger ${trg}`);
+    }
+
+    try {
+      const version = await client.query<{ migration_version: unknown }>(
+        "SELECT migration_version FROM app.schema_migration_version",
+      );
+      if (
+        version.rows.length !== 1 ||
+        version.rows[0]?.migration_version !== LATEST_APP_MIGRATION
+      ) {
+        problems.push("database migration version is missing or stale");
+      }
+    } catch {
+      problems.push("missing view app.schema_migration_version");
     }
   } finally {
     await client.end();

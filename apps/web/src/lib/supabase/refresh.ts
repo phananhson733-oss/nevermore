@@ -2,6 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseClientEnv } from "@/env";
+import {
+  hardenSessionCookieOptions,
+  sessionCookieOptions,
+} from "./session-cookie-options";
 
 /**
  * Refresh the Supabase session at the edge and surface the authenticated user.
@@ -22,6 +26,7 @@ export async function updateSession(
   const env = getSupabaseClientEnv();
 
   const supabase = createServerClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    cookieOptions: sessionCookieOptions(),
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -32,7 +37,11 @@ export async function updateSession(
         }
         response = nextResponse();
         for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
+          response.cookies.set(
+            name,
+            value,
+            hardenSessionCookieOptions(options),
+          );
         }
       },
     },

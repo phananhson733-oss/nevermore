@@ -6,6 +6,16 @@ export type RuntimeFailureCode =
   | "PGBOSS_STOP_FAILED"
   | "READINESS_LEASE_RELEASE_FAILED";
 
+function classifyFailure(error: unknown): RuntimeFailureType {
+  try {
+    return error instanceof Error ? "internal" : "unknown";
+  } catch {
+    // `instanceof` can invoke a Proxy getPrototypeOf trap. A process/error
+    // boundary must remain total even for an adversarial thrown value.
+    return "unknown";
+  }
+}
+
 /**
  * Reduce an arbitrary thrown value to a stable, non-content-bearing shape.
  * Never read `message`, `name`, `stack`, or coerce the value to a string: all
@@ -17,7 +27,7 @@ export function runtimeFailureMetadata<const Code extends RuntimeFailureCode>(
 ): Readonly<{ code: Code; type: RuntimeFailureType }> {
   return {
     code,
-    type: error instanceof Error ? "internal" : "unknown",
+    type: classifyFailure(error),
   };
 }
 

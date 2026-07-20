@@ -9,6 +9,7 @@ import {
   parseObjectKey,
   type BlobListInput,
   type BlobListPage,
+  type BlobGetOptions,
   type BlobPutInput,
   type BlobPutResult,
   type BlobStore,
@@ -298,6 +299,7 @@ export class SupabaseBlobStore implements BlobStore {
       if (abortScope.signal.aborted) throw abortScope.signal.reason;
       const response = await this.#fetch(url, {
         ...init,
+        redirect: init.redirect ?? "error",
         signal: abortScope.signal,
       });
       responseStatus = response.status;
@@ -365,13 +367,20 @@ export class SupabaseBlobStore implements BlobStore {
     );
   }
 
-  async get(key: string): Promise<Buffer | null> {
+  async get(
+    key: string,
+    options: BlobGetOptions = {},
+  ): Promise<Buffer | null> {
     const { bucket, path } = this.#route(key);
     return this.#withResponse(
       "get",
       key,
       `${this.#baseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${path}`,
-      { method: "GET", headers: this.#headers() },
+      {
+        method: "GET",
+        headers: this.#headers(),
+        ...(options.signal ? { signal: options.signal } : {}),
+      },
       async (response, signal) => {
         if (!response.ok) {
           if (response.status === 404) {

@@ -73,7 +73,7 @@
   place-items: center;
   width: 40px;
   height: 40px;
-  color: var(--sf-accent);
+  color: var(--sf-cobalt-text);
   background: var(--sf-cobalt-soft);
   border-radius: 11px;
 }
@@ -156,6 +156,27 @@
   font-size: var(--sf-text-sm);
   color: var(--sf-muted);
 }
+.pagination {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.paginationStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-sm);
+}
+.paginationError {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--sf-coral-text);
+  font-size: var(--sf-text-sm);
+  line-height: 1.45;
+  text-align: center;
+}
 
 /* ---------------------------------------------------------- Limitation ---- */
 .limitation {
@@ -181,7 +202,7 @@
 }
 .runError {
   font-size: var(--sf-text-sm);
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
 }
 .runFailure {
   display: flex;
@@ -214,7 +235,7 @@
 }
 .controlError {
   font-size: var(--sf-text-sm);
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
 }
 .controlHint {
   font-size: var(--sf-text-sm);
@@ -306,10 +327,10 @@
   line-height: 1.4;
 }
 .msgError {
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
 }
 .msgWarn {
-  color: var(--sf-amber);
+  color: var(--sf-amber-text);
 }
 
 .previewWrap {

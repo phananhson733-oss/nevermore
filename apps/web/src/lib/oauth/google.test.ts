@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildAuthUrl,
@@ -22,6 +24,49 @@ function oversizedJson(body: Record<string, unknown>): Response {
 }
 
 const WAIT_MARKER = Symbol("still waiting for a bounded Google response");
+
+async function withRedirectServer(
+  run: (
+    baseUrl: string,
+    hits: { readonly redirect: number; readonly followed: number },
+  ) => Promise<void>,
+): Promise<void> {
+  const hits = { redirect: 0, followed: 0 };
+  const server = createServer((request, response) => {
+    if (request.url === "/redirect") {
+      hits.redirect += 1;
+      response.statusCode = 302;
+      response.setHeader("location", "/followed");
+      response.end();
+      return;
+    }
+    if (request.url === "/followed") {
+      hits.followed += 1;
+      response.statusCode = 200;
+      response.end(JSON.stringify({ access_token: "access", expires_in: 3600 }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    throw new Error("redirect test server did not expose a TCP port");
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await run(baseUrl, hits);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
 
 describe("Google OAuth PKCE and authorization URL", () => {
   it("generates high-entropy URL-safe verifier/state values and a deterministic challenge", () => {
@@ -318,6 +363,7 @@ describe("HttpGoogleOAuthClient token exchange and GSC properties", () => {
     expect(url).toBe("https://oauth2.googleapis.com/token");
     expect(url).not.toContain("client-secret");
     expect(init).toMatchObject({ method: "POST" });
+    expect(init?.redirect).toBe("error");
     const form = new URLSearchParams(String(init?.body));
     expect(Object.fromEntries(form)).toMatchObject({
       grant_type: "authorization_code",
@@ -405,6 +451,25 @@ describe("HttpGoogleOAuthClient token exchange and GSC properties", () => {
     await expect(
       denied.listProperties("gsc", "access"),
     ).rejects.toMatchObject({ code: "OAUTH_PROPERTY_INVALID" });
+  });
+
+  it("fails token exchange on the first redirect hop and never follows the client-secret-bearing request", async () => {
+    await withRedirectServer(async (baseUrl, hits) => {
+      const client = new HttpGoogleOAuthClient({
+        clientId: "client",
+        clientSecret: "secret",
+        fetchImpl: (_input, init) => fetch(`${baseUrl}/redirect`, init),
+      });
+
+      await expect(
+        client.exchangeCode({
+          code: "code",
+          codeVerifier: "verifier",
+          redirectUri: "https://app.example/callback",
+        }),
+      ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE", status: 503 });
+      expect(hits).toEqual({ redirect: 1, followed: 0 });
+    });
   });
 
   it("rejects more than 500 verified GSC candidates instead of persisting an unbounded picker", async () => {

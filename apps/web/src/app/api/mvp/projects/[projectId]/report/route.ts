@@ -1,7 +1,9 @@
-import { Bcp47Locale } from "@sf/contracts";
 import { operatorRoute } from "@/lib/http/handler";
 import { ok } from "@/lib/http/respond";
-import { parseUuidParam } from "@/lib/http/validate";
+import {
+  parseOptionalOutputLocale,
+  parseUuidParam,
+} from "@/lib/http/validate";
 import { getProjectReport } from "@/lib/services/report";
 
 /**
@@ -11,8 +13,9 @@ import { getProjectReport } from "@/lib/services/report";
 export const GET = operatorRoute<{ projectId: string }>(async (request, ctx, routeCtx) => {
   const { projectId } = await routeCtx.params;
   const id = parseUuidParam(projectId);
-  const raw = new URL(request.url).searchParams.get("outputLocale");
-  const outputLocale = raw && Bcp47Locale.safeParse(raw).success ? raw : null;
+  const outputLocale = parseOptionalOutputLocale(
+    new URL(request.url).searchParams,
+  );
 
   const report = await getProjectReport(
     { workspaceId: ctx.operator.workspaceId },

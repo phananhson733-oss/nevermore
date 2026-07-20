@@ -13,30 +13,33 @@ export interface OperatorContext {
   readonly workspaceId: string;
 }
 
-/** The authenticated Supabase user id + display name, or null if unauthenticated. */
-async function getAuthUser(): Promise<{
-  userId: string;
-  displayName: string;
-} | null> {
+/** The authenticated Supabase user id, or null if unauthenticated. */
+async function getAuthUserId(): Promise<string | null> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return null;
-  const displayName =
-    (typeof user.user_metadata?.["full_name"] === "string" &&
-      user.user_metadata["full_name"]) ||
-    user.email ||
-    user.id;
-  return { userId: user.id, displayName };
+  return user?.id ?? null;
+}
+
+/** Resolve only a pre-provisioned operator; production never grants membership. */
+async function findOperator(userId: string): Promise<OperatorContext | null> {
+  const { db } = getDb();
+  const existing = await db
+    .select({ workspaceId: operatorProfiles.workspace_id })
+    .from(operatorProfiles)
+    .where(eq(operatorProfiles.user_id, userId))
+    .limit(1);
+  return existing[0]
+    ? { userId, workspaceId: existing[0].workspaceId }
+    : null;
 }
 
 /**
- * Ensure the single internal workspace exists and the operator has a profile in
- * it (spec §1.2). Bootstrap is serialized by a transaction-level advisory lock so
- * concurrent first-boot requests cannot create two workspaces.
+ * Bootstrap the explicit local-development operator and singleton workspace.
+ * This function is reachable only through the double-gated dev-auth branch.
  */
-async function ensureOperator(
+async function ensureDevelopmentOperator(
   userId: string,
   displayName: string,
 ): Promise<OperatorContext> {
@@ -90,9 +93,9 @@ export async function getOperatorContext(): Promise<OperatorContext | null> {
   // Local dev only (double-gated): skip Supabase and use a fixed operator so the
   // authenticated screens work without a running GoTrue instance (spec §14.1).
   if (isDevAuthEnabled()) {
-    return ensureOperator(DEV_USER_ID, DEV_USER_NAME);
+    return ensureDevelopmentOperator(DEV_USER_ID, DEV_USER_NAME);
   }
-  const authed = await getAuthUser();
-  if (!authed) return null;
-  return ensureOperator(authed.userId, authed.displayName);
+  const userId = await getAuthUserId();
+  if (!userId) return null;
+  return findOperator(userId);
 }

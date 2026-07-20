@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { normalizedObservations } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
@@ -52,6 +52,25 @@ export interface ObservationInsert {
   readonly grade: string;
   readonly support: string;
   readonly limitation: string;
+}
+
+export interface ObservationListPage {
+  readonly rows: ObservationRow[];
+  readonly nextCursor: string | null;
+}
+
+export interface ObservationListPageOptions {
+  readonly limit: number;
+  /** Last observation id returned by the preceding ascending-id page. */
+  readonly cursor: string | null;
+}
+
+export interface ObservationSubjectLookup {
+  readonly snapshotId: string;
+  readonly provider: string;
+  readonly metricKey: string;
+  readonly subjectType: string;
+  readonly subjectRef: string;
 }
 
 const INSERT_CHUNK = 500;
@@ -111,6 +130,70 @@ export class ObservationsRepository extends Repository {
           inArray(normalizedObservations.snapshot_id, [...snapshotIds]),
         ),
       )) as ObservationRow[];
+  }
+
+  /**
+   * Load one exact observation without materializing its snapshot. The snapshot
+   * and subject predicates remain inside the mandatory project scope so callers
+   * can safely read a frozen diagnostic input rather than a later provider row.
+   */
+  async findBySnapshotMetricSubject(
+    scope: ProjectScope,
+    lookup: ObservationSubjectLookup,
+  ): Promise<ObservationRow | null> {
+    const rows = (await this.exec
+      .select()
+      .from(normalizedObservations)
+      .where(
+        and(
+          projectPredicate(normalizedObservations, scope),
+          eq(normalizedObservations.snapshot_id, lookup.snapshotId),
+          eq(normalizedObservations.provider, lookup.provider),
+          eq(normalizedObservations.metric_key, lookup.metricKey),
+          eq(normalizedObservations.subject_type, lookup.subjectType),
+          eq(normalizedObservations.subject_ref, lookup.subjectRef),
+        ),
+      )
+      .limit(2)) as ObservationRow[];
+    return rows.length === 1 ? rows[0]! : null;
+  }
+
+  /**
+   * Bounded, project-scoped export reader. The UUID primary key is a stable,
+   * unique keyset within a repeatable-read snapshot, so a caller never needs
+   * to materialize every observation for a logical data snapshot at once.
+   */
+  async listBySnapshotIdsPage(
+    scope: ProjectScope,
+    snapshotIds: readonly string[],
+    options: ObservationListPageOptions,
+  ): Promise<ObservationListPage> {
+    if (!Number.isSafeInteger(options.limit) || options.limit <= 0) {
+      throw new RangeError("limit must be a positive safe integer");
+    }
+    if (snapshotIds.length === 0) {
+      return { rows: [], nextCursor: null };
+    }
+    const rows = (await this.exec
+      .select()
+      .from(normalizedObservations)
+      .where(
+        and(
+          projectPredicate(normalizedObservations, scope),
+          inArray(normalizedObservations.snapshot_id, [...snapshotIds]),
+          options.cursor === null
+            ? undefined
+            : gt(normalizedObservations.id, options.cursor),
+        ),
+      )
+      .orderBy(asc(normalizedObservations.id))
+      .limit(options.limit + 1)) as ObservationRow[];
+    const hasNext = rows.length > options.limit;
+    const page = hasNext ? rows.slice(0, options.limit) : rows;
+    return {
+      rows: page,
+      nextCursor: hasNext ? (page[page.length - 1]?.id ?? null) : null,
+    };
   }
 
   /** Count observations for one snapshot (used by tests / summaries). */

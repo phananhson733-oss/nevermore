@@ -454,7 +454,7 @@ function checkRunPollingImplementation() {
   return "run polling: canonical status route delegates Retry-After state handling";
 }
 
-function checkWebProxyImplementation() {
+async function checkWebProxyImplementation() {
   const boundaryPattern = /^(?:proxy|middleware)\.(?:[cm]?[jt]sx?)$/;
   const boundaryEntrypoints = ["apps/web", "apps/web/src"].flatMap(
     (directory) =>
@@ -480,10 +480,10 @@ function checkWebProxyImplementation() {
     "src/proxy.ts must import the shared CSP builder",
   );
   invariant(
-    /buildContentSecurityPolicy\s*\(\s*process\.env\[\s*["']NODE_ENV["']\s*\]\s*!==\s*["']production["']\s*,\s*nonce\s*,?\s*\)/s.test(
+    /buildContentSecurityPolicy\s*\(\s*process\.env\[\s*["']NODE_ENV["']\s*\]\s*===\s*["']development["']\s*,\s*nonce\s*,?\s*\)/s.test(
       proxy,
     ),
-    "src/proxy.ts must enable development CSP relaxations only outside production",
+    "src/proxy.ts must enable CSP relaxations only in explicit development mode",
   );
   invariant(
     /function\s+requestHeaderOverrides\s*\([^)]*\bcsp\s*:\s*string[^)]*\)[\s\S]*?headers\.set\s*\(\s*["']Content-Security-Policy["']\s*,\s*csp\s*\)[\s\S]*?return\s+headers\s*;/s.test(
@@ -509,23 +509,109 @@ function checkWebProxyImplementation() {
     /export\s+function\s+buildContentSecurityPolicy\b/.test(securityHeaders),
     "buildContentSecurityPolicy must remain an exported shared builder",
   );
-  const unsafeEvalOccurrences =
-    securityHeaders.match(/'unsafe-eval'/g) ?? [];
-  const unsafeInlineOccurrences =
-    securityHeaders.match(/'unsafe-inline'/g) ?? [];
+  const securityHeadersUrl = pathToFileURL(
+    fromRoot("apps/web/security-headers.ts"),
+  );
+  securityHeadersUrl.searchParams.set("implementation-check", String(Date.now()));
+  const securityHeadersModule = await import(securityHeadersUrl.href);
+  const buildCsp = securityHeadersModule.buildContentSecurityPolicy;
   invariant(
-    unsafeEvalOccurrences.length === 1 &&
-      /development\s*\?\s*\[\s*["']'unsafe-eval'["']\s*\]\s*:\s*\[\s*\]/.test(
-        securityHeaders,
-      ),
-    "unsafe-eval must appear exactly once and only in the development CSP branch",
+    typeof buildCsp === "function",
+    "buildContentSecurityPolicy must be executable by the implementation gate",
+  );
+
+  const nonce = "implementation-check-nonce";
+  const productionCsp = buildCsp(false, nonce);
+  const developmentCsp = buildCsp(true, nonce);
+  const directive = (csp, name) =>
+    csp
+      .split(";")
+      .map((value) => value.trim())
+      .find((value) => value === name || value.startsWith(`${name} `)) ?? "";
+  const productionScript = directive(productionCsp, "script-src");
+  const productionStyle = directive(productionCsp, "style-src");
+  const developmentScript = directive(developmentCsp, "script-src");
+  const developmentStyle = directive(developmentCsp, "style-src");
+
+  invariant(
+    productionScript.includes(`'nonce-${nonce}'`) &&
+      productionScript.includes("'strict-dynamic'") &&
+      !productionScript.includes("'unsafe-eval'") &&
+      !productionScript.includes("'unsafe-inline'"),
+    "production script-src must be nonce/strict-dynamic gated without unsafe relaxations",
   );
   invariant(
-    unsafeInlineOccurrences.length === 1 &&
-      /development\s*\?\s*["']\s*'unsafe-inline'["']\s*:\s*["']["']/.test(
-        securityHeaders,
+    productionStyle === `style-src 'self' 'nonce-${nonce}'`,
+    "production style-src must remain nonce-gated without unsafe-inline",
+  );
+  invariant(
+    developmentScript.includes(`'nonce-${nonce}'`) &&
+      developmentScript.includes("'strict-dynamic'") &&
+      developmentScript.includes("'unsafe-eval'"),
+    "development script-src must retain the Next runtime relaxation and nonce",
+  );
+  invariant(
+    developmentStyle === "style-src 'self' 'unsafe-inline'" &&
+      !developmentStyle.includes("'nonce-"),
+    "development style-src must permit Next DevTools styles without a nonce",
+  );
+
+  const devAuthUrl = pathToFileURL(
+    fromRoot("apps/web/src/lib/auth/dev.ts"),
+  );
+  devAuthUrl.searchParams.set("implementation-check", String(Date.now()));
+  const devAuthModule = await import(devAuthUrl.href);
+  const isDevAuthEnabled = devAuthModule.isDevAuthEnabled;
+  invariant(
+    typeof isDevAuthEnabled === "function",
+    "the local development auth gate must remain executable",
+  );
+  const localDevelopment = {
+    NODE_ENV: "development",
+    APP_ORIGIN: "http://127.0.0.1:3000",
+    SF_DEV_AUTH: "true",
+  };
+  invariant(
+    isDevAuthEnabled(localDevelopment) === true,
+    "the explicit loopback development harness must remain available",
+  );
+  for (const unsafeEnvironment of [
+    { ...localDevelopment, NODE_ENV: "test" },
+    { ...localDevelopment, NODE_ENV: "staging" },
+    { ...localDevelopment, NODE_ENV: "production" },
+    { ...localDevelopment, APP_ORIGIN: "https://staging.example.com" },
+    { ...localDevelopment, APP_ORIGIN: "https://localhost.example.com" },
+  ]) {
+    invariant(
+      isDevAuthEnabled(unsafeEnvironment) === false,
+      "SF_DEV_AUTH must fail closed outside exact loopback development",
+    );
+  }
+
+  const webPackage = readJson("apps/web/package.json");
+  invariant(
+    typeof webPackage.scripts?.dev === "string" &&
+      /\bnext\s+dev\b/.test(webPackage.scripts.dev) &&
+      /(?:--hostname|-H)\s+127\.0\.0\.1\b/.test(webPackage.scripts.dev),
+    "the supported Next development command must bind to 127.0.0.1 when local dev auth can be enabled",
+  );
+
+  const session = read("apps/web/src/lib/auth/session.ts");
+  invariant(
+    /if\s*\(\s*isDevAuthEnabled\(\)\s*\)/.test(session),
+    "operator bootstrap must remain behind the shared local-development gate",
+  );
+  invariant(
+    /if\s*\(\s*isDevAuthEnabled\(\)\s*\)/.test(proxy),
+    "the proxy auth bypass must remain behind the shared local-development gate",
+  );
+  const e2eShell = read("apps/web/src/app/p/[projectId]/_e2e-shell.ts");
+  invariant(
+    /isLoopbackDevelopmentRuntime\s*\(\s*env\s*\)/.test(e2eShell) &&
+      /env\[\s*["']SF_E2E_MOCK_API["']\s*\]\s*===\s*["']true["']/.test(
+        e2eShell,
       ),
-    "unsafe-inline must appear exactly once and only in the development CSP branch",
+    "the mock project shell must remain behind the loopback-development gate",
   );
 
   return "web boundary: src/proxy.ts propagates nonce CSP without production unsafe relaxations";

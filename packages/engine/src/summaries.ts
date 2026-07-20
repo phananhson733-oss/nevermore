@@ -73,7 +73,8 @@ export function buildSummary(
   titleArgs: Record<string, string | number>,
   deliveryLocale: string,
 ): { summary: string; summaryLocale: SummaryLocale } {
-  const locale: SummaryLocale = deliveryLocale.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+  const locale: SummaryLocale =
+    deliveryLocale.toLowerCase() === "zh-cn" ? "zh-CN" : "en";
   const summary = TEMPLATES[ruleId][locale](titleArgs);
   return { summary, summaryLocale: locale };
 }

@@ -18,7 +18,9 @@
 
 import type { ArtifactPromptInput } from "../types.ts";
 import {
+  canonicalizeCurrentMetadataValue,
   safeEvidenceClaimExcerpt,
+  safePromptCurrentMetadata,
   UNKNOWN_PLACEHOLDERS,
 } from "./envelope.ts";
 import type { LlmArtifactEnvelope } from "./envelope.ts";
@@ -120,8 +122,6 @@ function claimContainsNumber(claim: string, value: string): boolean {
 function bodyText(envelope: LlmArtifactEnvelope): string {
   if (envelope.kind === "metadata_rewrite") {
     return [
-      envelope.currentTitle,
-      envelope.currentDescription,
       envelope.proposedTitle,
       envelope.proposedDescription,
       envelope.rationale,
@@ -135,6 +135,25 @@ export function checkReferences(input: ArtifactPromptInput, envelope: LlmArtifac
   const errors: string[] = [];
   const evidenceById = new Map(input.evidence.map((e) => [e.evidenceId, e]));
   const validCitedNumbers = new Set<string>();
+
+  if (envelope.kind === "metadata_rewrite") {
+    const expected = safePromptCurrentMetadata(input.currentMetadata);
+    for (const field of [
+      "url",
+      "currentTitle",
+      "currentDescription",
+    ] as const) {
+      const actual =
+        expected[field] === null
+          ? canonicalizeCurrentMetadataValue(envelope[field])
+          : envelope[field];
+      if (actual !== expected[field]) {
+        errors.push(
+          `metadata ${field} does not match the provided currentMetadata`,
+        );
+      }
+    }
+  }
 
   for (const ref of envelope.evidenceRefs) {
     if (!evidenceById.has(ref)) {

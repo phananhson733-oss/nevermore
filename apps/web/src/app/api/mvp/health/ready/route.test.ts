@@ -5,7 +5,16 @@ const query = vi.fn();
 const checkWorkerReadiness = vi.fn();
 
 vi.mock("@/lib/db", () => ({
-  getDb: () => ({ pool: { query, connect: vi.fn() } }),
+  getDb: () => ({
+    pool: {
+      query,
+      connect: vi.fn(),
+      options: { max: 3 },
+      totalCount: 2,
+      idleCount: 1,
+      waitingCount: 0,
+    },
+  }),
 }));
 
 vi.mock("@sf/db", async (importOriginal) => {
@@ -13,6 +22,7 @@ vi.mock("@sf/db", async (importOriginal) => {
   return { ...actual, checkWorkerReadiness };
 });
 
+const { LATEST_APP_MIGRATION } = await import("@sf/db");
 const { GET } = await import("./route.ts");
 
 afterEach(() => {
@@ -25,10 +35,17 @@ describe("GET /api/mvp/health/ready", () => {
     checkWorkerReadiness.mockReset();
     query
       .mockResolvedValueOnce({ rows: [{ one: 1 }], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [{ migration_version: LATEST_APP_MIGRATION }],
+        rowCount: 1,
+      })
       .mockResolvedValueOnce({ rows: [{ one: 1 }], rowCount: 1 });
   });
 
   it("includes a live worker lease in the readiness contract", async () => {
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
     checkWorkerReadiness.mockResolvedValueOnce(true);
 
     const response = await GET(
@@ -39,13 +56,28 @@ describe("GET /api/mvp/health/ready", () => {
     await expect(response.json()).resolves.toMatchObject({
       data: {
         status: "ready",
-        checks: { database: true, pgbossSchema: true, worker: true },
+        checks: {
+          database: true,
+          migration: true,
+          pgbossSchema: true,
+          worker: true,
+        },
       },
     });
     expect(checkWorkerReadiness).toHaveBeenCalledTimes(1);
+    const logged = stdout.mock.calls.map(([line]) => String(line)).join("");
+    expect(logged).toContain('"event":"db_pool_snapshot"');
+    expect(logged).toContain('"event":"db_migration_version"');
+    expect(logged).toContain(
+      `"migrationVersion":"${LATEST_APP_MIGRATION}"`,
+    );
+    expect(logged).toContain('"max":3');
+    expect(logged).toContain('"active":1');
+    expect(logged).toContain('"waiting":0');
   });
 
   it("returns dependency unavailable when the queue exists but no worker is live", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     checkWorkerReadiness.mockResolvedValueOnce(false);
 
     const response = await GET(
@@ -59,7 +91,27 @@ describe("GET /api/mvp/health/ready", () => {
     });
   });
 
+  it("fails readiness when the database migration identity is stale", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    query.mockReset()
+      .mockResolvedValueOnce({ rows: [{ one: 1 }], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [{ migration_version: "0005_stale" }],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }], rowCount: 1 });
+    checkWorkerReadiness.mockResolvedValueOnce(true);
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/mvp/health/ready"),
+    );
+
+    expect(response.status).toBe(503);
+    expect(checkWorkerReadiness).toHaveBeenCalledTimes(1);
+  });
+
   it("logs only stable dependency metadata when a readiness probe throws", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     query.mockReset().mockRejectedValueOnce(
       new Error("database rejected customer-content-secret"),
     );

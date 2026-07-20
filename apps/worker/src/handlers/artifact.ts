@@ -11,8 +11,8 @@ export async function registerArtifactHandlers(ctx: WorkerContext): Promise<void
     { includeMetadata: true },
     async (jobs: JobWithMetadata<ArtifactJobPayload>[]) => {
       for (const job of jobs) {
-        await prepareRunDelivery(ctx, job, (payload) =>
-          runArtifact(ctx, payload),
+        await prepareRunDelivery(ctx, job, (payload, runCtx) =>
+          runArtifact(runCtx, payload),
         );
       }
     },
@@ -22,7 +22,9 @@ export async function registerArtifactHandlers(ctx: WorkerContext): Promise<void
     { includeMetadata: true },
     async (jobs: JobWithMetadata<ExportJobPayload>[]) => {
       for (const job of jobs) {
-        await prepareRunDelivery(ctx, job, (payload) => runExport(ctx, payload));
+        await prepareRunDelivery(ctx, job, (payload, runCtx) =>
+          runExport(runCtx, payload),
+        );
       }
     },
   );

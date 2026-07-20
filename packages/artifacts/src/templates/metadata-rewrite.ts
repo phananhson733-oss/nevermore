@@ -2,8 +2,8 @@
  * Deterministic metadata_rewrite template (spec §10.1). Produces the metadata
  * JSON object. Proposed title/description are placeholder rewrites derived from
  * the finding/action; targetQueries come from evidence subject refs; evidenceRefs
- * are the evidence ids. Unknown current values are `null` — never fabricated
- * (spec §1.3): the allowlisted input carries no live page title/description.
+ * are the evidence ids. Current values come only from the frozen crawl metadata
+ * already loaded into the allowlisted input; unknowns remain `null` (§1.3).
  */
 
 import type { ArtifactPromptInput } from "../types.ts";
@@ -13,14 +13,11 @@ const TITLE_MAX = 65;
 const DESCRIPTION_MAX = 155;
 
 export function build(input: ArtifactPromptInput): Record<string, unknown> {
-  const { icp, action, finding, evidence } = input;
+  const { icp, action, finding, currentMetadata, evidence } = input;
   const zh = isZh(input.outputLocale);
 
   const queries = deriveTargetQueries(input);
   const primaryQuery = queries[0];
-
-  // The subject URL comes only from real allowlisted refs; unknown => null.
-  const url = clean(finding.subjectRefs[0] ?? icp.primaryConversion?.targetUrl ?? "") || null;
 
   const titleCore = firstNonEmpty(
     [action.title, finding.summary, icp.productName],
@@ -48,10 +45,10 @@ export function build(input: ArtifactPromptInput): Record<string, unknown> {
   );
 
   return {
-    url,
-    currentTitle: null,
+    url: currentMetadata.url,
+    currentTitle: currentMetadata.currentTitle,
     proposedTitle,
-    currentDescription: null,
+    currentDescription: currentMetadata.currentDescription,
     proposedDescription,
     targetQueries: queries,
     rationale,

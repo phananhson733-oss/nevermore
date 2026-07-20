@@ -13,6 +13,8 @@
  *   [ end of central directory record ]
  */
 
+import { constants as BUFFER_CONSTANTS } from "node:buffer";
+
 /** A single archive member: an in-archive path and its raw bytes. */
 export interface ZipEntry {
   readonly path: string;
@@ -33,6 +35,21 @@ const DOS_DATE = 0; // pinned for determinism
 const LOCAL_HEADER_BYTES = 30;
 const CENTRAL_HEADER_BYTES = 46;
 const EOCD_BYTES = 22;
+const UINT16_MAX = 0xffff;
+const UINT32_MAX = 0xffffffff;
+
+export interface CreateZipOptions {
+  /** Exact completed STORE archive limit, checked before archive allocation. */
+  readonly maxArchiveBytes?: number;
+}
+
+/** ZIP32 structural or caller-supplied archive limit was exceeded. */
+export class ZipLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ZipLimitError";
+  }
+}
 
 /** CRC-32 (IEEE 802.3, polynomial 0xEDB88320) lookup table. */
 function buildCrcTable(): Uint32Array {
@@ -59,96 +76,218 @@ export function crc32(data: Buffer): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function localHeader(nameLength: number, crc: number, size: number): Buffer {
-  const header = Buffer.alloc(LOCAL_HEADER_BYTES);
-  header.writeUInt32LE(LOCAL_FILE_HEADER_SIG, 0);
-  header.writeUInt16LE(VERSION_NEEDED, 4);
-  header.writeUInt16LE(FLAG_UTF8, 6);
-  header.writeUInt16LE(METHOD_STORE, 8);
-  header.writeUInt16LE(DOS_TIME, 10);
-  header.writeUInt16LE(DOS_DATE, 12);
-  header.writeUInt32LE(crc, 14);
-  header.writeUInt32LE(size, 18); // compressed size == uncompressed (store)
-  header.writeUInt32LE(size, 22);
-  header.writeUInt16LE(nameLength, 26);
-  header.writeUInt16LE(0, 28); // extra field length
-  return header;
+function writeLocalHeader(
+  target: Buffer,
+  offset: number,
+  nameLength: number,
+  crc: number,
+  size: number,
+): number {
+  target.writeUInt32LE(LOCAL_FILE_HEADER_SIG, offset);
+  target.writeUInt16LE(VERSION_NEEDED, offset + 4);
+  target.writeUInt16LE(FLAG_UTF8, offset + 6);
+  target.writeUInt16LE(METHOD_STORE, offset + 8);
+  target.writeUInt16LE(DOS_TIME, offset + 10);
+  target.writeUInt16LE(DOS_DATE, offset + 12);
+  target.writeUInt32LE(crc, offset + 14);
+  target.writeUInt32LE(size, offset + 18); // compressed == uncompressed
+  target.writeUInt32LE(size, offset + 22);
+  target.writeUInt16LE(nameLength, offset + 26);
+  target.writeUInt16LE(0, offset + 28); // extra field length
+  return offset + LOCAL_HEADER_BYTES;
 }
 
-function centralHeader(
+function writeCentralHeader(
+  target: Buffer,
+  offset: number,
   nameLength: number,
   crc: number,
   size: number,
   localOffset: number,
-): Buffer {
-  const header = Buffer.alloc(CENTRAL_HEADER_BYTES);
-  header.writeUInt32LE(CENTRAL_DIR_HEADER_SIG, 0);
-  header.writeUInt16LE(VERSION_MADE_BY, 4);
-  header.writeUInt16LE(VERSION_NEEDED, 6);
-  header.writeUInt16LE(FLAG_UTF8, 8);
-  header.writeUInt16LE(METHOD_STORE, 10);
-  header.writeUInt16LE(DOS_TIME, 12);
-  header.writeUInt16LE(DOS_DATE, 14);
-  header.writeUInt32LE(crc, 16);
-  header.writeUInt32LE(size, 20); // compressed size
-  header.writeUInt32LE(size, 24); // uncompressed size
-  header.writeUInt16LE(nameLength, 28);
-  header.writeUInt16LE(0, 30); // extra field length
-  header.writeUInt16LE(0, 32); // comment length
-  header.writeUInt16LE(0, 34); // disk number start
-  header.writeUInt16LE(0, 36); // internal attributes
-  header.writeUInt32LE(0, 38); // external attributes
-  header.writeUInt32LE(localOffset, 42);
-  return header;
+): number {
+  target.writeUInt32LE(CENTRAL_DIR_HEADER_SIG, offset);
+  target.writeUInt16LE(VERSION_MADE_BY, offset + 4);
+  target.writeUInt16LE(VERSION_NEEDED, offset + 6);
+  target.writeUInt16LE(FLAG_UTF8, offset + 8);
+  target.writeUInt16LE(METHOD_STORE, offset + 10);
+  target.writeUInt16LE(DOS_TIME, offset + 12);
+  target.writeUInt16LE(DOS_DATE, offset + 14);
+  target.writeUInt32LE(crc, offset + 16);
+  target.writeUInt32LE(size, offset + 20); // compressed size
+  target.writeUInt32LE(size, offset + 24); // uncompressed size
+  target.writeUInt16LE(nameLength, offset + 28);
+  target.writeUInt16LE(0, offset + 30); // extra field length
+  target.writeUInt16LE(0, offset + 32); // comment length
+  target.writeUInt16LE(0, offset + 34); // disk number start
+  target.writeUInt16LE(0, offset + 36); // internal attributes
+  target.writeUInt32LE(0, offset + 38); // external attributes
+  target.writeUInt32LE(localOffset, offset + 42);
+  return offset + CENTRAL_HEADER_BYTES;
 }
 
-function endOfCentralDirectory(
+function writeEndOfCentralDirectory(
+  target: Buffer,
+  offset: number,
   count: number,
   centralSize: number,
   centralOffset: number,
-): Buffer {
-  const eocd = Buffer.alloc(EOCD_BYTES);
-  eocd.writeUInt32LE(END_OF_CENTRAL_DIR_SIG, 0);
-  eocd.writeUInt16LE(0, 4); // this disk number
-  eocd.writeUInt16LE(0, 6); // disk with central directory
-  eocd.writeUInt16LE(count, 8); // records on this disk
-  eocd.writeUInt16LE(count, 10); // total records
-  eocd.writeUInt32LE(centralSize, 12);
-  eocd.writeUInt32LE(centralOffset, 16);
-  eocd.writeUInt16LE(0, 20); // archive comment length
-  return eocd;
+): number {
+  target.writeUInt32LE(END_OF_CENTRAL_DIR_SIG, offset);
+  target.writeUInt16LE(0, offset + 4); // this disk number
+  target.writeUInt16LE(0, offset + 6); // disk with central directory
+  target.writeUInt16LE(count, offset + 8); // records on this disk
+  target.writeUInt16LE(count, offset + 10); // total records
+  target.writeUInt32LE(centralSize, offset + 12);
+  target.writeUInt32LE(centralOffset, offset + 16);
+  target.writeUInt16LE(0, offset + 20); // archive comment length
+  return offset + EOCD_BYTES;
+}
+
+interface PlannedZipEntry {
+  readonly entry: ZipEntry;
+  readonly nameLength: number;
+  readonly localOffset: number;
+}
+
+interface ZipPlan {
+  readonly entries: readonly PlannedZipEntry[];
+  readonly localBytes: number;
+  readonly centralBytes: number;
+  readonly totalBytes: number;
+}
+
+function planZip(
+  entries: readonly ZipEntry[],
+  options: CreateZipOptions,
+): ZipPlan {
+  if (entries.length > UINT16_MAX) {
+    throw new ZipLimitError("zip entry count exceeds the ZIP32 uint16 limit");
+  }
+  if (
+    options.maxArchiveBytes !== undefined &&
+    (!Number.isSafeInteger(options.maxArchiveBytes) ||
+      options.maxArchiveBytes < 0)
+  ) {
+    throw new TypeError("maxArchiveBytes must be a non-negative safe integer");
+  }
+
+  const planned: PlannedZipEntry[] = [];
+  let localBytes = 0;
+  let centralBytes = 0;
+  for (const entry of entries) {
+    if (!Buffer.isBuffer(entry.data)) {
+      throw new TypeError("zip entry data must be a Buffer");
+    }
+    const nameLength = Buffer.byteLength(entry.path, "utf8");
+    if (nameLength > UINT16_MAX) {
+      throw new ZipLimitError(
+        "zip UTF-8 entry name exceeds the ZIP32 uint16 limit",
+      );
+    }
+    const size = entry.data.length;
+    if (!Number.isSafeInteger(size) || size < 0 || size > UINT32_MAX) {
+      throw new ZipLimitError("zip entry size exceeds the ZIP32 uint32 limit");
+    }
+    if (localBytes > UINT32_MAX) {
+      throw new ZipLimitError(
+        "zip local-header offset exceeds the ZIP32 uint32 limit",
+      );
+    }
+    planned.push({ entry, nameLength, localOffset: localBytes });
+    localBytes += LOCAL_HEADER_BYTES + nameLength + size;
+    centralBytes += CENTRAL_HEADER_BYTES + nameLength;
+    if (centralBytes > UINT32_MAX) {
+      throw new ZipLimitError(
+        "zip central-directory size exceeds the ZIP32 uint32 limit",
+      );
+    }
+  }
+  if (localBytes > UINT32_MAX) {
+    throw new ZipLimitError(
+      "zip central-directory offset exceeds the ZIP32 uint32 limit",
+    );
+  }
+
+  const totalBytes = localBytes + centralBytes + EOCD_BYTES;
+  if (!Number.isSafeInteger(totalBytes)) {
+    throw new ZipLimitError("zip archive size exceeds the safe integer limit");
+  }
+  if (
+    options.maxArchiveBytes !== undefined &&
+    totalBytes > options.maxArchiveBytes
+  ) {
+    throw new ZipLimitError("zip archive exceeds the configured byte limit");
+  }
+  if (totalBytes > BUFFER_CONSTANTS.MAX_LENGTH) {
+    throw new ZipLimitError("zip archive exceeds the runtime buffer limit");
+  }
+  return { entries: planned, localBytes, centralBytes, totalBytes };
 }
 
 /**
  * Assemble a valid STORE-method .zip from the given entries. Entry order is
  * preserved. Deterministic: identical entries always yield identical bytes.
  */
-export function createZip(entries: readonly ZipEntry[]): Buffer {
-  const localParts: Buffer[] = [];
-  const centralParts: Buffer[] = [];
+export function createZip(
+  entries: readonly ZipEntry[],
+  options: CreateZipOptions = {},
+): Buffer {
+  const plan = planZip(entries, options);
+  const nameCache = new Map<string, Buffer>();
+  const prepared = plan.entries.map(({ entry, nameLength, localOffset }) => {
+    let name = nameCache.get(entry.path);
+    if (!name) {
+      name = Buffer.from(entry.path, "utf8");
+      nameCache.set(entry.path, name);
+    }
+    if (name.length !== nameLength) {
+      throw new Error("zip UTF-8 filename length changed during assembly");
+    }
+    return { entry, name, localOffset, crc: crc32(entry.data) };
+  });
+
+  const zip = Buffer.allocUnsafe(plan.totalBytes);
   let offset = 0;
-
-  for (const entry of entries) {
-    const nameBuf = Buffer.from(entry.path, "utf8");
-    const crc = crc32(entry.data);
-    const size = entry.data.length;
-
-    const local = localHeader(nameBuf.length, crc, size);
-    localParts.push(local, nameBuf, entry.data);
-
-    centralParts.push(centralHeader(nameBuf.length, crc, size, offset), nameBuf);
-    offset += local.length + nameBuf.length + entry.data.length;
+  for (const { entry, name, crc } of prepared) {
+    offset = writeLocalHeader(
+      zip,
+      offset,
+      name.length,
+      crc,
+      entry.data.length,
+    );
+    offset += name.copy(zip, offset);
+    offset += entry.data.copy(zip, offset);
+  }
+  if (offset !== plan.localBytes) {
+    throw new Error("zip local layout size mismatch");
   }
 
-  const localData = Buffer.concat(localParts);
-  const centralDir = Buffer.concat(centralParts);
-  const eocd = endOfCentralDirectory(
+  for (const { entry, name, localOffset, crc } of prepared) {
+    offset = writeCentralHeader(
+      zip,
+      offset,
+      name.length,
+      crc,
+      entry.data.length,
+      localOffset,
+    );
+    offset += name.copy(zip, offset);
+  }
+  if (offset !== plan.localBytes + plan.centralBytes) {
+    throw new Error("zip central-directory size mismatch");
+  }
+  offset = writeEndOfCentralDirectory(
+    zip,
+    offset,
     entries.length,
-    centralDir.length,
-    localData.length,
+    plan.centralBytes,
+    plan.localBytes,
   );
-
-  return Buffer.concat([localData, centralDir, eocd]);
+  if (offset !== plan.totalBytes) {
+    throw new Error("zip archive size mismatch");
+  }
+  return zip;
 }
 
 /**

@@ -46,6 +46,36 @@ describe("normalizeCsv", () => {
     expect(projectionOf(observations[0]!.valueJson).searchVolume).toBe(1200);
   });
 
+  it.each(["en-US-u-hc-h12", "x-private", "i-klingon"])(
+    "retains a structurally valid extended/private/grandfathered language tag %s",
+    (languageCode) => {
+      const text = `keyword,volume,market,language\nseo tools,100,US,${languageCode}\n`;
+      const { observations, rejectedRows } = normalizeCsv(text, MAPPING, {
+        observedAt: OBSERVED_AT,
+      });
+
+      expect(rejectedRows).toHaveLength(0);
+      expect(projectionOf(observations[0]!.valueJson).languageCode).toBe(
+        languageCode,
+      );
+    },
+  );
+
+  it.each(["de-1901-1901", "en-a-first-a-second", "en-u"])(
+    "rejects a malformed language tag %s",
+    (languageCode) => {
+      const text = `keyword,volume,market,language\nseo tools,100,US,${languageCode}\n`;
+      const { observations, rejectedRows } = normalizeCsv(text, MAPPING, {
+        observedAt: OBSERVED_AT,
+      });
+
+      expect(observations).toHaveLength(0);
+      expect(rejectedRows).toEqual([
+        { rowIndex: 0, reason: "language_invalid" },
+      ]);
+    },
+  );
+
   it("rejects rows failing keyword, cluster, market, or language rules", () => {
     const text = [
       "keyword,volume,market,language",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { ExecutionArtifactsRepository } from "./execution-artifacts.ts";
 import { FindingsRepository } from "./findings.ts";
 import { IcpProfilesRepository } from "./icp-profiles.ts";
@@ -75,7 +76,7 @@ describe("artifact and finding repositories", () => {
     const repo = new ExecutionArtifactsRepository(fake.executor);
     const artifact = {
       id: "artifact-1",
-      updated_at: "2026-07-18T12:00:00.000Z",
+      updated_at: "2026-07-18 12:00:00+08",
       current_revision: 2,
     };
 
@@ -135,6 +136,26 @@ describe("artifact and finding repositories", () => {
     await repo.startRegeneration("artifact-1", "run-4");
     expect(fake.last("set").args[0]).not.toHaveProperty("generation_mode");
 
+    fake.enqueue([{ id: "artifact-1" }], []);
+    await expect(
+      repo.startRegenerationIfLive(scope, "artifact-1", "run-5", {
+        generationMode: "template",
+        outputLocale: "en",
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      repo.startRegenerationIfLive(scope, "artifact-1", "run-5", {
+        generationMode: "template",
+        outputLocale: "en",
+      }),
+    ).resolves.toBe(false);
+    const regenerateGuard = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(regenerateGuard.sql).toContain(
+      '"app"."execution_artifacts"."status" <> \'archived\'',
+    );
+
     await repo.setGenerated("artifact-1", {
       status: "draft",
       currentRevision: 3,
@@ -151,6 +172,7 @@ describe("artifact and finding repositories", () => {
         status: "draft",
         currentRevision: 4,
         expectedRevision: 3,
+        expectedStatus: "ready",
         validationState: "valid",
         contentHash: "hash-4",
       }),
@@ -160,10 +182,18 @@ describe("artifact and finding repositories", () => {
         status: "draft",
         currentRevision: 4,
         expectedRevision: 3,
+        expectedStatus: "ready",
         validationState: "valid",
         contentHash: "hash-4",
       }),
     ).resolves.toBe(false);
+    const manualRevisionCas = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(manualRevisionCas.sql).toContain(
+      '"app"."execution_artifacts"."status" =',
+    );
+    expect(manualRevisionCas.params).toEqual(expect.arrayContaining(["ready"]));
     fake.enqueue([{ id: "artifact-1" }], []);
     await expect(
       repo.setGeneratedForGenerationRun(scope, "artifact-1", "run-4", {
@@ -187,11 +217,18 @@ describe("artifact and finding repositories", () => {
     await repo.setStatus(scope, "artifact-1", "ready");
     fake.enqueue([{ id: "artifact-1" }], []);
     await expect(
-      repo.setStatusIfRevision(scope, "artifact-1", "ready", 4),
+      repo.setStatusIfRevision(scope, "artifact-1", "ready", 4, "draft"),
     ).resolves.toBe(true);
     await expect(
-      repo.setStatusIfRevision(scope, "artifact-1", "ready", 3),
+      repo.setStatusIfRevision(scope, "artifact-1", "ready", 3, "draft"),
     ).resolves.toBe(false);
+    const statusCas = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(statusCas.sql).toContain(
+      '"app"."execution_artifacts"."status" =',
+    );
+    expect(statusCas.params).toEqual(expect.arrayContaining(["draft"]));
     await repo.setFailed("artifact-1");
     expect(fake.last("set").args[0]).toMatchObject({ status: "failed" });
     fake.enqueue([{ id: "artifact-1" }], []);
@@ -210,6 +247,7 @@ describe("artifact and finding repositories", () => {
         projectId: scope.projectId,
         artifactId: "artifact-1",
         revision: 4,
+        outputLocale: "zh-CN",
         contentFormat: "markdown",
         contentText: "# Brief",
         contentJson: null,
@@ -223,6 +261,7 @@ describe("artifact and finding repositories", () => {
     ).resolves.toBe(revision);
     expect(fake.last("values").args[0]).toMatchObject({
       artifact_id: "artifact-1",
+      output_locale: "zh-CN",
       editor_id: "user-1",
     });
     fake.enqueue([revision], [], [revision]);
@@ -237,12 +276,12 @@ describe("artifact and finding repositories", () => {
     ]);
 
     const second = {
-      id: "artifact-2",
-      updated_at: "2026-07-17T12:00:00.000Z",
+      id: "00000000-0000-4000-8000-000000000202",
+      updated_at: "2026-07-17 12:00:00+08",
     };
     const third = {
-      id: "artifact-3",
-      updated_at: "2026-07-16T12:00:00.000Z",
+      id: "00000000-0000-4000-8000-000000000203",
+      updated_at: "2026-07-16 12:00:00+08",
     };
     fake.enqueue([artifact, second, third]);
     const page = await repo.listByProject(scope, { limit: 2, cursor: null });
@@ -252,9 +291,90 @@ describe("artifact and finding repositories", () => {
     await expect(
       repo.listByProject(scope, { limit: 2, cursor: page.nextCursor }),
     ).resolves.toEqual({ rows: [second], nextCursor: null });
+    const artifactCursorQuery = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(artifactCursorQuery.params).toEqual(
+      expect.arrayContaining([second.updated_at, second.id]),
+    );
     await expect(
       repo.listByProject(scope, { limit: 2, cursor: "invalid" }),
     ).resolves.toEqual({ rows: [], nextCursor: null });
+
+    fake.enqueue([]);
+    await repo.listByProject(scope, {
+      limit: 2,
+      cursor: null,
+      artifactType: "technical_ticket",
+      status: "ready",
+    });
+    const artifactFilterQuery = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(artifactFilterQuery.sql).toContain(
+      '"app"."execution_artifacts"."artifact_type" =',
+    );
+    expect(artifactFilterQuery.sql).toContain(
+      '"app"."execution_artifacts"."status" =',
+    );
+    expect(artifactFilterQuery.params).toEqual(
+      expect.arrayContaining(["technical_ticket", "ready"]),
+    );
+  });
+
+  it("keyset-pages artifact revisions in descending revision order", async () => {
+    const fake = fakeExecutor();
+    const repo = new ExecutionArtifactsRepository(fake.executor);
+    const revision3 = { artifact_id: "artifact-1", revision: 3 };
+    const revision2 = { artifact_id: "artifact-1", revision: 2 };
+    const revision1 = { artifact_id: "artifact-1", revision: 1 };
+
+    fake.enqueue([revision3, revision2, revision1]);
+    await expect(
+      repo.listRevisionsPage(scope, "artifact-1", {
+        limit: 2,
+        cursor: null,
+      }),
+    ).resolves.toEqual({
+      rows: [revision3, revision2],
+      nextCursor: 2,
+    });
+    expect(fake.last("limit").args).toEqual([3]);
+
+    fake.enqueue([revision1]);
+    await expect(
+      repo.listRevisionsPage(scope, "artifact-1", {
+        limit: 2,
+        cursor: 2,
+      }),
+    ).resolves.toEqual({ rows: [revision1], nextCursor: null });
+    const cursorQuery = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(cursorQuery.sql).toContain(
+      '"app"."artifact_revisions"."revision" <',
+    );
+    expect(cursorQuery.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        "artifact-1",
+        2,
+      ]),
+    );
+
+    await expect(
+      repo.listRevisionsPage(scope, "artifact-1", {
+        limit: 0,
+        cursor: null,
+      }),
+    ).rejects.toThrow(RangeError);
+    await expect(
+      repo.listRevisionsPage(scope, "artifact-1", {
+        limit: 2,
+        cursor: 0,
+      }),
+    ).rejects.toThrow(RangeError);
   });
 
   it("preserves human review state while findings regress and resolve", async () => {
@@ -262,7 +382,7 @@ describe("artifact and finding repositories", () => {
     const repo = new FindingsRepository(fake.executor);
     const finding = {
       id: "finding-1",
-      updated_at: "2026-07-18T12:00:00.000Z",
+      updated_at: "2026-07-18 12:00:00+08",
     };
     fake.enqueue([finding], []);
     await expect(repo.findByKey(scope, "key-1")).resolves.toBe(finding);
@@ -352,12 +472,12 @@ describe("artifact and finding repositories", () => {
     ).resolves.toBe(false);
 
     const second = {
-      id: "finding-2",
-      updated_at: "2026-07-17T12:00:00.000Z",
+      id: "00000000-0000-4000-8000-000000000302",
+      updated_at: "2026-07-17 12:00:00+08",
     };
     const third = {
-      id: "finding-3",
-      updated_at: "2026-07-16T12:00:00.000Z",
+      id: "00000000-0000-4000-8000-000000000303",
+      updated_at: "2026-07-16 12:00:00+08",
     };
     fake.enqueue([finding, second, third]);
     const page = await repo.list(scope, {
@@ -375,6 +495,12 @@ describe("artifact and finding repositories", () => {
         activeOnly: false,
       }),
     ).resolves.toEqual({ rows: [second], nextCursor: null });
+    const findingCursorQuery = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(findingCursorQuery.params).toEqual(
+      expect.arrayContaining([second.updated_at, second.id]),
+    );
     await expect(
       repo.list(scope, {
         limit: 2,
@@ -382,6 +508,23 @@ describe("artifact and finding repositories", () => {
         activeOnly: false,
       }),
     ).resolves.toEqual({ rows: [], nextCursor: null });
+
+    fake.enqueue([]);
+    await repo.list(scope, {
+      limit: 2,
+      cursor: null,
+      activeOnly: false,
+      domain: "geo_ai",
+      reviewState: "confirmed",
+    });
+    const filterQuery = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(filterQuery.sql).toContain('"app"."findings"."domain" =');
+    expect(filterQuery.sql).toContain('"app"."findings"."review_state" =');
+    expect(filterQuery.params).toEqual(
+      expect.arrayContaining(["geo_ai", "confirmed"]),
+    );
   });
 });
 
@@ -455,6 +598,12 @@ describe("project and source repositories", () => {
     await expect(
       repo.setStage(scope, "missing", "diagnosing"),
     ).resolves.toBe(false);
+    const stageGuard = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(stageGuard.sql).toContain(
+      '"app"."client_projects"."archived_at" is null',
+    );
     fake.enqueue([{ id: "project-1" }], []);
     await expect(
       repo.setReadyToDiagnoseIfEligible(scope, "project-1"),
@@ -462,12 +611,24 @@ describe("project and source repositories", () => {
     await expect(
       repo.setReadyToDiagnoseIfEligible(scope, "project-2"),
     ).resolves.toBe(false);
+    const readyGuard = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(readyGuard.sql).toContain(
+      '"app"."client_projects"."archived_at" is null',
+    );
 
     fake.enqueue([], [project]);
     await expect(
       repo.rebuildStageFromHistory(scope, "project-1"),
     ).resolves.toBe("planning");
     expect(fake.last("execute").args).toHaveLength(1);
+    const rebuildGuard = new PgDialect().sqlToQuery(
+      fake.last("execute").args[0] as never,
+    );
+    expect(rebuildGuard.sql).toContain(
+      '"app"."client_projects"."archived_at" is null',
+    );
     fake.enqueue([], []);
     await expect(
       repo.rebuildStageFromHistory(scope, "missing"),
@@ -616,9 +777,23 @@ describe("project and source repositories", () => {
     expect(fake.last("values").args[0]).toMatchObject({ external_ref: null });
     expect(fake.last("values").args[0]).not.toHaveProperty("connected_at");
 
-    fake.enqueue([source], [], [source], [], [source], [], [source]);
+    fake.enqueue(
+      [source],
+      [],
+      [source],
+      [],
+      [source],
+      [],
+      [source],
+      [source],
+      [source],
+      [],
+      [source],
+    );
     await expect(repo.findById(scope, "source-1")).resolves.toBe(source);
     await expect(repo.findById(scope, "missing")).resolves.toBeNull();
+    await expect(repo.findConnectedById(scope, "source-1")).resolves.toBe(source);
+    await expect(repo.findConnectedById(scope, "missing")).resolves.toBeNull();
     await expect(
       repo.findActiveByIdForUpdate(scope, "source-1"),
     ).resolves.toBe(source);
@@ -627,16 +802,75 @@ describe("project and source repositories", () => {
       repo.findActiveByIdForUpdate(scope, "missing"),
     ).resolves.toBeNull();
     await expect(
+      repo.findConnectedByIdForUpdate(scope, "source-1"),
+    ).resolves.toBe(source);
+    expect(fake.last("for").args).toEqual(["update"]);
+    await expect(
       repo.findConnectedByProvider(scope, "crawl"),
     ).resolves.toBe(source);
+    await expect(
+      repo.findConnectedByProviderForUpdate(scope, "crawl"),
+    ).resolves.toBe(source);
+    expect(fake.last("for").args).toEqual(["update"]);
     await expect(
       repo.findConnectedByProvider(scope, "ga4"),
     ).resolves.toBeNull();
     await expect(repo.listByProject(scope)).resolves.toEqual([source]);
     await repo.updateState(scope, "source-1", "syncing");
+    const updateStateGuard = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(updateStateGuard.sql).toContain(
+      'from "app"."client_projects"',
+    );
+    expect(updateStateGuard.sql).toContain(
+      '"app"."client_projects"."archived_at" is null',
+    );
     await repo.setLastSnapshot("source-1", "snapshot-1", "available");
+    const snapshotGuard = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(snapshotGuard.sql).toContain('from "app"."client_projects"');
+    expect(snapshotGuard.sql).toContain(
+      '"app"."client_projects"."archived_at" is null',
+    );
     await repo.disconnect(scope, "source-1");
     expect(fake.last("set").args[0]).toMatchObject({ state: "disconnected" });
+
+    fake.enqueue([{ id: "source-1" }], []);
+    await expect(
+      repo.recoverSyncingAfterCollectionFailure(scope, "source-1", "crawl"),
+    ).resolves.toBe(true);
+    await expect(
+      repo.recoverSyncingAfterCollectionFailure(scope, "source-1", "crawl"),
+    ).resolves.toBe(false);
+    const recoverySet = fake.last("set").args[0] as Record<string, unknown>;
+    expect(recoverySet).toMatchObject({
+      limitation:
+        "Source synchronization did not complete; no new snapshot was saved.",
+    });
+    const recoveryGuard = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(recoveryGuard.sql).toContain(
+      '"app"."source_connections"."state" =',
+    );
+    expect(recoveryGuard.sql).toContain(
+      '"app"."source_connections"."disconnected_at" is null',
+    );
+    expect(recoveryGuard.sql).toContain('from "app"."client_projects"');
+    expect(recoveryGuard.sql).toContain(
+      '"app"."client_projects"."archived_at" is null',
+    );
+    expect(recoveryGuard.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        "source-1",
+        "syncing",
+        "crawl",
+      ]),
+    );
   });
 
   it("locks and rotates encrypted source credentials", async () => {

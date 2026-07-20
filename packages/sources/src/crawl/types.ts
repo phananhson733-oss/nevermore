@@ -19,6 +19,19 @@ export const CRAWL_METHOD_VERSION = "crawl.site_graph.v1";
 /** Defense-in-depth run cap from spec §14.2; counts fetch-decoded body bytes. */
 export const CRAWL_MAX_TOTAL_DECODED_BYTES = 128 * 1024 * 1024;
 
+/** Frozen spec §7.1 upper bound for one crawl queue delivery. */
+export const CRAWL_JOB_WALL_CLOCK_CAP_MS = 15 * 60 * 1_000;
+
+/**
+ * Time kept outside the crawl engine for raw upload, snapshot/observation
+ * persistence, and the canonical terminal transition before pg-boss expiry.
+ */
+export const CRAWL_FINALIZATION_HEADROOM_MS = 60 * 1_000;
+
+/** Effective provider-work budget inside the frozen fifteen-minute job cap. */
+export const CRAWL_ENGINE_WALL_CLOCK_BUDGET_MS =
+  CRAWL_JOB_WALL_CLOCK_CAP_MS - CRAWL_FINALIZATION_HEADROOM_MS;
+
 /**
  * Fixed persisted-projection bounds. These are deliberately not operator
  * tunable: a hostile but per-response-valid page must not amplify into an
@@ -69,7 +82,7 @@ export interface CrawlBudget {
 export const CRAWL_BUDGET: CrawlBudget = {
   maxUrls: 2000,
   maxDepth: 6,
-  maxWallClockMs: 15 * 60 * 1000,
+  maxWallClockMs: CRAWL_ENGINE_WALL_CLOCK_BUDGET_MS,
   maxRedirects: 5,
   maxBodyBytes: 5 * 1024 * 1024,
   maxTotalBytes: CRAWL_MAX_TOTAL_DECODED_BYTES,

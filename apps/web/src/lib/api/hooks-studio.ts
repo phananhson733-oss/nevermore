@@ -13,9 +13,12 @@
  */
 
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
+  type InfiniteData,
+  type UseInfiniteQueryResult,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
@@ -26,6 +29,7 @@ import {
   type DataEnvelope,
   type ListEnvelope,
 } from "@/lib/api";
+import { cursorPageUrl, nextCursorPageParam } from "@/lib/api/cursor-pages";
 
 // --------------------------------------------------------------- DTOs --------
 
@@ -66,6 +70,7 @@ export type ArtifactContent = string | Record<string, unknown>;
 export interface ArtifactRevision {
   readonly id: string;
   readonly revision: number;
+  readonly outputLocale: string;
   readonly contentFormat: ContentFormat;
   readonly content: ArtifactContent;
   readonly contentHash: string;
@@ -208,26 +213,40 @@ export function isTerminalRun(status: RunStatus): boolean {
 
 // -------------------------------------------------------------- Hooks --------
 
-/** List the project's execution artifacts (with current-revision metadata). */
+/** List the project's execution artifacts as bounded cursor pages. */
 export function useProjectArtifacts(
   projectId: string,
-): UseQueryResult<ListEnvelope<Artifact>, ApiError> {
-  return useQuery({
+): UseInfiniteQueryResult<
+  InfiniteData<ListEnvelope<Artifact>, string | null>,
+  ApiError
+> {
+  return useInfiniteQuery({
     queryKey: ["artifacts", projectId],
-    queryFn: () =>
-      apiGet<ListEnvelope<Artifact>>(`/projects/${projectId}/artifacts`),
+    queryFn: ({ pageParam }) =>
+      apiGet<ListEnvelope<Artifact>>(
+        cursorPageUrl(`/projects/${projectId}/artifacts`, pageParam),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: nextCursorPageParam,
     enabled: projectId.length > 0,
   });
 }
 
-/** List the project's plan actions (the source of "generate artifact"). */
+/** List plan actions (the source of "generate artifact") as cursor pages. */
 export function useProjectActions(
   projectId: string,
-): UseQueryResult<ListEnvelope<ArtifactAction>, ApiError> {
-  return useQuery({
+): UseInfiniteQueryResult<
+  InfiniteData<ListEnvelope<ArtifactAction>, string | null>,
+  ApiError
+> {
+  return useInfiniteQuery({
     queryKey: ["actions", projectId],
-    queryFn: () =>
-      apiGet<ListEnvelope<ArtifactAction>>(`/projects/${projectId}/actions`),
+    queryFn: ({ pageParam }) =>
+      apiGet<ListEnvelope<ArtifactAction>>(
+        cursorPageUrl(`/projects/${projectId}/actions`, pageParam),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: nextCursorPageParam,
     enabled: projectId.length > 0,
   });
 }

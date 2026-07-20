@@ -10,17 +10,18 @@
  * re-ranking, spec §10.4). All model/artifact text renders as TEXT — React
  * escapes by default, no raw HTML injection.
  *
- * `outputLocale` selects the report *content* language independently of the UI
- * locale (product chrome still follows the UI locale). Print uses a `@media
- * print` block in the CSS module; there is deliberately no PDF export (forbidden
- * in the MVP, spec §10.4).
+ * `outputLocale` requests the report methodology/export locale independently of
+ * the UI locale. Canonical findings, actions, and artifacts keep their recorded
+ * content locale, which this view labels explicitly. Print uses a `@media print`
+ * block in the CSS module; there is deliberately no PDF export (forbidden in the
+ * MVP, spec §10.4).
  */
 
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { FileCheck2, Route, ScanSearch } from "lucide-react";
-import { LOCALES } from "@sf/i18n/config";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Badge,
   Button,
@@ -28,6 +29,7 @@ import {
   Panel,
   Spinner,
   StatusPill,
+  TextInput,
   cx,
   type BadgeTone,
   type StatusTone,
@@ -35,12 +37,14 @@ import {
 import type { Coverage } from "@/lib/api";
 import {
   isTerminalRun,
+  normalizeOutputLocale,
   useCreateExport,
   useProjectExport,
   useProjectReport,
   type Action,
   type Artifact,
   type EvidenceGrade,
+  type ExportBundle,
   type ExportKind,
   type Finding,
   type PriorityBand,
@@ -53,6 +57,7 @@ import {
   reportFooterLimitations,
   uniqueStrings,
 } from "../_view-model.ts";
+import { ProblemNotice, ProblemState } from "../_problem-display";
 import { exportErrorMessageKey } from "../_frontend-error-state.ts";
 import styles from "./report.module.css";
 
@@ -67,6 +72,33 @@ const DOMAIN_KEYS = [
 
 /** 30/60/90 plan lanes in order (spec §10.4). */
 const LANE_ORDER: readonly RoadmapLane[] = ["now", "next", "later"];
+
+const MANIFEST_ITEM_ORDER = [
+  "projects",
+  "contexts",
+  "sources",
+  "snapshots",
+  "observations",
+  "findings",
+  "evidence",
+  "actions",
+  "artifacts",
+  "artifactRevisions",
+] as const;
+const MANIFEST_ITEM_KEYS: ReadonlySet<string> = new Set(MANIFEST_ITEM_ORDER);
+
+function manifestItemEntries(
+  itemCounts: Readonly<Record<string, number>>,
+): readonly (readonly [string, number])[] {
+  const rank = new Map<string, number>(
+    MANIFEST_ITEM_ORDER.map((key, index) => [key, index]),
+  );
+  return Object.entries(itemCounts).sort(([left], [right]) => {
+    const leftRank = rank.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightRank = rank.get(right) ?? Number.MAX_SAFE_INTEGER;
+    return leftRank - rightRank || left.localeCompare(right);
+  });
+}
 
 /** `coverage.*` label key (status is never conveyed by color alone). */
 type CoverageLabelKey = "ready" | "degraded" | "partial" | "missing";
@@ -147,42 +179,106 @@ function formatDateTime(iso: string, locale: string): string {
 
 // -------------------------------------------------------- Output locale ------
 
+function localeSuggestions(
+  report: Report | undefined,
+  committedLocale: string | undefined,
+  draftLocale: string,
+): readonly string[] {
+  const values = new Set<string>();
+  if (report) {
+    values.add(report.project.defaultDeliveryLocale);
+    for (const code of report.project.site.languageCodes) values.add(code);
+  }
+  if (committedLocale !== undefined) values.add(committedLocale);
+  const draft = normalizeOutputLocale(draftLocale);
+  if (draft !== undefined) values.add(draft);
+  return [...values];
+}
+
+function reportUrlWithLocale(
+  pathname: string,
+  searchParams: { readonly toString: () => string },
+  outputLocale: string | undefined,
+): string {
+  const next = new URLSearchParams(searchParams.toString());
+  if (outputLocale === undefined) next.delete("outputLocale");
+  else next.set("outputLocale", outputLocale);
+  const query = next.toString();
+  return query.length > 0 ? `${pathname}?${query}` : pathname;
+}
+
+/**
+ * Resolve the locale used by an export click from the current input render.
+ * This deliberately does not wait for `router.replace`: browser click ordering
+ * fires the input blur before the button click, while the URL transition is
+ * asynchronous. A blank draft means "use the project delivery locale"; a
+ * non-empty invalid draft keeps the last committed locale.
+ */
+function exportLocaleForDraft(
+  draftLocale: string,
+  committedLocale: string,
+  defaultDeliveryLocale: string,
+): string {
+  if (draftLocale.trim().length === 0) return defaultDeliveryLocale;
+  return normalizeOutputLocale(draftLocale) ?? committedLocale;
+}
+
 function OutputLocaleSelect({
   value,
+  suggestions,
   onChange,
+  onCommit,
+  onReset,
 }: {
-  readonly value: string | undefined;
+  readonly value: string;
+  readonly suggestions: readonly string[];
   readonly onChange: (locale: string) => void;
+  readonly onCommit: () => void;
+  readonly onReset: () => void;
 }) {
   const t = useTranslations("report");
+  const listId = "sf-report-output-locale-options";
+  const helpId = "sf-report-output-locale-help";
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onCommit();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onReset();
+    }
+  }
+
   return (
     <div className={styles.localeField}>
-      <span className={styles.localeLabel} id="sf-output-locale-label">
+      <label className={styles.localeLabel} htmlFor="sf-report-output-locale">
         {t("outputLocale")}
-      </span>
-      <div
-        className={styles.segmented}
-        role="group"
-        aria-labelledby="sf-output-locale-label"
-      >
-        {LOCALES.map((locale) => {
-          const isActive = locale === value;
-          return (
-            <button
-              key={locale}
-              type="button"
-              className={cx(styles.segment, isActive && styles.segmentActive)}
-              aria-pressed={isActive}
-              onClick={() => onChange(locale)}
-            >
-              {locale === "en" ? "EN" : "中"}
-              <span
-                className={styles.srOnly}
-              >{` ${t(`locale.${locale}`)}`}</span>
-            </button>
-          );
-        })}
-      </div>
+      </label>
+      <TextInput
+        id="sf-report-output-locale"
+        value={value}
+        list={suggestions.length > 0 ? listId : undefined}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={onCommit}
+        onKeyDown={onKeyDown}
+        aria-describedby={helpId}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+      {suggestions.length > 0 ? (
+        <datalist id={listId}>
+          {suggestions.map((locale) => (
+            <option key={locale} value={locale} />
+          ))}
+        </datalist>
+      ) : null}
+      <p id={helpId} className={styles.localeHelp}>
+        {t("outputLocaleHelp")}
+      </p>
     </div>
   );
 }
@@ -192,12 +288,18 @@ function OutputLocaleSelect({
 function ReportHeader({
   report,
   outputLocale,
+  outputLocaleSuggestions,
   onOutputLocaleChange,
+  onOutputLocaleCommit,
+  onOutputLocaleReset,
   onPrint,
 }: {
   readonly report: Report;
-  readonly outputLocale: string | undefined;
+  readonly outputLocale: string;
+  readonly outputLocaleSuggestions: readonly string[];
   readonly onOutputLocaleChange: (locale: string) => void;
+  readonly onOutputLocaleCommit: () => void;
+  readonly onOutputLocaleReset: () => void;
   readonly onPrint: () => void;
 }) {
   const t = useTranslations("report");
@@ -217,7 +319,10 @@ function ReportHeader({
       <div className={cx(styles.headerActions, styles.noPrint)}>
         <OutputLocaleSelect
           value={outputLocale}
+          suggestions={outputLocaleSuggestions}
           onChange={onOutputLocaleChange}
+          onCommit={onOutputLocaleCommit}
+          onReset={onOutputLocaleReset}
         />
         <Button variant="secondary" onClick={onPrint}>
           {t("print")}
@@ -318,6 +423,9 @@ function FindingCard({ finding }: { readonly finding: Finding }) {
           {t(`severity.${finding.severity}`)}
         </StatusPill>
       </div>
+      <span className={styles.contentLocale}>
+        {t("summaryContentLocale", { locale: finding.summaryLocale })}
+      </span>
       <p className={styles.cardSummary}>{finding.summary}</p>
       {scope !== undefined ? (
         <p className={styles.scope}>
@@ -383,6 +491,9 @@ function ActionCard({ action }: { readonly action: Action }) {
           {tPriority(action.priorityBand)}
         </StatusPill>
       </div>
+      <span className={styles.contentLocale}>
+        {t("actionContentLocale", { locale: action.contentLocale })}
+      </span>
       <p className={styles.cardSummary}>{action.description}</p>
       <p className={styles.outcome}>
         <span className={styles.outcomeLabel}>{t("expectedOutcome")}:</span>{" "}
@@ -476,6 +587,11 @@ function ArtifactsSection({
                 <span className={styles.artifactRevision}>
                   {t("revision", { n: artifact.currentRevision })}
                 </span>
+                <span className={styles.contentLocale}>
+                  {t("artifactContentLocale", {
+                    locale: artifact.outputLocale,
+                  })}
+                </span>
               </div>
               <span className={styles.artifactDate}>
                 {formatDate(artifact.updatedAt, uiLocale)}
@@ -542,6 +658,86 @@ function MethodologySection({ report }: { readonly report: Report }) {
 
 // ------------------------------------------------------------- Export --------
 
+function ExportManifest({
+  bundle,
+  uiLocale,
+}: {
+  readonly bundle: ExportBundle;
+  readonly uiLocale: string;
+}) {
+  const t = useTranslations("report");
+  const titleId = `sf-export-manifest-${bundle.id}`;
+  const isClient = bundle.kind === "client_bundle";
+
+  return (
+    <section className={styles.manifest} aria-labelledby={titleId}>
+      <div className={styles.manifestHead}>
+        <div>
+          <h3 id={titleId} className={styles.manifestTitle}>
+            {t("manifestTitle")}
+          </h3>
+          <p className={styles.manifestDescription}>
+            {t("manifestDescription")}
+          </p>
+        </div>
+        <Badge tone="neutral">{t(`kind.${bundle.kind}`)}</Badge>
+      </div>
+
+      <dl className={styles.manifestFacts}>
+        <div className={styles.manifestFact}>
+          <dt>{t("schemaVersion")}</dt>
+          <dd>{bundle.schemaVersion}</dd>
+        </div>
+        <div className={styles.manifestFact}>
+          <dt>{t("bundleLocale")}</dt>
+          <dd>{bundle.outputLocale}</dd>
+        </div>
+        <div className={styles.manifestFact}>
+          <dt>{t("createdAt")}</dt>
+          <dd>{formatDateTime(bundle.createdAt, uiLocale)}</dd>
+        </div>
+        <div className={cx(styles.manifestFact, styles.manifestChecksum)}>
+          <dt>{t("checksum")}</dt>
+          <dd>
+            {bundle.checksum === null ? (
+              t("notAvailable")
+            ) : (
+              <code title={bundle.checksum}>{bundle.checksum}</code>
+            )}
+          </dd>
+        </div>
+      </dl>
+
+      <div className={styles.manifestBoundary}>
+        <div>
+          <span className={styles.manifestBoundaryLabel}>{t("included")}</span>
+          <p>{t(isClient ? "clientIncluded" : "serviceIncluded")}</p>
+        </div>
+        <div>
+          <span className={styles.manifestBoundaryLabel}>{t("excluded")}</span>
+          <p>{t(isClient ? "clientExcluded" : "serviceExcluded")}</p>
+        </div>
+      </div>
+
+      <div>
+        <h4 className={styles.manifestItemsTitle}>{t("itemCounts")}</h4>
+        <ul className={styles.manifestItems}>
+          {manifestItemEntries(bundle.itemCounts).map(([key, count]) => (
+            <li key={key}>
+              <span>
+                {MANIFEST_ITEM_KEYS.has(key)
+                  ? t(`manifestItems.${key}`)
+                  : key}
+              </span>
+              <strong>{count}</strong>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 function ExportStatus({
   projectId,
   exportId,
@@ -558,16 +754,14 @@ function ExportStatus({
   if (query.error !== null) {
     return (
       <div className={styles.exportReady} role="alert">
-        <p className={styles.exportError}>
-          {t(exportErrorMessageKey(query.error))}
-        </p>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void query.refetch()}
-        >
-          {t("retryExportStatus")}
-        </Button>
+        <ProblemNotice
+          className={styles.exportError}
+          error={query.error}
+          message={t(exportErrorMessageKey(query.error))}
+          onRetry={() => void query.refetch()}
+          retryLabel={t("retryExportStatus")}
+          compact
+        />
       </div>
     );
   }
@@ -598,19 +792,22 @@ function ExportStatus({
   }
   return (
     <div className={styles.exportReady}>
-      <a
-        className={styles.downloadLink}
-        href={bundle.downloadUrl}
-        download
-        rel="noreferrer"
-      >
-        {t("download", { kind: t(`kind.${bundle.kind}`) })}
-      </a>
-      {bundle.downloadExpiresAt !== null ? (
-        <span className={styles.expiresAt}>
-          {t("expiresAt")}: {formatDateTime(bundle.downloadExpiresAt, uiLocale)}
-        </span>
-      ) : null}
+      <ExportManifest bundle={bundle} uiLocale={uiLocale} />
+      <div className={styles.exportDownload}>
+        <a
+          className={styles.downloadLink}
+          href={bundle.downloadUrl}
+          download
+          rel="noreferrer"
+        >
+          {t("download", { kind: t(`kind.${bundle.kind}`) })}
+        </a>
+        {bundle.downloadExpiresAt !== null ? (
+          <span className={styles.expiresAt}>
+            {t("expiresAt")}: {formatDateTime(bundle.downloadExpiresAt, uiLocale)}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -675,9 +872,12 @@ function ExportSection({
       <p className={styles.clientBundleNote}>{t("clientBundleNote")}</p>
       <div className={styles.exportStatus} aria-live="polite">
         {createExport.isError ? (
-          <p className={styles.exportError} role="alert">
-            {t(exportErrorMessageKey(createExport.error))}
-          </p>
+          <ProblemNotice
+            className={styles.exportError}
+            error={createExport.error}
+            message={t(exportErrorMessageKey(createExport.error))}
+            compact
+          />
         ) : null}
         {createExport.isPending && active === null ? (
           <span className={styles.exportBusy}>
@@ -699,15 +899,22 @@ function ReportContent({
   projectId,
   report,
   outputLocale,
+  exportOutputLocale,
+  outputLocaleSuggestions,
   onOutputLocaleChange,
+  onOutputLocaleCommit,
+  onOutputLocaleReset,
 }: {
   readonly projectId: string;
   readonly report: Report;
-  readonly outputLocale: string | undefined;
+  readonly outputLocale: string;
+  readonly exportOutputLocale: string;
+  readonly outputLocaleSuggestions: readonly string[];
   readonly onOutputLocaleChange: (locale: string) => void;
+  readonly onOutputLocaleCommit: () => void;
+  readonly onOutputLocaleReset: () => void;
 }): ReactNode {
   const t = useTranslations("report");
-  const resolvedLocale = outputLocale ?? report.outputLocale;
   const isEmpty =
     report.findings.length === 0 &&
     report.actions.length === 0 &&
@@ -717,11 +924,14 @@ function ReportContent({
   ).length;
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-report-page="">
       <ReportHeader
         report={report}
-        outputLocale={resolvedLocale}
+        outputLocale={outputLocale}
+        outputLocaleSuggestions={outputLocaleSuggestions}
         onOutputLocaleChange={onOutputLocaleChange}
+        onOutputLocaleCommit={onOutputLocaleCommit}
+        onOutputLocaleReset={onOutputLocaleReset}
         onPrint={() => window.print()}
       />
       {!isEmpty ? (
@@ -777,7 +987,10 @@ function ReportContent({
             <PlanSection actions={report.actions} />
           ) : null}
           <ArtifactsSection artifacts={report.artifacts} />
-          <ExportSection projectId={projectId} outputLocale={resolvedLocale} />
+          <ExportSection
+            projectId={projectId}
+            outputLocale={exportOutputLocale}
+          />
         </>
       )}
       <MethodologySection report={report} />
@@ -790,12 +1003,79 @@ function ReportContent({
  * loading / error / ready states. The project shell layout provides the chrome;
  * this renders content only.
  */
-export function ReportClient({ projectId }: { readonly projectId: string }) {
+export function ReportClient({
+  projectId,
+  initialOutputLocale,
+}: {
+  readonly projectId: string;
+  readonly initialOutputLocale?: string | undefined;
+}) {
   const tCommon = useTranslations("common");
-  const [outputLocale, setOutputLocale] = useState<string | undefined>(
-    undefined,
-  );
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialLocale = normalizeOutputLocale(initialOutputLocale);
+  const rawSearchLocale = searchParams.get("outputLocale");
+  const outputLocale = normalizeOutputLocale(rawSearchLocale) ?? initialLocale;
+  const invalidSearchLocale =
+    rawSearchLocale !== null && normalizeOutputLocale(rawSearchLocale) === undefined;
   const query = useProjectReport(projectId, outputLocale);
+  const [draftLocale, setDraftLocale] = useState<string>(outputLocale ?? "");
+  const [draftDirty, setDraftDirty] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!invalidSearchLocale) return;
+    router.replace(reportUrlWithLocale(pathname, searchParams, undefined), {
+      scroll: false,
+    });
+  }, [invalidSearchLocale, pathname, router, searchParams]);
+
+  useEffect(() => {
+    if (draftDirty) return;
+    const canonical = outputLocale ?? query.data?.outputLocale ?? "";
+    if (draftLocale !== canonical) setDraftLocale(canonical);
+  }, [draftDirty, draftLocale, outputLocale, query.data?.outputLocale]);
+
+  const outputLocaleSuggestions = useMemo(
+    () => localeSuggestions(query.data, outputLocale, draftLocale),
+    [draftLocale, outputLocale, query.data],
+  );
+
+  function replaceOutputLocale(nextLocale: string | undefined): void {
+    router.replace(reportUrlWithLocale(pathname, searchParams, nextLocale), {
+      scroll: false,
+    });
+  }
+
+  function commitOutputLocale(): void {
+    const trimmedDraft = draftLocale.trim();
+    setDraftDirty(false);
+    if (trimmedDraft.length === 0) {
+      const fallback =
+        query.data?.project.defaultDeliveryLocale ??
+        query.data?.outputLocale ??
+        "";
+      setDraftLocale(fallback);
+      if (rawSearchLocale !== null || outputLocale !== undefined) {
+        replaceOutputLocale(undefined);
+      }
+      return;
+    }
+
+    const nextLocale = normalizeOutputLocale(trimmedDraft);
+    if (nextLocale === undefined) {
+      const fallback = outputLocale ?? query.data?.outputLocale ?? "";
+      setDraftLocale(fallback);
+      return;
+    }
+    setDraftLocale(nextLocale);
+    if (nextLocale !== outputLocale) replaceOutputLocale(nextLocale);
+  }
+
+  function resetOutputLocale(): void {
+    setDraftDirty(false);
+    setDraftLocale(outputLocale ?? query.data?.outputLocale ?? "");
+  }
 
   if (query.isLoading) {
     return (
@@ -809,26 +1089,31 @@ export function ReportClient({ projectId }: { readonly projectId: string }) {
   if (query.error !== null || query.data === undefined) {
     return (
       <div className={styles.state}>
-        <EmptyState title={tCommon("error")}>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void query.refetch();
-            }}
-          >
-            {tCommon("retry")}
-          </Button>
-        </EmptyState>
+        <ProblemState error={query.error} onRetry={() => void query.refetch()} />
       </div>
     );
   }
+
+  const committedOutputLocale = outputLocale ?? query.data.outputLocale;
+  const exportOutputLocale = exportLocaleForDraft(
+    draftLocale,
+    committedOutputLocale,
+    query.data.project.defaultDeliveryLocale,
+  );
 
   return (
     <ReportContent
       projectId={projectId}
       report={query.data}
-      outputLocale={outputLocale}
-      onOutputLocaleChange={setOutputLocale}
+      outputLocale={draftLocale}
+      exportOutputLocale={exportOutputLocale}
+      outputLocaleSuggestions={outputLocaleSuggestions}
+      onOutputLocaleChange={(locale) => {
+        setDraftLocale(locale);
+        setDraftDirty(true);
+      }}
+      onOutputLocaleCommit={commitOutputLocale}
+      onOutputLocaleReset={resetOutputLocale}
     />
   );
 }

@@ -1,8 +1,28 @@
 import { Cursor } from "@sf/contracts";
 import { operatorRoute } from "@/lib/http/handler";
 import { ok } from "@/lib/http/respond";
-import { parseUuidParam } from "@/lib/http/validate";
+import {
+  parseOptionalQueryEnum,
+  parseQueryBoolean,
+  parseQueryLimit,
+  parseQueryValue,
+  parseUuidParam,
+} from "@/lib/http/validate";
 import { listProjectFindings } from "@/lib/services/findings-list";
+
+const DOMAINS = [
+  "technical_seo",
+  "search_performance",
+  "content_intent",
+  "conversion_journey",
+  "geo_ai",
+] as const;
+const REVIEW_STATES = [
+  "unreviewed",
+  "confirmed",
+  "ignored",
+  "needs_more_data",
+] as const;
 
 /**
  * `GET /api/mvp/projects/{projectId}/findings` — page of findings + evidence with
@@ -14,16 +34,20 @@ export const GET = operatorRoute<{ projectId: string }>(async (request, ctx, rou
   const id = parseUuidParam(projectId);
 
   const url = new URL(request.url);
-  const rawCursor = url.searchParams.get("cursor");
-  const cursor = rawCursor && Cursor.safeParse(rawCursor).success ? rawCursor : null;
-  const rawLimit = Number(url.searchParams.get("limit"));
-  const limit = Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= 100 ? rawLimit : 50;
-  const activeOnly = url.searchParams.get("active") !== "false";
+  const cursor = parseQueryValue(url.searchParams, "cursor", Cursor);
+  const limit = parseQueryLimit(url.searchParams);
+  const activeOnly = parseQueryBoolean(url.searchParams, "active", true);
+  const domain = parseOptionalQueryEnum(url.searchParams, "domain", DOMAINS);
+  const reviewState = parseOptionalQueryEnum(
+    url.searchParams,
+    "reviewState",
+    REVIEW_STATES,
+  );
 
   const result = await listProjectFindings(
     { workspaceId: ctx.operator.workspaceId },
     id,
-    { limit, cursor, activeOnly },
+    { limit, cursor, activeOnly, domain, reviewState },
   );
   return ok(result.data, ctx.requestId, { meta: result.meta });
 });

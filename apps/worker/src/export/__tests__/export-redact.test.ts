@@ -4,10 +4,10 @@ import { assembleBundle, type BundleInput } from "@sf/artifacts";
 import { redact } from "@sf/observability";
 
 /**
- * AC-040: the export bundle must never carry raw secrets. `buildBundleInput` in
- * run-export.ts deep-redacts the assembled input (`redact(input)`) before handing
- * it to the pure assembler. This test exercises that exact composition and scans
- * the STORE-method (uncompressed) zip bytes, so any leaked secret would appear
+ * AC-040: the pure export assembler must not reintroduce secrets once handed an
+ * already-redacted BundleInput. A separate run-export boundary test covers the
+ * real `runExport -> redact -> assembleBundle` path; this one scans the
+ * STORE-method (uncompressed) zip bytes so any leaked secret would appear
  * verbatim in the archive.
  */
 
@@ -60,12 +60,14 @@ function craftedInput(
         refresh_token: SECRETS.findingRefresh,
       },
     ],
+    findingEvidenceLinks: [],
     evidence: [],
     actions: [{ id: "action-1", title: SECRETS.cookieInTitle }],
     artifacts: [
       {
         id: "a-1",
-        status: "final",
+        status: "ready",
+        currentRevision: 1,
         revisions: [
           {
             revision: 1,
@@ -96,9 +98,8 @@ describe("export bundle redaction guard", () => {
     },
   );
 
-  it("would leak those secrets without the redact backstop (guard is load-bearing)", () => {
-    // Proves the redaction is necessary: the raw assembler alone lets the crafted
-    // secrets through, so removing `redact(...)` from run-export.ts regresses AC-040.
+  it("would leak those secrets without a caller-side redact backstop", () => {
+    // Proves the assembler alone does not sanitize free-form payloads.
     const leaky = assembleBundle(craftedInput());
     expect(leaky.zip.includes(SECRETS.projectApiKey)).toBe(true);
     expect(leaky.zip.includes(SECRETS.artifactClientSecret)).toBe(true);

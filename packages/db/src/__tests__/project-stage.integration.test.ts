@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDbHandle, type DbHandle } from "../client.ts";
 import { runMigrations } from "../migrate.ts";
-import { icpProfiles, workspaces } from "../schema.ts";
+import { clientProjects, icpProfiles, workspaces } from "../schema.ts";
+import { and, eq, sql } from "drizzle-orm";
 import { AsyncRunsRepository } from "../repositories/async-runs.ts";
 import { CollectionRunsRepository } from "../repositories/collection-runs.ts";
 import { DataSnapshotsRepository } from "../repositories/data-snapshots.ts";
@@ -79,6 +80,7 @@ describeDb("project lifecycle stage", () => {
       kind: "collection",
       activeKey: `collect:crawl:${randomUUID()}`,
       initiatedBy: actor,
+      contractVersion: "2026-07-18",
     });
     await new CollectionRunsRepository(handle.db).insertPlaceholder({
       runId: run.id,
@@ -141,6 +143,7 @@ describeDb("project lifecycle stage", () => {
       kind: "export",
       activeKey: `export:client_bundle:${randomUUID()}`,
       initiatedBy: actor,
+      contractVersion: "2026-07-18",
       requestPayload: { kind: "client_bundle", outputLocale: "en" },
     });
     const bundle = await new ExportBundlesRepository(handle.db).insert({
@@ -158,16 +161,57 @@ describeDb("project lifecycle stage", () => {
       itemCounts: {},
       manifest: {},
     });
-    await new AsyncRunsRepository(handle.db).setTerminal(exportRun.id, {
-      status: "completed",
-      resultType: "export",
-      resultId: bundle.id,
-    });
+    const runs = new AsyncRunsRepository(handle.db);
+    const claimedExport = await runs.claim(
+      { workspaceId: scope.workspaceId, projectId: project.id },
+      exportRun.id,
+    );
+    expect(claimedExport).not.toBeNull();
+    await runs.setTerminal(
+      {
+        workspaceId: scope.workspaceId,
+        projectId: project.id,
+        runId: exportRun.id,
+        attemptCount: claimedExport!.attempt_count,
+      },
+      {
+        status: "completed",
+        resultType: "export",
+        resultId: bundle.id,
+      },
+    );
 
     // Projection drift is repairable from the immutable/run ledgers.
     await projects.setStage(scope, project.id, "setup");
     await expect(
       projects.rebuildStageFromHistory(scope, project.id),
     ).resolves.toBe("delivered");
+    await expect(
+      projects.setStage(scope, project.id, "executing"),
+    ).resolves.toBe(true);
+
+    // Archival freezes the rebuildable lifecycle projection even when the
+    // immutable history remains eligible for a different stage.
+    await handle.db
+      .update(clientProjects)
+      .set({ archived_at: sql`now()` })
+      .where(
+        and(
+          eq(clientProjects.workspace_id, scope.workspaceId),
+          eq(clientProjects.id, project.id),
+        ),
+      );
+    await expect(
+      projects.rebuildStageFromHistory(scope, project.id),
+    ).resolves.toBe("executing");
+    await expect(
+      projects.setReadyToDiagnoseIfEligible(scope, project.id),
+    ).resolves.toBe(false);
+    await expect(
+      projects.setStage(scope, project.id, "setup"),
+    ).resolves.toBe(false);
+    expect((await projects.findById(scope, project.id))?.stage).toBe(
+      "executing",
+    );
   });
 });

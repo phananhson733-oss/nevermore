@@ -245,7 +245,7 @@ export function resolveActionCopy(
   template: ActionTemplate,
   deliveryLocale: string,
 ): { copy: ActionCopy; contentLocale: ContentLocale } {
-  if (deliveryLocale.toLowerCase().startsWith("zh")) {
+  if (deliveryLocale.toLowerCase() === "zh-cn") {
     return { copy: template.copy["zh-CN"], contentLocale: "zh-CN" };
   }
   return { copy: template.copy.en, contentLocale: "en" };

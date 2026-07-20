@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { CollectionContext } from "../adapter.ts";
 import { createCanonicalUrlGuard } from "../url-safety/index.ts";
 import { crawlSite } from "./engine.ts";
-import { CRAWL_BUDGET, CRAWL_PROJECTION_LIMITS } from "./types.ts";
+import {
+  CRAWL_BUDGET,
+  CRAWL_ENGINE_WALL_CLOCK_BUDGET_MS,
+  CRAWL_FINALIZATION_HEADROOM_MS,
+  CRAWL_JOB_WALL_CLOCK_CAP_MS,
+  CRAWL_PROJECTION_LIMITS,
+} from "./types.ts";
 import type { CrawlFetcher } from "./types.ts";
 
 const PARAMS = { origin: "https://example.com", host: "example.com" } as const;
@@ -137,10 +143,15 @@ const HOME_HTML = `<!doctype html><html lang="en"><head>
 const ABOUT_HTML = `<html><head><title>About</title></head><body><h1>About</h1><p>Since 2020.</p></body></html>`;
 
 describe("crawlSite", () => {
-  it("keeps the frozen URL, response, duration, and total decoded-byte production budgets", () => {
+  it("keeps the frozen crawl cap while reserving finalization headroom", () => {
+    expect(CRAWL_JOB_WALL_CLOCK_CAP_MS).toBe(15 * 60 * 1_000);
+    expect(CRAWL_FINALIZATION_HEADROOM_MS).toBe(60 * 1_000);
+    expect(CRAWL_ENGINE_WALL_CLOCK_BUDGET_MS).toBe(
+      CRAWL_JOB_WALL_CLOCK_CAP_MS - CRAWL_FINALIZATION_HEADROOM_MS,
+    );
     expect(CRAWL_BUDGET).toMatchObject({
       maxUrls: 2_000,
-      maxWallClockMs: 15 * 60 * 1_000,
+      maxWallClockMs: CRAWL_ENGINE_WALL_CLOCK_BUDGET_MS,
       maxBodyBytes: 5 * 1_024 * 1_024,
       maxTotalBytes: 128 * 1_024 * 1_024,
     });
@@ -1046,6 +1057,33 @@ describe("crawlSite", () => {
         { ...CTX, signal: controller.signal },
         fetcher,
         { guard, budget: FAST_BUDGET },
+      ),
+      500,
+    );
+    clearTimeout(abortTimer);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.value.stopReason).toBe("aborted");
+    expect(outcome.value.availability).toBe("partial");
+    expect(calls).toEqual([]);
+  });
+
+  it("converges on external abort while the URL guard remains pending", async () => {
+    const controller = new AbortController();
+    const { fetcher, calls } = makeFetcher({});
+    const abortTimer = setTimeout(() => controller.abort(), 10);
+
+    const outcome = await settleWithin(
+      crawlSite(
+        PARAMS,
+        CONFIG,
+        { ...CTX, signal: controller.signal },
+        fetcher,
+        {
+          guard: () => new Promise<never>(() => undefined),
+          budget: FAST_BUDGET,
+        },
       ),
       500,
     );

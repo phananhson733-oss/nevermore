@@ -685,6 +685,7 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
           now: () => FIXED_NOW,
         },
         openai: { apiKey: "sk-test", model: "gpt-test" },
+        findingSummariesEnabled: false,
         logger,
       },
     };

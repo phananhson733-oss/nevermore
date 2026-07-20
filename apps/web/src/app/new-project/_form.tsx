@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button, Card, Field, TextInput } from "@/components/ui";
 import { ApiError, useCreateProject } from "@/lib/api";
+import {
+  mapProjectFieldErrors,
+  type ProjectFieldErrors as FieldErrors,
+} from "./_form-errors";
 import styles from "./new-project.module.css";
 
 /**
@@ -15,31 +19,12 @@ import styles from "./new-project.module.css";
  * onto the matching `Field` and surface anything else as a general error.
  */
 
-const FIELD_KEYS = [
-  "clientName",
-  "projectName",
-  "siteUrl",
-  "marketCodes",
-  "siteLanguageCodes",
-  "defaultDeliveryLocale",
-] as const;
-
-type FieldKey = (typeof FIELD_KEYS)[number];
-
-type FieldErrors = Partial<Record<FieldKey, string>>;
-
 /** Split a comma-separated input into trimmed, non-empty tokens. */
 function splitCsv(raw: string): string[] {
   return raw
     .split(",")
     .map((token) => token.trim())
     .filter((token) => token.length > 0);
-}
-
-/** Map a JSON pointer ("/siteUrl", "/marketCodes/0") back to a form field key. */
-function pointerToField(pointer: string): FieldKey | null {
-  const seg = pointer.split("/")[1] ?? "";
-  return (FIELD_KEYS as readonly string[]).includes(seg) ? (seg as FieldKey) : null;
 }
 
 export function NewProjectForm() {
@@ -73,23 +58,12 @@ export function NewProjectForm() {
       router.push(`/p/${project.id}/overview`);
     } catch (error) {
       if (error instanceof ApiError) {
-        const nextErrors: FieldErrors = {};
-        let hasGeneral = false;
-        for (const fieldError of error.fieldErrors()) {
-          const key = pointerToField(fieldError.pointer);
-          if (key) {
-            nextErrors[key] =
-              key === "siteUrl"
-                ? fieldError.message || t("siteUrlInvalid")
-                : fieldError.message || t("createError");
-          } else {
-            hasGeneral = true;
-          }
-        }
-        setFieldErrors(nextErrors);
-        if (hasGeneral || Object.keys(nextErrors).length === 0) {
-          setGeneralError(t("createError"));
-        }
+        const mapped = mapProjectFieldErrors(error.fieldErrors(), {
+          siteUrlInvalid: t("siteUrlInvalid"),
+          createError: t("createError"),
+        });
+        setFieldErrors(mapped.fieldErrors);
+        setGeneralError(mapped.generalError);
       } else {
         setGeneralError(t("createError"));
       }

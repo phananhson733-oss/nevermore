@@ -10,6 +10,7 @@ import { toAsyncRunDto, type AsyncRunDto } from "./runs";
 export interface ArtifactRevisionDto {
   id: string;
   revision: number;
+  outputLocale: string;
   contentFormat: string;
   content: string | Record<string, unknown>;
   contentHash: string;
@@ -26,6 +27,7 @@ export function toArtifactRevisionDto(row: ArtifactRevisionRow): ArtifactRevisio
   return {
     id: row.id,
     revision: row.revision,
+    outputLocale: row.output_locale,
     contentFormat: row.content_format,
     content,
     contentHash: row.content_hash,

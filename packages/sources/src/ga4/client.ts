@@ -443,6 +443,7 @@ export class HttpGa4Client implements Ga4Client {
           "content-type": "application/json",
         },
         body: JSON.stringify(body),
+        redirect: "error",
         signal: abortScope.signal,
       });
 

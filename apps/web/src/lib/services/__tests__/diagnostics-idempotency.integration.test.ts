@@ -12,7 +12,7 @@ process.env["RAW_IMPORT_BUCKET"] ??= "raw-imports";
 process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import {
   CollectionRunsRepository,
@@ -49,6 +49,7 @@ async function createDiagnosticFixture(
   handle: DbHandle,
   workspaceId: string,
   suffix: string,
+  opts: { crawlAvailability?: "available" | "partial" | "unavailable" } = {},
 ): Promise<{ scope: ProjectScope; snapshotId: string }> {
   const created = await createProject(
     { workspaceId },
@@ -118,7 +119,7 @@ async function createDiagnosticFixture(
     methodVersion: "crawl.site_graph.v1",
     capturedAt,
     sourceWindow: { start: null, end: null },
-    availability: "available",
+    availability: opts.crawlAvailability ?? "available",
     limitation: "Deterministic idempotency fixture.",
     rawObjectKey: null,
     rowCount: 0,
@@ -218,6 +219,41 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
       extraHeaders: { Location: fulfilled!.value.statusUrl },
     });
     expect(queueFixture.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an unavailable crawl snapshot before enqueueing a diagnostic run", async () => {
+    queueFixture.send.mockClear();
+    const fixture = await createDiagnosticFixture(
+      handle,
+      workspaceId,
+      randomUUID(),
+      { crawlAvailability: "unavailable" },
+    );
+
+    await expect(
+      createDiagnosticRun(
+        { workspaceId },
+        fixture.scope.projectId,
+        actor,
+        randomUUID(),
+        { snapshotIds: [fixture.snapshotId], outputLocale: "en" },
+      ),
+    ).rejects.toMatchObject({
+      code: "CRAWL_SNAPSHOT_REQUIRED",
+      status: 422,
+    });
+    expect(queueFixture.send).not.toHaveBeenCalled();
+
+    const runs = await handle.db
+      .select({ id: asyncRuns.id })
+      .from(asyncRuns)
+      .where(
+        and(
+          eq(asyncRuns.project_id, fixture.scope.projectId),
+          eq(asyncRuns.kind, "diagnostic"),
+        ),
+      );
+    expect(runs).toHaveLength(0);
   });
 
   it("replays the original 202 after archive and ICP pointer changes", async () => {

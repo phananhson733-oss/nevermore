@@ -1,7 +1,11 @@
 import { UpdateArtifactRequest } from "@sf/contracts";
 import { operatorRoute } from "@/lib/http/handler";
 import { ok } from "@/lib/http/respond";
-import { parseJsonBody, parseUuidParam } from "@/lib/http/validate";
+import {
+  parseJsonBody,
+  parseOptionalQueryInteger,
+  parseUuidParam,
+} from "@/lib/http/validate";
 import { getProjectArtifact } from "@/lib/services/artifacts";
 import { updateProjectArtifact } from "@/lib/services/artifact-update";
 
@@ -11,11 +15,21 @@ import { updateProjectArtifact } from "@/lib/services/artifact-update";
  * status (spec §10.3). `baseRevision` guards concurrency (409 STALE_REVISION).
  */
 export const GET = operatorRoute<{ projectId: string; artifactId: string }>(
-  async (_request, ctx, routeCtx) => {
+  async (request, ctx, routeCtx) => {
     const { projectId, artifactId } = await routeCtx.params;
     const pid = parseUuidParam(projectId);
     const aid = parseUuidParam(artifactId);
-    const artifact = await getProjectArtifact({ workspaceId: ctx.operator.workspaceId }, pid, aid);
+    const revision = parseOptionalQueryInteger(
+      new URL(request.url).searchParams,
+      "revision",
+      { minimum: 1 },
+    );
+    const artifact = await getProjectArtifact(
+      { workspaceId: ctx.operator.workspaceId },
+      pid,
+      aid,
+      revision,
+    );
     return ok(artifact, ctx.requestId);
   },
 );

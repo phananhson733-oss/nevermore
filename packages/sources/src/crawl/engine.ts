@@ -444,7 +444,19 @@ async function guardedFetch(
     if (originOf(current) !== deps.allowedOrigin) {
       return { kind: "blocked" };
     }
-    const guarded = await deps.guard(current);
+    const guardRemaining =
+      deps.maxWallClockMs - (deps.nowMs() - deps.startMs);
+    const guardScope = makeRequestSignal(guardRemaining, deps.ctxSignal);
+    const guardResult = await raceWithSignal(
+      Promise.resolve().then(() => deps.guard(current)),
+      guardScope.signal,
+    );
+    guardScope.clear();
+    if (guardResult.kind === "aborted") return { kind: "aborted" };
+    // Guard failures are intentionally reduced to a blocked URL. The raw DNS
+    // or resolver error may contain customer-controlled host details.
+    if (guardResult.kind === "error") return { kind: "blocked" };
+    const guarded = guardResult.value;
     if (!guarded.safe || !guarded.normalizedUrl || !guarded.pinnedIp) {
       return { kind: "blocked" };
     }

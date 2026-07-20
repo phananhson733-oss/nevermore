@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import type { z } from "zod";
-import { IdempotencyKey, Uuid } from "@sf/contracts";
+import { Bcp47Locale, IdempotencyKey, Uuid } from "@sf/contracts";
 import { ProblemError, type ProblemFieldError } from "@sf/observability";
 
 /**
@@ -20,6 +20,9 @@ import { ProblemError, type ProblemFieldError } from "@sf/observability";
  * a 1 MiB cap is ample for every JSON body (the largest is a complete ICP profile).
  */
 export const MAX_JSON_BODY_BYTES = 1 * 1024 * 1024;
+
+/** Absolute deadline for consuming any decoded request body. */
+export const BODY_READ_TIMEOUT_MS = 30_000;
 
 /**
  * Space reserved for the multipart boundary, part headers, and the small
@@ -88,12 +91,39 @@ async function readBodyWithinLimit(
 
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
+  const boundaryFailure = new ProblemError("BAD_REQUEST", BODY_INVALID);
+  let rejectBoundary!: (reason: unknown) => void;
+  const boundary = new Promise<never>((_resolve, reject) => {
+    rejectBoundary = reject;
+  });
+  const timeout = setTimeout(
+    () => rejectBoundary(boundaryFailure),
+    BODY_READ_TIMEOUT_MS,
+  );
+  const signal = request.signal;
+  const onAbort = (): void => rejectBoundary(boundaryFailure);
+  try {
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
+  } catch {
+    rejectBoundary(boundaryFailure);
+  }
+
   try {
     while (true) {
       let result: ReadableStreamReadResult<Uint8Array>;
       try {
-        result = await reader.read();
-      } catch {
+        const pendingRead = Promise.resolve().then(() => reader.read());
+        result = await Promise.race([pendingRead, boundary]);
+      } catch (error: unknown) {
+        if (error === boundaryFailure) {
+          try {
+            void Promise.resolve(reader.cancel()).catch(() => undefined);
+          } catch {
+            // Abort/timeout outcome must not depend on transport cleanup.
+          }
+          throw boundaryFailure;
+        }
         // Treat every transport rejection as untrusted input, even if its
         // rejection value happens to be a ProblemError with another code.
         throw new ProblemError("BAD_REQUEST", BODY_INVALID);
@@ -117,6 +147,12 @@ async function readBodyWithinLimit(
       }
     }
   } finally {
+    clearTimeout(timeout);
+    try {
+      signal?.removeEventListener("abort", onAbort);
+    } catch {
+      // Cleanup failure must not replace the stable request problem.
+    }
     try {
       reader.releaseLock();
     } catch {
@@ -170,12 +206,160 @@ function toPointer(path: readonly PropertyKey[]): string {
   return `/${path.map((seg) => String(seg).replace(/~/g, "~0").replace(/\//g, "~1")).join("/")}`;
 }
 
+function queryPointer(name: string): string {
+  return `/${name.replace(/~/g, "~0").replace(/\//g, "~1")}`;
+}
+
+function invalidQuery(
+  name: string,
+  code: "invalid_query_value" | "duplicate_query_parameter" =
+    "invalid_query_value",
+): never {
+  throw new ProblemError(
+    "VALIDATION_ERROR",
+    "Query parameter failed validation.",
+    {
+      errors: [
+        {
+          pointer: queryPointer(name),
+          code,
+          message:
+            code === "duplicate_query_parameter"
+              ? "Query parameter must appear at most once."
+              : "Invalid query parameter.",
+        },
+      ],
+    },
+  );
+}
+
+/**
+ * Read one declared query value. Duplicate scalar parameters are rejected so
+ * the application, reverse proxies, caches, and clients cannot disagree about
+ * whether the first or last value wins.
+ */
+function readSingleQueryValue(
+  searchParams: URLSearchParams,
+  name: string,
+): string | null {
+  const values = searchParams.getAll(name);
+  if (values.length === 0) return null;
+  if (values.length !== 1) invalidQuery(name, "duplicate_query_parameter");
+  return values[0] ?? null;
+}
+
+/** Validate one optional scalar query value with a Zod contract. */
+export function parseQueryValue<T>(
+  searchParams: URLSearchParams,
+  name: string,
+  schema: z.ZodType<T>,
+): T | null {
+  const raw = readSingleQueryValue(searchParams, name);
+  if (raw === null) return null;
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) invalidQuery(name);
+  return parsed.data;
+}
+
+/** Validate one optional string enum without reflecting its untrusted value. */
+export function parseOptionalQueryEnum<const T extends string>(
+  searchParams: URLSearchParams,
+  name: string,
+  allowed: readonly T[],
+): T | null {
+  const raw = readSingleQueryValue(searchParams, name);
+  if (raw === null) return null;
+  if (!allowed.includes(raw as T)) invalidQuery(name);
+  return raw as T;
+}
+
+/** Parse an OpenAPI boolean using only its canonical `true`/`false` forms. */
+export function parseQueryBoolean(
+  searchParams: URLSearchParams,
+  name: string,
+  defaultValue: boolean,
+): boolean {
+  const raw = readSingleQueryValue(searchParams, name);
+  if (raw === null) return defaultValue;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return invalidQuery(name);
+}
+
+/** Parse the shared OpenAPI Limit parameter (integer 1..100, defaulted only when absent). */
+export function parseQueryLimit(
+  searchParams: URLSearchParams,
+  defaultValue = 50,
+): number {
+  if (!Number.isInteger(defaultValue) || defaultValue < 1 || defaultValue > 100) {
+    throw new RangeError("default query limit must be an integer from 1 to 100");
+  }
+  const raw = readSingleQueryValue(searchParams, "limit");
+  if (raw === null) return defaultValue;
+  if (!/^(?:[1-9]|[1-9][0-9]|100)$/.test(raw)) invalidQuery("limit");
+  return Number(raw);
+}
+
+/** Parse one optional canonical decimal integer within explicit safe bounds. */
+export function parseOptionalQueryInteger(
+  searchParams: URLSearchParams,
+  name: string,
+  options: { minimum: number; maximum?: number },
+): number | null {
+  const maximum = options.maximum ?? Number.MAX_SAFE_INTEGER;
+  if (
+    !Number.isSafeInteger(options.minimum) ||
+    !Number.isSafeInteger(maximum) ||
+    options.minimum < 0 ||
+    maximum < options.minimum
+  ) {
+    throw new RangeError("query integer bounds must be non-negative safe integers");
+  }
+  const raw = readSingleQueryValue(searchParams, name);
+  if (raw === null) return null;
+  if (!/^(?:0|[1-9][0-9]*)$/.test(raw)) invalidQuery(name);
+  const value = Number(raw);
+  if (
+    !Number.isSafeInteger(value) ||
+    value < options.minimum ||
+    value > maximum
+  ) {
+    invalidQuery(name);
+  }
+  return value;
+}
+
 export function zodToFieldErrors(error: z.ZodError): ProblemFieldError[] {
   return error.issues.map((issue) => ({
     pointer: toPointer(issue.path),
     code: issue.code,
     message: issue.message,
   }));
+}
+
+/** Parse an optional report/workspace delivery locale without silent fallback. */
+export function parseOptionalOutputLocale(
+  searchParams: URLSearchParams,
+): string | null {
+  const raw = readSingleQueryValue(searchParams, "outputLocale");
+  if (raw === null) return null;
+  const parsed = Bcp47Locale.safeParse(raw);
+  if (!parsed.success) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Query param `outputLocale` must be a supported BCP 47 locale.",
+      {
+        errors: [
+          {
+            pointer: "/outputLocale",
+            code: "invalid_string",
+            message: "Unsupported output locale.",
+          },
+        ],
+      },
+    );
+  }
+  return parsed.data;
 }
 
 /** Parse + validate a JSON request body against a schema, or throw a problem. */

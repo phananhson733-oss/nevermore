@@ -16,7 +16,6 @@ import {
   Button,
   Card,
   DarkPanel,
-  EmptyState,
   Field,
   Panel,
   Spinner,
@@ -37,6 +36,9 @@ import type {
   Persona,
   UpdateContextRequest,
 } from "@sf/contracts";
+import { ProblemNotice, ProblemState } from "../_problem-display";
+import { setUnsavedContextChanges } from "../_context-navigation-guard";
+import { mapContextFieldErrors } from "./_context-form-errors";
 import styles from "./_context-form.module.css";
 
 // --------------------------------------------------------------- Form model --
@@ -108,64 +110,10 @@ const EMPTY_FORM: FormState = {
   ninetyDayGoals: "",
 };
 
-// Labels for fields the `context.fields.*` namespace does not carry.
-const STATIC_LABELS = {
-  marketCodes: "Target markets",
-  siteLanguageCodes: "Site languages",
-  defaultDeliveryLocale: "Default delivery locale",
-  brandConstraints: "Brand constraints",
-  complianceConstraints: "Compliance constraints",
-  technicalConstraints: "Technical constraints",
-  resourceConstraints: "Resource constraints",
-  personaName: "Name",
-  personaRole: "Role or context",
-  personaJobs: "Jobs to be done",
-  personaPains: "Pain points",
-  conversionLabel: "Conversion label",
-  conversionType: "Conversion type",
-  conversionTargetUrl: "Target URL",
-} as const;
-
-const HELP = {
-  perLine: "One item per line.",
-  markets: "One per line — ISO-2 uppercase (e.g. US, GB).",
-  languages: "One per line — BCP-47 tags (e.g. en, en-US).",
-  locale: "A BCP-47 tag (e.g. en-US).",
-  urls: "One URL per line.",
-} as const;
-
 interface SelectOption {
   readonly value: string;
   readonly label: string;
 }
-
-const CUSTOMER_MODELS: readonly SelectOption[] = [
-  { value: "b2b", label: "B2B" },
-  { value: "b2c", label: "B2C" },
-  { value: "hybrid", label: "Hybrid" },
-];
-
-const BUSINESS_PROFILES: readonly SelectOption[] = [
-  { value: "b2b_saas", label: "B2B SaaS" },
-  { value: "b2b_services", label: "B2B services" },
-  { value: "b2c_ecommerce", label: "B2C e-commerce" },
-  { value: "b2c_subscription", label: "B2C subscription" },
-  { value: "marketplace", label: "Marketplace" },
-  { value: "publisher", label: "Publisher" },
-  { value: "other", label: "Other" },
-];
-
-const CONVERSION_TYPES: readonly SelectOption[] = [
-  { value: "demo", label: "Demo" },
-  { value: "signup", label: "Sign up" },
-  { value: "trial", label: "Trial" },
-  { value: "purchase", label: "Purchase" },
-  { value: "lead", label: "Lead" },
-  { value: "contact", label: "Contact" },
-  { value: "subscribe", label: "Subscribe" },
-  { value: "offline", label: "Offline" },
-  { value: "other", label: "Other" },
-];
 
 // ------------------------------------------------------------- Profile I/O --
 
@@ -532,6 +480,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
   const [justSaved, setJustSaved] = useState<boolean>(false);
   const [savingMode, setSavingMode] = useState<SaveMode | null>(null);
   const [topAlert, setTopAlert] = useState<string | null>(null);
+  const [topProblem, setTopProblem] = useState<unknown | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const syncedKey = useRef<string | null>(null);
 
@@ -550,10 +499,26 @@ export function ContextForm({ projectId }: ContextFormProps) {
   const isDirty = serialize(form) !== baseline;
   const baseVersion = currentProfile?.version ?? 0;
 
+  useEffect(() => {
+    setUnsavedContextChanges(isDirty);
+    if (!isDirty) return () => setUnsavedContextChanges(false);
+
+    const warnBeforeUnload = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload);
+      setUnsavedContextChanges(false);
+    };
+  }, [isDirty]);
+
   function clearFeedback(): void {
     setJustSaved(false);
-    setTopAlert((prev) => (prev === null ? prev : null));
-    setFieldErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+    setTopAlert(null);
+    setTopProblem(null);
+    setFieldErrors({});
   }
 
   function patchForm(patch: Partial<FormState>): void {
@@ -591,28 +556,29 @@ export function ContextForm({ projectId }: ContextFormProps) {
     if (error instanceof ApiError) {
       if (error.code === "VERSION_CONFLICT") {
         setTopAlert(t("conflictError"));
+        setTopProblem(error);
         void query.refetch();
         return;
       }
       const errors = error.fieldErrors();
       if (errors.length > 0) {
-        const map: Record<string, string> = {};
-        for (const fieldError of errors) {
-          if (!(fieldError.pointer in map)) map[fieldError.pointer] = fieldError.message;
-        }
-        setFieldErrors(map);
+        setFieldErrors(mapContextFieldErrors(errors, t("qualificationIncomplete")));
         setTopAlert(t("qualificationIncomplete"));
+        setTopProblem(error);
         return;
       }
-      setTopAlert(error.message);
+      setTopAlert(tCommon("error"));
+      setTopProblem(error);
       return;
     }
     setTopAlert(tCommon("error"));
+    setTopProblem(null);
   }
 
   async function runSave(mode: SaveMode, body: UpdateContextRequest): Promise<void> {
     setSavingMode(mode);
     setTopAlert(null);
+    setTopProblem(null);
     setFieldErrors({});
     const snapshot = serialize(form);
     try {
@@ -658,16 +624,12 @@ export function ContextForm({ projectId }: ContextFormProps) {
   }
 
   if (query.isError && !currentProfile) {
-    return (
-      <EmptyState title={tCommon("error")} description={query.error?.message}>
-        <Button variant="secondary" onClick={() => void query.refetch()}>
-          {tCommon("retry")}
-        </Button>
-      </EmptyState>
-    );
+    return <ProblemState error={query.error} onRetry={() => void query.refetch()} />;
   }
 
-  const versionLabel = currentProfile ? `Version ${currentProfile.version}` : "New";
+  const versionLabel = currentProfile
+    ? t("version", { version: currentProfile.version })
+    : t("newVersion");
   const statusKey = currentProfile?.status ?? "missing";
   const flags = sectionFlags(form);
   const marketBadges = parseLines(form.marketCodes);
@@ -687,6 +649,34 @@ export function ContextForm({ projectId }: ContextFormProps) {
     { done: flags.idealCustomer, label: t("sections.idealCustomer.title") },
     { done: flags.commercialFocus, label: t("sections.commercialFocus.title") },
     { done: flags.successDefinition, label: t("sections.successDefinition.title") },
+  ];
+  const customerModels: readonly SelectOption[] = [
+    { value: "b2b", label: t("options.customerModel.b2b") },
+    { value: "b2c", label: t("options.customerModel.b2c") },
+    { value: "hybrid", label: t("options.customerModel.hybrid") },
+  ];
+  const businessProfiles: readonly SelectOption[] = [
+    { value: "b2b_saas", label: t("options.businessProfile.b2b_saas") },
+    { value: "b2b_services", label: t("options.businessProfile.b2b_services") },
+    { value: "b2c_ecommerce", label: t("options.businessProfile.b2c_ecommerce") },
+    {
+      value: "b2c_subscription",
+      label: t("options.businessProfile.b2c_subscription"),
+    },
+    { value: "marketplace", label: t("options.businessProfile.marketplace") },
+    { value: "publisher", label: t("options.businessProfile.publisher") },
+    { value: "other", label: t("options.businessProfile.other") },
+  ];
+  const conversionTypes: readonly SelectOption[] = [
+    { value: "demo", label: t("options.conversionType.demo") },
+    { value: "signup", label: t("options.conversionType.signup") },
+    { value: "trial", label: t("options.conversionType.trial") },
+    { value: "purchase", label: t("options.conversionType.purchase") },
+    { value: "lead", label: t("options.conversionType.lead") },
+    { value: "contact", label: t("options.conversionType.contact") },
+    { value: "subscribe", label: t("options.conversionType.subscribe") },
+    { value: "offline", label: t("options.conversionType.offline") },
+    { value: "other", label: t("options.conversionType.other") },
   ];
 
   return (
@@ -714,9 +704,18 @@ export function ContextForm({ projectId }: ContextFormProps) {
       </div>
 
       {topAlert !== null ? (
-        <p className={styles.alert} role="alert">
-          {topAlert}
-        </p>
+        topProblem !== null ? (
+          <ProblemNotice
+            className={styles.alert}
+            error={topProblem}
+            message={topAlert}
+            compact
+          />
+        ) : (
+          <p className={styles.alert} role="alert">
+            {topAlert}
+          </p>
+        )
       ) : null}
 
       <div className={styles.grid}>
@@ -750,7 +749,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
                 <NativeSelect
                   value={form.customerModel}
                   onChange={(value) => patchForm({ customerModel: value })}
-                  options={CUSTOMER_MODELS}
+                  options={customerModels}
                   placeholder={tCommon("none")}
                 />
               </Field>
@@ -762,7 +761,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
                 <NativeSelect
                   value={form.businessProfile}
                   onChange={(value) => patchForm({ businessProfile: value })}
-                  options={BUSINESS_PROFILES}
+                  options={businessProfiles}
                   placeholder={tCommon("none")}
                 />
               </Field>
@@ -779,16 +778,16 @@ export function ContextForm({ projectId }: ContextFormProps) {
             ) : null}
             <div className={styles.row2}>
               <AreaField
-                label={STATIC_LABELS.marketCodes}
-                help={HELP.markets}
+                label={t("fields.marketCodes")}
+                help={t("help.markets")}
                 required
                 value={form.marketCodes}
                 onChange={(value) => patchForm({ marketCodes: value })}
                 error={errAt("/marketCodes")}
               />
               <AreaField
-                label={STATIC_LABELS.siteLanguageCodes}
-                help={HELP.languages}
+                label={t("fields.siteLanguageCodes")}
+                help={t("help.languages")}
                 required
                 value={form.siteLanguageCodes}
                 onChange={(value) => patchForm({ siteLanguageCodes: value })}
@@ -796,8 +795,8 @@ export function ContextForm({ projectId }: ContextFormProps) {
               />
             </div>
             <TextField
-              label={STATIC_LABELS.defaultDeliveryLocale}
-              help={HELP.locale}
+              label={t("fields.defaultDeliveryLocale")}
+              help={t("help.locale")}
               required
               value={form.defaultDeliveryLocale}
               onChange={(value) => patchForm({ defaultDeliveryLocale: value })}
@@ -812,7 +811,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
           >
             <AreaField
               label={t("fields.segments")}
-              help={HELP.perLine}
+              help={t("help.perLine")}
               required
               value={form.segments}
               onChange={(value) => patchForm({ segments: value })}
@@ -837,30 +836,30 @@ export function ContextForm({ projectId }: ContextFormProps) {
                     </div>
                     <div className={styles.personaBody}>
                       <TextField
-                        label={STATIC_LABELS.personaName}
+                        label={t("fields.personaName")}
                         required
                         value={persona.name}
                         onChange={(value) => updatePersona(index, { name: value })}
                         error={errAt(`/personas/${index}/name`)}
                       />
                       <TextField
-                        label={STATIC_LABELS.personaRole}
+                        label={t("fields.personaRole")}
                         required
                         value={persona.roleOrContext}
                         onChange={(value) => updatePersona(index, { roleOrContext: value })}
                         error={errAt(`/personas/${index}/roleOrContext`)}
                       />
                       <AreaField
-                        label={STATIC_LABELS.personaJobs}
-                        help={HELP.perLine}
+                        label={t("fields.personaJobs")}
+                        help={t("help.perLine")}
                         required
                         value={persona.jobs}
                         onChange={(value) => updatePersona(index, { jobs: value })}
                         error={errAt(`/personas/${index}/jobs`)}
                       />
                       <AreaField
-                        label={STATIC_LABELS.personaPains}
-                        help={HELP.perLine}
+                        label={t("fields.personaPains")}
+                        help={t("help.perLine")}
                         required
                         value={persona.painPoints}
                         onChange={(value) => updatePersona(index, { painPoints: value })}
@@ -881,7 +880,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
             </Field>
             <AreaField
               label={t("fields.useCases")}
-              help={HELP.perLine}
+              help={t("help.perLine")}
               required
               value={form.useCases}
               onChange={(value) => patchForm({ useCases: value })}
@@ -897,7 +896,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
             <div className={styles.row2}>
               <AreaField
                 label={t("fields.offers")}
-                help={HELP.perLine}
+                help={t("help.perLine")}
                 required
                 value={form.offers}
                 onChange={(value) => patchForm({ offers: value })}
@@ -905,7 +904,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
               />
               <AreaField
                 label={t("fields.differentiators")}
-                help={HELP.perLine}
+                help={t("help.perLine")}
                 required
                 value={form.differentiators}
                 onChange={(value) => patchForm({ differentiators: value })}
@@ -919,28 +918,28 @@ export function ContextForm({ projectId }: ContextFormProps) {
             >
               <div className={styles.row2}>
                 <TextField
-                  label={STATIC_LABELS.conversionLabel}
+                  label={t("fields.conversionLabel")}
                   required
                   value={form.conversionLabel}
                   onChange={(value) => patchForm({ conversionLabel: value })}
                   error={errAt("/primaryConversion/label")}
                 />
                 <Field
-                  label={STATIC_LABELS.conversionType}
+                  label={t("fields.conversionType")}
                   required
                   error={errAt("/primaryConversion/type")}
                 >
                   <NativeSelect
                     value={form.conversionType}
                     onChange={(value) => patchForm({ conversionType: value })}
-                    options={CONVERSION_TYPES}
+                    options={conversionTypes}
                     placeholder={tCommon("none")}
                   />
                 </Field>
               </div>
             </Field>
             <TextField
-              label={STATIC_LABELS.conversionTargetUrl}
+              label={t("fields.conversionTargetUrl")}
               type="url"
               value={form.conversionTargetUrl}
               onChange={(value) => patchForm({ conversionTargetUrl: value })}
@@ -948,7 +947,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
             />
             <AreaField
               label={t("fields.priorityProductsOrServices")}
-              help={HELP.perLine}
+              help={t("help.perLine")}
               required
               value={form.priorityProductsOrServices}
               onChange={(value) => patchForm({ priorityProductsOrServices: value })}
@@ -957,14 +956,14 @@ export function ContextForm({ projectId }: ContextFormProps) {
             <div className={styles.row2}>
               <AreaField
                 label={t("fields.priorityUrls")}
-                help={HELP.urls}
+                help={t("help.urls")}
                 value={form.priorityUrls}
                 onChange={(value) => patchForm({ priorityUrls: value })}
                 error={errAt("/priorityUrls")}
               />
               <AreaField
                 label={t("fields.competitors")}
-                help={HELP.perLine}
+                help={t("help.perLine")}
                 value={form.competitors}
                 onChange={(value) => patchForm({ competitors: value })}
                 error={errAt("/competitors")}
@@ -972,15 +971,15 @@ export function ContextForm({ projectId }: ContextFormProps) {
             </div>
             <div className={styles.row2}>
               <AreaField
-                label={STATIC_LABELS.brandConstraints}
-                help={HELP.perLine}
+                label={t("fields.brandConstraints")}
+                help={t("help.perLine")}
                 value={form.brandConstraints}
                 onChange={(value) => patchForm({ brandConstraints: value })}
                 error={errAt("/brandConstraints")}
               />
               <AreaField
-                label={STATIC_LABELS.complianceConstraints}
-                help={HELP.perLine}
+                label={t("fields.complianceConstraints")}
+                help={t("help.perLine")}
                 value={form.complianceConstraints}
                 onChange={(value) => patchForm({ complianceConstraints: value })}
                 error={errAt("/complianceConstraints")}
@@ -988,15 +987,15 @@ export function ContextForm({ projectId }: ContextFormProps) {
             </div>
             <div className={styles.row2}>
               <AreaField
-                label={STATIC_LABELS.technicalConstraints}
-                help={HELP.perLine}
+                label={t("fields.technicalConstraints")}
+                help={t("help.perLine")}
                 value={form.technicalConstraints}
                 onChange={(value) => patchForm({ technicalConstraints: value })}
                 error={errAt("/technicalConstraints")}
               />
               <AreaField
-                label={STATIC_LABELS.resourceConstraints}
-                help={HELP.perLine}
+                label={t("fields.resourceConstraints")}
+                help={t("help.perLine")}
                 value={form.resourceConstraints}
                 onChange={(value) => patchForm({ resourceConstraints: value })}
                 error={errAt("/resourceConstraints")}
@@ -1011,7 +1010,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
           >
             <AreaField
               label={t("fields.growthQuestions")}
-              help={HELP.perLine}
+              help={t("help.perLine")}
               required
               value={form.growthQuestions}
               onChange={(value) => patchForm({ growthQuestions: value })}
@@ -1019,7 +1018,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
             />
             <AreaField
               label={t("fields.ninetyDayGoals")}
-              help={HELP.perLine}
+              help={t("help.perLine")}
               required
               value={form.ninetyDayGoals}
               onChange={(value) => patchForm({ ninetyDayGoals: value })}
@@ -1039,7 +1038,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
             </div>
 
             <div className={styles.lensMeta}>
-              <span className={styles.lensMetaLabel}>{STATIC_LABELS.marketCodes}</span>
+              <span className={styles.lensMetaLabel}>{t("fields.marketCodes")}</span>
               {marketBadges.length > 0 ? (
                 <div className={styles.lensBadges}>
                   {marketBadges.map((code) => (
@@ -1054,7 +1053,7 @@ export function ContextForm({ projectId }: ContextFormProps) {
             </div>
 
             <div className={styles.lensMeta}>
-              <span className={styles.lensMetaLabel}>{STATIC_LABELS.siteLanguageCodes}</span>
+              <span className={styles.lensMetaLabel}>{t("fields.siteLanguageCodes")}</span>
               {languageBadges.length > 0 ? (
                 <div className={styles.lensBadges}>
                   {languageBadges.map((code) => (

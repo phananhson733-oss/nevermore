@@ -54,7 +54,7 @@ export default async function ProjectLayout({
         {tShell("skipToContent")}
       </a>
 
-      <aside className={styles.sidebar}>
+      <aside className={styles.sidebar} data-app-shell-sidebar="">
         <div className={styles.brand} aria-label="SignalFrame">
           <span className={styles.brandMark} aria-hidden="true">
             <Sparkles size={17} strokeWidth={2.2} />
@@ -81,8 +81,8 @@ export default async function ProjectLayout({
       </aside>
 
       <div className={styles.body}>
-        <header className={styles.topbar}>
-          <nav className={styles.breadcrumb} aria-label="Breadcrumb">
+        <header className={styles.topbar} data-app-shell-topbar="">
+          <nav className={styles.breadcrumb} aria-label={tShell("breadcrumb")}>
             <span className={styles.crumbRoot}>{project.clientName}</span>
             <span className={styles.crumbSep} aria-hidden="true">
               /

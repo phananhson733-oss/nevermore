@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { HttpGscClient } from "./client.ts";
 import type { FetchLike } from "./client.ts";
@@ -14,6 +16,7 @@ interface ApiRow {
 interface CapturedCall {
   readonly url: string;
   readonly authorization: string | undefined;
+  readonly redirect: string | undefined;
   readonly body: {
     readonly startDate: string;
     readonly endDate: string;
@@ -95,6 +98,49 @@ function delayedBodyFailureResponse(secret: string): Response {
   });
 }
 
+async function withRedirectServer(
+  run: (
+    baseUrl: string,
+    hits: { readonly redirect: number; readonly followed: number },
+  ) => Promise<void>,
+): Promise<void> {
+  const hits = { redirect: 0, followed: 0 };
+  const server = createServer((request, response) => {
+    if (request.url === "/redirect") {
+      hits.redirect += 1;
+      response.statusCode = 302;
+      response.setHeader("location", "/followed");
+      response.end();
+      return;
+    }
+    if (request.url === "/followed") {
+      hits.followed += 1;
+      response.statusCode = 200;
+      response.end(JSON.stringify({ rows: [] }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    throw new Error("redirect test server did not expose a TCP port");
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await run(baseUrl, hits);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
 /** A fetch fixture that serves `pages` in order (a missing page = empty rows). */
 function servePages(pages: readonly (readonly ApiRow[])[]): {
   readonly fetchImpl: FetchLike;
@@ -107,6 +153,7 @@ function servePages(pages: readonly (readonly ApiRow[])[]): {
     calls.push({
       url,
       authorization: headers["Authorization"],
+      redirect: init?.redirect,
       body: JSON.parse(init?.body as string) as CapturedCall["body"],
     });
     const page = pages[call] ?? [];
@@ -136,6 +183,7 @@ describe("HttpGscClient.querySearchAnalytics", () => {
       "https://www.googleapis.com/webmasters/v3/sites/https%3A%2F%2Fexample.com%2F/searchAnalytics/query",
     );
     expect(call.authorization).toBe("Bearer tok-123");
+    expect(call.redirect).toBe("error");
     expect(call.body.dimensions).toEqual(["date", "page", "query"]);
     expect(call.body.dataState).toBe("final");
     expect(call.body.rowLimit).toBe(2);
@@ -221,6 +269,21 @@ describe("HttpGscClient.querySearchAnalytics", () => {
     expect((error as SourceError).code).toBe("NETWORK_ERROR");
   });
 
+  it("fails on the first redirect hop and never follows a Bearer-authenticated request", async () => {
+    await withRedirectServer(async (baseUrl, hits) => {
+      const client = new HttpGscClient({
+        siteUrl: "https://example.com/",
+        accessToken: "tok",
+        fetchImpl: (_input, init) => fetch(`${baseUrl}/redirect`, init),
+      });
+
+      await expect(client.querySearchAnalytics(QUERY)).rejects.toMatchObject({
+        code: "NETWORK_ERROR",
+      });
+      expect(hits).toEqual({ redirect: 1, followed: 0 });
+    });
+  });
+
   it("bounds each provider request with an internal timeout", async () => {
     const client = new HttpGscClient({
       siteUrl: "https://example.com/",
@@ -258,10 +321,9 @@ describe("HttpGscClient.querySearchAnalytics", () => {
       accessToken: "tok",
       fetchImpl: hungFetch(),
       requestTimeoutMs: 30_000,
-      signal: controller.signal,
     });
 
-    const pending = client.querySearchAnalytics(QUERY);
+    const pending = client.querySearchAnalytics(QUERY, controller.signal);
     controller.abort(new DOMException("caller stopped", "AbortError"));
 
     await expect(pending).rejects.toMatchObject({ code: "TIMEOUT" });

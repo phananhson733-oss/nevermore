@@ -7,14 +7,20 @@ import {
   ExecutionArtifactsRepository,
   IdempotencyRepository,
   ProjectsRepository,
+  type Executor,
   type WorkspaceScope,
 } from "@sf/db";
 import { ACTION_TEMPLATES } from "@sf/engine";
-import type { CreateArtifactRequest } from "@sf/contracts";
+import type { CreateArtifactWireRequest } from "@sf/contracts";
+import {
+  normalizeTemplateArtifactLocale,
+  UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE,
+} from "@sf/artifacts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
 import { isPostgresUniqueViolation } from "./db-errors";
+import { assertValidTimestampUuidListCursor } from "./list-cursor";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 import { toArtifactDto, type ArtifactDto } from "./artifact-mappers";
 
@@ -29,6 +35,7 @@ import { toArtifactDto, type ArtifactDto } from "./artifact-mappers";
 const CONTRACT_VERSION = "2026-07-18";
 const IDEMPOTENCY_SCOPE = "createActionArtifact";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+const ARTIFACTS_MAX_PAGE_BYTES = 16 * 1024 * 1024;
 
 /** Reverse map: action templateId → its fixed artifact type (spec §9.2, §10.1). */
 const ARTIFACT_TYPE_BY_TEMPLATE: Record<string, string> = Object.fromEntries(
@@ -91,13 +98,20 @@ function activeArtifactConflict(projectId: string, runId?: string): ProblemError
   );
 }
 
+function artifactsBudgetExceeded(): never {
+  throw new ProblemError(
+    "DEPENDENCY_UNAVAILABLE",
+    "Artifacts projection exceeded its safety budget.",
+  );
+}
+
 export async function createActionArtifact(
   scope: WorkspaceScope,
   projectId: string,
   actionId: string,
   actorId: string,
   idempotencyKey: string,
-  body: CreateArtifactRequest,
+  body: CreateArtifactWireRequest,
 ): Promise<ArtifactAcceptedResult> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
@@ -122,6 +136,30 @@ export async function createActionArtifact(
   if (existingKey) {
     const replay = replayArtifact(existingKey, requestHash);
     if (replay) return replay;
+  }
+
+  // Route parsing already enforces and canonicalizes this rule. Keep the
+  // service defense for direct/internal callers, but apply it only after an
+  // immutable completed command had the chance to replay under its original
+  // raw/canonical hash.
+  const outputLocale =
+    body.generationMode === "template"
+      ? normalizeTemplateArtifactLocale(body.outputLocale)
+      : body.outputLocale;
+  if (!outputLocale) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Request failed validation.",
+      {
+        errors: [
+          {
+            pointer: "/outputLocale",
+            code: "unsupported_template_locale",
+            message: UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE,
+          },
+        ],
+      },
+    );
   }
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
@@ -167,6 +205,9 @@ export async function createActionArtifact(
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
+      const txProjects = new ProjectsRepository(tx);
+      const txActions = new ActionsRepository(tx);
+      const txArtifacts = new ExecutionArtifactsRepository(tx);
       const reserved = await txIdem.begin({
         workspaceId: scope.workspaceId,
         scope: IDEMPOTENCY_SCOPE,
@@ -188,41 +229,94 @@ export async function createActionArtifact(
         );
       }
 
+      const currentProject = await txProjects.findByIdForUpdate(scope, projectId);
+      if (!currentProject) {
+        throw new ProblemError("NOT_FOUND", "Project not found.");
+      }
+      if (currentProject.archived_at) {
+        throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+      }
+
+      const currentAction = await txActions.findByIdForUpdate(
+        projectScope,
+        actionId,
+      );
+      if (!currentAction) {
+        throw new ProblemError("NOT_FOUND", "Action not found.");
+      }
+      if (currentAction.status === "dismissed") {
+        throw new ProblemError(
+          "ACTION_NOT_EXECUTABLE",
+          "A dismissed action cannot produce an artifact.",
+        );
+      }
+      const currentExpectedType =
+        ARTIFACT_TYPE_BY_TEMPLATE[currentAction.template_id];
+      if (currentExpectedType && body.artifactType !== currentExpectedType) {
+        throw new ProblemError(
+          "VALIDATION_ERROR",
+          `This action produces a ${currentExpectedType}, not a ${body.artifactType}.`,
+          {
+            errors: [
+              {
+                pointer: "/artifactType",
+                code: "type_mismatch",
+                message: `Expected ${currentExpectedType}.`,
+              },
+            ],
+          },
+        );
+      }
+
+      const currentExisting = await txArtifacts.findLiveByActionType(
+        projectScope,
+        actionId,
+        body.artifactType,
+      );
+      const currentArtifactId = currentExisting ? currentExisting.id : randomUUID();
+
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
         projectId,
         kind: "artifact_generation",
-        activeKey,
+        activeKey: `artifact:${currentArtifactId}`,
         initiatedBy: actorId,
         contractVersion: CONTRACT_VERSION,
         requestPayload: {
-          artifactId,
+          artifactId: currentArtifactId,
           actionId,
           artifactType: body.artifactType,
           generationMode: body.generationMode,
-          outputLocale: body.outputLocale,
+          outputLocale,
           operatorInstructions: body.operatorInstructions ?? null,
         },
       });
 
-      if (existing) {
-        await new ExecutionArtifactsRepository(tx).startRegeneration(
-          artifactId,
+      if (currentExisting) {
+        const started = await txArtifacts.startRegenerationIfLive(
+          projectScope,
+          currentArtifactId,
           run.id,
           {
             generationMode: body.generationMode,
-            outputLocale: body.outputLocale,
+            outputLocale,
           },
         );
+        if (!started) {
+          throw new ProblemError(
+            "VERSION_CONFLICT",
+            "Artifact was archived; refetch and retry.",
+          );
+        }
       } else {
-        await new ExecutionArtifactsRepository(tx).insert({
-          id: artifactId,
+        await txArtifacts.insert({
+          id: currentArtifactId,
           workspaceId: scope.workspaceId,
           projectId,
           actionId,
           artifactType: body.artifactType,
           generationMode: body.generationMode,
-          outputLocale: body.outputLocale,
+          outputLocale,
           latestGenerationRunId: run.id,
           createdBy: actorId,
         });
@@ -247,7 +341,7 @@ export async function createActionArtifact(
         status: 202,
         run: toAsyncRunDto(run),
         statusUrl,
-        resourceRef: { type: "artifact", id: artifactId },
+        resourceRef: { type: "artifact", id: currentArtifactId },
         location: statusUrl,
       };
       await txIdem.complete(reserved.id, {
@@ -258,7 +352,7 @@ export async function createActionArtifact(
           resourceRef: result.resourceRef,
         },
         resourceType: "artifact",
-        resourceId: artifactId,
+        resourceId: currentArtifactId,
       });
       return result;
     });
@@ -297,10 +391,21 @@ export async function createActionArtifact(
 export async function listProjectArtifacts(
   scope: WorkspaceScope,
   projectId: string,
-  opts: { limit: number; cursor: string | null },
+  opts: {
+    limit: number;
+    cursor: string | null;
+    artifactType?:
+      | "content_brief"
+      | "metadata_rewrite"
+      | "technical_ticket"
+      | null;
+    status?: "generating" | "draft" | "ready" | "failed" | "archived" | null;
+  },
+  exec?: Executor,
 ): Promise<{ data: ArtifactDto[]; nextCursor: string | null; limit: number }> {
+  assertValidTimestampUuidListCursor(opts.cursor);
   const projectScope = { workspaceId: scope.workspaceId, projectId };
-  const { db } = getDb();
+  const db = exec ?? getDb().db;
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
 
@@ -308,6 +413,8 @@ export async function listProjectArtifacts(
   const page = await repo.listByProject(projectScope, opts);
   const runs = new AsyncRunsRepository(db);
   const data: ArtifactDto[] = [];
+  const encoder = new TextEncoder();
+  let dataBytes = 2; // JSON array brackets.
   for (const a of page.rows) {
     const current = a.current_revision > 0
       ? await repo.findRevision(projectScope, a.id, a.current_revision)
@@ -315,7 +422,16 @@ export async function listProjectArtifacts(
     const activeRun = a.latest_generation_run_id
       ? await runs.findById(projectScope, a.latest_generation_run_id)
       : null;
-    data.push(toArtifactDto(a, current, activeRun && !isTerminal(activeRun.status) ? activeRun : null));
+    const dto = toArtifactDto(
+      a,
+      current,
+      activeRun && !isTerminal(activeRun.status) ? activeRun : null,
+    );
+    dataBytes +=
+      (data.length === 0 ? 0 : 1) +
+      encoder.encode(JSON.stringify(dto)).byteLength;
+    if (dataBytes > ARTIFACTS_MAX_PAGE_BYTES) artifactsBudgetExceeded();
+    data.push(dto);
   }
   return { data, nextCursor: page.nextCursor, limit: opts.limit };
 }
@@ -324,19 +440,39 @@ export async function getProjectArtifact(
   scope: WorkspaceScope,
   projectId: string,
   artifactId: string,
+  requestedRevision?: number | null,
 ): Promise<ArtifactDto> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
   const repo = new ExecutionArtifactsRepository(db);
   const artifact = await repo.findById(projectScope, artifactId);
   if (!artifact) throw new ProblemError("NOT_FOUND", "Artifact not found.");
-  const current = artifact.current_revision > 0
-    ? await repo.findRevision(projectScope, artifactId, artifact.current_revision)
+  const selectedRevision = requestedRevision ?? artifact.current_revision;
+  const current = selectedRevision > 0
+    ? await repo.findRevision(projectScope, artifactId, selectedRevision)
     : null;
+  if (requestedRevision != null && !current) {
+    throw new ProblemError("NOT_FOUND", "Artifact not found.");
+  }
+  const encoder = new TextEncoder();
+  const baseDto = toArtifactDto(artifact, current, null);
+  if (
+    encoder.encode(JSON.stringify(baseDto)).byteLength >
+    ARTIFACTS_MAX_PAGE_BYTES
+  ) {
+    artifactsBudgetExceeded();
+  }
   const activeRun = artifact.latest_generation_run_id
     ? await new AsyncRunsRepository(db).findById(projectScope, artifact.latest_generation_run_id)
     : null;
-  return toArtifactDto(artifact, current, activeRun && !isTerminal(activeRun.status) ? activeRun : null);
+  const dto = toArtifactDto(
+    artifact,
+    current,
+    activeRun && !isTerminal(activeRun.status) ? activeRun : null,
+  );
+  const dtoBytes = encoder.encode(JSON.stringify(dto)).byteLength;
+  if (dtoBytes > ARTIFACTS_MAX_PAGE_BYTES) artifactsBudgetExceeded();
+  return dto;
 }
 
 function isTerminal(status: string): boolean {

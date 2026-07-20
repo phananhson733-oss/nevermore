@@ -167,4 +167,23 @@ describe("croPathRule (CRO-PATH-001)", () => {
     if (result.status !== "skipped") throw new Error("expected skipped");
     expect(result.reason).toBe("missing_dataset");
   });
+
+  it.each([
+    { label: "an apparent missing link", links: [] as readonly string[] },
+    { label: "an apparent complete path", links: [DEST] as readonly string[] },
+  ])("is inconclusive for partial crawl link graphs with $label", ({ links }) => {
+    const ctx = buildCtx({
+      icp: ICP_WITH_DEMO,
+      observations: [
+        crawlObs(DEST, page(DEST, [])),
+        crawlObs("https://x.com/product", page("https://x.com/product", links)),
+      ],
+      coverage: { crawl: "partial" },
+    });
+
+    expect(croPathRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "partial_crawl_link_graph",
+    });
+  });
 });

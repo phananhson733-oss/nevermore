@@ -34,15 +34,24 @@ import {
   parseObjectKey,
   type BlobListInput,
   type BlobListPage,
+  type BlobGetOptions,
   type BlobPutInput,
   type BlobPutResult,
   type BlobStore,
 } from "./types.ts";
 
 function errorCode(error: unknown): string | undefined {
-  return typeof error === "object" && error !== null && "code" in error
-    ? String((error as { code?: unknown }).code)
-    : undefined;
+  if (typeof error !== "object" || error === null) return undefined;
+  try {
+    const code = Reflect.get(error, "code");
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+interface LocalFsMaintenanceOptions {
+  readonly signal?: AbortSignal;
 }
 
 export class LocalFsBlobStore implements BlobStore {
@@ -85,10 +94,18 @@ export class LocalFsBlobStore implements BlobStore {
     };
   }
 
-  async get(key: string): Promise<Buffer | null> {
+  async get(
+    key: string,
+    options: BlobGetOptions = {},
+  ): Promise<Buffer | null> {
+    options.signal?.throwIfAborted();
     const path = this.#pathFor(key);
     try {
-      return await readFile(path);
+      const body = options.signal
+        ? await readFile(path, { signal: options.signal })
+        : await readFile(path);
+      options.signal?.throwIfAborted();
+      return body;
     } catch (error) {
       if (errorCode(error) === "ENOENT") {
         return null;
@@ -113,62 +130,77 @@ export class LocalFsBlobStore implements BlobStore {
     return url.href;
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(
+    key: string,
+    options: LocalFsMaintenanceOptions = {},
+  ): Promise<void> {
+    options.signal?.throwIfAborted();
     await rm(this.#pathFor(key), { force: true });
+    options.signal?.throwIfAborted();
   }
 
-  async list(input: BlobListInput): Promise<BlobListPage> {
+  async list(
+    input: BlobListInput & LocalFsMaintenanceOptions,
+  ): Promise<BlobListPage> {
     assertBlobListInput(input);
-    const paths = await this.#walkFiles(this.#pathFor(input.kind));
+    input.signal?.throwIfAborted();
     const objects: Array<{ key: string; createdAt: string }> = [];
-    for (const path of paths) {
+    let hasNext = false;
+    for await (const path of this.#walkFiles(
+      this.#pathFor(input.kind),
+      input.signal,
+    )) {
+      input.signal?.throwIfAborted();
       const key = relative(this.#baseDir, path).split(sep).join("/");
+      if (input.cursor !== null && key <= input.cursor) continue;
       try {
         if (parseObjectKey(key).kind !== input.kind) continue;
         const metadata = await stat(path);
         objects.push({ key, createdAt: metadata.mtime.toISOString() });
+        if (objects.length > input.limit) {
+          hasNext = true;
+          break;
+        }
       } catch (error) {
         // A concurrent idempotent delete may remove an object between readdir
         // and stat. Treat that object as absent while preserving real failures.
         if (errorCode(error) !== "ENOENT") throw error;
       }
     }
-    objects.sort((left, right) =>
-      left.key < right.key ? -1 : left.key > right.key ? 1 : 0,
-    );
-    const cursor = input.cursor;
-    const start =
-      cursor === null
-        ? 0
-        : objects.findIndex((object) => object.key > cursor);
-    if (start < 0) return { objects: [], nextCursor: null };
-    const page = objects.slice(start, start + input.limit);
-    const hasNext = start + page.length < objects.length;
+    input.signal?.throwIfAborted();
+    const page = hasNext ? objects.slice(0, input.limit) : objects;
     return {
       objects: page,
       nextCursor: hasNext ? page.at(-1)!.key : null,
     };
   }
 
-  async #walkFiles(directory: string): Promise<string[]> {
+  async *#walkFiles(
+    directory: string,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<string> {
+    signal?.throwIfAborted();
     let entries;
     try {
       entries = await readdir(directory, { withFileTypes: true });
     } catch (error) {
-      if (errorCode(error) === "ENOENT") return [];
+      if (errorCode(error) === "ENOENT") return;
       throw error;
     }
-    const files: string[] = [];
+    signal?.throwIfAborted();
+    entries.sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+    );
     for (const entry of entries) {
+      signal?.throwIfAborted();
       const path = resolve(directory, entry.name);
       if (entry.isDirectory()) {
-        files.push(...(await this.#walkFiles(path)));
+        yield* this.#walkFiles(path, signal);
       } else if (entry.isFile()) {
-        files.push(path);
+        yield path;
       }
       // Symlinks and other special files are intentionally ignored: orphan
       // maintenance must never follow a path outside the configured base dir.
     }
-    return files;
   }
 }

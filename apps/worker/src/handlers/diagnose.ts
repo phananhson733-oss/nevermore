@@ -10,8 +10,8 @@ export async function registerDiagnoseHandler(ctx: WorkerContext): Promise<void>
     { includeMetadata: true },
     async (jobs: JobWithMetadata<DiagnoseJobPayload>[]) => {
       for (const job of jobs) {
-        await prepareRunDelivery(ctx, job, (payload) =>
-          runDiagnostic(ctx, payload),
+        await prepareRunDelivery(ctx, job, (payload, runCtx) =>
+          runDiagnostic(runCtx, payload),
         );
       }
     },

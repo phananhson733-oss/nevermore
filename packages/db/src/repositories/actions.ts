@@ -1,6 +1,10 @@
 import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { actionOverrideAudit, actions } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
+import {
+  decodeTimestampUuidCursor,
+  encodeTimestampUuidCursor,
+} from "./cursor.ts";
 
 /**
  * `actions` are template-derived (spec §9.2), created idempotently when a Finding
@@ -40,20 +44,14 @@ export interface ActionListPage {
 }
 
 function encodeCursor(row: { updated_at: string; id: string }): string {
-  return Buffer.from(`${row.updated_at} ${row.id}`, "utf8").toString("base64url");
-}
-function decodeCursor(cursor: string): { updatedAt: string; id: string } | null {
-  try {
-    const raw = Buffer.from(cursor, "base64url").toString("utf8");
-    const idx = raw.indexOf(" ");
-    if (idx < 0) return null;
-    return { updatedAt: raw.slice(0, idx), id: raw.slice(idx + 1) };
-  } catch {
-    return null;
-  }
+  return encodeTimestampUuidCursor(row.updated_at, row.id);
 }
 
 export class ActionsRepository extends Repository {
+  static isListCursorValid(cursor: string): boolean {
+    return decodeTimestampUuidCursor(cursor) !== null;
+  }
+
   async findByKey(scope: ProjectScope, actionKey: string): Promise<ActionRow | null> {
     const rows = await this.exec
       .select()
@@ -69,6 +67,20 @@ export class ActionsRepository extends Repository {
       .from(actions)
       .where(and(projectPredicate(actions, scope), eq(actions.id, id)))
       .limit(1);
+    return (rows[0] as ActionRow | undefined) ?? null;
+  }
+
+  /** Lock one project-scoped Action through a mutable gate and its writes. */
+  async findByIdForUpdate(
+    scope: ProjectScope,
+    id: string,
+  ): Promise<ActionRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(actions)
+      .where(and(projectPredicate(actions, scope), eq(actions.id, id)))
+      .limit(1)
+      .for("update");
     return (rows[0] as ActionRow | undefined) ?? null;
   }
 
@@ -190,20 +202,41 @@ export class ActionsRepository extends Repository {
   /** List a project's actions for the 30/60/90 plan (spec §9.3). */
   async list(
     scope: ProjectScope,
-    opts: { limit: number; cursor: string | null },
+    opts: {
+      limit: number;
+      cursor: string | null;
+      lane?: string | null;
+      status?: string | null;
+    },
   ): Promise<ActionListPage> {
-    const keyset = opts.cursor ? decodeCursor(opts.cursor) : null;
+    const keyset = opts.cursor ? decodeTimestampUuidCursor(opts.cursor) : null;
+    const laneFilter = opts.lane
+      ? eq(actions.roadmap_lane, opts.lane)
+      : undefined;
+    const statusFilter = opts.status
+      ? eq(actions.status, opts.status)
+      : undefined;
     const after =
       keyset != null
         ? or(
-            lt(actions.updated_at, keyset.updatedAt),
-            and(eq(actions.updated_at, keyset.updatedAt), lt(actions.id, keyset.id)),
+            lt(actions.updated_at, keyset.timestamp),
+            and(
+              eq(actions.updated_at, keyset.timestamp),
+              lt(actions.id, keyset.id),
+            ),
           )
         : undefined;
     const rows = (await this.exec
       .select()
       .from(actions)
-      .where(and(projectPredicate(actions, scope), after))
+      .where(
+        and(
+          projectPredicate(actions, scope),
+          laneFilter,
+          statusFilter,
+          after,
+        ),
+      )
       .orderBy(desc(actions.updated_at), desc(actions.id))
       .limit(opts.limit + 1)) as ActionRow[];
     const hasNext = rows.length > opts.limit;

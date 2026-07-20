@@ -68,10 +68,8 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-COVER
     "status": "candidate",
   },
   "edge": {
-    "metrics": {
-      "coveredCount": 0,
-    },
-    "status": "pass",
+    "reason": "intent_match_unavailable",
+    "status": "inconclusive",
   },
   "missing": {
     "reason": "missing_dataset",

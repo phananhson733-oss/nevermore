@@ -1,8 +1,10 @@
-import { Bcp47Locale } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { operatorRoute } from "@/lib/http/handler";
 import { ok } from "@/lib/http/respond";
-import { parseUuidParam } from "@/lib/http/validate";
+import {
+  parseOptionalOutputLocale,
+  parseUuidParam,
+} from "@/lib/http/validate";
 import { getWorkspaceView, type WorkspaceViewName } from "@/lib/services/workspace-view";
 
 const VIEWS: readonly WorkspaceViewName[] = ["overview", "plan", "studio", "report"];
@@ -19,8 +21,7 @@ export const GET = operatorRoute<{ projectId: string }>(async (request, ctx, rou
       errors: [{ pointer: "/view", code: "invalid_enum_value", message: "Unsupported view." }],
     });
   }
-  const rawLocale = url.searchParams.get("outputLocale");
-  const outputLocale = rawLocale && Bcp47Locale.safeParse(rawLocale).success ? rawLocale : null;
+  const outputLocale = parseOptionalOutputLocale(url.searchParams);
 
   const result = await getWorkspaceView(
     { workspaceId: ctx.operator.workspaceId },

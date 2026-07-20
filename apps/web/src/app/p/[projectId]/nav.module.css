@@ -18,7 +18,7 @@
 
 .groupLabel {
   margin: 16px 11px 6px;
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(255, 255, 255, 0.56);
   font-family: var(--sf-font-body);
   font-size: 10px;
   font-weight: 800;
@@ -87,7 +87,10 @@
     flex-direction: row;
     gap: 4px;
     overflow-x: auto;
-    padding-bottom: 4px;
+    padding: 0 14px 8px 0;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.32) transparent;
     -webkit-overflow-scrolling: touch;
   }
   .entry {
@@ -100,6 +103,7 @@
   .item {
     flex: none;
     min-height: 36px;
+    scroll-snap-align: start;
   }
   .item::before {
     display: none;

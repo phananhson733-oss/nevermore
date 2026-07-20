@@ -1,6 +1,13 @@
 export * from "./url-safety/index.ts";
 export { normalizeSiteOrigin } from "./origin.ts";
 export type { NormalizedOrigin } from "./origin.ts";
+export { createSiteOriginProbe, probeSiteOrigin } from "./site-origin-probe.ts";
+export type {
+  SiteOriginProbe,
+  SiteOriginProbeFetch,
+  SiteOriginProbeInput,
+  SiteOriginProbeOptions,
+} from "./site-origin-probe.ts";
 export * from "./adapter.ts";
 
 // Contract seam (WP2 → WP3): canonical URL + observation vocabulary.
@@ -48,6 +55,7 @@ export type {
   BlobStore,
   BlobPutInput,
   BlobPutResult,
+  BlobGetOptions,
   BlobListInput,
   BlobListPage,
   BlobObjectMetadata,

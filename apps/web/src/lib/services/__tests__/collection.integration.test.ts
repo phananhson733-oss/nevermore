@@ -15,7 +15,7 @@ process.env["LOG_LEVEL"] ??= "error";
 import { eq, sql } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { IdempotencyRepository, SourceConnectionsRepository } from "@sf/db";
-import { clientProjects, sourceConnections, workspaces } from "@sf/db/schema";
+import { asyncRuns, clientProjects, sourceConnections, workspaces } from "@sf/db/schema";
 import { ProblemError } from "@sf/observability";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
@@ -31,6 +31,17 @@ const safeGuard: UrlGuard = async (url) => ({
   pinnedIp: "93.184.216.34",
   reason: null,
 });
+
+async function countProjectRuns(
+  handle: DbHandle,
+  scopedProjectId: string,
+): Promise<number> {
+  const rows = await handle.db
+    .select({ id: asyncRuns.id })
+    .from(asyncRuns)
+    .where(eq(asyncRuns.project_id, scopedProjectId));
+  return rows.length;
+}
 
 describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
   let handle: DbHandle;
@@ -152,6 +163,50 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
     await expect(
       createCollectionRun({ workspaceId }, projectId, actor, randomUUID(), { provider: "gsc" }),
     ).rejects.toMatchObject({ code: "SOURCE_NOT_CONNECTED" });
+  });
+
+  it("422s an explicit source id once that source has been disconnected", async () => {
+    const [explicitWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `WS-${randomUUID()}` })
+      .returning();
+    const created = await createProject(
+      { workspaceId: explicitWorkspace!.id },
+      actor,
+      randomUUID(),
+      {
+        clientName: "Disconnected source",
+        projectName: "Disconnected source",
+        siteUrl: "https://collection-disconnected-source.example",
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    const explicitScope = {
+      workspaceId: explicitWorkspace!.id,
+      projectId: created.project.id,
+    };
+    const [crawlSource] = await handle.db
+      .select({ id: sourceConnections.id })
+      .from(sourceConnections)
+      .where(eq(sourceConnections.project_id, created.project.id));
+    await new SourceConnectionsRepository(handle.db).disconnect(
+      explicitScope,
+      crawlSource!.id,
+    );
+
+    await expect(
+      createCollectionRun(
+        { workspaceId: explicitWorkspace!.id },
+        created.project.id,
+        actor,
+        randomUUID(),
+        { provider: "crawl", sourceConnectionId: crawlSource!.id },
+      ),
+    ).rejects.toMatchObject({ code: "SOURCE_NOT_CONNECTED", status: 422 });
+    expect(await countProjectRuns(handle, created.project.id)).toBe(0);
   });
 
   it("422s an operation that doesn't match the provider", async () => {

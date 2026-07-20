@@ -16,6 +16,7 @@
   "common": {
     "loading": "Loading…",
     "error": "Something went wrong",
+    "errorHint": "Retry the request. If it keeps failing, share the stable error code and request ID.",
     "empty": "Nothing to show yet",
     "retry": "Retry",
     "save": "Save",
@@ -27,7 +28,13 @@
     "close": "Close",
     "none": "None",
     "unavailable": "Unavailable",
-    "learnMore": "Learn more"
+    "learnMore": "Learn more",
+    "problemDetails": "Error details",
+    "errorCode": "Error code",
+    "requestId": "Request ID",
+    "loadMore": "Load more",
+    "loadingMore": "Loading more…",
+    "loadMoreError": "We couldn't load the next page. Items already loaded are still shown."
   },
   "runState": {
     "queued": "Queued",
@@ -210,8 +217,59 @@
       "priorityUrls": "Priority URLs",
       "competitors": "Competitors",
       "growthQuestions": "Growth questions",
-      "ninetyDayGoals": "90-day goals"
+      "ninetyDayGoals": "90-day goals",
+      "marketCodes": "Target markets",
+      "siteLanguageCodes": "Site languages",
+      "defaultDeliveryLocale": "Default delivery locale",
+      "brandConstraints": "Brand constraints",
+      "complianceConstraints": "Compliance constraints",
+      "technicalConstraints": "Technical constraints",
+      "resourceConstraints": "Resource constraints",
+      "personaName": "Name",
+      "personaRole": "Role or context",
+      "personaJobs": "Jobs to be done",
+      "personaPains": "Pain points",
+      "conversionLabel": "Conversion label",
+      "conversionType": "Conversion type",
+      "conversionTargetUrl": "Target URL"
     },
+    "help": {
+      "perLine": "One item per line.",
+      "markets": "One per line — ISO-2 uppercase (e.g. US, GB).",
+      "languages": "One per line — BCP-47 tags (e.g. en, en-US).",
+      "locale": "A BCP-47 tag (e.g. en-US).",
+      "urls": "One URL per line."
+    },
+    "options": {
+      "customerModel": {
+        "b2b": "B2B",
+        "b2c": "B2C",
+        "hybrid": "Hybrid"
+      },
+      "businessProfile": {
+        "b2b_saas": "B2B SaaS",
+        "b2b_services": "B2B services",
+        "b2c_ecommerce": "B2C e-commerce",
+        "b2c_subscription": "B2C subscription",
+        "marketplace": "Marketplace",
+        "publisher": "Publisher",
+        "other": "Other"
+      },
+      "conversionType": {
+        "demo": "Demo",
+        "signup": "Sign up",
+        "trial": "Trial",
+        "purchase": "Purchase",
+        "lead": "Lead",
+        "contact": "Contact",
+        "subscribe": "Subscribe",
+        "offline": "Offline",
+        "other": "Other"
+      }
+    },
+    "version": "Version {version}",
+    "newVersion": "New",
+    "leaveWarning": "You have unsaved changes. Leave this page and discard them?",
     "qualificationIncomplete": "Complete the required fields before marking this context complete."
   },
   "overview": {
@@ -225,6 +283,44 @@
     },
     "nextStep": "Next step",
     "noData": "No data collected yet",
+    "unavailable": "Unavailable",
+    "available": "Available",
+    "snapshotDetail": "{provider} snapshot",
+    "signalRail": {
+      "title": "Signal rail",
+      "description": "The canonical path from captured signals to diagnosis, action, and delivery.",
+      "diagnosis": "Diagnosis",
+      "action": "Action",
+      "delivery": "Delivery",
+      "noDiagnosis": "No diagnosis data",
+      "noAction": "No action selected",
+      "noDelivery": "No delivery for this action"
+    },
+    "highestAction": {
+      "eyebrow": "Highest leverage",
+      "title": "Highest-priority action",
+      "description": "The highest persisted priority band in the current canonical plan.",
+      "empty": "No action is available yet. Confirm a diagnosis finding to create the canonical plan.",
+      "evidenceCount": "{count, plural, =1 {# linked evidence item} other {# linked evidence items}}",
+      "noEvidence": "No linked evidence is available for this action.",
+      "expectedOutcome": "Expected outcome",
+      "viewPlan": "View plan"
+    },
+    "evidenceFocus": {
+      "title": "Evidence focus",
+      "description": "Evidence associated with the highest-priority action's source finding.",
+      "count": "{count, plural, =1 {# canonical evidence item} other {# canonical evidence items}}",
+      "latestObserved": "Latest observed {date}",
+      "sources": "Sources",
+      "empty": "No canonical evidence association is available for this action."
+    },
+    "deliveryFocus": {
+      "title": "Delivery focus",
+      "description": "The latest artifact associated with the highest-priority action.",
+      "updated": "Updated {date}",
+      "empty": "No artifact is associated with this action yet.",
+      "openStudio": "Open Studio"
+    },
     "reviewDiagnosis": "Review diagnosis",
     "previewReport": "Preview report"
   },
@@ -232,7 +328,9 @@
     "projectStage": "Project stage",
     "localeSwitch": "Switch language",
     "comingSoon": "Available in a later stage",
-    "skipToContent": "Skip to content"
+    "skipToContent": "Skip to content",
+    "projectSections": "Project sections",
+    "breadcrumb": "Breadcrumb"
   },
   "contextStatus": {
     "missing": "Not started",
@@ -253,6 +351,10 @@
     "availabilityLabel": "Availability",
     "rows": "Rows",
     "snapshotHistory": "{count} snapshots collected",
+    "snapshotHistoryPartial": "{count, plural, =1 {At least # snapshot loaded} other {At least # snapshots loaded}}",
+    "snapshotHistoryUnavailable": "Snapshot history is temporarily unavailable",
+    "loadingHistory": "Loading snapshot history…",
+    "loadMoreHistory": "Load more snapshot history",
     "inProgress": "In progress",
     "progress": "Progress: {current}/{total}",
     "runStatusUnavailable": "We couldn't refresh this run's status. The source data was refreshed; retry the status check before starting another run.",
@@ -314,6 +416,7 @@
     "needsContext": "A complete ICP context is required before diagnosis. Finish the project context first.",
     "runActive": "A diagnostic run is already in progress for this project.",
     "runError": "The diagnostic run did not finish. Review the run status and try again.",
+    "statusReadError": "Run status is temporarily unavailable. This run stays locked until its status can be checked.",
     "coverageTitle": "Evidence coverage",
     "ruleBoard": "Rule board",
     "ruleBoardEmpty": "The rule board populates after the first diagnostic run.",
@@ -330,6 +433,7 @@
     "notDiagnosedHint": "Run the diagnosis to surface findings and their evidence.",
     "noFindings": "No findings raised",
     "noFindingsHint": "The diagnostic run completed and found nothing that needs attention.",
+    "moreFindingsHint": "More findings are available on the next page.",
     "severityLabel": "Severity",
     "confidenceLabel": "Confidence",
     "confidence": {
@@ -341,8 +445,44 @@
     "subjectsLabel": "Affected",
     "evidenceLabel": "Evidence",
     "gradeLabel": "Grade {grade}",
+    "filters": {
+      "title": "Filter findings",
+      "domain": "Domain",
+      "severity": "Severity",
+      "allDomains": "All domains",
+      "allSeverities": "All severities",
+      "results": "{shown} of {total} findings",
+      "resultsPartial": "{shown} of {total} loaded findings",
+      "empty": "No findings match these filters.",
+      "emptyPartial": "No loaded findings match yet; load more to continue searching.",
+      "clear": "Clear filters"
+    },
+    "evidence": {
+      "cardLabel": "Evidence: {claim}",
+      "detailsLabel": "Evidence details: {claim}",
+      "showDetails": "Show evidence details",
+      "hideDetails": "Hide evidence details",
+      "sourceProvider": "Source provider",
+      "provider": {
+        "system": "SignalFrame system",
+        "llm": "Language model"
+      },
+      "availability": "Availability",
+      "supportLabel": "Support",
+      "support": {
+        "supports": "Supports",
+        "contradicts": "Contradicts",
+        "context": "Context"
+      },
+      "observedAt": "Observed {date}",
+      "origin": "Origin",
+      "method": "Method",
+      "limitation": "Limitation",
+      "subjects": "Evidence subjects",
+      "noSubjects": "No subject reference is attached.",
+      "none": "No canonical evidence is attached to this finding."
+    },
     "regressed": "Regressed",
-    "autoNote": "Flagged as needs more data automatically because confidence is low.",
     "actionCreated": "Action created:",
     "confirm": "Confirm",
     "ignore": "Ignore",
@@ -374,6 +514,7 @@
     "laneNextWindow": "31–60 days",
     "laneLaterWindow": "61–90 days",
     "laneEmpty": "No actions scheduled in this window yet.",
+    "laneEmptyPartial": "No loaded actions are in this window yet; more actions remain.",
     "priority": "Priority",
     "status": "Status",
     "effort": "Effort",
@@ -426,7 +567,7 @@
     "generateSubmit": "Generate",
     "generating": "Generating…",
     "runStatusUnavailable": "We couldn't refresh the generation status. Artifacts were refreshed; check them before generating again.",
-    "refreshArtifacts": "Refresh artifacts",
+    "retryGenerationStatus": "Retry generation status",
     "regenerate": "Regenerate",
     "open": "Open",
     "openSelected": "Open",
@@ -434,6 +575,9 @@
     "revision": "Revision",
     "revisionLabel": "Revision {n}",
     "outputLocale": "Output language",
+    "outputLocaleHelp": "Template supports only en and zh-CN. Structured LLM accepts any valid BCP-47 locale; recommendations come from the project delivery locale and site languages.",
+    "invalidOutputLocale": "Enter a valid BCP-47 locale such as en, zh-CN, or fr-FR.",
+    "templateLocaleRequiresStructuredLlm": "Template generation supports only en and zh-CN. Select Structured LLM for other languages.",
     "artifactTypeLabel": "Artifact type",
     "generationMode": "Generation mode",
     "generationModeHelp": "Template is deterministic; structured LLM drafts richer copy from the same evidence.",
@@ -442,9 +586,14 @@
     "operatorInstructions": "Operator instructions",
     "operatorInstructionsHelp": "Optional guidance for this generation. Steers tone and emphasis; never invents evidence.",
     "editContent": "Content",
-    "editContentHelp": "Model output is shown as plain text. Edit here to save a new revision.",
+    "editContentHelp": "Model output is shown as plain text. Edit here to save a new revision (maximum 40,000 characters).",
+    "contentTooLong": "Content cannot exceed 40,000 characters.",
     "editorNote": "Revision note",
     "saveRevision": "Save revision",
+    "editorUnsaved": "Unsaved changes",
+    "editorSaved": "All changes saved",
+    "unsavedLeaveWarning": "You have unsaved artifact edits. Leave and discard them?",
+    "saveBeforeStatusChange": "Save or discard your edits before changing this artifact's status.",
     "markReady": "Mark ready",
     "markReadyHint": "Resolve the validation errors before this artifact can be marked ready.",
     "backToDraft": "Back to draft",
@@ -457,6 +606,7 @@
     "pickAction": "Pick an action",
     "pickActionHelp": "Choose a confirmed action to generate its deliverable.",
     "noActions": "No actions are ready to execute yet.",
+    "moreActionsHint": "More actions are available on the next page.",
     "emptyTitle": "No artifacts yet",
     "emptyHint": "Confirm findings and build a plan first.",
     "artifactType": {
@@ -485,7 +635,11 @@
     "summaryActions": "Planned actions",
     "summaryDeliverables": "Ready deliverables",
     "reportDate": "Report date",
-    "outputLocale": "Report language",
+    "outputLocale": "Requested methodology locale",
+    "outputLocaleHelp": "This request localizes the methodology and sets the locale for a new export. Clear it to use the project delivery locale. Findings, actions, and deliverables keep their recorded languages, shown below.",
+    "summaryContentLocale": "Summary language: {locale}",
+    "actionContentLocale": "Action language: {locale}",
+    "artifactContentLocale": "Deliverable language: {locale}",
     "locale": {
       "en": "English",
       "zh-CN": "Simplified Chinese"
@@ -528,7 +682,7 @@
     "export": "Export",
     "exportServiceBundle": "Service bundle",
     "exportClientBundle": "Client bundle",
-    "clientBundleNote": "The client bundle excludes internal observations, notes, provider usage, and unconfirmed findings — only client-safe content is included. The service bundle contains the full internal record.",
+    "clientBundleNote": "The client bundle excludes internal observations, notes, provider usage, ignored or needs-more-data findings, and non-final artifacts. The service bundle contains the full internal record.",
     "kind": {
       "service_bundle": "service bundle",
       "client_bundle": "client bundle"
@@ -536,6 +690,32 @@
     "preparing": "Preparing export…",
     "download": "Download {kind}",
     "expiresAt": "Link expires",
+    "manifestTitle": "Export manifest",
+    "manifestDescription": "Canonical contents and integrity metadata for this generated bundle.",
+    "schemaVersion": "Schema version",
+    "bundleLocale": "Content locale",
+    "createdAt": "Created",
+    "checksum": "Archive checksum",
+    "notAvailable": "Not available",
+    "included": "Included",
+    "excluded": "Excluded",
+    "clientIncluded": "Client-safe report data and ready deliverables",
+    "clientExcluded": "Internal observations, notes, and non-final content",
+    "serviceIncluded": "Canonical service data, observations, evidence, actions, and artifact revisions",
+    "serviceExcluded": "Secrets, credentials, tokens, and restricted provider usage details",
+    "itemCounts": "Object counts",
+    "manifestItems": {
+      "projects": "Projects",
+      "contexts": "Contexts",
+      "sources": "Sources",
+      "snapshots": "Snapshots",
+      "observations": "Observations",
+      "findings": "Findings",
+      "evidence": "Evidence",
+      "actions": "Actions",
+      "artifacts": "Artifacts",
+      "artifactRevisions": "Artifact revisions"
+    },
     "exportAlreadyActive": "An export is already being prepared for this project. Wait for it to finish, then refresh the export status.",
     "exportDependencyUnavailable": "The export service is temporarily unavailable. Try again later.",
     "retryExportStatus": "Retry status check",

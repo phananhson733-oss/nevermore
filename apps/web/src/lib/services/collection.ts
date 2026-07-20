@@ -104,16 +104,21 @@ export async function createCollectionRun(
   idempotencyKey: string,
   body: CreateCollectionRunRequest,
 ): Promise<CollectionAcceptedResult> {
-  const config = PROVIDER_CONFIG[body.provider];
-  const operation = body.operation ?? config.operation;
   const projectScope = { workspaceId: scope.workspaceId, projectId };
 
   const { db } = getDb();
+  // Hash the validated wire shape before deriving defaults. Optional members
+  // only participate when JSON could have carried them; explicit null remains.
   const requestHash = contentHash({
     projectId,
     provider: body.provider,
-    operation,
-    sourceConnectionId: body.sourceConnectionId ?? null,
+    ...(Object.hasOwn(body, "operation") && body.operation !== undefined
+      ? { operation: body.operation }
+      : {}),
+    ...(Object.hasOwn(body, "sourceConnectionId") &&
+        body.sourceConnectionId !== undefined
+      ? { sourceConnectionId: body.sourceConnectionId }
+      : {}),
   });
 
   // Completed commands replay independently of mutable project/source state.
@@ -126,6 +131,8 @@ export async function createCollectionRun(
     if (replay) return replay;
   }
 
+  const config = PROVIDER_CONFIG[body.provider];
+  const operation = body.operation ?? config.operation;
   if (operation !== config.operation) {
     throw new ProblemError(
       "INVALID_COLLECTION_OPERATION",
@@ -155,7 +162,6 @@ export async function createCollectionRun(
     );
   }
 
-  const parametersHash = contentHash({ provider: body.provider, operation, siteId: site.id });
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
   const active = await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
@@ -170,6 +176,9 @@ export async function createCollectionRun(
   try {
     return await db.transaction(async (tx) => {
       const txIdem = new IdempotencyRepository(tx);
+      const txProjects = new ProjectsRepository(tx);
+      const txSites = new SitesRepository(tx);
+      const txSources = new SourceConnectionsRepository(tx);
       const reserved = await txIdem.begin({
         workspaceId: scope.workspaceId,
         scope: IDEMPOTENCY_SCOPE,
@@ -184,6 +193,44 @@ export async function createCollectionRun(
         throw new ProblemError("IDEMPOTENCY_KEY_REUSED", "Idempotency key is being processed.");
       }
 
+      const currentProject = await txProjects.findByIdForUpdate(scope, projectId);
+      if (!currentProject) {
+        throw new ProblemError("NOT_FOUND", "Project not found.");
+      }
+      if (currentProject.archived_at) {
+        throw new ProblemError(
+          "PROJECT_ARCHIVED",
+          "Project is archived and read-only.",
+        );
+      }
+
+      const currentSite = await txSites.findPrimary(projectScope);
+      if (!currentSite) {
+        throw new ProblemError("NOT_FOUND", "Project has no primary site.");
+      }
+
+      const currentConnection = body.sourceConnectionId
+        ? await txSources.findConnectedByIdForUpdate(
+            projectScope,
+            body.sourceConnectionId,
+          )
+        : await txSources.findConnectedByProviderForUpdate(
+            projectScope,
+            body.provider,
+          );
+      if (!currentConnection || currentConnection.provider !== body.provider) {
+        throw new ProblemError(
+          "SOURCE_NOT_CONNECTED",
+          `No connected ${body.provider} source for this project.`,
+        );
+      }
+
+      const parametersHash = contentHash({
+        provider: body.provider,
+        operation,
+        siteId: currentSite.id,
+      });
+
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
         projectId,
@@ -194,15 +241,15 @@ export async function createCollectionRun(
         requestPayload: {
           provider: body.provider,
           operation,
-          sourceConnectionId: connection.id,
+          sourceConnectionId: currentConnection.id,
         },
       });
       await new CollectionRunsRepository(tx).insertPlaceholder({
         runId: run.id,
         workspaceId: scope.workspaceId,
         projectId,
-        siteId: site.id,
-        sourceConnectionId: connection.id,
+        siteId: currentSite.id,
+        sourceConnectionId: currentConnection.id,
         provider: body.provider,
         operation,
         methodVersion: config.methodVersion,

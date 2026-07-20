@@ -119,4 +119,64 @@ describe("POST action artifact async contract (AC-031)", () => {
       );
     },
   );
+
+  it.each(["zh-TW", "ZH-cn", "EN"])(
+    "preserves the raw wire locale %s for service-level idempotency replay",
+    async (outputLocale) => {
+      mocks.createActionArtifact.mockResolvedValueOnce({
+        status: 202,
+        run: {
+          id: runId,
+          projectId,
+          kind: "artifact_generation",
+          status: "queued",
+          progress: {
+            phase: "queued",
+            current: 0,
+            total: null,
+            messageKey: "run.queued",
+          },
+          lastError: null,
+          resultRef: null,
+          queuedAt: "2026-07-18T00:00:00.000Z",
+          startedAt: null,
+          completedAt: null,
+        },
+        statusUrl,
+        resourceRef: { type: "artifact", id: artifactId },
+        location: statusUrl,
+      });
+
+      const response = await POST(
+        new NextRequest(
+          `http://localhost/api/mvp/projects/${projectId}/actions/${actionId}/artifacts`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": `idem-locale-${outputLocale}`,
+              Origin: "http://localhost",
+            },
+            body: JSON.stringify({
+              artifactType: "technical_ticket",
+              generationMode: "template",
+              outputLocale,
+              operatorInstructions: null,
+            }),
+          },
+        ),
+        { params: Promise.resolve({ projectId, actionId }) },
+      );
+
+      expect(response.status).toBe(202);
+      expect(mocks.createActionArtifact).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        actionId,
+        expect.any(String),
+        `idem-locale-${outputLocale}`,
+        expect.objectContaining({ outputLocale }),
+      );
+    },
+  );
 });

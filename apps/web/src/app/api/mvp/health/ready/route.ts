@@ -1,4 +1,10 @@
-import { checkWorkerReadiness, PGBOSS_SCHEMA } from "@sf/db";
+import {
+  checkWorkerReadiness,
+  getDbPoolStats,
+  LATEST_APP_MIGRATION,
+  PGBOSS_SCHEMA,
+  readMigrationVersion,
+} from "@sf/db";
 import { route } from "@/lib/http/handler";
 import { getDb } from "@/lib/db";
 import { ok, problem } from "@/lib/http/respond";
@@ -11,13 +17,21 @@ import { ok, problem } from "@/lib/http/respond";
 export const GET = route(async (_request, ctx) => {
   const checks: Record<string, boolean> = {
     database: false,
+    migration: false,
     pgbossSchema: false,
     worker: false,
   };
   try {
     const { pool } = getDb();
+    ctx.logger.info("db_pool_snapshot", { ...getDbPoolStats(pool) });
     await pool.query("SELECT 1");
     checks.database = true;
+    const migrationVersion = await readMigrationVersion(pool);
+    checks.migration = migrationVersion === LATEST_APP_MIGRATION;
+    ctx.logger.info("db_migration_version", {
+      migrationVersion: migrationVersion ?? "unavailable",
+      expectedMigrationVersion: LATEST_APP_MIGRATION,
+    });
     const schemaRes = await pool.query(
       `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
       [PGBOSS_SCHEMA],
@@ -33,7 +47,8 @@ export const GET = route(async (_request, ctx) => {
     });
   }
 
-  const ready = checks.database && checks.pgbossSchema && checks.worker;
+  const ready =
+    checks.database && checks.migration && checks.pgbossSchema && checks.worker;
   if (!ready) {
     return problem("DEPENDENCY_UNAVAILABLE", "Service dependencies are not ready.", ctx.requestId);
   }

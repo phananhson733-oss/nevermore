@@ -8,6 +8,7 @@ const context: CollectionContext = {
   projectId: "project-1",
   siteId: "site-1",
   runId: "run-1",
+  signal: new AbortController().signal,
 };
 const row: GscRow = {
   date: "2026-07-15",
@@ -73,10 +74,13 @@ describe("GSC source adapter", () => {
       },
       context,
     );
-    expect(querySearchAnalytics).toHaveBeenCalledWith({
-      startDate: "2026-05-21",
-      endDate: "2026-07-15",
-    });
+    expect(querySearchAnalytics).toHaveBeenCalledWith(
+      {
+        startDate: "2026-05-21",
+        endDate: "2026-07-15",
+      },
+      context.signal,
+    );
     expect(result).toMatchObject({
       availability: "available",
       rowCount: 1,

@@ -24,6 +24,31 @@ function problem(code: string, detail: string, status: number) {
   };
 }
 
+function validationProblem(message: string) {
+  return {
+    ...problem("VALIDATION_ERROR", "Request failed validation.", 422),
+    title: "Validation failed",
+    errors: [
+      {
+        pointer: "/reason",
+        code: "too_small",
+        message,
+      },
+    ],
+  };
+}
+
+async function nodeInSidebar(
+  page: import("@playwright/test").Page,
+  target: readonly string[],
+): Promise<boolean> {
+  const selector = target.join(" ");
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    return !!el && !!el.closest('[class*="sidebar"]');
+  }, selector);
+}
+
 test("CSV preview has a readable 390px card view without horizontal panning", async ({
   page,
 }) => {
@@ -76,6 +101,45 @@ test("CSV preview has a readable 390px card view without horizontal panning", as
       )
       .map((violation) => violation.id),
   ).toEqual([]);
+});
+
+test("Sources full-screen query errors expose stable code, request ID, and retry without raw detail", async ({
+  page,
+}) => {
+  let failuresRemaining = 2;
+  await page.route(`**/api/mvp/projects/${E2E_PROJECT_ID}/sources`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    if (failuresRemaining > 0) {
+      failuresRemaining -= 1;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/problem+json",
+        body: JSON.stringify(
+          problem(
+            "DEPENDENCY_UNAVAILABLE",
+            "raw provider topology detail",
+            503,
+          ),
+        ),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+  await expect(page.getByText("Error code", { exact: true })).toBeVisible();
+  await expect(page.getByText("DEPENDENCY_UNAVAILABLE", { exact: true })).toBeVisible();
+  await expect(page.getByText("Request ID", { exact: true })).toBeVisible();
+  await expect(page.getByText("frontend-error-e2e", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(page.getByRole("main")).not.toContainText("raw provider topology");
+
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("heading", { name: "Sources" })).toBeVisible();
 });
 
 test("Sources settles a failed status query once and offers a status retry", async ({
@@ -231,7 +295,7 @@ test("AC-046: Sources exposes permission, partial, and automatic rate-limit retr
   await expect(ga4.getByRole("button", { name: "Retry collection" })).toBeVisible();
 });
 
-test("Studio clears a failed run poll, refreshes artifacts, and shows an action", async ({
+test("Studio retries the same run after a transient status outage", async ({
   page,
 }) => {
   const now = "2026-07-18T12:00:00.000Z";
@@ -265,7 +329,7 @@ test("Studio clears a failed run poll, refreshes artifacts, and shows an action"
   let runReads = 0;
 
   await page.route(
-    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts`,
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
     async (route) => {
       artifactReads += 1;
       await route.fulfill({
@@ -282,6 +346,27 @@ test("Studio clears a failed run poll, refreshes artifacts, and shows an action"
     `**/api/mvp/projects/${E2E_PROJECT_ID}/runs/artifact-error-run`,
     async (route) => {
       runReads += 1;
+      if (runReads > 2) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            data: {
+              ...activeRun,
+              status: "completed",
+              progress: {
+                phase: "completed",
+                current: 2,
+                total: 2,
+                messageKey: "ignored",
+              },
+              resultRef: { type: "artifact", id: activeArtifact.id },
+              completedAt: now,
+            },
+          }),
+        });
+        return;
+      }
       await route.fulfill({
         status: 503,
         contentType: "application/problem+json",
@@ -302,21 +387,172 @@ test("Studio clears a failed run poll, refreshes artifacts, and shows an action"
       exact: false,
     }),
   ).toBeVisible();
-  const refresh = page.getByRole("button", { name: "Refresh artifacts" });
-  await expect(refresh).toBeVisible();
+  const retry = page.getByRole("button", { name: "Retry generation status" });
+  await expect(retry).toBeVisible();
   await expect(page.getByRole("main")).not.toContainText("raw model-provider");
   await expect.poll(() => runReads).toBe(2);
   await expect.poll(() => artifactReads).toBeGreaterThanOrEqual(2);
 
-  await refresh.click();
+  await retry.click();
+  await expect.poll(() => runReads).toBe(3);
   await expect(
     page.getByText("We couldn't refresh the generation status", {
       exact: false,
     }),
   ).toHaveCount(0);
   await page.waitForTimeout(750);
-  expect(runReads).toBe(2);
+  expect(runReads).toBe(3);
 });
+
+test("Studio generation errors expose stable code and request ID without raw provider text", async ({
+  page,
+}) => {
+  let createAttempts = 0;
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/actions/00000000-0000-4000-8000-000000000301/artifacts`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      createAttempts += 1;
+      if (createAttempts === 1) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/problem+json",
+          body: JSON.stringify(
+            problem(
+              "DEPENDENCY_UNAVAILABLE",
+              "raw model-provider credential detail",
+              503,
+            ),
+          ),
+        });
+        return;
+      }
+      await route.fallback();
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  await page.getByRole("button", { name: "Generate artifact" }).click();
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "Fix the failing product page" })
+    .getByRole("button", { name: /Generate|Regenerate/ })
+    .click();
+  await page.getByLabel("Output language").fill("fr-FR");
+  await page
+    .getByLabel("Generation mode")
+    .selectOption("structured_llm");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+
+  await expect(page.getByText("Something went wrong", { exact: true })).toBeVisible();
+  await expect(page.getByText("Error code", { exact: true })).toBeVisible();
+  await expect(page.getByText("DEPENDENCY_UNAVAILABLE", { exact: true })).toBeVisible();
+  await expect(page.getByText("Request ID", { exact: true })).toBeVisible();
+  await expect(page.getByText("frontend-error-e2e", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main")).not.toContainText("raw model-provider credential");
+
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect.poll(() => createAttempts).toBe(2);
+  await expect.poll(() => api.artifactCreateRequests.length).toBe(1);
+});
+
+test("zh-CN Studio keeps server validation detail out of localized feedback", async ({
+  page,
+}) => {
+  const rawMessage = "Server-only English artifact validation detail.";
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts/00000000-0000-4000-8000-000000000401`,
+    async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 422,
+        contentType: "application/problem+json",
+        body: JSON.stringify(validationProblem(rawMessage)),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  await page.getByRole("button", { name: "简体中文" }).click();
+  await page.getByRole("button", { name: "打开", exact: true }).click();
+  await page.getByLabel("内容").fill("更新后的执行物内容");
+  await page.getByRole("button", { name: "保存版本" }).click();
+
+  await expect(
+    page.getByText("此执行物暂时无法标记为就绪，请解决下列错误。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("main")).not.toContainText(rawMessage);
+});
+
+test("zh-CN Diagnosis keeps server validation detail out of localized review feedback", async ({
+  page,
+}) => {
+  const rawMessage = "Server-only English finding review validation detail.";
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/findings/00000000-0000-4000-8000-000000000202`,
+    async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 422,
+        contentType: "application/problem+json",
+        body: JSON.stringify(validationProblem(rawMessage)),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/diagnosis`);
+  await page.getByRole("button", { name: "简体中文" }).click();
+  const finding = page
+    .getByRole("article")
+    .filter({ hasText: "A product page returned a server error." });
+  await finding.getByRole("button", { name: "忽略", exact: true }).click();
+  await finding.getByLabel("原因").fill("已有替代方案");
+  await finding.getByRole("button", { name: "提交", exact: true }).click();
+
+  await expect(
+    finding.getByText("无法保存你的审核，请重试。", { exact: true }),
+  ).toBeVisible();
+  await expect(finding).not.toContainText(rawMessage);
+});
+
+for (const screen of ["plan", "studio"] as const) {
+  test(`${screen} mock shell has no critical/serious axe violations`, async ({
+    page,
+  }) => {
+    await page.goto(`/p/${E2E_PROJECT_ID}/${screen}`);
+    await expect(page.getByRole("main")).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    const blocking: string[] = [];
+    for (const violation of results.violations) {
+      if (violation.impact !== "critical" && violation.impact !== "serious") {
+        continue;
+      }
+      if (violation.id === "color-contrast") {
+        for (const node of violation.nodes) {
+          if (!(await nodeInSidebar(page, node.target as string[]))) {
+            blocking.push(`${violation.id} @ ${node.target.join(" ")}`);
+          }
+        }
+      } else {
+        blocking.push(violation.id);
+      }
+    }
+    expect(blocking, `axe violations on ${screen}`).toEqual([]);
+  });
+}
 
 test("Report distinguishes an existing export from a temporarily unavailable service", async ({
   page,
@@ -349,6 +585,10 @@ test("Report distinguishes an existing export from a temporarily unavailable ser
       exact: false,
     }),
   ).toBeVisible();
+  await expect(page.getByText("Error code", { exact: true })).toBeVisible();
+  await expect(page.getByText("DEPENDENCY_UNAVAILABLE", { exact: true })).toBeVisible();
+  await expect(page.getByText("Request ID", { exact: true })).toBeVisible();
+  await expect(page.getByText("frontend-error-e2e", { exact: true })).toBeVisible();
   await expect(page.getByRole("main")).not.toContainText(
     "raw export-provider detail",
   );
@@ -383,6 +623,10 @@ test("Report maps bundle-read dependency errors and exposes a retry", async ({
       exact: false,
     }),
   ).toBeVisible();
+  await expect(page.getByText("Error code", { exact: true })).toBeVisible();
+  await expect(page.getByText("DEPENDENCY_UNAVAILABLE", { exact: true })).toBeVisible();
+  await expect(page.getByText("Request ID", { exact: true })).toBeVisible();
+  await expect(page.getByText("frontend-error-e2e", { exact: true })).toBeVisible();
   const retry = page.getByRole("button", { name: "Retry status check" });
   await expect(retry).toBeVisible();
   await expect(page.getByRole("main")).not.toContainText("raw object-storage");

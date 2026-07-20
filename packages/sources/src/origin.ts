@@ -17,7 +17,8 @@ export interface NormalizedOrigin {
  * Normalize a raw site URL into its persistable { origin, host }.
  *
  * Returns null when the input is not an unambiguous http(s) URL without
- * userinfo (normalizeUrl fails closed). On success:
+ * userinfo, or when it contains a non-root path/query/fragment that an
+ * origin-only Site record could not preserve honestly. On success:
  * - `origin`: `scheme://host` with any non-default port, a lowercase host, and
  *   no path or trailing slash (e.g. "https://example.com", "http://host:8080").
  * - `host`: the lowercase hostname.
@@ -26,6 +27,9 @@ export function normalizeSiteOrigin(rawUrl: string): NormalizedOrigin | null {
   const normalized = normalizeUrl(rawUrl);
   if (!normalized) return null;
   const { url } = normalized;
+  if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
+    return null;
+  }
   const host = url.hostname.toLowerCase();
   const protocol = url.protocol.toLowerCase();
   // url.port is "" for the scheme's default port (80/443), so those are dropped.

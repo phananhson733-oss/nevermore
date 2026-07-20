@@ -97,6 +97,17 @@ export async function reviewProjectFinding(
   const nextRevision = finding.review_revision + 1;
 
   await db.transaction(async (tx) => {
+    const currentProject = await new ProjectsRepository(tx).findByIdForUpdate(
+      scope,
+      projectId,
+    );
+    if (!currentProject) {
+      throw new ProblemError("NOT_FOUND", "Project not found.");
+    }
+    if (currentProject.archived_at) {
+      throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+    }
+
     const ok = await new FindingsRepository(tx).updateReview(
       projectScope,
       findingId,
@@ -180,6 +191,17 @@ async function confirmFinding(
   const { copy, contentLocale } = resolveActionCopy(template, deliveryLocale);
 
   const action = await db.transaction(async (tx): Promise<ActionRow> => {
+    const currentProject = await new ProjectsRepository(tx).findByIdForUpdate(
+      scope,
+      projectScope.projectId,
+    );
+    if (!currentProject) {
+      throw new ProblemError("NOT_FOUND", "Project not found.");
+    }
+    if (currentProject.archived_at) {
+      throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+    }
+
     const ok = await new FindingsRepository(tx).updateReview(
       projectScope,
       finding.id,

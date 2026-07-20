@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { NextRequest } from "next/server";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
@@ -14,7 +15,7 @@ process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
 import { createDbHandle, type DbHandle } from "@sf/db/client";
-import { workspaces } from "@sf/db/schema";
+import { clientProjects, oauthIntents, workspaces } from "@sf/db/schema";
 import {
   OAuthIntentsRepository,
   type OAuthIntentRow,
@@ -22,6 +23,7 @@ import {
 } from "@sf/db";
 import { encryptCredential } from "@sf/sources";
 import { ProblemError } from "@sf/observability";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import {
@@ -35,6 +37,15 @@ import {
   type GoogleOAuthClient,
   type GoogleProperty,
 } from "@/lib/oauth/google";
+import { archiveWinsProjectRace } from "./project-archive-race";
+
+const callbackOperator = vi.hoisted(() => ({
+  current: null as { userId: string; workspaceId: string } | null,
+}));
+
+vi.mock("@/lib/auth/session", () => ({
+  getOperatorContext: async () => callbackOperator.current,
+}));
 
 /**
  * AC-014 (spec §7.4, §11.1): the Google OAuth callback consumes external state
@@ -134,6 +145,33 @@ describeDb("handleGoogleCallback — single-use state (AC-014)", () => {
   afterAll(async () => {
     await handle?.end();
   });
+
+  async function requestCallback(params: {
+    code?: string;
+    state: string;
+    error?: string;
+  }) {
+    const previousOperator = callbackOperator.current;
+    callbackOperator.current = {
+      userId: actor,
+      workspaceId: scope.workspaceId,
+    };
+    try {
+      const { GET } = await import(
+        "@/app/api/mvp/oauth/google/callback/route"
+      );
+      const url = new URL(
+        "/api/mvp/oauth/google/callback",
+        process.env["APP_ORIGIN"],
+      );
+      if (params.code) url.searchParams.set("code", params.code);
+      url.searchParams.set("state", params.state);
+      if (params.error) url.searchParams.set("error", params.error);
+      return await GET(new NextRequest(url));
+    } finally {
+      callbackOperator.current = previousOperator;
+    }
+  }
 
   it("rejects a replay without poisoning the ready intent, which remains selectable", async () => {
     const expiresAt = new Date(Date.now() + 600_000).toISOString();
@@ -323,55 +361,255 @@ describeDb("handleGoogleCallback — single-use state (AC-014)", () => {
     expect(failed?.pkce_verifier_cipher).toEqual(Buffer.alloc(32));
   });
 
-  it.each(["exchange", "candidate-cap"] as const)(
-    "scrubs an intent when provider %s fails before candidates can be persisted",
-    async (failure) => {
-      const { state, intentId } = await seedIntent(
+  it("keeps an initiated intent retryable after a transient token-exchange failure", async () => {
+    const { state, intentId } = await seedIntent(
+      handle,
+      scope,
+      siteId,
+      actor,
+      new Date(Date.now() + 600_000).toISOString(),
+    );
+    let exchangeAttempts = 0;
+    const client: GoogleOAuthClient = {
+      exchangeCode: async () => {
+        exchangeAttempts += 1;
+        if (exchangeAttempts === 1) {
+          throw new ProblemError(
+            "DEPENDENCY_UNAVAILABLE",
+            "token exchange: provider request timed out.",
+          );
+        }
+        return {
+          accessToken: "retryable-access-token",
+          refreshToken: "retryable-refresh-token",
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          scope: "https://www.googleapis.com/auth/webmasters.readonly",
+        };
+      },
+      listProperties: async () => [
+        {
+          externalPropertyId: "https://retryable.example/",
+          displayName: "retryable.example",
+        },
+      ],
+    };
+
+    const first = await handleGoogleCallback(
+      { workspaceId: scope.workspaceId },
+      { code: "auth-code", state, error: null },
+      { client },
+    );
+    expect(first).toContain("error=OAUTH_EXCHANGE_FAILED");
+    const afterFirst = await new OAuthIntentsRepository(handle.db).findById(
+      scope,
+      intentId,
+    );
+    expect(afterFirst).toMatchObject({
+      status: "initiated",
+      failure_code: null,
+      token_cipher: null,
+      candidate_properties: null,
+    });
+    expect(afterFirst?.pkce_verifier_cipher).not.toEqual(Buffer.alloc(32));
+
+    const second = await handleGoogleCallback(
+      { workspaceId: scope.workspaceId },
+      { code: "auth-code", state, error: null },
+      { client },
+    );
+    expect(second).toBe(
+      `/p/${scope.projectId}/sources?oauthIntentId=${intentId}&provider=gsc`,
+    );
+    expect(exchangeAttempts).toBe(2);
+    const ready = await new OAuthIntentsRepository(handle.db).findById(
+      scope,
+      intentId,
+    );
+    expect(ready).toMatchObject({
+      status: "properties_ready",
+      failure_code: null,
+    });
+  });
+
+  it("fails and scrubs an initiated intent whose PKCE verifier cannot be decrypted", async () => {
+    const { state, intentId } = await seedIntent(
+      handle,
+      scope,
+      siteId,
+      actor,
+      new Date(Date.now() + 600_000).toISOString(),
+    );
+    await handle.db
+      .update(oauthIntents)
+      .set({ pkce_verifier_cipher: Buffer.alloc(32, 0xa5) })
+      .where(eq(oauthIntents.id, intentId));
+
+    const response = await requestCallback({ code: "auth-code", state });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      `/p/${scope.projectId}/sources?error=OAUTH_EXCHANGE_FAILED`,
+    );
+    const failed = await new OAuthIntentsRepository(handle.db).findById(
+      scope,
+      intentId,
+    );
+    expect(failed).toMatchObject({
+      status: "failed",
+      failure_code: "OAUTH_EXCHANGE_FAILED",
+      token_cipher: null,
+      candidate_properties: null,
+    });
+    expect(failed?.pkce_verifier_cipher).toEqual(Buffer.alloc(32));
+  });
+
+  it("waits behind archival and returns a stable 303 without mutating the initiated intent", async () => {
+    const { state, intentId } = await seedIntent(
+      handle,
+      scope,
+      siteId,
+      actor,
+      new Date(Date.now() + 600_000).toISOString(),
+    );
+    const repo = new OAuthIntentsRepository(handle.db);
+    const before = await repo.findById(scope, intentId);
+
+    try {
+      const result = await archiveWinsProjectRace(
         handle,
-        scope,
-        siteId,
-        actor,
-        new Date(Date.now() + 600_000).toISOString(),
-      );
-      const base = fakeClient();
-      const client: GoogleOAuthClient =
-        failure === "exchange"
-          ? {
-              ...base,
-              exchangeCode: async () => {
-                throw new Error("provider failed near oauth-secret");
-              },
-            }
-          : {
-              ...base,
-              listProperties: async () =>
-                Array.from({ length: 501 }, (_, index) => ({
-                  externalPropertyId: `sc-domain:site-${index}.example`,
-                  displayName: `site-${index}.example`,
-                })),
-            };
-
-      const location = await handleGoogleCallback(
-        { workspaceId: scope.workspaceId },
-        { code: "auth-code", state, error: null },
-        { client },
+        scope.projectId,
+        () => requestCallback({ state, error: "access_denied" }),
       );
 
-      expect(location).toContain("error=OAUTH_EXCHANGE_FAILED");
-      expect(location).not.toContain("oauth-secret");
-      const failed = await new OAuthIntentsRepository(handle.db).findById(
-        scope,
-        intentId,
+      expect(result.status).toBe("fulfilled");
+      if (result.status !== "fulfilled") throw result.reason;
+      const response = result.value;
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe(
+        `/p/${scope.projectId}/sources?error=PROJECT_ARCHIVED`,
       );
-      expect(failed).toMatchObject({
-        status: "failed",
-        failure_code: "OAUTH_EXCHANGE_FAILED",
-        token_cipher: null,
-        candidate_properties: null,
-      });
-      expect(failed?.pkce_verifier_cipher).toEqual(Buffer.alloc(32));
-    },
-  );
+      await expect(repo.findById(scope, intentId)).resolves.toEqual(before);
+    } finally {
+      await handle.db
+        .update(clientProjects)
+        .set({ archived_at: null })
+        .where(eq(clientProjects.id, scope.projectId));
+    }
+  });
+
+  it("persists the temporary token across a transient property-list failure and retries without re-exchanging", async () => {
+    const { state, intentId } = await seedIntent(
+      handle,
+      scope,
+      siteId,
+      actor,
+      new Date(Date.now() + 600_000).toISOString(),
+    );
+    const exchangeCode = vi.fn(async () => ({
+      accessToken: "staged-access-token",
+      refreshToken: "staged-refresh-token",
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      scope: "https://www.googleapis.com/auth/webmasters.readonly",
+    }));
+    let listAttempts = 0;
+    const listProperties = vi.fn(async (): Promise<GoogleProperty[]> => {
+      listAttempts += 1;
+      if (listAttempts === 1) {
+        throw new ProblemError(
+          "RATE_LIMITED",
+          "list GSC sites: rate limited.",
+        );
+      }
+      return [
+        {
+          externalPropertyId: "https://staged.example/",
+          displayName: "staged.example",
+        },
+      ];
+    });
+    const client: GoogleOAuthClient = { exchangeCode, listProperties };
+
+    const first = await handleGoogleCallback(
+      { workspaceId: scope.workspaceId },
+      { code: "auth-code", state, error: null },
+      { client },
+    );
+    expect(first).toContain("error=OAUTH_EXCHANGE_FAILED");
+    const staged = await new OAuthIntentsRepository(handle.db).findById(
+      scope,
+      intentId,
+    );
+    expect(staged).toMatchObject({
+      status: "initiated",
+      failure_code: null,
+      candidate_properties: null,
+    });
+    expect(staged?.token_cipher).not.toBeNull();
+    expect(staged?.pkce_verifier_cipher).not.toEqual(Buffer.alloc(32));
+    expect(exchangeCode).toHaveBeenCalledTimes(1);
+    expect(listProperties).toHaveBeenCalledTimes(1);
+
+    const second = await handleGoogleCallback(
+      { workspaceId: scope.workspaceId },
+      {
+        code: "different-code-is-ignored-on-retry",
+        state,
+        error: null,
+      },
+      { client },
+    );
+    expect(second).toBe(
+      `/p/${scope.projectId}/sources?oauthIntentId=${intentId}&provider=gsc`,
+    );
+    expect(exchangeCode).toHaveBeenCalledTimes(1);
+    expect(listProperties).toHaveBeenCalledTimes(2);
+    const ready = await new OAuthIntentsRepository(handle.db).findById(
+      scope,
+      intentId,
+    );
+    expect(ready).toMatchObject({
+      status: "properties_ready",
+      failure_code: null,
+    });
+    expect(ready?.token_cipher).not.toBeNull();
+  });
+
+  it("still scrubs an intent on a permanent property-candidate failure", async () => {
+    const { state, intentId } = await seedIntent(
+      handle,
+      scope,
+      siteId,
+      actor,
+      new Date(Date.now() + 600_000).toISOString(),
+    );
+    const client: GoogleOAuthClient = {
+      ...fakeClient(),
+      listProperties: async () =>
+        Array.from({ length: 501 }, (_, index) => ({
+          externalPropertyId: `sc-domain:site-${index}.example`,
+          displayName: `site-${index}.example`,
+        })),
+    };
+
+    const location = await handleGoogleCallback(
+      { workspaceId: scope.workspaceId },
+      { code: "auth-code", state, error: null },
+      { client },
+    );
+
+    expect(location).toContain("error=OAUTH_EXCHANGE_FAILED");
+    const failed = await new OAuthIntentsRepository(handle.db).findById(
+      scope,
+      intentId,
+    );
+    expect(failed).toMatchObject({
+      status: "failed",
+      failure_code: "OAUTH_EXCHANGE_FAILED",
+      token_cipher: null,
+      candidate_properties: null,
+    });
+    expect(failed?.pkce_verifier_cipher).toEqual(Buffer.alloc(32));
+  });
 
   it("rejects an expired state as OAUTH_STATE_EXPIRED", async () => {
     const expiresAt = new Date(Date.now() + 600_000).toISOString();

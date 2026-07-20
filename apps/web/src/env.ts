@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  postgresUrlIssue,
+  runtimeHttpUrlIssue,
+  type RuntimeHttpUrlPolicy,
+} from "@sf/contracts/runtime-url";
 
 /**
  * Server env contract for the web service (spec §3.4). Fail-fast at first import
@@ -18,36 +23,64 @@ const base64Bytes = (expected: number) =>
     { message: `must be ${expected}-byte base64` },
   );
 
-const EnvSchema = z.object({
-  APP_ORIGIN: z.url(),
-  DATABASE_URL: z.string().min(1),
-  // Max connections per pool; keep low against a connection-limited pooler
-  // (e.g. Supabase session pooler ~15/project). See apps/worker/src/env.ts.
-  DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
-  SUPABASE_URL: z.url(),
-  SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  CREDENTIAL_ENCRYPTION_KEY: base64Bytes(32),
-  GOOGLE_OAUTH_CLIENT_ID: z.string().min(1),
-  GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1),
-  // MVP hard requirement: DataForSEO stays disabled (spec §2.2, §3.4).
-  DATAFORSEO_ENABLED: z.literal("false"),
-  RAW_IMPORT_BUCKET: z.string().min(1),
-  EXPORT_BUCKET: z.string().min(1),
-  // Production is always Supabase. Local/test may opt into Supabase, otherwise
-  // they must provide one explicit absolute directory shared with the worker.
-  SF_BLOB_BACKEND: z.enum(["local", "supabase"]).optional(),
-  SF_BLOB_DIR: z.string().min(1).optional(),
-  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-});
+function runtimeUrl(
+  environment: string | undefined,
+  policy?: RuntimeHttpUrlPolicy,
+) {
+  return z.string().superRefine((value, ctx) => {
+    const message = runtimeHttpUrlIssue(value, environment, policy);
+    if (message) ctx.addIssue({ code: "custom", message });
+  });
+}
+
+const postgresUrl = () =>
+  z.string().superRefine((value, ctx) => {
+    const message = postgresUrlIssue(value);
+    if (message) ctx.addIssue({ code: "custom", message });
+  });
+
+export function createWebEnvSchema(environment: string | undefined) {
+  return z.object({
+    APP_ORIGIN: runtimeUrl(environment, { originOnly: true }),
+    DATABASE_URL: postgresUrl(),
+    // Max connections per pool; keep low against a connection-limited pooler
+    // (e.g. Supabase session pooler ~15/project). See apps/worker/src/env.ts.
+    DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
+    SUPABASE_URL: runtimeUrl(environment),
+    SUPABASE_ANON_KEY: z.string().min(1),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    CREDENTIAL_ENCRYPTION_KEY: base64Bytes(32),
+    GOOGLE_OAUTH_CLIENT_ID: z.string().min(1),
+    GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1),
+    // MVP hard requirement: DataForSEO stays disabled (spec §2.2, §3.4).
+    DATAFORSEO_ENABLED: z.literal("false"),
+    RAW_IMPORT_BUCKET: z.string().min(1),
+    EXPORT_BUCKET: z.string().min(1),
+    // Production is always Supabase. Local/test may opt into Supabase, otherwise
+    // they must provide one explicit absolute directory shared with the worker.
+    SF_BLOB_BACKEND: z.enum(["local", "supabase"]).optional(),
+    SF_BLOB_DIR: z.string().min(1).optional(),
+    LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  });
+}
+
+const EnvSchema = createWebEnvSchema(process.env["NODE_ENV"]);
 
 export type WebEnv = z.infer<typeof EnvSchema>;
 
 /** Minimal subset needed to build a Supabase client (safe for edge/middleware). */
-const SupabaseClientEnvSchema = z.object({
-  SUPABASE_URL: z.url(),
-  SUPABASE_ANON_KEY: z.string().min(1),
-});
+export function createSupabaseClientEnvSchema(
+  environment: string | undefined,
+) {
+  return z.object({
+    SUPABASE_URL: runtimeUrl(environment),
+    SUPABASE_ANON_KEY: z.string().min(1),
+  });
+}
+
+const SupabaseClientEnvSchema = createSupabaseClientEnvSchema(
+  process.env["NODE_ENV"],
+);
 
 export type SupabaseClientEnv = z.infer<typeof SupabaseClientEnvSchema>;
 

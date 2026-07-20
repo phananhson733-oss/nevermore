@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AsyncRunsRepository,
   ExportBundlesRepository,
+  StorageObjectReferencesRepository,
   type AsyncRunRow,
   type ExportBundleRow,
 } from "@sf/db";
@@ -73,6 +74,10 @@ describe("export download error mapping", () => {
       bundle,
     );
     vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue(run);
+    vi.spyOn(
+      StorageObjectReferencesRepository.prototype,
+      "databaseNow",
+    ).mockResolvedValue(new Date("2026-07-19T00:00:00.000Z"));
   });
 
   it.each([

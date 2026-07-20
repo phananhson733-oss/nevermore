@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { ActionsRepository } from "./actions.ts";
 import { AnalysisInvocationsRepository } from "./analysis-invocations.ts";
 import {
   AsyncRunsRepository,
   isTerminalStatus,
+  toRunAttempt,
 } from "./async-runs.ts";
 import { CollectionRunsRepository } from "./collection-runs.ts";
 import { DataSnapshotsRepository } from "./data-snapshots.ts";
 import { DiagnosticRunsRepository } from "./diagnostic-runs.ts";
 import { EvidenceRepository } from "./evidence.ts";
 import { ExportBundlesRepository } from "./export-bundles.ts";
+import { FindingsRepository } from "./findings.ts";
 import { FindingReviewEventsRepository } from "./findings-review.ts";
 import { IdempotencyRepository } from "./idempotency.ts";
 import { ImportPreviewsRepository } from "./import-previews.ts";
@@ -110,6 +113,11 @@ class FakeExecutor {
     return this.query("delete", args);
   }
 
+  execute(...args: unknown[]): Promise<unknown> {
+    this.calls.push({ method: "execute", args });
+    return Promise.resolve(this.take());
+  }
+
   last(method: string): RecordedCall {
     const call = this.calls.findLast((candidate) => candidate.method === method);
     if (!call) throw new Error(`No ${method} call was recorded`);
@@ -127,6 +135,26 @@ function repository<T>(
 }
 
 describe("core repositories", () => {
+  it("excludes caller-selected finding review states in SQL", async () => {
+    const { repo, db } = repository(FindingsRepository);
+    db.enqueue([]);
+
+    await repo.list(scope, {
+      limit: 50,
+      cursor: null,
+      activeOnly: false,
+      excludedReviewStates: ["ignored", "needs_more_data"],
+    });
+
+    const query = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(query.sql).toContain('"app"."findings"."review_state" not in');
+    expect(query.params).toEqual(
+      expect.arrayContaining(["ignored", "needs_more_data"]),
+    );
+  });
+
   it("maps action reads, writes, atomic overrides, and keyset pages", async () => {
     const { repo, db } = repository(ActionsRepository);
     const action = {
@@ -134,9 +162,22 @@ describe("core repositories", () => {
       updated_at: "2026-07-18T01:02:03.000Z",
     };
 
-    db.enqueue([action], []);
+    db.enqueue([action], [], [action], []);
     await expect(repo.findByKey(scope, "key-1")).resolves.toBe(action);
     await expect(repo.findById(scope, "missing")).resolves.toBeNull();
+    await expect(repo.findByIdForUpdate(scope, "action-1")).resolves.toBe(
+      action,
+    );
+    expect(db.last("for").args).toEqual(["update"]);
+    await expect(
+      repo.findByIdForUpdate(scope, "missing"),
+    ).resolves.toBeNull();
+    const actionLockScope = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(actionLockScope.sql).toContain('"workspace_id" = $1');
+    expect(actionLockScope.sql).toContain('"project_id" = $2');
+    expect(actionLockScope.sql).toContain('"id" = $3');
 
     db.enqueue([action], []);
     await expect(
@@ -250,13 +291,13 @@ describe("core repositories", () => {
         workspaceId: scope.workspaceId,
         projectId: scope.projectId,
         asyncRunId: "run-1",
-        task: "report",
+        task: "finding_summary",
         provider: "openai",
         model: "gpt",
         promptSetVersion: "v2",
         inputHash: "input-hash",
         outputHash: "output-hash",
-        status: "completed",
+        status: "succeeded",
         inputTokens: 10,
         outputTokens: 20,
         costUsd: 0.123,
@@ -274,9 +315,9 @@ describe("core repositories", () => {
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
       asyncRunId: null,
-      task: "report",
-      provider: "template",
-      model: "none",
+      task: "artifact_generation",
+      provider: "openai",
+      model: "gpt",
       promptSetVersion: "v2",
       inputHash: "input-hash",
       outputHash: null,
@@ -290,11 +331,101 @@ describe("core repositories", () => {
     expect(db.last("values").args[0]).toMatchObject({ cost_usd: null });
   });
 
+  it("counts one project-scoped run/task aggregate and fails closed on unsafe counts", async () => {
+    const { repo, db } = repository(AnalysisInvocationsRepository);
+    db.enqueue([{ count: "7" }]);
+
+    await expect(
+      repo.countByAsyncRunTask(scope, "run-1", "finding_summary"),
+    ).resolves.toBe(7);
+
+    const aggregate = new PgDialect().sqlToQuery(
+      (db.last("select").args[0] as { count: never }).count,
+    );
+    expect(aggregate.sql).toBe("count(*)::text");
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"workspace_id" = $1');
+    expect(predicate.sql).toContain('"project_id" = $2');
+    expect(predicate.sql).toContain('"async_run_id" = $3');
+    expect(predicate.sql).toContain('"task" = $4');
+    expect(predicate.params).toEqual([
+      scope.workspaceId,
+      scope.projectId,
+      "run-1",
+      "finding_summary",
+    ]);
+
+    for (const invalid of [
+      [],
+      [{ count: "1" }, { count: "2" }],
+      [{ count: 0 }],
+      [{ count: "01" }],
+      [{ count: "-1" }],
+      [{ count: "1.5" }],
+      [{ count: "9007199254740992" }],
+    ]) {
+      const fixture = repository(AnalysisInvocationsRepository);
+      fixture.db.enqueue(invalid);
+      await expect(
+        fixture.repo.countByAsyncRunTask(
+          scope,
+          "run-1",
+          "finding_summary",
+        ),
+      ).rejects.toThrow("invalid analysis invocation count");
+    }
+  });
+
   it("maintains the complete async-run lifecycle and optional terminal fields", async () => {
     const { repo, db } = repository(AsyncRunsRepository);
     const run = { id: "run-1", status: "queued" };
+    const claimed = {
+      ...run,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      attempt_count: 1,
+    };
+    const attempt = toRunAttempt(claimed as never);
     expect(isTerminalStatus("completed")).toBe(true);
     expect(isTerminalStatus("running")).toBe(false);
+
+    db.enqueue({
+      rows: [
+        {
+          kind: "collection",
+          queued_depth: "3",
+          running_depth: "2",
+          oldest_queued_age_ms: "1234.567",
+          average_run_duration_ms_24h: "2000.555",
+          max_run_duration_ms_24h: "9000",
+          retry_count_24h: "4",
+          failure_count_24h: "1",
+        },
+        {
+          kind: "__proto__",
+          queued_depth: "999",
+        },
+      ],
+    });
+    await expect(repo.technicalMetrics()).resolves.toEqual([
+      {
+        kind: "collection",
+        queuedDepth: 3,
+        runningDepth: 2,
+        oldestQueuedAgeMs: 1234.57,
+        averageRunDurationMs24h: 2000.56,
+        maxRunDurationMs24h: 9000,
+        retryCount24h: 4,
+        failureCount24h: 1,
+      },
+    ]);
+    const metricSql = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(metricSql.sql).not.toContain("request_payload");
+    expect(metricSql.sql).not.toContain("last_error_summary");
 
     db.enqueue([run], [{ id: "run-2" }]);
     await expect(
@@ -304,12 +435,12 @@ describe("core repositories", () => {
         kind: "diagnostic",
         activeKey: "diagnostic",
         initiatedBy: "user-1",
-        contractVersion: "0.2",
+        contractVersion: "2026-07-18",
         requestPayload: { locale: "en" },
       }),
     ).resolves.toBe(run);
     expect(db.last("values").args[0]).toMatchObject({
-      contract_version: "0.2",
+      contract_version: "2026-07-18",
       request_payload: { locale: "en" },
     });
     await repo.insertQueued({
@@ -318,34 +449,57 @@ describe("core repositories", () => {
       kind: "collection",
       activeKey: "crawl",
       initiatedBy: "user-1",
+      contractVersion: "2026-07-18",
     });
-    expect(db.last("values").args[0]).not.toHaveProperty("contract_version");
+    expect(db.last("values").args[0]).toMatchObject({
+      contract_version: "2026-07-18",
+    });
 
-    db.enqueue([run], [], [run], [run], [], [run], []);
+    db.enqueue([run], [], [run], [run], [], [claimed], []);
     await expect(repo.findActive(scope, "crawl")).resolves.toBe(run);
     await expect(repo.findActive(scope, "none")).resolves.toBeNull();
     await expect(repo.listActiveByProject(scope)).resolves.toEqual([run]);
     await expect(repo.findById(scope, "run-1")).resolves.toBe(run);
     await expect(repo.findById(scope, "missing")).resolves.toBeNull();
-    await expect(repo.claim("run-1")).resolves.toBe(run);
-    await expect(repo.claim("run-1")).resolves.toBeNull();
+    await expect(repo.claim(scope, "run-1")).resolves.toBe(claimed);
+    await expect(repo.claim(scope, "run-1")).resolves.toBeNull();
 
-    await repo.resetToQueued("run-1");
-    await repo.setProgress("run-1", { completed: 3, total: 5 });
-    await repo.setTerminal("run-1", {
+    db.enqueue([claimed]);
+    await expect(repo.lockAttemptForUpdate(attempt)).resolves.toBe(claimed);
+    expect(db.last("for").args).toEqual(["update"]);
+
+    db.enqueue([claimed]);
+    await expect(
+      repo.lockActiveForRecovery(scope, "run-1"),
+    ).resolves.toBe(claimed);
+    expect(db.last("for").args).toEqual(["update"]);
+
+    db.enqueue([{ id: "run-1" }], [{ id: "run-1" }], [{ id: "run-1" }]);
+    await expect(repo.resetToQueued(attempt)).resolves.toBe(true);
+    await expect(
+      repo.setProgress(attempt, { completed: 3, total: 5 }),
+    ).resolves.toBe(true);
+    await expect(repo.setTerminal(attempt, {
       status: "partial",
       resultType: "diagnostic",
       resultId: "diagnostic-1",
       lastErrorCode: "PARTIAL_SOURCE",
       lastErrorSummary: "One source was stale",
-    });
+    })).resolves.toBe(true);
     expect(db.last("set").args[0]).toMatchObject({
       status: "partial",
       result_type: "diagnostic",
       last_error_code: "PARTIAL_SOURCE",
     });
-    await repo.setTerminal("run-2", { status: "completed" });
+    db.enqueue([]);
+    await expect(
+      repo.setTerminal({ ...attempt, runId: "run-2" }, { status: "completed" }),
+    ).resolves.toBe(false);
     expect(db.last("set").args[0]).not.toHaveProperty("result_type");
+
+    await expect(
+      repo.setProgress({ ...attempt, attemptCount: 0 }, { ignored: true }),
+    ).resolves.toBe(false);
 
     db.enqueue([run]);
     await expect(repo.prepareDelivery(scope, "run-1", 1)).resolves.toBe(run);
@@ -436,7 +590,7 @@ describe("core repositories", () => {
     const { repo, db } = repository(DataSnapshotsRepository);
     const snapshot = {
       id: "snapshot-1",
-      created_at: "2026-07-18T01:02:03.000Z",
+      created_at: "2026-07-18 01:02:03+08",
     };
     db.enqueue([snapshot], [{ id: "snapshot-2" }]);
     await expect(
@@ -499,12 +653,12 @@ describe("core repositories", () => {
     ).resolves.toBeNull();
 
     const second = {
-      id: "snapshot-2",
-      created_at: "2026-07-17T01:02:03.000Z",
+      id: "00000000-0000-4000-8000-000000000102",
+      created_at: "2026-07-17 01:02:03+08",
     };
     const third = {
-      id: "snapshot-3",
-      created_at: "2026-07-16T01:02:03.000Z",
+      id: "00000000-0000-4000-8000-000000000103",
+      created_at: "2026-07-16 01:02:03+08",
     };
     db.enqueue([snapshot, second, third]);
     const page = await repo.listByProject(scope, { limit: 2, cursor: null });
@@ -514,10 +668,28 @@ describe("core repositories", () => {
     await expect(
       repo.listByProject(scope, { limit: 2, cursor: page.nextCursor }),
     ).resolves.toEqual({ rows: [second], nextCursor: null });
+    const snapshotCursorQuery = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(snapshotCursorQuery.params).toEqual(
+      expect.arrayContaining([second.created_at, second.id]),
+    );
     db.enqueue([]);
     await expect(
       repo.listByProject(scope, { limit: 2, cursor: "invalid" }),
     ).resolves.toEqual({ rows: [], nextCursor: null });
+
+    db.enqueue([]);
+    await repo.listByProject(scope, {
+      limit: 2,
+      cursor: null,
+      provider: "gsc",
+    });
+    const providerQuery = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(providerQuery.sql).toContain('"app"."data_snapshots"."provider" =');
+    expect(providerQuery.params).toContain("gsc");
   });
 
   it("stores diagnostic manifests, coverage, and per-rule timings", async () => {
@@ -660,11 +832,236 @@ describe("core repositories", () => {
     await expect(
       repo.listForFindings(scope, ["finding-1"]),
     ).resolves.toHaveLength(1);
+    const linkOrder = db.last("orderBy").args.map((expression) =>
+      new PgDialect().sqlToQuery(expression as never).sql,
+    );
+    expect(linkOrder).toEqual([
+      '"app"."finding_observations"."finding_id" asc',
+      '"app"."finding_observations"."evidence_id" asc',
+      '"app"."finding_observations"."role" asc',
+    ]);
     await expect(repo.findByIds(scope, [])).resolves.toEqual([]);
     db.enqueue([{ id: "evidence-1", snapshot_id: "snapshot-1" }]);
     await expect(
       repo.findByIds(scope, ["evidence-1"]),
     ).resolves.toHaveLength(1);
+    expect(
+      db.calls.filter(({ method }) => method === "orderBy").length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("chunks evidence lookup predicates to a fixed maximum size", async () => {
+    const { repo, db } = repository(EvidenceRepository);
+    const ids = Array.from({ length: 1_001 }, (_, index) => `id-${index}`);
+
+    db.enqueue([], [], []);
+    await expect(repo.listForFindings(scope, ids)).resolves.toEqual([]);
+    const listQueryCount = db.calls.filter(
+      ({ method }) => method === "select",
+    ).length;
+    expect(listQueryCount).toBe(3);
+
+    db.enqueue([], [], []);
+    await expect(repo.findByIds(scope, ids)).resolves.toEqual([]);
+    const totalQueryCount = db.calls.filter(
+      ({ method }) => method === "select",
+    ).length;
+    expect(totalQueryCount - listQueryCount).toBe(3);
+
+    db.enqueue([
+      { finding_id: "finding-1", evidence_id: "evidence-1", role: "primary" },
+      { finding_id: "finding-1", evidence_id: "evidence-2", role: "supporting" },
+      { finding_id: "finding-1", evidence_id: "evidence-3", role: "context" },
+    ]);
+    await expect(
+      repo.listForFindings(scope, ["finding-1"], { maxRows: 2 }),
+    ).resolves.toHaveLength(2);
+    expect(db.last("limit").args).toEqual([2]);
+    await expect(
+      repo.listForFindings(scope, ["finding-1"], { maxRows: -1 }),
+    ).rejects.toThrow("maxRows must be a non-negative safe integer");
+  });
+
+  it("sorts finding ids before deterministic 500-id link-query chunks", async () => {
+    const { repo, db } = repository(EvidenceRepository);
+    const ids = Array.from(
+      { length: 501 },
+      (_, index) => `finding-${String(index).padStart(3, "0")}`,
+    ).reverse();
+    db.enqueue([], []);
+
+    await expect(repo.listForFindings(scope, ids)).resolves.toEqual([]);
+
+    const predicates = db.calls.filter(({ method }) => method === "where");
+    expect(predicates).toHaveLength(2);
+    const first = new PgDialect().sqlToQuery(predicates[0]!.args[0] as never);
+    const second = new PgDialect().sqlToQuery(predicates[1]!.args[0] as never);
+    expect(first.params).toContain("finding-000");
+    expect(first.params).toContain("finding-499");
+    expect(first.params).not.toContain("finding-500");
+    expect(second.params).toContain("finding-500");
+  });
+
+  it("caps evidence link reads at a caller-supplied maxRows overflow sentinel", async () => {
+    const { repo, db } = repository(EvidenceRepository);
+
+    db.enqueue([]);
+    await expect(
+      repo.listForFindings(scope, ["finding-1"], { maxRows: 2 }),
+    ).resolves.toEqual([]);
+    expect(
+      db.calls.some(
+        ({ method, args }) => method === "limit" && args[0] === 2,
+      ),
+    ).toBe(true);
+
+    await expect(
+      repo.listForFindings(scope, ["finding-1"], { maxRows: -1 }),
+    ).rejects.toThrow(RangeError);
+  });
+
+  it("restricts finding evidence links to the exact frozen diagnostic run", async () => {
+    const { repo, db } = repository(EvidenceRepository);
+
+    db.enqueue([]);
+    await expect(
+      repo.listForFindings(scope, ["finding-1"], {
+        diagnosticRunId: "diagnostic-frozen",
+        maxRows: 101,
+      }),
+    ).resolves.toEqual([]);
+
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain(
+      '"app"."finding_observations"."diagnostic_run_id" =',
+    );
+    expect(predicate.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        "finding-1",
+        "diagnostic-frozen",
+      ]),
+    );
+    expect(db.last("limit").args).toEqual([101]);
+  });
+
+  it("pages export evidence byte estimates in stable id order", async () => {
+    const { repo, db } = repository(EvidenceRepository);
+
+    db.enqueue([
+      { id: "evidence-001", estimated_bytes: 64 },
+      { id: "evidence-002", estimated_bytes: 96 },
+      { id: "evidence-003", estimated_bytes: 128 },
+    ]);
+    await expect(
+      repo.listExportByteSizesByIdsPage(
+        scope,
+        ["evidence-003", "evidence-001", "evidence-002"],
+        { limit: 2, cursor: null },
+      ),
+    ).resolves.toEqual({
+      rows: [
+        { id: "evidence-001", estimated_bytes: 64 },
+        { id: "evidence-002", estimated_bytes: 96 },
+      ],
+      nextCursor: "evidence-002",
+    });
+    expect(
+      db.calls.some(
+        ({ method, args }) => method === "limit" && args[0] === 3,
+      ),
+    ).toBe(true);
+    expect(
+      db.calls.some(({ method }) => method === "orderBy"),
+    ).toBe(true);
+    const sizeSelection = db.last("select").args[0] as Record<string, unknown>;
+    const sizeSql = new PgDialect().sqlToQuery(
+      sizeSelection["estimated_bytes"] as never,
+    ).sql;
+    expect(sizeSql).toContain("octet_length");
+    expect(sizeSql).toContain("json_build_object");
+    expect(sizeSql).toContain("convert_to");
+
+    db.enqueue([{ id: "evidence-003", estimated_bytes: 128 }]);
+    await expect(
+      repo.listExportByteSizesByIdsPage(
+        scope,
+        ["evidence-003", "evidence-001", "evidence-002"],
+        { limit: 2, cursor: "evidence-002" },
+      ),
+    ).resolves.toEqual({
+      rows: [{ id: "evidence-003", estimated_bytes: 128 }],
+      nextCursor: null,
+    });
+    const sizeCursorSql = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(sizeCursorSql.sql).toContain('"app"."evidence"."id" >');
+    expect(sizeCursorSql.params).toContain("evidence-002");
+
+    const exportRow1 = {
+      id: "evidence-001",
+      source_provider: "crawl",
+      grade: "A",
+      subject_refs: [],
+      claim: "claim one",
+      observed_at: "2026-07-19T00:00:00.000Z",
+    };
+    const exportRow2 = { ...exportRow1, id: "evidence-002", claim: "claim two" };
+    const exportRow3 = { ...exportRow1, id: "evidence-003", claim: "claim three" };
+    db.enqueue([exportRow1, exportRow2, exportRow3]);
+    await expect(
+      repo.listExportByIdsPage(
+        scope,
+        ["evidence-003", "evidence-001", "evidence-002"],
+        { limit: 2, cursor: null },
+      ),
+    ).resolves.toEqual({
+      rows: [exportRow1, exportRow2],
+      nextCursor: "evidence-002",
+    });
+    expect(db.last("limit").args).toEqual([3]);
+    const exportSelection = db.last("select").args[0] as Record<string, unknown>;
+    expect(Object.keys(exportSelection)).toEqual([
+      "id",
+      "source_provider",
+      "grade",
+      "subject_refs",
+      "claim",
+      "observed_at",
+    ]);
+
+    db.enqueue([exportRow3]);
+    await expect(
+      repo.listExportByIdsPage(
+        scope,
+        ["evidence-003", "evidence-001", "evidence-002"],
+        { limit: 2, cursor: "evidence-002" },
+      ),
+    ).resolves.toEqual({ rows: [exportRow3], nextCursor: null });
+    const bodyCursorSql = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(bodyCursorSql.sql).toContain('"app"."evidence"."id" >');
+    expect(bodyCursorSql.params).toEqual(
+      expect.arrayContaining(["evidence-001", "evidence-002", "evidence-003"]),
+    );
+
+    await expect(
+      repo.listExportByteSizesByIdsPage(scope, ["evidence-1"], {
+        limit: 0,
+        cursor: null,
+      }),
+    ).rejects.toThrow("limit must be a positive safe integer");
+    await expect(
+      repo.listExportByIdsPage(scope, ["evidence-1"], {
+        limit: 0,
+        cursor: null,
+      }),
+    ).rejects.toThrow("limit must be a positive safe integer");
   });
 
   it("chunks normalized observations and preserves unavailable values as null", async () => {
@@ -736,6 +1133,112 @@ describe("core repositories", () => {
     await expect(
       repo.countBySnapshot(scope, "snapshot-1"),
     ).resolves.toBe(2);
+  });
+
+  it("targets one project-scoped observation by frozen snapshot, metric, and subject", async () => {
+    const { repo, db } = repository(ObservationsRepository);
+    const observation = {
+      id: "observation-1",
+      snapshot_id: "snapshot-frozen",
+      provider: "crawl",
+      metric_key: "crawl.page.v1",
+      subject_type: "url",
+      subject_ref: "https://example.com/pricing",
+    };
+    db.enqueue([observation], [], [observation, { ...observation, id: "observation-2" }]);
+
+    await expect(
+      repo.findBySnapshotMetricSubject(scope, {
+        snapshotId: "snapshot-frozen",
+        provider: "crawl",
+        metricKey: "crawl.page.v1",
+        subjectType: "url",
+        subjectRef: "https://example.com/pricing",
+      }),
+    ).resolves.toBe(observation);
+    expect(db.last("limit").args).toEqual([2]);
+    const query = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(query.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        "snapshot-frozen",
+        "crawl",
+        "crawl.page.v1",
+        "url",
+        "https://example.com/pricing",
+      ]),
+    );
+
+    await expect(
+      repo.findBySnapshotMetricSubject(scope, {
+        snapshotId: "snapshot-frozen",
+        provider: "crawl",
+        metricKey: "crawl.page.v1",
+        subjectType: "url",
+        subjectRef: "https://example.com/missing",
+      }),
+    ).resolves.toBeNull();
+
+    await expect(
+      repo.findBySnapshotMetricSubject(scope, {
+        snapshotId: "snapshot-frozen",
+        provider: "crawl",
+        metricKey: "crawl.page.v1",
+        subjectType: "url",
+        subjectRef: "https://example.com/pricing",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("keyset-pages project-scoped observations by their stable unique id", async () => {
+    const { repo, db } = repository(ObservationsRepository);
+    const first = { id: "00000000-0000-4000-8000-000000000101" };
+    const second = { id: "00000000-0000-4000-8000-000000000102" };
+    const third = { id: "00000000-0000-4000-8000-000000000103" };
+
+    await expect(
+      repo.listBySnapshotIdsPage(scope, [], { limit: 2, cursor: null }),
+    ).resolves.toEqual({ rows: [], nextCursor: null });
+    db.enqueue([first, second, third]);
+    await expect(
+      repo.listBySnapshotIdsPage(scope, ["snapshot-1"], {
+        limit: 2,
+        cursor: null,
+      }),
+    ).resolves.toEqual({ rows: [first, second], nextCursor: second.id });
+    expect(db.last("limit").args).toEqual([3]);
+
+    db.enqueue([third]);
+    await expect(
+      repo.listBySnapshotIdsPage(scope, ["snapshot-1"], {
+        limit: 2,
+        cursor: second.id,
+      }),
+    ).resolves.toEqual({ rows: [third], nextCursor: null });
+    const cursorQuery = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(cursorQuery.sql).toContain(
+      '"app"."normalized_observations"."id" >',
+    );
+    expect(cursorQuery.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        "snapshot-1",
+        second.id,
+      ]),
+    );
+
+    await expect(
+      repo.listBySnapshotIdsPage(scope, ["snapshot-1"], {
+        limit: 0,
+        cursor: null,
+      }),
+    ).rejects.toThrow(RangeError);
   });
 
   it("stores and finalizes export bundle metadata", async () => {

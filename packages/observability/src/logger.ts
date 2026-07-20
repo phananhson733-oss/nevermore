@@ -1,8 +1,21 @@
-import { redact } from "./redact.ts";
+import { LOG_REDACT_LIMITS, redact, redactText } from "./redact.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 const LEVEL_ORDER: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+const RESERVED_LOG_FIELDS: ReadonlySet<string> = new Set([
+  "timestamp",
+  "level",
+  "event",
+  "service",
+  "environment",
+  "requestId",
+  "runId",
+  "workspaceId",
+  "projectId",
+]);
+const FALLBACK_LINE =
+  '{"level":"error","event":"logger_emit_failed","code":"LOG_EMIT_FAILED"}\n';
 
 /** Correlation fields carried on every structured log line (spec §15.2). */
 export interface LogContext {
@@ -24,11 +37,54 @@ export interface Logger {
 }
 
 const parseLevel = (raw: string | undefined): LogLevel => {
-  const value = (raw ?? "info").toLowerCase();
+  if (typeof raw !== "string") return "info";
+  const value = raw.toLowerCase();
   return value === "debug" || value === "info" || value === "warn" || value === "error"
     ? value
     : "info";
 };
+
+function safeFields(fields: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (fields === undefined) return {};
+  const redacted = redact(fields, LOG_REDACT_LIMITS);
+  if (
+    typeof redacted !== "object" ||
+    redacted === null ||
+    Array.isArray(redacted)
+  ) {
+    return { fields: redacted };
+  }
+
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(redacted)) {
+    if (!RESERVED_LOG_FIELDS.has(key)) {
+      Reflect.defineProperty(filtered, key, {
+        configurable: true,
+        enumerable: true,
+        value,
+        writable: true,
+      });
+    }
+  }
+  return filtered;
+}
+
+function writeFallback(failedSink?: NodeJS.WriteStream): void {
+  const sinks =
+    failedSink === process.stderr
+      ? [process.stdout]
+      : failedSink === process.stdout
+        ? [process.stderr]
+        : [process.stderr, process.stdout];
+  for (const sink of sinks) {
+    try {
+      sink.write(FALLBACK_LINE);
+      return;
+    } catch {
+      // A logger must never become the application failure path.
+    }
+  }
+}
 
 /**
  * Create a JSON-lines logger. `fields` are deep-redacted before emission so that
@@ -37,19 +93,35 @@ const parseLevel = (raw: string | undefined): LogLevel => {
  * prompt/output as fields.
  */
 export function createLogger(context: LogContext, minLevel?: LogLevel): Logger {
-  const threshold = LEVEL_ORDER[minLevel ?? parseLevel(process.env["LOG_LEVEL"])];
+  const threshold = LEVEL_ORDER[
+    parseLevel(minLevel ?? process.env["LOG_LEVEL"])
+  ];
 
   const emit = (level: LogLevel, event: string, fields?: Record<string, unknown>): void => {
     if (LEVEL_ORDER[level] < threshold) return;
-    const line = {
-      timestamp: new Date().toISOString(),
-      level,
-      event,
-      ...context,
-      ...(fields ? (redact(fields) as Record<string, unknown>) : {}),
-    };
     const sink = level === "error" || level === "warn" ? process.stderr : process.stdout;
-    sink.write(`${JSON.stringify(line)}\n`);
+    let serialized: string;
+    try {
+      const line = {
+        ...safeFields(fields),
+        ...context,
+        timestamp: new Date().toISOString(),
+        level,
+        event: redactText(event),
+      };
+      const encoded = JSON.stringify(line);
+      if (typeof encoded !== "string") throw new TypeError("log serialization failed");
+      serialized = `${encoded}\n`;
+    } catch {
+      writeFallback();
+      return;
+    }
+
+    try {
+      sink.write(serialized);
+    } catch {
+      writeFallback(sink);
+    }
   };
 
   return {

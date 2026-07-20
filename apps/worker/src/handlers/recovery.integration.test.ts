@@ -1,17 +1,28 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   AsyncRunsRepository,
+  ProjectsRepository,
+  SourceConnectionsRepository,
   createBoss,
   createDbHandle,
   startBoss,
+  toRunAttempt,
   type DbHandle,
   type JobWithMetadata,
   type PgBoss,
   type ProjectScope,
   type RunJobPayload,
 } from "@sf/db";
-import { asyncRuns, clientProjects, workspaces } from "@sf/db/schema";
+import {
+  asyncRuns,
+  clientProjects,
+  collectionRuns,
+  dataSnapshots,
+  sites,
+  sourceConnections,
+  workspaces,
+} from "@sf/db/schema";
 import type { Logger } from "@sf/observability";
 import { runMigrations } from "../../../../packages/db/src/migrate.ts";
 import type { WorkerContext } from "../context.ts";
@@ -22,6 +33,9 @@ const describeDb = DATABASE_URL ? describe : describe.skip;
 const ACTOR_ID = randomUUID();
 const NOW = new Date("2026-07-19T12:00:00.000Z");
 const OLD = "2026-07-19T08:00:00.000Z";
+const HASH = "a".repeat(64);
+const RECOVERY_LIMITATION =
+  "Source synchronization did not complete; no new snapshot was saved.";
 
 const NOOP = (): void => undefined;
 const logger: Logger = {
@@ -37,8 +51,11 @@ describeDb("worker canonical run recovery", () => {
   let handle: DbHandle;
   let boss: PgBoss;
   let scope: ProjectScope;
+  let siteId: string;
   let ctx: WorkerContext;
-  let priority = 10_000;
+  // Keep repeated runs against the same disposable database ahead of jobs
+  // intentionally left live by earlier executions of this recovery fixture.
+  let priority = Math.floor(Date.now() / 1_000);
 
   beforeAll(async () => {
     await runMigrations(DATABASE_URL!);
@@ -61,6 +78,18 @@ describeDb("worker canonical run recovery", () => {
       })
       .returning();
     scope = { workspaceId: workspace!.id, projectId: project!.id };
+    const [site] = await handle.db
+      .insert(sites)
+      .values({
+        workspace_id: scope.workspaceId,
+        project_id: scope.projectId,
+        origin: "https://worker-recovery.example",
+        host: "worker-recovery.example",
+        market_codes: ["US"],
+        language_codes: ["en"],
+      })
+      .returning();
+    siteId = site!.id;
     ctx = {
       db: handle.db,
       boss,
@@ -69,6 +98,7 @@ describeDb("worker canonical run recovery", () => {
       appOrigin: "http://localhost:3000",
       googleOAuth: { clientId: "test", clientSecret: "test" },
       openai: { apiKey: "test", model: "test" },
+      findingSummariesEnabled: true,
       logger,
     };
   });
@@ -105,10 +135,13 @@ describeDb("worker canonical run recovery", () => {
     const completedJob = await fetchOwn(await send(completed));
     await boss.complete("diagnose", completedJob.id);
 
-    const legacyCompleted = await seedRun({ status: "running" });
+    const legacyCompleted = await seedRun({
+      status: "running",
+      contractVersion: "0.2.0",
+    });
     const legacyJobId = await boss.send(
       "diagnose",
-      payload(legacyCompleted),
+      payload(legacyCompleted, "0.2.0"),
       { priority: ++priority },
     );
     expect(legacyJobId).not.toBeNull();
@@ -178,10 +211,11 @@ describeDb("worker canonical run recovery", () => {
 
     await expect(
       prepareRunDelivery(ctx, finalRetry, async () => {
-        expect(await repo.claim(transientRun)).toMatchObject({
+        const claimed = await repo.claim(scope, transientRun);
+        expect(claimed).toMatchObject({
           attempt_count: 3,
         });
-        await repo.resetToQueued(transientRun);
+        await repo.resetToQueued(toRunAttempt(claimed!));
         throw transient;
       }),
     ).rejects.toBe(transient);
@@ -198,8 +232,9 @@ describeDb("worker canonical run recovery", () => {
     );
     await expect(
       prepareRunDelivery(ctx, permanentJob, async () => {
-        expect(await repo.claim(permanentRun)).not.toBeNull();
-        await repo.setTerminal(permanentRun, {
+        const claimed = await repo.claim(scope, permanentRun);
+        expect(claimed).not.toBeNull();
+        await repo.setTerminal(toRunAttempt(claimed!), {
           status: "failed",
           lastErrorCode: "PERMANENT_FIXTURE",
           lastErrorSummary: "Safe fixture summary.",
@@ -209,6 +244,603 @@ describeDb("worker canonical run recovery", () => {
     ).rejects.toThrow("runner already persisted a terminal state");
     await expectRun(permanentRun, "failed", "PERMANENT_FIXTURE");
     await boss.fail("diagnose", permanentJob.id);
+  });
+
+  it("projects failed collection recovery without overwriting newer success or disconnect state", async () => {
+    const [withSnapshot, withoutSnapshot, alreadyAvailable, disconnected] =
+      await handle.db
+        .insert(sourceConnections)
+        .values([
+          {
+            workspace_id: scope.workspaceId,
+            project_id: scope.projectId,
+            site_id: siteId,
+            provider: "crawl",
+            connection_type: "public",
+            state: "syncing",
+            limitation: "Crawl sync in progress.",
+            connected_at: OLD,
+            created_by: ACTOR_ID,
+          },
+          {
+            workspace_id: scope.workspaceId,
+            project_id: scope.projectId,
+            site_id: siteId,
+            provider: "gsc",
+            connection_type: "oauth",
+            state: "syncing",
+            limitation: "GSC sync in progress.",
+            connected_at: OLD,
+            created_by: ACTOR_ID,
+          },
+          {
+            workspace_id: scope.workspaceId,
+            project_id: scope.projectId,
+            site_id: siteId,
+            provider: "ga4",
+            connection_type: "oauth",
+            state: "available",
+            limitation: "Newer GA4 snapshot is available.",
+            connected_at: OLD,
+            created_by: ACTOR_ID,
+          },
+          {
+            workspace_id: scope.workspaceId,
+            project_id: scope.projectId,
+            site_id: siteId,
+            provider: "csv",
+            connection_type: "file_import",
+            state: "disconnected",
+            limitation: "CSV source was disconnected.",
+            connected_at: OLD,
+            disconnected_at: OLD,
+            created_by: ACTOR_ID,
+          },
+        ])
+        .returning();
+
+    const historicalRunId = randomUUID();
+    const historicalSnapshotId = randomUUID();
+    await handle.db.insert(asyncRuns).values({
+      id: historicalRunId,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      kind: "collection",
+      status: "completed",
+      request_payload: {
+        provider: "crawl",
+        sourceConnectionId: withSnapshot!.id,
+      },
+      initiated_by: ACTOR_ID,
+      completed_at: OLD,
+    });
+    await handle.db.insert(collectionRuns).values({
+      id: historicalRunId,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      site_id: siteId,
+      source_connection_id: withSnapshot!.id,
+      provider: "crawl",
+      operation: "site_graph",
+      method_version: "recovery.integration.v1",
+      parameters_hash: HASH,
+    });
+    await handle.db.insert(dataSnapshots).values({
+      id: historicalSnapshotId,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      site_id: siteId,
+      collection_run_id: historicalRunId,
+      source_connection_id: withSnapshot!.id,
+      provider: "crawl",
+      dataset_key: "crawl.site_graph.v1",
+      schema_version: "recovery.integration.v1",
+      method_version: "recovery.integration.v1",
+      captured_at: OLD,
+      source_window: { start: null, end: null },
+      availability: "available",
+      limitation: "Historical crawl snapshot.",
+      row_count: 1,
+      checksum: HASH,
+    });
+    await new SourceConnectionsRepository(handle.db).setLastSnapshot(
+      withSnapshot!.id,
+      historicalSnapshotId,
+      "syncing",
+      "Crawl sync in progress.",
+    );
+
+    const [foreignProject] = await handle.db
+      .insert(clientProjects)
+      .values({
+        workspace_id: scope.workspaceId,
+        client_name: "Foreign recovery scope",
+        project_name: "Foreign recovery scope",
+        default_delivery_locale: "en",
+        created_by: ACTOR_ID,
+      })
+      .returning();
+    const foreignScope: ProjectScope = {
+      workspaceId: scope.workspaceId,
+      projectId: foreignProject!.id,
+    };
+    const [foreignSite] = await handle.db
+      .insert(sites)
+      .values({
+        workspace_id: foreignScope.workspaceId,
+        project_id: foreignScope.projectId,
+        origin: "https://foreign-worker-recovery.example",
+        host: "foreign-worker-recovery.example",
+        market_codes: ["US"],
+        language_codes: ["en"],
+      })
+      .returning();
+    const [foreignSource] = await handle.db
+      .insert(sourceConnections)
+      .values({
+        workspace_id: foreignScope.workspaceId,
+        project_id: foreignScope.projectId,
+        site_id: foreignSite!.id,
+        provider: "crawl",
+        connection_type: "public",
+        state: "syncing",
+        limitation: "Foreign source must not be changed.",
+        connected_at: OLD,
+        created_by: ACTOR_ID,
+      })
+      .returning();
+
+    const recovering = await Promise.all([
+      seedRun({
+        status: "running",
+        kind: "collection",
+        requestPayload: {
+          provider: "crawl",
+          sourceConnectionId: withSnapshot!.id,
+        },
+      }),
+      seedRun({
+        status: "running",
+        kind: "collection",
+        requestPayload: {
+          provider: "gsc",
+          sourceConnectionId: withoutSnapshot!.id,
+        },
+      }),
+      seedRun({
+        status: "running",
+        kind: "collection",
+        requestPayload: {
+          provider: "ga4",
+          sourceConnectionId: alreadyAvailable!.id,
+        },
+      }),
+      seedRun({
+        status: "running",
+        kind: "collection",
+        requestPayload: {
+          provider: "csv",
+          sourceConnectionId: disconnected!.id,
+        },
+      }),
+      seedRun({
+        status: "running",
+        kind: "collection",
+        requestPayload: {
+          provider: "crawl",
+          sourceConnectionId: foreignSource!.id,
+        },
+      }),
+    ]);
+
+    await reconcileActiveRuns(ctx, {
+      scope,
+      now: NOW,
+      missingAfterMs: 60 * 60 * 1_000,
+    });
+
+    for (const runId of recovering) {
+      await expectRun(runId, "failed", "QUEUE_JOB_MISSING");
+    }
+    const sourcesRepo = new SourceConnectionsRepository(handle.db);
+    await expect(
+      sourcesRepo.findById(scope, withSnapshot!.id),
+    ).resolves.toMatchObject({
+      state: "stale",
+      limitation: RECOVERY_LIMITATION,
+      last_successful_snapshot_id: historicalSnapshotId,
+    });
+    await expect(
+      sourcesRepo.findById(scope, withoutSnapshot!.id),
+    ).resolves.toMatchObject({
+      state: "unavailable",
+      limitation: RECOVERY_LIMITATION,
+      last_successful_snapshot_id: null,
+    });
+    await expect(
+      sourcesRepo.findById(scope, alreadyAvailable!.id),
+    ).resolves.toMatchObject({
+      state: "available",
+      limitation: "Newer GA4 snapshot is available.",
+    });
+    await expect(
+      sourcesRepo.findById(scope, disconnected!.id),
+    ).resolves.toMatchObject({
+      state: "disconnected",
+      limitation: "CSV source was disconnected.",
+    });
+    await expect(
+      sourcesRepo.findById(foreignScope, foreignSource!.id),
+    ).resolves.toMatchObject({
+      state: "syncing",
+      limitation: "Foreign source must not be changed.",
+    });
+  });
+
+  it("terminalizes an accepted collection after archive without recovering its source projection", async () => {
+    const [archivedWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `Archived recovery ${randomUUID()}` })
+      .returning();
+    const [archivedProject] = await handle.db
+      .insert(clientProjects)
+      .values({
+        workspace_id: archivedWorkspace!.id,
+        client_name: "Archived recovery",
+        project_name: "Archived recovery",
+        default_delivery_locale: "en",
+        stage: "collecting",
+        created_by: ACTOR_ID,
+      })
+      .returning();
+    const archivedScope: ProjectScope = {
+      workspaceId: archivedWorkspace!.id,
+      projectId: archivedProject!.id,
+    };
+    const archivedHost = `archived-recovery-${randomUUID()}.example`;
+    const [archivedSite] = await handle.db
+      .insert(sites)
+      .values({
+        workspace_id: archivedScope.workspaceId,
+        project_id: archivedScope.projectId,
+        origin: `https://${archivedHost}`,
+        host: archivedHost,
+        market_codes: ["US"],
+        language_codes: ["en"],
+      })
+      .returning();
+    const [archivedSource] = await handle.db
+      .insert(sourceConnections)
+      .values({
+        workspace_id: archivedScope.workspaceId,
+        project_id: archivedScope.projectId,
+        site_id: archivedSite!.id,
+        provider: "crawl",
+        connection_type: "public",
+        state: "syncing",
+        limitation: "Accepted crawl is still running.",
+        connected_at: OLD,
+        created_by: ACTOR_ID,
+      })
+      .returning();
+    const archivedRunId = randomUUID();
+    await handle.db.insert(asyncRuns).values({
+      id: archivedRunId,
+      workspace_id: archivedScope.workspaceId,
+      project_id: archivedScope.projectId,
+      kind: "collection",
+      status: "running",
+      active_key: `collect:crawl:${randomUUID()}`,
+      request_payload: {
+        provider: "crawl",
+        sourceConnectionId: archivedSource!.id,
+      },
+      attempt_count: 1,
+      initiated_by: ACTOR_ID,
+      queued_at: OLD,
+      started_at: OLD,
+    });
+    await handle.pool.query(
+      `update app.client_projects
+          set archived_at = now()
+        where workspace_id = $1
+          and id = $2`,
+      [archivedScope.workspaceId, archivedScope.projectId],
+    );
+    const sourcesRepo = new SourceConnectionsRepository(handle.db);
+    const sourceBefore = await sourcesRepo.findById(
+      archivedScope,
+      archivedSource!.id,
+    );
+
+    await reconcileActiveRuns(ctx, {
+      scope: archivedScope,
+      now: NOW,
+      missingAfterMs: 60 * 60 * 1_000,
+    });
+
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(
+        archivedScope,
+        archivedRunId,
+      ),
+    ).resolves.toMatchObject({
+      status: "failed",
+      last_error_code: "QUEUE_JOB_MISSING",
+      completed_at: expect.any(String),
+    });
+    await expect(
+      sourcesRepo.findById(archivedScope, archivedSource!.id),
+    ).resolves.toEqual(sourceBefore);
+  });
+
+  it("releases the active-key slot after recovery commits the terminal state", async () => {
+    const [slotWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `Recovery active-key slot ${randomUUID()}` })
+      .returning();
+    let slotProjectId: string | undefined;
+
+    try {
+      const [slotProject] = await handle.db
+        .insert(clientProjects)
+        .values({
+          workspace_id: slotWorkspace!.id,
+          client_name: "Recovery active-key slot",
+          project_name: "Recovery active-key slot",
+          default_delivery_locale: "en",
+          created_by: ACTOR_ID,
+        })
+        .returning();
+      slotProjectId = slotProject!.id;
+      const slotScope: ProjectScope = {
+        workspaceId: slotWorkspace!.id,
+        projectId: slotProjectId,
+      };
+      const recoveredRunId = randomUUID();
+      const replacementRunId = randomUUID();
+      const activeKey = `diagnostic:recovery-slot:${randomUUID()}`;
+      await handle.db.insert(asyncRuns).values({
+        id: recoveredRunId,
+        workspace_id: slotScope.workspaceId,
+        project_id: slotScope.projectId,
+        kind: "diagnostic",
+        status: "running",
+        active_key: activeKey,
+        contract_version: "2026-07-18",
+        request_payload: {},
+        attempt_count: 1,
+        initiated_by: ACTOR_ID,
+        queued_at: OLD,
+        started_at: OLD,
+      });
+
+      await reconcileActiveRuns(ctx, {
+        scope: slotScope,
+        now: NOW,
+        missingAfterMs: 60 * 60 * 1_000,
+      });
+
+      const repo = new AsyncRunsRepository(handle.db);
+      await expect(
+        repo.findById(slotScope, recoveredRunId),
+      ).resolves.toMatchObject({
+        kind: "diagnostic",
+        status: "failed",
+        active_key: activeKey,
+        last_error_code: "QUEUE_JOB_MISSING",
+        completed_at: expect.any(String),
+      });
+
+      const [replacement] = await handle.db
+        .insert(asyncRuns)
+        .values({
+          id: replacementRunId,
+          workspace_id: slotScope.workspaceId,
+          project_id: slotScope.projectId,
+          kind: "diagnostic",
+          status: "queued",
+          active_key: activeKey,
+          contract_version: "2026-07-18",
+          request_payload: {},
+          initiated_by: ACTOR_ID,
+          queued_at: NOW.toISOString(),
+        })
+        .returning();
+
+      expect(replacement).toMatchObject({
+        id: replacementRunId,
+        workspace_id: slotScope.workspaceId,
+        project_id: slotScope.projectId,
+        kind: "diagnostic",
+        status: "queued",
+        active_key: activeKey,
+      });
+      await expect(repo.findActive(slotScope, activeKey)).resolves.toMatchObject({
+        id: replacementRunId,
+        status: "queued",
+      });
+    } finally {
+      if (slotProjectId) {
+        await handle.pool.query(
+          `delete from app.async_runs
+            where workspace_id = $1
+              and project_id = $2`,
+          [slotWorkspace!.id, slotProjectId],
+        );
+        await handle.pool.query(
+          `delete from app.client_projects
+            where workspace_id = $1
+              and id = $2`,
+          [slotWorkspace!.id, slotProjectId],
+        );
+      }
+      await handle.pool.query(
+        "delete from app.workspaces where id = $1",
+        [slotWorkspace!.id],
+      );
+    }
+  });
+
+  it("pure-locks the active run before project/source so a same-key enqueue fails without deadlock", async () => {
+    const [raceWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `Recovery lock order ${randomUUID()}` })
+      .returning();
+    const [raceProject] = await handle.db
+      .insert(clientProjects)
+      .values({
+        workspace_id: raceWorkspace!.id,
+        client_name: "Recovery lock order",
+        project_name: "Recovery lock order",
+        default_delivery_locale: "en",
+        created_by: ACTOR_ID,
+      })
+      .returning();
+    const raceScope: ProjectScope = {
+      workspaceId: raceWorkspace!.id,
+      projectId: raceProject!.id,
+    };
+    const raceHost = `recovery-lock-${randomUUID()}.example`;
+    const [raceSite] = await handle.db
+      .insert(sites)
+      .values({
+        workspace_id: raceScope.workspaceId,
+        project_id: raceScope.projectId,
+        origin: `https://${raceHost}`,
+        host: raceHost,
+        market_codes: ["US"],
+        language_codes: ["en"],
+      })
+      .returning();
+    const [raceSource] = await handle.db
+      .insert(sourceConnections)
+      .values({
+        workspace_id: raceScope.workspaceId,
+        project_id: raceScope.projectId,
+        site_id: raceSite!.id,
+        provider: "crawl",
+        connection_type: "public",
+        state: "syncing",
+        limitation: "Recovery lock-order fixture.",
+        connected_at: OLD,
+        created_by: ACTOR_ID,
+      })
+      .returning();
+    const raceRunId = randomUUID();
+    const activeKey = `collect:crawl:${randomUUID()}`;
+    await handle.db.insert(asyncRuns).values({
+      id: raceRunId,
+      workspace_id: raceScope.workspaceId,
+      project_id: raceScope.projectId,
+      kind: "collection",
+      status: "running",
+      active_key: activeKey,
+      request_payload: {
+        provider: "crawl",
+        sourceConnectionId: raceSource!.id,
+      },
+      attempt_count: 1,
+      initiated_by: ACTOR_ID,
+      queued_at: OLD,
+      started_at: OLD,
+    });
+
+    const originalProjectLock = ProjectsRepository.prototype.findByIdForUpdate;
+    let projectLockAttemptResolve!: () => void;
+    const projectLockAttempt = new Promise<void>((resolve) => {
+      projectLockAttemptResolve = resolve;
+    });
+    let releaseProjectLockResolve!: () => void;
+    const releaseProjectLock = new Promise<void>((resolve) => {
+      releaseProjectLockResolve = resolve;
+    });
+    const projectLockSpy = vi
+      .spyOn(ProjectsRepository.prototype, "findByIdForUpdate")
+      .mockImplementation(async function (
+        this: ProjectsRepository,
+        lookupScope,
+        projectId,
+      ) {
+        if (projectId === raceScope.projectId) {
+          projectLockAttemptResolve();
+          await releaseProjectLock;
+        }
+        return originalProjectLock.call(this, lookupScope, projectId);
+      });
+
+    const enqueueClient = await handle.pool.connect();
+    let enqueueTransactionOpen = false;
+    let enqueueErrorCode: string | undefined;
+    const recovery = reconcileActiveRuns(ctx, {
+      scope: raceScope,
+      now: NOW,
+      missingAfterMs: 60 * 60 * 1_000,
+    });
+    try {
+      await projectLockAttempt;
+      await enqueueClient.query("begin");
+      enqueueTransactionOpen = true;
+      await enqueueClient.query(
+        `select id
+           from app.client_projects
+          where workspace_id = $1
+            and id = $2
+          for update`,
+        [raceScope.workspaceId, raceScope.projectId],
+      );
+      await enqueueClient.query(
+        `select id
+           from app.source_connections
+          where workspace_id = $1
+            and project_id = $2
+            and id = $3
+          for update`,
+        [raceScope.workspaceId, raceScope.projectId, raceSource!.id],
+      );
+      releaseProjectLockResolve();
+      try {
+        await enqueueClient.query(
+          `insert into app.async_runs (
+             id, workspace_id, project_id, kind, status, active_key, initiated_by
+           ) values ($1, $2, $3, 'collection', 'queued', $4, $5)`,
+          [
+            randomUUID(),
+            raceScope.workspaceId,
+            raceScope.projectId,
+            activeKey,
+            ACTOR_ID,
+          ],
+        );
+      } catch (error) {
+        enqueueErrorCode = (error as { code?: string }).code;
+      }
+      await enqueueClient.query("rollback");
+      enqueueTransactionOpen = false;
+      await recovery;
+    } finally {
+      releaseProjectLockResolve();
+      if (enqueueTransactionOpen) {
+        await enqueueClient.query("rollback").catch(() => undefined);
+      }
+      enqueueClient.release();
+      projectLockSpy.mockRestore();
+      await recovery.catch(() => undefined);
+    }
+
+    expect(enqueueErrorCode).toBe("23505");
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(raceScope, raceRunId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      last_error_code: "QUEUE_JOB_MISSING",
+    });
+    await expect(
+      new SourceConnectionsRepository(handle.db).findById(
+        raceScope,
+        raceSource!.id,
+      ),
+    ).resolves.toMatchObject({ state: "unavailable" });
   });
 
   it("redelivers domain work after a process dies immediately after claim", async () => {
@@ -226,7 +858,7 @@ describeDb("worker canonical run recovery", () => {
 
     await expect(
       prepareRunDelivery(ctx, firstDelivery, async () => {
-        expect(await repo.claim(runId)).toMatchObject({ attempt_count: 1 });
+        expect(await repo.claim(scope, runId)).toMatchObject({ attempt_count: 1 });
         domainExecutions += 1;
         throw crash;
       }),
@@ -240,9 +872,10 @@ describeDb("worker canonical run recovery", () => {
     expect(retryDelivery.retryCount).toBe(1);
 
     await prepareRunDelivery(ctx, retryDelivery, async () => {
-      expect(await repo.claim(runId)).toMatchObject({ attempt_count: 2 });
+      const claimed = await repo.claim(scope, runId);
+      expect(claimed).toMatchObject({ attempt_count: 2 });
       domainExecutions += 1;
-      await repo.setTerminal(runId, {
+      await repo.setTerminal(toRunAttempt(claimed!), {
         status: "completed",
         resultType: "diagnostic_run",
         resultId: runId,
@@ -311,6 +944,7 @@ describeDb("worker canonical run recovery", () => {
     requestPayload?: Record<string, unknown>;
     queuedAt?: string;
     attemptCount?: number;
+    contractVersion?: string;
   }): Promise<string> {
     const runId = randomUUID();
     await handle.db.insert(asyncRuns).values({
@@ -320,6 +954,7 @@ describeDb("worker canonical run recovery", () => {
       kind: input.kind ?? "diagnostic",
       status: input.status,
       active_key: `${input.kind ?? "diagnostic"}:${runId}`,
+      contract_version: input.contractVersion ?? "2026-07-18",
       request_payload: input.requestPayload ?? {},
       attempt_count:
         input.attemptCount ?? (input.status === "running" ? 1 : 0),
@@ -343,12 +978,15 @@ describeDb("worker canonical run recovery", () => {
     });
   }
 
-  function payload(runId: string): RunJobPayload {
+  function payload(
+    runId: string,
+    contractVersion = "2026-07-18",
+  ): RunJobPayload {
     return {
       runId,
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
-      contractVersion: "0.2.0",
+      contractVersion,
     };
   }
 });

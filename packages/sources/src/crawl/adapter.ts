@@ -57,7 +57,7 @@ async function capabilities(_config: CrawlConfig): Promise<Capability[]> {
       operation: "site_graph",
       available: true,
       limitation:
-        "Public crawl within a fixed budget (2000 URLs, depth 6, 15 min); same-origin only, robots-respecting.",
+        "Public crawl within a fixed budget (2000 URLs, depth 6, 14 min of provider work inside a 15 min job cap); same-origin only, robots-respecting, with finalization time reserved.",
     },
   ];
 }

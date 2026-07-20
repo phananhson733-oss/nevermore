@@ -227,6 +227,7 @@ export class HttpGoogleTokenRefresher {
 
   async refresh(
     previous: OAuthCredentialEnvelope,
+    signal?: AbortSignal,
   ): Promise<OAuthCredentialEnvelope> {
     if (previous.refreshToken === null || previous.refreshToken.trim() === "") {
       throw new SourceError(
@@ -241,10 +242,11 @@ export class HttpGoogleTokenRefresher {
       client_id: this.options.clientId,
       client_secret: this.options.clientSecret,
     });
-    const abortScope = createRequestAbortScope(this.timeoutMs, []);
+    const abortScope = createRequestAbortScope(this.timeoutMs, [signal]);
     try {
       const response = await this.fetchImpl(GOOGLE_OAUTH_TOKEN_ENDPOINT, {
         method: "POST",
+        redirect: "error",
         headers: {
           "content-type": "application/x-www-form-urlencoded",
         },

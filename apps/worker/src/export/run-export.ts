@@ -10,11 +10,28 @@ import {
   ObservationsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
+  StorageObjectReferencesRepository,
   TelemetryRepository,
+  toRunAttempt,
+  type ActionRow,
+  type ArtifactRevisionRow,
+  type ArtifactRow,
+  type DataSnapshotRow,
+  type DbTx,
+  type FindingRow,
+  type ObservationRow,
   type ProjectScope,
 } from "@sf/db";
-import { assembleBundle, type BundleInput } from "@sf/artifacts";
-import { mintExportObjectKey } from "@sf/sources";
+import {
+  assembleBundle,
+  DEFAULT_BUNDLE_ASSEMBLY_LIMITS,
+  type BundleArtifact,
+  type BundleArtifactRevision,
+  type BundleFindingEvidenceLink,
+  ExportBundleLimitError,
+  type BundleInput,
+} from "@sf/artifacts";
+import { mintExportObjectKey, type BlobPutResult } from "@sf/sources";
 import { redact } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
 import {
@@ -49,44 +66,179 @@ interface ExportRequest {
 
 const SNAPSHOT_PAGE_SIZE = 100;
 const EXPORT_ENTITY_PAGE_SIZE = 500;
+const OBSERVATION_PAGE_SIZE = 500;
+const ARTIFACT_REVISION_PAGE_SIZE = 100;
 const EXPORT_LOOKUP_CHUNK_SIZE = 100;
+const EVIDENCE_PAGE_SIZE = 25;
+// Input-only historical associations have their own raw-row safety cap. They
+// are not archive items, but the overflow sentinel keeps dense role/run history
+// from growing worker memory without bound before reachability deduplication.
+const MAX_FINDING_EVIDENCE_LINK_ROWS = 100_000;
 
-interface CursorPage<T> {
+interface CursorPage<T, Cursor> {
   readonly rows: readonly T[];
-  readonly nextCursor: string | null;
+  readonly nextCursor: Cursor | null;
+}
+
+type ExportSnapshot = {
+  id: string;
+  provider: string;
+  datasetKey: string;
+  availability: string;
+  capturedAt: string;
+  rowCount: number;
+  checksum: string;
+};
+type ExportObservation = {
+  snapshotId: string;
+  metricKey: string;
+  subjectRef: string;
+  availability: string;
+  valueJson: unknown;
+};
+type ExportFinding = {
+  id: string;
+  ruleId: string;
+  domain: string;
+  severity: string;
+  confidence: string;
+  reviewState: string;
+  summary: string;
+  subjectRefs: unknown[];
+};
+type ExportEvidence = {
+  id: string;
+  sourceProvider: string;
+  grade: string;
+  claim: string;
+  subjectRefs: unknown[];
+  observedAt: string;
+};
+type ExportAction = {
+  id: string;
+  templateId: string;
+  title: string;
+  priorityBand: string;
+  roadmapLane: string;
+  status: string;
+};
+type ExportArtifactMutable = BundleArtifact & {
+  revisions: BundleArtifactRevision[];
+};
+
+class ExportReadBudget {
+  private itemCount = 0;
+  private estimatedBytes = 0;
+
+  get remainingItems(): number {
+    return Math.max(
+      0,
+      DEFAULT_BUNDLE_ASSEMBLY_LIMITS.maxItems - this.itemCount,
+    );
+  }
+
+  /**
+   * Reserve one extra row as an overflow sentinel. Even with no remaining
+   * items, callers fetch at most one row to distinguish "complete" from
+   * "over budget" without materializing an unbounded logical resource.
+   */
+  pageLimit(maxPageSize: number): number {
+    return Math.min(maxPageSize, this.remainingItems + 1);
+  }
+
+  consumeJsonItem(value: unknown): void {
+    this.consumeItem();
+    this.consumeJson(value);
+  }
+
+  consumePrecomputedJsonItem(bytes: number): void {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) {
+      throw new Error("export evidence byte estimate was invalid");
+    }
+    this.consumeItem();
+    this.consumeBytes(bytes);
+  }
+
+  consumeJson(value: unknown): void {
+    const encoded = JSON.stringify(value);
+    this.consumeBytes(Buffer.byteLength(encoded ?? "null", "utf8") + 1);
+  }
+
+  /** Match the assembler's artifact shell estimate exactly. */
+  consumeArtifact(id: string): void {
+    this.consumeItem();
+    this.consumeBytes(Buffer.byteLength(id, "utf8") + 64);
+  }
+
+  /** Match the assembler's per-revision estimate exactly. */
+  consumeRevision(content: unknown): void {
+    this.consumeItem();
+    this.consumeBytes(64);
+    if (typeof content === "string") {
+      this.consumeBytes(Buffer.byteLength(content, "utf8"));
+    } else {
+      this.consumeJson(content);
+    }
+  }
+
+  private consumeItem(): void {
+    this.itemCount += 1;
+    if (this.itemCount > DEFAULT_BUNDLE_ASSEMBLY_LIMITS.maxItems) {
+      throw new ExportBundleLimitError();
+    }
+  }
+
+  private consumeBytes(bytes: number): void {
+    this.estimatedBytes += bytes;
+    if (
+      this.estimatedBytes >
+      DEFAULT_BUNDLE_ASSEMBLY_LIMITS.maxEstimatedBytes
+    ) {
+      throw new ExportBundleLimitError();
+    }
+  }
 }
 
 /** Exhaust a trusted keyset paginator; reject a repeated cursor instead of hanging. */
-async function collectAllPages<T>(
-  loadPage: (cursor: string | null) => Promise<CursorPage<T>>,
-): Promise<T[]> {
-  const rows: T[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | null = null;
+async function collectAllPages<T, Cursor, Result>(
+  loadPage: (
+    cursor: Cursor | null,
+    limit: number,
+  ) => Promise<CursorPage<T, Cursor>>,
+  budget: ExportReadBudget,
+  pageSize: number,
+  mapRow: (row: T) => Result,
+  consumeRow: (row: Result) => void = (row) => budget.consumeJsonItem(row),
+  nextLimit: () => number = () => budget.pageLimit(pageSize),
+): Promise<Result[]> {
+  const rows: Result[] = [];
+  const seenCursors = new Set<Cursor>();
+  let cursor: Cursor | null = null;
 
   for (;;) {
-    const page = await loadPage(cursor);
-    rows.push(...page.rows);
+    const limit = nextLimit();
+    const page = await loadPage(cursor, limit);
+    if (page.rows.length > limit) {
+      throw new Error("export pagination exceeded its requested page size");
+    }
+    for (const row of page.rows) {
+      const mapped = mapRow(row);
+      consumeRow(mapped);
+      rows.push(mapped);
+    }
     if (page.nextCursor === null) return rows;
+    // A keyset paginator can only advance when it returned at least one row.
+    // Reject a broken repository contract here so an ever-changing cursor with
+    // empty pages cannot turn export assembly into an unbounded read loop.
+    if (page.rows.length === 0) {
+      throw new Error("export pagination advanced without rows");
+    }
     if (seenCursors.has(page.nextCursor)) {
       throw new Error("export pagination returned a repeated cursor");
     }
     seenCursors.add(page.nextCursor);
     cursor = page.nextCursor;
   }
-}
-
-/** Keep project-scoped `IN (...)` lookups below driver/database bind limits. */
-async function collectInChunks<T, R>(
-  values: readonly T[],
-  loadChunk: (chunk: readonly T[]) => Promise<readonly R[]>,
-): Promise<R[]> {
-  const rows: R[] = [];
-  for (let index = 0; index < values.length; index += EXPORT_LOOKUP_CHUNK_SIZE) {
-    const chunk = values.slice(index, index + EXPORT_LOOKUP_CHUNK_SIZE);
-    rows.push(...(await loadChunk(chunk)));
-  }
-  return rows;
 }
 
 async function deleteUncommittedExport(
@@ -113,13 +265,14 @@ export async function runExport(
   const { runId, workspaceId, projectId } = payload;
   const scope: ProjectScope = { workspaceId, projectId };
   const runs = new AsyncRunsRepository(ctx.db);
-  const claimed = await runs.claim(runId);
+  const claimed = await runs.claim(scope, runId);
   if (!claimed) return;
+  const attempt = toRunAttempt(claimed);
 
   const bundlesRepo = new ExportBundlesRepository(ctx.db);
   const bundleRow = await bundlesRepo.findByRun(scope, runId);
   if (!bundleRow) {
-    await runs.setTerminal(runId, {
+    await runs.setTerminal(attempt, {
       status: "failed",
       lastErrorCode: "NOT_FOUND",
       lastErrorSummary: "export bundle missing",
@@ -132,31 +285,60 @@ export async function runExport(
     const input = await buildBundleInput(ctx, scope, bundleRow.id, req);
     const assembled = assembleBundle(input);
 
-    // Upload to a final, non-overwritable key BEFORE the tx (spec §13.3). A fresh
-    // random nonce per run makes every (re)generate land on a distinct key (AC-039).
+    // A fresh random nonce makes every (re)generate land on a distinct final,
+    // non-overwritable key (AC-039). The key is known before Storage is touched,
+    // so this writer and orphan cleanup can serialize on the same advisory lock.
     const key = mintExportObjectKey({ projectId, runId });
-    const put = await ctx.blobStore.put({
-      key,
-      body: assembled.zip,
-      contentType: "application/zip",
-    });
-
+    let put: BlobPutResult | undefined;
+    let transactionCallbackCompleted = false;
     try {
-      await ctx.db.transaction(async (tx) => {
+      const committedPut = await ctx.db.transaction(async (tx) => {
+        // Storage is external to PostgreSQL, but orphan cleanup holds this same
+        // transaction-scoped key lock across its final reference recheck and
+        // DELETE. Holding it from upload through canonical commit prevents a
+        // cleanup sweep from deleting bytes between upload and reference.
+        await new StorageObjectReferencesRepository(
+          tx,
+        ).lockObjectKeysForTransaction([key]);
+        put = await ctx.blobStore.put({
+          key,
+          body: assembled.zip,
+          contentType: "application/zip",
+        });
+        const uploaded = put;
+
+        const txRuns = new AsyncRunsRepository(tx);
+        if (!(await txRuns.lockAttemptForUpdate(attempt))) {
+          transactionCallbackCompleted = true;
+          return null;
+        }
+        const projects = new ProjectsRepository(tx);
+        const project = await projects.findByIdForUpdate(
+          { workspaceId },
+          projectId,
+        );
+        if (!project) {
+          throw new Error("export project disappeared while terminalizing");
+        }
+        const projectionsMutable = project.archived_at === null;
+
         await new ExportBundlesRepository(tx).finalize(bundleRow.id, {
-          objectKey: put.key,
+          objectKey: uploaded.key,
           checksum: assembled.checksum,
-          byteSize: put.bytes,
+          byteSize: uploaded.bytes,
           itemCounts: assembled.itemCounts,
           manifest: assembled.manifest as unknown as Record<string, unknown>,
         });
-        await new AsyncRunsRepository(tx).setTerminal(runId, {
+        const terminalized = await txRuns.setTerminal(attempt, {
           status: "completed",
           resultType: "export",
           resultId: bundleRow.id,
         });
-        if (req.kind === "client_bundle") {
-          await new ProjectsRepository(tx).setStage(
+        if (!terminalized) {
+          throw new Error("export attempt ownership changed while locked");
+        }
+        if (req.kind === "client_bundle" && projectionsMutable) {
+          await projects.setStage(
             { workspaceId },
             projectId,
             "delivered",
@@ -171,37 +353,76 @@ export async function runExport(
             kind: req.kind,
             itemCounts: assembled.itemCounts,
             sizeBucket:
-              put.bytes < 1_000_000
+              uploaded.bytes < 1_000_000
                 ? "under_1mb"
-                : put.bytes < 10_000_000
+                : uploaded.bytes < 10_000_000
                   ? "under_10mb"
                   : "over_10mb",
           },
         });
+        // This callback has finished; Drizzle issues COMMIT next. If the driver
+        // then reports a connection-class error, the canonical reference may
+        // have committed and its bytes must remain for reconciliation/sweep.
+        transactionCallbackCompleted = true;
+        return uploaded;
+      });
+      if (committedPut === null) {
+        // This stale attempt never installed its nonce-keyed object in the DB.
+        if (put !== undefined) {
+          await deleteUncommittedExport(ctx, runId, put.key);
+        }
+        return;
+      }
+      ctx.logger.info("export_done", {
+        runId,
+        kind: req.kind,
+        bytes: committedPut.bytes,
       });
     } catch (error) {
-      await deleteUncommittedExport(ctx, runId, put.key);
+      if (!transactionCallbackCompleted && put !== undefined) {
+        await deleteUncommittedExport(ctx, runId, put.key);
+      }
       throw error;
     }
-    ctx.logger.info("export_done", { runId, kind: req.kind, bytes: put.bytes });
   } catch (error) {
-    if (isTransientInfrastructureError(error)) {
-      ctx.logger.warn("export_transient_error", {
-        runId,
-        code: transientFailureCode(error),
+    if (error instanceof ExportBundleLimitError) {
+      const terminalized = await runs.setTerminal(attempt, {
+        status: "failed",
+        lastErrorCode: error.code,
+        lastErrorSummary: error.message,
       });
-      await runs.resetToQueued(runId);
+      if (!terminalized) {
+        ctx.logger.info("export_skip_stale_attempt", { code: error.code });
+        return;
+      }
+      ctx.logger.error("export_failed", {
+        code: error.code,
+        type: "validation",
+      });
+      return;
+    }
+    if (isTransientInfrastructureError(error)) {
+      const code = transientFailureCode(error);
+      if (!(await runs.resetToQueued(attempt))) {
+        ctx.logger.info("export_skip_stale_attempt", { code });
+        return;
+      }
+      ctx.logger.warn("export_transient_error", { code });
       throw error;
     }
-    ctx.logger.error("export_failed", {
-      runId,
-      ...runtimeFailureMetadata("UNAVAILABLE", error),
-    });
-    await runs.setTerminal(runId, {
+    const terminalized = await runs.setTerminal(attempt, {
       status: "failed",
       lastErrorCode: "UNAVAILABLE",
       lastErrorSummary: "export failed",
     });
+    if (!terminalized) {
+      ctx.logger.info("export_skip_stale_attempt", { code: "UNAVAILABLE" });
+      return;
+    }
+    ctx.logger.error(
+      "export_failed",
+      runtimeFailureMetadata("UNAVAILABLE", error),
+    );
   }
 }
 
@@ -211,82 +432,354 @@ async function buildBundleInput(
   exportId: string,
   req: ExportRequest,
 ): Promise<BundleInput> {
-  const project = await new ProjectsRepository(ctx.db).findById(
+  return ctx.db.transaction(
+    (tx) => buildBundleInputFromSnapshot(tx, scope, exportId, req),
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
+}
+
+async function buildBundleInputFromSnapshot(
+  tx: DbTx,
+  scope: ProjectScope,
+  exportId: string,
+  req: ExportRequest,
+): Promise<BundleInput> {
+  const budget = new ExportReadBudget();
+  const projectRow = await new ProjectsRepository(tx).findById(
     { workspaceId: scope.workspaceId },
     scope.projectId,
   );
-  if (!project) throw new Error("project missing");
-  const icp = project.current_icp_profile_id
-    ? await new IcpProfilesRepository(ctx.db).findById(
+  if (!projectRow) throw new Error("project missing");
+  const project = {
+    id: projectRow.id,
+    clientName: projectRow.client_name,
+    projectName: projectRow.project_name,
+    stage: projectRow.stage,
+    defaultDeliveryLocale: projectRow.default_delivery_locale,
+    createdAt: projectRow.created_at,
+  };
+  // bundleItemCount includes exactly one project item.
+  budget.consumeJsonItem(project);
+
+  const icpRow = projectRow.current_icp_profile_id
+    ? await new IcpProfilesRepository(tx).findById(
         scope,
-        project.current_icp_profile_id,
+        projectRow.current_icp_profile_id,
       )
     : null;
-  const sources = await new SourceConnectionsRepository(ctx.db).listByProject(
-    scope,
-  );
-  const snapshotsRepo = new DataSnapshotsRepository(ctx.db);
-  const snapshots = await collectAllPages((cursor) =>
-    snapshotsRepo.listByProject(scope, {
-      limit: SNAPSHOT_PAGE_SIZE,
-      cursor,
+  const context = icpRow
+    ? { version: icpRow.version, status: icpRow.status, profile: icpRow.profile }
+    : null;
+  // Context JSON is always included in the byte estimate, while only a
+  // non-null context contributes an item to bundleItemCount.
+  if (context === null) budget.consumeJson(context);
+  else budget.consumeJsonItem(context);
+
+  const sourceRows = await new SourceConnectionsRepository(tx).listByProject(scope);
+  const sources = sourceRows.map((source) => ({
+    id: source.id,
+    provider: source.provider,
+    connectionType: source.connection_type,
+    state: source.state,
+    limitation: source.limitation,
+  }));
+  for (const source of sources) {
+    budget.consumeJsonItem(source);
+  }
+
+  const snapshots = await collectAllPages<DataSnapshotRow, string, ExportSnapshot>(
+    (cursor: string | null, limit) =>
+      new DataSnapshotsRepository(tx).listByProject(scope, {
+        limit,
+        cursor,
+      }),
+    budget,
+    SNAPSHOT_PAGE_SIZE,
+    (snapshot) => ({
+      id: snapshot.id,
+      provider: snapshot.provider,
+      datasetKey: snapshot.dataset_key,
+      availability: snapshot.availability,
+      capturedAt: snapshot.captured_at,
+      rowCount: snapshot.row_count,
+      checksum: snapshot.checksum,
     }),
   );
   const snapshotIds = snapshots.map((snapshot) => snapshot.id);
-  const observationsRepo = new ObservationsRepository(ctx.db);
+
+  const observationsRepo = new ObservationsRepository(tx);
   const observations =
     req.kind === "service_bundle"
-      ? await collectInChunks(snapshotIds, (ids) =>
-          observationsRepo.listBySnapshotIds(scope, ids),
-        )
+      ? await (async () => {
+          const rows: ExportObservation[] = [];
+          for (
+            let index = 0;
+            index < snapshotIds.length;
+            index += SNAPSHOT_PAGE_SIZE
+          ) {
+            rows.push(
+              ...await collectAllPages<
+                ObservationRow,
+                string,
+                ExportObservation
+              >(
+                (cursor: string | null, limit) =>
+                  observationsRepo.listBySnapshotIdsPage(
+                    scope,
+                    snapshotIds.slice(index, index + SNAPSHOT_PAGE_SIZE),
+                    {
+                      limit,
+                      cursor,
+                    },
+                  ),
+                budget,
+                OBSERVATION_PAGE_SIZE,
+                (observation) => ({
+                  snapshotId: observation.snapshot_id,
+                  metricKey: observation.metric_key,
+                  subjectRef: observation.subject_ref,
+                  availability: observation.availability,
+                  valueJson: observation.value_json,
+                }),
+              ),
+            );
+          }
+          return rows;
+        })()
       : [];
-  const findingsRepo = new FindingsRepository(ctx.db);
-  const findings = await collectAllPages((cursor) =>
-    findingsRepo.list(scope, {
-      limit: EXPORT_ENTITY_PAGE_SIZE,
-      cursor,
-      activeOnly: false,
-    }),
-  );
-  const evidenceRepo = new EvidenceRepository(ctx.db);
-  const links = await collectInChunks(
-    findings.map((finding) => finding.id),
-    (findingIds) => evidenceRepo.listForFindings(scope, findingIds),
-  );
-  const evidenceRows = await collectInChunks(
-    [...new Set(links.map((link) => link.evidence_id))],
-    (evidenceIds) => evidenceRepo.findByIds(scope, evidenceIds),
-  );
-  const actionsRepo = new ActionsRepository(ctx.db);
-  const actions = await collectAllPages((cursor) =>
-    actionsRepo.list(scope, {
-      limit: EXPORT_ENTITY_PAGE_SIZE,
-      cursor,
-    }),
-  );
-  const artifactRepo = new ExecutionArtifactsRepository(ctx.db);
-  const artifactRows = await collectAllPages((cursor) =>
-    artifactRepo.listByProject(scope, {
-      limit: EXPORT_ENTITY_PAGE_SIZE,
-      cursor,
+
+  const findings = await collectAllPages<FindingRow, string, ExportFinding>(
+    (cursor: string | null, limit) =>
+      new FindingsRepository(tx).list(scope, {
+        limit,
+        cursor,
+        activeOnly: false,
+        ...(req.kind === "client_bundle"
+          ? { excludedReviewStates: ["ignored", "needs_more_data"] }
+          : {}),
+      }),
+    budget,
+    EXPORT_ENTITY_PAGE_SIZE,
+    (finding) => ({
+      id: finding.id,
+      ruleId: finding.rule_id,
+      domain: finding.domain,
+      severity: finding.severity,
+      confidence: finding.confidence,
+      reviewState: finding.review_state,
+      summary: finding.summary,
+      subjectRefs: finding.subject_refs,
     }),
   );
 
-  const artifacts = [];
-  for (const a of artifactRows) {
-    const revs = await artifactRepo.listRevisions(scope, a.id);
-    artifacts.push({
-      id: a.id,
-      status: a.status,
-      revisions: revs.map((r) => ({
-        revision: r.revision,
-        contentFormat: r.content_format,
+  const evidenceRepo = new EvidenceRepository(tx);
+  const representativeLinkByEvidenceId = new Map<
+    string,
+    BundleFindingEvidenceLink
+  >();
+  let rawFindingEvidenceLinkCount = 0;
+  const findingIds = findings
+    .map((finding) => finding.id)
+    .sort();
+  for (
+    let index = 0;
+    index < findingIds.length;
+    index += EXPORT_LOOKUP_CHUNK_SIZE
+  ) {
+    const remainingLinkRows =
+      MAX_FINDING_EVIDENCE_LINK_ROWS - rawFindingEvidenceLinkCount;
+    const links = await evidenceRepo.listForFindings(
+      scope,
+      findingIds.slice(index, index + EXPORT_LOOKUP_CHUNK_SIZE),
+      { maxRows: remainingLinkRows + 1 },
+    );
+    if (links.length > remainingLinkRows) {
+      throw new ExportBundleLimitError();
+    }
+    rawFindingEvidenceLinkCount += links.length;
+    for (const link of links) {
+      if (!representativeLinkByEvidenceId.has(link.evidence_id)) {
+        representativeLinkByEvidenceId.set(link.evidence_id, {
+          findingId: link.finding_id,
+          evidenceId: link.evidence_id,
+        });
+      }
+    }
+  }
+  const findingEvidenceLinks = [...representativeLinkByEvidenceId.values()];
+  findingEvidenceLinks.sort((left, right) => {
+    if (left.findingId !== right.findingId) {
+      return left.findingId < right.findingId ? -1 : 1;
+    }
+    if (left.evidenceId !== right.evidenceId) {
+      return left.evidenceId < right.evidenceId ? -1 : 1;
+    }
+    return 0;
+  });
+
+  const uniqueEvidenceIds = [...representativeLinkByEvidenceId.keys()].sort();
+
+  // Phase 1: preflight every evidence row using SQL-computed mapped-row JSON
+  // bytes for the compact payload budget. This is a bounded payload-read check,
+  // not a final ZIP-size estimate.
+  // No claim/subject_refs body reaches the worker until the entire evidence set
+  // is known to fit the remaining mapped item and byte budgets.
+  for (
+    let index = 0;
+    index < uniqueEvidenceIds.length;
+    index += EXPORT_LOOKUP_CHUNK_SIZE
+  ) {
+    const chunk = uniqueEvidenceIds.slice(
+      index,
+      index + EXPORT_LOOKUP_CHUNK_SIZE,
+    );
+    const preflightIds = await collectAllPages(
+      (cursor: string | null, limit) =>
+        evidenceRepo.listExportByteSizesByIdsPage(scope, chunk, {
+          limit,
+          cursor,
+        }),
+      budget,
+      EVIDENCE_PAGE_SIZE,
+      (row) => row,
+      (row) => budget.consumePrecomputedJsonItem(row.estimated_bytes),
+    );
+    if (
+      preflightIds.length !== chunk.length ||
+      preflightIds.some((row, offset) => row.id !== chunk[offset])
+    ) {
+      throw new Error("export evidence preflight did not cover every linked row");
+    }
+  }
+
+  // Phase 2: now that every body is budget-approved, materialize only exported
+  // columns in the same sorted chunks and small id-keyset pages.
+  const evidence: ExportEvidence[] = [];
+  for (
+    let index = 0;
+    index < uniqueEvidenceIds.length;
+    index += EXPORT_LOOKUP_CHUNK_SIZE
+  ) {
+    const chunk = uniqueEvidenceIds.slice(
+      index,
+      index + EXPORT_LOOKUP_CHUNK_SIZE,
+    );
+    const rows = await collectAllPages(
+      (cursor: string | null, limit) =>
+        evidenceRepo.listExportByIdsPage(scope, chunk, { limit, cursor }),
+      budget,
+      EVIDENCE_PAGE_SIZE,
+      (row) => ({
+        id: row.id,
+        sourceProvider: row.source_provider,
+        grade: row.grade,
+        claim: row.claim,
+        subjectRefs: row.subject_refs,
+        observedAt: row.observed_at,
+      }),
+      () => {
+        // Already charged during phase 1.
+      },
+      () => EVIDENCE_PAGE_SIZE,
+    );
+    if (
+      rows.length !== chunk.length ||
+      rows.some((row, offset) => row.id !== chunk[offset])
+    ) {
+      throw new Error("export evidence body did not match its preflight");
+    }
+    evidence.push(...rows);
+  }
+
+  const actions = await collectAllPages<ActionRow, string, ExportAction>(
+    (cursor: string | null, limit) =>
+      new ActionsRepository(tx).list(scope, {
+        limit,
+        cursor,
+      }),
+    budget,
+    EXPORT_ENTITY_PAGE_SIZE,
+    (action) => ({
+      id: action.id,
+      templateId: action.template_id,
+      title: action.title,
+      priorityBand: action.priority_band,
+      roadmapLane: action.roadmap_lane,
+      status: action.status,
+    }),
+  );
+
+  const artifactRepo = new ExecutionArtifactsRepository(tx);
+  const artifactRows = await collectAllPages<
+    ArtifactRow,
+    string,
+    ExportArtifactMutable
+  >(
+    (cursor: string | null, limit) =>
+      artifactRepo.listByProject(scope, {
+        limit,
+        cursor,
+        ...(req.kind === "client_bundle" ? { status: "ready" } : {}),
+      }),
+    budget,
+    EXPORT_ENTITY_PAGE_SIZE,
+    (artifact) => ({
+      id: artifact.id,
+      status: artifact.status,
+      currentRevision: artifact.current_revision,
+      revisions: [],
+    }),
+    (artifact) => budget.consumeArtifact(artifact.id),
+  );
+
+  for (const artifact of artifactRows) {
+    if (req.kind === "client_bundle") {
+      const revision = await artifactRepo.findRevision(
+        scope,
+        artifact.id,
+        artifact.currentRevision,
+      );
+      if (!revision) {
+        throw new Error(
+          "client bundle ready artifact current revision is unavailable",
+        );
+      }
+      const mappedRevision: BundleArtifactRevision = {
+        revision: revision.revision,
+        contentFormat:
+          revision.content_format as BundleArtifactRevision["contentFormat"],
         content:
-          r.content_text !== null
-            ? r.content_text
-            : (r.content_json as unknown),
-      })),
-    });
+          revision.content_text !== null
+            ? revision.content_text
+            : (revision.content_json as BundleArtifactRevision["content"]),
+      };
+      budget.consumeRevision(mappedRevision.content);
+      artifact.revisions = [mappedRevision];
+    } else {
+      artifact.revisions = await collectAllPages<
+        ArtifactRevisionRow,
+        number,
+        BundleArtifactRevision
+      >(
+        (cursor: number | null, limit) =>
+          artifactRepo.listRevisionsPage(scope, artifact.id, {
+            limit,
+            cursor,
+          }),
+        budget,
+        ARTIFACT_REVISION_PAGE_SIZE,
+        (revision) => ({
+          revision: revision.revision,
+          contentFormat:
+            revision.content_format as BundleArtifactRevision["contentFormat"],
+          content:
+            revision.content_text !== null
+              ? revision.content_text
+              : (revision.content_json as BundleArtifactRevision["content"]),
+        }),
+        (revision) => budget.consumeRevision(revision.content),
+      );
+    }
   }
 
   // The DB rows are JSON at runtime; the assembler's strict JsonValue types are
@@ -299,67 +792,16 @@ async function buildBundleInput(
     generatedAt: new Date().toISOString(),
     outputLocale: req.outputLocale,
     sourceSnapshotIds: snapshotIds,
-    project: {
-      id: project.id,
-      clientName: project.client_name,
-      projectName: project.project_name,
-      stage: project.stage,
-      defaultDeliveryLocale: project.default_delivery_locale,
-      createdAt: project.created_at,
-    },
-    context: icp
-      ? { version: icp.version, status: icp.status, profile: icp.profile }
-      : null,
-    sources: sources.map((s) => ({
-      id: s.id,
-      provider: s.provider,
-      connectionType: s.connection_type,
-      state: s.state,
-      limitation: s.limitation,
-    })),
-    snapshots: snapshots.map((s) => ({
-      id: s.id,
-      provider: s.provider,
-      datasetKey: s.dataset_key,
-      availability: s.availability,
-      capturedAt: s.captured_at,
-      rowCount: s.row_count,
-      checksum: s.checksum,
-    })),
-    observations: observations.map((o) => ({
-      snapshotId: o.snapshot_id,
-      metricKey: o.metric_key,
-      subjectRef: o.subject_ref,
-      availability: o.availability,
-      valueJson: o.value_json,
-    })),
-    findings: findings.map((f) => ({
-      id: f.id,
-      ruleId: f.rule_id,
-      domain: f.domain,
-      severity: f.severity,
-      confidence: f.confidence,
-      reviewState: f.review_state,
-      summary: f.summary,
-      subjectRefs: f.subject_refs,
-    })),
-    evidence: evidenceRows.map((e) => ({
-      id: e.id,
-      sourceProvider: e.source_provider,
-      grade: e.grade,
-      claim: e.claim,
-      subjectRefs: e.subject_refs,
-      observedAt: e.observed_at,
-    })),
-    actions: actions.map((a) => ({
-      id: a.id,
-      templateId: a.template_id,
-      title: a.title,
-      priorityBand: a.priority_band,
-      roadmapLane: a.roadmap_lane,
-      status: a.status,
-    })),
-    artifacts,
+    project,
+    context,
+    sources,
+    snapshots,
+    observations,
+    findings,
+    findingEvidenceLinks,
+    evidence,
+    actions,
+    artifacts: artifactRows,
   };
   return redact(input) as unknown as BundleInput;
 }

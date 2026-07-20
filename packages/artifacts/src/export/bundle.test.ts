@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { assembleBundle } from "./bundle.ts";
 import type { BundleInput } from "./bundle.ts";
 import type { Manifest } from "./manifest.ts";
@@ -63,17 +63,19 @@ function baseInput(kind: BundleInput["kind"]): BundleInput {
       { metricKey: "gsc.decay", availability: "unavailable", value: null },
     ],
     findings: [
-      { ruleId: "geo.crawler", reviewState: "confirmed" },
-      { ruleId: "content.coverage", reviewState: "unreviewed" },
-      { ruleId: "tech.linkgraph", reviewState: "ignored" },
-      { ruleId: "cro.path", reviewState: "needs_more_data" },
+      { id: "f1", ruleId: "geo.crawler", reviewState: "confirmed" },
+      { id: "f2", ruleId: "content.coverage", reviewState: "unreviewed" },
+      { id: "f3", ruleId: "tech.linkgraph", reviewState: "ignored" },
+      { id: "f4", ruleId: "cro.path", reviewState: "needs_more_data" },
     ],
-    evidence: [{ evidenceId: "e1", grade: "A" }],
+    findingEvidenceLinks: [{ findingId: "f1", evidenceId: "e1" }],
+    evidence: [{ id: "e1", grade: "A" }],
     actions: [{ id: "a1", title: "Fix robots" }],
     artifacts: [
       {
         id: "aaaaaaaa-0000-4000-8000-000000000001",
         status: "ready",
+        currentRevision: 1,
         revisions: [
           { revision: 1, contentFormat: "markdown", content: "# Brief\n" },
           { revision: 2, contentFormat: "json", content: { title: "Rewrite" } },
@@ -82,6 +84,7 @@ function baseInput(kind: BundleInput["kind"]): BundleInput {
       {
         id: "bbbbbbbb-0000-4000-8000-000000000002",
         status: "draft",
+        currentRevision: 1,
         revisions: [{ revision: 1, contentFormat: "markdown", content: "# Draft\n" }],
       },
     ],
@@ -96,6 +99,51 @@ function manifestOf(zip: Buffer): Manifest {
   const manifestEntry = readZip(zip).find((e) => e.path === "manifest.json");
   expect(manifestEntry).toBeDefined();
   return JSON.parse(manifestEntry!.data.toString("utf8")) as Manifest;
+}
+
+function clientReachabilityInput(): BundleInput {
+  return {
+    ...baseInput("client_bundle"),
+    findings: [
+      { id: "finding-visible", reviewState: "confirmed" },
+      { id: "finding-hidden", reviewState: "ignored" },
+      { id: "finding-needs-data", reviewState: "needs_more_data" },
+    ],
+    evidence: [
+      { id: "evidence-visible-only", grade: "A" },
+      { id: "evidence-shared", grade: "A" },
+      { id: "evidence-hidden-only", grade: "B" },
+      { id: "evidence-needs-data-only", grade: "C" },
+    ],
+    findingEvidenceLinks: [
+      { findingId: "finding-visible", evidenceId: "evidence-visible-only" },
+      { findingId: "finding-visible", evidenceId: "evidence-shared" },
+      { findingId: "finding-hidden", evidenceId: "evidence-shared" },
+      { findingId: "finding-hidden", evidenceId: "evidence-hidden-only" },
+      {
+        findingId: "finding-needs-data",
+        evidenceId: "evidence-needs-data-only",
+      },
+    ],
+  } as BundleInput;
+}
+
+function capturedRevisionInput(kind: BundleInput["kind"]): BundleInput {
+  return {
+    ...baseInput(kind),
+    artifacts: [
+      {
+        id: "aaaaaaaa-0000-4000-8000-000000000001",
+        status: "ready",
+        currentRevision: 2,
+        revisions: [
+          { revision: 3, contentFormat: "markdown", content: "# Invalid future\n" },
+          { revision: 2, contentFormat: "markdown", content: "# Current ready\n" },
+          { revision: 1, contentFormat: "markdown", content: "# Historical draft\n" },
+        ],
+      },
+    ],
+  } as BundleInput;
 }
 
 describe("assembleBundle — service_bundle", () => {
@@ -130,6 +178,18 @@ describe("assembleBundle — service_bundle", () => {
     for (const line of lines) {
       expect(() => JSON.parse(line)).not.toThrow();
     }
+  });
+
+  it("emits an empty observations.ndjson file when the snapshot has no observations", () => {
+    const input = {
+      ...baseInput("service_bundle"),
+      observations: [],
+    } satisfies BundleInput;
+    const observationsEntry = readZip(assembleBundle(input).zip).find(
+      (entry) => entry.path === "observations.ndjson",
+    );
+
+    expect(observationsEntry?.data).toEqual(Buffer.alloc(0));
   });
 
   it("keeps ignored/needs_more_data findings in the service bundle", () => {
@@ -170,9 +230,279 @@ describe("assembleBundle — client_bundle exclusions", () => {
       paths.some((p) => p.startsWith("artifacts/bbbbbbbb-0000-4000-8000-000000000002/")),
     ).toBe(false);
   });
+
+  it("keeps only evidence reachable from visible findings while retaining shared evidence", () => {
+    const { zip, itemCounts } = assembleBundle(clientReachabilityInput());
+    const evidenceEntry = readZip(zip).find((e) => e.path === "evidence.json");
+    const evidence = JSON.parse(evidenceEntry!.data.toString("utf8")) as readonly {
+      readonly id: string;
+    }[];
+
+    expect(evidence.map((row) => row.id)).toEqual([
+      "evidence-visible-only",
+      "evidence-shared",
+    ]);
+    expect(itemCounts["evidence"]).toBe(2);
+  });
+
+  it("does not infer reachability from findings or evidence without string ids", () => {
+    const input = {
+      ...baseInput("client_bundle"),
+      findings: [{ reviewState: "confirmed" }, { id: "visible" }],
+      findingEvidenceLinks: [
+        { findingId: "visible", evidenceId: "reachable" },
+      ],
+      evidence: [
+        { id: "reachable", grade: "A" },
+        { id: 7, grade: "B" },
+        { grade: "C" },
+      ],
+    } satisfies BundleInput;
+    const evidenceEntry = readZip(assembleBundle(input).zip).find(
+      (entry) => entry.path === "evidence.json",
+    );
+
+    expect(JSON.parse(evidenceEntry!.data.toString("utf8"))).toEqual([
+      { id: "reachable", grade: "A" },
+    ]);
+  });
+
+  it("emits only the captured current revision of a ready artifact", () => {
+    const { zip, itemCounts } = assembleBundle(
+      capturedRevisionInput("client_bundle"),
+    );
+    const artifactPaths = pathsOf(zip).filter((path) =>
+      path.startsWith("artifacts/"),
+    );
+
+    expect(artifactPaths).toEqual([
+      "artifacts/aaaaaaaa-0000-4000-8000-000000000001/revision-2.md",
+    ]);
+    expect(itemCounts["artifactRevisions"]).toBe(1);
+  });
+
+  it("fails closed when a ready artifact lacks exactly one captured current revision", () => {
+    const input = {
+      ...baseInput("client_bundle"),
+      artifacts: [
+        {
+          id: "aaaaaaaa-0000-4000-8000-000000000001",
+          status: "ready",
+          currentRevision: 2,
+          revisions: [
+            { revision: 1, contentFormat: "markdown", content: "# Old\n" },
+          ],
+        },
+      ],
+    } satisfies BundleInput;
+
+    expect(() => assembleBundle(input)).toThrowError(
+      "client bundle ready artifact current revision is unavailable",
+    );
+  });
+});
+
+describe("assembleBundle — bounded assembly", () => {
+  it("keeps full artifact revision history in a service bundle", () => {
+    const { zip, itemCounts } = assembleBundle(
+      capturedRevisionInput("service_bundle"),
+    );
+    expect(pathsOf(zip).filter((path) => path.startsWith("artifacts/"))).toEqual([
+      "artifacts/aaaaaaaa-0000-4000-8000-000000000001/revision-3.md",
+      "artifacts/aaaaaaaa-0000-4000-8000-000000000001/revision-2.md",
+      "artifacts/aaaaaaaa-0000-4000-8000-000000000001/revision-1.md",
+    ]);
+    expect(itemCounts["artifactRevisions"]).toBe(3);
+  });
+
+  it("raises a stable limit error before building an over-budget archive", () => {
+    expect(() =>
+      assembleBundle(baseInput("service_bundle"), {
+        maxItems: 1,
+        maxEstimatedBytes: 256,
+        maxArchiveBytes: 512,
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "EXPORT_BUNDLE_LIMIT_EXCEEDED" }),
+    );
+  });
+
+  it("checks estimated section bytes before allocating the archive", () => {
+    expect(() =>
+      assembleBundle(baseInput("service_bundle"), {
+        maxItems: 1_000,
+        maxEstimatedBytes: 64,
+        maxArchiveBytes: 1_024,
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "EXPORT_BUNDLE_LIMIT_EXCEEDED" }),
+    );
+  });
+
+  it("does not charge a logical item for a null context", () => {
+    const withoutContext = {
+      ...baseInput("service_bundle"),
+      context: null,
+    } satisfies BundleInput;
+    const limits = {
+      maxItems: 17,
+      maxEstimatedBytes: 1024 * 1024,
+      maxArchiveBytes: 1024 * 1024,
+    };
+
+    expect(() => assembleBundle(withoutContext, limits)).not.toThrow();
+    expect(() =>
+      assembleBundle(baseInput("service_bundle"), limits),
+    ).toThrowError(
+      expect.objectContaining({ code: "EXPORT_BUNDLE_LIMIT_EXCEEDED" }),
+    );
+  });
+
+  it.each([
+    ["maxItems", 0],
+    ["maxEstimatedBytes", -1],
+    ["maxArchiveBytes", 1.5],
+  ] as const)("rejects invalid %s assembly limits", (field, value) => {
+    const limits = {
+      maxItems: 1_000,
+      maxEstimatedBytes: 1024 * 1024,
+      maxArchiveBytes: 1024 * 1024,
+      [field]: value,
+    };
+
+    expect(() => assembleBundle(baseInput("service_bundle"), limits)).toThrowError(
+      new TypeError("bundle assembly limits must be positive safe integers"),
+    );
+  });
+
+  it("does not count input-only finding evidence links as archive items", () => {
+    const input = {
+      ...baseInput("service_bundle"),
+      findingEvidenceLinks: new Array(100).fill({
+        findingId: "f1",
+        evidenceId: "e1",
+      }),
+    } satisfies BundleInput;
+
+    expect(() =>
+      assembleBundle(input, {
+        maxItems: 18,
+        maxEstimatedBytes: 1024 * 1024,
+        maxArchiveBytes: 1024 * 1024,
+      }),
+    ).not.toThrow();
+  });
+
+  it("applies client exclusions before output item accounting while service remains full", () => {
+    const hiddenFindings = Array.from({ length: 20 }, (_, index) => ({
+      id: `hidden-${index}`,
+      reviewState: index % 2 === 0 ? "ignored" : "needs_more_data",
+    }));
+    const client = {
+      ...baseInput("client_bundle"),
+      findings: [
+        { id: "f1", reviewState: "confirmed" },
+        ...hiddenFindings,
+      ],
+    } satisfies BundleInput;
+    const limits = {
+      maxItems: 15,
+      maxEstimatedBytes: 1024 * 1024,
+      maxArchiveBytes: 1024 * 1024,
+    };
+
+    expect(() => assembleBundle(client, limits)).not.toThrow();
+    expect(() =>
+      assembleBundle({ ...client, kind: "service_bundle" }, limits),
+    ).toThrowError(
+      expect.objectContaining({ code: "EXPORT_BUNDLE_LIMIT_EXCEEDED" }),
+    );
+  });
+
+  it("rejects the exact STORE size before allocating an over-limit archive", () => {
+    const input = baseInput("service_bundle");
+    const exactBytes = assembleBundle(input).zip.length;
+    const alloc = vi.spyOn(Buffer, "alloc");
+    const allocUnsafe = vi.spyOn(Buffer, "allocUnsafe");
+
+    try {
+      expect(() =>
+        assembleBundle(input, {
+          maxItems: 1_000,
+          maxEstimatedBytes: 1024 * 1024,
+          maxArchiveBytes: exactBytes - 1,
+        }),
+      ).toThrowError(
+        expect.objectContaining({ code: "EXPORT_BUNDLE_LIMIT_EXCEEDED" }),
+      );
+      expect(alloc).not.toHaveBeenCalled();
+      expect(allocUnsafe).not.toHaveBeenCalled();
+    } finally {
+      alloc.mockRestore();
+      allocUnsafe.mockRestore();
+    }
+  });
+
+  it("maps ZIP32 assembler limits to the stable export limit error", () => {
+    const oversizedPathInput = {
+      ...baseInput("service_bundle"),
+      artifacts: [
+        {
+          id: "a".repeat(65_536),
+          status: "ready",
+          currentRevision: 1,
+          revisions: [
+            { revision: 1, contentFormat: "markdown", content: "" },
+          ],
+        },
+      ],
+    } satisfies BundleInput;
+
+    expect(() =>
+      assembleBundle(oversizedPathInput, {
+        maxItems: 1_000,
+        maxEstimatedBytes: 1024 * 1024,
+        maxArchiveBytes: 1024 * 1024,
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "EXPORT_BUNDLE_LIMIT_EXCEEDED" }),
+    );
+  });
+
+  it("does not misclassify a non-limit ZIP allocation failure", () => {
+    const allocationFailure = new Error("allocation failed");
+    const allocUnsafe = vi
+      .spyOn(Buffer, "allocUnsafe")
+      .mockImplementationOnce(() => {
+        throw allocationFailure;
+      });
+
+    try {
+      expect(() => assembleBundle(baseInput("service_bundle"))).toThrow(
+        allocationFailure,
+      );
+    } finally {
+      allocUnsafe.mockRestore();
+    }
+  });
 });
 
 describe("assembleBundle — manifest & checksum", () => {
+  it("uses compact JSON for data files and the manifest", () => {
+    const entries = readZip(assembleBundle(baseInput("service_bundle")).zip);
+    const project = entries.find((entry) => entry.path === "project.json");
+    const manifest = entries.find((entry) => entry.path === "manifest.json");
+    expect(manifest).toBeDefined();
+    const manifestText = manifest!.data.toString("utf8");
+
+    expect(project?.data.toString("utf8")).toBe(
+      `${JSON.stringify(baseInput("service_bundle").project)}\n`,
+    );
+    expect(manifestText).toBe(
+      `${JSON.stringify(JSON.parse(manifestText))}\n`,
+    );
+  });
+
   it("produces a manifest with all required keys and pinned version literals", () => {
     const manifest = manifestOf(assembleBundle(baseInput("service_bundle")).zip);
     for (const key of REQUIRED_MANIFEST_KEYS) {

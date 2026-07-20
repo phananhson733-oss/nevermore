@@ -20,6 +20,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
+import { Bcp47Locale } from "@sf/contracts";
 import { apiGet, apiSend, type ApiError } from "./client";
 import type { Coverage, DataEnvelope, Project } from "./types";
 
@@ -212,6 +213,28 @@ const POLL_STEADY_MS = 5000;
 
 // ------------------------------------------------------------------ Hooks ---
 
+/** Trim and validate an optional delivery locale against the shared BCP-47 contract. */
+export function normalizeOutputLocale(
+  value: string | null | undefined,
+): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Bcp47Locale.safeParse(trimmed);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Build the canonical report endpoint path, omitting invalid/blank locale params. */
+export function buildProjectReportPath(
+  projectId: string,
+  outputLocale?: string | null,
+): string {
+  const locale = normalizeOutputLocale(outputLocale);
+  const suffix = locale
+    ? `?outputLocale=${encodeURIComponent(locale)}`
+    : "";
+  return `/projects/${projectId}/report${suffix}`;
+}
+
 /**
  * Read the client report projection (spec §10.4). `outputLocale` selects the
  * report *content* language independently of the UI locale; omitting it lets the
@@ -222,14 +245,12 @@ export function useProjectReport(
   projectId: string,
   outputLocale?: string,
 ): UseQueryResult<Report, ApiError> {
+  const locale = normalizeOutputLocale(outputLocale);
   return useQuery({
-    queryKey: ["report", projectId, outputLocale ?? null],
+    queryKey: ["report", projectId, locale ?? null],
     queryFn: async () => {
-      const suffix = outputLocale
-        ? `?outputLocale=${encodeURIComponent(outputLocale)}`
-        : "";
       const res = await apiGet<DataEnvelope<Report>>(
-        `/projects/${projectId}/report${suffix}`,
+        buildProjectReportPath(projectId, locale),
       );
       return res.data;
     },

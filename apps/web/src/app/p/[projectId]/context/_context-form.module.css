@@ -60,10 +60,10 @@
   min-height: 22px;
 }
 .saveStatusDirty {
-  color: var(--sf-amber);
+  color: var(--sf-amber-text);
 }
 .saveStatusSaved {
-  color: var(--sf-mint);
+  color: var(--sf-mint-text);
 }
 .saveButtons {
   display: flex;
@@ -125,7 +125,7 @@
   height: 30px;
   border-radius: 50%;
   background: var(--sf-cobalt-soft);
-  color: var(--sf-accent);
+  color: var(--sf-cobalt-text);
   font-family: var(--sf-font-body);
   font-size: var(--sf-text-sm);
   font-weight: 800;

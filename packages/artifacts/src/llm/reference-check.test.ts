@@ -33,6 +33,11 @@ function makeInput(): ArtifactPromptInput {
       confidence: "b",
       subjectRefs: ["url:/"],
     },
+    currentMetadata: {
+      url: null,
+      currentTitle: null,
+      currentDescription: null,
+    },
     evidence: [
       {
         evidenceId: "ev-1",
@@ -425,5 +430,110 @@ describe("checkReferences (spec §10.2 / §14.4 step 2)", () => {
     };
     const errors = checkReferences(makeInput(), metadata);
     expect(errors.some((e) => e.includes("12.5%"))).toBe(true);
+  });
+
+  it("accepts an exact echo of known frozen current metadata", () => {
+    const input = {
+      ...makeInput(),
+      currentMetadata: {
+        url: "https://acme.example/pricing",
+        currentTitle: "Acme Pricing",
+        currentDescription: "Current plan comparison.",
+      },
+    };
+    const metadata: MetadataEnvelope = {
+      kind: "metadata_rewrite",
+      ...input.currentMetadata,
+      proposedTitle: "Compare Acme plans",
+      proposedDescription: "Choose the Acme plan that fits your team.",
+      targetQueries: ["acme pricing"],
+      rationale: "Clarifies the pricing page metadata.",
+      evidenceRefs: [],
+      citedNumbers: [],
+    };
+    expect(checkReferences(input, metadata)).toEqual([]);
+  });
+
+  it("preserves placeholder-like literals when they are the real known current metadata", () => {
+    const input = {
+      ...makeInput(),
+      currentMetadata: {
+        url: "https://acme.example/unknown",
+        currentTitle: "Unknown",
+        currentDescription: "N/A",
+      },
+    };
+    const metadata: MetadataEnvelope = {
+      kind: "metadata_rewrite",
+      ...input.currentMetadata,
+      proposedTitle: "Clarify plan options",
+      proposedDescription: "Choose the right plan with clearer metadata.",
+      targetQueries: [],
+      rationale: "Known current metadata must not be collapsed to null.",
+      evidenceRefs: [],
+      citedNumbers: [],
+    };
+    expect(checkReferences(input, metadata)).toEqual([]);
+    expect(
+      checkReferences(input, {
+        ...metadata,
+        currentTitle: "unknown",
+      }),
+    ).toContain(
+      "metadata currentTitle does not match the provided currentMetadata",
+    );
+  });
+
+  it.each([
+    ["url", "https://acme.example/changed"],
+    ["currentTitle", "Invented current title"],
+    ["currentDescription", "Invented current description"],
+  ] as const)("rejects a model change to known current metadata %s", (field, changed) => {
+    const input = {
+      ...makeInput(),
+      currentMetadata: {
+        url: "https://acme.example/pricing",
+        currentTitle: "Acme Pricing",
+        currentDescription: "Current plan comparison.",
+      },
+    };
+    const metadata: MetadataEnvelope = {
+      kind: "metadata_rewrite",
+      ...input.currentMetadata,
+      [field]: changed,
+      proposedTitle: "Compare Acme plans",
+      proposedDescription: "Choose the Acme plan that fits your team.",
+      targetQueries: [],
+      rationale: "Clarifies the pricing page metadata.",
+      evidenceRefs: [],
+      citedNumbers: [],
+    };
+    expect(checkReferences(input, metadata)).toContain(
+      `metadata ${field} does not match the provided currentMetadata`,
+    );
+  });
+
+  it("accepts canonical nulls for unknown current metadata and rejects invented values", () => {
+    const unknown: MetadataEnvelope = {
+      kind: "metadata_rewrite",
+      url: "unknown",
+      currentTitle: "待确认",
+      currentDescription: "n/a",
+      proposedTitle: "Draft title",
+      proposedDescription: "Draft description.",
+      targetQueries: [],
+      rationale: "Current metadata is unavailable.",
+      evidenceRefs: [],
+      citedNumbers: [],
+    };
+    expect(checkReferences(makeInput(), unknown)).toEqual([]);
+    expect(
+      checkReferences(makeInput(), {
+        ...unknown,
+        currentTitle: "Fabricated current title",
+      }),
+    ).toContain(
+      "metadata currentTitle does not match the provided currentMetadata",
+    );
   });
 });

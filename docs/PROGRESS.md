@@ -1,16 +1,40 @@
 # SignalFrame MVP Progress
 
-Last locally verified: **2026-07-18**
+Last full local verification: **2026-07-20**
+
+A full whole-worktree verification and repeated owner-audit loop was completed
+on **2026-07-20**. The final loop closed additional defects in:
+
+- `async_runs.contract_version` default drift (`0009_async_run_contract_version`)
+- non-en/zh `finding_summary` generation + invocation persistence health latching
+- persisted `finding_summary` run-budget enforcement across worker retries
+- shared OpenAI transport shutdown-signal propagation plus no-new-summary
+  behavior after worker shutdown begins
+- `metadata_rewrite` current-metadata fidelity, including preservation of literal
+  values such as `Unknown` / `N/A` when they are the real frozen crawl fields
+- frozen-run evidence and diagnostic-metadata scoping, exact current/legacy job
+  contract-version matching, and invalid recovery-candidate rejection
+- bounded Artifact transport/prompt/envelope inputs plus a shared 40,000-character
+  manual/LLM content budget enforced at contract, HTTP, service and UI boundaries
+- report export-locale same-click behavior and blank-reset-to-project-default behavior
+- report print CSS scoping: app shell chrome now hides only on report print media
+  through stable data attributes plus a real-browser regression check
+
+The counts below reflect the latest final-goal reruns, including full unit
+coverage, real PostgreSQL integration, real and mock browser E2E, production
+builds, both container entrypoints, and an actual disposable restore. Hosted
+provider, production-recovery, authority-ratification and Owner-approval gates
+remain explicitly open.
 
 ## Executive status
 
-The implementation is **locally code-complete against the frozen MVP v0.2 contract** and all code-closable release gates are green. It is not yet accurate to call the product pilot-ready: the current worktree is uncommitted, there is no immutable release SHA, and the hosted/provider/production-recovery/Owner gates listed below have not been performed from this task.
+Every currently known **locally code-closable implementation and acceptance gate is green**. It is not accurate to call the product pilot-ready: the current worktree is uncommitted, there is no immutable release SHA, the hosted/provider/production-recovery/Owner gates listed below have not been performed from this task, and the checked-in authority machine contracts still contain differences that require Owner ratification rather than a speculative local rewrite.
 
 - Authority: `/Users/wzb/Code/nevermore/signalframe-mvp/implementation-spec-v0.2/MVP-IMPLEMENTATION-SPEC.md`
 - Contract: product `0.2.0`, API/job contract `2026-07-18`
 - Contract inventory: **26 API operations / 5 async operations / 28 app tables / 11 frozen rules**
 - Repository: `/Users/wzb/Code/nevermore/signalframe-mvp-app`
-- Current Git base: `27871476957bfc786e8bd40cd82f7bd4b38a9375` on `main`; the release candidate exists only as a shared dirty worktree, not a deployable immutable SHA.
+- Current audit base: `75137aecd093b3656bda86c33cf2fd818c0a5271` on `main`; the release candidate exists only as a shared dirty worktree, not a deployable immutable SHA. Freeze and record a new SHA only after final verification.
 - Legacy vendor source: `/Users/wzb/Code/signalframe` at `72af9300c6009a3912973b96b4789c89ad37db01`; the final vendor baseline check confirms this task did not modify it.
 - No hosted Supabase, Vercel, Railway, Google, OpenAI, or Azure state was mutated during the final local verification.
 
@@ -21,34 +45,45 @@ The implementation is **locally code-complete against the frozen MVP v0.2 contra
 | Toolchain/install | Node `24.12.0`, pnpm `10.32.1`; `pnpm install --frozen-lockfile` passed with an unchanged lockfile. |
 | Frozen specification | `pnpm verify:spec` passed: 26 operations, 5 async operations, 28 tables, 11 rules, manifest schema and local links. |
 | HTTP contracts | `pnpm openapi:lint` passed without errors; `pnpm contracts:check` regenerated and exactly diffed the OpenAPI TypeScript output. |
-| Implementation/deploy consistency | `pnpm implementation:check` and `pnpm deploy:check` passed, including shared 202 envelopes, status polling, Next 16 proxy/CSP, integration/E2E safety, Vercel web and Railway worker topology. |
-| Security/provenance | `pnpm secrets:scan`, `pnpm vendor:check`, and `pnpm audit --audit-level=moderate` passed; audit reported no known vulnerabilities. |
-| Static quality | Full `pnpm typecheck`, full `pnpm lint`, and `git diff --check` passed across the workspace. |
-| PostgreSQL schema | On disposable loopback PostgreSQL 16.12, migration ran successfully twice; migrate-check reported **28 app tables, 22 indexes, 25 triggers**; schema smoke passed and rolled all fixtures back. |
-| Unit tests | **121 files / 1,079 tests passed**. Coverage: **87.48% statements, 80.76% branches, 89.51% functions, 88.97% lines**. |
-| Real PostgreSQL integration | **31 files / 175 tests passed** in three consecutive full serial runs against the explicitly guarded disposable loopback database; the formerly flaky active-key race also passed its dedicated repeated stress loop. |
-| Real browser E2E | **37/37 passed**: project isolation, axe/keyboard/reduced-motion checks, and 390/768/1024/1440 responsive coverage. |
-| Mock critical-flow E2E | **12/12 passed**: navigation/locales, async collection polling, review→Action, stale Artifact revision, export download, CSV mobile view, permission/rate-limit/partial/degraded/retry/error states. |
+| Implementation/deploy consistency | `pnpm implementation:check` and `pnpm deploy:check` passed, including shared 202 envelopes, status polling, Next 16 proxy/CSP, integration/E2E safety, the frozen-spec shared `Dockerfile.railway` web/worker image path, and the Owner-pending Vercel+Render+`/app` candidate. The Render Blueprint truthfully prepares direct OpenAI only; Azure remains a separately reviewed manual runtime variant. |
+| Security/provenance | `pnpm secrets:scan`, `pnpm vendor:check`, `pnpm audit --prod --audit-level=moderate`, and `pnpm audit --audit-level=moderate` passed; both audits reported no known vulnerabilities. |
+| Static quality | Full `pnpm typecheck`, full `pnpm lint`, and `git diff --check` passed across the workspace. The root commands now explicitly include `typecheck:e2e` and `lint:e2e`, closing the prior gap where Playwright/config files were executable but outside recursive workspace static checks. |
+| PostgreSQL schema | On disposable loopback PostgreSQL 16.12, migration ran successfully twice; migrate-check reported **28 app tables, 22 indexes, 28 triggers**; schema smoke passed and rolled all fixtures back. |
+| Unit tests | **181 files / 2,101 tests passed**. Coverage: **87.19% statements (9,411/10,793), 80.68% branches (5,652/7,005), 90.97% functions (1,755/1,929), 88.61% lines (8,691/9,808)**. The branch gate was not lowered, ignored or excluded: the final service-boundary test initially exposed 79.67% global branch coverage, so 24 meaningful Artifact revision/concurrency/status tests were added; `artifact-update.ts` now has 100% statements/branches/functions/lines coverage. |
+| Real PostgreSQL integration | **36 files / 255 tests passed** in the final full serial run against an explicitly guarded disposable loopback database, including the real disconnect/reconnect migration-progress regression; focused diagnostic, readiness, storage-reference and concurrency regressions also passed. |
+| Real browser E2E | **42/42 passed on a fresh dedicated database** — project isolation, axe/keyboard/reduced-motion checks, the report-print regression, 390/768/1024/1440 responsive coverage, plus real B2B/B2C browser verticals through Next, PostgreSQL, pg-boss workers and local file blobs. Both diagnostic runs finished `completed`, exercised all 11 rules and had zero skipped/inconclusive rules. Crawl/GSC/GA4 use explicit deterministic offline seams; application persistence, queues, HTTP, UI and ZIP bytes are real. |
+| Mock browser E2E | **51/51 passed**: navigation/locales, cursor pagination, Studio unsaved-change/back-forward protection, async collection polling, review→Action, stale Artifact revision, arbitrary valid BCP-47 output-locale deep-link/export behavior, same-click locale export, blank reset to project default, CSV mobile view, permission/rate-limit/partial/degraded/retry/error states, plus a real `next dev` + Chromium assertion that hydration completes with the expected development CSP and zero console/page errors. |
+| End-to-end aggregate coverage | The final explicit reruns passed **42/42 real + 51/51 mock**. |
 | E2E teardown safety | Both web servers exited; the exact real/mock dist and blob directories were removed after server shutdown; `next-env.d.ts` was restored to the canonical `.next/types/routes.d.ts` import. |
-| Production web build | Next.js `16.2.10` standalone production build passed. Live/version returned 200; the isolated readiness probe correctly returned 503 because no worker lease was started. CSP smoke proved the per-request nonce reached the HTML and production policy contains neither `unsafe-inline` nor `unsafe-eval`. |
-| Worker container | `Dockerfile.worker` built successfully as `signalframe-worker:codex-verify`; image metadata uses user `node` and the expected PID-1 Node/tsx command. Running without required env failed fast with fixed JSON `{event, code, type}` and no dynamic exception text, as intended. |
-| Restore drill tests | **16/16 passed** with 91.04% line, 85.14% branch and 92.00% function coverage. |
-| Actual local restore | A fresh PostgreSQL 16 drill restored `signalframe_restore_drill_20260718t190112_1e57a167ec5d`, replayed migration, passed smoke, matched all 28 table counts/canonical SHA-256 hashes/object-metadata probes, found no differences, removed its private dump, dropped only that generated target, and confirmed the target absent. |
+| Disposable database closeout | The two exact databases created by the final rerun — `signalframe_codex_root_final_20260720_1316_a7c9e2` and `signalframe_e2e_root_final_20260720_1316_b4d8f1` — were dropped and a final `pg_database` query returned zero matches. The generated restore target `signalframe_restore_drill_20260720t052018_381c70896548` was also dropped and confirmed absent; unrelated pre-existing databases were left untouched. The retained restore evidence contains no connection secret. |
+| Production web build | Next.js `16.2.10` standalone production build passed. In the final Railway-image smoke with production-valid synthetic service URLs, `/api/mvp/health/live` returned 200, `/api/mvp/health/ready` correctly returned 503 with the stable `DEPENDENCY_UNAVAILABLE` problem body because its database/worker dependencies were deliberately absent, and `/login` returned 200. Response CSP used per-request nonces and contained no `unsafe-inline` or `unsafe-eval`. |
+| Isolated visual/CSP audit | In a credential-free Docker container whose build context excludes every `.env*` file, all five core pages rendered at 1440px and 390px, plus the zh-CN Overview: **11/11 document responses were 200, browser errors and failed responses were zero, and measured horizontal overflow was zero**. Artifact comparison found no actionable desktop P0-P3. The audit also closed a development-only CSP defect: Next DevTools nonce-less styles now use `style-src 'self' 'unsafe-inline'` only when `NODE_ENV === "development"`; production, test, staging, empty and unset modes remain nonce-gated without either unsafe relaxation. `e2e/csp-development.mock.spec.ts` now makes the real Next-development-runtime browser/console check reproducible. |
+| Worker container | Current `Dockerfile.worker` built successfully as `signalframe-worker:codex-final-20260720` (`sha256:41ebfec86ac6a45c5c2edb83902b64c294a4e1594186928d3c2644292734babd`); image metadata uses user `node` and the expected PID-1 Node/tsx command. Running without required env exited 1 with fixed JSON `{event, code, type}` and no dynamic exception text, as intended. |
+| Frozen Railway shared image | `Dockerfile.railway` rebuilt successfully as `signalframe-railway:codex-final-20260720` (`sha256:13bd3cc72b7038f216aca10876e9b0a273313639e260c314f3ed62952074632d`) with user `node`. Its default standalone web entrypoint returned live 200, `/ready` returned the stable 503 dependency problem while dependencies were intentionally absent, and `/login` returned 200 under production-valid synthetic configuration. The same image's documented worker command exited 1 with the same fixed safe boot error on intentionally omitted required env. Hosted same-image/SHA proof remains external. |
+| Restore drill tests | **29/29 passed** with **94.30% line, 88.53% branch and 98.57% function coverage**. |
+| Actual local restore | Using matching PostgreSQL 16 client binaries through `RESTORE_DRILL_PG_BIN`, a fresh drill restored `signalframe_restore_drill_20260720t052018_381c70896548`; the generated evidence records `Migration replay: passed`, `Schema smoke: passed`, **28** application tables, matching row counts and canonical/object-metadata SHA-256 checksums, no differences, removed dump/passfile artifacts, dropped only that generated target, and confirmed the target absent. Sanitized mode-0600 JSON/Markdown evidence is retained under `.data/restore-drills/final-goal-20260720-1320/`. |
 
 The local production readiness response above is intentionally **not** counted as a hosted readiness pass. `/api/mvp/health/ready` is designed to be 200 only while a real worker holds its PostgreSQL session lease.
 
 ## Material fixes included in this candidate
 
-- Request boundary: Next 16 `src/proxy.ts`, per-request nonce CSP, complete security headers, same-origin browser mutation checks, bounded JSON/multipart parsing, stable RFC 9457-style problems, and DB-backed replay-aware rate limiting.
+- Request boundary: Next 16 `src/proxy.ts`, per-request nonce CSP, complete security headers, same-origin browser mutation checks, bounded JSON/multipart parsing, stable RFC 9457-style problems, and DB-backed replay-aware rate limiting. Only explicit `NODE_ENV === "development"` permits the Next DevTools style/eval relaxations; every other environment stays nonce-gated. The implementation gate executes both CSP branches and validates their effective directives instead of depending on the builder's source-code layout.
 - SSRF/provider safety: fail-closed IPv4/IPv6 classification, DNS timeout and IP pinning, manual same-origin redirects, per-hop robots checks, bounded response bodies and operation deadlines for Crawl, Google and OpenAI paths.
 - Crawl correctness: terminal redirect URL is the page identity and parse base; concurrent aliases deterministically deduplicate; pending body readers cannot exceed abort/deadline; total decoded data has a strict shared 128 MiB reservation; persisted projections are bounded.
 - GA4 honesty: session and key-event reports share a 200,000-row budget; truncation is explicit/partial and incomplete key-event values remain `null`, never a fabricated zero.
 - Idempotency/concurrency: DB-clock expiry/reuse, bounded pruning, immutable completed replay before mutable/external checks, cross-project request hashes, active-run winner re-reads, and project-scoped DB-time CAS for single-use CSV tokens. PostgreSQL `23505` mapping now traverses bounded/cycle-safe Drizzle `cause` chains, tolerates hostile getters, and accepts only the exact expected constraint for each operation.
 - Async/data integrity: queue retry/recovery and canonical run reconciliation; Artifact generation ownership/revision CAS; stale generations cannot overwrite manual/new generations; deterministic project stage transitions.
-- Evidence/output honesty: 11 deterministic rules, provider discrepancy confidence downgrade, generated-evidence invocation linkage, fixed rule failure codes, prompt/reference/number/Markdown validation, immutable Artifact revisions, and canonical report/export projections.
-- Storage/export: local and Supabase private backends, bounded signing/listing, complete keyset pagination, post-upload rollback cleanup, daily fail-closed orphan sweep, exact canonical object-reference checks, export redaction, schema/hash/count lineage.
-- Privacy/observability: request/worker/rule/Crawl failures and production database CLI top-level failures log or persist stable codes only; customer/model/provider error text is not evaluated or propagated; telemetry and export allowlists are covered by sentinel scans. Schema smoke also removes the database password from `psql` argv, uses a mode-0600 temporary `PGPASSFILE`, and removes it after the child exits.
-- Product UI: EN/zh-CN parity, explicit permission/partial/degraded/retry states, project-scoped routing, responsive alternatives, accessibility coverage, and real/mock E2E teardown isolation.
+- Evidence/output honesty: 11 deterministic rules, provider discrepancy confidence downgrade, generated-evidence invocation linkage, fixed rule failure codes, prompt/reference/number/Markdown validation, immutable Artifact revisions, and canonical report/export projections. Diagnostic reads now bind evidence and metadata to the Finding's frozen `last_seen_in_run_id`; lookup paths reject cross-run/cross-project leakage and preserve the exact diagnostic manifest that produced the Finding.
+- Optional Finding summaries: non-en/zh summaries use a strict bounded OpenAI client, an explicit feature flag, a persisted per-run eight-call budget that survives retries, abort propagation, fixed failure classifications and persisted invocation health. Once worker shutdown starts, no new summary request can be issued.
+- Artifact bounds: single-Artifact DTO transport is capped at 16 MiB; prompt and envelope collections have explicit count/size limits; manual and LLM-produced content share a 40,000-character budget. Text and compact-serialized JSON are checked in the contract, HTTP route, service defense, Studio UI and LLM client, including a direct-service test proving oversized content fails before database access.
+- Delivery-locale implementation: the runtime parser and PostgreSQL migration implement the RFC 5646 structural grammar (including extlang, script, region, variants, extensions, private use and grandfathered tags), reject duplicate variants/singletons case-insensitively and enforce a 255-character protocol ceiling. Report export derives the locale from the current draft during the export click, eliminating the blur/router race; clearing the field removes the query override and restores the project default. The older authority OpenAPI/schema locale limits remain an explicit Owner-ratification gate below and are not represented here as already reconciled.
+- Migration progress: every ordered file from `0001` through `0009` projects its own exact `app.schema_migration_version`; a real PostgreSQL integration applies `0001`–`0004`, disconnects/reconnects, verifies the stable interruption point, and resumes through the latest migration. This prevents an early migration from falsely claiming a later schema version.
+- Job compatibility: newly queued jobs persist contract `2026-07-18`; worker execution and recovery accept only the exact canonical current form or the one explicit canonical legacy form, rejecting malformed/coerced candidates instead of silently executing them.
+- Storage/export: local and Supabase private backends, bounded signing/listing, complete keyset pagination, post-upload rollback cleanup, daily fail-closed orphan sweep, and exact canonical object-reference checks across all application writers. The client export reader now filters hidden findings before budgeting, reads only visible-reachable evidence and ready/current Artifact revisions, gives internal finding/evidence history an independent 100,000-row safety bound, and never charges non-archive edges as archive items. JSON and manifest files use compact encoding; the STORE ZIP writer plans the exact archive before one final allocation, enforces all ZIP32 count/name/size/offset/central-directory bounds, and maps every structural/archive limit to the stable export-limit error.
+- Privacy/observability: request/worker/rule/Crawl failures and production database CLI top-level failures log or persist stable codes only; customer/model/provider error text is not evaluated or propagated; telemetry and export allowlists are covered by sentinel scans. The secret scanner now ignores ephemeral `.next-e2e-*` runtime directories and tolerates transient `ENOENT` races during tree walks instead of crashing the verification gate. Schema smoke also removes the database password from `psql` argv, uses a mode-0600 temporary `PGPASSFILE`, and removes it after the child exits.
+- Product UI: EN/zh-CN parity, explicit permission/partial/degraded/retry states, project-scoped routing, responsive alternatives, accessibility coverage, and real/mock E2E teardown isolation. A successful finding confirmation explicitly refetches the diagnosis list on mutation success so the real vertical chain surfaces `Confirmed` and the created Action deterministically in the same screen session. Report printing hides only the shell chrome through stable data attributes, and locale export/reset behavior is covered in Chromium. The final isolated 11-view visual audit covered Overview, Diagnosis, Plan, Studio and Report at desktop/mobile sizes plus zh-CN Overview, with zero failed responses, console errors or document overflow after the CSP correction.
+- Final confidence pass: full-result fixtures now include the robots observation required for an honest complete crawl; project-seeding E2E fixtures use stable-hashed public IP literals so the SSRF path stays exercised without live DNS, including distinct deterministic origins for the two-tab isolation case; real browser verticals fail closed unless their disposable pg-boss database starts empty, assert an exact `Completed` result and reject structured worker-shutdown failures; worker-readiness subprocess coverage inherits the parent PostgreSQL environment, budgets its outer deadline beyond the acquisition path and reports only stable error codes; provider metric accounting lives in a separately testable pure module so unit coverage includes meaningful behavior instead of runner bootstrap branches.
+- Deployment truth: the frozen Railway topology now has one repository-built image containing both web and worker entrypoints; its shared config deliberately leaves the worker start override service-scoped. The alternative Render Blueprint no longer claims an Azure option it does not encode.
 
 ## AC-001–AC-048 evidence matrix
 
@@ -58,7 +93,7 @@ The local production readiness response above is intentionally **not** counted a
 | --- | --- | --- |
 | AC-001 | Passed | Frozen-spec verifier: 26 operations / 5 async / 28 tables / 11 rules. |
 | AC-002 | Passed | Redocly lint and exact regenerated OpenAPI TypeScript diff. |
-| AC-003 | Passed | PostgreSQL 16 migration twice; 28 tables / 22 indexes / 25 triggers. |
+| AC-003 | Passed | PostgreSQL 16 migration twice; 28 tables / 22 indexes / 28 triggers. |
 | AC-004 | Passed | pg-boss remains outside app migrations; queue and live-worker readiness integration tests pass. |
 | AC-005 | Passed | Auth/isolation tests, project-scoped repositories, browser app-schema denial and real two-tab isolation E2E. |
 | AC-006 | Passed | Transactional enqueue/full-chain integrations prove run+job rollback symmetry. |
@@ -87,43 +122,46 @@ The local production readiness response above is intentionally **not** counted a
 | AC-029 | Passed | Frozen priority ordering fixtures; no weighted-score field. |
 | AC-030 | Passed | Action override reason, revision conflict and old/new audit integrations. |
 | AC-031 | Passed | Three Artifact types share 202/status URL; worker generation/revision integrations. |
-| AC-032 | Passed | LLM envelope/prompt allowlist, size/deadline and secret-sentinel tests. |
-| AC-033 | Passed | Evidence/reference/number forgery, HTML/script/URI and missing-section validators. |
-| AC-034 | Passed | Artifact stale base revision, identical hash and ready→draft edit tests. |
-| AC-035 | Passed | output locale default/override and UI-locale independence tests. |
+| AC-032 | Passed | LLM envelope/prompt allowlist, collection/size/deadline caps, shared 40,000-character content budget and secret-sentinel tests. |
+| AC-033 | Passed | Evidence/reference/number forgery, active-content/HTML/script/URI, bounded metadata and missing-section validators. |
+| AC-034 | Passed | Artifact stale base revision, identical hash+format no-op, format-sensitive revision, direct-service content-budget defense and ready→draft edit tests. |
+| AC-035 | Passed locally; authority ratification pending | Output locale default/override, same-click export, blank-reset and UI-locale independence tests; runtime/DB/app OpenAPI/manifest validation covers RFC 5646 structure with a 255-character ceiling. The older authority machine-contract representation remains launch gate 1 below. |
 | AC-036 | Passed | Canonical report/list projection integration and mapper tests. |
-| AC-037 | Passed | Service bundle manifest schema, file hashes/counts/snapshot/ruleset lineage and full pagination tests. |
-| AC-038 | Passed | Client bundle redaction excludes observations, internal/ignored/draft/credential content. |
-| AC-039 | Passed locally | Project-scoped 900-second signer, missing/dependency distinctions and regeneration tests; production 30-day bucket lifecycle configuration pending. |
+| AC-037 | Passed | Service bundle manifest schema, file hashes/counts/snapshot/ruleset lineage, full pagination, mapped evidence preflight, compact serialization, exact pre-allocation STORE sizing and ZIP32 boundary tests. |
+| AC-038 | Passed | Client bundle redaction excludes observations, internal/ignored/draft/credential content at the read/budget layer; only visible-reachable evidence and ready/current Artifact revisions are materialized. |
+| AC-039 | Passed locally | Project-scoped 900-second signer, exact 30-day signing cutoff, regeneration tests, application-owned export-byte retention, all-writer reference locking, independent per-kind 100,000-object/list safety boundaries, and the final local sweep/recovery verification; production private-bucket permissions, object-count alerting and live sweep evidence remain pending. |
 | AC-040 | Passed | Secret scan plus logger, telemetry, export, rule and Crawl sentinel tests. |
 | AC-041 | Passed | Transient/permanent maps, heartbeat/retry exhaustion, recovery and terminal-redelivery idempotency tests. |
-| AC-042 | Passed | 28 real responsive page/viewport checks plus mobile CSV alternative. |
-| AC-043 | Passed | Axe, contrast, keyboard focus, non-colour status and reduced-motion checks. |
-| AC-044 | Passed locally | Real PostgreSQL B2B full-chain integration and critical-flow browser fixture; Owner walkthrough pending. |
-| AC-045 | Passed locally | Real PostgreSQL B2C full-chain integration and client-report/export browser fixture; Owner walkthrough pending. |
+| AC-042 | Passed | 28 real responsive page/viewport checks, the full B2C browser main chain at 390px with document-overflow assertions on every key screen, plus the accessible mobile CSV alternative. The final shared-worktree rerun passed. |
+| AC-043 | Passed | Axe, contrast, non-colour status and reduced-motion checks, plus real keyboard activation across diagnosis/navigation/ready/export and evidence Enter/Escape focus restoration. The final shared-worktree rerun passed. |
+| AC-044 | Passed locally | Real browser B2B chain: page create; Context + CSV through Next; `collect.csv`, diagnostic, template Artifact and service export through pg-boss workers; real PostgreSQL/local-blob persistence; ZIP bytes verified. The diagnostic completed all 11 rules with zero skipped/inconclusive results. Crawl/GSC/GA4 are deterministic offline snapshots; live providers and Owner walkthrough remain pending. |
+| AC-045 | Passed locally | The same real chain runs as a B2C Ecommerce purchase fixture at 390px through the client report and client bundle, with ready deliverable and ZIP bytes verified. The diagnostic completed all 11 rules with zero skipped/inconclusive results. Crawl/GSC/GA4 are deterministic offline snapshots; live providers and Owner walkthrough remain pending. |
 | AC-046 | Passed | Mock browser permission/rate-limit/partial/degraded/error/retry states. |
-| AC-047 | Local/CI passed; production pending | Actual loopback restore matched 28-table counts and canonical/integrity hashes and proved cleanup; production Supabase PITR plus Storage-byte recovery requires Owner evidence. |
+| AC-047 | Local/CI passed; production pending | Actual loopback restore with matching PostgreSQL 16 client binaries matched 28-table counts and canonical/integrity hashes and proved target/dump/credential cleanup; production Supabase PITR plus Storage-byte recovery requires Owner evidence. |
 | AC-048 | Passed | Vendor manifest hashes current and legacy repository baseline unchanged. |
 
 ## External / Owner-gated launch checklist
 
 These are the only known remaining release gates. They require external authority, credentials, production-like infrastructure, or business judgment and cannot be truthfully fabricated from local code:
 
-1. Freeze and commit this worktree, then deploy **the same immutable SHA** to Vercel web and Railway worker; run the migration job against the intended Supabase project first.
-2. Verify hosted `/api/mvp/health/version` reports that exact SHA on web and worker logs, and hosted `/api/mvp/health/ready` returns 200 only with DB, pg-boss schema and a live worker session lease.
-3. Complete real Supabase Auth browser/session/callback proof on the deployed origin.
-4. Exercise live Google OAuth, GSC property selection/sync and GA4 property/key-event sync with Owner-approved accounts; retain sanitized evidence without tokens or customer payloads.
-5. Exercise the chosen production OpenAI endpoint (direct OpenAI or the complete Azure OpenAI configuration), both structured-LLM Artifact generation and optional Finding summaries, with log/telemetry review.
-6. Confirm both Supabase Storage buckets are private, configure/verify the 30-day export lifecycle, and validate signed downloads from the deployed web service.
-7. Perform the production recovery exercise described in `docs/RESTORE-DRILL.md`: Supabase PITR into an isolated project plus separate private Storage object-count/sample-byte-checksum recovery evidence and Owner sign-off.
-8. Have the business Owner walk through EN and zh-CN B2B and B2C outputs, including evidence, priority, Action, Artifact and both bundle types, and explicitly approve pilot quality.
+1. Reconcile and have the Owner ratify the authority machine contracts before release freeze. The prose contract uses API/job version `2026-07-18`, while the authority schema still contains product default `0.2.0`; the authority migration view stops at `0006` while the application is at `0009`; authority `LocaleCode` remains `maxLength: 35` with a simplified pattern while the prose permits arbitrary valid BCP 47 and the application uses a 255-character structural grammar; and the application OpenAPI adds discriminator mappings absent from the authority OpenAPI. Record the chosen canonical representation, refresh the authority hashes, and rerun the spec lock rather than silently guessing which machine file should win.
+2. Owner chooses and records either frozen-spec Railway web+worker or the prepared Vercel+Render+`/app` candidate. Then freeze this worktree and deploy **the same immutable SHA** to the chosen web, worker, and migration job; for Railway also prove both services used the shared image identity. Migrate the intended Supabase project first. If any release predating canonical CSV `request_payload.sourceConnectionId` was ever deployed, first run the active-CSV audit in `docs/RUNBOOK.md` and drain/terminalize or separately migrate every matching legacy run.
+3. Verify hosted `/api/mvp/health/version` reports that exact SHA on web and worker logs, and hosted `/api/mvp/health/ready` returns 200 only with DB, pg-boss schema and a live worker session lease.
+4. Complete real Supabase Auth browser/session/callback proof on the deployed origin.
+5. Exercise live Google OAuth, GSC property selection/sync and GA4 property/key-event sync with Owner-approved accounts; retain sanitized evidence without tokens or customer payloads.
+6. Exercise the chosen production OpenAI endpoint: direct OpenAI for the prepared Render Blueprint, or a separately reviewed all-or-nothing Azure manual configuration. Verify both structured-LLM Artifact generation and optional Finding summaries, with log/telemetry review.
+7. Confirm both Supabase Storage buckets are private, grant worker list/delete access, prove each application-owned object kind stays at or below the explicit 100,000-object operational boundary (with alerting before the limit), validate aggregate retention-sweep evidence, and validate signed downloads from the deployed web service.
+8. Perform the production recovery exercise described in `docs/RESTORE-DRILL.md`: Supabase PITR into an isolated project plus separate private Storage object-count/sample-byte-checksum recovery evidence and Owner sign-off.
+9. Have the business Owner walk through EN and zh-CN B2B and B2C outputs, including evidence, priority, Action, Artifact and both bundle types, and explicitly approve pilot quality.
 
-Until all eight are complete, describe the state as **“local implementation and acceptance gates passed; hosted/Owner launch gates pending,”** not “production-ready” or “pilot-ready.”
+Until all nine are complete, describe the state as **“local implementation and acceptance gates passed; authority/hosted/Owner launch gates pending,”** not “production-ready” or “pilot-ready.”
 
 ## Safety notes for the next operator
 
 - Never run database-backed tests against a hosted database. Use an explicit loopback disposable name accepted by `packages/db/src/test-database-safety.ts`.
+- Give real database-backed Playwright verticals a fresh dedicated database. Their preflight intentionally refuses any database whose `pgboss.job` table already contains a job, preventing stale test jobs from starving or reordering the real chain.
 - Do not infer or document what `.env.local` points to. Final tests supplied explicit isolated environment values and the safety guards fail closed.
+- Run restore drills with client binaries matching the source PostgreSQL server major (for this baseline, `RESTORE_DRILL_PG_BIN=/opt/homebrew/opt/postgresql@16/bin`); newer `pg_dump` output is not assumed to be backward compatible with PostgreSQL 16.
 - Do not reuse an unknown server in Playwright; a port collision must fail instead of sending mutations to an existing process.
 - Do not replace `apps/web/src/proxy.ts` with the removed `middleware.ts`; Next 16 request-boundary behavior and nonce propagation live in `src/proxy.ts`.
 - Do not weaken stable error/log fields by adding `error.message`, `String(error)`, provider bodies, model output, object keys or customer text.

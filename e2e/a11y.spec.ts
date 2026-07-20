@@ -16,6 +16,8 @@ const SCREENS = [
   "context",
   "sources",
   "diagnosis",
+  "plan",
+  "studio",
   "report",
 ] as const;
 
@@ -107,13 +109,26 @@ test("sidebar text meets the WCAG AA contrast ratio", async ({ page }) => {
       return [m[0] ?? 0, m[1] ?? 0, m[2] ?? 0, m[3] ?? 1];
     };
     const effectiveBg = (el: Element): [number, number, number] => {
+      const layers: [number, number, number, number][] = [];
       let node: Element | null = el;
       while (node) {
-        const [r, g, b, a] = parse(getComputedStyle(node).backgroundColor);
-        if (a > 0) return [r, g, b];
+        layers.push(parse(getComputedStyle(node).backgroundColor));
         node = node.parentElement;
       }
-      return [255, 255, 255];
+
+      // CSS backgrounds may be translucent (the active sidebar row is white at
+      // low alpha over the opaque ink sidebar). Composite every layer from the
+      // root inward; treating the first non-transparent layer as opaque turns
+      // rgba(255 255 255 / 0.1) into pure white and produces a false 1:1 ratio.
+      let out: [number, number, number] = [255, 255, 255];
+      for (const [r, g, b, a] of layers.reverse()) {
+        out = [
+          r * a + out[0] * (1 - a),
+          g * a + out[1] * (1 - a),
+          b * a + out[2] * (1 - a),
+        ];
+      }
+      return out;
     };
     const sidebar = document.querySelector('[class*="sidebar"]');
     if (!sidebar) return ["no sidebar"];
@@ -126,7 +141,7 @@ test("sidebar text meets the WCAG AA contrast ratio", async ({ page }) => {
       if (fa === 0) continue;
       const [br, bg, bb] = effectiveBg(el);
       // Blend the (possibly opacity-reduced) foreground over the background.
-      const op = parseFloat(cs.opacity || "1");
+      const op = parseFloat(cs.opacity || "1") * fa;
       const cr = fr * op + br * (1 - op);
       const cg = fg * op + bg * (1 - op);
       const cb = fb * op + bb * (1 - op);
@@ -197,4 +212,16 @@ test("prefers-reduced-motion is honoured by the render context", async ({
     });
   });
   expect(hasInfiniteAnimation).toBe(false);
+});
+
+test("report print media hides only the application shell chrome", async ({
+  page,
+}) => {
+  await page.emulateMedia({ media: "print" });
+  await gotoScreen(page, "report");
+
+  await expect(page.locator("[data-app-shell-sidebar]")).toBeHidden();
+  await expect(page.locator("[data-app-shell-topbar]")).toBeHidden();
+  await expect(page.locator("[data-report-page]")).toBeVisible();
+  await expect(page.locator("[data-report-page] h1")).toBeVisible();
 });

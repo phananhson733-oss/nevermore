@@ -150,13 +150,22 @@ export class DiagnosticContext {
     return isEnglishProject(this.icp);
   }
 
+  datasetAvailability(dataset: Dataset): DatasetAvailability {
+    if (dataset === "icp") return "available";
+    return this.coverage[dataset];
+  }
+
+  /**
+   * The default rule gate requires a complete provider snapshot. Partial crawl is
+   * the exception because HTTP/canonical rules can still use reached pages; rules
+   * that need a complete graph must reject it explicitly.
+   */
   hasDataset(dataset: Dataset): boolean {
     if (dataset === "icp") return true;
-    if (dataset === "crawl") return this.coverage.crawl !== "unavailable";
-    if (dataset === "gsc") return this.coverage.gsc !== "unavailable";
-    if (dataset === "ga4") return this.coverage.ga4 !== "unavailable";
-    if (dataset === "csv") return this.coverage.csv !== "unavailable";
-    return false;
+    const availability = this.datasetAvailability(dataset);
+    return dataset === "crawl"
+      ? availability !== "unavailable"
+      : availability === "available";
   }
 
   crawlPartial(): boolean {

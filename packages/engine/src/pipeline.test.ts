@@ -200,12 +200,12 @@ describe("runPipeline async rule contract (spec §8.3)", () => {
       projectId: "00000000-0000-4000-8000-000000000001",
       ctx: emptyContext(),
       rules,
-      deliveryLocale: "fr",
+      deliveryLocale: "fr-u-ca-gregory",
       summaryGenerator: async (input) => {
         events.push(`llm:${input.ruleId}`);
         return {
           summary: "Résumé généré à partir des faits autorisés.",
-          summaryLocale: "fr",
+          summaryLocale: "fr-u-ca-gregory",
           invocationId: "00000000-0000-4000-8000-000000000099",
         };
       },
@@ -219,7 +219,7 @@ describe("runPipeline async rule contract (spec §8.3)", () => {
     ]);
     expect(result.findings[0]).toMatchObject({
       summary: "Résumé généré à partir des faits autorisés.",
-      summaryLocale: "fr",
+      summaryLocale: "fr-u-ca-gregory",
       summaryInvocationId: "00000000-0000-4000-8000-000000000099",
     });
   });
@@ -239,6 +239,14 @@ describe("runPipeline async rule contract (spec §8.3)", () => {
       async () => ({
         summary: "résumé",
         summaryLocale: "not a locale",
+        invocationId: "00000000-0000-4000-8000-000000000099",
+      }),
+    ],
+    [
+      "duplicate BCP-47 extension singleton",
+      async () => ({
+        summary: "résumé",
+        summaryLocale: "fr-a-first-a-second",
         invocationId: "00000000-0000-4000-8000-000000000099",
       }),
     ],
@@ -302,6 +310,65 @@ describe("runPipeline async rule contract (spec §8.3)", () => {
     expect(generator).not.toHaveBeenCalled();
     expect(result.findings[0]?.summaryLocale).toBe("en");
   });
+
+  it.each(["zh-TW", "zh-HK", "zh-Hant"])(
+    "falls back to an honestly labelled English summary for %s when generation is disabled",
+    async (locale) => {
+      const result = await runPipeline({
+        projectId: "00000000-0000-4000-8000-000000000001",
+        ctx: emptyContext(),
+        rules: [
+          {
+            id: "TECH-HTTP-001",
+            version: 1,
+            domain: "technical_seo",
+            requiredDatasets: [],
+            evaluate: () => ({
+              status: "candidate",
+              candidates: [candidate("http_status:500", "https://x.test/broken")],
+            }),
+          },
+        ],
+        deliveryLocale: locale,
+      });
+
+      expect(result.findings[0]).toMatchObject({
+        summaryLocale: "en",
+        summaryInvocationId: null,
+      });
+    },
+  );
+
+  it.each(["zh-TW", "zh-HK", "zh-Hant"])(
+    "falls back to an honestly labelled English summary for %s when generation fails",
+    async (locale) => {
+      const result = await runPipeline({
+        projectId: "00000000-0000-4000-8000-000000000001",
+        ctx: emptyContext(),
+        rules: [
+          {
+            id: "TECH-HTTP-001",
+            version: 1,
+            domain: "technical_seo",
+            requiredDatasets: [],
+            evaluate: () => ({
+              status: "candidate",
+              candidates: [candidate("http_status:500", "https://x.test/broken")],
+            }),
+          },
+        ],
+        deliveryLocale: locale,
+        summaryGenerator: async () => {
+          throw new Error("provider unavailable");
+        },
+      });
+
+      expect(result.findings[0]).toMatchObject({
+        summaryLocale: "en",
+        summaryInvocationId: null,
+      });
+    },
+  );
 });
 
 describe("runPipeline provider discrepancy confidence (spec §7.6, §8.7)", () => {

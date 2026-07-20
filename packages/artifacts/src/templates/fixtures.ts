@@ -43,6 +43,11 @@ export function makePromptInput(
       confidence: "high",
       subjectRefs: ["https://acme.example/pricing"],
     },
+    currentMetadata: {
+      url: "https://acme.example/pricing",
+      currentTitle: "Acme Analytics Pricing",
+      currentDescription: "Compare Acme Analytics plans and pricing.",
+    },
     evidence: [
       {
         evidenceId: "ev_ctr_001",

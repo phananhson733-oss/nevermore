@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BlobObjectNotFoundError } from "../../storage/types.ts";
 import {
@@ -60,6 +62,49 @@ function oversizedResponse(status: number): {
   };
 }
 
+async function withRedirectServer(
+  run: (
+    baseUrl: string,
+    hits: { readonly redirect: number; readonly followed: number },
+  ) => Promise<void>,
+): Promise<void> {
+  const hits = { redirect: 0, followed: 0 };
+  const server = createServer((request, response) => {
+    if (request.url === "/redirect") {
+      hits.redirect += 1;
+      response.statusCode = 302;
+      response.setHeader("location", "/followed");
+      response.end();
+      return;
+    }
+    if (request.url === "/followed") {
+      hits.followed += 1;
+      response.statusCode = 200;
+      response.end("{}");
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    throw new Error("redirect test server did not expose a TCP port");
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await run(baseUrl, hits);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -84,16 +129,18 @@ describe("createSupabaseDownloadSigner", () => {
     let capturedBody: unknown;
     let capturedAuth: string | undefined;
     let capturedSignal: AbortSignal | undefined;
-    const fetch: typeof globalThis.fetch = async (url, init) => {
+    let capturedRedirect: string | undefined;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
       capturedUrl = String(url);
       capturedBody = JSON.parse(String(init?.body));
       capturedAuth =
         new Headers(init?.headers).get("authorization") ?? undefined;
       capturedSignal = init?.signal ?? undefined;
+      capturedRedirect = init?.redirect;
       return jsonResponse({
         signedURL: "/object/sign/exports/export/p1/r1/n1?token=tok",
       });
-    };
+    });
     const signer = createSupabaseDownloadSigner({ ...BASE_CONFIG, fetch });
 
     const url = await signer.signDownloadUrl("export/p1/r1/n1", {
@@ -107,9 +154,29 @@ describe("createSupabaseDownloadSigner", () => {
     expect(capturedAuth).toBe("Bearer svc-role-key");
     expect(capturedSignal).toBeInstanceOf(AbortSignal);
     expect(capturedSignal?.aborted).toBe(false);
+    expect(capturedRedirect).toBe("error");
     expect(url).toBe(
       "https://proj.supabase.co/storage/v1/object/sign/exports/export/p1/r1/n1?token=tok",
     );
+  });
+
+  it("fails on the first redirect hop and never follows a signed-URL request", async () => {
+    await withRedirectServer(async (baseUrl, hits) => {
+      const signer = createSupabaseDownloadSigner({
+        ...BASE_CONFIG,
+        fetch: (_url, init) => fetch(`${baseUrl}/redirect`, init),
+      });
+
+      await expect(
+        signer.signDownloadUrl("export/p1/r1/redirected", {
+          expiresInSeconds: EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+        }),
+      ).rejects.toMatchObject({
+        name: "SupabaseSignError",
+        status: undefined,
+      });
+      expect(hits).toEqual({ redirect: 1, followed: 0 });
+    });
   });
 
   it("maps a hanging sign request to a stable timeout without leaking secrets", async () => {

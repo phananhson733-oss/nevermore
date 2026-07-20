@@ -13,9 +13,15 @@ import {
   type SiteRow,
   type WorkspaceScope,
 } from "@sf/db";
-import type { CreateProjectRequest } from "@sf/contracts";
+import type { CreateProjectWireRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
-import { canonicalUrlGuard, normalizeSiteOrigin, type UrlGuardResult } from "@sf/sources";
+import {
+  canonicalUrlGuard,
+  normalizeSiteOrigin,
+  probeSiteOrigin,
+  type SiteOriginProbe,
+  type UrlGuardResult,
+} from "@sf/sources";
 import { getDb } from "@/lib/db";
 import { toProjectDto, type ProjectDto } from "./mappers";
 
@@ -24,6 +30,11 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Injectable URL guard so tests can drive SSRF cases without live DNS. */
 export type UrlGuard = (rawUrl: string) => Promise<UrlGuardResult>;
+
+export interface CreateProjectRuntime {
+  readonly environment?: string;
+  readonly siteOriginProbe?: SiteOriginProbe;
+}
 
 export interface CreateProjectResult {
   readonly status: number;
@@ -46,8 +57,9 @@ export async function createProject(
   scope: WorkspaceScope,
   actorId: string,
   idempotencyKey: string,
-  body: CreateProjectRequest,
+  body: CreateProjectWireRequest,
   guard: UrlGuard = canonicalUrlGuard,
+  runtime: CreateProjectRuntime = {},
 ): Promise<CreateProjectResult> {
   const requestHash = contentHash({
     clientName: body.clientName,
@@ -70,14 +82,66 @@ export async function createProject(
   }
 
   // 1. Normalize + validate the submitted URL (scheme, host, trailing slash).
-  const normalized = normalizeSiteOrigin(body.siteUrl);
-  if (!normalized) {
-    throw new ProblemError("VALIDATION_ERROR", "siteUrl must be a valid http(s) URL.", {
-      errors: [{ pointer: "/siteUrl", code: "invalid_url", message: "Not a valid http(s) URL." }],
+  const submittedOrigin = normalizeSiteOrigin(body.siteUrl);
+  if (!submittedOrigin) {
+    throw new ProblemError("VALIDATION_ERROR", "siteUrl must be an origin-only http(s) URL.", {
+      errors: [{ pointer: "/siteUrl", code: "invalid_url", message: "Use an http(s) origin without a path, query, or fragment." }],
     });
   }
-  // 2. SSRF / reachability guard: reject localhost, private, link-local, metadata.
-  const verdict = await guard(normalized.origin);
+  // 2. Production canonicalizes submitted HTTP origins to HTTPS only after a
+  // DNS-pinned, bounded reachability request proves the secure origin exists.
+  // Local/test environments keep explicit HTTP origins for offline fixtures.
+  let normalized = submittedOrigin;
+  let verdict: UrlGuardResult | null = null;
+  if (
+    (runtime.environment ?? process.env["NODE_ENV"]) === "production" &&
+    submittedOrigin.origin.startsWith("http://")
+  ) {
+    const secureUrl = new URL(submittedOrigin.origin);
+    secureUrl.protocol = "https:";
+    const secureOrigin = normalizeSiteOrigin(secureUrl.origin);
+    if (!secureOrigin) {
+      throw new ProblemError(
+        "VALIDATION_ERROR",
+        "siteUrl could not be normalized to a secure origin.",
+        {
+          errors: [{
+            pointer: "/siteUrl",
+            code: "invalid_url",
+            message: "The secure site origin is invalid.",
+          }],
+        },
+      );
+    }
+    const secureVerdict = await guard(secureOrigin.origin);
+    verdict = secureVerdict;
+    const probe = runtime.siteOriginProbe ?? probeSiteOrigin;
+    const reachable =
+      secureVerdict.safe &&
+      secureVerdict.pinnedIp !== null &&
+      (await probe({
+        origin: secureOrigin.origin,
+        pinnedIp: secureVerdict.pinnedIp,
+      }));
+    if (!reachable) {
+      throw new ProblemError(
+        "VALIDATION_ERROR",
+        "The HTTPS site origin could not be reached safely.",
+        {
+          errors: [{
+            pointer: "/siteUrl",
+            code: "https_unreachable",
+            message: "Confirm that the HTTPS origin is publicly reachable.",
+          }],
+        },
+      );
+    }
+    normalized = secureOrigin;
+  }
+
+  // 3. SSRF guard: reject localhost, private, link-local, metadata. The HTTPS
+  // upgrade branch already guarded this exact normalized origin before probing.
+  verdict ??= await guard(normalized.origin);
   if (!verdict.safe) {
     throw new ProblemError("VALIDATION_ERROR", "siteUrl is not an allowed public address.", {
       errors: [
@@ -206,8 +270,12 @@ async function loadAggregate(
 }
 
 /** `GET /projects/{projectId}` — 404 (not 403) when foreign/absent (AC-005, AC-010). */
-export async function getProject(scope: WorkspaceScope, projectId: string): Promise<ProjectDto> {
-  const { db } = getDb();
+export async function getProject(
+  scope: WorkspaceScope,
+  projectId: string,
+  exec?: Db | DbTx,
+): Promise<ProjectDto> {
+  const db = exec ?? getDb().db;
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
   return loadAggregate(db, scope, project);

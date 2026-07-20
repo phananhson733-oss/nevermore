@@ -1,3 +1,4 @@
+import { isBcp47LanguageTag } from "@sf/contracts";
 import type { DiagnosticContext } from "./context.ts";
 import type {
   DiagnosticDomain,
@@ -288,7 +289,7 @@ function isValidGeneratedSummary(
   value: GeneratedFindingSummary | null,
 ): value is GeneratedFindingSummary {
   if (!value || value.summary.trim().length === 0) return false;
-  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value.summaryLocale)) {
+  if (!isBcp47LanguageTag(value.summaryLocale)) {
     return false;
   }
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -325,7 +326,7 @@ function buildCoverage(
         : "unavailable";
 
   const limitations: string[] = [];
-  const zh = deliveryLocale.toLowerCase().startsWith("zh");
+  const zh = deliveryLocale.toLowerCase() === "zh-cn";
   if (ctx.coverage.crawl === "partial")
     limitations.push(
       zh

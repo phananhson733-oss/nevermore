@@ -11,8 +11,10 @@ import {
  * §7.4). The DB stores ONLY a state hash and an ENCRYPTED PKCE verifier (and,
  * after callback, an encrypted temporary token) — never plaintext secrets, never
  * in URLs/logs (§14.3). An intent is single-use: `consumed` after property
- * selection, `failed` on any recoverable error. Nothing is written as a
- * half-connected SourceConnection.
+ * selection, while terminal failures scrub every temporary secret. Retryable
+ * callback/provider faults may leave an `initiated` intent carrying only the
+ * temporary token so the same callback state can resume property discovery
+ * without creating a half-connected SourceConnection.
  */
 
 export type OAuthIntentStatus =
@@ -141,9 +143,29 @@ export class OAuthIntentsRepository extends Repository {
         token_cipher: values.tokenCipher,
         candidate_properties: values.candidateProperties,
         status: "properties_ready",
+        failure_code: null,
         updated_at: sql`now()`,
       })
       .where(eq(oauthIntents.id, id));
+  }
+
+  /**
+   * Persist the exchanged temporary token while the callback remains `initiated`.
+   * This lets a retryable property-listing failure resume without replaying a
+   * single-use auth code or exposing a half-connected source row.
+   */
+  async setInitiatedToken(id: string, tokenCipher: Buffer): Promise<void> {
+    await this.exec
+      .update(oauthIntents)
+      .set({
+        token_cipher: tokenCipher,
+        candidate_properties: null,
+        failure_code: null,
+        updated_at: sql`now()`,
+      })
+      .where(
+        and(eq(oauthIntents.id, id), eq(oauthIntents.status, "initiated")),
+      );
   }
 
   /** Mark the intent consumed once the SourceConnection + credential are created. */
@@ -161,7 +183,7 @@ export class OAuthIntentsRepository extends Repository {
       .where(eq(oauthIntents.id, id));
   }
 
-  /** Mark a recoverable failure (no half-connected source is created). */
+  /** Mark a terminal callback failure and scrub every temporary secret. */
   async fail(id: string, failureCode: string): Promise<void> {
     await this.exec
       .update(oauthIntents)

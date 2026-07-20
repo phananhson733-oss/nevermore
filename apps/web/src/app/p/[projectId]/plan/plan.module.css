@@ -74,15 +74,15 @@
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  color: var(--sf-cobalt);
+  color: var(--sf-cobalt-text);
   background: var(--sf-cobalt-soft);
 }
 .summaryIconMint {
-  color: var(--sf-mint);
+  color: var(--sf-mint-text);
   background: var(--sf-mint-soft);
 }
 .summaryIconAmber {
-  color: var(--sf-amber);
+  color: var(--sf-amber-text);
   background: var(--sf-amber-soft);
 }
 .summaryMetric {
@@ -122,13 +122,14 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--sf-accent);
+  color: var(--sf-cobalt-text);
 }
 .methodTitle {
   font-size: var(--sf-text-xs);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--sf-fg);
 }
 .methodCopy {
   margin: 0;
@@ -150,6 +151,20 @@
   margin: 0;
   font-size: var(--sf-text-base);
   color: var(--sf-muted);
+}
+.pagination {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.paginationError {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--sf-coral-text);
+  font-size: var(--sf-text-sm);
+  line-height: 1.45;
+  text-align: center;
 }
 
 /* ---------------------------------------------------------- Lane board ---- */
@@ -189,7 +204,7 @@
   font-weight: 560;
   letter-spacing: -0.03em;
   line-height: 1;
-  color: var(--sf-cobalt);
+  color: var(--sf-cobalt-text);
   font-variant-numeric: tabular-nums;
 }
 .laneHeadText {
@@ -275,7 +290,7 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--sf-coral);
+  color: var(--sf-coral-text);
 }
 
 .actionMeta {
