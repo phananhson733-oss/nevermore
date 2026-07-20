@@ -6,6 +6,7 @@ import type {
 } from "@/lib/api/hooks-diagnosis";
 import {
   filterCanonicalFindings,
+  resolveCoveragePresentationState,
   type FindingFilters,
 } from "./_diagnosis-view-model.ts";
 
@@ -87,5 +88,27 @@ describe("filterCanonicalFindings", () => {
     const before = [...FINDINGS];
     filterCanonicalFindings(FINDINGS, filters("content_intent", "low"));
     expect(FINDINGS).toEqual(before);
+  });
+});
+
+describe("resolveCoveragePresentationState", () => {
+  const evaluatedCoverage = {
+    overall: "partial" as const,
+    domains: { technical_seo: "missing" as const },
+    limitations: [],
+  };
+
+  it("does not collapse an absent first-run assessment into evaluated missing coverage", () => {
+    expect(resolveCoveragePresentationState(null, false)).toBe("not-run");
+  });
+
+  it("reports absent coverage from an existing run as unavailable", () => {
+    expect(resolveCoveragePresentationState(null, true)).toBe("unavailable");
+  });
+
+  it("keeps an evaluated assessment available even when a domain is explicitly missing", () => {
+    expect(resolveCoveragePresentationState(evaluatedCoverage, true)).toBe(
+      "available",
+    );
   });
 });

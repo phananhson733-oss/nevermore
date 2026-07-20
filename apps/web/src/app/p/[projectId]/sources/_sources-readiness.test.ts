@@ -6,9 +6,13 @@ import type {
   SourceConnection,
 } from "@/lib/api/hooks-sources";
 import {
+  SOURCE_PROVIDER_ORDER,
   abbreviateChecksum,
   deriveSourcesReadiness,
   sourceAcquisitionMode,
+  sourcePrimaryRowCount,
+  sourcesCoveragePercentage,
+  sourcesReadyForDiagnosis,
 } from "./_sources-readiness.ts";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000042";
@@ -82,7 +86,7 @@ describe("Sources readiness projection", () => {
       connectedCount: 4,
       usableCount: 2,
       partialCount: 1,
-      unavailableCount: 2,
+      unavailableCount: 1,
       enabledCount: 4,
       gapProviders: ["gsc", "ga4"],
       missingProviders: [],
@@ -102,7 +106,7 @@ describe("Sources readiness projection", () => {
       expectedFamilyCount: 5,
       usableCount: 1,
       partialCount: 0,
-      unavailableCount: 4,
+      unavailableCount: 3,
       missingProviders: ["dataforseo"],
     });
   });
@@ -112,6 +116,82 @@ describe("Sources readiness projection", () => {
     expect(sourceAcquisitionMode(source("gsc"))).toBe("live");
     expect(sourceAcquisitionMode(source("csv"))).toBe("manual");
     expect(sourceAcquisitionMode(source("dataforseo"))).toBe("disabled");
+  });
+
+  it("computes coverage only across enabled families without promoting connections or partial data", () => {
+    const sources = [
+      source("crawl", { latestSnapshot: snapshot("crawl", "available") }),
+      source("gsc", {
+        state: "partial",
+        latestSnapshot: snapshot("gsc", "partial"),
+      }),
+      source("ga4", { state: "connected" }),
+      source("csv", { latestSnapshot: snapshot("csv", "available") }),
+      source("dataforseo"),
+    ] as const;
+
+    expect(sourcesCoveragePercentage(sources)).toBe(50);
+    expect(sourcesReadyForDiagnosis(sources)).toBe(false);
+  });
+
+  it("reports 4/4 enabled families as 100% and ready when DataForSEO is disabled", () => {
+    const sources = [
+      source("crawl", { latestSnapshot: snapshot("crawl", "available") }),
+      source("gsc", { latestSnapshot: snapshot("gsc", "available") }),
+      source("ga4", { latestSnapshot: snapshot("ga4", "available") }),
+      source("csv", { latestSnapshot: snapshot("csv", "available") }),
+      source("dataforseo"),
+    ] as const;
+
+    expect(deriveSourcesReadiness(sources)).toMatchObject({
+      enabledCount: 4,
+      usableCount: 4,
+      unavailableCount: 0,
+      gapProviders: [],
+    });
+    expect(sourcesCoveragePercentage(sources)).toBe(100);
+    expect(sourcesReadyForDiagnosis(sources)).toBe(true);
+  });
+
+  it("keeps coverage and diagnosis readiness at zero when no family is enabled", () => {
+    const sources = SOURCE_PROVIDER_ORDER.map((provider) =>
+      source(provider, {
+        featureEnabled: false,
+        latestSnapshot: snapshot(provider, "available"),
+      }),
+    );
+
+    expect(deriveSourcesReadiness(sources)).toMatchObject({
+      enabledCount: 0,
+      usableCount: 0,
+    });
+    expect(sourcesCoveragePercentage(sources)).toBe(0);
+    expect(sourcesReadyForDiagnosis(sources)).toBe(false);
+  });
+
+  it("keeps unavailable evidence distinct from a measured zero", () => {
+    expect(sourcePrimaryRowCount(source("crawl"))).toBeNull();
+    expect(
+      sourcePrimaryRowCount(
+        source("gsc", {
+          latestSnapshot: snapshot("gsc", "unavailable"),
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      sourcePrimaryRowCount(
+        source("csv", {
+          latestSnapshot: { ...snapshot("csv", "available"), rowCount: 0 },
+        }),
+      ),
+    ).toBe(0);
+    expect(
+      sourcePrimaryRowCount(
+        source("ga4", {
+          latestSnapshot: snapshot("ga4", "partial"),
+        }),
+      ),
+    ).toBe(42);
   });
 
   it("abbreviates long checksums while preserving both identifying ends", () => {

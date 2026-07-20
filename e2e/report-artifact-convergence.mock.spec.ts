@@ -1,8 +1,37 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import type { components } from "../packages/contracts/src/generated/openapi.ts";
 import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
 
 const NOW = "2026-07-20T09:00:00.000Z";
 const REPORT_ROUTE = `**/api/mvp/projects/${E2E_PROJECT_ID}/report**`;
+
+type ReportEvidenceFixture = components["schemas"]["Evidence"];
+
+/**
+ * Keep report mock evidence aligned with the OpenAPI contract even though the
+ * current hooks-report client reads only a subset of these fields.
+ */
+function reportEvidenceFixture(
+  index: number,
+  claim: string,
+  subjectValue: string,
+): ReportEvidenceFixture {
+  return {
+    id: `evidence-${index}`,
+    sourceProvider: "crawl",
+    origin: "direct_public",
+    method: "observed",
+    grade: "A",
+    availability: "available",
+    support: "supports",
+    claim,
+    subjectRefs: [{ type: "url", value: subjectValue }],
+    observedAt: NOW,
+    limitation: "This observation is bounded to the captured source window.",
+    snapshotId: null,
+    analysisInvocationId: null,
+  };
+}
 
 function finding(index: number) {
   return {
@@ -23,18 +52,11 @@ function finding(index: number) {
       },
     ],
     evidence: [
-      {
-        id: `evidence-${index}`,
-        origin: "crawl",
-        method: "crawler.http.v1",
-        grade: "A",
-        availability: "available",
-        support: "direct",
-        claim: `Observed signal ${index} from the canonical snapshot.`,
-        limitation: "This observation is bounded to the captured source window.",
-        sourceSnapshotId: `snapshot-${index}`,
-        analysisInvocationId: null,
-      },
+      reportEvidenceFixture(
+        index,
+        `Observed signal ${index} from the canonical snapshot.`,
+        `https://example.test/priority-${index}`,
+      ),
     ],
   };
 }
@@ -111,19 +133,13 @@ function reportFixture(options?: {
           return {
             ...canonicalFinding,
             summary: `${canonicalFinding.summary} It also explains the affected journey and the bounded operator decision without replacing canonical evidence.`,
-            evidence: [1, 2, 3].map((evidenceIndex) => ({
-              id: `evidence-${index}-${evidenceIndex}`,
-              origin: "crawl",
-              method: "crawler.http.v1",
-              grade: "A",
-              availability: "available",
-              support: "direct",
-              claim: `Canonical signal ${evidenceIndex} for finding ${index} remains traceable to its captured URL set.`,
-              limitation:
-                "Coverage remains bounded to the captured source window.",
-              sourceSnapshotId: `snapshot-${index}`,
-              analysisInvocationId: null,
-            })),
+            evidence: [1, 2, 3].map((evidenceIndex) =>
+              reportEvidenceFixture(
+                index * 10 + evidenceIndex,
+                `Canonical signal ${evidenceIndex} for finding ${index} remains traceable to its captured URL set.`,
+                `https://example.test/priority-${index}-${evidenceIndex}`,
+              ),
+            ),
           };
         }),
     // The deliberately mixed order proves that visual lane placement does not
@@ -183,7 +199,7 @@ test.beforeEach(async ({ page }) => {
 test("desktop uses a delivery-document cover, editorial findings, and a compact three-lane roadmap", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.setViewportSize({ width: 1920, height: 1080 });
   await serveReport(page, reportFixture({ longContent: true }));
   await openReport(page);
 
@@ -199,7 +215,7 @@ test("desktop uses a delivery-document cover, editorial findings, and a compact 
   expect(coverBox).not.toBeNull();
   expect(summaryBox).not.toBeNull();
   expect(sectionsBox).not.toBeNull();
-  expect(coverBox!.height).toBeGreaterThanOrEqual(300);
+  expect(coverBox!.height).toBeGreaterThanOrEqual(410);
   expect(summaryBox!.y).toBeGreaterThanOrEqual(coverBox!.y + coverBox!.height - 1);
   expect(sectionsBox!.y).toBeGreaterThanOrEqual(
     summaryBox!.y + summaryBox!.height - 1,
@@ -251,7 +267,11 @@ test("desktop uses a delivery-document cover, editorial findings, and a compact 
   const evidenceColumns = await evidenceList.evaluate(
     (node) => getComputedStyle(node).gridTemplateColumns,
   );
-  expect(evidenceColumns.trim().split(/\s+/)).toHaveLength(3);
+  const occupiedEvidenceColumns = evidenceColumns
+    .trim()
+    .split(/\s+/)
+    .filter((track) => Number.parseFloat(track) > 1);
+  expect(occupiedEvidenceColumns).toHaveLength(3);
   const evidenceRows = await firstEvidenceRows.evaluateAll((nodes) =>
     nodes.map((node) => ({
       fits: node.scrollWidth <= node.clientWidth,

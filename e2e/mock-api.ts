@@ -126,8 +126,8 @@ export function sourceSlot(
 const evidence = {
   id: "00000000-0000-4000-8000-000000000201",
   sourceProvider: "crawl",
-  origin: "crawl_pages",
-  method: "HTTP response inspection",
+  origin: "direct_public",
+  method: "observed",
   grade: "A",
   availability: "available",
   support: "supports",
@@ -197,6 +197,20 @@ export function diagnosisFindingsEnvelopeFixture(
           durationMs: 12,
         },
       ],
+    },
+  };
+}
+
+/** Fresh-project read model: no diagnostic run means no coverage assessment. */
+export function diagnosisNotRunFindingsEnvelopeFixture() {
+  const envelope = diagnosisFindingsEnvelopeFixture([]);
+  return {
+    ...envelope,
+    meta: {
+      ...envelope.meta,
+      latestRun: null,
+      coverage: null,
+      ruleResults: [],
     },
   };
 }

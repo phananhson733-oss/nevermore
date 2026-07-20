@@ -159,15 +159,24 @@ async function createProjectInBrowser(
       new URL(response.url()).pathname === "/api/mvp/projects",
   );
   await page.getByRole("button", { name: "Create project" }).click();
-  expect((await createResponse).status()).toBe(201);
+  const created = await createResponse;
+  expect(
+    created.status(),
+    `create project failed: ${await created.text()}`,
+  ).toBe(201);
   await page.waitForURL(/\/p\/[0-9a-f-]+\/overview$/);
-  await expect(
-    page.getByRole("heading", { name: definition.projectName }),
-  ).toBeVisible();
   const match = new URL(page.url()).pathname.match(
     /^\/p\/([0-9a-f-]+)\/overview$/,
   );
   if (!match?.[1]) throw new Error("created project id was missing from URL");
+  await expect(
+    page
+      .locator("[data-overview-hero]")
+      .getByText(definition.projectName, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Switch project" }),
+  ).toHaveValue(match[1]);
   return match[1];
 }
 
@@ -412,7 +421,11 @@ async function runDiagnosisAndConfirmFinding(
   keyboard: boolean,
 ): Promise<void> {
   await page.goto(`/p/${projectId}/diagnosis`);
-  await expect(page.getByRole("heading", { name: "Diagnosis" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Every finding should stand up to scrutiny.",
+    }),
+  ).toBeVisible();
   await expectNoDocumentOverflow(page);
   const run = page.getByRole("button", { name: "Run diagnosis" });
   await expect(run).toBeEnabled();
@@ -436,13 +449,13 @@ async function runDiagnosisAndConfirmFinding(
 
   // Exercise the real disclosure keyboard behavior: Enter opens, Escape closes,
   // and focus returns to the exact trigger rather than becoming lost in the DOM.
-  const evidence = finding
-    .getByRole("button", { name: "Show evidence details" })
-    .first();
+  const evidence = finding.getByRole("button", { name: /View evidence/ });
   await evidence.focus();
   await page.keyboard.press("Enter");
   await expect(
-    finding.getByRole("region", { name: /Evidence details:/ }).first(),
+    page.getByRole("dialog", {
+      name: "Trace the finding back to its source",
+    }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(evidence).toBeFocused();
@@ -483,16 +496,30 @@ async function generateReadyArtifact(
   } else {
     await studioLink.click();
   }
-  await expect(page.getByRole("heading", { name: "Studio" })).toBeVisible();
+  await expect(page).toHaveURL(`/p/${projectId}/studio`);
+  const studioHero = page.locator("[data-studio-page-hero]");
+  const studioWorkspace = page.locator("[data-studio-workspace]");
+  const editorCanvas = page.locator("[data-studio-editor-column]");
+  await expect(studioHero).toBeVisible();
+  await expect(studioHero.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(studioWorkspace).toBeVisible();
   await expectNoDocumentOverflow(page);
 
-  await page.getByRole("button", { name: "Generate artifact" }).click();
-  await expect(page.getByRole("heading", { name: "Pick an action" })).toBeVisible();
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: /Fix|HTTP|status/i }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await studioHero.getByRole("button", { name: "Generate artifact" }).click();
+  const picker = editorCanvas.locator('[aria-labelledby="sf-picker-title"]');
+  await expect(picker.locator("#sf-picker-title")).toBeVisible();
+  await picker
+    .getByRole("button", { name: "Generate", exact: true })
+    .first()
+    .click();
+
+  const generationForm = editorCanvas.locator(
+    '[aria-labelledby="sf-generate-title"]',
+  );
+  await expect(generationForm.locator("#sf-generate-title")).toBeVisible();
+  await generationForm
+    .getByRole("button", { name: "Generate", exact: true })
+    .click();
 
   const artifactGroup = page.getByRole("region", {
     name: "Technical ticket",

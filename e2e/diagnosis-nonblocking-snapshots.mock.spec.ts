@@ -55,7 +55,10 @@ test("Diagnosis renders its read model while the complete snapshot chain is stil
   await page.goto(`/p/${E2E_PROJECT_ID}/diagnosis`);
 
   await expect(
-    page.getByRole("heading", { name: "Diagnosis", exact: true }),
+    page.getByRole("heading", {
+      name: "Every finding should stand up to scrutiny.",
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole("article", { name: "HTTP status errors" }),

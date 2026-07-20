@@ -24,7 +24,9 @@ test("Next development runtime renders without browser or CSP errors", async ({
   const response = await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
   expect(response?.status()).toBe(200);
   await expect(
-    page.getByRole("heading", { name: "E2E Critical Flow" }),
+    page.getByRole("heading", {
+      name: "Turn evidence into the next 90 days of action.",
+    }),
   ).toBeVisible();
   await page.evaluate(
     () =>

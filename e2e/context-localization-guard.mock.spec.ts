@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
 
 const BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
+const CAPTURE_DIR = process.env["SF_CAPTURE_DIR"];
 
 const contextProfile = {
   id: "00000000-0000-4000-8000-000000000501",
@@ -84,6 +85,264 @@ test("zh-CN localizes the new Context version label", async ({ page }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/context`);
   await page.getByRole("button", { name: "简体中文" }).click();
   await expect(page.getByText("新建", { exact: true })).toBeVisible();
+});
+
+test("Profile Lens never substitutes product instructions for a missing client description", async ({
+  page,
+}) => {
+  servedContext = {
+    ...contextProfile,
+    profile: { ...contextProfile.profile, oneLineDescription: "" },
+  };
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+
+  const lens = page.locator("[data-context-rail]");
+  await expect(
+    lens.getByText("Nothing to show yet", { exact: true }).last(),
+  ).toBeVisible();
+  await expect(
+    lens.getByText(
+      "Define the ideal customer profile that grounds every diagnosis.",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+});
+
+test("Context preserves its editorial form and dark Profile Lens at desktop and mobile", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+  await expect(page.locator("[data-context-rail]")).toBeVisible();
+  if (CAPTURE_DIR !== undefined) {
+    await page.screenshot({
+      path: `${CAPTURE_DIR}/context-page-1920.png`,
+      fullPage: true,
+    });
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("[data-context-rail]")).toBeVisible();
+  const overflow = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(overflow.scrollWidth).toBe(overflow.clientWidth);
+  if (CAPTURE_DIR !== undefined) {
+    await page.screenshot({
+      path: `${CAPTURE_DIR}/context-page-390.png`,
+      fullPage: true,
+    });
+  }
+});
+
+test("numbered goals expose help and server validation to every editable row", async ({
+  page,
+}) => {
+  await page.route(`**${BASE}/context`, async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 422,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "https://example.test/problems/validation",
+        title: "Validation failed",
+        status: 422,
+        code: "VALIDATION_ERROR",
+        detail: "The profile is incomplete.",
+        requestId: "req-context-goals",
+        errors: [
+          {
+            pointer: "/profile/ninetyDayGoals",
+            code: "too_small",
+            message: "At least one qualified goal is required.",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+
+  const goals = page.getByRole("group", { name: "90-day goals" });
+  await goals.getByRole("button", { name: "90-day goals", exact: true }).click();
+  const inputs = goals.getByRole("textbox");
+  await expect(inputs).toHaveCount(2);
+
+  const helpWiring = await inputs.evaluateAll((elements) =>
+    elements.map((element) => {
+      const ids = (element.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean);
+      return {
+        id: element.id,
+        descriptions: ids.map((id) => document.getElementById(id)?.textContent ?? null),
+      };
+    }),
+  );
+  expect(helpWiring.every(({ id }) => id.length > 0)).toBe(true);
+  expect(
+    helpWiring.every(({ descriptions }) => descriptions.includes("One item per line.")),
+  ).toBe(true);
+
+  await page.getByRole("button", { name: "Mark complete" }).click();
+  await expect(inputs.first()).toHaveAttribute("aria-invalid", "true");
+
+  const errorWiring = await inputs.evaluateAll((elements) =>
+    elements.map((element) => {
+      const errorId = element.getAttribute("aria-errormessage");
+      const describedBy = (element.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean);
+      return {
+        errorId,
+        errorExists: errorId !== null && document.getElementById(errorId) !== null,
+        describedByError: errorId !== null && describedBy.includes(errorId),
+      };
+    }),
+  );
+  expect(
+    errorWiring.every(
+      ({ errorId, errorExists, describedByError }) =>
+        errorId !== null && errorExists && describedByError,
+    ),
+  ).toBe(true);
+});
+
+test("an aggregate personas error is exposed by the group and every row control", async ({
+  page,
+}) => {
+  await page.route(`**${BASE}/context`, async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 422,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "https://example.test/problems/validation",
+        title: "Validation failed",
+        status: 422,
+        code: "VALIDATION_ERROR",
+        detail: "The profile is incomplete.",
+        requestId: "req-context-personas",
+        errors: [
+          {
+            pointer: "/profile/personas",
+            code: "too_small",
+            message: "At least one qualified persona is required.",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+  await page.getByRole("button", { name: "Mark complete" }).click();
+
+  const personas = page.getByRole("group", { name: "Personas" });
+  await expect(personas).toHaveAttribute("aria-invalid", "true");
+  const controls = personas.getByRole("textbox");
+  await expect(controls).toHaveCount(4);
+
+  const groupWiring = await personas.evaluate((element) => {
+    const errorId = element.getAttribute("aria-errormessage");
+    const describedBy = (element.getAttribute("aria-describedby") ?? "")
+      .split(/\s+/)
+      .filter(Boolean);
+    return {
+      errorId,
+      errorExists: errorId !== null && document.getElementById(errorId) !== null,
+      describedByError: errorId !== null && describedBy.includes(errorId),
+    };
+  });
+  expect(groupWiring).toMatchObject({
+    errorExists: true,
+    describedByError: true,
+  });
+
+  const controlWiring = await controls.evaluateAll((elements) =>
+    elements.map((element) => {
+      const errorId = element.getAttribute("aria-errormessage");
+      const describedBy = (element.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean);
+      return {
+        id: element.id,
+        invalid: element.getAttribute("aria-invalid"),
+        errorId,
+        errorExists: errorId !== null && document.getElementById(errorId) !== null,
+        describedByError: errorId !== null && describedBy.includes(errorId),
+      };
+    }),
+  );
+  expect(
+    controlWiring.every(
+      ({ id, invalid, errorId, errorExists, describedByError }) =>
+        id.length > 0 &&
+        invalid === "true" &&
+        errorId !== null &&
+        errorExists &&
+        describedByError,
+    ),
+  ).toBe(true);
+});
+
+test("a successful draft save removes an unpersisted empty goal row", async ({
+  page,
+}) => {
+  let patchCount = 0;
+  await page.route(`**${BASE}/context`, async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    patchCount += 1;
+    const body = route.request().postDataJSON() as {
+      readonly profile: { readonly ninetyDayGoals?: readonly string[] };
+    };
+    const persistedGoals = [...(body.profile.ninetyDayGoals ?? [])];
+    expect(persistedGoals).toEqual(["Customer-authored goal"]);
+    servedContext = {
+      ...contextProfile,
+      version: 4,
+      profile: {
+        ...contextProfile.profile,
+        ninetyDayGoals: persistedGoals,
+      },
+      contentHash: "sha256:e2e-context-v4",
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: servedContext }),
+    });
+  });
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+  const goals = page.getByRole("group", { name: "90-day goals" });
+  await goals.getByRole("button", { name: "90-day goals", exact: true }).click();
+  await expect(goals.getByRole("textbox")).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect.poll(() => patchCount).toBe(1);
+  await expect(page.getByText("Saved just now", { exact: true })).toBeVisible();
+  await expect(goals.getByRole("textbox")).toHaveCount(1);
+  await expect(goals.getByRole("textbox")).toHaveValue(
+    "Customer-authored goal",
+  );
+
+  await page.reload();
+  const reloadedGoals = page.getByRole("group", { name: "90-day goals" });
+  await expect(reloadedGoals.getByRole("textbox")).toHaveCount(1);
+  await expect(reloadedGoals.getByRole("textbox")).toHaveValue(
+    "Customer-authored goal",
+  );
 });
 
 test("dirty Context prevents unload and asks before internal project navigation", async ({

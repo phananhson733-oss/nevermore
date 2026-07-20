@@ -9,16 +9,25 @@
  * and reloads the latest version.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import {
+  BriefcaseBusiness,
+  Check,
+  Crosshair,
+  Plus,
+  Save,
+  Sparkles,
+  Target,
+  UsersRound,
+  X,
+} from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  Card,
   DarkPanel,
   Field,
-  Panel,
   Spinner,
   StatusPill,
   TextArea,
@@ -26,91 +35,34 @@ import {
   cx,
   useFieldControl,
 } from "@/components/ui";
-import type { StatusTone } from "@/components/ui";
+import type {
+  StatusTone,
+  TextAreaProps,
+  TextInputProps,
+} from "@/components/ui";
 import { ApiError, useProjectContext, useUpdateContext } from "@/lib/api";
 import type {
   BusinessProfile,
   CompleteIcpProfileInput,
   ConversionType,
   CustomerModel,
-  DraftIcpProfilePatch,
   Persona,
   UpdateContextRequest,
 } from "@sf/contracts";
 import type { IcpProfile } from "@/lib/api/types";
 import { ProblemNotice, ProblemState } from "../_problem-display";
 import { setUnsavedContextChanges } from "../_context-navigation-guard";
+import {
+  EMPTY_FORM,
+  emptyPersona,
+  prepareDraftSave,
+  type FormState,
+  type PersonaDraft,
+} from "./_context-draft";
 import { mapContextFieldErrors } from "./_context-form-errors";
 import styles from "./_context-form.module.css";
 
 // --------------------------------------------------------------- Form model --
-
-interface PersonaDraft {
-  readonly name: string;
-  readonly roleOrContext: string;
-  readonly jobs: string; // one item per line
-  readonly painPoints: string; // one item per line
-}
-
-interface FormState {
-  readonly productName: string;
-  readonly oneLineDescription: string;
-  readonly customerModel: string;
-  readonly businessProfile: string;
-  readonly businessProfileNote: string;
-  readonly marketCodes: string;
-  readonly siteLanguageCodes: string;
-  readonly defaultDeliveryLocale: string;
-  readonly segments: string;
-  readonly personas: readonly PersonaDraft[];
-  readonly useCases: string;
-  readonly offers: string;
-  readonly differentiators: string;
-  readonly conversionLabel: string;
-  readonly conversionType: string;
-  readonly conversionTargetUrl: string;
-  readonly priorityProductsOrServices: string;
-  readonly priorityUrls: string;
-  readonly competitors: string;
-  readonly brandConstraints: string;
-  readonly complianceConstraints: string;
-  readonly technicalConstraints: string;
-  readonly resourceConstraints: string;
-  readonly growthQuestions: string;
-  readonly ninetyDayGoals: string;
-}
-
-function emptyPersona(): PersonaDraft {
-  return { name: "", roleOrContext: "", jobs: "", painPoints: "" };
-}
-
-const EMPTY_FORM: FormState = {
-  productName: "",
-  oneLineDescription: "",
-  customerModel: "",
-  businessProfile: "",
-  businessProfileNote: "",
-  marketCodes: "",
-  siteLanguageCodes: "",
-  defaultDeliveryLocale: "",
-  segments: "",
-  personas: [emptyPersona()],
-  useCases: "",
-  offers: "",
-  differentiators: "",
-  conversionLabel: "",
-  conversionType: "",
-  conversionTargetUrl: "",
-  priorityProductsOrServices: "",
-  priorityUrls: "",
-  competitors: "",
-  brandConstraints: "",
-  complianceConstraints: "",
-  technicalConstraints: "",
-  resourceConstraints: "",
-  growthQuestions: "",
-  ninetyDayGoals: "",
-};
 
 interface SelectOption {
   readonly value: string;
@@ -207,71 +159,6 @@ function completePersonas(rows: readonly PersonaDraft[]): Persona[] {
   }));
 }
 
-/** Draft patch of the currently-filled fields (never sends empty values). */
-function buildDraftPatch(form: FormState): DraftIcpProfilePatch {
-  const patch: DraftIcpProfilePatch = {};
-  const scalar = (raw: string): string | undefined => {
-    const value = raw.trim();
-    return value.length > 0 ? value : undefined;
-  };
-  const list = (raw: string): string[] | undefined => {
-    const items = parseLines(raw);
-    return items.length > 0 ? items : undefined;
-  };
-
-  const productName = scalar(form.productName);
-  if (productName !== undefined) patch.productName = productName;
-  const oneLineDescription = scalar(form.oneLineDescription);
-  if (oneLineDescription !== undefined) patch.oneLineDescription = oneLineDescription;
-  if (form.customerModel) patch.customerModel = form.customerModel as CustomerModel;
-  if (form.businessProfile) patch.businessProfile = form.businessProfile as BusinessProfile;
-  const businessProfileNote = scalar(form.businessProfileNote);
-  if (businessProfileNote !== undefined) patch.businessProfileNote = businessProfileNote;
-  const marketCodes = list(form.marketCodes);
-  if (marketCodes !== undefined) patch.marketCodes = marketCodes;
-  const siteLanguageCodes = list(form.siteLanguageCodes);
-  if (siteLanguageCodes !== undefined) patch.siteLanguageCodes = siteLanguageCodes;
-  const defaultDeliveryLocale = scalar(form.defaultDeliveryLocale);
-  if (defaultDeliveryLocale !== undefined) patch.defaultDeliveryLocale = defaultDeliveryLocale;
-  const segments = list(form.segments);
-  if (segments !== undefined) patch.segments = segments;
-  const personas = validPersonas(form.personas);
-  if (personas.length > 0) patch.personas = personas;
-  const useCases = list(form.useCases);
-  if (useCases !== undefined) patch.useCases = useCases;
-  const offers = list(form.offers);
-  if (offers !== undefined) patch.offers = offers;
-  const differentiators = list(form.differentiators);
-  if (differentiators !== undefined) patch.differentiators = differentiators;
-  if (form.conversionLabel.trim() && form.conversionType) {
-    patch.primaryConversion = {
-      label: form.conversionLabel.trim(),
-      type: form.conversionType as ConversionType,
-      targetUrl: form.conversionTargetUrl.trim() || null,
-    };
-  }
-  const priorityProductsOrServices = list(form.priorityProductsOrServices);
-  if (priorityProductsOrServices !== undefined)
-    patch.priorityProductsOrServices = priorityProductsOrServices;
-  const priorityUrls = list(form.priorityUrls);
-  if (priorityUrls !== undefined) patch.priorityUrls = priorityUrls;
-  const competitors = list(form.competitors);
-  if (competitors !== undefined) patch.competitors = competitors;
-  const brandConstraints = list(form.brandConstraints);
-  if (brandConstraints !== undefined) patch.brandConstraints = brandConstraints;
-  const complianceConstraints = list(form.complianceConstraints);
-  if (complianceConstraints !== undefined) patch.complianceConstraints = complianceConstraints;
-  const technicalConstraints = list(form.technicalConstraints);
-  if (technicalConstraints !== undefined) patch.technicalConstraints = technicalConstraints;
-  const resourceConstraints = list(form.resourceConstraints);
-  if (resourceConstraints !== undefined) patch.resourceConstraints = resourceConstraints;
-  const growthQuestions = list(form.growthQuestions);
-  if (growthQuestions !== undefined) patch.growthQuestions = growthQuestions;
-  const ninetyDayGoals = list(form.ninetyDayGoals);
-  if (ninetyDayGoals !== undefined) patch.ninetyDayGoals = ninetyDayGoals;
-  return patch;
-}
-
 /** The full complete-mode input. Enum casts fall through to server validation. */
 function buildCompleteInput(form: FormState): CompleteIcpProfileInput {
   const note = form.businessProfileNote.trim();
@@ -348,6 +235,60 @@ function profileIdentity(profile: IcpProfile | null): string {
 
 // --------------------------------------------------------------- Controls ---
 
+interface AdditionalControlA11y {
+  readonly additionalDescribedBy?: string | undefined;
+  readonly errorMessageId?: string | undefined;
+  readonly forceInvalid?: boolean | undefined;
+}
+
+function mergeAriaIds(
+  ...ids: readonly (string | undefined)[]
+): string | undefined {
+  const merged = ids.filter((id): id is string => id !== undefined && id.length > 0);
+  return merged.length > 0 ? merged.join(" ") : undefined;
+}
+
+/** Preserve Field's local help/error wiring while appending a group-level error. */
+function ConnectedTextInput({
+  additionalDescribedBy,
+  errorMessageId,
+  forceInvalid = false,
+  ...props
+}: TextInputProps & AdditionalControlA11y) {
+  const field = useFieldControl();
+  return (
+    <TextInput
+      {...props}
+      aria-describedby={mergeAriaIds(
+        field?.describedBy,
+        additionalDescribedBy,
+      )}
+      aria-errormessage={errorMessageId}
+      invalid={Boolean(forceInvalid || field?.invalid)}
+    />
+  );
+}
+
+function ConnectedTextArea({
+  additionalDescribedBy,
+  errorMessageId,
+  forceInvalid = false,
+  ...props
+}: TextAreaProps & AdditionalControlA11y) {
+  const field = useFieldControl();
+  return (
+    <TextArea
+      {...props}
+      aria-describedby={mergeAriaIds(
+        field?.describedBy,
+        additionalDescribedBy,
+      )}
+      aria-errormessage={errorMessageId}
+      invalid={Boolean(forceInvalid || field?.invalid)}
+    />
+  );
+}
+
 interface TextFieldProps {
   readonly label: ReactNode;
   readonly help?: ReactNode;
@@ -357,6 +298,12 @@ interface TextFieldProps {
   readonly onChange: (value: string) => void;
   readonly type?: string;
   readonly placeholder?: string;
+  readonly fieldClassName?: string | undefined;
+  readonly controlClassName?: string | undefined;
+  readonly controlId?: string | undefined;
+  readonly additionalDescribedBy?: string | undefined;
+  readonly errorMessageId?: string | undefined;
+  readonly forceInvalid?: boolean | undefined;
 }
 
 function TextField({
@@ -368,10 +315,27 @@ function TextField({
   onChange,
   type,
   placeholder,
+  fieldClassName,
+  controlClassName,
+  controlId,
+  additionalDescribedBy,
+  errorMessageId,
+  forceInvalid,
 }: TextFieldProps) {
   return (
-    <Field label={label} help={help} error={error} required={Boolean(required)}>
-      <TextInput
+    <Field
+      className={fieldClassName}
+      label={label}
+      help={help}
+      error={error}
+      required={Boolean(required)}
+      {...(controlId !== undefined ? { htmlFor: controlId } : {})}
+    >
+      <ConnectedTextInput
+        className={controlClassName}
+        additionalDescribedBy={additionalDescribedBy}
+        errorMessageId={errorMessageId}
+        forceInvalid={forceInvalid}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         {...(type !== undefined ? { type } : {})}
@@ -389,12 +353,43 @@ interface AreaFieldProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly rows?: number;
+  readonly fieldClassName?: string | undefined;
+  readonly controlClassName?: string | undefined;
+  readonly controlId?: string | undefined;
+  readonly additionalDescribedBy?: string | undefined;
+  readonly errorMessageId?: string | undefined;
+  readonly forceInvalid?: boolean | undefined;
 }
 
-function AreaField({ label, help, error, required, value, onChange, rows }: AreaFieldProps) {
+function AreaField({
+  label,
+  help,
+  error,
+  required,
+  value,
+  onChange,
+  rows,
+  fieldClassName,
+  controlClassName,
+  controlId,
+  additionalDescribedBy,
+  errorMessageId,
+  forceInvalid,
+}: AreaFieldProps) {
   return (
-    <Field label={label} help={help} error={error} required={Boolean(required)}>
-      <TextArea
+    <Field
+      className={fieldClassName}
+      label={label}
+      help={help}
+      error={error}
+      required={Boolean(required)}
+      {...(controlId !== undefined ? { htmlFor: controlId } : {})}
+    >
+      <ConnectedTextArea
+        className={controlClassName}
+        additionalDescribedBy={additionalDescribedBy}
+        errorMessageId={errorMessageId}
+        forceInvalid={forceInvalid}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         {...(rows !== undefined ? { rows } : {})}
@@ -434,27 +429,151 @@ function NativeSelect({ value, onChange, options, placeholder }: NativeSelectPro
   );
 }
 
+interface NumberedListFieldProps {
+  readonly label: string;
+  readonly help: string;
+  readonly error?: string | undefined;
+  readonly required?: boolean;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly removeLabel: string;
+}
+
+/**
+ * A line-list editor whose transport value stays the existing newline-delimited
+ * string. The numbered rows mirror the editorial artifact without changing the
+ * API's `string[]` semantics (empty rows are still discarded by `parseLines`).
+ */
+function NumberedListField({
+  label,
+  help,
+  error,
+  required = false,
+  value,
+  onChange,
+  removeLabel,
+}: NumberedListFieldProps) {
+  const controlId = useId();
+  const labelId = `${controlId}-label`;
+  const helpId = `${controlId}-help`;
+  const errorId = `${controlId}-error`;
+  const items = value.split("\n");
+
+  function updateItem(index: number, nextValue: string): void {
+    const next = [...items];
+    next[index] = nextValue;
+    onChange(next.join("\n"));
+  }
+
+  function addItem(): void {
+    onChange([...items, ""].join("\n"));
+  }
+
+  function removeItem(index: number): void {
+    const next = items.filter((_, itemIndex) => itemIndex !== index);
+    onChange(next.length > 0 ? next.join("\n") : "");
+  }
+
+  return (
+    <div
+      className={styles.numberedField}
+      id={`${controlId}-group`}
+      role="group"
+      aria-labelledby={labelId}
+      aria-describedby={helpId}
+      data-numbered-list=""
+    >
+      <div className={styles.numberedFieldHead}>
+        <h3 className={styles.numberedFieldTitle} id={labelId}>
+          {label}
+          {required ? (
+            <span className={styles.requiredMark} aria-hidden="true">
+              {" *"}
+            </span>
+          ) : null}
+        </h3>
+        <p className={styles.numberedFieldHelp} id={helpId}>
+          {help}
+        </p>
+      </div>
+      <div className={styles.numberedRows}>
+        {items.map((item, index) => (
+          <div className={styles.numberedRow} key={index}>
+            <span className={styles.numberedIndex} aria-hidden="true">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <TextInput
+              className={styles.numberedInput}
+              id={`${controlId}-item-${index}`}
+              aria-label={`${label} ${index + 1}`}
+              aria-describedby={
+                error === undefined ? helpId : `${helpId} ${errorId}`
+              }
+              aria-errormessage={error === undefined ? undefined : errorId}
+              aria-invalid={error === undefined ? undefined : true}
+              required={required && index === 0}
+              value={item}
+              onChange={(event) => updateItem(index, event.target.value)}
+            />
+            {items.length > 1 ? (
+              <Button
+                variant="text"
+                size="sm"
+                className={styles.removeListItem}
+                onClick={() => removeItem(index)}
+                aria-label={`${removeLabel} ${label} ${index + 1}`}
+              >
+                <X aria-hidden="true" size={15} strokeWidth={1.8} />
+              </Button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {error !== undefined ? (
+        <p className={styles.inlineError} id={errorId} role="alert">
+          {error}
+        </p>
+      ) : null}
+      <Button
+        variant="text"
+        size="sm"
+        className={styles.addListItem}
+        onClick={addItem}
+      >
+        <Plus aria-hidden="true" size={16} strokeWidth={1.9} />
+        {label}
+      </Button>
+    </div>
+  );
+}
+
 interface SectionProps {
   readonly index: number;
   readonly title: ReactNode;
   readonly description: ReactNode;
+  readonly icon: ReactNode;
   readonly children: ReactNode;
 }
 
-function Section({ index, title, description, children }: SectionProps) {
+function Section({ index, title, description, icon, children }: SectionProps) {
   return (
-    <Panel padding="lg" className={styles.section}>
-      <header className={styles.sectionHead}>
-        <span className={styles.sectionNumber} aria-hidden="true">
-          {index}
-        </span>
-        <div>
-          <h2 className={styles.sectionTitle}>{title}</h2>
-          <p className={styles.sectionDesc}>{description}</p>
-        </div>
-      </header>
-      <div className={styles.sectionBody}>{children}</div>
-    </Panel>
+    <section className={styles.section} data-context-section={index}>
+      <span className={styles.sectionNumber} aria-hidden="true">
+        {String(index).padStart(2, "0")}
+      </span>
+      <div className={styles.sectionInner}>
+        <header className={styles.sectionHead}>
+          <div>
+            <h2 className={styles.sectionTitle}>{title}</h2>
+            <p className={styles.sectionDesc}>{description}</p>
+          </div>
+          <span className={styles.sectionIcon} aria-hidden="true">
+            {icon}
+          </span>
+        </header>
+        <div className={styles.sectionBody}>{children}</div>
+      </div>
+    </section>
   );
 }
 
@@ -478,6 +597,7 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
   const t = useTranslations("context");
   const tCommon = useTranslations("common");
   const tStatus = useTranslations("contextStatus");
+  const personasControlId = useId();
 
   const query = useProjectContext(projectId, initialProfile);
   const queryClient = useQueryClient();
@@ -504,8 +624,8 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
   const [form, setForm] = useState<FormState>(() =>
     initialProfile ? fromProfile(initialProfile.profile) : EMPTY_FORM,
   );
-  const [baseline, setBaseline] = useState<string>(() =>
-    serialize(initialProfile ? fromProfile(initialProfile.profile) : EMPTY_FORM),
+  const [baselineForm, setBaselineForm] = useState<FormState>(() =>
+    initialProfile ? fromProfile(initialProfile.profile) : EMPTY_FORM,
   );
   const [justSaved, setJustSaved] = useState<boolean>(false);
   const [savingMode, setSavingMode] = useState<SaveMode | null>(null);
@@ -549,10 +669,10 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
     syncedKey.current = key;
     const next = fromProfile(currentProfile.profile);
     setForm(next);
-    setBaseline(serialize(next));
+    setBaselineForm(next);
   }, [currentProfile]);
 
-  const isDirty = serialize(form) !== baseline;
+  const isDirty = serialize(form) !== serialize(baselineForm);
   const baseVersion = currentProfile?.version ?? 0;
 
   useEffect(() => {
@@ -636,11 +756,19 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
     setTopAlert(null);
     setTopProblem(null);
     setFieldErrors({});
-    const snapshot = serialize(form);
+    const submittedSnapshot = serialize(form);
     try {
       const saved = await update.mutateAsync(body);
+      const canonicalForm = fromProfile(saved.profile);
       syncedKey.current = `${saved.id}@${saved.version}`;
-      setBaseline(snapshot);
+      // The API removes empty list rows and incomplete draft-only structures.
+      // Reconcile an unchanged UI with that canonical response so "saved" can
+      // never describe data that was not persisted. Preserve edits made while
+      // the request was in flight and compare them against the server baseline.
+      setForm((current) =>
+        serialize(current) === submittedSnapshot ? canonicalForm : current,
+      );
+      setBaselineForm(canonicalForm);
       setJustSaved(true);
     } catch (error) {
       handleError(error);
@@ -650,7 +778,20 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
   }
 
   function onSaveDraft(): void {
-    const profile = buildDraftPatch(form);
+    const preparation = prepareDraftSave(form, baselineForm);
+    if (!preparation.ok) {
+      const message = t("qualificationIncomplete");
+      setJustSaved(false);
+      setTopAlert(message);
+      setTopProblem(null);
+      setFieldErrors(
+        Object.fromEntries(
+          preparation.fieldPointers.map((pointer) => [pointer, message]),
+        ),
+      );
+      return;
+    }
+    const { profile } = preparation;
     if (Object.keys(profile).length === 0) return;
     void runSave("draft", { mode: "draft", baseVersion, profile });
   }
@@ -661,14 +802,26 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
   }
 
   const errAt = (pointer: string): string | undefined => {
-    const exact = fieldErrors[pointer];
-    if (exact !== undefined) return exact;
-    const prefix = `${pointer}/`;
-    for (const key of Object.keys(fieldErrors)) {
-      if (key.startsWith(prefix)) return fieldErrors[key];
+    // The API returns RFC 6901 paths rooted at `/profile`; retain support for
+    // older tests/fixtures that used the profile-relative form.
+    for (const candidate of [pointer, `/profile${pointer}`]) {
+      const exact = fieldErrors[candidate];
+      if (exact !== undefined) return exact;
+      const prefix = `${candidate}/`;
+      for (const key of Object.keys(fieldErrors)) {
+        if (key.startsWith(prefix)) return fieldErrors[key];
+      }
     }
     return undefined;
   };
+  const personasError = errAt("/personas");
+  const personasLabelId = `${personasControlId}-label`;
+  const personasHelpId = `${personasControlId}-help`;
+  const personasErrorId = `${personasControlId}-error`;
+  const personasDescribedBy = mergeAriaIds(
+    personasHelpId,
+    personasError === undefined ? undefined : personasErrorId,
+  );
 
   if (query.isLoading) {
     return (
@@ -690,6 +843,13 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
   const flags = sectionFlags(form);
   const marketBadges = parseLines(form.marketCodes);
   const languageBadges = parseLines(form.siteLanguageCodes);
+  const segmentLines = form.segments.split("\n");
+  const primarySegment = segmentLines[0] ?? "";
+  const secondarySegments = segmentLines.slice(1).join("\n");
+
+  function joinSegments(primary: string, secondary: string): string {
+    return secondary.length > 0 ? `${primary}\n${secondary}` : primary;
+  }
 
   const busy = savingMode !== null;
   const saveStatus: { text: string; className: string | undefined } = busy
@@ -700,11 +860,31 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
         ? { text: t("savedJustNow"), className: styles.saveStatusSaved }
         : { text: t("saved"), className: undefined };
 
-  const checklist: readonly { readonly done: boolean; readonly label: string }[] = [
-    { done: flags.businessFrame, label: t("sections.businessFrame.title") },
-    { done: flags.idealCustomer, label: t("sections.idealCustomer.title") },
-    { done: flags.commercialFocus, label: t("sections.commercialFocus.title") },
-    { done: flags.successDefinition, label: t("sections.successDefinition.title") },
+  const checklist: readonly {
+    readonly done: boolean;
+    readonly label: string;
+    readonly description: string;
+  }[] = [
+    {
+      done: flags.businessFrame,
+      label: t("sections.businessFrame.title"),
+      description: t("sections.businessFrame.description"),
+    },
+    {
+      done: flags.idealCustomer,
+      label: t("sections.idealCustomer.title"),
+      description: t("sections.idealCustomer.description"),
+    },
+    {
+      done: flags.commercialFocus,
+      label: t("sections.commercialFocus.title"),
+      description: t("sections.commercialFocus.description"),
+    },
+    {
+      done: flags.successDefinition,
+      label: t("sections.successDefinition.title"),
+      description: t("sections.successDefinition.description"),
+    },
   ];
   const customerModels: readonly SelectOption[] = [
     { value: "b2b", label: t("options.customerModel.b2b") },
@@ -736,10 +916,13 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
   ];
 
   return (
-    <div className={styles.page}>
-      <div className={styles.hero}>
+    <div className={styles.page} data-context-page="">
+      <header className={styles.hero}>
         <div className={styles.heroText}>
-          <span className="sf-eyebrow">{versionLabel}</span>
+          <div className={styles.heroMeta}>
+            <span className="sf-eyebrow">{versionLabel}</span>
+            <StatusPill tone={STATUS_TONE[statusKey]}>{tStatus(statusKey)}</StatusPill>
+          </div>
           <h1 className={styles.title}>{t("title")}</h1>
           <p className={styles.subtitle}>{t("subtitle")}</p>
         </div>
@@ -753,11 +936,12 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
               {t("saveDraft")}
             </Button>
             <Button variant="primary" onClick={onMarkComplete} disabled={busy}>
+              <Save aria-hidden="true" size={16} strokeWidth={2} />
               {t("markComplete")}
             </Button>
           </div>
         </div>
-      </div>
+      </header>
 
       {topAlert !== null ? (
         topProblem !== null ? (
@@ -774,30 +958,41 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
         )
       ) : null}
 
-      <div className={styles.grid}>
+      <div className={styles.grid} data-context-layout="">
         <div className={styles.formCol}>
           <Section
             index={1}
-            title={t("sections.businessFrame.title")}
+            title={
+              form.productName.trim().length > 0
+                ? `${form.productName.trim()} · ${t("sections.businessFrame.title")}`
+                : t("sections.businessFrame.title")
+            }
             description={t("sections.businessFrame.description")}
+            icon={<BriefcaseBusiness size={23} strokeWidth={1.7} />}
           >
-            <TextField
-              label={t("fields.productName")}
-              required
-              value={form.productName}
-              onChange={(value) => patchForm({ productName: value })}
-              error={errAt("/productName")}
-            />
-            <AreaField
-              label={t("fields.oneLineDescription")}
-              required
-              rows={3}
-              value={form.oneLineDescription}
-              onChange={(value) => patchForm({ oneLineDescription: value })}
-              error={errAt("/oneLineDescription")}
-            />
-            <div className={styles.row2}>
+            <div className={styles.businessLead}>
+              <TextField
+                label={t("fields.productName")}
+                required
+                value={form.productName}
+                onChange={(value) => patchForm({ productName: value })}
+                error={errAt("/productName")}
+                controlClassName={styles.leadInput}
+              />
+              <AreaField
+                label={t("fields.oneLineDescription")}
+                required
+                rows={4}
+                value={form.oneLineDescription}
+                onChange={(value) => patchForm({ oneLineDescription: value })}
+                error={errAt("/oneLineDescription")}
+                controlClassName={styles.descriptionControl}
+              />
+            </div>
+
+            <div className={styles.businessMetaCard}>
               <Field
+                className={styles.metaCell}
                 label={t("fields.customerModel")}
                 required
                 error={errAt("/customerModel")}
@@ -810,6 +1005,7 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
                 />
               </Field>
               <Field
+                className={styles.metaCell}
                 label={t("fields.businessProfile")}
                 required
                 error={errAt("/businessProfile")}
@@ -822,6 +1018,7 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
                 />
               </Field>
             </div>
+
             {form.businessProfile === "other" ? (
               <AreaField
                 label={t("fields.businessProfileNote")}
@@ -832,66 +1029,145 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
                 error={errAt("/businessProfileNote")}
               />
             ) : null}
-            <div className={styles.row2}>
+
+            <div className={styles.marketGrid}>
               <AreaField
                 label={t("fields.marketCodes")}
                 help={t("help.markets")}
                 required
+                rows={3}
                 value={form.marketCodes}
                 onChange={(value) => patchForm({ marketCodes: value })}
                 error={errAt("/marketCodes")}
+                controlClassName={styles.compactArea}
               />
               <AreaField
                 label={t("fields.siteLanguageCodes")}
                 help={t("help.languages")}
                 required
+                rows={3}
                 value={form.siteLanguageCodes}
                 onChange={(value) => patchForm({ siteLanguageCodes: value })}
                 error={errAt("/siteLanguageCodes")}
+                controlClassName={styles.compactArea}
+              />
+              <TextField
+                label={t("fields.defaultDeliveryLocale")}
+                help={t("help.locale")}
+                required
+                value={form.defaultDeliveryLocale}
+                onChange={(value) => patchForm({ defaultDeliveryLocale: value })}
+                error={errAt("/defaultDeliveryLocale")}
               />
             </div>
-            <TextField
-              label={t("fields.defaultDeliveryLocale")}
-              help={t("help.locale")}
-              required
-              value={form.defaultDeliveryLocale}
-              onChange={(value) => patchForm({ defaultDeliveryLocale: value })}
-              error={errAt("/defaultDeliveryLocale")}
-            />
           </Section>
 
           <Section
             index={2}
             title={t("sections.idealCustomer.title")}
             description={t("sections.idealCustomer.description")}
+            icon={<UsersRound size={23} strokeWidth={1.7} />}
           >
-            <AreaField
-              label={t("fields.segments")}
-              help={t("help.perLine")}
-              required
-              value={form.segments}
-              onChange={(value) => patchForm({ segments: value })}
-              error={errAt("/segments")}
-            />
-            <Field label={t("fields.personas")} required error={errAt("/personas")}>
-              <div className={styles.personaList}>
+            <div className={styles.segmentGrid} data-segment-cards="">
+              <div
+                className={cx(styles.segmentCard, styles.segmentCardPrimary)}
+                data-icp-card="primary"
+              >
+                <span className={styles.cardEyebrow}>ICP 01</span>
+                <AreaField
+                  label={`${t("fields.segments")} · ICP 01`}
+                  required
+                  rows={3}
+                  value={primarySegment}
+                  onChange={(value) =>
+                    patchForm({ segments: joinSegments(value, secondarySegments) })
+                  }
+                  error={errAt("/segments")}
+                  controlClassName={styles.segmentControl}
+                />
+              </div>
+              <div className={styles.segmentCard} data-icp-card="secondary">
+                <span className={styles.cardEyebrow}>ICP 02</span>
+                <AreaField
+                  label={`${t("fields.segments")} · ICP 02`}
+                  help={t("help.perLine")}
+                  rows={3}
+                  value={secondarySegments}
+                  onChange={(value) =>
+                    patchForm({ segments: joinSegments(primarySegment, value) })
+                  }
+                  controlClassName={styles.segmentControl}
+                />
+              </div>
+            </div>
+
+            <div
+              className={styles.personaField}
+              id={`${personasControlId}-group`}
+              role="group"
+              aria-labelledby={personasLabelId}
+              aria-describedby={personasDescribedBy}
+              aria-errormessage={
+                personasError === undefined ? undefined : personasErrorId
+              }
+              aria-invalid={personasError === undefined ? undefined : true}
+            >
+              <div className={styles.personaFieldHead}>
+                <h3 className={styles.personaFieldTitle} id={personasLabelId}>
+                  {t("fields.personas")}
+                  <span className={styles.requiredMark} aria-hidden="true">
+                    {" *"}
+                  </span>
+                </h3>
+                <p className={styles.personaFieldHelp} id={personasHelpId}>
+                  {t("help.perLine")}
+                </p>
+              </div>
+              {personasError !== undefined ? (
+                <p className={styles.inlineError} id={personasErrorId} role="alert">
+                  {personasError}
+                </p>
+              ) : null}
+              <div
+                className={styles.personaTable}
+                role="table"
+                aria-label={t("fields.personas")}
+                data-persona-table=""
+              >
+                <div className={styles.personaTableHead} role="row">
+                  <span
+                    className={styles.personaIndexHead}
+                    role="columnheader"
+                    aria-label="№"
+                  />
+                  <span role="columnheader">
+                    {t("fields.personaName")} / {t("fields.personaRole")}
+                  </span>
+                  <span role="columnheader">{t("fields.personaJobs")}</span>
+                  <span role="columnheader">{t("fields.personaPains")}</span>
+                </div>
                 {form.personas.map((persona, index) => (
-                  <Card key={index} padding="md" className={styles.personaCard}>
-                    <div className={styles.personaHead}>
-                      <span className={styles.personaTitle}>{`#${index + 1}`}</span>
-                      {form.personas.length > 1 ? (
-                        <Button
-                          variant="text"
-                          size="sm"
-                          onClick={() => removePersona(index)}
-                          aria-label={`${tCommon("close")} #${index + 1}`}
-                        >
-                          {tCommon("close")}
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className={styles.personaBody}>
+                  <div
+                    className={styles.personaRow}
+                    role="row"
+                    key={index}
+                    data-persona-row={index}
+                  >
+                    <span className={styles.personaOrdinal} role="cell">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div className={styles.personaIdentity} role="cell">
                       <TextField
+                        fieldClassName={styles.personaCell}
+                        controlClassName={styles.personaInput}
+                        controlId={`${personasControlId}-row-${index}-name`}
+                        additionalDescribedBy={
+                          personasError === undefined ? undefined : personasErrorId
+                        }
+                        errorMessageId={
+                          personasError === undefined ? undefined : personasErrorId
+                        }
+                        forceInvalid={personasError !== undefined}
                         label={t("fields.personaName")}
                         required
                         value={persona.name}
@@ -899,48 +1175,101 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
                         error={errAt(`/personas/${index}/name`)}
                       />
                       <TextField
+                        fieldClassName={styles.personaCell}
+                        controlClassName={styles.personaInput}
+                        controlId={`${personasControlId}-row-${index}-role`}
+                        additionalDescribedBy={
+                          personasError === undefined ? undefined : personasErrorId
+                        }
+                        errorMessageId={
+                          personasError === undefined ? undefined : personasErrorId
+                        }
+                        forceInvalid={personasError !== undefined}
                         label={t("fields.personaRole")}
                         required
                         value={persona.roleOrContext}
                         onChange={(value) => updatePersona(index, { roleOrContext: value })}
                         error={errAt(`/personas/${index}/roleOrContext`)}
                       />
+                    </div>
+                    <div className={styles.personaDataCell} role="cell">
                       <AreaField
+                        fieldClassName={styles.personaCell}
+                        controlClassName={styles.personaArea}
+                        controlId={`${personasControlId}-row-${index}-jobs`}
+                        additionalDescribedBy={
+                          personasError === undefined ? undefined : personasErrorId
+                        }
+                        errorMessageId={
+                          personasError === undefined ? undefined : personasErrorId
+                        }
+                        forceInvalid={personasError !== undefined}
                         label={t("fields.personaJobs")}
                         help={t("help.perLine")}
                         required
+                        rows={3}
                         value={persona.jobs}
                         onChange={(value) => updatePersona(index, { jobs: value })}
                         error={errAt(`/personas/${index}/jobs`)}
                       />
+                    </div>
+                    <div className={styles.personaDataCell} role="cell">
                       <AreaField
+                        fieldClassName={styles.personaCell}
+                        controlClassName={styles.personaArea}
+                        controlId={`${personasControlId}-row-${index}-pains`}
+                        additionalDescribedBy={
+                          personasError === undefined ? undefined : personasErrorId
+                        }
+                        errorMessageId={
+                          personasError === undefined ? undefined : personasErrorId
+                        }
+                        forceInvalid={personasError !== undefined}
                         label={t("fields.personaPains")}
                         help={t("help.perLine")}
                         required
+                        rows={3}
                         value={persona.painPoints}
                         onChange={(value) => updatePersona(index, { painPoints: value })}
                         error={errAt(`/personas/${index}/painPoints`)}
                       />
+                      <div className={styles.personaAction}>
+                        {form.personas.length > 1 ? (
+                          <Button
+                            variant="text"
+                            size="sm"
+                            className={styles.removePersona}
+                            onClick={() => removePersona(index)}
+                            aria-label={`${tCommon("close")} #${index + 1}`}
+                          >
+                            <X aria-hidden="true" size={16} strokeWidth={1.8} />
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
-                  </Card>
+                  </div>
                 ))}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className={styles.addPersona}
-                  onClick={addPersona}
-                >
-                  {`+ ${t("fields.personas")}`}
-                </Button>
               </div>
-            </Field>
+              <Button
+                variant="text"
+                size="sm"
+                className={styles.addPersona}
+                onClick={addPersona}
+              >
+                <Plus aria-hidden="true" size={16} strokeWidth={1.9} />
+                {t("fields.personas")}
+              </Button>
+            </div>
+
             <AreaField
               label={t("fields.useCases")}
               help={t("help.perLine")}
               required
+              rows={4}
               value={form.useCases}
               onChange={(value) => patchForm({ useCases: value })}
               error={errAt("/useCases")}
+              controlClassName={styles.compactArea}
             />
           </Section>
 
@@ -948,31 +1277,91 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
             index={3}
             title={t("sections.commercialFocus.title")}
             description={t("sections.commercialFocus.description")}
+            icon={<Crosshair size={23} strokeWidth={1.7} />}
           >
-            <div className={styles.row2}>
-              <AreaField
-                label={t("fields.offers")}
-                help={t("help.perLine")}
-                required
-                value={form.offers}
-                onChange={(value) => patchForm({ offers: value })}
-                error={errAt("/offers")}
-              />
-              <AreaField
-                label={t("fields.differentiators")}
-                help={t("help.perLine")}
-                required
-                value={form.differentiators}
-                onChange={(value) => patchForm({ differentiators: value })}
-                error={errAt("/differentiators")}
-              />
+            <div className={styles.productCompetitionGrid}>
+              <div className={styles.productCard} data-product-card="">
+                <div className={styles.editorialCardHead}>
+                  <span className={styles.editorialCardIcon} aria-hidden="true">
+                    <Target size={18} strokeWidth={1.8} />
+                  </span>
+                  <h3>{t("fields.priorityProductsOrServices")}</h3>
+                </div>
+                <AreaField
+                  fieldClassName={styles.darkField}
+                  controlClassName={styles.darkControl}
+                  label={t("fields.priorityProductsOrServices")}
+                  help={t("help.perLine")}
+                  required
+                  rows={3}
+                  value={form.priorityProductsOrServices}
+                  onChange={(value) => patchForm({ priorityProductsOrServices: value })}
+                  error={errAt("/priorityProductsOrServices")}
+                />
+                <div className={styles.productCardSplit}>
+                  <AreaField
+                    fieldClassName={styles.darkField}
+                    controlClassName={styles.darkControl}
+                    label={t("fields.offers")}
+                    help={t("help.perLine")}
+                    required
+                    rows={3}
+                    value={form.offers}
+                    onChange={(value) => patchForm({ offers: value })}
+                    error={errAt("/offers")}
+                  />
+                  <AreaField
+                    fieldClassName={styles.darkField}
+                    controlClassName={styles.darkControl}
+                    label={t("fields.differentiators")}
+                    help={t("help.perLine")}
+                    required
+                    rows={3}
+                    value={form.differentiators}
+                    onChange={(value) => patchForm({ differentiators: value })}
+                    error={errAt("/differentiators")}
+                  />
+                </div>
+              </div>
+
+              <div className={styles.competitionCard} data-competition-card="">
+                <div className={styles.editorialCardHead}>
+                  <span className={styles.editorialCardIndex} aria-hidden="true">
+                    03
+                  </span>
+                  <h3>{t("fields.competitors")}</h3>
+                </div>
+                <AreaField
+                  label={t("fields.competitors")}
+                  help={t("help.perLine")}
+                  rows={4}
+                  value={form.competitors}
+                  onChange={(value) => patchForm({ competitors: value })}
+                  error={errAt("/competitors")}
+                  controlClassName={styles.compactArea}
+                />
+                <AreaField
+                  label={t("fields.priorityUrls")}
+                  help={t("help.urls")}
+                  rows={3}
+                  value={form.priorityUrls}
+                  onChange={(value) => patchForm({ priorityUrls: value })}
+                  error={errAt("/priorityUrls")}
+                  controlClassName={styles.compactArea}
+                />
+              </div>
             </div>
-            <Field
-              label={t("fields.primaryConversion")}
-              required
-              error={errAt("/primaryConversion")}
-            >
-              <div className={styles.row2}>
+
+            <div className={styles.conversionPanel}>
+              <div className={styles.conversionHead}>
+                <h3>
+                  {t("fields.primaryConversion")}
+                  <span className={styles.requiredMark} aria-hidden="true">
+                    {" *"}
+                  </span>
+                </h3>
+              </div>
+              <div className={styles.conversionGrid}>
                 <TextField
                   label={t("fields.conversionLabel")}
                   required
@@ -992,69 +1381,57 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
                     placeholder={tCommon("none")}
                   />
                 </Field>
+                <TextField
+                  label={t("fields.conversionTargetUrl")}
+                  type="url"
+                  value={form.conversionTargetUrl}
+                  onChange={(value) => patchForm({ conversionTargetUrl: value })}
+                  error={errAt("/primaryConversion/targetUrl")}
+                />
               </div>
-            </Field>
-            <TextField
-              label={t("fields.conversionTargetUrl")}
-              type="url"
-              value={form.conversionTargetUrl}
-              onChange={(value) => patchForm({ conversionTargetUrl: value })}
-              error={errAt("/primaryConversion/targetUrl")}
-            />
-            <AreaField
-              label={t("fields.priorityProductsOrServices")}
-              help={t("help.perLine")}
-              required
-              value={form.priorityProductsOrServices}
-              onChange={(value) => patchForm({ priorityProductsOrServices: value })}
-              error={errAt("/priorityProductsOrServices")}
-            />
-            <div className={styles.row2}>
-              <AreaField
-                label={t("fields.priorityUrls")}
-                help={t("help.urls")}
-                value={form.priorityUrls}
-                onChange={(value) => patchForm({ priorityUrls: value })}
-                error={errAt("/priorityUrls")}
-              />
-              <AreaField
-                label={t("fields.competitors")}
-                help={t("help.perLine")}
-                value={form.competitors}
-                onChange={(value) => patchForm({ competitors: value })}
-                error={errAt("/competitors")}
-              />
+              {errAt("/primaryConversion") !== undefined ? (
+                <p className={styles.inlineError} role="alert">
+                  {errAt("/primaryConversion")}
+                </p>
+              ) : null}
             </div>
-            <div className={styles.row2}>
+
+            <div className={styles.constraintGrid}>
               <AreaField
                 label={t("fields.brandConstraints")}
                 help={t("help.perLine")}
+                rows={3}
                 value={form.brandConstraints}
                 onChange={(value) => patchForm({ brandConstraints: value })}
                 error={errAt("/brandConstraints")}
+                controlClassName={styles.compactArea}
               />
               <AreaField
                 label={t("fields.complianceConstraints")}
                 help={t("help.perLine")}
+                rows={3}
                 value={form.complianceConstraints}
                 onChange={(value) => patchForm({ complianceConstraints: value })}
                 error={errAt("/complianceConstraints")}
+                controlClassName={styles.compactArea}
               />
-            </div>
-            <div className={styles.row2}>
               <AreaField
                 label={t("fields.technicalConstraints")}
                 help={t("help.perLine")}
+                rows={3}
                 value={form.technicalConstraints}
                 onChange={(value) => patchForm({ technicalConstraints: value })}
                 error={errAt("/technicalConstraints")}
+                controlClassName={styles.compactArea}
               />
               <AreaField
                 label={t("fields.resourceConstraints")}
                 help={t("help.perLine")}
+                rows={3}
                 value={form.resourceConstraints}
                 onChange={(value) => patchForm({ resourceConstraints: value })}
                 error={errAt("/resourceConstraints")}
+                controlClassName={styles.compactArea}
               />
             </div>
           </Section>
@@ -1063,93 +1440,117 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
             index={4}
             title={t("sections.successDefinition.title")}
             description={t("sections.successDefinition.description")}
+            icon={<Target size={23} strokeWidth={1.7} />}
           >
-            <AreaField
-              label={t("fields.growthQuestions")}
-              help={t("help.perLine")}
-              required
-              value={form.growthQuestions}
-              onChange={(value) => patchForm({ growthQuestions: value })}
-              error={errAt("/growthQuestions")}
-            />
-            <AreaField
-              label={t("fields.ninetyDayGoals")}
-              help={t("help.perLine")}
-              required
-              value={form.ninetyDayGoals}
-              onChange={(value) => patchForm({ ninetyDayGoals: value })}
-              error={errAt("/ninetyDayGoals")}
-            />
+            <div className={styles.successGrid}>
+              <AreaField
+                label={t("fields.growthQuestions")}
+                help={t("help.perLine")}
+                required
+                rows={5}
+                value={form.growthQuestions}
+                onChange={(value) => patchForm({ growthQuestions: value })}
+                error={errAt("/growthQuestions")}
+                controlClassName={styles.successQuestions}
+              />
+              <NumberedListField
+                label={t("fields.ninetyDayGoals")}
+                help={t("help.perLine")}
+                required
+                value={form.ninetyDayGoals}
+                onChange={(value) => patchForm({ ninetyDayGoals: value })}
+                error={errAt("/ninetyDayGoals")}
+                removeLabel={tCommon("close")}
+              />
+            </div>
           </Section>
         </div>
 
-        <DarkPanel padding="lg" className={styles.aside} aria-label={t("title")}>
-          <div className={styles.lens}>
-            <div>
-              <span className={styles.lensEyebrow}>{t("title")}</span>
-              <p className={styles.lensName}>{form.productName.trim() || tCommon("empty")}</p>
-              {form.oneLineDescription.trim().length > 0 ? (
-                <p className={styles.lensDesc}>{form.oneLineDescription.trim()}</p>
-              ) : null}
-            </div>
-
-            <div className={styles.lensMeta}>
-              <span className={styles.lensMetaLabel}>{t("fields.marketCodes")}</span>
-              {marketBadges.length > 0 ? (
-                <div className={styles.lensBadges}>
-                  {marketBadges.map((code) => (
-                    <span key={code} className={styles.lensBadge}>
-                      {code}
-                    </span>
-                  ))}
+        <aside className={styles.aside} data-context-rail="">
+          <DarkPanel padding="none" className={styles.lensPanel} aria-label={t("title")}>
+            <div className={styles.lens}>
+              <div className={styles.lensIntro}>
+                <span className={styles.lensMark} aria-hidden="true">
+                  <Sparkles size={19} strokeWidth={1.8} />
+                </span>
+                <div>
+                  <span className={styles.lensEyebrow}>{t("title")}</span>
+                  <p className={styles.lensName}>
+                    {form.productName.trim() || tCommon("empty")}
+                  </p>
                 </div>
-              ) : (
-                <span className={styles.lensEmpty}>{tCommon("none")}</span>
-              )}
-            </div>
+              </div>
+              <p className={styles.lensDesc}>
+                {form.oneLineDescription.trim() || tCommon("empty")}
+              </p>
 
-            <div className={styles.lensMeta}>
-              <span className={styles.lensMetaLabel}>{t("fields.siteLanguageCodes")}</span>
-              {languageBadges.length > 0 ? (
-                <div className={styles.lensBadges}>
-                  {languageBadges.map((code) => (
-                    <span key={code} className={styles.lensBadge}>
-                      {code}
+              <div className={styles.lensDivider} aria-hidden="true" />
+
+              <ul className={styles.lensChecklist}>
+                {checklist.map((item) => (
+                  <li key={item.label} className={styles.lensCheckItem}>
+                    <span
+                      className={cx(
+                        styles.lensCheckMark,
+                        item.done && styles.lensCheckMarkDone,
+                      )}
+                      aria-hidden="true"
+                    >
+                      {item.done ? <Check size={13} strokeWidth={2.4} /> : null}
                     </span>
-                  ))}
+                    <span className={styles.lensCheckCopy}>
+                      <strong>{item.label}</strong>
+                      <span>{item.description}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className={styles.lensSnapshot}>
+                <div className={styles.lensMeta}>
+                  <span className={styles.lensMetaLabel}>{t("fields.marketCodes")}</span>
+                  {marketBadges.length > 0 ? (
+                    <div className={styles.lensBadges}>
+                      {marketBadges.map((code) => (
+                        <span key={code} className={styles.lensBadge}>
+                          {code}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className={styles.lensEmpty}>{tCommon("none")}</span>
+                  )}
                 </div>
-              ) : (
-                <span className={styles.lensEmpty}>{tCommon("none")}</span>
-              )}
-            </div>
-
-            <div className={styles.lensDivider} aria-hidden="true" />
-
-            <ul className={styles.lensChecklist}>
-              {checklist.map((item) => (
-                <li key={item.label} className={styles.lensCheckItem}>
-                  <span
-                    className={cx(
-                      styles.lensCheckMark,
-                      item.done && styles.lensCheckMarkDone,
-                    )}
-                    aria-hidden="true"
-                  >
-                    {"✓"}
+                <div className={styles.lensMeta}>
+                  <span className={styles.lensMetaLabel}>
+                    {t("fields.siteLanguageCodes")}
                   </span>
-                  <span>{item.label}</span>
-                </li>
-              ))}
-            </ul>
+                  {languageBadges.length > 0 ? (
+                    <div className={styles.lensBadges}>
+                      {languageBadges.map((code) => (
+                        <span key={code} className={styles.lensBadge}>
+                          {code}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className={styles.lensEmpty}>{tCommon("none")}</span>
+                  )}
+                </div>
+              </div>
 
-            <div className={styles.lensDivider} aria-hidden="true" />
+              <div className={styles.lensCallout}>
+                <span>{t("sections.successDefinition.title")}</span>
+                <p>{t("sections.successDefinition.description")}</p>
+              </div>
 
-            <div className={styles.lensStatusRow}>
-              <span className={styles.lensStatusLabel}>{t("title")}</span>
-              <StatusPill tone={STATUS_TONE[statusKey]}>{tStatus(statusKey)}</StatusPill>
+              <div className={styles.lensStatusRow}>
+                <span className={styles.lensStatusLabel}>{t("title")}</span>
+                <StatusPill tone={STATUS_TONE[statusKey]}>{tStatus(statusKey)}</StatusPill>
+              </div>
             </div>
-          </div>
-        </DarkPanel>
+          </DarkPanel>
+        </aside>
       </div>
     </div>
   );

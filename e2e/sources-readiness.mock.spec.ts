@@ -101,7 +101,11 @@ test("Sources derives readiness and exposes canonical immutable provenance", asy
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
 
   const readiness = page.getByRole("region", { name: "Source readiness" });
-  await expect(readiness).toContainText("5 / 5");
+  // Readiness is intentionally scoped to enabled evidence families. The
+  // disabled DataForSEO slot remains visible on the page, but it must not
+  // dilute the actionable coverage denominator.
+  await expect(readiness).toContainText("2 / 4");
+  await expect(readiness).toContainText("50%");
   await expect(readiness).toContainText("Connected");
   await expect(readiness).toContainText("4");
   await expect(readiness).toContainText("Usable");
@@ -109,7 +113,7 @@ test("Sources derives readiness and exposes canonical immutable provenance", asy
   await expect(readiness).toContainText("Partial");
   await expect(readiness).toContainText("1");
   await expect(readiness).toContainText("Unavailable");
-  await expect(readiness).toContainText("2");
+  await expect(readiness).toContainText("1");
   await expect(readiness).not.toContainText("83%");
 
   const gap = page.getByRole("note", { name: "Coverage gap" });

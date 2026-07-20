@@ -21,6 +21,10 @@ const basePath = rawBasePath ? `/${rawBasePath}` : undefined;
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Keep the development route badge out of application screenshots and from
+  // covering the persistent sidebar utilities. Compile/runtime errors still
+  // surface through the regular development overlay.
+  devIndicators: false,
   ...(basePath ? { basePath } : {}),
   // Isolated Playwright/mock servers must not contend with the developer's
   // existing `.next/dev/lock`; production and normal development keep `.next`.

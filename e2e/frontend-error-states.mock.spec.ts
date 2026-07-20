@@ -435,8 +435,10 @@ test("Studio generation errors expose stable code and request ID without raw pro
   );
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
-  await page.getByRole("button", { name: "Generate artifact" }).click();
-  await page
+  const hero = page.locator("[data-studio-page-hero]");
+  const canvas = page.locator("[data-studio-editor-column]");
+  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
     .getByRole("button", { name: /Generate|Regenerate/ })
@@ -457,6 +459,364 @@ test("Studio generation errors expose stable code and request ID without raw pro
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect.poll(() => createAttempts).toBe(2);
   await expect.poll(() => api.artifactCreateRequests.length).toBe(1);
+});
+
+test("Studio adopts a cross-tab active generation from the refreshed artifact projection", async ({
+  page,
+}) => {
+  const now = "2026-07-20T12:00:00.000Z";
+  const actionId = "00000000-0000-4000-8000-000000000301";
+  const artifactId = "00000000-0000-4000-8000-000000000401";
+  const runId = "cross-tab-artifact-run";
+  const activeRun = {
+    id: runId,
+    projectId: E2E_PROJECT_ID,
+    kind: "artifact_generation",
+    status: "running",
+    progress: {
+      phase: "generate",
+      current: 1,
+      total: 2,
+      messageKey: "worker.artifact_generation",
+    },
+    lastError: null,
+    resultRef: null,
+    queuedAt: now,
+    startedAt: now,
+    completedAt: null,
+  };
+  const artifact = {
+    id: artifactId,
+    actionId,
+    artifactType: "technical_ticket",
+    status: "draft",
+    generationMode: "template",
+    outputLocale: "en",
+    currentRevision: 2,
+    validationState: "valid",
+    current: {
+      id: "00000000-0000-4000-8000-000000000402",
+      revision: 2,
+      contentFormat: "markdown",
+      content: "Canonical artifact content",
+      contentHash: "sha256:cross-tab-artifact",
+      validationErrors: [],
+      note: null,
+      createdAt: now,
+    },
+    activeRun: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  let conflictRaised = false;
+  let createAttempts = 0;
+  let artifactReads = 0;
+  let runReads = 0;
+
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      artifactReads += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: [
+            conflictRaised
+              ? { ...artifact, status: "generating", activeRun }
+              : artifact,
+          ],
+          meta: { nextCursor: null, hasNext: false, limit: 100 },
+        }),
+      });
+    },
+  );
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/actions/${actionId}/artifacts`,
+    async (route) => {
+      createAttempts += 1;
+      conflictRaised = true;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/problem+json",
+        headers: {
+          Location: `/api/mvp/projects/${E2E_PROJECT_ID}/runs/${runId}`,
+        },
+        body: JSON.stringify(
+          problem(
+            "RUN_ALREADY_ACTIVE",
+            "raw provider detail: this artifact is already generating",
+            409,
+          ),
+        ),
+      });
+    },
+  );
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/runs/${runId}`,
+    async (route) => {
+      runReads += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: activeRun }),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  const card = page.locator(`[data-studio-artifact-id="${artifactId}"]`);
+  await card.getByRole("button", { name: "Regenerate" }).click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+
+  await expect.poll(() => artifactReads).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => runReads).toBeGreaterThanOrEqual(1);
+  await expect.poll(() => createAttempts).toBe(1);
+  await expect(page.locator(`[data-studio-active-run="${runId}"]`)).toBeVisible();
+  await expect(
+    card.getByRole("button", { name: "Generating…" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("Something went wrong", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("main")).not.toContainText("raw provider detail");
+
+  await page
+    .locator("[data-studio-page-hero]")
+    .getByRole("button", { name: "Generate artifact" })
+    .click();
+  const activeAction = page
+    .locator("[data-studio-editor-column]")
+    .getByRole("listitem")
+    .filter({ hasText: "Fix the failing product page" })
+    .getByRole("button", { name: "Generating…" });
+  await expect(activeAction).toBeDisabled();
+  expect(createAttempts).toBe(1);
+});
+
+test("Studio releases a 409 recovery fence when the canonical run has already settled", async ({
+  page,
+}) => {
+  const now = "2026-07-20T12:00:00.000Z";
+  const actionId = "00000000-0000-4000-8000-000000000301";
+  const artifactId = "00000000-0000-4000-8000-000000000401";
+  const artifact = {
+    id: artifactId,
+    actionId,
+    artifactType: "technical_ticket",
+    status: "draft",
+    generationMode: "template",
+    outputLocale: "en",
+    currentRevision: 2,
+    validationState: "valid",
+    current: {
+      id: "00000000-0000-4000-8000-000000000402",
+      revision: 2,
+      contentFormat: "markdown",
+      content: "Canonical artifact content after the winning run settled.",
+      contentHash: "sha256:settled-cross-tab-artifact",
+      validationErrors: [],
+      note: null,
+      createdAt: now,
+    },
+    activeRun: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  let conflictRaised = false;
+  let createAttempts = 0;
+  let artifactReads = 0;
+  let releaseSettledProjection!: () => void;
+  const settledProjectionGate = new Promise<void>((resolve) => {
+    releaseSettledProjection = resolve;
+  });
+
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      artifactReads += 1;
+      if (conflictRaised && artifactReads === 2) {
+        // Hold the first recovery refetch open long enough to prove the local
+        // fence is active before canonical settlement releases it.
+        await settledProjectionGate;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: [
+            conflictRaised ? { ...artifact, status: "ready" } : artifact,
+          ],
+          meta: { nextCursor: null, hasNext: false, limit: 100 },
+        }),
+      });
+    },
+  );
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/actions/${actionId}/artifacts`,
+    async (route) => {
+      createAttempts += 1;
+      conflictRaised = true;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/problem+json",
+        body: JSON.stringify(
+          problem(
+            "RUN_ALREADY_ACTIVE",
+            "The winning run settled before the artifact refetch.",
+            409,
+          ),
+        ),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  const card = page.locator(`[data-studio-artifact-id="${artifactId}"]`);
+  await card.getByRole("button", { name: "Regenerate" }).click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+
+  await expect.poll(() => createAttempts).toBe(1);
+  await expect.poll(() => artifactReads).toBe(2);
+  await expect(
+    card.getByRole("button", { name: "Generating…" }),
+  ).toBeDisabled();
+  expect(createAttempts).toBe(1);
+
+  releaseSettledProjection();
+  const regenerate = card.getByRole("button", { name: "Regenerate" });
+  await expect(regenerate).toBeEnabled();
+  await expect(
+    page.locator("[data-studio-conflict-recovery]"),
+  ).toHaveCount(0);
+  expect(createAttempts).toBe(1);
+
+  await regenerate.click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect.poll(() => createAttempts).toBe(2);
+});
+
+test("Studio fences a locally queued generation before artifact projection catches up", async ({
+  page,
+}) => {
+  const runId = "artifact-run";
+  const actionId = "00000000-0000-4000-8000-000000000301";
+  const artifactId = "00000000-0000-4000-8000-000000000401";
+  const staleArtifact = {
+    id: artifactId,
+    actionId,
+    artifactType: "technical_ticket",
+    status: "draft",
+    generationMode: "template",
+    outputLocale: "en",
+    currentRevision: 2,
+    validationState: "valid",
+    current: {
+      id: "00000000-0000-4000-8000-000000000402",
+      revision: 2,
+      contentFormat: "markdown",
+      content: "Projection remains stale while the accepted run starts.",
+      contentHash: "sha256:stale-artifact-projection",
+      validationErrors: [],
+      note: null,
+      createdAt: "2026-07-20T12:00:00.000Z",
+    },
+    activeRun: null,
+    createdAt: "2026-07-20T12:00:00.000Z",
+    updatedAt: "2026-07-20T12:00:00.000Z",
+  };
+  let artifactReads = 0;
+  let runReads = 0;
+
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      artifactReads += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          // Deliberately keep returning the pre-202 projection. The card must
+          // consume the local action/type fence instead of waiting for this
+          // record to expose status=generating and activeRun.
+          data: [staleArtifact],
+          meta: { nextCursor: null, hasNext: false, limit: 100 },
+        }),
+      });
+    },
+  );
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/runs/${runId}`,
+    async (route) => {
+      runReads += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            id: runId,
+            projectId: E2E_PROJECT_ID,
+            kind: "artifact_generation",
+            status: "running",
+            progress: {
+              phase: "generate",
+              current: 1,
+              total: 2,
+              messageKey: "worker.artifact_generation",
+            },
+            lastError: null,
+            resultRef: null,
+            queuedAt: "2026-07-20T12:00:00.000Z",
+            startedAt: "2026-07-20T12:00:00.000Z",
+            completedAt: null,
+          },
+        }),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  const hero = page.locator("[data-studio-page-hero]");
+  const canvas = page.locator("[data-studio-editor-column]");
+  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await canvas
+    .getByRole("listitem")
+    .filter({ hasText: "Fix the failing product page" })
+    .getByRole("button", { name: "Regenerate", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+
+  await expect.poll(() => artifactReads).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => runReads).toBeGreaterThanOrEqual(1);
+  await expect.poll(() => api.artifactCreateRequests.length).toBe(1);
+
+  const staleCard = page.locator(
+    `[data-studio-artifact-id="${artifactId}"]`,
+  );
+  await expect(staleCard.getByText("Generating", { exact: true })).toBeVisible();
+  await expect(
+    staleCard.getByRole("button", { name: "Generating…" }),
+  ).toBeDisabled();
+
+  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  const queuedAction = canvas
+    .getByRole("listitem")
+    .filter({ hasText: "Fix the failing product page" })
+    .getByRole("button", { name: "Generating…" });
+  await expect(queuedAction).toBeDisabled();
+  expect(api.artifactCreateRequests).toHaveLength(1);
 });
 
 test("zh-CN Studio keeps server validation detail out of localized feedback", async ({

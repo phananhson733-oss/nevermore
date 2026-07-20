@@ -31,7 +31,13 @@ test("Studio renders artifacts before actions and defers project metadata", asyn
 
     // Artifact data is already usable, so an unrelated slow action lookup must
     // not replace the whole screen with a loading state.
-    await expect(page.getByRole("heading", { name: "Studio" })).toBeVisible();
+    const hero = page.locator("[data-studio-page-hero]");
+    const queue = page.locator("[data-studio-queue]");
+    await expect(
+      hero.getByRole("heading", {
+        name: "Turn actions into client-ready work.",
+      }),
+    ).toBeVisible();
     await expect(
       page.getByText("Technical ticket", { exact: true }).first(),
     ).toBeVisible();
@@ -39,10 +45,10 @@ test("Studio renders artifacts before actions and defers project metadata", asyn
       page.getByRole("button", { name: "Open", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText("Fix the failing product page", { exact: true }),
+      queue.getByText("Fix the failing product page", { exact: true }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Generate artifact" }),
+      hero.getByRole("button", { name: "Generate artifact" }),
     ).toBeDisabled();
     expect(projectReads).toBe(0);
 
@@ -50,9 +56,9 @@ test("Studio renders artifacts before actions and defers project metadata", asyn
     releaseActions = undefined;
 
     await expect(
-      page.getByText("Fix the failing product page", { exact: true }),
+      queue.getByText("Fix the failing product page", { exact: true }),
     ).toBeVisible();
-    const generate = page.getByRole("button", { name: "Generate artifact" });
+    const generate = hero.getByRole("button", { name: "Generate artifact" });
     await expect(generate).toBeEnabled();
     expect(projectReads).toBe(0);
 

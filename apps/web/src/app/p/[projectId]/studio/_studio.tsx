@@ -14,13 +14,13 @@
  */
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,11 +28,14 @@ import {
   MAX_ARTIFACT_CONTENT_CHARS,
 } from "@sf/contracts";
 import {
+  Clock3,
   CircleCheckBig,
   ClipboardList,
-  FilePenLine,
-  FileStack,
   FileText,
+  Languages,
+  Link2,
+  ShieldCheck,
+  Sparkles,
   SquarePen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -107,6 +110,19 @@ const GENERATION_MODES: readonly GenerationMode[] = [
   "template",
   "structured_llm",
 ];
+
+function artifactGenerationKey(
+  actionId: string,
+  artifactType: ArtifactType,
+): string {
+  return `${actionId}:${artifactType}`;
+}
+
+interface ActiveGenerationRecovery {
+  readonly key: string;
+  readonly actionId: string;
+  readonly artifactType: ArtifactType;
+}
 
 function artifactStatusTone(status: ArtifactStatus): StatusTone {
   switch (status) {
@@ -436,11 +452,48 @@ function RunBanner({
   );
 }
 
+/**
+ * One independent observer per active artifact run. Keeping the hook in a keyed
+ * child lets Studio poll every concurrent run without changing hook order when
+ * artifacts are added or settle.
+ */
+function ArtifactRunMonitor({
+  projectId,
+  runId,
+  onTerminal,
+  onQueryError,
+}: {
+  readonly projectId: string;
+  readonly runId: string;
+  readonly onTerminal: (run: AsyncRun) => void;
+  readonly onQueryError: (runId: string) => void;
+}) {
+  const t = useTranslations("studio");
+  const query = useProjectRun(projectId, runId);
+  const outcome = studioRunQueryOutcome(query.data, query.error);
+
+  useEffect(() => {
+    if (outcome === "terminal" && query.data !== undefined) {
+      onTerminal(query.data);
+      return;
+    }
+    if (outcome === "query_error") onQueryError(runId);
+  }, [onQueryError, onTerminal, outcome, query.data, runId]);
+
+  if (outcome !== "active" || query.data === undefined) return null;
+  return (
+    <div data-studio-active-run={runId}>
+      <RunBanner run={query.data} message={t("generating")} />
+    </div>
+  );
+}
+
 // --------------------------------------------------------- Artifact card -----
 
 interface ArtifactCardProps {
   readonly artifact: Artifact;
   readonly actionTitle: string | undefined;
+  readonly generationActive: boolean;
   readonly selected: boolean;
   readonly onOpen: () => void;
   readonly onRegenerate: (() => void) | undefined;
@@ -449,6 +502,7 @@ interface ArtifactCardProps {
 function ArtifactCard({
   artifact,
   actionTitle,
+  generationActive,
   selected,
   onOpen,
   onRegenerate,
@@ -456,13 +510,17 @@ function ArtifactCard({
   const t = useTranslations("studio");
   const tRun = useTranslations("runState");
   const generating =
-    artifact.status === "generating" || artifact.activeRun !== null;
+    generationActive ||
+    artifact.status === "generating" ||
+    artifact.activeRun !== null;
+  const displayedStatus = generating ? "generating" : artifact.status;
   const TypeIcon = ARTIFACT_TYPE_ICON[artifact.artifactType];
 
   return (
     <Card
-      padding="md"
+      padding="sm"
       className={cx(styles.artCard, selected && styles.artCardSelected)}
+      data-studio-artifact-id={artifact.id}
     >
       <div className={styles.artHead}>
         <span className={styles.artTypeWrap}>
@@ -473,8 +531,8 @@ function ArtifactCard({
             {t(`artifactType.${artifact.artifactType}`)}
           </span>
         </span>
-        <StatusPill tone={artifactStatusTone(artifact.status)}>
-          {t(`status.${artifact.status}`)}
+        <StatusPill tone={artifactStatusTone(displayedStatus)}>
+          {t(`status.${displayedStatus}`)}
         </StatusPill>
       </div>
 
@@ -499,11 +557,13 @@ function ArtifactCard({
         </span>
       </div>
 
-      {generating && artifact.activeRun !== null ? (
+      {generating ? (
         <div className={styles.artRun} aria-live="polite">
           <Spinner size="sm" label={t("generating")} />
           <span className={styles.metaLabel}>
-            {tRun(artifact.activeRun.status)}
+            {artifact.activeRun === null
+              ? t("generating")
+              : tRun(artifact.activeRun.status)}
           </span>
         </div>
       ) : null}
@@ -519,7 +579,7 @@ function ArtifactCard({
             onClick={onRegenerate}
             disabled={generating}
           >
-            {t("regenerate")}
+            {generating ? t("generating") : t("regenerate")}
           </Button>
         ) : null}
       </div>
@@ -702,6 +762,7 @@ function ArtifactEditor({
       padding="lg"
       className={styles.editor}
       aria-labelledby="sf-editor-title"
+      data-studio-editor=""
     >
       <div className={styles.editorHead}>
         <div className={styles.editorHeadText}>
@@ -768,10 +829,10 @@ function ArtifactEditor({
           {isJson ? (
             <dl className={styles.fields}>
               {metadataFields(current.content).map((field) => (
-                <div key={field.key} className={styles.fieldRow}>
+                <Fragment key={field.key}>
                   <dt className={styles.fieldKey}>{field.key}</dt>
                   <dd className={styles.fieldVal}>{field.value}</dd>
-                </div>
+                </Fragment>
               ))}
             </dl>
           ) : null}
@@ -867,12 +928,155 @@ function ArtifactEditor({
   );
 }
 
+// ----------------------------------------------------- Workspace support ----
+
+function EditorPlaceholder({
+  generationUnavailable,
+  canGenerate,
+  onGenerate,
+}: {
+  readonly generationUnavailable: boolean;
+  readonly canGenerate: boolean;
+  readonly onGenerate: () => void;
+}) {
+  const t = useTranslations("studio");
+  return (
+    <Panel
+      padding="lg"
+      className={styles.editorPlaceholder}
+      data-studio-editor="empty"
+    >
+      <span className={styles.placeholderIcon}>
+        <Sparkles aria-hidden="true" size={24} />
+      </span>
+      <span className="sf-eyebrow">{t("editorCanvas")}</span>
+      <h2 className={styles.placeholderTitle}>{t("selectArtifactTitle")}</h2>
+      <p className={styles.placeholderText}>{t("selectArtifactHint")}</p>
+      <Button
+        variant="primary"
+        onClick={onGenerate}
+        disabled={generationUnavailable || !canGenerate}
+      >
+        {t("generate")}
+      </Button>
+    </Panel>
+  );
+}
+
+function EvidenceRail({
+  artifact,
+  action,
+}: {
+  readonly artifact: Artifact | null;
+  readonly action: ArtifactAction | undefined;
+}) {
+  const t = useTranslations("studio");
+  const tLane = useTranslations("lane");
+  const tBand = useTranslations("priorityBand");
+
+  return (
+    <Panel
+      padding="none"
+      className={styles.evidenceRail}
+      data-studio-evidence-rail=""
+      aria-labelledby="sf-studio-evidence-title"
+    >
+      <div className={styles.railHead}>
+        <span className="sf-eyebrow">{t("evidenceRailEyebrow")}</span>
+        <h2 id="sf-studio-evidence-title" className={styles.railTitle}>
+          {t("evidenceRailTitle")}
+        </h2>
+      </div>
+
+      {artifact === null ? (
+        <div className={styles.railEmpty}>
+          <Link2 aria-hidden="true" size={19} />
+          <p>{t("evidenceRailEmpty")}</p>
+        </div>
+      ) : (
+        <>
+          <section className={styles.railSection}>
+            <span className={styles.railLabel}>{t("linkedAction")}</span>
+            <h3 className={styles.linkedActionTitle}>
+              {action?.title ?? t("linkedActionUnavailable")}
+            </h3>
+            {action !== undefined ? (
+              <>
+                <p className={styles.linkedActionDescription}>
+                  {action.description}
+                </p>
+                <div className={styles.railBadges}>
+                  <Badge tone="accent">{tLane(action.roadmapLane)}</Badge>
+                  <Badge>{tBand(action.priorityBand)}</Badge>
+                </div>
+              </>
+            ) : null}
+          </section>
+
+          <section className={styles.railSection}>
+            <span className={styles.railLabel}>{t("deliveryChecks")}</span>
+            <div className={styles.checkList}>
+              <div className={styles.checkRow}>
+                <Link2 aria-hidden="true" size={17} />
+                <div>
+                  <strong>{t("actionBinding")}</strong>
+                  <code title={artifact.actionId}>{artifact.actionId}</code>
+                </div>
+              </div>
+              {action !== undefined ? (
+                <div className={styles.checkRow}>
+                  <ShieldCheck aria-hidden="true" size={17} />
+                  <div>
+                    <strong>{t("findingBinding")}</strong>
+                    <code title={action.findingId}>{action.findingId}</code>
+                  </div>
+                </div>
+              ) : null}
+              <div className={styles.checkRow}>
+                <CircleCheckBig aria-hidden="true" size={17} />
+                <div>
+                  <strong>{t("validation")}</strong>
+                  <span>{t(`validationState.${artifact.validationState}`)}</span>
+                </div>
+              </div>
+              <div className={styles.checkRow}>
+                <Clock3 aria-hidden="true" size={17} />
+                <div>
+                  <strong>{t("revision")}</strong>
+                  <span>{t("revisionLabel", { n: artifact.currentRevision })}</span>
+                </div>
+              </div>
+              <div className={styles.checkRow}>
+                <Languages aria-hidden="true" size={17} />
+                <div>
+                  <strong>{t("outputLocale")}</strong>
+                  <span>{artifact.outputLocale}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
+
+      <div className={styles.railFoot}>
+        <ShieldCheck aria-hidden="true" size={17} />
+        <p>{t("manualHandoff")}</p>
+      </div>
+    </Panel>
+  );
+}
+
 // --------------------------------------------------------- Generate form -----
 
 interface GenerateFormProps {
   readonly projectId: string;
   readonly action: ArtifactAction;
-  readonly onQueued: (run: AsyncRun, artifactId: string | null) => void;
+  readonly onQueued: (
+    run: AsyncRun,
+    artifactId: string | null,
+    artifactType: ArtifactType,
+  ) => void;
+  readonly onAlreadyActive: (artifactType: ArtifactType) => Promise<void>;
   readonly onCancel: () => void;
 }
 
@@ -909,6 +1113,7 @@ function GenerateForm({
   projectId,
   action,
   onQueued,
+  onAlreadyActive,
   onCancel,
 }: GenerateFormProps) {
   const t = useTranslations("studio");
@@ -970,9 +1175,17 @@ function GenerateForm({
       });
       const artifactId =
         data.resourceRef?.type === "artifact" ? data.resourceRef.id : null;
-      onQueued(data.run, artifactId);
+      onQueued(data.run, artifactId, type);
     } catch (caught) {
       if (caught instanceof ApiError) {
+        if (caught.code === "RUN_ALREADY_ACTIVE") {
+          // The server exposes the winning run only as a Location response
+          // header, while ApiError intentionally carries the problem body. Do
+          // not infer an id: refresh the canonical artifact projection and let
+          // the parent adopt its activeRun when it becomes visible.
+          await onAlreadyActive(type);
+          return;
+        }
         setError(tCommon("error"));
         setProblemError(caught);
         return;
@@ -1107,6 +1320,7 @@ function GenerateForm({
 interface ActionPickerProps {
   readonly actions: readonly ArtifactAction[];
   readonly liveKeys: ReadonlySet<string>;
+  readonly activeKeys: ReadonlySet<string>;
   readonly hasMore: boolean;
   readonly loadingMore: boolean;
   readonly loadMoreError: boolean;
@@ -1118,6 +1332,7 @@ interface ActionPickerProps {
 function ActionPicker({
   actions,
   liveKeys,
+  activeKeys,
   hasMore,
   loadingMore,
   loadMoreError,
@@ -1156,8 +1371,11 @@ function ActionPicker({
         <ul className={styles.pickerList}>
           {actions.map((action) => {
             const type = expectedArtifactType(action);
+            const key =
+              type === null ? null : artifactGenerationKey(action.id, type);
             const hasLive =
-              type !== null && liveKeys.has(`${action.id}:${type}`);
+              key !== null && liveKeys.has(key);
+            const active = key !== null && activeKeys.has(key);
             return (
               <li key={action.id} className={styles.pickerRow}>
                 <div className={styles.pickerText}>
@@ -1174,8 +1392,13 @@ function ActionPicker({
                   variant="secondary"
                   size="sm"
                   onClick={() => onPick(action)}
+                  disabled={active}
                 >
-                  {hasLive ? t("regenerate") : t("generateSubmit")}
+                  {active
+                    ? t("generating")
+                    : hasLive
+                      ? t("regenerate")
+                      : t("generateSubmit")}
                 </Button>
               </li>
             );
@@ -1206,12 +1429,6 @@ function ActionPicker({
   );
 }
 
-// --------------------------------------------------------------- Screen ------
-
-function StateWrap({ children }: { readonly children: ReactNode }) {
-  return <div className={styles.state}>{children}</div>;
-}
-
 export function StudioClient({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
@@ -1219,6 +1436,8 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   const artifactsQuery = useProjectArtifacts(projectId);
   const actionsQuery = useProjectActions(projectId);
   const queryClient = useQueryClient();
+  const artifacts = uniqueCursorItems(artifactsQuery.data);
+  const actions = uniqueCursorItems(actionsQuery.data);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dirtyArtifactId, setDirtyArtifactId] = useState<string | null>(null);
@@ -1226,8 +1445,28 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     null,
   );
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [failedRunId, setFailedRunId] = useState<string | null>(null);
+  const [trackedRunIds, setTrackedRunIds] = useState<readonly string[]>([]);
+  const [runQueryFailureIds, setRunQueryFailureIds] = useState<
+    readonly string[]
+  >([]);
+  const [terminalRunFailures, setTerminalRunFailures] = useState<
+    readonly AsyncRun[]
+  >([]);
+  // A 202 response precedes the artifact-list projection. Preserve the
+  // action/type binding locally so the picker cannot present a second Generate
+  // affordance during that window.
+  const [localActiveKeysByRun, setLocalActiveKeysByRun] = useState<
+    Readonly<Record<string, string>>
+  >({});
+  // RUN_ALREADY_ACTIVE does not put the winning run id in the problem body.
+  // Keep a conservative fence until a refreshed artifact projection reveals it.
+  const [activeGenerationRecoveries, setActiveGenerationRecoveries] = useState<
+    readonly ActiveGenerationRecovery[]
+  >([]);
+  const autoSelectedArtifact = useRef<boolean>(false);
+  // Runs already observed terminal/error, so a stale artifact list cannot
+  // re-seed a settled monitor before the canonical list refetch completes.
+  const finishedRuns = useRef<Set<string>>(new Set<string>());
   const onEditorDirtyChange = useCallback(
     (artifactId: string, dirty: boolean): void => {
       setDirtyArtifactId((value) => {
@@ -1238,55 +1477,83 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     [],
   );
 
-  const runQuery = useProjectRun(projectId, activeRunId);
-  const runOutcome = studioRunQueryOutcome(runQuery.data, runQuery.error);
-  // Runs already observed terminal, so a stale artifact list can't re-seed them.
-  const finishedRuns = useRef<Set<string>>(new Set<string>());
-
-  // Resume polling a run that is still generating on load.
+  // Resume every projected live run on load/refetch. Locally queued runs remain
+  // in this set even before their artifact projection becomes visible.
   useEffect(() => {
-    if (activeRunId !== null) return;
-    const live = uniqueCursorItems(artifactsQuery.data).find(
-      (a) =>
-        a.activeRun !== null &&
-        !isTerminalRun(a.activeRun.status) &&
-        !finishedRuns.current.has(a.activeRun.id),
+    const projectedArtifacts = artifacts.filter(
+      (artifact) =>
+        artifact.activeRun !== null &&
+        !isTerminalRun(artifact.activeRun.status),
     );
-    if (live?.activeRun) setActiveRunId(live.activeRun.id);
-  }, [artifactsQuery.data, activeRunId]);
+    const projected = projectedArtifacts.flatMap((artifact) =>
+      artifact.activeRun !== null &&
+      !finishedRuns.current.has(artifact.activeRun.id)
+        ? [artifact.activeRun.id]
+        : [],
+    );
+    setTrackedRunIds((current) => {
+      const next = [...current];
+      for (const runId of projected) {
+        if (!next.includes(runId)) next.push(runId);
+      }
+      return next.length === current.length ? current : next;
+    });
+    if (projectedArtifacts.length === 0) return;
+    const projectedKeys = new Set(
+      projectedArtifacts.map((artifact) =>
+        artifactGenerationKey(artifact.actionId, artifact.artifactType),
+      ),
+    );
+    setActiveGenerationRecoveries((current) => {
+      const next = current.filter((recovery) => !projectedKeys.has(recovery.key));
+      return next.length === current.length ? current : next;
+    });
+  }, [artifacts]);
 
-  // When the tracked run reaches a terminal state, refetch and stop polling.
-  // A final status-query error follows the same cleanup path, but leaves a
-  // visible, actionable notice and prevents a stale artifact projection from
-  // immediately re-seeding the same failed poll.
-  useEffect(() => {
-    const run = runQuery.data;
-    if (runOutcome === "terminal" && run) {
+  const onRunTerminal = useCallback(
+    (run: AsyncRun): void => {
+      if (finishedRuns.current.has(run.id)) return;
       finishedRuns.current.add(run.id);
-      setFailedRunId(null);
-      void queryClient.invalidateQueries({
-        queryKey: ["artifacts", projectId],
+      setTrackedRunIds((current) => current.filter((id) => id !== run.id));
+      setRunQueryFailureIds((current) =>
+        current.filter((id) => id !== run.id),
+      );
+      setLocalActiveKeysByRun((current) => {
+        if (!(run.id in current)) return current;
+        return Object.fromEntries(
+          Object.entries(current).filter(([id]) => id !== run.id),
+        );
       });
-      setActiveRunId(null);
-      return;
-    }
-    if (
-      runOutcome === "query_error" &&
-      activeRunId !== null &&
-      !finishedRuns.current.has(activeRunId)
-    ) {
-      finishedRuns.current.add(activeRunId);
-      setFailedRunId(activeRunId);
+      if (run.status !== "completed") {
+        setTerminalRunFailures((current) => {
+          const withoutRun = current.filter((item) => item.id !== run.id);
+          return [...withoutRun, run].slice(-3);
+        });
+      }
       void queryClient.invalidateQueries({
         queryKey: ["artifacts", projectId],
         refetchType: "active",
       });
-      setActiveRunId(null);
-    }
-  }, [runOutcome, runQuery.data, activeRunId, queryClient, projectId]);
+    },
+    [projectId, queryClient],
+  );
 
-  const artifacts = uniqueCursorItems(artifactsQuery.data);
-  const actions = uniqueCursorItems(actionsQuery.data);
+  const onRunQueryError = useCallback(
+    (runId: string): void => {
+      if (finishedRuns.current.has(runId)) return;
+      finishedRuns.current.add(runId);
+      setTrackedRunIds((current) => current.filter((id) => id !== runId));
+      setRunQueryFailureIds((current) =>
+        current.includes(runId) ? current : [...current, runId],
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["artifacts", projectId],
+        refetchType: "active",
+      });
+    },
+    [projectId, queryClient],
+  );
+
   const artifactsInitialLoading =
     artifactsQuery.isLoading && artifactsQuery.data === undefined;
   const artifactsInitialError =
@@ -1301,12 +1568,33 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   const eligibleActions = actions.filter(
     (action) => action.status !== "dismissed",
   );
-  const liveKeys = new Set(
+  const canonicalLiveKeys = new Set(
     artifacts
       .filter((a) => a.status !== "archived")
-      .map((a) => `${a.actionId}:${a.artifactType}`),
+      .map((a) => artifactGenerationKey(a.actionId, a.artifactType)),
   );
+  const liveKeys = new Set([
+    ...canonicalLiveKeys,
+    ...Object.values(localActiveKeysByRun),
+    ...activeGenerationRecoveries.map((recovery) => recovery.key),
+  ]);
+  const activeKeys = new Set(
+    artifacts
+      .filter(
+        (artifact) =>
+          artifact.status === "generating" || artifact.activeRun !== null,
+      )
+      .map((artifact) =>
+        artifactGenerationKey(artifact.actionId, artifact.artifactType),
+      ),
+  );
+  for (const key of Object.values(localActiveKeysByRun)) activeKeys.add(key);
+  for (const recovery of activeGenerationRecoveries) {
+    activeKeys.add(recovery.key);
+  }
   const selected = artifacts.find((a) => a.id === selectedId) ?? null;
+  const selectedAction =
+    selected === null ? undefined : actionById.get(selected.actionId);
   const groups = groupByType(artifacts);
   const readyCount = artifacts.filter((a) => a.status === "ready").length;
   const draftCount = artifacts.filter((a) => a.status === "draft").length;
@@ -1317,6 +1605,18 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     artifactsInitialError ||
     actionsInitialLoading ||
     actionsInitialError;
+
+  useEffect(() => {
+    if (
+      autoSelectedArtifact.current ||
+      selectedId !== null ||
+      artifacts.length === 0
+    ) {
+      return;
+    }
+    autoSelectedArtifact.current = true;
+    setSelectedId(artifacts[0]?.id ?? null);
+  }, [artifacts, selectedId]);
 
   function confirmEditorDiscard(): boolean {
     return canDiscardArtifactChanges(selectedEditorDirty, () =>
@@ -1336,69 +1636,198 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   }
 
   function openGenerate(action: ArtifactAction): void {
+    if (!confirmEditorDiscard()) return;
     setGenerateAction(action);
     setPickerOpen(false);
   }
 
-  function onQueued(run: AsyncRun, artifactId: string | null): void {
-    setFailedRunId(null);
-    setActiveRunId(run.id);
+  function openPicker(): void {
+    if (!confirmEditorDiscard()) return;
+    setPickerOpen(true);
     setGenerateAction(null);
-    setPickerOpen(false);
-    if (artifactId !== null) selectArtifact(artifactId);
   }
 
-  function retryFailedRun(): void {
-    if (failedRunId === null) return;
-    finishedRuns.current.delete(failedRunId);
-    setActiveRunId(failedRunId);
-    setFailedRunId(null);
+  function onQueued(
+    run: AsyncRun,
+    artifactId: string | null,
+    actionId: string,
+    artifactType: ArtifactType,
+  ): void {
+    const key = artifactGenerationKey(actionId, artifactType);
+    finishedRuns.current.delete(run.id);
+    setRunQueryFailureIds((current) =>
+      current.filter((id) => id !== run.id),
+    );
+    setTerminalRunFailures((current) =>
+      current.filter((item) => item.id !== run.id),
+    );
+    setTrackedRunIds((current) =>
+      current.includes(run.id) ? current : [...current, run.id],
+    );
+    setLocalActiveKeysByRun((current) => ({
+      ...current,
+      [run.id]: key,
+    }));
+    setActiveGenerationRecoveries((current) =>
+      current.filter((recovery) => recovery.key !== key),
+    );
+    setGenerateAction(null);
+    setPickerOpen(false);
+    if (artifactId !== null) {
+      setDirtyArtifactId(null);
+      setSelectedId(artifactId);
+    }
+  }
+
+  async function recoverAlreadyActive(
+    actionId: string,
+    artifactType: ArtifactType,
+  ): Promise<void> {
+    const recovery: ActiveGenerationRecovery = {
+      key: artifactGenerationKey(actionId, artifactType),
+      actionId,
+      artifactType,
+    };
+    setActiveGenerationRecoveries((current) => {
+      const withoutKey = current.filter((item) => item.key !== recovery.key);
+      return [...withoutKey, recovery];
+    });
+    setGenerateAction(null);
+    setPickerOpen(false);
+
+    const refreshed = await artifactsQuery.refetch();
+    // A refetch error can retain the previous successful pages in `data`.
+    // Never treat that stale cache as proof that the conflicting run settled.
+    if (!refreshed.isSuccess) return;
+    const recoveredArtifact = uniqueCursorItems(refreshed.data).find(
+      (artifact) =>
+        artifact.actionId === actionId &&
+        artifact.artifactType === artifactType,
+    );
+    const recoveredRun = recoveredArtifact?.activeRun ?? null;
+    if (recoveredArtifact === undefined) return;
+    if (recoveredRun === null || isTerminalRun(recoveredRun.status)) {
+      // The conflict was truthful when the POST was evaluated, but the winning
+      // run can finish before this refetch reaches the artifact projection. A
+      // matching canonical artifact with no live run is definitive settlement,
+      // so retaining the conservative recovery fence would lock regeneration
+      // forever. A missing artifact remains ambiguous and deliberately keeps
+      // the retryable fence above.
+      setActiveGenerationRecoveries((current) =>
+        current.filter((item) => item.key !== recovery.key),
+      );
+      return;
+    }
+
+    // This id comes from the canonical artifact projection, not from parsing
+    // provider detail or guessing the Location header hidden by ApiError.
+    finishedRuns.current.delete(recoveredRun.id);
+    setRunQueryFailureIds((current) =>
+      current.filter((id) => id !== recoveredRun.id),
+    );
+    setTerminalRunFailures((current) =>
+      current.filter((run) => run.id !== recoveredRun.id),
+    );
+    setTrackedRunIds((current) =>
+      current.includes(recoveredRun.id)
+        ? current
+        : [...current, recoveredRun.id],
+    );
+    setLocalActiveKeysByRun((current) => ({
+      ...current,
+      [recoveredRun.id]: recovery.key,
+    }));
+    setActiveGenerationRecoveries((current) =>
+      current.filter((item) => item.key !== recovery.key),
+    );
+    setDirtyArtifactId(null);
+    setSelectedId(recoveredArtifact.id);
+  }
+
+  function retryFailedRun(runId: string): void {
+    finishedRuns.current.delete(runId);
+    queryClient.removeQueries({
+      queryKey: ["run", projectId, runId],
+      exact: true,
+    });
+    setRunQueryFailureIds((current) =>
+      current.filter((id) => id !== runId),
+    );
+    setTrackedRunIds((current) =>
+      current.includes(runId) ? current : [...current, runId],
+    );
     void artifactsQuery.refetch();
   }
 
   return (
     <div className={styles.page}>
-      <header className={styles.hero}>
+      <header className={styles.hero} data-studio-page-hero="">
         <div className={styles.heroText}>
-          <span className="sf-eyebrow">{t("eyebrow")}</span>
-          <h1 className={styles.title}>{t("title")}</h1>
+          <span className="sf-eyebrow">
+            {t("title")} · {t("eyebrow")}
+          </span>
+          <h1 className={styles.title}>{t("heroTitle")}</h1>
           <p className={styles.subtitle}>{t("subtitle")}</p>
+          <div className={styles.heroActions}>
+            <Button
+              variant="primary"
+              onClick={openPicker}
+              disabled={
+                generationUnavailable ||
+                (eligibleActions.length === 0 && !actionsQuery.hasNextPage)
+              }
+              aria-busy={generationUnavailable}
+              aria-describedby={
+                actionsInitialLoading ||
+                (!actionsInitialError &&
+                  eligibleActions.length === 0 &&
+                  !actionsQuery.hasNextPage)
+                  ? "sf-gen-note"
+                  : undefined
+              }
+            >
+              {t("generate")}
+            </Button>
+            {actionsInitialLoading ? (
+              <p id="sf-gen-note" className={styles.heroNote}>
+                {tCommon("loading")}
+              </p>
+            ) : !actionsInitialError &&
+              eligibleActions.length === 0 &&
+              !actionsQuery.hasNextPage ? (
+              <p id="sf-gen-note" className={styles.heroNote}>
+                {t("noActions")}
+              </p>
+            ) : null}
+          </div>
         </div>
-        <div className={styles.heroActions}>
-          <Button
-            variant="primary"
-            onClick={() => {
-              setPickerOpen(true);
-              setGenerateAction(null);
-            }}
-            disabled={
-              generationUnavailable ||
-              (eligibleActions.length === 0 && !actionsQuery.hasNextPage)
-            }
-            aria-busy={generationUnavailable}
-            aria-describedby={
-              actionsInitialLoading ||
-              (!actionsInitialError &&
-                eligibleActions.length === 0 &&
-                !actionsQuery.hasNextPage)
-                ? "sf-gen-note"
-                : undefined
-            }
-          >
-            {t("generate")}
-          </Button>
-          {actionsInitialLoading ? (
-            <p id="sf-gen-note" className={styles.heroNote}>
-              {tCommon("loading")}
-            </p>
-          ) : !actionsInitialError &&
-            eligibleActions.length === 0 &&
-            !actionsQuery.hasNextPage ? (
-            <p id="sf-gen-note" className={styles.heroNote}>
-              {t("noActions")}
-            </p>
-          ) : null}
-        </div>
+
+        <section className={styles.statStrip} aria-label={t("summaryTitle")}>
+          <article className={styles.statCard}>
+            <span className={styles.statMetric}>
+              {artifactsInitialLoading
+                ? "—"
+                : `${artifacts.length}${artifactsQuery.hasNextPage ? "+" : ""}`}
+            </span>
+            <span className={styles.statLabel}>{t("statOutputs")}</span>
+          </article>
+          <article className={styles.statCard}>
+            <span className={styles.statMetric}>
+              {artifactsInitialLoading
+                ? "—"
+                : `${readyCount}${artifactsQuery.hasNextPage ? "+" : ""}`}
+            </span>
+            <span className={styles.statLabel}>{t("statReady")}</span>
+          </article>
+          <article className={styles.statCard}>
+            <span className={styles.statMetric}>
+              {artifactsInitialLoading
+                ? "—"
+                : `${draftCount}${artifactsQuery.hasNextPage ? "+" : ""}`}
+            </span>
+            <span className={styles.statLabel}>{t("statDrafts")}</span>
+          </article>
+        </section>
       </header>
 
       {actionsInitialError ? (
@@ -1410,172 +1839,246 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
         />
       ) : null}
 
-      {artifacts.length > 0 ? (
-        <section className={styles.statStrip} aria-label={t("summaryTitle")}>
-          <article className={styles.statCard}>
-            <span className={styles.statIcon}>
-              <FileStack aria-hidden="true" size={18} />
-            </span>
-            <span className={styles.statMetric}>
-              {artifacts.length}
-              {artifactsQuery.hasNextPage ? "+" : ""}
-            </span>
-            <span className={styles.statLabel}>{t("statOutputs")}</span>
-          </article>
-          <article className={styles.statCard}>
-            <span className={cx(styles.statIcon, styles.statIconMint)}>
-              <CircleCheckBig aria-hidden="true" size={18} />
-            </span>
-            <span className={styles.statMetric}>
-              {readyCount}
-              {artifactsQuery.hasNextPage ? "+" : ""}
-            </span>
-            <span className={styles.statLabel}>{t("statReady")}</span>
-          </article>
-          <article className={styles.statCard}>
-            <span className={cx(styles.statIcon, styles.statIconAmber)}>
-              <FilePenLine aria-hidden="true" size={18} />
-            </span>
-            <span className={styles.statMetric}>
-              {draftCount}
-              {artifactsQuery.hasNextPage ? "+" : ""}
-            </span>
-            <span className={styles.statLabel}>{t("statDrafts")}</span>
-          </article>
-        </section>
+      {trackedRunIds.length > 0 ? (
+        <div className={styles.runStack} aria-label={t("activeRuns")}>
+          {trackedRunIds.map((runId) => (
+            <ArtifactRunMonitor
+              key={runId}
+              projectId={projectId}
+              runId={runId}
+              onTerminal={onRunTerminal}
+              onQueryError={onRunQueryError}
+            />
+          ))}
+        </div>
       ) : null}
 
-      {activeRunId !== null && runQuery.data !== undefined ? (
-        <RunBanner run={runQuery.data} message={t("generating")} />
-      ) : null}
+      {terminalRunFailures.map((run) => (
+        <div key={run.id} data-studio-terminal-run-failure={run.id}>
+          <RunBanner run={run} message={t("generationDidNotComplete")} />
+        </div>
+      ))}
 
-      {failedRunId !== null ? (
-        <Panel tone="coral" padding="md" className={styles.banner} role="alert">
+      {runQueryFailureIds.map((runId) => (
+        <Panel
+          key={runId}
+          tone="coral"
+          padding="md"
+          className={styles.banner}
+          role="alert"
+          data-studio-run-query-error={runId}
+        >
           <span className={styles.bannerLabel}>
             {t("runStatusUnavailable")}
           </span>
           <Button
             variant="secondary"
             size="sm"
-            onClick={retryFailedRun}
+            onClick={() => retryFailedRun(runId)}
           >
             {t("retryGenerationStatus")}
           </Button>
         </Panel>
-      ) : null}
-
-      {generateAction !== null ? (
-        <GenerateForm
-          projectId={projectId}
-          action={generateAction}
-          onQueued={onQueued}
-          onCancel={() => setGenerateAction(null)}
-        />
-      ) : pickerOpen ? (
-        <ActionPicker
-          actions={eligibleActions}
-          liveKeys={liveKeys}
-          hasMore={actionsQuery.hasNextPage}
-          loadingMore={actionsQuery.isFetchingNextPage}
-          loadMoreError={actionsQuery.isFetchNextPageError}
-          onPick={openGenerate}
-          onLoadMore={() => void actionsQuery.fetchNextPage()}
-          onCancel={() => setPickerOpen(false)}
-        />
-      ) : null}
-
-      {selected !== null ? (
-        <ArtifactEditor
-          key={selected.id}
-          projectId={projectId}
-          artifact={selected}
-          onClose={closeEditor}
-          onDirtyChange={onEditorDirtyChange}
-        />
-      ) : null}
-
-      {artifactsInitialLoading ? (
-        <StateWrap>
-          <Spinner size="lg" label={tCommon("loading")} />
-          <p className={styles.stateText}>{tCommon("loading")}</p>
-        </StateWrap>
-      ) : artifactsInitialError ? (
-        <StateWrap>
-          <ProblemState
-            error={artifactsQuery.error ?? new Error("unknown")}
-            onRetry={() => void artifactsQuery.refetch()}
-          />
-        </StateWrap>
-      ) : artifacts.length === 0 ? (
-        <StateWrap>
-          <EmptyState title={t("emptyTitle")} description={t("emptyHint")} />
-        </StateWrap>
-      ) : (
-        <div className={styles.groups}>
-          {groups.map(([type, list]) => {
-            const GroupIcon = ARTIFACT_TYPE_ICON[type];
-            return (
-              <section
-                key={type}
-                className={styles.group}
-                aria-label={t(`artifactType.${type}`)}
-              >
-                <div className={styles.groupHead}>
-                  <span className={styles.groupIcon}>
-                    <GroupIcon aria-hidden="true" size={18} />
-                  </span>
-                  <h2 className={styles.groupTitle}>
-                    {t(`artifactType.${type}`)}
-                  </h2>
-                  <Badge>
-                    {String(list.length)}
-                    {artifactsQuery.hasNextPage ? "+" : ""}
-                  </Badge>
-                </div>
-                <div className={styles.cardGrid}>
-                  {list.map((artifact) => {
-                    const action = actionById.get(artifact.actionId);
-                    return (
-                      <ArtifactCard
-                        key={artifact.id}
-                        artifact={artifact}
-                        actionTitle={action?.title}
-                        selected={selected?.id === artifact.id}
-                        onOpen={() => selectArtifact(artifact.id)}
-                        onRegenerate={
-                          action !== undefined && action.status !== "dismissed"
-                            ? () => openGenerate(action)
-                            : undefined
-                        }
-                      />
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      )}
-      {artifactsQuery.hasNextPage || artifactsQuery.isFetchNextPageError ? (
-        <div className={styles.pagination}>
-          {artifactsQuery.isFetchNextPageError ? (
-            <p className={styles.paginationError} role="alert">
-              {tCommon("loadMoreError")}
-            </p>
-          ) : null}
+      ))}
+      {activeGenerationRecoveries.map((recovery) => (
+        <Panel
+          key={recovery.key}
+          padding="md"
+          className={styles.runQueryError}
+          data-studio-conflict-recovery={recovery.key}
+        >
+          <span className={styles.bannerLabel}>
+            {t("runStatusUnavailable")}
+          </span>
           <Button
             variant="secondary"
-            onClick={() => void artifactsQuery.fetchNextPage()}
-            disabled={artifactsQuery.isFetchingNextPage}
+            size="sm"
+            onClick={() =>
+              void recoverAlreadyActive(
+                recovery.actionId,
+                recovery.artifactType,
+              )
+            }
           >
-            {artifactsQuery.isFetchingNextPage
-              ? tCommon("loadingMore")
-              : artifactsQuery.isFetchNextPageError
-                ? tCommon("retry")
-                : tCommon("loadMore")}
+            {t("retryGenerationStatus")}
           </Button>
-        </div>
-      ) : null}
+        </Panel>
+      ))}
+
+      <div
+        className={styles.workspace}
+        data-studio-workspace=""
+        aria-label={t("workspaceLabel")}
+      >
+        <Panel
+          padding="none"
+          className={styles.queuePanel}
+          data-studio-queue=""
+          aria-labelledby="sf-studio-queue-title"
+        >
+          <div className={styles.queueHead}>
+            <div>
+              <span className="sf-eyebrow">{t("queueEyebrow")}</span>
+              <h2 id="sf-studio-queue-title" className={styles.queueTitle}>
+                {t("queueTitle")}
+              </h2>
+            </div>
+            <Badge>
+              {artifactsInitialLoading
+                ? "—"
+                : `${artifacts.length}${artifactsQuery.hasNextPage ? "+" : ""}`}
+            </Badge>
+          </div>
+          <div className={styles.queueScroll}>
+            {artifactsInitialLoading ? (
+              <div className={styles.queueState}>
+                <Spinner size="lg" label={tCommon("loading")} />
+                <p className={styles.stateText}>{tCommon("loading")}</p>
+              </div>
+            ) : artifactsInitialError ? (
+              <div className={styles.queueState}>
+                <ProblemState
+                  error={artifactsQuery.error ?? new Error("unknown")}
+                  onRetry={() => void artifactsQuery.refetch()}
+                />
+              </div>
+            ) : artifacts.length === 0 ? (
+              <div className={styles.queueState}>
+                <EmptyState
+                  title={t("emptyTitle")}
+                  description={t("emptyHint")}
+                />
+              </div>
+            ) : (
+              <div className={styles.groups}>
+                {groups.map(([type, list]) => {
+                  const GroupIcon = ARTIFACT_TYPE_ICON[type];
+                  return (
+                    <section
+                      key={type}
+                      className={styles.group}
+                      aria-label={t(`artifactType.${type}`)}
+                    >
+                      <div className={styles.groupHead}>
+                        <span className={styles.groupIcon}>
+                          <GroupIcon aria-hidden="true" size={16} />
+                        </span>
+                        <h3 className={styles.groupTitle}>
+                          {t(`artifactType.${type}`)}
+                        </h3>
+                        <span className={styles.groupCount}>{list.length}</span>
+                      </div>
+                      <div className={styles.cardGrid}>
+                        {list.map((artifact) => {
+                          const action = actionById.get(artifact.actionId);
+                          return (
+                            <ArtifactCard
+                              key={artifact.id}
+                              artifact={artifact}
+                              actionTitle={action?.title}
+                              generationActive={activeKeys.has(
+                                artifactGenerationKey(
+                                  artifact.actionId,
+                                  artifact.artifactType,
+                                ),
+                              )}
+                              selected={selected?.id === artifact.id}
+                              onOpen={() => selectArtifact(artifact.id)}
+                              onRegenerate={
+                                action !== undefined &&
+                                action.status !== "dismissed"
+                                  ? () => openGenerate(action)
+                                  : undefined
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {artifactsQuery.hasNextPage ||
+          artifactsQuery.isFetchNextPageError ? (
+            <div className={styles.queueFooter}>
+              {artifactsQuery.isFetchNextPageError ? (
+                <p className={styles.paginationError} role="alert">
+                  {tCommon("loadMoreError")}
+                </p>
+              ) : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void artifactsQuery.fetchNextPage()}
+                disabled={artifactsQuery.isFetchingNextPage}
+              >
+                {artifactsQuery.isFetchingNextPage
+                  ? tCommon("loadingMore")
+                  : artifactsQuery.isFetchNextPageError
+                    ? tCommon("retry")
+                    : tCommon("loadMore")}
+              </Button>
+            </div>
+          ) : null}
+        </Panel>
+
+        <section
+          className={styles.editorColumn}
+          data-studio-editor-column=""
+          aria-label={t("editorCanvas")}
+        >
+          {generateAction !== null ? (
+            <GenerateForm
+              projectId={projectId}
+              action={generateAction}
+              onQueued={(run, artifactId, artifactType) =>
+                onQueued(
+                  run,
+                  artifactId,
+                  generateAction.id,
+                  artifactType,
+                )
+              }
+              onAlreadyActive={(artifactType) =>
+                recoverAlreadyActive(generateAction.id, artifactType)
+              }
+              onCancel={() => setGenerateAction(null)}
+            />
+          ) : pickerOpen ? (
+            <ActionPicker
+              actions={eligibleActions}
+              liveKeys={liveKeys}
+              activeKeys={activeKeys}
+              hasMore={actionsQuery.hasNextPage}
+              loadingMore={actionsQuery.isFetchingNextPage}
+              loadMoreError={actionsQuery.isFetchNextPageError}
+              onPick={openGenerate}
+              onLoadMore={() => void actionsQuery.fetchNextPage()}
+              onCancel={() => setPickerOpen(false)}
+            />
+          ) : selected !== null ? (
+            <ArtifactEditor
+              key={selected.id}
+              projectId={projectId}
+              artifact={selected}
+              onClose={closeEditor}
+              onDirtyChange={onEditorDirtyChange}
+            />
+          ) : (
+            <EditorPlaceholder
+              generationUnavailable={generationUnavailable}
+              canGenerate={
+                eligibleActions.length > 0 || actionsQuery.hasNextPage
+              }
+              onGenerate={openPicker}
+            />
+          )}
+        </section>
+
+        <EvidenceRail artifact={selected} action={selectedAction} />
+      </div>
     </div>
   );
 }

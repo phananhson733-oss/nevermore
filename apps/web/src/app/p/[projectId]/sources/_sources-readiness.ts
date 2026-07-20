@@ -58,26 +58,28 @@ export function deriveSourcesReadiness(
   const missingProviders = SOURCE_PROVIDER_ORDER.filter(
     (provider) => !byProvider.has(provider),
   );
-  const usableCount = canonicalSources.filter(
+  const enabledSources = canonicalSources.filter(
+    (source) => source.featureEnabled,
+  );
+  const usableCount = enabledSources.filter(
     (source) => source.latestSnapshot?.availability === "available",
   ).length;
-  const partialCount = canonicalSources.filter(
+  const partialCount = enabledSources.filter(
     (source) => source.latestSnapshot?.availability === "partial",
   ).length;
+  const enabledCount = enabledSources.length;
 
   return {
     familyCount: canonicalSources.length,
     expectedFamilyCount: SOURCE_PROVIDER_ORDER.length,
-    connectedCount: canonicalSources.filter(
+    connectedCount: enabledSources.filter(
       (source) => source.id !== null && source.state !== "disconnected",
     ).length,
     usableCount,
     partialCount,
-    unavailableCount:
-      SOURCE_PROVIDER_ORDER.length - usableCount - partialCount,
-    enabledCount: canonicalSources.filter((source) => source.featureEnabled)
-      .length,
-    gapProviders: canonicalSources
+    unavailableCount: enabledCount - usableCount - partialCount,
+    enabledCount,
+    gapProviders: enabledSources
       .filter(
         (source) =>
           source.featureEnabled &&
@@ -86,6 +88,49 @@ export function deriveSourcesReadiness(
       .map((source) => source.provider),
     missingProviders,
   };
+}
+
+/**
+ * Coverage is intentionally strict: only a fully available latest snapshot
+ * contributes. A connection or a partial snapshot is useful context, but it is
+ * not silently promoted to complete evidence.
+ */
+export function sourcesCoveragePercentage(
+  sources: readonly SourceConnection[],
+): number {
+  const readiness = deriveSourcesReadiness(sources);
+  if (readiness.enabledCount === 0) return 0;
+  return Math.round(
+    (readiness.usableCount / readiness.enabledCount) * 100,
+  );
+}
+
+/** Diagnosis is ready only when every enabled canonical family is usable. */
+export function sourcesReadyForDiagnosis(
+  sources: readonly SourceConnection[],
+): boolean {
+  const readiness = deriveSourcesReadiness(sources);
+  return (
+    readiness.enabledCount > 0 &&
+    readiness.usableCount === readiness.enabledCount &&
+    readiness.gapProviders.length === 0 &&
+    readiness.missingProviders.length === 0
+  );
+}
+
+/**
+ * Value used for the large card metric. `null` means "not available" and must
+ * remain visually distinct from a measured zero. Partial snapshots keep their
+ * real row count while their status continues to communicate the limitation.
+ */
+export function sourcePrimaryRowCount(
+  source: SourceConnection,
+): number | null {
+  const snapshot = source.latestSnapshot;
+  if (snapshot === null || snapshot.availability === "unavailable") {
+    return null;
+  }
+  return snapshot.rowCount;
 }
 
 /** Keep checksums scannable without rendering the full immutable digest. */

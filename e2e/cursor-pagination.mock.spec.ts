@@ -282,14 +282,97 @@ test("Studio exposes artifact and action next pages", async ({ page }) => {
   });
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
-  await expect(page.getByText(firstAction.title, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Load more" }).click();
-  await expect(page.getByText("Content brief", { exact: true }).first()).toBeVisible();
+  const queue = page.locator("[data-studio-queue]");
+  const hero = page.locator("[data-studio-page-hero]");
+  const canvas = page.locator("[data-studio-editor-column]");
+  await expect(queue.getByText(firstAction.title, { exact: true })).toBeVisible();
+  await queue.getByRole("button", { name: "Load more" }).click();
+  await expect(
+    queue.getByRole("heading", { name: "Content brief", exact: true }),
+  ).toBeVisible();
 
-  await page.getByRole("button", { name: "Generate artifact" }).click();
+  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await expect(canvas.getByRole("heading", { name: "Pick an action" })).toBeVisible();
+  await canvas.getByRole("button", { name: "Load more" }).click();
+  await expect(
+    queue.getByText(secondAction.title, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    canvas.getByText(secondAction.title, { exact: true }),
+  ).toBeVisible();
+});
+
+test("Studio guards hero generation and card regeneration while the editor is dirty", async ({
+  page,
+}) => {
+  const action = actionFixture(1, "Guarded generation action");
+  const artifact = artifactFixture(1, action.id, "technical_ticket");
+
+  await page.route(`**${API_BASE}/actions**`, (route) =>
+    json(route, listEnvelope([action], null)),
+  );
+  await page.route(`**${API_BASE}/artifacts**`, (route) =>
+    json(route, listEnvelope([artifact], null)),
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  const content = page.getByRole("textbox", { name: "Content" });
+  const note = page.getByRole("textbox", { name: "Revision note" });
+  const heroGenerate = page
+    .locator("[data-studio-page-hero]")
+    .getByRole("button", { name: "Generate artifact" });
+  const regenerate = page
+    .locator(`[data-studio-artifact-id="${artifact.id}"]`)
+    .getByRole("button", { name: "Regenerate" });
+
+  await content.fill("Unsaved content survives a rejected transition");
+  await note.fill("Unsaved note survives too");
+
+  let dialogPromise = page.waitForEvent("dialog");
+  let transitionPromise = heroGenerate.click();
+  let dialog = await dialogPromise;
+  expect(dialog.message()).toBe(
+    "You have unsaved artifact edits. Leave and discard them?",
+  );
+  await dialog.dismiss();
+  await transitionPromise;
+  await expect(content).toHaveValue(
+    "Unsaved content survives a rejected transition",
+  );
+  await expect(note).toHaveValue("Unsaved note survives too");
+  await expect(page.getByRole("heading", { name: "Pick an action" })).toHaveCount(
+    0,
+  );
+
+  dialogPromise = page.waitForEvent("dialog");
+  transitionPromise = regenerate.click();
+  dialog = await dialogPromise;
+  await dialog.dismiss();
+  await transitionPromise;
+  await expect(content).toHaveValue(
+    "Unsaved content survives a rejected transition",
+  );
+  await expect(note).toHaveValue("Unsaved note survives too");
+  await expect(page.getByLabel("Generation mode")).toHaveCount(0);
+
+  dialogPromise = page.waitForEvent("dialog");
+  transitionPromise = heroGenerate.click();
+  dialog = await dialogPromise;
+  await dialog.accept();
+  await transitionPromise;
   await expect(page.getByRole("heading", { name: "Pick an action" })).toBeVisible();
-  await page.getByRole("button", { name: "Load more" }).click();
-  await expect(page.getByText(secondAction.title, { exact: true })).toHaveCount(2);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(content).toHaveValue("Artifact page 1");
+  await expect(note).toHaveValue("");
+
+  await content.fill("A second explicitly discardable draft");
+  await note.fill("Second note");
+  dialogPromise = page.waitForEvent("dialog");
+  transitionPromise = regenerate.click();
+  dialog = await dialogPromise;
+  await dialog.accept();
+  await transitionPromise;
+  await expect(page.getByLabel("Generation mode")).toBeVisible();
 });
 
 test("Studio protects unsaved content and notes from editor transitions", async ({
@@ -308,7 +391,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   );
 
   await page.goto(`/p/${E2E_PROJECT_ID}/plan`);
-  await page.getByRole("link", { name: "Studio" }).click();
+  await page.getByRole("link", { name: "Studio", exact: true }).click();
   await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
 
   const firstOpen = page
@@ -384,7 +467,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await transitionPromise;
   await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/plan`);
 
-  await page.getByRole("link", { name: "Studio" }).click();
+  await page.getByRole("link", { name: "Studio", exact: true }).click();
   await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
   const studioPosition = await page.evaluate(
     () => history.state?.__sfProjectHistoryPosition as unknown,

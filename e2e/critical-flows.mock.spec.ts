@@ -17,7 +17,9 @@ test("project navigation exposes live destinations and localizes stage chrome", 
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
 
   await expect(
-    page.getByRole("heading", { name: "E2E Critical Flow" }),
+    page.getByRole("heading", {
+      name: "Turn evidence into the next 90 days of action.",
+    }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Preview report" })).toHaveAttribute(
     "href",
@@ -55,8 +57,8 @@ test("Sources chrome localizes to zh-CN while server-supplied provider content r
   await page.getByRole("button", { name: "简体中文" }).click();
 
   await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
-  await expect(page.getByText("最近采集", { exact: true })).toBeVisible();
-  await expect(page.getByText("可用性", { exact: true })).toBeVisible();
+  await expect(page.getByText("最近采集", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("可用性", { exact: true }).first()).toBeVisible();
   await expect(
     page.getByText("Static HTML only; JavaScript-rendered content may be absent.", {
       exact: true,
@@ -142,20 +144,25 @@ test("Studio chrome localizes to zh-CN without translating action content", asyn
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   await page.getByRole("button", { name: "简体中文" }).click();
 
-  await expect(page.getByRole("button", { name: "生成执行物" })).toBeVisible();
+  const hero = page.locator("[data-studio-page-hero]");
+  const queue = page.locator("[data-studio-queue]");
+  const canvas = page.locator("[data-studio-editor-column]");
+  await expect(hero.getByRole("button", { name: "生成执行物" })).toBeVisible();
   await expect(page.getByText("可交付", { exact: true })).toBeVisible();
-  await expect(page.getByText("Fix the failing product page", { exact: true })).toBeVisible();
+  await expect(
+    queue.getByText("Fix the failing product page", { exact: true }),
+  ).toBeVisible();
 
-  await page.getByRole("button", { name: "生成执行物" }).click();
-  await expect(page.getByRole("heading", { name: "选择一个行动" })).toBeVisible();
-  await page
+  await hero.getByRole("button", { name: "生成执行物" }).click();
+  await expect(canvas.getByRole("heading", { name: "选择一个行动" })).toBeVisible();
+  await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
     .getByRole("button", { name: /生成|重新生成/ })
     .click();
   await expect(page.getByLabel("输出语言")).toHaveValue("en");
   await expect(
-    page.getByRole("heading", { name: "Fix the failing product page" }),
+    canvas.getByRole("heading", { name: "Fix the failing product page" }),
   ).toBeVisible();
 });
 
@@ -163,8 +170,10 @@ test("Studio requires structured LLM for template-unsupported output locales", a
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
-  await page.getByRole("button", { name: "Generate artifact" }).click();
-  await page
+  const hero = page.locator("[data-studio-page-hero]");
+  const canvas = page.locator("[data-studio-editor-column]");
+  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
     .getByRole("button", { name: /Generate|Regenerate/ })

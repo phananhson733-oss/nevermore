@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { AlertTriangle, Check, CircleDashed, ShieldCheck } from "lucide-react";
 import {
   Button,
   EmptyState,
@@ -40,7 +41,6 @@ import {
   type DiagnosticDomain,
   type DiagnosticRuleResult,
   type Finding,
-  type RuleStatus,
   type RunStatus,
   type Severity,
 } from "@/lib/api/hooks-diagnosis";
@@ -48,6 +48,7 @@ import { ProblemState } from "../_problem-display";
 import { FindingCard } from "./_finding-card.tsx";
 import {
   filterCanonicalFindings,
+  resolveCoveragePresentationState,
   type FindingFilters,
 } from "./_diagnosis-view-model.ts";
 import styles from "./diagnosis.module.css";
@@ -84,18 +85,6 @@ function domainCoverageMeta(status: string | undefined): ToneLabel {
   }
 }
 
-/** Overall coverage → pill tone + label (unavailable is the honest default). */
-function coverageOverallMeta(overall: Coverage["overall"]): ToneLabel {
-  switch (overall) {
-    case "complete":
-      return { tone: "success", labelKey: "ready" };
-    case "partial":
-      return { tone: "warning", labelKey: "partial" };
-    default:
-      return { tone: "neutral", labelKey: "missing" };
-  }
-}
-
 function runStatusTone(status: RunStatus): StatusTone {
   switch (status) {
     case "completed":
@@ -111,21 +100,6 @@ function runStatusTone(status: RunStatus): StatusTone {
   }
 }
 
-/** Rule-board status → pill tone. Each status is deliberately its own tone so a
- * `pass` (healthy) never looks like a `skipped`/`inconclusive` rule. */
-function ruleStatusTone(status: RuleStatus): StatusTone {
-  switch (status) {
-    case "pass":
-      return "success";
-    case "candidate":
-      return "priority";
-    case "inconclusive":
-      return "warning";
-    default:
-      return "neutral";
-  }
-}
-
 /* ------------------------------------------------------------ Run header --- */
 
 /** Which hard gate (if any) is blocking a run — drives the disabled explanation. */
@@ -134,6 +108,10 @@ type SnapshotReadState = "loading" | "error" | "ready";
 
 interface RunHeaderProps {
   readonly projectId: string;
+  readonly clientName: string;
+  readonly findingCount: number;
+  readonly completeDomainCount: number | null;
+  readonly evidenceBackedCount: number;
   readonly canRun: boolean;
   readonly gate: RunGate;
   readonly hasEverRun: boolean;
@@ -153,6 +131,10 @@ interface RunHeaderProps {
 
 function RunHeader({
   projectId,
+  clientName,
+  findingCount,
+  completeDomainCount,
+  evidenceBackedCount,
   canRun,
   gate,
   hasEverRun,
@@ -192,140 +174,216 @@ function RunHeader({
   return (
     <header className={styles.header}>
       <div className={styles.headerText}>
-        <h1 className={styles.title}>{t("title")}</h1>
-        <p className={styles.subtitle}>{t("subtitle")}</p>
+        <div className={styles.heroMeta}>
+          <span className={styles.heroEyebrow}>{t("title")}</span>
+          {runStatus !== null ? (
+            <span className={styles.runStatusRow}>
+              <span className={styles.runStatusLabel}>{t("lastRun")}</span>
+              <StatusPill tone={runStatusTone(runStatus)}>
+                {tRun(runStatus)}
+              </StatusPill>
+            </span>
+          ) : null}
+        </div>
+        <h1 className={styles.title}>{t("heroTitle")}</h1>
+        <p className={styles.subtitle}>
+          {t("subtitle", { client: clientName, count: findingCount })}
+        </p>
       </div>
-      <div className={styles.runControl}>
-        <Button
-          variant="primary"
-          onClick={onRun}
-          disabled={!canRun}
-          aria-describedby={runNote ? noteId : undefined}
-        >
-          {(polling || pending) && (
-            <Spinner
-              size="sm"
-              label={t("runInProgress")}
-              className={styles.btnSpinner}
-            />
-          )}
-          {buttonLabel}
-        </Button>
-        {runStatus !== null ? (
-          <span className={styles.runStatusRow}>
-            <span className={styles.runStatusLabel}>{t("lastRun")}</span>
-            <StatusPill tone={runStatusTone(runStatus)}>
-              {tRun(runStatus)}
-            </StatusPill>
-          </span>
-        ) : null}
-        {runNote ? (
-          <p id={noteId} className={styles.runNote}>
-            {snapshotReadState === "loading" && gateText === null ? (
-              <Spinner
-                size="sm"
-                label={snapshotReadText ?? tCommon("loading")}
-                className={styles.btnSpinner}
-              />
-            ) : null}
-            {runNote}
-            {gate === "context" ? (
-              <>
-                {" "}
-                <Link
-                  href={`/p/${projectId}/context`}
-                  className={styles.runNoteLink}
-                >
-                  {tNav("context")}
-                </Link>
-              </>
-            ) : null}
-          </p>
-        ) : null}
-        {notice ? (
-          <p
-            className={cx(
-              styles.notice,
-              notice.kind === "error" ? styles.noticeError : styles.noticeInfo,
-            )}
-            role="status"
-          >
-            {notice.text}
-          </p>
-        ) : null}
-        {statusPollError ? (
+      <div className={styles.heroAside}>
+        <dl className={styles.metricGroup} aria-label={t("metrics.label")}>
+          <div>
+            <dt>{t("metrics.completeDomains")}</dt>
+            <dd>
+              {completeDomainCount ?? (
+                <span className={styles.metricUnavailable}>
+                  {t(
+                    hasEverRun
+                      ? "metrics.coverageUnavailable"
+                      : "metrics.coverageNotRun",
+                  )}
+                </span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("metrics.loadedFindings")}</dt>
+            <dd>{findingCount}</dd>
+          </div>
+          <div>
+            <dt>{t("metrics.evidenceBacked")}</dt>
+            <dd>{evidenceBackedCount}</dd>
+          </div>
+        </dl>
+        <div className={styles.runControl}>
           <Button
-            size="sm"
-            variant="secondary"
-            onClick={onRetryStatus}
-            disabled={statusPollRetrying}
+            variant="primary"
+            onClick={onRun}
+            disabled={!canRun}
+            aria-describedby={runNote ? noteId : undefined}
           >
-            {statusPollRetrying ? (
+            {(polling || pending) && (
               <Spinner
                 size="sm"
-                label={tCommon("loading")}
+                label={t("runInProgress")}
                 className={styles.btnSpinner}
               />
-            ) : null}
-            {tCommon("retry")}
+            )}
+            {buttonLabel}
           </Button>
-        ) : null}
+          {runNote ? (
+            <p id={noteId} className={styles.runNote}>
+              {snapshotReadState === "loading" && gateText === null ? (
+                <Spinner
+                  size="sm"
+                  label={snapshotReadText ?? tCommon("loading")}
+                  className={styles.btnSpinner}
+                />
+              ) : null}
+              {runNote}
+              {gate === "context" ? (
+                <>
+                  {" "}
+                  <Link
+                    href={`/p/${projectId}/context`}
+                    className={styles.runNoteLink}
+                  >
+                    {tNav("context")}
+                  </Link>
+                </>
+              ) : null}
+            </p>
+          ) : null}
+          {notice ? (
+            <p
+              className={cx(
+                styles.notice,
+                notice.kind === "error"
+                  ? styles.noticeError
+                  : styles.noticeInfo,
+              )}
+              role="status"
+            >
+              {notice.text}
+            </p>
+          ) : null}
+          {statusPollError ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onRetryStatus}
+              disabled={statusPollRetrying}
+            >
+              {statusPollRetrying ? (
+                <Spinner
+                  size="sm"
+                  label={tCommon("loading")}
+                  className={styles.btnSpinner}
+                />
+              ) : null}
+              {tCommon("retry")}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </header>
   );
 }
 
-/* --------------------------------------------------------- Coverage panel -- */
+/* ------------------------------------------------------- Coverage + rail --- */
 
-function CoveragePanel({ coverage }: { readonly coverage: Coverage }) {
+function CoverageMark({ status }: { readonly status: string | undefined }) {
+  if (status === "complete") {
+    return <Check aria-hidden="true" size={15} strokeWidth={2.2} />;
+  }
+  if (status === undefined || status === "missing") {
+    return <CircleDashed aria-hidden="true" size={15} strokeWidth={1.8} />;
+  }
+  return <AlertTriangle aria-hidden="true" size={15} strokeWidth={1.8} />;
+}
+
+function CoverageBand({
+  coverage,
+  rules,
+  hasEverRun,
+}: {
+  readonly coverage: Coverage | null;
+  readonly rules: readonly DiagnosticRuleResult[];
+  readonly hasEverRun: boolean;
+}) {
   const t = useTranslations("diagnosis");
   const tCoverage = useTranslations("coverage");
   const tDomain = useTranslations("domain");
-  const overall = coverageOverallMeta(coverage.overall);
-  const limitations = [...new Set(coverage.limitations)];
+  const presentationState = resolveCoveragePresentationState(
+    coverage,
+    hasEverRun,
+  );
   return (
-    <Panel
-      className={styles.panel}
-      padding="lg"
-      aria-labelledby="sf-coverage-title"
+    <section
+      className={styles.coverageBand}
+      aria-labelledby="sf-coverage-band-title"
+      data-coverage-band=""
+      data-coverage-availability={presentationState}
+      tabIndex={0}
     >
-      <div className={styles.panelHead}>
-        <h2 id="sf-coverage-title" className={styles.panelTitle}>
-          {t("coverageTitle")}
-        </h2>
-        <StatusPill tone={overall.tone}>
-          {tCoverage(overall.labelKey)}
-        </StatusPill>
-      </div>
-      <ul className={styles.domainList}>
-        {DOMAIN_KEYS.map((key) => {
-          const meta = domainCoverageMeta(coverage.domains[key]);
-          return (
-            <li key={key} className={styles.domainRow}>
-              <span className={styles.domainName}>{tDomain(key)}</span>
-              <StatusPill tone={meta.tone}>
-                {tCoverage(meta.labelKey)}
-              </StatusPill>
-            </li>
-          );
-        })}
-      </ul>
-      {limitations.length > 0 ? (
-        <ul className={styles.limitationList}>
-          {limitations.map((text, index) => (
-            <li key={`${index}:${text}`} className={styles.limitationItem}>
-              {text}
-            </li>
-          ))}
+      <h2 id="sf-coverage-band-title" className={styles.visuallyHidden}>
+        {t("coverageBand.label")}
+      </h2>
+      {coverage === null ? (
+        <div className={styles.coverageUnavailable} role="status">
+          <span className={styles.coverageUnavailableIcon} aria-hidden="true">
+            <CircleDashed size={19} strokeWidth={1.8} />
+          </span>
+          <div>
+            <strong>
+              {t(
+                presentationState === "not-run"
+                  ? "coverageBand.notRunTitle"
+                  : "coverageBand.unavailableTitle",
+              )}
+            </strong>
+            <p>
+              {t(
+                presentationState === "not-run"
+                  ? "coverageBand.notRunDescription"
+                  : "coverageBand.unavailableDescription",
+              )}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <ul>
+          {DOMAIN_KEYS.map((domain) => {
+            const status = coverage.domains[domain];
+            const meta = domainCoverageMeta(status);
+            const ruleCount = rules.filter(
+              (rule) => rule.domain === domain,
+            ).length;
+            return (
+              <li key={domain} data-coverage-state={status ?? "missing"}>
+                <div className={styles.coverageCellMeta}>
+                  <span data-tone={meta.tone}>
+                    <CoverageMark status={status} />
+                    {tCoverage(meta.labelKey)}
+                  </span>
+                  <strong>{ruleCount}</strong>
+                </div>
+                <span className={styles.coverageDomain}>{tDomain(domain)}</span>
+                <span
+                  className={styles.coverageStateBar}
+                  data-coverage-state-bar=""
+                  aria-hidden="true"
+                />
+              </li>
+            );
+          })}
         </ul>
-      ) : null}
-    </Panel>
+      )}
+    </section>
   );
 }
 
-/* ------------------------------------------------------------- Rule board -- */
-
-function RuleRow({ rule }: { readonly rule: DiagnosticRuleResult }) {
+function RailRuleRow({ rule }: { readonly rule: DiagnosticRuleResult }) {
   const t = useTranslations("diagnosis");
   const tRule = useTranslations("ruleTitle");
   const detail =
@@ -336,57 +394,142 @@ function RuleRow({ rule }: { readonly rule: DiagnosticRuleResult }) {
         ? t("ruleNotRunHint")
         : null);
   return (
-    <li className={styles.ruleRow}>
+    <li className={styles.railRuleRow} data-rule-status={rule.status}>
       <div className={styles.ruleMain}>
         <span className={styles.ruleTitle}>{tRule(rule.ruleId)}</span>
         {detail ? <span className={styles.ruleReason}>{detail}</span> : null}
       </div>
-      <StatusPill tone={ruleStatusTone(rule.status)}>
+      <span className={styles.railRuleStatus}>
         {t(`ruleStatus.${rule.status}`)}
-      </StatusPill>
+      </span>
     </li>
   );
 }
 
-function RuleBoard({
+function AuditRail({
+  coverage,
   rules,
+  hasEverRun,
 }: {
+  readonly coverage: Coverage | null;
   readonly rules: readonly DiagnosticRuleResult[];
+  readonly hasEverRun: boolean;
 }) {
   const t = useTranslations("diagnosis");
   const tDomain = useTranslations("domain");
+  const presentationState = resolveCoveragePresentationState(
+    coverage,
+    hasEverRun,
+  );
+  const limitations = [...new Set(coverage?.limitations ?? [])];
+  const completeDomains = DOMAIN_KEYS.filter(
+    (domain) => coverage?.domains[domain] === "complete",
+  ).length;
   return (
-    <Panel
-      className={styles.panel}
-      padding="lg"
-      aria-labelledby="sf-ruleboard-title"
+    <aside
+      className={styles.auditRail}
+      aria-labelledby="sf-audit-rail-title"
+      data-audit-rail=""
+      data-coverage-availability={presentationState}
     >
-      <div className={styles.panelHead}>
-        <h2 id="sf-ruleboard-title" className={styles.panelTitle}>
-          {t("ruleBoard")}
-        </h2>
+      <div className={styles.auditRailHeader}>
+        <span className={styles.auditIcon} aria-hidden="true">
+          <ShieldCheck size={21} strokeWidth={1.8} />
+        </span>
+        <div>
+          <p>{t("auditRail.eyebrow")}</p>
+          <h2 id="sf-audit-rail-title">{t("auditRail.title")}</h2>
+        </div>
       </div>
-      {rules.length === 0 ? (
-        <p className={styles.boardEmpty}>{t("ruleBoardEmpty")}</p>
+      <p className={styles.auditRailDescription}>
+        {t("auditRail.description")}
+      </p>
+
+      {coverage === null ? (
+        <div className={styles.auditUnavailable} role="status">
+          <strong>
+            {t(
+              presentationState === "not-run"
+                ? "auditRail.notRunTitle"
+                : "auditRail.unavailableTitle",
+            )}
+          </strong>
+          <p>
+            {t(
+              presentationState === "not-run"
+                ? "auditRail.notRunDescription"
+                : "auditRail.unavailableDescription",
+            )}
+          </p>
+        </div>
       ) : (
-        <div className={styles.domainGroups}>
-          {DOMAIN_KEYS.map((domain) => {
-            const domainRules = rules.filter((rule) => rule.domain === domain);
-            if (domainRules.length === 0) return null;
-            return (
-              <section key={domain} className={styles.domainGroup}>
-                <h3 className={styles.domainGroupTitle}>{tDomain(domain)}</h3>
-                <ul className={styles.ruleList}>
-                  {domainRules.map((rule) => (
-                    <RuleRow key={rule.ruleId} rule={rule} />
-                  ))}
-                </ul>
-              </section>
-            );
-          })}
+        <div className={styles.auditMeter}>
+          <div>
+            <strong>{`${completeDomains}/${DOMAIN_KEYS.length}`}</strong>
+            <span>
+              {t("auditRail.completeDomains", {
+                complete: completeDomains,
+                total: DOMAIN_KEYS.length,
+              })}
+            </span>
+          </div>
+          <div className={styles.auditDomainTrack} aria-hidden="true">
+            {DOMAIN_KEYS.map((domain) => (
+              <span
+                key={domain}
+                data-audit-domain-segment=""
+                data-coverage-state={coverage.domains[domain] ?? "missing"}
+              />
+            ))}
+          </div>
         </div>
       )}
-    </Panel>
+
+      <section className={styles.auditSection}>
+        <h3>{t("auditRail.limitations")}</h3>
+        {coverage === null ? (
+          <p className={styles.railEmpty}>
+            {t(
+              presentationState === "not-run"
+                ? "auditRail.limitationsNotRun"
+                : "auditRail.limitationsUnavailable",
+            )}
+          </p>
+        ) : limitations.length > 0 ? (
+          <ul className={styles.railLimitationList}>
+            {limitations.map((text, index) => (
+              <li key={`${index}:${text}`}>{text}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className={styles.railEmpty}>{t("auditRail.noLimitations")}</p>
+        )}
+      </section>
+
+      <section className={styles.auditSection}>
+        <h3>{t("auditRail.ruleOutcomes")}</h3>
+        {rules.length === 0 ? (
+          <p className={styles.railEmpty}>{t("ruleBoardEmpty")}</p>
+        ) : (
+          <div className={styles.domainGroups}>
+            {DOMAIN_KEYS.map((domain) => {
+              const domainRules = rules.filter((rule) => rule.domain === domain);
+              if (domainRules.length === 0) return null;
+              return (
+                <section key={domain} className={styles.domainGroup}>
+                  <h4 className={styles.domainGroupTitle}>{tDomain(domain)}</h4>
+                  <ul className={styles.ruleList}>
+                    {domainRules.map((rule) => (
+                      <RailRuleRow key={rule.ruleId} rule={rule} />
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </aside>
   );
 }
 
@@ -538,12 +681,13 @@ function FindingsSection({
           </EmptyState>
         </Panel>
       ) : (
-        <div className={styles.findingList}>
+        <div className={styles.findingList} data-finding-list="">
           {filtered.map((finding) => (
             <FindingCard
               key={finding.id}
               projectId={projectId}
               finding={finding}
+              index={findings.indexOf(finding)}
               onRefetch={onRefetch}
             />
           ))}
@@ -756,11 +900,24 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
   const headerRunStatus: RunStatus | null = polling
     ? (runQuery.data?.status ?? latestRun?.status ?? "queued")
     : (latestRun?.status ?? null);
+  const completeDomainCount =
+    coverage === null
+      ? null
+      : DOMAIN_KEYS.filter(
+          (domain) => coverage.domains[domain] === "complete",
+        ).length;
+  const evidenceBackedCount = findingEnvelope.data.filter(
+    (finding) => finding.evidence.length > 0,
+  ).length;
 
   return (
     <div className={styles.page}>
       <RunHeader
         projectId={projectId}
+        clientName={project.data.clientName}
+        findingCount={findingEnvelope.data.length}
+        completeDomainCount={completeDomainCount}
+        evidenceBackedCount={evidenceBackedCount}
         canRun={canRun}
         gate={gate}
         hasEverRun={hasEverRun}
@@ -780,18 +937,28 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
           onRetry={() => void refetchSnapshots()}
         />
       ) : null}
-      {coverage !== null ? <CoveragePanel coverage={coverage} /> : null}
-      <RuleBoard rules={ruleResults} />
-      <FindingsSection
-        projectId={projectId}
-        findings={findingEnvelope.data}
+      <CoverageBand
+        coverage={coverage}
+        rules={ruleResults}
         hasEverRun={hasEverRun}
-        hasMore={findings.hasNextPage}
-        loadingMore={findings.isFetchingNextPage}
-        loadMoreError={findings.isFetchNextPageError}
-        onLoadMore={() => void findings.fetchNextPage()}
-        onRefetch={() => void refetchFindings()}
       />
+      <div className={styles.workspaceGrid} data-diagnosis-layout="">
+        <FindingsSection
+          projectId={projectId}
+          findings={findingEnvelope.data}
+          hasEverRun={hasEverRun}
+          hasMore={findings.hasNextPage}
+          loadingMore={findings.isFetchingNextPage}
+          loadMoreError={findings.isFetchNextPageError}
+          onLoadMore={() => void findings.fetchNextPage()}
+          onRefetch={() => void refetchFindings()}
+        />
+        <AuditRail
+          coverage={coverage}
+          rules={ruleResults}
+          hasEverRun={hasEverRun}
+        />
+      </div>
     </div>
   );
 }

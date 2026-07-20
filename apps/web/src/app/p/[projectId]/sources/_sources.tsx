@@ -16,13 +16,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import {
+  AlertTriangle,
+  ArrowRight,
   BarChart3,
+  ChevronDown,
   Database,
   FileUp,
   Globe2,
+  RefreshCw,
   Search,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import { uniqueCursorItems } from "@/lib/api/cursor-pages";
@@ -72,6 +78,9 @@ import {
   abbreviateChecksum,
   deriveSourcesReadiness,
   sourceAcquisitionMode,
+  sourcePrimaryRowCount,
+  sourcesReadyForDiagnosis,
+  sourcesCoveragePercentage,
   type SourceAcquisitionMode,
 } from "./_sources-readiness.ts";
 import styles from "./sources.module.css";
@@ -85,14 +94,28 @@ const PROVIDER_ICON: Record<Provider, LucideIcon> = {
   dataforseo: Database,
 };
 
+const PROVIDER_BADGE: Readonly<Record<Provider, string>> = {
+  crawl: "CR",
+  gsc: "GS",
+  ga4: "GA",
+  csv: "CSV",
+  dataforseo: "DF",
+};
+
 interface SourcesPresentationCopy {
+  readonly heroEyebrow: (count: number) => string;
+  readonly heroTitle: string;
+  readonly heroSummary: (usable: number, partial: number) => string;
+  readonly refreshAll: string;
+  readonly refreshing: string;
+  readonly trustNote: string;
+  readonly readinessRegionLabel: string;
   readonly readinessEyebrow: string;
   readonly readinessTitle: string;
   readonly readinessDescription: string;
   readonly readinessComplete: string;
   readonly readinessPartial: string;
   readonly readinessUnavailable: string;
-  readonly families: string;
   readonly connected: string;
   readonly usable: string;
   readonly partial: string;
@@ -103,9 +126,7 @@ interface SourcesPresentationCopy {
   readonly coverageGapDescription: string;
   readonly coverageComplete: string;
   readonly noUsableSnapshots: string;
-  readonly partialSnapshot: string;
   readonly noUsableSnapshot: string;
-  readonly missingFamily: string;
   readonly latestImmutableSnapshot: string;
   readonly provenanceUnavailable: string;
   readonly dataset: string;
@@ -117,6 +138,17 @@ interface SourcesPresentationCopy {
   readonly windowUnavailable: string;
   readonly windowFrom: (start: string) => string;
   readonly windowThrough: (end: string) => string;
+  readonly metricLabel: Readonly<Record<Provider, string>>;
+  readonly metricUnit: Readonly<Record<Provider, string>>;
+  readonly providerRole: Readonly<Record<Provider, string>>;
+  readonly snapshotDetails: string;
+  readonly sourceHealth: string;
+  readonly noMeasuredValue: string;
+  readonly readyForDiagnosis: string;
+  readonly notReadyForDiagnosis: string;
+  readonly reviewDiagnosis: string;
+  readonly reviewSourceGaps: string;
+  readonly coveragePercentage: (percentage: number) => string;
   readonly mode: Readonly<Record<SourceAcquisitionMode, string>>;
   readonly footerAria: string;
   readonly snapshotsExact: (count: number) => string;
@@ -126,14 +158,23 @@ interface SourcesPresentationCopy {
 }
 
 const EN_SOURCES_COPY: SourcesPresentationCopy = {
+  heroEyebrow: (count) =>
+    `Evidence intake · ${count} canonical ${count === 1 ? "source" : "sources"}`,
+  heroTitle: "Every recommendation starts with trusted data.",
+  heroSummary: (usable, partial) =>
+    `${usable} sources have fully usable evidence${partial > 0 ? ` and ${partial} are partially usable` : ""}. Connection state and snapshot availability are shown separately.`,
+  refreshAll: "Refresh all sources",
+  refreshing: "Refreshing sources…",
+  trustNote:
+    "This page reads immutable evidence snapshots. Connections, refreshes, imports, limitations, and errors remain tied to their real provider state; credentials are never displayed.",
+  readinessRegionLabel: "Source readiness",
   readinessEyebrow: "Evidence coverage",
-  readinessTitle: "Source readiness",
+  readinessTitle: "Coverage you can act on",
   readinessDescription:
-    "Counts come from canonical source slots and their latest snapshots. Connections alone never count as usable data.",
+    "Only fully usable latest snapshots count toward coverage.",
   readinessComplete: "Enabled sources usable",
   readinessPartial: "Coverage has gaps",
   readinessUnavailable: "No usable snapshots yet",
-  families: "Canonical families",
   connected: "Connected",
   usable: "Usable",
   partial: "Partial",
@@ -145,9 +186,7 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
     "Enabled families without a fully usable latest snapshot:",
   coverageComplete: "Every enabled source family has a usable snapshot.",
   noUsableSnapshots: "No usable snapshots yet",
-  partialSnapshot: "Partial snapshot",
   noUsableSnapshot: "No usable snapshot",
-  missingFamily: "Canonical family missing",
   latestImmutableSnapshot: "Latest immutable snapshot",
   provenanceUnavailable: "Provenance is unavailable until a snapshot is captured.",
   dataset: "Dataset",
@@ -159,6 +198,35 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
   windowUnavailable: "Not provided",
   windowFrom: (start) => `From ${start}`,
   windowThrough: (end) => `Through ${end}`,
+  metricLabel: {
+    crawl: "Captured URLs",
+    gsc: "Search performance rows",
+    ga4: "Organic landing rows",
+    csv: "Imported keyword rows",
+    dataforseo: "Ranking keyword rows",
+  },
+  metricUnit: {
+    crawl: "URLs",
+    gsc: "rows",
+    ga4: "rows",
+    csv: "rows",
+    dataforseo: "keywords",
+  },
+  providerRole: {
+    crawl: "Network evidence",
+    gsc: "First-party search",
+    ga4: "First-party analytics",
+    csv: "Manual evidence",
+    dataforseo: "Search intelligence",
+  },
+  snapshotDetails: "Snapshot details",
+  sourceHealth: "Source health",
+  noMeasuredValue: "No usable measurement",
+  readyForDiagnosis: "Evidence is ready for diagnosis",
+  notReadyForDiagnosis: "Evidence coverage is not ready for diagnosis",
+  reviewDiagnosis: "Review diagnostic coverage",
+  reviewSourceGaps: "Review source gaps",
+  coveragePercentage: (percentage) => `${percentage}% evidence coverage`,
   mode: { live: "Live", manual: "Manual", disabled: "Disabled" },
   footerAria: "Snapshot provenance policy",
   snapshotsExact: (count) =>
@@ -172,14 +240,22 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
 };
 
 const ZH_SOURCES_COPY: SourcesPresentationCopy = {
+  heroEyebrow: (count) => `证据接入 · 已配置 ${count} 个规范数据来源`,
+  heroTitle: "每一条建议，都从可信数据开始。",
+  heroSummary: (usable, partial) =>
+    `当前有 ${usable} 个数据来源完全可用${partial > 0 ? `，另有 ${partial} 个部分可用` : ""}；连接状态与快照可用性分别呈现。`,
+  refreshAll: "刷新所有来源",
+  refreshing: "正在刷新来源…",
+  trustNote:
+    "此页面读取不可变证据快照。连接、刷新、导入、限制和错误始终对应真实供应商状态；页面绝不展示连接凭据。",
+  readinessRegionLabel: "数据源就绪度",
   readinessEyebrow: "证据覆盖",
-  readinessTitle: "数据源就绪度",
+  readinessTitle: "数据覆盖足以开始行动",
   readinessDescription:
-    "计数仅来自规范数据源槽位及其最新快照。仅有连接绝不计为可用数据。",
+    "只有完全可用的最新快照才计入覆盖率。",
   readinessComplete: "已启用数据源均可用",
   readinessPartial: "覆盖仍有缺口",
   readinessUnavailable: "尚无可用快照",
-  families: "规范数据源类别",
   connected: "已连接",
   usable: "可用",
   partial: "部分可用",
@@ -190,9 +266,7 @@ const ZH_SOURCES_COPY: SourcesPresentationCopy = {
   coverageGapDescription: "以下已启用类别尚无完全可用的最新快照：",
   coverageComplete: "每个已启用的数据源类别都有可用快照。",
   noUsableSnapshots: "尚无可用快照",
-  partialSnapshot: "部分可用快照",
   noUsableSnapshot: "无可用快照",
-  missingFamily: "缺少规范数据源类别",
   latestImmutableSnapshot: "最新不可变快照",
   provenanceUnavailable: "捕获快照前，来源元数据不可用。",
   dataset: "数据集",
@@ -204,6 +278,35 @@ const ZH_SOURCES_COPY: SourcesPresentationCopy = {
   windowUnavailable: "未提供",
   windowFrom: (start) => `自 ${start}`,
   windowThrough: (end) => `截至 ${end}`,
+  metricLabel: {
+    crawl: "已采集 URL",
+    gsc: "搜索表现记录",
+    ga4: "自然落地页记录",
+    csv: "导入关键词记录",
+    dataforseo: "排名关键词记录",
+  },
+  metricUnit: {
+    crawl: "URLs",
+    gsc: "行",
+    ga4: "行",
+    csv: "行",
+    dataforseo: "关键词",
+  },
+  providerRole: {
+    crawl: "网络证据",
+    gsc: "第一方搜索",
+    ga4: "第一方分析",
+    csv: "人工证据",
+    dataforseo: "搜索情报",
+  },
+  snapshotDetails: "快照详情",
+  sourceHealth: "数据源健康度",
+  noMeasuredValue: "暂无可用度量",
+  readyForDiagnosis: "证据已可用于诊断",
+  notReadyForDiagnosis: "证据覆盖尚未达到诊断就绪状态",
+  reviewDiagnosis: "查看诊断覆盖度",
+  reviewSourceGaps: "查看数据源缺口",
+  coveragePercentage: (percentage) => `${percentage}% 证据覆盖`,
   mode: { live: "实时采集", manual: "手动导入", disabled: "未启用" },
   footerAria: "快照来源策略",
   snapshotsExact: (count) => `${count} 个不可变快照`,
@@ -393,90 +496,143 @@ function Freshness({
   const locale = useLocale();
   const copy = sourcesPresentationCopy(locale);
   const snap = source.latestSnapshot;
-
-  if (!snap) {
-    return (
-      <div className={styles.freshEmpty}>
-        <strong>{t("noSnapshot")}</strong>
-        <span>{copy.provenanceUnavailable}</span>
-      </div>
-    );
-  }
+  const metricValue = sourcePrimaryRowCount(source);
+  const historyLabel =
+    snapshotCount === null
+      ? t("snapshotHistoryUnavailable")
+      : snapshotHistoryComplete
+        ? t("snapshotHistory", { count: snapshotCount })
+        : t("snapshotHistoryPartial", { count: snapshotCount });
 
   return (
-    <section
-      className={styles.provenance}
-      aria-label={copy.latestImmutableSnapshot}
-    >
-      <div className={styles.provenanceHead}>
-        <h3 className={styles.provenanceTitle}>
-          {copy.latestImmutableSnapshot}
-        </h3>
-        <span className={styles.metaLabel}>{t("availabilityLabel")}</span>
-        <StatusPill tone={availabilityTone(snap.availability)}>
-          {tState(snap.availability)}
-        </StatusPill>
-        {source.state === "stale" ? (
-          <StatusPill tone="warning">{tState("stale")}</StatusPill>
-        ) : null}
-        {snapshotCount === null ? (
-          <span className={styles.snapHistory}>
-            {t("snapshotHistoryUnavailable")}
-          </span>
-        ) : snapshotCount > 0 ? (
-          <span className={styles.snapHistory}>
-            {snapshotHistoryComplete
-              ? t("snapshotHistory", { count: snapshotCount })
-              : t("snapshotHistoryPartial", { count: snapshotCount })}
-          </span>
-        ) : null}
+    <div className={styles.freshness}>
+      <div className={styles.primaryMetric}>
+        <span className={styles.metaLabel}>
+          {copy.metricLabel[source.provider]}
+        </span>
+        {metricValue === null ? (
+          <strong className={styles.metricUnavailable}>
+            {source.featureEnabled ? copy.noMeasuredValue : t("notAvailable")}
+          </strong>
+        ) : (
+          <p className={styles.metricValue}>
+            <strong data-testid="source-provenance-dynamic">
+              {new Intl.NumberFormat(locale, { notation: "compact" }).format(
+                metricValue,
+              )}
+            </strong>
+            <span>{copy.metricUnit[source.provider]}</span>
+          </p>
+        )}
       </div>
 
-      <dl className={styles.provenanceGrid}>
-        <div className={styles.provenanceItem}>
-          <dt>{copy.dataset}</dt>
-          <dd data-testid="source-provenance-dynamic">{snap.datasetKey}</dd>
-        </div>
-        <div className={styles.provenanceItem}>
-          <dt>{copy.schema}</dt>
-          <dd data-testid="source-provenance-dynamic">{snap.schemaVersion}</dd>
-        </div>
-        <div className={styles.provenanceItem}>
-          <dt>{copy.method}</dt>
-          <dd data-testid="source-provenance-dynamic">{snap.methodVersion}</dd>
-        </div>
-        <div className={styles.provenanceItem}>
-          <dt>{copy.sourceWindow}</dt>
-          <dd data-testid="source-provenance-dynamic">
-            {formatSourceWindow(snap.sourceWindow, locale, copy)}
-          </dd>
-        </div>
-        <div className={styles.provenanceItem}>
+      <dl className={styles.snapshotFacts}>
+        <div className={styles.snapshotFact}>
           <dt>{t("lastCollected")}</dt>
-          <dd data-testid="source-provenance-dynamic">
-            {formatDateTime(snap.capturedAt, locale)}
+          <dd>
+            {snap === null ? (
+              "—"
+            ) : (
+              <time dateTime={snap.capturedAt}>
+                {formatDateOnly(snap.capturedAt, locale)}
+              </time>
+            )}
           </dd>
         </div>
-        <div className={styles.provenanceItem}>
-          <dt>{t("rows")}</dt>
-          <dd
-            className={styles.provenanceRows}
-            data-testid="source-provenance-dynamic"
-          >
-            {new Intl.NumberFormat(locale).format(snap.rowCount)}
-          </dd>
-        </div>
-        <div className={styles.provenanceItem}>
-          <dt>{copy.checksum}</dt>
-          <dd
-            className={styles.provenanceChecksum}
-            data-testid="source-provenance-dynamic"
-          >
-            {abbreviateChecksum(snap.checksum)}
+        <div className={styles.snapshotFact}>
+          <dt>{t("availabilityLabel")}</dt>
+          <dd>
+            {snap === null ? (
+              source.featureEnabled ? (
+                copy.noUsableSnapshot
+              ) : (
+                t("notAvailable")
+              )
+            ) : (
+              <StatusPill tone={availabilityTone(snap.availability)}>
+                {tState(snap.availability)}
+              </StatusPill>
+            )}
           </dd>
         </div>
       </dl>
-    </section>
+
+      {snap === null ? (
+        <div className={styles.freshEmpty}>
+          <strong>{t("noSnapshot")}</strong>
+          <span>{copy.provenanceUnavailable}</span>
+        </div>
+      ) : (
+        <details className={styles.provenance}>
+          <summary className={styles.provenanceSummary}>
+            <span className={styles.provenanceSummaryLead}>
+              <Database size={16} strokeWidth={1.8} aria-hidden="true" />
+              <span>{copy.latestImmutableSnapshot}</span>
+            </span>
+            <span className={styles.snapHistory}>{historyLabel}</span>
+            <ChevronDown
+              className={styles.provenanceChevron}
+              size={16}
+              strokeWidth={2}
+              aria-hidden="true"
+            />
+          </summary>
+          <div className={styles.provenanceBody}>
+            <div className={styles.provenanceHead}>
+              <h3 className={styles.provenanceTitle}>{copy.snapshotDetails}</h3>
+              {source.state === "stale" ? (
+                <StatusPill tone="warning">{tState("stale")}</StatusPill>
+              ) : null}
+            </div>
+            <dl className={styles.provenanceGrid}>
+              <div className={styles.provenanceItem}>
+                <dt>{copy.dataset}</dt>
+                <dd data-testid="source-provenance-dynamic">{snap.datasetKey}</dd>
+              </div>
+              <div className={styles.provenanceItem}>
+                <dt>{copy.schema}</dt>
+                <dd data-testid="source-provenance-dynamic">
+                  {snap.schemaVersion}
+                </dd>
+              </div>
+              <div className={styles.provenanceItem}>
+                <dt>{copy.method}</dt>
+                <dd data-testid="source-provenance-dynamic">
+                  {snap.methodVersion}
+                </dd>
+              </div>
+              <div className={styles.provenanceItem}>
+                <dt>{copy.sourceWindow}</dt>
+                <dd data-testid="source-provenance-dynamic">
+                  {formatSourceWindow(snap.sourceWindow, locale, copy)}
+                </dd>
+              </div>
+              <div className={styles.provenanceItem}>
+                <dt>{t("lastCollected")}</dt>
+                <dd data-testid="source-provenance-dynamic">
+                  {formatDateTime(snap.capturedAt, locale)}
+                </dd>
+              </div>
+              <div className={styles.provenanceItem}>
+                <dt>{t("rows")}</dt>
+                <dd className={styles.provenanceRows}>
+                  {new Intl.NumberFormat(locale).format(snap.rowCount)}
+                </dd>
+              </div>
+              <div className={styles.provenanceItem}>
+                <dt>{copy.checksum}</dt>
+                <dd
+                  className={styles.provenanceChecksum}
+                  data-testid="source-provenance-dynamic"
+                >
+                  {abbreviateChecksum(snap.checksum)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -504,7 +660,8 @@ function CrawlControls({
   };
   return (
     <div className={styles.controls}>
-      <Button variant="primary" onClick={start} disabled={busy || runActive}>
+      <Button variant="ghost" onClick={start} disabled={busy || runActive}>
+        <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
         {busy ? t("collecting") : t(sourceCollectLabelKey(sourceState))}
       </Button>
       {mutation.error !== null ? (
@@ -688,7 +845,8 @@ function OAuthControls({
     };
     return (
       <div className={styles.controls}>
-        <Button variant="primary" onClick={authorize} disabled={busy}>
+        <Button variant="ghost" onClick={authorize} disabled={busy}>
+          <ArrowRight size={15} strokeWidth={2} aria-hidden="true" />
           {busy ? t("authorizing") : t("connect")}
         </Button>
         {connect.error !== null ? (
@@ -718,7 +876,8 @@ function OAuthControls({
   };
   return (
     <div className={styles.controls}>
-      <Button variant="primary" onClick={start} disabled={busy || runActive}>
+      <Button variant="ghost" onClick={start} disabled={busy || runActive}>
+        <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
         {busy ? t("collecting") : t(sourceCollectLabelKey(source.state))}
       </Button>
       {collect.error !== null ? (
@@ -970,36 +1129,52 @@ function CsvControls({
   };
 
   return (
-    <div className={styles.csv}>
-      <Field label={t("chooseFile")} htmlFor={fileId}>
-        <input
-          id={fileId}
-          type="file"
-          accept=".csv,text/csv"
-          className={styles.fileInput}
-          disabled={importer.preview.isPending || runActive}
-          onChange={onFile}
-        />
-      </Field>
+    <details
+      className={styles.actionDrawer}
+      open={
+        importer.preview.isPending ||
+        preview !== undefined ||
+        importer.preview.error !== null
+          ? true
+          : undefined
+      }
+    >
+      <summary className={styles.drawerSummary}>
+        <FileUp size={16} strokeWidth={1.9} aria-hidden="true" />
+        <span>{t("chooseFile")}</span>
+        <ChevronDown size={15} strokeWidth={2} aria-hidden="true" />
+      </summary>
+      <div className={styles.drawerBody}>
+        <div className={styles.csv}>
+          <Field label={t("chooseFile")} htmlFor={fileId}>
+            <input
+              id={fileId}
+              type="file"
+              accept=".csv,text/csv"
+              className={styles.fileInput}
+              disabled={importer.preview.isPending || runActive}
+              onChange={onFile}
+            />
+          </Field>
 
-      {importer.preview.isPending ? (
-        <div className={styles.runRow} role="status">
-          <Spinner size="sm" label={t("reading")} />
-          <span className={styles.runText}>{t("reading")}</span>
-        </div>
-      ) : null}
+          {importer.preview.isPending ? (
+            <div className={styles.runRow} role="status">
+              <Spinner size="sm" label={t("reading")} />
+              <span className={styles.runText}>{t("reading")}</span>
+            </div>
+          ) : null}
 
-      {importer.preview.error !== null ? (
-        <ProblemNotice
-          className={styles.alert}
-          error={importer.preview.error}
-          message={tCommon("error")}
-          compact
-        />
-      ) : null}
+          {importer.preview.error !== null ? (
+            <ProblemNotice
+              className={styles.alert}
+              error={importer.preview.error}
+              message={tCommon("error")}
+              compact
+            />
+          ) : null}
 
-      {preview ? (
-        <div className={styles.previewBlock}>
+          {preview ? (
+            <div className={styles.previewBlock}>
           <p className={styles.previewMeta}>
             {t("previewMeta", {
               shown: preview.previewRows.length,
@@ -1068,9 +1243,11 @@ function CsvControls({
               compact
             />
           ) : null}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-    </div>
+      </div>
+    </details>
   );
 }
 
@@ -1109,10 +1286,11 @@ function DataForSeoControls({
       <p className={styles.dataForSeoScope}>{t("dataForSeoScope")}</p>
       <div className={styles.controls}>
         <Button
-          variant="primary"
+          variant="ghost"
           onClick={start}
           disabled={mutation.isPending || runActive}
         >
+          <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
           {mutation.isPending
             ? t("collecting")
             : source.latestSnapshot === null
@@ -1287,98 +1465,113 @@ function SourceCard({
     source.state !== "disconnected";
   const ProviderIcon = PROVIDER_ICON[source.provider];
   const acquisitionMode = sourceAcquisitionMode(source);
+  const historyLabel =
+    snapshotCount === null
+      ? copy.historyUnavailable
+      : snapshotHistoryComplete
+        ? copy.snapshotsExact(snapshotCount)
+        : copy.snapshotsPartial(snapshotCount);
 
   return (
-    <Panel padding="lg" className={styles.card} aria-labelledby={titleId}>
-      <div className={styles.cardHead}>
+    <Panel
+      padding="none"
+      className={cx(
+        styles.card,
+        !source.featureEnabled && styles.cardUnavailable,
+      )}
+      data-provider={source.provider}
+      data-source-card=""
+      aria-labelledby={titleId}
+    >
+      <header className={styles.cardHead}>
         <span className={styles.sourceLogo} aria-hidden="true">
-          <ProviderIcon size={20} strokeWidth={1.8} />
+          <ProviderIcon size={21} strokeWidth={1.85} />
+          <span className={styles.sourceBadge}>
+            {PROVIDER_BADGE[source.provider]}
+          </span>
         </span>
         <div className={styles.cardHeadText}>
+          <span className={styles.sourceMode}>
+            {copy.providerRole[source.provider]} · {copy.mode[acquisitionMode]}
+          </span>
           <h2 id={titleId} className={styles.cardTitle}>
             {providerLabel}
           </h2>
-          <p className={styles.cardDesc}>
-            {t(`description.${source.provider}`)}
-          </p>
         </div>
         <div className={styles.cardStatuses}>
-          <StatusPill
-            tone={
-              acquisitionMode === "live"
-                ? "info"
-                : acquisitionMode === "manual"
-                  ? "warning"
-                  : "neutral"
-            }
-          >
-            {copy.mode[acquisitionMode]}
-          </StatusPill>
           <StatusPill tone={stateTone(source.state)}>
             {tState(source.state)}
           </StatusPill>
         </div>
-      </div>
+      </header>
 
-      <Freshness
-        source={source}
-        snapshotCount={snapshotCount}
-        snapshotHistoryComplete={snapshotHistoryComplete}
-      />
-
-      <p className={styles.limitation}>
-        <span className={styles.metaLabel}>{t("limitationLabel")}</span>
-        <span>{sourceLimitationForDisplay(source)}</span>
-      </p>
-
-      {hintKey !== null ? (
-        <p className={styles.controlHint}>{t(hintKey)}</p>
-      ) : null}
-
-      {runActive && activeRunId !== null ? (
-        <RunWatcher
-          projectId={projectId}
-          runId={activeRunId}
-          onSettled={onSettled}
-        />
-      ) : null}
-
-      {failedRunId !== null && activeRunId === null ? (
-        <div className={styles.runFailure} role="alert">
-          <span>{t("runStatusUnavailable")}</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setStartedRunId(failedRunId);
-              setSettledRunId(null);
-              setFailedRunId(null);
-            }}
-          >
-            {tCommon("retry")}
-          </Button>
-        </div>
-      ) : null}
-
-      <div className={styles.cardFooter}>
-        <SourceControls
+      <div className={styles.cardBody}>
+        <Freshness
           source={source}
-          projectId={projectId}
-          intent={intent}
-          onClearIntent={onClearIntent}
-          onStarted={onStarted}
-          runActive={runActive}
+          snapshotCount={snapshotCount}
+          snapshotHistoryComplete={snapshotHistoryComplete}
         />
-        {disconnectable && sourceId !== null ? (
-          <DisconnectButton
+
+        <p className={styles.limitation}>
+          <span className={styles.metaLabel}>{t("limitationLabel")}</span>
+          <span>{sourceLimitationForDisplay(source)}</span>
+        </p>
+
+        {hintKey !== null ? (
+          <p className={styles.controlHint}>{t(hintKey)}</p>
+        ) : null}
+
+        {runActive && activeRunId !== null ? (
+          <RunWatcher
             projectId={projectId}
-            sourceConnectionId={sourceId}
-            providerLabel={providerLabel}
-            onDone={onRefetch}
-            disabled={runActive}
+            runId={activeRunId}
+            onSettled={onSettled}
           />
         ) : null}
+
+        {failedRunId !== null && activeRunId === null ? (
+          <div className={styles.runFailure} role="alert">
+            <span>{t("runStatusUnavailable")}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setStartedRunId(failedRunId);
+                setSettledRunId(null);
+                setFailedRunId(null);
+              }}
+            >
+              {tCommon("retry")}
+            </Button>
+          </div>
+        ) : null}
       </div>
+
+      <footer className={styles.cardFooter}>
+        <span className={styles.footerHistory}>
+          <Database size={16} strokeWidth={1.8} aria-hidden="true" />
+          {historyLabel}
+        </span>
+        <div className={styles.cardActions}>
+          <SourceControls
+            source={source}
+            projectId={projectId}
+            intent={intent}
+            onClearIntent={onClearIntent}
+            onStarted={onStarted}
+            runActive={runActive}
+          />
+          {disconnectable && sourceId !== null ? (
+            <DisconnectButton
+              projectId={projectId}
+              sourceConnectionId={sourceId}
+              providerLabel={providerLabel}
+              onDone={onRefetch}
+              disabled={runActive}
+            />
+          ) : null}
+        </div>
+      </footer>
     </Panel>
   );
 }
@@ -1398,9 +1591,6 @@ function ReadinessSummary({
   const tProvider = useTranslations("provider");
   const copy = sourcesPresentationCopy(locale);
   const readiness = deriveSourcesReadiness(sources);
-  const sourceByProvider = new Map(
-    sources.map((source) => [source.provider, source] as const),
-  );
   const hasGaps =
     readiness.gapProviders.length > 0 ||
     readiness.missingProviders.length > 0;
@@ -1410,128 +1600,156 @@ function ReadinessSummary({
     : hasGaps
       ? copy.readinessPartial
       : copy.readinessComplete;
-  const overallTone: StatusTone = !hasUsableSnapshots
-    ? "danger"
-    : hasGaps
-      ? "warning"
-      : "success";
+  const coveragePercentage = sourcesCoveragePercentage(sources);
   const historyValue =
     snapshotCount === null
       ? "—"
       : snapshotHistoryComplete
         ? String(snapshotCount)
         : `≥ ${snapshotCount}`;
+  const gapLabels = [
+    ...readiness.gapProviders.map((provider) => tProvider(provider)),
+    ...readiness.missingProviders.map((provider) => tProvider(provider)),
+  ];
 
   return (
     <Panel
-      padding="lg"
+      padding="none"
       className={styles.readiness}
-      aria-labelledby="source-readiness-title"
+      id="source-readiness"
+      data-source-readiness=""
+      aria-label={copy.readinessRegionLabel}
     >
-      <div className={styles.readinessHead}>
-        <div className={styles.readinessLead}>
-          <span className="sf-eyebrow">{copy.readinessEyebrow}</span>
-          <h2 id="source-readiness-title" className={styles.readinessTitle}>
-            {copy.readinessTitle}
-          </h2>
+      <div className={styles.readinessLead} data-source-readiness-lead="">
+        <div
+          className={styles.coverageRing}
+          role="meter"
+          aria-label={copy.coveragePercentage(coveragePercentage)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={coveragePercentage}
+        >
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <circle cx="24" cy="24" r="20" pathLength="100" />
+            <circle
+              className={styles.coverageArc}
+              cx="24"
+              cy="24"
+              r="20"
+              pathLength="100"
+              strokeDasharray={`${coveragePercentage} 100`}
+            />
+          </svg>
+          <strong data-testid="source-readiness-dynamic">
+            {coveragePercentage}%
+          </strong>
+        </div>
+        <div className={styles.readinessCopy}>
+          <span className={styles.readinessEyebrow}>
+            {copy.readinessEyebrow}
+          </span>
+          <h2 className={styles.readinessTitle}>{copy.readinessTitle}</h2>
           <p className={styles.readinessDescription}>
             {copy.readinessDescription}
           </p>
+          <p className={styles.familyCount}>
+            <strong data-testid="source-readiness-dynamic">
+              {readiness.usableCount} / {readiness.enabledCount}
+            </strong>
+            <span>{copy.usable}</span>
+            <span aria-hidden="true">·</span>
+            <span>
+              {copy.immutableSnapshots}: {historyValue}
+            </span>
+          </p>
         </div>
-        <StatusPill tone={overallTone}>{overallLabel}</StatusPill>
       </div>
 
       <dl className={styles.readinessMetrics}>
-        <div className={styles.readinessMetric}>
-          <dt>{copy.families}</dt>
-          <dd data-testid="source-readiness-dynamic">
-            {readiness.familyCount} / {readiness.expectedFamilyCount}
-          </dd>
-        </div>
         <div className={styles.readinessMetric}>
           <dt>{copy.connected}</dt>
           <dd data-testid="source-readiness-dynamic">
             {readiness.connectedCount}
           </dd>
+          <progress
+            value={readiness.connectedCount}
+            max={Math.max(readiness.enabledCount, 1)}
+            aria-label={copy.connected}
+          />
         </div>
         <div className={styles.readinessMetric}>
           <dt>{copy.usable}</dt>
           <dd data-testid="source-readiness-dynamic">{readiness.usableCount}</dd>
+          <progress
+            value={readiness.usableCount}
+            max={Math.max(readiness.enabledCount, 1)}
+            aria-label={copy.usable}
+          />
         </div>
         <div className={styles.readinessMetric}>
           <dt>{copy.partial}</dt>
           <dd data-testid="source-readiness-dynamic">
             {readiness.partialCount}
           </dd>
-        </div>
-        <div className={styles.readinessMetric}>
-          <dt>{copy.unavailable}</dt>
-          <dd data-testid="source-readiness-dynamic">
-            {readiness.unavailableCount}
-          </dd>
-        </div>
-        <div className={styles.readinessMetric}>
-          <dt>{copy.immutableSnapshots}</dt>
-          <dd data-testid="source-readiness-dynamic">{historyValue}</dd>
-          {snapshotCount === null ? <small>{copy.historyUnavailable}</small> : null}
+          <progress
+            value={readiness.partialCount}
+            max={Math.max(readiness.enabledCount, 1)}
+            aria-label={copy.partial}
+          />
         </div>
       </dl>
 
       {hasGaps ? (
         <aside
           className={styles.gapCallout}
+          data-source-readiness-gap=""
           role="note"
           aria-label={copy.coverageGap}
         >
+          <AlertTriangle size={20} strokeWidth={1.9} aria-hidden="true" />
           <div className={styles.gapCopy}>
-            <strong>{copy.coverageGap}</strong>
+            <strong>
+              <span data-testid="source-readiness-dynamic">
+                {readiness.unavailableCount}
+              </span>{" "}
+              {copy.unavailable}
+            </strong>
+            <span className={styles.gapLabel}>{copy.coverageGap}</span>
             <p>
               {!hasUsableSnapshots
                 ? copy.noUsableSnapshots
                 : copy.coverageGapDescription}
             </p>
+            <span className={styles.gapProviders}>{gapLabels.join(", ")}</span>
           </div>
-          <ul className={styles.gapList}>
-            {readiness.gapProviders.map((provider) => {
-              const availability =
-                sourceByProvider.get(provider)?.latestSnapshot?.availability;
-              return (
-                <li key={provider}>
-                  <span>{tProvider(provider)}</span>
-                  <StatusPill
-                    tone={availability === "partial" ? "warning" : "neutral"}
-                  >
-                    {availability === "partial"
-                      ? copy.partialSnapshot
-                      : copy.noUsableSnapshot}
-                  </StatusPill>
-                </li>
-              );
-            })}
-            {readiness.missingProviders.map((provider) => (
-              <li key={`missing-${provider}`}>
-                <span>{tProvider(provider)}</span>
-                <StatusPill tone="danger">{copy.missingFamily}</StatusPill>
-              </li>
-            ))}
-          </ul>
         </aside>
       ) : (
-        <p className={styles.coverageComplete}>{copy.coverageComplete}</p>
+        <div className={styles.coverageComplete}>
+          <ShieldCheck size={20} strokeWidth={1.9} aria-hidden="true" />
+          <div>
+            <strong>{overallLabel}</strong>
+            <p>{copy.coverageComplete}</p>
+          </div>
+        </div>
       )}
     </Panel>
   );
 }
 
 function SnapshotPolicyFootline({
+  projectId,
+  sources,
   snapshotCount,
   snapshotHistoryComplete,
 }: {
+  readonly projectId: string;
+  readonly sources: readonly SourceConnection[];
   readonly snapshotCount: number | null;
   readonly snapshotHistoryComplete: boolean;
 }) {
   const locale = useLocale();
   const copy = sourcesPresentationCopy(locale);
+  const readyForDiagnosis = sourcesReadyForDiagnosis(sources);
   const countLabel =
     snapshotCount === null
       ? copy.historyUnavailable
@@ -1544,15 +1762,44 @@ function SnapshotPolicyFootline({
       className={styles.footline}
       role="contentinfo"
       aria-label={copy.footerAria}
+      data-source-footline=""
+      data-readiness-state={readyForDiagnosis ? "ready" : "not-ready"}
     >
-      <Database size={18} strokeWidth={1.8} aria-hidden="true" />
-      <div className={styles.footlineCopy}>
-        <p>
+      <div className={styles.footlineItem}>
+        <Database size={19} strokeWidth={1.8} aria-hidden="true" />
+        <div className={styles.footlineCopy}>
           <strong data-testid="source-provenance-dynamic">{countLabel}</strong>
           <span>{copy.immutablePolicy}</span>
-        </p>
-        <p>{copy.credentialsPolicy}</p>
+        </div>
       </div>
+      <div className={styles.footlineItem}>
+        {readyForDiagnosis ? (
+          <ShieldCheck size={19} strokeWidth={1.8} aria-hidden="true" />
+        ) : (
+          <AlertTriangle size={19} strokeWidth={1.8} aria-hidden="true" />
+        )}
+        <div className={styles.footlineCopy}>
+          <strong>
+            {readyForDiagnosis
+              ? copy.readyForDiagnosis
+              : copy.notReadyForDiagnosis}
+          </strong>
+          <span>{copy.credentialsPolicy}</span>
+        </div>
+      </div>
+      <Link
+        href={
+          readyForDiagnosis
+            ? `/p/${projectId}/diagnosis`
+            : "#source-readiness"
+        }
+        className={styles.diagnosisLink}
+      >
+        <span>
+          {readyForDiagnosis ? copy.reviewDiagnosis : copy.reviewSourceGaps}
+        </span>
+        <ArrowRight size={17} strokeWidth={2} aria-hidden="true" />
+      </Link>
     </footer>
   );
 }
@@ -1567,6 +1814,8 @@ function toGoogleProvider(value: string | null): GoogleProvider | null {
 export function SourcesClient({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("sources");
   const tCommon = useTranslations("common");
+  const locale = useLocale();
+  const copy = sourcesPresentationCopy(locale);
   const queryClient = useQueryClient();
 
   const sources = useProjectSources(projectId);
@@ -1661,15 +1910,48 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     );
   }
 
+  const pageReadiness = deriveSourcesReadiness(sources.data);
+  const refreshing = sources.isFetching || snapshots.isFetching;
+
   return (
     <div className={styles.page}>
       <header className={styles.hero}>
         <div className={styles.heroText}>
-          <span className="sf-eyebrow">{t("title")}</span>
-          <h1 className={styles.title}>{t("title")}</h1>
-          <p className={styles.subtitle}>{t("subtitle")}</p>
+          <div className={styles.heroEyebrow}>
+            <h1 className={styles.pageLabel}>{t("title")}</h1>
+            <span aria-hidden="true">·</span>
+            <span>{copy.heroEyebrow(pageReadiness.familyCount)}</span>
+          </div>
+          <h2 className={styles.heroTitle}>{copy.heroTitle}</h2>
+          <p className={styles.subtitle}>
+            {copy.heroSummary(
+              pageReadiness.usableCount,
+              pageReadiness.partialCount,
+            )}
+          </p>
         </div>
+        <Button
+          variant="primary"
+          className={styles.refreshButton}
+          onClick={() => {
+            void Promise.all([sources.refetch(), snapshots.refetch()]);
+          }}
+          disabled={refreshing}
+        >
+          <RefreshCw
+            className={cx(refreshing && styles.refreshIcon)}
+            size={17}
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+          {refreshing ? copy.refreshing : copy.refreshAll}
+        </Button>
       </header>
+
+      <aside className={styles.trustStrip} aria-label={copy.sourceHealth}>
+        <ShieldCheck size={18} strokeWidth={1.9} aria-hidden="true" />
+        <p>{copy.trustNote}</p>
+      </aside>
 
       <ReadinessSummary
         sources={sources.data}
@@ -1683,7 +1965,7 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
         </p>
       ) : null}
 
-      <div className={styles.cards}>
+      <div className={styles.cards} data-source-grid="">
         {ordered.map((source) => (
           <SourceCard
             key={source.provider}
@@ -1743,6 +2025,8 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
       ) : null}
 
       <SnapshotPolicyFootline
+        projectId={projectId}
+        sources={sources.data}
         snapshotCount={snapshotHistoryCount}
         snapshotHistoryComplete={snapshotHistoryComplete}
       />

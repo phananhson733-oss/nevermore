@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
 import {
   CircleHelp,
-  LogOut,
+  Plus,
   Settings,
   Sparkles,
-  UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -77,9 +76,6 @@ export default async function ProjectLayout({
           projectId={project.id}
           options={shell.projectOptions}
         />
-        <Link href="/new-project" className={styles.newProjectLink}>
-          {tNav("newProject")}
-        </Link>
 
         <ProjectNav
           projectId={project.id}
@@ -114,6 +110,37 @@ export default async function ProjectLayout({
             value={shell.program.day}
           />
         </section>
+
+        <div
+          className={styles.sidebarUtilities}
+          role="group"
+          aria-label={tShell("productTools")}
+        >
+          <Link href="/new-project" className={styles.newProjectLink}>
+            <Plus aria-hidden="true" size={17} strokeWidth={1.8} />
+            <span>{tNav("newProject")}</span>
+          </Link>
+          <button
+            type="button"
+            className={styles.sidebarUtility}
+            aria-label={tShell("help")}
+            title={`${tShell("help")} — ${tShell("comingSoon")}`}
+            disabled
+          >
+            <CircleHelp aria-hidden="true" size={17} strokeWidth={1.8} />
+            <span>{tShell("help")}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.sidebarUtility}
+            aria-label={tShell("settings")}
+            title={`${tShell("settings")} — ${tShell("comingSoon")}`}
+            disabled
+          >
+            <Settings aria-hidden="true" size={17} strokeWidth={1.8} />
+            <span>{tShell("settings")}</span>
+          </button>
+        </div>
       </aside>
 
       <div className={styles.body}>
@@ -130,37 +157,16 @@ export default async function ProjectLayout({
           </nav>
 
           <div className={styles.topbarActions}>
-            <div
-              className={styles.productTools}
-              role="group"
-              aria-label={tShell("productTools")}
-            >
-              <button
-                type="button"
-                className={styles.iconButton}
-                aria-label={tShell("help")}
-                title={`${tShell("help")} — ${tShell("comingSoon")}`}
-                disabled
-              >
-                <CircleHelp aria-hidden="true" size={18} strokeWidth={1.8} />
-              </button>
-              <button
-                type="button"
-                className={styles.iconButton}
-                aria-label={tShell("settings")}
-                title={`${tShell("settings")} — ${tShell("comingSoon")}`}
-                disabled
-              >
-                <Settings aria-hidden="true" size={18} strokeWidth={1.8} />
-              </button>
-            </div>
+            <span className={styles.stagePill}>
+              <span aria-hidden="true" />
+              {tStage(project.stage)}
+            </span>
             <LocaleSwitch aria-label={tShell("localeSwitch")} />
             <div
               className={styles.account}
               role="group"
               aria-label={tShell("account")}
             >
-              <UserRound aria-hidden="true" size={17} strokeWidth={1.9} />
               <span className={styles.accountLabel}>{tShell("account")}</span>
               <form action={signOutAction}>
                 <button
@@ -169,8 +175,9 @@ export default async function ProjectLayout({
                   aria-label={tNav("logout")}
                   title={tNav("logout")}
                 >
-                  <LogOut aria-hidden="true" size={16} strokeWidth={1.9} />
-                  <span className={styles.logoutLabel}>{tNav("logout")}</span>
+                  <span className={styles.accountMonogram} aria-hidden="true">
+                    SF
+                  </span>
                 </button>
               </form>
             </div>

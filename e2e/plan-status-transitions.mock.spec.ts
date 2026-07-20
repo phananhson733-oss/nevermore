@@ -119,12 +119,20 @@ test("each Action status exposes only its frozen transition targets", async ({
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/plan`);
   await expect(
-    page.getByRole("heading", { name: "Plan", exact: true }),
+    page.getByRole("heading", {
+      name: "A 90-day plan with receipts, not hunches.",
+      exact: true,
+    }),
   ).toBeVisible();
 
   for (const [index, status] of STATUSES.entries()) {
-    await page.getByRole("button", { name: "Adjust plan" }).nth(index).click();
-    const form = page.getByRole("form", {
+    await page
+      .getByRole("button", { name: /^Open action details —/ })
+      .nth(index)
+      .click();
+    const drawer = page.getByRole("dialog");
+    await drawer.getByRole("button", { name: "Adjust plan" }).click();
+    const form = drawer.getByRole("form", {
       name: `Manual override — Action currently ${status}`,
     });
     const select = form.getByLabel("New status");
@@ -140,6 +148,8 @@ test("each Action status exposes only its frozen transition targets", async ({
     ]);
     await form.getByRole("button", { name: "Cancel" }).click();
     await expect(form).toHaveCount(0);
+    await drawer.getByRole("button", { name: "Close" }).click();
+    await expect(drawer).toHaveCount(0);
   }
 });
 
@@ -147,8 +157,13 @@ test("current state is a no-op, reason remains required, and keyboard selection 
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/plan`);
-  await page.getByRole("button", { name: "Adjust plan" }).first().click();
-  const form = page.getByRole("form", {
+  await page
+    .getByRole("button", { name: /^Open action details —/ })
+    .first()
+    .click();
+  const drawer = page.getByRole("dialog");
+  await drawer.getByRole("button", { name: "Adjust plan" }).click();
+  const form = drawer.getByRole("form", {
     name: "Manual override — Action currently candidate",
   });
   const select = form.getByLabel("New status");
@@ -195,23 +210,89 @@ test("current state is a no-op, reason remains required, and keyboard selection 
   });
 });
 
+test("a stale revision keeps the drawer open, refetches, and exposes the stable conflict", async ({
+  page,
+}) => {
+  const candidate = actionFixture("candidate", 0);
+  let staleBody: Readonly<Record<string, unknown>> | null = null;
+  await page.route(
+    `**${API_BASE}/actions/${candidate.id}`,
+    async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.fallback();
+        return;
+      }
+      staleBody = route.request().postDataJSON() as Readonly<
+        Record<string, unknown>
+      >;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/problem+json",
+        body: JSON.stringify({
+          type: "about:blank",
+          title: "Conflict",
+          status: 409,
+          code: "VERSION_CONFLICT",
+          detail: "Action was modified; refetch and retry.",
+          requestId: "plan-conflict-request",
+        }),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/plan`);
+  await page
+    .getByRole("button", {
+      name: `Open action details — ${candidate.title}`,
+    })
+    .click();
+  const drawer = page.getByRole("dialog");
+  await drawer.getByRole("button", { name: "Adjust plan" }).click();
+  const form = drawer.getByRole("form", {
+    name: `Manual override — ${candidate.title}`,
+  });
+  await form.getByLabel("New status").selectOption("planned");
+  await form.getByLabel("Reason").fill("The operator has newer evidence.");
+  await form.getByRole("button", { name: "Apply override" }).click();
+
+  await expect(form.getByRole("alert")).toContainText(
+    "This action was changed elsewhere",
+  );
+  await expect(drawer).toBeVisible();
+  expect(staleBody).toMatchObject({
+    baseRevision: 1,
+    status: "planned",
+    reason: "The operator has newer evidence.",
+  });
+});
+
 test("done and dismissed recovery targets stay localized in zh-CN", async ({
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/plan`);
   await page.getByRole("button", { name: "简体中文" }).click();
-  await expect(page.getByRole("heading", { name: "行动计划" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "一份有理有据、拒绝拍脑袋的 90 天计划。",
+    }),
+  ).toBeVisible();
 
   for (const [index, currentLabel] of [
     [4, "已完成"],
     [5, "已放弃"],
   ] as const) {
-    await page.getByRole("button", { name: "调整计划" }).nth(index).click();
-    const select = page.getByLabel("新状态");
+    await page
+      .getByRole("button", { name: /^打开行动详情 —/ })
+      .nth(index)
+      .click();
+    const drawer = page.getByRole("dialog");
+    await drawer.getByRole("button", { name: "调整计划" }).click();
+    const select = drawer.getByLabel("新状态");
     await expect(select.locator("option")).toHaveText([
       `保持不变 — ${currentLabel}`,
       "已计划",
     ]);
-    await page.getByRole("button", { name: "取消" }).click();
+    await drawer.getByRole("button", { name: "取消" }).click();
+    await drawer.getByRole("button", { name: "关闭" }).click();
   }
 });

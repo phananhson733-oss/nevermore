@@ -1,28 +1,44 @@
 "use client";
 
 /**
- * Plan client view (spec §4.2, §9.3): the deterministic 30/60/90 roadmap. Actions
- * are grouped into three lanes by their server-assigned `roadmapLane`
- * (now = 0–30d, next = 31–60d, later = 61–90d) — the UI never recomputes
- * priority (spec §1.3). Each card states its priority band and status with a
- * text label + tone (never color alone, spec §4.4). A `blocked` action is the
- * low-confidence hard gate (spec §9.3 rule 7): shown distinctly with an
- * explanation. The per-card override form applies a status/priority/lane change
- * with a REQUIRED reason via `useUpdateAction`; a 409 VERSION_CONFLICT refetches
- * and informs. TanStack Query owns the server state (spec §3.2).
+ * Evidence-led 30 / 60 / 90 plan. The API owns deterministic ordering: this
+ * view only partitions the returned sequence by `roadmapLane` and never
+ * invents scores, owners, dates, or dependencies. Action details are shown in
+ * a modal drawer; manual overrides retain the required reason and revision CAS.
  */
 
-import { useState } from "react";
-import type { FormEvent } from "react";
+import Link from "next/link";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
-import { Flame, Layers3, Rocket, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  CalendarRange,
+  CheckCircle2,
+  ChevronRight,
+  FileSearch,
+  Flame,
+  Layers3,
+  Link2,
+  ShieldCheck,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import {
   Badge,
   Button,
-  Card,
   EmptyState,
   Field,
-  Panel,
   Spinner,
   StatusPill,
   TextArea,
@@ -33,6 +49,12 @@ import {
 import { ApiError } from "@/lib/api";
 import { uniqueCursorItems } from "@/lib/api/cursor-pages";
 import {
+  mergeFindingPages,
+  useProjectFindings,
+  type Evidence,
+  type Finding,
+} from "@/lib/api/hooks-diagnosis";
+import {
   useProjectActions,
   useUpdateAction,
   type Action,
@@ -42,13 +64,12 @@ import {
 } from "@/lib/api/hooks-plan";
 import { ProblemNotice, ProblemState } from "../_problem-display";
 import { allowedActionStatusTargets } from "./_action-status-transitions";
+import { evidenceProviderLabel } from "./_provider-label";
 import styles from "./plan.module.css";
 
-/** The three delivery windows, in the spec's canonical order (spec §9.3). */
 const LANES = ["now", "next", "later"] as const;
 type Lane = (typeof LANES)[number];
 
-/** `plan.*` message key for each lane's delivery window (0–30 / 31–60 / 61–90). */
 const LANE_WINDOW_KEY: Record<
   Lane,
   "laneNowWindow" | "laneNextWindow" | "laneLaterWindow"
@@ -58,7 +79,24 @@ const LANE_WINDOW_KEY: Record<
   later: "laneLaterWindow",
 };
 
-/** Priority band -> pill tone. The pill always carries a text label alongside. */
+const LANE_INDEX: Record<Lane, string> = {
+  now: "01",
+  next: "02",
+  later: "03",
+};
+
+const LANE_CLASS: Record<Lane, string | undefined> = {
+  now: styles.laneNow,
+  next: styles.laneNext,
+  later: styles.laneLater,
+};
+
+const ACTION_CARD_LANE_CLASS: Record<Lane, string | undefined> = {
+  now: styles.actionCardNow,
+  next: styles.actionCardNext,
+  later: styles.actionCardLater,
+};
+
 const PRIORITY_TONE: Record<PriorityBand, StatusTone> = {
   critical: "danger",
   high: "warning",
@@ -66,7 +104,6 @@ const PRIORITY_TONE: Record<PriorityBand, StatusTone> = {
   low: "neutral",
 };
 
-/** Action status -> pill tone. The pill always carries a text label alongside. */
 const STATUS_TONE: Record<ActionStatus, StatusTone> = {
   candidate: "neutral",
   planned: "info",
@@ -89,8 +126,8 @@ interface SelectOption {
   readonly label: string;
 }
 
-/** Partition actions into the three lanes by server-assigned `roadmapLane`. */
-function groupByLane(
+/** Preserve the server order inside each lane; no client-side re-ranking. */
+export function groupActionsByLane(
   actions: readonly Action[],
 ): Record<Lane, readonly Action[]> {
   return {
@@ -100,17 +137,24 @@ function groupByLane(
   };
 }
 
-// --------------------------------------------------------------- Controls ---
+function uniqueEvidence(evidence: readonly Evidence[]): readonly Evidence[] {
+  const seen = new Set<string>();
+  return evidence.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+// --------------------------------------------------------------- Controls --
 
 interface PlanSelectProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly options: readonly SelectOption[];
-  /** The "no change" option (value ""); keeps the action's current value. */
   readonly keepLabel: string;
 }
 
-/** Native select wired to an enclosing `Field` (id, describedBy, invalid). */
 function PlanSelect({ value, onChange, options, keepLabel }: PlanSelectProps) {
   const field = useFieldControl();
   return (
@@ -137,20 +181,20 @@ function PlanSelect({ value, onChange, options, keepLabel }: PlanSelectProps) {
 interface OverrideFormProps {
   readonly projectId: string;
   readonly action: Action;
-  readonly onClose: () => void;
-  /** Refetch the plan after a 409 conflict so the card shows the latest values. */
+  readonly onCancel: () => void;
+  readonly onApplied: () => void;
   readonly onConflict: () => void;
 }
 
 /**
- * Per-action override form. Change any subset of status/priority/window, always
- * with a reason (min 3 chars). Submits `baseRevision = action.revision`; a 409
- * VERSION_CONFLICT refetches the plan and informs the operator.
+ * Apply any allowed status / priority / lane subset with a mandatory audit
+ * reason. `baseRevision` remains the server-provided optimistic CAS token.
  */
 function OverrideForm({
   projectId,
   action,
-  onClose,
+  onCancel,
+  onApplied,
   onConflict,
 }: OverrideFormProps) {
   const t = useTranslations("plan");
@@ -173,10 +217,7 @@ function OverrideForm({
     (value) => ({ value, label: tStatus(value) }),
   );
   const priorityOptions: readonly SelectOption[] = PRIORITY_OPTIONS.map(
-    (value) => ({
-      value,
-      label: tPriority(value),
-    }),
+    (value) => ({ value, label: tPriority(value) }),
   );
   const laneOptions: readonly SelectOption[] = LANE_OPTIONS.map((value) => ({
     value,
@@ -193,11 +234,9 @@ function OverrideForm({
     const trimmedReason = reason.trim();
     if (trimmedReason.length < 3) {
       setError(t("reasonRequired"));
-      setProblemError(null);
       return;
     }
 
-    // Only send fields that were set to a NEW value (different from current).
     const changes: {
       status?: ActionStatus;
       priorityBand?: PriorityBand;
@@ -217,7 +256,6 @@ function OverrideForm({
     }
     if (Object.keys(changes).length === 0) {
       setError(t("noChange"));
-      setProblemError(null);
       return;
     }
 
@@ -232,7 +270,7 @@ function OverrideForm({
           ...(trimmedNote.length > 0 ? { note: trimmedNote } : {}),
         },
       });
-      onClose();
+      onApplied();
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === "VERSION_CONFLICT") {
         setError(t("conflict"));
@@ -246,7 +284,6 @@ function OverrideForm({
         return;
       }
       setError(tCommon("error"));
-      setProblemError(null);
     }
   }
 
@@ -254,12 +291,15 @@ function OverrideForm({
 
   return (
     <form
+      id="plan-override-controls"
       className={styles.overrideForm}
       onSubmit={handleSubmit}
       aria-label={`${t("overrideTitle")} — ${action.title}`}
+      data-testid="plan-override-form"
     >
       <div className={styles.overrideHead}>
-        <h4 className={styles.overrideTitle}>{t("overrideTitle")}</h4>
+        <span className={styles.sectionKicker}>{t("overrideKicker")}</span>
+        <h3 className={styles.overrideTitle}>{t("overrideTitle")}</h3>
         <p className={styles.overrideDesc}>{t("overrideDescription")}</p>
       </div>
 
@@ -277,7 +317,7 @@ function OverrideForm({
             value={prioritySel}
             onChange={setPrioritySel}
             options={priorityOptions}
-            keepLabel={t("keepUnchanged")}
+            keepLabel={`${t("keepUnchanged")} — ${tPriority(action.priorityBand)}`}
           />
         </Field>
         <Field label={t("newLane")}>
@@ -285,7 +325,7 @@ function OverrideForm({
             value={laneSel}
             onChange={setLaneSel}
             options={laneOptions}
-            keepLabel={t("keepUnchanged")}
+            keepLabel={`${t("keepUnchanged")} — ${tLane(action.roadmapLane)}`}
           />
         </Field>
       </div>
@@ -308,7 +348,10 @@ function OverrideForm({
         />
       </Field>
 
-      <p className={styles.overrideKept}>{t("overrideKept")}</p>
+      <p className={styles.overrideKept}>
+        <ShieldCheck aria-hidden="true" size={16} />
+        <span>{t("overrideKept")}</span>
+      </p>
 
       {error !== null ? (
         problemError !== null ? (
@@ -326,7 +369,7 @@ function OverrideForm({
       ) : null}
 
       <div className={styles.overrideActions}>
-        <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
           {tCommon("cancel")}
         </Button>
         <Button type="submit" variant="primary" disabled={busy}>
@@ -340,119 +383,103 @@ function OverrideForm({
 // --------------------------------------------------------------- Card -------
 
 interface ActionCardProps {
-  readonly projectId: string;
   readonly action: Action;
-  readonly onConflict: () => void;
-  /** A lane-level note can own the repeated explanation for an all-blocked set. */
+  readonly onOpen: (actionId: string) => void;
   readonly showBlockedExplanation?: boolean;
-  /** Associates a visually deduplicated lane explanation with this card. */
   readonly blockedExplanationId?: string;
 }
 
 function ActionCard({
-  projectId,
   action,
-  onConflict,
+  onOpen,
   showBlockedExplanation = true,
   blockedExplanationId,
 }: ActionCardProps) {
   const t = useTranslations("plan");
   const tStatus = useTranslations("actionStatus");
   const tPriority = useTranslations("priorityBand");
-  const [open, setOpen] = useState<boolean>(false);
   const isBlocked = action.status === "blocked";
+  const ownBlockedExplanationId = `plan-action-${action.id}-blocked`;
+  const describedBy = isBlocked
+    ? (blockedExplanationId ?? ownBlockedExplanationId)
+    : undefined;
 
   return (
-    <Card
-      padding="md"
-      className={cx(styles.actionCard, isBlocked && styles.actionCardBlocked)}
-      role="article"
+    <article
+      className={cx(
+        styles.actionCard,
+        ACTION_CARD_LANE_CLASS[action.roadmapLane],
+        isBlocked && styles.actionCardBlocked,
+      )}
       data-testid="plan-action-card"
+      data-action-id={action.id}
       data-action-status={action.status}
-      aria-describedby={isBlocked ? blockedExplanationId : undefined}
+      data-roadmap-lane={action.roadmapLane}
     >
-      <div className={styles.actionTopline}>
-        <StatusPill tone={PRIORITY_TONE[action.priorityBand]}>
-          {`${t("priority")}: ${tPriority(action.priorityBand)}`}
-        </StatusPill>
-        <StatusPill tone={STATUS_TONE[action.status]}>
-          {tStatus(action.status)}
-        </StatusPill>
-      </div>
+      <button
+        type="button"
+        className={styles.actionOpen}
+        onClick={() => onOpen(action.id)}
+        aria-label={t("openAction", { title: action.title })}
+        aria-describedby={describedBy}
+      >
+        <span className={styles.actionTopline}>
+          <StatusPill tone={STATUS_TONE[action.status]}>
+            {tStatus(action.status)}
+          </StatusPill>
+          <span className={styles.actionPriority}>
+            {tPriority(action.priorityBand)}
+          </span>
+        </span>
 
-      <h3 className={styles.actionTitle}>{action.title}</h3>
-      <p className={styles.actionDesc}>{action.description}</p>
+        <span className={styles.actionTitle}>{action.title}</span>
+        <span className={styles.actionDesc}>{action.description}</span>
 
-      {isBlocked && showBlockedExplanation ? (
-        <p className={styles.blockedNote}>
-          <span className={styles.blockedLabel}>{t("blocked")}</span>
-          {t("blockedExplanation")}
-        </p>
-      ) : null}
+        {isBlocked && showBlockedExplanation ? (
+          <span
+            id={ownBlockedExplanationId}
+            className={styles.blockedNote}
+          >
+            <strong>{t("blocked")}</strong>
+            <span>{t("blockedExplanation")}</span>
+          </span>
+        ) : null}
 
-      <dl className={styles.actionMeta}>
-        <div className={styles.metaItem}>
-          <dt className={styles.metaLabel}>{t("effort")}</dt>
-          <dd className={styles.metaValue}>
-            {t(`effortValue.${action.effort}`)}
-          </dd>
-        </div>
-        <div className={styles.metaItem}>
-          <dt className={styles.metaLabel}>{t("risk")}</dt>
-          <dd className={styles.metaValue}>{t(`riskValue.${action.risk}`)}</dd>
-        </div>
-      </dl>
+        <span className={styles.actionDeliverable}>
+          <span>
+            <FileSearch aria-hidden="true" size={16} />
+            <span>{action.templateId}</span>
+          </span>
+        </span>
 
-      <div className={styles.outcome}>
-        <span className={styles.metaLabel}>{t("expectedOutcome")}</span>
-        <p className={styles.outcomeText}>{action.expectedOutcome}</p>
-      </div>
-
-      <div className={styles.actionFoot}>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setOpen((prev) => !prev)}
-          aria-expanded={open}
-        >
-          {t("override")}
-        </Button>
-      </div>
-
-      {open ? (
-        <OverrideForm
-          projectId={projectId}
-          action={action}
-          onClose={() => setOpen(false)}
-          onConflict={onConflict}
-        />
-      ) : null}
-    </Card>
+        <span className={styles.actionFoot}>
+          <span>
+            <Link2 aria-hidden="true" size={15} />
+            {t("linkedFindingCount", { count: 1 })}
+          </span>
+          <ChevronRight aria-hidden="true" size={17} />
+        </span>
+      </button>
+    </article>
   );
 }
 
 // --------------------------------------------------------------- Lane -------
 
 interface LaneColumnProps {
-  readonly projectId: string;
   readonly lane: Lane;
-  /** Two-digit ordinal ("01"/"02"/"03") shown as the lane's Fraunces index. */
-  readonly index: string;
   readonly actions: readonly Action[];
   readonly hasMore: boolean;
-  readonly onConflict: () => void;
+  readonly onOpenAction: (actionId: string) => void;
 }
 
 function LaneColumn({
-  projectId,
   lane,
-  index,
   actions,
   hasMore,
-  onConflict,
+  onOpenAction,
 }: LaneColumnProps) {
   const t = useTranslations("plan");
-  const tLane = useTranslations("lane");
   const sharesBlockedExplanation =
     !hasMore &&
     actions.length > 1 &&
@@ -460,26 +487,30 @@ function LaneColumn({
   const sharedBlockedExplanationId = `plan-${lane}-blocked-explanation`;
 
   return (
-    <Panel
-      padding="lg"
-      className={styles.lane}
-      aria-label={`${tLane(lane)} — ${t(LANE_WINDOW_KEY[lane])}`}
+    <section
+      className={cx(styles.lane, LANE_CLASS[lane])}
+      aria-label={`${t(`laneTitle.${lane}`)} — ${t(LANE_WINDOW_KEY[lane])}`}
+      data-testid={`plan-lane-${lane}`}
     >
       <header className={styles.laneHead}>
         <span className={styles.laneIndex} aria-hidden="true">
-          {index}
+          {LANE_INDEX[lane]}
         </span>
         <div className={styles.laneHeadText}>
-          <div className={styles.laneTitleRow}>
-            <h2 className={styles.laneName}>{tLane(lane)}</h2>
-            <Badge>
-              {actions.length}
-              {hasMore ? "+" : ""}
-            </Badge>
-          </div>
-          <span className={styles.laneWindow}>{t(LANE_WINDOW_KEY[lane])}</span>
+          <h2 className={styles.laneName}>{t(`laneTitle.${lane}`)}</h2>
+          <p className={styles.laneWindow}>
+            {t("laneActionCount", { count: actions.length })}
+            <span aria-hidden="true"> · </span>
+            {t(LANE_WINDOW_KEY[lane])}
+            {hasMore ? (
+              <span className={styles.lanePartial}>
+                {` · ${t("loadedScope")}`}
+              </span>
+            ) : null}
+          </p>
         </div>
       </header>
+
       {sharesBlockedExplanation ? (
         <p
           id={sharedBlockedExplanationId}
@@ -487,15 +518,16 @@ function LaneColumn({
           className={styles.laneBlockedNote}
           data-testid="plan-lane-blocked-note"
         >
-          <span className={styles.blockedLabel}>{t("blocked")}</span>
-          <span>{t("blockedExplanation")}</span>
+          <ShieldCheck aria-hidden="true" size={17} />
+          <span>
+            <strong>{t("blocked")}</strong>
+            {t("blockedExplanation")}
+          </span>
         </p>
       ) : null}
+
       <div
-        className={cx(
-          styles.laneBody,
-          sharesBlockedExplanation && styles.laneBodyBlockedGroup,
-        )}
+        className={styles.laneBody}
         data-testid="plan-lane-actions"
       >
         {actions.length === 0 ? (
@@ -506,9 +538,8 @@ function LaneColumn({
           actions.map((action) => (
             <ActionCard
               key={action.id}
-              projectId={projectId}
               action={action}
-              onConflict={onConflict}
+              onOpen={onOpenAction}
               showBlockedExplanation={!sharesBlockedExplanation}
               {...(sharesBlockedExplanation
                 ? { blockedExplanationId: sharedBlockedExplanationId }
@@ -517,21 +548,501 @@ function LaneColumn({
           ))
         )}
       </div>
-    </Panel>
+    </section>
+  );
+}
+
+// -------------------------------------------------------------- Drawer ------
+
+interface PriorityDimension {
+  readonly key: string;
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+  readonly available: boolean;
+  readonly tone: "cobalt" | "mint";
+}
+
+function PriorityContext({
+  action,
+  finding,
+  evidenceLoading,
+}: {
+  readonly action: Action;
+  readonly finding: Finding | null;
+  readonly evidenceLoading: boolean;
+}) {
+  const t = useTranslations("plan");
+  const tCommon = useTranslations("common");
+  const tStatus = useTranslations("actionStatus");
+  const tPriority = useTranslations("priorityBand");
+  const evidence = finding === null ? [] : uniqueEvidence(finding.evidence);
+  const outcomeAvailable = action.expectedOutcome.trim().length > 0;
+  const evidenceAvailable = finding !== null;
+
+  const dimensions: readonly PriorityDimension[] = [
+    {
+      key: "priority",
+      label: t("dimension.priority"),
+      value: tPriority(action.priorityBand),
+      detail: t("dimension.priorityHint"),
+      available: true,
+      tone: "cobalt",
+    },
+    {
+      key: "lane",
+      label: t("dimension.lane"),
+      value: t(`laneTitle.${action.roadmapLane}`),
+      detail: t("dimension.laneHint"),
+      available: true,
+      tone: "cobalt",
+    },
+    {
+      key: "status",
+      label: t("dimension.status"),
+      value: tStatus(action.status),
+      detail: t("dimension.statusHint"),
+      available: true,
+      tone: "cobalt",
+    },
+    {
+      key: "effort",
+      label: t("dimension.effort"),
+      value: t(`effortValue.${action.effort}`),
+      detail: t("dimension.effortHint"),
+      available: true,
+      tone: "mint",
+    },
+    {
+      key: "risk",
+      label: t("dimension.risk"),
+      value: t(`riskValue.${action.risk}`),
+      detail: t("dimension.riskHint"),
+      available: true,
+      tone: "mint",
+    },
+    {
+      key: "evidence",
+      label: t("dimension.evidence"),
+      value: evidenceLoading
+        ? tCommon("loading")
+        : evidenceAvailable
+          ? t("evidenceCount", { count: evidence.length })
+          : tCommon("unavailable"),
+      detail: evidenceAvailable
+        ? t("dimension.evidenceHint")
+        : t("dimension.unavailableHint"),
+      available: evidenceAvailable,
+      tone: "cobalt",
+    },
+    {
+      key: "outcome",
+      label: t("dimension.outcome"),
+      value: outcomeAvailable ? t("available") : tCommon("unavailable"),
+      detail: outcomeAvailable
+        ? action.expectedOutcome
+        : t("dimension.unavailableHint"),
+      available: outcomeAvailable,
+      tone: "cobalt",
+    },
+    {
+      key: "dependencies",
+      label: t("dimension.dependencies"),
+      value: tCommon("unavailable"),
+      detail: t("dimension.unavailableHint"),
+      available: false,
+      tone: "mint",
+    },
+  ];
+
+  return (
+    <section className={styles.prioritySection}>
+      <div className={styles.sectionHeading}>
+        <div>
+          <span className={styles.sectionKicker}>
+            {t("priorityContextKicker")}
+          </span>
+          <h3>{t("priorityContextTitle")}</h3>
+          <p>{t("priorityContextCopy")}</p>
+        </div>
+        <ShieldCheck aria-hidden="true" size={21} />
+      </div>
+
+      <div className={styles.priorityGrid} data-testid="plan-priority-grid">
+        {dimensions.map((dimension) => (
+          <article
+            key={dimension.key}
+            className={cx(
+              styles.dimension,
+              dimension.tone === "mint" && styles.dimensionMint,
+              !dimension.available && styles.dimensionUnavailable,
+            )}
+            data-available={dimension.available ? "true" : "false"}
+          >
+            <div className={styles.dimensionHead}>
+              <span>{dimension.label}</span>
+              <strong>{dimension.value}</strong>
+            </div>
+            <p>{dimension.detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FindingRelation({
+  projectId,
+  action,
+  finding,
+  findingQuery,
+}: {
+  readonly projectId: string;
+  readonly action: Action;
+  readonly finding: Finding | null;
+  readonly findingQuery: ReturnType<typeof useProjectFindings>;
+}) {
+  const t = useTranslations("plan");
+  const tCommon = useTranslations("common");
+  const tPriority = useTranslations("priorityBand");
+  const tDomain = useTranslations("domain");
+  const tProvider = useTranslations("provider");
+  const evidence = useMemo(
+    () => (finding === null ? [] : uniqueEvidence(finding.evidence)),
+    [finding],
+  );
+
+  return (
+    <section className={styles.findingSection}>
+      <div className={styles.sectionHeading}>
+        <div>
+          <span className={styles.sectionKicker}>
+            {t("linkedFindingsKicker")}
+          </span>
+          <h3>{t("linkedFindingsTitle")}</h3>
+        </div>
+        <Link2 aria-hidden="true" size={21} />
+      </div>
+
+      {findingQuery.isLoading ? (
+        <div className={styles.findingState} role="status">
+          <Spinner size="sm" label={tCommon("loading")} />
+          <span>{t("findingLoading")}</span>
+        </div>
+      ) : findingQuery.isError && findingQuery.data === undefined ? (
+        <div className={styles.findingError}>
+          <ProblemNotice
+            error={findingQuery.error}
+            message={t("findingReadError")}
+            compact
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void findingQuery.refetch()}
+          >
+            {tCommon("retry")}
+          </Button>
+        </div>
+      ) : finding !== null ? (
+        <article className={styles.findingCard}>
+          <header className={styles.findingHead}>
+            <div>
+              <span className={styles.findingRule}>
+                {`${tDomain(finding.domain)} · ${finding.ruleId}`}
+              </span>
+              <h4>{finding.summary}</h4>
+            </div>
+            <div className={styles.findingPills}>
+              <StatusPill tone={PRIORITY_TONE[finding.severity]}>
+                {`${t("severityLabel")}: ${tPriority(finding.severity)}`}
+              </StatusPill>
+              <Badge>{`${t("confidenceLabel")}: ${t(`confidence.${finding.confidence}`)}`}</Badge>
+            </div>
+          </header>
+
+          <div className={styles.evidenceHead}>
+            <strong>{t("evidenceTitle")}</strong>
+            <span>{t("evidenceCount", { count: evidence.length })}</span>
+          </div>
+          {evidence.length > 0 ? (
+            <ul className={styles.evidenceList}>
+              {evidence.slice(0, 3).map((item) => {
+                const provider = evidenceProviderLabel(
+                  item.sourceProvider,
+                  tProvider,
+                  tCommon("unavailable"),
+                );
+
+                return (
+                  <li key={item.id}>
+                    <span className={styles.evidenceGrade}>{item.grade}</span>
+                    <div>
+                      <p>{item.claim}</p>
+                      <span>{`${provider} · ${t(`evidenceAvailability.${item.availability}`)}`}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className={styles.evidenceEmpty}>{t("noEvidence")}</p>
+          )}
+          {evidence.length > 3 ? (
+            <p className={styles.evidenceMore}>
+              {t("evidenceMore", { count: evidence.length - 3 })}
+            </p>
+          ) : null}
+
+          <Link
+            href={`/p/${projectId}/diagnosis#sf-finding-${finding.id}`}
+            className={styles.findingLink}
+          >
+            {t("openDiagnosis")}
+            <ArrowUpRight aria-hidden="true" size={16} />
+          </Link>
+        </article>
+      ) : (
+        <div className={styles.findingUnavailable}>
+          <FileSearch aria-hidden="true" size={20} />
+          <div>
+            <strong>
+              {findingQuery.hasNextPage
+                ? t("findingOutsideLoaded")
+                : t("findingUnavailable")}
+            </strong>
+            <code>{action.findingId}</code>
+            {findingQuery.isFetchNextPageError ? (
+              <p className={styles.findingPaginationError} role="alert">
+                {tCommon("loadMoreError")}
+              </p>
+            ) : null}
+          </div>
+          {findingQuery.hasNextPage ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void findingQuery.fetchNextPage()}
+              disabled={findingQuery.isFetchingNextPage}
+            >
+              {findingQuery.isFetchingNextPage
+                ? tCommon("loadingMore")
+                : findingQuery.isFetchNextPageError
+                  ? tCommon("retry")
+                  : t("loadRelatedFinding")}
+            </Button>
+          ) : (
+            <Link
+              href={`/p/${projectId}/diagnosis`}
+              className={styles.findingLink}
+            >
+              {t("openDiagnosis")}
+              <ArrowUpRight aria-hidden="true" size={16} />
+            </Link>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ActionDrawer({
+  projectId,
+  action,
+  onClose,
+  onConflict,
+}: {
+  readonly projectId: string;
+  readonly action: Action;
+  readonly onClose: () => void;
+  readonly onConflict: () => void;
+}) {
+  const t = useTranslations("plan");
+  const tCommon = useTranslations("common");
+  const tStatus = useTranslations("actionStatus");
+  const tPriority = useTranslations("priorityBand");
+  const findingQuery = useProjectFindings(projectId);
+  const findingEnvelope = mergeFindingPages(findingQuery.data);
+  const finding =
+    findingEnvelope?.data.find((item) => item.id === action.findingId) ?? null;
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus();
+    };
+  }, [onClose]);
+
+  function trapFocus(event: ReactKeyboardEvent<HTMLElement>): void {
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(
+      drawerRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), select:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (first === undefined || last === undefined) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return createPortal(
+    <div
+      className={styles.drawerBackdrop}
+      data-testid="plan-action-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <aside
+        ref={drawerRef}
+        className={styles.drawer}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="plan-action-drawer-title"
+        aria-describedby="plan-action-drawer-description"
+        onKeyDown={trapFocus}
+        data-testid="plan-action-drawer"
+      >
+        <header className={styles.drawerHead}>
+          <div className={styles.drawerEyebrow}>
+            <span>{t("detailKicker")}</span>
+            <StatusPill tone={STATUS_TONE[action.status]}>
+              {tStatus(action.status)}
+            </StatusPill>
+          </div>
+          <h2 id="plan-action-drawer-title">{action.title}</h2>
+          <p id="plan-action-drawer-description">{action.description}</p>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className={styles.drawerClose}
+            onClick={onClose}
+            aria-label={tCommon("close")}
+          >
+            <X aria-hidden="true" size={21} />
+          </button>
+        </header>
+
+        <dl className={styles.drawerSummary}>
+          <div>
+            <dt>{t("summaryPriority")}</dt>
+            <dd className={styles.drawerPriority}>
+              {tPriority(action.priorityBand)}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("summaryLane")}</dt>
+            <dd>
+              <CalendarRange aria-hidden="true" size={17} />
+              {t(`laneTitle.${action.roadmapLane}`)}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("summaryFinding")}</dt>
+            <dd>
+              <Link2 aria-hidden="true" size={17} />
+              {t("linkedFindingCount", { count: 1 })}
+            </dd>
+          </div>
+        </dl>
+
+        <div className={styles.drawerBody}>
+          <PriorityContext
+            action={action}
+            finding={finding}
+            evidenceLoading={findingQuery.isLoading}
+          />
+
+          <section className={styles.outcomeSection}>
+            <span className={styles.sectionKicker}>{t("outcomeKicker")}</span>
+            <h3>{t("expectedOutcome")}</h3>
+            <p>
+              {action.expectedOutcome.trim().length > 0
+                ? action.expectedOutcome
+                : tCommon("unavailable")}
+            </p>
+          </section>
+
+          <FindingRelation
+            projectId={projectId}
+            action={action}
+            finding={finding}
+            findingQuery={findingQuery}
+          />
+
+          {editing ? (
+            <OverrideForm
+              projectId={projectId}
+              action={action}
+              onCancel={() => setEditing(false)}
+              onApplied={onClose}
+              onConflict={onConflict}
+            />
+          ) : null}
+        </div>
+
+        <footer className={styles.drawerFoot}>
+          <p>
+            <ShieldCheck aria-hidden="true" size={16} />
+            <span>{t("drawerAudit")}</span>
+          </p>
+          <div>
+            <Button
+              variant="secondary"
+              onClick={() => setEditing((value) => !value)}
+              aria-expanded={editing}
+              aria-controls="plan-override-controls"
+            >
+              <SlidersHorizontal aria-hidden="true" size={17} />
+              {editing ? t("hideAdjustment") : t("override")}
+            </Button>
+            <Link
+              href={`/p/${projectId}/studio`}
+              className={styles.primaryLink}
+            >
+              {t("openStudio")}
+              <ArrowRight aria-hidden="true" size={17} />
+            </Link>
+          </div>
+        </footer>
+      </aside>
+    </div>,
+    document.body,
   );
 }
 
 // --------------------------------------------------------------- Screen -----
 
-/**
- * Plan entry: owns the `actions` query and renders loading / error / empty /
- * ready states. The project shell layout provides the chrome; this renders
- * content only.
- */
 export function PlanClient({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("plan");
   const tCommon = useTranslations("common");
   const query = useProjectActions(projectId);
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+  const onConflict = useCallback(() => {
+    void query.refetch();
+  }, [query.refetch]);
+  const closeDrawer = useCallback(() => setSelectedActionId(null), []);
 
   if (query.isLoading) {
     return (
@@ -551,10 +1062,7 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
   }
 
   const actions = uniqueCursorItems(query.data);
-  const grouped = groupByLane(actions);
-  const visibleLanes = LANES.flatMap((lane, index) =>
-    grouped[lane].length > 0 ? [{ lane, index }] : [],
-  );
+  const grouped = groupActionsByLane(actions);
   const highPriorityCount = actions.filter(
     (action) =>
       action.priorityBand === "critical" || action.priorityBand === "high",
@@ -562,127 +1070,171 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
   const inDeliveryCount = actions.filter(
     (action) => action.status === "in_progress" || action.status === "done",
   ).length;
-  const onConflict = () => {
-    void query.refetch();
-  };
-
+  const selectedAction =
+    selectedActionId === null
+      ? null
+      : (actions.find((action) => action.id === selectedActionId) ?? null);
   return (
-    <div className={styles.page}>
-      <header className={styles.hero}>
-        <div className={styles.heroText}>
-          <span className="sf-eyebrow">{t("kicker")}</span>
-          <h1 className={styles.title}>{t("title")}</h1>
-          <p className={styles.subtitle}>{t("subtitle")}</p>
-        </div>
-      </header>
-
-      {actions.length === 0 ? (
-        <EmptyState title={t("emptyTitle")} description={t("emptyHint")} />
-      ) : (
-        <>
-          <section
-            className={styles.summaryStrip}
-            aria-label={t("summaryTitle")}
-          >
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryIcon}>
-                <Layers3 aria-hidden="true" size={18} />
-              </span>
-              <span className={styles.summaryMetric}>
-                {actions.length}
-                {query.hasNextPage ? "+" : ""}
-              </span>
-              <div className={styles.summaryText}>
-                <span className={styles.summaryLabel}>
-                  {t("summaryPrioritized")}
-                </span>
-                <p className={styles.summaryHint}>
-                  {t("summaryPrioritizedHint")}
-                </p>
-              </div>
-            </article>
-            <article className={styles.summaryCard}>
-              <span className={cx(styles.summaryIcon, styles.summaryIconAmber)}>
-                <Flame aria-hidden="true" size={18} />
-              </span>
-              <span className={styles.summaryMetric}>
-                {highPriorityCount}
-                {query.hasNextPage ? "+" : ""}
-              </span>
-              <div className={styles.summaryText}>
-                <span className={styles.summaryLabel}>
-                  {t("summaryHighPriority")}
-                </span>
-                <p className={styles.summaryHint}>
-                  {t("summaryHighPriorityHint")}
-                </p>
-              </div>
-            </article>
-            <article className={styles.summaryCard}>
-              <span className={cx(styles.summaryIcon, styles.summaryIconMint)}>
-                <Rocket aria-hidden="true" size={18} />
-              </span>
-              <span className={styles.summaryMetric}>
-                {inDeliveryCount}
-                {query.hasNextPage ? "+" : ""}
-              </span>
-              <div className={styles.summaryText}>
-                <span className={styles.summaryLabel}>
-                  {t("summaryInDelivery")}
-                </span>
-                <p className={styles.summaryHint}>
-                  {t("summaryInDeliveryHint")}
-                </p>
-              </div>
-            </article>
-            <article className={cx(styles.summaryCard, styles.methodCard)}>
-              <span className={styles.methodHead}>
-                <ShieldCheck aria-hidden="true" size={16} />
-                <span className={styles.methodTitle}>{t("methodTitle")}</span>
-              </span>
-              <p className={styles.methodCopy}>{t("methodCopy")}</p>
-            </article>
-          </section>
-
-          <div
-            className={styles.board}
-            data-testid="plan-board"
-            data-lane-count={visibleLanes.length}
-          >
-            {visibleLanes.map(({ lane, index }) => (
-              <LaneColumn
-                key={lane}
-                projectId={projectId}
-                lane={lane}
-                index={String(index + 1).padStart(2, "0")}
-                actions={grouped[lane]}
-                hasMore={query.hasNextPage}
-                onConflict={onConflict}
-              />
-            ))}
-          </div>
-          {query.hasNextPage || query.isFetchNextPageError ? (
-            <div className={styles.pagination}>
-              {query.isFetchNextPageError ? (
-                <p className={styles.paginationError} role="alert">
-                  {tCommon("loadMoreError")}
-                </p>
+    <>
+      <div className={styles.page}>
+        <header className={styles.hero}>
+          <div className={styles.heroText}>
+            <div className={styles.heroKickers}>
+              <span className="sf-eyebrow">{t("kicker")}</span>
+              {actions.length > 0 ? (
+                <StatusPill tone="success">{t("heroBadge")}</StatusPill>
               ) : null}
-              <Button
-                variant="secondary"
-                onClick={() => void query.fetchNextPage()}
-                disabled={query.isFetchingNextPage}
-              >
-                {query.isFetchingNextPage
-                  ? tCommon("loadingMore")
-                  : query.isFetchNextPageError
-                    ? tCommon("retry")
-                    : tCommon("loadMore")}
-              </Button>
             </div>
-          ) : null}
-        </>
-      )}
-    </div>
+            <h1 className={styles.title}>{t("title")}</h1>
+            <p className={styles.subtitle}>
+              {t("subtitle", {
+                count: actions.length,
+                suffix: query.hasNextPage ? "+" : "",
+              })}
+            </p>
+          </div>
+          <div className={styles.heroActions}>
+            <Link
+              href={`/p/${projectId}/diagnosis`}
+              className={styles.secondaryLink}
+            >
+              <ArrowLeft aria-hidden="true" size={17} />
+              {t("backToDiagnosis")}
+            </Link>
+            <Link
+              href={`/p/${projectId}/studio`}
+              className={styles.primaryLink}
+            >
+              {t("openStudio")}
+              <ArrowRight aria-hidden="true" size={17} />
+            </Link>
+          </div>
+        </header>
+
+        {actions.length === 0 ? (
+          <EmptyState title={t("emptyTitle")} description={t("emptyHint")} />
+        ) : (
+          <>
+            <section
+              className={styles.summaryStrip}
+              aria-label={t("summaryTitle")}
+            >
+              <article className={styles.summaryCard}>
+                <span className={styles.summaryIcon}>
+                  <Layers3 aria-hidden="true" size={19} />
+                </span>
+                <span className={styles.summaryMetric}>
+                  {actions.length}
+                  {query.hasNextPage ? "+" : ""}
+                </span>
+                <div className={styles.summaryText}>
+                  <span className={styles.summaryLabel}>
+                    {t("summaryPrioritized")}
+                  </span>
+                  <p className={styles.summaryHint}>
+                    {t("summaryPrioritizedHint")}
+                  </p>
+                </div>
+              </article>
+              <article className={styles.summaryCard}>
+                <span className={cx(styles.summaryIcon, styles.summaryIconMint)}>
+                  <CheckCircle2 aria-hidden="true" size={19} />
+                </span>
+                <span className={styles.summaryMetric}>{inDeliveryCount}</span>
+                <div className={styles.summaryText}>
+                  <span className={styles.summaryLabel}>
+                    {t("summaryInDelivery")}
+                  </span>
+                  <p className={styles.summaryHint}>
+                    {query.hasNextPage
+                      ? t("summaryLoadedHint")
+                      : t("summaryInDeliveryHint")}
+                  </p>
+                </div>
+              </article>
+              <article className={styles.summaryCard}>
+                <span className={cx(styles.summaryIcon, styles.summaryIconAmber)}>
+                  <Flame aria-hidden="true" size={19} />
+                </span>
+                <span className={styles.summaryMetric}>{highPriorityCount}</span>
+                <div className={styles.summaryText}>
+                  <span className={styles.summaryLabel}>
+                    {t("summaryHighPriority")}
+                  </span>
+                  <p className={styles.summaryHint}>
+                    {query.hasNextPage
+                      ? t("summaryLoadedHint")
+                      : t("summaryHighPriorityHint")}
+                  </p>
+                </div>
+              </article>
+              <article className={styles.methodCard}>
+                <span className={styles.methodIcon}>
+                  <ShieldCheck aria-hidden="true" size={20} />
+                </span>
+                <div>
+                  <span className={styles.methodTitle}>{t("methodTitle")}</span>
+                  <p className={styles.methodCopy}>{t("methodCopy")}</p>
+                </div>
+              </article>
+            </section>
+
+            <div
+              className={styles.board}
+              data-testid="plan-board"
+              data-lane-count={LANES.length}
+              data-populated-lane-count={LANES.filter(
+                (lane) => grouped[lane].length > 0,
+              ).length}
+            >
+              {LANES.map((lane) => (
+                <LaneColumn
+                  key={lane}
+                  lane={lane}
+                  actions={grouped[lane]}
+                  hasMore={query.hasNextPage}
+                  onOpenAction={setSelectedActionId}
+                />
+              ))}
+            </div>
+
+            {query.hasNextPage || query.isFetchNextPageError ? (
+              <div className={styles.pagination}>
+                {query.isFetchNextPageError ? (
+                  <p className={styles.paginationError} role="alert">
+                    {tCommon("loadMoreError")}
+                  </p>
+                ) : null}
+                <Button
+                  variant="secondary"
+                  onClick={() => void query.fetchNextPage()}
+                  disabled={query.isFetchingNextPage}
+                >
+                  {query.isFetchingNextPage
+                    ? tCommon("loadingMore")
+                    : query.isFetchNextPageError
+                      ? tCommon("retry")
+                      : tCommon("loadMore")}
+                </Button>
+              </div>
+            ) : null}
+
+            <footer className={styles.planFootnote}>
+              <ShieldCheck aria-hidden="true" size={16} />
+              <span>{t("planFootnote")}</span>
+            </footer>
+          </>
+        )}
+      </div>
+
+      {selectedAction !== null ? (
+        <ActionDrawer
+          projectId={projectId}
+          action={selectedAction}
+          onClose={closeDrawer}
+          onConflict={onConflict}
+        />
+      ) : null}
+    </>
   );
 }

@@ -77,6 +77,6 @@ test("desktop project cockpit exposes canonical progress and product chrome", as
   await expect(page.getByText("Day 30 of 90", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Help" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
-  await expect(page.getByText("Account", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Account" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
 });

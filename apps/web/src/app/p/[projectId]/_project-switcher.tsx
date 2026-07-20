@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -26,6 +27,56 @@ function currentSection(pathname: string): string {
   return segment && PROJECT_SECTIONS.has(segment) ? segment : "overview";
 }
 
+interface ProjectSwitcherIdentity {
+  readonly primary: string;
+  readonly secondary: string;
+  readonly avatar: string;
+}
+
+function normalizedIdentityPart(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+/**
+ * Keep the project itself as the strongest visible identity. The client and
+ * primary site remain available as supporting context, while exact duplicate
+ * values are omitted so the compact switcher does not repeat itself.
+ */
+function projectSwitcherIdentity(
+  project: Pick<
+    ProjectShellOption,
+    "clientName" | "projectName" | "host"
+  >,
+): ProjectSwitcherIdentity {
+  const clientName = project.clientName.trim();
+  const projectName =
+    project.projectName.trim() || clientName || project.host.trim();
+  const host = project.host.trim();
+  const primaryKey = normalizedIdentityPart(projectName);
+  const clientKey = normalizedIdentityPart(clientName);
+  const secondaryParts = [
+    ...(clientName && clientKey !== primaryKey ? [clientName] : []),
+    ...(host &&
+    normalizedIdentityPart(host) !== primaryKey &&
+    normalizedIdentityPart(host) !== clientKey
+      ? [host]
+      : []),
+  ];
+
+  return {
+    primary: projectName,
+    secondary: secondaryParts.join(" · "),
+    avatar: projectName.charAt(0).toLocaleUpperCase() || "•",
+  };
+}
+
+/** Preserve the unambiguous client — project label in the native control. */
+function projectSwitcherOptionText(
+  option: Pick<ProjectShellOption, "label" | "host">,
+): string {
+  return `${option.label} · ${option.host}`;
+}
+
 /** Preserve the operator's current live section when changing projects. */
 export function projectSwitchHref(pathname: string, projectId: string): string {
   return `/p/${projectId}/${currentSection(pathname)}`;
@@ -42,6 +93,10 @@ export function ProjectSwitcher({
   const tContext = useTranslations("context");
   const pathname = usePathname();
   const linkRefs = useRef(new Map<string, HTMLAnchorElement>());
+  const selectedProject = options.find((option) => option.id === projectId);
+  const selectedIdentity = selectedProject
+    ? projectSwitcherIdentity(selectedProject)
+    : null;
 
   function confirmContextNavigation(
     event: MouseEvent<HTMLAnchorElement>,
@@ -63,12 +118,24 @@ export function ProjectSwitcher({
   return (
     <div className={styles.projectSwitcher}>
       <span className={styles.projectAvatar} aria-hidden="true">
-        {options
-          .find((option) => option.id === projectId)
-          ?.clientName.trim()
-          .charAt(0)
-          .toUpperCase() || "•"}
+        {selectedIdentity?.avatar || "•"}
       </span>
+      <span
+        className={styles.projectIdentity}
+        aria-hidden="true"
+        data-project-identity
+      >
+        <strong>{selectedIdentity?.primary}</strong>
+        {selectedIdentity?.secondary ? (
+          <span>{selectedIdentity.secondary}</span>
+        ) : null}
+      </span>
+      <ChevronDown
+        className={styles.projectChevron}
+        aria-hidden="true"
+        size={16}
+        strokeWidth={2}
+      />
       <select
         className={styles.projectSelect}
         aria-label={tShell("switchProject")}
@@ -84,7 +151,7 @@ export function ProjectSwitcher({
       >
         {options.map((option) => (
           <option key={option.id} value={option.id}>
-            {option.label} · {option.host}
+            {projectSwitcherOptionText(option)}
           </option>
         ))}
       </select>

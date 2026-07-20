@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import {
   E2E_PROJECT_ID,
   installCriticalFlowApi,
@@ -20,8 +21,22 @@ async function serveOverview(page: Page, data: unknown): Promise<void> {
 async function openOverview(page: Page): Promise<void> {
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
   await expect(
-    page.getByRole("heading", { name: "E2E Critical Flow" }),
+    page.getByRole("heading", {
+      name: "Turn evidence into the next 90 days of action.",
+    }),
   ).toBeVisible();
+  await expect(
+    page
+      .locator("#main-content")
+      .getByText("E2E Critical Flow", { exact: true }),
+  ).toBeVisible();
+}
+
+async function visibleBox(locator: Locator) {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  if (box === null) throw new Error("Expected a visible layout box.");
+  return box;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -33,11 +48,11 @@ test("ready Overview renders the canonical signal → action → delivery chain"
 }) => {
   await openOverview(page);
 
-  const freshness = page.getByRole("group", { name: "Freshness" });
+  const freshness = page.locator('[data-overview-metric="freshness"]');
   await expect(freshness).toContainText("Jul 18, 2026");
   await expect(freshness).not.toContainText("No data collected yet");
 
-  const delivery = page.getByRole("group", { name: "Delivery" });
+  const delivery = page.locator('[data-overview-metric="delivery"]');
   await expect(delivery).toContainText("Draft");
   await expect(delivery.getByText("EN", { exact: true })).toHaveCount(0);
 
@@ -77,10 +92,10 @@ test("empty and partial Overview states stay explicit about unavailable links", 
   );
   await openOverview(page);
 
-  await expect(page.getByRole("group", { name: "Freshness" })).toContainText(
+  await expect(page.locator('[data-overview-metric="freshness"]')).toContainText(
     "Unavailable",
   );
-  await expect(page.getByRole("group", { name: "Delivery" })).toContainText(
+  await expect(page.locator('[data-overview-metric="delivery"]')).toContainText(
     "Unavailable",
   );
   await expect(page.getByRole("region", { name: "Signal rail" })).toContainText(
@@ -111,7 +126,7 @@ test("empty and partial Overview states stay explicit about unavailable links", 
   await serveOverview(page, partial);
   await page.reload();
 
-  await expect(page.getByRole("group", { name: "Freshness" })).toContainText(
+  await expect(page.locator('[data-overview-metric="freshness"]')).toContainText(
     "Jul 18, 2026",
   );
   await expect(
@@ -129,6 +144,34 @@ test("empty and partial Overview states stay explicit about unavailable links", 
   await expect(page.getByRole("region", { name: "Delivery focus" })).toContainText(
     "Unavailable",
   );
+});
+
+test("unavailable Overview content keeps WCAG AA contrast and semantics", async ({
+  page,
+}) => {
+  await serveOverview(
+    page,
+    overviewWorkspaceFixture({
+      coverage: { overall: "unavailable", domains: {}, limitations: [] },
+      topActions: [],
+      latestSnapshot: null,
+      topActionEvidence: [],
+      deliveryFocus: null,
+    }),
+  );
+  await openOverview(page);
+
+  const results = await new AxeBuilder({ page })
+    .include("#main-content")
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const blocking = results.violations
+    .filter(
+      (violation) =>
+        violation.impact === "critical" || violation.impact === "serious",
+    )
+    .map((violation) => `${violation.id} (${violation.impact})`);
+  expect(blocking).toEqual([]);
 });
 
 test("Overview footer exposes only the canonical analysis window, capture time, and limitations", async ({
@@ -181,6 +224,69 @@ test("Overview chrome localizes to zh-CN while canonical content stays intact", 
   await expect(footer).toContainText("分析窗口");
   await expect(footer).toContainText("最新快照");
   await expect(footer).toContainText("限制说明");
+});
+
+test("Overview keeps the artifact geometry on wide screens and stacks cleanly on mobile", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await openOverview(page);
+
+  const sidebarBox = await visibleBox(
+    page.locator("[data-app-shell-sidebar]"),
+  );
+  const topbarBox = await visibleBox(page.locator("[data-app-shell-topbar]"));
+  const mainBox = await visibleBox(page.locator("#main-content"));
+  expect(sidebarBox.width).toBeGreaterThanOrEqual(251);
+  expect(sidebarBox.width).toBeLessThanOrEqual(253);
+  expect(topbarBox.height).toBeGreaterThanOrEqual(63);
+  expect(topbarBox.height).toBeLessThanOrEqual(65);
+  expect(mainBox.width).toBeLessThanOrEqual(1480);
+  expect(mainBox.x).toBeGreaterThan(sidebarBox.width);
+
+  const metricCards = page.locator("[data-overview-metrics] > div");
+  await expect(metricCards).toHaveCount(4);
+  const wideMetricBoxes = await Promise.all(
+    Array.from({ length: 4 }, (_, index) =>
+      visibleBox(metricCards.nth(index)),
+    ),
+  );
+  for (const box of wideMetricBoxes.slice(1)) {
+    expect(Math.abs(box.y - wideMetricBoxes[0]!.y)).toBeLessThanOrEqual(1);
+  }
+
+  const primaryCards = page.locator("[data-overview-primary-grid] > *");
+  const signalBox = await visibleBox(primaryCards.nth(0));
+  const opportunityBox = await visibleBox(primaryCards.nth(1));
+  expect(Math.abs(signalBox.y - opportunityBox.y)).toBeLessThanOrEqual(1);
+  expect(signalBox.width / opportunityBox.width).toBeGreaterThan(1.95);
+  expect(signalBox.width / opportunityBox.width).toBeLessThan(2.2);
+  expect(opportunityBox.height).toBeGreaterThanOrEqual(431);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileMetricBoxes = await Promise.all(
+    Array.from({ length: 4 }, (_, index) =>
+      visibleBox(metricCards.nth(index)),
+    ),
+  );
+  for (let index = 1; index < mobileMetricBoxes.length; index += 1) {
+    const previous = mobileMetricBoxes[index - 1]!;
+    const current = mobileMetricBoxes[index]!;
+    expect(Math.abs(current.x - mobileMetricBoxes[0]!.x)).toBeLessThanOrEqual(1);
+    expect(current.y).toBeGreaterThanOrEqual(previous.y + previous.height - 1);
+  }
+
+  const mobileSignalBox = await visibleBox(primaryCards.nth(0));
+  const mobileOpportunityBox = await visibleBox(primaryCards.nth(1));
+  expect(mobileOpportunityBox.y).toBeGreaterThan(
+    mobileSignalBox.y + mobileSignalBox.height,
+  );
+  const hasHorizontalOverflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth >
+      document.documentElement.clientWidth + 1,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
 });
 
 for (const viewport of [

@@ -20,7 +20,16 @@
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { FileCheck2, Route, ScanSearch } from "lucide-react";
+import {
+  ArrowRight,
+  FileCheck2,
+  Globe2,
+  Languages,
+  MapPin,
+  Route,
+  ScanSearch,
+  Target,
+} from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Badge,
@@ -283,6 +292,33 @@ function OutputLocaleSelect({
 
 // ------------------------------------------------------------- Header --------
 
+function DeliveryHero({ report }: { readonly report: Report }) {
+  const t = useTranslations("report");
+  return (
+    <header
+      className={cx(styles.deliveryHero, styles.noPrint)}
+      data-report-page-hero=""
+    >
+      <div className={styles.deliveryHeroText}>
+        <span className="sf-eyebrow">
+          {t("title")} · {report.project.clientName}
+        </span>
+        <p className={styles.deliveryTitle} data-report-delivery-title="">
+          {t("heroTitle")}
+        </p>
+        <p className={styles.deliverySubtitle}>{t("subtitle")}</p>
+      </div>
+      <div className={styles.deliveryIdentity}>
+        <Globe2 aria-hidden="true" size={18} />
+        <div>
+          <span>{t("reportFor")}</span>
+          <strong>{report.project.site.host}</strong>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 function ReportHeader({ report }: { readonly report: Report }) {
   const t = useTranslations("report");
   const uiLocale = useLocale();
@@ -334,6 +370,91 @@ function ReportSectionTitle({
   );
 }
 
+// --------------------------------------------------- Executive + context ----
+
+function ExecutiveSummarySection({ report }: { readonly report: Report }) {
+  const t = useTranslations("report");
+  const readyDeliverables = report.artifacts.filter(
+    (artifact) => artifact.status === "ready",
+  ).length;
+  return (
+    <Panel
+      className={styles.panel}
+      padding="lg"
+      aria-labelledby="sf-executive-title"
+      data-report-section="executive"
+    >
+      <div className={styles.panelHead}>
+        <ReportSectionTitle number="01" id="sf-executive-title">
+          {t("executiveSummary")}
+        </ReportSectionTitle>
+      </div>
+      <p className={styles.panelNote}>{t("executiveSummaryNote")}</p>
+      <div className={styles.decisionGrid}>
+        <article className={styles.decisionCard}>
+          <span>{t("evidenceFrame")}</span>
+          <strong>{t("evidenceFrameValue", { count: report.findings.length })}</strong>
+        </article>
+        <article className={styles.decisionCard}>
+          <span>{t("programShape")}</span>
+          <strong>{t("programShapeValue", { count: report.actions.length })}</strong>
+        </article>
+        <article className={styles.decisionCard}>
+          <span>{t("deliveryState")}</span>
+          <strong>{t("deliveryStateValue", { count: readyDeliverables })}</strong>
+        </article>
+      </div>
+    </Panel>
+  );
+}
+
+function ClientContextSection({ report }: { readonly report: Report }) {
+  const t = useTranslations("report");
+  const { project } = report;
+  return (
+    <Panel
+      className={styles.panel}
+      padding="lg"
+      aria-labelledby="sf-client-context-title"
+      data-report-section="context"
+    >
+      <div className={styles.panelHead}>
+        <ReportSectionTitle number="02" id="sf-client-context-title">
+          {t("clientContext")}
+        </ReportSectionTitle>
+      </div>
+      <p className={styles.panelNote}>
+        {t("clientContextNote", { host: project.site.host })}
+      </p>
+      <div className={styles.contextGrid}>
+        <article className={styles.contextCard}>
+          <MapPin aria-hidden="true" size={18} />
+          <span>{t("primaryMarkets")}</span>
+          <strong>
+            {project.site.marketCodes.length > 0
+              ? project.site.marketCodes.join(", ")
+              : t("notAvailable")}
+          </strong>
+        </article>
+        <article className={styles.contextCard}>
+          <Languages aria-hidden="true" size={18} />
+          <span>{t("siteLanguages")}</span>
+          <strong>
+            {project.site.languageCodes.length > 0
+              ? project.site.languageCodes.join(", ")
+              : t("notAvailable")}
+          </strong>
+        </article>
+        <article className={styles.contextCard}>
+          <Target aria-hidden="true" size={18} />
+          <span>{t("deliveryLocale")}</span>
+          <strong>{project.defaultDeliveryLocale}</strong>
+        </article>
+      </div>
+    </Panel>
+  );
+}
+
 // ----------------------------------------------------------- Coverage --------
 
 function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
@@ -349,7 +470,7 @@ function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
       data-report-section="coverage"
     >
       <div className={styles.panelHead}>
-        <ReportSectionTitle number="01" id="sf-coverage-title">
+        <ReportSectionTitle number="03" id="sf-coverage-title">
           {t("dataCoverage")}
         </ReportSectionTitle>
         <StatusPill tone={overall.tone}>
@@ -482,7 +603,7 @@ function FindingsSection({
       data-report-section="findings"
     >
       <div className={styles.panelHead}>
-        <ReportSectionTitle number="02" id="sf-findings-title">
+        <ReportSectionTitle number="04" id="sf-findings-title">
           {t("findings")}
         </ReportSectionTitle>
       </div>
@@ -536,7 +657,7 @@ function PlanSection({ actions }: { readonly actions: readonly Action[] }) {
       data-report-section="plan"
     >
       <div className={styles.panelHead}>
-        <ReportSectionTitle number="03" id="sf-plan-title">
+        <ReportSectionTitle number="05" id="sf-plan-title">
           {t("plan")}
         </ReportSectionTitle>
       </div>
@@ -610,7 +731,7 @@ function ArtifactsSection({
       data-report-section="artifacts"
     >
       <div className={styles.panelHead}>
-        <ReportSectionTitle number="04" id="sf-artifacts-title">
+        <ReportSectionTitle number="06" id="sf-artifacts-title">
           {t("artifacts")}
         </ReportSectionTitle>
       </div>
@@ -656,6 +777,9 @@ function ArtifactsSection({
 
 function MethodologySection({ report }: { readonly report: Report }) {
   const t = useTranslations("report");
+  const firstWindowActions = report.actions.filter(
+    (action) => action.roadmapLane === "now",
+  ).length;
   const footerLimitations = reportFooterLimitations(
     report.coverage.limitations,
     report.limitations,
@@ -672,7 +796,7 @@ function MethodologySection({ report }: { readonly report: Report }) {
       data-report-section="methodology"
     >
       <div className={styles.panelHead}>
-        <ReportSectionTitle number="05" id="sf-methodology-title">
+        <ReportSectionTitle number="07" id="sf-methodology-title">
           {t("methodology")}
         </ReportSectionTitle>
       </div>
@@ -696,6 +820,14 @@ function MethodologySection({ report }: { readonly report: Report }) {
           </ul>
         </div>
       ) : null}
+      <div className={styles.nextStep}>
+        <div className={styles.nextStepHead}>
+          <span>{t("nextStep")}</span>
+          <ArrowRight aria-hidden="true" size={19} />
+        </div>
+        <strong>{t("nextStepLead", { count: firstWindowActions })}</strong>
+        <p>{t("nextStepBody")}</p>
+      </div>
       <p
         className={styles.noPromise}
         role="note"
@@ -735,30 +867,31 @@ function ExportManifest({
       </div>
 
       <dl className={styles.manifestFacts}>
-        <div className={styles.manifestFact}>
-          <dt>{t("schemaVersion")}</dt>
-          <dd>{bundle.schemaVersion}</dd>
-        </div>
-        <div className={styles.manifestFact}>
-          <dt>{t("bundleLocale")}</dt>
-          <dd>{bundle.outputLocale}</dd>
-        </div>
-        <div className={styles.manifestFact}>
-          <dt>{t("createdAt")}</dt>
-          <dd data-testid="report-dynamic-value">
-            {formatDateTime(bundle.createdAt, uiLocale)}
-          </dd>
-        </div>
-        <div className={cx(styles.manifestFact, styles.manifestChecksum)}>
-          <dt>{t("checksum")}</dt>
-          <dd data-testid="report-dynamic-value">
-            {bundle.checksum === null ? (
-              t("notAvailable")
-            ) : (
-              <code title={bundle.checksum}>{bundle.checksum}</code>
-            )}
-          </dd>
-        </div>
+        <dt className={styles.manifestFactTerm}>{t("schemaVersion")}</dt>
+        <dd className={styles.manifestFactValue}>{bundle.schemaVersion}</dd>
+        <dt className={styles.manifestFactTerm}>{t("bundleLocale")}</dt>
+        <dd className={styles.manifestFactValue}>{bundle.outputLocale}</dd>
+        <dt className={styles.manifestFactTerm}>{t("createdAt")}</dt>
+        <dd
+          className={styles.manifestFactValue}
+          data-testid="report-dynamic-value"
+        >
+          {formatDateTime(bundle.createdAt, uiLocale)}
+        </dd>
+        <dt className={styles.manifestFactTerm}>{t("checksum")}</dt>
+        <dd
+          className={cx(
+            styles.manifestFactValue,
+            styles.manifestChecksum,
+          )}
+          data-testid="report-dynamic-value"
+        >
+          {bundle.checksum === null ? (
+            t("notAvailable")
+          ) : (
+            <code title={bundle.checksum}>{bundle.checksum}</code>
+          )}
+        </dd>
       </dl>
 
       <div className={styles.manifestBoundary}>
@@ -1006,6 +1139,7 @@ function ReportContent({
 
   return (
     <div className={styles.page} data-report-page="">
+      <DeliveryHero report={report} />
       <div className={styles.workspace} data-report-workspace="">
         <article className={styles.document} data-report-document="">
           <ReportHeader report={report} />
@@ -1060,6 +1194,8 @@ function ReportContent({
             className={styles.documentSections}
             data-report-document-sections=""
           >
+            <ExecutiveSummarySection report={report} />
+            <ClientContextSection report={report} />
             <CoverageSection coverage={report.coverage} />
             {isEmpty ? (
               <Panel className={styles.emptyPanel} padding="lg">

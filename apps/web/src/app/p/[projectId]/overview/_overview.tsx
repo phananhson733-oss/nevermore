@@ -179,6 +179,7 @@ function providerLabel(
 interface MetricItem {
   readonly key: string;
   readonly tone: CardTone;
+  readonly icon: LucideIcon;
   readonly label: string;
   readonly value: string;
   readonly detail?: string | undefined;
@@ -200,24 +201,35 @@ function HeroSection({ project }: { readonly project: Project }) {
   const tStage = useTranslations("projectStage");
   const tContextStatus = useTranslations("contextStatus");
   return (
-    <header className={styles.hero}>
+    <header className={styles.hero} data-overview-hero="">
       <div className={styles.heroText}>
-        <span className="sf-eyebrow">{project.clientName}</span>
-        <h1 className={styles.heroTitle}>{project.projectName}</h1>
-        <p className={styles.host}>{project.site.host}</p>
-        <p className={styles.subtitle}>{t("subtitle")}</p>
-        <div className={styles.metaRow}>
-          <span className={styles.metaItem}>
-            <span className={styles.metaLabel}>{tShell("projectStage")}</span>
-            <Badge>{tStage(project.stage)}</Badge>
+        <div className={styles.heroKicker}>
+          <span className={styles.projectIdentityLine}>
+            <span className="sf-eyebrow">{project.projectName}</span>
+            <span className={styles.kickerSeparator} aria-hidden="true">
+              ·
+            </span>
+            <span className={styles.host}>{project.site.host}</span>
           </span>
-          <span className={styles.metaItem}>
-            <span className={styles.metaLabel}>{tNav("context")}</span>
-            <StatusPill tone={contextTone(project.contextStatus)}>
-              {tContextStatus(project.contextStatus)}
-            </StatusPill>
+          <span className={styles.metaRow}>
+            <span className={styles.metaItem}>
+              <span className={styles.metaLabel}>
+                {tShell("projectStage")}
+              </span>
+              <Badge>{tStage(project.stage)}</Badge>
+            </span>
+            <span className={styles.metaItem}>
+              <span className={styles.metaLabel}>{tNav("context")}</span>
+              <StatusPill tone={contextTone(project.contextStatus)}>
+                {tContextStatus(project.contextStatus)}
+              </StatusPill>
+            </span>
           </span>
         </div>
+        <h1 className={styles.heroTitle}>{t("heroTitle")}</h1>
+        <p className={styles.subtitle}>
+          {t("subtitle", { client: project.clientName })}
+        </p>
       </div>
       <div className={styles.heroActions}>
         <div className={styles.heroButtons}>
@@ -277,6 +289,9 @@ function MetricStrip({ view }: { readonly view: OverviewView }) {
   const tProvider = useTranslations("provider");
   const locale = useLocale();
   const overall = coverageOverallMeta(view.coverage.overall);
+  const coveredDomainCount = DOMAIN_KEYS.filter(
+    (key) => domainStatusMeta(view.coverage.domains[key]).labelKey !== "missing",
+  ).length;
   const topAction = view.topActions[0] ?? null;
   const captured = view.latestSnapshot
     ? formatDate(view.latestSnapshot.capturedAt, locale)
@@ -292,13 +307,16 @@ function MetricStrip({ view }: { readonly view: OverviewView }) {
     {
       key: "coverage",
       tone: "cobalt",
+      icon: SearchCheck,
       label: t("metrics.coverage"),
-      value: tCoverage(overall.labelKey),
+      value: `${coveredDomainCount} / ${DOMAIN_KEYS.length}`,
+      detail: tCoverage(overall.labelKey),
       empty: view.coverage.overall === "unavailable",
     },
     {
       key: "freshness",
       tone: "mint",
+      icon: Database,
       label: t("metrics.freshness"),
       value: captured ?? t("unavailable"),
       detail: view.latestSnapshot
@@ -312,6 +330,7 @@ function MetricStrip({ view }: { readonly view: OverviewView }) {
     {
       key: "roadmap",
       tone: "amber",
+      icon: ListTodo,
       label: t("metrics.roadmap"),
       value: topAction ? tActionStatus(topAction.status) : t("noData"),
       empty: topAction === null,
@@ -319,6 +338,7 @@ function MetricStrip({ view }: { readonly view: OverviewView }) {
     {
       key: "delivery",
       tone: "coral",
+      icon: FileCheck2,
       label: t("metrics.delivery"),
       value: view.deliveryFocus
         ? tStudio(`status.${view.deliveryFocus.status}`)
@@ -330,32 +350,42 @@ function MetricStrip({ view }: { readonly view: OverviewView }) {
     },
   ];
   return (
-    <dl className={styles.metrics}>
-      {metrics.map((metric) => (
-        <div
-          key={metric.key}
-          role="group"
-          aria-label={metric.label}
-          className={cx(styles.metric, METRIC_TONE_CLASS[metric.tone])}
-        >
-          <dt className={styles.metricLabel}>{metric.label}</dt>
-          <dd
-            className={cx(
-              styles.metricValue,
-              metric.empty && styles.metricValueEmpty,
-            )}
+    <dl className={styles.metrics} data-overview-metrics="">
+      {metrics.map((metric) => {
+        const Icon = metric.icon;
+        return (
+          <div
+            key={metric.key}
+            data-overview-metric={metric.key}
+            className={cx(styles.metric, METRIC_TONE_CLASS[metric.tone])}
           >
-            {metric.dateTime ? (
-              <time dateTime={metric.dateTime}>{metric.value}</time>
-            ) : (
-              metric.value
-            )}
-          </dd>
-          {metric.detail ? (
-            <dd className={styles.metricDetail}>{metric.detail}</dd>
-          ) : null}
-        </div>
-      ))}
+            <dt className={styles.metricHead}>
+              <span className={styles.metricLabel}>{metric.label}</span>
+              <Icon
+                className={styles.metricIcon}
+                aria-hidden="true"
+                size={18}
+                strokeWidth={1.7}
+              />
+            </dt>
+            <dd
+              className={cx(
+                styles.metricValue,
+                metric.empty && styles.metricValueEmpty,
+              )}
+            >
+              {metric.dateTime ? (
+                <time dateTime={metric.dateTime}>{metric.value}</time>
+              ) : (
+                metric.value
+              )}
+            </dd>
+            {metric.detail ? (
+              <dd className={styles.metricDetail}>{metric.detail}</dd>
+            ) : null}
+          </div>
+        );
+      })}
     </dl>
   );
 }
@@ -584,9 +614,11 @@ function HighestActionPanel({
 function EvidenceFocusPanel({
   projectId,
   evidence,
+  coverage,
 }: {
   readonly projectId: string;
   readonly evidence: readonly OverviewEvidence[];
+  readonly coverage: Coverage;
 }) {
   const t = useTranslations("overview");
   const tProvider = useTranslations("provider");
@@ -690,6 +722,7 @@ function EvidenceFocusPanel({
           </Link>
         </div>
       )}
+      <CoverageSummary coverage={coverage} />
     </Panel>
   );
 }
@@ -709,7 +742,7 @@ function DeliveryFocusPanel({
     <Panel
       tone="coral"
       padding="lg"
-      className={styles.focusPanel}
+      className={cx(styles.focusPanel, styles.deliveryPanel)}
       aria-labelledby="sf-delivery-focus-title"
     >
       <div className={styles.sectionHead}>
@@ -767,22 +800,20 @@ function DeliveryFocusPanel({
   );
 }
 
-function CoveragePanel({ coverage }: { readonly coverage: Coverage }) {
+function CoverageSummary({ coverage }: { readonly coverage: Coverage }) {
   const t = useTranslations("overview");
   const tCoverage = useTranslations("coverage");
   const tDomain = useTranslations("domain");
   const overall = coverageOverallMeta(coverage.overall);
-  const limitations = [...new Set(coverage.limitations)];
   return (
-    <Panel
-      className={styles.panel}
-      padding="lg"
+    <section
+      className={styles.coverageSummary}
       aria-labelledby="sf-coverage-title"
     >
-      <div className={styles.sectionHead}>
-        <h2 id="sf-coverage-title" className={styles.panelTitle}>
+      <div className={styles.coverageSummaryHead}>
+        <h3 id="sf-coverage-title" className={styles.coverageTitle}>
           {t("metrics.coverage")}
-        </h2>
+        </h3>
         <StatusPill tone={overall.tone}>
           {tCoverage(overall.labelKey)}
         </StatusPill>
@@ -800,18 +831,7 @@ function CoveragePanel({ coverage }: { readonly coverage: Coverage }) {
           );
         })}
       </ul>
-      {limitations.length > 0 ? (
-        <div className={styles.limitations}>
-          <ul className={styles.limitationList}>
-            {limitations.map((text, index) => (
-              <li key={`${index}:${text}`} className={styles.limitationItem}>
-                {text}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </Panel>
+    </section>
   );
 }
 
@@ -906,7 +926,7 @@ function OverviewContent({
         />
       ) : null}
       <MetricStrip view={view} />
-      <div className={styles.narrativeGrid}>
+      <div className={styles.narrativeGrid} data-overview-primary-grid="">
         <SignalRail projectId={projectId} view={view} />
         <HighestActionPanel
           projectId={projectId}
@@ -914,17 +934,17 @@ function OverviewContent({
           evidenceCount={view.topActionEvidence.length}
         />
       </div>
-      <div className={styles.focusGrid}>
+      <div className={styles.focusGrid} data-overview-support-grid="">
         <EvidenceFocusPanel
           projectId={projectId}
           evidence={view.topActionEvidence}
+          coverage={view.coverage}
         />
         <DeliveryFocusPanel
           projectId={projectId}
           delivery={view.deliveryFocus}
         />
       </div>
-      <CoveragePanel coverage={view.coverage} />
       <EvidenceFooter view={view} />
     </div>
   );

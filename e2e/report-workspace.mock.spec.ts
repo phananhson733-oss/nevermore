@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import {
   E2E_PROJECT_ID,
   installCriticalFlowApi,
@@ -144,18 +145,31 @@ for (const width of [1440, 1920] as const) {
     const workspace = page.locator("[data-report-workspace]");
     const reportDocument = page.locator("[data-report-document]");
     const rail = page.locator("[data-report-manifest-rail]");
+    const levelOneHeadings = page.locator("[data-report-page] h1");
+    await expect(levelOneHeadings).toHaveCount(1);
+    await expect(levelOneHeadings).toHaveText("Canonical customer report");
+    await expect(page.locator("[data-report-delivery-title]")).toBeVisible();
+    const reportOutline = await reportDocument
+      .locator("h1, h2, h3, h4")
+      .evaluateAll((nodes) => nodes.map((node) => node.tagName));
+    expect(reportOutline[0]).toBe("H1");
+    expect(reportOutline.filter((tagName) => tagName === "H1")).toHaveLength(1);
     const documentBox = await reportDocument.boundingBox();
     const railBox = await rail.boundingBox();
 
     expect(documentBox).not.toBeNull();
     expect(railBox).not.toBeNull();
     expect(documentBox!.x + documentBox!.width).toBeLessThanOrEqual(railBox!.x);
+    expect(
+      Math.abs(railBox!.x - (documentBox!.x + documentBox!.width) - 18),
+    ).toBeLessThanOrEqual(1);
+    expect(Math.abs(railBox!.width - 286)).toBeLessThanOrEqual(1);
     await expect(workspace).toHaveCSS("display", "grid");
     await expect(rail).toHaveCSS("position", "sticky");
 
     await expect(
       reportDocument.locator("[data-report-section-number]"),
-    ).toHaveText(["01", "02", "03", "04", "05"]);
+    ).toHaveText(["01", "02", "03", "04", "05", "06", "07"]);
 
     const findings = await reportDocument
       .locator("[data-report-finding-id]")
@@ -228,6 +242,19 @@ test("export polling populates the rail, while print removes all chrome and keep
   await expect(
     rail.getByRole("heading", { name: "Export manifest" }),
   ).toBeVisible();
+  const manifestFacts = rail.locator("dl");
+  await expect(manifestFacts.locator(":scope > dt")).toHaveCount(4);
+  await expect(manifestFacts.locator(":scope > dd")).toHaveCount(4);
+  expect(
+    await manifestFacts
+      .locator(":scope > dt, :scope > dd")
+      .evaluateAll((nodes) => nodes.every((node) => node.parentElement?.tagName === "DL")),
+  ).toBe(true);
+  const definitionListA11y = await new AxeBuilder({ page })
+    .include("[data-report-manifest-rail] dl")
+    .withRules(["definition-list", "dlitem"])
+    .analyze();
+  expect(definitionListA11y.violations).toEqual([]);
   await expect(rail.getByText("sha256:e2e-export", { exact: true })).toBeVisible();
   await expect(
     rail.getByRole("link", { name: "Download client bundle" }),
@@ -245,6 +272,8 @@ test("export polling populates the rail, while print removes all chrome and keep
   await expect(workspace).toHaveCSS("display", "block");
   await expect(reportDocument).toBeVisible();
   for (const heading of [
+    "Executive summary",
+    "Client context & delivery frame",
     "Data coverage",
     "Findings",
     "30 / 60 / 90 plan",

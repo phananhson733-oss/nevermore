@@ -1,13 +1,14 @@
 /*
- * Context (ICP profile) screen layout. Every color/size is a `var(--sf-*)`
- * design token from app/globals.css, so light, dark, and the zh-CN heading swap
- * all come for free. Focus is owned by the global `:focus-visible` ring.
+ * Editorial Context editor, closely following the reference artifact's spatial
+ * skeleton: oversized masthead, numbered ruled sections, a broad writing area,
+ * and a sticky ink profile rail. Body copy remains >=14px; 12px is reserved for
+ * compact labels and metadata. All color comes from the SignalFrame tokens.
  */
 
 .page {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  container: context-page / inline-size;
+  width: min(100%, 1480px);
+  margin: 0 auto;
 }
 
 .centered {
@@ -15,33 +16,51 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 240px;
+  min-height: 280px;
   color: var(--sf-muted);
+  font-size: var(--sf-text-base);
 }
 
 /* --------------------------------------------------------------- Hero ----- */
 .hero {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 28px 44px;
+  padding: 14px 0 34px;
+  border-bottom: 1px solid var(--sf-border);
 }
+
 .heroText {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
   min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
 }
+
+.heroMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .title {
-  font-size: var(--sf-text-3xl);
+  max-width: 12ch;
   color: var(--sf-fg);
+  font-size: clamp(48px, 5.2vw, 72px);
+  font-weight: 640;
+  line-height: 0.98;
+  letter-spacing: -0.055em;
 }
+
 .subtitle {
+  max-width: 68ch;
   margin: 0;
-  max-width: 60ch;
   color: var(--sf-muted);
   font-size: var(--sf-text-base);
+  line-height: 1.65;
 }
 
 .saveBlock {
@@ -49,121 +68,164 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
+  padding-bottom: 2px;
 }
+
 .saveStatus {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--sf-text-sm);
-  font-weight: 700;
-  color: var(--sf-muted);
   min-height: 22px;
+  gap: 8px;
+  color: var(--sf-muted);
+  font-size: 13px;
+  font-weight: 700;
 }
+
 .saveStatusDirty {
   color: var(--sf-amber-text);
 }
+
 .saveStatusSaved {
   color: var(--sf-mint-text);
 }
+
 .saveButtons {
   display: flex;
+  align-items: center;
   gap: 10px;
 }
 
 /* --------------------------------------------------------------- Alert ----- */
 .alert {
-  margin: 0;
-  padding: 12px 16px;
-  border: 1px solid var(--sf-coral);
-  background: var(--sf-coral-soft);
+  margin: 22px 0 0;
+  padding: 13px 16px;
   color: var(--sf-fg);
+  font-size: 14px;
+  font-weight: 650;
+  background: var(--sf-coral-soft);
+  border: 1px solid var(--sf-coral);
   border-radius: var(--sf-radius-control);
-  font-size: var(--sf-text-sm);
-  font-weight: 600;
 }
 
 /* -------------------------------------------------------------- Layout ----- */
 .grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
   align-items: start;
+  gap: 34px;
 }
-@media (min-width: 1024px) {
-  .grid {
-    grid-template-columns: minmax(0, 1fr) 340px;
-  }
-}
+
 .formCol {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  container: context-form / inline-size;
   min-width: 0;
 }
+
 .aside {
-  position: sticky;
-  top: 24px;
+  min-width: 0;
+  padding: 34px 0 8px;
+}
+
+@media (min-width: 961px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+    gap: clamp(28px, 4vw, 54px);
+  }
+
+  .aside {
+    position: sticky;
+    top: 92px;
+    width: 100%;
+    max-width: 340px;
+    justify-self: end;
+  }
+}
+
+@media (min-width: 961px) and (max-width: 1180px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) 290px;
+    gap: 28px;
+  }
+
+  .aside {
+    max-width: 290px;
+  }
 }
 
 /* ------------------------------------------------------------- Section ----- */
 .section {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 0;
+  padding: 32px 0 38px;
+  border-bottom: 1px solid var(--sf-border);
 }
+
+.sectionNumber {
+  padding-top: 7px;
+  color: var(--sf-muted);
+  font-family: var(--sf-font-display);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.sectionInner {
+  min-width: 0;
+}
+
 .sectionHead {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 24px;
 }
-.sectionNumber {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--sf-cobalt-soft);
-  color: var(--sf-cobalt-text);
-  font-family: var(--sf-font-body);
-  font-size: var(--sf-text-sm);
-  font-weight: 800;
-}
+
 .sectionTitle {
-  font-size: var(--sf-text-xl);
+  max-width: 26ch;
   color: var(--sf-fg);
+  font-size: clamp(28px, 2.45vw, 38px);
+  font-weight: 620;
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
 }
+
 .sectionDesc {
-  margin: 2px 0 0;
+  max-width: 66ch;
+  margin: 8px 0 0;
   color: var(--sf-muted);
-  font-size: var(--sf-text-sm);
+  font-size: 14px;
+  line-height: 1.6;
 }
+
+.sectionIcon {
+  display: inline-grid;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: var(--sf-muted);
+  border: 1px solid var(--sf-border);
+  border-radius: 50%;
+}
+
 .sectionBody {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-.row2 {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-}
-@media (min-width: 640px) {
-  .row2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  gap: 22px;
+  margin-top: 26px;
 }
 
-/* -------------------------------------------------------------- Select ----- */
+/* ------------------------------------------------------------- Controls ---- */
 .select {
   width: 100%;
-  min-height: 40px;
+  min-height: 44px;
   padding: 9px 12px;
+  color: var(--sf-fg);
   font-family: var(--sf-font-body);
   font-size: var(--sf-text-base);
   line-height: 1.4;
-  color: var(--sf-fg);
   background: var(--sf-surface);
   border: 1px solid var(--sf-border-strong);
   border-radius: var(--sf-radius-control);
@@ -171,154 +233,844 @@
     border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
+
 .select:hover:not(:disabled):not(:focus) {
   border-color: var(--sf-fg);
 }
+
 .selectInvalid {
   border-color: var(--sf-coral);
 }
 
-/* ------------------------------------------------------------- Persona ----- */
-.personaList {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.personaCard {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  background: var(--sf-surface-deep);
-}
-.personaHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.personaTitle {
-  font-size: var(--sf-text-sm);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--sf-muted);
-}
-.personaBody {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.addPersona {
-  align-self: flex-start;
+.leadInput {
+  min-height: 50px;
+  font-family: var(--sf-font-display);
+  font-size: 20px;
+  font-weight: 580;
 }
 
-/* ---------------------------------------------------------- Profile lens -- */
-.lens {
+.descriptionControl {
+  min-height: 132px;
+  padding: 14px 16px;
+  line-height: 1.7;
+}
+
+.compactArea {
+  min-height: 92px;
+}
+
+.businessLead {
+  display: grid;
+  gap: 18px;
+}
+
+.businessMetaCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.metaCell {
+  padding: 17px 18px;
+}
+
+.metaCell + .metaCell {
+  border-top: 1px solid var(--sf-border);
+}
+
+.marketGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+@container context-form (min-width: 580px) {
+  .businessMetaCard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metaCell + .metaCell {
+    border-top: 0;
+    border-left: 1px solid var(--sf-border);
+  }
+}
+
+@container context-form (min-width: 720px) {
+  .marketGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------------------------------------------------------- ICP cards ------ */
+.segmentGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.segmentCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 13px;
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.segmentCardPrimary {
+  background: color-mix(in srgb, var(--sf-cobalt-soft) 68%, var(--sf-surface));
+  border-color: color-mix(in srgb, var(--sf-cobalt) 48%, var(--sf-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sf-cobalt) 8%, transparent);
+}
+
+.cardEyebrow {
+  color: var(--sf-cobalt-text);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.segmentControl {
+  min-height: 104px;
+  background: color-mix(in srgb, var(--sf-surface) 90%, transparent);
+}
+
+@container context-form (min-width: 640px) {
+  .segmentGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* -------------------------------------------------------- Persona table ---- */
+.personaField {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 11px;
+  padding-top: 2px;
+}
+
+.personaFieldHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 18px;
+}
+
+.personaFieldTitle,
+.numberedFieldTitle {
+  color: var(--sf-fg);
+  font-family: var(--sf-font-body);
+  font-size: var(--sf-text-base);
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.requiredMark {
+  color: var(--sf-coral-text);
+}
+
+.personaFieldHelp,
+.numberedFieldHelp {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: 12px;
+}
+
+.inlineError {
+  margin: 0;
+  color: var(--sf-coral-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.personaTable {
+  overflow: hidden;
+  border-top: 1px solid var(--sf-border);
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.personaTableHead {
+  display: none;
+}
+
+.personaIndexHead {
+  text-align: center;
+}
+
+.personaRow {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.personaRow:last-child {
+  border-bottom: 0;
+}
+
+.personaIdentity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.personaOrdinal {
+  padding-top: 2px;
+  color: var(--sf-muted);
+  font-family: var(--sf-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.personaCell {
+  min-width: 0;
+}
+
+.personaDataCell {
+  min-width: 0;
+}
+
+.personaInput {
+  min-height: 42px;
+}
+
+.personaArea {
+  min-height: 86px;
+}
+
+.personaAction {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.removePersona,
+.removeListItem {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  color: var(--sf-muted);
+}
+
+.addPersona,
+.addListItem {
+  align-self: flex-start;
+  padding-left: 0;
+  color: var(--sf-cobalt-text);
+}
+
+@container context-form (min-width: 720px) {
+  .personaTableHead,
+  .personaRow {
+    display: grid;
+    grid-template-columns:
+      38px
+      minmax(0, 0.75fr)
+      minmax(0, 1fr)
+      minmax(0, 0.7fr);
+    gap: 16px;
+  }
+
+  .personaTableHead {
+    align-items: center;
+    padding: 10px 12px;
+    color: var(--sf-muted);
+    font-size: 12px;
+    font-weight: 750;
+    letter-spacing: 0.045em;
+    background: var(--sf-surface-deep);
+    text-transform: uppercase;
+  }
+
+  .personaRow {
+    position: relative;
+    align-items: start;
+    padding: 16px 12px;
+  }
+
+  .personaCell > label,
+  .personaCell > p:not([role="alert"]) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .personaOrdinal {
+    padding-top: 14px;
+  }
+
+  .personaAction {
+    position: absolute;
+    top: 4px;
+    right: 2px;
+  }
+
+  .personaArea {
+    min-height: 76px;
+  }
+}
+
+/* ------------------------------------------------ Product / competition --- */
+.productCompetitionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.productCard,
+.competitionCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 13px;
+}
+
+.productCard {
+  position: relative;
+  overflow: hidden;
+  color: var(--sf-white);
+  background: var(--sf-ink-900);
+  border: 1px solid var(--sf-ink-800);
+  box-shadow: var(--sf-shadow-md);
+}
+
+.productCard::after {
+  position: absolute;
+  top: -74px;
+  right: -68px;
+  width: 172px;
+  height: 172px;
+  content: "";
+  border: 24px solid rgba(153, 239, 203, 0.06);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.competitionCard {
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.editorialCardHead {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.editorialCardHead h3 {
+  color: inherit;
+  font-size: 20px;
+  font-weight: 620;
+  letter-spacing: -0.025em;
+}
+
+.editorialCardIcon {
+  display: inline-grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--sf-ink-950);
+  background: var(--sf-mint-bright);
+  border-radius: 50%;
+}
+
+.editorialCardIndex {
+  color: var(--sf-cobalt-text);
+  font-family: var(--sf-font-mono);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.darkField {
+  position: relative;
+  z-index: 1;
+}
+
+.darkField > label {
+  color: var(--sf-white);
+}
+
+.darkField > p:not([role="alert"]) {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.darkControl {
+  min-height: 88px;
+  color: var(--sf-white);
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.darkControl:hover:not(:disabled):not(:focus) {
+  border-color: rgba(255, 255, 255, 0.52);
+}
+
+.productCardSplit {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.conversionPanel {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding: 20px;
+  background: color-mix(in srgb, var(--sf-surface-deep) 64%, transparent);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
 }
-.lensEyebrow {
+
+.conversionHead h3 {
+  color: var(--sf-fg);
   font-family: var(--sf-font-body);
-  font-size: var(--sf-text-xs);
+  font-size: var(--sf-text-base);
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.conversionGrid,
+.constraintGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+@container context-form (min-width: 660px) {
+  .productCompetitionGrid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(250px, 0.85fr);
+  }
+
+  .productCardSplit,
+  .constraintGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .conversionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .conversionGrid > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------------------------------------------------------- Success rows -- */
+.successGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 22px;
+}
+
+.successQuestions {
+  min-height: 158px;
+}
+
+.numberedField {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.numberedFieldHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+}
+
+.numberedRows {
+  border-top: 1px solid var(--sf-border);
+}
+
+.numberedRow {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.numberedIndex {
+  color: var(--sf-coral-text);
+  font-family: var(--sf-font-mono);
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--sf-mint-bright);
+  font-variant-numeric: tabular-nums;
 }
-.lensName {
-  margin: 4px 0 0;
-  font-family: var(--sf-font-display);
-  font-size: var(--sf-text-xl);
-  line-height: 1.15;
-  color: var(--sf-white);
-  word-break: break-word;
+
+.numberedInput {
+  min-height: 40px;
+  padding-right: 6px;
+  padding-left: 6px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 5px;
 }
-.lensDesc {
-  margin: 6px 0 0;
-  font-size: var(--sf-text-sm);
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.68);
+
+.numberedInput:hover:not(:disabled):not(:focus) {
+  border-color: var(--sf-border-strong);
 }
-.lensMeta {
+
+@container context-form (min-width: 700px) {
+  .successGrid {
+    grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.28fr);
+    gap: 28px;
+  }
+}
+
+/* ---------------------------------------------------------- Profile lens -- */
+.lensPanel {
+  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: 0 24px 52px rgba(17, 25, 35, 0.15);
+}
+
+.lens {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 18px;
+  padding: 24px;
 }
-.lensMetaLabel {
-  font-size: var(--sf-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+
+.lensIntro {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.lensMark {
+  display: inline-grid;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  color: var(--sf-mint-bright);
+  background: rgba(153, 239, 203, 0.08);
+  border: 1px solid rgba(153, 239, 203, 0.22);
+  border-radius: 10px;
+}
+
+.lensEyebrow {
+  color: var(--sf-mint-bright);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
 }
+
+.lensName {
+  margin: 4px 0 0;
+  color: var(--sf-white);
+  font-family: var(--sf-font-display);
+  font-size: 23px;
+  font-weight: 590;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.lensDesc {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.lensDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.lensChecklist {
+  display: flex;
+  flex-direction: column;
+  margin: -4px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lensCheckItem {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  padding: 13px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lensCheckItem:last-child {
+  border-bottom: 0;
+}
+
+.lensCheckMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+}
+
+.lensCheckMarkDone {
+  color: var(--sf-ink-950);
+  background: var(--sf-mint-bright);
+  border-color: var(--sf-mint-bright);
+}
+
+.lensCheckCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lensCheckCopy strong {
+  color: var(--sf-white);
+  font-size: 14px;
+  font-weight: 730;
+}
+
+.lensCheckCopy span {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.lensSnapshot {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lensMeta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+}
+
+.lensMetaLabel,
+.lensStatusLabel {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
 .lensBadges {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+
 .lensBadge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: var(--sf-radius-chip);
-  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 7px;
   color: var(--sf-white);
-  font-size: var(--sf-text-xs);
+  font-size: 12px;
   font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--sf-radius-chip);
 }
+
 .lensEmpty {
-  font-size: var(--sf-text-sm);
   color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
 }
-.lensDivider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.12);
+
+.lensCallout {
+  padding: 14px;
+  background: rgba(49, 94, 251, 0.18);
+  border: 1px solid rgba(132, 165, 255, 0.24);
+  border-radius: 9px;
 }
-.lensChecklist {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+
+.lensCallout > span {
+  color: #b8c9ff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-.lensCheckItem {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--sf-text-sm);
-  color: rgba(255, 255, 255, 0.82);
+
+.lensCallout p {
+  margin: 7px 0 0;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 14px;
+  line-height: 1.55;
 }
-.lensCheckMark {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.35);
-  color: transparent;
-  font-size: 11px;
-  font-weight: 900;
-  line-height: 1;
-}
-.lensCheckMarkDone {
-  background: var(--sf-mint);
-  border-color: var(--sf-mint);
-  color: var(--sf-white);
-}
+
 .lensStatusRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.lensStatusLabel {
-  font-size: var(--sf-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+
+/* ------------------------------------------------------------- Mobile ----- */
+@media (max-width: 640px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 22px;
+    padding-top: 4px;
+    padding-bottom: 26px;
+  }
+
+  .title {
+    max-width: 100%;
+    font-size: clamp(42px, 14vw, 58px);
+  }
+
+  .saveBlock {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .saveButtons {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 28px 0 34px;
+  }
+
+  .sectionNumber {
+    padding-top: 0;
+  }
+
+  .sectionHead {
+    gap: 14px;
+  }
+
+  .sectionTitle {
+    font-size: 28px;
+  }
+
+  .sectionIcon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .sectionBody {
+    margin-top: 22px;
+  }
+
+  .segmentCard,
+  .productCard,
+  .competitionCard,
+  .conversionPanel {
+    padding: 18px;
+  }
+
+  .lensSnapshot {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lens {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 960px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .aside {
+    position: static;
+    order: -1;
+    width: 100%;
+    max-width: none;
+    padding: 28px 0 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .segmentGrid,
+  .productCompetitionGrid,
+  .productCardSplit,
+  .constraintGrid,
+  .conversionGrid,
+  .successGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .conversionGrid > :last-child {
+    grid-column: auto;
+  }
+
+  .personaTableHead {
+    display: none;
+  }
+
+  .personaRow {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .personaAction {
+    position: static;
+  }
+}
+
+@media (max-width: 420px) {
+  .saveButtons {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .numberedRow {
+    grid-template-columns: 26px minmax(0, 1fr) 32px;
+    gap: 6px;
+  }
 }
