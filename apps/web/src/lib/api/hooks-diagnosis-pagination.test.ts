@@ -130,6 +130,18 @@ describe("Diagnosis pagination", () => {
     ).toEqual(["csv-usable"]);
     expect(
       selectLatestSnapshotIds([
+        snapshot("csv-old", "csv", "2026-07-18T00:00:00.000Z"),
+        snapshot("dfs-usable", "dataforseo", "2026-07-19T00:00:00.000Z"),
+        snapshot(
+          "dfs-newer-unavailable",
+          "dataforseo",
+          "2026-07-20T00:00:00.000Z",
+          "unavailable",
+        ),
+      ]),
+    ).toEqual(["dfs-usable"]);
+    expect(
+      selectLatestSnapshotIds([
         snapshot("csv-tie", "csv", "2026-07-20T00:00:00.000Z"),
         snapshot("dfs-tie", "dataforseo", "2026-07-20T00:00:00.000Z"),
       ]),

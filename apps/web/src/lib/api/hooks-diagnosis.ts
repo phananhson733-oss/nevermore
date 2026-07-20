@@ -257,26 +257,41 @@ export function selectLatestSnapshotIds(
   snapshots: readonly DataSnapshot[],
 ): readonly string[] {
   const latest = new Map<Provider, DataSnapshot>();
+  const keywordGapSnapshots: DataSnapshot[] = [];
   for (const snapshot of snapshots) {
+    if (snapshot.provider === "csv" || snapshot.provider === "dataforseo") {
+      keywordGapSnapshots.push(snapshot);
+      continue;
+    }
     const current = latest.get(snapshot.provider);
     if (current === undefined || snapshot.capturedAt > current.capturedAt) {
       latest.set(snapshot.provider, snapshot);
     }
   }
 
-  const csv = latest.get("csv");
-  const dataForSeo = latest.get("dataforseo");
-  if (csv !== undefined && dataForSeo !== undefined) {
-    const isUsable = (snapshot: DataSnapshot) =>
+  const usableKeywordGapSnapshots = keywordGapSnapshots.filter(
+    (snapshot) =>
       snapshot.availability === "available" ||
-      snapshot.availability === "partial";
-    const csvUsable = isUsable(csv);
-    const dataForSeoUsable = isUsable(dataForSeo);
-    const preferDataForSeo =
-      dataForSeoUsable !== csvUsable
-        ? dataForSeoUsable
-        : dataForSeo.capturedAt >= csv.capturedAt;
-    latest.delete(preferDataForSeo ? "csv" : "dataforseo");
+      snapshot.availability === "partial",
+  );
+  const keywordGapCandidates =
+    usableKeywordGapSnapshots.length > 0
+      ? usableKeywordGapSnapshots
+      : keywordGapSnapshots;
+  let latestKeywordGap: DataSnapshot | undefined;
+  for (const snapshot of keywordGapCandidates) {
+    if (
+      latestKeywordGap === undefined ||
+      snapshot.capturedAt > latestKeywordGap.capturedAt ||
+      (snapshot.capturedAt === latestKeywordGap.capturedAt &&
+        snapshot.provider === "dataforseo" &&
+        latestKeywordGap.provider === "csv")
+    ) {
+      latestKeywordGap = snapshot;
+    }
+  }
+  if (latestKeywordGap !== undefined) {
+    latest.set(latestKeywordGap.provider, latestKeywordGap);
   }
   return Array.from(latest.values(), (snapshot) => snapshot.id);
 }
