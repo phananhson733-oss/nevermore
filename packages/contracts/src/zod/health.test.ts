@@ -8,17 +8,17 @@ import {
 } from "./health.ts";
 
 describe("build/version metadata", () => {
-  it("reports the immutable product and contract versions with an explicit build SHA", () => {
+  it("reports the immutable product and contract versions with the web platform SHA", () => {
     const metadata = resolveBuildMetadata("web", {
-      APP_BUILD_SHA: "abc123",
-      VERCEL_GIT_COMMIT_SHA: "ignored",
+      APP_BUILD_SHA: "stale-fallback",
+      VERCEL_GIT_COMMIT_SHA: "vercel-sha",
     });
 
     expect(metadata).toEqual({
       productVersion: PRODUCT_VERSION,
       contractVersion: CONTRACT_VERSION,
       service: "web",
-      buildSha: "abc123",
+      buildSha: "vercel-sha",
     });
     expect(versionResponse.parse(metadata)).toEqual(metadata);
   });
@@ -34,6 +34,15 @@ describe("build/version metadata", () => {
       service: "web",
       buildSha: "development",
     });
+  });
+
+  it("prefers immutable worker platform metadata over a stale portable fallback", () => {
+    expect(
+      resolveBuildMetadata("worker", {
+        APP_BUILD_SHA: "stale-fallback",
+        RAILWAY_GIT_COMMIT_SHA: "railway-sha",
+      }),
+    ).toMatchObject({ service: "worker", buildSha: "railway-sha" });
   });
 
   it("ignores blank build variables", () => {

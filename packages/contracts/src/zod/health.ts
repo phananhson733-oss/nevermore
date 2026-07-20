@@ -20,13 +20,28 @@ export function resolveBuildMetadata(
   service: VersionResponse["service"],
   env: BuildEnvironment = process.env,
 ): VersionResponse {
-  const buildSha = [
-    env["APP_BUILD_SHA"],
-    env["VERCEL_GIT_COMMIT_SHA"],
-    env["RAILWAY_GIT_COMMIT_SHA"],
-    env["RENDER_GIT_COMMIT"],
-    env["GITHUB_SHA"],
-  ]
+  // Platform-provided commit metadata is immutable for a deployment, whereas
+  // APP_BUILD_SHA is a portable fallback and can become stale when configured
+  // as a long-lived environment variable. Prefer the hosting platform that
+  // owns each service so /version always identifies the code actually running.
+  const buildCandidates =
+    service === "web"
+      ? [
+          env["VERCEL_GIT_COMMIT_SHA"],
+          env["APP_BUILD_SHA"],
+          env["GITHUB_SHA"],
+          env["RAILWAY_GIT_COMMIT_SHA"],
+          env["RENDER_GIT_COMMIT"],
+        ]
+      : [
+          env["RAILWAY_GIT_COMMIT_SHA"],
+          env["RENDER_GIT_COMMIT"],
+          env["APP_BUILD_SHA"],
+          env["GITHUB_SHA"],
+          env["VERCEL_GIT_COMMIT_SHA"],
+        ];
+
+  const buildSha = buildCandidates
     .map((value) => value?.trim())
     .find((value): value is string => Boolean(value));
 
