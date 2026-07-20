@@ -79,8 +79,6 @@ const RETRYABLE_UNAVAILABLE_STATUSES: ReadonlySet<number> = new Set([
 
 const RETRYABLE_RATE_LIMIT_STATUSES: ReadonlySet<number> = new Set([
   40_202, // per-minute request limit
-  40_205, // duplicate-task hourly limit
-  40_206, // duplicate-task daily limit
   40_209, // simultaneous-query limit
 ]);
 
@@ -92,6 +90,8 @@ const AUTH_STATUSES: ReadonlySet<number> = new Set([
 const QUOTA_STATUSES: ReadonlySet<number> = new Set([
   40_200, // payment required
   40_203, // account cost limit exceeded
+  40_205, // duplicate-task hourly limit; worker retries cannot change the account policy
+  40_206, // duplicate-task daily limit; worker retries cannot change the account policy
   40_210, // insufficient account balance
 ]);
 
@@ -407,7 +407,10 @@ function toProviderTask(request: DataForSeoRankedKeywordsRequest): JsonRecord {
       "and",
       ["ranked_serp_element.serp_item.rank_group", "<=", 20],
     ],
-    order_by: ["keyword_data.keyword_info.search_volume,desc"],
+    order_by: [
+      "keyword_data.keyword_info.search_volume,desc",
+      "ranked_serp_element.serp_item.rank_group,asc",
+    ],
     limit: request.limit,
   };
 }

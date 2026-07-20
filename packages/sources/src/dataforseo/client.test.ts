@@ -100,7 +100,10 @@ describe("HttpDataForSeoClient", () => {
           "and",
           ["ranked_serp_element.serp_item.rank_group", "<=", 20],
         ],
-        order_by: ["keyword_data.keyword_info.search_volume,desc"],
+        order_by: [
+          "keyword_data.keyword_info.search_volume,desc",
+          "ranked_serp_element.serp_item.rank_group,asc",
+        ],
         limit: 200,
       },
     ]);
@@ -160,6 +163,9 @@ describe("HttpDataForSeoClient", () => {
     [40_100, "AUTH_REQUIRED"],
     [40_103, "UNAVAILABLE"],
     [40_202, "RATE_LIMITED"],
+    [40_209, "RATE_LIMITED"],
+    [40_205, "QUOTA_EXCEEDED"],
+    [40_206, "QUOTA_EXCEEDED"],
     [40_207, "PERMISSION_DENIED"],
     [40_210, "QUOTA_EXCEEDED"],
     [40_005, "INVALID_CONFIGURATION"],
