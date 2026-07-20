@@ -59,6 +59,29 @@ function snapshotManifestEntry(s: DataSnapshotRow) {
   };
 }
 
+/**
+ * A diagnostic manifest may freeze one snapshot per provider and only one
+ * provider for the canonical keyword-gap dataset slot. Enforcing this on the
+ * server keeps direct API clients from double-counting CSV and DataForSEO rows.
+ */
+export function assertDiagnosticSnapshotSelection(
+  snapshots: readonly Pick<DataSnapshotRow, "provider">[],
+): void {
+  const providers = snapshots.map((snapshot) => snapshot.provider);
+  if (new Set(providers).size !== providers.length) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Select at most one snapshot per provider.",
+    );
+  }
+  if (providers.includes("csv") && providers.includes("dataforseo")) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Select at most one snapshot for the keyword-gap dataset.",
+    );
+  }
+}
+
 function replay(
   row: {
     request_hash: string;
@@ -176,15 +199,9 @@ export async function createDiagnosticRun(
       "A crawl snapshot is required to diagnose.",
     );
   }
-  // At most one snapshot per provider — two crawl snapshots would merge into the
-  // same observation maps in unspecified order (evidence-honesty risk).
-  const providers = snapshots.map((s) => s.provider);
-  if (new Set(providers).size !== providers.length) {
-    throw new ProblemError(
-      "VALIDATION_ERROR",
-      "Select at most one snapshot per provider.",
-    );
-  }
+  // Two provider snapshots for one logical dataset would merge observations in
+  // unspecified order and can double-count evidence.
+  assertDiagnosticSnapshotSelection(snapshots);
 
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
@@ -291,13 +308,7 @@ export async function createDiagnosticRun(
           "A crawl snapshot is required to diagnose.",
         );
       }
-      const currentProviders = currentSnapshots.map((snapshot) => snapshot.provider);
-      if (new Set(currentProviders).size !== currentProviders.length) {
-        throw new ProblemError(
-          "VALIDATION_ERROR",
-          "Select at most one snapshot per provider.",
-        );
-      }
+      assertDiagnosticSnapshotSelection(currentSnapshots);
 
       const orderedCurrentSnapshots = [...currentSnapshots].sort((a, b) =>
         a.id < b.id ? -1 : 1,

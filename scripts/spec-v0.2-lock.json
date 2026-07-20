@@ -4,7 +4,7 @@
   "contractVersion": "2026-07-18",
   "authorityFiles": {
     "README.md": "f5a95d5c4273049e9f04fbf0d59b9402045980a08f4c15f6dd5014e5d37a5e0c",
-    "MVP-IMPLEMENTATION-SPEC.md": "108df52eb0c8682b0bf4179b930b4978c9edd3506540aa891c6493a05c724250",
+    "MVP-IMPLEMENTATION-SPEC.md": "8c189bbbe37fa705a4f974bf234751556528daedce6788339c5d391fd8e1397b",
     "openapi.yaml": "257d9e9cccf57dd2fcf7449d9028d87c4f817c24409c7d6f064041019375999e",
     "schema.sql": "539cb40a002f47a60e73862395d6621c09b6c2f1e22e783f9cc0673f8404ad36",
     "schemas/service-bundle-manifest.schema.json": "55ccf46ef54e6d62dc30834fd04aa341270a7e6613b392e136fbb46ef7ff678e",

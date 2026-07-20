@@ -248,8 +248,10 @@ export function isRunTerminal(status: RunStatus): boolean {
 
 /**
  * The snapshot ids a diagnostic run should freeze: the latest snapshot per
- * provider (by `capturedAt`). The crawl snapshot is included when present; the
- * server rejects a run without one (422 `CRAWL_SNAPSHOT_REQUIRED`).
+ * provider (by `capturedAt`). CSV and DataForSEO share one canonical keyword-gap
+ * dataset slot, so only the newest usable one is retained (DataForSEO wins an
+ * exact timestamp tie). The crawl snapshot is included when present; the server
+ * rejects a run without one (422 `CRAWL_SNAPSHOT_REQUIRED`).
  */
 export function selectLatestSnapshotIds(
   snapshots: readonly DataSnapshot[],
@@ -260,6 +262,21 @@ export function selectLatestSnapshotIds(
     if (current === undefined || snapshot.capturedAt > current.capturedAt) {
       latest.set(snapshot.provider, snapshot);
     }
+  }
+
+  const csv = latest.get("csv");
+  const dataForSeo = latest.get("dataforseo");
+  if (csv !== undefined && dataForSeo !== undefined) {
+    const isUsable = (snapshot: DataSnapshot) =>
+      snapshot.availability === "available" ||
+      snapshot.availability === "partial";
+    const csvUsable = isUsable(csv);
+    const dataForSeoUsable = isUsable(dataForSeo);
+    const preferDataForSeo =
+      dataForSeoUsable !== csvUsable
+        ? dataForSeoUsable
+        : dataForSeo.capturedAt >= csv.capturedAt;
+    latest.delete(preferDataForSeo ? "csv" : "dataforseo");
   }
   return Array.from(latest.values(), (snapshot) => snapshot.id);
 }

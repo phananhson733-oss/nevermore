@@ -94,4 +94,45 @@ describe("Diagnosis pagination", () => {
       ]),
     ).toEqual(["crawl-latest", "ga4-latest"]);
   });
+
+  it("freezes only one usable snapshot for the shared keyword-gap slot", () => {
+    const snapshot = (
+      id: string,
+      provider: "csv" | "dataforseo",
+      capturedAt: string,
+      availability: DataSnapshot["availability"] = "available",
+    ): DataSnapshot => ({
+      id,
+      provider,
+      datasetKey: "csv.keyword_gap.v1",
+      capturedAt,
+      availability,
+      limitation: "",
+      rowCount: 1,
+    });
+
+    expect(
+      selectLatestSnapshotIds([
+        snapshot("csv-old", "csv", "2026-07-18T00:00:00.000Z"),
+        snapshot("dfs-new", "dataforseo", "2026-07-20T00:00:00.000Z"),
+      ]),
+    ).toEqual(["dfs-new"]);
+    expect(
+      selectLatestSnapshotIds([
+        snapshot("csv-usable", "csv", "2026-07-18T00:00:00.000Z"),
+        snapshot(
+          "dfs-unavailable",
+          "dataforseo",
+          "2026-07-20T00:00:00.000Z",
+          "unavailable",
+        ),
+      ]),
+    ).toEqual(["csv-usable"]);
+    expect(
+      selectLatestSnapshotIds([
+        snapshot("csv-tie", "csv", "2026-07-20T00:00:00.000Z"),
+        snapshot("dfs-tie", "dataforseo", "2026-07-20T00:00:00.000Z"),
+      ]),
+    ).toEqual(["dfs-tie"]);
+  });
 });

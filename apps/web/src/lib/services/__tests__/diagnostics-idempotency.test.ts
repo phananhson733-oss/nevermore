@@ -18,7 +18,8 @@ vi.mock("@sf/db", async () => {
 vi.mock("@/lib/db", () => ({ getDb: () => ({ db: {} }) }));
 vi.mock("@/lib/boss", () => ({ getBoss: vi.fn() }));
 
-const { createDiagnosticRun } = await import("../diagnostics.ts");
+const { assertDiagnosticSnapshotSelection, createDiagnosticRun } =
+  await import("../diagnostics.ts");
 
 const workspaceId = "00000000-0000-4000-8000-000000000011";
 const projectId = "00000000-0000-4000-8000-000000000012";
@@ -140,5 +141,30 @@ describe("createDiagnosticRun wire-body idempotency", () => {
         outputLocale: "en",
       }),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED", status: 409 });
+  });
+});
+
+describe("diagnostic snapshot selection", () => {
+  it("rejects CSV and DataForSEO in the same keyword-gap slot", () => {
+    expect(() =>
+      assertDiagnosticSnapshotSelection([
+        { provider: "crawl" },
+        { provider: "csv" },
+        { provider: "dataforseo" },
+      ]),
+    ).toThrow(
+      expect.objectContaining({ code: "VALIDATION_ERROR", status: 422 }),
+    );
+  });
+
+  it("allows one keyword-gap provider alongside the other canonical providers", () => {
+    expect(() =>
+      assertDiagnosticSnapshotSelection([
+        { provider: "crawl" },
+        { provider: "gsc" },
+        { provider: "ga4" },
+        { provider: "dataforseo" },
+      ]),
+    ).not.toThrow();
   });
 });
