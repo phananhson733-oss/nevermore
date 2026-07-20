@@ -130,6 +130,7 @@ function ruleStatusTone(status: RuleStatus): StatusTone {
 
 /** Which hard gate (if any) is blocking a run — drives the disabled explanation. */
 type RunGate = "context" | "crawl" | null;
+type SnapshotReadState = "loading" | "error" | "ready";
 
 interface RunHeaderProps {
   readonly projectId: string;
@@ -139,6 +140,7 @@ interface RunHeaderProps {
   readonly polling: boolean;
   readonly pending: boolean;
   readonly runStatus: RunStatus | null;
+  readonly snapshotReadState: SnapshotReadState;
   readonly statusPollError: boolean;
   readonly statusPollRetrying: boolean;
   readonly notice: {
@@ -157,6 +159,7 @@ function RunHeader({
   polling,
   pending,
   runStatus,
+  snapshotReadState,
   statusPollError,
   statusPollRetrying,
   notice,
@@ -179,6 +182,13 @@ function RunHeader({
       : gate === "crawl"
         ? t("needsCrawl")
         : null;
+  const snapshotReadText =
+    snapshotReadState === "loading"
+      ? `${tNav("sources")}: ${tCommon("loading")}`
+      : snapshotReadState === "error"
+        ? `${tNav("sources")}: ${tCommon("error")}`
+        : null;
+  const runNote = gateText ?? snapshotReadText;
   return (
     <header className={styles.header}>
       <div className={styles.headerText}>
@@ -190,7 +200,7 @@ function RunHeader({
           variant="primary"
           onClick={onRun}
           disabled={!canRun}
-          aria-describedby={gateText ? noteId : undefined}
+          aria-describedby={runNote ? noteId : undefined}
         >
           {(polling || pending) && (
             <Spinner
@@ -209,9 +219,16 @@ function RunHeader({
             </StatusPill>
           </span>
         ) : null}
-        {gateText ? (
+        {runNote ? (
           <p id={noteId} className={styles.runNote}>
-            {gateText}
+            {snapshotReadState === "loading" && gateText === null ? (
+              <Spinner
+                size="sm"
+                label={snapshotReadText ?? tCommon("loading")}
+                className={styles.btnSpinner}
+              />
+            ) : null}
+            {runNote}
             {gate === "context" ? (
               <>
                 {" "}
@@ -651,7 +668,14 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
   async function onRun(): Promise<void> {
     const snaps = snapshots.data;
     const proj = project.data;
-    if (snaps === undefined || proj == null) return;
+    if (
+      snapshots.isError ||
+      snapshots.isFetching ||
+      snaps === undefined ||
+      proj == null
+    ) {
+      return;
+    }
     setNotice(null);
     try {
       const accepted = await createRun.mutateAsync({
@@ -665,8 +689,10 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
     }
   }
 
-  // Whole-screen loading / error mirror the overview conventions.
-  if (findings.isLoading || project.isLoading || snapshots.isLoading) {
+  // Project and findings own the visible Diagnosis read model. The complete
+  // snapshot cursor chain is only a run precondition, so it must not hold the
+  // already-available diagnosis body behind a whole-screen spinner.
+  if (findings.isLoading || project.isLoading) {
     return (
       <div className={styles.state}>
         <Spinner size="lg" label={tCommon("loading")} />
@@ -678,13 +704,10 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
   if (
     (findings.isError && findingEnvelope === undefined) ||
     project.error !== null ||
-    snapshots.error !== null ||
     findingEnvelope === undefined ||
-    project.data === undefined ||
-    snapshots.data === undefined
+    project.data === undefined
   ) {
-    const screenError =
-      findings.error ?? project.error ?? snapshots.error ?? new Error("unknown");
+    const screenError = findings.error ?? project.error ?? new Error("unknown");
     return (
       <div className={styles.state}>
         <ProblemState
@@ -707,15 +730,25 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
   const hasEverRun = latestRun !== null;
 
   const contextComplete = project.data.contextStatus === "complete";
-  const crawlReady = hasCrawlSnapshot(snapshots.data);
+  // A failed snapshot read is never treated as a known-empty list. Keeping it
+  // distinct from `ready` prevents both a false "needs crawl" message and a
+  // diagnostic run based on an incomplete/unknown input manifest.
+  const snapshotReadState: SnapshotReadState = snapshots.isError
+    ? "error"
+    : snapshots.data === undefined || snapshots.isFetching
+      ? "loading"
+      : "ready";
+  const crawlReady =
+    snapshotReadState === "ready" && hasCrawlSnapshot(snapshots.data ?? []);
   const polling = activeRunId !== null;
   const gate: RunGate = !contextComplete
     ? "context"
-    : !crawlReady
+    : snapshotReadState === "ready" && !crawlReady
       ? "crawl"
       : null;
   const canRun = Boolean(
     contextComplete &&
+    snapshotReadState === "ready" &&
     crawlReady &&
     !polling &&
     !createRun.isPending,
@@ -734,12 +767,19 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
         polling={polling}
         pending={createRun.isPending}
         runStatus={headerRunStatus}
+        snapshotReadState={snapshotReadState}
         statusPollError={polling && runQuery.isError}
         statusPollRetrying={runQuery.isFetching}
         notice={notice}
         onRun={() => void onRun()}
         onRetryStatus={() => void onRetryStatus()}
       />
+      {snapshotReadState === "error" ? (
+        <ProblemState
+          error={snapshots.error ?? new Error("unknown")}
+          onRetry={() => void refetchSnapshots()}
+        />
+      ) : null}
       {coverage !== null ? <CoveragePanel coverage={coverage} /> : null}
       <RuleBoard rules={ruleResults} />
       <FindingsSection
