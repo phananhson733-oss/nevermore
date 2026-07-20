@@ -159,6 +159,57 @@ describe("HttpDataForSeoClient", () => {
     });
   });
 
+  it("accepts the successful null-count empty shape returned by Labs", async () => {
+    const client = new HttpDataForSeoClient({
+      login: "fixture-login",
+      password: "fixture-password",
+      fetchImpl: async () =>
+        jsonResponse({
+          status_code: 20_000,
+          cost: 0.012,
+          tasks: [
+            {
+              status_code: 20_000,
+              cost: 0.012,
+              result_count: 1,
+              result: [
+                {
+                  total_count: null,
+                  items_count: 0,
+                  items: null,
+                },
+              ],
+            },
+          ],
+        }),
+    });
+
+    await expect(client.rankedKeywords(REQUEST)).resolves.toEqual({
+      rows: [],
+      totalCount: 0,
+      itemsCount: 0,
+      costUsd: 0.012,
+      providerStatusCode: 20_000,
+      taskStatusCode: 20_000,
+    });
+  });
+
+  it("rejects a null total when the provider also returns rows", async () => {
+    const payload = successEnvelope() as {
+      tasks: Array<{ result: Array<{ total_count: number | null }> }>;
+    };
+    payload.tasks[0]!.result[0]!.total_count = null;
+    const client = new HttpDataForSeoClient({
+      login: "fixture-login",
+      password: "fixture-password",
+      fetchImpl: async () => jsonResponse(payload),
+    });
+
+    await expect(client.rankedKeywords(REQUEST)).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+    });
+  });
+
   it.each([
     [40_100, "AUTH_REQUIRED"],
     [40_103, "UNAVAILABLE"],

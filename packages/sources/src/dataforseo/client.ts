@@ -346,10 +346,6 @@ function parseResponse(payload: unknown): DataForSeoRankedKeywordsResponse {
   }
 
   const result = asRecord(task.result[0], "DataForSEO ranked-keywords result");
-  const totalCount = asNonNegativeInteger(
-    result.total_count,
-    "DataForSEO result total_count",
-  );
   const rawItems = result.items;
   if (rawItems !== null && rawItems !== undefined && !Array.isArray(rawItems)) {
     throw new SourceError(
@@ -371,6 +367,23 @@ function parseResponse(payload: unknown): DataForSeoRankedKeywordsResponse {
       "DataForSEO result items_count did not match the returned items.",
     );
   }
+  // A successful Labs response with no matching rows uses the observed shape
+  // `total_count: null`, `items_count: 0`, `items: null` rather than the
+  // documented no-results task status. Treat only that internally consistent
+  // shape as an honest empty result; populated or contradictory responses must
+  // still provide an integer total.
+  const totalCount =
+    result.total_count === null || result.total_count === undefined
+      ? itemsCount === 0 && rows.length === 0
+        ? 0
+        : asNonNegativeInteger(
+            result.total_count,
+            "DataForSEO result total_count",
+          )
+      : asNonNegativeInteger(
+          result.total_count,
+          "DataForSEO result total_count",
+        );
   if (totalCount < rows.length) {
     throw new SourceError(
       "INVALID_RESPONSE",
