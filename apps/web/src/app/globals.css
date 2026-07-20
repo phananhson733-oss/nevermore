@@ -61,6 +61,8 @@
     "Times New Roman", serif;
   --sf-font-body: var(--font-manrope), "Manrope", "Manrope Variable", system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sf-font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono",
+    Consolas, "Liberation Mono", monospace;
   --sf-font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   --sf-text-xs: 12px;
   --sf-text-sm: 13px;
