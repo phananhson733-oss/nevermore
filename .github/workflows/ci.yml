@@ -184,15 +184,15 @@ jobs:
           pnpm db:migrate
 
       - name: Run database-backed responsive and a11y E2E
-        run: pnpm test:e2e:real --update-snapshots
+        run: pnpm test:e2e:real
 
-      - name: Preserve generated Linux visual baselines
-        if: ${{ always() }}
+      - name: Preserve failed real browser visual comparisons
+        if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: linux-visual-baselines
-          path: e2e/real-vertical-chains.spec.ts-snapshots/*-linux.png
-          if-no-files-found: error
+          name: failed-real-e2e-visuals-${{ github.run_id }}
+          path: test-results/**/*.png
+          if-no-files-found: ignore
           retention-days: 3
 
       - name: Drop isolated real browser E2E database
