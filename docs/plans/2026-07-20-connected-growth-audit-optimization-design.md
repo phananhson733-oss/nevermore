@@ -157,7 +157,7 @@ flowchart LR
 
 ## 8. Finding Review 与统一增长计划
 
-Nevermore 当前五个诊断域继续作为 Action 归类主轴：
+Nevermore 当前五个诊断域继续作为首阶段 Action 归类主轴：
 
 - `technical_seo`；
 - `search_performance`；
@@ -165,7 +165,7 @@ Nevermore 当前五个诊断域继续作为 Action 归类主轴：
 - `conversion_journey`；
 - `geo_ai`。
 
-综合审计八面与 A0–A14 是诊断 Taxonomy，通过映射进入上述业务域，不再建立一套平行 Finding 表。
+综合审计八面与 A0–A14 是诊断 Taxonomy，不再建立一套平行 Finding 表。它们只有在存在明确整改语义和确定性 Action Template 时才映射到行动域。Accessibility、Security/Reliability、Compliance 不能为了复用现有五域而伪装成普通 SEO；当这些 Finding 进入整改阶段时，v0.3 合同应显式增加 `accessibility`、`security_reliability`、`compliance` 行动域。报告分类、技术检查分类和行动分类保持三层独立。
 
 ### 8.1 Finding Review 状态
 
@@ -281,6 +281,7 @@ Action 使用可解释的优先级投影：
 ### 12.2 最小新增对象
 
 - `capability_runs`：与 `async_runs` 一对一扩展，记录 capability/version、输入 Manifest Hash、模式、结果引用与副作用范围；
+- `audit_runs` / `audit_module_results`：完整审计范围、八面模块状态、nullable score、测量/No Data 计数与来源摘要；运行状态仍由 `async_runs` 独占，不复制队列状态机；
 - `site_pages` / `page_snapshots`：URL 当前投影与不可变抓取快照；
 - `competitors` / `competitor_snapshots`；
 - `topics`、`search_queries`、`generative_queries` 与各自 Metric Snapshot；
@@ -321,7 +322,7 @@ Web 只创建 Run 与队列任务，不能直接运行任意脚本。Job Payload
 
 ### Phase 2 — Finding Review 与统一 Growth Plan
 
-- 标准化诊断 Taxonomy 到 Nevermore 五个业务域；
+- 保持报告、A0–A14 检查与 Action Domain 三层 Taxonomy；首阶段复用五域，Accessibility/Security/Compliance 有整改模板后显式扩域；
 - 加入 confirmed/needs_data/dismissed Review Event；
 - 把确认 Finding 转为跨域 Action；
 - 复用当前三类 Artifact 完成首条“技术问题 → 工单 → 复测”Vertical Slice。
