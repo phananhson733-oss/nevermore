@@ -93,9 +93,13 @@ function evaluate(ctx: DiagnosticContext): RuleResult {
   const severity: Severity = entityGap && proofGap && anyPriority ? "high" : "medium";
 
   const claim =
-    `Of ${selected.length} priority/commercial page(s), ${entityMissingCount} expose no ` +
-    `structured entity types and ${proofCount} contain a proof block ` +
-    `(proof coverage ${Math.round(proofCoverageRatio * 100)}%).`;
+    entityMissingCount === 0
+      ? `Of ${selected.length} priority/commercial page(s), all expose at least one ` +
+        `structured entity type; ${proofCount} contain a proof block ` +
+        `(proof coverage ${Math.round(proofCoverageRatio * 100)}%).`
+      : `Of ${selected.length} priority/commercial page(s), ${entityMissingCount} expose no ` +
+        `structured entity types and ${proofCount} contain a proof block ` +
+        `(proof coverage ${Math.round(proofCoverageRatio * 100)}%).`;
 
   const candidate: FindingCandidate = {
     subjectRefs: [PAGE_SET_REF],
