@@ -399,7 +399,7 @@ function EvidenceRow({
 }) {
   const t = useTranslations("report");
   return (
-    <li className={styles.evidenceRow}>
+    <li className={styles.evidenceRow} data-report-evidence-row="">
       <div className={styles.evidenceHead}>
         <Badge tone={gradeTone(grade)}>{t("gradeLabel", { grade })}</Badge>
         <span className={styles.evidenceClaim}>{claim}</span>

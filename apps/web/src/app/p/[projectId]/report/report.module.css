@@ -15,7 +15,10 @@
 }
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  /* The app shell already reserves 252px for navigation. Keep the delivery
+   * rail useful without letting a fixed 300–340px track squeeze the actual
+   * report canvas at common desktop widths. */
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.32fr);
   align-items: start;
   gap: 20px;
   max-width: 1280px;
@@ -414,8 +417,8 @@
 .findingCard {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
-  gap: 14px;
-  padding: 18px 0;
+  gap: 12px;
+  padding: 14px 0;
   border-bottom: 1px solid var(--sf-border);
 }
 .findingOrdinal {
@@ -429,7 +432,7 @@
 .findingBody {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 .actionCard {
@@ -460,7 +463,7 @@
   font-size: var(--sf-text-xs);
   font-weight: 700;
   color: var(--sf-muted);
-  line-height: 1.4;
+  line-height: 1.3;
 }
 .actionTitle {
   font-size: var(--sf-text-base);
@@ -471,6 +474,7 @@
   margin: 0;
   font-size: var(--sf-text-sm);
   color: var(--sf-muted);
+  line-height: 1.35;
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -481,8 +485,8 @@
 .evidence {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding-top: 9px;
+  gap: 5px;
+  padding-top: 7px;
   border-top: 1px solid var(--sf-border);
 }
 .evidenceLabel {
@@ -498,15 +502,15 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 196px), 1fr));
+  gap: 6px;
 }
 .evidenceRow {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 7px 9px;
   background: var(--sf-surface-deep);
   border-radius: var(--sf-radius-chip);
 }
@@ -963,7 +967,10 @@
   border: 0;
 }
 
-@media (max-width: 1240px) {
+/* Below this viewport the 252px project nav leaves too little room for a
+ * trustworthy two-column report. Stack the delivery controls instead of
+ * preserving the rail at the document's expense. */
+@media (max-width: 1400px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1055,12 +1062,30 @@
   .findingCard {
     grid-template-columns: 30px minmax(0, 1fr);
     gap: 9px;
+    padding: 18px 0;
   }
   .findingOrdinal {
     font-size: var(--sf-text-lg);
   }
+  .findingBody {
+    gap: 8px;
+  }
+  .contentLocale {
+    line-height: 1.4;
+  }
+  .scope {
+    line-height: normal;
+  }
+  .evidence {
+    gap: 7px;
+    padding-top: 9px;
+  }
   .evidenceList {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .evidenceRow {
+    gap: 4px;
+    padding: 9px 10px;
   }
   .manifest {
     padding: 14px;

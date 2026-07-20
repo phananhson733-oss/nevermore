@@ -227,6 +227,33 @@
   flex-direction: column;
   gap: 12px;
 }
+/* When real evidence parks every action in a lane, the lane still tells the
+ * truth without repeating the same large warning seven times.
+ * The shared explanation stays immediately above the responsive card set. */
+.laneBlockedNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 9px 12px;
+  border-left: 3px solid var(--sf-coral);
+  border-radius: var(--sf-radius-control);
+  background: var(--sf-coral-soft);
+  color: var(--sf-fg);
+  font-size: var(--sf-text-sm);
+  line-height: 1.45;
+}
+/* Keep canonical lanes as vertical columns. Only the single populated,
+ * all-blocked lane becomes a compact editorial card grid. */
+.board[data-lane-count="1"] .laneBodyBlockedGroup {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, 320px), 1fr)
+  );
+  align-items: start;
+}
 .laneEmpty {
   margin: 0;
   padding: 16px;

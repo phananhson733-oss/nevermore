@@ -58,8 +58,10 @@ function action(index: number, roadmapLane: "now" | "next" | "later") {
 function reportFixture(options?: {
   readonly empty?: boolean;
   readonly singleLane?: boolean;
+  readonly longContent?: boolean;
 }) {
   const empty = options?.empty === true;
+  const longContent = options?.longContent === true;
   const roadmapLanes: readonly ("now" | "next" | "later")[] =
     options?.singleLane === true
       ? ["later", "later", "later", "later", "later", "later", "later"]
@@ -101,7 +103,29 @@ function reportFixture(options?: {
           : "Coverage is bounded to the available source window.",
       ],
     },
-    findings: empty ? [] : [1, 2, 3, 4, 5].map(finding),
+    findings: empty
+      ? []
+      : [1, 2, 3, 4, 5].map((index) => {
+          const canonicalFinding = finding(index);
+          if (!longContent) return canonicalFinding;
+          return {
+            ...canonicalFinding,
+            summary: `${canonicalFinding.summary} It also explains the affected journey and the bounded operator decision without replacing canonical evidence.`,
+            evidence: [1, 2, 3].map((evidenceIndex) => ({
+              id: `evidence-${index}-${evidenceIndex}`,
+              origin: "crawl",
+              method: "crawler.http.v1",
+              grade: "A",
+              availability: "available",
+              support: "direct",
+              claim: `Canonical signal ${evidenceIndex} for finding ${index} remains traceable to its captured URL set.`,
+              limitation:
+                "Coverage remains bounded to the captured source window.",
+              sourceSnapshotId: `snapshot-${index}`,
+              analysisInvocationId: null,
+            })),
+          };
+        }),
     // The deliberately mixed order proves that visual lane placement does not
     // mutate the canonical server order in the DOM/export projection.
     actions: empty
@@ -160,9 +184,10 @@ test("desktop uses a delivery-document cover, editorial findings, and a compact 
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await serveReport(page, reportFixture());
+  await serveReport(page, reportFixture({ longContent: true }));
   await openReport(page);
 
+  const workspace = page.locator("[data-report-workspace]");
   const reportDocument = page.locator("[data-report-document]");
   const cover = reportDocument.locator("[data-report-cover]");
   const coverSummary = reportDocument.locator("[data-report-cover-summary]");
@@ -184,9 +209,55 @@ test("desktop uses a delivery-document cover, editorial findings, and a compact 
     "[data-report-findings-list] > article",
   );
   await expect(findingRows).toHaveCount(5);
-  const firstFindingBox = await findingRows.first().boundingBox();
-  expect(firstFindingBox).not.toBeNull();
-  expect(firstFindingBox!.width).toBeGreaterThan(firstFindingBox!.height * 2);
+
+  const layout = await workspace.evaluate((node) => {
+    const documentNode = node.querySelector<HTMLElement>(
+      "[data-report-document]",
+    );
+    const railNode = node.querySelector<HTMLElement>(
+      "[data-report-manifest-rail]",
+    );
+    const findingsNode = node.querySelector<HTMLElement>(
+      "[data-report-findings-list]",
+    );
+    if (documentNode === null || railNode === null || findingsNode === null) {
+      throw new Error("Report layout landmarks are missing");
+    }
+    const workspaceBox = node.getBoundingClientRect();
+    const documentBox = documentNode.getBoundingClientRect();
+    const railBox = railNode.getBoundingClientRect();
+    const findingsBox = findingsNode.getBoundingClientRect();
+    return {
+      documentShare: documentBox.width / workspaceBox.width,
+      railShare: railBox.width / workspaceBox.width,
+      findingsAspect: findingsBox.height / findingsBox.width,
+      documentFits: documentNode.scrollWidth <= documentNode.clientWidth,
+      railFits: railNode.scrollWidth <= railNode.clientWidth,
+    };
+  });
+  // Keep a generous cross-platform cushion around the intended ~74/24 split;
+  // Linux font metrics and scrollbar gutters must not turn this into a pixel test.
+  expect(layout.documentShare).toBeGreaterThan(0.68);
+  expect(layout.railShare).toBeLessThan(0.3);
+  expect(layout.findingsAspect).toBeLessThan(2.75);
+  expect(layout.documentFits).toBe(true);
+  expect(layout.railFits).toBe(true);
+
+  const firstEvidenceRows = findingRows
+    .first()
+    .locator("[data-report-evidence-row]");
+  await expect(firstEvidenceRows).toHaveCount(3);
+  const evidenceList = firstEvidenceRows.first().locator("xpath=..");
+  const evidenceColumns = await evidenceList.evaluate(
+    (node) => getComputedStyle(node).gridTemplateColumns,
+  );
+  expect(evidenceColumns.trim().split(/\s+/)).toHaveLength(3);
+  const evidenceRows = await firstEvidenceRows.evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      fits: node.scrollWidth <= node.clientWidth,
+    })),
+  );
+  expect(evidenceRows.every((row) => row.fits)).toBe(true);
 
   const roadmap = reportDocument.locator("[data-report-roadmap]");
   const roadmapColumns = await roadmap.evaluate(
@@ -225,7 +296,7 @@ test("desktop uses a delivery-document cover, editorial findings, and a compact 
 
   const documentBox = await reportDocument.boundingBox();
   expect(documentBox).not.toBeNull();
-  expect(documentBox!.height).toBeLessThan(4300);
+  expect(documentBox!.height / documentBox!.width).toBeLessThan(5.5);
 });
 
 test("390px stacks the roadmap and export rail without horizontal overflow", async ({

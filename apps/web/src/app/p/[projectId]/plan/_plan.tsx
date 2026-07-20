@@ -343,9 +343,19 @@ interface ActionCardProps {
   readonly projectId: string;
   readonly action: Action;
   readonly onConflict: () => void;
+  /** A lane-level note can own the repeated explanation for an all-blocked set. */
+  readonly showBlockedExplanation?: boolean;
+  /** Associates a visually deduplicated lane explanation with this card. */
+  readonly blockedExplanationId?: string;
 }
 
-function ActionCard({ projectId, action, onConflict }: ActionCardProps) {
+function ActionCard({
+  projectId,
+  action,
+  onConflict,
+  showBlockedExplanation = true,
+  blockedExplanationId,
+}: ActionCardProps) {
   const t = useTranslations("plan");
   const tStatus = useTranslations("actionStatus");
   const tPriority = useTranslations("priorityBand");
@@ -356,6 +366,10 @@ function ActionCard({ projectId, action, onConflict }: ActionCardProps) {
     <Card
       padding="md"
       className={cx(styles.actionCard, isBlocked && styles.actionCardBlocked)}
+      role="article"
+      data-testid="plan-action-card"
+      data-action-status={action.status}
+      aria-describedby={isBlocked ? blockedExplanationId : undefined}
     >
       <div className={styles.actionTopline}>
         <StatusPill tone={PRIORITY_TONE[action.priorityBand]}>
@@ -369,7 +383,7 @@ function ActionCard({ projectId, action, onConflict }: ActionCardProps) {
       <h3 className={styles.actionTitle}>{action.title}</h3>
       <p className={styles.actionDesc}>{action.description}</p>
 
-      {isBlocked ? (
+      {isBlocked && showBlockedExplanation ? (
         <p className={styles.blockedNote}>
           <span className={styles.blockedLabel}>{t("blocked")}</span>
           {t("blockedExplanation")}
@@ -439,6 +453,12 @@ function LaneColumn({
 }: LaneColumnProps) {
   const t = useTranslations("plan");
   const tLane = useTranslations("lane");
+  const sharesBlockedExplanation =
+    !hasMore &&
+    actions.length > 1 &&
+    actions.every((action) => action.status === "blocked");
+  const sharedBlockedExplanationId = `plan-${lane}-blocked-explanation`;
+
   return (
     <Panel
       padding="lg"
@@ -460,7 +480,24 @@ function LaneColumn({
           <span className={styles.laneWindow}>{t(LANE_WINDOW_KEY[lane])}</span>
         </div>
       </header>
-      <div className={styles.laneBody}>
+      {sharesBlockedExplanation ? (
+        <p
+          id={sharedBlockedExplanationId}
+          role="note"
+          className={styles.laneBlockedNote}
+          data-testid="plan-lane-blocked-note"
+        >
+          <span className={styles.blockedLabel}>{t("blocked")}</span>
+          <span>{t("blockedExplanation")}</span>
+        </p>
+      ) : null}
+      <div
+        className={cx(
+          styles.laneBody,
+          sharesBlockedExplanation && styles.laneBodyBlockedGroup,
+        )}
+        data-testid="plan-lane-actions"
+      >
         {actions.length === 0 ? (
           <p className={styles.laneEmpty}>
             {hasMore ? t("laneEmptyPartial") : t("laneEmpty")}
@@ -472,6 +509,10 @@ function LaneColumn({
               projectId={projectId}
               action={action}
               onConflict={onConflict}
+              showBlockedExplanation={!sharesBlockedExplanation}
+              {...(sharesBlockedExplanation
+                ? { blockedExplanationId: sharedBlockedExplanationId }
+                : {})}
             />
           ))
         )}

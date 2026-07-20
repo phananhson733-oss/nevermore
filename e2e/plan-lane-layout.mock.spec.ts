@@ -105,3 +105,69 @@ test("multiple populated delivery lanes retain the canonical three-column order"
   expect(laneBoxes[0]!.x).toBeLessThan(laneBoxes[1]!.x);
   expect(laneBoxes[1]!.x).toBeLessThan(laneBoxes[2]!.x);
 });
+
+test("seven blocked actions share one honest reason and form a responsive dense lane", async ({
+  page,
+}) => {
+  const blockedActions = Array.from({ length: 7 }, (_, index) => ({
+    ...actionFixture("later", index),
+    status: "blocked",
+  }));
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installPlanActionsApi(page, blockedActions);
+  await page.goto(`/p/${E2E_PROJECT_ID}/plan`);
+
+  const board = page.getByTestId("plan-board");
+  const lane = board.getByRole("region", { name: /^Later —/ });
+  const cards = lane.getByTestId("plan-action-card");
+  const sharedNote = lane.getByTestId("plan-lane-blocked-note");
+  const laneActions = lane.getByTestId("plan-lane-actions");
+
+  await expect(board).toHaveAttribute("data-lane-count", "1");
+  await expect(cards).toHaveCount(7);
+  expect(
+    await cards.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-action-status")),
+    ),
+  ).toEqual(Array.from({ length: 7 }, () => "blocked"));
+  expect(
+    await cards.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("aria-describedby")),
+    ),
+  ).toEqual(
+    Array.from({ length: 7 }, () => "plan-later-blocked-explanation"),
+  );
+  await expect(sharedNote).toHaveCount(1);
+  await expect(sharedNote).toContainText("Blocked — waiting on data");
+  await expect(sharedNote).toContainText(
+    "Confidence was too low to schedule this action",
+  );
+  await expect(laneActions).toHaveCSS("display", "grid");
+
+  const blockedStatusPills = cards.getByText("Blocked", { exact: true });
+  await expect(blockedStatusPills).toHaveCount(7);
+  await expect(
+    cards.getByText("Blocked — waiting on data", { exact: true }),
+  ).toHaveCount(0);
+
+  const desktopColumns = await laneActions.evaluate(
+    (node) => getComputedStyle(node).gridTemplateColumns,
+  );
+  expect(desktopColumns.trim().split(/\s+/).length).toBeGreaterThan(1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(cards).toHaveCount(7);
+  await expect(sharedNote).toBeVisible();
+  await expect(laneActions).toHaveCSS("display", "grid");
+
+  const mobileColumns = await laneActions.evaluate(
+    (node) => getComputedStyle(node).gridTemplateColumns,
+  );
+  expect(mobileColumns.trim().split(/\s+/)).toHaveLength(1);
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
+});
