@@ -69,6 +69,8 @@ const DOMAIN_KEYS = [
   "geo_ai",
 ] as const;
 
+const ROADMAP_LANES = ["now", "next", "later"] as const;
+
 const MANIFEST_ITEM_ORDER = [
   "projects",
   "contexts",
@@ -355,7 +357,7 @@ function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
         </StatusPill>
       </div>
       <p className={styles.panelNote}>{t("dataCoverageNote")}</p>
-      <ul className={styles.domainList}>
+      <ul className={styles.domainList} data-report-coverage-grid="">
         {DOMAIN_KEYS.map((key) => {
           const meta = domainMeta(coverage.domains[key]);
           return (
@@ -411,46 +413,57 @@ function EvidenceRow({
   );
 }
 
-function FindingCard({ finding }: { readonly finding: Finding }) {
+function FindingCard({
+  finding,
+  index,
+}: {
+  readonly finding: Finding;
+  readonly index: number;
+}) {
   const t = useTranslations("report");
   const tDomain = useTranslations("domain");
   const scope = finding.subjectRefs[0];
   const keyEvidence = evidenceForFinding(finding.evidence).slice(0, 3);
   return (
     <article
-      className={styles.card}
+      className={styles.findingCard}
       data-report-finding-id={finding.id}
     >
-      <div className={styles.cardHead}>
-        <span className="sf-eyebrow">{tDomain(finding.domain)}</span>
-        <StatusPill tone={bandTone(finding.severity)}>
-          {t(`severity.${finding.severity}`)}
-        </StatusPill>
-      </div>
-      <span className={styles.contentLocale}>
-        {t("summaryContentLocale", { locale: finding.summaryLocale })}
+      <span className={styles.findingOrdinal} aria-hidden="true">
+        {String(index + 1).padStart(2, "0")}
       </span>
-      <p className={styles.cardSummary}>{finding.summary}</p>
-      {scope !== undefined ? (
-        <p className={styles.scope}>
-          {t("scope")}: <span className={styles.mono}>{scope.value}</span>
-        </p>
-      ) : null}
-      {keyEvidence.length > 0 ? (
-        <div className={styles.evidence}>
-          <p className={styles.evidenceLabel}>{t("keyEvidence")}</p>
-          <ul className={styles.evidenceList}>
-            {keyEvidence.map((item) => (
-              <EvidenceRow
-                key={item.id}
-                claim={item.claim}
-                grade={item.grade}
-                limitation={item.limitation}
-              />
-            ))}
-          </ul>
+      <div className={styles.findingBody}>
+        <div className={styles.cardHead}>
+          <span className="sf-eyebrow">{tDomain(finding.domain)}</span>
+          <StatusPill tone={bandTone(finding.severity)}>
+            {t(`severity.${finding.severity}`)}
+          </StatusPill>
         </div>
-      ) : null}
+        <span className={styles.contentLocale}>
+          {t("summaryContentLocale", { locale: finding.summaryLocale })}
+        </span>
+        <p className={styles.cardSummary}>{finding.summary}</p>
+        {scope !== undefined ? (
+          <p className={styles.scope}>
+            {t("scope")}: <span className={styles.mono}>{scope.value}</span>
+          </p>
+        ) : null}
+        {keyEvidence.length > 0 ? (
+          <div className={styles.evidence}>
+            <p className={styles.evidenceLabel}>{t("keyEvidence")}</p>
+            <ul className={styles.evidenceList}>
+              {keyEvidence.map((item) => (
+                <EvidenceRow
+                  key={item.id}
+                  claim={item.claim}
+                  grade={item.grade}
+                  limitation={item.limitation}
+                />
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
     </article>
   );
 }
@@ -474,9 +487,9 @@ function FindingsSection({
         </ReportSectionTitle>
       </div>
       <p className={styles.panelNote}>{t("findingsNote")}</p>
-      <div className={styles.cardList}>
-        {findings.map((finding) => (
-          <FindingCard key={finding.id} finding={finding} />
+      <div className={styles.cardList} data-report-findings-list="">
+        {findings.map((finding, index) => (
+          <FindingCard key={finding.id} finding={finding} index={index} />
         ))}
       </div>
     </Panel>
@@ -489,7 +502,7 @@ function ActionCard({ action }: { readonly action: Action }) {
   const t = useTranslations("report");
   const tPriority = useTranslations("priorityBand");
   return (
-    <article className={styles.card} data-report-action-id={action.id}>
+    <article className={styles.actionCard} data-report-action-id={action.id}>
       <div className={styles.cardHead}>
         <h3 className={styles.actionTitle}>{action.title}</h3>
         <StatusPill tone={bandTone(action.priorityBand)}>
@@ -511,6 +524,10 @@ function ActionCard({ action }: { readonly action: Action }) {
 function PlanSection({ actions }: { readonly actions: readonly Action[] }) {
   const t = useTranslations("report");
   const tLane = useTranslations("lane");
+  const activeLanes = ROADMAP_LANES.filter((lane) =>
+    actions.some((action) => action.roadmapLane === lane),
+  );
+  const laneLayout = activeLanes.join("-");
   return (
     <Panel
       className={styles.panel}
@@ -524,9 +541,37 @@ function PlanSection({ actions }: { readonly actions: readonly Action[] }) {
         </ReportSectionTitle>
       </div>
       <p className={styles.panelNote}>{t("planNote")}</p>
-      <div className={styles.lanes}>
+      <div
+        className={styles.roadmapLegend}
+        data-report-active-lanes={activeLanes.length}
+        aria-hidden="true"
+      >
+        {activeLanes.map((lane) => (
+          <div
+            key={lane}
+            className={styles.roadmapLegendItem}
+            data-report-roadmap-legend-item={lane}
+          >
+            <span>
+              {String(ROADMAP_LANES.indexOf(lane) + 1).padStart(2, "0")}
+            </span>
+            <strong>{tLane(lane)}</strong>
+            <small>{t(`laneCaption.${lane}`)}</small>
+          </div>
+        ))}
+      </div>
+      <div
+        className={styles.lanes}
+        data-report-roadmap=""
+        data-report-active-lanes={activeLanes.length}
+        data-report-lane-layout={laneLayout}
+      >
         {actions.map((action) => (
-          <div className={styles.lane} key={action.id}>
+          <div
+            className={styles.lane}
+            key={action.id}
+            data-report-roadmap-lane={action.roadmapLane}
+          >
             <div className={styles.laneHead}>
               <span className={styles.laneTitle}>
                 {tLane(action.roadmapLane)}
@@ -567,7 +612,7 @@ function ArtifactsSection({
       </div>
       <p className={styles.panelNote}>{t("artifactsNote")}</p>
       {ready.length > 0 ? (
-        <ul className={styles.artifactList}>
+        <ul className={styles.artifactList} data-report-output-list="">
           {ready.map((artifact) => (
             <li
               key={artifact.id}
@@ -647,7 +692,11 @@ function MethodologySection({ report }: { readonly report: Report }) {
           </ul>
         </div>
       ) : null}
-      <p className={styles.noPromise} role="note">
+      <p
+        className={styles.noPromise}
+        role="note"
+        data-report-decision-close=""
+      >
         {t("noPromise")}
       </p>
     </Panel>
@@ -960,6 +1009,7 @@ function ReportContent({
             <section
               className={styles.summaryStrip}
               aria-label={t("summaryTitle")}
+              data-report-cover-summary=""
             >
               <div className={styles.summaryCard}>
                 <span className={styles.summaryIcon}>
@@ -1002,7 +1052,10 @@ function ReportContent({
               </div>
             </section>
           ) : null}
-          <div className={styles.documentSections}>
+          <div
+            className={styles.documentSections}
+            data-report-document-sections=""
+          >
             <CoverageSection coverage={report.coverage} />
             {isEmpty ? (
               <Panel className={styles.emptyPanel} padding="lg">
