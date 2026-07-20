@@ -681,6 +681,11 @@ async function assertCanonicalVisualRegression(
 test.describe.serial(
   "real local app chain with an explicit offline Crawl/Google seam",
   () => {
+    // This suite intentionally mutates one guarded disposable database and
+    // proves the queue started empty. Retrying only the failed test would reuse
+    // pg-boss history from the first attempt and could never be a valid retry.
+    test.describe.configure({ retries: 0 });
+
     let db: DbHandle | undefined;
     let worker: WorkerRuntime | undefined;
 

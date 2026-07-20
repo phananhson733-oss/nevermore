@@ -41,11 +41,11 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
     toHaveScreenshot: {
-      // CI runs Chromium on Linux while product review runs on macOS. The
-      // bundled web fonts keep layout stable; a small pixel ratio absorbs only
-      // platform rasterisation noise while still failing structural drift.
+      // Playwright documents that browser rendering and font metrics vary by
+      // host OS. Keep separately reviewed baselines per platform while a small
+      // pixel ratio absorbs rasterisation noise within the same platform.
       pathTemplate:
-        "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}",
+        "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}-{platform}{ext}",
       threshold: 0.2,
       maxDiffPixelRatio: 0.02,
       animations: "disabled",
