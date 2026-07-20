@@ -58,3 +58,51 @@ test("enabled DataForSEO slot collects without inventing a client-side connectio
   await expect.poll(() => api.collectionRequests.length).toBe(1);
   expect(api.collectionRequests[0]).toEqual({ provider: "dataforseo" });
 });
+
+test("a provisioned DataForSEO connection can be disconnected from the card", async ({
+  page,
+}) => {
+  await installCriticalFlowApi(page);
+  const sourceConnectionId = "00000000-0000-4000-8000-000000000109";
+  let connected = true;
+  let disconnectRequests = 0;
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/sources`,
+    (route) =>
+      json(route, {
+        data: [
+          sourceSlot("crawl"),
+          sourceSlot("gsc"),
+          sourceSlot("ga4"),
+          sourceSlot("csv"),
+          sourceSlot("dataforseo", {
+            id: connected ? sourceConnectionId : null,
+            state: connected ? "available" : "disconnected",
+            featureEnabled: true,
+            connectedAt: connected ? "2026-07-20T00:00:00.000Z" : null,
+            limitation: connected
+              ? "DataForSEO is connected for ranked-keyword collection."
+              : "DataForSEO is ready to reconnect on the next collection.",
+          }),
+        ],
+      }),
+  );
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/sources/${sourceConnectionId}`,
+    async (route) => {
+      expect(route.request().method()).toBe("DELETE");
+      disconnectRequests += 1;
+      connected = false;
+      await route.fulfill({ status: 204 });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+
+  const dataForSeo = page.getByRole("region", { name: "DataForSEO" });
+  await dataForSeo
+    .getByRole("button", { name: "Disconnect — DataForSEO" })
+    .click();
+  await expect.poll(() => disconnectRequests).toBe(1);
+  await expect(dataForSeo).toContainText("Disconnected");
+});

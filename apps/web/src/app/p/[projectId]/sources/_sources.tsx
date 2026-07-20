@@ -1282,7 +1282,8 @@ function SourceCard({
   const disconnectable =
     sourceId !== null &&
     (source.connectionType === "oauth" ||
-      source.connectionType === "file_import") &&
+      source.connectionType === "file_import" ||
+      source.connectionType === "api_key_stub") &&
     source.state !== "disconnected";
   const ProviderIcon = PROVIDER_ICON[source.provider];
   const acquisitionMode = sourceAcquisitionMode(source);
