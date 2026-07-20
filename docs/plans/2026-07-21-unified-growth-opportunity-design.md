@@ -821,7 +821,7 @@ The repository’s frozen verification system must evolve in the same commit as 
 Every task that adds or removes a normative operation, table, queue, or rule must update:
 
 - the v0.3 normative spec and OpenAPI/SQL authority;
-- the authority package's own verifier (`implementation-spec-v0.3/scripts/verify-spec.mjs` or its reviewed successor);
+- the versioned authority package's own verifier (`authority/implementation-spec-v0.3/scripts/verify-spec.mjs` or its reviewed successor);
 - the app spec lock manifest;
 - `scripts/verify-spec-lock.mjs` expectations;
 - `scripts/verify-implementation.mjs` expectations;

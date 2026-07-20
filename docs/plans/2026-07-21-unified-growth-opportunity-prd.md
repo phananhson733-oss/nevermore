@@ -846,7 +846,7 @@ Demand + Competitor + Existing-page Audit
 新增/删除 operation、table、queue 或 rule 时，同一提交必须更新：
 
 - v0.3 Narrative/OpenAPI/SQL Authority；
-- Authority Package 自身的 Verifier（`implementation-spec-v0.3/scripts/verify-spec.mjs` 或经过审阅的后继脚本）；
+- 仓库内版本化 Authority Package 自身的 Verifier（`authority/implementation-spec-v0.3/scripts/verify-spec.mjs` 或经过审阅的后继脚本）；
 - Spec Lock Manifest；
 - `verify-spec-lock.mjs`；
 - `verify-implementation.mjs`；
