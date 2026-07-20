@@ -348,8 +348,8 @@ function buildCoverage(
   if (ctx.coverage.csv === "unavailable")
     limitations.push(
       zh
-        ? "未提供关键词差距 CSV；内容差距规则已跳过。"
-        : "No keyword-gap CSV; content gap was skipped.",
+        ? "未提供关键词差距 CSV 或 DataForSEO 快照；内容差距规则已跳过。"
+        : "No keyword-gap CSV or DataForSEO snapshot; content gap was skipped.",
     );
   return { overall, domains, limitations };
 }

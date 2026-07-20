@@ -1,67 +1,421 @@
-/**
- * DataForSEO disabled adapter (spec §7.2, AC-020). The adapter CONTRACT is kept
- * in the first version, but the provider is switched off behind a feature flag
- * that must stay `false` in the MVP (spec §14 env matrix, `DATAFORSEO_ENABLED`).
- *
- * Every method throws a stable `SourceError("FEATURE_DISABLED", …)` — thrown
- * SYNCHRONOUSLY, before any await — so there is provably NO code path that opens
- * a socket. There are no imports of `fetch`, `http`, or any network client here:
- * DataForSEO makes no network request in the MVP (AC-020).
- *
- * DataForSEO would be a vendor_observation source for competitive keyword-gap
- * data (spec §7.6 evidence table), i.e. the API alternative to the CSV keyword
- * gap import — hence the disabled capability describes that keyword-gap slot.
- */
-
-import type {
-  Capability,
-  CollectionContext,
-  CollectionResult,
-  NormalizeContext,
-  NormalizedObservation,
-  SourceAdapter,
+import { isBcp47LanguageTag } from "@sf/contracts";
+import {
+  SourceError,
+  type Availability,
+  type Capability,
+  type CollectionContext,
+  type CollectionResult,
+  type NormalizeContext,
+  type NormalizedObservation,
+  type SourceAdapter,
 } from "../adapter.ts";
-import { SourceError } from "../adapter.ts";
+import { clusterKey } from "../csv/cluster-key.ts";
+import {
+  buildObservation,
+  METRIC_CSV_KEYWORD_GAP,
+  type CsvKeywordProjection,
+} from "../observations.ts";
+import {
+  DEFAULT_DATAFORSEO_LIMIT,
+  MAX_DATAFORSEO_LIMIT,
+  type DataForSeoClient,
+  type DataForSeoRankedKeywordRow,
+  type DataForSeoRankedKeywordsRequest,
+} from "./client.ts";
 
-/** Feature flag. MUST be `false` in the MVP (spec §14, AC-020). */
-export const DATAFORSEO_ENABLED = false;
+export const DATAFORSEO_DATASET_KEY = "csv.keyword_gap.v1" as const;
+export const DATAFORSEO_METHOD_VERSION =
+  "dataforseo.ranked_keywords.v1" as const;
+export const DATAFORSEO_ROW_CAP_STOP_REASON =
+  "DATAFORSEO_ROW_CAP_REACHED" as const;
 
-const DISABLED_MESSAGE = "DataForSEO is disabled in the MVP";
+const US_LOCATION_CODE = 2_840;
+const MARKET_CODE_RE = /^[A-Za-z]{2}$/;
+const HOSTNAME_RE =
+  /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
-function disabled(): never {
-  throw new SourceError("FEATURE_DISABLED", DISABLED_MESSAGE);
+const BASE_LIMITATION =
+  "DataForSEO Labs is a weekly-updated vendor observation of live Google organic rankings filtered to search volume above 0 and rank group 4–20.";
+
+export interface DataForSeoParams {
+  readonly target: string;
+  readonly marketCode: string;
+  readonly locationCode?: number;
+  readonly locationName?: string;
+  readonly languageCode: string;
+  readonly limit?: number;
+  /** Test-only clock injection; never sent to DataForSEO or persisted. */
+  readonly now?: Date;
 }
 
-/**
- * The capability advertised to the UI: the DataForSEO-backed keyword-gap slot is
- * present but unavailable, so the Sources UI can render an explicit "not
- * enabled" card rather than hiding the provider (AC-020).
- */
-export function disabledCapability(): Capability {
+/** Fully validated adapter config; exactly one location selector is present. */
+export interface DataForSeoConfig {
+  readonly target: string;
+  readonly marketCode: string;
+  readonly locationCode?: number;
+  readonly locationName?: string;
+  readonly languageCode: string;
+  readonly limit: number;
+  readonly usedUsLocationFallback: boolean;
+}
+
+/** Credential-free request metadata retained with the source snapshot. */
+export interface DataForSeoRawRequest extends DataForSeoRankedKeywordsRequest {
+  readonly marketCode: string;
+  readonly methodVersion: typeof DATAFORSEO_METHOD_VERSION;
+}
+
+/** Snapshot raw payload. It is safe to persist and contains no authentication. */
+export interface DataForSeoRaw {
+  readonly schemaVersion: typeof DATAFORSEO_METHOD_VERSION;
+  readonly request: DataForSeoRawRequest;
+  readonly rows: readonly DataForSeoRankedKeywordRow[];
+  readonly totalCount: number;
+  readonly itemsCount: number;
+  readonly costUsd: number;
+  readonly providerStatusCode: number;
+  readonly taskStatusCode: number;
+  readonly capturedAt: string;
+  readonly availability: Availability;
+  readonly stopReason: string | null;
+  readonly limitation: string;
+}
+
+export interface DataForSeoAdapterOptions {
+  readonly now?: () => Date;
+}
+
+function normalizeTarget(value: unknown): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO target must be a non-empty public hostname.",
+    );
+  }
+  const input = value.trim();
+  let url: URL;
+  try {
+    url = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(input) ? input : `https://${input}`,
+    );
+  } catch {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO target must be a valid public hostname.",
+    );
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO target must use HTTP or HTTPS.",
+    );
+  }
+  const target = url.hostname
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/^www\./, "");
+  if (!HOSTNAME_RE.test(target)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO target must be a valid public hostname.",
+    );
+  }
+  return target;
+}
+
+function normalizeMarketCode(value: unknown): string {
+  if (typeof value !== "string" || !MARKET_CODE_RE.test(value.trim())) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO marketCode must be an ISO 3166-1 alpha-2 code.",
+    );
+  }
+  return value.trim().toUpperCase();
+}
+
+function normalizeLanguageCode(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.trim() === "" ||
+    !isBcp47LanguageTag(value.trim())
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO languageCode must be a valid BCP-47 language tag.",
+    );
+  }
+  const primary = value.trim().split("-")[0];
+  if (!primary) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO languageCode must contain a primary language subtag.",
+    );
+  }
+  return primary.toLowerCase();
+}
+
+function normalizeLocationCode(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO locationCode must be a positive integer.",
+    );
+  }
+  return value as number;
+}
+
+function normalizeLocationName(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO locationName must be a non-empty string.",
+    );
+  }
+  return value.trim();
+}
+
+function normalizeLimit(value: unknown): number {
+  if (value === undefined || value === null) return DEFAULT_DATAFORSEO_LIMIT;
+  if (
+    !Number.isSafeInteger(value) ||
+    (value as number) < 1 ||
+    (value as number) > MAX_DATAFORSEO_LIMIT
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      `DataForSEO limit must be an integer from 1 to ${MAX_DATAFORSEO_LIMIT}.`,
+    );
+  }
+  return value as number;
+}
+
+function resolveConfig(value: unknown): DataForSeoConfig {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO config must be an object.",
+    );
+  }
+  const input = value as Record<string, unknown>;
+  const marketCode = normalizeMarketCode(input.marketCode);
+  let locationCode = normalizeLocationCode(input.locationCode);
+  const locationName = normalizeLocationName(input.locationName);
+  if (locationCode !== undefined && locationName !== undefined) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO config must specify locationCode or locationName, not both.",
+    );
+  }
+
+  let usedUsLocationFallback =
+    input.usedUsLocationFallback === true &&
+    marketCode === "US" &&
+    locationCode === US_LOCATION_CODE &&
+    locationName === undefined;
+  if (locationCode === undefined && locationName === undefined) {
+    if (marketCode !== "US") {
+      throw new SourceError(
+        "INVALID_CONFIGURATION",
+        "DataForSEO config requires locationCode or locationName for non-US markets.",
+      );
+    }
+    locationCode = US_LOCATION_CODE;
+    usedUsLocationFallback = true;
+  }
+
+  const common = {
+    target: normalizeTarget(input.target),
+    marketCode,
+    languageCode: normalizeLanguageCode(input.languageCode),
+    limit: normalizeLimit(input.limit),
+    usedUsLocationFallback,
+  };
+  return locationCode !== undefined
+    ? { ...common, locationCode }
+    : { ...common, locationName: locationName as string };
+}
+
+function limitationFor(
+  config: DataForSeoConfig,
+  rowsReturned?: number,
+  totalCount?: number,
+): string {
+  const details: string[] = [BASE_LIMITATION];
+  if (config.usedUsLocationFallback) {
+    details.push(
+      "The US compatibility location code 2840 was used because no explicit location selector was configured.",
+    );
+  }
+  if (
+    rowsReturned !== undefined &&
+    totalCount !== undefined &&
+    totalCount > rowsReturned
+  ) {
+    details.push(
+      `Only the first ${rowsReturned} of ${totalCount} matching keywords were persisted.`,
+    );
+  } else if (rowsReturned === 0 && totalCount === 0) {
+    details.push(
+      "The provider returned an observed empty result set; no zero-valued keyword facts were fabricated.",
+    );
+  }
+  return details.join(" ");
+}
+
+function capability(config: DataForSeoConfig): Capability {
   return {
-    datasetKey: "csv.keyword_gap.v1",
+    datasetKey: DATAFORSEO_DATASET_KEY,
     operation: "keyword_gap_import",
-    available: false,
-    limitation: DISABLED_MESSAGE,
+    available: true,
+    limitation: limitationFor(config),
   };
 }
 
-/**
- * The disabled adapter. `C`/`P`/`R` are `never`: there is no valid config, no
- * collectable payload, and no raw shape — every method rejects.
- */
-export const dataforseoAdapter: SourceAdapter<never, never, never> = {
-  provider: "dataforseo",
-  validateConfig(_config: unknown): Promise<never> {
-    return disabled();
-  },
-  capabilities(_config: never): Promise<Capability[]> {
-    return disabled();
-  },
-  collect(_params: never, _ctx: CollectionContext): Promise<CollectionResult<never>> {
-    return disabled();
-  },
-  normalize(_raw: never, _ctx: NormalizeContext): AsyncIterable<NormalizedObservation> {
-    return disabled();
+function safeAbsoluteUrl(value: string | null): string | null {
+  if (value === null || value.trim() === "") return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+export function createDataForSeoAdapter(
+  client: DataForSeoClient,
+  options: DataForSeoAdapterOptions = {},
+): SourceAdapter<DataForSeoConfig, DataForSeoParams, DataForSeoRaw> {
+  return {
+    provider: "dataforseo",
+
+    async validateConfig(config: unknown): Promise<DataForSeoConfig> {
+      return resolveConfig(config);
+    },
+
+    async capabilities(config: DataForSeoConfig): Promise<Capability[]> {
+      return [capability(config)];
+    },
+
+    async collect(
+      params: DataForSeoParams,
+      ctx: CollectionContext,
+    ): Promise<CollectionResult<DataForSeoRaw>> {
+      const config = resolveConfig(params);
+      const request: DataForSeoRankedKeywordsRequest =
+        config.locationCode !== undefined
+          ? {
+              target: config.target,
+              locationCode: config.locationCode,
+              languageCode: config.languageCode,
+              limit: config.limit,
+            }
+          : {
+              target: config.target,
+              locationName: config.locationName as string,
+              languageCode: config.languageCode,
+              limit: config.limit,
+            };
+      const response = await client.rankedKeywords(request, ctx.signal);
+      const capturedAt = (
+        params.now ??
+        options.now?.() ??
+        new Date()
+      ).toISOString();
+      const availability: Availability =
+        response.totalCount > response.rows.length ? "partial" : "available";
+      const stopReason =
+        availability === "partial" ? DATAFORSEO_ROW_CAP_STOP_REASON : null;
+      const limitation = limitationFor(
+        config,
+        response.rows.length,
+        response.totalCount,
+      );
+      const rawRequest: DataForSeoRawRequest = {
+        ...request,
+        marketCode: config.marketCode,
+        methodVersion: DATAFORSEO_METHOD_VERSION,
+      };
+      const raw: DataForSeoRaw = {
+        schemaVersion: DATAFORSEO_METHOD_VERSION,
+        request: rawRequest,
+        rows: response.rows,
+        totalCount: response.totalCount,
+        itemsCount: response.itemsCount,
+        costUsd: response.costUsd,
+        providerStatusCode: response.providerStatusCode,
+        taskStatusCode: response.taskStatusCode,
+        capturedAt,
+        availability,
+        stopReason,
+        limitation,
+      };
+      return {
+        availability,
+        raw,
+        capturedAt,
+        sourceWindow: { start: null, end: null },
+        rowCount: response.rows.length,
+        stopReason,
+        providerUsage: {
+          apiCalls: 1,
+          rowsReturned: response.rows.length,
+          costUsd: response.costUsd,
+        },
+        limitation,
+      };
+    },
+
+    async *normalize(
+      raw: DataForSeoRaw,
+      ctx: NormalizeContext,
+    ): AsyncIterable<NormalizedObservation> {
+      for (const row of raw.rows) {
+        const cluster = clusterKey(row.keyword);
+        if (cluster === null) {
+          throw new SourceError(
+            "INVALID_RESPONSE",
+            "DataForSEO returned a keyword that cannot produce a canonical cluster key.",
+          );
+        }
+        const projection: CsvKeywordProjection = {
+          keyword: row.keyword,
+          clusterKey: cluster,
+          searchVolume: row.searchVolume,
+          currentUrl: safeAbsoluteUrl(row.currentUrl),
+          currentRank: row.currentRank,
+          competitorDomain: null,
+          competitorRank: null,
+          marketCode: raw.request.marketCode,
+          languageCode: raw.request.languageCode,
+        };
+        yield buildObservation({
+          provider: "dataforseo",
+          metricKey: METRIC_CSV_KEYWORD_GAP,
+          subjectType: "keyword_cluster",
+          subjectRef: cluster,
+          observedAt: ctx.capturedAt,
+          availability: "available",
+          value: { json: projection },
+          limitation: raw.limitation,
+        });
+      }
+    },
+  };
+}
+
+const unboundClient: DataForSeoClient = {
+  rankedKeywords(): Promise<never> {
+    return Promise.reject(
+      new SourceError(
+        "AUTH_REQUIRED",
+        "DataForSEO collection requires a credential-bound HTTP client.",
+      ),
+    );
   },
 };
+
+/** Default instance supports config/capability/normalization but not live I/O. */
+export const dataforseoAdapter = createDataForSeoAdapter(unboundClient);

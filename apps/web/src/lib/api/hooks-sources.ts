@@ -36,7 +36,7 @@ export type Provider = "crawl" | "gsc" | "ga4" | "csv" | "dataforseo";
 /** The two OAuth (Google) providers `connect`/property-selection applies to. */
 export type GoogleProvider = "gsc" | "ga4";
 /** Providers that accept a `collection-runs` POST (CSV collects via import). */
-export type CollectionProvider = "crawl" | "gsc" | "ga4";
+export type CollectionProvider = "crawl" | "gsc" | "ga4" | "dataforseo";
 export type ConnectionType =
   | "public"
   | "oauth"
@@ -334,9 +334,10 @@ export function useProjectRun(
 
 /**
  * Queue one provider collection. Crawl may omit `sourceConnectionId` (the default
- * Crawl source fills it in); GSC/GA4 must pass their connected source. Returns the
- * accepted run so the caller can poll it; Sources is invalidated so the queued
- * `activeRun` appears on the card.
+ * Crawl source fills it in); GSC/GA4 must pass their connected source. DataForSEO
+ * may omit it because the server atomically provisions a secret-free project
+ * connection for legacy projects. Returns the accepted run so the caller can
+ * poll it; Sources is invalidated so the queued `activeRun` appears on the card.
  */
 export function useCreateCollectionRun(
   projectId: string,

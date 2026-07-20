@@ -86,6 +86,7 @@ const COLLECTION_QUEUE_BY_PROVIDER: Readonly<Record<string, QueueName>> = {
   gsc: "collect.gsc",
   ga4: "collect.ga4",
   csv: "collect.csv",
+  dataforseo: "collect.dataforseo",
 };
 
 const UUID_PATTERN =

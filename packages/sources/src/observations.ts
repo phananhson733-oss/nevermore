@@ -152,6 +152,7 @@ const PROVIDER_AXES = {
   gsc: { origin: "first_party", grade: "A" },
   ga4: { origin: "first_party", grade: "A" },
   crawl: { origin: "direct_public", grade: "B" },
+  dataforseo: { origin: "vendor_observation", grade: "B" },
   csv: { origin: "user_provided", grade: "C" },
 } as const satisfies Record<string, AxisSpec>;
 

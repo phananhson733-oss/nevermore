@@ -79,10 +79,14 @@ export class ObservationsRepository extends Repository {
   /**
    * Batch-insert observations for one snapshot (spec §7.6). Chunked so a very
    * large crawl/GSC snapshot does not exceed the driver's bind-parameter limit.
+   * The snapshot provider is explicit: different providers may intentionally
+   * share one logical metric key (CSV and DataForSEO both emit keyword-gap
+   * observations), so a metric prefix is not a trustworthy provenance source.
    */
   async insertMany(
     scope: ProjectScope,
     snapshotId: string,
+    provider: string,
     observations: readonly ObservationInsert[],
   ): Promise<number> {
     if (observations.length === 0) return 0;
@@ -93,7 +97,7 @@ export class ObservationsRepository extends Repository {
         workspace_id: scope.workspaceId,
         project_id: scope.projectId,
         snapshot_id: snapshotId,
-        provider: providerOfMetric(o.metricKey),
+        provider,
         metric_key: o.metricKey,
         subject_type: o.subjectType,
         subject_ref: o.subjectRef,
@@ -212,10 +216,4 @@ export class ObservationsRepository extends Repository {
       )) as { id: string }[];
     return rows.length;
   }
-}
-
-/** Derive the provider column from the versioned metric key prefix. */
-function providerOfMetric(metricKey: string): string {
-  const dot = metricKey.indexOf(".");
-  return dot > 0 ? metricKey.slice(0, dot) : metricKey;
 }

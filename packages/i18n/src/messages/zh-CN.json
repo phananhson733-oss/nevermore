@@ -377,6 +377,9 @@
     "collectNow": "立即采集",
     "retryCollection": "重新采集",
     "collecting": "采集中…",
+    "collectDataForSeo": "采集排名关键词",
+    "recollectDataForSeo": "重新采集排名关键词",
+    "dataForSeoScope": "按项目选定的市场和语言，为主域名采集有上限的自然排名关键词。这并不代表完整的竞品差距覆盖。",
     "rateLimitRetryScheduled": "已安排自动重试。",
     "permissionReconnectRequired": "请先重新连接，再继续采集。",
     "connect": "连接",
@@ -418,7 +421,7 @@
       "gsc": "只读读取已验证资源的 Search Console 点击、展示与排名。",
       "ga4": "只读读取 GA4 自然流量落地页会话，以及你选择计为转化的关键事件。",
       "csv": "使用 keyword_gap_v1 模板导入 Keyword Gap CSV。",
-      "dataforseo": "第三方关键词与 SERP 数据。"
+      "dataforseo": "按单一市场和语言采集主域名在 DataForSEO Labs 中的自然排名关键词。"
     }
   },
   "diagnosis": {

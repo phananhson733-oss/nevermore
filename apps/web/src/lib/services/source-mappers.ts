@@ -123,7 +123,9 @@ export function toSourceConnectionDto(input: {
     connectedAt: connection ? connection.connected_at : null,
     latestSnapshot: snapshotDto,
     activeRun: activeRun ? toAsyncRunDto(activeRun) : null,
-    limitation: connection ? connection.limitation : defaultLimitation(input.provider),
+    limitation: connection
+      ? connection.limitation
+      : defaultLimitation(input.provider, input.featureEnabled),
     featureEnabled: input.featureEnabled,
     updatedAt: connection ? connection.updated_at : new Date(input.now).toISOString(),
   };
@@ -136,7 +138,7 @@ function slotConnectionType(provider: string): string {
   return "api_key_stub";
 }
 
-function defaultLimitation(provider: string): string {
+function defaultLimitation(provider: string, featureEnabled: boolean): string {
   switch (provider) {
     case "gsc":
       return "Not connected. Authorize Google Search Console to collect search performance data.";
@@ -145,7 +147,9 @@ function defaultLimitation(provider: string): string {
     case "csv":
       return "No keyword-gap CSV imported yet.";
     case "dataforseo":
-      return "DataForSEO is disabled in this MVP.";
+      return featureEnabled
+        ? "DataForSEO ranked-keyword collection is enabled for the primary site. No snapshot has been collected yet."
+        : "DataForSEO is disabled for this deployment.";
     default:
       return "No snapshot has been collected yet.";
   }

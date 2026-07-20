@@ -94,6 +94,8 @@ self-healing retry states.
    in `deploy/worker.env.template`. Railway provides
    `RAILWAY_GIT_COMMIT_SHA`; leave `APP_BUILD_SHA` unset unless it is explicitly
    the exact same `<release SHA>`.
+   Keep DataForSEO Basic Auth credentials on this worker only; Vercel receives
+   the boolean feature flag and row cap, never the login/password.
 6. Confirm sanitized startup logs report `<release SHA>`, the recovery sweep
    completes, pg-boss starts and the worker holds its readiness lease. Logs must
    not expose environment values, provider bodies, model output or customer

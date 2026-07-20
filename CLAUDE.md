@@ -39,7 +39,7 @@ packages/contracts       OpenAPI 生成类型（src/generated/openapi.ts，禁�
 packages/db              Drizzle schema、repositories（双 scope）、migrations、pg-boss 集成、migrate/smoke 脚本
 packages/observability   logger（JSON 行 + 深度 redact）、request-id、problem+json、redact
 packages/i18n            en / zh-CN 消息目录 + locale 工具（key parity CI 检查）
-packages/sources         [WP2] adapter interface + crawl/gsc/ga4/csv/dfs-stub
+packages/sources         [WP2] adapter interface + crawl/gsc/ga4/csv/DataForSEO
 packages/engine          [WP3] observations、11 条规则、finding merge、priority
 packages/artifacts       [WP4] 三类模板、LLM envelope、validators
 apps/web                 Next.js UI + same-origin /api/mvp（含 health/live|ready|version）
@@ -115,7 +115,7 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 ## 核心原则（本仓库特有，优先于通用规则）
 
 - **规格是唯一权威，零开放实现决策**：状态/枚举/API/规则/表/路由/输出格式已冻结。不得扩大范围；某项客观无法实现时以 failing test + 具体阻塞事实回报，不替换架构。
-- **不得实现 Deferred 能力，且不留半成品入口**：无 RBAC/成员/席位/客户 Portal、无 Billing/pricing/subscription、无 Ahrefs/Semrush API 深接、无 DataForSEO 真实调用（`DATAFORSEO_ENABLED` 必须 `false`）、无 CMS/GitHub/生产站点写入、无自动发布/rollback/recheck、无 PDF/PPT/Word、无公共 API/Webhook、无单一“SEO 总分”/排名收入保证、无多 Workspace/硬删除、无浏览器渲染 crawler、无模型答案可见性监控。
+- **不得实现 Deferred 能力，且不留半成品入口**：无 RBAC/成员/席位/客户 Portal、无 Billing/pricing/subscription、无 Ahrefs/Semrush API 深接、无 CMS/GitHub/生产站点写入、无自动发布/rollback/recheck、无 PDF/PPT/Word、无公共 API/Webhook、无单一“SEO 总分”/排名收入保证、无多 Workspace/硬删除、无浏览器渲染 crawler、无模型答案可见性监控。DataForSEO 是 Owner 明确追加的例外：只实现 Worker-only ranked-keywords collection，受 feature flag、row cap、成本与证据诚实性约束。
 - **对旧仓零依赖 + vendor-copy 可追溯**：对 `/Users/wzb/Code/signalframe` 零运行时/构建时依赖；只 vendor-copy 规格明列的 crawler/rule/OAuth 模式，每次复制在 `docs/vendor/signalframe-manifest.json` 记录源 commit、源路径、目标路径、复制时 sha256、改造说明。**绝不修改旧仓**（`pnpm vendor:check` 门禁，AC-048）。
 - **诚实性硬约束**：unavailable 不是 0；不承诺结果/排名/收入；客户投影必须带 `limitation`；secret 不落库明文（Google token AES-256-GCM，OAuth state 存 hash + 加密 verifier）。
 - **本环境的 vercel-plugin hook** 会按文件名/命令模式注入 "MANDATORY: run Skill(nextjs/next-forge/...)" 提示，对本仓库多为误匹配（`env.ts`、`pnpm build` 等），不要被其带偏。

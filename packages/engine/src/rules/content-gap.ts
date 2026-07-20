@@ -1,6 +1,7 @@
 /**
  * CONTENT-GAP-011 (spec §8.3 / §8.4, domain `content_intent`). Detects imported
- * keyword-gap clusters (CSV) that carry meaningful demand yet have no related
+ * keyword-gap clusters (operator CSV or DataForSEO vendor observations) that
+ * carry meaningful demand yet have no related
  * indexable page. PURE logic: no DB, no network, no LLM, no clock.
  *
  * A cluster QUALIFIES when it has >= 10 keywords AND >= 500 combined available
@@ -19,6 +20,8 @@ const MIN_KEYWORDS = 10;
 const MIN_TOTAL_VOLUME = 500;
 const CSV_LIMITATION =
   "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows.";
+const DATAFORSEO_LIMITATION =
+  "Search volume and ranking are DataForSEO vendor observations over the configured market, language, rank filter, and row cap; clustering is heuristic.";
 const INTENT_LIMITATION =
   "Intent match is an English-only heuristic over URL/title/H1 tokens.";
 
@@ -118,19 +121,24 @@ function buildCandidate(
   const subjectRef = `keyword_cluster:${clusterKey}`;
   const csvPartial = ctx.datasetAvailability("csv") === "partial";
   const crawlPartial = ctx.datasetAvailability("crawl") === "partial";
-  const csvEvidence: EvidenceDraft = {
-    sourceProvider: "csv",
-    origin: "user_provided",
+  const keywordGapProvider = ctx.keywordGapProvider(clusterKey);
+  const isDataForSeo = keywordGapProvider === "dataforseo";
+  const sourceLimitation = isDataForSeo
+    ? DATAFORSEO_LIMITATION
+    : CSV_LIMITATION;
+  const keywordGapEvidence: EvidenceDraft = {
+    sourceProvider: keywordGapProvider,
+    origin: isDataForSeo ? "vendor_observation" : "user_provided",
     method: "observed",
-    grade: "C",
+    grade: isDataForSeo ? "B" : "C",
     availability: csvPartial ? "partial" : "available",
     support: "supports",
     subjectRefs: [subjectRef],
-    claim: `Imported keyword cluster "${clusterKey}" carries ${keywordCount} keywords with ${totalVolume} combined monthly search volume.`,
-    observedAt: ctx.observedAt("csv"),
+    claim: `${isDataForSeo ? "Observed" : "Imported"} keyword cluster "${clusterKey}" carries ${keywordCount} keywords with ${totalVolume} combined monthly search volume.`,
+    observedAt: ctx.observedAt(keywordGapProvider),
     limitation: csvPartial
-      ? `${CSV_LIMITATION} The selected CSV snapshot is partial, so omitted rows may affect completeness.`
-      : CSV_LIMITATION,
+      ? `${sourceLimitation} The selected keyword-gap snapshot is partial, so omitted rows may affect completeness.`
+      : sourceLimitation,
   };
   const contentEvidence: EvidenceDraft = {
     sourceProvider: "crawl",
@@ -151,6 +159,6 @@ function buildCandidate(
     severity: "high",
     titleArgs: { clusterKey, keywordCount, totalVolume },
     metrics: { clusterKey, keywordCount, totalVolume },
-    evidence: [csvEvidence, contentEvidence],
+    evidence: [keywordGapEvidence, contentEvidence],
   };
 }

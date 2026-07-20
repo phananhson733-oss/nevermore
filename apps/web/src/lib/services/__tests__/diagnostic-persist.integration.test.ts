@@ -150,23 +150,28 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
       checksum: contentHash({ s: 1 }).padEnd(64, "0").slice(0, 64),
     });
     const gonePage = page404("https://diag2.example/gone");
-    await new ObservationsRepository(handle.db).insertMany(scope, snapshot.id, [
-      {
-        metricKey: METRIC_CRAWL_PAGE,
-        subjectType: "url",
-        subjectRef: "https://diag2.example/gone",
-        observedAt: capturedAt,
-        availability: "available",
-        valueNumeric: null,
-        valueText: null,
-        valueJson: gonePage,
-        unit: null,
-        origin: "direct_public",
-        grade: "B",
-        support: "supports",
-        limitation: "current public response",
-      },
-    ]);
+    await new ObservationsRepository(handle.db).insertMany(
+      scope,
+      snapshot.id,
+      "crawl",
+      [
+        {
+          metricKey: METRIC_CRAWL_PAGE,
+          subjectType: "url",
+          subjectRef: "https://diag2.example/gone",
+          observedAt: capturedAt,
+          availability: "available",
+          valueNumeric: null,
+          valueText: null,
+          valueJson: gonePage,
+          unit: null,
+          origin: "direct_public",
+          grade: "B",
+          support: "supports",
+          limitation: "current public response",
+        },
+      ],
+    );
 
     // Build the frozen context + run the real pipeline.
     const observationRows = await new ObservationsRepository(

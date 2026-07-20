@@ -53,8 +53,15 @@ export function createWebEnvSchema(environment: string | undefined) {
     CREDENTIAL_ENCRYPTION_KEY: base64Bytes(32),
     GOOGLE_OAUTH_CLIENT_ID: z.string().min(1),
     GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1),
-    // MVP hard requirement: DataForSEO stays disabled (spec §2.2, §3.4).
-    DATAFORSEO_ENABLED: z.literal("false"),
+    // Web only needs the public feature state and collection-size policy. The
+    // provider credentials remain worker-only and never enter a Vercel runtime.
+    DATAFORSEO_ENABLED: z.enum(["true", "false"]).default("false"),
+    DATAFORSEO_MAX_KEYWORDS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(200),
     RAW_IMPORT_BUCKET: z.string().min(1),
     EXPORT_BUCKET: z.string().min(1),
     // Production is always Supabase. Local/test may opt into Supabase, otherwise

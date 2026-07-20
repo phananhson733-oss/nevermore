@@ -25,6 +25,21 @@ export interface WorkerContext {
     readonly clientSecret: string;
   };
   /**
+   * DataForSEO is a worker-owned, account-level provider. Credentials are read
+   * only from the worker secret store and are never carried in queue payloads,
+   * source-connection config, canonical rows, or logs. This remains optional at
+   * the type boundary so rolling workers and focused non-collection test
+   * contexts fail closed; `buildWorkerContext` always supplies it.
+   */
+  readonly dataForSeo?: {
+    readonly enabled: boolean;
+    readonly login: string | null;
+    readonly password: string | null;
+    readonly maxKeywords: number;
+    /** Offline provider seam used only by collection fixtures. */
+    readonly fetch?: typeof globalThis.fetch;
+  };
+  /**
    * LLM config for artifact generation (spec §10.2); the client is built per job.
    * `baseUrl`/`authScheme` are set when the OpenAI provider is reached via an
    * Azure OpenAI deployment (same models/API, different host + auth header).
@@ -100,6 +115,12 @@ export function buildWorkerContext(input: {
     googleOAuth: {
       clientId: input.env.GOOGLE_OAUTH_CLIENT_ID,
       clientSecret: input.env.GOOGLE_OAUTH_CLIENT_SECRET,
+    },
+    dataForSeo: {
+      enabled: input.env.DATAFORSEO_ENABLED === "true",
+      login: input.env.DATAFORSEO_LOGIN ?? null,
+      password: input.env.DATAFORSEO_PASSWORD ?? null,
+      maxKeywords: input.env.DATAFORSEO_MAX_KEYWORDS,
     },
     openai: resolveLlmClientConfig(input.env),
     findingSummariesEnabled:

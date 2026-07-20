@@ -112,7 +112,7 @@ The local production readiness response above is intentionally **not** counted a
 | AC-017 | Passed | DB unavailable-number check, normalization and serializer contract tests; unavailable values stay `null`. |
 | AC-018 | Passed | Source/read-model freshness and unavailable/stale UI tests. |
 | AC-019 | Passed | Provider active-key conflict, winner status URL and concurrent exact replay integrations. |
-| AC-020 | Passed | DataForSEO flag/API/UI tests prove stable disabled behavior and no request path. |
+| AC-020 | In progress — hosted proof pending | DataForSEO real adapter/queue/snapshot/vendor-observation tests cover enabled behavior, row caps, provider status codes and the disabled no-network path; production collection evidence is required before release. |
 | AC-021 | Passed | All 11 rule fixtures and canonical output snapshots; Engine 112 tests. |
 | AC-022 | Passed | B2B/B2C fixtures exercise all domains and exact missing-provider degradation. |
 | AC-023 | Passed | Pipeline-order tests keep deterministic rules before optional summaries/LLM work. |
@@ -151,12 +151,13 @@ These are the only known remaining release gates. They require external authorit
 3. Verify hosted `/api/mvp/health/version` reports that exact SHA on web and worker logs, and hosted `/api/mvp/health/ready` returns 200 only with DB, pg-boss schema and a live worker session lease.
 4. Complete real Supabase Auth browser/session/callback proof on the deployed origin.
 5. Exercise live Google OAuth, GSC property selection/sync and GA4 property/key-event sync with Owner-approved accounts; retain sanitized evidence without tokens or customer payloads.
-6. Exercise the Railway worker's selected production OpenAI endpoint: direct OpenAI, or a separately reviewed all-or-nothing Azure manual configuration. Verify both structured-LLM Artifact generation and optional Finding summaries, with log/telemetry review.
-7. Confirm both Supabase Storage buckets are private, grant worker list/delete access, prove each application-owned object kind stays at or below the explicit 100,000-object operational boundary (with alerting before the limit), validate aggregate retention-sweep evidence, and validate signed downloads from the deployed web service.
-8. Perform the production recovery exercise described in `docs/RESTORE-DRILL.md`: Supabase PITR into an isolated project plus separate private Storage object-count/sample-byte-checksum recovery evidence and Owner sign-off.
-9. Have the business Owner walk through EN and zh-CN B2B and B2C outputs, including evidence, priority, Action, Artifact and both bundle types, and explicitly approve pilot quality.
+6. Exercise one cost-capped hosted DataForSEO collection from Sources and retain sanitized evidence for the `collect.dataforseo` run, immutable snapshot, non-secret provider usage and vendor-grade observations. Confirm login/password exist only on Railway and no provider body or Authorization appears in logs.
+7. Exercise the Railway worker's selected production OpenAI endpoint: direct OpenAI, or a separately reviewed all-or-nothing Azure manual configuration. Verify both structured-LLM Artifact generation and optional Finding summaries, with log/telemetry review.
+8. Confirm both Supabase Storage buckets are private, grant worker list/delete access, prove each application-owned object kind stays at or below the explicit 100,000-object operational boundary (with alerting before the limit), validate aggregate retention-sweep evidence, and validate signed downloads from the deployed web service.
+9. Perform the production recovery exercise described in `docs/RESTORE-DRILL.md`: Supabase PITR into an isolated project plus separate private Storage object-count/sample-byte-checksum recovery evidence and Owner sign-off.
+10. Have the business Owner walk through EN and zh-CN B2B and B2C outputs, including evidence, priority, Action, Artifact and both bundle types, and explicitly approve pilot quality.
 
-Until all nine are complete, describe the state as **“local implementation and acceptance gates passed; authority/hosted/Owner launch gates pending,”** not “production-ready” or “pilot-ready.”
+Until all ten are complete, describe the state as **“local implementation and acceptance gates passed; authority/hosted/Owner launch gates pending,”** not “production-ready” or “pilot-ready.”
 
 ## Safety notes for the next operator
 

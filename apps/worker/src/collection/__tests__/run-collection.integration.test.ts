@@ -40,6 +40,7 @@ import {
 import {
   BlobObjectAlreadyExistsError,
   CRAWL_BUDGET,
+  DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
   InvalidBlobObjectKeyError,
   LocalFsBlobStore,
   SupabaseStorageError,
@@ -287,6 +288,271 @@ describeDb("collection runner (spec §13)", () => {
       projectId: seed.scope.projectId,
     });
     expect(await snapshotCount(handle, seed.scope)).toBe(1);
+  });
+
+  it("runs the DataForSEO queue through the real HTTP adapter into an immutable snapshot and canonical observations", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    const connection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertConnection({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      provider: "dataforseo",
+      connectionType: "api_key_stub",
+      state: "connected",
+      externalRef: "example.com",
+      config: {
+        target: "https://www.example.com/catalog?ignored=true",
+        marketCode: "US",
+        locationName: "United States",
+        languageCode: "en-US",
+        maxKeywords: 75,
+      },
+      limitation: "DataForSEO configured; no snapshot has been collected yet.",
+      connectedAt: true,
+      createdBy: seed.actor,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "dataforseo",
+      operation: "keyword_gap_import",
+      methodVersion: "dataforseo.ranked_keywords.v1",
+      sourceConnectionId: connection.id,
+      importPreviewId: null,
+      requestPayload: {
+        provider: "dataforseo",
+        sourceConnectionId: connection.id,
+      },
+    });
+
+    const fixtureLogin = "dfs-worker-login-fixture";
+    const fixturePassword = "dfs-worker-password-fixture";
+    const requests: Array<{
+      readonly url: string;
+      readonly method: string | undefined;
+      readonly authorization: string;
+      readonly body: unknown;
+    }> = [];
+    const fetchMock = vi.fn<GoogleFetch>(async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method,
+        authorization:
+          ((init?.headers ?? {}) as Record<string, string>)["Authorization"] ??
+          "",
+        body: JSON.parse(String(init?.body ?? "null")) as unknown,
+      });
+      return jsonResponse({
+        status_code: 20_000,
+        cost: 0.02,
+        tasks: [
+          {
+            status_code: 20_000,
+            cost: 0.02,
+            result_count: 1,
+            result: [
+              {
+                total_count: 2,
+                items_count: 2,
+                items: [
+                  {
+                    keyword_data: {
+                      keyword: "enterprise seo platform",
+                      keyword_info: { search_volume: 720 },
+                    },
+                    ranked_serp_element: {
+                      serp_item: {
+                        url: "https://example.com/enterprise-seo",
+                        rank_group: 6,
+                      },
+                    },
+                  },
+                  {
+                    keyword_data: {
+                      keyword: "seo reporting software",
+                      keyword_info: { search_volume: 390 },
+                    },
+                    ranked_serp_element: {
+                      serp_item: {
+                        url: "https://example.com/reporting",
+                        rank_group: 11,
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+    });
+    type Delivery = {
+      readonly data: {
+        readonly runId: string;
+        readonly workspaceId: string;
+        readonly projectId: string;
+        readonly contractVersion: string;
+      };
+      readonly retryCount: number;
+      readonly retryLimit: number;
+    };
+    type DeliveryHandler = (jobs: Delivery[]) => Promise<void>;
+    let dataForSeoHandler: DeliveryHandler | undefined;
+    const boss = {
+      work: vi.fn(
+        async (
+          queue: string,
+          _options: unknown,
+          handler: DeliveryHandler,
+        ) => {
+          if (queue === "collect.dataforseo") dataForSeoHandler = handler;
+          return "worker-id";
+        },
+      ),
+    } as unknown as PgBoss;
+    const captured = captureLogger();
+    const worker: WorkerContext = {
+      ...ctx,
+      boss,
+      dataForSeo: {
+        enabled: true,
+        login: fixtureLogin,
+        password: fixturePassword,
+        maxKeywords: 50,
+        fetch: fetchMock,
+      },
+      logger: captured.logger,
+    };
+    await registerCollectHandlers(worker);
+    if (!dataForSeoHandler) {
+      throw new Error("collect.dataforseo handler was not registered");
+    }
+
+    await dataForSeoHandler([
+      {
+        data: {
+          runId,
+          workspaceId: seed.scope.workspaceId,
+          projectId: seed.scope.projectId,
+          contractVersion: CONTRACT_VERSION,
+        },
+        retryCount: 0,
+        retryLimit: 3,
+      },
+    ]);
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      url: DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
+      method: "POST",
+      authorization: `Basic ${Buffer.from(
+        `${fixtureLogin}:${fixturePassword}`,
+        "utf8",
+      ).toString("base64")}`,
+      body: [
+        expect.objectContaining({
+          target: "example.com",
+          location_name: "United States",
+          language_code: "en",
+          limit: 50,
+        }),
+      ],
+    });
+    expect(providerMetricLines(captured.lines)).toEqual([
+      {
+        provider: "dataforseo",
+        outcome: "success",
+        errorCode: "NONE",
+        requestCount: 1,
+        rateLimitCount: 0,
+        quotaCount: 0,
+        rowCount: 2,
+        rowCountAvailable: true,
+        urlCount: 0,
+        urlCountAvailable: false,
+      },
+    ]);
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      seed.scope,
+      runId,
+    );
+    expect(run).toMatchObject({ status: "completed", last_error_code: null });
+    const snapshots = await new DataSnapshotsRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(snapshots.rows).toHaveLength(1);
+    const snapshot = snapshots.rows[0]!;
+    expect(snapshot).toMatchObject({
+      collection_run_id: runId,
+      provider: "dataforseo",
+      dataset_key: "csv.keyword_gap.v1",
+      method_version: "dataforseo.ranked_keywords.v1",
+      availability: "available",
+      row_count: 2,
+    });
+    expect(snapshot.limitation.trim()).not.toBe("");
+    expect(snapshot.raw_object_key).not.toBeNull();
+    const rawBytes = await worker.blobStore.get(snapshot.raw_object_key!);
+    expect(rawBytes).not.toBeNull();
+    const rawText = rawBytes!.toString("utf8");
+    expect(rawText).not.toContain(fixtureLogin);
+    expect(rawText).not.toContain(fixturePassword);
+    expect(rawText.toLowerCase()).not.toContain("authorization");
+    expect(JSON.parse(rawText)).toMatchObject({
+      schemaVersion: "dataforseo.ranked_keywords.v1",
+      request: {
+        target: "example.com",
+        locationName: "United States",
+        languageCode: "en",
+        limit: 50,
+        marketCode: "US",
+      },
+      totalCount: 2,
+      itemsCount: 2,
+    });
+
+    const observations = await new ObservationsRepository(
+      handle.db,
+    ).listBySnapshotIds(seed.scope, [snapshot.id]);
+    expect(observations).toHaveLength(2);
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "dataforseo",
+          metric_key: "csv.keyword_gap.v1",
+          subject_type: "keyword_cluster",
+          origin: "vendor_observation",
+          availability: "available",
+        }),
+      ]),
+    );
+    expect(
+      observations.map((row) => row.value_json),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          keyword: "enterprise seo platform",
+          searchVolume: 720,
+          currentRank: 6,
+          marketCode: "US",
+          languageCode: "en",
+        }),
+      ]),
+    );
+    await expect(
+      new SourceConnectionsRepository(handle.db).findById(
+        seed.scope,
+        connection.id,
+      ),
+    ).resolves.toMatchObject({
+      state: "available",
+      last_successful_snapshot_id: snapshot.id,
+    });
+    expect(captured.lines.join("\n")).not.toContain(fixtureLogin);
+    expect(captured.lines.join("\n")).not.toContain(fixturePassword);
   });
 
   it("AC-012: an offline crawl fixture flows adapter -> worker -> partial snapshot with pages, robots, sitemap, and link graph observations", async () => {

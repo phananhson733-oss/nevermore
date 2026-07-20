@@ -1431,11 +1431,11 @@ components:
       additionalProperties: false
       required: [provider]
       properties:
-        provider: { type: string, enum: [crawl, gsc, ga4] }
+        provider: { type: string, enum: [crawl, gsc, ga4, dataforseo] }
         sourceConnectionId: { type: [string, 'null'], format: uuid }
         operation:
           type: string
-          enum: [site_graph, search_analytics, organic_landing]
+          enum: [site_graph, search_analytics, organic_landing, keyword_gap_import]
 
     AsyncRun:
       type: object

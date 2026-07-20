@@ -100,12 +100,35 @@ export type {
   SupabaseSignerConfig,
 } from "./blob/supabase-signer.ts";
 
-// DataForSEO disabled stub (spec §7.2, AC-020).
+// DataForSEO Labs ranked-keywords adapter.
 export {
-  DATAFORSEO_ENABLED,
-  disabledCapability,
+  createDataForSeoAdapter,
   dataforseoAdapter,
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_ROW_CAP_STOP_REASON,
 } from "./dataforseo/adapter.ts";
+export type {
+  DataForSeoAdapterOptions,
+  DataForSeoConfig,
+  DataForSeoParams,
+  DataForSeoRaw,
+  DataForSeoRawRequest,
+} from "./dataforseo/adapter.ts";
+export {
+  HttpDataForSeoClient,
+  DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
+  DEFAULT_DATAFORSEO_LIMIT,
+  MAX_DATAFORSEO_LIMIT,
+} from "./dataforseo/client.ts";
+export type {
+  DataForSeoClient,
+  DataForSeoFetch,
+  DataForSeoRankedKeywordRow,
+  DataForSeoRankedKeywordsRequest,
+  DataForSeoRankedKeywordsResponse,
+  HttpDataForSeoClientOptions,
+} from "./dataforseo/client.ts";
 
 // Crawl adapter (spec §7.3).
 export * from "./crawl/types.ts";

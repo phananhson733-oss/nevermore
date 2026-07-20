@@ -48,6 +48,40 @@ describe("web production URL environment policy", () => {
     expect(production.parse({ ...BASE, DB_POOL_MAX: "2" }).DB_POOL_MAX).toBe(2);
   });
 
+  it("defaults DataForSEO off with a bounded collection size", () => {
+    const { DATAFORSEO_ENABLED: _enabled, ...withoutFlag } = BASE;
+    const parsed = production.parse(withoutFlag);
+
+    expect(parsed.DATAFORSEO_ENABLED).toBe("false");
+    expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(200);
+  });
+
+  it("accepts an explicit DataForSEO rollout and coerces its collection size", () => {
+    const parsed = production.parse({
+      ...BASE,
+      DATAFORSEO_ENABLED: "true",
+      DATAFORSEO_MAX_KEYWORDS: "350",
+    });
+
+    expect(parsed.DATAFORSEO_ENABLED).toBe("true");
+    expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(350);
+  });
+
+  it.each(["0", "1001", "1.5", "not-a-number"])(
+    "rejects an unsafe DataForSEO keyword limit: %s",
+    (DATAFORSEO_MAX_KEYWORDS) => {
+      expect(
+        production.safeParse({ ...BASE, DATAFORSEO_MAX_KEYWORDS }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects ambiguous DataForSEO feature flag values", () => {
+    expect(
+      production.safeParse({ ...BASE, DATAFORSEO_ENABLED: "1" }).success,
+    ).toBe(false);
+  });
+
   it.each([
     ["APP_ORIGIN", "http://app.example.com"],
     ["APP_ORIGIN", "http://localhost:3000"],

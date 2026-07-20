@@ -20,6 +20,7 @@ export type QueueName =
   | "collect.gsc"
   | "collect.ga4"
   | "collect.csv"
+  | "collect.dataforseo"
   | "diagnose"
   | "artifact.generate"
   | "export.bundle";
@@ -35,7 +36,7 @@ interface QueueConfig {
   readonly heartbeatSeconds: number;
 }
 
-/** The seven fixed queues and their timeout/retry contract (spec §13.1). */
+/** The fixed queues and their timeout/retry contract (spec §13.1). */
 export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
   "collect.crawl": {
     expireInSeconds: COLLECT_CRAWL_JOB_EXPIRY_SECONDS,
@@ -58,6 +59,12 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
   "collect.csv": {
     expireInSeconds: 600,
     retryLimit: 1,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
+  "collect.dataforseo": {
+    expireInSeconds: 600,
+    retryLimit: 3,
     retryBackoff: true,
     heartbeatSeconds: 60,
   },
@@ -124,7 +131,7 @@ export function createBoss(
 
 /**
  * Start the boss (creates the `pgboss` schema on first run) and register the
- * seven queues with their timeout/retry policy. Idempotent across restarts.
+ * queues with their timeout/retry policy. Idempotent across restarts.
  */
 export async function startBoss(boss: PgBoss): Promise<void> {
   await boss.start();

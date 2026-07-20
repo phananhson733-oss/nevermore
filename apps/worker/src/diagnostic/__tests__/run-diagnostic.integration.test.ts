@@ -651,6 +651,7 @@ async function seedSnapshot(
   await new ObservationsRepository(handle.db).insertMany(
     seed.scope,
     snapshot.id,
+    "crawl",
     observations,
   );
   return snapshot.id;

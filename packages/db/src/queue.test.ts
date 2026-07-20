@@ -26,6 +26,16 @@ describe("pg-boss queue contract", () => {
     );
   });
 
+  it("gives DataForSEO the bounded vendor retry policy", () => {
+    expect(QUEUE_NAMES).toContain("collect.dataforseo");
+    expect(QUEUE_CONFIG["collect.dataforseo"]).toEqual({
+      expireInSeconds: 600,
+      retryLimit: 3,
+      retryBackoff: true,
+      heartbeatSeconds: 60,
+    });
+  });
+
   it("constructs normal and enqueue-only clients without opening connections", () => {
     expect(createBoss("postgres://user@localhost/db")).toBeInstanceOf(PgBoss);
     expect(

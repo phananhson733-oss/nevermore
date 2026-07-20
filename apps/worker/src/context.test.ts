@@ -53,6 +53,7 @@ describe("buildWorkerContext", () => {
         OPENAI_MODEL: "test",
         FINDING_SUMMARIES_ENABLED: configured,
         DATAFORSEO_ENABLED: "false",
+        DATAFORSEO_MAX_KEYWORDS: 200,
         RAW_IMPORT_BUCKET: "raw-imports",
         EXPORT_BUCKET: "exports",
         SF_BLOB_BACKEND: "local",
@@ -70,6 +71,12 @@ describe("buildWorkerContext", () => {
       });
 
       expect(context.findingSummariesEnabled).toBe(expected);
+      expect(context.dataForSeo).toEqual({
+        enabled: false,
+        login: null,
+        password: null,
+        maxKeywords: 200,
+      });
       expect(context.signal).toBe(signal);
     },
   );

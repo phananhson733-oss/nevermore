@@ -174,6 +174,7 @@ export async function persistCollectionResult(
       await new ObservationsRepository(tx).insertMany(
         scope,
         snapshot.id,
+        run.provider,
         input.observations,
       );
       await discrepancies.detectForSnapshot(scope, snapshot.id);

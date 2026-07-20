@@ -26,7 +26,8 @@ import {
 /**
  * The frozen diagnostic input a rule reads (spec §8.1, §8.3). Built once per run
  * from the loaded snapshot observations; rules never touch the DB. All data is
- * indexed by canonical subjectUrl (crawl/gsc/ga4) or clusterKey (csv). Derived
+ * indexed by canonical subjectUrl (crawl/gsc/ga4) or clusterKey (the keyword-gap
+ * slot, supplied by CSV or DataForSEO). Derived
  * facts (internal inlink counts) are computed here — pipeline step 4.
  */
 
@@ -71,6 +72,8 @@ export class DiagnosticContext {
   readonly gsc: ReadonlyMap<string, GscPageProjection>;
   readonly ga4: ReadonlyMap<string, Ga4LandingProjection>;
   readonly csvClusters: ReadonlyMap<string, readonly CsvKeywordProjection[]>;
+  /** Actual observed provider(s) contributing each keyword-gap cluster. */
+  readonly keywordGapProviders: ReadonlyMap<string, ReadonlySet<"csv" | "dataforseo">>;
   /** Derived internal inlink counts per subjectUrl (pipeline step 4). */
   readonly internalInlinks: ReadonlyMap<string, number>;
 
@@ -87,6 +90,10 @@ export class DiagnosticContext {
     const gsc = new Map<string, GscPageProjection>();
     const ga4 = new Map<string, Ga4LandingProjection>();
     const csv = new Map<string, CsvKeywordProjection[]>();
+    const keywordGapProviders = new Map<
+      string,
+      Set<"csv" | "dataforseo">
+    >();
     let robots: CrawlRobotsProjection | null = null;
     let sitemap: CrawlSitemapProjection | null = null;
 
@@ -112,6 +119,11 @@ export class DiagnosticContext {
           const list = csv.get(obs.subjectRef) ?? [];
           list.push(obs.valueJson as CsvKeywordProjection);
           csv.set(obs.subjectRef, list);
+          if (obs.provider === "csv" || obs.provider === "dataforseo") {
+            const providers = keywordGapProviders.get(obs.subjectRef) ?? new Set();
+            providers.add(obs.provider);
+            keywordGapProviders.set(obs.subjectRef, providers);
+          }
           break;
         }
         default:
@@ -137,6 +149,7 @@ export class DiagnosticContext {
     this.gsc = gsc;
     this.ga4 = ga4;
     this.csvClusters = csv;
+    this.keywordGapProviders = keywordGapProviders;
     this.internalInlinks = inlinks;
   }
 
@@ -215,6 +228,17 @@ export class DiagnosticContext {
 
   observedAt(provider: string): string {
     return this.capturedAt[provider] ?? this.capturedAt["crawl"] ?? new Date(0).toISOString();
+  }
+
+  /**
+   * Evidence source for one keyword-gap cluster. A cluster populated only by the
+   * vendor must never be presented as user-provided CSV evidence. When both
+   * sources contribute, prefer the higher-grade vendor observation while the
+   * frozen manifest still retains both snapshots for audit/replay.
+   */
+  keywordGapProvider(clusterKey: string): "csv" | "dataforseo" {
+    const providers = this.keywordGapProviders.get(clusterKey);
+    return providers?.has("dataforseo") ? "dataforseo" : "csv";
   }
 }
 

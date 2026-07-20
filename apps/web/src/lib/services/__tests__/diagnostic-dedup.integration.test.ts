@@ -285,23 +285,28 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
       rowCount: 1,
       checksum: contentHash({ s: 1 }),
     });
-    await new ObservationsRepository(handle.db).insertMany(scope, snapshot.id, [
-      {
-        metricKey: METRIC_CRAWL_PAGE,
-        subjectType: "url",
-        subjectRef: "https://dedup.example/gone",
-        observedAt: capturedAt,
-        availability: "available",
-        valueNumeric: null,
-        valueText: null,
-        valueJson: page404("https://dedup.example/gone"),
-        unit: null,
-        origin: "direct_public",
-        grade: "B",
-        support: "supports",
-        limitation: "current public response",
-      },
-    ]);
+    await new ObservationsRepository(handle.db).insertMany(
+      scope,
+      snapshot.id,
+      "crawl",
+      [
+        {
+          metricKey: METRIC_CRAWL_PAGE,
+          subjectType: "url",
+          subjectRef: "https://dedup.example/gone",
+          observedAt: capturedAt,
+          availability: "available",
+          valueNumeric: null,
+          valueText: null,
+          valueJson: page404("https://dedup.example/gone"),
+          unit: null,
+          origin: "direct_public",
+          grade: "B",
+          support: "supports",
+          limitation: "current public response",
+        },
+      ],
+    );
 
     const observationRows = await new ObservationsRepository(
       handle.db,

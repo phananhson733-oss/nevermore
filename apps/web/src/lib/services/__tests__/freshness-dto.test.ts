@@ -193,6 +193,28 @@ describe("toSourceConnectionDto — effective state downgrade (spec §5.2, AC-01
 });
 
 describe("null-not-zero honesty in the snapshot DTO (spec §1.3, AC-018)", () => {
+  it("keeps an enabled DataForSEO legacy slot disconnected until collection provisions it", () => {
+    const dto = toSourceConnectionDto({
+      projectId: "proj-1",
+      provider: "dataforseo",
+      connection: null,
+      latestSnapshot: null,
+      activeRun: null,
+      featureEnabled: true,
+      now: NOW,
+    });
+
+    expect(dto).toMatchObject({
+      id: null,
+      provider: "dataforseo",
+      connectionType: "api_key_stub",
+      state: "disconnected",
+      featureEnabled: true,
+      latestSnapshot: null,
+    });
+    expect(dto.limitation).toContain("collection is enabled");
+  });
+
   it("an absent snapshot surfaces as `null`, NOT a zero-filled object", () => {
     const dto = toSourceConnectionDto({
       projectId: "proj-1",

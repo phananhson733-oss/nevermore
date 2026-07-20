@@ -17,6 +17,12 @@ vi.mock("@sf/db", async () => {
 });
 vi.mock("@/lib/db", () => ({ getDb: () => ({ db: {} }) }));
 vi.mock("@/lib/boss", () => ({ getBoss: vi.fn() }));
+vi.mock("@/env", () => ({
+  getEnv: () => ({
+    DATAFORSEO_ENABLED: "false",
+    DATAFORSEO_MAX_KEYWORDS: 200,
+  }),
+}));
 
 const { createCollectionRun } = await import("../collection.ts");
 
@@ -118,6 +124,18 @@ beforeEach(() => {
 });
 
 describe("createCollectionRun wire-body idempotency", () => {
+  it("fails closed before database access when DataForSEO is disabled", async () => {
+    await expect(
+      createCollectionRun(
+        { workspaceId },
+        projectId,
+        actorId,
+        idempotencyKey,
+        { provider: "dataforseo" },
+      ),
+    ).rejects.toMatchObject({ code: "FEATURE_DISABLED", status: 503 });
+  });
+
   it("replays the original response for the exact same body", async () => {
     const body = { provider: "crawl" as const };
 

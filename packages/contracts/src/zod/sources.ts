@@ -2,17 +2,23 @@ import { z } from "zod";
 
 /**
  * Source collection request schemas (spec §7.5). CSV uses the dedicated import
- * endpoint; DataForSEO is disabled — so `createCollectionRun` only accepts
- * crawl/gsc/ga4. `operation` is optional and derived from `provider` when absent.
+ * endpoint; `createCollectionRun` accepts each network-backed provider.
+ * `operation` is optional and derived from `provider` when absent.
  */
 
-export const CollectionProvider = z.enum(["crawl", "gsc", "ga4"]);
+export const CollectionProvider = z.enum([
+  "crawl",
+  "gsc",
+  "ga4",
+  "dataforseo",
+]);
 export type CollectionProvider = z.infer<typeof CollectionProvider>;
 
 export const CollectionOperationInput = z.enum([
   "site_graph",
   "search_analytics",
   "organic_landing",
+  "keyword_gap_import",
 ]);
 export type CollectionOperationInput = z.infer<typeof CollectionOperationInput>;
 

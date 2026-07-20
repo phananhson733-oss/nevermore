@@ -1081,6 +1081,57 @@ function DisabledControls() {
   return <p className={styles.disabledNote}>{t("notAvailable")}</p>;
 }
 
+function DataForSeoControls({
+  source,
+  projectId,
+  onStarted,
+  runActive,
+}: {
+  readonly source: SourceConnection;
+  readonly projectId: string;
+  readonly onStarted: (runId: string) => void;
+  readonly runActive: boolean;
+}) {
+  const t = useTranslations("sources");
+  const mutation = useCreateCollectionRun(projectId);
+  const start = () => {
+    mutation.mutate(
+      {
+        provider: "dataforseo",
+        ...(source.id === null ? {} : { sourceConnectionId: source.id }),
+      },
+      { onSuccess: (data) => onStarted(data.run.id) },
+    );
+  };
+
+  return (
+    <div className={styles.dataForSeoControls}>
+      <p className={styles.dataForSeoScope}>{t("dataForSeoScope")}</p>
+      <div className={styles.controls}>
+        <Button
+          variant="primary"
+          onClick={start}
+          disabled={mutation.isPending || runActive}
+        >
+          {mutation.isPending
+            ? t("collecting")
+            : source.latestSnapshot === null
+              ? t("collectDataForSeo")
+              : t("recollectDataForSeo")}
+        </Button>
+      </div>
+      {mutation.error !== null ? (
+        <ProblemNotice
+          className={styles.controlError}
+          error={mutation.error}
+          message={t("runStatusUnavailable")}
+          compact
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function DisconnectButton({
   projectId,
   sourceConnectionId,
@@ -1160,8 +1211,17 @@ function SourceControls({
           runActive={runActive}
         />
       );
-    default:
-      return <DisabledControls />;
+    case "dataforseo":
+      return source.featureEnabled ? (
+        <DataForSeoControls
+          source={source}
+          projectId={projectId}
+          onStarted={onStarted}
+          runActive={runActive}
+        />
+      ) : (
+        <DisabledControls />
+      );
   }
 }
 

@@ -479,6 +479,7 @@ async function persistSnapshot(
   await new ObservationsRepository(handle.db).insertMany(
     project.scope,
     snapshot.id,
+    fixture.provider,
     fixture.observations,
   );
   await collectionRuns.finalize(runId, {

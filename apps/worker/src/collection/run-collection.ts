@@ -19,6 +19,7 @@ import {
   CREDENTIAL_CIPHER_VERSION,
   createCrawlAdapter,
   createDefaultCrawlFetcher,
+  createDataForSeoAdapter,
   createGa4Adapter,
   createGscAdapter,
   csvAdapter,
@@ -29,6 +30,7 @@ import {
   HttpGoogleTokenRefresher,
   HttpGa4Client,
   HttpGscClient,
+  HttpDataForSeoClient,
   InvalidBlobObjectKeyError,
   isTransient,
   shouldRefreshCredential,
@@ -41,6 +43,7 @@ import {
   type CrawlEngineOptions,
   type CrawlFetcher,
   type CsvColumnMapping,
+  type DataForSeoParams,
   type GoogleTokenFetch,
   type NormalizedObservation,
   type NormalizeContext,
@@ -68,6 +71,7 @@ const DATASET_KEY: Record<string, string> = {
   gsc: "gsc.page_query_daily.v1",
   ga4: "ga4.organic_landing_daily.v1",
   csv: "csv.keyword_gap.v1",
+  dataforseo: "csv.keyword_gap.v1",
 };
 
 const COLLECTION_SHUTDOWN_RETRY_SUMMARY =
@@ -208,7 +212,10 @@ function permanentCollectionErrorCode(error: unknown): SourceErrorCode {
   return "UNAVAILABLE";
 }
 
-function permanentSourceProjection(code: SourceErrorCode): {
+function permanentSourceProjection(
+  code: SourceErrorCode,
+  provider?: string,
+): {
   readonly state: "permission_denied" | "unavailable";
   readonly limitation: string;
 } {
@@ -217,13 +224,17 @@ function permanentSourceProjection(code: SourceErrorCode): {
       return {
         state: "permission_denied",
         limitation:
-          "Google provider permission was denied. Disconnect and reconnect a property you can access.",
+          provider === "dataforseo"
+            ? "DataForSEO rejected the configured account permissions. Verify the worker credentials before retrying."
+            : "Google provider permission was denied. Disconnect and reconnect a property you can access.",
       };
     case "AUTH_REQUIRED":
       return {
         state: "permission_denied",
         limitation:
-          "Google authorization is no longer valid. Disconnect and reconnect the source.",
+          provider === "dataforseo"
+            ? "DataForSEO worker credentials are unavailable or no longer valid. Update the worker secrets before retrying."
+            : "Google authorization is no longer valid. Disconnect and reconnect the source.",
       };
     case "QUOTA_EXCEEDED":
       return {
@@ -548,7 +559,7 @@ export async function runCollection(
       throw failure; // let pg-boss retry (spec §13.1).
     }
     const code = permanentCollectionErrorCode(failure);
-    const projection = permanentSourceProjection(code);
+    const projection = permanentSourceProjection(code, collectionRun.provider);
     let terminalized: boolean;
     try {
       terminalized = await ctx.db.transaction(async (tx) => {
@@ -735,12 +746,130 @@ async function collectByProvider(
       );
       return { outcome: toOutcome(result), observations };
     }
+    case "dataforseo": {
+      const runtime = ctx.dataForSeo;
+      if (!runtime?.enabled) {
+        throw new SourceError(
+          "FEATURE_DISABLED",
+          "DataForSEO collection is disabled on this worker.",
+        );
+      }
+      if (!runtime.login || !runtime.password) {
+        throw new SourceError(
+          "AUTH_REQUIRED",
+          "DataForSEO worker credentials are not configured.",
+        );
+      }
+      const connection = await loadDataForSeoConnection(ctx, scope, run);
+      const params = dataForSeoParams(connection.config, site, runtime.maxKeywords);
+      const providerFetch = providerMetrics.wrapGoogleFetch(
+        runtime.fetch ?? globalThis.fetch,
+      );
+      const client = new HttpDataForSeoClient({
+        login: runtime.login,
+        password: runtime.password,
+        fetchImpl: providerFetch,
+      });
+      const adapter = createDataForSeoAdapter(client);
+      const result = await adapter.collect(params, adapterCtx);
+      const observations = await drain(
+        adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
+        adapterCtx.signal,
+      );
+      return { outcome: toOutcome(result), observations };
+    }
     default:
       throw new SourceError(
         "FEATURE_DISABLED",
         `Unsupported collection provider ${run.provider}.`,
       );
   }
+}
+
+async function loadDataForSeoConnection(
+  ctx: CollectionWorkerContext,
+  scope: { readonly workspaceId: string; readonly projectId: string },
+  run: CollectionRunRow,
+): Promise<SourceConnectionRow> {
+  if (!run.source_connection_id) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO collection run has no source connection.",
+    );
+  }
+  const connection = await new SourceConnectionsRepository(
+    ctx.db,
+  ).findConnectedById(scope, run.source_connection_id);
+  if (!connection || connection.provider !== "dataforseo") {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO source connection is missing or inactive.",
+    );
+  }
+  return connection;
+}
+
+function dataForSeoParams(
+  config: Record<string, unknown>,
+  site: SiteRow,
+  workerMaxKeywords: number,
+): DataForSeoParams {
+  const target = normalizeDataForSeoTarget(
+    readConfigString(config, "target") ?? site.host,
+  );
+  const marketCode =
+    readConfigString(config, "marketCode") ?? site.market_codes[0] ?? "US";
+  const languageCode =
+    readConfigString(config, "languageCode") ??
+    site.language_codes[0] ??
+    "en";
+  const locationName = readConfigString(config, "locationName");
+  const locationCode = readConfigPositiveInteger(config, "locationCode");
+  const configuredLimit = readConfigPositiveInteger(config, "maxKeywords");
+  const runtimeLimit =
+    Number.isSafeInteger(workerMaxKeywords) && workerMaxKeywords > 0
+      ? workerMaxKeywords
+      : 200;
+  const limit = Math.min(configuredLimit ?? runtimeLimit, runtimeLimit);
+
+  return {
+    target,
+    marketCode,
+    ...(locationName
+      ? { locationName }
+      : locationCode !== null
+        ? { locationCode }
+        : {}),
+    languageCode,
+    limit,
+  };
+}
+
+function normalizeDataForSeoTarget(value: string): string {
+  const trimmed = value.trim();
+  let hostname = trimmed;
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
+    );
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("unsupported target protocol");
+    }
+    hostname = url.hostname;
+  } catch {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO target must be a valid public hostname.",
+    );
+  }
+  const normalized = hostname.toLowerCase().replace(/^www\./, "");
+  if (!normalized || normalized.includes("..")) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO target must be a valid public hostname.",
+    );
+  }
+  return normalized;
 }
 
 interface LoadedGoogleCredential {
@@ -996,7 +1125,21 @@ function readConfigString(
   key: string,
 ): string | null {
   const v = config[key];
-  return typeof v === "string" ? v : null;
+  if (typeof v !== "string") return null;
+  const trimmed = v.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function readConfigPositiveInteger(
+  config: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = config[key];
+  return typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > 0
+    ? value
+    : null;
 }
 
 function readConfigStringArray(

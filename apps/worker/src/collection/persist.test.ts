@@ -156,6 +156,12 @@ describe("persistCollectionResult transaction outcomes", () => {
       expect.objectContaining({ rawObjectKey: uploadedKey }),
     );
     expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalled();
+    expect(ObservationsRepository.prototype.insertMany).toHaveBeenCalledWith(
+      { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+      "snapshot-1",
+      collectionRun.provider,
+      [],
+    );
     expect(deleteObject).not.toHaveBeenCalled();
     expect(
       vi.mocked(

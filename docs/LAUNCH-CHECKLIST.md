@@ -107,7 +107,8 @@ Deploy the worker before the web promotion gate.
   `APP_ORIGIN=https://app.gengrowth.ai`, session-mode `DATABASE_URL`,
   `DB_POOL_MAX=2`, shared Supabase/OAuth/encryption values,
   `SF_BLOB_BACKEND=supabase`, the two bucket names, and the selected worker-only
-  LLM configuration **[Owner]**
+  LLM configuration. Set `DATAFORSEO_ENABLED=true`, the reviewed row cap, and
+  `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` only in Railway **[Owner]**
 - [ ] Leave `APP_BUILD_SHA` unset so `RAILWAY_GIT_COMMIT_SHA` reports the actual
   source, or set it only to exact `<release SHA>` **[Owner]**
 - [ ] Deploy `<release SHA>` and retain sanitized Railway evidence that startup
@@ -128,11 +129,12 @@ probe.
 - [ ] Set Production variables from the approved web template/dashboard:
   `APP_ORIGIN=https://app.gengrowth.ai`, session-mode `DATABASE_URL`,
   `DB_POOL_MAX=1`, the same Supabase/OAuth/encryption/bucket settings,
-  `SUPABASE_ANON_KEY`, and `SF_BLOB_BACKEND=supabase` **[Owner]**
+  `SUPABASE_ANON_KEY`, `SF_BLOB_BACKEND=supabase`, `DATAFORSEO_ENABLED=true`,
+  and the same non-secret DataForSEO row cap **[Owner]**
 - [ ] Leave `NEXT_PUBLIC_BASE_PATH` unset. Do not set `/app`; this release serves
   the root of `app.gengrowth.ai` **[Owner]**
-- [ ] Do not set `SF_DEV_AUTH`, `SF_BLOB_DIR` or worker-only LLM values in Vercel
-  **[Owner]**
+- [ ] Do not set `SF_DEV_AUTH`, `SF_BLOB_DIR`, worker-only LLM values, or
+  `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` in Vercel **[Owner]**
 - [ ] Leave `APP_BUILD_SHA` unset so `VERCEL_GIT_COMMIT_SHA` reports the actual
   source, or set it only to exact `<release SHA>` **[Owner]**
 - [ ] Deploy `<release SHA>` to a **unique Vercel URL without promoting the
@@ -189,6 +191,10 @@ verification in progress,” not as pilot-ready.
 - [ ] Complete live Google OAuth → GSC property selection and a real collection
   using Owner-approved data; retain sanitized evidence **[Owner]**
 - [ ] Complete live GA4 property/key-event synchronization **[Owner]**
+- [ ] Run one cost-capped DataForSEO ranked-keywords collection from Sources;
+  verify the terminal run, immutable snapshot and `vendor_observation / B`
+  evidence, and retain sanitized Railway logs proving no Authorization,
+  credentials or provider response body was emitted **[Owner/me]**
 - [ ] Generate a production structured-LLM Artifact with the selected worker
   provider configuration **[Owner]**
 - [ ] Verify a signed export download works, expires in 900 seconds and never

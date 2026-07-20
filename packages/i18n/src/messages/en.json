@@ -377,6 +377,9 @@
     "collectNow": "Collect now",
     "retryCollection": "Retry collection",
     "collecting": "Collecting…",
+    "collectDataForSeo": "Collect ranking keywords",
+    "recollectDataForSeo": "Recollect ranking keywords",
+    "dataForSeoScope": "Collects a capped set of organic ranking keywords for the primary domain in the project's selected market and language. This is not complete competitor-gap coverage.",
     "rateLimitRetryScheduled": "Automatic retry scheduled.",
     "permissionReconnectRequired": "Reconnect required before collecting again.",
     "connect": "Connect",
@@ -418,7 +421,7 @@
       "gsc": "Read-only Search Console clicks, impressions, and positions for your verified property.",
       "ga4": "Read-only GA4 organic-landing sessions, plus the key events you choose to count as conversions.",
       "csv": "Import a keyword-gap CSV using the keyword_gap_v1 template.",
-      "dataforseo": "Third-party keyword and SERP data."
+      "dataforseo": "DataForSEO Labs organic ranking keywords for the primary domain, scoped to one market and language."
     }
   },
   "diagnosis": {

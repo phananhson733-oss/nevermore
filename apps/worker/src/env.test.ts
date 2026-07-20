@@ -64,6 +64,51 @@ describe("worker production URL environment policy", () => {
     ).toBe(false);
   });
 
+  it("defaults DataForSEO off without requiring provider credentials", () => {
+    const { DATAFORSEO_ENABLED: _enabled, ...withoutFlag } = BASE;
+    const parsed = production.parse(withoutFlag);
+
+    expect(parsed.DATAFORSEO_ENABLED).toBe("false");
+    expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(200);
+    expect(parsed.DATAFORSEO_LOGIN).toBeUndefined();
+    expect(parsed.DATAFORSEO_PASSWORD).toBeUndefined();
+  });
+
+  it("requires both DataForSEO credentials when enabled", () => {
+    const enabled = {
+      ...BASE,
+      DATAFORSEO_ENABLED: "true",
+      DATAFORSEO_LOGIN: "dfs-login",
+      DATAFORSEO_PASSWORD: "dfs-password",
+      DATAFORSEO_MAX_KEYWORDS: "350",
+    };
+    const parsed = production.parse(enabled);
+
+    expect(parsed.DATAFORSEO_ENABLED).toBe("true");
+    expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(350);
+    expect(production.safeParse({ ...enabled, DATAFORSEO_LOGIN: undefined }).success).toBe(
+      false,
+    );
+    expect(
+      production.safeParse({ ...enabled, DATAFORSEO_PASSWORD: "   " }).success,
+    ).toBe(false);
+  });
+
+  it.each(["0", "1001", "1.5", "not-a-number"])(
+    "rejects an unsafe DataForSEO keyword limit: %s",
+    (DATAFORSEO_MAX_KEYWORDS) => {
+      expect(
+        production.safeParse({ ...BASE, DATAFORSEO_MAX_KEYWORDS }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects ambiguous DataForSEO feature flag values", () => {
+    expect(
+      production.safeParse({ ...BASE, DATAFORSEO_ENABLED: "1" }).success,
+    ).toBe(false);
+  });
+
   it.each([
     ["APP_ORIGIN", "http://app.example.com"],
     ["APP_ORIGIN", "http://localhost:3000"],

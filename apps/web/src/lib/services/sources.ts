@@ -10,6 +10,7 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import { ProblemError } from "@sf/observability";
+import { getEnv } from "@/env";
 import { getDb } from "@/lib/db";
 import { toSourceConnectionDto, type SourceConnectionDto } from "./source-mappers";
 
@@ -17,8 +18,10 @@ import { toSourceConnectionDto, type SourceConnectionDto } from "./source-mapper
  * Sources read model + disconnect (spec §7, §11.2). `listProjectSources` always
  * returns EXACTLY the five provider slots (crawl, gsc, ga4, csv, dataforseo) —
  * connected or not — so the UI can render every provider card and distinguish
- * "not connected" from "connected but no snapshot" (spec §5.2). DataForSEO is
- * always featureEnabled=false (AC-020).
+ * "not connected" from "connected but no snapshot" (spec §5.2). DataForSEO's
+ * slot is enabled only by the validated server feature flag; an enabled legacy
+ * project still remains honestly disconnected until its first collection
+ * atomically provisions the project-scoped connection.
  */
 
 const PROVIDER_ORDER = ["crawl", "gsc", "ga4", "csv", "dataforseo"] as const;
@@ -39,6 +42,7 @@ export async function listProjectSources(
 ): Promise<SourceConnectionDto[]> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
+  const dataForSeoEnabled = getEnv().DATAFORSEO_ENABLED === "true";
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
@@ -68,7 +72,8 @@ export async function listProjectSources(
         connection,
         latestSnapshot,
         activeRun: activeRunForProvider(activeRuns, provider),
-        featureEnabled: provider !== "dataforseo",
+        featureEnabled:
+          provider !== "dataforseo" || dataForSeoEnabled,
         now,
       }),
     );

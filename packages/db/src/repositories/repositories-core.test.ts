@@ -1064,7 +1064,7 @@ describe("core repositories", () => {
     ).rejects.toThrow("limit must be a positive safe integer");
   });
 
-  it("chunks normalized observations and preserves unavailable values as null", async () => {
+  it("chunks normalized observations, uses the explicit provider, and preserves unavailable values as null", async () => {
     const { repo, db } = repository(ObservationsRepository);
     const observed: ObservationInsert = {
       metricKey: "crawl.page.v1",
@@ -1098,9 +1098,11 @@ describe("core repositories", () => {
       limitation: "Provider unavailable",
     };
 
-    await expect(repo.insertMany(scope, "snapshot-1", [])).resolves.toBe(0);
     await expect(
-      repo.insertMany(scope, "snapshot-1", [
+      repo.insertMany(scope, "snapshot-1", "dataforseo", []),
+    ).resolves.toBe(0);
+    await expect(
+      repo.insertMany(scope, "snapshot-1", "dataforseo", [
         observed,
         unavailable,
         ...Array.from({ length: 499 }, () => observed),
@@ -1110,13 +1112,13 @@ describe("core repositories", () => {
     expect(batches).toHaveLength(2);
     const first = batches[0]?.args[0] as readonly Record<string, unknown>[];
     expect(first[0]).toMatchObject({
-      provider: "crawl",
+      provider: "dataforseo",
       value_numeric: "42.5",
       value_json: { status: 200 },
       method: "computed",
     });
     expect(first[1]).toMatchObject({
-      provider: "provider_without_dot",
+      provider: "dataforseo",
       value_numeric: null,
       value_json: null,
       method: "observed",

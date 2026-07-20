@@ -14,6 +14,7 @@ import type { CreateCollectionRunRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
+import { getEnv } from "@/env";
 import { isPostgresUniqueViolation } from "./db-errors";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
@@ -34,10 +35,49 @@ const PROVIDER_CONFIG = {
     queue: "collect.ga4",
     methodVersion: "ga4.organic_landing_daily.v1",
   },
+  dataforseo: {
+    operation: "keyword_gap_import",
+    queue: "collect.dataforseo",
+    methodVersion: "dataforseo.ranked_keywords.v1",
+  },
 } as const satisfies Record<
   CreateCollectionRunRequest["provider"],
   { operation: string; queue: QueueName; methodVersion: string }
 >;
+
+interface DataForSeoConnectionConfig {
+  readonly target: string;
+  readonly marketCode: string;
+  readonly locationName: string;
+  readonly languageCode: string;
+  readonly maxKeywords: number;
+}
+
+function dataForSeoConnectionConfig(site: {
+  readonly host: string;
+  readonly market_codes: readonly string[];
+  readonly language_codes: readonly string[];
+}): DataForSeoConnectionConfig {
+  const env = getEnv();
+  const target = site.host.replace(/^www\./i, "");
+  const marketCode = site.market_codes[0] ?? "US";
+  const languageTag = site.language_codes[0] ?? "en";
+  const languageCode = languageTag.split("-")[0]?.toLowerCase() ?? "en";
+  const locationName =
+    new Intl.DisplayNames(["en"], { type: "region" }).of(marketCode) ??
+    marketCode;
+  return {
+    target,
+    marketCode,
+    locationName,
+    languageCode,
+    maxKeywords: env.DATAFORSEO_MAX_KEYWORDS,
+  };
+}
+
+function dataForSeoLimitation(config: DataForSeoConnectionConfig): string {
+  return `DataForSEO ranked keywords for ${config.target}; market ${config.marketCode} (${config.locationName}), language ${config.languageCode}, capped at ${config.maxKeywords} keywords per collection. This is the target domain's ranking-keyword dataset, not a complete competitor-gap analysis.`;
+}
 
 export interface CollectionAcceptedResult {
   readonly status: 202;
@@ -94,8 +134,9 @@ function replayCollection(
  * operation combination, resolves the source connection, and atomically inserts
  * the run + collection placeholder and enqueues the job in ONE transaction. A
  * second active run for the same `collect:{provider}:{operation}` key returns 409
- * RUN_ALREADY_ACTIVE (AC-019). CSV uses the import endpoint; DataForSEO is
- * disabled — so only crawl/gsc/ga4 reach here.
+ * RUN_ALREADY_ACTIVE (AC-019). CSV uses the import endpoint. DataForSEO is
+ * feature-gated and lazily creates a project-scoped, secret-free connection for
+ * legacy projects when the server integration is enabled.
  */
 export async function createCollectionRun(
   scope: WorkspaceScope,
@@ -105,6 +146,15 @@ export async function createCollectionRun(
   body: CreateCollectionRunRequest,
 ): Promise<CollectionAcceptedResult> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
+  if (
+    body.provider === "dataforseo" &&
+    getEnv().DATAFORSEO_ENABLED !== "true"
+  ) {
+    throw new ProblemError(
+      "FEATURE_DISABLED",
+      "DataForSEO collection is not enabled for this deployment.",
+    );
+  }
 
   const { db } = getDb();
   // Hash the validated wire shape before deriving defaults. Optional members
@@ -155,7 +205,12 @@ export async function createCollectionRun(
   const connection = body.sourceConnectionId
     ? await sources.findById(projectScope, body.sourceConnectionId)
     : await sources.findConnectedByProvider(projectScope, body.provider);
-  if (!connection || connection.provider !== body.provider) {
+  const canProvisionDataForSeo =
+    body.provider === "dataforseo" && body.sourceConnectionId == null;
+  if (
+    (!connection && !canProvisionDataForSeo) ||
+    (connection !== null && connection.provider !== body.provider)
+  ) {
     throw new ProblemError(
       "SOURCE_NOT_CONNECTED",
       `No connected ${body.provider} source for this project.`,
@@ -209,7 +264,7 @@ export async function createCollectionRun(
         throw new ProblemError("NOT_FOUND", "Project has no primary site.");
       }
 
-      const currentConnection = body.sourceConnectionId
+      let currentConnection = body.sourceConnectionId
         ? await txSources.findConnectedByIdForUpdate(
             projectScope,
             body.sourceConnectionId,
@@ -218,6 +273,22 @@ export async function createCollectionRun(
             projectScope,
             body.provider,
           );
+      if (!currentConnection && canProvisionDataForSeo) {
+        const connectionConfig = dataForSeoConnectionConfig(currentSite);
+        currentConnection = await txSources.insertConnection({
+          workspaceId: scope.workspaceId,
+          projectId,
+          siteId: currentSite.id,
+          provider: "dataforseo",
+          connectionType: "api_key_stub",
+          state: "connected",
+          externalRef: connectionConfig.target,
+          config: { ...connectionConfig },
+          limitation: dataForSeoLimitation(connectionConfig),
+          connectedAt: true,
+          createdBy: actorId,
+        });
+      }
       if (!currentConnection || currentConnection.provider !== body.provider) {
         throw new ProblemError(
           "SOURCE_NOT_CONNECTED",

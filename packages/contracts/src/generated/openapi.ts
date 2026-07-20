@@ -736,11 +736,11 @@ export interface components {
         };
         CreateCollectionRunRequest: {
             /** @enum {string} */
-            provider: "crawl" | "gsc" | "ga4";
+            provider: "crawl" | "gsc" | "ga4" | "dataforseo";
             /** Format: uuid */
             sourceConnectionId?: string | null;
             /** @enum {string} */
-            operation?: "site_graph" | "search_analytics" | "organic_landing";
+            operation?: "site_graph" | "search_analytics" | "organic_landing" | "keyword_gap_import";
         };
         AsyncRun: {
             id: components["schemas"]["Uuid"];

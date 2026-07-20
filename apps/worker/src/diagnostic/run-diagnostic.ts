@@ -323,12 +323,20 @@ function buildCoverage(snaps: readonly ManifestSnapshot[]): {
   };
   const capturedAt: Record<string, string> = {};
   for (const s of snaps) capturedAt[s.provider] = s.capturedAt;
+  const keywordGapAvailability = (): DatasetAvailability => {
+    const sources = [availFor("csv"), availFor("dataforseo")];
+    if (sources.includes("available")) return "available";
+    if (sources.includes("partial")) return "partial";
+    return "unavailable";
+  };
   return {
     coverage: {
       crawl: availFor("crawl"),
       gsc: availFor("gsc"),
       ga4: availFor("ga4"),
-      csv: availFor("csv"),
+      // The frozen `csv` coverage key is the canonical keyword-gap dataset slot.
+      // It may now be supplied by either an operator CSV or DataForSEO.
+      csv: keywordGapAvailability(),
     },
     capturedAt,
   };

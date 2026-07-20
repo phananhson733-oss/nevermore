@@ -46,7 +46,7 @@ afterEach(() => {
 });
 
 describe("queueForRun", () => {
-  it("maps the four collection providers and three other run kinds", () => {
+  it("maps every collection provider and the other run kinds", () => {
     expect(queueForRun(run("collection", { provider: "crawl" }))).toBe(
       "collect.crawl",
     );
@@ -59,6 +59,9 @@ describe("queueForRun", () => {
     expect(queueForRun(run("collection", { provider: "csv" }))).toBe(
       "collect.csv",
     );
+    expect(queueForRun(run("collection", { provider: "dataforseo" }))).toBe(
+      "collect.dataforseo",
+    );
     expect(queueForRun(run("diagnostic", {}))).toBe("diagnose");
     expect(queueForRun(run("artifact_generation", {}))).toBe(
       "artifact.generate",
@@ -68,7 +71,7 @@ describe("queueForRun", () => {
 
   it("rejects unknown/missing collection providers", () => {
     expect(queueForRun(run("collection", {}))).toBeNull();
-    expect(queueForRun(run("collection", { provider: "dataforseo" }))).toBeNull();
+    expect(queueForRun(run("collection", { provider: "unsupported" }))).toBeNull();
     expect(queueForRun(run("collection", { provider: "toString" }))).toBeNull();
     expect(queueForRun(run("collection", { provider: "__proto__" }))).toBeNull();
     expect(queueForRun(run("unknown", {}))).toBeNull();
@@ -623,14 +626,17 @@ describe("reconcileActiveRuns", () => {
   });
 
   it.each([
-    ["failed", "failed"],
-    ["cancelled", "cancelled"],
-    ["missing", null],
+    ["crawl", "failed", "failed"],
+    ["crawl", "cancelled", "cancelled"],
+    ["crawl", "missing", null],
+    ["dataforseo", "failed", "failed"],
+    ["dataforseo", "cancelled", "cancelled"],
+    ["dataforseo", "missing", null],
   ] as const)(
-    "recovers a collection source after a %s queue outcome",
-    async (_label, queueState) => {
+    "recovers a %s collection source after a %s queue outcome",
+    async (provider, _label, queueState) => {
       const row = run("collection", {
-        provider: "crawl",
+        provider,
         sourceConnectionId: SOURCE_CONNECTION_ID,
       });
       vi.spyOn(
@@ -664,7 +670,7 @@ describe("reconcileActiveRuns", () => {
       expect(recoverSource).toHaveBeenCalledWith(
         scopeFor(row),
         SOURCE_CONNECTION_ID,
-        "crawl",
+        provider,
       );
     },
   );
@@ -677,7 +683,7 @@ describe("reconcileActiveRuns", () => {
     ],
     [
       "collection",
-      { provider: "dataforseo", sourceConnectionId: SOURCE_CONNECTION_ID },
+      { provider: "unsupported", sourceConnectionId: SOURCE_CONNECTION_ID },
     ],
     ["diagnostic", { sourceConnectionId: SOURCE_CONNECTION_ID }],
   ] as const)(
@@ -831,7 +837,7 @@ describe("reconcileActiveRuns", () => {
     const invalid = {
       ...runWithId("00000000-0000-4000-8000-000000000023"),
       kind: "collection",
-      request_payload: { provider: "dataforseo" },
+      request_payload: { provider: "unsupported" },
     };
     vi.spyOn(
       AsyncRunsRepository.prototype,

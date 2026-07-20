@@ -74,8 +74,29 @@ export function createWorkerEnvSchema(environment: string | undefined) {
       // artifact generation. Keep the raw env contract explicit at boot and
       // convert it to a boolean only when building WorkerContext.
       FINDING_SUMMARIES_ENABLED: z.enum(["true", "false"]).default("true"),
-      // MVP hard requirement: DataForSEO stays disabled (spec §2.2, §3.4).
-      DATAFORSEO_ENABLED: z.literal("false"),
+      DATAFORSEO_ENABLED: z.enum(["true", "false"]).default("false"),
+      // Credentials are global provider secrets, never persisted in connection
+      // config or job payloads. They become mandatory only when rollout is on.
+      DATAFORSEO_LOGIN: z
+        .string()
+        .min(1)
+        .refine((value) => value.trim().length > 0, {
+          message: "must not be blank",
+        })
+        .optional(),
+      DATAFORSEO_PASSWORD: z
+        .string()
+        .min(1)
+        .refine((value) => value.trim().length > 0, {
+          message: "must not be blank",
+        })
+        .optional(),
+      DATAFORSEO_MAX_KEYWORDS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(200),
       RAW_IMPORT_BUCKET: z.string().min(1),
       EXPORT_BUCKET: z.string().min(1),
       // Production is always Supabase. Local/test may opt into Supabase, otherwise
@@ -112,6 +133,23 @@ export function createWorkerEnvSchema(environment: string | undefined) {
             "LLM config required: set OPENAI_API_KEY + OPENAI_MODEL (direct), or " +
             "AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT + OPENAI_API_VERSION (Azure).",
         });
+      }
+      if (env.DATAFORSEO_ENABLED === "true") {
+        if (!env.DATAFORSEO_LOGIN) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["DATAFORSEO_LOGIN"],
+            message: "DATAFORSEO_LOGIN is required when DataForSEO is enabled.",
+          });
+        }
+        if (!env.DATAFORSEO_PASSWORD) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["DATAFORSEO_PASSWORD"],
+            message:
+              "DATAFORSEO_PASSWORD is required when DataForSEO is enabled.",
+          });
+        }
       }
     });
 }

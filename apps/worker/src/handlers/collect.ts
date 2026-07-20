@@ -4,7 +4,7 @@ import { runCollection, type CollectJobPayload } from "../collection/run-collect
 import { prepareRunDelivery } from "./recovery.ts";
 
 /**
- * Register the four collection queue workers (spec §13.1). Each job payload is
+ * Register the collection queue workers (spec §13.1). Each job payload is
  * `{runId, workspaceId, projectId}` only (no credentials/raw content, §13.3); the
  * runner claims the run and drives the provider adapter → snapshot/observations.
  */
@@ -14,6 +14,7 @@ const COLLECT_QUEUES: readonly QueueName[] = [
   "collect.gsc",
   "collect.ga4",
   "collect.csv",
+  "collect.dataforseo",
 ];
 
 export async function registerCollectHandlers(ctx: WorkerContext): Promise<void> {

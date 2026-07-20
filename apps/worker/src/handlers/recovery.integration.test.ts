@@ -158,7 +158,7 @@ describeDb("worker canonical run recovery", () => {
     const invalidMapping = await seedRun({
       status: "queued",
       kind: "collection",
-      requestPayload: { provider: "dataforseo" },
+      requestPayload: { provider: "unsupported" },
     });
 
     await reconcileActiveRuns(ctx, {

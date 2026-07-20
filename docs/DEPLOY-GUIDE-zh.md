@@ -141,7 +141,8 @@ Worker，不能回退到 Next.js Web CMD。
 - `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`
 - `CREDENTIAL_ENCRYPTION_KEY`（与 Vercel Web 完全相同）
 - `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`（与 Web 相同）
-- `DATAFORSEO_ENABLED=false`
+- `DATAFORSEO_ENABLED=true`、`DATAFORSEO_MAX_KEYWORDS=200`
+- Worker-only `DATAFORSEO_LOGIN`、`DATAFORSEO_PASSWORD`（只从 Railway secret store 设置，不复制到 Vercel）
 - `RAW_IMPORT_BUCKET=raw-imports`、`EXPORT_BUCKET=exports`
 - `SF_BLOB_BACKEND=supabase`
 - `LOG_LEVEL=info`
@@ -186,11 +187,12 @@ Production 环境至少需要：
   `CREDENTIAL_ENCRYPTION_KEY`、Google OAuth 字段、bucket 字段
 - Web-only `SUPABASE_ANON_KEY`
 - `SF_BLOB_BACKEND=supabase`
-- `DATAFORSEO_ENABLED=false`、`LOG_LEVEL=info`
+- `DATAFORSEO_ENABLED=true`、`DATAFORSEO_MAX_KEYWORDS=200`、`LOG_LEVEL=info`
 
 **不要设置 `NEXT_PUBLIC_BASE_PATH=/app`。** 本次应用直接服务于
 `https://app.gengrowth.ai` 根路径。也不要在 Vercel 设置 Worker-only LLM 变量、
-`SF_DEV_AUTH` 或 `SF_BLOB_DIR`。
+`SF_DEV_AUTH` 或 `SF_BLOB_DIR`，也不要设置 Worker-only 的
+`DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD`。
 
 ### 4.3 创建 unique deployment 并冒烟
 

@@ -7,7 +7,7 @@ import { registerDiagnoseHandler } from "./diagnose.ts";
 import { prepareRunDelivery } from "./recovery.ts";
 
 // This suite verifies only pg-boss registration options and queue names. Keep
-// the four heavy runners isolated here: their behavior is covered by dedicated
+// the heavy runners isolated here: their behavior is covered by dedicated
 // unit/real-Postgres suites, and executing them is not part of registration.
 vi.mock("../collection/run-collection.ts", () => ({ runCollection: vi.fn() }));
 vi.mock("../diagnostic/run-diagnostic.ts", () => ({ runDiagnostic: vi.fn() }));
@@ -24,7 +24,7 @@ vi.mock("./recovery.ts", () => ({
 }));
 
 describe("worker handler registration", () => {
-  it("requests pg-boss delivery metadata for all seven queues", async () => {
+  it("requests pg-boss delivery metadata for every registered queue", async () => {
     const work = vi.fn(async (..._args: unknown[]) => "worker-id");
     const info = vi.fn();
     const ctx = {
@@ -36,12 +36,13 @@ describe("worker handler registration", () => {
     await registerDiagnoseHandler(ctx);
     await registerArtifactHandlers(ctx);
 
-    expect(work).toHaveBeenCalledTimes(7);
+    expect(work).toHaveBeenCalledTimes(8);
     expect(work.mock.calls.map((call) => call[0])).toEqual([
       "collect.crawl",
       "collect.gsc",
       "collect.ga4",
       "collect.csv",
+      "collect.dataforseo",
       "diagnose",
       "artifact.generate",
       "export.bundle",

@@ -40,7 +40,7 @@ import {
 
 /**
  * Worker bootstrap (spec §3.1, §13). Readiness is acquired last: pg-boss must be
- * started, all seven queue handlers registered, and blocking startup recovery
+ * started, all eight queue handlers registered, and blocking startup recovery
  * completed before the process owns the advisory readiness lease.
  */
 
