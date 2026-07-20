@@ -1,5 +1,7 @@
 # Connected Growth Audit & Optimization Implementation Plan
 
+> **Superseded on 2026-07-21.** Do not execute this 18-task plan. It mixes the long-term target state with the first implementation slice and contains known spec-lock, create-run, and recheck inconsistencies. Use [`2026-07-21-unified-growth-opportunity-prd.md`](./2026-07-21-unified-growth-opportunity-prd.md), [`2026-07-21-unified-growth-opportunity-design.md`](./2026-07-21-unified-growth-opportunity-design.md), and the replacement implementation plan.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Extend Nevermore into a versioned complete audit-and-optimization platform, proving a technical audit-to-recheck vertical slice before migrating market, demand, content, publishing, and client self-service.

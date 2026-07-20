@@ -1,5 +1,7 @@
 # Nevermore Connected Growth Audit & Optimization Platform 设计
 
+> **Superseded on 2026-07-21.** This document preserves the prior dual-loop proposal for decision history. The current product requirements authority is [`2026-07-21-unified-growth-opportunity-prd.md`](./2026-07-21-unified-growth-opportunity-prd.md), supported by [`2026-07-21-unified-growth-opportunity-design.md`](./2026-07-21-unified-growth-opportunity-design.md): one Growth Audit, one Growth Opportunity work object, one delivery loop, and four primary product entries.
+
 **日期：** 2026-07-20
 
 **状态：** 已确认，可进入实施规划
