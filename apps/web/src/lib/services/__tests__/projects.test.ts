@@ -5,6 +5,7 @@ import {
   IcpProfilesRepository,
   IdempotencyRepository,
   ProjectsRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   TelemetryRepository,
@@ -15,6 +16,7 @@ import {
 import type {
   CreateProjectRequest,
   CreateProjectWireRequest,
+  LegacyCreateProjectRequest,
 } from "@sf/contracts";
 import type { UrlGuardResult } from "@sf/sources";
 
@@ -33,7 +35,7 @@ const { createProject, getProject, listProjects } = await import(
 const scope = { workspaceId: "workspace-1" };
 const actorId = "user-1";
 const idempotencyKey = "idem-1";
-const baseBody: CreateProjectRequest = {
+const baseBody: LegacyCreateProjectRequest = {
   clientName: "Client",
   projectName: "Project",
   siteUrl: "https://example.com",
@@ -47,15 +49,17 @@ const projectRow = {
   workspace_id: scope.workspaceId,
   client_name: baseBody.clientName,
   project_name: baseBody.projectName,
+  stage: "setup",
   default_delivery_locale: baseBody.defaultDeliveryLocale,
   current_icp_profile_id: null,
+  confirmed_icp_profile_id: null,
   created_at: "2026-07-19T00:00:00.000Z",
   updated_at: "2026-07-19T00:00:00.000Z",
   archived_at: null,
 } as ProjectRow;
 
 const siteRow = {
-  id: "site-1",
+  id: "11111111-1111-4111-8111-111111111111",
   workspace_id: scope.workspaceId,
   project_id: projectRow.id,
   origin: "https://example.com",
@@ -69,6 +73,13 @@ const siteRow = {
 function requestHash(
   body: CreateProjectWireRequest,
 ): string {
+  if ("mode" in body) {
+    return contentHash({
+      mode: body.mode,
+      productUrl: body.productUrl,
+      businessHint: body.businessHint ?? null,
+    });
+  }
   return contentHash({
     clientName: body.clientName,
     projectName: body.projectName,
@@ -149,6 +160,7 @@ beforeEach(() => {
   );
   vi.spyOn(IdempotencyRepository.prototype, "complete").mockResolvedValue();
   vi.spyOn(ProjectsRepository.prototype, "insert").mockResolvedValue(projectRow);
+  vi.spyOn(ProjectsRepository.prototype, "setCurrentIcpProfile").mockResolvedValue(true);
   vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue(projectRow);
   vi.spyOn(SitesRepository.prototype, "insertPrimary").mockResolvedValue(siteRow);
   vi.spyOn(SitesRepository.prototype, "findPrimary").mockResolvedValue(siteRow);
@@ -158,8 +170,22 @@ beforeEach(() => {
   vi.spyOn(SourceConnectionsRepository.prototype, "insertDefaultCrawl").mockResolvedValue(
     { id: "source-1" } as never,
   );
+  vi.spyOn(SitePagesRepository.prototype, "upsertNormalizedUrl").mockResolvedValue({
+    id: "page-1",
+  } as never);
   vi.spyOn(TelemetryRepository.prototype, "emit").mockResolvedValue();
   vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue(null);
+  vi.spyOn(IcpProfilesRepository.prototype, "insertVersion").mockResolvedValue({
+    id: "icp-profile-1",
+    workspace_id: scope.workspaceId,
+    project_id: projectRow.id,
+    version: 1,
+    status: "draft",
+    profile: {},
+    content_hash: "a".repeat(64),
+    created_by: actorId,
+    created_at: projectRow.created_at,
+  });
   vi.spyOn(IcpProfilesRepository.prototype, "mapByIds").mockResolvedValue(
     new Map(),
   );
@@ -170,6 +196,71 @@ beforeEach(() => {
 });
 
 describe("createProject", () => {
+  it("creates an honest URL-first draft and preserves the submitted product page", async () => {
+    const body: CreateProjectRequest = {
+      mode: "product_profile",
+      productUrl:
+        "https://Example.com/products/growth/?utm_source=demo&plan=pro",
+      businessHint: "Hybrid B2B and B2C growth workspace",
+    };
+    const guard = vi.fn(async () => safeVerdict);
+
+    const result = await createProject(
+      scope,
+      actorId,
+      idempotencyKey,
+      body,
+      guard,
+    );
+
+    expect(guard).toHaveBeenCalledWith("https://example.com");
+    expect(ProjectsRepository.prototype.insert).toHaveBeenCalledWith({
+      workspaceId: scope.workspaceId,
+      clientName: "example.com",
+      projectName: "example.com",
+      defaultDeliveryLocale: "en",
+      createdBy: actorId,
+    });
+    expect(SitesRepository.prototype.insertPrimary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: "https://example.com",
+        host: "example.com",
+        marketCodes: [],
+        languageCodes: [],
+      }),
+    );
+    expect(SitePagesRepository.prototype.upsertNormalizedUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        normalizedUrl: "https://example.com/products/growth?plan=pro",
+        normalizedUrlHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+    expect(IcpProfilesRepository.prototype.insertVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 1,
+        status: "draft",
+        profile: expect.objectContaining({
+          profileSchemaVersion: "product-profile.0.3.0",
+          sourcePageUrl: "https://example.com/products/growth?plan=pro",
+          sourceSnapshotId: null,
+          analysisInvocationId: null,
+          productName: null,
+          targetMarkets: [],
+          targetAudiences: [],
+          competitorCandidates: [],
+          businessHint: "Hybrid B2B and B2C growth workspace",
+        }),
+      }),
+    );
+    expect(ProjectsRepository.prototype.setCurrentIcpProfile).toHaveBeenCalledWith(
+      scope,
+      projectRow.id,
+      "icp-profile-1",
+    );
+    expect(result.project.contextStatus).toBe("draft");
+    expect(result.project.confirmedIcpProfileVersion).toBeNull();
+  });
+
   it("replays a completed idempotent create before any DNS or reachability checks", async () => {
     const guard = vi.fn(async () => safeVerdict);
     vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValueOnce(
@@ -189,6 +280,96 @@ describe("createProject", () => {
       replayed: true,
       location: "/p/project-1/overview",
     });
+    expect(guard).not.toHaveBeenCalled();
+    expect(IdempotencyRepository.prototype.begin).not.toHaveBeenCalled();
+  });
+
+  it("rehydrates a completed replay from the scoped project instead of returning a stale stored response contract", async () => {
+    const guard = vi.fn(async () => safeVerdict);
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValueOnce(
+      completedIdempotency(baseBody, {
+        response_body: {
+          data: {
+            id: "stale-project-id",
+            clientName: "Historical Client",
+            projectName: "Historical Project",
+            stage: "active",
+            legacyOnlyField: "must-not-leak",
+          },
+        },
+      }),
+    );
+
+    const result = await createProject(
+      scope,
+      actorId,
+      idempotencyKey,
+      baseBody,
+      guard,
+    );
+
+    expect(ProjectsRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      projectRow.id,
+    );
+    expect(result.project).toEqual({
+      id: projectRow.id,
+      clientName: baseBody.clientName,
+      projectName: baseBody.projectName,
+      stage: "setup",
+      site: {
+        id: siteRow.id,
+        origin: siteRow.origin,
+        host: siteRow.host,
+        marketCodes: siteRow.market_codes,
+        languageCodes: siteRow.language_codes,
+      },
+      contextStatus: "missing",
+      currentIcpProfileVersion: null,
+      confirmedIcpProfileVersion: null,
+      defaultDeliveryLocale: baseBody.defaultDeliveryLocale,
+      createdAt: projectRow.created_at,
+      updatedAt: projectRow.updated_at,
+      archivedAt: null,
+    });
+    expect(result.project.stage).not.toBe("active");
+    expect(result.project).not.toHaveProperty("legacyOnlyField");
+    expect(guard).not.toHaveBeenCalled();
+    expect(IdempotencyRepository.prototype.begin).not.toHaveBeenCalled();
+  });
+
+  it("fails explicitly when a completed replay target cannot be rehydrated in the workspace scope", async () => {
+    const guard = vi.fn(async () => safeVerdict);
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValueOnce(
+      completedIdempotency(baseBody),
+    );
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValueOnce(null);
+
+    await expect(
+      createProject(scope, actorId, idempotencyKey, baseBody, guard),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+      message: "Idempotent project replay target not found.",
+    });
+    expect(guard).not.toHaveBeenCalled();
+    expect(IdempotencyRepository.prototype.begin).not.toHaveBeenCalled();
+  });
+
+  it("fails explicitly when a completed replay record has no resource identity", async () => {
+    const guard = vi.fn(async () => safeVerdict);
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValueOnce(
+      completedIdempotency(baseBody, { resource_id: null }),
+    );
+
+    await expect(
+      createProject(scope, actorId, idempotencyKey, baseBody, guard),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+      message: "Idempotent project replay target not found.",
+    });
+    expect(ProjectsRepository.prototype.findById).not.toHaveBeenCalled();
     expect(guard).not.toHaveBeenCalled();
     expect(IdempotencyRepository.prototype.begin).not.toHaveBeenCalled();
   });

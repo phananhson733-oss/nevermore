@@ -8,6 +8,7 @@ import {
   ActionsRepository,
   AsyncRunsRepository,
   DiagnosticRunsRepository,
+  EvidenceRepository,
   ExecutionArtifactsRepository,
   ExportBundlesRepository,
   FindingsRepository,
@@ -320,10 +321,41 @@ async function seedExport(handle: DbHandle): Promise<{
     runId: diagnosticRunId,
     seenAt: new Date().toISOString(),
   });
+  const observedAt = new Date().toISOString();
+  const [evidenceId] = await new EvidenceRepository(handle.db).insertMany(
+    {
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      diagnosticRunId,
+    },
+    [
+      {
+        sourceProvider: "crawl",
+        origin: "direct_public",
+        method: "observed",
+        grade: "B",
+        availability: "available",
+        support: "supports",
+        subjectRefs: ["https://example.test/"],
+        claim: "Snapshot fixture finding observation.",
+        observedAt,
+        limitation: "Disposable export integration fixture.",
+      },
+    ],
+  );
+  await new EvidenceRepository(handle.db).linkObservations(
+    {
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      diagnosticRunId,
+    },
+    [{ findingId: finding.id, evidenceId: evidenceId!, role: "primary" }],
+  );
   const action = await new ActionsRepository(handle.db).insert({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
     sourceFindingId: finding.id,
+    sourceDiagnosticRunId: diagnosticRunId,
     actionKey: contentHash({ action: finding.id }),
     templateId: "technical-ticket",
     templateVersion: 1,

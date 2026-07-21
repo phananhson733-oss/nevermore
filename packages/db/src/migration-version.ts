@@ -1,7 +1,7 @@
 import type pg from "pg";
 
 export const LATEST_APP_MIGRATION =
-  "0010_growth_audit_slice1" as const;
+  "0011_product_profile_foundation" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 

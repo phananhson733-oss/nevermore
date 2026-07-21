@@ -48,7 +48,7 @@ describeDb("project lifecycle stage", () => {
       "collecting",
     );
 
-    // A complete context alone is insufficient: a crawl snapshot is mandatory.
+    // A complete working context alone is not a confirmed downstream input.
     const [icp] = await handle.db
       .insert(icpProfiles)
       .values({
@@ -114,10 +114,46 @@ describeDb("project lifecycle stage", () => {
 
     await expect(
       projects.setReadyToDiagnoseIfEligible(scope, project.id),
+    ).resolves.toBe(false);
+    expect((await projects.findById(scope, project.id))?.stage).toBe(
+      "collecting",
+    );
+
+    await expect(
+      projects.setConfirmedIcpProfile(scope, project.id, icp!.id),
+    ).resolves.toBe(true);
+    await expect(
+      projects.setReadyToDiagnoseIfEligible(scope, project.id),
     ).resolves.toBe(true);
     expect((await projects.findById(scope, project.id))?.stage).toBe(
       "ready_to_diagnose",
     );
+
+    // A later working draft does not replace or invalidate confirmed v1.
+    const [draft] = await handle.db
+      .insert(icpProfiles)
+      .values({
+        workspace_id: scope.workspaceId,
+        project_id: project.id,
+        version: 2,
+        status: "draft",
+        profile: { productName: "Acme working v2" },
+        content_hash: "4".repeat(64),
+        created_by: actor,
+      })
+      .returning();
+    await expect(
+      projects.setCurrentIcpProfile(scope, project.id, draft!.id),
+    ).resolves.toBe(true);
+    await projects.setStage(scope, project.id, "collecting");
+    await expect(
+      projects.setReadyToDiagnoseIfEligible(scope, project.id),
+    ).resolves.toBe(true);
+    expect(await projects.findById(scope, project.id)).toMatchObject({
+      stage: "ready_to_diagnose",
+      current_icp_profile_id: draft!.id,
+      confirmed_icp_profile_id: icp!.id,
+    });
 
     for (const stage of [
       "diagnosing",

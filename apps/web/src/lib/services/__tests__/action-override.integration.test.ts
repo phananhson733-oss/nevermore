@@ -230,6 +230,7 @@ describeDb(
     let projectId: string;
     let findingId: string;
     let actionId: string;
+    let sourceDiagnosticRunId: string;
     let artifactId: string;
     const actor = randomUUID();
 
@@ -276,6 +277,11 @@ describeDb(
       // Derived priority for high/high is high/now (spec §9.3 clause 2).
       expect(confirmed.action!.roadmapLane).toBe("now");
       expect(confirmed.action!.revision).toBe(1);
+      const confirmedAction = await new ActionsRepository(handle.db).findById(
+        { workspaceId, projectId },
+        actionId,
+      );
+      sourceDiagnosticRunId = confirmedAction!.source_diagnostic_run_id;
 
       const nowTs = new Date().toISOString();
       const [artifactRun] = await handle.db
@@ -341,6 +347,7 @@ describeDb(
         workspaceId,
         projectId,
         sourceFindingId: findingId,
+        sourceDiagnosticRunId,
         actionKey: contentHash({ projectId, marker }),
         templateId: `artifact_state_fixture_${marker}.v1`,
         templateVersion: 1,
@@ -1404,6 +1411,7 @@ describeDb(
           workspaceId,
           projectId,
           sourceFindingId: findingId,
+          sourceDiagnosticRunId,
           actionKey: contentHash({ projectId, marker: fixture.marker }),
           templateId: `action_list_${fixture.marker}.v1`,
           templateVersion: 1,

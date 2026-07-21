@@ -86,6 +86,8 @@ interface ArtifactFixture {
     | "technical_ticket";
   readonly findingId: string;
   readonly diagnosticRunIds: readonly string[];
+  readonly sourceDiagnosticRunId: string;
+  readonly sourceIcpProfileId: string;
   readonly subjectUrl: string;
 }
 
@@ -1025,11 +1027,49 @@ async function seedArtifact(
       regressed: false,
     });
   }
+  const sourceDiagnosticRunId = diagnosticRunIds.at(-1)!;
+  const evidence = new EvidenceRepository(handle.db);
+  const [sourceEvidenceId] = await evidence.insertMany(
+    {
+      workspaceId,
+      projectId: project.id,
+      diagnosticRunId: sourceDiagnosticRunId,
+    },
+    [
+      {
+        sourceProvider: "crawl",
+        origin: "direct_public",
+        method: "observed",
+        grade: "B",
+        availability: "available",
+        support: "supports",
+        subjectRefs: [...prepared.subjectRefs],
+        claim: "The source diagnostic observed this finding.",
+        observedAt: new Date().toISOString(),
+        limitation: "Static integration fixture proving Action source lineage.",
+      },
+    ],
+  );
+  await evidence.linkObservations(
+    {
+      workspaceId,
+      projectId: project.id,
+      diagnosticRunId: sourceDiagnosticRunId,
+    },
+    [
+      {
+        findingId: finding.id,
+        evidenceId: sourceEvidenceId!,
+        role: "primary",
+      },
+    ],
+  );
   const metadataRewrite = artifactType === "metadata_rewrite";
   const action = await new ActionsRepository(handle.db).insert({
     workspaceId,
     projectId: project.id,
     sourceFindingId: finding.id,
+    sourceDiagnosticRunId,
     actionKey: contentHash({ action: finding.id }),
     templateId: metadataRewrite
       ? "rewrite_search_metadata.v1"
@@ -1063,6 +1103,8 @@ async function seedArtifact(
     artifactType,
     findingId: finding.id,
     diagnosticRunIds,
+    sourceDiagnosticRunId,
+    sourceIcpProfileId: icpId,
     subjectUrl,
   };
   const seedRunId = await queueArtifactRun(handle, fixture);
@@ -1085,7 +1127,13 @@ async function queueArtifactRun(
   handle: DbHandle,
   fx: Pick<
     ArtifactFixture,
-    "scope" | "actor" | "artifactId" | "actionId" | "artifactType"
+    | "scope"
+    | "actor"
+    | "artifactId"
+    | "actionId"
+    | "artifactType"
+    | "sourceDiagnosticRunId"
+    | "sourceIcpProfileId"
   >,
   generationMode: "template" | "structured_llm" = "template",
   outputLocale = "en",
@@ -1105,6 +1153,8 @@ async function queueArtifactRun(
       generationMode,
       outputLocale,
       operatorInstructions: null,
+      sourceDiagnosticRunId: fx.sourceDiagnosticRunId,
+      sourceIcpProfileId: fx.sourceIcpProfileId,
     },
   });
   return runId;

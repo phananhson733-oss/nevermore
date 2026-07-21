@@ -69,6 +69,8 @@ const request = {
   generationMode: "template" as const,
   outputLocale: "en",
   operatorInstructions: null,
+  sourceDiagnosticRunId: "diagnostic-1",
+  sourceIcpProfileId: "icp-1",
 };
 const run = {
   id: "run-1",
@@ -113,6 +115,7 @@ const action = {
   workspace_id: scope.workspaceId,
   project_id: scope.projectId,
   source_finding_id: "finding-1",
+  source_diagnostic_run_id: "diagnostic-1",
   action_key: "action-key-1",
   template_id: "fix_http_status.v1",
   template_version: 1,
@@ -233,6 +236,7 @@ const project = {
   stage: "executing" as const,
   default_delivery_locale: "en",
   current_icp_profile_id: null,
+  confirmed_icp_profile_id: null,
   archived_at: null,
   created_by: "user-1",
   created_at: "2026-07-18T10:00:00.000Z",
@@ -341,7 +345,7 @@ beforeEach(() => {
   vi.spyOn(ActionsRepository.prototype, "findById").mockResolvedValue(action);
   vi.spyOn(FindingsRepository.prototype, "findById").mockResolvedValue(finding);
   vi.spyOn(DiagnosticRunsRepository.prototype, "findById").mockResolvedValue(
-    null,
+    diagnosticRun,
   );
   vi.spyOn(
     ObservationsRepository.prototype,
@@ -409,7 +413,10 @@ describe("runArtifact", () => {
         },
       }),
     );
-    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(DiagnosticRunsRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      request.sourceDiagnosticRunId,
+    );
     expect(
       ObservationsRepository.prototype.findBySnapshotMetricSubject,
     ).not.toHaveBeenCalled();
@@ -838,7 +845,10 @@ describe("runArtifact", () => {
 
     await runArtifact(ctx, { runId: run.id, ...scope });
 
-    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(DiagnosticRunsRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      request.sourceDiagnosticRunId,
+    );
     expect(
       ObservationsRepository.prototype.findBySnapshotMetricSubject,
     ).not.toHaveBeenCalled();
@@ -946,17 +956,20 @@ describe("runArtifact", () => {
     );
   });
 
-  it("loads the current ICP and commits invalid JSON content as a draft", async () => {
+  it("loads the source diagnosis ICP and ignores later project profile pointers", async () => {
     vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
       ...run,
       request_payload: {
         ...request,
         artifactType: "metadata_rewrite",
+        sourceDiagnosticRunId: diagnosticRun.id,
+        sourceIcpProfileId: icpRow.id,
       },
     });
     vi.mocked(ProjectsRepository.prototype.findById).mockResolvedValueOnce({
       ...project,
-      current_icp_profile_id: icpRow.id,
+      current_icp_profile_id: "later-draft-2",
+      confirmed_icp_profile_id: "later-confirmed-3",
     });
     mocks.buildTemplateArtifact.mockReturnValueOnce({
       contentFormat: "json",
@@ -971,6 +984,7 @@ describe("runArtifact", () => {
       scope,
       icpRow.id,
     );
+    expect(ProjectsRepository.prototype.findById).not.toHaveBeenCalled();
     expect(mocks.parseIcp).toHaveBeenCalledWith(icpRow.profile);
     expect(ExecutionArtifactsRepository.prototype.insertRevision).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -986,6 +1000,123 @@ describe("runArtifact", () => {
       artifact.id,
       run.id,
       expect.objectContaining({ validationState: "invalid" }),
+    );
+  });
+
+  it("fails closed when the source diagnosis ICP cannot be resolved", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: {
+        ...request,
+        sourceIcpProfileId: "missing-source-icp",
+      },
+    });
+    vi.mocked(DiagnosticRunsRepository.prototype.findById).mockResolvedValueOnce({
+      ...diagnosticRun,
+      icp_profile_id: "missing-source-icp",
+    });
+    vi.mocked(IcpProfilesRepository.prototype.findById).mockResolvedValueOnce(null);
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(IcpProfilesRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      "missing-source-icp",
+    );
+    expect(mocks.parseIcp).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("fails closed when the finding moves beyond the diagnosis frozen at enqueue", async () => {
+    vi.mocked(FindingsRepository.prototype.findById).mockResolvedValueOnce({
+      ...finding,
+      summary: "A later diagnosis changed this finding",
+      last_seen_run_id: "diagnostic-2",
+    });
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(IcpProfilesRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(EvidenceRepository.prototype.listForFindings).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("fails closed when the queued diagnosis disagrees with the Action's immutable source", async () => {
+    vi.mocked(ActionsRepository.prototype.findById).mockResolvedValueOnce({
+      ...action,
+      source_diagnostic_run_id: "diagnostic-2",
+    });
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(FindingsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(IcpProfilesRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(EvidenceRepository.prototype.listForFindings).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("fails closed when the frozen source diagnosis cannot be resolved", async () => {
+    vi.mocked(DiagnosticRunsRepository.prototype.findById).mockResolvedValueOnce(
+      null,
+    );
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(IcpProfilesRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(EvidenceRepository.prototype.listForFindings).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("fails closed when the frozen source ICP disagrees with its diagnosis", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: {
+        ...request,
+        sourceIcpProfileId: "unrelated-icp",
+      },
+    });
+
+    await runArtifact(ctx, { runId: run.id, ...scope });
+
+    expect(IcpProfilesRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(EvidenceRepository.prototype.listForFindings).not.toHaveBeenCalled();
+    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
     );
   });
 

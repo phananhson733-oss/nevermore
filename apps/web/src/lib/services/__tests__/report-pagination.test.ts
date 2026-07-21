@@ -72,6 +72,7 @@ function action(id: string, status: string): ActionRow {
     workspace_id: SCOPE.workspaceId,
     project_id: SCOPE.projectId,
     source_finding_id: "eligible-finding",
+    source_diagnostic_run_id: "diagnostic-run-1",
     action_key: `key-${id}`,
     template_id: "technical_fix_v1",
     template_version: 1,

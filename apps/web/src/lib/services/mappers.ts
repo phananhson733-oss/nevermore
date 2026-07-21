@@ -24,6 +24,7 @@ export interface ProjectDto {
   site: SiteDto;
   contextStatus: ContextStatus;
   currentIcpProfileVersion: number | null;
+  confirmedIcpProfileVersion: number | null;
   defaultDeliveryLocale: string;
   createdAt: string;
   updatedAt: string;
@@ -54,8 +55,16 @@ export function toProjectDto(
   project: ProjectRow,
   site: SiteRow,
   currentIcp: IcpProfileRow | null,
+  confirmedIcp: IcpProfileRow | null = null,
 ): ProjectDto {
-  const contextStatus: ContextStatus = currentIcp ? currentIcp.status : "missing";
+  // `contextStatus` is the downstream readiness projection. Once a reviewed
+  // version exists, a later working draft must not make the project appear
+  // unconfirmed or block an audit that correctly freezes the confirmed row.
+  const contextStatus: ContextStatus = confirmedIcp
+    ? "complete"
+    : currentIcp
+      ? currentIcp.status
+      : "missing";
   return {
     id: project.id,
     clientName: project.client_name,
@@ -64,6 +73,7 @@ export function toProjectDto(
     site: toSiteDto(site),
     contextStatus,
     currentIcpProfileVersion: currentIcp ? currentIcp.version : null,
+    confirmedIcpProfileVersion: confirmedIcp ? confirmedIcp.version : null,
     defaultDeliveryLocale: project.default_delivery_locale,
     createdAt: project.created_at,
     updatedAt: project.updated_at,

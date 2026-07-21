@@ -38,6 +38,7 @@ export interface Project {
   readonly site: SiteDto;
   readonly contextStatus: ContextStatus;
   readonly currentIcpProfileVersion: number | null;
+  readonly confirmedIcpProfileVersion?: number | null;
   readonly defaultDeliveryLocale: string;
   readonly createdAt: string;
   readonly updatedAt: string;

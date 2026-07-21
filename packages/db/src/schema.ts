@@ -6,8 +6,8 @@
 // column defaults so insert/select types are correct and ergonomic.
 //
 // Foreign keys use the function form `.references(() => other.id)` so forward and
-// circular references resolve lazily (notably the two deferred circular FKs:
-// client_projects.current_icp_profile_id -> icp_profiles.id and
+// circular references resolve lazily (notably the deferred circular FKs from
+// client_projects.current/confirmed_icp_profile_id -> icp_profiles.id and
 // source_connections.last_successful_snapshot_id -> data_snapshots.id).
 
 import { sql } from "drizzle-orm";
@@ -69,7 +69,7 @@ export const operatorProfiles = app.table("operator_profiles", {
 });
 
 // ---------------------------------------------------------------------------
-// 3. client_projects  (deferred circular FK -> icp_profiles.id)
+// 3. client_projects  (deferred circular FKs -> icp_profiles.id)
 // ---------------------------------------------------------------------------
 export const clientProjects = app.table("client_projects", {
   id: uuid().primaryKey().defaultRandom(),
@@ -81,6 +81,9 @@ export const clientProjects = app.table("client_projects", {
   stage: text().notNull().default("setup"),
   default_delivery_locale: text().notNull(),
   current_icp_profile_id: uuid().references((): AnyPgColumn => icpProfiles.id),
+  confirmed_icp_profile_id: uuid().references(
+    (): AnyPgColumn => icpProfiles.id,
+  ),
   archived_at: tz(),
   created_by: uuid().notNull(),
   created_at: tz().notNull().defaultNow(),
@@ -645,6 +648,9 @@ export const actions = app.table("actions", {
   source_finding_id: uuid()
     .notNull()
     .references(() => findings.id),
+  source_diagnostic_run_id: uuid()
+    .notNull()
+    .references(() => diagnosticRuns.id),
   action_key: text().notNull(),
   template_id: text().notNull(),
   template_version: integer().notNull().default(1),

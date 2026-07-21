@@ -431,7 +431,7 @@ Complete profile 必填：
 
 Profile JSON 使用 RFC 8785 语义的 canonical JSON 后 sha256，语义相同的保存返回现有版本，不制造空版本。
 
-`marketCodes`、`siteLanguageCodes` 和 `defaultDeliveryLocale` 在 complete Profile 中是诊断输入权威，同时在 Site/Project 上保留读模型投影。complete 保存必须在同一事务创建 ICP version、更新 `sites.market_codes/language_codes`、更新 `client_projects.default_delivery_locale/current_icp_profile_id`；draft 保存只更新 current profile pointer，不改变 Site/Project 投影。DiagnosticRun 永远冻结 Profile 里的值，避免并发更新影响历史 Run。
+`marketCodes`、`siteLanguageCodes` 和 `defaultDeliveryLocale` 在 confirmed Profile 中是诊断输入权威，同时在 Site/Project 上保留读模型投影。URL-first 初始化时，未知的 Site market/language 必须保存为空数组，不得默认成 `US` 或 `en`。complete 保存必须在同一事务创建 ICP version、更新 `sites.market_codes/language_codes`、更新 `client_projects.default_delivery_locale/current_icp_profile_id/confirmed_icp_profile_id`；后续 draft 只更新 current profile pointer，不改变 Site/Project 投影或 confirmed pointer。DiagnosticRun 永远冻结 `confirmed_icp_profile_id` 指向的不可变 Profile version，避免未审核草稿或并发更新影响历史 Run。
 
 ## 7. 数据中心与 Source Adapter 合同
 

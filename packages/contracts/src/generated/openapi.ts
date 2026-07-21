@@ -465,7 +465,8 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        CreateProjectRequest: {
+        CreateProjectRequest: components["schemas"]["LegacyCreateProjectRequest"] | components["schemas"]["ProductProfileCreateProjectRequest"];
+        LegacyCreateProjectRequest: {
             clientName: string;
             projectName: string;
             /**
@@ -477,6 +478,17 @@ export interface components {
             siteLanguageCodes: components["schemas"]["LocaleCode"][];
             defaultDeliveryLocale: components["schemas"]["LocaleCode"];
         };
+        ProductProfileCreateProjectRequest: {
+            /** @constant */
+            mode: "product_profile";
+            /**
+             * Format: uri
+             * @description Public http(s) product page URL. Paths and non-tracking query parameters are preserved; credentials, fragments, private/reserved targets, and unsafe DNS resolutions are rejected.
+             */
+            productUrl: string;
+            /** @description Optional customer-declared business context. This is recorded as declared provenance, never as an observed fact. */
+            businessHint?: string;
+        };
         Project: {
             id: components["schemas"]["Uuid"];
             clientName: string;
@@ -487,6 +499,8 @@ export interface components {
             /** @enum {string} */
             contextStatus: "missing" | "draft" | "complete";
             currentIcpProfileVersion?: number | null;
+            /** @description Immutable reviewed profile version frozen for downstream audits; independent of a later working draft. */
+            confirmedIcpProfileVersion?: number | null;
             defaultDeliveryLocale: components["schemas"]["LocaleCode"];
             createdAt: components["schemas"]["Timestamp"];
             updatedAt: components["schemas"]["Timestamp"];

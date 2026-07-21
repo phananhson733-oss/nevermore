@@ -197,6 +197,49 @@ test("rejects a current v0.3 lock downgraded to lockFormat 1", (t) => {
   assert.match(result.stderr, /lockFormat 2 is required for product version 0\.3\.0/i);
 });
 
+test("rejects an explicitly supplied legacy v1 lock before it can bypass implementation equality", (t) => {
+  const fixture = makeFixture(t);
+  write(
+    fixture.root,
+    "package.json",
+    `${JSON.stringify({ version: "0.2.0" })}\n`,
+  );
+  write(
+    fixture.root,
+    "authority/openapi.yaml",
+    `${readFileSync(join(fixture.root, "openapi/mvp.yaml"), "utf8")}x-authority-only: true\n`,
+  );
+  write(
+    fixture.root,
+    "authority/scripts/verify-spec.mjs",
+    "process.exit(0);\n",
+  );
+
+  const legacyLock = {
+    ...fixture.lock,
+    lockFormat: 1,
+    productVersion: "0.2.0",
+    authorityFiles: {
+      ...fixture.lock.authorityFiles,
+      "openapi.yaml": sha256(join(fixture.root, "authority/openapi.yaml")),
+      "scripts/verify-spec.mjs": sha256(
+        join(fixture.root, "authority/scripts/verify-spec.mjs"),
+      ),
+    },
+  };
+  delete legacyLock.implementationFiles;
+  write(
+    fixture.root,
+    fixture.lockPath,
+    `${JSON.stringify(legacyLock, null, 2)}\n`,
+  );
+
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /legacy lockFormat 1 cannot verify activated v0\.3 authority/i);
+});
+
 test("rejects a table declared by the lock but absent from every migration", (t) => {
   const fixture = makeFixture(t, {
     tables: ["workspaces", "capability_runs", "audit_runs"],

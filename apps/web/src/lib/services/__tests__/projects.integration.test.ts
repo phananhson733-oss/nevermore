@@ -20,7 +20,14 @@ import {
   ProjectsRepository,
   type CanonicalValue,
 } from "@sf/db";
-import { sourceConnections, telemetryEvents, workspaces } from "@sf/db/schema";
+import {
+  clientProjects,
+  icpProfiles,
+  sitePages,
+  sourceConnections,
+  telemetryEvents,
+  workspaces,
+} from "@sf/db/schema";
 import { ProblemError } from "@sf/observability";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProject, getProject, type UrlGuard } from "@/lib/services/projects";
@@ -98,6 +105,72 @@ describeDb("createProject (AC-007)", () => {
       .from(telemetryEvents)
       .where(eq(telemetryEvents.project_id, result.project.id));
     expect(events.map((e) => e.event_name)).toContain("project_created");
+  });
+
+  it("creates a URL-first project with a traceable deep page and no invented market facts", async () => {
+    const result = await createProject(
+      { workspaceId },
+      actor,
+      randomUUID(),
+      {
+        mode: "product_profile",
+        productUrl:
+          "https://Profile.Example.com/products/growth/?utm_source=demo&plan=pro",
+        businessHint: "A hybrid B2B and B2C growth product",
+      },
+      safeGuard,
+    );
+
+    expect(result.project).toMatchObject({
+      clientName: "profile.example.com",
+      projectName: "profile.example.com",
+      contextStatus: "draft",
+      site: {
+        origin: "https://profile.example.com",
+        host: "profile.example.com",
+        marketCodes: [],
+        languageCodes: [],
+      },
+    });
+
+    const [project] = await handle.db
+      .select({
+        currentProfileId: clientProjects.current_icp_profile_id,
+        confirmedProfileId: clientProjects.confirmed_icp_profile_id,
+      })
+      .from(clientProjects)
+      .where(eq(clientProjects.id, result.project.id));
+    expect(project?.currentProfileId).toEqual(expect.any(String));
+    expect(project?.confirmedProfileId).toBeNull();
+
+    const [page] = await handle.db
+      .select()
+      .from(sitePages)
+      .where(eq(sitePages.project_id, result.project.id));
+    expect(page?.normalized_url).toBe(
+      "https://profile.example.com/products/growth?plan=pro",
+    );
+
+    const [profile] = await handle.db
+      .select()
+      .from(icpProfiles)
+      .where(eq(icpProfiles.id, project!.currentProfileId!));
+    expect(profile).toMatchObject({
+      status: "draft",
+      version: 1,
+      profile: expect.objectContaining({
+        profileSchemaVersion: "product-profile.0.3.0",
+        sourceSiteId: result.project.site.id,
+        sourcePageUrl:
+          "https://profile.example.com/products/growth?plan=pro",
+        sourceSnapshotId: null,
+        analysisInvocationId: null,
+        productName: null,
+        targetMarkets: [],
+        targetAudiences: [],
+        competitorCandidates: [],
+      }),
+    });
   });
 
   it("rejects a non-http(s) URL with 422 before the guard runs", async () => {
@@ -422,6 +495,89 @@ describeDb("context versioning (AC-009) and isolation (AC-010)", () => {
     const project = await getProject({ workspaceId }, projectId);
     expect(project.contextStatus).toBe("complete");
     expect(project.currentIcpProfileVersion).toBe(complete.version);
+    expect(project.confirmedIcpProfileVersion).toBe(complete.version);
+
+    const [persisted] = await handle.db
+      .select({
+        currentProfileId: clientProjects.current_icp_profile_id,
+        confirmedProfileId: clientProjects.confirmed_icp_profile_id,
+      })
+      .from(clientProjects)
+      .where(eq(clientProjects.id, projectId));
+    expect(persisted).toEqual({
+      currentProfileId: complete.id,
+      confirmedProfileId: complete.id,
+    });
+
+    const workingDraft = await updateContext(
+      { workspaceId },
+      projectId,
+      actor,
+      {
+        mode: "draft",
+        baseVersion: complete.version,
+        profile: { productName: "Unconfirmed product name edit" },
+      },
+    );
+    const withWorkingDraft = await getProject({ workspaceId }, projectId);
+    expect(withWorkingDraft).toMatchObject({
+      contextStatus: "complete",
+      currentIcpProfileVersion: workingDraft.version,
+      confirmedIcpProfileVersion: complete.version,
+    });
+  });
+
+  it("re-confirming an older immutable profile restores its site and locale projections", async () => {
+    const rollbackWorkspaceId = await newWorkspace(handle);
+    const created = await createProject(
+      { workspaceId: rollbackWorkspaceId },
+      actor,
+      randomUUID(),
+      baseBody("https://ctx-projection-rollback.example"),
+      safeGuard,
+    );
+    const profileV1 = completeProfile();
+    const profileV2 = {
+      ...completeProfile(),
+      marketCodes: ["DE"],
+      siteLanguageCodes: ["de"],
+      defaultDeliveryLocale: "de",
+    };
+
+    const v1 = await updateContext(
+      { workspaceId: rollbackWorkspaceId },
+      created.project.id,
+      actor,
+      { mode: "complete", baseVersion: 0, profile: profileV1 },
+    );
+    const v2 = await updateContext(
+      { workspaceId: rollbackWorkspaceId },
+      created.project.id,
+      actor,
+      { mode: "complete", baseVersion: v1.version, profile: profileV2 },
+    );
+    const reconfirmed = await updateContext(
+      { workspaceId: rollbackWorkspaceId },
+      created.project.id,
+      actor,
+      { mode: "complete", baseVersion: v2.version, profile: profileV1 },
+    );
+
+    expect(reconfirmed.id).toBe(v1.id);
+    const project = await getProject(
+      { workspaceId: rollbackWorkspaceId },
+      created.project.id,
+    );
+    expect(project).toMatchObject({
+      contextStatus: "complete",
+      currentIcpProfileVersion: v2.version,
+      confirmedIcpProfileVersion: v1.version,
+      defaultDeliveryLocale: "en",
+      site: {
+        marketCodes: ["US"],
+        languageCodes: ["en"],
+      },
+    });
   });
 
   it("a foreign workspace cannot read the project (404, not 403) (AC-010)", async () => {

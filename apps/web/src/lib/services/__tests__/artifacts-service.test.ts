@@ -3,7 +3,9 @@ import {
   ActionsRepository,
   AsyncRunsRepository,
   contentHash,
+  DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
+  FindingsRepository,
   IdempotencyRepository,
   ProjectsRepository,
   type ActionRow,
@@ -104,13 +106,24 @@ const requestHash = contentHash({
 const project = {
   id: projectId,
   workspace_id: scope.workspaceId,
+  confirmed_icp_profile_id: "later-confirmed-icp-2",
   archived_at: null,
 } as ProjectRow;
 const action = {
   id: actionId,
+  source_finding_id: "finding-1",
+  source_diagnostic_run_id: "diagnostic-1",
   template_id: "fix_http_status.v1",
   status: "accepted",
 } as ActionRow;
+const sourceFinding = {
+  id: action.source_finding_id,
+  last_seen_run_id: "diagnostic-1",
+};
+const sourceDiagnosticRun = {
+  id: sourceFinding.last_seen_run_id,
+  icp_profile_id: "source-icp-1",
+};
 const run = {
   id: "run-1",
   workspace_id: scope.workspaceId,
@@ -237,6 +250,12 @@ beforeEach(() => {
   vi.spyOn(ActionsRepository.prototype, "findByIdForUpdate").mockResolvedValue(
     action,
   );
+  vi.spyOn(FindingsRepository.prototype, "findById").mockResolvedValue(
+    sourceFinding as never,
+  );
+  vi.spyOn(DiagnosticRunsRepository.prototype, "findById").mockResolvedValue(
+    sourceDiagnosticRun as never,
+  );
   vi.spyOn(
     ExecutionArtifactsRepository.prototype,
     "findLiveByActionType",
@@ -362,6 +381,14 @@ describe("createActionArtifact", () => {
     expect(ExecutionArtifactsRepository.prototype.insert).toHaveBeenCalledWith(
       expect.objectContaining({ id: result.resourceRef.id, actionId }),
     );
+    expect(AsyncRunsRepository.prototype.insertQueued).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestPayload: expect.objectContaining({
+          sourceDiagnosticRunId: sourceDiagnosticRun.id,
+          sourceIcpProfileId: sourceDiagnosticRun.icp_profile_id,
+        }),
+      }),
+    );
     expect(mocks.enqueueRunInTx).toHaveBeenCalledWith(
       {},
       {},
@@ -381,6 +408,69 @@ describe("createActionArtifact", () => {
       reserved.id,
       expect.objectContaining({ resourceId: result.resourceRef.id }),
     );
+  });
+
+  it("fails closed when the action's source finding is unavailable", async () => {
+    vi.mocked(FindingsRepository.prototype.findById).mockResolvedValueOnce(null);
+
+    await expect(
+      createActionArtifact(
+        scope,
+        projectId,
+        actionId,
+        actorId,
+        idempotencyKey,
+        body,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      message: "Artifact source finding is unavailable.",
+    });
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the finding's source diagnosis is unavailable", async () => {
+    vi.mocked(DiagnosticRunsRepository.prototype.findById).mockResolvedValueOnce(
+      null,
+    );
+
+    await expect(
+      createActionArtifact(
+        scope,
+        projectId,
+        actionId,
+        actorId,
+        idempotencyKey,
+        body,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      message: "Artifact source diagnosis is unavailable.",
+    });
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+  });
+
+  it("rejects artifact creation when the finding moved beyond the Action's frozen diagnosis", async () => {
+    vi.mocked(FindingsRepository.prototype.findById).mockResolvedValueOnce({
+      ...sourceFinding,
+      last_seen_run_id: "diagnostic-2",
+    } as never);
+
+    await expect(
+      createActionArtifact(
+        scope,
+        projectId,
+        actionId,
+        actorId,
+        idempotencyKey,
+        body,
+      ),
+    ).rejects.toMatchObject({
+      code: "VERSION_CONFLICT",
+      message: "Finding changed after this Action was created; review the current opportunity before generating an artifact.",
+    });
+    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
   });
 
   it("regenerates a live artifact and preserves explicit operator instructions", async () => {

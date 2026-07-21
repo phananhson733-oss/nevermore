@@ -47,6 +47,7 @@ const requestHash = contentHash({ projectId, ...body });
 const project = {
   id: projectId,
   workspace_id: scope.workspaceId,
+  confirmed_icp_profile_id: "confirmed-icp-1",
   archived_at: null,
 } as ProjectRow;
 const run = {
@@ -168,7 +169,10 @@ describe("createProjectExport", () => {
         kind: "export",
         activeKey: "export:client_bundle",
         contractVersion: "2026-07-21",
-        requestPayload: body,
+        requestPayload: {
+          ...body,
+          confirmedIcpProfileId: "confirmed-icp-1",
+        },
       }),
     );
     expect(mocks.enqueueRunInTx).toHaveBeenCalledWith(

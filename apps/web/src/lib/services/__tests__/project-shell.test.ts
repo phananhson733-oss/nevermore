@@ -37,6 +37,7 @@ function projectRow(
     stage: "planning",
     default_delivery_locale: "en",
     current_icp_profile_id: null,
+    confirmed_icp_profile_id: null,
     archived_at: null,
     created_by: "operator-1",
     created_at: CREATED_AT,

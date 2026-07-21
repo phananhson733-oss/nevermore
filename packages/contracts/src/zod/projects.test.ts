@@ -13,13 +13,21 @@ const body = (siteUrl: string) => ({
   defaultDeliveryLocale: "en",
 });
 
+const productProfileBody = (productUrl: string, businessHint?: string) => ({
+  mode: "product_profile" as const,
+  productUrl,
+  ...(businessHint === undefined ? {} : { businessHint }),
+});
+
 describe("CreateProjectRequest siteUrl", () => {
   it("preserves a valid legacy URL in the wire schema for idempotency lookup", () => {
     const siteUrl = "https://example.com/customer-path?campaign=legacy";
     const parsed = CreateProjectWireRequest.safeParse(body(siteUrl));
 
     expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.siteUrl).toBe(siteUrl);
+    if (parsed.success && "siteUrl" in parsed.data) {
+      expect(parsed.data.siteUrl).toBe(siteUrl);
+    }
   });
 
   it("accepts only origin-preserving HTTP(S) URLs", () => {
@@ -39,5 +47,77 @@ describe("CreateProjectRequest siteUrl", () => {
     if (!result.success) {
       expect(result.error.issues[0]?.path).toEqual(["siteUrl"]);
     }
+  });
+});
+
+describe("product-profile create request", () => {
+  it("accepts a deep public HTTP(S) product URL and trims the optional hint", () => {
+    expect(
+      CreateProjectRequest.parse(
+        productProfileBody(
+          "https://example.com/products/growth?market=us",
+          "  A hybrid marketplace  ",
+        ),
+      ),
+    ).toEqual({
+      mode: "product_profile",
+      productUrl: "https://example.com/products/growth?market=us",
+      businessHint: "A hybrid marketplace",
+    });
+  });
+
+  it.each([
+    "ftp://example.com/product",
+    "https://user:password@example.com/product",
+    "https://localhost/product",
+    "https://intranet/product",
+    "http://127.0.0.1/product",
+    "https://10.0.0.1/product",
+    "https://198.18.0.1/product",
+    "https://198.51.100.1/product",
+    "https://[::ffff:127.0.0.1]/product",
+    "https://[2001:db8::1]/product",
+    "https://example.com/product#private-fragment",
+  ])("rejects a non-public or unsafe product URL: %s", (productUrl) => {
+    expect(
+      CreateProjectRequest.safeParse(productProfileBody(productUrl)).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    "https://product.test/launch",
+    "https://product.invalid/launch",
+    "https://product.example/launch",
+    "https://nested.product.TEST/launch",
+    "https://product.test./launch",
+  ])("rejects a reserved test or placeholder hostname: %s", (productUrl) => {
+    expect(
+      CreateProjectRequest.safeParse(productProfileBody(productUrl)).success,
+    ).toBe(false);
+  });
+
+  it("rejects blank hints and unknown fields", () => {
+    expect(
+      CreateProjectRequest.safeParse(
+        productProfileBody("https://example.com/product", "   "),
+      ).success,
+    ).toBe(false);
+    expect(
+      CreateProjectWireRequest.safeParse({
+        ...productProfileBody("https://example.com/product"),
+        clientName: "legacy leakage",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("preserves the legacy no-mode shape alongside the discriminated new shape", () => {
+    expect(CreateProjectWireRequest.safeParse(body("https://example.com")).success).toBe(
+      true,
+    );
+    expect(
+      CreateProjectWireRequest.safeParse(
+        productProfileBody("https://example.com/deep/path"),
+      ).success,
+    ).toBe(true);
   });
 });

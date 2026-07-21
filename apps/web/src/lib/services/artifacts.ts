@@ -3,8 +3,10 @@ import {
   ActionsRepository,
   AsyncRunsRepository,
   contentHash,
+  DiagnosticRunsRepository,
   enqueueRunInTx,
   ExecutionArtifactsRepository,
+  FindingsRepository,
   IdempotencyRepository,
   ProjectsRepository,
   type Executor,
@@ -207,6 +209,8 @@ export async function createActionArtifact(
       const txProjects = new ProjectsRepository(tx);
       const txActions = new ActionsRepository(tx);
       const txArtifacts = new ExecutionArtifactsRepository(tx);
+      const txFindings = new FindingsRepository(tx);
+      const txDiagnosticRuns = new DiagnosticRunsRepository(tx);
       const reserved = await txIdem.begin({
         workspaceId: scope.workspaceId,
         scope: IDEMPOTENCY_SCOPE,
@@ -267,6 +271,39 @@ export async function createActionArtifact(
         );
       }
 
+      // An Artifact belongs to the exact diagnosis that produced its source
+      // Finding. The project's confirmed pointer may advance independently,
+      // so derive and freeze lineage from Finding -> DiagnosticRun instead.
+      const sourceFinding = await txFindings.findById(
+        projectScope,
+        currentAction.source_finding_id,
+      );
+      if (!sourceFinding) {
+        throw new ProblemError(
+          "DEPENDENCY_UNAVAILABLE",
+          "Artifact source finding is unavailable.",
+        );
+      }
+      if (
+        sourceFinding.last_seen_run_id !==
+        currentAction.source_diagnostic_run_id
+      ) {
+        throw new ProblemError(
+          "VERSION_CONFLICT",
+          "Finding changed after this Action was created; review the current opportunity before generating an artifact.",
+        );
+      }
+      const sourceDiagnosticRun = await txDiagnosticRuns.findById(
+        projectScope,
+        currentAction.source_diagnostic_run_id,
+      );
+      if (!sourceDiagnosticRun) {
+        throw new ProblemError(
+          "DEPENDENCY_UNAVAILABLE",
+          "Artifact source diagnosis is unavailable.",
+        );
+      }
+
       const currentExisting = await txArtifacts.findLiveByActionType(
         projectScope,
         actionId,
@@ -288,6 +325,8 @@ export async function createActionArtifact(
           generationMode: body.generationMode,
           outputLocale,
           operatorInstructions: body.operatorInstructions ?? null,
+          sourceDiagnosticRunId: sourceDiagnosticRun.id,
+          sourceIcpProfileId: sourceDiagnosticRun.icp_profile_id,
         },
       });
 

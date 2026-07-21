@@ -589,7 +589,33 @@ describe("project and source repositories", () => {
       }),
     ).resolves.toEqual({ rows: [], nextCursor: null });
 
-    await repo.setCurrentIcpProfile(scope, "project-1", "icp-2");
+    const confirmedIcp = {
+      id: "icp-1",
+      workspace_id: scope.workspaceId,
+      project_id: "project-1",
+      version: 1,
+      status: "complete" as const,
+    };
+    fake.enqueue([confirmedIcp], [], [{ id: "project-1" }], []);
+    await expect(
+      repo.findConfirmedIcpProfile(scope, "project-1"),
+    ).resolves.toBe(confirmedIcp);
+    await expect(
+      repo.findConfirmedIcpProfile(scope, "missing"),
+    ).resolves.toBeNull();
+    await expect(
+      repo.setCurrentIcpProfile(scope, "project-1", "icp-2"),
+    ).resolves.toBe(true);
+    await expect(
+      repo.setCurrentIcpProfile(scope, "missing", "icp-2"),
+    ).resolves.toBe(false);
+    fake.enqueue([{ id: "project-1" }], []);
+    await expect(
+      repo.setConfirmedIcpProfile(scope, "project-1", "icp-1"),
+    ).resolves.toBe(true);
+    await expect(
+      repo.setConfirmedIcpProfile(scope, "missing", "icp-1"),
+    ).resolves.toBe(false);
     await repo.setDeliveryLocale(scope, "project-1", "zh-CN");
     fake.enqueue([{ id: "project-1" }], []);
     await expect(
@@ -617,6 +643,8 @@ describe("project and source repositories", () => {
     expect(readyGuard.sql).toContain(
       '"app"."client_projects"."archived_at" is null',
     );
+    expect(readyGuard.sql).toContain("confirmed_icp_profile_id");
+    expect(readyGuard.sql).not.toContain("current_icp_profile_id");
 
     fake.enqueue([], [project]);
     await expect(
@@ -629,6 +657,8 @@ describe("project and source repositories", () => {
     expect(rebuildGuard.sql).toContain(
       '"app"."client_projects"."archived_at" is null',
     );
+    expect(rebuildGuard.sql).toContain("confirmed_icp_profile_id");
+    expect(rebuildGuard.sql).not.toContain("current_icp_profile_id");
     fake.enqueue([], []);
     await expect(
       repo.rebuildStageFromHistory(scope, "missing"),

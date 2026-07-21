@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { CONTRACT_VERSION } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import {
   ActionsRepository,
   AsyncRunsRepository,
+  DiagnosticRunsRepository,
+  EvidenceRepository,
+  FindingsRepository,
   ProjectsRepository,
   contentHash,
+  toRunAttempt,
 } from "@sf/db";
 import { createActionArtifact } from "@/lib/services/artifacts";
 import { createDiagnosticRun } from "@/lib/services/diagnostics";
@@ -290,6 +295,163 @@ describeDb(
       );
     });
 
+    it("rejects Artifact creation after the confirmed Action's source Finding advances to a later diagnosis", async () => {
+      const driftChain = await runCommonChain(
+        handle,
+        ctx,
+        `b2b-action-lineage-${randomUUID().slice(0, 8)}`,
+      );
+      const diagnosticRuns = new DiagnosticRunsRepository(handle.db);
+      const sourceRun = await diagnosticRuns.findById(
+        driftChain.scope,
+        driftChain.diagRunId,
+      );
+      const findingsRepo = new FindingsRepository(handle.db);
+      const sourceFinding = await findingsRepo.findById(
+        driftChain.scope,
+        driftChain.httpFindingId,
+      );
+      if (!sourceRun || !sourceFinding) {
+        throw new Error("lineage drift fixture did not persist its source rows");
+      }
+
+      const nonce = randomUUID();
+      const asyncRuns = new AsyncRunsRepository(handle.db);
+      const laterRun = await asyncRuns.insertQueued({
+        workspaceId: driftChain.scope.workspaceId,
+        projectId: driftChain.scope.projectId,
+        kind: "diagnostic",
+        activeKey: `diagnostic:lineage-drift:${nonce}`,
+        initiatedBy: driftChain.actor,
+        contractVersion: CONTRACT_VERSION,
+        requestPayload: { lineageDriftFixture: nonce },
+      });
+      await diagnosticRuns.insert({
+        runId: laterRun.id,
+        workspaceId: driftChain.scope.workspaceId,
+        projectId: driftChain.scope.projectId,
+        siteId: sourceRun.site_id,
+        icpProfileId: sourceRun.icp_profile_id,
+        icpProfileVersion: sourceRun.icp_profile_version,
+        ruleSetVersion: sourceRun.rule_set_version,
+        promptSetVersion: sourceRun.prompt_set_version,
+        outputLocale: sourceRun.output_locale,
+        inputManifest: {
+          ...sourceRun.input_manifest,
+          lineageDriftFixture: nonce,
+        },
+        inputHash: contentHash({ lineageDriftFixture: nonce }),
+      });
+      const claimed = await asyncRuns.claim(driftChain.scope, laterRun.id);
+      if (!claimed) throw new Error("lineage drift diagnostic was not claimable");
+
+      const evidence = new EvidenceRepository(handle.db);
+      const [laterEvidenceId] = await evidence.insertMany(
+        {
+          workspaceId: driftChain.scope.workspaceId,
+          projectId: driftChain.scope.projectId,
+          diagnosticRunId: laterRun.id,
+        },
+        [
+          {
+            sourceProvider: "crawl",
+            origin: "direct_public",
+            method: "observed",
+            grade: "B",
+            availability: "available",
+            support: "supports",
+            subjectRefs: sourceFinding.subject_refs,
+            claim: "The later diagnostic observed the same canonical finding.",
+            observedAt: new Date().toISOString(),
+            limitation: "Isolated integration fixture for lineage drift.",
+          },
+        ],
+      );
+      await evidence.linkObservations(
+        {
+          workspaceId: driftChain.scope.workspaceId,
+          projectId: driftChain.scope.projectId,
+          diagnosticRunId: laterRun.id,
+        },
+        [
+          {
+            findingId: sourceFinding.id,
+            evidenceId: laterEvidenceId!,
+            role: "primary",
+          },
+        ],
+      );
+      await findingsRepo.touchSeen(sourceFinding.id, {
+        severity: sourceFinding.severity,
+        confidence: sourceFinding.confidence,
+        titleArgs: sourceFinding.title_args,
+        summary: "A later diagnostic observed this finding again.",
+        summaryLocale: sourceFinding.summary_locale,
+        summaryInvocationId: sourceFinding.summary_invocation_id ?? null,
+        subjectRefs: sourceFinding.subject_refs,
+        runId: laterRun.id,
+        seenAt: new Date(Date.now() + 1_000).toISOString(),
+        regressed: false,
+      });
+      await asyncRuns.setTerminal(toRunAttempt(claimed), {
+        status: "completed",
+        resultType: "diagnostic_run",
+        resultId: laterRun.id,
+      });
+
+      await expect(
+        new ActionsRepository(handle.db).findById(
+          driftChain.scope,
+          driftChain.actionId,
+        ),
+      ).resolves.toMatchObject({
+        source_finding_id: sourceFinding.id,
+        source_diagnostic_run_id: sourceRun.id,
+      });
+      await expect(
+        findingsRepo.findById(driftChain.scope, sourceFinding.id),
+      ).resolves.toMatchObject({ last_seen_run_id: laterRun.id });
+
+      const artifactBefore = await new ExecutionArtifactsRepository(
+        handle.db,
+      ).findById(driftChain.scope, driftChain.artifactId);
+      let rejection: unknown;
+      try {
+        await createActionArtifact(
+          { workspaceId: driftChain.scope.workspaceId },
+          driftChain.scope.projectId,
+          driftChain.actionId,
+          driftChain.actor,
+          randomUUID(),
+          {
+            artifactType: "technical_ticket",
+            generationMode: "template",
+            outputLocale: "en",
+            operatorInstructions: null,
+          },
+        );
+      } catch (error) {
+        rejection = error;
+      }
+      expect(rejection).toBeInstanceOf(ProblemError);
+      expect(rejection).toMatchObject({
+        status: 409,
+        code: "VERSION_CONFLICT",
+        message:
+          "Finding changed after this Action was created; review the current opportunity before generating an artifact.",
+      });
+      await expect(
+        new ExecutionArtifactsRepository(handle.db).findById(
+          driftChain.scope,
+          driftChain.artifactId,
+        ),
+      ).resolves.toMatchObject({
+        current_revision: artifactBefore?.current_revision,
+        latest_generation_run_id: artifactBefore?.latest_generation_run_id,
+        status: artifactBefore?.status,
+      });
+    });
+
     it("runArtifact (TEMPLATE mode, no network) appends a draft revision", async () => {
       const repo = new ExecutionArtifactsRepository(handle.db);
       const artifact = await repo.findById(chain.scope, chain.artifactId);
@@ -438,10 +600,17 @@ describeDb(
         if (!sourceFinding) {
           throw new Error(`golden fixture did not trip ${sourceRuleId}`);
         }
+        const sourceFindingRow = await new FindingsRepository(
+          handle.db,
+        ).findById(chain.scope, sourceFinding.id);
+        if (!sourceFindingRow) {
+          throw new Error(`source finding ${sourceFinding.id} was not persisted`);
+        }
         const action = await new ActionsRepository(handle.db).insert({
           workspaceId: chain.scope.workspaceId,
           projectId: chain.scope.projectId,
           sourceFindingId: sourceFinding.id,
+          sourceDiagnosticRunId: sourceFindingRow.last_seen_run_id,
           actionKey: contentHash({
             acceptance: "AC-031",
             projectId: chain.scope.projectId,

@@ -216,7 +216,13 @@ export async function createProjectExport(
         activeKey,
         initiatedBy: actorId,
         contractVersion: CONTRACT_VERSION,
-        requestPayload: { kind: body.kind, outputLocale: body.outputLocale },
+        requestPayload: {
+          kind: body.kind,
+          outputLocale: body.outputLocale,
+          // Export is an immutable customer deliverable. Bind it to the
+          // profile confirmed when the command was accepted, not a later draft.
+          confirmedIcpProfileId: currentProject.confirmed_icp_profile_id,
+        },
       });
       const bundle = await new ExportBundlesRepository(tx).insert({
         workspaceId: scope.workspaceId,

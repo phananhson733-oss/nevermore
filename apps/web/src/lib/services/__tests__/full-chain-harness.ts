@@ -406,6 +406,11 @@ async function seedCompleteIcp(
     scope.projectId,
     icp!.id,
   );
+  await new ProjectsRepository(handle.db).setConfirmedIcpProfile(
+    scope,
+    scope.projectId,
+    icp!.id,
+  );
 }
 
 /** Seed one AVAILABLE crawl snapshot holding the golden observations. */

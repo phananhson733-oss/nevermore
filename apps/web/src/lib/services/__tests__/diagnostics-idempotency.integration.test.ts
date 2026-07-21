@@ -24,6 +24,7 @@ import {
 import {
   asyncRuns,
   clientProjects,
+  diagnosticRuns,
   icpProfiles,
   workspaces,
 } from "@sf/db/schema";
@@ -50,7 +51,7 @@ async function createDiagnosticFixture(
   workspaceId: string,
   suffix: string,
   opts: { crawlAvailability?: "available" | "partial" | "unavailable" } = {},
-): Promise<{ scope: ProjectScope; snapshotId: string }> {
+): Promise<{ scope: ProjectScope; snapshotId: string; confirmedProfileId: string }> {
   const created = await createProject(
     { workspaceId },
     actor,
@@ -80,7 +81,10 @@ async function createDiagnosticFixture(
     .returning();
   await handle.db
     .update(clientProjects)
-    .set({ current_icp_profile_id: icp!.id })
+    .set({
+      current_icp_profile_id: icp!.id,
+      confirmed_icp_profile_id: icp!.id,
+    })
     .where(eq(clientProjects.id, scope.projectId));
 
   const capturedAt = new Date().toISOString();
@@ -125,7 +129,7 @@ async function createDiagnosticFixture(
     rowCount: 0,
     checksum: contentHash({ snapshot: suffix }),
   });
-  return { scope, snapshotId: snapshot.id };
+  return { scope, snapshotId: snapshot.id, confirmedProfileId: icp!.id };
 }
 
 describeDb("createDiagnosticRun idempotency ordering", () => {
@@ -254,6 +258,54 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
         ),
       );
     expect(runs).toHaveLength(0);
+  });
+
+  it("freezes the confirmed profile even when the working pointer advances to a later draft", async () => {
+    queueFixture.send.mockClear();
+    const fixture = await createDiagnosticFixture(
+      handle,
+      workspaceId,
+      randomUUID(),
+    );
+    const [draft] = await handle.db
+      .insert(icpProfiles)
+      .values({
+        workspace_id: workspaceId,
+        project_id: fixture.scope.projectId,
+        version: 2,
+        status: "draft",
+        profile: { productName: "Unconfirmed working edit" },
+        content_hash: contentHash({
+          status: "draft",
+          profile: { productName: "Unconfirmed working edit" },
+        }),
+        created_by: actor,
+      })
+      .returning();
+    await handle.db
+      .update(clientProjects)
+      .set({ current_icp_profile_id: draft!.id })
+      .where(eq(clientProjects.id, fixture.scope.projectId));
+
+    const accepted = await createDiagnosticRun(
+      { workspaceId },
+      fixture.scope.projectId,
+      actor,
+      randomUUID(),
+      { snapshotIds: [fixture.snapshotId], outputLocale: "en" },
+    );
+    const [persisted] = await handle.db
+      .select({
+        icpProfileId: diagnosticRuns.icp_profile_id,
+        icpProfileVersion: diagnosticRuns.icp_profile_version,
+      })
+      .from(diagnosticRuns)
+      .where(eq(diagnosticRuns.id, accepted.run.id));
+
+    expect(persisted).toEqual({
+      icpProfileId: fixture.confirmedProfileId,
+      icpProfileVersion: 1,
+    });
   });
 
   it("replays the original 202 after archive and ICP pointer changes", async () => {

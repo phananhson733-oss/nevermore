@@ -59,7 +59,11 @@ const run = {
   status: "running",
   active_key: "export:client",
   contract_version: "2026-07-21",
-  request_payload: { kind: "client_bundle", outputLocale: "en" },
+  request_payload: {
+    kind: "client_bundle",
+    outputLocale: "en",
+    confirmedIcpProfileId: null,
+  },
   progress: {},
   last_error_code: null,
   last_error_summary: null,
@@ -329,6 +333,7 @@ beforeEach(() => {
     stage: "executing",
     default_delivery_locale: "en",
     current_icp_profile_id: null,
+    confirmed_icp_profile_id: null,
     archived_at: null,
     created_by: "actor-1",
     created_at: "2026-07-19T00:00:00.000Z",
@@ -1015,6 +1020,14 @@ describe("runExport bundle completeness", () => {
   });
 
   it("counts a non-null context item but not a null context item", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: {
+        kind: "client_bundle",
+        outputLocale: "en",
+        confirmedIcpProfileId: "icp-1",
+      },
+    });
     vi.mocked(ProjectsRepository.prototype.findById).mockResolvedValueOnce({
       id: scope.projectId,
       workspace_id: scope.workspaceId,
@@ -1022,7 +1035,8 @@ describe("runExport bundle completeness", () => {
       project_name: "Growth",
       stage: "executing",
       default_delivery_locale: "en",
-      current_icp_profile_id: "icp-1",
+      current_icp_profile_id: "later-draft-2",
+      confirmed_icp_profile_id: "later-confirmed-3",
       archived_at: null,
       created_by: "actor-1",
       created_at: "2026-07-19T00:00:00.000Z",
@@ -1031,7 +1045,7 @@ describe("runExport bundle completeness", () => {
     vi.mocked(IcpProfilesRepository.prototype.findById).mockResolvedValueOnce({
       id: "icp-1",
       version: 1,
-      status: "approved",
+      status: "complete",
       profile: { audience: "operators" },
     } as never);
 
@@ -1041,9 +1055,42 @@ describe("runExport bundle completeness", () => {
       ).resolves.toBeUndefined();
     });
 
-    expect(IcpProfilesRepository.prototype.findById).toHaveBeenCalledOnce();
+    expect(IcpProfilesRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      "icp-1",
+    );
     expect(SourceConnectionsRepository.prototype.listByProject).not.toHaveBeenCalled();
     expect(mocks.assembleBundle).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the frozen confirmed ICP cannot be resolved", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.claim).mockResolvedValueOnce({
+      ...run,
+      request_payload: {
+        kind: "client_bundle",
+        outputLocale: "en",
+        confirmedIcpProfileId: "missing-confirmed-icp",
+      },
+    });
+    vi.mocked(IcpProfilesRepository.prototype.findById).mockResolvedValueOnce(null);
+
+    await expect(
+      runExport(ctx, { runId: run.id, ...scope }),
+    ).resolves.toBeUndefined();
+
+    expect(IcpProfilesRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      "missing-confirmed-icp",
+    );
+    expect(mocks.assembleBundle).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      {
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+        lastErrorSummary: "export failed",
+      },
+    );
   });
 
   it("reads every cursor page and chunks observations for every snapshot", async () => {
@@ -1910,6 +1957,7 @@ describe("runExport bundle completeness", () => {
       stage: "executing",
       default_delivery_locale: "en",
       current_icp_profile_id: null,
+      confirmed_icp_profile_id: null,
       archived_at: null,
       created_by: "actor-1",
       created_at: "2026-07-19T00:00:00.000Z",

@@ -10,7 +10,8 @@ import {
  * `actions` are template-derived (spec §9.2), created idempotently when a Finding
  * is confirmed. `action_key = sha256({projectId, findingKey, templateId})` is
  * unique per project; re-confirm merges evidence refs and refreshes timestamps
- * but never duplicates the Action or overwrites human priority/status.
+ * but never duplicates the Action, rebinds its source DiagnosticRun, or
+ * overwrites human priority/status.
  * `action_override_audit` is the append-only human-override trail (spec §9.3).
  */
 
@@ -19,6 +20,7 @@ export interface ActionRow {
   readonly workspace_id: string;
   readonly project_id: string;
   readonly source_finding_id: string;
+  readonly source_diagnostic_run_id: string;
   readonly action_key: string;
   readonly template_id: string;
   readonly template_version: number;
@@ -89,6 +91,7 @@ export class ActionsRepository extends Repository {
     workspaceId: string;
     projectId: string;
     sourceFindingId: string;
+    sourceDiagnosticRunId: string;
     actionKey: string;
     templateId: string;
     templateVersion: number;
@@ -110,6 +113,7 @@ export class ActionsRepository extends Repository {
         workspace_id: values.workspaceId,
         project_id: values.projectId,
         source_finding_id: values.sourceFindingId,
+        source_diagnostic_run_id: values.sourceDiagnosticRunId,
         action_key: values.actionKey,
         template_id: values.templateId,
         template_version: values.templateVersion,

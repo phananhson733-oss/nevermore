@@ -960,6 +960,11 @@ components:
           additionalProperties: true
 
     CreateProjectRequest:
+      oneOf:
+        - $ref: '#/components/schemas/LegacyCreateProjectRequest'
+        - $ref: '#/components/schemas/ProductProfileCreateProjectRequest'
+
+    LegacyCreateProjectRequest:
       type: object
       additionalProperties: false
       required: [clientName, projectName, siteUrl, marketCodes, siteLanguageCodes, defaultDeliveryLocale]
@@ -985,6 +990,23 @@ components:
           items: { $ref: '#/components/schemas/LocaleCode' }
         defaultDeliveryLocale: { $ref: '#/components/schemas/LocaleCode' }
 
+    ProductProfileCreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, productUrl]
+      properties:
+        mode: { type: string, const: product_profile }
+        productUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Public http(s) product page URL. Paths and non-tracking query parameters are preserved; credentials, fragments, private/reserved targets, and unsafe DNS resolutions are rejected.
+        businessHint:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Optional customer-declared business context. This is recorded as declared provenance, never as an observed fact.
+
     Project:
       type: object
       additionalProperties: false
@@ -1001,6 +1023,10 @@ components:
           type: string
           enum: [missing, draft, complete]
         currentIcpProfileVersion: { type: [integer, 'null'], minimum: 1 }
+        confirmedIcpProfileVersion:
+          type: [integer, 'null']
+          minimum: 1
+          description: Immutable reviewed profile version frozen for downstream audits; independent of a later working draft.
         defaultDeliveryLocale: { $ref: '#/components/schemas/LocaleCode' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }
@@ -1019,9 +1045,13 @@ components:
         host: { type: string }
         marketCodes:
           type: array
+          maxItems: 20
+          uniqueItems: true
           items: { $ref: '#/components/schemas/MarketCode' }
         languageCodes:
           type: array
+          maxItems: 20
+          uniqueItems: true
           items: { $ref: '#/components/schemas/LocaleCode' }
 
     ProjectResponse:

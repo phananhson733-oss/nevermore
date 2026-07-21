@@ -245,6 +245,7 @@ async function confirmFinding(
       workspaceId: scope.workspaceId,
       projectId: projectScope.projectId,
       sourceFindingId: finding.id,
+      sourceDiagnosticRunId: finding.last_seen_run_id,
       actionKey,
       templateId: template.templateId,
       templateVersion: template.templateVersion,

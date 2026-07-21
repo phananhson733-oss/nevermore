@@ -873,7 +873,9 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
   const ruleResults = findingMeta.ruleResults;
   const hasEverRun = latestRun !== null;
 
-  const contextComplete = project.data.contextStatus === "complete";
+  const contextComplete =
+    project.data.confirmedIcpProfileVersion !== null &&
+    project.data.confirmedIcpProfileVersion !== undefined;
   // A failed snapshot read is never treated as a known-empty list. Keeping it
   // distinct from `ready` prevents both a false "needs crawl" message and a
   // diagnostic run based on an incomplete/unknown input manifest.

@@ -106,6 +106,20 @@ export async function updateContext(
       const dup = await icps.findByContentHash(projectScope, hash);
       if (dup) {
         if (body.mode === "complete") {
+          // Confirmation is a separate stable pointer from the working draft.
+          // Re-selecting an immutable complete version must therefore advance
+          // the confirmed pointer and its read-model projections even when no
+          // new profile row is necessary.
+          await projects.setConfirmedIcpProfile(scope, projectId, dup.id);
+          await sites.updatePrimaryProjections(projectScope, {
+            marketCodes: [...body.profile.marketCodes],
+            languageCodes: [...body.profile.siteLanguageCodes],
+          });
+          await projects.setDeliveryLocale(
+            scope,
+            projectId,
+            body.profile.defaultDeliveryLocale,
+          );
           await projects.setReadyToDiagnoseIfEligible(scope, projectId);
         }
         return toIcpProfileDto(dup);
@@ -127,6 +141,7 @@ export async function updateContext(
       // (spec §6.2); a draft save only advances the current-profile pointer.
       if (body.mode === "complete") {
         const p = body.profile;
+        await projects.setConfirmedIcpProfile(scope, projectId, inserted.id);
         await sites.updatePrimaryProjections(projectScope, {
           marketCodes: [...p.marketCodes],
           languageCodes: [...p.siteLanguageCodes],

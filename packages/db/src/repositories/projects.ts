@@ -7,6 +7,7 @@ import {
   icpProfiles,
 } from "../schema.ts";
 import { Repository, workspacePredicate, type WorkspaceScope } from "./base.ts";
+import type { IcpProfileRow } from "./icp-profiles.ts";
 
 /**
  * `client_projects` is workspace-scoped (it has no parent project). Every read is
@@ -32,6 +33,7 @@ export interface ProjectRow {
   readonly stage: ProjectStage;
   readonly default_delivery_locale: string;
   readonly current_icp_profile_id: string | null;
+  readonly confirmed_icp_profile_id: string | null;
   readonly archived_at: string | null;
   readonly created_by: string;
   readonly created_at: string;
@@ -134,6 +136,45 @@ export class ProjectsRepository extends Repository {
     return (rows[0] as ProjectRow | undefined) ?? null;
   }
 
+  /**
+   * Read the reviewed immutable profile selected for downstream work. The
+   * project and profile lineage are both scoped in SQL; projection drift fails
+   * closed even though the database write guard should make it impossible.
+   */
+  async findConfirmedIcpProfile(
+    scope: WorkspaceScope,
+    projectId: string,
+  ): Promise<IcpProfileRow | null> {
+    const rows = await this.exec
+      .select({
+        id: icpProfiles.id,
+        workspace_id: icpProfiles.workspace_id,
+        project_id: icpProfiles.project_id,
+        version: icpProfiles.version,
+        status: icpProfiles.status,
+        profile: icpProfiles.profile,
+        content_hash: icpProfiles.content_hash,
+        created_by: icpProfiles.created_by,
+        created_at: icpProfiles.created_at,
+      })
+      .from(clientProjects)
+      .innerJoin(
+        icpProfiles,
+        eq(icpProfiles.id, clientProjects.confirmed_icp_profile_id),
+      )
+      .where(
+        and(
+          workspacePredicate(clientProjects, scope),
+          eq(clientProjects.id, projectId),
+          eq(icpProfiles.workspace_id, scope.workspaceId),
+          eq(icpProfiles.project_id, projectId),
+          eq(icpProfiles.status, "complete"),
+        ),
+      )
+      .limit(1);
+    return (rows[0] as IcpProfileRow | undefined) ?? null;
+  }
+
   /** Keyset page of a workspace's projects, newest first (spec §11.1 pagination). */
   async listByWorkspace(
     scope: WorkspaceScope,
@@ -173,13 +214,13 @@ export class ProjectsRepository extends Repository {
     };
   }
 
-  /** Point the project at a newly created ICP version (inside the save transaction). */
+  /** Point the project at its newest working ICP version. */
   async setCurrentIcpProfile(
     scope: WorkspaceScope,
     projectId: string,
     icpProfileId: string,
-  ): Promise<void> {
-    await this.exec
+  ): Promise<boolean> {
+    const rows = await this.exec
       .update(clientProjects)
       .set({ current_icp_profile_id: icpProfileId })
       .where(
@@ -187,7 +228,31 @@ export class ProjectsRepository extends Repository {
           workspacePredicate(clientProjects, scope),
           eq(clientProjects.id, projectId),
         ),
-      );
+      )
+      .returning({ id: clientProjects.id });
+    return rows.length === 1;
+  }
+
+  /**
+   * Select a reviewed complete ICP version without changing lifecycle stage.
+   * PostgreSQL additionally rejects draft and cross-project profile ids.
+   */
+  async setConfirmedIcpProfile(
+    scope: WorkspaceScope,
+    projectId: string,
+    icpProfileId: string,
+  ): Promise<boolean> {
+    const rows = await this.exec
+      .update(clientProjects)
+      .set({ confirmed_icp_profile_id: icpProfileId })
+      .where(
+        and(
+          workspacePredicate(clientProjects, scope),
+          eq(clientProjects.id, projectId),
+        ),
+      )
+      .returning({ id: clientProjects.id });
+    return rows.length === 1;
   }
 
   /** Mirror the delivery locale from a complete ICP save (spec §6.2). */
@@ -231,9 +296,9 @@ export class ProjectsRepository extends Repository {
   }
 
   /**
-   * Enter `ready_to_diagnose` only when the current ICP is complete and at least
+   * Enter `ready_to_diagnose` only when a reviewed ICP is confirmed and at least
    * one usable Crawl snapshot exists. Both gates and the stage write are one SQL
-   * statement, avoiding a stale read between collection/context completion.
+   * statement, avoiding a stale read between collection/profile confirmation.
    */
   async setReadyToDiagnoseIfEligible(
     scope: WorkspaceScope,
@@ -250,7 +315,7 @@ export class ProjectsRepository extends Repository {
           sql`exists (
             select 1
               from ${icpProfiles}
-             where ${icpProfiles.id} = ${clientProjects.current_icp_profile_id}
+             where ${icpProfiles.id} = ${clientProjects.confirmed_icp_profile_id}
                and ${icpProfiles.workspace_id} = ${scope.workspaceId}
                and ${icpProfiles.project_id} = ${projectId}
                and ${icpProfiles.status} = 'complete'
@@ -303,7 +368,7 @@ export class ProjectsRepository extends Repository {
            and exists (
              select 1 from ${icpProfiles}
               where ${icpProfiles.id} = (
-                      select ${clientProjects.current_icp_profile_id}
+                      select ${clientProjects.confirmed_icp_profile_id}
                         from ${clientProjects}
                        where ${clientProjects.workspace_id} = ${scope.workspaceId}
                          and ${clientProjects.id} = ${projectId}
@@ -334,7 +399,7 @@ export class ProjectsRepository extends Repository {
                20
           from ${icpProfiles}
           join ${clientProjects}
-            on ${clientProjects.current_icp_profile_id} = ${icpProfiles.id}
+            on ${clientProjects.confirmed_icp_profile_id} = ${icpProfiles.id}
          where ${clientProjects.workspace_id} = ${scope.workspaceId}
            and ${clientProjects.id} = ${projectId}
            and ${icpProfiles.status} = 'complete'

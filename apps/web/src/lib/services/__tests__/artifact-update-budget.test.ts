@@ -48,6 +48,7 @@ const project = {
   stage: "executing",
   default_delivery_locale: "en",
   current_icp_profile_id: null,
+  confirmed_icp_profile_id: null,
   archived_at: null,
   created_by: actorId,
   created_at: "2026-07-20T00:00:00.000Z",

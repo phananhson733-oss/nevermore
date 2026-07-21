@@ -62,10 +62,8 @@ assert.ok(existsSync(lockPath), `spec lock does not exist: ${lockPath}`);
 const lock = JSON.parse(readFileSync(lockPath, "utf8"));
 assert.ok([1, 2].includes(lock.lockFormat), "unsupported spec lock format");
 if (lock.lockFormat === 1) {
-  assert.equal(
-    lock.productVersion,
-    "0.2.0",
-    `lockFormat 2 is required for product version ${lock.productVersion}`,
+  assert.fail(
+    `lockFormat 2 is required for product version ${lock.productVersion}; legacy lockFormat 1 cannot verify activated v0.3 authority or implementation equality`,
   );
 }
 

@@ -62,6 +62,8 @@ export interface ExportJobPayload {
 interface ExportRequest {
   kind: "service_bundle" | "client_bundle";
   outputLocale: string;
+  /** Absent only on legacy runs queued before confirmed-profile freezing. */
+  confirmedIcpProfileId?: string | null;
 }
 
 const SNAPSHOT_PAGE_SIZE = 100;
@@ -461,12 +463,15 @@ async function buildBundleInputFromSnapshot(
   // bundleItemCount includes exactly one project item.
   budget.consumeJsonItem(project);
 
-  const icpRow = projectRow.current_icp_profile_id
+  const icpRow = req.confirmedIcpProfileId
     ? await new IcpProfilesRepository(tx).findById(
         scope,
-        projectRow.current_icp_profile_id,
+        req.confirmedIcpProfileId,
       )
     : null;
+  if (req.confirmedIcpProfileId && (!icpRow || icpRow.status !== "complete")) {
+    throw new Error("frozen confirmed ICP missing or incomplete");
+  }
   const context = icpRow
     ? { version: icpRow.version, status: icpRow.status, profile: icpRow.profile }
     : null;

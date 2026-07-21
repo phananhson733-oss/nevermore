@@ -159,6 +159,7 @@ describeDb(
     let projectId: string;
     let siteId: string;
     let findingId: string;
+    let actionSourceDiagnosticRunId: string;
     const actor = randomUUID();
 
     beforeAll(async () => {
@@ -215,6 +216,22 @@ describeDb(
       expect(result.action?.roadmapLane).toBe("now");
       expect(result.action?.status).toBe("candidate");
       expect(result.finding.evidence.length).toBeGreaterThan(0);
+
+      const lineage = await handle.pool.query<{
+        source_diagnostic_run_id: string;
+        last_seen_run_id: string;
+      }>(
+        `select action.source_diagnostic_run_id, finding.last_seen_run_id
+           from app.actions action
+           join app.findings finding on finding.id = action.source_finding_id
+          where action.source_finding_id = $1`,
+        [findingId],
+      );
+      expect(lineage.rows).toHaveLength(1);
+      expect(lineage.rows[0]?.source_diagnostic_run_id).toBe(
+        lineage.rows[0]?.last_seen_run_id,
+      );
+      actionSourceDiagnosticRunId = lineage.rows[0]!.source_diagnostic_run_id;
     });
 
     it("re-confirm is idempotent (same action, no duplicate)", async () => {
@@ -237,6 +254,9 @@ describeDb(
         (a) => a.source_finding_id === findingId,
       );
       expect(forFinding.length).toBe(1);
+      expect(forFinding[0]?.source_diagnostic_run_id).toBe(
+        actionSourceDiagnosticRunId,
+      );
     });
 
     it("a stale baseRevision returns 409 VERSION_CONFLICT", async () => {

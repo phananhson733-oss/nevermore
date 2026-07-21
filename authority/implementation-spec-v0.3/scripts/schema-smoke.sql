@@ -24,14 +24,23 @@ VALUES (
 INSERT INTO app.client_projects (
   id, workspace_id, client_name, project_name, default_delivery_locale, created_by
 )
-VALUES (
-  '00000000-0000-4000-8000-000000000201',
-  '00000000-0000-4000-8000-000000000001',
-  'Spec client',
-  'Spec project',
-  'en',
-  '00000000-0000-4000-8000-000000000101'
-);
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000001',
+    'Spec client',
+    'Spec project',
+    'en',
+    '00000000-0000-4000-8000-000000000101'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000202',
+    '00000000-0000-4000-8000-000000000001',
+    'Other client',
+    'Other project',
+    'en',
+    '00000000-0000-4000-8000-000000000101'
+  );
 
 INSERT INTO app.sites (
   id, workspace_id, project_id, origin, host, market_codes, language_codes
@@ -42,27 +51,136 @@ VALUES (
   '00000000-0000-4000-8000-000000000201',
   'https://example.com',
   'example.com',
-  ARRAY['US'],
-  ARRAY['en-US']
+  ARRAY[]::text[],
+  ARRAY[]::text[]
 );
 
 INSERT INTO app.icp_profiles (
   id, workspace_id, project_id, version, status, profile, content_hash, created_by
 )
-VALUES (
-  '00000000-0000-4000-8000-000000000401',
-  '00000000-0000-4000-8000-000000000001',
-  '00000000-0000-4000-8000-000000000201',
-  1,
-  'complete',
-  '{"productName":"Spec product"}'::jsonb,
-  repeat('1', 64),
-  '00000000-0000-4000-8000-000000000101'
-);
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000401',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    1,
+    'complete',
+    '{"productName":"Spec product v1"}'::jsonb,
+    repeat('1', 64),
+    '00000000-0000-4000-8000-000000000101'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000402',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000202',
+    1,
+    'complete',
+    '{"productName":"Other product"}'::jsonb,
+    repeat('2', 64),
+    '00000000-0000-4000-8000-000000000101'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000403',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    2,
+    'draft',
+    '{"productName":"Spec product working v2"}'::jsonb,
+    repeat('3', 64),
+    '00000000-0000-4000-8000-000000000101'
+  );
 
 UPDATE app.client_projects
-SET current_icp_profile_id = '00000000-0000-4000-8000-000000000401'
+SET current_icp_profile_id = '00000000-0000-4000-8000-000000000403',
+    confirmed_icp_profile_id = '00000000-0000-4000-8000-000000000401'
 WHERE id = '00000000-0000-4000-8000-000000000201';
+
+-- The database separates the latest working draft from the reviewed profile
+-- used by downstream work, without advancing the project lifecycle.
+DO $$
+DECLARE
+  current_splice_rejected boolean := false;
+  confirmed_splice_rejected boolean := false;
+  draft_confirmation_rejected boolean := false;
+  profile_mutation_rejected boolean := false;
+BEGIN
+  IF (
+    SELECT market_codes = ARRAY[]::text[]
+       AND language_codes = ARRAY[]::text[]
+    FROM app.sites
+    WHERE id = '00000000-0000-4000-8000-000000000301'
+  ) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'URL-first site did not preserve unknown market/language scope';
+  END IF;
+
+  IF (
+    SELECT current_icp_profile_id = '00000000-0000-4000-8000-000000000403'
+       AND confirmed_icp_profile_id = '00000000-0000-4000-8000-000000000401'
+       AND stage = 'setup'
+    FROM app.client_projects
+    WHERE id = '00000000-0000-4000-8000-000000000201'
+  ) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'working and confirmed profile pointers were not kept distinct';
+  END IF;
+
+  BEGIN
+    UPDATE app.client_projects
+    SET current_icp_profile_id = '00000000-0000-4000-8000-000000000402'
+    WHERE id = '00000000-0000-4000-8000-000000000201';
+  EXCEPTION WHEN check_violation THEN
+    current_splice_rejected := true;
+  END;
+  IF NOT current_splice_rejected THEN
+    RAISE EXCEPTION 'cross-project current profile splice was accepted';
+  END IF;
+
+  BEGIN
+    UPDATE app.client_projects
+    SET confirmed_icp_profile_id = '00000000-0000-4000-8000-000000000402'
+    WHERE id = '00000000-0000-4000-8000-000000000201';
+  EXCEPTION WHEN check_violation THEN
+    confirmed_splice_rejected := true;
+  END;
+  IF NOT confirmed_splice_rejected THEN
+    RAISE EXCEPTION 'cross-project confirmed profile splice was accepted';
+  END IF;
+
+  BEGIN
+    UPDATE app.client_projects
+    SET confirmed_icp_profile_id = '00000000-0000-4000-8000-000000000403'
+    WHERE id = '00000000-0000-4000-8000-000000000201';
+  EXCEPTION WHEN check_violation THEN
+    draft_confirmation_rejected := true;
+  END;
+  IF NOT draft_confirmation_rejected THEN
+    RAISE EXCEPTION 'draft profile was accepted as confirmed';
+  END IF;
+
+  BEGIN
+    UPDATE app.icp_profiles
+    SET profile = '{"mutated":true}'::jsonb
+    WHERE id = '00000000-0000-4000-8000-000000000403';
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    profile_mutation_rejected := true;
+  END;
+  IF NOT profile_mutation_rejected THEN
+    RAISE EXCEPTION 'append-only ICP profile mutation was accepted';
+  END IF;
+
+  IF (
+    SELECT count(*)
+    FROM pg_constraint
+    WHERE conrelid = 'app.client_projects'::regclass
+      AND conname IN (
+        'client_projects_current_icp_profile_fk',
+        'client_projects_confirmed_icp_profile_fk'
+      )
+      AND confdeltype = 'r'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'ICP profile pointers are not protected by ON DELETE RESTRICT';
+  END IF;
+END;
+$$;
 
 INSERT INTO app.source_connections (
   id, workspace_id, project_id, site_id, provider, connection_type, state,
@@ -368,7 +486,8 @@ VALUES (
 );
 
 INSERT INTO app.actions (
-  id, workspace_id, project_id, source_finding_id, action_key, template_id,
+  id, workspace_id, project_id, source_finding_id, source_diagnostic_run_id,
+  action_key, template_id,
   title, description, content_locale, priority_band, roadmap_lane, status,
   effort, risk, expected_outcome, created_by
 )
@@ -377,6 +496,7 @@ VALUES (
   '00000000-0000-4000-8000-000000000001',
   '00000000-0000-4000-8000-000000000201',
   '00000000-0000-4000-8000-000000001001',
+  '00000000-0000-4000-8000-000000000602',
   repeat('6', 64),
   'strengthen_internal_links.v1',
   'Strengthen internal links to priority pages',
@@ -840,6 +960,8 @@ BEGIN
   END IF;
   IF NOT app.are_bcp47_language_tags(
     ARRAY['en-US-u-hc-h12', 'x-private']::text[]
+  ) OR NOT app.are_bcp47_language_tags(
+    ARRAY[]::text[]
   ) OR app.are_bcp47_language_tags(
     ARRAY['en', 'de-1901-1901']::text[]
   ) THEN
@@ -884,7 +1006,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0010_growth_audit_slice1' THEN
+  ) IS DISTINCT FROM '0011_product_profile_foundation' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;

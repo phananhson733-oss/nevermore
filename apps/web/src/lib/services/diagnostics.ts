@@ -152,21 +152,23 @@ export async function createDiagnosticRun(
   if (project.archived_at)
     throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
 
-  // Hard gate 1: a COMPLETE ICP profile is required.
-  if (!project.current_icp_profile_id) {
+  // Hard gate 1: a reviewed COMPLETE profile is required. The working/current
+  // pointer may advance to a later draft; diagnostics must freeze only the
+  // customer's separately confirmed version.
+  if (!project.confirmed_icp_profile_id) {
     throw new ProblemError(
       "CONTEXT_INCOMPLETE",
-      "A complete ICP profile is required to diagnose.",
+      "A confirmed product profile is required to diagnose.",
     );
   }
   const icp = await new IcpProfilesRepository(db).findById(
     projectScope,
-    project.current_icp_profile_id,
+    project.confirmed_icp_profile_id,
   );
   if (!icp || icp.status !== "complete") {
     throw new ProblemError(
       "CONTEXT_INCOMPLETE",
-      "The ICP profile must be complete to diagnose.",
+      "The product profile must be confirmed before diagnosis.",
     );
   }
 
@@ -261,21 +263,21 @@ export async function createDiagnosticRun(
       if (currentProject.archived_at) {
         throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
       }
-      if (!currentProject.current_icp_profile_id) {
+      if (!currentProject.confirmed_icp_profile_id) {
         throw new ProblemError(
           "CONTEXT_INCOMPLETE",
-          "A complete ICP profile is required to diagnose.",
+          "A confirmed product profile is required to diagnose.",
         );
       }
 
-      const currentIcp = await txIcp.findById(
+      const confirmedIcp = await txIcp.findById(
         projectScope,
-        currentProject.current_icp_profile_id,
+        currentProject.confirmed_icp_profile_id,
       );
-      if (!currentIcp || currentIcp.status !== "complete") {
+      if (!confirmedIcp || confirmedIcp.status !== "complete") {
         throw new ProblemError(
           "CONTEXT_INCOMPLETE",
-          "The ICP profile must be complete to diagnose.",
+          "The product profile must be confirmed before diagnosis.",
         );
       }
 
@@ -316,9 +318,9 @@ export async function createDiagnosticRun(
         projectId,
         siteId: currentSite.id,
         icp: {
-          id: currentIcp.id,
-          version: currentIcp.version,
-          contentHash: currentIcp.content_hash,
+          id: confirmedIcp.id,
+          version: confirmedIcp.version,
+          contentHash: confirmedIcp.content_hash,
         },
         snapshots: orderedCurrentSnapshots.map(snapshotManifestEntry),
         ruleSetVersion: RULE_SET_VERSION,
@@ -346,8 +348,8 @@ export async function createDiagnosticRun(
         workspaceId: scope.workspaceId,
         projectId,
         siteId: currentSite.id,
-        icpProfileId: currentIcp.id,
-        icpProfileVersion: currentIcp.version,
+        icpProfileId: confirmedIcp.id,
+        icpProfileVersion: confirmedIcp.version,
         ruleSetVersion: RULE_SET_VERSION,
         promptSetVersion: PROMPT_SET_VERSION,
         outputLocale: body.outputLocale,

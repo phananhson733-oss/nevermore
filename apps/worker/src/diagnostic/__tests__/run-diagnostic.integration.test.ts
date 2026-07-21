@@ -27,6 +27,7 @@ import {
   CollectionRunsRepository,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
+  EvidenceRepository,
   FindingsRepository,
   ObservationsRepository,
   ProjectsRepository,
@@ -314,6 +315,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       workspaceId: seed.scope.workspaceId,
       projectId: seed.scope.projectId,
       sourceFindingId: finding.id,
+      sourceDiagnosticRunId: priorRunId,
       actionKey: contentHash({ action: finding.id }),
       templateId: "tech-http-fix",
       templateVersion: 1,
@@ -721,6 +723,35 @@ async function seedFinding(
     runId,
     seenAt: OBSERVED_AT,
   });
+  const [evidenceId] = await new EvidenceRepository(handle.db).insertMany(
+    {
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      diagnosticRunId: runId,
+    },
+    [
+      {
+        sourceProvider: "crawl",
+        origin: "direct_public",
+        method: "observed",
+        grade: "B",
+        availability: "available",
+        support: "supports",
+        subjectRefs: [...subjectRefs],
+        claim: "Seeded prior-run finding observation.",
+        observedAt: OBSERVED_AT,
+        limitation: "Disposable diagnostic integration fixture.",
+      },
+    ],
+  );
+  await new EvidenceRepository(handle.db).linkObservations(
+    {
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      diagnosticRunId: runId,
+    },
+    [{ findingId: row.id, evidenceId: evidenceId!, role: "primary" }],
+  );
   return { id: row.id, key };
 }
 

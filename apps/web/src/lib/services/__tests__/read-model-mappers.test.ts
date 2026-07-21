@@ -198,6 +198,7 @@ describe("diagnostic read-model mappers", () => {
     const action = {
       id: "action-1",
       source_finding_id: "finding-1",
+      source_diagnostic_run_id: "diagnostic-run-1",
       template_id: "template-1",
       title: "Fix the page",
       description: "Restore the page",

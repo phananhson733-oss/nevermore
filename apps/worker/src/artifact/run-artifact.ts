@@ -9,8 +9,8 @@ import {
   FindingsRepository,
   IcpProfilesRepository,
   ObservationsRepository,
-  ProjectsRepository,
   toRunAttempt,
+  type DiagnosticRunRow,
   type ProjectScope,
   type RunAttempt,
 } from "@sf/db";
@@ -62,6 +62,10 @@ interface RunRequest {
   generationMode: "template" | "structured_llm";
   outputLocale: string;
   operatorInstructions: string | null;
+  /** Absent only on legacy runs queued before source-lineage freezing. */
+  sourceDiagnosticRunId?: string | null;
+  /** Absent only on legacy runs; otherwise must match the source diagnosis. */
+  sourceIcpProfileId?: string | null;
 }
 
 const SUPERSEDED_RUN = {
@@ -166,9 +170,9 @@ async function loadCurrentMetadata(
   ctx: WorkerContext,
   scope: ProjectScope,
   finding: {
-    readonly last_seen_run_id: string;
     readonly subject_refs: readonly unknown[];
   },
+  diagnosticRun: DiagnosticRunRow,
   primaryConversionUrl: string | null,
 ): Promise<PromptCurrentMetadata> {
   const url =
@@ -176,13 +180,6 @@ async function loadCurrentMetadata(
     firstCanonicalSubjectUrl([primaryConversionUrl]);
   if (url === null) return UNKNOWN_CURRENT_METADATA;
 
-  const diagnosticRun = await new DiagnosticRunsRepository(ctx.db).findById(
-    scope,
-    finding.last_seen_run_id,
-  );
-  if (diagnosticRun === null) {
-    return { url, currentTitle: null, currentDescription: null };
-  }
   const snapshotId = frozenCrawlSnapshotId(diagnosticRun.input_manifest);
   if (snapshotId === null) {
     return { url, currentTitle: null, currentDescription: null };
@@ -580,23 +577,41 @@ async function buildPromptInput(
     req.actionId,
   );
   if (!action) throw new Error("action missing");
+  if (
+    req.sourceDiagnosticRunId &&
+    req.sourceDiagnosticRunId !== action.source_diagnostic_run_id
+  ) {
+    throw new Error("queued diagnosis does not match the Action source");
+  }
+  const sourceDiagnosticRunId = action.source_diagnostic_run_id;
   const finding = await new FindingsRepository(ctx.db).findById(
     scope,
     action.source_finding_id,
   );
   if (!finding) throw new Error("source finding missing");
 
-  const project = await new ProjectsRepository(ctx.db).findById(
-    { workspaceId: scope.workspaceId },
-    scope.projectId,
+  if (finding.last_seen_run_id !== sourceDiagnosticRunId) {
+    throw new Error("source finding moved beyond the frozen diagnosis");
+  }
+  const sourceDiagnosticRun = await new DiagnosticRunsRepository(
+    ctx.db,
+  ).findById(scope, sourceDiagnosticRunId);
+  if (!sourceDiagnosticRun) {
+    throw new Error("source diagnostic run missing");
+  }
+  const sourceIcpProfileId =
+    req.sourceIcpProfileId ?? sourceDiagnosticRun.icp_profile_id;
+  if (sourceDiagnosticRun.icp_profile_id !== sourceIcpProfileId) {
+    throw new Error("source diagnosis ICP does not match the frozen request");
+  }
+  const icpRow = await new IcpProfilesRepository(ctx.db).findById(
+    scope,
+    sourceIcpProfileId,
   );
-  const icpRow = project?.current_icp_profile_id
-    ? await new IcpProfilesRepository(ctx.db).findById(
-        scope,
-        project.current_icp_profile_id,
-      )
-    : null;
-  const icp = parseIcp(icpRow?.profile ?? {});
+  if (!icpRow || icpRow.status !== "complete") {
+    throw new Error("source diagnosis ICP missing or incomplete");
+  }
+  const icp = parseIcp(icpRow.profile);
 
   const currentMetadata =
     req.artifactType === "metadata_rewrite"
@@ -604,6 +619,7 @@ async function buildPromptInput(
           ctx,
           scope,
           finding,
+          sourceDiagnosticRun,
           icp.primaryConversion?.targetUrl ?? null,
         )
       : UNKNOWN_CURRENT_METADATA;
@@ -611,7 +627,7 @@ async function buildPromptInput(
   // Evidence excerpts: claims + grades only (spec §10.2 allowlist).
   const evidenceRepo = new EvidenceRepository(ctx.db);
   const links = await evidenceRepo.listForFindings(scope, [finding.id], {
-    diagnosticRunId: finding.last_seen_run_id,
+    diagnosticRunId: sourceDiagnosticRunId,
     // The final row is an overflow sentinel. Refuse the projection before
     // loading claims (or constructing an external model client) when the
     // frozen finding/run relationship exceeds the prompt contract.
@@ -634,7 +650,7 @@ async function buildPromptInput(
     if (
       !expectedEvidenceIds.has(row.id) ||
       observedEvidenceIds.has(row.id) ||
-      row.diagnostic_run_id !== finding.last_seen_run_id
+      row.diagnostic_run_id !== sourceDiagnosticRunId
     ) {
       throw new Error("artifact evidence projection failed its integrity check");
     }

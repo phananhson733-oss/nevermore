@@ -38,6 +38,7 @@ export function e2eProjectShell(projectId: typeof E2E_PROJECT_ID): ProjectDto {
     },
     contextStatus: "complete",
     currentIcpProfileVersion: 1,
+    confirmedIcpProfileVersion: 1,
     defaultDeliveryLocale: "en",
     createdAt: timestamp,
     updatedAt: timestamp,

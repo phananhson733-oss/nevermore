@@ -8,6 +8,81 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("adds a separate confirmed profile pointer and permits unknown site scope", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0011_product_profile_foundation.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+confirmed_icp_profile_id\s+uuid/iu,
+    );
+    expect(migration).toMatch(
+      /FOREIGN\s+KEY\s*\(confirmed_icp_profile_id\)[\s\S]*?REFERENCES\s+app\.icp_profiles\s*\(id\)\s+ON\s+DELETE\s+RESTRICT/iu,
+    );
+    expect(migration).toMatch(
+      /cardinality\s*\(market_codes\)\s+BETWEEN\s+0\s+AND\s+20/iu,
+    );
+    expect(migration).toMatch(
+      /cardinality\s*\(language_codes\)\s+BETWEEN\s+0\s+AND\s+20/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TRIGGER\s+client_projects_icp_profile_provenance_guard[\s\S]*?EXECUTE\s+FUNCTION\s+app\.enforce_client_project_icp_profile_provenance/iu,
+    );
+    expect(migration).toMatch(
+      /UPDATE\s+app\.client_projects\s+project[\s\S]*?SET\s+confirmed_icp_profile_id\s*=\s*profile\.id[\s\S]*?project\.current_icp_profile_id\s*=\s*profile\.id[\s\S]*?profile\.status\s*=\s*'complete'/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0011_product_profile_foundation'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
+  it("freezes each Action to a real observed DiagnosticRun lineage", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0011_product_profile_foundation.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /ALTER\s+TABLE\s+app\.actions[\s\S]*?ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+source_diagnostic_run_id\s+uuid/iu,
+    );
+    expect(migration).toMatch(
+      /JOIN\s+app\.finding_observations\s+observation[\s\S]*?observation\.finding_id\s*=\s*action\.source_finding_id[\s\S]*?JOIN\s+app\.diagnostic_runs\s+diagnostic_run[\s\S]*?observation\.created_at\s*<=\s*action\.created_at[\s\S]*?diagnostic_run\.created_at\s*<=\s*action\.created_at/iu,
+    );
+    expect(migration).toMatch(
+      /JOIN\s+app\.evidence\s+source_evidence[\s\S]*?source_evidence\.diagnostic_run_id\s*=\s*observation\.diagnostic_run_id/iu,
+    );
+    expect(migration).toMatch(
+      /WHERE\s+action\.source_diagnostic_run_id\s+IS\s+NULL[\s\S]*?RAISE\s+EXCEPTION\s+'existing action cannot be traced to an observed diagnostic run'/iu,
+    );
+    expect(migration).toMatch(
+      /ALTER\s+TABLE\s+app\.actions[\s\S]*?ALTER\s+COLUMN\s+source_diagnostic_run_id\s+SET\s+NOT\s+NULL/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TRIGGER\s+actions_source_lineage_guard[\s\S]*?BEFORE\s+INSERT\s+OR\s+UPDATE\s+ON\s+app\.actions[\s\S]*?EXECUTE\s+FUNCTION\s+app\.enforce_action_source_lineage/iu,
+    );
+
+    const backfillStart = migration.indexOf("WITH ranked_action_sources AS");
+    const backfillEnd = migration.indexOf(
+      "ALTER TABLE app.actions\n  ALTER COLUMN source_diagnostic_run_id SET NOT NULL",
+    );
+    expect(backfillStart).toBeGreaterThanOrEqual(0);
+    expect(backfillEnd).toBeGreaterThan(backfillStart);
+    expect(migration.slice(backfillStart, backfillEnd)).not.toContain(
+      "last_seen_run_id",
+    );
+  });
+
   it("activates the current HTTP and immutable export contracts", () => {
     const migration = readFileSync(
       fileURLToPath(

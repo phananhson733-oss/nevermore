@@ -185,6 +185,7 @@ describe("core repositories", () => {
         workspaceId: scope.workspaceId,
         projectId: scope.projectId,
         sourceFindingId: "finding-1",
+        sourceDiagnosticRunId: "diagnostic-run-1",
         actionKey: "key-1",
         templateId: "template-1",
         templateVersion: 2,
@@ -203,6 +204,8 @@ describe("core repositories", () => {
     ).resolves.toBe(action);
     expect(db.last("values").args[0]).toMatchObject({
       workspace_id: scope.workspaceId,
+      source_finding_id: "finding-1",
+      source_diagnostic_run_id: "diagnostic-run-1",
       action_key: "key-1",
       evidence_refs: ["ev-1"],
     });

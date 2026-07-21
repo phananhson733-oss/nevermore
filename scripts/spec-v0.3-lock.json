@@ -7,18 +7,18 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "73df5fe3072af38b95fadd2a2eaabbf2d75498118c297b19daa1a54a4ea0201d",
-    "MVP-IMPLEMENTATION-SPEC.md": "77fd6e21ea378cc57d0a22a82b3d35c87fd364b2b98463e21d5813afb286dac2",
-    "openapi.yaml": "681723eb77e5cc1fd489f20f90dd60be61aec54f478faaf6826e89f65d0a48ce",
-    "schema.sql": "742f445297448b1a7123cd1260c292aa6151d50e62304545e0722b1279ad07e9",
+    "MVP-IMPLEMENTATION-SPEC.md": "10fc2b831334a9824c09560bbc5b898ba48693ce96b88ca55d997d5986a1f7bd",
+    "openapi.yaml": "394ea642f1bb1efdfa1afbd1d52a4cfe053279ae5c6869dabc5180c9473e731a",
+    "schema.sql": "237de75051a249c94980e75042b758a382e025f4c5f74931830e4ad023c89011",
     "schemas/service-bundle-manifest.schema.json": "a0999d56ae868e9741914c2f9f0911f5f8b503600b4cd4d7630421cec2ee5cee",
-    "scripts/schema-smoke.sql": "a7b05fa0d65013b3ea40a496186083c55bb4e9f5ff62b16d986785f9595ef176",
+    "scripts/schema-smoke.sql": "d65efb8195480eb87424eb8f1e4d50bff8d4d106f736e129534953f3da02df5f",
     "scripts/verify-spec.mjs": "f7df9ce92ad10c2cc1ce13f17fa446a413581435a9a2d9481badf52b9ad86afc"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "681723eb77e5cc1fd489f20f90dd60be61aec54f478faaf6826e89f65d0a48ce",
-    "packages/contracts/src/generated/openapi.ts": "44ce75d9d3346a2f082a32ade0a01746760c25fc3ceaaab5621044deaf8731cc",
+    "openapi/mvp.yaml": "394ea642f1bb1efdfa1afbd1d52a4cfe053279ae5c6869dabc5180c9473e731a",
+    "packages/contracts/src/generated/openapi.ts": "087ce0d93eff71288ec60ae7abde1ded54dfb87a9e00347f5de293498ca659fc",
     "schemas/service-bundle-manifest.schema.json": "a0999d56ae868e9741914c2f9f0911f5f8b503600b4cd4d7630421cec2ee5cee",
-    "packages/db/migrations/schema-smoke.sql": "a7b05fa0d65013b3ea40a496186083c55bb4e9f5ff62b16d986785f9595ef176"
+    "packages/db/migrations/schema-smoke.sql": "d65efb8195480eb87424eb8f1e4d50bff8d4d106f736e129534953f3da02df5f"
   },
   "apiOperations": [
     "listProjects",
