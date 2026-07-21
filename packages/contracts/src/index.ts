@@ -14,3 +14,6 @@ export * from "./zod/projects.ts";
 export * from "./zod/sources.ts";
 export * from "./zod/diagnostics.ts";
 export * from "./zod/artifacts.ts";
+export * from "./zod/audit.ts";
+export * from "./zod/capabilities.ts";
+export * from "./zod/opportunities.ts";
