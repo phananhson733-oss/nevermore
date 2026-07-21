@@ -558,7 +558,7 @@ Opportunity Review 必须展示：
 
 1. 打开 Growth Map；
 2. 在 Audit Evidence 查看事实；
-3. 打开由一项或多项 canonical Finding 支持的 Reviewable Opportunity；Observation-only Candidate 只能检查证据或请求分析，不能 Confirm；
+3. 打开恰好由一项 measured primary canonical Finding 锚定的 Reviewable Opportunity；它可以引用 supporting Finding 或跨 Lens Observation 作为只读解释，但这些对象不共享 Confirm；Observation-only Candidate 只能检查证据或请求分析，不能 Confirm；
 4. 检查 Target、Source、Freshness、Scope、Limitation；
 5. 对 Opportunity 的 primary Finding 选择 Confirm、Needs Data 或 Dismiss；
 6. Confirm 复用 Finding Review 事务，幂等创建唯一对应 Action；Opportunity Projection 不直接写 Action；
