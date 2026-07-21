@@ -1,0 +1,6 @@
+extends:
+  - recommended
+
+rules:
+  # OAuth browser callbacks intentionally return 303 rather than a JSON 2xx response.
+  operation-2xx-response: off

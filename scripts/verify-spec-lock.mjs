@@ -8,16 +8,66 @@ import {
   readFileSync,
   readdirSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const lock = JSON.parse(
-  readFileSync(join(repoRoot, "scripts/spec-v0.2-lock.json"), "utf8"),
+const scriptRepositoryRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
 );
 
+function parseArguments(argv) {
+  const options = {
+    root: scriptRepositoryRoot,
+    lock: undefined,
+    authorityRoot: undefined,
+  };
+  for (let index = 0; index < argv.length; index += 2) {
+    const flag = argv[index];
+    const value = argv[index + 1];
+    assert.ok(
+      value && ["--root", "--lock", "--authority-root"].includes(flag),
+      "usage: node scripts/verify-spec-lock.mjs [--root <repository>] [--lock <path>] [--authority-root <path>]",
+    );
+    if (flag === "--root") options.root = resolve(value);
+    if (flag === "--lock") options.lock = value;
+    if (flag === "--authority-root") options.authorityRoot = value;
+  }
+  return options;
+}
+
+const options = parseArguments(process.argv.slice(2));
+const repoRoot = options.root;
+
+function safePath(base, value, label) {
+  assert.equal(typeof value, "string", `${label} must be a string`);
+  assert.ok(value.trim().length > 0, `${label} must not be empty`);
+  const path = isAbsolute(value) ? resolve(value) : resolve(base, value);
+  if (!isAbsolute(value)) {
+    const rel = relative(base, path);
+    assert.ok(
+      rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel),
+      `${label} escapes its root`,
+    );
+  }
+  return path;
+}
+
+const lockPath = safePath(
+  repoRoot,
+  options.lock ?? "scripts/spec-v0.2-lock.json",
+  "spec lock path",
+);
+assert.ok(existsSync(lockPath), `spec lock does not exist: ${lockPath}`);
+const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+assert.ok([1, 2].includes(lock.lockFormat), "unsupported spec lock format");
+
+function fromRoot(relativePath) {
+  return safePath(repoRoot, relativePath, relativePath);
+}
+
 function read(relativePath) {
-  return readFileSync(join(repoRoot, relativePath), "utf8");
+  return readFileSync(fromRoot(relativePath), "utf8");
 }
 
 function sorted(values) {
@@ -25,14 +75,75 @@ function sorted(values) {
 }
 
 function assertSameSet(actual, expected, label) {
-  assert.deepEqual(sorted(actual), sorted(expected), `${label} drifted from the frozen spec lock`);
+  assert.deepEqual(
+    sorted(actual),
+    sorted(expected),
+    `${label} drifted from the frozen spec lock`,
+  );
 }
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-assert.equal(lock.lockFormat, 1, "unsupported spec lock format");
+function stripSqlComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\r\n]*/g, " ");
+}
+
+function migrationTables() {
+  const migrationDirectory = safePath(
+    repoRoot,
+    lock.migrationDirectory ?? "packages/db/migrations",
+    "migration directory",
+  );
+  assert.ok(
+    existsSync(migrationDirectory),
+    `migration directory does not exist: ${migrationDirectory}`,
+  );
+  const migrationFilePattern = new RegExp(
+    lock.migrationFilePattern ?? "^[0-9]{4}_.+\\.sql$",
+  );
+  const migrationFiles = readdirSync(migrationDirectory)
+    .filter((fileName) => migrationFilePattern.test(fileName))
+    .sort();
+  assert.ok(migrationFiles.length > 0, "at least one ordered migration is required");
+
+  const filesByOrdinal = new Map();
+  for (const fileName of migrationFiles) {
+    const ordinal = fileName.match(/^([0-9]{4})_/)?.[1];
+    assert.ok(ordinal, `migration lacks a four-digit ordinal: ${fileName}`);
+    assert.ok(
+      !filesByOrdinal.has(ordinal),
+      `duplicate migration ordinal ${ordinal}: ${filesByOrdinal.get(ordinal)} and ${fileName}`,
+    );
+    filesByOrdinal.set(ordinal, fileName);
+  }
+
+  const tableOwners = new Map();
+  const tables = [];
+  for (const fileName of migrationFiles) {
+    const sql = stripSqlComments(
+      readFileSync(join(migrationDirectory, fileName), "utf8"),
+    );
+    const createdTables = [
+      ...sql.matchAll(
+        /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?app\.([a-z][a-z0-9_]*)\s*\(/gi,
+      ),
+    ].map((match) => match[1]);
+    for (const table of createdTables) {
+      assert.ok(
+        !tableOwners.has(table),
+        `table ${table} is created by multiple migrations: ${tableOwners.get(table)} and ${fileName}`,
+      );
+      tableOwners.set(table, fileName);
+      tables.push(table);
+    }
+  }
+  return tables;
+}
+
 assert.equal(
   JSON.parse(read("package.json")).version,
   lock.productVersion,
@@ -59,13 +170,10 @@ for (const operationId of lock.asyncOperations) {
   assert.match(operation, /AsyncAccepted/, `${operationId} must use AsyncAccepted`);
 }
 
-const initialMigration = read("packages/db/migrations/0001_init.sql");
-const tables = [
-  ...initialMigration.matchAll(/CREATE TABLE IF NOT EXISTS app\.([a-z][a-z0-9_]*)\s*\(/g),
-].map((match) => match[1]);
+const tables = migrationTables();
 assertSameSet(tables, lock.tables, "application tables");
 
-const rulesDir = join(repoRoot, "packages/engine/src/rules");
+const rulesDir = fromRoot("packages/engine/src/rules");
 const rules = readdirSync(rulesDir)
   .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
   .flatMap((name) => [
@@ -76,39 +184,44 @@ const rules = readdirSync(rulesDir)
   .map((match) => match[1]);
 assertSameSet(rules, lock.rules, "diagnostic rules");
 
-const explicitAuthorityIndex = process.argv.indexOf("--authority-root");
-assert.ok(
-  explicitAuthorityIndex === -1 || process.argv.length === explicitAuthorityIndex + 2,
-  "usage: node scripts/verify-spec-lock.mjs [--authority-root <path>]",
-);
-const defaultAuthority = resolve(
-  repoRoot,
-  "../signalframe-mvp/implementation-spec-v0.2",
-);
-const authorityRoot =
-  explicitAuthorityIndex === -1
-    ? defaultAuthority
-    : resolve(process.argv[explicitAuthorityIndex + 1]);
+const configuredAuthority =
+  options.authorityRoot ??
+  lock.authorityRoot ??
+  resolve(repoRoot, "../signalframe-mvp/implementation-spec-v0.2");
+const authorityRoot = isAbsolute(configuredAuthority)
+  ? resolve(configuredAuthority)
+  : safePath(repoRoot, configuredAuthority, "authority root");
 const authorityAvailable = existsSync(authorityRoot);
-if (explicitAuthorityIndex !== -1) {
-  assert.ok(authorityAvailable, "explicit authority root does not exist");
+const authorityIsRequired =
+  options.authorityRoot !== undefined || lock.authorityRoot !== undefined;
+if (authorityIsRequired) {
+  assert.ok(authorityAvailable, "configured authority root does not exist");
 }
 
 if (authorityAvailable) {
   for (const [relativePath, expectedHash] of Object.entries(lock.authorityFiles)) {
-    const sourcePath = join(authorityRoot, relativePath);
+    const sourcePath = safePath(authorityRoot, relativePath, "authority file");
     assert.ok(existsSync(sourcePath), `authority file is missing: ${relativePath}`);
     assert.equal(
       sha256(sourcePath),
       expectedHash,
-      `authority file drifted from the reviewed v0.2 lock: ${relativePath}`,
+      `authority file drifted from the reviewed ${lock.productVersion} lock: ${relativePath}`,
     );
   }
-  const verification = spawnSync(
-    process.execPath,
-    [join(authorityRoot, "scripts/verify-spec.mjs")],
-    { stdio: "inherit" },
+  const authorityVerifier = safePath(
+    authorityRoot,
+    "scripts/verify-spec.mjs",
+    "authority verifier",
   );
+  const authorityArguments = [authorityVerifier];
+  if (lock.lockFormat >= 2) {
+    authorityArguments.push("--app-root", repoRoot);
+  }
+  const verification = spawnSync(process.execPath, authorityArguments, {
+    encoding: "utf8",
+  });
+  if (verification.stdout) process.stdout.write(verification.stdout);
+  if (verification.stderr) process.stderr.write(verification.stderr);
   assert.equal(
     verification.status,
     0,
@@ -117,7 +230,7 @@ if (authorityAvailable) {
   console.log("Frozen spec source hashes match the reviewed authority snapshot.");
 } else {
   console.log(
-    "Authority checkout absent; verified the clone-local pinned v0.2 contract lock.",
+    `Authority checkout absent; verified the clone-local pinned ${lock.productVersion} contract lock.`,
   );
 }
 

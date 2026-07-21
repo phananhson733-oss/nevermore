@@ -1,0 +1,1938 @@
+openapi: 3.1.0
+info:
+  title: SignalFrame Service Delivery MVP API
+  version: 0.2.0
+  summary: Same-origin internal API for the ICP-to-enterprise-export MVP.
+  description: |
+    Implementation contract for SignalFrame MVP 0.2. All authenticated operators have
+    full product access inside one internal workspace. Project scoping, evidence lineage,
+    unavailable-not-zero semantics, optimistic revisions, and asynchronous status URLs
+    are mandatory. This is an internal contract, not a public API commitment.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: /api/mvp
+    description: Same-origin web application API
+security:
+  - supabaseSessionCookie: []
+tags:
+  - name: Projects
+    description: Client projects, sites, context versions, and screen projections.
+  - name: Sources
+    description: Source authorization, import, collection, and immutable snapshots.
+  - name: Runs
+    description: Unified asynchronous job lifecycle and polling.
+  - name: Diagnosis
+    description: Frozen diagnostic runs, evidence, findings, and human review.
+  - name: Actions
+    description: Deterministic action templates and the 30/60/90 plan.
+  - name: Artifacts
+    description: Generated and manually revised execution deliverables.
+  - name: Reports
+    description: Canonical browser-facing client report projection.
+  - name: Exports
+    description: Versioned enterprise and client JSON ZIP bundles.
+
+paths:
+  /projects:
+    get:
+      tags: [Projects]
+      summary: List client projects in the internal workspace
+      operationId: listProjects
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Project page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [Projects]
+      summary: Create a client project, primary site, and default crawl source
+      operationId: createProject
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProjectRequest' }
+      responses:
+        '201':
+          description: Project created.
+          headers:
+            Location:
+              required: true
+              schema: { type: string, pattern: '^/p/[0-9a-f-]+/overview$' }
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}:
+    get:
+      tags: [Projects]
+      summary: Read the current project aggregate
+      operationId: getProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Current project aggregate.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /projects/{projectId}/context:
+    get:
+      tags: [Projects]
+      summary: Read the current immutable ICP profile version, or null before the first save
+      operationId: getProjectContext
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Current ICP profile or null for a new project.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentIcpProfileResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Projects]
+      summary: Save an immutable draft or complete ICP profile version
+      operationId: updateProjectContext
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/DraftContextRequest'
+                - $ref: '#/components/schemas/CompleteContextRequest'
+              discriminator:
+                propertyName: mode
+      responses:
+        '200':
+          description: Current profile; semantic no-op may return the existing version.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IcpProfileResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/workspace:
+    get:
+      tags: [Projects]
+      summary: Read a screen-oriented projection backed by canonical repositories
+      operationId: getProjectWorkspaceView
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: view
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [overview, plan, studio, report]
+        - name: outputLocale
+          in: query
+          schema: { $ref: '#/components/schemas/LocaleCode' }
+      responses:
+        '200':
+          description: Requested projection. The data.view discriminator identifies its shape.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceViewResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/sources:
+    get:
+      tags: [Sources]
+      summary: List source cards, capabilities, and latest snapshots
+      operationId: listProjectSources
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: All five MVP source capabilities, including disabled or absent sources.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /projects/{projectId}/sources/{provider}/connect:
+    post:
+      tags: [Sources]
+      summary: Begin Google authorization, read candidate properties, or select one property
+      operationId: connectProjectSource
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/GoogleProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/AuthorizeSourceRequest'
+                - $ref: '#/components/schemas/GetPropertySelectionRequest'
+                - $ref: '#/components/schemas/SelectPropertyRequest'
+              discriminator:
+                propertyName: phase
+      responses:
+        '200':
+          description: Authorization URL or connected source; response is discriminated by phase.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectSourceResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /oauth/google/callback:
+    get:
+      tags: [Sources]
+      summary: Consume one Google OAuth callback and return to the project Sources screen
+      operationId: handleGoogleOAuthCallback
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string, minLength: 1 }
+        - name: state
+          in: query
+          schema: { type: string, minLength: 20 }
+        - name: error
+          in: query
+          schema: { type: string }
+        - name: error_description
+          in: query
+          schema: { type: string }
+      responses:
+        '303':
+          description: Redirect to the project Sources page with oauthIntentId or a stable error code.
+          headers:
+            Location:
+              required: true
+              schema: { type: string, pattern: '^/p/[0-9a-f-]+/sources' }
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/sources/{provider}/import:
+    post:
+      tags: [Sources]
+      summary: Preview or confirm a keyword-gap CSV import
+      description: |
+        multipart/form-data with mode=preview returns 200 and does not write canonical observations.
+        application/json with mode=confirm returns 202 and a statusUrl.
+      operationId: importProjectSourceFile
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CsvProvider'
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/ImportPreviewRequest' }
+          application/json:
+            schema: { $ref: '#/components/schemas/ImportConfirmRequest' }
+      responses:
+        '200':
+          description: Safe preview only; no canonical observations were written.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportPreviewResponse' }
+        '202':
+          $ref: '#/components/responses/AsyncAccepted'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/sources/{sourceConnectionId}:
+    delete:
+      tags: [Sources]
+      summary: Disconnect a source and remove its credential while preserving snapshots
+      operationId: disconnectProjectSource
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/SourceConnectionId'
+      responses:
+        '204':
+          description: Source disconnected. Historical snapshots remain.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /projects/{projectId}/collection-runs:
+    post:
+      tags: [Runs, Sources]
+      summary: Queue one provider collection
+      operationId: createCollectionRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCollectionRunRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/snapshots:
+    get:
+      tags: [Sources]
+      summary: List immutable data snapshots
+      operationId: listProjectSnapshots
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: provider
+          in: query
+          schema: { $ref: '#/components/schemas/Provider' }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Snapshot page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SnapshotListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/runs/{runId}:
+    get:
+      tags: [Runs]
+      summary: Poll any collection, diagnostic, artifact, or export run
+      operationId: getProjectRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Current run projection.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+            Retry-After:
+              schema: { type: integer, minimum: 1, maximum: 10 }
+              description: Present for queued or running responses.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AsyncRunResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /projects/{projectId}/diagnostic-runs:
+    post:
+      tags: [Runs, Diagnosis]
+      summary: Queue a frozen-input diagnostic run
+      operationId: createDiagnosticRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDiagnosticRunRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/findings:
+    get:
+      tags: [Diagnosis]
+      summary: List findings with evidence summaries
+      operationId: listProjectFindings
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: domain
+          in: query
+          schema: { $ref: '#/components/schemas/DiagnosticDomain' }
+        - name: reviewState
+          in: query
+          schema: { $ref: '#/components/schemas/FindingReviewState' }
+        - name: active
+          in: query
+          schema: { type: boolean, default: true }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Finding page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FindingListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/findings/{findingId}:
+    patch:
+      tags: [Diagnosis, Actions]
+      summary: Confirm, ignore, or request more data for a finding
+      operationId: reviewProjectFinding
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/FindingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewFindingRequest' }
+      responses:
+        '200':
+          description: Updated finding and the idempotently created/merged action when confirmed.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewFindingResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/actions:
+    get:
+      tags: [Actions]
+      summary: List the 30/60/90 action plan
+      operationId: listProjectActions
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: lane
+          in: query
+          schema: { $ref: '#/components/schemas/RoadmapLane' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ActionStatus' }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Action page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/actions/{actionId}:
+    patch:
+      tags: [Actions]
+      summary: Update action status or override priority/lane with an audit reason
+      operationId: updateProjectAction
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ActionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateActionRequest' }
+      responses:
+        '200':
+          description: Updated action.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/artifacts:
+    get:
+      tags: [Artifacts]
+      summary: List execution artifacts and current revision metadata
+      operationId: listProjectArtifacts
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/ArtifactType' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ArtifactStatus' }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Artifact page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArtifactListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/actions/{actionId}/artifacts:
+    post:
+      tags: [Actions, Artifacts, Runs]
+      summary: Queue creation or regeneration of an execution artifact
+      operationId: createActionArtifact
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ActionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateArtifactRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/artifacts/{artifactId}:
+    get:
+      tags: [Artifacts]
+      summary: Read an artifact and its current or requested revision
+      operationId: getProjectArtifact
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ArtifactId'
+        - name: revision
+          in: query
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Artifact with revision content.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArtifactDetailResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    patch:
+      tags: [Artifacts]
+      summary: Create an immutable manual revision or change validated status
+      operationId: updateProjectArtifact
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ArtifactId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateArtifactRequest' }
+      responses:
+        '200':
+          description: Updated artifact and current revision.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArtifactDetailResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/report:
+    get:
+      tags: [Reports]
+      summary: Read the canonical client-facing report projection
+      operationId: getProjectReport
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: outputLocale
+          in: query
+          schema: { $ref: '#/components/schemas/LocaleCode' }
+      responses:
+        '200':
+          description: Client report projection.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/exports:
+    post:
+      tags: [Exports, Runs]
+      summary: Queue a versioned service or client JSON ZIP bundle
+      operationId: createProjectExport
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExportRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/exports/{exportId}:
+    get:
+      tags: [Exports]
+      summary: Read export metadata and a short-lived signed download URL
+      operationId: getProjectExport
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ExportId'
+      responses:
+        '200':
+          description: Export projection; downloadUrl is null until completed.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    supabaseSessionCookie:
+      type: apiKey
+      in: cookie
+      name: sb-auth-token
+      description: Logical same-origin Supabase SSR session cookie; deployed cookie name may include the project reference.
+
+  headers:
+    RequestId:
+      description: Stable request correlation identifier.
+      schema: { type: string, minLength: 8, maxLength: 128 }
+
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    SourceConnectionId:
+      name: sourceConnectionId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    FindingId:
+      name: findingId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    ActionId:
+      name: actionId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    ExportId:
+      name: exportId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    GoogleProvider:
+      name: provider
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [gsc, ga4]
+    CsvProvider:
+      name: provider
+      in: path
+      required: true
+      schema:
+        type: string
+        const: csv
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 1024
+      description: Opaque base64url cursor returned by the previous page.
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[ -~]+$'
+    OptionalIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Required when mode=confirm; ignored for preview.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[ -~]+$'
+
+  responses:
+    AsyncAccepted:
+      description: Canonical run and job were atomically accepted.
+      headers:
+        Location:
+          required: true
+          schema: { type: string, pattern: '^/api/mvp/projects/[0-9a-f-]+/runs/[0-9a-f-]+$' }
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+        Retry-After:
+          schema: { type: integer, minimum: 1, maximum: 10, default: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AsyncAcceptedResponse' }
+    BadRequest:
+      description: Malformed request.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthenticated:
+      description: Missing or invalid session.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource absent or outside the current workspace/project.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Optimistic version, idempotency, or active-run conflict.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationError:
+      description: Semantically invalid input or unmet domain precondition.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    DependencyUnavailable:
+      description: Required upstream provider is temporarily unavailable.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PayloadTooLarge:
+      description: Upload exceeds the 20 MB or 200,000-row import budget.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimited:
+      description: Application or upstream request rate limit reached.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+        Retry-After:
+          required: true
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+    Timestamp:
+      type: string
+      format: date-time
+    LocaleCode:
+      type: string
+      minLength: 2
+      maxLength: 35
+      pattern: '^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$'
+    MarketCode:
+      type: string
+      pattern: '^[A-Z]{2}$'
+    Provider:
+      type: string
+      enum: [crawl, gsc, ga4, csv, dataforseo]
+    Availability:
+      type: string
+      enum: [available, partial, unavailable]
+    SourceState:
+      type: string
+      enum: [connecting, connected, syncing, available, partial, stale, permission_denied, unavailable, disconnected]
+    RunKind:
+      type: string
+      enum: [collection, diagnostic, artifact_generation, export]
+    RunStatus:
+      type: string
+      enum: [queued, running, completed, partial, failed, cancelled]
+    DiagnosticDomain:
+      type: string
+      enum: [technical_seo, search_performance, content_intent, conversion_journey, geo_ai]
+    Severity:
+      type: string
+      enum: [critical, high, medium, low]
+    Confidence:
+      type: string
+      enum: [high, medium, low, inconclusive]
+    FindingReviewState:
+      type: string
+      enum: [unreviewed, confirmed, ignored, needs_more_data]
+    PriorityBand:
+      type: string
+      enum: [critical, high, medium, low]
+    RoadmapLane:
+      type: string
+      enum: [now, next, later]
+    ActionStatus:
+      type: string
+      enum: [candidate, planned, in_progress, blocked, done, dismissed]
+    ArtifactType:
+      type: string
+      enum: [content_brief, metadata_rewrite, technical_ticket]
+    ArtifactStatus:
+      type: string
+      enum: [generating, draft, ready, failed, archived]
+    ContentFormat:
+      type: string
+      enum: [markdown, json, csv]
+
+    PageMeta:
+      type: object
+      additionalProperties: false
+      required: [nextCursor, hasNext, limit]
+      properties:
+        nextCursor: { type: [string, 'null'] }
+        hasNext: { type: boolean }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, detail, requestId]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]+$' }
+        detail: { type: string }
+        requestId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [pointer, code, message]
+            properties:
+              pointer: { type: string }
+              code: { type: string }
+              message: { type: string }
+        current:
+          type: [object, 'null']
+          additionalProperties: true
+
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [clientName, projectName, siteUrl, marketCodes, siteLanguageCodes, defaultDeliveryLocale]
+      properties:
+        clientName: { type: string, minLength: 1, maxLength: 160 }
+        projectName: { type: string, minLength: 1, maxLength: 160 }
+        siteUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Origin-only http(s) URL; paths, query, fragment, and userinfo are rejected. Production probes HTTPS before upgrading submitted HTTP.
+        marketCodes:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/MarketCode' }
+        siteLanguageCodes:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/LocaleCode' }
+        defaultDeliveryLocale: { $ref: '#/components/schemas/LocaleCode' }
+
+    Project:
+      type: object
+      additionalProperties: false
+      required: [id, clientName, projectName, stage, site, contextStatus, defaultDeliveryLocale, createdAt, updatedAt, archivedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        clientName: { type: string }
+        projectName: { type: string }
+        stage:
+          type: string
+          enum: [setup, collecting, ready_to_diagnose, diagnosing, planning, executing, delivered]
+        site: { $ref: '#/components/schemas/Site' }
+        contextStatus:
+          type: string
+          enum: [missing, draft, complete]
+        currentIcpProfileVersion: { type: [integer, 'null'], minimum: 1 }
+        defaultDeliveryLocale: { $ref: '#/components/schemas/LocaleCode' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        archivedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+
+    Site:
+      type: object
+      additionalProperties: false
+      required: [id, origin, host, marketCodes, languageCodes]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        origin: { type: string, format: uri }
+        host: { type: string }
+        marketCodes:
+          type: array
+          items: { $ref: '#/components/schemas/MarketCode' }
+        languageCodes:
+          type: array
+          items: { $ref: '#/components/schemas/LocaleCode' }
+
+    ProjectResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Project' }
+    ProjectListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Project' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+
+    Persona:
+      type: object
+      additionalProperties: false
+      required: [name, roleOrContext, jobs, painPoints]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        roleOrContext: { type: string, minLength: 1, maxLength: 500 }
+        jobs:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 500 }
+        painPoints:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 500 }
+
+    PrimaryConversion:
+      type: object
+      additionalProperties: false
+      required: [label, type, targetUrl]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 160 }
+        type:
+          type: string
+          enum: [demo, signup, trial, purchase, lead, contact, subscribe, offline, other]
+        targetUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
+
+    CompleteIcpProfileInput:
+      type: object
+      additionalProperties: false
+      required:
+        - productName
+        - oneLineDescription
+        - customerModel
+        - businessProfile
+        - businessProfileNote
+        - marketCodes
+        - siteLanguageCodes
+        - defaultDeliveryLocale
+        - segments
+        - personas
+        - useCases
+        - offers
+        - differentiators
+        - primaryConversion
+        - priorityProductsOrServices
+        - priorityUrls
+        - competitors
+        - brandConstraints
+        - complianceConstraints
+        - technicalConstraints
+        - resourceConstraints
+        - growthQuestions
+        - ninetyDayGoals
+      properties:
+        productName: { type: string, minLength: 1, maxLength: 160 }
+        oneLineDescription: { type: string, minLength: 1, maxLength: 1000 }
+        customerModel: { type: string, enum: [b2b, b2c, hybrid] }
+        businessProfile:
+          type: string
+          enum: [b2b_saas, b2b_services, b2c_ecommerce, b2c_subscription, marketplace, publisher, other]
+        businessProfileNote: { type: [string, 'null'], maxLength: 500 }
+        marketCodes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/MarketCode' }
+        siteLanguageCodes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/LocaleCode' }
+        defaultDeliveryLocale: { $ref: '#/components/schemas/LocaleCode' }
+        segments:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 500 }
+        personas:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/Persona' }
+        useCases:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 500 }
+        offers:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 500 }
+        differentiators:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 500 }
+        primaryConversion: { $ref: '#/components/schemas/PrimaryConversion' }
+        priorityProductsOrServices:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 500 }
+        priorityUrls:
+          type: array
+          items: { type: string, format: uri }
+        competitors:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 500 }
+        brandConstraints:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 1000 }
+        complianceConstraints:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 1000 }
+        technicalConstraints:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 1000 }
+        resourceConstraints:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 1000 }
+        growthQuestions:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 1000 }
+        ninetyDayGoals:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 1000 }
+      allOf:
+        - if:
+            properties:
+              businessProfile: { const: other }
+          then:
+            properties:
+              businessProfileNote: { type: string, minLength: 3, maxLength: 500 }
+
+    DraftIcpProfilePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Partial merge over the current profile. Explicit null clears a field where domain-valid.
+      properties:
+        productName: { type: [string, 'null'], maxLength: 160 }
+        oneLineDescription: { type: [string, 'null'], maxLength: 1000 }
+        customerModel: { type: [string, 'null'], enum: [b2b, b2c, hybrid, null] }
+        businessProfile:
+          type: [string, 'null']
+          enum: [b2b_saas, b2b_services, b2c_ecommerce, b2c_subscription, marketplace, publisher, other, null]
+        businessProfileNote: { type: [string, 'null'], maxLength: 500 }
+        marketCodes:
+          type: [array, 'null']
+          items: { $ref: '#/components/schemas/MarketCode' }
+        siteLanguageCodes:
+          type: [array, 'null']
+          items: { $ref: '#/components/schemas/LocaleCode' }
+        defaultDeliveryLocale:
+          oneOf:
+            - $ref: '#/components/schemas/LocaleCode'
+            - type: 'null'
+        segments: { type: [array, 'null'], items: { type: string } }
+        personas: { type: [array, 'null'], items: { $ref: '#/components/schemas/Persona' } }
+        useCases: { type: [array, 'null'], items: { type: string } }
+        offers: { type: [array, 'null'], items: { type: string } }
+        differentiators: { type: [array, 'null'], items: { type: string } }
+        primaryConversion:
+          oneOf:
+            - $ref: '#/components/schemas/PrimaryConversion'
+            - type: 'null'
+        priorityProductsOrServices: { type: [array, 'null'], items: { type: string } }
+        priorityUrls: { type: [array, 'null'], items: { type: string, format: uri } }
+        competitors: { type: [array, 'null'], items: { type: string } }
+        brandConstraints: { type: [array, 'null'], items: { type: string } }
+        complianceConstraints: { type: [array, 'null'], items: { type: string } }
+        technicalConstraints: { type: [array, 'null'], items: { type: string } }
+        resourceConstraints: { type: [array, 'null'], items: { type: string } }
+        growthQuestions: { type: [array, 'null'], items: { type: string } }
+        ninetyDayGoals: { type: [array, 'null'], items: { type: string } }
+
+    DraftContextRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, baseVersion, profile]
+      properties:
+        mode: { const: draft }
+        baseVersion: { type: integer, minimum: 0 }
+        profile: { $ref: '#/components/schemas/DraftIcpProfilePatch' }
+    CompleteContextRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, baseVersion, profile]
+      properties:
+        mode: { const: complete }
+        baseVersion: { type: integer, minimum: 0 }
+        profile: { $ref: '#/components/schemas/CompleteIcpProfileInput' }
+
+    IcpProfile:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, version, status, profile, contentHash, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [draft, complete] }
+        profile: { type: object, additionalProperties: true }
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    IcpProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/IcpProfile' }
+    CurrentIcpProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/IcpProfile'
+            - type: 'null'
+
+    SourceConnection:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, provider, connectionType, state, externalRef, scopes, connectedAt, latestSnapshot, activeRun, limitation, featureEnabled, updatedAt]
+      properties:
+        id: { type: [string, 'null'], format: uuid }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        provider: { $ref: '#/components/schemas/Provider' }
+        connectionType: { type: string, enum: [public, oauth, file_import, api_key_stub] }
+        state: { $ref: '#/components/schemas/SourceState' }
+        externalRef: { type: [string, 'null'] }
+        scopes: { type: array, items: { type: string } }
+        connectedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        latestSnapshot:
+          oneOf:
+            - $ref: '#/components/schemas/DataSnapshot'
+            - type: 'null'
+        activeRun:
+          oneOf:
+            - $ref: '#/components/schemas/AsyncRun'
+            - type: 'null'
+        limitation: { type: string, minLength: 1 }
+        featureEnabled: { type: boolean }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    SourceListResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items: { $ref: '#/components/schemas/SourceConnection' }
+
+    AuthorizeSourceRequest:
+      type: object
+      additionalProperties: false
+      required: [phase, returnPath]
+      properties:
+        phase: { const: authorize }
+        returnPath: { type: string, pattern: '^/p/[0-9a-f-]+/sources$' }
+    GetPropertySelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [phase, oauthIntentId]
+      properties:
+        phase: { const: property_selection }
+        oauthIntentId: { $ref: '#/components/schemas/Uuid' }
+    SelectPropertyRequest:
+      type: object
+      additionalProperties: false
+      required: [phase, oauthIntentId, externalPropertyId]
+      properties:
+        phase: { const: select_property }
+        oauthIntentId: { $ref: '#/components/schemas/Uuid' }
+        externalPropertyId: { type: string, minLength: 1, maxLength: 1000 }
+        keyEventNames:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200 }
+          description: GA4 only; ignored for GSC.
+    AuthorizationPhase:
+      type: object
+      additionalProperties: false
+      required: [phase, authorizationUrl, expiresAt]
+      properties:
+        phase: { const: authorization }
+        authorizationUrl: { type: string, format: uri }
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+    PropertySelectionPhase:
+      type: object
+      additionalProperties: false
+      required: [phase, oauthIntentId, provider, properties, expiresAt]
+      properties:
+        phase: { const: property_selection }
+        oauthIntentId: { $ref: '#/components/schemas/Uuid' }
+        provider: { type: string, enum: [gsc, ga4] }
+        properties:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, displayName]
+            properties:
+              id: { type: string }
+              displayName: { type: string }
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+    ConnectedPhase:
+      type: object
+      additionalProperties: false
+      required: [phase, source]
+      properties:
+        phase: { const: connected }
+        source: { $ref: '#/components/schemas/SourceConnection' }
+    ConnectSourceResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/AuthorizationPhase'
+            - $ref: '#/components/schemas/PropertySelectionPhase'
+            - $ref: '#/components/schemas/ConnectedPhase'
+          discriminator:
+            propertyName: phase
+
+    ImportPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, templateId, file]
+      properties:
+        mode: { type: string, const: preview }
+        templateId: { type: string, const: keyword_gap_v1 }
+        file: { type: string, format: binary }
+    ImportConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, importToken, mapping]
+      properties:
+        mode: { const: confirm }
+        importToken: { type: string, minLength: 32, maxLength: 512 }
+        mapping:
+          type: object
+          additionalProperties: false
+          required: [keyword, searchVolume, marketCode, languageCode]
+          properties:
+            keyword: { type: string }
+            searchVolume: { type: string }
+            cluster: { type: [string, 'null'] }
+            currentUrl: { type: [string, 'null'] }
+            currentRank: { type: [string, 'null'] }
+            competitorDomain: { type: [string, 'null'] }
+            competitorRank: { type: [string, 'null'] }
+            marketCode: { type: string }
+            languageCode: { type: string }
+    ImportPreviewResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [importToken, expiresAt, rowCount, previewRows, detectedColumns, suggestedMapping, errors, warnings]
+          properties:
+            importToken: { type: string, minLength: 32 }
+            expiresAt: { $ref: '#/components/schemas/Timestamp' }
+            rowCount: { type: integer, minimum: 0, maximum: 200000 }
+            previewRows:
+              type: array
+              maxItems: 20
+              items: { type: object, additionalProperties: true }
+            detectedColumns: { type: array, items: { type: string } }
+            suggestedMapping: { type: object, additionalProperties: { type: [string, 'null'] } }
+            errors: { type: array, items: { type: string } }
+            warnings: { type: array, items: { type: string } }
+
+    CreateCollectionRunRequest:
+      type: object
+      additionalProperties: false
+      required: [provider]
+      properties:
+        provider: { type: string, enum: [crawl, gsc, ga4, dataforseo] }
+        sourceConnectionId: { type: [string, 'null'], format: uuid }
+        operation:
+          type: string
+          enum: [site_graph, search_analytics, organic_landing, keyword_gap_import]
+
+    AsyncRun:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, kind, status, progress, lastError, resultRef, queuedAt, startedAt, completedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        kind: { $ref: '#/components/schemas/RunKind' }
+        status: { $ref: '#/components/schemas/RunStatus' }
+        progress:
+          type: object
+          additionalProperties: false
+          required: [phase, current, total, messageKey]
+          properties:
+            phase: { type: string }
+            current: { type: integer, minimum: 0 }
+            total: { type: [integer, 'null'], minimum: 0 }
+            messageKey: { type: string }
+        lastError:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [code, summary]
+          properties:
+            code: { type: string }
+            summary: { type: string }
+        resultRef:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [type, id]
+          properties:
+            type: { type: string, enum: [collection_run, diagnostic_run, artifact, export] }
+            id: { $ref: '#/components/schemas/Uuid' }
+        queuedAt: { $ref: '#/components/schemas/Timestamp' }
+        startedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        completedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+    AsyncAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [run, statusUrl, resourceRef]
+          properties:
+            run: { $ref: '#/components/schemas/AsyncRun' }
+            statusUrl: { type: string, pattern: '^/api/mvp/projects/[0-9a-f-]+/runs/[0-9a-f-]+$' }
+            resourceRef:
+              type: [object, 'null']
+              additionalProperties: false
+              required: [type, id]
+              properties:
+                type: { type: string, enum: [collection_run, diagnostic_run, artifact, export] }
+                id: { $ref: '#/components/schemas/Uuid' }
+    AsyncRunResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/AsyncRun' }
+
+    DataSnapshot:
+      type: object
+      additionalProperties: false
+      required: [id, provider, datasetKey, schemaVersion, methodVersion, capturedAt, sourceWindow, availability, limitation, rowCount, checksum]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        provider: { $ref: '#/components/schemas/Provider' }
+        datasetKey: { type: string }
+        schemaVersion: { type: string }
+        methodVersion: { type: string }
+        capturedAt: { $ref: '#/components/schemas/Timestamp' }
+        sourceWindow:
+          type: object
+          additionalProperties: false
+          required: [start, end]
+          properties:
+            start: { type: [string, 'null'], format: date }
+            end: { type: [string, 'null'], format: date }
+        availability: { $ref: '#/components/schemas/Availability' }
+        limitation: { type: string, minLength: 1 }
+        rowCount: { type: integer, minimum: 0 }
+        checksum: { type: string, pattern: '^[a-f0-9]{64}$' }
+    SnapshotListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/DataSnapshot' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+
+    CreateDiagnosticRunRequest:
+      type: object
+      additionalProperties: false
+      required: [snapshotIds, outputLocale]
+      properties:
+        snapshotIds:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+          description: Must include a current-project crawl snapshot; omitted optional datasets use latest eligible snapshots only when explicitly selected by UI.
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+
+    Evidence:
+      type: object
+      additionalProperties: false
+      required: [id, sourceProvider, origin, method, grade, availability, support, claim, subjectRefs, observedAt, limitation, snapshotId, analysisInvocationId]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        sourceProvider: { type: string, enum: [crawl, gsc, ga4, csv, dataforseo, system, llm] }
+        origin: { type: string, enum: [first_party, direct_public, vendor_observation, user_provided, derived, generated] }
+        method: { type: string, enum: [observed, computed, inferred, generated] }
+        grade: { type: string, enum: [A, B, C] }
+        availability: { $ref: '#/components/schemas/Availability' }
+        support: { type: string, enum: [supports, contradicts, context] }
+        claim: { type: string, minLength: 1 }
+        subjectRefs:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SubjectRef' }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        limitation: { type: string, minLength: 1 }
+        snapshotId: { type: [string, 'null'], format: uuid }
+        analysisInvocationId: { type: [string, 'null'], format: uuid }
+    SubjectRef:
+      type: object
+      additionalProperties: false
+      required: [type, value]
+      properties:
+        type: { type: string, enum: [url, site, page_set, http_status, canonical_issue, keyword_cluster, user_agent] }
+        value: { type: string, minLength: 1, maxLength: 2048 }
+
+    Finding:
+      type: object
+      additionalProperties: false
+      required: [id, ruleId, ruleVersion, domain, titleKey, titleArgs, summary, summaryLocale, severity, confidence, reviewState, reviewRevision, active, regressed, subjectRefs, evidence, firstSeenAt, lastSeenAt, resolvedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        ruleId: { type: string, pattern: '^(TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3}$' }
+        ruleVersion: { type: integer, const: 1 }
+        domain: { $ref: '#/components/schemas/DiagnosticDomain' }
+        titleKey: { type: string }
+        titleArgs: { type: object, additionalProperties: true }
+        summary: { type: string }
+        summaryLocale: { $ref: '#/components/schemas/LocaleCode' }
+        severity: { $ref: '#/components/schemas/Severity' }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        reviewState: { $ref: '#/components/schemas/FindingReviewState' }
+        reviewRevision: { type: integer, minimum: 0 }
+        active: { type: boolean }
+        regressed: { type: boolean }
+        subjectRefs: { type: array, items: { $ref: '#/components/schemas/SubjectRef' } }
+        evidence: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Evidence' } }
+        firstSeenAt: { $ref: '#/components/schemas/Timestamp' }
+        lastSeenAt: { $ref: '#/components/schemas/Timestamp' }
+        resolvedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+    FindingListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Finding' } }
+        meta: { $ref: '#/components/schemas/FindingListMeta' }
+    DiagnosticRuleResult:
+      type: object
+      additionalProperties: false
+      required: [ruleId, ruleVersion, domain, status, reason, durationMs]
+      properties:
+        ruleId: { type: string, pattern: '^(TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3}$' }
+        ruleVersion: { type: integer, minimum: 1 }
+        domain: { $ref: '#/components/schemas/DiagnosticDomain' }
+        status: { type: string, enum: [pass, candidate, skipped, inconclusive] }
+        reason: { type: [string, 'null'] }
+        durationMs: { type: integer, minimum: 0 }
+    FindingListMeta:
+      type: object
+      additionalProperties: false
+      required: [nextCursor, hasNext, limit, latestRun, coverage, ruleResults]
+      properties:
+        nextCursor: { type: [string, 'null'] }
+        hasNext: { type: boolean }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        latestRun:
+          oneOf:
+            - $ref: '#/components/schemas/AsyncRun'
+            - type: 'null'
+        coverage:
+          oneOf:
+            - $ref: '#/components/schemas/Coverage'
+            - type: 'null'
+        ruleResults:
+          type: array
+          maxItems: 11
+          items: { $ref: '#/components/schemas/DiagnosticRuleResult' }
+
+    ReviewFindingRequest:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, reviewState]
+      properties:
+        baseRevision: { type: integer, minimum: 0 }
+        reviewState: { type: string, enum: [confirmed, ignored, needs_more_data] }
+        reason: { type: [string, 'null'], maxLength: 1000 }
+        note: { type: [string, 'null'], maxLength: 4000 }
+      allOf:
+        - if:
+            properties: { reviewState: { const: ignored } }
+            required: [reviewState]
+          then:
+            required: [reason]
+            properties: { reason: { type: string, minLength: 3, maxLength: 1000 } }
+        - if:
+            properties: { reviewState: { const: needs_more_data } }
+            required: [reviewState]
+          then:
+            required: [note]
+            properties: { note: { type: string, minLength: 3, maxLength: 4000 } }
+    ReviewFindingResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [finding, action]
+          properties:
+            finding: { $ref: '#/components/schemas/Finding' }
+            action:
+              oneOf:
+                - $ref: '#/components/schemas/Action'
+                - type: 'null'
+
+    Action:
+      type: object
+      additionalProperties: false
+      required: [id, findingId, templateId, title, description, contentLocale, priorityBand, roadmapLane, status, effort, risk, expectedOutcome, revision, createdAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        findingId: { $ref: '#/components/schemas/Uuid' }
+        templateId: { type: string }
+        title: { type: string, minLength: 1 }
+        description: { type: string, minLength: 1 }
+        contentLocale: { $ref: '#/components/schemas/LocaleCode' }
+        priorityBand: { $ref: '#/components/schemas/PriorityBand' }
+        roadmapLane: { $ref: '#/components/schemas/RoadmapLane' }
+        status: { $ref: '#/components/schemas/ActionStatus' }
+        effort: { type: string, enum: [small, medium, large] }
+        risk: { type: string, enum: [low, medium, high] }
+        expectedOutcome: { type: string, minLength: 1 }
+        revision: { type: integer, minimum: 1 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    ActionResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Action' }
+    ActionListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Action' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+    UpdateActionRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 3
+      required: [baseRevision, reason]
+      properties:
+        baseRevision: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/ActionStatus' }
+        priorityBand: { $ref: '#/components/schemas/PriorityBand' }
+        roadmapLane: { $ref: '#/components/schemas/RoadmapLane' }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+        note: { type: [string, 'null'], maxLength: 4000 }
+      anyOf:
+        - required: [status]
+        - required: [priorityBand]
+        - required: [roadmapLane]
+
+    CreateArtifactRequest:
+      type: object
+      additionalProperties: false
+      required: [artifactType, generationMode, outputLocale]
+      properties:
+        artifactType: { $ref: '#/components/schemas/ArtifactType' }
+        generationMode: { type: string, enum: [template, structured_llm] }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        operatorInstructions: { type: [string, 'null'], maxLength: 4000 }
+
+    ArtifactRevision:
+      type: object
+      additionalProperties: false
+      required: [id, revision, outputLocale, contentFormat, content, contentHash, validationErrors, note, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        revision: { type: integer, minimum: 1 }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        contentFormat: { $ref: '#/components/schemas/ContentFormat' }
+        content:
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        validationErrors: { type: array, items: { type: string } }
+        note: { type: [string, 'null'] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    Artifact:
+      type: object
+      additionalProperties: false
+      required: [id, actionId, artifactType, status, generationMode, outputLocale, currentRevision, validationState, current, activeRun, createdAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        artifactType: { $ref: '#/components/schemas/ArtifactType' }
+        status: { $ref: '#/components/schemas/ArtifactStatus' }
+        generationMode: { type: string, enum: [template, structured_llm] }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        currentRevision: { type: integer, minimum: 0 }
+        validationState: { type: string, enum: [pending, valid, invalid] }
+        current:
+          oneOf:
+            - $ref: '#/components/schemas/ArtifactRevision'
+            - type: 'null'
+        activeRun:
+          oneOf:
+            - $ref: '#/components/schemas/AsyncRun'
+            - type: 'null'
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    ArtifactListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Artifact' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+    ArtifactDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Artifact' }
+    UpdateArtifactRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [baseRevision, contentFormat, content]
+          properties:
+            baseRevision: { type: integer, minimum: 0 }
+            contentFormat: { $ref: '#/components/schemas/ContentFormat' }
+            content:
+              oneOf:
+                - type: string
+                - type: object
+                  additionalProperties: true
+            editorNote: { type: [string, 'null'], maxLength: 4000 }
+        - type: object
+          additionalProperties: false
+          required: [baseRevision, status]
+          properties:
+            baseRevision: { type: integer, minimum: 0 }
+            status: { type: string, enum: [draft, ready, archived] }
+
+    CreateExportRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, outputLocale]
+      properties:
+        kind: { type: string, enum: [service_bundle, client_bundle] }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+    ExportBundle:
+      type: object
+      additionalProperties: false
+      required: [id, kind, schemaVersion, outputLocale, run, checksum, itemCounts, downloadUrl, downloadExpiresAt, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        kind: { type: string, enum: [service_bundle, client_bundle] }
+        schemaVersion: { type: string, const: signalframe.service-bundle.0.2.0 }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        run: { $ref: '#/components/schemas/AsyncRun' }
+        checksum: { type: [string, 'null'], pattern: '^[a-f0-9]{64}$' }
+        itemCounts: { type: object, additionalProperties: { type: integer, minimum: 0 } }
+        downloadUrl: { type: [string, 'null'], format: uri }
+        downloadExpiresAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    ExportResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ExportBundle' }
+
+    Coverage:
+      type: object
+      additionalProperties: false
+      required: [overall, domains, limitations]
+      properties:
+        overall: { type: string, enum: [unavailable, partial, complete] }
+        domains:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [unavailable, qualitative, partial, complete]
+        limitations: { type: array, items: { type: string } }
+    Report:
+      type: object
+      additionalProperties: false
+      required: [project, outputLocale, generatedAt, coverage, findings, actions, artifacts, methodology, limitations]
+      properties:
+        project: { $ref: '#/components/schemas/Project' }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        generatedAt: { $ref: '#/components/schemas/Timestamp' }
+        coverage: { $ref: '#/components/schemas/Coverage' }
+        findings: { type: array, items: { $ref: '#/components/schemas/Finding' } }
+        actions: { type: array, items: { $ref: '#/components/schemas/Action' } }
+        artifacts: { type: array, items: { $ref: '#/components/schemas/Artifact' } }
+        methodology: { type: string }
+        limitations: { type: array, items: { type: string } }
+    ReportResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Report' }
+
+    OverviewView:
+      type: object
+      additionalProperties: false
+      required: [view, project, coverage, activeRuns, topActions, latestSnapshot, topActionEvidence, deliveryFocus]
+      properties:
+        view: { const: overview }
+        project: { $ref: '#/components/schemas/Project' }
+        coverage: { $ref: '#/components/schemas/Coverage' }
+        activeRuns:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/AsyncRun' }
+        topActions: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/Action' } }
+        latestSnapshot:
+          oneOf:
+            - $ref: '#/components/schemas/DataSnapshot'
+            - type: 'null'
+        topActionEvidence:
+          type: array
+          items: { $ref: '#/components/schemas/Evidence' }
+        deliveryFocus:
+          oneOf:
+            - $ref: '#/components/schemas/OverviewDeliveryFocus'
+            - type: 'null'
+    OverviewDeliveryFocus:
+      type: object
+      additionalProperties: false
+      required: [artifactId, actionId, artifactType, status, updatedAt]
+      properties:
+        artifactId: { $ref: '#/components/schemas/Uuid' }
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        artifactType: { $ref: '#/components/schemas/ArtifactType' }
+        status: { $ref: '#/components/schemas/ArtifactStatus' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    PlanView:
+      type: object
+      additionalProperties: false
+      required: [view, actions]
+      properties:
+        view: { const: plan }
+        actions: { type: array, items: { $ref: '#/components/schemas/Action' } }
+    StudioView:
+      type: object
+      additionalProperties: false
+      required: [view, artifacts]
+      properties:
+        view: { const: studio }
+        artifacts: { type: array, items: { $ref: '#/components/schemas/Artifact' } }
+    ReportView:
+      type: object
+      additionalProperties: false
+      required: [view, report]
+      properties:
+        view: { const: report }
+        report: { $ref: '#/components/schemas/Report' }
+    WorkspaceViewResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/OverviewView'
+            - $ref: '#/components/schemas/PlanView'
+            - $ref: '#/components/schemas/StudioView'
+            - $ref: '#/components/schemas/ReportView'
+          discriminator:
+            propertyName: view

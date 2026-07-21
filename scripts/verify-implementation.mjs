@@ -797,8 +797,8 @@ function checkDatabaseContract() {
     ),
   ].map((match) => match[1]);
   invariant(
-    tables.length === 28,
-    `expected 28 app tables in the migration, found ${tables.length}`,
+    tables.length === EXPECTED_TABLES.length,
+    `expected ${EXPECTED_TABLES.length} app tables in the migrations, found ${tables.length}`,
   );
   assertExactSet(tables, EXPECTED_TABLES, "application tables");
   invariant(
@@ -811,7 +811,7 @@ function checkDatabaseContract() {
     /\bROLLBACK\s*;\s*$/.test(smoke),
     "schema-smoke.sql must finish with ROLLBACK",
   );
-  return "database: 28 app tables (pg-boss excluded)";
+  return `database: ${EXPECTED_TABLES.length} app tables (pg-boss excluded)`;
 }
 
 async function importSource(relativePath) {
