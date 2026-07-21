@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const PRODUCT_VERSION = "0.2.0" as const;
-export const CONTRACT_VERSION = "2026-07-18" as const;
+export const PRODUCT_VERSION = "0.3.0" as const;
+export const CONTRACT_VERSION = "2026-07-21" as const;
 
 // Product and contract version identifiers. Wrapped in the data envelope at the
 // usage site (e.g. successEnvelope(versionResponse)).

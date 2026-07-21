@@ -8,6 +8,11 @@ import {
 } from "./health.ts";
 
 describe("build/version metadata", () => {
+  it("pins the active product and runtime contract versions", () => {
+    expect(PRODUCT_VERSION).toBe("0.3.0");
+    expect(CONTRACT_VERSION).toBe("2026-07-21");
+  });
+
   it("reports the immutable product and contract versions with the web platform SHA", () => {
     const metadata = resolveBuildMetadata("web", {
       APP_BUILD_SHA: "stale-fallback",

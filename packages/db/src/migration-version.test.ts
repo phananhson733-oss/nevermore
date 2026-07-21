@@ -8,11 +8,11 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
-  it("updates the async-run default to the current HTTP contract", () => {
+  it("activates the current HTTP and immutable export contracts", () => {
     const migration = readFileSync(
       fileURLToPath(
         new URL(
-          "../migrations/0009_async_run_contract_version.sql",
+          "../migrations/0010_growth_audit_slice1.sql",
           import.meta.url,
         ),
       ),
@@ -20,9 +20,15 @@ describe("readMigrationVersion", () => {
     );
 
     expect(migration).toMatch(
-      /ALTER\s+TABLE\s+app\.async_runs\s+ALTER\s+COLUMN\s+contract_version\s+SET\s+DEFAULT\s+'2026-07-18'/iu,
+      /ALTER\s+TABLE\s+app\.async_runs\s+ALTER\s+COLUMN\s+contract_version\s+SET\s+DEFAULT\s+'2026-07-21'/iu,
     );
-    expect(asyncRuns.contract_version.default).toBe("2026-07-18");
+    expect(migration).toMatch(
+      /ALTER\s+TABLE\s+app\.export_bundles[\s\S]*?ALTER\s+COLUMN\s+schema_version\s+SET\s+DEFAULT\s+'signalframe\.service-bundle\.0\.3\.0'/iu,
+    );
+    expect(migration).toMatch(
+      /CHECK\s*\(\s*schema_version\s+IN\s*\(\s*'signalframe\.service-bundle\.0\.2\.0'\s*,\s*'signalframe\.service-bundle\.0\.3\.0'\s*\)\s*\)/iu,
+    );
+    expect(asyncRuns.contract_version.default).toBe("2026-07-21");
   });
 
   it("advances the database projection exactly once per migration file", () => {

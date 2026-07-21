@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: SignalFrame Service Delivery MVP API
-  version: 0.2.0
+  version: 0.3.0
   summary: Same-origin internal API for the ICP-to-enterprise-export MVP.
   description: |
-    Implementation contract for SignalFrame MVP 0.2. All authenticated operators have
+    Implementation contract for SignalFrame MVP 0.3. All authenticated operators have
     full product access inside one internal workspace. Project scoping, evidence lineage,
     unavailable-not-zero semantics, optimistic revisions, and asynchronous status URLs
     are mandatory. This is an internal contract, not a public API commitment.
@@ -1838,7 +1838,12 @@ components:
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         kind: { type: string, enum: [service_bundle, client_bundle] }
-        schemaVersion: { type: string, const: signalframe.service-bundle.0.2.0 }
+        schemaVersion:
+          type: string
+          enum:
+            - signalframe.service-bundle.0.2.0
+            - signalframe.service-bundle.0.3.0
+          description: Read DTO supports immutable historical 0.2 bundles; all newly generated manifests use 0.3.0.
         outputLocale: { $ref: '#/components/schemas/LocaleCode' }
         run: { $ref: '#/components/schemas/AsyncRun' }
         checksum: { type: [string, 'null'], pattern: '^[a-f0-9]{64}$' }

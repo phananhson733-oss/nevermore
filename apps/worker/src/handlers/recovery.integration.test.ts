@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { CONTRACT_VERSION } from "@sf/contracts";
 import {
   AsyncRunsRepository,
   ProjectsRepository,
@@ -607,7 +608,7 @@ describeDb("worker canonical run recovery", () => {
         kind: "diagnostic",
         status: "running",
         active_key: activeKey,
-        contract_version: "2026-07-18",
+        contract_version: CONTRACT_VERSION,
         request_payload: {},
         attempt_count: 1,
         initiated_by: ACTOR_ID,
@@ -641,7 +642,7 @@ describeDb("worker canonical run recovery", () => {
           kind: "diagnostic",
           status: "queued",
           active_key: activeKey,
-          contract_version: "2026-07-18",
+          contract_version: CONTRACT_VERSION,
           request_payload: {},
           initiated_by: ACTOR_ID,
           queued_at: NOW.toISOString(),
@@ -954,7 +955,7 @@ describeDb("worker canonical run recovery", () => {
       kind: input.kind ?? "diagnostic",
       status: input.status,
       active_key: `${input.kind ?? "diagnostic"}:${runId}`,
-      contract_version: input.contractVersion ?? "2026-07-18",
+      contract_version: input.contractVersion ?? CONTRACT_VERSION,
       request_payload: input.requestPayload ?? {},
       attempt_count:
         input.attemptCount ?? (input.status === "running" ? 1 : 0),
@@ -980,7 +981,7 @@ describeDb("worker canonical run recovery", () => {
 
   function payload(
     runId: string,
-    contractVersion = "2026-07-18",
+    contractVersion: string = CONTRACT_VERSION,
   ): RunJobPayload {
     return {
       runId,

@@ -12,7 +12,7 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
-import type { CreateDiagnosticRunRequest } from "@sf/contracts";
+import { CONTRACT_VERSION, type CreateDiagnosticRunRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
@@ -27,7 +27,6 @@ import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
  * available/partial crawl snapshot must be selected (422 CRAWL_SNAPSHOT_REQUIRED).
  */
 
-const CONTRACT_VERSION = "2026-07-18";
 const IDEMPOTENCY_SCOPE = "createDiagnosticRun";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const DIAGNOSTIC_ACTIVE_KEY = "diagnostic";

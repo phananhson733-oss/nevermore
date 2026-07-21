@@ -32,7 +32,7 @@ const bundle = {
   project_id: "00000000-0000-4000-8000-000000000003",
   async_run_id: "00000000-0000-4000-8000-000000000004",
   kind: "service_bundle",
-  schema_version: "0.2.0",
+  schema_version: "signalframe.service-bundle.0.3.0",
   output_locale: "en",
   object_key:
     "exports/00000000-0000-4000-8000-000000000003/run-1/archive.zip",
@@ -50,7 +50,7 @@ const run = {
   kind: "export",
   status: "completed",
   active_key: null,
-  contract_version: "2026-07-18",
+  contract_version: "2026-07-21",
   request_payload: {},
   progress: { phase: "completed", current: 1, total: 1, messageKey: "done" },
   last_error_code: null,

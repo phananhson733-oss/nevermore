@@ -1,4 +1,4 @@
--- SignalFrame Service Delivery MVP 0.2.0
+-- SignalFrame Service Delivery MVP 0.3.0
 -- PostgreSQL 15+ reference DDL. pg-boss manages its own separate schema.
 
 BEGIN;
@@ -246,7 +246,7 @@ CREATE TABLE IF NOT EXISTS app.async_runs (
   status text NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued','running','completed','partial','failed','cancelled')),
   active_key text,
-  contract_version text NOT NULL DEFAULT '0.2.0',
+  contract_version text NOT NULL DEFAULT '2026-07-21',
   request_payload jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(request_payload) = 'object'),
   progress jsonb NOT NULL DEFAULT '{"phase":"queued","current":0,"total":null,"messageKey":"run.queued"}'::jsonb
     CHECK (jsonb_typeof(progress) = 'object'),
@@ -636,8 +636,9 @@ CREATE TABLE IF NOT EXISTS app.export_bundles (
   project_id uuid NOT NULL REFERENCES app.client_projects(id) ON DELETE RESTRICT,
   async_run_id uuid NOT NULL UNIQUE REFERENCES app.async_runs(id) ON DELETE RESTRICT,
   kind text NOT NULL CHECK (kind IN ('service_bundle','client_bundle')),
-  schema_version text NOT NULL DEFAULT 'signalframe.service-bundle.0.2.0'
-    CHECK (schema_version = 'signalframe.service-bundle.0.2.0'),
+  schema_version text NOT NULL DEFAULT 'signalframe.service-bundle.0.3.0',
+  CONSTRAINT export_bundles_schema_version_check
+    CHECK (schema_version IN ('signalframe.service-bundle.0.2.0','signalframe.service-bundle.0.3.0')),
   output_locale text NOT NULL CHECK (output_locale ~ '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$'),
   object_key text,
   checksum text CHECK (checksum IS NULL OR checksum ~ '^[a-f0-9]{64}$'),
@@ -684,6 +685,543 @@ CREATE TABLE IF NOT EXISTS app.telemetry_events (
 
 CREATE INDEX IF NOT EXISTS telemetry_events_name_created_idx
   ON app.telemetry_events(event_name, created_at DESC);
+
+-- Capability execution extends the canonical async-run ledger. The primary key
+-- is the owning async run, so this table cannot become a second run lifecycle.
+CREATE TABLE IF NOT EXISTS app.capability_runs (
+  async_run_id uuid PRIMARY KEY REFERENCES app.async_runs(id) ON DELETE RESTRICT,
+  capability_id text NOT NULL CHECK (length(btrim(capability_id)) >= 1),
+  capability_version text NOT NULL CHECK (length(btrim(capability_version)) >= 1),
+  input_manifest_hash text NOT NULL CHECK (input_manifest_hash ~ '^[a-f0-9]{64}$'),
+  mode text NOT NULL CHECK (mode IN ('production','shadow','simulation')),
+  side_effect_class text NOT NULL
+    CHECK (side_effect_class IN ('read_only','internal_write','external_write')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Customer-facing audit state is an immutable projection over canonical runs;
+-- status remains owned by the referenced async run.
+CREATE TABLE IF NOT EXISTS app.audit_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id uuid NOT NULL REFERENCES app.workspaces(id) ON DELETE RESTRICT,
+  project_id uuid NOT NULL REFERENCES app.client_projects(id) ON DELETE RESTRICT,
+  diagnostic_run_id uuid NOT NULL UNIQUE
+    REFERENCES app.diagnostic_runs(id) ON DELETE RESTRICT,
+  capability_run_id uuid NOT NULL UNIQUE
+    REFERENCES app.capability_runs(async_run_id) ON DELETE RESTRICT,
+  scope_kind text NOT NULL CHECK (scope_kind IN ('site','template','url')),
+  scope_key text NOT NULL CHECK (length(btrim(scope_key)) >= 1),
+  projection_version text NOT NULL CHECK (length(btrim(projection_version)) >= 1),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (diagnostic_run_id = capability_run_id)
+);
+
+CREATE INDEX IF NOT EXISTS audit_runs_project_created_idx
+  ON app.audit_runs(project_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS app.audit_module_results (
+  audit_run_id uuid NOT NULL REFERENCES app.audit_runs(id) ON DELETE RESTRICT,
+  module_id text NOT NULL CHECK (module_id IN (
+    'performance',
+    'accessibility',
+    'best_practices_security',
+    'technical_search',
+    'content_intent',
+    'ai_geo',
+    'links_architecture',
+    'compliance_measurement'
+  )),
+  coverage_state text NOT NULL
+    CHECK (coverage_state IN ('available','partial','stale','no_data')),
+  summary jsonb NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(summary) = 'object'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (audit_run_id, module_id)
+);
+
+-- Durable URL identity only. Metrics and extracted content remain attributable
+-- to immutable page/data snapshots.
+CREATE TABLE IF NOT EXISTS app.site_pages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id uuid NOT NULL REFERENCES app.workspaces(id) ON DELETE RESTRICT,
+  project_id uuid NOT NULL REFERENCES app.client_projects(id) ON DELETE RESTRICT,
+  site_id uuid NOT NULL REFERENCES app.sites(id) ON DELETE RESTRICT,
+  normalized_url text NOT NULL CHECK (length(btrim(normalized_url)) >= 1),
+  normalized_url_hash text NOT NULL CHECK (normalized_url_hash ~ '^[a-f0-9]{64}$'),
+  template_key text CHECK (template_key IS NULL OR length(btrim(template_key)) >= 1),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (project_id, normalized_url_hash)
+);
+
+CREATE INDEX IF NOT EXISTS site_pages_project_updated_idx
+  ON app.site_pages(project_id, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS site_pages_site_idx
+  ON app.site_pages(site_id, id);
+
+CREATE TABLE IF NOT EXISTS app.page_snapshots (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id uuid NOT NULL REFERENCES app.workspaces(id) ON DELETE RESTRICT,
+  project_id uuid NOT NULL REFERENCES app.client_projects(id) ON DELETE RESTRICT,
+  site_page_id uuid NOT NULL REFERENCES app.site_pages(id) ON DELETE RESTRICT,
+  data_snapshot_id uuid NOT NULL REFERENCES app.data_snapshots(id) ON DELETE RESTRICT,
+  content_hash text NOT NULL CHECK (content_hash ~ '^[a-f0-9]{64}$'),
+  extract jsonb NOT NULL CHECK (jsonb_typeof(extract) = 'object'),
+  captured_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (site_page_id, data_snapshot_id, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS page_snapshots_page_captured_idx
+  ON app.page_snapshots(site_page_id, captured_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS page_snapshots_project_captured_idx
+  ON app.page_snapshots(project_id, captured_at DESC, id DESC);
+
+-- Duplicated tenant keys are read-model accelerators, never free-form labels.
+-- Every projection is checked against its canonical parent lineage before it
+-- can become customer-visible.
+CREATE OR REPLACE FUNCTION app.enforce_audit_run_provenance()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.diagnostic_run_id IS DISTINCT FROM NEW.capability_run_id OR NOT EXISTS (
+    SELECT 1
+    FROM app.diagnostic_runs diagnostic
+    JOIN app.async_runs run ON run.id = diagnostic.id
+    JOIN app.capability_runs capability
+      ON capability.async_run_id = diagnostic.id
+    WHERE diagnostic.id = NEW.diagnostic_run_id
+      AND diagnostic.workspace_id = NEW.workspace_id
+      AND diagnostic.project_id = NEW.project_id
+      AND run.workspace_id = NEW.workspace_id
+      AND run.project_id = NEW.project_id
+  ) THEN
+    RAISE EXCEPTION 'audit run provenance does not match its canonical run'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.enforce_site_page_provenance()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.sites site
+    WHERE site.id = NEW.site_id
+      AND site.workspace_id = NEW.workspace_id
+      AND site.project_id = NEW.project_id
+  ) THEN
+    RAISE EXCEPTION 'site page provenance does not match its canonical site'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.enforce_page_snapshot_provenance()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.site_pages page
+    JOIN app.data_snapshots snapshot
+      ON snapshot.id = NEW.data_snapshot_id
+     AND snapshot.site_id = page.site_id
+    WHERE page.id = NEW.site_page_id
+      AND page.workspace_id = NEW.workspace_id
+      AND page.project_id = NEW.project_id
+      AND snapshot.workspace_id = NEW.workspace_id
+      AND snapshot.project_id = NEW.project_id
+  ) THEN
+    RAISE EXCEPTION 'page snapshot provenance does not match its canonical sources'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS audit_runs_provenance_guard ON app.audit_runs;
+CREATE TRIGGER audit_runs_provenance_guard BEFORE INSERT ON app.audit_runs
+  FOR EACH ROW EXECUTE FUNCTION app.enforce_audit_run_provenance();
+
+DROP TRIGGER IF EXISTS site_pages_provenance_guard ON app.site_pages;
+CREATE TRIGGER site_pages_provenance_guard BEFORE INSERT OR UPDATE ON app.site_pages
+  FOR EACH ROW EXECUTE FUNCTION app.enforce_site_page_provenance();
+
+DROP TRIGGER IF EXISTS page_snapshots_provenance_guard ON app.page_snapshots;
+CREATE TRIGGER page_snapshots_provenance_guard BEFORE INSERT ON app.page_snapshots
+  FOR EACH ROW EXECUTE FUNCTION app.enforce_page_snapshot_provenance();
+
+-- AsyncRun terminal states are irreversible (spec §5.2). Repository attempt
+-- fencing is the primary guard; this trigger is the final invariant for direct
+-- SQL and any future writer that bypasses the repository CAS.
+CREATE OR REPLACE FUNCTION app.reject_async_run_terminal_transition()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.status IN ('completed', 'partial', 'failed', 'cancelled')
+     AND NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'async run terminal status is immutable'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS async_runs_terminal_status_immutable ON app.async_runs;
+CREATE TRIGGER async_runs_terminal_status_immutable
+  BEFORE UPDATE OF status ON app.async_runs
+  FOR EACH ROW EXECUTE FUNCTION app.reject_async_run_terminal_transition();
+
+-- Bind each ExportBundle to the exact export AsyncRun/project named by its
+-- object key. Only one placeholder -> finalized transition is legal; after the
+-- key is committed, all bundle identity and object metadata are immutable.
+CREATE OR REPLACE FUNCTION app.enforce_export_bundle_invariants()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  run_matches boolean;
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+       OR NEW.project_id IS DISTINCT FROM OLD.project_id
+       OR NEW.async_run_id IS DISTINCT FROM OLD.async_run_id
+       OR NEW.kind IS DISTINCT FROM OLD.kind
+       OR NEW.schema_version IS DISTINCT FROM OLD.schema_version
+       OR NEW.output_locale IS DISTINCT FROM OLD.output_locale
+       OR NEW.created_by IS DISTINCT FROM OLD.created_by
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+      RAISE EXCEPTION 'export bundle identity is immutable'
+        USING ERRCODE = '23514';
+    END IF;
+
+    IF OLD.object_key IS NOT NULL OR NEW.object_key IS NULL THEN
+      RAISE EXCEPTION 'export bundle may be finalized exactly once'
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM app.async_runs AS run
+    WHERE run.id = NEW.async_run_id
+      AND run.workspace_id = NEW.workspace_id
+      AND run.project_id = NEW.project_id
+      AND run.kind = 'export'
+  ) INTO run_matches;
+
+  IF NOT run_matches THEN
+    RAISE EXCEPTION 'export bundle run scope is invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE connamespace = 'app'::regnamespace
+      AND conrelid = 'app.export_bundles'::regclass
+      AND conname = 'export_bundles_object_key_invariant'
+  ) THEN
+    ALTER TABLE app.export_bundles
+      ADD CONSTRAINT export_bundles_object_key_invariant CHECK (
+        (
+          object_key IS NULL
+          AND checksum IS NULL
+          AND byte_size IS NULL
+          AND manifest IS NULL
+        )
+        OR
+        (
+          object_key IS NOT NULL
+          AND checksum IS NOT NULL
+          AND byte_size IS NOT NULL
+          AND manifest IS NOT NULL
+          AND octet_length(object_key) <= 1024
+          AND cardinality(string_to_array(object_key, '/')) = 4
+          AND object_key =
+            'export/' || project_id::text || '/' || async_run_id::text || '/' ||
+            split_part(object_key, '/', 4)
+          AND split_part(object_key, '/', 4) ~ '^[A-Za-z0-9._-]+$'
+          AND split_part(object_key, '/', 4) NOT IN ('.', '..')
+        )
+      ) NOT VALID;
+  END IF;
+END;
+$$;
+
+ALTER TABLE app.export_bundles
+  VALIDATE CONSTRAINT export_bundles_object_key_invariant;
+
+-- Validate the cross-table identity for pre-existing rows before installing
+-- the prospective trigger. A mismatch aborts the migration rather than making
+-- corrupted bundles downloadable under a new release.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM app.export_bundles AS bundle
+    LEFT JOIN app.async_runs AS run
+      ON run.id = bundle.async_run_id
+     AND run.workspace_id = bundle.workspace_id
+     AND run.project_id = bundle.project_id
+     AND run.kind = 'export'
+    WHERE run.id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'existing export bundle run scope is invalid'
+      USING ERRCODE = '23514';
+  END IF;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS export_bundles_invariant_guard
+  ON app.export_bundles;
+CREATE TRIGGER export_bundles_invariant_guard
+  BEFORE INSERT OR UPDATE ON app.export_bundles
+  FOR EACH ROW EXECUTE FUNCTION app.enforce_export_bundle_invariants();
+
+-- RFC 5646 language-tag validation shared by every canonical locale column.
+-- This deliberately validates the structural grammar without a live IANA
+-- registry dependency: registry availability must never become a write-path
+-- dependency, while grandfathered tags remain valid permanently.
+CREATE OR REPLACE FUNCTION app.is_bcp47_language_tag(candidate text)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+  parts text[];
+  part_count integer;
+  part_index integer := 1;
+  extlang_count integer := 0;
+  first_child_index integer;
+  normalized text;
+  seen_variants text[] := ARRAY[]::text[];
+  seen_singletons text[] := ARRAY[]::text[];
+BEGIN
+  IF candidate IS NULL
+     OR char_length(candidate) NOT BETWEEN 2 AND 255
+     OR candidate !~ '^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$' THEN
+    RETURN false;
+  END IF;
+
+  normalized := lower(candidate);
+  IF normalized = ANY (ARRAY[
+    'art-lojban', 'cel-gaulish', 'en-gb-oed', 'i-ami', 'i-bnn',
+    'i-default', 'i-enochian', 'i-hak', 'i-klingon', 'i-lux',
+    'i-mingo', 'i-navajo', 'i-pwn', 'i-tao', 'i-tay', 'i-tsu',
+    'no-bok', 'no-nyn', 'sgn-be-fr', 'sgn-be-nl', 'sgn-ch-de',
+    'zh-guoyu', 'zh-hakka', 'zh-min', 'zh-min-nan', 'zh-xiang'
+  ]::text[]) THEN
+    RETURN true;
+  END IF;
+
+  parts := string_to_array(candidate, '-');
+  part_count := cardinality(parts);
+
+  -- A private-use-only tag starts with x and requires at least one 1-8
+  -- character alphanumeric subtag.
+  IF lower(parts[1]) = 'x' THEN
+    IF part_count < 2 THEN
+      RETURN false;
+    END IF;
+    FOR part_index IN 2..part_count LOOP
+      IF char_length(parts[part_index]) NOT BETWEEN 1 AND 8
+         OR parts[part_index] !~ '^[A-Za-z0-9]+$' THEN
+        RETURN false;
+      END IF;
+    END LOOP;
+    RETURN true;
+  END IF;
+
+  -- language = 2*3ALPHA [extlang] / 4ALPHA / 5*8ALPHA
+  IF char_length(parts[1]) NOT BETWEEN 2 AND 8
+     OR parts[1] !~ '^[A-Za-z]+$' THEN
+    RETURN false;
+  END IF;
+  part_index := 2;
+
+  IF char_length(parts[1]) <= 3 THEN
+    WHILE part_index <= part_count
+      AND extlang_count < 3
+      AND char_length(parts[part_index]) = 3
+      AND parts[part_index] ~ '^[A-Za-z]+$'
+    LOOP
+      part_index := part_index + 1;
+      extlang_count := extlang_count + 1;
+    END LOOP;
+  END IF;
+
+  -- Optional script and region, in that order.
+  IF part_index <= part_count
+     AND char_length(parts[part_index]) = 4
+     AND parts[part_index] ~ '^[A-Za-z]+$' THEN
+    part_index := part_index + 1;
+  END IF;
+  IF part_index <= part_count
+     AND (
+       parts[part_index] ~ '^[A-Za-z]{2}$'
+       OR parts[part_index] ~ '^[0-9]{3}$'
+     ) THEN
+    part_index := part_index + 1;
+  END IF;
+
+  -- Variants precede extensions and cannot repeat case-insensitively.
+  WHILE part_index <= part_count
+    AND parts[part_index] ~ '^([A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3})$'
+  LOOP
+    normalized := lower(parts[part_index]);
+    IF normalized = ANY (seen_variants) THEN
+      RETURN false;
+    END IF;
+    seen_variants := array_append(seen_variants, normalized);
+    part_index := part_index + 1;
+  END LOOP;
+
+  -- Each non-x singleton introduces one or more 2-8 character extension
+  -- subtags, and the singleton cannot repeat case-insensitively.
+  WHILE part_index <= part_count
+    AND parts[part_index] ~ '^[0-9A-WY-Za-wy-z]$'
+  LOOP
+    normalized := lower(parts[part_index]);
+    IF normalized = ANY (seen_singletons) THEN
+      RETURN false;
+    END IF;
+    seen_singletons := array_append(seen_singletons, normalized);
+    part_index := part_index + 1;
+    first_child_index := part_index;
+
+    WHILE part_index <= part_count
+      AND char_length(parts[part_index]) BETWEEN 2 AND 8
+      AND parts[part_index] ~ '^[A-Za-z0-9]+$'
+    LOOP
+      part_index := part_index + 1;
+    END LOOP;
+    IF part_index = first_child_index THEN
+      RETURN false;
+    END IF;
+  END LOOP;
+
+  -- Optional trailing private-use sequence.
+  IF part_index <= part_count AND lower(parts[part_index]) = 'x' THEN
+    part_index := part_index + 1;
+    first_child_index := part_index;
+    WHILE part_index <= part_count
+      AND char_length(parts[part_index]) BETWEEN 1 AND 8
+      AND parts[part_index] ~ '^[A-Za-z0-9]+$'
+    LOOP
+      part_index := part_index + 1;
+    END LOOP;
+    IF part_index = first_child_index THEN
+      RETURN false;
+    END IF;
+  END IF;
+
+  RETURN part_index > part_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.are_bcp47_language_tags(candidates text[])
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+  candidate text;
+BEGIN
+  IF candidates IS NULL THEN
+    RETURN false;
+  END IF;
+  FOREACH candidate IN ARRAY candidates LOOP
+    IF NOT app.is_bcp47_language_tag(candidate) THEN
+      RETURN false;
+    END IF;
+  END LOOP;
+  RETURN true;
+END;
+$$;
+
+ALTER TABLE app.client_projects
+  DROP CONSTRAINT IF EXISTS client_projects_default_delivery_locale_check;
+ALTER TABLE app.client_projects
+  ADD CONSTRAINT client_projects_default_delivery_locale_check
+  CHECK (app.is_bcp47_language_tag(default_delivery_locale)) NOT VALID;
+
+ALTER TABLE app.sites
+  DROP CONSTRAINT IF EXISTS sites_language_codes_bcp47_check;
+ALTER TABLE app.sites
+  ADD CONSTRAINT sites_language_codes_bcp47_check
+  CHECK (app.are_bcp47_language_tags(language_codes)) NOT VALID;
+
+ALTER TABLE app.diagnostic_runs
+  DROP CONSTRAINT IF EXISTS diagnostic_runs_output_locale_check;
+ALTER TABLE app.diagnostic_runs
+  ADD CONSTRAINT diagnostic_runs_output_locale_check
+  CHECK (app.is_bcp47_language_tag(output_locale)) NOT VALID;
+
+ALTER TABLE app.findings
+  DROP CONSTRAINT IF EXISTS findings_summary_locale_check;
+ALTER TABLE app.findings
+  ADD CONSTRAINT findings_summary_locale_check
+  CHECK (app.is_bcp47_language_tag(summary_locale)) NOT VALID;
+
+ALTER TABLE app.actions
+  DROP CONSTRAINT IF EXISTS actions_content_locale_check;
+ALTER TABLE app.actions
+  ADD CONSTRAINT actions_content_locale_check
+  CHECK (app.is_bcp47_language_tag(content_locale)) NOT VALID;
+
+ALTER TABLE app.execution_artifacts
+  DROP CONSTRAINT IF EXISTS execution_artifacts_output_locale_check;
+ALTER TABLE app.execution_artifacts
+  ADD CONSTRAINT execution_artifacts_output_locale_check
+  CHECK (app.is_bcp47_language_tag(output_locale)) NOT VALID;
+
+ALTER TABLE app.artifact_revisions
+  DROP CONSTRAINT IF EXISTS artifact_revisions_output_locale_check;
+ALTER TABLE app.artifact_revisions
+  ADD CONSTRAINT artifact_revisions_output_locale_check
+  CHECK (app.is_bcp47_language_tag(output_locale)) NOT VALID;
+
+ALTER TABLE app.export_bundles
+  DROP CONSTRAINT IF EXISTS export_bundles_output_locale_check;
+ALTER TABLE app.export_bundles
+  ADD CONSTRAINT export_bundles_output_locale_check
+  CHECK (app.is_bcp47_language_tag(output_locale)) NOT VALID;
+
+ALTER TABLE app.client_projects
+  VALIDATE CONSTRAINT client_projects_default_delivery_locale_check;
+ALTER TABLE app.sites
+  VALIDATE CONSTRAINT sites_language_codes_bcp47_check;
+ALTER TABLE app.diagnostic_runs
+  VALIDATE CONSTRAINT diagnostic_runs_output_locale_check;
+ALTER TABLE app.findings
+  VALIDATE CONSTRAINT findings_summary_locale_check;
+ALTER TABLE app.actions
+  VALIDATE CONSTRAINT actions_content_locale_check;
+ALTER TABLE app.execution_artifacts
+  VALIDATE CONSTRAINT execution_artifacts_output_locale_check;
+ALTER TABLE app.artifact_revisions
+  VALIDATE CONSTRAINT artifact_revisions_output_locale_check;
+ALTER TABLE app.export_bundles
+  VALIDATE CONSTRAINT export_bundles_output_locale_check;
 
 -- Deferred circular references are added after both sides exist.
 DO $$
@@ -757,6 +1295,9 @@ CREATE TRIGGER execution_artifacts_status_transition_guard
 DROP TRIGGER IF EXISTS idempotency_keys_set_updated_at ON app.idempotency_keys;
 CREATE TRIGGER idempotency_keys_set_updated_at BEFORE UPDATE ON app.idempotency_keys
   FOR EACH ROW EXECUTE FUNCTION app.set_updated_at();
+DROP TRIGGER IF EXISTS site_pages_set_updated_at ON app.site_pages;
+CREATE TRIGGER site_pages_set_updated_at BEFORE UPDATE ON app.site_pages
+  FOR EACH ROW EXECUTE FUNCTION app.set_updated_at();
 
 -- Canonical historical records are append-only. Jobs insert them only when complete.
 DROP TRIGGER IF EXISTS icp_profiles_append_only ON app.icp_profiles;
@@ -792,11 +1333,23 @@ CREATE TRIGGER artifact_revisions_append_only BEFORE UPDATE OR DELETE ON app.art
 DROP TRIGGER IF EXISTS telemetry_events_append_only ON app.telemetry_events;
 CREATE TRIGGER telemetry_events_append_only BEFORE UPDATE OR DELETE ON app.telemetry_events
   FOR EACH ROW EXECUTE FUNCTION app.reject_append_only_mutation();
+DROP TRIGGER IF EXISTS capability_runs_append_only ON app.capability_runs;
+CREATE TRIGGER capability_runs_append_only BEFORE UPDATE OR DELETE ON app.capability_runs
+  FOR EACH ROW EXECUTE FUNCTION app.reject_append_only_mutation();
+DROP TRIGGER IF EXISTS audit_runs_append_only ON app.audit_runs;
+CREATE TRIGGER audit_runs_append_only BEFORE UPDATE OR DELETE ON app.audit_runs
+  FOR EACH ROW EXECUTE FUNCTION app.reject_append_only_mutation();
+DROP TRIGGER IF EXISTS audit_module_results_append_only ON app.audit_module_results;
+CREATE TRIGGER audit_module_results_append_only BEFORE UPDATE OR DELETE ON app.audit_module_results
+  FOR EACH ROW EXECUTE FUNCTION app.reject_append_only_mutation();
+DROP TRIGGER IF EXISTS page_snapshots_append_only ON app.page_snapshots;
+CREATE TRIGGER page_snapshots_append_only BEFORE UPDATE OR DELETE ON app.page_snapshots
+  FOR EACH ROW EXECUTE FUNCTION app.reject_append_only_mutation();
 
 -- Runtime-safe migration identity for technical health signals (spec §15.2).
--- A view keeps the frozen 28-table application inventory unchanged.
+-- A view keeps migration identity separate from the frozen table inventory.
 CREATE OR REPLACE VIEW app.schema_migration_version AS
-  SELECT '0006_observability_metrics'::text AS migration_version;
+  SELECT '0010_growth_audit_slice1'::text AS migration_version;
 
 -- The browser must not access canonical tables directly through the Supabase Data API.
 DO $$

@@ -5,8 +5,8 @@ SET search_path = app, public;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 28 THEN
-    RAISE EXCEPTION 'expected exactly 28 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 33 THEN
+    RAISE EXCEPTION 'expected exactly 33 app tables';
   END IF;
 END;
 $$;
@@ -678,6 +678,154 @@ UPDATE app.execution_artifacts
 SET status = 'archived'
 WHERE id = '00000000-0000-4000-8000-000000001201';
 
+-- Slice 1 growth-audit persistence only stores traceable canonical references.
+INSERT INTO app.capability_runs (
+  async_run_id, capability_id, capability_version, input_manifest_hash,
+  mode, side_effect_class
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000602',
+  'growth-audit',
+  '0.3.0',
+  repeat('a', 64),
+  'production',
+  'internal_write'
+);
+
+INSERT INTO app.audit_runs (
+  id, workspace_id, project_id, diagnostic_run_id, capability_run_id,
+  scope_kind, scope_key, projection_version
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001501',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000602',
+  '00000000-0000-4000-8000-000000000602',
+  'site',
+  '00000000-0000-4000-8000-000000000301',
+  'growth-audit.0.3.0'
+);
+
+INSERT INTO app.audit_module_results (
+  audit_run_id, module_id, coverage_state, summary
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001501',
+  'technical_search',
+  'available',
+  '{}'::jsonb
+);
+
+INSERT INTO app.site_pages (
+  id, workspace_id, project_id, site_id, normalized_url,
+  normalized_url_hash
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001601',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  'https://example.com/customer-onboarding',
+  repeat('b', 64)
+);
+
+INSERT INTO app.page_snapshots (
+  id, workspace_id, project_id, site_page_id, data_snapshot_id,
+  content_hash, extract, captured_at
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001701',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000001601',
+  '00000000-0000-4000-8000-000000000701',
+  repeat('c', 64),
+  '{"canonical":"https://example.com/customer-onboarding"}'::jsonb,
+  now()
+);
+
+DO $$
+DECLARE
+  duplicate_module_rejected boolean := false;
+  capability_mutation_rejected boolean := false;
+  audit_mutation_rejected boolean := false;
+  module_mutation_rejected boolean := false;
+  page_snapshot_mutation_rejected boolean := false;
+  forbidden_status_count integer;
+BEGIN
+  BEGIN
+    INSERT INTO app.audit_module_results (
+      audit_run_id, module_id, coverage_state, summary
+    ) VALUES (
+      '00000000-0000-4000-8000-000000001501',
+      'technical_search',
+      'partial',
+      '{}'::jsonb
+    );
+  EXCEPTION WHEN unique_violation THEN
+    duplicate_module_rejected := true;
+  END;
+  IF NOT duplicate_module_rejected THEN
+    RAISE EXCEPTION 'duplicate audit module result was accepted';
+  END IF;
+
+  BEGIN
+    UPDATE app.capability_runs
+    SET mode = 'shadow'
+    WHERE async_run_id = '00000000-0000-4000-8000-000000000602';
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    capability_mutation_rejected := true;
+  END;
+  IF NOT capability_mutation_rejected THEN
+    RAISE EXCEPTION 'capability run mutation was accepted';
+  END IF;
+
+  BEGIN
+    UPDATE app.audit_runs
+    SET scope_key = 'unexpected'
+    WHERE id = '00000000-0000-4000-8000-000000001501';
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    audit_mutation_rejected := true;
+  END;
+  IF NOT audit_mutation_rejected THEN
+    RAISE EXCEPTION 'audit run mutation was accepted';
+  END IF;
+
+  BEGIN
+    UPDATE app.audit_module_results
+    SET coverage_state = 'partial'
+    WHERE audit_run_id = '00000000-0000-4000-8000-000000001501'
+      AND module_id = 'technical_search';
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    module_mutation_rejected := true;
+  END;
+  IF NOT module_mutation_rejected THEN
+    RAISE EXCEPTION 'audit module result mutation was accepted';
+  END IF;
+
+  BEGIN
+    UPDATE app.page_snapshots
+    SET extract = '{}'::jsonb
+    WHERE id = '00000000-0000-4000-8000-000000001701';
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    page_snapshot_mutation_rejected := true;
+  END;
+  IF NOT page_snapshot_mutation_rejected THEN
+    RAISE EXCEPTION 'page snapshot mutation was accepted';
+  END IF;
+
+  SELECT count(*) INTO forbidden_status_count
+  FROM information_schema.columns
+  WHERE table_schema = 'app'
+    AND table_name IN ('capability_runs', 'audit_runs')
+    AND column_name = 'status';
+  IF forbidden_status_count <> 0 THEN
+    RAISE EXCEPTION 'growth audit projection introduced a second status';
+  END IF;
+END;
+$$;
+
 DO $$
 DECLARE
   locale_constraint_count integer;
@@ -720,12 +868,23 @@ BEGIN
     SELECT contract_version
     FROM app.async_runs
     WHERE id = '00000000-0000-4000-8000-000000000601'
-  ) IS DISTINCT FROM '2026-07-18' THEN
+  ) IS DISTINCT FROM '2026-07-21' THEN
     RAISE EXCEPTION 'async run contract-version default is stale';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE connamespace = 'app'::regnamespace
+      AND conrelid = 'app.export_bundles'::regclass
+      AND conname = 'export_bundles_schema_version_check'
+      AND pg_get_constraintdef(oid) LIKE '%signalframe.service-bundle.0.2.0%'
+      AND pg_get_constraintdef(oid) LIKE '%signalframe.service-bundle.0.3.0%'
+  ) THEN
+    RAISE EXCEPTION 'export bundle schema-version compatibility is stale';
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0009_async_run_contract_version' THEN
+  ) IS DISTINCT FROM '0010_growth_audit_slice1' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;

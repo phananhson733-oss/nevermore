@@ -1,13 +1,13 @@
 # Nevermore Unified Growth Opportunity — Implementation Authority v0.3
 
-状态：**reviewed-scaffold**
+状态：**activated**
 Authority 版本：**0.3.0**
 合同日期：**2026-07-21**
-当前已实现机器面：**0.2.0**
+当前已实现机器面：**0.3.0**
 
-本目录是 Nevermore 下一阶段统一增长机会产品的 repository-owned authority scaffold。它已经冻结产品方向、对象边界和变更顺序，但不会把尚未落地的 Slice 1 能力伪装成已实现合同。当前同目录的 OpenAPI、SQL、26 个 operation、5 个 async operation、28 张应用表与 11 条确定性规则，仍与已实现的 v0.2 surface 完全相同。
+本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 仍精确保留 26 个 operation 与 5 个 async operation，确定性规则仍为 `mvp.rules.0.2.0` 的 11 条规则；数据库新增 5 张可追溯 audit/page projection 表，总数为 33 张。
 
-换言之：`0.3.0 / 2026-07-21` 是本 authority scaffold 的版本；`implemented_surface_version: 0.2.0` 是当前可以由代码和机器合同证明的运行面。后续任务只有在实现、迁移、OpenAPI、锁文件和两个 verifier 同一提交更新时，才可以扩大 normative surface。
+这次激活只把已经实现的 versioned Growth Audit / Capability contract、只读 Opportunity projection 与最小 persistence 纳入事实面。它没有提前声明 create-run route、recheck operation、CMS publishing 或 content lifecycle；后续只有在实现、迁移、OpenAPI、锁文件和 verifier 同一提交更新时，才可以继续扩大 normative surface。
 
 ## 权威顺序
 
@@ -42,20 +42,21 @@ Growth Opportunity 是上述 canonical objects 的客户可读 projection。在 
 
 ## 当前 normative surface
 
-本 scaffold 初始提交仍冻结以下已实现能力：
+当前 activated surface 冻结以下已实现能力：
 
 - 单内部 Workspace、所有登录人员全权限；没有 RBAC、成员管理或客户 Portal。
 - 没有定价、订阅、账单或 entitlement。
 - 真实数据源为 Crawl、GSC、GA4、Keyword Gap CSV，以及受 feature flag 和成本上限约束的 DataForSEO ranked-keyword collection。
 - 11 条确定性规则，覆盖 Technical SEO、Search、Content、Conversion、GEO 五个诊断域。
 - 3 类可编辑执行物：`content_brief`、`metadata_rewrite`、`technical_ticket`。
+- versioned Growth Audit / Capability contract、只读 Opportunity projection，以及 `capability_runs`、`audit_runs`、`audit_module_results`、`site_pages`、`page_snapshots` 五张可追溯 persistence 表。
 - 浏览器报告与版本化 JSON ZIP 导出；没有外部写入、自动发布或结果归因。
 - English / 简体中文产品 chrome；客户内容语言与 UI 语言彼此独立。
-- 26 个 operation、5 个 async operation、28 张应用表；清单仍由主规格中的 markers 与机器合同精确比对。
+- 26 个 operation、5 个 async operation、33 张应用表；清单由主规格中的 markers 与机器合同精确比对。
 
 ## Reviewed Slice 1 change sequence
 
-以下是 **reviewed Slice 1 change sequence**，不是当前已实现 operation、table、route 或 UI claim：
+以下是 **reviewed Slice 1 change sequence**。步骤 1–2 已进入当前机器面；步骤 3–5 仍是未来变更，不是当前已实现 operation、route 或 UI claim：
 
 1. 先引入 versioned Growth Audit / Capability contract 和只读 Opportunity projection。
 2. 再以受审迁移加入最小 audit/page projection persistence，同时保持 canonical run、Finding、Action 和 Artifact ownership 不变。
@@ -67,7 +68,7 @@ Growth Opportunity 是上述 canonical objects 的客户可读 projection。在 
 
 ## 明确禁区
 
-本 v0.3 scaffold 明确禁止：
+本 v0.3 authority 明确禁止：
 
 - 新建 `Opportunity table`；Opportunity 继续是 canonical chain 上的 projection。
 - 新建 `second Action creation path`；只有 primary Finding 的 Finding Review 可以幂等创建 Action。
@@ -83,7 +84,7 @@ Growth Opportunity 是上述 canonical objects 的客户可读 projection。在 
 authority/implementation-spec-v0.3/MVP-IMPLEMENTATION-SPEC.md
 
 先运行 pnpm verify:authority、pnpm verify:spec 与 pnpm implementation:check。
-当前 normative OpenAPI/SQL 仍是 implemented surface 0.2.0；不得因为 authority 目录名为 v0.3
+当前 normative OpenAPI/SQL 是 implemented surface 0.3.0；不得因为产品方向已审核
 就预先加入未来 operation 或 table。按 reviewed Slice 1 change sequence 施工，每个 task 只在
 实现、合同、迁移、锁、verifier 与测试可同一提交通过时扩大 normative surface。
 

@@ -22,6 +22,7 @@ type ConnectResponse =
   operations["connectProjectSource"]["responses"][200]["content"]["application/json"];
 type WorkspaceResponse =
   operations["getProjectWorkspaceView"]["responses"][200]["content"]["application/json"];
+type ExportSchemaVersion = components["schemas"]["ExportBundle"]["schemaVersion"];
 
 type _DraftMode = Expect<
   Equal<components["schemas"]["DraftContextRequest"]["mode"], "draft">
@@ -92,6 +93,13 @@ type _WorkspaceResponseView = Expect<
     "overview" | "plan" | "studio" | "report"
   >
 >;
+type _ReadableExportSchemaVersions = Expect<
+  Equal<
+    ExportSchemaVersion,
+    | "signalframe.service-bundle.0.2.0"
+    | "signalframe.service-bundle.0.3.0"
+  >
+>;
 
 const generated = readFileSync(
   new URL("./generated/openapi.ts", import.meta.url),
@@ -139,5 +147,11 @@ describe("generated OpenAPI discriminator literals", () => {
       "Template generation supports only en and zh-CN; use structured_llm for every other valid BCP-47 output locale.";
 
     expect(generated.split(localeRule)).toHaveLength(3);
+  });
+
+  it("keeps historical 0.2 export read DTOs compatible with current 0.3 exports", () => {
+    expect(generated).toContain(
+      'schemaVersion: "signalframe.service-bundle.0.2.0" | "signalframe.service-bundle.0.3.0";',
+    );
   });
 });

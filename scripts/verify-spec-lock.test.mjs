@@ -31,15 +31,15 @@ function makeFixture(t, options = {}) {
   const root = mkdtempSync(join(tmpdir(), "spec-lock-fixture-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
 
-  write(root, "package.json", JSON.stringify({ version: "0.2.0" }));
-  write(
+  write(root, "package.json", JSON.stringify({ version: "0.3.0" }));
+  const implementationOpenApi = write(
     root,
     "openapi/mvp.yaml",
     [
       "openapi: 3.1.0",
       "info:",
       "  title: fixture",
-      "  version: 0.2.0",
+      "  version: 0.3.0",
       "paths:",
       "  /projects:",
       "    get:",
@@ -53,7 +53,22 @@ function makeFixture(t, options = {}) {
   write(
     root,
     "packages/contracts/src/zod/health.ts",
-    'export const CONTRACT_VERSION = "2026-07-18";\n',
+    'export const CONTRACT_VERSION = "2026-07-21";\n',
+  );
+  const generatedOpenApi = write(
+    root,
+    "packages/contracts/src/generated/openapi.ts",
+    "// generated fixture contract\n",
+  );
+  const implementationBundleSchema = write(
+    root,
+    "schemas/service-bundle-manifest.schema.json",
+    '{"schema":"fixture"}\n',
+  );
+  const implementationSchemaSmoke = write(
+    root,
+    "packages/db/migrations/schema-smoke.sql",
+    "BEGIN; ROLLBACK;\n",
   );
   write(
     root,
@@ -84,18 +99,48 @@ function makeFixture(t, options = {}) {
       "",
     ].join("\n"),
   );
+  const authorityOpenApi = write(
+    root,
+    "authority/openapi.yaml",
+    readFileSync(implementationOpenApi),
+  );
+  const authorityBundleSchema = write(
+    root,
+    "authority/schemas/service-bundle-manifest.schema.json",
+    readFileSync(implementationBundleSchema),
+  );
+  const authoritySchemaSmoke = write(
+    root,
+    "authority/scripts/schema-smoke.sql",
+    readFileSync(implementationSchemaSmoke),
+  );
 
   const tables = options.tables ?? ["workspaces", "capability_runs"];
   const lock = {
     lockFormat: 2,
-    productVersion: "0.2.0",
-    contractVersion: "2026-07-18",
+    productVersion: "0.3.0",
+    contractVersion: "2026-07-21",
     authorityRoot: "authority",
     migrationDirectory: "packages/db/migrations",
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
     authorityFiles: {
       "README.md": sha256(authorityReadme),
+      "openapi.yaml": sha256(authorityOpenApi),
+      "schemas/service-bundle-manifest.schema.json": sha256(
+        authorityBundleSchema,
+      ),
+      "scripts/schema-smoke.sql": sha256(authoritySchemaSmoke),
       "scripts/verify-spec.mjs": sha256(authorityVerifier),
+    },
+    implementationFiles: {
+      "openapi/mvp.yaml": sha256(implementationOpenApi),
+      "packages/contracts/src/generated/openapi.ts": sha256(generatedOpenApi),
+      "schemas/service-bundle-manifest.schema.json": sha256(
+        implementationBundleSchema,
+      ),
+      "packages/db/migrations/schema-smoke.sql": sha256(
+        implementationSchemaSmoke,
+      ),
     },
     apiOperations: ["listProjects"],
     asyncOperations: [],
@@ -125,12 +170,31 @@ test("accepts a caller-supplied lock and scans the complete ordered migration se
   assert.equal(readFileSync(join(fixture.root, "authority-ran"), "utf8"), "yes");
 });
 
-test("retains scripts/spec-v0.2-lock.json as the default lock path", (t) => {
-  const fixture = makeFixture(t, { lockPath: "scripts/spec-v0.2-lock.json" });
+test("uses scripts/spec-v0.3-lock.json as the activated default lock path", (t) => {
+  const fixture = makeFixture(t, { lockPath: "scripts/spec-v0.3-lock.json" });
   const result = runVerifier(fixture);
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Spec lock passed/);
+});
+
+test("rejects a current v0.3 lock downgraded to lockFormat 1", (t) => {
+  const fixture = makeFixture(t);
+  const downgradedLock = {
+    ...fixture.lock,
+    lockFormat: 1,
+  };
+  delete downgradedLock.implementationFiles;
+  write(
+    fixture.root,
+    fixture.lockPath,
+    `${JSON.stringify(downgradedLock, null, 2)}\n`,
+  );
+
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /lockFormat 2 is required for product version 0\.3\.0/i);
 });
 
 test("rejects a table declared by the lock but absent from every migration", (t) => {
@@ -182,4 +246,33 @@ test("rejects an authority file whose content no longer matches the lock", (t) =
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /authority file drifted/i);
+});
+
+test("rejects non-operation implementation OpenAPI drift", (t) => {
+  const fixture = makeFixture(t);
+  const openApiPath = join(fixture.root, "openapi/mvp.yaml");
+  write(
+    fixture.root,
+    "openapi/mvp.yaml",
+    readFileSync(openApiPath, "utf8").replace("version: 0.3.0", "version: 9.9.9"),
+  );
+
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /implementation file drifted.*openapi\/mvp\.yaml/is);
+});
+
+test("rejects generated contract drift independently of OpenAPI operations", (t) => {
+  const fixture = makeFixture(t);
+  write(
+    fixture.root,
+    "packages/contracts/src/generated/openapi.ts",
+    "// stale generated fixture contract\n",
+  );
+
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /implementation file drifted.*generated\/openapi\.ts/is);
 });

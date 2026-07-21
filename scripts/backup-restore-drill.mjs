@@ -78,6 +78,11 @@ export const APP_TABLES = [
   "export_bundles",
   "idempotency_keys",
   "telemetry_events",
+  "capability_runs",
+  "audit_runs",
+  "audit_module_results",
+  "site_pages",
+  "page_snapshots",
 ];
 
 export const INTEGRITY_PROBES = [
@@ -95,6 +100,16 @@ export const INTEGRITY_PROBES = [
     id: "data_snapshots.raw-object",
     table: "data_snapshots",
     columns: ["raw_object_key", "checksum"],
+  },
+  {
+    id: "capability_runs.input-manifest-hash",
+    table: "capability_runs",
+    columns: ["input_manifest_hash"],
+  },
+  {
+    id: "page_snapshots.content-hash",
+    table: "page_snapshots",
+    columns: ["content_hash"],
   },
   {
     id: "execution_artifacts.content-hash",

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { CONTRACT_VERSION } from "@sf/contracts";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { asyncRuns, icpProfiles, workspaces } from "@sf/db/schema";
 import {
@@ -390,7 +391,7 @@ async function seedExport(handle: DbHandle): Promise<{
     kind: "export",
     activeKey: `export:client_bundle:${randomUUID()}`,
     initiatedBy: actorId,
-    contractVersion: "2026-07-18",
+    contractVersion: CONTRACT_VERSION,
     requestPayload: { kind: "client_bundle", outputLocale: "en" },
   });
   await new ExportBundlesRepository(handle.db).insert({

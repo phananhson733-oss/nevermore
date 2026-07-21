@@ -320,6 +320,7 @@ describe("createActionArtifact", () => {
     );
     expect(AsyncRunsRepository.prototype.insertQueued).toHaveBeenCalledWith(
       expect.objectContaining({
+        contractVersion: "2026-07-21",
         requestPayload: expect.objectContaining({ outputLocale: "zh-CN" }),
       }),
     );
@@ -365,7 +366,11 @@ describe("createActionArtifact", () => {
       {},
       {},
       "artifact.generate",
-      expect.objectContaining({ runId: run.id, projectId }),
+      expect.objectContaining({
+        runId: run.id,
+        projectId,
+        contractVersion: "2026-07-21",
+      }),
     );
     expect(ProjectsRepository.prototype.setStage).toHaveBeenCalledWith(
       scope,

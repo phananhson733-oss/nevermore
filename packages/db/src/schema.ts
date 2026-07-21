@@ -266,7 +266,7 @@ export const asyncRuns = app.table("async_runs", {
   kind: text().notNull(),
   status: text().notNull().default("queued"),
   active_key: text(),
-  contract_version: text().notNull().default("2026-07-18"),
+  contract_version: text().notNull().default("2026-07-21"),
   request_payload: jsonb()
     .$type<JsonObject>()
     .notNull()
@@ -764,7 +764,7 @@ export const exportBundles = app.table("export_bundles", {
     .notNull()
     .references(() => asyncRuns.id),
   kind: text().notNull(),
-  schema_version: text().notNull().default("signalframe.service-bundle.0.2.0"),
+  schema_version: text().notNull().default("signalframe.service-bundle.0.3.0"),
   output_locale: text().notNull(),
   object_key: text(),
   checksum: text(),
@@ -818,6 +818,108 @@ export const telemetryEvents = app.table("telemetry_events", {
 });
 
 // ---------------------------------------------------------------------------
+// 29. capability_runs  (async_run_id shares async_runs.id)
+// ---------------------------------------------------------------------------
+export const capabilityRuns = app.table("capability_runs", {
+  async_run_id: uuid()
+    .primaryKey()
+    .references(() => asyncRuns.id),
+  capability_id: text().notNull(),
+  capability_version: text().notNull(),
+  input_manifest_hash: text().notNull(),
+  mode: text().notNull(),
+  side_effect_class: text().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 30. audit_runs  (tenant-scoped projection over canonical runs)
+// ---------------------------------------------------------------------------
+export const auditRuns = app.table("audit_runs", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  diagnostic_run_id: uuid()
+    .notNull()
+    .references(() => diagnosticRuns.id),
+  capability_run_id: uuid()
+    .notNull()
+    .references(() => capabilityRuns.async_run_id),
+  scope_kind: text().notNull(),
+  scope_key: text().notNull(),
+  projection_version: text().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 31. audit_module_results  (composite PK, append-once)
+// ---------------------------------------------------------------------------
+export const auditModuleResults = app.table(
+  "audit_module_results",
+  {
+    audit_run_id: uuid()
+      .notNull()
+      .references(() => auditRuns.id),
+    module_id: text().notNull(),
+    coverage_state: text().notNull(),
+    summary: jsonb()
+      .$type<JsonObject>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    created_at: tz().notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.audit_run_id, t.module_id] })],
+);
+
+// ---------------------------------------------------------------------------
+// 32. site_pages  (project-scoped mutable URL identity)
+// ---------------------------------------------------------------------------
+export const sitePages = app.table("site_pages", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  normalized_url: text().notNull(),
+  normalized_url_hash: text().notNull(),
+  template_key: text(),
+  created_at: tz().notNull().defaultNow(),
+  updated_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 33. page_snapshots  (append-only projection of data_snapshots)
+// ---------------------------------------------------------------------------
+export const pageSnapshots = app.table("page_snapshots", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_page_id: uuid()
+    .notNull()
+    .references(() => sitePages.id),
+  data_snapshot_id: uuid()
+    .notNull()
+    .references(() => dataSnapshots.id),
+  content_hash: text().notNull(),
+  extract: jsonb().$type<JsonObject>().notNull(),
+  captured_at: tz().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Aggregate schema (consumed by drizzle(pool, { schema })).
 // ---------------------------------------------------------------------------
 export const schema = {
@@ -849,4 +951,9 @@ export const schema = {
   exportBundles,
   idempotencyKeys,
   telemetryEvents,
+  capabilityRuns,
+  auditRuns,
+  auditModuleResults,
+  sitePages,
+  pageSnapshots,
 } as const;

@@ -995,8 +995,11 @@ export interface components {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
             kind: "service_bundle" | "client_bundle";
-            /** @constant */
-            schemaVersion: "signalframe.service-bundle.0.2.0";
+            /**
+             * @description Read DTO supports immutable historical 0.2 bundles; all newly generated manifests use 0.3.0.
+             * @enum {string}
+             */
+            schemaVersion: "signalframe.service-bundle.0.2.0" | "signalframe.service-bundle.0.3.0";
             outputLocale: components["schemas"]["LocaleCode"];
             run: components["schemas"]["AsyncRun"];
             checksum: string | null;

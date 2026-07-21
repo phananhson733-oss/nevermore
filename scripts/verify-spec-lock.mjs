@@ -55,12 +55,19 @@ function safePath(base, value, label) {
 
 const lockPath = safePath(
   repoRoot,
-  options.lock ?? "scripts/spec-v0.2-lock.json",
+  options.lock ?? "scripts/spec-v0.3-lock.json",
   "spec lock path",
 );
 assert.ok(existsSync(lockPath), `spec lock does not exist: ${lockPath}`);
 const lock = JSON.parse(readFileSync(lockPath, "utf8"));
 assert.ok([1, 2].includes(lock.lockFormat), "unsupported spec lock format");
+if (lock.lockFormat === 1) {
+  assert.equal(
+    lock.productVersion,
+    "0.2.0",
+    `lockFormat 2 is required for product version ${lock.productVersion}`,
+  );
+}
 
 function fromRoot(relativePath) {
   return safePath(repoRoot, relativePath, relativePath);
@@ -198,6 +205,42 @@ if (authorityIsRequired) {
   assert.ok(authorityAvailable, "configured authority root does not exist");
 }
 
+const requiredImplementationFiles = [
+  "openapi/mvp.yaml",
+  "packages/contracts/src/generated/openapi.ts",
+  "schemas/service-bundle-manifest.schema.json",
+  "packages/db/migrations/schema-smoke.sql",
+];
+if (lock.lockFormat >= 2) {
+  assert.ok(
+    lock.implementationFiles &&
+      typeof lock.implementationFiles === "object" &&
+      !Array.isArray(lock.implementationFiles),
+    "lockFormat 2 requires implementationFiles hashes",
+  );
+  for (const relativePath of requiredImplementationFiles) {
+    assert.equal(
+      typeof lock.implementationFiles[relativePath],
+      "string",
+      `implementationFiles is missing ${relativePath}`,
+    );
+  }
+  for (const [relativePath, expectedHash] of Object.entries(
+    lock.implementationFiles,
+  )) {
+    const implementationPath = fromRoot(relativePath);
+    assert.ok(
+      existsSync(implementationPath),
+      `implementation file is missing: ${relativePath}`,
+    );
+    assert.equal(
+      sha256(implementationPath),
+      expectedHash,
+      `implementation file drifted from the frozen ${lock.productVersion} lock: ${relativePath}`,
+    );
+  }
+}
+
 if (authorityAvailable) {
   for (const [relativePath, expectedHash] of Object.entries(lock.authorityFiles)) {
     const sourcePath = safePath(authorityRoot, relativePath, "authority file");
@@ -207,6 +250,22 @@ if (authorityAvailable) {
       expectedHash,
       `authority file drifted from the reviewed ${lock.productVersion} lock: ${relativePath}`,
     );
+  }
+  if (lock.lockFormat >= 2) {
+    for (const [authorityPath, implementationPath] of [
+      ["openapi.yaml", "openapi/mvp.yaml"],
+      [
+        "schemas/service-bundle-manifest.schema.json",
+        "schemas/service-bundle-manifest.schema.json",
+      ],
+      ["scripts/schema-smoke.sql", "packages/db/migrations/schema-smoke.sql"],
+    ]) {
+      assert.equal(
+        sha256(safePath(authorityRoot, authorityPath, "authority file")),
+        sha256(fromRoot(implementationPath)),
+        `authority ${authorityPath} differs from implementation ${implementationPath}`,
+      );
+    }
   }
   const authorityVerifier = safePath(
     authorityRoot,

@@ -38,11 +38,12 @@ const SCRIPT_REPO_ROOT = resolve(
   "..",
 );
 
-const PRODUCT_VERSION = "0.2.0";
-const CONTRACT_VERSION = "2026-07-18";
+const PRODUCT_VERSION = "0.3.0";
+const CONTRACT_VERSION = "2026-07-21";
 const RULE_SET_VERSION = "mvp.rules.0.2.0";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
-const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
+const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
+const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 
 const EXPECTED_OPENAPI_OPERATIONS = [
   "listProjects",
@@ -142,6 +143,11 @@ const EXPECTED_TABLES = [
   "export_bundles",
   "idempotency_keys",
   "telemetry_events",
+  "capability_runs",
+  "audit_runs",
+  "audit_module_results",
+  "site_pages",
+  "page_snapshots",
 ];
 
 const EXPECTED_RULES = [
@@ -362,6 +368,18 @@ function checkOpenApi() {
     typeof asyncData?.properties?.statusUrl?.pattern === "string" &&
       asyncData.properties.statusUrl.pattern.includes("/runs/"),
     "AsyncAcceptedResponse.statusUrl must point to the canonical run endpoint",
+  );
+
+  const readableBundleSchemaVersions =
+    document.components?.schemas?.ExportBundle?.properties?.schemaVersion?.enum;
+  invariant(
+    Array.isArray(readableBundleSchemaVersions),
+    "ExportBundle.schemaVersion must enumerate readable bundle versions",
+  );
+  assertExactSet(
+    readableBundleSchemaVersions,
+    [HISTORICAL_BUNDLE_SCHEMA_VERSION, BUNDLE_SCHEMA_VERSION],
+    "OpenAPI readable export bundle schema versions",
   );
 
   return "OpenAPI: 26 operations, 5 shared 202 statusUrl operations";
@@ -804,6 +822,97 @@ function checkDatabaseContract() {
   invariant(
     !tables.some((table) => table.startsWith("pgboss") || table === "job"),
     "pg-boss tables must not be counted as application tables",
+  );
+
+  const tableDefinition = (tableName) => {
+    const marker = `CREATE TABLE IF NOT EXISTS app.${tableName}`;
+    const start = migration.indexOf(marker);
+    invariant(start >= 0, `${tableName} table definition is missing`);
+    const next = migration.indexOf("CREATE TABLE IF NOT EXISTS app.", start + marker.length);
+    return migration.slice(start, next === -1 ? undefined : next);
+  };
+  const capabilityRuns = tableDefinition("capability_runs");
+  invariant(
+    /async_run_id\s+uuid\s+PRIMARY KEY\s+REFERENCES\s+app\.async_runs\(id\)\s+ON DELETE RESTRICT/i.test(
+      capabilityRuns,
+    ),
+    "capability_runs must extend the canonical async run with an ON DELETE RESTRICT primary key",
+  );
+  invariant(
+    !/^\s*status\s+/im.test(capabilityRuns),
+    "capability_runs must not create a second mutable status lifecycle",
+  );
+
+  const auditRuns = tableDefinition("audit_runs");
+  invariant(
+    /REFERENCES\s+app\.diagnostic_runs\(id\)\s+ON DELETE RESTRICT/i.test(auditRuns) &&
+      /REFERENCES\s+app\.capability_runs\(async_run_id\)\s+ON DELETE RESTRICT/i.test(
+        auditRuns,
+      ),
+    "audit_runs must retain RESTRICT lineage to canonical diagnostic and capability runs",
+  );
+  invariant(
+    !/^\s*status\s+/im.test(auditRuns),
+    "audit_runs must not create a second mutable status lifecycle",
+  );
+  invariant(
+    /CHECK\s*\(diagnostic_run_id\s*=\s*capability_run_id\)/i.test(auditRuns),
+    "audit_runs must bind diagnostic and capability projections to the same canonical run",
+  );
+
+  const pageSnapshots = tableDefinition("page_snapshots");
+  invariant(
+    /data_snapshot_id\s+uuid\s+NOT NULL\s+REFERENCES\s+app\.data_snapshots\(id\)\s+ON DELETE RESTRICT/i.test(
+      pageSnapshots,
+    ),
+    "page_snapshots must retain RESTRICT lineage to canonical data snapshots",
+  );
+
+  for (const indexName of [
+    "audit_runs_project_created_idx",
+    "site_pages_project_updated_idx",
+    "site_pages_site_idx",
+    "page_snapshots_page_captured_idx",
+    "page_snapshots_project_captured_idx",
+  ]) {
+    invariant(
+      new RegExp(`CREATE\\s+INDEX\\s+IF NOT EXISTS\\s+${indexName}\\b`, "i").test(
+        migration,
+      ),
+      `required Slice 1 index is missing: ${indexName}`,
+    );
+  }
+  for (const triggerName of [
+    "audit_runs_provenance_guard",
+    "site_pages_provenance_guard",
+    "page_snapshots_provenance_guard",
+    "capability_runs_append_only",
+    "audit_runs_append_only",
+    "audit_module_results_append_only",
+    "page_snapshots_append_only",
+  ]) {
+    invariant(
+      new RegExp(`CREATE\\s+TRIGGER\\s+${triggerName}\\b`, "i").test(migration),
+      `required Slice 1 provenance/immutability trigger is missing: ${triggerName}`,
+    );
+  }
+  invariant(
+    /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(migration),
+    "site_pages must retain the shared updated_at trigger",
+  );
+  invariant(
+    /ALTER\s+TABLE\s+app\.async_runs\s+ALTER\s+COLUMN\s+contract_version\s+SET\s+DEFAULT\s+'2026-07-21'/i.test(
+      migration,
+    ),
+    "new async runs must default to contract 2026-07-21",
+  );
+  invariant(
+    /ALTER\s+TABLE\s+app\.export_bundles[\s\S]{0,300}?ALTER\s+COLUMN\s+schema_version\s+SET\s+DEFAULT\s+'signalframe\.service-bundle\.0\.3\.0'/i.test(
+      migration,
+    ) &&
+      migration.includes("signalframe.service-bundle.0.2.0") &&
+      migration.includes("signalframe.service-bundle.0.3.0"),
+    "new exports must default to bundle 0.3.0 while preserving historical 0.2.0 rows",
   );
 
   const smoke = read("packages/db/migrations/schema-smoke.sql");

@@ -11,7 +11,7 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import { ACTION_TEMPLATES } from "@sf/engine";
-import type { CreateArtifactWireRequest } from "@sf/contracts";
+import { CONTRACT_VERSION, type CreateArtifactWireRequest } from "@sf/contracts";
 import {
   normalizeTemplateArtifactLocale,
   UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE,
@@ -32,7 +32,6 @@ import { toArtifactDto, type ArtifactDto } from "./artifact-mappers";
  * run); concurrent regenerate on `artifact:{id}` returns 409.
  */
 
-const CONTRACT_VERSION = "2026-07-18";
 const IDEMPOTENCY_SCOPE = "createActionArtifact";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const ARTIFACTS_MAX_PAGE_BYTES = 16 * 1024 * 1024;

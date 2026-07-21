@@ -12,7 +12,7 @@ import {
   type ExportBundleRow,
   type WorkspaceScope,
 } from "@sf/db";
-import type { CreateExportRequest } from "@sf/contracts";
+import { CONTRACT_VERSION, type CreateExportRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import {
   BlobObjectNotFoundError,
@@ -33,7 +33,6 @@ import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
  * serializes concurrent exports of the same kind.
  */
 
-const CONTRACT_VERSION = "2026-07-18";
 const IDEMPOTENCY_SCOPE = "createProjectExport";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const SIGNED_URL_TTL_S = 15 * 60;
@@ -97,7 +96,7 @@ function activeExportConflict(projectId: string, runId?: string): ProblemError {
 export interface ExportBundleDto {
   id: string;
   kind: string;
-  schemaVersion: string;
+  schemaVersion: ExportBundleSchemaVersion;
   outputLocale: string;
   run: AsyncRunDto;
   checksum: string | null;
@@ -105,6 +104,25 @@ export interface ExportBundleDto {
   downloadUrl: string | null;
   downloadExpiresAt: string | null;
   createdAt: string;
+}
+
+export type ExportBundleSchemaVersion =
+  | "signalframe.service-bundle.0.2.0"
+  | "signalframe.service-bundle.0.3.0";
+
+function readableExportBundleSchemaVersion(
+  value: string,
+): ExportBundleSchemaVersion {
+  if (
+    value === "signalframe.service-bundle.0.2.0" ||
+    value === "signalframe.service-bundle.0.3.0"
+  ) {
+    return value;
+  }
+  throw new ProblemError(
+    "DEPENDENCY_UNAVAILABLE",
+    "Export metadata is temporarily unavailable.",
+  );
 }
 
 export async function createProjectExport(
@@ -363,7 +381,7 @@ function toExportBundleDto(
   return {
     id: row.id,
     kind: row.kind,
-    schemaVersion: row.schema_version,
+    schemaVersion: readableExportBundleSchemaVersion(row.schema_version),
     outputLocale: row.output_locale,
     run,
     checksum: row.checksum,

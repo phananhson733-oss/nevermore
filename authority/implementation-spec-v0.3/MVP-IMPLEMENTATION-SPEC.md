@@ -1,16 +1,16 @@
 ---
-title: Nevermore Unified Growth Opportunity — Reviewed Implementation Authority Scaffold
-status: reviewed-scaffold
+title: Nevermore Unified Growth Opportunity — Activated Implementation Authority
+status: activated
 product_version: 0.3.0
 contract_version: 2026-07-21
-implemented_surface_version: 0.2.0
-normative_surface_status: implementation-ready
+implemented_surface_version: 0.3.0
+normative_surface_status: active
 owner: SignalFrame
 ---
 
-# Nevermore Unified Growth Opportunity — v0.3 可执行权威 Scaffold
+# Nevermore Unified Growth Opportunity — v0.3 可执行权威
 
-本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。它是 **reviewed scaffold**，不会把未来任务伪装成当前实现：初始 normative OpenAPI、SQL、26 个 operation、5 个 async operation、28 张应用表和 11 条确定性规则仍等于已实现的 v0.2 surface。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，对应变化才成为新的 normative surface。
+本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确保留 26 个 operation 与 5 个 async operation，SQL 精确声明 33 张应用表，确定性规则仍为 `mvp.rules.0.2.0` 的 11 条规则。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
 
 规范词“必须 / MUST”“不得 / MUST NOT”是当前机器面或已审核变更边界的发布条件；“应 / SHOULD”是强建议，偏离时必须在代码评审中记录原因；“可 / MAY”是非阻塞增强。凡是标为“reviewed change sequence”“planned”或“stop gate 后”的内容，均不是当前可调用 API、已存在表或已交付产品事实。
 
@@ -18,7 +18,7 @@ owner: SignalFrame
 
 ### 0.1 单一权威
 
-本文件是 v0.3 的产品、数据与工程行为权威 scaffold；同目录 [openapi.yaml](openapi.yaml) 与 [schema.sql](schema.sql) 分别是**当前已实现 surface** 的 HTTP 和数据库机器合同。当前机器面版本固定为 `implemented_surface_version: 0.2.0`；OpenAPI/SQL 在对应实现任务落地前不得预声明未来 audit、Opportunity 或 recheck 变化。
+本文件是 v0.3 的产品、数据与工程行为权威；同目录 [openapi.yaml](openapi.yaml) 与 [schema.sql](schema.sql) 分别是**当前已实现 surface** 的 HTTP 和数据库机器合同。当前机器面版本固定为 `implemented_surface_version: 0.3.0`；OpenAPI/SQL 不得预声明尚未落地的 create-run、recheck 或后续内容生命周期变化。
 
 产品范围由本仓 [统一增长机会 PRD](../../docs/plans/2026-07-21-unified-growth-opportunity-prd.md) 控制，详细技术设计由 [统一增长机会设计](../../docs/plans/2026-07-21-unified-growth-opportunity-design.md) 控制，施工顺序由 [统一增长机会实施计划](../../docs/plans/2026-07-21-unified-growth-opportunity-implementation.md) 控制。旧 draft、长周期全案和 mock Artifact 只提供背景或视觉参考；Artifact 不构成 canonical truth，也不证明拟议能力已经生产落地。
 
@@ -45,7 +45,7 @@ MVP 完成表示一个已登录的内部 Operator 能在真实项目中走完：
   → 导出可供企业定制服务调用的版本化 JSON ZIP
 ```
 
-以上流程描述的是初始 scaffold 继承的 v0.2 implemented surface。完成不表示 Growth Audit / Opportunity / Recheck 已经落地，也不表示自动发布网站、自动改 CMS、验证排名结果或商业化 SaaS 订阅。
+以上流程仍是当前完整业务主链。v0.3 另已落地 versioned Growth Audit / Capability contract、只读 Opportunity projection 与最小 audit/page persistence；这不表示 create-run route、Recheck、自动发布网站、自动改 CMS、验证排名结果或商业化 SaaS 订阅已经落地。
 
 ### 0.3 零开放实现决策
 
@@ -66,7 +66,7 @@ Lens 只用于组织 Evidence、筛选 Growth Map 和解释 Opportunity，不拥
 
 Growth Opportunity 是该链上的客户可读 projection，不是第二套 lifecycle truth。在 Slice 1，一项 reviewable Opportunity 必须恰好锚定一个 measured primary canonical Finding；Supporting Findings 与 Observation 只丰富解释。Confirm 必须继续复用 primary Finding 的 Finding Review 事务并幂等创建唯一 Action。
 
-以下内容构成 **reviewed Slice 1 change sequence**，但在初始 v0.3 scaffold 中均不是已实现 operation、route、table 或 UI fact：
+以下内容构成 **reviewed Slice 1 change sequence**。步骤 1–2 已进入 v0.3 machine surface；步骤 3–5 仍不是当前已实现 operation、route 或 UI fact：
 
 1. 引入 versioned Growth Audit / Capability contract 与只读 Opportunity projection；
 2. 以受审迁移增加最小 audit/page projection persistence，不复制 canonical run、Finding、Action 或 Artifact ownership；
@@ -130,6 +130,7 @@ v0.3 明确禁止以下并行或提前建设：
 | 项目背景 | 项目、站点、ICP、Persona、市场、语言、转化、限制、90 天目标；draft/complete 两种保存 |
 | 数据中心 | Crawl、GSC、GA4、Keyword Gap CSV、DataForSEO ranked keywords；统一 Run/Snapshot/Observation 血缘 |
 | 诊断 | 11 条确定性规则、五个域、覆盖状态、Evidence、跨 Run 稳定 Finding |
+| Growth Audit | versioned Capability/Audit contract、只读 Opportunity projection；最小 audit/page persistence 只引用 canonical Run/Snapshot，不复制状态或证据事实 |
 | 审核与方案 | Finding confirm/ignore/needs-more-data；确定性 Action template；30/60/90 lane；人工 override 审计 |
 | 执行物 | Content Brief、Metadata Rewrite、Technical Ticket；异步生成、人工编辑、不可变 revision |
 | 输出 | 浏览器 HTML 报告、`service_bundle` / `client_bundle` JSON ZIP |
@@ -810,7 +811,7 @@ Report 页面使用 `outputLocale` 参数，默认项目 delivery locale；产�
 
 ### 10.5 企业导出
 
-Export 始终异步生成私有、签名下载 URL。`schemaVersion=signalframe.service-bundle.0.2.0`。
+Export 始终异步生成私有、签名下载 URL。新生成的 Export 使用 `schemaVersion=signalframe.service-bundle.0.3.0`；数据库约束继续接受历史 `signalframe.service-bundle.0.2.0` 行。
 
 `service_bundle` ZIP：
 
@@ -918,7 +919,7 @@ Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `met
 
 ## 12. PostgreSQL 合同
 
-### 12.1 28 张应用表
+### 12.1 33 张应用表
 
 表的 DDL、check、FK、索引和 append-only trigger 以 [schema.sql](schema.sql) 为准。以下集合由 verifier 与 SQL 做精确一致性检查。
 
@@ -951,9 +952,16 @@ Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `met
 - `export_bundles`
 - `idempotency_keys`
 - `telemetry_events`
+- `capability_runs`
+- `audit_runs`
+- `audit_module_results`
+- `site_pages`
+- `page_snapshots`
 <!-- TABLES_END -->
 
-pg-boss 自己的 schema/table 不计入这 28 张，由固定版本的 pg-boss 自行迁移；不得复制到 Drizzle migrations 或手改。
+pg-boss 自己的 schema/table 不计入这 33 张，由固定版本的 pg-boss 自行迁移；不得复制到 Drizzle migrations 或手改。
+
+新增的 Slice 1 persistence 遵守以下不变量：`capability_runs` 以 canonical `async_runs.id` 为主键；`audit_runs` 只引用同一个 canonical Diagnostic/Capability run 且不拥有 `status`；`audit_module_results` 是不可变模块投影；`page_snapshots` 必须引用同 tenant/site 的 immutable `data_snapshots`；上述四类记录 append-only。`audit_runs_provenance_guard`、`site_pages_provenance_guard` 与 `page_snapshots_provenance_guard` 在数据库边界拒绝跨 workspace/project/site 拼接。`site_pages` 只维护项目内 URL identity，可更新 template identity，但不得承载不可溯源的指标或抽取内容。
 
 ### 12.2 Repository scope 与 RLS
 
@@ -1092,7 +1100,7 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 - 初始化独立 pnpm monorepo、Node/Next/TS lint/typecheck/test。
 - 复制 OpenAPI、SQL，生成 API types；CI 运行 Redocly 和 spec verifier。
-- 启动本地 Supabase/Postgres 与 pg-boss；应用 28 表 migration。
+- 启动本地 Supabase/Postgres 与 pg-boss；应用 33 表 migration。
 - 实现 Supabase Auth、单 Workspace bootstrap、repository scope、requestId/problem details。
 - 捕获旧仓 status/diff/hash baseline；不修改旧仓。
 
@@ -1151,9 +1159,9 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 ### 17.1 合同与基础
 
-- **AC-001** `pnpm verify:authority` 通过；在初始 reviewed scaffold 中，26 operationId、5 async operation、28 table 与当前应用 ordered migrations 完全一致。
+- **AC-001** `pnpm verify:authority` 通过；26 operationId、5 async operation、33 table 与当前应用 ordered migrations 完全一致。
 - **AC-002** Redocly lint 无 error；生成 client/server types 无手工 `any` patch。
-- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；28 表、索引、trigger 存在。
+- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；33 表、索引、trigger 存在。
 - **AC-004** pg-boss schema 由库创建且不进入 Drizzle migration。
 - **AC-005** 未认证 API 401；跨 Workspace/project child ID 404；browser 不能直连 app schema。
 - **AC-006** 创建 Run 与 enqueue 任一侧故障均整体 rollback；不存在 queued-without-job 或 job-without-run。
@@ -1242,6 +1250,6 @@ Definition of Done：
 5. 没有未完成占位标记代表 MVP 行为；Deferred 能力没有半成品入口。
 6. 旧 SignalFrame 仓未被本任务改动；vendor manifest 可追溯。
 7. Runbook 包含 provider outage、stuck job、OAuth revoke、credential rotation、export regeneration 和 rollback。
-8. 初始 reviewed scaffold 不谎报运行版本：应用 `/api/mvp/health/version` 与 export manifest 继续返回当前 implemented surface `0.2.0 / 2026-07-18`；authority 自身为 `0.3.0 / 2026-07-21`。只有后续任务原子激活 v0.3 lock 与对应机器合同时，运行版本才可提升。
+8. 应用 `/api/mvp/health/version`、OpenAPI 与新生成的 export manifest 返回当前 implemented surface `0.3.0 / 2026-07-21`；历史 `0.2.0` export rows 仍可读取，但不得伪装成当前生成结果。rule/prompt set 继续固定为 `mvp.rules.0.2.0` / `mvp.prompts.0.2.0`。
 
 达到以上条件才可称为 `implementation complete / pilot-ready`；“页面能打开”或“mock 流程可点”不等于完成。

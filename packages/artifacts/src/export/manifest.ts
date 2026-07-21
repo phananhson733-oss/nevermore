@@ -10,9 +10,9 @@
  */
 
 /** Pinned manifest literals (JSON Schema `const` values). */
-export const MANIFEST_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0" as const;
-export const PRODUCT_VERSION = "0.2.0" as const;
-export const CONTRACT_VERSION = "2026-07-18" as const;
+export const MANIFEST_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0" as const;
+export const PRODUCT_VERSION = "0.3.0" as const;
+export const CONTRACT_VERSION = "2026-07-21" as const;
 export const RULE_SET_VERSION = "mvp.rules.0.2.0" as const;
 
 export type BundleKind = "service_bundle" | "client_bundle";

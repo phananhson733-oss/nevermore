@@ -6,6 +6,20 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const authorityRoot = path.resolve(scriptDirectory, "..");
+const PRODUCT_VERSION = "0.3.0";
+const CONTRACT_VERSION = "2026-07-21";
+const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
+const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
+const RULE_SET_VERSION = "mvp.rules.0.2.0";
+const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
+const EXPECTED_TABLE_COUNT = 33;
+const SLICE_1_TABLES = [
+  "capability_runs",
+  "audit_runs",
+  "audit_module_results",
+  "site_pages",
+  "page_snapshots",
+];
 
 function parseArguments(argv) {
   if (argv.length === 0) {
@@ -132,25 +146,25 @@ function applicationMigrationTables() {
 }
 
 check(
-  files.spec.includes("status: reviewed-scaffold"),
-  "main spec must be a reviewed-scaffold until the v0.3 runtime lock is activated",
+  files.spec.includes("status: activated"),
+  "main spec must identify the activated v0.3 machine surface",
 );
 check(
-  files.spec.includes("product_version: 0.3.0"),
-  "authority product version must be 0.3.0",
+  files.spec.includes(`product_version: ${PRODUCT_VERSION}`),
+  `authority product version must be ${PRODUCT_VERSION}`,
 );
 check(
-  files.spec.includes("contract_version: 2026-07-21"),
-  "authority contract version must be 2026-07-21",
+  files.spec.includes(`contract_version: ${CONTRACT_VERSION}`),
+  `authority contract version must be ${CONTRACT_VERSION}`,
 );
 check(
-  files.spec.includes("implemented_surface_version: 0.2.0"),
-  "reviewed scaffold must identify the still-implemented 0.2.0 machine surface",
+  files.spec.includes(`implemented_surface_version: ${PRODUCT_VERSION}`),
+  `authority must identify the implemented ${PRODUCT_VERSION} machine surface`,
 );
 check(files.openapi.includes("openapi: 3.1.0"), "OpenAPI must be 3.1.0");
 check(
-  files.openapi.includes("version: 0.2.0"),
-  "scaffold OpenAPI must remain at the implemented 0.2.0 surface until activation",
+  files.openapi.includes(`version: ${PRODUCT_VERSION}`),
+  `OpenAPI must expose the activated ${PRODUCT_VERSION} surface`,
 );
 check(
   !files.openapi.includes("bearerAuth"),
@@ -161,10 +175,35 @@ check(
   "session cookie security scheme missing",
 );
 check(files.openapi.includes("statusUrl"), "async statusUrl schema missing");
-check(files.sql.includes("mvp.rules.0.2.0"), "SQL rule-set version drift");
+const exportBundleBlock = between(
+  files.openapi,
+  "    ExportBundle:",
+  "    ExportResponse:",
+);
+const readableBundleSchemaVersions = [
+  ...exportBundleBlock.matchAll(
+    /^\s+-\s+(signalframe\.service-bundle\.[0-9]+\.[0-9]+\.[0-9]+)\s*$/gm,
+  ),
+].map((match) => match[1]);
+exactSet(
+  readableBundleSchemaVersions,
+  [HISTORICAL_BUNDLE_SCHEMA_VERSION, BUNDLE_SCHEMA_VERSION],
+  "OpenAPI readable export bundle schema versions",
+);
+check(files.sql.includes(RULE_SET_VERSION), "SQL rule-set version drift");
+check(files.sql.includes(PROMPT_SET_VERSION), "SQL prompt-set version drift");
 check(
-  files.sql.includes("signalframe.service-bundle.0.2.0"),
-  "scaffold SQL export schema must remain at implemented version 0.2.0",
+  files.sql.includes(`DEFAULT '${BUNDLE_SCHEMA_VERSION}'`),
+  `SQL export schema must default to ${BUNDLE_SCHEMA_VERSION}`,
+);
+check(
+  files.sql.includes(HISTORICAL_BUNDLE_SCHEMA_VERSION) &&
+    files.sql.includes(BUNDLE_SCHEMA_VERSION),
+  "SQL export schema must preserve historical 0.2.0 rows while accepting current 0.3.0 rows",
+);
+check(
+  files.sql.includes(`DEFAULT '${CONTRACT_VERSION}'`),
+  `SQL async-run contract version must default to ${CONTRACT_VERSION}`,
 );
 check(
   files.sql.includes(
@@ -176,15 +215,54 @@ check(
   files.sql.includes("async_runs_one_active_key_idx"),
   "active-run uniqueness index missing",
 );
+for (const databaseObject of [
+  "CREATE OR REPLACE FUNCTION app.reject_async_run_terminal_transition()",
+  "CREATE TRIGGER async_runs_terminal_status_immutable",
+  "CREATE OR REPLACE FUNCTION app.enforce_export_bundle_invariants()",
+  "ADD CONSTRAINT export_bundles_object_key_invariant",
+  "CREATE TRIGGER export_bundles_invariant_guard",
+  "CREATE OR REPLACE FUNCTION app.is_bcp47_language_tag(candidate text)",
+  "CREATE OR REPLACE FUNCTION app.are_bcp47_language_tags(candidates text[])",
+]) {
+  check(
+    files.sql.includes(databaseObject),
+    `cumulative database invariant missing: ${databaseObject}`,
+  );
+}
+for (const constraint of [
+  "client_projects_default_delivery_locale_check",
+  "sites_language_codes_bcp47_check",
+  "diagnostic_runs_output_locale_check",
+  "findings_summary_locale_check",
+  "actions_content_locale_check",
+  "execution_artifacts_output_locale_check",
+  "artifact_revisions_output_locale_check",
+  "export_bundles_output_locale_check",
+]) {
+  check(
+    files.sql.includes(`ADD CONSTRAINT ${constraint}`),
+    `cumulative BCP 47 constraint missing: ${constraint}`,
+  );
+}
 check(
   files.schemaSmoke.includes("ROLLBACK;"),
   "schema smoke test must roll back fixture data",
 );
 for (const phrase of [
+  "expected exactly 33 app tables",
   "unavailable observation with zero was accepted",
   "generated evidence without invocation was accepted",
   "append-only evidence update was accepted",
   "ready artifact without a revision was accepted",
+  "duplicate audit module result was accepted",
+  "capability run mutation was accepted",
+  "audit run mutation was accepted",
+  "audit module result mutation was accepted",
+  "page snapshot mutation was accepted",
+  "growth audit projection introduced a second status",
+  "async run contract-version default is stale",
+  "export bundle schema-version compatibility is stale",
+  "database migration version projection is stale",
 ]) {
   check(
     files.schemaSmoke.includes(phrase),
@@ -200,11 +278,19 @@ try {
 }
 check(
   parsedBundleSchema?.properties?.schemaVersion?.const ===
-    "signalframe.service-bundle.0.2.0",
-  "scaffold bundle manifest schema must remain at implemented version 0.2.0",
+    BUNDLE_SCHEMA_VERSION,
+  `bundle manifest schema must expose ${BUNDLE_SCHEMA_VERSION}`,
 );
 check(
-  parsedBundleSchema?.properties?.ruleSetVersion?.const === "mvp.rules.0.2.0",
+  parsedBundleSchema?.properties?.productVersion?.const === PRODUCT_VERSION,
+  `bundle manifest product version must be ${PRODUCT_VERSION}`,
+);
+check(
+  parsedBundleSchema?.properties?.contractVersion?.const === CONTRACT_VERSION,
+  `bundle manifest contract version must be ${CONTRACT_VERSION}`,
+);
+check(
+  parsedBundleSchema?.properties?.ruleSetVersion?.const === RULE_SET_VERSION,
   "bundle manifest rule-set version drift",
 );
 
@@ -277,8 +363,8 @@ const sqlTables = [
 ].map((match) => match[1]);
 const appTables = applicationMigrationTables();
 check(
-  declaredTables.length === 28,
-  `expected 28 declared tables, got ${declaredTables.length}`,
+  declaredTables.length === EXPECTED_TABLE_COUNT,
+  `expected ${EXPECTED_TABLE_COUNT} declared tables, got ${declaredTables.length}`,
 );
 check(
   sqlTables.length === declaredTables.length,
@@ -286,6 +372,82 @@ check(
 );
 exactSet(sqlTables, declaredTables, "authority SQL tables");
 exactSet(appTables, declaredTables, "application migration tables");
+for (const tableName of SLICE_1_TABLES) {
+  check(
+    declaredTables.includes(tableName),
+    `required Slice 1 table missing: ${tableName}`,
+  );
+}
+
+const sqlWithoutComments = stripSqlComments(files.sql);
+const tableDefinition = (tableName) => {
+  const marker = `CREATE TABLE IF NOT EXISTS app.${tableName}`;
+  const start = sqlWithoutComments.indexOf(marker);
+  check(start >= 0, `${tableName} table definition missing from authority SQL`);
+  const next = sqlWithoutComments.indexOf(
+    "CREATE TABLE IF NOT EXISTS app.",
+    start + marker.length,
+  );
+  return start >= 0
+    ? sqlWithoutComments.slice(start, next === -1 ? undefined : next)
+    : "";
+};
+const capabilityRuns = tableDefinition("capability_runs");
+check(
+  /async_run_id\s+uuid\s+PRIMARY KEY\s+REFERENCES\s+app\.async_runs\(id\)\s+ON DELETE RESTRICT/i.test(
+    capabilityRuns,
+  ),
+  "capability_runs must extend canonical async_runs through an ON DELETE RESTRICT primary key",
+);
+check(
+  !/^\s*status\s+/im.test(capabilityRuns),
+  "capability_runs must not create a second status lifecycle",
+);
+const auditRuns = tableDefinition("audit_runs");
+check(
+  /REFERENCES\s+app\.diagnostic_runs\(id\)\s+ON DELETE RESTRICT/i.test(
+    auditRuns,
+  ) &&
+    /REFERENCES\s+app\.capability_runs\(async_run_id\)\s+ON DELETE RESTRICT/i.test(
+      auditRuns,
+    ),
+  "audit_runs must retain RESTRICT lineage to diagnostic and capability runs",
+);
+check(
+  !/^\s*status\s+/im.test(auditRuns),
+  "audit_runs must not create a second status lifecycle",
+);
+check(
+  /CHECK\s*\(diagnostic_run_id\s*=\s*capability_run_id\)/i.test(auditRuns),
+  "audit_runs must bind diagnostic and capability projections to the same canonical run",
+);
+const pageSnapshots = tableDefinition("page_snapshots");
+check(
+  /data_snapshot_id\s+uuid\s+NOT NULL\s+REFERENCES\s+app\.data_snapshots\(id\)\s+ON DELETE RESTRICT/i.test(
+    pageSnapshots,
+  ),
+  "page_snapshots must retain RESTRICT lineage to canonical data snapshots",
+);
+for (const triggerName of [
+  "audit_runs_provenance_guard",
+  "site_pages_provenance_guard",
+  "page_snapshots_provenance_guard",
+  "capability_runs_append_only",
+  "audit_runs_append_only",
+  "audit_module_results_append_only",
+  "page_snapshots_append_only",
+]) {
+  check(
+    new RegExp(`CREATE\\s+TRIGGER\\s+${triggerName}\\b`, "i").test(
+      sqlWithoutComments,
+    ),
+    `append-only trigger missing: ${triggerName}`,
+  );
+}
+check(
+  /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(sqlWithoutComments),
+  "site_pages updated_at trigger missing",
+);
 
 const mvpRules = unique(
   [
@@ -359,12 +521,12 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("GenGrowth v0.3 reviewed authority scaffold verified.");
+console.log("GenGrowth v0.3 activated authority verified.");
 console.log(`- API operations: ${openapiOperations.length}`);
 console.log(`- Async operations: ${asyncOperations.length}`);
 console.log(`- PostgreSQL application tables: ${appTables.length}`);
 console.log(`- Frozen diagnostic rules: ${mvpRules.length}`);
-console.log("- Current implemented machine surface: 0.2.0");
+console.log(`- Current implemented machine surface: ${PRODUCT_VERSION}`);
 console.log("- Service bundle manifest schema: valid JSON and version-aligned");
 console.log("- PostgreSQL smoke assertions: present and rollback-safe");
 console.log("- Local Markdown links: valid");

@@ -35,7 +35,7 @@ const run = {
   kind: "diagnostic",
   status: "running",
   active_key: "diagnostic",
-  contract_version: "2026-07-18",
+  contract_version: "2026-07-21",
   request_payload: {},
   progress: {
     phase: "rules",

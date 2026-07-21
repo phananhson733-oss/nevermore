@@ -511,9 +511,9 @@ describe("assembleBundle — manifest & checksum", () => {
     for (const key of REQUIRED_ITEM_COUNT_KEYS) {
       expect(manifest.itemCounts).toHaveProperty(key);
     }
-    expect(manifest.schemaVersion).toBe("signalframe.service-bundle.0.2.0");
-    expect(manifest.productVersion).toBe("0.2.0");
-    expect(manifest.contractVersion).toBe("2026-07-18");
+    expect(manifest.schemaVersion).toBe("signalframe.service-bundle.0.3.0");
+    expect(manifest.productVersion).toBe("0.3.0");
+    expect(manifest.contractVersion).toBe("2026-07-21");
     expect(manifest.ruleSetVersion).toBe("mvp.rules.0.2.0");
     expect(manifest.exportId).toBe(EXPORT_ID);
     expect(manifest.projectId).toBe(PROJECT_ID);

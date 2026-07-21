@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 28 app tables plus every named index and trigger in the frozen SQL
+ * exactly 33 app tables plus every named index and trigger in the frozen SQL
  * contract. Exits non-zero on drift. This is a structural object-presence gate;
  * the byte-for-byte migration/spec gate separately prevents definition drift.
  */
@@ -38,6 +38,11 @@ const EXPECTED_TABLES = [
   "export_bundles",
   "idempotency_keys",
   "telemetry_events",
+  "capability_runs",
+  "audit_runs",
+  "audit_module_results",
+  "site_pages",
+  "page_snapshots",
 ] as const;
 
 const REQUIRED_INDEXES = [
@@ -63,6 +68,11 @@ const REQUIRED_INDEXES = [
   "export_bundles_project_idx",
   "idempotency_keys_expiry_idx",
   "telemetry_events_name_created_idx",
+  "audit_runs_project_created_idx",
+  "site_pages_project_updated_idx",
+  "site_pages_site_idx",
+  "page_snapshots_page_captured_idx",
+  "page_snapshots_project_captured_idx",
 ] as const;
 
 const REQUIRED_TRIGGERS = [
@@ -94,6 +104,14 @@ const REQUIRED_TRIGGERS = [
   "action_override_audit_append_only",
   "artifact_revisions_append_only",
   "telemetry_events_append_only",
+  "site_pages_set_updated_at",
+  "audit_runs_provenance_guard",
+  "site_pages_provenance_guard",
+  "page_snapshots_provenance_guard",
+  "capability_runs_append_only",
+  "audit_runs_append_only",
+  "audit_module_results_append_only",
+  "page_snapshots_append_only",
 ] as const;
 
 export interface MigrateCheckResult {

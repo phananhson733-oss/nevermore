@@ -70,7 +70,7 @@ const bundle = {
   project_id: projectId,
   async_run_id: run.id,
   kind: body.kind,
-  schema_version: "0.2.0",
+  schema_version: "signalframe.service-bundle.0.3.0",
   output_locale: body.outputLocale,
   object_key: null,
   checksum: null,
@@ -167,6 +167,7 @@ describe("createProjectExport", () => {
       expect.objectContaining({
         kind: "export",
         activeKey: "export:client_bundle",
+        contractVersion: "2026-07-21",
         requestPayload: body,
       }),
     );
@@ -174,7 +175,10 @@ describe("createProjectExport", () => {
       {},
       {},
       "export.bundle",
-      expect.objectContaining({ runId: run.id }),
+      expect.objectContaining({
+        runId: run.id,
+        contractVersion: "2026-07-21",
+      }),
     );
     expect(IdempotencyRepository.prototype.complete).toHaveBeenCalledWith(
       reservation.id,
@@ -327,6 +331,36 @@ describe("createProjectExport", () => {
 });
 
 describe("getProjectExport", () => {
+  it("returns a historical 0.2 bundle through the current read DTO", async () => {
+    vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValue({
+      ...bundle,
+      schema_version: "signalframe.service-bundle.0.2.0",
+    });
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue(run);
+
+    await expect(
+      getProjectExport(scope, projectId, bundle.id),
+    ).resolves.toMatchObject({
+      id: bundle.id,
+      schemaVersion: "signalframe.service-bundle.0.2.0",
+    });
+  });
+
+  it("fails closed instead of emitting an undocumented export schema version", async () => {
+    vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValue({
+      ...bundle,
+      schema_version: "signalframe.service-bundle.9.9.9",
+    });
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue(run);
+
+    await expect(
+      getProjectExport(scope, projectId, bundle.id),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      message: "Export metadata is temporarily unavailable.",
+    });
+  });
+
   it("returns a pending bundle without attempting to sign it", async () => {
     vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValue(
       bundle,

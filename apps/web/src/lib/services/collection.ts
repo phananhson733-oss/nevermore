@@ -10,7 +10,7 @@ import {
   type QueueName,
   type WorkspaceScope,
 } from "@sf/db";
-import type { CreateCollectionRunRequest } from "@sf/contracts";
+import { CONTRACT_VERSION, type CreateCollectionRunRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
@@ -18,7 +18,6 @@ import { getEnv } from "@/env";
 import { isPostgresUniqueViolation } from "./db-errors";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
-const CONTRACT_VERSION = "2026-07-18";
 const IDEMPOTENCY_SCOPE = "createCollectionRun";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 

@@ -61,7 +61,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
     return Number(res.rows[0]?.c ?? 0);
   };
 
-  it("AC-004: pg-boss owns a separate schema; app still has exactly 28 tables", async () => {
+  it("AC-004: pg-boss owns a separate schema; app still has exactly 33 tables", async () => {
     const pgbossSchema = await handle.pool.query(
       `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
       [PGBOSS_SCHEMA],
@@ -72,7 +72,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
       `SELECT count(*)::int AS c FROM information_schema.tables
        WHERE table_schema = 'app' AND table_type = 'BASE TABLE'`,
     );
-    expect(Number(appTables.rows[0]!.c)).toBe(28);
+    expect(Number(appTables.rows[0]!.c)).toBe(33);
 
     // No pgboss table leaked into the app schema.
     const leaked = await handle.pool.query<{ c: string }>(

@@ -14,7 +14,7 @@ import {
 } from "@sf/db";
 import { previewCsv, objectKey, KEYWORD_GAP_TEMPLATE_ID } from "@sf/sources";
 import type { BlobPutResult, CsvPreviewResult } from "@sf/sources";
-import type { ImportConfirmRequest } from "@sf/contracts";
+import { CONTRACT_VERSION, type ImportConfirmRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
@@ -31,7 +31,6 @@ import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
  *    retry replays its 202; a new command using the token is rejected.
  */
 
-const CONTRACT_VERSION = "2026-07-18";
 const PREVIEW_TTL_MS = 30 * 60 * 1000;
 const IDEMPOTENCY_SCOPE = "importProjectSourceFile";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;

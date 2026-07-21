@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://signalframe.local/schemas/service-bundle-manifest/0.2.0",
-  "title": "SignalFrame Service Bundle Manifest 0.2.0",
+  "$id": "https://signalframe.local/schemas/service-bundle-manifest/0.3.0",
+  "title": "SignalFrame Service Bundle Manifest 0.3.0",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -20,13 +20,13 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "signalframe.service-bundle.0.2.0"
+      "const": "signalframe.service-bundle.0.3.0"
     },
     "productVersion": {
-      "const": "0.2.0"
+      "const": "0.3.0"
     },
     "contractVersion": {
-      "const": "2026-07-18"
+      "const": "2026-07-21"
     },
     "exportId": {
       "$ref": "#/$defs/uuid"

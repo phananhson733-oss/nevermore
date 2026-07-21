@@ -397,7 +397,7 @@ describeDb(
       ).toEqual([]);
       expect(serviceBundle.manifest["kind"]).toBe("service_bundle");
       expect(serviceBundle.manifest["schemaVersion"]).toBe(
-        "signalframe.service-bundle.0.2.0",
+        "signalframe.service-bundle.0.3.0",
       );
       expect(serviceBundle.manifest["ruleSetVersion"]).toBe("mvp.rules.0.2.0");
     });

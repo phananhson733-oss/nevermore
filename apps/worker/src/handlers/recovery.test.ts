@@ -9,6 +9,7 @@ import {
   type AsyncRunRow,
   type JobWithMetadata,
 } from "@sf/db";
+import { CONTRACT_VERSION } from "@sf/contracts";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
 import {
@@ -24,7 +25,7 @@ const PAYLOAD = {
   runId: "00000000-0000-4000-8000-000000000001",
   workspaceId: "00000000-0000-4000-8000-000000000002",
   projectId: "00000000-0000-4000-8000-000000000003",
-  contractVersion: "2026-07-18",
+  contractVersion: CONTRACT_VERSION as string,
 };
 const SOURCE_CONNECTION_ID = "00000000-0000-4000-8000-000000000005";
 
@@ -195,7 +196,7 @@ describe("prepareRunDelivery", () => {
       },
     });
     expect(JSON.stringify(lines)).not.toContain("0.2.0");
-    expect(JSON.stringify(lines)).not.toContain("2026-07-18");
+    expect(JSON.stringify(lines)).not.toContain(CONTRACT_VERSION);
   });
 
   it("acks an invalid contract and the next sweep immediately finishes reconciliation", async () => {
@@ -760,7 +761,7 @@ describe("reconcileActiveRuns", () => {
       ...jobFor(row, "active"),
       data: {
         ...jobFor(row, "active").data,
-        contractVersion: "2026-07-18",
+        contractVersion: CONTRACT_VERSION,
       },
     };
     const findJobs = vi.fn(async () => [mismatched]);
@@ -784,7 +785,7 @@ describe("reconcileActiveRuns", () => {
       expect.objectContaining({ lastErrorCode: "JOB_CONTRACT_MISMATCH" }),
     );
     expect(JSON.stringify(lines)).not.toContain("0.2.0");
-    expect(JSON.stringify(lines)).not.toContain("2026-07-18");
+    expect(JSON.stringify(lines)).not.toContain(CONTRACT_VERSION);
   });
 
   it("prefers a valid legacy job over invalid direct and duplicate candidates", async () => {
@@ -801,7 +802,7 @@ describe("reconcileActiveRuns", () => {
       ...jobFor(row, "active"),
       data: {
         ...jobFor(row, "active").data,
-        contractVersion: "2026-07-18",
+        contractVersion: CONTRACT_VERSION,
       },
     };
     const validLegacy = jobFor(row, "active", "legacy-valid-job");
@@ -1119,7 +1120,7 @@ describe("startRunRecoveryLoop", () => {
 function run(
   kind: string,
   requestPayload: Record<string, unknown>,
-  contractVersion = "2026-07-18",
+  contractVersion: string = CONTRACT_VERSION,
 ): AsyncRunRow {
   return {
     id: PAYLOAD.runId,

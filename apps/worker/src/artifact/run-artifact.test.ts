@@ -77,7 +77,7 @@ const run = {
   kind: "artifact_generation",
   status: "running",
   active_key: "artifact:artifact-1",
-  contract_version: "2026-07-18",
+  contract_version: "2026-07-21",
   request_payload: request,
   progress: {},
   last_error_code: null,

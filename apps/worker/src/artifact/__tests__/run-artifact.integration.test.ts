@@ -1264,7 +1264,7 @@ async function seedCrawlSnapshot(
     project_id: input.scope.projectId,
     kind: "collection",
     status: "completed",
-    contract_version: "2026-07-18",
+    contract_version: CONTRACT_VERSION,
     initiated_by: input.actor,
     started_at: input.capturedAt,
     completed_at: input.capturedAt,

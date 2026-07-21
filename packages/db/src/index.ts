@@ -106,6 +106,24 @@ export type {
   DiagnosticRunRow,
   RuleResultInsert,
 } from "./repositories/diagnostic-runs.ts";
+export { CapabilityRunsRepository } from "./repositories/capability-runs.ts";
+export type { CapabilityRunRow } from "./repositories/capability-runs.ts";
+export { AuditRunsRepository } from "./repositories/audit-runs.ts";
+export type {
+  AuditRunRow,
+  AuditModuleResultRow,
+  AuditModuleResultInsert,
+} from "./repositories/audit-runs.ts";
+export { SitePagesRepository } from "./repositories/site-pages.ts";
+export type {
+  SitePageRow,
+  SitePageListPage,
+} from "./repositories/site-pages.ts";
+export { PageSnapshotsRepository } from "./repositories/page-snapshots.ts";
+export type {
+  PageSnapshotRow,
+  PageSnapshotListPage,
+} from "./repositories/page-snapshots.ts";
 export { FindingsRepository } from "./repositories/findings.ts";
 export type { FindingRow, FindingListPage } from "./repositories/findings.ts";
 export { FindingReviewEventsRepository } from "./repositories/findings-review.ts";
