@@ -14,7 +14,7 @@ const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 const EXPECTED_OPERATION_COUNT = 38;
 const EXPECTED_ASYNC_OPERATION_COUNT = 6;
-const EXPECTED_TABLE_COUNT = 36;
+const EXPECTED_TABLE_COUNT = 41;
 const MIGRATION_VERSION_VIEW_PATTERN =
   /^CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version\s+AS\s+SELECT\s+'([^']+)'::text\s+AS\s+migration_version$/is;
 const SLICE_1_TABLES = [
@@ -26,6 +26,11 @@ const SLICE_1_TABLES = [
   "product_profile_runs",
   "product_profile_invocation_attempts",
   "finding_targets",
+  "keyword_occurrences",
+  "keyword_entities",
+  "keyword_entity_sources",
+  "competitor_entities",
+  "competitor_origin_occurrences",
 ];
 const EXPECTED_RULE_VERSIONS = new Map([
   ["TECH-HTTP-001", 2],
@@ -892,10 +897,10 @@ if (fs.existsSync(implementationSchemaSmokePath)) {
   );
 }
 for (const phrase of [
-  "expected exactly 36 app tables",
-  "expected all 41 named app indexes",
-  "expected all 55 app triggers",
-  "expected all 6 runtime routines",
+  "expected exactly 41 app tables",
+  "expected all 51 named app indexes",
+  "expected all 63 app triggers",
+  "expected all 16 runtime routines",
   "unavailable observation with zero was accepted",
   "generated evidence without invocation was accepted",
   "append-only evidence update was accepted",
@@ -1436,6 +1441,88 @@ if (fs.existsSync(findingTargetLedgerMigrationPath)) {
     "Finding target ledger migration must not backfill or infer historical target membership",
   );
 }
+const keywordLibraryFoundationMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0018_keyword_library_foundation.sql",
+);
+check(
+  fs.existsSync(keywordLibraryFoundationMigrationPath),
+  "Keyword Library foundation migration is missing",
+);
+if (fs.existsSync(keywordLibraryFoundationMigrationPath)) {
+  const source = fs.readFileSync(keywordLibraryFoundationMigrationPath, "utf8");
+  const contract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: source,
+    migrationVersion: "0018_keyword_library_foundation",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0018 Keyword Library foundation contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(contract);
+  const migration = stripSqlComments(source);
+  check(
+    [
+      "keyword_occurrences",
+      "keyword_entities",
+      "keyword_entity_sources",
+    ].every((tableName) =>
+      new RegExp(
+        `CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+app\\.${tableName}\\b`,
+        "i",
+      ).test(migration),
+    ) &&
+      /dataforseo\.ranked_keywords\.v1/i.test(migration) &&
+      /CREATE\s+TRIGGER\s+keyword_occurrences_lineage_guard/i.test(migration) &&
+      /CREATE\s+TRIGGER\s+keyword_entity_sources_lineage_guard/i.test(migration) &&
+      /FUNCTION\s+app\.upsert_keyword_library_occurrence/i.test(migration),
+    "Keyword Library foundation must freeze stable identities, immutable source occurrences, exact provider datasets, and guarded projection",
+  );
+}
+const competitorLibraryFoundationMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0019_competitor_library_foundation.sql",
+);
+check(
+  fs.existsSync(competitorLibraryFoundationMigrationPath),
+  "Competitor Library foundation migration is missing",
+);
+if (fs.existsSync(competitorLibraryFoundationMigrationPath)) {
+  const source = fs.readFileSync(
+    competitorLibraryFoundationMigrationPath,
+    "utf8",
+  );
+  const contract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: source,
+    migrationVersion: "0019_competitor_library_foundation",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0019 Competitor Library foundation contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(contract);
+  const migration = stripSqlComments(source);
+  check(
+    /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.competitor_entities\b/i.test(
+      migration,
+    ) &&
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.competitor_origin_occurrences\b/i.test(
+        migration,
+      ) &&
+      /origin_kind\s+IN\s*\(\s*'product_profile'\s*,\s*'csv_keyword_gap'\s*,\s*'manual'/i.test(
+        migration,
+      ) &&
+      /provenance_derivation\s+NOT\s+IN\s*\([\s\S]*?'declared'[\s\S]*?'observed'[\s\S]*?'computed'[\s\S]*?'inferred'/i.test(
+        migration,
+      ) &&
+      /NEW\.source_pointer\s*=\s*'\/valueJson\/competitorDomain'/i.test(
+        migration,
+      ) &&
+      /CREATE\s+TRIGGER\s+competitor_entities_governance_guard/i.test(
+        migration,
+      ) &&
+      /CREATE\s+TRIGGER\s+competitor_origins_lineage_guard/i.test(migration),
+    "Competitor Library foundation must freeze governed stable domains and exact Product Profile/CSV/manual lineage",
+  );
+}
 verifyMigrationOwnedDefinitionUniqueness(cumulativeMigrationContracts);
 const authorityExecutableStatements = executableSqlStatements(files.sql);
 const canonicalSitePageFunctionIndex = authorityExecutableStatements.findIndex(
@@ -1510,8 +1597,8 @@ const authorityMigrationVersions = executableSqlStatements(files.sql)
   .filter((version) => version !== undefined);
 check(
   authorityMigrationVersions.length === 1 &&
-    authorityMigrationVersions[0] === "0017_finding_target_ledger",
-  "authority SQL must define exactly one final 0017 migration-version projection",
+    authorityMigrationVersions[0] === "0019_competitor_library_foundation",
+  "authority SQL must define exactly one final 0019 migration-version projection",
 );
 check(
   /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(sqlWithoutComments),

@@ -168,6 +168,11 @@ const EXPECTED_TABLES = [
   "product_profile_runs",
   "product_profile_invocation_attempts",
   "finding_targets",
+  "keyword_occurrences",
+  "keyword_entities",
+  "keyword_entity_sources",
+  "competitor_entities",
+  "competitor_origin_occurrences",
 ];
 
 const EXPECTED_RULES = [

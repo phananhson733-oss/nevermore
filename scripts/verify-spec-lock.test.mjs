@@ -227,10 +227,10 @@ function runVerifier(fixture, extraArguments = []) {
   );
 }
 
-test("freezes the activated traceable audit surface at 38 operations, six async commands, and 36 tables", () => {
+test("freezes the activated traceable audit surface at 38 operations, six async commands, and 41 tables", () => {
   assert.equal(activatedLock.apiOperations.length, 38);
   assert.equal(activatedLock.asyncOperations.length, 6);
-  assert.equal(activatedLock.tables.length, 36);
+  assert.equal(activatedLock.tables.length, 41);
 
   for (const operationId of [
     "getProjectProductProfile",

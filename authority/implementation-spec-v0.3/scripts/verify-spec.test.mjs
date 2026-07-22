@@ -81,19 +81,33 @@ const findingTargetLedgerMigration = readFileSync(
   ),
   "utf8",
 );
+const keywordLibraryFoundationMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0018_keyword_library_foundation.sql",
+  ),
+  "utf8",
+);
+const competitorLibraryFoundationMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0019_competitor_library_foundation.sql",
+  ),
+  "utf8",
+);
 const authorityTables = [
   ...authoritySql.matchAll(
     /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?app\.([a-z][a-z0-9_]*)\s*\(/gi,
   ),
 ].map((match) => match[1]);
 
-test("declares the activated v0.3 machine surface and exactly 36 application tables", () => {
+test("declares the activated v0.3 machine surface and exactly 41 application tables", () => {
   assert.match(authorityReadme, /状态：\*\*activated\*\*/);
   assert.match(authorityReadme, /当前已实现机器面：\*\*0\.3\.0\*\*/);
   assert.match(authoritySpec, /status: activated/);
   assert.match(authoritySpec, /implemented_surface_version: 0\.3\.0/);
   assert.match(authorityOpenApi, /^\s+version: 0\.3\.0$/m);
-  assert.equal(authorityTables.length, 36);
+  assert.equal(authorityTables.length, 41);
   for (const table of [
     "capability_runs",
     "audit_runs",
@@ -103,6 +117,11 @@ test("declares the activated v0.3 machine surface and exactly 36 application tab
     "product_profile_runs",
     "product_profile_invocation_attempts",
     "finding_targets",
+    "keyword_occurrences",
+    "keyword_entities",
+    "keyword_entity_sources",
+    "competitor_entities",
+    "competitor_origin_occurrences",
   ]) {
     assert.ok(authorityTables.includes(table), `${table} is missing`);
   }
@@ -303,7 +322,7 @@ test("declares traceable Slice 1 persistence without a second mutable lifecycle"
   assert.match(authoritySql, /CREATE TRIGGER site_pages_set_updated_at/);
 });
 
-test("bounds every cumulative executable migration through the Finding target ledger", () => {
+test("bounds every cumulative executable migration through the Competitor Library foundation", () => {
   for (const migrationVersion of [
     "0012_page_snapshot_lineage_hardening",
     "0013_exact_url_variant_rules",
@@ -311,6 +330,8 @@ test("bounds every cumulative executable migration through the Finding target le
     "0015_frozen_crawl_seed",
     "0016_observation_site_page_lineage",
     "0017_finding_target_ledger",
+    "0018_keyword_library_foundation",
+    "0019_competitor_library_foundation",
   ]) {
     assert.equal(
       authoritySql.match(
@@ -352,9 +373,24 @@ test("bounds every cumulative executable migration through the Finding target le
     "enforce_normalized_observation_site_page_lineage",
     "finding_target_relation_key",
     "enforce_finding_target_lineage",
+    "enforce_keyword_occurrence_lineage",
+    "enforce_keyword_entity_mutation",
+    "enforce_keyword_entity_source_lineage",
+    "upsert_keyword_library_occurrence",
+    "is_normalized_competitor_domain",
+    "is_competitor_analysis_scope",
+    "is_typed_product_profile_evidence_refs",
+    "enforce_competitor_entity_governance",
+    "enforce_competitor_origin_lineage",
+    "upsert_competitor_origin",
   ]) {
-    const expectedCount =
-      functionName === "enforce_collection_run_provenance" ? 2 : 1;
+    const expectedCount = new Set([
+      "enforce_collection_run_provenance",
+      "enforce_data_snapshot_provenance",
+      "enforce_normalized_observation_provenance",
+    ]).has(functionName)
+      ? 2
+      : 1;
     assert.equal(
       authoritySql.match(
         new RegExp(
@@ -387,6 +423,14 @@ test("bounds every cumulative executable migration through the Finding target le
     "site_pages_canonical_subject_lock",
     "finding_targets_lineage_guard",
     "finding_targets_append_only",
+    "keyword_occurrences_lineage_guard",
+    "keyword_occurrences_append_only",
+    "keyword_entities_mutation_guard",
+    "keyword_entities_no_delete",
+    "keyword_entity_sources_lineage_guard",
+    "keyword_entity_sources_append_only",
+    "competitor_entities_governance_guard",
+    "competitor_origins_lineage_guard",
   ]) {
     const expectedCount =
       triggerName === "collection_runs_provenance_guard" ? 2 : 1;
@@ -399,13 +443,13 @@ test("bounds every cumulative executable migration through the Finding target le
   }
 });
 
-test("schema smoke exercises Product Profile, exact page lineage, and the Finding target ledger", () => {
+test("schema smoke exercises Product Profile, page lineage, Finding targets, and growth libraries", () => {
   assert.equal(authoritySchemaSmoke, implementationSchemaSmoke);
   for (const marker of [
-    "expected exactly 36 app tables",
-    "expected all 41 named app indexes",
-    "expected all 55 app triggers",
-    "expected all 6 runtime routines",
+    "expected exactly 41 app tables",
+    "expected all 51 named app indexes",
+    "expected all 63 app triggers",
+    "expected all 16 runtime routines",
     "product profile invocation reservation was not persisted",
     "a fourth product profile invocation reservation was accepted",
     "unresolved product profile invocation allowed another provider call",
@@ -424,7 +468,7 @@ test("schema smoke exercises Product Profile, exact page lineage, and the Findin
     "Finding target ledger indexes are incomplete",
     "Finding target lineage and append-only guards are incomplete",
     "Finding target runtime routines are incomplete",
-    "0017_finding_target_ledger",
+    "0019_competitor_library_foundation",
   ]) {
     assert.match(authoritySchemaSmoke, new RegExp(marker));
   }
@@ -511,6 +555,11 @@ const cumulativeMigrationOwnedTables = new Set([
   "product_profile_runs",
   "product_profile_invocation_attempts",
   "finding_targets",
+  "keyword_occurrences",
+  "keyword_entities",
+  "keyword_entity_sources",
+  "competitor_entities",
+  "competitor_origin_occurrences",
 ]);
 
 function tableSql(tables) {
@@ -539,6 +588,8 @@ function fixture(t, migrations) {
     "0015_frozen_crawl_seed.sql": frozenCrawlSeedMigration,
     "0016_observation_site_page_lineage.sql": observationSitePageLineageMigration,
     "0017_finding_target_ledger.sql": findingTargetLedgerMigration,
+    "0018_keyword_library_foundation.sql": keywordLibraryFoundationMigration,
+    "0019_competitor_library_foundation.sql": competitorLibraryFoundationMigration,
     ...migrations,
   };
   for (const [name, sql] of Object.entries(completeMigrations)) {
@@ -810,6 +861,47 @@ test("rejects Finding target ledger migration drift", (t) => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /exact cumulative 0017 Finding target ledger/i);
+});
+
+test("rejects Keyword Library foundation migration drift", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = keywordLibraryFoundationMigration.replace(
+    "keyword_entity_sources_project_occurrence_idx",
+    "keyword_entity_sources_project_occurrence_drift_idx",
+  );
+  assert.notEqual(mutatedMigration, keywordLibraryFoundationMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0018_keyword_library_foundation.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exact cumulative 0018 Keyword Library foundation/i);
+});
+
+test("rejects Competitor Library foundation migration drift", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = competitorLibraryFoundationMigration.replace(
+    "competitor_origins_entity_observed_idx",
+    "competitor_origins_entity_observed_drift_idx",
+  );
+  assert.notEqual(mutatedMigration, competitorLibraryFoundationMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0019_competitor_library_foundation.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /exact cumulative 0019 Competitor Library foundation/i,
+  );
 });
 
 test("rejects duplicate app migration ordinals", (t) => {

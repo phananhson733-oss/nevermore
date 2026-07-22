@@ -5134,6 +5134,1702 @@ CREATE INDEX IF NOT EXISTS finding_targets_operational_idx
   WHERE resolution_state IN ('unresolved','definition_only');
 -- END EXACT EXECUTABLE MIGRATION 0017_finding_target_ledger
 
+-- BEGIN EXACT EXECUTABLE MIGRATION 0018_keyword_library_foundation
+-- DataForSEO historically reused the CSV keyword-gap dataset key. Preserve
+-- those immutable rows, but allow new collection writers to state the actual
+-- provider operation without rewriting history.
+ALTER TABLE app.data_snapshots
+  DROP CONSTRAINT IF EXISTS data_snapshots_dataset_key_check;
+ALTER TABLE app.data_snapshots
+  ADD CONSTRAINT data_snapshots_dataset_key_check CHECK (dataset_key IN (
+    'crawl.site_graph.v1',
+    'gsc.page_query_daily.v1',
+    'ga4.organic_landing_daily.v1',
+    'csv.keyword_gap.v1',
+    'dataforseo.ranked_keywords.v1'
+  ));
+
+CREATE OR REPLACE FUNCTION app.enforce_data_snapshot_provenance()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.collection_runs run
+    WHERE run.id = NEW.collection_run_id
+      AND run.workspace_id = NEW.workspace_id
+      AND run.project_id = NEW.project_id
+      AND run.site_id = NEW.site_id
+      AND run.provider = NEW.provider
+      AND run.method_version = NEW.method_version
+      AND run.source_connection_id IS NOT DISTINCT FROM NEW.source_connection_id
+  ) THEN
+    RAISE EXCEPTION 'data snapshot provenance does not match its collection run'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NOT (
+    (NEW.provider = 'crawl' AND NEW.dataset_key = 'crawl.site_graph.v1')
+    OR (NEW.provider = 'gsc' AND NEW.dataset_key = 'gsc.page_query_daily.v1')
+    OR (NEW.provider = 'ga4' AND NEW.dataset_key = 'ga4.organic_landing_daily.v1')
+    OR (NEW.provider = 'csv' AND NEW.dataset_key = 'csv.keyword_gap.v1')
+    OR (
+      NEW.provider = 'dataforseo'
+      AND NEW.dataset_key IN (
+        'csv.keyword_gap.v1',
+        'dataforseo.ranked_keywords.v1'
+      )
+    )
+  ) THEN
+    RAISE EXCEPTION 'data snapshot dataset does not belong to its provider'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.enforce_normalized_observation_provenance()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.data_snapshots snapshot
+    WHERE snapshot.id = NEW.snapshot_id
+      AND snapshot.workspace_id = NEW.workspace_id
+      AND snapshot.project_id = NEW.project_id
+      AND snapshot.provider = NEW.provider
+      AND snapshot.captured_at = NEW.observed_at
+  ) THEN
+    RAISE EXCEPTION 'observation provenance does not match its immutable snapshot'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.data_snapshots snapshot
+    WHERE snapshot.id = NEW.snapshot_id
+      AND (
+        (
+          snapshot.provider = 'crawl'
+          AND snapshot.dataset_key = 'crawl.site_graph.v1'
+          AND NEW.metric_key IN (
+            'crawl.page.v1','crawl.robots.v1','crawl.sitemap.v1'
+          )
+        )
+        OR (
+          snapshot.provider = 'gsc'
+          AND snapshot.dataset_key = 'gsc.page_query_daily.v1'
+          AND NEW.metric_key = 'gsc.page.v1'
+        )
+        OR (
+          snapshot.provider = 'ga4'
+          AND snapshot.dataset_key = 'ga4.organic_landing_daily.v1'
+          AND NEW.metric_key = 'ga4.landing.v1'
+        )
+        OR (
+          snapshot.provider = 'csv'
+          AND snapshot.dataset_key = 'csv.keyword_gap.v1'
+          AND NEW.metric_key = 'csv.keyword_gap.v1'
+        )
+        OR (
+          snapshot.provider = 'dataforseo'
+          AND (
+            (
+              snapshot.dataset_key = 'csv.keyword_gap.v1'
+              AND NEW.metric_key = 'csv.keyword_gap.v1'
+            )
+            OR (
+              snapshot.dataset_key = 'dataforseo.ranked_keywords.v1'
+              AND NEW.metric_key = 'csv.keyword_gap.v1'
+            )
+          )
+        )
+      )
+  ) THEN
+    RAISE EXCEPTION 'observation metric does not belong to its provider dataset'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NOT (
+    (NEW.provider IN ('gsc','ga4') AND NEW.origin = 'first_party' AND NEW.grade = 'A')
+    OR (NEW.provider = 'crawl' AND NEW.origin = 'direct_public' AND NEW.grade = 'B')
+    OR (
+      NEW.provider = 'dataforseo'
+      AND NEW.origin = 'vendor_observation'
+      AND NEW.grade = 'B'
+    )
+    OR (NEW.provider = 'csv' AND NEW.origin = 'user_provided' AND NEW.grade = 'C')
+  ) THEN
+    RAISE EXCEPTION 'observation trust label does not match its provider'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- A provider occurrence points to the canonical Snapshot and exact normalized
+-- Observation that own all provider metrics. A manual occurrence is itself the
+-- immutable source record and has no fabricated provider lineage. Search
+-- volume, rank, current URL, competitor rank and KD are never duplicated here.
+CREATE TABLE IF NOT EXISTS app.keyword_occurrences (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id uuid NOT NULL
+    REFERENCES app.workspaces(id) ON DELETE RESTRICT,
+  project_id uuid NOT NULL
+    REFERENCES app.client_projects(id) ON DELETE RESTRICT,
+  data_snapshot_id uuid
+    REFERENCES app.data_snapshots(id) ON DELETE RESTRICT,
+  normalized_observation_id uuid
+    REFERENCES app.normalized_observations(id) ON DELETE RESTRICT,
+  display_keyword text NOT NULL,
+  normalized_keyword text NOT NULL,
+  market text NOT NULL,
+  language_tag text NOT NULL,
+  query_kind text NOT NULL CHECK (
+    query_kind IN ('search_query','generative_query')
+  ),
+  source_kind text NOT NULL CHECK (
+    source_kind IN (
+      'csv_import',
+      'dataforseo_ranked',
+      'gsc_top_query',
+      'manual'
+    )
+  ),
+  scope_basis text NOT NULL CHECK (
+    scope_basis IN (
+      'provider_collection_scope',
+      'user_provided',
+      'project_context',
+      'manual'
+    )
+  ),
+  source_pointer text,
+  source_ref text NOT NULL,
+  collected_at timestamptz NOT NULL,
+  provider_data_as_of timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    length(display_keyword) BETWEEN 1 AND 500
+    AND display_keyword = btrim(display_keyword)
+  ),
+  CHECK (
+    length(normalized_keyword) BETWEEN 1 AND 500
+    AND normalized_keyword = btrim(normalized_keyword)
+    AND normalized_keyword = lower(normalized_keyword)
+    AND normalized_keyword !~ '[[:space:]]{2,}'
+  ),
+  CHECK (market ~ '^[A-Z]{2}$'),
+  CHECK (app.is_bcp47_language_tag(language_tag)),
+  CHECK (
+    source_pointer IS NULL
+    OR source_pointer = '/valueJson/keyword'
+    OR source_pointer ~ '^/valueJson/topQueries/[0-9]/query$'
+  ),
+  CHECK (
+    length(source_ref) BETWEEN 1 AND 2048
+    AND source_ref = btrim(source_ref)
+  ),
+  CHECK (
+    (
+      source_kind = 'manual'
+      AND scope_basis = 'manual'
+      AND data_snapshot_id IS NULL
+      AND normalized_observation_id IS NULL
+      AND source_pointer IS NULL
+      AND provider_data_as_of IS NULL
+    )
+    OR (
+      source_kind <> 'manual'
+      AND scope_basis <> 'manual'
+      AND data_snapshot_id IS NOT NULL
+      AND normalized_observation_id IS NOT NULL
+      AND source_pointer IS NOT NULL
+    )
+  ),
+  UNIQUE (project_id, source_kind, source_ref)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS keyword_occurrences_observation_pointer_idx
+  ON app.keyword_occurrences(normalized_observation_id, source_pointer)
+  WHERE normalized_observation_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS keyword_occurrences_project_collected_idx
+  ON app.keyword_occurrences(project_id, collected_at DESC, id DESC);
+
+-- Stable keyword identity. Cluster membership and Existing Page/New Asset are
+-- governed review decisions, never part of the identity tuple.
+CREATE TABLE IF NOT EXISTS app.keyword_entities (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id uuid NOT NULL
+    REFERENCES app.workspaces(id) ON DELETE RESTRICT,
+  project_id uuid NOT NULL
+    REFERENCES app.client_projects(id) ON DELETE RESTRICT,
+  display_keyword text NOT NULL,
+  normalized_keyword text NOT NULL,
+  market text NOT NULL,
+  language_tag text NOT NULL,
+  query_kind text NOT NULL CHECK (
+    query_kind IN ('search_query','generative_query')
+  ),
+  status text NOT NULL DEFAULT 'candidate'
+    CHECK (status IN ('candidate','approved','excluded','parked')),
+  intent text,
+  buyer_stage text,
+  cluster_key text,
+  mapping_decision text NOT NULL DEFAULT 'unassigned'
+    CHECK (mapping_decision IN ('unassigned','existing_page','new_asset')),
+  mapped_site_page_id uuid
+    REFERENCES app.site_pages(id) ON DELETE RESTRICT,
+  mapping_review_state text NOT NULL DEFAULT 'unreviewed'
+    CHECK (mapping_review_state IN ('unreviewed','confirmed')),
+  mapping_revision integer NOT NULL DEFAULT 0 CHECK (mapping_revision >= 0),
+  first_seen_at timestamptz NOT NULL,
+  last_seen_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    length(display_keyword) BETWEEN 1 AND 500
+    AND display_keyword = btrim(display_keyword)
+  ),
+  CHECK (
+    length(normalized_keyword) BETWEEN 1 AND 500
+    AND normalized_keyword = btrim(normalized_keyword)
+    AND normalized_keyword = lower(normalized_keyword)
+    AND normalized_keyword !~ '[[:space:]]{2,}'
+  ),
+  CHECK (market ~ '^[A-Z]{2}$'),
+  CHECK (app.is_bcp47_language_tag(language_tag)),
+  CHECK (
+    intent IS NULL OR (
+      length(intent) BETWEEN 1 AND 100 AND intent = btrim(intent)
+    )
+  ),
+  CHECK (
+    buyer_stage IS NULL OR (
+      length(buyer_stage) BETWEEN 1 AND 100 AND buyer_stage = btrim(buyer_stage)
+    )
+  ),
+  CHECK (
+    cluster_key IS NULL OR (
+      length(cluster_key) BETWEEN 1 AND 200 AND cluster_key = btrim(cluster_key)
+    )
+  ),
+  CHECK (
+    (mapping_decision = 'existing_page' AND mapped_site_page_id IS NOT NULL)
+    OR (
+      mapping_decision IN ('unassigned','new_asset')
+      AND mapped_site_page_id IS NULL
+    )
+  ),
+  CHECK (first_seen_at <= last_seen_at),
+  UNIQUE (
+    project_id,
+    normalized_keyword,
+    market,
+    language_tag,
+    query_kind
+  )
+);
+
+CREATE INDEX IF NOT EXISTS keyword_entities_project_created_idx
+  ON app.keyword_entities(project_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS keyword_entities_project_review_idx
+  ON app.keyword_entities(
+    project_id,
+    status,
+    mapping_review_state,
+    updated_at DESC,
+    id DESC
+  );
+
+CREATE TABLE IF NOT EXISTS app.keyword_entity_sources (
+  workspace_id uuid NOT NULL
+    REFERENCES app.workspaces(id) ON DELETE RESTRICT,
+  project_id uuid NOT NULL
+    REFERENCES app.client_projects(id) ON DELETE RESTRICT,
+  keyword_entity_id uuid NOT NULL
+    REFERENCES app.keyword_entities(id) ON DELETE RESTRICT,
+  keyword_occurrence_id uuid NOT NULL
+    REFERENCES app.keyword_occurrences(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (keyword_entity_id, keyword_occurrence_id)
+);
+
+CREATE INDEX IF NOT EXISTS keyword_entity_sources_project_occurrence_idx
+  ON app.keyword_entity_sources(
+    project_id,
+    keyword_occurrence_id,
+    keyword_entity_id
+  );
+
+CREATE OR REPLACE FUNCTION app.enforce_keyword_occurrence_lineage()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  observation_provider text;
+  observation_metric_key text;
+  observation_origin text;
+  observation_keyword text;
+  observation_market text;
+  observation_language text;
+  collection_market text;
+  collection_language text;
+  context_basis text;
+  context_market text;
+  context_language text;
+  snapshot_data_as_of text;
+  observation_data_as_of text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.client_projects project
+    WHERE project.id = NEW.project_id
+      AND project.workspace_id = NEW.workspace_id
+      AND project.archived_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'keyword occurrence project is absent or archived'
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- A manual entry is itself the immutable source record. It must not invent a
+  -- provider Snapshot or Observation merely to satisfy a shared table shape.
+  IF NEW.source_kind = 'manual' THEN
+    IF NEW.scope_basis <> 'manual'
+       OR NEW.data_snapshot_id IS NOT NULL
+       OR NEW.normalized_observation_id IS NOT NULL
+       OR NEW.source_pointer IS NOT NULL
+       OR NEW.provider_data_as_of IS NOT NULL
+       OR NEW.source_ref IS DISTINCT FROM ('manual:' || NEW.id::text) THEN
+      RAISE EXCEPTION 'manual keyword occurrence has invalid first-class provenance'
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  SELECT
+    observation.provider,
+    observation.metric_key,
+    observation.origin,
+    CASE
+      WHEN NEW.source_pointer = '/valueJson/keyword'
+        THEN observation.value_json ->> 'keyword'
+      WHEN NEW.source_pointer ~ '^/valueJson/topQueries/[0-9]/query$'
+        THEN observation.value_json #>> ARRAY[
+          'topQueries',
+          substring(
+            NEW.source_pointer
+            FROM '^/valueJson/topQueries/([0-9])/query$'
+          ),
+          'query'
+        ]
+      ELSE NULL
+    END,
+    observation.value_json ->> 'marketCode',
+    observation.value_json ->> 'languageCode',
+    snapshot.summary #>> '{collectionScope,marketCode}',
+    snapshot.summary #>> '{collectionScope,languageTag}',
+    snapshot.summary #>> '{keywordLibraryContext,basis}',
+    snapshot.summary #>> '{keywordLibraryContext,marketCode}',
+    snapshot.summary #>> '{keywordLibraryContext,languageTag}',
+    snapshot.summary #>> '{timing,dataAsOf}',
+    observation.value_json ->> 'providerDataAsOf'
+  INTO
+    observation_provider,
+    observation_metric_key,
+    observation_origin,
+    observation_keyword,
+    observation_market,
+    observation_language,
+    collection_market,
+    collection_language,
+    context_basis,
+    context_market,
+    context_language,
+    snapshot_data_as_of,
+    observation_data_as_of
+  FROM app.normalized_observations observation
+  JOIN app.data_snapshots snapshot
+    ON snapshot.id = NEW.data_snapshot_id
+   AND snapshot.id = observation.snapshot_id
+   AND snapshot.workspace_id = NEW.workspace_id
+   AND snapshot.project_id = NEW.project_id
+  WHERE observation.id = NEW.normalized_observation_id
+    AND observation.workspace_id = NEW.workspace_id
+    AND observation.project_id = NEW.project_id
+    AND observation.observed_at = NEW.collected_at;
+
+  IF observation_provider IS NULL THEN
+    RAISE EXCEPTION 'keyword occurrence lacks canonical Observation lineage'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NOT (
+    (
+      NEW.source_kind = 'csv_import'
+      AND NEW.scope_basis = 'user_provided'
+      AND NEW.source_pointer = '/valueJson/keyword'
+      AND observation_provider = 'csv'
+      AND observation_metric_key = 'csv.keyword_gap.v1'
+    )
+    OR (
+      NEW.source_kind = 'dataforseo_ranked'
+      AND NEW.scope_basis = 'provider_collection_scope'
+      AND NEW.source_pointer = '/valueJson/keyword'
+      AND observation_provider = 'dataforseo'
+      AND observation_metric_key = 'csv.keyword_gap.v1'
+    )
+    OR (
+      NEW.source_kind = 'gsc_top_query'
+      AND NEW.scope_basis = 'project_context'
+      AND NEW.source_pointer ~ '^/valueJson/topQueries/[0-9]/query$'
+      AND observation_provider = 'gsc'
+      AND observation_metric_key = 'gsc.page.v1'
+    )
+  ) THEN
+    RAISE EXCEPTION 'keyword occurrence source kind/pointer is not supported by its Observation'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NEW.query_kind <> 'search_query' THEN
+    RAISE EXCEPTION 'current canonical keyword sources produce SearchQuery only'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NEW.source_kind = 'dataforseo_ranked' THEN
+    IF collection_market IS NULL OR collection_language IS NULL THEN
+      RAISE EXCEPTION 'DataForSEO keyword occurrence requires frozen provider collection scope'
+        USING ERRCODE = '23514';
+    END IF;
+    observation_market := collection_market;
+    observation_language := collection_language;
+  ELSIF NEW.source_kind = 'gsc_top_query' THEN
+    -- Search Analytics has no market/language request filter. This explicitly
+    -- frozen project context is not presented as provider collection scope.
+    IF context_basis IS DISTINCT FROM 'project_context'
+       OR context_market IS NULL
+       OR context_language IS NULL THEN
+      RAISE EXCEPTION 'GSC keyword occurrence requires frozen Keyword Library project context'
+        USING ERRCODE = '23514';
+    END IF;
+    observation_market := context_market;
+    observation_language := context_language;
+  END IF;
+  IF NEW.source_ref IS DISTINCT FROM (
+    'observation:' || NEW.normalized_observation_id::text || '#' ||
+    NEW.source_pointer
+  ) THEN
+    RAISE EXCEPTION 'keyword occurrence source ref is not its canonical Observation pointer'
+      USING ERRCODE = '23514';
+  END IF;
+  IF observation_keyword IS NULL OR regexp_replace(
+    lower(btrim(observation_keyword)),
+    '[[:space:]]+',
+    ' ',
+    'g'
+  ) IS DISTINCT FROM NEW.normalized_keyword THEN
+    RAISE EXCEPTION 'keyword occurrence identity does not match Observation keyword'
+      USING ERRCODE = '23514';
+  END IF;
+  IF observation_market IS NULL OR upper(observation_market) IS DISTINCT FROM NEW.market THEN
+    RAISE EXCEPTION 'keyword occurrence market does not match Observation provenance'
+      USING ERRCODE = '23514';
+  END IF;
+  IF observation_language IS NULL OR lower(observation_language) IS DISTINCT FROM lower(NEW.language_tag) THEN
+    RAISE EXCEPTION 'keyword occurrence language does not match Observation provenance'
+      USING ERRCODE = '23514';
+  END IF;
+  IF coalesce(observation_data_as_of, snapshot_data_as_of) IS NULL THEN
+    IF NEW.provider_data_as_of IS NOT NULL THEN
+      RAISE EXCEPTION 'keyword provider data timestamp lacks canonical provenance'
+      USING ERRCODE = '23514';
+    END IF;
+  ELSIF observation_data_as_of IS NOT NULL
+     AND snapshot_data_as_of IS NOT NULL
+     AND observation_data_as_of::timestamptz IS DISTINCT FROM
+       snapshot_data_as_of::timestamptz THEN
+    RAISE EXCEPTION 'canonical keyword provider timestamps contradict each other'
+      USING ERRCODE = '23514';
+  ELSIF NEW.provider_data_as_of IS NULL OR coalesce(
+    observation_data_as_of,
+    snapshot_data_as_of
+  )::timestamptz IS DISTINCT FROM NEW.provider_data_as_of THEN
+    RAISE EXCEPTION 'keyword provider data timestamp omits or conflicts with canonical provenance'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS keyword_occurrences_lineage_guard
+  ON app.keyword_occurrences;
+CREATE TRIGGER keyword_occurrences_lineage_guard
+  BEFORE INSERT ON app.keyword_occurrences
+  FOR EACH ROW
+  EXECUTE FUNCTION app.enforce_keyword_occurrence_lineage();
+
+DROP TRIGGER IF EXISTS keyword_occurrences_append_only
+  ON app.keyword_occurrences;
+CREATE TRIGGER keyword_occurrences_append_only
+  BEFORE UPDATE OR DELETE ON app.keyword_occurrences
+  FOR EACH ROW
+  EXECUTE FUNCTION app.reject_append_only_mutation();
+
+CREATE OR REPLACE FUNCTION app.enforce_keyword_entity_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  review_changed boolean;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.client_projects project
+    WHERE project.id = NEW.project_id
+      AND project.workspace_id = NEW.workspace_id
+      AND project.archived_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'keyword entity project is absent or archived'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NEW.mapping_decision = 'existing_page' AND NOT EXISTS (
+    SELECT 1
+    FROM app.site_pages page
+    WHERE page.id = NEW.mapped_site_page_id
+      AND page.workspace_id = NEW.workspace_id
+      AND page.project_id = NEW.project_id
+  ) THEN
+    RAISE EXCEPTION 'keyword Existing Page mapping is outside project scope'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+     OR NEW.project_id IS DISTINCT FROM OLD.project_id
+     OR NEW.display_keyword IS DISTINCT FROM OLD.display_keyword
+     OR NEW.normalized_keyword IS DISTINCT FROM OLD.normalized_keyword
+     OR NEW.market IS DISTINCT FROM OLD.market
+     OR NEW.language_tag IS DISTINCT FROM OLD.language_tag
+     OR NEW.query_kind IS DISTINCT FROM OLD.query_kind
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'keyword stable identity is immutable'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NEW.first_seen_at > OLD.first_seen_at
+     OR NEW.last_seen_at < OLD.last_seen_at THEN
+    RAISE EXCEPTION 'keyword observation window may only expand'
+      USING ERRCODE = '23514';
+  END IF;
+
+  review_changed :=
+    NEW.status IS DISTINCT FROM OLD.status
+    OR NEW.intent IS DISTINCT FROM OLD.intent
+    OR NEW.buyer_stage IS DISTINCT FROM OLD.buyer_stage
+    OR NEW.cluster_key IS DISTINCT FROM OLD.cluster_key
+    OR NEW.mapping_decision IS DISTINCT FROM OLD.mapping_decision
+    OR NEW.mapped_site_page_id IS DISTINCT FROM OLD.mapped_site_page_id
+    OR NEW.mapping_review_state IS DISTINCT FROM OLD.mapping_review_state;
+
+  IF review_changed AND NEW.mapping_revision <> OLD.mapping_revision + 1 THEN
+    RAISE EXCEPTION 'keyword review update must advance exactly one revision'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NOT review_changed AND NEW.mapping_revision <> OLD.mapping_revision THEN
+    RAISE EXCEPTION 'keyword mapping revision cannot advance without a review change'
+      USING ERRCODE = '23514';
+  END IF;
+
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS keyword_entities_mutation_guard
+  ON app.keyword_entities;
+CREATE TRIGGER keyword_entities_mutation_guard
+  BEFORE INSERT OR UPDATE ON app.keyword_entities
+  FOR EACH ROW
+  EXECUTE FUNCTION app.enforce_keyword_entity_mutation();
+
+DROP TRIGGER IF EXISTS keyword_entities_no_delete
+  ON app.keyword_entities;
+CREATE TRIGGER keyword_entities_no_delete
+  BEFORE DELETE ON app.keyword_entities
+  FOR EACH ROW
+  EXECUTE FUNCTION app.reject_append_only_mutation();
+
+CREATE OR REPLACE FUNCTION app.enforce_keyword_entity_source_lineage()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.client_projects project
+    JOIN app.keyword_entities entity
+      ON entity.id = NEW.keyword_entity_id
+     AND entity.workspace_id = NEW.workspace_id
+     AND entity.project_id = NEW.project_id
+    JOIN app.keyword_occurrences occurrence
+      ON occurrence.id = NEW.keyword_occurrence_id
+     AND occurrence.workspace_id = NEW.workspace_id
+     AND occurrence.project_id = NEW.project_id
+     AND occurrence.normalized_keyword = entity.normalized_keyword
+     AND occurrence.market = entity.market
+     AND occurrence.language_tag = entity.language_tag
+     AND occurrence.query_kind = entity.query_kind
+    WHERE project.id = NEW.project_id
+      AND project.workspace_id = NEW.workspace_id
+      AND project.archived_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'keyword entity source membership has invalid project provenance'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS keyword_entity_sources_lineage_guard
+  ON app.keyword_entity_sources;
+CREATE TRIGGER keyword_entity_sources_lineage_guard
+  BEFORE INSERT ON app.keyword_entity_sources
+  FOR EACH ROW
+  EXECUTE FUNCTION app.enforce_keyword_entity_source_lineage();
+
+DROP TRIGGER IF EXISTS keyword_entity_sources_append_only
+  ON app.keyword_entity_sources;
+CREATE TRIGGER keyword_entity_sources_append_only
+  BEFORE UPDATE OR DELETE ON app.keyword_entity_sources
+  FOR EACH ROW
+  EXECUTE FUNCTION app.reject_append_only_mutation();
+
+-- A single SQL call owns occurrence dedupe, stable entity convergence and
+-- membership. The unique constraints serialize concurrent retries; a replay
+-- with changed semantic bytes fails rather than mutating immutable provenance.
+CREATE OR REPLACE FUNCTION app.upsert_keyword_library_occurrence(
+  selected_workspace_id uuid,
+  selected_project_id uuid,
+  selected_occurrence_id uuid,
+  selected_data_snapshot_id uuid,
+  selected_normalized_observation_id uuid,
+  selected_display_keyword text,
+  selected_normalized_keyword text,
+  selected_market text,
+  selected_language_tag text,
+  selected_query_kind text,
+  selected_source_kind text,
+  selected_scope_basis text,
+  selected_source_pointer text,
+  selected_source_ref text,
+  selected_collected_at timestamptz,
+  selected_provider_data_as_of timestamptz
+)
+RETURNS TABLE (occurrence_id uuid, entity_id uuid)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  occurrence_row app.keyword_occurrences%ROWTYPE;
+  entity_row app.keyword_entities%ROWTYPE;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.client_projects project
+    WHERE project.id = selected_project_id
+      AND project.workspace_id = selected_workspace_id
+      AND project.archived_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'keyword library project is absent or archived'
+      USING ERRCODE = '23514';
+  END IF;
+  IF (selected_source_kind = 'manual') IS DISTINCT FROM
+     (selected_occurrence_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'manual entry id is required only for manual occurrences'
+      USING ERRCODE = '23514';
+  END IF;
+
+  INSERT INTO app.keyword_occurrences (
+    id,
+    workspace_id,
+    project_id,
+    data_snapshot_id,
+    normalized_observation_id,
+    display_keyword,
+    normalized_keyword,
+    market,
+    language_tag,
+    query_kind,
+    source_kind,
+    scope_basis,
+    source_pointer,
+    source_ref,
+    collected_at,
+    provider_data_as_of
+  ) VALUES (
+    coalesce(selected_occurrence_id, gen_random_uuid()),
+    selected_workspace_id,
+    selected_project_id,
+    selected_data_snapshot_id,
+    selected_normalized_observation_id,
+    selected_display_keyword,
+    selected_normalized_keyword,
+    selected_market,
+    selected_language_tag,
+    selected_query_kind,
+    selected_source_kind,
+    selected_scope_basis,
+    selected_source_pointer,
+    selected_source_ref,
+    selected_collected_at,
+    selected_provider_data_as_of
+  )
+  ON CONFLICT (project_id, source_kind, source_ref) DO NOTHING
+  RETURNING * INTO occurrence_row;
+
+  IF occurrence_row.id IS NULL THEN
+    SELECT *
+    INTO occurrence_row
+    FROM app.keyword_occurrences occurrence
+    WHERE occurrence.project_id = selected_project_id
+      AND occurrence.source_kind = selected_source_kind
+      AND occurrence.source_ref = selected_source_ref;
+  END IF;
+
+  IF occurrence_row.id IS NULL
+     OR (
+       selected_source_kind = 'manual'
+       AND occurrence_row.id IS DISTINCT FROM selected_occurrence_id
+     )
+     OR occurrence_row.workspace_id IS DISTINCT FROM selected_workspace_id
+     OR occurrence_row.project_id IS DISTINCT FROM selected_project_id
+     OR occurrence_row.data_snapshot_id IS DISTINCT FROM selected_data_snapshot_id
+     OR occurrence_row.normalized_observation_id IS DISTINCT FROM selected_normalized_observation_id
+     OR occurrence_row.display_keyword IS DISTINCT FROM selected_display_keyword
+     OR occurrence_row.normalized_keyword IS DISTINCT FROM selected_normalized_keyword
+     OR occurrence_row.market IS DISTINCT FROM selected_market
+     OR occurrence_row.language_tag IS DISTINCT FROM selected_language_tag
+     OR occurrence_row.query_kind IS DISTINCT FROM selected_query_kind
+     OR occurrence_row.source_kind IS DISTINCT FROM selected_source_kind
+     OR occurrence_row.scope_basis IS DISTINCT FROM selected_scope_basis
+     OR occurrence_row.source_pointer IS DISTINCT FROM selected_source_pointer
+     OR occurrence_row.source_ref IS DISTINCT FROM selected_source_ref
+     OR occurrence_row.collected_at IS DISTINCT FROM selected_collected_at
+     OR occurrence_row.provider_data_as_of IS DISTINCT FROM selected_provider_data_as_of THEN
+    RAISE EXCEPTION 'keyword source occurrence conflicts with immutable provenance'
+      USING ERRCODE = '23514';
+  END IF;
+
+  INSERT INTO app.keyword_entities (
+    workspace_id,
+    project_id,
+    display_keyword,
+    normalized_keyword,
+    market,
+    language_tag,
+    query_kind,
+    first_seen_at,
+    last_seen_at
+  ) VALUES (
+    selected_workspace_id,
+    selected_project_id,
+    selected_display_keyword,
+    selected_normalized_keyword,
+    selected_market,
+    selected_language_tag,
+    selected_query_kind,
+    selected_collected_at,
+    selected_collected_at
+  )
+  ON CONFLICT (
+    project_id,
+    normalized_keyword,
+    market,
+    language_tag,
+    query_kind
+  ) DO UPDATE SET
+    first_seen_at = least(
+      app.keyword_entities.first_seen_at,
+      EXCLUDED.first_seen_at
+    ),
+    last_seen_at = greatest(
+      app.keyword_entities.last_seen_at,
+      EXCLUDED.last_seen_at
+    )
+  RETURNING * INTO entity_row;
+
+  IF entity_row.workspace_id IS DISTINCT FROM selected_workspace_id THEN
+    RAISE EXCEPTION 'keyword stable identity conflicts with workspace scope'
+      USING ERRCODE = '23514';
+  END IF;
+
+  INSERT INTO app.keyword_entity_sources (
+    workspace_id,
+    project_id,
+    keyword_entity_id,
+    keyword_occurrence_id
+  ) VALUES (
+    selected_workspace_id,
+    selected_project_id,
+    entity_row.id,
+    occurrence_row.id
+  )
+  ON CONFLICT (keyword_entity_id, keyword_occurrence_id) DO NOTHING;
+
+  RETURN QUERY SELECT occurrence_row.id, entity_row.id;
+END;
+$$;
+-- END EXACT EXECUTABLE MIGRATION 0018_keyword_library_foundation
+
+-- BEGIN EXACT EXECUTABLE MIGRATION 0019_competitor_library_foundation
+-- Competitors are stable project/domain identities. A domain is deliberately
+-- narrower than a URL: lowercase ASCII hostname, no scheme, credentials, port,
+-- path or wildcard. IDNs must arrive in canonical punycode form.
+CREATE OR REPLACE FUNCTION app.is_normalized_competitor_domain(candidate text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+STRICT
+AS $$
+  SELECT length(candidate) BETWEEN 1 AND 253
+    AND candidate = btrim(candidate)
+    AND candidate = lower(candidate)
+    AND candidate ~ '^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$';
+$$;
+
+CREATE OR REPLACE FUNCTION app.is_competitor_analysis_scope(candidate text[])
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+AS $$
+DECLARE
+  scope text;
+BEGIN
+  IF cardinality(candidate) NOT BETWEEN 0 AND 5 THEN
+    RETURN false;
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM unnest(candidate) value
+    WHERE value IS NULL
+       OR value NOT IN (
+         'positioning',
+         'product_capability',
+         'keyword_gap',
+         'content',
+         'serp_visibility'
+       )
+  ) THEN
+    RETURN false;
+  END IF;
+  IF (SELECT count(*) FROM unnest(candidate) value)
+     IS DISTINCT FROM
+     (SELECT count(DISTINCT value) FROM unnest(candidate) value) THEN
+    RETURN false;
+  END IF;
+  FOREACH scope IN ARRAY candidate LOOP
+    IF scope IS DISTINCT FROM btrim(scope) THEN
+      RETURN false;
+    END IF;
+  END LOOP;
+  RETURN true;
+END;
+$$;
+
+-- Product Profile evidence references remain typed JSON objects. A UUID list
+-- would lose whether an anchor was a Snapshot, Observation, user edit, etc.
+CREATE OR REPLACE FUNCTION app.is_typed_product_profile_evidence_refs(
+  candidate jsonb
+)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+AS $$
+DECLARE
+  evidence_ref jsonb;
+  ref_kind text;
+  ref_id text;
+  target_id text;
+  expected_keys integer;
+  seen_ids text[] := ARRAY[]::text[];
+  uuid_pattern constant text :=
+    '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
+BEGIN
+  IF jsonb_typeof(candidate) IS DISTINCT FROM 'array'
+     OR jsonb_array_length(candidate) NOT BETWEEN 1 AND 50 THEN
+    RETURN false;
+  END IF;
+
+  FOR evidence_ref IN SELECT value FROM jsonb_array_elements(candidate)
+  LOOP
+    IF jsonb_typeof(evidence_ref) IS DISTINCT FROM 'object' THEN
+      RETURN false;
+    END IF;
+    ref_kind := evidence_ref ->> 'kind';
+    ref_id := evidence_ref ->> 'evidenceRefId';
+    IF ref_id IS NULL OR ref_id !~ uuid_pattern OR ref_id = ANY(seen_ids) THEN
+      RETURN false;
+    END IF;
+    seen_ids := array_append(seen_ids, ref_id);
+
+    CASE ref_kind
+      WHEN 'declaredHint', 'userEdit' THEN
+        expected_keys := 2;
+        target_id := NULL;
+      WHEN 'snapshot' THEN
+        expected_keys := 3;
+        target_id := evidence_ref ->> 'snapshotId';
+      WHEN 'pageSnapshot' THEN
+        expected_keys := 3;
+        target_id := evidence_ref ->> 'pageSnapshotId';
+      WHEN 'observation' THEN
+        expected_keys := 3;
+        target_id := evidence_ref ->> 'observationId';
+      WHEN 'analysisInvocation' THEN
+        expected_keys := 3;
+        target_id := evidence_ref ->> 'analysisInvocationId';
+      ELSE
+        RETURN false;
+    END CASE;
+
+    IF (SELECT count(*) FROM jsonb_object_keys(evidence_ref))
+       IS DISTINCT FROM expected_keys THEN
+      RETURN false;
+    END IF;
+    IF expected_keys = 3 AND (target_id IS NULL OR target_id !~ uuid_pattern) THEN
+      RETURN false;
+    END IF;
+  END LOOP;
+  RETURN true;
+END;
+$$;
+
+CREATE TABLE IF NOT EXISTS app.competitor_entities (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id uuid NOT NULL
+    REFERENCES app.workspaces(id) ON DELETE RESTRICT,
+  project_id uuid NOT NULL
+    REFERENCES app.client_projects(id) ON DELETE RESTRICT,
+  domain text NOT NULL CHECK (app.is_normalized_competitor_domain(domain)),
+  name text CHECK (
+    name IS NULL
+    OR (length(name) BETWEEN 1 AND 160 AND name = btrim(name))
+  ),
+  review_status text NOT NULL DEFAULT 'candidate'
+    CHECK (review_status IN ('candidate','approved','excluded')),
+  relationship text CHECK (
+    relationship IS NULL
+    OR relationship IN (
+      'direct',
+      'indirect',
+      'status_quo',
+      'benchmark',
+      'publisher'
+    )
+  ),
+  analysis_scope text[] NOT NULL DEFAULT '{}'
+    CHECK (app.is_competitor_analysis_scope(analysis_scope)),
+  revision integer NOT NULL DEFAULT 0 CHECK (revision >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (project_id, domain),
+  CHECK (
+    (
+      review_status = 'approved'
+      AND relationship IS NOT NULL
+      AND cardinality(analysis_scope) BETWEEN 1 AND 5
+    )
+    OR (
+      review_status IN ('candidate','excluded')
+      AND relationship IS NULL
+      AND cardinality(analysis_scope) = 0
+    )
+  )
+);
+
+CREATE INDEX IF NOT EXISTS competitor_entities_project_created_idx
+  ON app.competitor_entities(project_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS competitor_entities_project_status_idx
+  ON app.competitor_entities(project_id, review_status, created_at DESC, id DESC);
+
+-- One immutable row is one exact origin occurrence. Only a canonical confirmed
+-- Product Profile version, a canonical CSV Observation pointer, or a manual
+-- entry may be represented in v1. There is intentionally no DataForSEO, SERP,
+-- or AI-citation discriminator in this table.
+CREATE TABLE IF NOT EXISTS app.competitor_origin_occurrences (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id uuid NOT NULL
+    REFERENCES app.workspaces(id) ON DELETE RESTRICT,
+  project_id uuid NOT NULL
+    REFERENCES app.client_projects(id) ON DELETE RESTRICT,
+  competitor_id uuid NOT NULL
+    REFERENCES app.competitor_entities(id) ON DELETE RESTRICT,
+  origin_kind text NOT NULL CHECK (
+    origin_kind IN ('product_profile','csv_keyword_gap','manual')
+  ),
+  source_name text CHECK (
+    source_name IS NULL
+    OR (
+      length(source_name) BETWEEN 1 AND 160
+      AND source_name = btrim(source_name)
+    )
+  ),
+  product_profile_id uuid
+    REFERENCES app.icp_profiles(id) ON DELETE RESTRICT,
+  profile_version integer CHECK (
+    profile_version IS NULL OR profile_version >= 1
+  ),
+  candidate_id uuid,
+  field_provenance_path text,
+  evidence_refs jsonb,
+  source_review_status text CHECK (
+    source_review_status IS NULL
+    OR source_review_status IN ('candidate','approved','excluded')
+  ),
+  source_relationship text CHECK (
+    source_relationship IS NULL
+    OR source_relationship IN ('direct','indirect')
+  ),
+  source_analysis_scope text[],
+  data_snapshot_id uuid
+    REFERENCES app.data_snapshots(id) ON DELETE RESTRICT,
+  normalized_observation_id uuid
+    REFERENCES app.normalized_observations(id) ON DELETE RESTRICT,
+  import_preview_id uuid
+    REFERENCES app.import_previews(id) ON DELETE RESTRICT,
+  source_pointer text,
+  manual_entry_id uuid,
+  observed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    source_analysis_scope IS NULL
+    OR app.is_competitor_analysis_scope(source_analysis_scope)
+  ),
+  CHECK (
+    evidence_refs IS NULL
+    OR app.is_typed_product_profile_evidence_refs(evidence_refs)
+  ),
+  CHECK (
+    (
+      origin_kind = 'product_profile'
+      AND source_name IS NOT NULL
+      AND product_profile_id IS NOT NULL
+      AND profile_version IS NOT NULL
+      AND candidate_id IS NOT NULL
+      AND field_provenance_path IS NOT NULL
+      AND evidence_refs IS NOT NULL
+      AND source_review_status IS NOT NULL
+      AND source_analysis_scope IS NOT NULL
+      AND data_snapshot_id IS NULL
+      AND normalized_observation_id IS NULL
+      AND import_preview_id IS NULL
+      AND source_pointer IS NULL
+      AND manual_entry_id IS NULL
+      AND observed_at IS NULL
+    )
+    OR (
+      origin_kind = 'csv_keyword_gap'
+      AND source_name IS NULL
+      AND product_profile_id IS NULL
+      AND profile_version IS NULL
+      AND candidate_id IS NULL
+      AND field_provenance_path IS NULL
+      AND evidence_refs IS NULL
+      AND source_review_status IS NULL
+      AND source_relationship IS NULL
+      AND source_analysis_scope IS NULL
+      AND data_snapshot_id IS NOT NULL
+      AND normalized_observation_id IS NOT NULL
+      AND import_preview_id IS NOT NULL
+      AND source_pointer = '/valueJson/competitorDomain'
+      AND manual_entry_id IS NULL
+      AND observed_at IS NOT NULL
+    )
+    OR (
+      origin_kind = 'manual'
+      AND product_profile_id IS NULL
+      AND profile_version IS NULL
+      AND candidate_id IS NULL
+      AND field_provenance_path IS NULL
+      AND evidence_refs IS NULL
+      AND source_review_status IS NULL
+      AND source_relationship IS NULL
+      AND source_analysis_scope IS NULL
+      AND data_snapshot_id IS NULL
+      AND normalized_observation_id IS NULL
+      AND import_preview_id IS NULL
+      AND source_pointer IS NULL
+      AND manual_entry_id IS NOT NULL
+      AND id = manual_entry_id
+      AND observed_at IS NULL
+    )
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS competitor_origins_profile_identity_idx
+  ON app.competitor_origin_occurrences(
+    product_profile_id,
+    profile_version,
+    candidate_id
+  )
+  WHERE origin_kind = 'product_profile';
+CREATE UNIQUE INDEX IF NOT EXISTS competitor_origins_csv_identity_idx
+  ON app.competitor_origin_occurrences(
+    normalized_observation_id,
+    source_pointer
+  )
+  WHERE origin_kind = 'csv_keyword_gap';
+CREATE UNIQUE INDEX IF NOT EXISTS competitor_origins_manual_identity_idx
+  ON app.competitor_origin_occurrences(manual_entry_id)
+  WHERE origin_kind = 'manual';
+CREATE INDEX IF NOT EXISTS competitor_origins_entity_observed_idx
+  ON app.competitor_origin_occurrences(
+    competitor_id,
+    observed_at DESC NULLS LAST,
+    created_at DESC,
+    id DESC
+  );
+
+CREATE OR REPLACE FUNCTION app.enforce_competitor_entity_governance()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'competitor stable identities cannot be deleted'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.client_projects project
+    WHERE project.id = NEW.project_id
+      AND project.workspace_id = NEW.workspace_id
+      AND project.archived_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'competitor project is absent, archived, or cross-workspace'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.revision IS DISTINCT FROM 0 THEN
+      RAISE EXCEPTION 'competitor governance must begin at revision zero'
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+     OR NEW.project_id IS DISTINCT FROM OLD.project_id
+     OR NEW.domain IS DISTINCT FROM OLD.domain
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'competitor stable identity is immutable'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NEW.revision IS DISTINCT FROM OLD.revision + 1 THEN
+    RAISE EXCEPTION 'competitor governance revision must advance exactly once'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NEW.name IS NOT DISTINCT FROM OLD.name
+     AND NEW.review_status IS NOT DISTINCT FROM OLD.review_status
+     AND NEW.relationship IS NOT DISTINCT FROM OLD.relationship
+     AND NEW.analysis_scope IS NOT DISTINCT FROM OLD.analysis_scope THEN
+    RAISE EXCEPTION 'competitor revision requires a governance change'
+      USING ERRCODE = '23514';
+  END IF;
+  NEW.updated_at := clock_timestamp();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS competitor_entities_governance_guard
+  ON app.competitor_entities;
+CREATE TRIGGER competitor_entities_governance_guard
+  BEFORE INSERT OR UPDATE OR DELETE ON app.competitor_entities
+  FOR EACH ROW
+  EXECUTE FUNCTION app.enforce_competitor_entity_governance();
+
+CREATE OR REPLACE FUNCTION app.enforce_competitor_origin_lineage()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  entity_row app.competitor_entities%ROWTYPE;
+  profile_row app.icp_profiles%ROWTYPE;
+  profile_candidate jsonb;
+  candidate_index integer;
+  candidate_count integer;
+  provenance_count integer;
+  provenance_derivation text;
+BEGIN
+  IF TG_OP IN ('UPDATE','DELETE') THEN
+    RAISE EXCEPTION 'competitor origin occurrences are append-only'
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT entity.*
+  INTO entity_row
+  FROM app.competitor_entities entity
+  JOIN app.client_projects project
+    ON project.id = entity.project_id
+   AND project.workspace_id = entity.workspace_id
+   AND project.archived_at IS NULL
+  WHERE entity.id = NEW.competitor_id
+    AND entity.workspace_id = NEW.workspace_id
+    AND entity.project_id = NEW.project_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'competitor origin does not match an active scoped entity'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NEW.origin_kind = 'product_profile' THEN
+    SELECT profile.*
+    INTO profile_row
+    FROM app.icp_profiles profile
+    JOIN app.client_projects project
+      ON project.id = profile.project_id
+     AND project.workspace_id = profile.workspace_id
+     AND project.confirmed_icp_profile_id = profile.id
+    WHERE profile.id = NEW.product_profile_id
+      AND profile.workspace_id = NEW.workspace_id
+      AND profile.project_id = NEW.project_id
+      AND profile.version = NEW.profile_version
+      AND profile.status = 'complete'
+      AND profile.profile ->> 'profileSchemaVersion'
+        = 'product-profile.0.3.0';
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'competitor Product Profile source is not the confirmed scoped version'
+        USING ERRCODE = '23514';
+    END IF;
+
+    SELECT count(*)::integer
+    INTO candidate_count
+    FROM jsonb_array_elements(profile_row.profile -> 'competitorCandidates') item
+    WHERE item ->> 'candidateId' = NEW.candidate_id::text;
+    IF candidate_count IS DISTINCT FROM 1 THEN
+      RAISE EXCEPTION 'competitor candidate identity is absent or ambiguous'
+        USING ERRCODE = '23514';
+    END IF;
+    SELECT item, (ordinality - 1)::integer
+    INTO profile_candidate, candidate_index
+    FROM jsonb_array_elements(profile_row.profile -> 'competitorCandidates')
+      WITH ORDINALITY candidate(item, ordinality)
+    WHERE item ->> 'candidateId' = NEW.candidate_id::text;
+
+    IF profile_candidate ->> 'domain' IS DISTINCT FROM entity_row.domain
+       OR profile_candidate ->> 'name' IS DISTINCT FROM NEW.source_name
+       OR profile_candidate ->> 'reviewStatus'
+         IS DISTINCT FROM NEW.source_review_status
+       OR profile_candidate ->> 'relationship'
+         IS DISTINCT FROM NEW.source_relationship
+       OR profile_candidate -> 'analysisScope'
+         IS DISTINCT FROM to_jsonb(NEW.source_analysis_scope) THEN
+      RAISE EXCEPTION 'competitor origin drifted from the immutable Product Profile candidate'
+        USING ERRCODE = '23514';
+    END IF;
+    IF NEW.source_review_status = 'approved'
+       AND (
+         NEW.source_relationship IS NULL
+         OR NEW.source_relationship NOT IN ('direct','indirect')
+         OR cardinality(NEW.source_analysis_scope) = 0
+       ) THEN
+      RAISE EXCEPTION 'approved Product Profile competitor is not actionable'
+        USING ERRCODE = '23514';
+    END IF;
+    IF NEW.field_provenance_path NOT IN (
+      '/competitorCandidates',
+      '/competitorCandidates/' || candidate_index::text
+    ) THEN
+      RAISE EXCEPTION 'competitor field provenance path does not cover its candidate'
+        USING ERRCODE = '23514';
+    END IF;
+    SELECT count(*)::integer, min(entry ->> 'derivation')
+    INTO provenance_count, provenance_derivation
+    FROM jsonb_array_elements(profile_row.profile -> 'fieldProvenance') entry
+    WHERE entry ->> 'path' = NEW.field_provenance_path
+      AND entry -> 'evidenceRefs' = NEW.evidence_refs;
+    IF provenance_count IS DISTINCT FROM 1
+       OR provenance_derivation IS NULL
+       OR provenance_derivation NOT IN (
+         'declared',
+         'observed',
+         'computed',
+         'inferred'
+       ) THEN
+      RAISE EXCEPTION 'competitor source does not match projectable Product Profile provenance'
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF NEW.origin_kind = 'csv_keyword_gap' THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM app.normalized_observations observation
+      JOIN app.data_snapshots snapshot
+        ON snapshot.id = observation.snapshot_id
+       AND snapshot.id = NEW.data_snapshot_id
+       AND snapshot.workspace_id = NEW.workspace_id
+       AND snapshot.project_id = NEW.project_id
+       AND snapshot.provider = 'csv'
+       AND snapshot.dataset_key = 'csv.keyword_gap.v1'
+       AND snapshot.method_version = 'csv.keyword_gap.v1'
+      JOIN app.collection_runs collection_run
+        ON collection_run.id = snapshot.collection_run_id
+       AND collection_run.workspace_id = NEW.workspace_id
+       AND collection_run.project_id = NEW.project_id
+       AND collection_run.site_id = snapshot.site_id
+       AND collection_run.provider = 'csv'
+       AND collection_run.operation = 'keyword_gap_import'
+       AND collection_run.method_version = 'csv.keyword_gap.v1'
+       AND collection_run.source_connection_id
+         IS NOT DISTINCT FROM snapshot.source_connection_id
+       AND collection_run.import_preview_id = NEW.import_preview_id
+      LEFT JOIN app.source_connections source_connection
+        ON source_connection.id = snapshot.source_connection_id
+       AND source_connection.workspace_id = NEW.workspace_id
+       AND source_connection.project_id = NEW.project_id
+       AND source_connection.site_id = snapshot.site_id
+       AND source_connection.provider = 'csv'
+      JOIN app.import_previews preview
+        ON preview.id = collection_run.import_preview_id
+       AND preview.workspace_id = NEW.workspace_id
+       AND preview.project_id = NEW.project_id
+       AND preview.site_id = snapshot.site_id
+       AND preview.template_id = 'keyword_gap_v1'
+       AND preview.status = 'consumed'
+      WHERE observation.id = NEW.normalized_observation_id
+        AND observation.workspace_id = NEW.workspace_id
+        AND observation.project_id = NEW.project_id
+        AND observation.provider = 'csv'
+        AND observation.metric_key = 'csv.keyword_gap.v1'
+        AND observation.origin = 'user_provided'
+        AND observation.grade = 'C'
+        AND observation.availability = 'available'
+        AND observation.observed_at = NEW.observed_at
+        AND observation.value_json ->> 'competitorDomain' = entity_row.domain
+        AND NEW.source_pointer = '/valueJson/competitorDomain'
+        AND (
+          snapshot.source_connection_id IS NULL
+          OR source_connection.id IS NOT NULL
+        )
+    ) THEN
+      RAISE EXCEPTION 'competitor CSV origin does not match canonical Observation lineage'
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF NEW.origin_kind = 'manual' THEN
+    IF NEW.id IS DISTINCT FROM NEW.manual_entry_id THEN
+      RAISE EXCEPTION 'manual competitor occurrence must retain its entry identity'
+        USING ERRCODE = '23514';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'unsupported competitor origin kind'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS competitor_origins_lineage_guard
+  ON app.competitor_origin_occurrences;
+CREATE TRIGGER competitor_origins_lineage_guard
+  BEFORE INSERT OR UPDATE OR DELETE ON app.competitor_origin_occurrences
+  FOR EACH ROW
+  EXECUTE FUNCTION app.enforce_competitor_origin_lineage();
+
+-- A single statement serializes an exact source identity, converges the stable
+-- domain entity, and appends the origin. Existing governance is never touched.
+CREATE OR REPLACE FUNCTION app.upsert_competitor_origin(
+  selected_workspace_id uuid,
+  selected_project_id uuid,
+  selected_domain text,
+  selected_name text,
+  selected_origin_kind text,
+  selected_product_profile_id uuid,
+  selected_profile_version integer,
+  selected_candidate_id uuid,
+  selected_field_provenance_path text,
+  selected_evidence_refs jsonb,
+  selected_source_review_status text,
+  selected_source_relationship text,
+  selected_source_analysis_scope text[],
+  selected_data_snapshot_id uuid,
+  selected_normalized_observation_id uuid,
+  selected_import_preview_id uuid,
+  selected_source_pointer text,
+  selected_manual_entry_id uuid
+)
+RETURNS TABLE (occurrence_id uuid, competitor_id uuid)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  entity_row app.competitor_entities%ROWTYPE;
+  occurrence_row app.competitor_origin_occurrences%ROWTYPE;
+  selected_observed_at timestamptz;
+  source_lock_key text;
+  seed_review_status text := 'candidate';
+  seed_relationship text := NULL;
+  seed_analysis_scope text[] := ARRAY[]::text[];
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.client_projects project
+    WHERE project.id = selected_project_id
+      AND project.workspace_id = selected_workspace_id
+      AND project.archived_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'competitor project is absent or archived'
+      USING ERRCODE = '23514';
+  END IF;
+  IF selected_domain IS NULL
+     OR NOT app.is_normalized_competitor_domain(selected_domain)
+     OR (
+       selected_name IS NOT NULL
+       AND (
+         length(selected_name) NOT BETWEEN 1 AND 160
+         OR selected_name IS DISTINCT FROM btrim(selected_name)
+       )
+     ) THEN
+    RAISE EXCEPTION 'competitor identity is not canonical'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF selected_origin_kind = 'product_profile' THEN
+    IF selected_name IS NULL
+       OR selected_product_profile_id IS NULL
+       OR selected_profile_version IS NULL
+       OR selected_profile_version < 1
+       OR selected_candidate_id IS NULL
+       OR selected_field_provenance_path IS NULL
+       OR selected_evidence_refs IS NULL
+       OR NOT app.is_typed_product_profile_evidence_refs(selected_evidence_refs)
+       OR selected_source_review_status IS NULL
+       OR selected_source_review_status NOT IN ('candidate','approved','excluded')
+       OR selected_source_relationship IS NOT NULL
+          AND selected_source_relationship NOT IN ('direct','indirect')
+       OR selected_source_analysis_scope IS NULL
+       OR NOT app.is_competitor_analysis_scope(selected_source_analysis_scope)
+       OR selected_data_snapshot_id IS NOT NULL
+       OR selected_normalized_observation_id IS NOT NULL
+       OR selected_import_preview_id IS NOT NULL
+       OR selected_source_pointer IS NOT NULL
+       OR selected_manual_entry_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Product Profile competitor source shape is invalid'
+        USING ERRCODE = '23514';
+    END IF;
+    IF selected_source_review_status = 'approved'
+       AND (
+         selected_source_relationship IS NULL
+         OR selected_source_relationship NOT IN ('direct','indirect')
+         OR cardinality(selected_source_analysis_scope) = 0
+       ) THEN
+      RAISE EXCEPTION 'approved Product Profile competitor source is incomplete'
+        USING ERRCODE = '23514';
+    END IF;
+    source_lock_key := selected_origin_kind || ':'
+      || selected_product_profile_id::text || ':'
+      || selected_profile_version::text || ':'
+      || selected_candidate_id::text;
+    seed_review_status := selected_source_review_status;
+    IF seed_review_status = 'approved' THEN
+      seed_relationship := selected_source_relationship;
+      seed_analysis_scope := selected_source_analysis_scope;
+    END IF;
+  ELSIF selected_origin_kind = 'csv_keyword_gap' THEN
+    IF selected_name IS NOT NULL
+       OR selected_product_profile_id IS NOT NULL
+       OR selected_profile_version IS NOT NULL
+       OR selected_candidate_id IS NOT NULL
+       OR selected_field_provenance_path IS NOT NULL
+       OR selected_evidence_refs IS NOT NULL
+       OR selected_source_review_status IS NOT NULL
+       OR selected_source_relationship IS NOT NULL
+       OR selected_source_analysis_scope IS NOT NULL
+       OR selected_data_snapshot_id IS NULL
+       OR selected_normalized_observation_id IS NULL
+       OR selected_import_preview_id IS NULL
+       OR selected_source_pointer IS DISTINCT FROM '/valueJson/competitorDomain'
+       OR selected_manual_entry_id IS NOT NULL THEN
+      RAISE EXCEPTION 'CSV competitor source shape is invalid'
+        USING ERRCODE = '23514';
+    END IF;
+    SELECT observation.observed_at
+    INTO selected_observed_at
+    FROM app.normalized_observations observation
+    WHERE observation.id = selected_normalized_observation_id;
+    source_lock_key := selected_origin_kind || ':'
+      || selected_normalized_observation_id::text || ':'
+      || selected_source_pointer;
+  ELSIF selected_origin_kind = 'manual' THEN
+    IF selected_product_profile_id IS NOT NULL
+       OR selected_profile_version IS NOT NULL
+       OR selected_candidate_id IS NOT NULL
+       OR selected_field_provenance_path IS NOT NULL
+       OR selected_evidence_refs IS NOT NULL
+       OR selected_source_review_status IS NOT NULL
+       OR selected_source_relationship IS NOT NULL
+       OR selected_source_analysis_scope IS NOT NULL
+       OR selected_data_snapshot_id IS NOT NULL
+       OR selected_normalized_observation_id IS NOT NULL
+       OR selected_import_preview_id IS NOT NULL
+       OR selected_source_pointer IS NOT NULL
+       OR selected_manual_entry_id IS NULL THEN
+      RAISE EXCEPTION 'manual competitor source shape is invalid'
+        USING ERRCODE = '23514';
+    END IF;
+    source_lock_key := selected_origin_kind || ':'
+      || selected_manual_entry_id::text;
+  ELSE
+    RAISE EXCEPTION 'unsupported competitor origin kind'
+      USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(
+    source_lock_key,
+    0
+  ));
+
+  IF selected_origin_kind = 'product_profile' THEN
+    SELECT * INTO occurrence_row
+    FROM app.competitor_origin_occurrences occurrence
+    WHERE occurrence.origin_kind = 'product_profile'
+      AND occurrence.product_profile_id = selected_product_profile_id
+      AND occurrence.profile_version = selected_profile_version
+      AND occurrence.candidate_id = selected_candidate_id;
+  ELSIF selected_origin_kind = 'csv_keyword_gap' THEN
+    SELECT * INTO occurrence_row
+    FROM app.competitor_origin_occurrences occurrence
+    WHERE occurrence.origin_kind = 'csv_keyword_gap'
+      AND occurrence.normalized_observation_id = selected_normalized_observation_id
+      AND occurrence.source_pointer = selected_source_pointer;
+  ELSE
+    SELECT * INTO occurrence_row
+    FROM app.competitor_origin_occurrences occurrence
+    WHERE occurrence.origin_kind = 'manual'
+      AND occurrence.manual_entry_id = selected_manual_entry_id;
+  END IF;
+
+  IF occurrence_row.id IS NOT NULL THEN
+    SELECT * INTO entity_row
+    FROM app.competitor_entities entity
+    WHERE entity.id = occurrence_row.competitor_id;
+    IF occurrence_row.workspace_id IS DISTINCT FROM selected_workspace_id
+       OR occurrence_row.project_id IS DISTINCT FROM selected_project_id
+       OR entity_row.workspace_id IS DISTINCT FROM selected_workspace_id
+       OR entity_row.project_id IS DISTINCT FROM selected_project_id
+       OR entity_row.domain IS DISTINCT FROM selected_domain
+       OR occurrence_row.origin_kind IS DISTINCT FROM selected_origin_kind
+       OR occurrence_row.source_name IS DISTINCT FROM selected_name
+       OR occurrence_row.product_profile_id IS DISTINCT FROM selected_product_profile_id
+       OR occurrence_row.profile_version IS DISTINCT FROM selected_profile_version
+       OR occurrence_row.candidate_id IS DISTINCT FROM selected_candidate_id
+       OR occurrence_row.field_provenance_path IS DISTINCT FROM selected_field_provenance_path
+       OR occurrence_row.evidence_refs IS DISTINCT FROM selected_evidence_refs
+       OR occurrence_row.source_review_status IS DISTINCT FROM selected_source_review_status
+       OR occurrence_row.source_relationship IS DISTINCT FROM selected_source_relationship
+       OR occurrence_row.source_analysis_scope IS DISTINCT FROM selected_source_analysis_scope
+       OR occurrence_row.data_snapshot_id IS DISTINCT FROM selected_data_snapshot_id
+       OR occurrence_row.normalized_observation_id IS DISTINCT FROM selected_normalized_observation_id
+       OR occurrence_row.import_preview_id IS DISTINCT FROM selected_import_preview_id
+       OR occurrence_row.source_pointer IS DISTINCT FROM selected_source_pointer
+       OR occurrence_row.manual_entry_id IS DISTINCT FROM selected_manual_entry_id
+       OR occurrence_row.observed_at IS DISTINCT FROM selected_observed_at THEN
+      RAISE EXCEPTION 'competitor source replay conflicts with immutable provenance'
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN QUERY SELECT occurrence_row.id, entity_row.id;
+    RETURN;
+  END IF;
+
+  INSERT INTO app.competitor_entities (
+    workspace_id,
+    project_id,
+    domain,
+    name,
+    review_status,
+    relationship,
+    analysis_scope
+  ) VALUES (
+    selected_workspace_id,
+    selected_project_id,
+    selected_domain,
+    selected_name,
+    seed_review_status,
+    seed_relationship,
+    seed_analysis_scope
+  )
+  ON CONFLICT (project_id, domain) DO NOTHING
+  RETURNING * INTO entity_row;
+
+  IF entity_row.id IS NULL THEN
+    SELECT * INTO entity_row
+    FROM app.competitor_entities entity
+    WHERE entity.project_id = selected_project_id
+      AND entity.domain = selected_domain;
+  END IF;
+  IF entity_row.id IS NULL
+     OR entity_row.workspace_id IS DISTINCT FROM selected_workspace_id THEN
+    RAISE EXCEPTION 'competitor stable domain conflicts with workspace scope'
+      USING ERRCODE = '23514';
+  END IF;
+
+  INSERT INTO app.competitor_origin_occurrences (
+    id,
+    workspace_id,
+    project_id,
+    competitor_id,
+    origin_kind,
+    source_name,
+    product_profile_id,
+    profile_version,
+    candidate_id,
+    field_provenance_path,
+    evidence_refs,
+    source_review_status,
+    source_relationship,
+    source_analysis_scope,
+    data_snapshot_id,
+    normalized_observation_id,
+    import_preview_id,
+    source_pointer,
+    manual_entry_id,
+    observed_at
+  ) VALUES (
+    coalesce(selected_manual_entry_id, gen_random_uuid()),
+    selected_workspace_id,
+    selected_project_id,
+    entity_row.id,
+    selected_origin_kind,
+    selected_name,
+    selected_product_profile_id,
+    selected_profile_version,
+    selected_candidate_id,
+    selected_field_provenance_path,
+    selected_evidence_refs,
+    selected_source_review_status,
+    selected_source_relationship,
+    selected_source_analysis_scope,
+    selected_data_snapshot_id,
+    selected_normalized_observation_id,
+    selected_import_preview_id,
+    selected_source_pointer,
+    selected_manual_entry_id,
+    selected_observed_at
+  )
+  RETURNING * INTO occurrence_row;
+
+  RETURN QUERY SELECT occurrence_row.id, entity_row.id;
+END;
+$$;
+-- END EXACT EXECUTABLE MIGRATION 0019_competitor_library_foundation
+
 -- Mutable projections receive server timestamps.
 DROP TRIGGER IF EXISTS workspaces_set_updated_at ON app.workspaces;
 CREATE TRIGGER workspaces_set_updated_at BEFORE UPDATE ON app.workspaces
@@ -5232,7 +6928,7 @@ CREATE TRIGGER page_snapshots_append_only BEFORE UPDATE OR DELETE ON app.page_sn
 -- Runtime-safe migration identity for technical health signals (spec §15.2).
 -- A view keeps migration identity separate from the frozen table inventory.
 CREATE OR REPLACE VIEW app.schema_migration_version AS
-  SELECT '0017_finding_target_ledger'::text AS migration_version;
+  SELECT '0019_competitor_library_foundation'::text AS migration_version;
 
 -- The browser must not access canonical tables directly through the Supabase Data API.
 DO $$

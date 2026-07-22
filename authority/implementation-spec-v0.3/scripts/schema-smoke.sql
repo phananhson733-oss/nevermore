@@ -5,8 +5,8 @@ SET search_path = app, public;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 36 THEN
-    RAISE EXCEPTION 'expected exactly 36 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 41 THEN
+    RAISE EXCEPTION 'expected exactly 41 app tables';
   END IF;
   IF (
     SELECT count(*)
@@ -53,10 +53,20 @@ BEGIN
         'product_profile_runs_source_snapshot_idx',
         'product_profile_runs_result_profile_idx',
         'product_profile_invocation_attempts_project_idx',
-        'product_profile_invocation_attempts_unresolved_idx'
+        'product_profile_invocation_attempts_unresolved_idx',
+        'keyword_occurrences_project_collected_idx',
+        'keyword_entities_project_created_idx',
+        'keyword_entities_project_review_idx',
+        'keyword_entity_sources_project_occurrence_idx',
+        'competitor_entities_project_created_idx',
+        'competitor_entities_project_status_idx',
+        'competitor_origins_profile_identity_idx',
+        'competitor_origins_csv_identity_idx',
+        'competitor_origins_manual_identity_idx',
+        'competitor_origins_entity_observed_idx'
       ]::text[])
-  ) <> 41 THEN
-    RAISE EXCEPTION 'expected all 41 named app indexes';
+  ) <> 51 THEN
+    RAISE EXCEPTION 'expected all 51 named app indexes';
   END IF;
   IF (
     SELECT count(*)
@@ -120,10 +130,18 @@ BEGIN
         'product_profile_runs_frozen_input_guard',
         'async_runs_product_profile_result_guard',
         'product_profile_invocation_attempts_transition_guard',
-        'icp_profiles_product_profile_provenance_guard'
+        'icp_profiles_product_profile_provenance_guard',
+        'keyword_occurrences_lineage_guard',
+        'keyword_occurrences_append_only',
+        'keyword_entities_mutation_guard',
+        'keyword_entities_no_delete',
+        'keyword_entity_sources_lineage_guard',
+        'keyword_entity_sources_append_only',
+        'competitor_entities_governance_guard',
+        'competitor_origins_lineage_guard'
       ]::text[])
-  ) <> 55 THEN
-    RAISE EXCEPTION 'expected all 55 app triggers';
+  ) <> 63 THEN
+    RAISE EXCEPTION 'expected all 63 app triggers';
   END IF;
   IF (
     SELECT count(DISTINCT procedure.proname)
@@ -135,10 +153,20 @@ BEGIN
         'reserve_product_profile_invocation_attempt',
         'finalize_product_profile_invocation_attempt',
         'mark_product_profile_invocation_outcome_unknown',
-        'validate_product_profile_provenance'
+        'validate_product_profile_provenance',
+        'enforce_keyword_occurrence_lineage',
+        'enforce_keyword_entity_mutation',
+        'enforce_keyword_entity_source_lineage',
+        'upsert_keyword_library_occurrence',
+        'is_normalized_competitor_domain',
+        'is_competitor_analysis_scope',
+        'is_typed_product_profile_evidence_refs',
+        'enforce_competitor_entity_governance',
+        'enforce_competitor_origin_lineage',
+        'upsert_competitor_origin'
       ]::text[])
-  ) <> 6 THEN
-    RAISE EXCEPTION 'expected all 6 runtime routines';
+  ) <> 16 THEN
+    RAISE EXCEPTION 'expected all 16 runtime routines';
   END IF;
 END;
 $$;
@@ -3067,7 +3095,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0017_finding_target_ledger' THEN
+  ) IS DISTINCT FROM '0019_competitor_library_foundation' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;
