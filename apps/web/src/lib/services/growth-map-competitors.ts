@@ -696,7 +696,7 @@ function projectCsvOrigin(
     observation.origin !== "user_provided" ||
     observation.method !== "observed" ||
     observation.grade !== "C" ||
-    observation.support !== "context" ||
+    observation.support !== "supports" ||
     !isRecord(observation.value_json) ||
     observation.value_json["competitorDomain"] !== entity.domain ||
     snapshot.workspace_id !== entity.workspace_id ||

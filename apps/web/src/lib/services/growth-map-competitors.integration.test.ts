@@ -289,7 +289,7 @@ async function seedCanonicalCompetitor(
     origin: "user_provided",
     method: "observed",
     grade: "C",
-    support: "context",
+    support: "supports",
     limitation: "Customer-provided keyword-gap CSV.",
   });
   const csv = await repository.upsertOrigin(scope, {

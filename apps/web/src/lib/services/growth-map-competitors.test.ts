@@ -249,7 +249,7 @@ function csvObservation(overrides: Record<string, unknown> = {}) {
     origin: "user_provided",
     method: "observed",
     grade: "C",
-    support: "context",
+    support: "supports",
     ...overrides,
   };
 }
@@ -644,6 +644,25 @@ describe("Growth Map Competitor Library read service", () => {
         ids.project,
         { limit: 50, cursor: null },
         csvDrift as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+
+    vi.restoreAllMocks();
+    const csvSupportDrift = arrangeList({
+      queryResults: [
+        [profileRow()],
+        [csvObservation({ support: "context" })],
+        [csvSnapshot()],
+        [csvCollectionRun()],
+        [csvPreview()],
+      ],
+    });
+    await expect(
+      listProjectAuditCompetitors(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null },
+        csvSupportDrift as never,
       ),
     ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
   });
