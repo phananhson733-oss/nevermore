@@ -28,6 +28,10 @@ const ids = {
   collectionRun: "10000000-0000-4000-8000-000000000012",
   site: "10000000-0000-4000-8000-000000000013",
   manual: "10000000-0000-4000-8000-000000000014",
+  historicalProfileOrigin: "10000000-0000-4000-8000-000000000015",
+  historicalProfile: "10000000-0000-4000-8000-000000000016",
+  historicalCandidate: "10000000-0000-4000-8000-000000000017",
+  historicalEvidenceRef: "10000000-0000-4000-8000-000000000018",
 } as const;
 
 const scope = { workspaceId: ids.workspace };
@@ -134,6 +138,18 @@ function profileOrigin(
   };
 }
 
+function historicalProfileOrigin(): CompetitorOriginRow {
+  return profileOrigin({
+    id: ids.historicalProfileOrigin,
+    product_profile_id: ids.historicalProfile,
+    profile_version: 1,
+    candidate_id: ids.historicalCandidate,
+    evidence_refs: [
+      { evidenceRefId: ids.historicalEvidenceRef, kind: "userEdit" },
+    ],
+  });
+}
+
 function csvOrigin(
   overrides: Partial<CompetitorOriginRow> = {},
 ): CompetitorOriginRow {
@@ -228,6 +244,42 @@ function profileRow(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   };
+}
+
+function historicalProfileRow() {
+  const historicalEvidenceRefs = [
+    { evidenceRefId: ids.historicalEvidenceRef, kind: "userEdit" as const },
+  ];
+  return profileRow({
+    id: ids.historicalProfile,
+    version: 1,
+    profile: {
+      ...profileRow().profile,
+      competitorCandidates: [
+        {
+          candidateId: ids.historicalCandidate,
+          name: "Example Competitor",
+          domain: "example-competitor.com",
+          relationship: "direct",
+          analysisScope: ["keyword_gap", "positioning"],
+          similarity: null,
+          reason: "Customer-confirmed direct competitor in V1.",
+          reviewStatus: "approved",
+          confidence: "high",
+        },
+      ],
+      fieldProvenance: [
+        {
+          path: "/competitorCandidates/0",
+          derivation: "declared",
+          confidence: "high",
+          evidenceRefs: historicalEvidenceRefs,
+          limitation: "Confirmed by the customer in V1.",
+          observedAt: null,
+        },
+      ],
+    },
+  });
 }
 
 function csvObservation(overrides: Record<string, unknown> = {}) {
@@ -428,6 +480,82 @@ describe("Growth Map Competitor Library read service", () => {
     expect(serialized).not.toContain("must-not-leak-csv");
     expect(serialized).not.toContain("privateProfilePayload");
     expect(serialized).not.toContain("privateCsvPayload");
+  });
+
+  it("projects a valid immutable V1 origin after the project confirms V2", async () => {
+    const exec = arrangeList({
+      entity: entity({ last_observed_at: null, origin_count: 1 }),
+      origins: [historicalProfileOrigin()],
+      queryResults: [[historicalProfileRow()]],
+      confirmedProfileId: ids.profile,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.originOccurrences).toEqual([
+      {
+        occurrenceId: ids.historicalProfileOrigin,
+        originKind: "product_profile",
+        productProfileId: ids.historicalProfile,
+        profileVersion: 1,
+        candidateId: ids.historicalCandidate,
+        fieldProvenancePath: "/competitorCandidates/0",
+        evidenceRefs: [
+          { evidenceRefId: ids.historicalEvidenceRef, kind: "userEdit" },
+        ],
+        observedAt: null,
+      },
+    ]);
+  });
+
+  it("preserves mixed CSV, historical V1, and current V2 origin history", async () => {
+    const exec = arrangeList({
+      origins: [csvOrigin(), historicalProfileOrigin(), profileOrigin()],
+      queryResults: [
+        [historicalProfileRow(), profileRow()],
+        [csvObservation()],
+        [csvSnapshot()],
+        [csvCollectionRun()],
+        [csvPreview()],
+      ],
+      confirmedProfileId: ids.profile,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.originOccurrences).toHaveLength(3);
+    expect(response.data[0]?.originOccurrences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          occurrenceId: ids.csvOrigin,
+          originKind: "csv_keyword_gap",
+        }),
+        expect.objectContaining({
+          occurrenceId: ids.historicalProfileOrigin,
+          originKind: "product_profile",
+          productProfileId: ids.historicalProfile,
+          profileVersion: 1,
+          candidateId: ids.historicalCandidate,
+        }),
+        expect.objectContaining({
+          occurrenceId: ids.profileOrigin,
+          originKind: "product_profile",
+          productProfileId: ids.profile,
+          profileVersion: 2,
+          candidateId: ids.candidate,
+        }),
+      ]),
+    );
   });
 
   it("returns the same scoped projection from detail", async () => {

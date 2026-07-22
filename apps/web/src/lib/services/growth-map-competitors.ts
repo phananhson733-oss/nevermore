@@ -560,7 +560,6 @@ async function loadProjectionRows(
 function projectProfileOrigin(
   origin: CompetitorOriginRow,
   entity: CompetitorEntityRow,
-  project: ProjectRow,
   rows: CompetitorProjectionRows,
 ): GrowthMapCompetitorOriginOccurrence {
   if (
@@ -577,8 +576,7 @@ function projectProfileOrigin(
     origin.import_preview_id !== null ||
     origin.source_pointer !== null ||
     origin.manual_entry_id !== null ||
-    origin.observed_at !== null ||
-    project.confirmed_icp_profile_id !== origin.product_profile_id
+    origin.observed_at !== null
   ) {
     return corruptCompetitorLibrary();
   }
@@ -770,14 +768,13 @@ function projectManualOrigin(
 function projectOrigin(
   origin: CompetitorOriginRow,
   entity: CompetitorEntityRow,
-  project: ProjectRow,
   rows: CompetitorProjectionRows,
   scope: ProjectScope,
 ): GrowthMapCompetitorOriginOccurrence {
   validateOriginIdentity(origin, entity, scope);
   switch (origin.origin_kind) {
     case "product_profile":
-      return projectProfileOrigin(origin, entity, project, rows);
+      return projectProfileOrigin(origin, entity, rows);
     case "csv_keyword_gap":
       return projectCsvOrigin(origin, entity, rows);
     case "manual":
@@ -815,12 +812,11 @@ function itemCoverage(
 
 function projectItem(
   history: EntityOriginHistory,
-  project: ProjectRow,
   rows: CompetitorProjectionRows,
   scope: ProjectScope,
 ): GrowthMapCompetitorLibraryItem {
   const origins = history.origins.map((origin) =>
-    projectOrigin(origin, history.entity, project, rows, scope),
+    projectOrigin(origin, history.entity, rows, scope),
   );
   const observedTimes = origins
     .flatMap((origin) => (origin.observedAt === null ? [] : [origin.observedAt]))
@@ -888,7 +884,7 @@ async function listInSnapshot(
   projectId: string,
   options: GrowthMapCompetitorListOptions,
 ): Promise<ReturnType<typeof GrowthMapCompetitorLibraryResponse.parse>> {
-  const project = await loadActiveProject(exec, workspaceScope, projectId);
+  await loadActiveProject(exec, workspaceScope, projectId);
   const scope = { workspaceId: workspaceScope.workspaceId, projectId };
   const page = await new CompetitorsRepository(exec).listByProject(scope, {
     limit: options.limit,
@@ -896,7 +892,7 @@ async function listInSnapshot(
   });
   const rows = await loadProjectionRows(exec, scope, page.rows);
   const data = rows.histories.map((history) =>
-    projectItem(history, project, rows, scope),
+    projectItem(history, rows, scope),
   );
   try {
     return GrowthMapCompetitorLibraryResponse.parse({
@@ -941,7 +937,7 @@ async function detailInSnapshot(
   projectId: string,
   competitorId: string,
 ): Promise<ReturnType<typeof GrowthMapCompetitorDetailResponse.parse>> {
-  const project = await loadActiveProject(exec, workspaceScope, projectId);
+  await loadActiveProject(exec, workspaceScope, projectId);
   const scope = { workspaceId: workspaceScope.workspaceId, projectId };
   const entity = await new CompetitorsRepository(exec).findById(
     scope,
@@ -951,7 +947,7 @@ async function detailInSnapshot(
   const rows = await loadProjectionRows(exec, scope, [entity]);
   const history = rows.histories[0];
   if (!history) return corruptCompetitorLibrary();
-  const data = projectItem(history, project, rows, scope);
+  const data = projectItem(history, rows, scope);
   try {
     return GrowthMapCompetitorDetailResponse.parse({ projectId, data });
   } catch {

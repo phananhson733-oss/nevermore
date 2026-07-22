@@ -67,6 +67,14 @@ interface CompetitorFixture {
   readonly privateObservationPayload: string;
 }
 
+interface ProfileOriginFixture {
+  readonly profileOriginId: string;
+  readonly profileId: string;
+  readonly profileVersion: number;
+  readonly candidateId: string;
+  readonly evidenceRefId: string;
+}
+
 async function inRolledBackFixture(
   handle: DbHandle,
   test: (tx: DbTx) => Promise<void>,
@@ -342,6 +350,96 @@ async function seedCanonicalCompetitor(
   };
 }
 
+async function confirmNextProfileOrigin(
+  tx: DbTx,
+  project: ProjectFixture,
+  competitor: CompetitorFixture,
+): Promise<ProfileOriginFixture> {
+  const profileId = randomUUID();
+  const profileVersion = competitor.profileVersion + 1;
+  const candidateId = randomUUID();
+  const evidenceRefId = randomUUID();
+  const evidenceRefs = [
+    { evidenceRefId, kind: "userEdit" as const },
+  ];
+  const profile = {
+    profileSchemaVersion: "product-profile.0.3.0",
+    sourceSiteId: project.siteId,
+    sourcePageUrl: `https://${project.host}/`,
+    sourceSnapshotId: null,
+    analysisInvocationId: null,
+    generatedAt: null,
+    competitorCandidates: [
+      {
+        candidateId,
+        name: "Canonical Competitor",
+        domain: "canonical-competitor.example",
+        relationship: "direct",
+        analysisScope: ["keyword_gap", "positioning"],
+        similarity: null,
+        reason: "Customer-confirmed direct competitor in V2.",
+        reviewStatus: "approved",
+        confidence: "high",
+      },
+    ],
+    fieldProvenance: [
+      {
+        path: "/competitorCandidates/0",
+        derivation: "declared",
+        confidence: "high",
+        evidenceRefs,
+        limitation: "Confirmed by the customer in V2.",
+        observedAt: null,
+      },
+    ],
+  };
+  await tx.insert(icpProfiles).values({
+    id: profileId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    version: profileVersion,
+    status: "complete",
+    profile,
+    content_hash: contentHash(profile),
+    created_by: project.actorId,
+  });
+  await tx
+    .update(clientProjects)
+    .set({
+      current_icp_profile_id: profileId,
+      confirmed_icp_profile_id: profileId,
+    })
+    .where(eq(clientProjects.id, project.projectId));
+
+  const origin = await new CompetitorsRepository(tx).upsertOrigin(
+    {
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+    },
+    {
+      originKind: "product_profile",
+      domain: "canonical-competitor.example",
+      name: "Canonical Competitor",
+      productProfileId: profileId,
+      profileVersion,
+      candidateId,
+      fieldProvenancePath: "/competitorCandidates/0",
+      evidenceRefs,
+      sourceReviewStatus: "approved",
+      sourceRelationship: "direct",
+      sourceAnalysisScope: ["keyword_gap", "positioning"],
+    },
+  );
+  expect(origin.competitorId).toBe(competitor.competitorId);
+  return {
+    profileOriginId: origin.occurrenceId,
+    profileId,
+    profileVersion,
+    candidateId,
+    evidenceRefId,
+  };
+}
+
 describeDb("Growth Map Competitor Library real Postgres projection", () => {
   let handle: DbHandle;
 
@@ -475,6 +573,61 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
           tx,
         ),
       ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    });
+  });
+
+  it("preserves mixed CSV and Product Profile V1 history after V2 becomes confirmed", async () => {
+    await inRolledBackFixture(handle, async (tx) => {
+      const workspaceId = randomUUID();
+      await tx.insert(workspaces).values({
+        id: workspaceId,
+        name: `Historical competitor origin ${workspaceId}`,
+      });
+      const project = await seedProject(tx, workspaceId, "Historical");
+      const v1 = await seedCanonicalCompetitor(tx, project);
+      const v2 = await confirmNextProfileOrigin(tx, project, v1);
+
+      const list = await listProjectAuditCompetitors(
+        { workspaceId },
+        project.projectId,
+        { limit: 50, cursor: null },
+        tx,
+      );
+
+      expect(list.data).toHaveLength(1);
+      expect(list.data[0]?.originOccurrences).toHaveLength(4);
+      expect(list.data[0]?.originOccurrences).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            occurrenceId: v1.csvOriginId,
+            originKind: "csv_keyword_gap",
+          }),
+          {
+            occurrenceId: v1.profileOriginId,
+            originKind: "product_profile",
+            productProfileId: v1.profileId,
+            profileVersion: v1.profileVersion,
+            candidateId: v1.candidateId,
+            fieldProvenancePath: "/competitorCandidates/0",
+            evidenceRefs: [
+              { evidenceRefId: v1.evidenceRefId, kind: "userEdit" },
+            ],
+            observedAt: null,
+          },
+          {
+            occurrenceId: v2.profileOriginId,
+            originKind: "product_profile",
+            productProfileId: v2.profileId,
+            profileVersion: v2.profileVersion,
+            candidateId: v2.candidateId,
+            fieldProvenancePath: "/competitorCandidates/0",
+            evidenceRefs: [
+              { evidenceRefId: v2.evidenceRefId, kind: "userEdit" },
+            ],
+            observedAt: null,
+          },
+        ]),
+      );
     });
   });
 });
