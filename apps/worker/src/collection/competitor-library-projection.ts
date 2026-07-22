@@ -3,6 +3,7 @@ import {
   CompetitorsRepository,
   ImportPreviewsRepository,
   ObservationsRepository,
+  SourceConnectionsRepository,
   type CollectionRunRow,
   type CsvKeywordGapCompetitorOriginInput,
   type DataSnapshotRow,
@@ -58,8 +59,7 @@ function assertCanonicalCsvLineage(
   if (
     snapshot.provider !== CSV_PROVIDER ||
     snapshot.dataset_key !== CSV_DATASET_KEY ||
-    snapshot.method_version !== CSV_DATASET_KEY ||
-    snapshot.source_connection_id !== null
+    snapshot.method_version !== CSV_DATASET_KEY
   ) {
     throw invalidProjection(
       "Competitor Library projection requires the canonical CSV Snapshot.",
@@ -73,7 +73,7 @@ function assertCanonicalCsvLineage(
     run.provider !== CSV_PROVIDER ||
     run.operation !== CSV_OPERATION ||
     run.method_version !== CSV_DATASET_KEY ||
-    run.source_connection_id !== null ||
+    run.source_connection_id !== snapshot.source_connection_id ||
     run.import_preview_id === null ||
     run.crawl_seed_site_page_id !== null ||
     run.crawl_seed_url !== null
@@ -200,6 +200,25 @@ export async function projectCollectionSnapshotCompetitors(
     );
   }
   assertCanonicalCsvLineage(snapshot, run, preview);
+
+  if (snapshot.source_connection_id !== null) {
+    const connection = await new SourceConnectionsRepository(tx).findById(
+      scope,
+      snapshot.source_connection_id,
+    );
+    if (
+      !connection ||
+      connection.id !== snapshot.source_connection_id ||
+      connection.workspace_id !== snapshot.workspace_id ||
+      connection.project_id !== snapshot.project_id ||
+      connection.site_id !== snapshot.site_id ||
+      connection.provider !== CSV_PROVIDER
+    ) {
+      throw invalidProjection(
+        "Canonical CSV Snapshot does not match its exact source connection.",
+      );
+    }
+  }
 
   const observations = new ObservationsRepository(tx);
   const competitors = new CompetitorsRepository(tx);

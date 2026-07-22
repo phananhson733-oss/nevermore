@@ -12,6 +12,7 @@ import {
   ProviderDiscrepanciesRepository,
   SitesRepository,
   SitePagesRepository,
+  SourceConnectionsRepository,
   StorageObjectReferencesRepository,
   TelemetryRepository,
   type CollectionRunRow,
@@ -43,6 +44,7 @@ const collectionRun = {
 } as CollectionRunRow;
 
 const capturedAt = "2026-07-19T00:00:00.000Z";
+const csvSourceConnectionId = "00000000-0000-4000-8000-000000000012";
 const sourceWindow = {
   start: "2026-07-18T00:00:00.000Z",
   end: capturedAt,
@@ -143,6 +145,30 @@ beforeEach(() => {
   vi.spyOn(DataSnapshotsRepository.prototype, "insert").mockResolvedValue({
     id: "snapshot-1",
   } as never);
+  vi.spyOn(
+    SourceConnectionsRepository.prototype,
+    "findActiveByIdForUpdate",
+  ).mockResolvedValue({
+    id: csvSourceConnectionId,
+    workspace_id: attempt.workspaceId,
+    project_id: attempt.projectId,
+    site_id: collectionRun.site_id,
+    provider: "csv",
+  } as never);
+  vi.spyOn(
+    SourceConnectionsRepository.prototype,
+    "findById",
+  ).mockResolvedValue({
+    id: csvSourceConnectionId,
+    workspace_id: attempt.workspaceId,
+    project_id: attempt.projectId,
+    site_id: collectionRun.site_id,
+    provider: "csv",
+  } as never);
+  vi.spyOn(
+    SourceConnectionsRepository.prototype,
+    "setLastSnapshot",
+  ).mockResolvedValue();
   vi.spyOn(CollectionRunsRepository.prototype, "findById").mockResolvedValue(
     null,
   );
@@ -202,6 +228,7 @@ describe("persistCollectionResult transaction outcomes", () => {
   it("projects canonical persisted CSV Observations into the Keyword Library before terminalizing", async () => {
     const csvRun = {
       ...collectionRun,
+      source_connection_id: csvSourceConnectionId,
       import_preview_id: "00000000-0000-4000-8000-000000000007",
       provider: "csv",
       operation: "keyword_gap_import",
@@ -213,7 +240,7 @@ describe("persistCollectionResult transaction outcomes", () => {
       project_id: attempt.projectId,
       site_id: csvRun.site_id,
       collection_run_id: csvRun.id,
-      source_connection_id: null,
+      source_connection_id: csvSourceConnectionId,
       provider: "csv",
       dataset_key: "csv.keyword_gap.v1",
       schema_version: "0.2.0",
@@ -335,6 +362,7 @@ describe("persistCollectionResult transaction outcomes", () => {
     const previewId = "00000000-0000-4000-8000-000000000007";
     const csvRun = {
       ...collectionRun,
+      source_connection_id: csvSourceConnectionId,
       import_preview_id: previewId,
       provider: "csv",
       operation: "keyword_gap_import",
@@ -346,7 +374,7 @@ describe("persistCollectionResult transaction outcomes", () => {
       project_id: attempt.projectId,
       site_id: csvRun.site_id,
       collection_run_id: csvRun.id,
-      source_connection_id: null,
+      source_connection_id: csvSourceConnectionId,
       provider: "csv",
       dataset_key: "csv.keyword_gap.v1",
       schema_version: "0.2.0",
@@ -441,6 +469,16 @@ describe("persistCollectionResult transaction outcomes", () => {
       },
     );
     expect(
+      SourceConnectionsRepository.prototype.findActiveByIdForUpdate,
+    ).toHaveBeenCalledWith(
+      { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+      csvSourceConnectionId,
+    );
+    expect(SourceConnectionsRepository.prototype.findById).toHaveBeenCalledWith(
+      { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+      csvSourceConnectionId,
+    );
+    expect(
       vi.mocked(CompetitorsRepository.prototype.upsertOrigin).mock
         .invocationCallOrder[0],
     ).toBeLessThan(
@@ -459,6 +497,7 @@ describe("persistCollectionResult transaction outcomes", () => {
   it("freezes both mutable libraries when archival wins the project lock", async () => {
     const csvRun = {
       ...collectionRun,
+      source_connection_id: csvSourceConnectionId,
       import_preview_id: "00000000-0000-4000-8000-000000000007",
       provider: "csv",
       operation: "keyword_gap_import",
@@ -475,7 +514,7 @@ describe("persistCollectionResult transaction outcomes", () => {
       project_id: attempt.projectId,
       site_id: csvRun.site_id,
       collection_run_id: csvRun.id,
-      source_connection_id: null,
+      source_connection_id: csvSourceConnectionId,
       provider: "csv",
       dataset_key: "csv.keyword_gap.v1",
       schema_version: "0.2.0",

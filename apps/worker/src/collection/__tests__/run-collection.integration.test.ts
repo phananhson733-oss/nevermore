@@ -624,13 +624,27 @@ describeDb("collection runner (spec §13)", () => {
     });
   });
 
-  it("AC-041: a successful CSV collection writes exactly one snapshot; a redelivered (already-claimed) job does not double-write", async () => {
+  it("AC-041: a production-shaped CSV source persists its competitor before terminalizing and redelivery remains idempotent", async () => {
     const seed = await seedProject(handle);
     const runId = randomUUID();
+    const csvConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertConnection({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      provider: "csv",
+      connectionType: "file_import",
+      state: "connected",
+      limitation: "Keyword-gap CSV provided by the operator.",
+      connectedAt: true,
+      createdBy: seed.actor,
+    });
 
     // Seed the raw CSV object + its import preview (the confirm-phase artifacts).
     const rawKey = `csv/${randomUUID()}.csv`;
-    const csvText = "keyword,search_volume\nrunning shoes,1000\n";
+    const csvText =
+      "keyword,search_volume,competitor_domain\nrunning shoes,1000,example-competitor.com\n";
     await ctx.blobStore.put({
       key: rawKey,
       body: Buffer.from(csvText, "utf8"),
@@ -646,7 +660,7 @@ describeDb("collection runner (spec §13)", () => {
       rawObjectKey: rawKey,
       fileChecksum: contentHash({ csv: csvText }),
       rowCount: 1,
-      detectedColumns: ["keyword", "search_volume"],
+      detectedColumns: ["keyword", "search_volume", "competitor_domain"],
       suggestedMapping: {},
       previewRows: [],
       validationErrors: [],
@@ -661,20 +675,43 @@ describeDb("collection runner (spec §13)", () => {
       provider: "csv",
       operation: "keyword_gap_import",
       methodVersion: "csv.keyword_gap.v1",
-      sourceConnectionId: null,
+      sourceConnectionId: csvConnection.id,
       importPreviewId: preview.id,
       requestPayload: {
-        mapping: { keyword: "keyword", searchVolume: "search_volume" },
+        mapping: {
+          keyword: "keyword",
+          searchVolume: "search_volume",
+          competitorDomain: "competitor_domain",
+        },
         marketFallback: "US",
         languageFallback: "en",
       },
     });
 
-    await runCollection(ctx, {
-      runId,
-      workspaceId: seed.scope.workspaceId,
-      projectId: seed.scope.projectId,
-    });
+    const upsertCompetitor = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "upsertOrigin",
+    );
+    const terminalize = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "setTerminal",
+    );
+    try {
+      await runCollection(ctx, {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+      });
+
+      expect(upsertCompetitor).toHaveBeenCalledOnce();
+      expect(terminalize).toHaveBeenCalledOnce();
+      expect(upsertCompetitor.mock.invocationCallOrder[0]).toBeLessThan(
+        terminalize.mock.invocationCallOrder[0]!,
+      );
+    } finally {
+      upsertCompetitor.mockRestore();
+      terminalize.mockRestore();
+    }
 
     const afterFirst = await new AsyncRunsRepository(handle.db).findById(
       seed.scope,
@@ -682,6 +719,17 @@ describeDb("collection runner (spec §13)", () => {
     );
     expect(afterFirst?.status).toBe("completed");
     expect(await snapshotCount(handle, seed.scope)).toBe(1);
+    const snapshots = await new DataSnapshotsRepository(
+      handle.db,
+    ).listByProject(seed.scope, { limit: 10, cursor: null });
+    expect(snapshots.rows).toEqual([
+      expect.objectContaining({
+        collection_run_id: runId,
+        source_connection_id: csvConnection.id,
+        provider: "csv",
+        dataset_key: "csv.keyword_gap.v1",
+      }),
+    ]);
     const keywords = await new KeywordsRepository(handle.db).listByProject(
       seed.scope,
       { limit: 10, cursor: null },
@@ -711,6 +759,41 @@ describeDb("collection runner (spec §13)", () => {
         }),
       ],
     });
+    const competitors = await new CompetitorsRepository(
+      handle.db,
+    ).listByProject(seed.scope, { limit: 10, cursor: null });
+    expect(competitors.rows).toEqual([
+      expect.objectContaining({
+        domain: "example-competitor.com",
+        name: null,
+        review_status: "candidate",
+        origin_count: 1,
+      }),
+    ]);
+    await expect(
+      new CompetitorsRepository(handle.db).listOrigins(
+        seed.scope,
+        competitors.rows[0]!.id,
+        10,
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        origin_kind: "csv_keyword_gap",
+        data_snapshot_id: snapshots.rows[0]!.id,
+        normalized_observation_id: expect.any(String),
+        import_preview_id: preview.id,
+        source_pointer: "/valueJson/competitorDomain",
+      }),
+    ]);
+    await expect(
+      new SourceConnectionsRepository(handle.db).findById(
+        seed.scope,
+        csvConnection.id,
+      ),
+    ).resolves.toMatchObject({
+      provider: "csv",
+      last_successful_snapshot_id: snapshots.rows[0]!.id,
+    });
 
     // Redelivery: the run is terminal, so claim() loses and the runner acks
     // without persisting a second snapshot (spec §13.3).
@@ -720,6 +803,14 @@ describeDb("collection runner (spec §13)", () => {
       projectId: seed.scope.projectId,
     });
     expect(await snapshotCount(handle, seed.scope)).toBe(1);
+    await expect(
+      new CompetitorsRepository(handle.db).listByProject(seed.scope, {
+        limit: 10,
+        cursor: null,
+      }),
+    ).resolves.toMatchObject({
+      rows: [expect.objectContaining({ origin_count: 1 })],
+    });
   });
 
   it("projects exact consumed CSV competitor lineage idempotently and rolls back every fixture", async () => {
@@ -775,6 +866,20 @@ describeDb("collection runner (spec §13)", () => {
           new ImportPreviewsRepository(tx).consume(scope, preview.id),
         ).resolves.toBe(true);
 
+        const csvConnection = await new SourceConnectionsRepository(
+          tx,
+        ).insertConnection({
+          workspaceId: scope.workspaceId,
+          projectId: scope.projectId,
+          siteId: site.id,
+          provider: "csv",
+          connectionType: "file_import",
+          state: "connected",
+          limitation: "Keyword-gap CSV provided by the operator.",
+          connectedAt: true,
+          createdBy: actor,
+        });
+
         const runId = randomUUID();
         await tx.insert(asyncRuns).values({
           id: runId,
@@ -790,7 +895,7 @@ describeDb("collection runner (spec §13)", () => {
           workspace_id: scope.workspaceId,
           project_id: scope.projectId,
           site_id: site.id,
-          source_connection_id: null,
+          source_connection_id: csvConnection.id,
           import_preview_id: preview.id,
           provider: "csv",
           operation: "keyword_gap_import",
@@ -809,7 +914,7 @@ describeDb("collection runner (spec §13)", () => {
           projectId: scope.projectId,
           siteId: site.id,
           collectionRunId: runId,
-          sourceConnectionId: null,
+          sourceConnectionId: csvConnection.id,
           provider: "csv",
           datasetKey: "csv.keyword_gap.v1",
           schemaVersion: "0.2.0",
@@ -3330,11 +3435,24 @@ async function seedCsvCollection(
   ) {
     throw new Error("CSV collection fixture ImportPreview was not consumed");
   }
+  const csvConnection = await new SourceConnectionsRepository(
+    handle.db,
+  ).insertConnection({
+    workspaceId: seed.scope.workspaceId,
+    projectId: seed.scope.projectId,
+    siteId: seed.siteId,
+    provider: "csv",
+    connectionType: "file_import",
+    state: "connected",
+    limitation: "Keyword-gap CSV provided by the operator.",
+    connectedAt: true,
+    createdBy: seed.actor,
+  });
   await seedCollectionRun(handle, seed, runId, {
     provider: "csv",
     operation: "keyword_gap_import",
     methodVersion: "csv.keyword_gap.v1",
-    sourceConnectionId: null,
+    sourceConnectionId: csvConnection.id,
     importPreviewId: preview.id,
     requestPayload: {
       mapping: { keyword: "keyword", searchVolume: "search_volume" },

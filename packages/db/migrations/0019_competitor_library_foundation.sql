@@ -381,6 +381,7 @@ DECLARE
   candidate_index integer;
   candidate_count integer;
   provenance_count integer;
+  provenance_derivation text;
 BEGIN
   IF TG_OP IN ('UPDATE','DELETE') THEN
     RAISE EXCEPTION 'competitor origin occurrences are append-only'
@@ -463,13 +464,20 @@ BEGIN
       RAISE EXCEPTION 'competitor field provenance path does not cover its candidate'
         USING ERRCODE = '23514';
     END IF;
-    SELECT count(*)::integer
-    INTO provenance_count
+    SELECT count(*)::integer, min(entry ->> 'derivation')
+    INTO provenance_count, provenance_derivation
     FROM jsonb_array_elements(profile_row.profile -> 'fieldProvenance') entry
     WHERE entry ->> 'path' = NEW.field_provenance_path
       AND entry -> 'evidenceRefs' = NEW.evidence_refs;
-    IF provenance_count IS DISTINCT FROM 1 THEN
-      RAISE EXCEPTION 'competitor evidence refs do not match typed Product Profile provenance'
+    IF provenance_count IS DISTINCT FROM 1
+       OR provenance_derivation IS NULL
+       OR provenance_derivation NOT IN (
+         'declared',
+         'observed',
+         'computed',
+         'inferred'
+       ) THEN
+      RAISE EXCEPTION 'competitor source does not match projectable Product Profile provenance'
         USING ERRCODE = '23514';
     END IF;
   ELSIF NEW.origin_kind = 'csv_keyword_gap' THEN
@@ -483,13 +491,24 @@ BEGIN
        AND snapshot.project_id = NEW.project_id
        AND snapshot.provider = 'csv'
        AND snapshot.dataset_key = 'csv.keyword_gap.v1'
+       AND snapshot.method_version = 'csv.keyword_gap.v1'
       JOIN app.collection_runs collection_run
         ON collection_run.id = snapshot.collection_run_id
        AND collection_run.workspace_id = NEW.workspace_id
        AND collection_run.project_id = NEW.project_id
        AND collection_run.site_id = snapshot.site_id
        AND collection_run.provider = 'csv'
+       AND collection_run.operation = 'keyword_gap_import'
+       AND collection_run.method_version = 'csv.keyword_gap.v1'
+       AND collection_run.source_connection_id
+         IS NOT DISTINCT FROM snapshot.source_connection_id
        AND collection_run.import_preview_id = NEW.import_preview_id
+      LEFT JOIN app.source_connections source_connection
+        ON source_connection.id = snapshot.source_connection_id
+       AND source_connection.workspace_id = NEW.workspace_id
+       AND source_connection.project_id = NEW.project_id
+       AND source_connection.site_id = snapshot.site_id
+       AND source_connection.provider = 'csv'
       JOIN app.import_previews preview
         ON preview.id = collection_run.import_preview_id
        AND preview.workspace_id = NEW.workspace_id
@@ -508,6 +527,10 @@ BEGIN
         AND observation.observed_at = NEW.observed_at
         AND observation.value_json ->> 'competitorDomain' = entity_row.domain
         AND NEW.source_pointer = '/valueJson/competitorDomain'
+        AND (
+          snapshot.source_connection_id IS NULL
+          OR source_connection.id IS NOT NULL
+        )
     ) THEN
       RAISE EXCEPTION 'competitor CSV origin does not match canonical Observation lineage'
         USING ERRCODE = '23514';

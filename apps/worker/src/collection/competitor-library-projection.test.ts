@@ -4,10 +4,12 @@ import {
   CompetitorsRepository,
   ImportPreviewsRepository,
   ObservationsRepository,
+  SourceConnectionsRepository,
   type CollectionRunRow,
   type DataSnapshotRow,
   type ImportPreviewRow,
   type ObservationRow,
+  type SourceConnectionRow,
 } from "@sf/db";
 import {
   deriveCsvCompetitorOriginInput,
@@ -21,6 +23,7 @@ const observationId = "00000000-0000-4000-8000-000000000004";
 const siteId = "00000000-0000-4000-8000-000000000005";
 const runId = "00000000-0000-4000-8000-000000000006";
 const previewId = "00000000-0000-4000-8000-000000000007";
+const sourceConnectionId = "00000000-0000-4000-8000-000000000012";
 const collectedAt = "2026-07-22T08:00:00.000Z";
 const scope = { workspaceId, projectId } as const;
 
@@ -33,7 +36,7 @@ function snapshot(
     project_id: projectId,
     site_id: siteId,
     collection_run_id: runId,
-    source_connection_id: null,
+    source_connection_id: sourceConnectionId,
     provider: "csv",
     dataset_key: "csv.keyword_gap.v1",
     schema_version: "0.2.0",
@@ -59,7 +62,7 @@ function collectionRun(
     workspace_id: workspaceId,
     project_id: projectId,
     site_id: siteId,
-    source_connection_id: null,
+    source_connection_id: sourceConnectionId,
     import_preview_id: previewId,
     crawl_seed_site_page_id: null,
     crawl_seed_url: null,
@@ -70,6 +73,31 @@ function collectionRun(
     row_count: null,
     stop_reason: null,
     created_at: collectedAt,
+    ...overrides,
+  };
+}
+
+function sourceConnection(
+  overrides: Partial<SourceConnectionRow> = {},
+): SourceConnectionRow {
+  return {
+    id: sourceConnectionId,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    site_id: siteId,
+    provider: "csv",
+    connection_type: "file_import",
+    state: "available",
+    external_ref: null,
+    scopes: [],
+    config: {},
+    limitation: "Keyword-gap CSV provided by the operator.",
+    connected_at: collectedAt,
+    disconnected_at: null,
+    last_successful_snapshot_id: snapshotId,
+    created_by: "00000000-0000-4000-8000-000000000008",
+    created_at: collectedAt,
+    updated_at: collectedAt,
     ...overrides,
   };
 }
@@ -168,6 +196,24 @@ describe("deriveCsvCompetitorOriginInput", () => {
     });
   });
 
+  it("retains a legacy matching-null CSV lineage without synthesizing a source connection", () => {
+    expect(
+      deriveCsvCompetitorOriginInput(
+        snapshot({ source_connection_id: null }),
+        collectionRun({ source_connection_id: null }),
+        importPreview(),
+        observation(),
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        originKind: "csv_keyword_gap",
+        domain: "example-competitor.com",
+        snapshotId,
+        observationId,
+      }),
+    );
+  });
+
   it.each([
     ["missing domain", { value_json: { ...observationValueJson(), competitorDomain: null } }],
     ["unavailable", { availability: "unavailable", value_json: null }],
@@ -203,6 +249,19 @@ describe("deriveCsvCompetitorOriginInput", () => {
           deriveCsvCompetitorOriginInput(
             snapshot(),
             collectionRun({ id: "00000000-0000-4000-8000-000000000099" }),
+            importPreview(),
+            observation(),
+          ),
+      ],
+      [
+        "source connection",
+        () =>
+          deriveCsvCompetitorOriginInput(
+            snapshot(),
+            collectionRun({
+              source_connection_id:
+                "00000000-0000-4000-8000-000000000099",
+            }),
             importPreview(),
             observation(),
           ),
@@ -294,6 +353,10 @@ describe("projectCollectionSnapshotCompetitors", () => {
       "findById",
     ).mockResolvedValue(importPreview());
     vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(sourceConnection());
+    vi.spyOn(
       ObservationsRepository.prototype,
       "listBySnapshotIdsPage",
     )
@@ -330,6 +393,10 @@ describe("projectCollectionSnapshotCompetitors", () => {
     expect(ImportPreviewsRepository.prototype.findById).toHaveBeenCalledWith(
       scope,
       previewId,
+    );
+    expect(SourceConnectionsRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      sourceConnectionId,
     );
     expect(
       ObservationsRepository.prototype.listBySnapshotIdsPage,
@@ -419,6 +486,43 @@ describe("projectCollectionSnapshotCompetitors", () => {
     expect(findPreview).toHaveBeenCalledOnce();
   });
 
+  it("fails closed when a named source connection is absent or not the exact canonical CSV provider", async () => {
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(collectionRun());
+    vi.spyOn(
+      ImportPreviewsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(importPreview());
+    const findSource = vi
+      .spyOn(SourceConnectionsRepository.prototype, "findById")
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(sourceConnection({ provider: "gsc" }))
+      .mockResolvedValueOnce(
+        sourceConnection({
+          site_id: "00000000-0000-4000-8000-000000000099",
+        }),
+      );
+    const list = vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIdsPage",
+    );
+
+    await expect(
+      projectCollectionSnapshotCompetitors({} as never, scope, snapshot()),
+    ).rejects.toThrow(/source connection/i);
+    await expect(
+      projectCollectionSnapshotCompetitors({} as never, scope, snapshot()),
+    ).rejects.toThrow(/source connection/i);
+    await expect(
+      projectCollectionSnapshotCompetitors({} as never, scope, snapshot()),
+    ).rejects.toThrow(/source connection/i);
+
+    expect(findSource).toHaveBeenCalledTimes(3);
+    expect(list).not.toHaveBeenCalled();
+  });
+
   it("fails closed if canonical Observation pagination cannot advance", async () => {
     vi.spyOn(
       CollectionRunsRepository.prototype,
@@ -428,6 +532,10 @@ describe("projectCollectionSnapshotCompetitors", () => {
       ImportPreviewsRepository.prototype,
       "findById",
     ).mockResolvedValue(importPreview());
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(sourceConnection());
     vi.spyOn(
       ObservationsRepository.prototype,
       "listBySnapshotIdsPage",

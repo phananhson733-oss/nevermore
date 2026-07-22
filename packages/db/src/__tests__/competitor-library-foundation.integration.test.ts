@@ -43,6 +43,7 @@ interface CsvFixture {
   readonly snapshotId: string;
   readonly observationId: string;
   readonly importPreviewId: string;
+  readonly sourceConnectionId: string;
   readonly observedAt: string;
   readonly domain: string;
 }
@@ -116,6 +117,7 @@ async function createProductProfile(
     readonly analysisScope?: ProductProfileFixture["analysisScope"];
     readonly confirm?: boolean;
     readonly usePoolProvenance?: boolean;
+    readonly provenanceDerivation?: string;
     readonly version?: number;
   },
 ): Promise<ProductProfileFixture> {
@@ -129,9 +131,14 @@ async function createProductProfile(
   const fieldProvenancePath = options.usePoolProvenance
     ? "/competitorCandidates"
     : "/competitorCandidates/0";
-  const evidenceRefs = [
-    { evidenceRefId: randomUUID(), kind: "userEdit" as const },
-  ];
+  const provenanceDerivation = options.provenanceDerivation ?? "declared";
+  const evidenceRefs =
+    provenanceDerivation === "contradicted"
+      ? [
+          { evidenceRefId: randomUUID(), kind: "userEdit" as const },
+          { evidenceRefId: randomUUID(), kind: "userEdit" as const },
+        ]
+      : [{ evidenceRefId: randomUUID(), kind: "userEdit" as const }];
   const profile = {
     profileSchemaVersion: "product-profile.0.3.0",
     sourceSiteId: project.siteId,
@@ -155,11 +162,11 @@ async function createProductProfile(
     fieldProvenance: [
       {
         path: fieldProvenancePath,
-        derivation: "declared",
+        derivation: provenanceDerivation,
         confidence: "high",
         evidenceRefs,
         limitation: "Customer-reviewed Product Profile source.",
-        observedAt: null,
+        observedAt: provenanceDerivation === "contradicted" ? BASE_TIME : null,
       },
     ],
   };
@@ -372,6 +379,7 @@ async function createCsvObservation(
     snapshotId,
     observationId,
     importPreviewId,
+    sourceConnectionId,
     observedAt: options.observedAt,
     domain: options.domain,
   };
@@ -547,6 +555,26 @@ describeDb("competitor library database foundation", () => {
     );
   });
 
+  it("rejects a Product Profile origin whose matched provenance derivation is not projectable", async () => {
+    const project = await createProject(handle);
+    const contradicted = await createProductProfile(handle, project, {
+      domain: "contradicted-rival.example",
+      provenanceDerivation: "contradicted",
+    });
+    const repository = new CompetitorsRepository(handle.db);
+
+    await expectPgCode(
+      repository.upsertOrigin(
+        {
+          workspaceId: project.workspaceId,
+          projectId: project.projectId,
+        },
+        profileInput(contradicted),
+      ),
+      "23514",
+    );
+  });
+
   it("converges CSV origins by domain and derives lastObservedAt only from Observation-backed rows", async () => {
     const project = await createProject(handle);
     const older = await createCsvObservation(handle, project, {
@@ -586,7 +614,7 @@ describeDb("competitor library database foundation", () => {
       .toBe(true);
   });
 
-  it("rejects CSV scope, provider pointer, import, and domain mismatches", async () => {
+  it("rejects CSV scope, pointer, import, domain, and source-lineage mismatches", async () => {
     const project = await createProject(handle);
     const foreignProject = await createProject(handle, project.workspaceId);
     const csv = await createCsvObservation(handle, project, {
@@ -648,6 +676,42 @@ describeDb("competitor library database foundation", () => {
         )`,
         [project.workspaceId, project.projectId, csv.domain],
       ),
+      "23514",
+    );
+
+    const sourceMismatch = await createCsvObservation(handle, project, {
+      domain: "source-mismatch-rival.example",
+      observedAt: "2026-07-22T10:00:00.000Z",
+    });
+    const client = await handle.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "ALTER TABLE app.data_snapshots DISABLE TRIGGER data_snapshots_append_only",
+      );
+      await client.query(
+        "UPDATE app.data_snapshots SET source_connection_id = NULL WHERE id = $1",
+        [sourceMismatch.snapshotId],
+      );
+      await client.query(
+        "ALTER TABLE app.data_snapshots ENABLE TRIGGER data_snapshots_append_only",
+      );
+      await client.query("COMMIT");
+    } finally {
+      await client.query("ROLLBACK").catch(() => undefined);
+      client.release();
+    }
+    await expectPgCode(
+      repository.upsertOrigin(scope, csvInput(sourceMismatch)),
+      "23514",
+    );
+
+    await handle.pool.query(
+      "UPDATE app.source_connections SET provider = 'gsc' WHERE id = $1",
+      [csv.sourceConnectionId],
+    );
+    await expectPgCode(
+      repository.upsertOrigin(scope, csvInput(csv)),
       "23514",
     );
   });
