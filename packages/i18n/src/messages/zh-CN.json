@@ -942,6 +942,111 @@
         "boundary": "未确认直接或间接关系、分析范围和证据的候选，不会作为正式竞品展示。"
       }
     },
+    "keywordLibrary": {
+      "loadingLibrary": "正在读取可追溯关键词库…",
+      "libraryError": "无法读取关键词库，请重试。",
+      "loadingDetail": "正在读取所选关键词的真实来源与指标…",
+      "detailError": "无法读取这个关键词的详情，请重试。",
+      "libraryScopeLabel": "关键词库数据范围",
+      "libraryScopeTitle": "只汇总可追溯的关键词记录",
+      "libraryScopeDescription": "每个关键词都保留真实来源、市场、语言和采集时间；本页不估算总量，也不补造指标。",
+      "loadedOnPage": "本页关键词",
+      "sourceOccurrencesOnPage": "本页来源记录",
+      "coverageLabel": "数据覆盖",
+      "listLabel": "关键词列表",
+      "loadedCount": "本页已加载 {count} 个关键词",
+      "paginationLabel": "关键词库翻页",
+      "previousPage": "上一页",
+      "nextPage": "下一页",
+      "columns": {
+        "keyword": "关键词 / 市场与语言",
+        "queryKind": "查询类型",
+        "status": "状态",
+        "source": "真实来源 / 采集时间"
+      },
+      "marketLanguage": "市场与语言",
+      "marketLanguageValue": "{market} · {language}",
+      "queryKind": {
+        "search_query": "搜索查询",
+        "generative_query": "生成式查询"
+      },
+      "status": {
+        "candidate": "候选",
+        "approved": "已确认",
+        "excluded": "已排除",
+        "parked": "已暂存"
+      },
+      "freshness": {
+        "current": "当前",
+        "stale": "较旧",
+        "unknown": "时效未知"
+      },
+      "sourceKind": {
+        "csv_import": "CSV 导入",
+        "dataforseo_ranked": "DataForSEO 排名关键词",
+        "gsc_top_query": "GSC 热门查询",
+        "manual": "人工记录"
+      },
+      "scopeBasisLabel": "范围依据",
+      "scopeBasis": {
+        "provider_collection_scope": "数据提供方采集范围",
+        "user_provided": "用户提供的数据",
+        "project_context": "项目上下文",
+        "manual": "人工设定"
+      },
+      "selectedDetailLabel": "所选关键词详情",
+      "selectedKeyword": "所选关键词",
+      "selectKeywordTitle": "选择一个关键词",
+      "selectKeywordDescription": "从左侧列表选择关键词，查看它自己的来源、分类、映射与真实指标。",
+      "classificationEyebrow": "治理信息 · 只读",
+      "classificationTitle": "分类与页面映射",
+      "classificationDescription": "只展示已保存的意图、购买阶段、聚类和映射；未知字段保留服务端限制说明。",
+      "intent": "搜索意图",
+      "buyerStage": "购买阶段",
+      "cluster": "关键词聚类",
+      "mappedTarget": "映射目标",
+      "mappingReview": "映射审核状态",
+      "mappingTarget": {
+        "unassigned": "尚未分配",
+        "existing_page": "现有页面",
+        "new_asset": "新内容资产"
+      },
+      "mappingReviewState": {
+        "unreviewed": "未审核",
+        "approved": "已确认",
+        "rejected": "已拒绝"
+      },
+      "metricsEyebrow": "规范观测 · 不推测",
+      "metricsTitle": "真实关键词指标",
+      "metricsDescription": "数值只来自规范化 Observation；没有真实投影时显示数据不足及原始限制，不生成搜索量或 KD。",
+      "metric": {
+        "volume": "搜索量",
+        "kd": "关键词难度（KD）",
+        "currentRank": "当前排名",
+        "currentUrl": "当前排名 URL",
+        "competitorDomain": "竞品域名",
+        "competitorRank": "竞品排名"
+      },
+      "metricObservedAt": "观测时间",
+      "metricObservation": "Observation",
+      "metricPointer": "规范字段指针",
+      "sourcesEyebrow": "来源记录 · 完整保留",
+      "sourcesTitle": "真实来源记录",
+      "sourcesDescription": "每条来源分别展示采集时间、数据时点、范围依据、时效和限制，不把多次采集合并成一个推测值。",
+      "collectedAt": "采集时间",
+      "providerDataAsOf": "数据时点",
+      "notProvided": "提供方未提供",
+      "occurrenceId": "来源记录 ID",
+      "snapshotId": "数据快照 ID",
+      "observationId": "观测记录 ID",
+      "sourcePointer": "来源字段指针",
+      "importPreviewId": "导入预览 ID",
+      "scopeLimitation": "范围限制",
+      "sourceLimitation": "来源限制",
+      "notAvailable": "数据不足",
+      "keywordId": "关键词 ID",
+      "revision": "记录版本"
+    },
     "loadingPortfolio": "正在读取真实 URL 组合…",
     "loadingDetail": "正在读取所选 URL 的证据链…",
     "portfolioError": "无法读取增长地图中的 URL，请重试。",

@@ -942,6 +942,111 @@
         "boundary": "Candidates without a confirmed direct or indirect relationship, analysis scope, and evidence are withheld from the approved competitor library."
       }
     },
+    "keywordLibrary": {
+      "loadingLibrary": "Reading the traceable Keyword Library…",
+      "libraryError": "The Keyword Library could not be read. Try again.",
+      "loadingDetail": "Reading the selected Keyword's real sources and metrics…",
+      "detailError": "This Keyword detail could not be read. Try again.",
+      "libraryScopeLabel": "Keyword Library data scope",
+      "libraryScopeTitle": "Only traceable Keyword records are included",
+      "libraryScopeDescription": "Every Keyword retains its real source, market, language, and collection time. This page does not estimate totals or fill in metrics.",
+      "loadedOnPage": "Keywords on this page",
+      "sourceOccurrencesOnPage": "Source records on this page",
+      "coverageLabel": "Data coverage",
+      "listLabel": "Keyword list",
+      "loadedCount": "{count, plural, one {# Keyword loaded on this page} other {# Keywords loaded on this page}}",
+      "paginationLabel": "Keyword Library pagination",
+      "previousPage": "Previous page",
+      "nextPage": "Next page",
+      "columns": {
+        "keyword": "Keyword / market and language",
+        "queryKind": "Query type",
+        "status": "Status",
+        "source": "Real source / collected at"
+      },
+      "marketLanguage": "Market and language",
+      "marketLanguageValue": "{market} · {language}",
+      "queryKind": {
+        "search_query": "Search query",
+        "generative_query": "Generative query"
+      },
+      "status": {
+        "candidate": "Candidate",
+        "approved": "Approved",
+        "excluded": "Excluded",
+        "parked": "Parked"
+      },
+      "freshness": {
+        "current": "Current",
+        "stale": "Stale",
+        "unknown": "Freshness unknown"
+      },
+      "sourceKind": {
+        "csv_import": "CSV import",
+        "dataforseo_ranked": "DataForSEO ranked Keywords",
+        "gsc_top_query": "GSC top query",
+        "manual": "Manual record"
+      },
+      "scopeBasisLabel": "Scope basis",
+      "scopeBasis": {
+        "provider_collection_scope": "Provider collection scope",
+        "user_provided": "User-provided data",
+        "project_context": "Project context",
+        "manual": "Manual scope"
+      },
+      "selectedDetailLabel": "Selected Keyword detail",
+      "selectedKeyword": "Selected Keyword",
+      "selectKeywordTitle": "Select a Keyword",
+      "selectKeywordDescription": "Choose a Keyword from the list to inspect its own sources, classification, mapping, and real metrics.",
+      "classificationEyebrow": "Governance · read only",
+      "classificationTitle": "Classification and page mapping",
+      "classificationDescription": "Only saved intent, buyer stage, cluster, and mapping values are shown. Unknown fields retain the service limitation.",
+      "intent": "Search intent",
+      "buyerStage": "Buyer stage",
+      "cluster": "Keyword cluster",
+      "mappedTarget": "Mapped target",
+      "mappingReview": "Mapping review state",
+      "mappingTarget": {
+        "unassigned": "Unassigned",
+        "existing_page": "Existing page",
+        "new_asset": "New content asset"
+      },
+      "mappingReviewState": {
+        "unreviewed": "Unreviewed",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "metricsEyebrow": "Canonical observations · no estimates",
+      "metricsTitle": "Real Keyword metrics",
+      "metricsDescription": "Values come only from normalized Observations. When no real projection exists, the original limitation is shown instead of generating volume or KD.",
+      "metric": {
+        "volume": "Search volume",
+        "kd": "Keyword difficulty (KD)",
+        "currentRank": "Current rank",
+        "currentUrl": "Current ranking URL",
+        "competitorDomain": "Competitor domain",
+        "competitorRank": "Competitor rank"
+      },
+      "metricObservedAt": "Observed at",
+      "metricObservation": "Observation",
+      "metricPointer": "Canonical field pointer",
+      "sourcesEyebrow": "Source records · preserved",
+      "sourcesTitle": "Real source records",
+      "sourcesDescription": "Each source keeps its collection time, data-as-of time, scope basis, freshness, and limitations. Separate collections are not merged into an estimated value.",
+      "collectedAt": "Collected at",
+      "providerDataAsOf": "Provider data as of",
+      "notProvided": "Not provided by the source",
+      "occurrenceId": "Source record ID",
+      "snapshotId": "Snapshot ID",
+      "observationId": "Observation ID",
+      "sourcePointer": "Source field pointer",
+      "importPreviewId": "Import preview ID",
+      "scopeLimitation": "Scope limitation",
+      "sourceLimitation": "Source limitation",
+      "notAvailable": "No data",
+      "keywordId": "Keyword ID",
+      "revision": "Record revision"
+    },
     "loadingPortfolio": "Reading the real URL portfolio…",
     "loadingDetail": "Reading the selected URL evidence chain…",
     "portfolioError": "The URL portfolio could not be read. Try again.",

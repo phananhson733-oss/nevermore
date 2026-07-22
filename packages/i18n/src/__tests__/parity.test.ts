@@ -91,6 +91,37 @@ describe("i18n message key parity", () => {
     );
   });
 
+  it("keeps the traceable Keyword Library Chinese-first without unsupported actions", () => {
+    expect(zhCN.growthMap.keywordLibrary).toMatchObject({
+      libraryScopeTitle: "只汇总可追溯的关键词记录",
+      selectedKeyword: "所选关键词",
+      classificationTitle: "分类与页面映射",
+      metricsTitle: "真实关键词指标",
+      sourcesTitle: "真实来源记录",
+      notAvailable: "数据不足",
+    });
+    expect(zhCN.growthMap.keywordLibrary.metric).toEqual({
+      volume: "搜索量",
+      kd: "关键词难度（KD）",
+      currentRank: "当前排名",
+      currentUrl: "当前排名 URL",
+      competitorDomain: "竞品域名",
+      competitorRank: "竞品排名",
+    });
+    expect(en.growthMap.keywordLibrary.metric).toEqual({
+      volume: "Search volume",
+      kd: "Keyword difficulty (KD)",
+      currentRank: "Current rank",
+      currentUrl: "Current ranking URL",
+      competitorDomain: "Competitor domain",
+      competitorRank: "Competitor rank",
+    });
+    expect(zhCN.growthMap.keywordLibrary).not.toHaveProperty("importAction");
+    expect(zhCN.growthMap.keywordLibrary).not.toHaveProperty("addAction");
+    expect(en.growthMap.keywordLibrary).not.toHaveProperty("importAction");
+    expect(en.growthMap.keywordLibrary).not.toHaveProperty("addAction");
+  });
+
   it("localizes every Context control group and app-shell accessibility name", () => {
     expect(en.context.fields.marketCodes).toBe("Target markets");
     expect(zhCN.context.fields).toMatchObject({

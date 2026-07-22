@@ -1,6 +1,8 @@
 import type {
   GrowthMapFindingTargetRelation,
   GrowthMapExecutionRef,
+  GrowthMapKeywordNumericMetric,
+  GrowthMapKeywordTextMetric,
   GrowthMapUrlFinding,
   GrowthMapUrlIdentitySource,
   GrowthMapUrlMetricObservation,
@@ -59,6 +61,53 @@ export function resolveVisibleSitePageSelection(
   return visibleSitePageIds[0] ?? null;
 }
 
+/** A Keyword detail can only be driven by an entity on the visible cursor page. */
+export function resolveVisibleKeywordSelection(
+  requestedKeywordId: string | null | undefined,
+  visibleKeywordIds: readonly string[],
+): string | null {
+  if (
+    requestedKeywordId != null &&
+    visibleKeywordIds.includes(requestedKeywordId)
+  ) {
+    return requestedKeywordId;
+  }
+  return visibleKeywordIds[0] ?? null;
+}
+
+export type KeywordLibraryReadState =
+  | "loading"
+  | "error"
+  | "empty"
+  | "ready";
+
+export function keywordLibraryReadState(input: {
+  readonly isPending: boolean;
+  readonly isError: boolean;
+  readonly itemCount: number;
+}): KeywordLibraryReadState {
+  if (input.isPending) return "loading";
+  if (input.isError) return "error";
+  return input.itemCount === 0 ? "empty" : "ready";
+}
+
+export type KeywordDetailReadState =
+  | "unselected"
+  | "loading"
+  | "error"
+  | "ready";
+
+export function keywordDetailReadState(input: {
+  readonly selectedKeywordId: string | null;
+  readonly isPending: boolean;
+  readonly isError: boolean;
+}): KeywordDetailReadState {
+  if (input.selectedKeywordId === null) return "unselected";
+  if (input.isPending) return "loading";
+  if (input.isError) return "error";
+  return "ready";
+}
+
 /**
  * Finding deep links select their exact visible owning URL unless the user has
  * already made an explicit, valid URL choice. The caller may narrow the list
@@ -91,6 +140,7 @@ export function resolveVisibleSitePageSelectionForFinding(
 interface GrowthMapLocationPatch {
   readonly mode?: GrowthMapObjectMode;
   readonly selectedSitePageId?: string | null;
+  readonly selectedKeywordId?: string | null;
   readonly selectedFindingId?: string | null;
   readonly search?: string | null;
   readonly cursor?: string | null;
@@ -109,14 +159,27 @@ export function growthMapLocationHref(
   const params = new URLSearchParams(currentSearch);
 
   if (patch.mode !== undefined) {
+    const currentMode = normalizeGrowthMapObjectMode(params.get("object"));
+    if (currentMode !== patch.mode) {
+      params.delete("q");
+      params.delete("cursor");
+      params.delete("selectedSitePageId");
+      params.delete("selectedKeywordId");
+      params.delete("findingId");
+    }
+
     if (patch.mode === "pages") params.set("object", "pages");
     else params.set("object", patch.mode);
 
     if (patch.mode !== "pages") {
       params.delete("q");
-      params.delete("cursor");
       params.delete("selectedSitePageId");
       params.delete("findingId");
+    }
+    if (patch.mode === "pages") params.delete("selectedKeywordId");
+    if (patch.mode === "competitors") {
+      params.delete("cursor");
+      params.delete("selectedKeywordId");
     }
   }
 
@@ -125,6 +188,14 @@ export function growthMapLocationHref(
       params.delete("selectedSitePageId");
     } else {
       params.set("selectedSitePageId", patch.selectedSitePageId);
+    }
+  }
+
+  if (patch.selectedKeywordId !== undefined) {
+    if (patch.selectedKeywordId === null) {
+      params.delete("selectedKeywordId");
+    } else {
+      params.set("selectedKeywordId", patch.selectedKeywordId);
     }
   }
 
@@ -146,6 +217,49 @@ export function growthMapLocationHref(
 
   const query = params.toString();
   return query === "" ? pathname : `${pathname}?${query}`;
+}
+
+type GrowthMapKeywordMetric =
+  | GrowthMapKeywordNumericMetric
+  | GrowthMapKeywordTextMetric;
+
+export type KeywordMetricPresentation =
+  | {
+      readonly state: "unavailable";
+      readonly limitation: string | null;
+    }
+  | {
+      readonly state: "observed";
+      readonly value: number | string;
+      readonly observedAt: string;
+      readonly freshness: GrowthMapKeywordMetric["freshness"];
+      readonly limitation: string | null;
+    };
+
+/**
+ * Preserve the canonical projection exactly: an observed zero remains a value,
+ * while a missing/null metric stays unavailable with the service limitation.
+ */
+export function keywordMetricPresentation(
+  metric: GrowthMapKeywordMetric | null | undefined,
+  absenceLimitation: string | null,
+): KeywordMetricPresentation {
+  if (metric == null) {
+    return { state: "unavailable", limitation: absenceLimitation };
+  }
+  if (metric.value === null) {
+    return {
+      state: "unavailable",
+      limitation: metric.limitation ?? absenceLimitation,
+    };
+  }
+  return {
+    state: "observed",
+    value: metric.value,
+    observedAt: metric.observedAt,
+    freshness: metric.freshness,
+    limitation: metric.limitation,
+  };
 }
 
 export interface MetricSelector {

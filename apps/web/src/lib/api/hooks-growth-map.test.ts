@@ -1,10 +1,16 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildGrowthMapKeywordDetailQueryOptions,
+  buildGrowthMapKeywordsQueryOptions,
   buildGrowthMapUrlDetailQueryOptions,
   buildGrowthMapUrlsQueryOptions,
+  getGrowthMapKeywordDetail,
+  getGrowthMapKeywords,
   getGrowthMapUrlDetail,
   getGrowthMapUrls,
+  growthMapKeywordDetailQueryKey,
+  growthMapKeywordsQueryKey,
   growthMapUrlDetailQueryKey,
   growthMapUrlsQueryKey,
   refreshGrowthMapAfterFindingReview,
@@ -19,6 +25,12 @@ const CRAWL_SNAPSHOT_ID = "00000000-0000-4000-8000-000000000006";
 const GSC_SNAPSHOT_ID = "00000000-0000-4000-8000-000000000007";
 const OBSERVATION_A = "00000000-0000-4000-8000-000000000008";
 const OBSERVATION_B = "00000000-0000-4000-8000-000000000009";
+const KEYWORD_A = "00000000-0000-4000-8000-000000000010";
+const KEYWORD_B = "00000000-0000-4000-8000-000000000011";
+const KEYWORD_OCCURRENCE = "00000000-0000-4000-8000-000000000012";
+const KEYWORD_SNAPSHOT = "00000000-0000-4000-8000-000000000013";
+const KEYWORD_OBSERVATION = "00000000-0000-4000-8000-000000000014";
+const IMPORT_PREVIEW = "00000000-0000-4000-8000-000000000015";
 const OBSERVED_AT = "2026-07-21T00:00:00.000Z";
 const UI_LOCALE = "en" as const;
 
@@ -101,6 +113,107 @@ function detailResponse(sitePageId: string) {
       },
       findings: [],
     },
+  } as const;
+}
+
+function keywordItem(keywordId = KEYWORD_A) {
+  const displayKeyword =
+    keywordId === KEYWORD_A
+      ? "customer onboarding software"
+      : "customer onboarding platform";
+  return {
+    projectId: PROJECT_ID,
+    keywordId,
+    displayKeyword,
+    normalizedKeyword: displayKeyword,
+    marketCode: "US",
+    languageTag: "en-US",
+    queryKind: "search_query",
+    status: "candidate",
+    revision: 0,
+    intent: null,
+    buyerStage: null,
+    cluster: null,
+    classificationLimitations: {
+      intent: "Intent has not been classified from a canonical source.",
+      buyerStage: "Buyer stage has not been classified from a canonical source.",
+      cluster: "No reviewed Keyword cluster is available.",
+    },
+    mappedTarget: {
+      kind: "unassigned",
+      reviewState: "unreviewed",
+      revision: 0,
+      reason: null,
+    },
+    sourceOccurrences: [
+      {
+        occurrenceId: KEYWORD_OCCURRENCE,
+        collectedAt: "2026-07-21T02:00:00.000Z",
+        providerDataAsOf: OBSERVED_AT,
+        freshness: "current",
+        limitation: null,
+        scopeBasis: "user_provided",
+        scopeLimitation: "Coverage is limited to the uploaded CSV rows.",
+        marketCode: "US",
+        languageTag: "en-US",
+        sourceKind: "csv_import",
+        snapshotId: KEYWORD_SNAPSHOT,
+        sourceObservationId: KEYWORD_OBSERVATION,
+        sourcePointer: "/valueJson/keyword",
+        importPreviewId: IMPORT_PREVIEW,
+      },
+    ],
+    metrics: {
+      volume: {
+        snapshotId: KEYWORD_SNAPSHOT,
+        observationId: KEYWORD_OBSERVATION,
+        valuePointer: "/valueJson/searchVolume",
+        observedAt: OBSERVED_AT,
+        freshness: "current",
+        limitation: null,
+        value: 0,
+      },
+      kd: null,
+      currentRank: null,
+      currentUrl: null,
+      competitorDomain: null,
+      competitorRank: null,
+      limitations: {
+        volume: null,
+        kd: "No canonical Keyword Difficulty observation is available.",
+        currentRank: "No canonical current-rank observation is available.",
+        currentUrl: "No canonical current-URL observation is available.",
+        competitorDomain: "No competitor-domain observation is available.",
+        competitorRank: "No competitor-rank observation is available.",
+      },
+    },
+    coverage: {
+      availability: "partial",
+      limitations: ["Classification and several canonical metrics are unavailable."],
+    },
+  } as const;
+}
+
+function keywordLibraryResponse() {
+  return {
+    projectId: PROJECT_ID,
+    data: [keywordItem()],
+    meta: {
+      limit: 50,
+      nextCursor: null,
+      hasNext: false,
+      coverage: {
+        availability: "partial",
+        limitations: ["Only source-verified Keyword occurrences are returned."],
+      },
+    },
+  } as const;
+}
+
+function keywordDetailResponse(keywordId = KEYWORD_A) {
+  return {
+    projectId: PROJECT_ID,
+    data: keywordItem(keywordId),
   } as const;
 }
 
@@ -285,6 +398,141 @@ describe("Growth Map browser API boundary", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getGrowthMapUrls(PROJECT_ID)).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes Keyword cursor params into one stable key and safely encoded URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok(keywordLibraryResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const params = { cursor: "next+/=", limit: 25 } as const;
+    const options = buildGrowthMapKeywordsQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      params,
+    );
+    await getGrowthMapKeywords(PROJECT_ID, params);
+
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "keywords",
+      { cursor: "next+/=", limit: 25 },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords?limit=25&cursor=next%2B%2F%3D`,
+      expect.any(Object),
+    );
+  });
+
+  it("uses the documented Keyword page default and omits an empty cursor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok(keywordLibraryResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const options = buildGrowthMapKeywordsQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      { cursor: "" },
+    );
+    await getGrowthMapKeywords(PROJECT_ID, { cursor: "" });
+
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "keywords",
+      { cursor: null, limit: 50 },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords?limit=50`,
+      expect.any(Object),
+    );
+  });
+
+  it("keys Keyword detail by exact id and active UI locale", () => {
+    expect(
+      growthMapKeywordDetailQueryKey(PROJECT_ID, UI_LOCALE, KEYWORD_A),
+    ).not.toEqual(
+      growthMapKeywordDetailQueryKey(PROJECT_ID, UI_LOCALE, KEYWORD_B),
+    );
+    expect(
+      growthMapKeywordsQueryKey(PROJECT_ID, "en", { limit: 25 }),
+    ).not.toEqual(
+      growthMapKeywordsQueryKey(PROJECT_ID, "zh-CN", { limit: 25 }),
+    );
+    expect(
+      buildGrowthMapKeywordDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        null,
+      ).enabled,
+    ).toBe(false);
+    expect(
+      buildGrowthMapKeywordDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_A,
+      ).enabled,
+    ).toBe(true);
+  });
+
+  it("switching Keyword id performs a distinct detail request", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(keywordDetailResponse(KEYWORD_A)))
+      .mockResolvedValueOnce(ok(keywordDetailResponse(KEYWORD_B)));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const observer = new QueryObserver(
+      client,
+      buildGrowthMapKeywordDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_A,
+      ),
+    );
+
+    const unsubscribe = observer.subscribe(() => undefined);
+    await observer.refetch();
+    observer.setOptions(
+      buildGrowthMapKeywordDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_B,
+      ),
+    );
+    await observer.refetch();
+    unsubscribe();
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}`,
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_B}`,
+    ]);
+  });
+
+  it("does not construct a Keyword detail request without an exact id", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getGrowthMapKeywordDetail(PROJECT_ID, null)).rejects.toThrow(
+      "keywordId",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on an invalid Keyword Library projection", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      ok({
+        projectId: PROJECT_ID,
+        data: [{ keywordId: KEYWORD_A, displayKeyword: "invented score" }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getGrowthMapKeywords(PROJECT_ID)).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

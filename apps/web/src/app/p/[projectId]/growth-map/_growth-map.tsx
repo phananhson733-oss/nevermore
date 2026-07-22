@@ -2,6 +2,10 @@
 
 import type {
   GrowthMapCoverage,
+  GrowthMapKeywordLibraryItem,
+  GrowthMapKeywordNumericMetric,
+  GrowthMapKeywordSourceOccurrence,
+  GrowthMapKeywordTextMetric,
   GrowthMapUrlDetail,
   GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
@@ -46,6 +50,8 @@ import {
 import { useReviewFinding } from "@/lib/api/hooks-diagnosis";
 import {
   refreshGrowthMapAfterFindingReview,
+  useGrowthMapKeywordDetail,
+  useGrowthMapKeywords,
   useGrowthMapUrlDetail,
   useGrowthMapUrls,
 } from "@/lib/api/hooks-growth-map";
@@ -59,12 +65,16 @@ import {
   growthMapDetailAllowsFindingReview,
   growthMapLocationHref,
   identitySourceKey,
+  keywordDetailReadState,
+  keywordLibraryReadState,
+  keywordMetricPresentation,
   metricLabelKey,
   metricPresentation,
   metricValueLabelKey,
   normalizeGrowthMapObjectMode,
   presentGrowthMapReviewProblem,
   resolveVisibleSitePageSelectionForFinding,
+  resolveVisibleKeywordSelection,
   safeExternalPageUrl,
   shouldShowGrowthMapReviewError,
   urlPresentation,
@@ -1422,10 +1432,818 @@ function PortfolioPane({ projectId }: { readonly projectId: string }) {
   );
 }
 
+type KeywordMetric =
+  | GrowthMapKeywordNumericMetric
+  | GrowthMapKeywordTextMetric;
+
+const KEYWORD_STATUS_CLASS = {
+  candidate: styles.keywordStatusCandidate,
+  approved: styles.keywordStatusApproved,
+  excluded: styles.keywordStatusExcluded,
+  parked: styles.keywordStatusParked,
+} as const;
+
+const KEYWORD_FRESHNESS_CLASS = {
+  current: styles.keywordFreshnessCurrent,
+  stale: styles.keywordFreshnessStale,
+  unknown: styles.keywordFreshnessUnknown,
+} as const;
+
+function latestKeywordCollection(
+  occurrences: readonly GrowthMapKeywordSourceOccurrence[],
+): string | null {
+  return occurrences.reduce<string | null>((latest, occurrence) => {
+    if (latest === null) return occurrence.collectedAt;
+    return Date.parse(occurrence.collectedAt) > Date.parse(latest)
+      ? occurrence.collectedAt
+      : latest;
+  }, null);
+}
+
+function KeywordStatusPill({
+  status,
+}: {
+  readonly status: GrowthMapKeywordLibraryItem["status"];
+}) {
+  const t = useTranslations("growthMap.keywordLibrary.status");
+  return (
+    <span className={cx(styles.keywordStatus, KEYWORD_STATUS_CLASS[status])}>
+      {t(status)}
+    </span>
+  );
+}
+
+function KeywordFreshnessPill({
+  freshness,
+}: {
+  readonly freshness: GrowthMapKeywordSourceOccurrence["freshness"];
+}) {
+  const t = useTranslations("growthMap.keywordLibrary.freshness");
+  return (
+    <span
+      className={cx(
+        styles.keywordFreshness,
+        KEYWORD_FRESHNESS_CLASS[freshness],
+      )}
+    >
+      {t(freshness)}
+    </span>
+  );
+}
+
+function KeywordRow({
+  item,
+  selected,
+  onSelect,
+}: {
+  readonly item: GrowthMapKeywordLibraryItem;
+  readonly selected: boolean;
+  readonly onSelect: (keywordId: string) => void;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.keywordLibrary");
+  const sourceKinds = Array.from(
+    new Set(item.sourceOccurrences.map((occurrence) => occurrence.sourceKind)),
+  );
+  const latestCollectedAt = latestKeywordCollection(item.sourceOccurrences);
+
+  return (
+    <li className={styles.keywordRow}>
+      <button
+        type="button"
+        className={cx(
+          styles.keywordRowButton,
+          selected && styles.keywordRowSelected,
+        )}
+        aria-pressed={selected}
+        onClick={() => onSelect(item.keywordId)}
+      >
+        <span className={styles.keywordIdentityCell}>
+          <strong>{item.displayKeyword}</strong>
+          <small>
+            {t("marketLanguageValue", {
+              market: item.marketCode,
+              language: item.languageTag,
+            })}
+          </small>
+        </span>
+        <span
+          className={styles.keywordKindCell}
+          data-column={t("columns.queryKind")}
+        >
+          {t(`queryKind.${item.queryKind}`)}
+        </span>
+        <span
+          className={styles.keywordStatusCell}
+          data-column={t("columns.status")}
+        >
+          <KeywordStatusPill status={item.status} />
+        </span>
+        <span
+          className={styles.keywordSourceSummary}
+          data-column={t("columns.source")}
+        >
+          <span>
+            {sourceKinds.map((sourceKind) => (
+              <small key={sourceKind}>{t(`sourceKind.${sourceKind}`)}</small>
+            ))}
+          </span>
+          {latestCollectedAt === null ? null : (
+            <time dateTime={latestCollectedAt}>
+              {formatObservedAt(locale, latestCollectedAt)}
+            </time>
+          )}
+          <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function KeywordList({
+  items,
+  selectedKeywordId,
+  onSelect,
+}: {
+  readonly items: readonly GrowthMapKeywordLibraryItem[];
+  readonly selectedKeywordId: string | null;
+  readonly onSelect: (keywordId: string) => void;
+}) {
+  const t = useTranslations("growthMap.keywordLibrary");
+  return (
+    <div className={styles.keywordLedger}>
+      <div className={styles.keywordLedgerHeader} aria-hidden="true">
+        <span>{t("columns.keyword")}</span>
+        <span>{t("columns.queryKind")}</span>
+        <span>{t("columns.status")}</span>
+        <span>{t("columns.source")}</span>
+      </div>
+      <ul className={styles.keywordList} aria-label={t("listLabel")}>
+        {items.map((item) => (
+          <KeywordRow
+            key={item.keywordId}
+            item={item}
+            selected={selectedKeywordId === item.keywordId}
+            onSelect={onSelect}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function KeywordClassificationField({
+  label,
+  value,
+  limitation,
+  identity,
+}: {
+  readonly label: string;
+  readonly value: string | null;
+  readonly limitation: string | null;
+  readonly identity?: string | undefined;
+}) {
+  const t = useTranslations("growthMap.keywordLibrary");
+  return (
+    <div className={styles.keywordClassificationField}>
+      <dt>{label}</dt>
+      <dd>
+        <strong className={value === null ? styles.keywordMissing : undefined}>
+          {value ?? t("notAvailable")}
+        </strong>
+        {identity === undefined ? null : (
+          <code title={identity}>{truncateId(identity)}</code>
+        )}
+        {limitation === null ? null : <small>{limitation}</small>}
+      </dd>
+    </div>
+  );
+}
+
+function KeywordMappedTarget({
+  target,
+}: {
+  readonly target: GrowthMapKeywordLibraryItem["mappedTarget"];
+}) {
+  const t = useTranslations("growthMap.keywordLibrary");
+  if (target.kind === "existing_page") {
+    const externalUrl = safeExternalPageUrl(target.normalizedUrl);
+    return (
+      <span className={styles.keywordMappedTarget}>
+        <strong>{t("mappingTarget.existing_page")}</strong>
+        {externalUrl === null ? (
+          <span>{target.normalizedUrl}</span>
+        ) : (
+          <a href={externalUrl} target="_blank" rel="noreferrer">
+            {target.normalizedUrl}
+            <ArrowUpRight aria-hidden="true" size={14} />
+          </a>
+        )}
+        <code title={target.sitePageId}>{truncateId(target.sitePageId)}</code>
+      </span>
+    );
+  }
+  return (
+    <span className={styles.keywordMappedTarget}>
+      <strong>{t(`mappingTarget.${target.kind}`)}</strong>
+    </span>
+  );
+}
+
+function KeywordMetricCard({
+  metricKey,
+  metric,
+  absenceLimitation,
+}: {
+  readonly metricKey: keyof GrowthMapKeywordLibraryItem["metrics"]["limitations"];
+  readonly metric: KeywordMetric | null;
+  readonly absenceLimitation: string | null;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.keywordLibrary");
+  const presentation = keywordMetricPresentation(metric, absenceLimitation);
+  const currentUrl =
+    presentation.state === "observed" &&
+    metricKey === "currentUrl" &&
+    typeof presentation.value === "string"
+      ? safeExternalPageUrl(presentation.value)
+      : null;
+
+  return (
+    <article className={styles.keywordMetricCard}>
+      <header>
+        <span>{t(`metric.${metricKey}`)}</span>
+        {metric === null ? null : (
+          <KeywordFreshnessPill freshness={metric.freshness} />
+        )}
+      </header>
+      {presentation.state === "observed" ? (
+        <div className={styles.keywordMetricValue}>
+          {typeof presentation.value === "number" ? (
+            <strong>{formatNumber(locale, presentation.value)}</strong>
+          ) : currentUrl !== null ? (
+            <a
+              href={currentUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {presentation.value}
+              <ArrowUpRight aria-hidden="true" size={14} />
+            </a>
+          ) : (
+            <strong>{presentation.value}</strong>
+          )}
+        </div>
+      ) : (
+        <strong className={styles.keywordMissing}>{t("notAvailable")}</strong>
+      )}
+      {metric === null ? null : (
+        <dl className={styles.keywordMetricMeta}>
+          <div>
+            <dt>{t("metricObservedAt")}</dt>
+            <dd>
+              <time dateTime={metric.observedAt}>
+                {formatObservedAt(locale, metric.observedAt)}
+              </time>
+            </dd>
+          </div>
+          <div>
+            <dt>{t("metricObservation")}</dt>
+            <dd>
+              <code title={metric.observationId}>
+                {truncateId(metric.observationId)}
+              </code>
+            </dd>
+          </div>
+          <div>
+            <dt>{t("metricPointer")}</dt>
+            <dd><code>{metric.valuePointer}</code></dd>
+          </div>
+        </dl>
+      )}
+      {presentation.limitation === null ? null : (
+        <p className={styles.keywordMetricLimitation}>
+          <CircleAlert aria-hidden="true" size={15} />
+          {presentation.limitation}
+        </p>
+      )}
+    </article>
+  );
+}
+
+function KeywordSourceOccurrenceCard({
+  occurrence,
+}: {
+  readonly occurrence: GrowthMapKeywordSourceOccurrence;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.keywordLibrary");
+  return (
+    <article className={styles.keywordSourceCard}>
+      <header>
+        <div>
+          <Database aria-hidden="true" size={18} />
+          <strong>{t(`sourceKind.${occurrence.sourceKind}`)}</strong>
+        </div>
+        <KeywordFreshnessPill freshness={occurrence.freshness} />
+      </header>
+      <dl className={styles.keywordSourceFacts}>
+        <div>
+          <dt>{t("collectedAt")}</dt>
+          <dd>
+            <time dateTime={occurrence.collectedAt}>
+              {formatObservedAt(locale, occurrence.collectedAt)}
+            </time>
+          </dd>
+        </div>
+        <div>
+          <dt>{t("providerDataAsOf")}</dt>
+          <dd>
+            {occurrence.providerDataAsOf === null ? (
+              <span>{t("notProvided")}</span>
+            ) : (
+              <time dateTime={occurrence.providerDataAsOf}>
+                {formatObservedAt(locale, occurrence.providerDataAsOf)}
+              </time>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("scopeBasisLabel")}</dt>
+          <dd>{t(`scopeBasis.${occurrence.scopeBasis}`)}</dd>
+        </div>
+        <div>
+          <dt>{t("marketLanguage")}</dt>
+          <dd>
+            {t("marketLanguageValue", {
+              market: occurrence.marketCode,
+              language: occurrence.languageTag,
+            })}
+          </dd>
+        </div>
+      </dl>
+      <dl className={styles.keywordSourceRefs}>
+        <div>
+          <dt>{t("occurrenceId")}</dt>
+          <dd><code title={occurrence.occurrenceId}>{truncateId(occurrence.occurrenceId)}</code></dd>
+        </div>
+        {occurrence.snapshotId === null ? null : (
+          <div>
+            <dt>{t("snapshotId")}</dt>
+            <dd><code title={occurrence.snapshotId}>{truncateId(occurrence.snapshotId)}</code></dd>
+          </div>
+        )}
+        {occurrence.sourceObservationId === null ? null : (
+          <div>
+            <dt>{t("observationId")}</dt>
+            <dd><code title={occurrence.sourceObservationId}>{truncateId(occurrence.sourceObservationId)}</code></dd>
+          </div>
+        )}
+        {occurrence.sourcePointer === null ? null : (
+          <div>
+            <dt>{t("sourcePointer")}</dt>
+            <dd><code>{occurrence.sourcePointer}</code></dd>
+          </div>
+        )}
+        {occurrence.sourceKind === "csv_import" ? (
+          <div>
+            <dt>{t("importPreviewId")}</dt>
+            <dd><code title={occurrence.importPreviewId}>{truncateId(occurrence.importPreviewId)}</code></dd>
+          </div>
+        ) : null}
+      </dl>
+      {occurrence.scopeLimitation === null ? null : (
+        <p className={styles.keywordSourceNote}>
+          <strong>{t("scopeLimitation")}</strong>
+          {occurrence.scopeLimitation}
+        </p>
+      )}
+      {occurrence.limitation === null ? null : (
+        <p className={styles.keywordSourceNote}>
+          <strong>{t("sourceLimitation")}</strong>
+          {occurrence.limitation}
+        </p>
+      )}
+    </article>
+  );
+}
+
+function KeywordDetailPanel({
+  detail,
+}: {
+  readonly detail: GrowthMapKeywordLibraryItem;
+}) {
+  const t = useTranslations("growthMap.keywordLibrary");
+  const metricKeys = [
+    "volume",
+    "kd",
+    "currentRank",
+    "currentUrl",
+    "competitorDomain",
+    "competitorRank",
+  ] as const;
+
+  return (
+    <aside
+      className={cx(styles.detailPanel, styles.keywordDetailPanel)}
+      aria-label={t("selectedDetailLabel")}
+    >
+      <header className={styles.keywordDetailHeader}>
+        <div className={styles.detailEyebrow}>
+          <span>{t("selectedKeyword")}</span>
+          <CoveragePill coverage={detail.coverage} />
+        </div>
+        <h2>{detail.displayKeyword}</h2>
+        <p>
+          {t("marketLanguageValue", {
+            market: detail.marketCode,
+            language: detail.languageTag,
+          })}
+        </p>
+        <div className={styles.keywordDetailTags}>
+          <span>{t(`queryKind.${detail.queryKind}`)}</span>
+          <KeywordStatusPill status={detail.status} />
+        </div>
+      </header>
+
+      <LimitationList limitations={detail.coverage.limitations} />
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("classificationEyebrow")}</span>
+            <h3>{t("classificationTitle")}</h3>
+          </div>
+          <Target aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("classificationDescription")}
+        </p>
+        <dl className={styles.keywordClassificationGrid}>
+          <KeywordClassificationField
+            label={t("intent")}
+            value={detail.intent}
+            limitation={detail.classificationLimitations.intent}
+          />
+          <KeywordClassificationField
+            label={t("buyerStage")}
+            value={detail.buyerStage}
+            limitation={detail.classificationLimitations.buyerStage}
+          />
+          <KeywordClassificationField
+            label={t("cluster")}
+            value={detail.cluster?.name ?? null}
+            identity={detail.cluster?.clusterId}
+            limitation={detail.classificationLimitations.cluster}
+          />
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("mappedTarget")}</dt>
+            <dd><KeywordMappedTarget target={detail.mappedTarget} /></dd>
+          </div>
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("mappingReview")}</dt>
+            <dd>
+              <strong>
+                {t(`mappingReviewState.${detail.mappedTarget.reviewState}`)}
+              </strong>
+              {detail.mappedTarget.reason === null ? null : (
+                <small>{detail.mappedTarget.reason}</small>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("metricsEyebrow")}</span>
+            <h3>{t("metricsTitle")}</h3>
+          </div>
+          <BarChart3 aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("metricsDescription")}
+        </p>
+        <div className={styles.keywordMetricGrid}>
+          {metricKeys.map((metricKey) => (
+            <KeywordMetricCard
+              key={metricKey}
+              metricKey={metricKey}
+              metric={detail.metrics[metricKey]}
+              absenceLimitation={detail.metrics.limitations[metricKey]}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("sourcesEyebrow")}</span>
+            <h3>{t("sourcesTitle")}</h3>
+          </div>
+          <ShieldCheck aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("sourcesDescription")}
+        </p>
+        <div className={styles.keywordSourceList}>
+          {detail.sourceOccurrences.map((occurrence) => (
+            <KeywordSourceOccurrenceCard
+              key={occurrence.occurrenceId}
+              occurrence={occurrence}
+            />
+          ))}
+        </div>
+      </section>
+
+      <footer className={styles.keywordDetailFooter}>
+        <span>
+          {t("keywordId")}
+          <code title={detail.keywordId}>{truncateId(detail.keywordId)}</code>
+        </span>
+        <span>
+          {t("revision")}
+          <strong>{detail.revision}</strong>
+        </span>
+      </footer>
+    </aside>
+  );
+}
+
+function KeywordDetailState({
+  projectId,
+  selectedKeywordId,
+}: {
+  readonly projectId: string;
+  readonly selectedKeywordId: string | null;
+}) {
+  const t = useTranslations("growthMap.keywordLibrary");
+  const detailQuery = useGrowthMapKeywordDetail(projectId, selectedKeywordId);
+  const readState = keywordDetailReadState({
+    selectedKeywordId,
+    isPending: detailQuery.isPending,
+    isError: detailQuery.isError,
+  });
+
+  if (readState === "unselected") {
+    return (
+      <aside className={styles.detailPlaceholder}>
+        <EmptyState
+          icon={<BookOpenText size={28} />}
+          title={t("selectKeywordTitle")}
+          description={t("selectKeywordDescription")}
+        />
+      </aside>
+    );
+  }
+  if (readState === "loading") {
+    return (
+      <aside className={styles.detailPlaceholder} role="status">
+        <Spinner label={t("loadingDetail")} size="lg" />
+        <p>{t("loadingDetail")}</p>
+      </aside>
+    );
+  }
+  if (readState === "error") {
+    return (
+      <aside className={styles.detailPlaceholder}>
+        <ProblemState
+          error={detailQuery.error}
+          onRetry={() => void detailQuery.refetch()}
+          message={t("detailError")}
+        />
+      </aside>
+    );
+  }
+  if (detailQuery.data === undefined) {
+    return (
+      <aside className={styles.detailPlaceholder} role="status">
+        <Spinner label={t("loadingDetail")} size="lg" />
+        <p>{t("loadingDetail")}</p>
+      </aside>
+    );
+  }
+  return (
+    <KeywordDetailPanel
+      key={detailQuery.data.data.keywordId}
+      detail={detailQuery.data.data}
+    />
+  );
+}
+
+function KeywordLibraryEmpty() {
+  const t = useTranslations("growthMap");
+  return (
+    <section className={styles.libraryUnavailable} aria-live="polite">
+      <div className={styles.libraryIcon}>
+        <BookOpenText aria-hidden="true" size={31} strokeWidth={1.6} />
+      </div>
+      <span className={styles.libraryKicker}>{t("realDataOnly")}</span>
+      <h2>{t("libraries.keywords.title")}</h2>
+      <p>{t("libraries.keywords.description")}</p>
+      <div className={styles.libraryBoundary}>
+        <CircleAlert aria-hidden="true" size={20} />
+        <p>{t("libraries.keywords.boundary")}</p>
+      </div>
+    </section>
+  );
+}
+
+function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
+  const t = useTranslations("growthMap.keywordLibrary");
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const cursor = searchParams.get("cursor");
+  const requestedKeywordId = searchParams.get("selectedKeywordId");
+  const [cursorHistory, setCursorHistory] =
+    useState<readonly (string | null)[]>([]);
+  const listQuery = useGrowthMapKeywords(projectId, { cursor, limit: 50 });
+  const items = listQuery.data?.data ?? [];
+  const selectedKeywordId = resolveVisibleKeywordSelection(
+    requestedKeywordId,
+    items.map((item) => item.keywordId),
+  );
+  const locationSearch = searchParams.toString();
+  const readState = keywordLibraryReadState({
+    isPending: listQuery.isPending,
+    isError: listQuery.isError,
+    itemCount: items.length,
+  });
+
+  useEffect(() => {
+    // As with the URL portfolio, an absent selection deliberately renders the
+    // first visible row without rewriting the address. Only repair an explicit
+    // stale/cursor-mismatched deep link after the bounded page has loaded.
+    if (
+      !listQuery.isSuccess ||
+      requestedKeywordId === null ||
+      requestedKeywordId === selectedKeywordId
+    ) {
+      return;
+    }
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, { selectedKeywordId }),
+      { scroll: false },
+    );
+  }, [
+    listQuery.isSuccess,
+    locationSearch,
+    pathname,
+    requestedKeywordId,
+    router,
+    selectedKeywordId,
+  ]);
+
+  function selectKeyword(keywordId: string): void {
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, {
+        selectedKeywordId: keywordId,
+      }),
+      { scroll: false },
+    );
+  }
+
+  function goNext(): void {
+    const nextCursor = listQuery.data?.meta.nextCursor ?? null;
+    if (nextCursor === null) return;
+    setCursorHistory((current) => [...current, cursor]);
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, {
+        cursor: nextCursor,
+        selectedKeywordId: null,
+      }),
+      { scroll: false },
+    );
+  }
+
+  function goPrevious(): void {
+    const previous = cursorHistory.at(-1);
+    if (previous === undefined) return;
+    setCursorHistory((current) => current.slice(0, -1));
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, {
+        cursor: previous,
+        selectedKeywordId: null,
+      }),
+      { scroll: false },
+    );
+  }
+
+  if (readState === "loading") {
+    return (
+      <div className={styles.pageState} role="status">
+        <Spinner label={t("loadingLibrary")} size="lg" />
+        <p>{t("loadingLibrary")}</p>
+      </div>
+    );
+  }
+
+  if (readState === "error") {
+    return (
+      <ProblemState
+        error={listQuery.error}
+        onRetry={() => void listQuery.refetch()}
+        message={t("libraryError")}
+        className={styles.pageState}
+      />
+    );
+  }
+
+  if (listQuery.data === undefined) {
+    return (
+      <div className={styles.pageState} role="status">
+        <Spinner label={t("loadingLibrary")} size="lg" />
+        <p>{t("loadingLibrary")}</p>
+      </div>
+    );
+  }
+  const response = listQuery.data;
+  const occurrenceCount = response.data.reduce(
+    (count, item) => count + item.sourceOccurrences.length,
+    0,
+  );
+
+  return (
+    <>
+      <section
+        className={styles.provenanceBand}
+        aria-label={t("libraryScopeLabel")}
+      >
+        <div className={styles.provenanceIntro}>
+          <ShieldCheck aria-hidden="true" size={22} />
+          <div>
+            <strong>{t("libraryScopeTitle")}</strong>
+            <p>{t("libraryScopeDescription")}</p>
+          </div>
+        </div>
+        <dl className={cx(styles.provenanceFacts, styles.keywordPageFacts)}>
+          <div>
+            <dt>{t("loadedOnPage")}</dt>
+            <dd>{response.data.length}</dd>
+          </div>
+          <div>
+            <dt>{t("sourceOccurrencesOnPage")}</dt>
+            <dd>{occurrenceCount}</dd>
+          </div>
+          <div>
+            <dt>{t("coverageLabel")}</dt>
+            <dd><CoveragePill coverage={response.meta.coverage} /></dd>
+          </div>
+        </dl>
+        <LimitationList limitations={response.meta.coverage.limitations} />
+      </section>
+
+      {readState === "empty" ? (
+        <KeywordLibraryEmpty />
+      ) : (
+        <div className={styles.keywordWorkspace}>
+          <div className={styles.masterColumn}>
+            <KeywordList
+              items={items}
+              selectedKeywordId={selectedKeywordId}
+              onSelect={selectKeyword}
+            />
+            <nav className={styles.pagination} aria-label={t("paginationLabel")}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={cursorHistory.length === 0}
+                onClick={goPrevious}
+              >
+                <ArrowLeft aria-hidden="true" size={16} />
+                {t("previousPage")}
+              </Button>
+              <span>{t("loadedCount", { count: items.length })}</span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!response.meta.hasNext}
+                onClick={goNext}
+              >
+                {t("nextPage")}
+                <ArrowRight aria-hidden="true" size={16} />
+              </Button>
+            </nav>
+          </div>
+          <KeywordDetailState
+            projectId={projectId}
+            selectedKeywordId={selectedKeywordId}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
 function UnavailableLibrary({
   mode,
 }: {
-  readonly mode: Exclude<GrowthMapObjectMode, "pages">;
+  readonly mode: "competitors";
 }) {
   const t = useTranslations("growthMap");
   const Icon = MODE_ICONS[mode];
@@ -1507,8 +2325,10 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
 
       {mode === "pages" ? (
         <PortfolioPane projectId={projectId} />
+      ) : mode === "keywords" ? (
+        <KeywordLibraryPane projectId={projectId} />
       ) : (
-        <UnavailableLibrary mode={mode} />
+        <UnavailableLibrary mode="competitors" />
       )}
     </div>
   );

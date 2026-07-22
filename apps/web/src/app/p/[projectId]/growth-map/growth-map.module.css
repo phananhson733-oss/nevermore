@@ -1387,6 +1387,602 @@
   font-size: 13px;
 }
 
+.keywordPageFacts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.keywordWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(420px, 0.95fr);
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.keywordLedger {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 14px;
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.keywordLedgerHeader,
+.keywordRowButton {
+  display: grid;
+  grid-template-columns:
+    minmax(210px, 1.75fr)
+    minmax(112px, 0.72fr)
+    minmax(96px, 0.62fr)
+    minmax(174px, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.keywordLedgerHeader {
+  min-height: 50px;
+  padding: 0 15px;
+  color: var(--sf-muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  background: var(--sf-surface-deep);
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.keywordList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.keywordRow + .keywordRow {
+  border-top: 1px solid var(--sf-border);
+}
+
+.keywordRowButton {
+  position: relative;
+  width: 100%;
+  min-height: 94px;
+  padding: 14px 15px;
+  color: var(--sf-fg);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.keywordRowButton::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  content: "";
+  background: var(--sf-mint);
+  opacity: 0;
+}
+
+.keywordRowButton:hover {
+  background: color-mix(in srgb, var(--gm-mint-wash) 42%, var(--sf-surface));
+}
+
+.keywordRowSelected,
+.keywordRowSelected:hover {
+  background: color-mix(in srgb, var(--gm-mint-wash) 79%, var(--sf-surface));
+}
+
+.keywordRowSelected::before {
+  opacity: 1;
+}
+
+.keywordRowButton:focus-visible {
+  z-index: 1;
+}
+
+.keywordIdentityCell,
+.keywordSourceSummary,
+.keywordMappedTarget {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.keywordIdentityCell {
+  gap: 4px;
+}
+
+.keywordIdentityCell strong {
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 16px;
+  font-weight: 820;
+  line-height: 1.35;
+}
+
+.keywordIdentityCell small,
+.keywordKindCell,
+.keywordSourceSummary time {
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.keywordKindCell,
+.keywordStatusCell {
+  min-width: 0;
+}
+
+.keywordStatus,
+.keywordFreshness {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 27px;
+  align-items: center;
+  padding: 0 9px;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 999px;
+}
+
+.keywordStatusCandidate,
+.keywordFreshnessStale {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+}
+
+.keywordStatusApproved,
+.keywordFreshnessCurrent {
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+}
+
+.keywordStatusExcluded {
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+}
+
+.keywordStatusParked {
+  color: var(--sf-violet-text);
+  background: var(--sf-violet-soft);
+}
+
+.keywordFreshnessUnknown {
+  color: var(--sf-muted);
+  background: var(--sf-surface-deep);
+}
+
+.keywordSourceSummary {
+  position: relative;
+  gap: 5px;
+  padding-right: 24px;
+}
+
+.keywordSourceSummary > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.keywordSourceSummary small {
+  padding: 3px 6px;
+  color: var(--sf-mint-text);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.3;
+  background: var(--sf-mint-soft);
+  border-radius: 5px;
+}
+
+.keywordSourceSummary > svg {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  color: var(--sf-muted);
+  transform: translateY(-50%);
+  transition: color 140ms ease, translate 140ms ease;
+}
+
+.keywordRowButton:hover .keywordSourceSummary > svg,
+.keywordRowSelected .keywordSourceSummary > svg {
+  color: var(--gm-ink);
+  translate: 2px 0;
+}
+
+.keywordDetailPanel {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sf-border-strong) transparent;
+}
+
+.keywordDetailHeader {
+  padding: 22px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--gm-mint-wash) 72%, var(--sf-surface)),
+      var(--sf-surface) 68%
+    );
+  border-bottom: 1px solid var(--sf-border);
+  border-radius: 14px 14px 0 0;
+}
+
+.keywordDetailHeader h2 {
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+  color: var(--gm-ink);
+  font-size: clamp(27px, 2.25vw, 36px);
+  line-height: 1.12;
+}
+
+.keywordDetailHeader > p {
+  margin: 8px 0 0;
+  color: var(--sf-muted);
+  font-size: 14px;
+}
+
+.keywordDetailTags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.keywordDetailTags > span:first-child {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  padding: 0 9px;
+  color: var(--sf-violet-text);
+  font-size: 13px;
+  font-weight: 780;
+  background: var(--sf-violet-soft);
+  border-radius: 999px;
+}
+
+.keywordDetailSection {
+  padding: 22px 20px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.keywordDetailPanel > .limitations + .keywordDetailSection {
+  margin-top: 16px;
+}
+
+.keywordSectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.keywordSectionHeading > div > span {
+  color: var(--sf-coral-text);
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.keywordSectionHeading h3 {
+  margin-top: 3px;
+  color: var(--sf-fg);
+  font-size: 23px;
+}
+
+.keywordSectionHeading > svg {
+  color: var(--sf-mint-text);
+}
+
+.keywordSectionDescription {
+  margin: 9px 0 16px;
+  color: var(--sf-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.keywordClassificationGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin: 0;
+}
+
+.keywordClassificationField {
+  min-width: 0;
+  padding: 12px;
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-border);
+  border-radius: 9px;
+}
+
+.keywordClassificationField dt {
+  color: var(--sf-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.keywordClassificationField dd {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  margin: 6px 0 0;
+}
+
+.keywordClassificationField strong {
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.keywordClassificationField code,
+.keywordMappedTarget code {
+  width: fit-content;
+  color: var(--sf-muted);
+  font-size: 11px;
+}
+
+.keywordClassificationField small {
+  color: var(--sf-amber-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.keywordMissing {
+  color: var(--sf-muted) !important;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.keywordMappedTarget {
+  gap: 5px;
+}
+
+.keywordMappedTarget a {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  overflow-wrap: anywhere;
+  color: var(--sf-cobalt-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.keywordMappedTarget a svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.keywordMetricGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.keywordMetricCard {
+  min-width: 0;
+  padding: 13px;
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+}
+
+.keywordMetricCard > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.keywordMetricCard > header > span:first-child {
+  color: var(--sf-fg);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.keywordMetricValue {
+  margin-top: 10px;
+}
+
+.keywordMetricValue strong {
+  overflow-wrap: anywhere;
+  color: var(--gm-ink);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.keywordMetricValue a {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  overflow-wrap: anywhere;
+  color: var(--sf-cobalt-text);
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.keywordMetricValue a svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.keywordMetricCard > .keywordMissing {
+  display: block;
+  margin-top: 10px;
+}
+
+.keywordMetricMeta {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.keywordMetricMeta > div,
+.keywordSourceRefs > div {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.72fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.keywordMetricMeta dt,
+.keywordSourceRefs dt {
+  color: var(--sf-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.keywordMetricMeta dd,
+.keywordSourceRefs dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--sf-fg);
+  font-size: 12px;
+  text-align: right;
+}
+
+.keywordMetricMeta code,
+.keywordSourceRefs code {
+  overflow-wrap: anywhere;
+  color: var(--sf-muted);
+  font-size: 11px;
+}
+
+.keywordMetricLimitation {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 8px 9px;
+  color: var(--sf-amber-text);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--sf-amber-soft);
+  border-radius: 7px;
+}
+
+.keywordMetricLimitation svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.keywordSourceList {
+  display: grid;
+  gap: 10px;
+}
+
+.keywordSourceCard {
+  min-width: 0;
+  padding: 13px;
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+}
+
+.keywordSourceCard > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.keywordSourceCard > header > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--sf-mint-text);
+}
+
+.keywordSourceCard > header strong {
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 14px;
+}
+
+.keywordSourceFacts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 13px 0 0;
+}
+
+.keywordSourceFacts > div {
+  min-width: 0;
+  padding: 9px;
+  background: var(--sf-surface);
+  border-radius: 7px;
+}
+
+.keywordSourceFacts dt {
+  color: var(--sf-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.keywordSourceFacts dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.keywordSourceRefs {
+  display: grid;
+  gap: 6px;
+  margin: 11px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.keywordSourceNote {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
+  gap: 8px;
+  margin: 9px 0 0;
+  color: var(--sf-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.keywordSourceNote strong {
+  color: var(--sf-amber-text);
+}
+
+.keywordDetailFooter {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 15px 20px;
+  background: var(--sf-surface-deep);
+  border-radius: 0 0 14px 14px;
+}
+
+.keywordDetailFooter > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--sf-muted);
+  font-size: 12px;
+}
+
+.keywordDetailFooter code {
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 12px;
+}
+
+.keywordDetailFooter strong {
+  color: var(--sf-fg);
+  font-size: 13px;
+}
+
 .libraryUnavailable {
   display: flex;
   min-height: 480px;
@@ -1489,6 +2085,9 @@
   .workspace {
     grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.9fr);
   }
+  .keywordWorkspace {
+    grid-template-columns: minmax(0, 1.4fr) minmax(380px, 0.9fr);
+  }
   .ledgerHeader,
   .rowButton {
     grid-template-columns: minmax(240px, 2fr) 70px 82px 82px 75px 105px;
@@ -1497,6 +2096,9 @@
 
 @media (max-width: 1100px) {
   .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .keywordWorkspace {
     grid-template-columns: minmax(0, 1fr);
   }
   .detailPanel {
@@ -1542,11 +2144,39 @@
   .ledgerHeader {
     display: none;
   }
+  .keywordLedgerHeader {
+    display: none;
+  }
   .rowButton {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 14px 8px;
     min-height: 0;
     padding: 16px;
+  }
+  .keywordRowButton {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 9px;
+    min-height: 0;
+    padding: 16px;
+  }
+  .keywordIdentityCell {
+    grid-column: 1 / -1;
+  }
+  .keywordKindCell,
+  .keywordStatusCell,
+  .keywordSourceSummary {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  .keywordKindCell::before,
+  .keywordStatusCell::before,
+  .keywordSourceSummary::before {
+    content: attr(data-column);
+    color: var(--sf-muted);
+    font-size: 12px;
+    font-weight: 700;
   }
   .urlCell {
     grid-column: 1 / -1;
@@ -1603,6 +2233,33 @@
   }
   .rowButton {
     grid-template-columns: 1fr 1fr;
+  }
+  .keywordRowButton {
+    grid-template-columns: 1fr 1fr;
+  }
+  .keywordSourceSummary {
+    grid-column: 1 / -1;
+  }
+  .keywordDetailHeader,
+  .keywordDetailSection {
+    padding-inline: 16px;
+  }
+  .keywordDetailPanel > .limitations {
+    margin-inline: 16px;
+  }
+  .keywordClassificationGrid,
+  .keywordSourceFacts,
+  .keywordDetailFooter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .keywordMetricMeta > div,
+  .keywordSourceRefs > div,
+  .keywordSourceNote {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .keywordMetricMeta dd,
+  .keywordSourceRefs dd {
+    text-align: left;
   }
   .detailHeader,
   .detailSection {

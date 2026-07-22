@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type {
+  GrowthMapKeywordNumericMetric,
   GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
 } from "@sf/contracts";
@@ -12,12 +13,16 @@ import {
   findMetricObservation,
   growthMapLocationHref,
   growthMapDetailAllowsFindingReview,
+  keywordMetricPresentation,
+  keywordDetailReadState,
+  keywordLibraryReadState,
   metricValueLabelKey,
   metricPresentation,
   normalizeGrowthMapObjectMode,
   presentGrowthMapReviewProblem,
   resolveVisibleSitePageSelection,
   resolveVisibleSitePageSelectionForFinding,
+  resolveVisibleKeywordSelection,
   safeExternalPageUrl,
   shouldShowGrowthMapReviewError,
   uniqueMetricSources,
@@ -128,6 +133,99 @@ describe("Growth Map view model", () => {
     );
   });
 
+  it("replaces selectedKeywordId on every Keyword selection while preserving its cursor", () => {
+    const first = growthMapLocationHref(
+      "/p/project/growth-map",
+      "object=keywords&cursor=opaque&selectedKeywordId=old",
+      { selectedKeywordId: "keyword-a" },
+    );
+    const second = growthMapLocationHref(
+      "/p/project/growth-map",
+      first.split("?")[1] ?? "",
+      { selectedKeywordId: "keyword-b" },
+    );
+
+    expect(first).toBe(
+      "/p/project/growth-map?object=keywords&cursor=opaque&selectedKeywordId=keyword-a",
+    );
+    expect(second).toBe(
+      "/p/project/growth-map?object=keywords&cursor=opaque&selectedKeywordId=keyword-b",
+    );
+  });
+
+  it("keeps Keyword detail constrained to the visible cursor page", () => {
+    expect(
+      resolveVisibleKeywordSelection("keyword-b", ["keyword-a", "keyword-b"]),
+    ).toBe("keyword-b");
+    expect(
+      resolveVisibleKeywordSelection("filtered-out", [
+        "keyword-a",
+        "keyword-b",
+      ]),
+    ).toBe("keyword-a");
+    expect(resolveVisibleKeywordSelection("stale", [])).toBeNull();
+  });
+
+  it("keeps Keyword Library loading, error, empty, and real rows distinct", () => {
+    expect(
+      keywordLibraryReadState({ isPending: true, isError: false, itemCount: 0 }),
+    ).toBe("loading");
+    expect(
+      keywordLibraryReadState({ isPending: false, isError: true, itemCount: 0 }),
+    ).toBe("error");
+    expect(
+      keywordLibraryReadState({ isPending: false, isError: false, itemCount: 0 }),
+    ).toBe("empty");
+    expect(
+      keywordLibraryReadState({ isPending: false, isError: false, itemCount: 2 }),
+    ).toBe("ready");
+  });
+
+  it("does not represent unselected, loading, or failed Keyword detail as data", () => {
+    expect(
+      keywordDetailReadState({
+        selectedKeywordId: null,
+        isPending: false,
+        isError: false,
+      }),
+    ).toBe("unselected");
+    expect(
+      keywordDetailReadState({
+        selectedKeywordId: "keyword-a",
+        isPending: true,
+        isError: false,
+      }),
+    ).toBe("loading");
+    expect(
+      keywordDetailReadState({
+        selectedKeywordId: "keyword-a",
+        isPending: false,
+        isError: true,
+      }),
+    ).toBe("error");
+    expect(
+      keywordDetailReadState({
+        selectedKeywordId: "keyword-a",
+        isPending: false,
+        isError: false,
+      }),
+    ).toBe("ready");
+  });
+
+  it("repairs only an explicit stale Keyword deep link after the cursor page loads", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toMatch(
+      /!listQuery\.isSuccess \|\|\s+requestedKeywordId === null \|\|\s+requestedKeywordId === selectedKeywordId/,
+    );
+    expect(source).toMatch(
+      /growthMapLocationHref\(pathname, locationSearch, \{ selectedKeywordId \}\)/,
+    );
+  });
+
   it("selects the visible URL that owns an exact Finding deep link", () => {
     expect(
       resolveVisibleSitePageSelectionForFinding(
@@ -170,6 +268,23 @@ describe("Growth Map view model", () => {
         { mode: "keywords" },
       ),
     ).toBe("/p/project/growth-map?object=keywords");
+  });
+
+  it("clears Keyword-only state and its opaque cursor when switching objects", () => {
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=keywords&cursor=keyword-page&selectedKeywordId=keyword-a",
+        { mode: "pages" },
+      ),
+    ).toBe("/p/project/growth-map?object=pages");
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=keywords&cursor=keyword-page&selectedKeywordId=keyword-a",
+        { mode: "competitors" },
+      ),
+    ).toBe("/p/project/growth-map?object=competitors");
   });
 
   it("selects a metric only by persisted provider and JSON pointer", () => {
@@ -225,6 +340,44 @@ describe("Growth Map view model", () => {
       state: "observed",
       value: 0,
       unit: null,
+    });
+  });
+
+  it("presents only canonical Keyword metric values and preserves their limitations", () => {
+    const observedZero = {
+      snapshotId: IDS.snapshot,
+      observationId: IDS.observation,
+      valuePointer: "/valueJson/searchVolume",
+      observedAt: "2026-07-21T08:00:00Z",
+      freshness: "current",
+      limitation: null,
+      value: 0,
+    } as GrowthMapKeywordNumericMetric;
+
+    expect(keywordMetricPresentation(observedZero, null)).toEqual({
+      state: "observed",
+      value: 0,
+      observedAt: "2026-07-21T08:00:00Z",
+      freshness: "current",
+      limitation: null,
+    });
+    expect(
+      keywordMetricPresentation(
+        null,
+        "No canonical Keyword Difficulty observation is available.",
+      ),
+    ).toEqual({
+      state: "unavailable",
+      limitation: "No canonical Keyword Difficulty observation is available.",
+    });
+    expect(
+      keywordMetricPresentation(
+        { ...observedZero, value: null, freshness: "unknown", limitation: "The source returned no value." },
+        null,
+      ),
+    ).toEqual({
+      state: "unavailable",
+      limitation: "The source returned no value.",
     });
   });
 
