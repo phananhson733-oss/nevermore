@@ -406,6 +406,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/audit/competitors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the project Competitor Library
+         * @description Returns one bounded cursor page of stable project Competitor identities with strict
+         *     typed origin occurrences, reviewed analysis scope, canonical Observation-backed
+         *     insights, and explicit coverage. This slice exposes no filters, synthetic totals,
+         *     manual-entry controls, review controls, or mutation methods.
+         */
+        get: operations["listProjectAuditCompetitors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/competitors/{competitorId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one project Competitor Library entry
+         * @description Resolves one stable Competitor identity inside the selected project and returns the
+         *     same strict origin, insight, review, coverage, and limitation contract as the page.
+         */
+        get: operations["getProjectAuditCompetitor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/findings": {
         parameters: {
             query?: never;
@@ -587,6 +631,8 @@ export interface components {
         Timestamp: string;
         /** @description Structurally valid RFC 5646 / BCP-47 language tag. The portable schema enforces subtag order, private use, irregular grandfathered tags, and same-case duplicate rejection; runtime and database validation additionally reject mixed-case duplicate variants or extension singletons. This API documents a 255-character protocol ceiling. */
         LocaleCode: string;
+        /** @description Canonical BCP-47 language tag. Growth Map Library responses additionally require Intl.Locale(value).toString() to equal value exactly. */
+        GrowthMapLibraryLanguageTag: components["schemas"]["LocaleCode"];
         MarketCode: string;
         /** @enum {string} */
         Provider: "crawl" | "gsc" | "ga4" | "csv" | "dataforseo";
@@ -1649,7 +1695,7 @@ export interface components {
             scopeBasis: "user_provided";
             scopeLimitation: string | null;
             marketCode: components["schemas"]["MarketCode"];
-            languageTag: components["schemas"]["LocaleCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
             importPreviewId: components["schemas"]["Uuid"];
         };
         GrowthMapKeywordDataForSeoRankedOccurrence: {
@@ -1672,7 +1718,7 @@ export interface components {
             scopeBasis: "provider_collection_scope";
             scopeLimitation: string | null;
             marketCode: components["schemas"]["MarketCode"];
-            languageTag: components["schemas"]["LocaleCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
         };
         GrowthMapKeywordGscTopQueryOccurrence: {
             occurrenceId: components["schemas"]["Uuid"];
@@ -1694,7 +1740,7 @@ export interface components {
             scopeBasis: "project_context";
             scopeLimitation: string;
             marketCode: components["schemas"]["MarketCode"];
-            languageTag: components["schemas"]["LocaleCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
         };
         GrowthMapKeywordManualOccurrence: {
             occurrenceId: components["schemas"]["Uuid"];
@@ -1715,7 +1761,7 @@ export interface components {
             scopeBasis: "manual";
             scopeLimitation: string | null;
             marketCode: components["schemas"]["MarketCode"];
-            languageTag: components["schemas"]["LocaleCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
         };
         /** @description Exact immutable source occurrence. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation. */
         GrowthMapKeywordSourceOccurrence: components["schemas"]["GrowthMapKeywordCsvImportOccurrence"] | components["schemas"]["GrowthMapKeywordDataForSeoRankedOccurrence"] | components["schemas"]["GrowthMapKeywordGscTopQueryOccurrence"] | components["schemas"]["GrowthMapKeywordManualOccurrence"];
@@ -1820,7 +1866,7 @@ export interface components {
             displayKeyword: string;
             normalizedKeyword: string;
             marketCode: components["schemas"]["MarketCode"];
-            languageTag: components["schemas"]["LocaleCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
             /** @enum {string} */
             queryKind: "search_query" | "generative_query";
             /** @enum {string} */
@@ -1858,6 +1904,173 @@ export interface components {
         };
         GrowthMapKeywordDetailHttpResponse: {
             data: components["schemas"]["GrowthMapKeywordDetailResponse"];
+        };
+        /** @enum {string} */
+        GrowthMapCompetitorReviewStatus: "candidate" | "approved" | "excluded";
+        /** @enum {string} */
+        GrowthMapCompetitorRelationship: "direct" | "indirect" | "status_quo" | "benchmark" | "publisher";
+        /** @enum {string} */
+        GrowthMapCompetitorOriginKind: "product_profile" | "csv_keyword_gap" | "manual" | "serp_overlap" | "ai_citation";
+        GrowthMapCompetitorEvidenceRef: {
+            /** @constant */
+            kind: "evidence";
+            evidenceId: components["schemas"]["Uuid"];
+        };
+        /** @description Exact Product Profile competitorCandidates root or candidate-index JSON Pointer. */
+        GrowthMapCompetitorProfileFieldProvenancePath: string;
+        /** @description Product Profile origin with typed Product Profile evidence; evidenceRefId and exact source identities are unique. */
+        GrowthMapCompetitorProductProfileOrigin: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            observedAt: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            originKind: "product_profile";
+            productProfileId: components["schemas"]["Uuid"];
+            profileVersion: number;
+            candidateId: components["schemas"]["Uuid"];
+            fieldProvenancePath: components["schemas"]["GrowthMapCompetitorProfileFieldProvenancePath"];
+            evidenceRefs: components["schemas"]["ProductProfileEvidenceRef"][];
+        };
+        /** @description CSV keyword-gap origin with canonical app Evidence references unique by evidenceId. */
+        GrowthMapCompetitorCsvKeywordGapOrigin: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            observedAt: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            originKind: "csv_keyword_gap";
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            sourcePointer: "/valueJson/competitorDomain";
+            importPreviewId: components["schemas"]["Uuid"];
+            evidenceRefs: components["schemas"]["GrowthMapCompetitorEvidenceRef"][];
+        };
+        /** @description Read-only projection of an existing manual origin; this slice does not expose manual-entry mutation. */
+        GrowthMapCompetitorManualOrigin: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            observedAt: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            originKind: "manual";
+            manualEntryId: components["schemas"]["Uuid"];
+            evidenceRefs: components["schemas"]["GrowthMapCompetitorEvidenceRef"][];
+        };
+        GrowthMapCompetitorSerpOverlapOrigin: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            observedAt: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            originKind: "serp_overlap";
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            evidenceRefs: components["schemas"]["GrowthMapCompetitorEvidenceRef"][];
+        };
+        GrowthMapCompetitorAiCitationOrigin: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            observedAt: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            originKind: "ai_citation";
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            evidenceRefs: components["schemas"]["GrowthMapCompetitorEvidenceRef"][];
+        };
+        /** @description Exact immutable origin occurrence. occurrenceId and canonical origin identities are unique within a Competitor and cursor page. */
+        GrowthMapCompetitorOriginOccurrence: components["schemas"]["GrowthMapCompetitorProductProfileOrigin"] | components["schemas"]["GrowthMapCompetitorCsvKeywordGapOrigin"] | components["schemas"]["GrowthMapCompetitorManualOrigin"] | components["schemas"]["GrowthMapCompetitorSerpOverlapOrigin"] | components["schemas"]["GrowthMapCompetitorAiCitationOrigin"];
+        GrowthMapCompetitorUnavailableInsight: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            availability: "unavailable";
+            value: null;
+            limitation: string;
+        };
+        GrowthMapCompetitorAvailableSerpOverlap: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/serpOverlap";
+            observedAt: components["schemas"]["Timestamp"];
+            limitation: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            availability: "available";
+            value: number;
+        };
+        GrowthMapCompetitorSerpOverlap: components["schemas"]["GrowthMapCompetitorUnavailableInsight"] | components["schemas"]["GrowthMapCompetitorAvailableSerpOverlap"];
+        GrowthMapCompetitorAvailableAiCitationInsight: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/aiCitationInsight";
+            observedAt: components["schemas"]["Timestamp"];
+            limitation: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            availability: "available";
+            value: string;
+        };
+        GrowthMapCompetitorAiCitationInsight: components["schemas"]["GrowthMapCompetitorUnavailableInsight"] | components["schemas"]["GrowthMapCompetitorAvailableAiCitationInsight"];
+        /** @description Stable project-scoped Competitor identity. Approved entries require relationship and analysisScope; candidate/excluded entries forbid both. lastObservedAt is the latest non-null origin timestamp and available insights match one exact origin Observation. */
+        GrowthMapCompetitorLibraryItem: {
+            projectId: components["schemas"]["Uuid"];
+            competitorId: components["schemas"]["Uuid"];
+            domain: components["schemas"]["ProductProfileCompetitorDomain"];
+            name: string | null;
+            reviewStatus: components["schemas"]["GrowthMapCompetitorReviewStatus"];
+            relationship: components["schemas"]["GrowthMapCompetitorRelationship"] | null;
+            analysisScope: components["schemas"]["ProductProfileCompetitorAnalysisScope"][];
+            revision: number;
+            originOccurrences: components["schemas"]["GrowthMapCompetitorOriginOccurrence"][];
+            /** Format: date-time */
+            lastObservedAt: string | null;
+            serpOverlap: components["schemas"]["GrowthMapCompetitorSerpOverlap"];
+            aiCitationInsight: components["schemas"]["GrowthMapCompetitorAiCitationInsight"];
+            coverage: components["schemas"]["GrowthMapCoverage"];
+        };
+        /** @description hasNext is true exactly when nextCursor is non-null. */
+        GrowthMapCompetitorLibraryPageMeta: {
+            limit: number;
+            nextCursor: string | null;
+            hasNext: boolean;
+            coverage: components["schemas"]["GrowthMapCoverage"];
+        };
+        /** @description Bounded project-scoped cursor page with no synthetic total or filter state. Competitor IDs, domains, occurrence IDs, and canonical origin identities are page-unique and page length cannot exceed meta.limit. */
+        GrowthMapCompetitorLibraryResponse: {
+            projectId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapCompetitorLibraryItem"][];
+            meta: components["schemas"]["GrowthMapCompetitorLibraryPageMeta"];
+        };
+        /** @description The selected Competitor item's projectId exactly matches the response scope. */
+        GrowthMapCompetitorDetailResponse: {
+            projectId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapCompetitorLibraryItem"];
+        };
+        GrowthMapCompetitorLibraryHttpResponse: {
+            data: components["schemas"]["GrowthMapCompetitorLibraryResponse"];
+        };
+        GrowthMapCompetitorDetailHttpResponse: {
+            data: components["schemas"]["GrowthMapCompetitorDetailResponse"];
         };
         CreateDiagnosticRunRequest: {
             /** @description Must include a current-project crawl snapshot; omitted optional datasets use latest eligible snapshots only when explicitly selected by UI. */
@@ -2326,6 +2539,7 @@ export interface components {
         ProjectId: components["schemas"]["Uuid"];
         SitePageId: components["schemas"]["Uuid"];
         KeywordId: components["schemas"]["Uuid"];
+        CompetitorId: components["schemas"]["Uuid"];
         ProductProfileCandidateId: components["schemas"]["Uuid"];
         SourceConnectionId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
@@ -3080,6 +3294,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GrowthMapKeywordDetailHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    listProjectAuditCompetitors: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque base64url cursor returned by the previous page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current traceable Competitor Library cursor page. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapCompetitorLibraryHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditCompetitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                competitorId: components["parameters"]["CompetitorId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selected traceable Competitor Library entry. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapCompetitorDetailHttpResponse"];
                 };
             };
             401: components["responses"]["Unauthenticated"];

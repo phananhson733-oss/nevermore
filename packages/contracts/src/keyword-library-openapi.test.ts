@@ -18,6 +18,11 @@ type Equal<Left, Right> =
     ? true
     : false;
 type Expect<Value extends true> = Value;
+type RequiredKeys<Value> = {
+  [Key in keyof Value]-?: Record<never, never> extends Pick<Value, Key>
+    ? never
+    : Key;
+}[keyof Value];
 
 type KeywordListOperation = operations["listProjectAuditKeywords"];
 type KeywordDetailOperation = operations["getProjectAuditKeyword"];
@@ -34,6 +39,9 @@ type KeywordSourceOccurrence =
 type KeywordMappedTarget =
   components["schemas"]["GrowthMapKeywordMappedTarget"];
 type KeywordMetrics = components["schemas"]["GrowthMapKeywordMetrics"];
+type KeywordPage = components["schemas"]["GrowthMapKeywordLibraryResponse"];
+type KeywordPageMeta =
+  components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
 
 type _ListQueryIsCursorOnly = Expect<
   Equal<keyof KeywordListQuery, "limit" | "cursor">
@@ -68,6 +76,24 @@ type _KeywordSourceOccurrenceIsClosed = Expect<
 >;
 type _KeywordMappedTargetIsClosed = Expect<
   Equal<string extends keyof KeywordMappedTarget ? true : false, false>
+>;
+type _KeywordPageFields = Expect<
+  Equal<keyof KeywordPage, "projectId" | "data" | "meta">
+>;
+type _KeywordPageRequiredFields = Expect<
+  Equal<RequiredKeys<KeywordPage>, keyof KeywordPage>
+>;
+type _KeywordPageMetaFields = Expect<
+  Equal<keyof KeywordPageMeta, "limit" | "nextCursor" | "hasNext" | "coverage">
+>;
+type _KeywordPageMetaRequiredFields = Expect<
+  Equal<RequiredKeys<KeywordPageMeta>, keyof KeywordPageMeta>
+>;
+type _KeywordLanguageTagUsesCanonicalContract = Expect<
+  Equal<
+    KeywordItem["languageTag"],
+    components["schemas"]["GrowthMapLibraryLanguageTag"]
+  >
 >;
 type _SourceKinds = Expect<
   Equal<
@@ -123,13 +149,25 @@ type KeywordDetailPath =
   paths["/projects/{projectId}/audit/keywords/{keywordId}"];
 type _ListHasNoMutation = Expect<
   Equal<
-    KeywordListPath["post"] | KeywordListPath["put"] | KeywordListPath["patch"] | KeywordListPath["delete"],
+    | KeywordListPath["post"]
+    | KeywordListPath["put"]
+    | KeywordListPath["patch"]
+    | KeywordListPath["delete"]
+    | KeywordListPath["head"]
+    | KeywordListPath["options"]
+    | KeywordListPath["trace"],
     undefined
   >
 >;
 type _DetailHasNoMutation = Expect<
   Equal<
-    KeywordDetailPath["post"] | KeywordDetailPath["put"] | KeywordDetailPath["patch"] | KeywordDetailPath["delete"],
+    | KeywordDetailPath["post"]
+    | KeywordDetailPath["put"]
+    | KeywordDetailPath["patch"]
+    | KeywordDetailPath["delete"]
+    | KeywordDetailPath["head"]
+    | KeywordDetailPath["options"]
+    | KeywordDetailPath["trace"],
     undefined
   >
 >;

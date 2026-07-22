@@ -60,7 +60,7 @@ test("freezes the eight traceability persistence tables in the 36-table contract
   );
 });
 
-test("freezes the 36 implemented operations and six async commands", () => {
+test("freezes the 38 implemented operations and six async commands", () => {
   for (const operationId of [
     "getProjectProductProfile",
     "updateProductProfileDraft",
@@ -72,6 +72,8 @@ test("freezes the 36 implemented operations and six async commands", () => {
     "getProjectAuditUrl",
     "listProjectAuditKeywords",
     "getProjectAuditKeyword",
+    "listProjectAuditCompetitors",
+    "getProjectAuditCompetitor",
   ]) {
     assert.match(verifier, new RegExp(`"${operationId}"`));
   }
@@ -102,6 +104,27 @@ test("gates the strict read-only Keyword Library OpenAPI surface", () => {
     "Growth Map Keyword source occurrence discriminator drift",
     "Growth Map Keyword mapped target discriminator drift",
     "Growth Map Keyword canonical metric pointer drift",
+    "Growth Map Library language tags must document the canonical Intl.Locale runtime refinement",
+    "Growth Map Keyword cursor page required fields",
+    "Growth Map Keyword cursor page metadata required fields",
+  ]) {
+    assert.match(verifier, new RegExp(invariant));
+  }
+});
+
+test("gates the strict read-only Competitor Library OpenAPI surface", () => {
+  for (const invariant of [
+    "Growth Map Competitor list path/operationId drift",
+    "Growth Map Competitor detail path/operationId drift",
+    "Growth Map Competitor list query must be exactly limit/cursor",
+    "Growth Map Competitor reads must return the standard HTTP envelope around the complete read model",
+    "Growth Map Competitor origin occurrence discriminator drift",
+    "Growth Map Competitor product_profile origin must keep its strict typed Product Profile evidence contract",
+    "Growth Map Competitor csv_keyword_gap origin discriminator or canonical pointer drift",
+    "Growth Map Competitor manual origin discriminator drift",
+    "Growth Map Competitor insight availability discriminator drift",
+    "Growth Map Competitor available insight canonical Observation pointer drift",
+    "Growth Map Competitor cursor page must remain bounded with exact metadata and explicit coverage",
   ]) {
     assert.match(verifier, new RegExp(invariant));
   }

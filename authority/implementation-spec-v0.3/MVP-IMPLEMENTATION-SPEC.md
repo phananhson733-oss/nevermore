@@ -10,7 +10,7 @@ owner: SignalFrame
 
 # Nevermore Unified Growth Opportunity — v0.3 可执行权威
 
-本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 36 个 operation 与 6 个 async operation，SQL 精确声明 36 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger，以及从最新可读 DiagnosticRun 冻结输入投影的可溯源多 URL Growth Map 与严格只读 Keyword Library 列表/详情。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
+本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 38 个 operation 与 6 个 async operation，SQL 精确声明 36 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger，以及从最新可读 DiagnosticRun 冻结输入投影的可溯源多 URL Growth Map 与严格只读 Keyword/Competitor Library 列表/详情。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
 
 规范词“必须 / MUST”“不得 / MUST NOT”是当前机器面或已审核变更边界的发布条件；“应 / SHOULD”是强建议，偏离时必须在代码评审中记录原因；“可 / MAY”是非阻塞增强。凡是标为“reviewed change sequence”“planned”或“stop gate 后”的内容，均不是当前可调用 API、已存在表或已交付产品事实。
 
@@ -913,6 +913,8 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `getProjectAuditUrl` — 读取一个 canonical SitePage 的真实 Observation、resolved FindingTarget、Finding 与 canonical Execution ID 关系。
 - `listProjectAuditKeywords` — 读取有界 Keyword Library cursor page；保留精确 source occurrence、canonical metric pointer、mapped target、coverage 与 limitation，不返回伪造总数或过滤状态。
 - `getProjectAuditKeyword` — 按稳定 Keyword ID 读取同一严格只读投影，不暴露 Finding confirmation、Action state 或 mutation。
+- `listProjectAuditCompetitors` — 读取有界 Competitor Library cursor page；保留严格 origin discriminator、typed evidence、review state、canonical Observation insight lineage 与 coverage，不返回伪造总数或过滤状态。
+- `getProjectAuditCompetitor` — 按稳定 Competitor ID 读取同一严格只读投影，不暴露 manual-entry、review control 或 mutation。
 - `listProjectFindings` — 列出 Finding 和 evidence summary。
 - `reviewProjectFinding` — confirm/ignore/needs-more-data。
 - `listProjectActions` — 列出 30/60/90 plan。
@@ -1204,7 +1206,7 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 ### 17.1 合同与基础
 
-- **AC-001** `pnpm verify:authority` 通过；34 operationId、6 async operation、36 table 与当前应用 ordered migrations 完全一致；0012～0017 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0017_finding_target_ledger`。
+- **AC-001** `pnpm verify:authority` 通过；38 operationId、6 async operation、36 table 与当前应用 ordered migrations 完全一致；0012～0017 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0017_finding_target_ledger`。
 - **AC-002** Redocly lint 无 error；生成 client/server types 无手工 `any` patch。
 - **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；36 表、41 个 named index、55 个 trigger、6 个 runtime routine、Product Profile reservation/provenance routines、frozen Crawl seed constraints、Observation→SitePage lineage guards，以及 Finding target relation/resolution/lineage/append-only guards 均存在；Crawl exact fetch、GSC/GA4 唯一 canonical/slash variant、歧义拒绝、无伪造 PageSnapshot、逐 Run target ledger 与最终 `0017_finding_target_ledger` version projection 均由 rollback-safe smoke 覆盖。
 - **AC-004** pg-boss schema 由库创建且不进入 Drizzle migration。

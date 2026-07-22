@@ -12,7 +12,7 @@ const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
 const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
-const EXPECTED_OPERATION_COUNT = 36;
+const EXPECTED_OPERATION_COUNT = 38;
 const EXPECTED_ASYNC_OPERATION_COUNT = 6;
 const EXPECTED_TABLE_COUNT = 36;
 const MIGRATION_VERSION_VIEW_PATTERN =
@@ -506,31 +506,129 @@ check(
     ),
   "Growth Map Finding must expose the exact non-negative reviewRevision required by optimistic review concurrency",
 );
-const keywordReadPathBlock = between(
+const openApiReadMethods = (pathBlock) => [
+  ...pathBlock.matchAll(
+    /^    (get|put|post|delete|options|head|patch|trace):\s*$/gm,
+  ),
+].map((match) => match[1]);
+const openApiParameterRefs = (operationBlock) => [
+  ...operationBlock.matchAll(
+    /^        - \$ref: '(#\/components\/parameters\/[^']+)'\s*$/gm,
+  ),
+].map((match) => match[1]);
+
+const keywordListPathBlock = between(
   files.openapi,
   "  /projects/{projectId}/audit/keywords:",
-  "  /projects/{projectId}/findings:",
+  "  /projects/{projectId}/audit/keywords/{keywordId}:",
+);
+const keywordDetailPathBlock = between(
+  files.openapi,
+  "  /projects/{projectId}/audit/keywords/{keywordId}:",
+  "  /projects/{projectId}/audit/competitors:",
+);
+exactSet(
+  openApiReadMethods(keywordListPathBlock),
+  ["get"],
+  "Growth Map Keyword list methods",
+);
+exactSet(
+  openApiReadMethods(keywordDetailPathBlock),
+  ["get"],
+  "Growth Map Keyword detail methods",
+);
+exactSet(
+  openApiParameterRefs(keywordListPathBlock),
+  [
+    "#/components/parameters/ProjectId",
+    "#/components/parameters/Limit",
+    "#/components/parameters/Cursor",
+  ],
+  "Growth Map Keyword list query must be exactly limit/cursor",
+);
+exactSet(
+  openApiParameterRefs(keywordDetailPathBlock),
+  [
+    "#/components/parameters/ProjectId",
+    "#/components/parameters/KeywordId",
+  ],
+  "Growth Map Keyword detail parameters",
 );
 check(
-  keywordReadPathBlock.includes(
+  keywordListPathBlock.includes(
     "operationId: listProjectAuditKeywords",
   ) &&
-    keywordReadPathBlock.includes(
+    keywordDetailPathBlock.includes(
       "operationId: getProjectAuditKeyword",
     ) &&
-    keywordReadPathBlock.includes(
+    keywordListPathBlock.includes(
       "#/components/schemas/GrowthMapKeywordLibraryHttpResponse",
     ) &&
-    keywordReadPathBlock.includes(
+    keywordDetailPathBlock.includes(
       "#/components/schemas/GrowthMapKeywordDetailHttpResponse",
-    ) &&
-    keywordReadPathBlock.includes("#/components/parameters/KeywordId") &&
-    !/^\s+(?:post|put|patch|delete):/m.test(keywordReadPathBlock),
+    ),
   "Growth Map Keyword authority paths must expose only the implemented list/detail reads",
+);
+const competitorListPathBlock = between(
+  files.openapi,
+  "  /projects/{projectId}/audit/competitors:",
+  "  /projects/{projectId}/audit/competitors/{competitorId}:",
+);
+const competitorDetailPathBlock = between(
+  files.openapi,
+  "  /projects/{projectId}/audit/competitors/{competitorId}:",
+  "  /projects/{projectId}/findings:",
+);
+exactSet(
+  openApiReadMethods(competitorListPathBlock),
+  ["get"],
+  "Growth Map Competitor list methods",
+);
+exactSet(
+  openApiReadMethods(competitorDetailPathBlock),
+  ["get"],
+  "Growth Map Competitor detail methods",
+);
+exactSet(
+  openApiParameterRefs(competitorListPathBlock),
+  [
+    "#/components/parameters/ProjectId",
+    "#/components/parameters/Limit",
+    "#/components/parameters/Cursor",
+  ],
+  "Growth Map Competitor list query must be exactly limit/cursor",
+);
+exactSet(
+  openApiParameterRefs(competitorDetailPathBlock),
+  [
+    "#/components/parameters/ProjectId",
+    "#/components/parameters/CompetitorId",
+  ],
+  "Growth Map Competitor detail parameters",
+);
+check(
+  competitorListPathBlock.includes(
+    "operationId: listProjectAuditCompetitors",
+  ) &&
+    competitorDetailPathBlock.includes(
+      "operationId: getProjectAuditCompetitor",
+    ) &&
+    competitorListPathBlock.includes(
+      "#/components/schemas/GrowthMapCompetitorLibraryHttpResponse",
+    ) &&
+    competitorDetailPathBlock.includes(
+      "#/components/schemas/GrowthMapCompetitorDetailHttpResponse",
+    ),
+  "Growth Map Competitor authority paths must expose only the implemented list/detail reads",
 );
 const keywordSchemaBlock = between(
   files.openapi,
   "    GrowthMapKeywordUnassignedTarget:",
+  "    GrowthMapCompetitorReviewStatus:",
+);
+const competitorSchemaBlock = between(
+  files.openapi,
+  "    GrowthMapCompetitorReviewStatus:",
   "    CreateDiagnosticRunRequest:",
 );
 check(
@@ -561,6 +659,32 @@ check(
   "Growth Map Keyword authority must preserve every canonical metric pointer",
 );
 check(
+  files.openapi.includes("    GrowthMapLibraryLanguageTag:") &&
+    files.openapi.includes(
+      "x-signalframe-runtime-refinement: canonicalIntlLocale",
+    ) &&
+    [
+      "GrowthMapKeywordCsvImportOccurrence",
+      "GrowthMapKeywordDataForSeoRankedOccurrence",
+      "GrowthMapKeywordGscTopQueryOccurrence",
+      "GrowthMapKeywordManualOccurrence",
+      "GrowthMapKeywordLibraryItem",
+    ].every((schemaName) => {
+      const start = keywordSchemaBlock.indexOf(`    ${schemaName}:`);
+      if (start < 0) return false;
+      const remaining = keywordSchemaBlock.slice(start);
+      const nextSchema = remaining.slice(1).search(/^    [A-Z][A-Za-z0-9]+:/m);
+      const schemaBlock =
+        nextSchema < 0
+          ? remaining
+          : remaining.slice(0, nextSchema + 1);
+      return schemaBlock.includes(
+        "languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }",
+      );
+    }),
+  "Growth Map Keyword authority must use canonical Growth Map Library language tags",
+);
+check(
   /GrowthMapKeywordLibraryItem:\s+type: object\s+additionalProperties: false/.test(
     keywordSchemaBlock,
   ) &&
@@ -576,8 +700,94 @@ check(
     keywordSchemaBlock.includes("minItems: 1") &&
     keywordSchemaBlock.includes("maxItems: 100") &&
     keywordSchemaBlock.includes("GrowthMapKeywordLibraryResponse:") &&
-    keywordSchemaBlock.includes("GrowthMapKeywordDetailResponse:"),
+    keywordSchemaBlock.includes("GrowthMapKeywordDetailResponse:") &&
+    /GrowthMapKeywordLibraryResponse:\s+type: object\s+additionalProperties: false\s+required: \[projectId, data, meta\]/.test(
+      keywordSchemaBlock,
+    ) &&
+    /GrowthMapKeywordLibraryPageMeta:\s+type: object\s+additionalProperties: false\s+required: \[limit, nextCursor, hasNext, coverage\]/.test(
+      keywordSchemaBlock,
+    ),
   "Growth Map Keyword authority must keep closed bounded coverage/limitation cursor contracts",
+);
+check(
+  [
+    "product_profile: '#/components/schemas/GrowthMapCompetitorProductProfileOrigin'",
+    "csv_keyword_gap: '#/components/schemas/GrowthMapCompetitorCsvKeywordGapOrigin'",
+    "manual: '#/components/schemas/GrowthMapCompetitorManualOrigin'",
+    "serp_overlap: '#/components/schemas/GrowthMapCompetitorSerpOverlapOrigin'",
+    "ai_citation: '#/components/schemas/GrowthMapCompetitorAiCitationOrigin'",
+  ].every((mapping) => competitorSchemaBlock.includes(mapping)) &&
+    competitorSchemaBlock.includes("propertyName: originKind"),
+  "Growth Map Competitor authority must preserve every exact origin discriminator",
+);
+const competitorProductProfileOriginBlock = between(
+  competitorSchemaBlock,
+  "    GrowthMapCompetitorProductProfileOrigin:",
+  "    GrowthMapCompetitorCsvKeywordGapOrigin:",
+);
+const competitorCsvKeywordGapOriginBlock = between(
+  competitorSchemaBlock,
+  "    GrowthMapCompetitorCsvKeywordGapOrigin:",
+  "    GrowthMapCompetitorManualOrigin:",
+);
+const competitorManualOriginBlock = between(
+  competitorSchemaBlock,
+  "    GrowthMapCompetitorManualOrigin:",
+  "    GrowthMapCompetitorSerpOverlapOrigin:",
+);
+check(
+  /GrowthMapCompetitorProductProfileOrigin:\s+type: object\s+additionalProperties: false/.test(
+    competitorSchemaBlock,
+  ) &&
+    competitorProductProfileOriginBlock.includes(
+      "items: { $ref: '#/components/schemas/ProductProfileEvidenceRef' }",
+    ) &&
+    competitorSchemaBlock.includes(
+      "pattern: '^/competitorCandidates(?:/[0-9]+)?$'",
+    ) &&
+    competitorCsvKeywordGapOriginBlock.includes(
+      "items: { $ref: '#/components/schemas/GrowthMapCompetitorEvidenceRef' }",
+    ) &&
+    competitorManualOriginBlock.includes(
+      "items: { $ref: '#/components/schemas/GrowthMapCompetitorEvidenceRef' }",
+    ) &&
+    competitorCsvKeywordGapOriginBlock.includes(
+      "sourcePointer: { type: string, const: /valueJson/competitorDomain }",
+    ),
+  "Growth Map Competitor authority must keep strict typed evidence for product_profile, csv_keyword_gap, and manual origins",
+);
+check(
+  [
+    "unavailable: '#/components/schemas/GrowthMapCompetitorUnavailableInsight'",
+    "available: '#/components/schemas/GrowthMapCompetitorAvailableSerpOverlap'",
+    "available: '#/components/schemas/GrowthMapCompetitorAvailableAiCitationInsight'",
+  ].every((mapping) => competitorSchemaBlock.includes(mapping)) &&
+    competitorSchemaBlock.includes("propertyName: availability") &&
+    competitorSchemaBlock.includes("const: /valueJson/serpOverlap") &&
+    competitorSchemaBlock.includes(
+      "const: /valueJson/aiCitationInsight",
+    ) &&
+    /GrowthMapCompetitorUnavailableInsight:\s+type: object\s+additionalProperties: false\s+required: \[availability, value, limitation\]/.test(
+      competitorSchemaBlock,
+    ),
+  "Growth Map Competitor authority must preserve available/unavailable insight discriminators and canonical Observation pointers",
+);
+check(
+  /GrowthMapCompetitorLibraryItem:\s+type: object\s+additionalProperties: false\s+required: \[projectId, competitorId, domain, name, reviewStatus, relationship, analysisScope, revision, originOccurrences, lastObservedAt, serpOverlap, aiCitationInsight, coverage\]/.test(
+    competitorSchemaBlock,
+  ) &&
+    /GrowthMapCompetitorLibraryResponse:\s+type: object\s+additionalProperties: false\s+required: \[projectId, data, meta\]/.test(
+      competitorSchemaBlock,
+    ) &&
+    /GrowthMapCompetitorLibraryPageMeta:\s+type: object\s+additionalProperties: false\s+required: \[limit, nextCursor, hasNext, coverage\]/.test(
+      competitorSchemaBlock,
+    ) &&
+    competitorSchemaBlock.includes("minItems: 1") &&
+    competitorSchemaBlock.includes("maxItems: 100") &&
+    competitorSchemaBlock.includes(
+      "coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }",
+    ),
+  "Growth Map Competitor authority must keep closed bounded exact-field cursor contracts",
 );
 const exportBundleBlock = between(
   files.openapi,

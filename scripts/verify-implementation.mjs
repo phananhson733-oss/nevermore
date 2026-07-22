@@ -71,6 +71,8 @@ const EXPECTED_OPENAPI_OPERATIONS = [
   "getProjectAuditUrl",
   "listProjectAuditKeywords",
   "getProjectAuditKeyword",
+  "listProjectAuditCompetitors",
+  "getProjectAuditCompetitor",
   "listProjectFindings",
   "reviewProjectFinding",
   "listProjectActions",
@@ -559,6 +561,15 @@ function checkOpenApi() {
   );
 
   const keywordSchemas = document.components?.schemas ?? {};
+  const canonicalLibraryLanguageTag =
+    keywordSchemas.GrowthMapLibraryLanguageTag;
+  invariant(
+    canonicalLibraryLanguageTag?.$ref ===
+      "#/components/schemas/LocaleCode" &&
+      canonicalLibraryLanguageTag["x-signalframe-runtime-refinement"] ===
+        "canonicalIntlLocale",
+    "Growth Map Library language tags must document the canonical Intl.Locale runtime refinement",
+  );
   const keywordSourceOccurrence =
     keywordSchemas.GrowthMapKeywordSourceOccurrence;
   invariant(
@@ -688,6 +699,14 @@ function checkOpenApi() {
         "#/components/schemas/GrowthMapCoverage",
     "Growth Map Keyword item must retain bounded source lineage and explicit coverage",
   );
+  const canonicalKeywordLanguageReferences =
+    source.match(
+      /languageTag: \{ \$ref: '#\/components\/schemas\/GrowthMapLibraryLanguageTag' \}/g,
+    ) ?? [];
+  invariant(
+    canonicalKeywordLanguageReferences.length === 5,
+    `Growth Map Keyword canonical language-tag reference drift: expected 5 references, found ${canonicalKeywordLanguageReferences.length}`,
+  );
 
   const keywordMetrics = keywordSchemas.GrowthMapKeywordMetrics;
   assertExactSet(
@@ -717,15 +736,447 @@ function checkOpenApi() {
     "Growth Map Keyword cursor page fields",
   );
   assertExactSet(
+    keywordPage?.required ?? [],
+    Object.keys(keywordPage?.properties ?? {}),
+    "Growth Map Keyword cursor page required fields",
+  );
+  assertExactSet(
     Object.keys(keywordPageMeta?.properties ?? {}),
     ["limit", "nextCursor", "hasNext", "coverage"],
     "Growth Map Keyword cursor page metadata fields",
+  );
+  assertExactSet(
+    keywordPageMeta?.required ?? [],
+    Object.keys(keywordPageMeta?.properties ?? {}),
+    "Growth Map Keyword cursor page metadata required fields",
   );
   invariant(
     keywordPage?.properties?.data?.maxItems === 100 &&
       keywordPageMeta?.properties?.coverage?.$ref ===
         "#/components/schemas/GrowthMapCoverage",
     "Growth Map Keyword cursor page must remain bounded with explicit coverage",
+  );
+
+  const competitorListPathName =
+    "/projects/{projectId}/audit/competitors";
+  const competitorDetailPathName =
+    "/projects/{projectId}/audit/competitors/{competitorId}";
+  assertExactSet(
+    Object.keys(document.paths ?? {}).filter((pathName) =>
+      pathName.startsWith(competitorListPathName),
+    ),
+    [competitorListPathName, competitorDetailPathName],
+    "Growth Map Competitor read paths",
+  );
+  const competitorListPath = document.paths?.[competitorListPathName];
+  const competitorDetailPath = document.paths?.[competitorDetailPathName];
+  const competitorList = competitorListPath?.get;
+  const competitorDetail = competitorDetailPath?.get;
+  invariant(
+    competitorList?.operationId === "listProjectAuditCompetitors",
+    "Growth Map Competitor list path/operationId drift",
+  );
+  invariant(
+    competitorDetail?.operationId === "getProjectAuditCompetitor",
+    "Growth Map Competitor detail path/operationId drift",
+  );
+  assertExactSet(
+    Object.keys(competitorListPath ?? {}).filter((key) =>
+      HTTP_METHODS.has(key),
+    ),
+    ["get"],
+    "Growth Map Competitor list methods",
+  );
+  assertExactSet(
+    Object.keys(competitorDetailPath ?? {}).filter((key) =>
+      HTTP_METHODS.has(key),
+    ),
+    ["get"],
+    "Growth Map Competitor detail methods",
+  );
+  const competitorListParameterRefs = (
+    competitorList?.parameters ?? []
+  ).map((parameter) => parameter.$ref);
+  invariant(
+    competitorListParameterRefs.every(
+      (reference) => typeof reference === "string",
+    ),
+    "Growth Map Competitor list query must be exactly limit/cursor",
+  );
+  assertExactSet(
+    competitorListParameterRefs,
+    [
+      "#/components/parameters/ProjectId",
+      "#/components/parameters/Limit",
+      "#/components/parameters/Cursor",
+    ],
+    "Growth Map Competitor list query must be exactly limit/cursor",
+  );
+  assertExactSet(
+    (competitorDetail?.parameters ?? []).map(
+      (parameter) => parameter.$ref,
+    ),
+    [
+      "#/components/parameters/ProjectId",
+      "#/components/parameters/CompetitorId",
+    ],
+    "Growth Map Competitor detail parameters",
+  );
+  invariant(
+    competitorList?.responses?.["200"]?.content?.["application/json"]
+      ?.schema?.$ref ===
+      "#/components/schemas/GrowthMapCompetitorLibraryHttpResponse" &&
+      competitorDetail?.responses?.["200"]?.content?.[
+        "application/json"
+      ]?.schema?.$ref ===
+        "#/components/schemas/GrowthMapCompetitorDetailHttpResponse",
+    "Growth Map Competitor reads must return the standard HTTP envelope around the complete read model",
+  );
+  invariant(
+    competitorList?.responses?.["422"]?.$ref ===
+      "#/components/responses/ValidationError" &&
+      competitorList.responses?.["503"]?.$ref ===
+        "#/components/responses/DependencyUnavailable" &&
+      competitorDetail?.responses?.["503"]?.$ref ===
+        "#/components/responses/DependencyUnavailable",
+    "Growth Map Competitor reads must expose cursor validation and fail-closed dependency errors",
+  );
+
+  const competitorSchemas = document.components?.schemas ?? {};
+  const assertClosedRequiredCompetitorSchema = (schemaName, fields) => {
+    const schema = competitorSchemas[schemaName];
+    invariant(
+      schema?.additionalProperties === false,
+      `Growth Map Competitor schema must be closed: ${schemaName}`,
+    );
+    assertExactSet(
+      Object.keys(schema?.properties ?? {}),
+      fields,
+      `Growth Map Competitor schema fields: ${schemaName}`,
+    );
+    assertExactSet(
+      schema?.required ?? [],
+      fields,
+      `Growth Map Competitor schema required fields: ${schemaName}`,
+    );
+  };
+  assertExactSet(
+    competitorSchemas.GrowthMapCompetitorReviewStatus?.enum ?? [],
+    ["candidate", "approved", "excluded"],
+    "Growth Map Competitor review statuses",
+  );
+  assertExactSet(
+    competitorSchemas.GrowthMapCompetitorRelationship?.enum ?? [],
+    ["direct", "indirect", "status_quo", "benchmark", "publisher"],
+    "Growth Map Competitor relationships",
+  );
+  const competitorOriginKinds = [
+    "product_profile",
+    "csv_keyword_gap",
+    "manual",
+    "serp_overlap",
+    "ai_citation",
+  ];
+  assertExactSet(
+    competitorSchemas.GrowthMapCompetitorOriginKind?.enum ?? [],
+    competitorOriginKinds,
+    "Growth Map Competitor origin kinds",
+  );
+
+  const competitorOriginOccurrence =
+    competitorSchemas.GrowthMapCompetitorOriginOccurrence;
+  invariant(
+    competitorOriginOccurrence?.discriminator?.propertyName ===
+      "originKind",
+    "Growth Map Competitor origin occurrence discriminator drift",
+  );
+  assertExactSet(
+    Object.keys(
+      competitorOriginOccurrence?.discriminator?.mapping ?? {},
+    ),
+    competitorOriginKinds,
+    "Growth Map Competitor origin occurrence discriminator drift",
+  );
+  const competitorOriginSchemaNames = [
+    "GrowthMapCompetitorProductProfileOrigin",
+    "GrowthMapCompetitorCsvKeywordGapOrigin",
+    "GrowthMapCompetitorManualOrigin",
+    "GrowthMapCompetitorSerpOverlapOrigin",
+    "GrowthMapCompetitorAiCitationOrigin",
+  ];
+  assertExactSet(
+    (competitorOriginOccurrence?.oneOf ?? []).map(
+      (shape) => shape.$ref,
+    ),
+    competitorOriginSchemaNames.map(
+      (schemaName) => `#/components/schemas/${schemaName}`,
+    ),
+    "Growth Map Competitor origin occurrence union drift",
+  );
+
+  const competitorOriginFields = new Map([
+    [
+      "GrowthMapCompetitorProductProfileOrigin",
+      [
+        "occurrenceId",
+        "observedAt",
+        "originKind",
+        "productProfileId",
+        "profileVersion",
+        "candidateId",
+        "fieldProvenancePath",
+        "evidenceRefs",
+      ],
+    ],
+    [
+      "GrowthMapCompetitorCsvKeywordGapOrigin",
+      [
+        "occurrenceId",
+        "observedAt",
+        "originKind",
+        "snapshotId",
+        "observationId",
+        "sourcePointer",
+        "importPreviewId",
+        "evidenceRefs",
+      ],
+    ],
+    [
+      "GrowthMapCompetitorManualOrigin",
+      [
+        "occurrenceId",
+        "observedAt",
+        "originKind",
+        "manualEntryId",
+        "evidenceRefs",
+      ],
+    ],
+    [
+      "GrowthMapCompetitorSerpOverlapOrigin",
+      [
+        "occurrenceId",
+        "observedAt",
+        "originKind",
+        "snapshotId",
+        "observationId",
+        "evidenceRefs",
+      ],
+    ],
+    [
+      "GrowthMapCompetitorAiCitationOrigin",
+      [
+        "occurrenceId",
+        "observedAt",
+        "originKind",
+        "snapshotId",
+        "observationId",
+        "evidenceRefs",
+      ],
+    ],
+  ]);
+  for (const [schemaName, fields] of competitorOriginFields) {
+    assertClosedRequiredCompetitorSchema(schemaName, fields);
+  }
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorEvidenceRef",
+    ["kind", "evidenceId"],
+  );
+  invariant(
+    competitorSchemas.GrowthMapCompetitorEvidenceRef?.properties?.kind
+      ?.const === "evidence",
+    "Growth Map Competitor canonical app Evidence discriminator drift",
+  );
+  const productProfileOrigin =
+    competitorSchemas.GrowthMapCompetitorProductProfileOrigin;
+  invariant(
+    productProfileOrigin?.properties?.originKind?.const ===
+      "product_profile" &&
+      productProfileOrigin.properties?.fieldProvenancePath?.$ref ===
+        "#/components/schemas/GrowthMapCompetitorProfileFieldProvenancePath" &&
+      competitorSchemas.GrowthMapCompetitorProfileFieldProvenancePath
+        ?.pattern === "^/competitorCandidates(?:/[0-9]+)?$" &&
+      productProfileOrigin.properties?.evidenceRefs?.items?.$ref ===
+        "#/components/schemas/ProductProfileEvidenceRef" &&
+      productProfileOrigin.properties.evidenceRefs.maxItems === 50 &&
+      productProfileOrigin.properties.evidenceRefs.uniqueItems === true,
+    "Growth Map Competitor product_profile origin must keep its strict typed Product Profile evidence contract",
+  );
+  const csvKeywordGapOrigin =
+    competitorSchemas.GrowthMapCompetitorCsvKeywordGapOrigin;
+  invariant(
+    csvKeywordGapOrigin?.properties?.originKind?.const ===
+      "csv_keyword_gap" &&
+      csvKeywordGapOrigin.properties?.sourcePointer?.const ===
+        "/valueJson/competitorDomain",
+    "Growth Map Competitor csv_keyword_gap origin discriminator or canonical pointer drift",
+  );
+  const manualOrigin = competitorSchemas.GrowthMapCompetitorManualOrigin;
+  invariant(
+    manualOrigin?.properties?.originKind?.const === "manual",
+    "Growth Map Competitor manual origin discriminator drift",
+  );
+  for (const schemaName of competitorOriginSchemaNames.slice(1)) {
+    const evidenceRefs =
+      competitorSchemas[schemaName]?.properties?.evidenceRefs;
+    invariant(
+      evidenceRefs?.items?.$ref ===
+        "#/components/schemas/GrowthMapCompetitorEvidenceRef" &&
+        evidenceRefs.maxItems === 100 &&
+        evidenceRefs.uniqueItems === true,
+      `Growth Map Competitor canonical app Evidence refs drift: ${schemaName}`,
+    );
+  }
+
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorUnavailableInsight",
+    ["availability", "value", "limitation"],
+  );
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorAvailableSerpOverlap",
+    [
+      "snapshotId",
+      "observationId",
+      "valuePointer",
+      "observedAt",
+      "limitation",
+      "availability",
+      "value",
+    ],
+  );
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorAvailableAiCitationInsight",
+    [
+      "snapshotId",
+      "observationId",
+      "valuePointer",
+      "observedAt",
+      "limitation",
+      "availability",
+      "value",
+    ],
+  );
+  invariant(
+    competitorSchemas.GrowthMapCompetitorUnavailableInsight?.properties
+      ?.availability?.const === "unavailable" &&
+      competitorSchemas.GrowthMapCompetitorUnavailableInsight.properties
+        ?.value?.type === "null",
+    "Growth Map Competitor unavailable insight discriminator drift",
+  );
+  const competitorInsightUnions = new Map([
+    [
+      "GrowthMapCompetitorSerpOverlap",
+      "GrowthMapCompetitorAvailableSerpOverlap",
+    ],
+    [
+      "GrowthMapCompetitorAiCitationInsight",
+      "GrowthMapCompetitorAvailableAiCitationInsight",
+    ],
+  ]);
+  for (const [unionName, availableName] of competitorInsightUnions) {
+    const union = competitorSchemas[unionName];
+    invariant(
+      union?.discriminator?.propertyName === "availability",
+      `Growth Map Competitor insight availability discriminator drift: ${unionName}`,
+    );
+    assertExactSet(
+      Object.keys(union?.discriminator?.mapping ?? {}),
+      ["unavailable", "available"],
+      `Growth Map Competitor insight availability discriminator drift: ${unionName}`,
+    );
+    assertExactSet(
+      (union?.oneOf ?? []).map((shape) => shape.$ref),
+      [
+        "#/components/schemas/GrowthMapCompetitorUnavailableInsight",
+        `#/components/schemas/${availableName}`,
+      ],
+      `Growth Map Competitor insight union drift: ${unionName}`,
+    );
+  }
+  invariant(
+    competitorSchemas.GrowthMapCompetitorAvailableSerpOverlap?.properties
+      ?.availability?.const === "available" &&
+      competitorSchemas.GrowthMapCompetitorAvailableSerpOverlap.properties
+        ?.valuePointer?.const === "/valueJson/serpOverlap" &&
+      competitorSchemas.GrowthMapCompetitorAvailableAiCitationInsight
+        ?.properties?.availability?.const === "available" &&
+      competitorSchemas.GrowthMapCompetitorAvailableAiCitationInsight
+        .properties?.valuePointer?.const ===
+        "/valueJson/aiCitationInsight",
+    "Growth Map Competitor available insight canonical Observation pointer drift",
+  );
+
+  const competitorItemFields = [
+    "projectId",
+    "competitorId",
+    "domain",
+    "name",
+    "reviewStatus",
+    "relationship",
+    "analysisScope",
+    "revision",
+    "originOccurrences",
+    "lastObservedAt",
+    "serpOverlap",
+    "aiCitationInsight",
+    "coverage",
+  ];
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorLibraryItem",
+    competitorItemFields,
+  );
+  const competitorItem =
+    competitorSchemas.GrowthMapCompetitorLibraryItem;
+  invariant(
+    competitorItem?.properties?.reviewStatus?.$ref ===
+      "#/components/schemas/GrowthMapCompetitorReviewStatus" &&
+      competitorItem.properties?.analysisScope?.items?.$ref ===
+        "#/components/schemas/ProductProfileCompetitorAnalysisScope" &&
+      competitorItem.properties.analysisScope.maxItems === 5 &&
+      competitorItem.properties.analysisScope.uniqueItems === true &&
+      competitorItem.properties?.originOccurrences?.items?.$ref ===
+        "#/components/schemas/GrowthMapCompetitorOriginOccurrence" &&
+      competitorItem.properties.originOccurrences.minItems === 1 &&
+      competitorItem.properties.originOccurrences.maxItems === 100 &&
+      competitorItem.properties?.coverage?.$ref ===
+        "#/components/schemas/GrowthMapCoverage" &&
+      competitorItem["x-signalframe-runtime-refinement"] ===
+        "competitorReviewStateAndExactOriginInsightLineage",
+    "Growth Map Competitor item must preserve review, bounded origin, exact insight lineage, and coverage semantics",
+  );
+
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorLibraryPageMeta",
+    ["limit", "nextCursor", "hasNext", "coverage"],
+  );
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorLibraryResponse",
+    ["projectId", "data", "meta"],
+  );
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorDetailResponse",
+    ["projectId", "data"],
+  );
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorLibraryHttpResponse",
+    ["data"],
+  );
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorDetailHttpResponse",
+    ["data"],
+  );
+  const competitorPage =
+    competitorSchemas.GrowthMapCompetitorLibraryResponse;
+  const competitorPageMeta =
+    competitorSchemas.GrowthMapCompetitorLibraryPageMeta;
+  invariant(
+    competitorPage?.properties?.data?.maxItems === 100 &&
+      competitorPage.properties?.meta?.$ref ===
+        "#/components/schemas/GrowthMapCompetitorLibraryPageMeta" &&
+      competitorPageMeta?.properties?.coverage?.$ref ===
+        "#/components/schemas/GrowthMapCoverage" &&
+      competitorPageMeta.properties?.limit?.minimum === 1 &&
+      competitorPageMeta.properties.limit.maximum === 100,
+    "Growth Map Competitor cursor page must remain bounded with exact metadata and explicit coverage",
   );
 
   const asyncOperations = operations.filter(

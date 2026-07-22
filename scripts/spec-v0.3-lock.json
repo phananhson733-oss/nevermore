@@ -6,20 +6,20 @@
   "migrationDirectory": "packages/db/migrations",
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
-    "README.md": "8a3c01012eb0d589c8604b0917360d25bc9246ea243c56b2a25f986ad99f732f",
-    "MVP-IMPLEMENTATION-SPEC.md": "3edbe71a9b8d5d5a4381c582c579265f33edf53eeaef7eb1100b2d99f2599818",
-    "openapi.yaml": "b5cfb1cc90f1b73cb97f10ced0e6b3ac556ced6bf9e5d9d730d15b10f4aed961",
+    "README.md": "56b19e89ffafe2120f863571c830431ff644e4fc9edde1df615a539da49b5515",
+    "MVP-IMPLEMENTATION-SPEC.md": "14d9e5e7141e1d9acf7f0d2332ff9112f5db89b400894dc82cc51ccb8d701c2e",
+    "openapi.yaml": "11582e2e54c571d7e4d842029a6becdce73fc9ae1c1db434dbde8a5c56893bc2",
     "schema.sql": "4239be55b4cbb0851a05400c1d591b4294aeacfec3a04e428ec915fe665f3686",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "scripts/schema-smoke.sql": "ebf3615b2e8df432456b5caaa928adf251867f08b55326148460b8206afe41b1",
-    "scripts/verify-spec.mjs": "645804e003342ae27ae2408f986d218a734f4773d0217f427c0b90a200db28ee"
+    "scripts/verify-spec.mjs": "6591fcc9731ffd874c4e6a4608302389d46b7f42aca6617aed1ff314be9af83c"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "b5cfb1cc90f1b73cb97f10ced0e6b3ac556ced6bf9e5d9d730d15b10f4aed961",
-    "packages/contracts/src/generated/openapi.ts": "4b0942b5c4f31dfab889d6fc29329ef64056521b703ec586640ae6fe1280389a",
+    "openapi/mvp.yaml": "11582e2e54c571d7e4d842029a6becdce73fc9ae1c1db434dbde8a5c56893bc2",
+    "packages/contracts/src/generated/openapi.ts": "4724831f765194366201c3b69da15ba5ca38d069676fdd41a7c0c59fa340213c",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "packages/db/migrations/schema-smoke.sql": "ebf3615b2e8df432456b5caaa928adf251867f08b55326148460b8206afe41b1",
-    "scripts/verify-implementation.mjs": "811b587d4ee525636f29df6346a776c979a5282bec20740963021361d05cea83"
+    "scripts/verify-implementation.mjs": "bf1eab5cb789f2cafdad982b4bc0e6889226f5c62790e0984d827e03c2257475"
   },
   "apiOperations": [
     "listProjects",
@@ -47,6 +47,8 @@
     "getProjectAuditUrl",
     "listProjectAuditKeywords",
     "getProjectAuditKeyword",
+    "listProjectAuditCompetitors",
+    "getProjectAuditCompetitor",
     "listProjectFindings",
     "reviewProjectFinding",
     "listProjectActions",

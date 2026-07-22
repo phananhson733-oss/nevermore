@@ -667,6 +667,56 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
+  /projects/{projectId}/audit/competitors:
+    get:
+      tags: [Diagnosis]
+      summary: List the project Competitor Library
+      description: |
+        Returns one bounded cursor page of stable project Competitor identities with strict
+        typed origin occurrences, reviewed analysis scope, canonical Observation-backed
+        insights, and explicit coverage. This slice exposes no filters, synthetic totals,
+        manual-entry controls, review controls, or mutation methods.
+      operationId: listProjectAuditCompetitors
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Current traceable Competitor Library cursor page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrowthMapCompetitorLibraryHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/audit/competitors/{competitorId}:
+    get:
+      tags: [Diagnosis]
+      summary: Read one project Competitor Library entry
+      description: |
+        Resolves one stable Competitor identity inside the selected project and returns the
+        same strict origin, insight, review, coverage, and limitation contract as the page.
+      operationId: getProjectAuditCompetitor
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CompetitorId'
+      responses:
+        '200':
+          description: Selected traceable Competitor Library entry.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrowthMapCompetitorDetailHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
   /projects/{projectId}/findings:
     get:
       tags: [Diagnosis]
@@ -970,6 +1020,11 @@ components:
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Uuid' }
+    CompetitorId:
+      name: competitorId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
     ProductProfileCandidateId:
       name: candidateId
       in: path
@@ -1145,6 +1200,10 @@ components:
       pattern: '^(?!(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4}|[A-Za-z]{5,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*-((?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*-\1(?:-|$))(?!(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4}|[A-Za-z]{5,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*-([0-9A-WY-Za-wy-z])(?:-[A-Za-z0-9]{2,8})+(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*-\2(?:-|$))(?:(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4}|[A-Za-z]{5,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*(?:-[Xx](?:-[A-Za-z0-9]{1,8})+)?|[Xx](?:-[A-Za-z0-9]{1,8})+|[Ee][Nn]-[Gg][Bb]-[Oo][Ee][Dd]|[Ii]-(?:[Aa][Mm][Ii]|[Bb][Nn][Nn]|[Dd][Ee][Ff][Aa][Uu][Ll][Tt]|[Ee][Nn][Oo][Cc][Hh][Ii][Aa][Nn]|[Hh][Aa][Kk]|[Kk][Ll][Ii][Nn][Gg][Oo][Nn]|[Ll][Uu][Xx]|[Mm][Ii][Nn][Gg][Oo]|[Nn][Aa][Vv][Aa][Jj][Oo]|[Pp][Ww][Nn]|[Tt][Aa][Oo]|[Tt][Aa][Yy]|[Tt][Ss][Uu])|[Ss][Gg][Nn]-(?:[Bb][Ee]-(?:[Ff][Rr]|[Nn][Ll])|[Cc][Hh]-[Dd][Ee]))$'
       description: Structurally valid RFC 5646 / BCP-47 language tag. The portable schema enforces subtag order, private use, irregular grandfathered tags, and same-case duplicate rejection; runtime and database validation additionally reject mixed-case duplicate variants or extension singletons. This API documents a 255-character protocol ceiling.
       x-signalframe-runtime-refinement: isBcp47LanguageTag
+    GrowthMapLibraryLanguageTag:
+      $ref: '#/components/schemas/LocaleCode'
+      description: Canonical BCP-47 language tag. Growth Map Library responses additionally require Intl.Locale(value).toString() to equal value exactly.
+      x-signalframe-runtime-refinement: canonicalIntlLocale
     MarketCode:
       type: string
       pattern: '^[A-Z]{2}$'
@@ -3042,7 +3101,7 @@ components:
         scopeBasis: { type: string, const: user_provided }
         scopeLimitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
         marketCode: { $ref: '#/components/schemas/MarketCode' }
-        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+        languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
         importPreviewId: { $ref: '#/components/schemas/Uuid' }
 
     GrowthMapKeywordDataForSeoRankedOccurrence:
@@ -3062,7 +3121,7 @@ components:
         scopeBasis: { type: string, const: provider_collection_scope }
         scopeLimitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
         marketCode: { $ref: '#/components/schemas/MarketCode' }
-        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+        languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
 
     GrowthMapKeywordGscTopQueryOccurrence:
       type: object
@@ -3083,7 +3142,7 @@ components:
         scopeBasis: { type: string, const: project_context }
         scopeLimitation: { type: string, minLength: 1, maxLength: 2000 }
         marketCode: { $ref: '#/components/schemas/MarketCode' }
-        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+        languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
 
     GrowthMapKeywordManualOccurrence:
       type: object
@@ -3102,7 +3161,7 @@ components:
         scopeBasis: { type: string, const: manual }
         scopeLimitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
         marketCode: { $ref: '#/components/schemas/MarketCode' }
-        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+        languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
 
     GrowthMapKeywordSourceOccurrence:
       oneOf:
@@ -3274,7 +3333,7 @@ components:
         displayKeyword: { type: string, minLength: 1, maxLength: 500 }
         normalizedKeyword: { type: string, minLength: 1, maxLength: 500 }
         marketCode: { $ref: '#/components/schemas/MarketCode' }
-        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+        languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
         queryKind: { type: string, enum: [search_query, generative_query] }
         status: { type: string, enum: [candidate, approved, excluded, parked] }
         revision: { type: integer, minimum: 0 }
@@ -3349,6 +3408,282 @@ components:
       required: [data]
       properties:
         data: { $ref: '#/components/schemas/GrowthMapKeywordDetailResponse' }
+
+    GrowthMapCompetitorReviewStatus:
+      type: string
+      enum: [candidate, approved, excluded]
+
+    GrowthMapCompetitorRelationship:
+      type: string
+      enum: [direct, indirect, status_quo, benchmark, publisher]
+
+    GrowthMapCompetitorOriginKind:
+      type: string
+      enum: [product_profile, csv_keyword_gap, manual, serp_overlap, ai_citation]
+
+    GrowthMapCompetitorEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [kind, evidenceId]
+      properties:
+        kind: { type: string, const: evidence }
+        evidenceId: { $ref: '#/components/schemas/Uuid' }
+
+    GrowthMapCompetitorProfileFieldProvenancePath:
+      type: string
+      maxLength: 1000
+      pattern: '^/competitorCandidates(?:/[0-9]+)?$'
+      description: Exact Product Profile competitorCandidates root or candidate-index JSON Pointer.
+
+    GrowthMapCompetitorProductProfileOrigin:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, observedAt, originKind, productProfileId, profileVersion, candidateId, fieldProvenancePath, evidenceRefs]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        observedAt: { type: [string, 'null'], format: date-time }
+        originKind: { $ref: '#/components/schemas/GrowthMapCompetitorOriginKind', const: product_profile }
+        productProfileId: { $ref: '#/components/schemas/Uuid' }
+        profileVersion: { type: integer, minimum: 1 }
+        candidateId: { $ref: '#/components/schemas/Uuid' }
+        fieldProvenancePath: { $ref: '#/components/schemas/GrowthMapCompetitorProfileFieldProvenancePath' }
+        evidenceRefs:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileEvidenceRef' }
+      description: Product Profile origin with typed Product Profile evidence; evidenceRefId and exact source identities are unique.
+      x-signalframe-runtime-refinement: uniqueProductProfileEvidenceIdentities
+
+    GrowthMapCompetitorCsvKeywordGapOrigin:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, observedAt, originKind, snapshotId, observationId, sourcePointer, importPreviewId, evidenceRefs]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        observedAt: { type: [string, 'null'], format: date-time }
+        originKind: { $ref: '#/components/schemas/GrowthMapCompetitorOriginKind', const: csv_keyword_gap }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        sourcePointer: { type: string, const: /valueJson/competitorDomain }
+        importPreviewId: { $ref: '#/components/schemas/Uuid' }
+        evidenceRefs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/GrowthMapCompetitorEvidenceRef' }
+      description: CSV keyword-gap origin with canonical app Evidence references unique by evidenceId.
+      x-signalframe-runtime-refinement: uniqueCanonicalEvidenceIds
+
+    GrowthMapCompetitorManualOrigin:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, observedAt, originKind, manualEntryId, evidenceRefs]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        observedAt: { type: [string, 'null'], format: date-time }
+        originKind: { $ref: '#/components/schemas/GrowthMapCompetitorOriginKind', const: manual }
+        manualEntryId: { $ref: '#/components/schemas/Uuid' }
+        evidenceRefs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/GrowthMapCompetitorEvidenceRef' }
+      description: Read-only projection of an existing manual origin; this slice does not expose manual-entry mutation.
+      x-signalframe-runtime-refinement: uniqueCanonicalEvidenceIds
+
+    GrowthMapCompetitorSerpOverlapOrigin:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, observedAt, originKind, snapshotId, observationId, evidenceRefs]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        observedAt: { type: [string, 'null'], format: date-time }
+        originKind: { $ref: '#/components/schemas/GrowthMapCompetitorOriginKind', const: serp_overlap }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        evidenceRefs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/GrowthMapCompetitorEvidenceRef' }
+      x-signalframe-runtime-refinement: uniqueCanonicalEvidenceIds
+
+    GrowthMapCompetitorAiCitationOrigin:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, observedAt, originKind, snapshotId, observationId, evidenceRefs]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        observedAt: { type: [string, 'null'], format: date-time }
+        originKind: { $ref: '#/components/schemas/GrowthMapCompetitorOriginKind', const: ai_citation }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        evidenceRefs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/GrowthMapCompetitorEvidenceRef' }
+      x-signalframe-runtime-refinement: uniqueCanonicalEvidenceIds
+
+    GrowthMapCompetitorOriginOccurrence:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapCompetitorProductProfileOrigin'
+        - $ref: '#/components/schemas/GrowthMapCompetitorCsvKeywordGapOrigin'
+        - $ref: '#/components/schemas/GrowthMapCompetitorManualOrigin'
+        - $ref: '#/components/schemas/GrowthMapCompetitorSerpOverlapOrigin'
+        - $ref: '#/components/schemas/GrowthMapCompetitorAiCitationOrigin'
+      discriminator:
+        propertyName: originKind
+        mapping:
+          product_profile: '#/components/schemas/GrowthMapCompetitorProductProfileOrigin'
+          csv_keyword_gap: '#/components/schemas/GrowthMapCompetitorCsvKeywordGapOrigin'
+          manual: '#/components/schemas/GrowthMapCompetitorManualOrigin'
+          serp_overlap: '#/components/schemas/GrowthMapCompetitorSerpOverlapOrigin'
+          ai_citation: '#/components/schemas/GrowthMapCompetitorAiCitationOrigin'
+      description: Exact immutable origin occurrence. occurrenceId and canonical origin identities are unique within a Competitor and cursor page.
+      x-signalframe-runtime-refinement: competitorOriginOccurrenceIdentityUniqueness
+
+    GrowthMapCompetitorUnavailableInsight:
+      type: object
+      additionalProperties: false
+      required: [availability, value, limitation]
+      properties:
+        availability: { type: string, const: unavailable }
+        value: { type: 'null' }
+        limitation: { type: string, minLength: 1, maxLength: 2000 }
+
+    GrowthMapCompetitorAvailableSerpOverlap:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, limitation, availability, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/serpOverlap }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        availability: { type: string, const: available }
+        value: { type: number, minimum: 0 }
+
+    GrowthMapCompetitorSerpOverlap:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapCompetitorUnavailableInsight'
+        - $ref: '#/components/schemas/GrowthMapCompetitorAvailableSerpOverlap'
+      discriminator:
+        propertyName: availability
+        mapping:
+          unavailable: '#/components/schemas/GrowthMapCompetitorUnavailableInsight'
+          available: '#/components/schemas/GrowthMapCompetitorAvailableSerpOverlap'
+
+    GrowthMapCompetitorAvailableAiCitationInsight:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, limitation, availability, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/aiCitationInsight }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        availability: { type: string, const: available }
+        value: { type: string, minLength: 1, maxLength: 2000 }
+
+    GrowthMapCompetitorAiCitationInsight:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapCompetitorUnavailableInsight'
+        - $ref: '#/components/schemas/GrowthMapCompetitorAvailableAiCitationInsight'
+      discriminator:
+        propertyName: availability
+        mapping:
+          unavailable: '#/components/schemas/GrowthMapCompetitorUnavailableInsight'
+          available: '#/components/schemas/GrowthMapCompetitorAvailableAiCitationInsight'
+
+    GrowthMapCompetitorLibraryItem:
+      type: object
+      additionalProperties: false
+      required: [projectId, competitorId, domain, name, reviewStatus, relationship, analysisScope, revision, originOccurrences, lastObservedAt, serpOverlap, aiCitationInsight, coverage]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        competitorId: { $ref: '#/components/schemas/Uuid' }
+        domain: { $ref: '#/components/schemas/ProductProfileCompetitorDomain' }
+        name: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        reviewStatus: { $ref: '#/components/schemas/GrowthMapCompetitorReviewStatus' }
+        relationship:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapCompetitorRelationship'
+            - type: 'null'
+        analysisScope:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileCompetitorAnalysisScope' }
+        revision: { type: integer, minimum: 0 }
+        originOccurrences:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GrowthMapCompetitorOriginOccurrence' }
+        lastObservedAt: { type: [string, 'null'], format: date-time }
+        serpOverlap: { $ref: '#/components/schemas/GrowthMapCompetitorSerpOverlap' }
+        aiCitationInsight: { $ref: '#/components/schemas/GrowthMapCompetitorAiCitationInsight' }
+        coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
+      description: Stable project-scoped Competitor identity. Approved entries require relationship and analysisScope; candidate/excluded entries forbid both. lastObservedAt is the latest non-null origin timestamp and available insights match one exact origin Observation.
+      x-signalframe-runtime-refinement: competitorReviewStateAndExactOriginInsightLineage
+
+    GrowthMapCompetitorLibraryPageMeta:
+      type: object
+      additionalProperties: false
+      required: [limit, nextCursor, hasNext, coverage]
+      properties:
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        nextCursor:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1024
+          pattern: '^[A-Za-z0-9_-]+$'
+        hasNext: { type: boolean }
+        coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
+      description: hasNext is true exactly when nextCursor is non-null.
+      x-signalframe-runtime-refinement: cursorAvailabilityConsistency
+
+    GrowthMapCompetitorLibraryResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, data, meta]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        data:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GrowthMapCompetitorLibraryItem' }
+        meta: { $ref: '#/components/schemas/GrowthMapCompetitorLibraryPageMeta' }
+      description: Bounded project-scoped cursor page with no synthetic total or filter state. Competitor IDs, domains, occurrence IDs, and canonical origin identities are page-unique and page length cannot exceed meta.limit.
+      x-signalframe-runtime-refinement: competitorPageScopeAndIdentityUniqueness
+
+    GrowthMapCompetitorDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, data]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        data: { $ref: '#/components/schemas/GrowthMapCompetitorLibraryItem' }
+      description: The selected Competitor item's projectId exactly matches the response scope.
+      x-signalframe-runtime-refinement: competitorDetailScopeConsistency
+
+    GrowthMapCompetitorLibraryHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/GrowthMapCompetitorLibraryResponse' }
+
+    GrowthMapCompetitorDetailHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/GrowthMapCompetitorDetailResponse' }
 
     CreateDiagnosticRunRequest:
       type: object

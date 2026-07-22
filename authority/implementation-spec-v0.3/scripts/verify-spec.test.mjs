@@ -15,6 +15,7 @@ import test from "node:test";
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const authorityRoot = resolve(scriptDirectory, "..");
 const verifier = join(scriptDirectory, "verify-spec.mjs");
+const verifierSource = readFileSync(verifier, "utf8");
 const authorityReadme = readFileSync(join(authorityRoot, "README.md"), "utf8");
 const authoritySpec = readFileSync(
   join(authorityRoot, "MVP-IMPLEMENTATION-SPEC.md"),
@@ -107,7 +108,7 @@ test("declares the activated v0.3 machine surface and exactly 36 application tab
   }
 });
 
-test("declares all 36 implemented operations and six real async commands", () => {
+test("declares all 38 implemented operations and six real async commands", () => {
   const operationBlock = authoritySpec.slice(
     authoritySpec.indexOf("<!-- API_OPERATIONS_START -->"),
     authoritySpec.indexOf("<!-- API_OPERATIONS_END -->"),
@@ -115,7 +116,7 @@ test("declares all 36 implemented operations and six real async commands", () =>
   const declaredOperations = [
     ...operationBlock.matchAll(/^- `([a-z][A-Za-z0-9]+)`/gm),
   ].map((match) => match[1]);
-  assert.equal(declaredOperations.length, 36);
+  assert.equal(declaredOperations.length, 38);
   for (const operationId of [
     "getProjectProductProfile",
     "updateProductProfileDraft",
@@ -125,6 +126,8 @@ test("declares all 36 implemented operations and six real async commands", () =>
     "confirmProductProfile",
     "listProjectAuditKeywords",
     "getProjectAuditKeyword",
+    "listProjectAuditCompetitors",
+    "getProjectAuditCompetitor",
   ]) {
     assert.ok(declaredOperations.includes(operationId), `${operationId} is missing`);
   }
@@ -139,6 +142,25 @@ test("declares all 36 implemented operations and six real async commands", () =>
   assert.equal(declaredAsyncOperations.length, 6);
   assert.ok(
     declaredAsyncOperations.includes("createProductProfileSynthesisRun"),
+  );
+});
+
+test("gates exact read-only Keyword and Competitor Library authority contracts", () => {
+  for (const invariant of [
+    "Growth Map Keyword list query must be exactly limit/cursor",
+    "Growth Map Keyword authority must use canonical Growth Map Library language tags",
+    "Growth Map Competitor list query must be exactly limit/cursor",
+    "Growth Map Competitor authority paths must expose only the implemented list/detail reads",
+    "Growth Map Competitor authority must preserve every exact origin discriminator",
+    "Growth Map Competitor authority must keep strict typed evidence for product_profile, csv_keyword_gap, and manual origins",
+    "Growth Map Competitor authority must preserve available/unavailable insight discriminators and canonical Observation pointers",
+    "Growth Map Competitor authority must keep closed bounded exact-field cursor contracts",
+  ]) {
+    assert.match(verifierSource, new RegExp(invariant));
+  }
+  assert.match(
+    verifierSource,
+    /get\|put\|post\|delete\|options\|head\|patch\|trace/,
   );
 });
 
