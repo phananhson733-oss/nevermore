@@ -38,9 +38,13 @@ import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  useCallback,
   useEffect,
   useMemo,
+  useOptimistic,
+  useRef,
   useState,
+  useTransition,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -98,6 +102,14 @@ import {
   type GrowthMapReviewProblemPresentation,
   type GrowthMapReviewIntent,
 } from "./_growth-map-view-model.ts";
+import {
+  createGrowthMapNavigationJournal,
+  observeGrowthMapCanonicalSearch,
+  recordGrowthMapNavigationHref,
+  requestGrowthMapNavigation,
+  settleGrowthMapNavigation,
+  type GrowthMapNavigationPatch,
+} from "./_growth-map-navigation.ts";
 import styles from "./growth-map.module.css";
 
 const LIST_METRICS = {
@@ -125,6 +137,12 @@ const MODE_ICONS: Readonly<Record<GrowthMapObjectMode, typeof MapIcon>> = {
   keywords: BookOpenText,
   competitors: Target,
 };
+
+interface GrowthMapNavigationController {
+  readonly isPending: boolean;
+  readonly request: (patch: GrowthMapNavigationPatch) => void;
+  readonly replaceCanonicalHref: (href: string) => void;
+}
 
 function formatNumber(locale: string, value: number): string {
   return new Intl.NumberFormat(locale, {
@@ -1253,15 +1271,34 @@ function DetailState({
   );
 }
 
-function PortfolioPane({ projectId }: { readonly projectId: string }) {
+function PortfolioPane({
+  projectId,
+  locationSearch,
+  navigation,
+}: {
+  readonly projectId: string;
+  readonly locationSearch: string;
+  readonly navigation: GrowthMapNavigationController;
+}) {
   const t = useTranslations("growthMap");
   const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const querySearch = searchParams.get("q") ?? "";
-  const cursor = searchParams.get("cursor");
-  const selectedParam = searchParams.get("selectedSitePageId");
-  const selectedFindingId = searchParams.get("findingId");
+  const canonicalSearchParams = useSearchParams();
+  const canonicalLocationSearch = canonicalSearchParams.toString();
+  const canonicalMode = normalizeGrowthMapObjectMode(
+    canonicalSearchParams.get("object"),
+  );
+  const locationParams = useMemo(
+    () => new URLSearchParams(locationSearch),
+    [locationSearch],
+  );
+  const querySearch = locationParams.get("q") ?? "";
+  const cursor = locationParams.get("cursor");
+  const selectedParam = locationParams.get("selectedSitePageId");
+  const selectedFindingId = locationParams.get("findingId");
+  const canonicalSelectedParam = canonicalSearchParams.get(
+    "selectedSitePageId",
+  );
+  const canonicalSelectedFindingId = canonicalSearchParams.get("findingId");
   const [searchDraft, setSearchDraft] = useState(querySearch);
   const [cursorHistory, setCursorHistory] = useState<readonly (string | null)[]>([]);
   const listQuery = useGrowthMapUrls(projectId, {
@@ -1275,7 +1312,11 @@ function PortfolioPane({ projectId }: { readonly projectId: string }) {
     selectedFindingId,
     items,
   );
-  const locationSearch = searchParams.toString();
+  const canonicalSelectedSitePageId = resolveVisibleSitePageSelectionForFinding(
+    canonicalSelectedParam,
+    canonicalSelectedFindingId,
+    items,
+  );
 
   useEffect(() => {
     setSearchDraft(querySearch);
@@ -1289,77 +1330,69 @@ function PortfolioPane({ projectId }: { readonly projectId: string }) {
     // We only repair an explicit, now-invalid deep link; direct row clicks are
     // the authority that add a selected SitePage ID to the address.
     if (
+      navigation.isPending ||
+      locationSearch !== canonicalLocationSearch ||
+      canonicalMode !== "pages" ||
       !listQuery.isSuccess ||
-      selectedParam === null ||
-      selectedParam === selectedSitePageId
+      canonicalSelectedParam === null ||
+      canonicalSelectedParam === canonicalSelectedSitePageId
     ) {
       return;
     }
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        selectedSitePageId,
+    navigation.replaceCanonicalHref(
+      growthMapLocationHref(pathname, canonicalLocationSearch, {
+        selectedSitePageId: canonicalSelectedSitePageId,
       }),
-      { scroll: false },
     );
   }, [
+    canonicalLocationSearch,
+    canonicalMode,
+    canonicalSelectedParam,
+    canonicalSelectedSitePageId,
     listQuery.isSuccess,
     locationSearch,
+    navigation,
     pathname,
-    router,
-    selectedParam,
-    selectedSitePageId,
   ]);
 
   function selectUrl(sitePageId: string): void {
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        selectedSitePageId: sitePageId,
-        selectedFindingId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({
+      selectedSitePageId: sitePageId,
+      selectedFindingId: null,
+    });
   }
 
   function submitSearch(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     setCursorHistory([]);
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        search: searchDraft,
-        cursor: null,
-        selectedSitePageId: null,
-        selectedFindingId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({
+      search: searchDraft,
+      cursor: null,
+      selectedSitePageId: null,
+      selectedFindingId: null,
+    });
   }
 
   function goNext(): void {
     const nextCursor = listQuery.data?.meta.nextCursor ?? null;
     if (nextCursor === null) return;
     setCursorHistory((current) => [...current, cursor]);
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        cursor: nextCursor,
-        selectedSitePageId: null,
-        selectedFindingId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({
+      cursor: nextCursor,
+      selectedSitePageId: null,
+      selectedFindingId: null,
+    });
   }
 
   function goPrevious(): void {
     const previous = cursorHistory.at(-1);
     if (previous === undefined) return;
     setCursorHistory((current) => current.slice(0, -1));
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        cursor: previous,
-        selectedSitePageId: null,
-        selectedFindingId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({
+      cursor: previous,
+      selectedSitePageId: null,
+      selectedFindingId: null,
+    });
   }
 
   if (listQuery.isPending) {
@@ -2131,13 +2164,31 @@ function KeywordLibraryEmpty() {
   );
 }
 
-function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
+function KeywordLibraryPane({
+  projectId,
+  locationSearch,
+  navigation,
+}: {
+  readonly projectId: string;
+  readonly locationSearch: string;
+  readonly navigation: GrowthMapNavigationController;
+}) {
   const t = useTranslations("growthMap.keywordLibrary");
   const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const cursor = searchParams.get("cursor");
-  const requestedKeywordId = searchParams.get("selectedKeywordId");
+  const canonicalSearchParams = useSearchParams();
+  const canonicalLocationSearch = canonicalSearchParams.toString();
+  const canonicalMode = normalizeGrowthMapObjectMode(
+    canonicalSearchParams.get("object"),
+  );
+  const locationParams = useMemo(
+    () => new URLSearchParams(locationSearch),
+    [locationSearch],
+  );
+  const cursor = locationParams.get("cursor");
+  const requestedKeywordId = locationParams.get("selectedKeywordId");
+  const canonicalRequestedKeywordId = canonicalSearchParams.get(
+    "selectedKeywordId",
+  );
   const [cursorPredecessors, setCursorPredecessors] = useState<
     ReadonlyMap<string, string | null>
   >(() => new Map());
@@ -2147,7 +2198,10 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
     requestedKeywordId,
     items.map((item) => item.keywordId),
   );
-  const locationSearch = searchParams.toString();
+  const canonicalSelectedKeywordId = resolveVisibleKeywordSelection(
+    canonicalRequestedKeywordId,
+    items.map((item) => item.keywordId),
+  );
   const readState = keywordLibraryReadState({
     isPending: listQuery.isPending,
     isError: listQuery.isError,
@@ -2164,32 +2218,33 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
     // first visible row without rewriting the address. Only repair an explicit
     // stale/cursor-mismatched deep link after the bounded page has loaded.
     if (
+      navigation.isPending ||
+      locationSearch !== canonicalLocationSearch ||
+      canonicalMode !== "keywords" ||
       !listQuery.isSuccess ||
-      requestedKeywordId === null ||
-      requestedKeywordId === selectedKeywordId
+      canonicalRequestedKeywordId === null ||
+      canonicalRequestedKeywordId === canonicalSelectedKeywordId
     ) {
       return;
     }
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, { selectedKeywordId }),
-      { scroll: false },
+    navigation.replaceCanonicalHref(
+      growthMapLocationHref(pathname, canonicalLocationSearch, {
+        selectedKeywordId: canonicalSelectedKeywordId,
+      }),
     );
   }, [
+    canonicalLocationSearch,
+    canonicalMode,
+    canonicalRequestedKeywordId,
+    canonicalSelectedKeywordId,
     listQuery.isSuccess,
     locationSearch,
+    navigation,
     pathname,
-    requestedKeywordId,
-    router,
-    selectedKeywordId,
   ]);
 
   function selectKeyword(keywordId: string): void {
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        selectedKeywordId: keywordId,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ selectedKeywordId: keywordId });
   }
 
   function goNext(): void {
@@ -2198,34 +2253,16 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
     setCursorPredecessors((current) =>
       rememberGrowthMapCursorPredecessor(current, cursor, nextCursor),
     );
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        cursor: nextCursor,
-        selectedKeywordId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ cursor: nextCursor, selectedKeywordId: null });
   }
 
   function goPrevious(): void {
     if (previousCursor === undefined) return;
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        cursor: previousCursor,
-        selectedKeywordId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ cursor: previousCursor, selectedKeywordId: null });
   }
 
   function goFirst(): void {
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        cursor: null,
-        selectedKeywordId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ cursor: null, selectedKeywordId: null });
   }
 
   if (readState === "loading") {
@@ -2970,13 +3007,31 @@ function CompetitorLibraryEmpty({
   );
 }
 
-function CompetitorLibraryPane({ projectId }: { readonly projectId: string }) {
+function CompetitorLibraryPane({
+  projectId,
+  locationSearch,
+  navigation,
+}: {
+  readonly projectId: string;
+  readonly locationSearch: string;
+  readonly navigation: GrowthMapNavigationController;
+}) {
   const t = useTranslations("growthMap.competitorLibrary");
   const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const cursor = searchParams.get("cursor");
-  const requestedCompetitorId = searchParams.get("selectedCompetitorId");
+  const canonicalSearchParams = useSearchParams();
+  const canonicalLocationSearch = canonicalSearchParams.toString();
+  const canonicalMode = normalizeGrowthMapObjectMode(
+    canonicalSearchParams.get("object"),
+  );
+  const locationParams = useMemo(
+    () => new URLSearchParams(locationSearch),
+    [locationSearch],
+  );
+  const cursor = locationParams.get("cursor");
+  const requestedCompetitorId = locationParams.get("selectedCompetitorId");
+  const canonicalRequestedCompetitorId = canonicalSearchParams.get(
+    "selectedCompetitorId",
+  );
   const [cursorPredecessors, setCursorPredecessors] = useState<
     ReadonlyMap<string, string | null>
   >(() => new Map());
@@ -2986,7 +3041,10 @@ function CompetitorLibraryPane({ projectId }: { readonly projectId: string }) {
     requestedCompetitorId,
     items.map((item) => item.competitorId),
   );
-  const locationSearch = searchParams.toString();
+  const canonicalSelectedCompetitorId = resolveVisibleCompetitorSelection(
+    canonicalRequestedCompetitorId,
+    items.map((item) => item.competitorId),
+  );
   const readState = competitorLibraryReadState({
     isPending: listQuery.isPending,
     isError: listQuery.isError,
@@ -3002,32 +3060,33 @@ function CompetitorLibraryPane({ projectId }: { readonly projectId: string }) {
     // Do not rewrite the implicit first row. Repair only an explicit stale
     // cursor-page deep link, so a late list response cannot undo a Tab click.
     if (
+      navigation.isPending ||
+      locationSearch !== canonicalLocationSearch ||
+      canonicalMode !== "competitors" ||
       !listQuery.isSuccess ||
-      requestedCompetitorId === null ||
-      requestedCompetitorId === selectedCompetitorId
+      canonicalRequestedCompetitorId === null ||
+      canonicalRequestedCompetitorId === canonicalSelectedCompetitorId
     ) {
       return;
     }
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, { selectedCompetitorId }),
-      { scroll: false },
+    navigation.replaceCanonicalHref(
+      growthMapLocationHref(pathname, canonicalLocationSearch, {
+        selectedCompetitorId: canonicalSelectedCompetitorId,
+      }),
     );
   }, [
+    canonicalLocationSearch,
+    canonicalMode,
+    canonicalRequestedCompetitorId,
+    canonicalSelectedCompetitorId,
     listQuery.isSuccess,
     locationSearch,
+    navigation,
     pathname,
-    requestedCompetitorId,
-    router,
-    selectedCompetitorId,
   ]);
 
   function selectCompetitor(competitorId: string): void {
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        selectedCompetitorId: competitorId,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ selectedCompetitorId: competitorId });
   }
 
   function goNext(): void {
@@ -3036,34 +3095,16 @@ function CompetitorLibraryPane({ projectId }: { readonly projectId: string }) {
     setCursorPredecessors((current) =>
       rememberGrowthMapCursorPredecessor(current, cursor, nextCursor),
     );
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        cursor: nextCursor,
-        selectedCompetitorId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ cursor: nextCursor, selectedCompetitorId: null });
   }
 
   function goPrevious(): void {
     if (previousCursor === undefined) return;
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        cursor: previousCursor,
-        selectedCompetitorId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ cursor: previousCursor, selectedCompetitorId: null });
   }
 
   function goFirst(): void {
-    router.replace(
-      growthMapLocationHref(pathname, locationSearch, {
-        cursor: null,
-        selectedCompetitorId: null,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ cursor: null, selectedCompetitorId: null });
   }
 
   if (readState === "loading") {
@@ -3192,7 +3233,72 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const mode = normalizeGrowthMapObjectMode(searchParams.get("object"));
+  const canonicalLocationSearch = searchParams.toString();
+  const [isNavigationPending, startNavigationTransition] = useTransition();
+  const navigationJournal = useRef(
+    createGrowthMapNavigationJournal(canonicalLocationSearch),
+  );
+  if (navigationJournal.current.canonicalSearch !== canonicalLocationSearch) {
+    navigationJournal.current = observeGrowthMapCanonicalSearch(
+      navigationJournal.current,
+      canonicalLocationSearch,
+    );
+  }
+  if (!isNavigationPending) {
+    navigationJournal.current = settleGrowthMapNavigation(
+      navigationJournal.current,
+      canonicalLocationSearch,
+    );
+  }
+  const [optimisticLocationSearch, setOptimisticLocationSearch] = useOptimistic(
+    canonicalLocationSearch,
+    (_currentSearch, requestedSearch: string) => requestedSearch,
+  );
+  const optimisticSearchParams = useMemo(
+    () => new URLSearchParams(optimisticLocationSearch),
+    [optimisticLocationSearch],
+  );
+  const mode = normalizeGrowthMapObjectMode(
+    optimisticSearchParams.get("object"),
+  );
+
+  const requestNavigation = useCallback(
+    (patch: GrowthMapNavigationPatch): void => {
+      const request = requestGrowthMapNavigation(
+        navigationJournal.current,
+        pathname,
+        patch,
+      );
+      navigationJournal.current = request.journal;
+      startNavigationTransition(() => {
+        setOptimisticLocationSearch(request.search);
+        router.replace(request.href, { scroll: false });
+      });
+    },
+    [pathname, router, setOptimisticLocationSearch, startNavigationTransition],
+  );
+
+  const replaceCanonicalHref = useCallback(
+    (href: string): void => {
+      navigationJournal.current = recordGrowthMapNavigationHref(
+        navigationJournal.current,
+        href,
+      );
+      startNavigationTransition(() => {
+        router.replace(href, { scroll: false });
+      });
+    },
+    [router, startNavigationTransition],
+  );
+
+  const navigation = useMemo<GrowthMapNavigationController>(
+    () => ({
+      isPending: isNavigationPending,
+      request: requestNavigation,
+      replaceCanonicalHref,
+    }),
+    [isNavigationPending, replaceCanonicalHref, requestNavigation],
+  );
 
   const tabItems = useMemo(
     () =>
@@ -3204,16 +3310,15 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
   );
 
   function switchMode(nextMode: GrowthMapObjectMode): void {
-    router.replace(
-      growthMapLocationHref(pathname, searchParams.toString(), {
-        mode: nextMode,
-      }),
-      { scroll: false },
-    );
+    navigation.request({ mode: nextMode });
   }
 
   return (
-    <div className={styles.page} data-growth-map-page="">
+    <div
+      className={styles.page}
+      data-growth-map-page=""
+      data-navigation-pending={isNavigationPending ? "" : undefined}
+    >
       <header className={styles.hero}>
         <div className={styles.heroText}>
           <span className={styles.eyebrow}>
@@ -3229,13 +3334,18 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
         </Link>
       </header>
 
-      <nav className={styles.objectTabs} aria-label={t("objectNavLabel")}>
+      <nav
+        className={styles.objectTabs}
+        aria-label={t("objectNavLabel")}
+        aria-busy={isNavigationPending}
+      >
         {tabItems.map(({ key, Icon }) => (
           <button
             type="button"
             key={key}
             className={cx(styles.objectTab, mode === key && styles.objectTabActive)}
             aria-current={mode === key ? "page" : undefined}
+            aria-pressed={mode === key}
             onClick={() => switchMode(key)}
           >
             <Icon aria-hidden="true" size={19} strokeWidth={1.8} />
@@ -3248,11 +3358,23 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
       </nav>
 
       {mode === "pages" ? (
-        <PortfolioPane projectId={projectId} />
+        <PortfolioPane
+          projectId={projectId}
+          locationSearch={optimisticLocationSearch}
+          navigation={navigation}
+        />
       ) : mode === "keywords" ? (
-        <KeywordLibraryPane projectId={projectId} />
+        <KeywordLibraryPane
+          projectId={projectId}
+          locationSearch={optimisticLocationSearch}
+          navigation={navigation}
+        />
       ) : (
-        <CompetitorLibraryPane projectId={projectId} />
+        <CompetitorLibraryPane
+          projectId={projectId}
+          locationSearch={optimisticLocationSearch}
+          navigation={navigation}
+        />
       )}
     </div>
   );

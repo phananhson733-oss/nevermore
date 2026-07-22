@@ -389,10 +389,10 @@ describe("Growth Map view model", () => {
     );
 
     expect(source).toMatch(
-      /!listQuery\.isSuccess \|\|\s+requestedKeywordId === null \|\|\s+requestedKeywordId === selectedKeywordId/,
+      /navigation\.isPending \|\|\s+locationSearch !== canonicalLocationSearch[\s\S]*?!listQuery\.isSuccess \|\|\s+canonicalRequestedKeywordId === null \|\|\s+canonicalRequestedKeywordId === canonicalSelectedKeywordId/,
     );
     expect(source).toMatch(
-      /growthMapLocationHref\(pathname, locationSearch, \{ selectedKeywordId \}\)/,
+      /growthMapLocationHref\(pathname, canonicalLocationSearch, \{\s+selectedKeywordId: canonicalSelectedKeywordId/,
     );
   });
 
@@ -403,10 +403,10 @@ describe("Growth Map view model", () => {
     );
 
     expect(source).toMatch(
-      /!listQuery\.isSuccess \|\|\s+requestedCompetitorId === null \|\|\s+requestedCompetitorId === selectedCompetitorId/,
+      /navigation\.isPending \|\|\s+locationSearch !== canonicalLocationSearch[\s\S]*?!listQuery\.isSuccess \|\|\s+canonicalRequestedCompetitorId === null \|\|\s+canonicalRequestedCompetitorId === canonicalSelectedCompetitorId/,
     );
     expect(source).toMatch(
-      /growthMapLocationHref\(pathname, locationSearch, \{ selectedCompetitorId \}\)/,
+      /growthMapLocationHref\(pathname, canonicalLocationSearch, \{\s+selectedCompetitorId: canonicalSelectedCompetitorId/,
     );
   });
 
