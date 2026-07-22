@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  GrowthMapCompetitorLibraryResponse,
+  GrowthMapKeywordLibraryResponse,
   GrowthMapUrlDetailResponse,
   GrowthMapUrlPortfolioResponse,
+  type GrowthMapCompetitorLibraryItem,
+  type GrowthMapKeywordLibraryItem,
   type GrowthMapUrlDetail,
   type GrowthMapUrlFinding,
   type GrowthMapUrlMetricObservation,
@@ -12,6 +16,7 @@ import {
   type APIRequestContext,
   type Locator,
   type Page,
+  type Route,
 } from "@playwright/test";
 import { createDbHandle, type DbHandle } from "../packages/db/src/index.ts";
 import type { WorkerShutdownResult } from "../apps/worker/src/shutdown-coordinator.ts";
@@ -46,6 +51,19 @@ interface PreviewData {
   readonly importToken: string;
   readonly rowCount: number;
   readonly errors: readonly unknown[];
+}
+
+interface SnapshotRecord {
+  readonly id: string;
+  readonly provider: "crawl" | "gsc" | "ga4" | "csv" | "dataforseo";
+}
+
+interface SnapshotListEnvelope {
+  readonly data: readonly SnapshotRecord[];
+  readonly meta: {
+    readonly hasNext: boolean;
+    readonly nextCursor: string | null;
+  };
 }
 
 interface JsonResponse {
@@ -176,7 +194,11 @@ async function waitForRun(
           readonly status: string;
         }>;
         observed = body.data.status;
-        if (observed === "failed" || observed === "cancelled") {
+        if (
+          observed === "partial" ||
+          observed === "failed" ||
+          observed === "cancelled"
+        ) {
           throw new Error(`run ${statusUrl} became terminal: ${observed}`);
         }
         return expected.includes(observed);
@@ -188,6 +210,35 @@ async function waitForRun(
       },
     )
     .toBe(true);
+}
+
+async function readDiagnosticSnapshots(
+  request: APIRequestContext,
+  projectId: string,
+  seededProviderSnapshotIds: readonly string[],
+): Promise<readonly SnapshotRecord[]> {
+  const response = await request.get(
+    `/api/mvp/projects/${projectId}/snapshots?limit=50`,
+    { headers: { cookie: "sf_ui_locale=en" } },
+  );
+  const snapshots = await responseJson<SnapshotListEnvelope>(
+    response,
+    "list diagnostic snapshots",
+  );
+  expect(snapshots.meta).toMatchObject({
+    hasNext: false,
+    nextCursor: null,
+  });
+  expect(snapshots.data.map((snapshot) => snapshot.provider).sort()).toEqual([
+    "crawl",
+    "csv",
+    "ga4",
+    "gsc",
+  ]);
+  expect(snapshots.data.map((snapshot) => snapshot.id)).toEqual(
+    expect.arrayContaining([...seededProviderSnapshotIds]),
+  );
+  return snapshots.data;
 }
 
 async function importCsvThroughRealWorker(
@@ -230,31 +281,24 @@ async function importCsvThroughRealWorker(
   await waitForRun(request, accepted.data.statusUrl, ["completed"]);
 }
 
-async function runDiagnosisThroughBrowser(
-  page: Page,
+async function runDiagnosisThroughRealApi(
   request: APIRequestContext,
   projectId: string,
+  snapshotIds: readonly string[],
 ): Promise<void> {
-  await page.goto(`/p/${projectId}/diagnosis`);
-  await expect(
-    page.getByRole("heading", {
-      name: "Every finding should stand up to scrutiny.",
-    }),
-  ).toBeVisible();
-  const acceptedResponse = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return (
-      response.request().method() === "POST" &&
-      url.pathname === `/api/mvp/projects/${projectId}/diagnostic-runs`
-    );
-  });
-  const runButton = page.getByRole("button", {
-    name: "Run diagnosis",
-    exact: true,
-  });
-  await expect(runButton).toBeEnabled();
-  await runButton.click();
-  const response = await acceptedResponse;
+  const response = await request.post(
+    `/api/mvp/projects/${projectId}/diagnostic-runs`,
+    {
+      headers: {
+        "Idempotency-Key": randomUUID(),
+        cookie: "sf_ui_locale=en",
+      },
+      data: {
+        snapshotIds,
+        outputLocale: "en",
+      },
+    },
+  );
   expect(
     response.status(),
     `diagnosis enqueue failed: ${await response.text()}`,
@@ -263,10 +307,155 @@ async function runDiagnosisThroughBrowser(
     response,
     "diagnosis enqueue",
   );
+  expect(accepted.data.run.status).toBe("queued");
   await waitForRun(request, accepted.data.statusUrl, ["completed"]);
+}
+
+function objectModeButton(page: Page, label: string): Locator {
+  return page
+    .getByRole("navigation", { name: "Growth Map objects" })
+    .getByRole("button", { name: new RegExp(`^${label}`) });
+}
+
+interface HeldGrowthMapNavigations {
+  waitForRequest(): Promise<void>;
+  release(): Promise<void>;
+}
+
+async function holdGrowthMapNavigations(
+  page: Page,
+  projectId: string,
+): Promise<HeldGrowthMapNavigations> {
+  const pattern = new RegExp(`/p/${projectId}/growth-map(?:\\?|$)`);
+  let intercepted = 0;
+  let active = 0;
+  let releaseGate: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  const handler = async (route: Route): Promise<void> => {
+    const url = new URL(route.request().url());
+    if (!url.searchParams.has("_rsc")) {
+      await route.continue();
+      return;
+    }
+    intercepted += 1;
+    active += 1;
+    try {
+      // Hold before forwarding so the final request still receives the exact
+      // server payload. Next may cancel superseded RSC requests while a newer
+      // intent is pending; those routes are already handled by cancellation.
+      await gate;
+      try {
+        await route.continue();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("Route is already handled")) throw error;
+      }
+    } finally {
+      active -= 1;
+    }
+  };
+  await page.route(pattern, handler);
+
+  return {
+    async waitForRequest(): Promise<void> {
+      await expect
+        .poll(() => intercepted, {
+          message: "rapid navigation did not overlap a held canonical RSC request",
+        })
+        .toBeGreaterThan(0);
+    },
+    async release(): Promise<void> {
+      releaseGate?.();
+      await expect
+        .poll(() => active, {
+          message: "held Growth Map RSC routes did not finish after release",
+        })
+        .toBe(0);
+      await page.unroute(pattern, handler);
+    },
+  };
+}
+
+async function rapidObjectModeRoundTrip(
+  page: Page,
+  projectId: string,
+): Promise<void> {
+  const pages = objectModeButton(page, "Pages & opportunities");
+  const keywords = objectModeButton(page, "Keyword library");
+  const competitors = objectModeButton(page, "Competitor library");
+  const held = await holdGrowthMapNavigations(page, projectId);
+
+  try {
+    // Hold every real Next RSC response, then issue the whole Pages -> Keywords
+    // -> Competitors -> Pages round trip. These assertions therefore exercise
+    // the reported pending window rather than merely checking eventual state.
+    await keywords.click({ noWaitAfter: true });
+    await competitors.click({ noWaitAfter: true });
+    await pages.click({ noWaitAfter: true });
+    await held.waitForRequest();
+
+    await expect(pages).toHaveAttribute("aria-pressed", "true");
+    await expect(pages).toHaveAttribute("aria-current", "page");
+    await expect(keywords).toHaveAttribute("aria-pressed", "false");
+    await expect(keywords).not.toHaveAttribute("aria-current", "page");
+    await expect(competitors).toHaveAttribute("aria-pressed", "false");
+    await expect(competitors).not.toHaveAttribute("aria-current", "page");
+  } finally {
+    await held.release();
+  }
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("object"), {
+      message: "rapid object-tab round trip did not keep Pages as latest intent",
+    })
+    .toBe("pages");
   await expect(
-    page.getByRole("article", { name: "HTTP status errors" }),
-  ).toBeVisible({ timeout: 45_000 });
+    page.getByRole("list", { name: "URLs and opportunities" }),
+  ).toBeVisible();
+}
+
+async function rapidUrlSelectionRoundTrip(input: {
+  readonly page: Page;
+  readonly projectId: string;
+  readonly pageA: GrowthMapUrlDetail;
+  readonly pageB: GrowthMapUrlDetail;
+  readonly findingA: GrowthMapUrlFinding;
+  readonly findingB: GrowthMapUrlFinding;
+}): Promise<void> {
+  const { page, projectId, pageA, pageB, findingA, findingB } = input;
+  const rowA = exactPortfolioRow(page, pageA.normalizedUrl);
+  const rowB = exactPortfolioRow(page, pageB.normalizedUrl);
+  const held = await holdGrowthMapNavigations(page, projectId);
+
+  try {
+    // Start from canonical A, then hold the real RSC responses while requesting
+    // B -> A. The final A row and detail must already be exact in the pending
+    // window, before either navigation response can rewrite the client state.
+    await rowB.click({ noWaitAfter: true });
+    await rowA.click({ noWaitAfter: true });
+    await held.waitForRequest();
+    await expect(rowA).toHaveAttribute("aria-pressed", "true");
+    await expect(rowB).toHaveAttribute("aria-pressed", "false");
+    const detail = page.locator('aside[aria-label="Selected URL detail"]');
+    await expect(
+      detail.getByTitle(pageA.sitePageId, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      detail.getByTitle(findingB.findingId, { exact: true }),
+    ).toHaveCount(0);
+  } finally {
+    await held.release();
+  }
+
+  await assertExactSelection({
+    page,
+    expected: pageA,
+    other: pageB,
+    expectedFinding: findingA,
+    otherFinding: findingB,
+    select: false,
+  });
 }
 
 async function readPortfolio(
@@ -303,6 +492,162 @@ async function readDetail(
     `read Growth Map URL ${sitePageId}`,
   );
   return GrowthMapUrlDetailResponse.parse(envelope.data).data;
+}
+
+async function readKeywordLibrary(
+  request: APIRequestContext,
+  projectId: string,
+): Promise<ReturnType<typeof GrowthMapKeywordLibraryResponse.parse>> {
+  const response = await request.get(
+    `/api/mvp/projects/${projectId}/audit/keywords?limit=50`,
+    { headers: { cookie: "sf_ui_locale=en" } },
+  );
+  const envelope = await responseJson<DataEnvelope<unknown>>(
+    response,
+    "read Growth Map Keyword Library",
+  );
+  return GrowthMapKeywordLibraryResponse.parse(envelope.data);
+}
+
+async function readCompetitorLibrary(
+  request: APIRequestContext,
+  projectId: string,
+): Promise<ReturnType<typeof GrowthMapCompetitorLibraryResponse.parse>> {
+  const response = await request.get(
+    `/api/mvp/projects/${projectId}/audit/competitors?limit=50`,
+    { headers: { cookie: "sf_ui_locale=en" } },
+  );
+  const envelope = await responseJson<DataEnvelope<unknown>>(
+    response,
+    "read Growth Map Competitor Library",
+  );
+  return GrowthMapCompetitorLibraryResponse.parse(envelope.data);
+}
+
+async function assertKeywordLibraryTraceability(input: {
+  readonly page: Page;
+  readonly item: GrowthMapKeywordLibraryItem;
+  readonly expectedCount: number;
+  readonly csvSnapshotId: string;
+}): Promise<void> {
+  const { page, item, expectedCount, csvSnapshotId } = input;
+  const list = page.getByRole("list", { name: "Keyword list" });
+  await expect(list.getByRole("button")).toHaveCount(expectedCount);
+  const row = list
+    .getByText(item.displayKeyword, { exact: true })
+    .locator("xpath=ancestor::button[1]");
+  await row.click();
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedKeywordId"))
+    .toBe(item.keywordId);
+
+  const detail = page.locator('aside[aria-label="Selected Keyword detail"]');
+  await expect(
+    detail.getByRole("heading", {
+      level: 2,
+      name: item.displayKeyword,
+      exact: true,
+    }),
+  ).toBeVisible();
+  const recordDetails = detail.locator("details").filter({
+    hasText: "View record details",
+  });
+  await recordDetails.locator("summary").click();
+  await expect(
+    recordDetails.getByTitle(item.keywordId, { exact: true }),
+  ).toBeVisible();
+
+  const occurrence = item.sourceOccurrences.find(
+    (candidate) =>
+      candidate.sourceKind === "csv_import" &&
+      candidate.snapshotId === csvSnapshotId,
+  );
+  if (!occurrence || occurrence.sourceKind !== "csv_import") {
+    throw new Error(
+      `${item.displayKeyword} lost its exact CSV Keyword source occurrence`,
+    );
+  }
+  const sourceCard = detail
+    .getByTitle(occurrence.occurrenceId, { exact: true })
+    .locator("xpath=ancestor::article[1]");
+  await sourceCard.getByText("View source details", { exact: true }).click();
+  for (const identity of [
+    occurrence.occurrenceId,
+    occurrence.snapshotId,
+    occurrence.sourceObservationId,
+    occurrence.importPreviewId,
+  ]) {
+    if (identity === null) {
+      throw new Error(`${item.displayKeyword} emitted incomplete CSV lineage`);
+    }
+    await expect(
+      sourceCard.getByTitle(identity, { exact: true }),
+    ).toBeVisible();
+  }
+  await expect(
+    sourceCard.getByText(occurrence.sourcePointer, { exact: true }),
+  ).toBeVisible();
+}
+
+async function assertCompetitorLibraryTraceability(input: {
+  readonly page: Page;
+  readonly item: GrowthMapCompetitorLibraryItem;
+  readonly expectedCount: number;
+  readonly csvSnapshotId: string;
+}): Promise<void> {
+  const { page, item, expectedCount, csvSnapshotId } = input;
+  const list = page.getByRole("list", { name: "Competitor list" });
+  await expect(list.getByRole("button")).toHaveCount(expectedCount);
+  const row = list.getByRole("button").filter({ hasText: item.domain });
+  await expect(row).toHaveCount(1);
+  await row.click();
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedCompetitorId"))
+    .toBe(item.competitorId);
+
+  const detail = page.locator('aside[aria-label="Selected Competitor detail"]');
+  await expect(
+    detail.getByRole("heading", {
+      level: 2,
+      name: item.name ?? item.domain,
+      exact: true,
+    }),
+  ).toBeVisible();
+  const recordDetails = detail.locator("details").filter({
+    hasText: "View record details",
+  });
+  await recordDetails.locator("summary").click();
+  await expect(
+    recordDetails.getByTitle(item.competitorId, { exact: true }),
+  ).toBeVisible();
+
+  const origin = item.originOccurrences.find(
+    (candidate) =>
+      candidate.originKind === "csv_keyword_gap" &&
+      candidate.snapshotId === csvSnapshotId,
+  );
+  if (!origin || origin.originKind !== "csv_keyword_gap") {
+    throw new Error(`${item.domain} lost its exact CSV Competitor origin`);
+  }
+  const originCard = detail
+    .getByTitle(origin.occurrenceId, { exact: true })
+    .locator("xpath=ancestor::article[1]");
+  await originCard.getByText("View source details", { exact: true }).click();
+  for (const identity of [
+    origin.occurrenceId,
+    origin.snapshotId,
+    origin.observationId,
+    origin.importPreviewId,
+  ]) {
+    await expect(
+      originCard.getByTitle(identity, { exact: true }),
+    ).toBeVisible();
+  }
+  await expect(
+    originCard.getByText(origin.sourcePointer, { exact: true }),
+  ).toBeVisible();
 }
 
 function exactPortfolioRow(page: Page, normalizedUrl: string): Locator {
@@ -366,11 +711,19 @@ async function assertExactSelection(input: {
   readonly other: GrowthMapUrlDetail;
   readonly expectedFinding: GrowthMapUrlFinding;
   readonly otherFinding: GrowthMapUrlFinding;
+  readonly select?: boolean;
 }): Promise<void> {
-  const { page, expected, other, expectedFinding, otherFinding } = input;
+  const {
+    page,
+    expected,
+    other,
+    expectedFinding,
+    otherFinding,
+    select = true,
+  } = input;
   const selectedRow = exactPortfolioRow(page, expected.normalizedUrl);
   const otherRow = exactPortfolioRow(page, other.normalizedUrl);
-  await selectedRow.click();
+  if (select) await selectedRow.click();
 
   await expect
     .poll(
@@ -512,28 +865,13 @@ async function switchObjectMode(
   page: Page,
   label: string,
   object: "pages" | "keywords" | "competitors",
-  expectedHeading?: string,
 ): Promise<void> {
-  const navigation = page.getByRole("navigation", {
-    name: "Growth Map objects",
-  });
-  const button = navigation.getByRole("button", {
-    name: new RegExp(`^${label}`),
-  });
+  const button = objectModeButton(page, label);
   await button.click();
   await expect(button).toHaveAttribute("aria-current", "page");
   await expect
     .poll(() => new URL(page.url()).searchParams.get("object"))
     .toBe(object);
-  if (expectedHeading) {
-    await expect(
-      page.getByRole("heading", { level: 2, name: expectedHeading }),
-    ).toBeVisible();
-  } else {
-    await expect(
-      page.getByRole("list", { name: "URLs and opportunities" }),
-    ).toBeVisible();
-  }
 }
 
 test.describe.serial("real Growth Map selected-page identity", () => {
@@ -576,7 +914,7 @@ test.describe.serial("real Growth Map selected-page identity", () => {
     if (shutdownResult) expect(shutdownResult.ok).toBe(true);
   });
 
-  test("switches object libraries, then keeps A -> B -> A address, row, detail, metrics, and Finding identity exact", async ({
+  test("keeps rapid tab and A -> B -> A latest intent exact across address, row, detail, metrics, and Finding identity", async ({
     page,
     request,
   }) => {
@@ -587,11 +925,53 @@ test.describe.serial("real Growth Map selected-page identity", () => {
     projectId = await createProjectInBrowser(page, definition);
     await completeContext(request, projectId, definition);
     await importCsvThroughRealWorker(request, projectId, definition);
-    await seedOfflineProviderSnapshots(db, projectId, definition);
-    await runDiagnosisThroughBrowser(page, request, projectId);
+    const seededProviderSnapshotIds = await seedOfflineProviderSnapshots(
+      db,
+      projectId,
+      definition,
+    );
+    const diagnosticSnapshots = await readDiagnosticSnapshots(
+      request,
+      projectId,
+      seededProviderSnapshotIds,
+    );
+    await runDiagnosisThroughRealApi(
+      request,
+      projectId,
+      diagnosticSnapshots.map((snapshot) => snapshot.id),
+    );
 
     const portfolio = await readPortfolio(request, projectId);
     expect(portfolio.data).toHaveLength(3);
+    const keywordLibrary = await readKeywordLibrary(request, projectId);
+    const competitorLibrary = await readCompetitorLibrary(request, projectId);
+    expect(keywordLibrary.data).toHaveLength(10);
+    expect(competitorLibrary.data).toHaveLength(1);
+    const csvSnapshot = diagnosticSnapshots.find(
+      (snapshot) => snapshot.provider === "csv",
+    );
+    if (!csvSnapshot) {
+      throw new Error("real Growth Map fixture lost its CSV Snapshot identity");
+    }
+    const keyword = keywordLibrary.data.find((item) =>
+      item.sourceOccurrences.some(
+        (occurrence) =>
+          occurrence.sourceKind === "csv_import" &&
+          occurrence.snapshotId === csvSnapshot.id,
+      ),
+    );
+    const competitor = competitorLibrary.data.find((item) =>
+      item.originOccurrences.some(
+        (origin) =>
+          origin.originKind === "csv_keyword_gap" &&
+          origin.snapshotId === csvSnapshot.id,
+      ),
+    );
+    if (!keyword || !competitor) {
+      throw new Error(
+        "real Growth Map libraries lost their exact CSV Snapshot lineage",
+      );
+    }
     const pageA = portfolio.data.find(
       (item) => item.normalizedUrl === `${definition.siteUrl}/product`,
     );
@@ -622,32 +1002,37 @@ test.describe.serial("real Growth Map selected-page identity", () => {
         name: "Find the next growth opportunity, page by real page.",
       }),
     ).toBeVisible();
-    await switchObjectMode(
+    await switchObjectMode(page, "Keyword library", "keywords");
+    await assertKeywordLibraryTraceability({
       page,
-      "Keyword library",
-      "keywords",
-      "No traceable keyword records yet",
-    );
-    await switchObjectMode(
+      item: keyword,
+      expectedCount: keywordLibrary.data.length,
+      csvSnapshotId: csvSnapshot.id,
+    });
+    await switchObjectMode(page, "Competitor library", "competitors");
+    await assertCompetitorLibraryTraceability({
       page,
-      "Competitor library",
-      "competitors",
-      "No traceable competitor records yet",
-    );
+      item: competitor,
+      expectedCount: competitorLibrary.data.length,
+      csvSnapshotId: csvSnapshot.id,
+    });
     await switchObjectMode(page, "Pages & opportunities", "pages");
-    await switchObjectMode(
-      page,
-      "Competitor library",
-      "competitors",
-      "No traceable competitor records yet",
-    );
-    await switchObjectMode(
-      page,
-      "Keyword library",
-      "keywords",
-      "No traceable keyword records yet",
-    );
+    await expect(
+      page.getByRole("list", { name: "URLs and opportunities" }),
+    ).toBeVisible();
+    await rapidObjectModeRoundTrip(page, projectId);
+    await switchObjectMode(page, "Competitor library", "competitors");
+    await expect(
+      page.getByRole("list", { name: "Competitor list" }),
+    ).toBeVisible();
+    await switchObjectMode(page, "Keyword library", "keywords");
+    await expect(
+      page.getByRole("list", { name: "Keyword list" }),
+    ).toBeVisible();
     await switchObjectMode(page, "Pages & opportunities", "pages");
+    await expect(
+      page.getByRole("list", { name: "URLs and opportunities" }),
+    ).toBeVisible();
 
     await assertExactSelection({
       page,
@@ -655,6 +1040,14 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       other: detailB,
       expectedFinding: findingA,
       otherFinding: findingB,
+    });
+    await rapidUrlSelectionRoundTrip({
+      page,
+      projectId,
+      pageA: detailA,
+      pageB: detailB,
+      findingA,
+      findingB,
     });
     await assertExactSelection({
       page,
