@@ -38,6 +38,7 @@ import { ProblemError } from "@sf/observability";
 import type { ZodError } from "zod";
 import { getDb } from "@/lib/db";
 import { isPostgresUniqueViolation } from "./db-errors";
+import { projectConfirmedProductProfileCompetitors } from "./product-profile-competitor-projection";
 import { toAsyncRunDto, type AsyncRunDto } from "./runs";
 
 /** One queued/running Product Profile synthesis per project. */
@@ -695,6 +696,12 @@ async function appendOrReuseConfirmed(
   if (!(await projects.setConfirmedIcpProfile(scope, projectId, row.id))) {
     throw new ProblemError("NOT_FOUND", "Project not found.");
   }
+  await projectConfirmedProductProfileCompetitors(
+    tx,
+    scoped,
+    { id: row.id, version: row.version },
+    profile,
+  );
   await sites.updatePrimaryMarketCodes(
     scoped,
     profile.targetMarkets.map((market) => market.marketCode),

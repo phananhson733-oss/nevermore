@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   profileProvenancePreflight: vi.fn(),
   activeFind: vi.fn(),
   updateMarkets: vi.fn(),
+  competitorUpsert: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -60,6 +61,9 @@ vi.mock("@sf/db", async (importOriginal) => {
     },
     SitesRepository: class {
       updatePrimaryMarketCodes = mocks.updateMarkets;
+    },
+    CompetitorsRepository: class {
+      upsertOrigin = mocks.competitorUpsert;
     },
   };
 });
@@ -191,6 +195,10 @@ beforeEach(() => {
   }));
   mocks.updateMarkets.mockResolvedValue(undefined);
   mocks.activeFind.mockResolvedValue(null);
+  mocks.competitorUpsert.mockResolvedValue({
+    occurrenceId: "00000000-0000-4000-8000-000000000030",
+    competitorId: "00000000-0000-4000-8000-000000000031",
+  });
 });
 
 describe("getProductProfileWorkspace", () => {
@@ -681,6 +689,7 @@ describe("confirmProductProfile", () => {
       ids.project,
       result.id,
     );
+    expect(mocks.competitorUpsert).not.toHaveBeenCalled();
     expect(mocks.updateMarkets).toHaveBeenCalledWith(
       { workspaceId: ids.workspace, projectId: ids.project },
       ["US", "GB"],
@@ -855,6 +864,118 @@ describe("confirmProductProfile", () => {
         baseVersion: 3,
       }),
     ).resolves.toMatchObject({ status: "complete" });
+    expect(mocks.competitorUpsert).toHaveBeenCalledTimes(2);
+    expect(mocks.competitorUpsert).toHaveBeenNthCalledWith(
+      1,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      expect.objectContaining({
+        originKind: "product_profile",
+        productProfileId: "00000000-0000-4000-8000-000000000020",
+        profileVersion: 4,
+        candidateId: ids.candidate,
+        fieldProvenancePath: "/competitorCandidates",
+        sourceReviewStatus: "approved",
+        sourceRelationship: "direct",
+        sourceAnalysisScope: ["positioning"],
+      }),
+    );
+    expect(mocks.competitorUpsert).toHaveBeenNthCalledWith(
+      2,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      expect.objectContaining({
+        originKind: "product_profile",
+        productProfileId: "00000000-0000-4000-8000-000000000020",
+        profileVersion: 4,
+        candidateId: "00000000-0000-4000-8000-000000000017",
+        fieldProvenancePath: "/competitorCandidates",
+        sourceReviewStatus: "approved",
+        sourceRelationship: "indirect",
+        sourceAnalysisScope: ["content"],
+      }),
+    );
+    expect(mocks.setCurrent.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.competitorUpsert.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.setConfirmed.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.competitorUpsert.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("prefers exact candidate provenance when projecting confirmed competitors", async () => {
+    const profile = completeDraft();
+    profile.competitorCandidates = [
+      {
+        candidateId: ids.candidate,
+        name: "Exact competitor",
+        domain: "exact.example",
+        relationship: "direct",
+        analysisScope: ["keyword_gap"],
+        similarity: null,
+        reason: "Exact provenance retained.",
+        reviewStatus: "approved",
+        confidence: "high",
+      },
+    ];
+    profile.missingFields = profile.missingFields.filter(
+      (path) => path !== "/competitorCandidates",
+    );
+    profile.fieldProvenance.push(
+      {
+        path: "/competitorCandidates",
+        derivation: "declared",
+        confidence: "high",
+        evidenceRefs: [
+          {
+            evidenceRefId: "00000000-0000-8000-8000-000000000040",
+            kind: "userEdit",
+          },
+        ],
+        limitation: "Pool-level provenance.",
+        observedAt: null,
+      },
+      {
+        path: "/competitorCandidates/0",
+        derivation: "declared",
+        confidence: "high",
+        evidenceRefs: [
+          {
+            evidenceRefId: "00000000-0000-8000-8000-000000000041",
+            kind: "userEdit",
+          },
+        ],
+        limitation: "Exact candidate provenance.",
+        observedAt: null,
+      },
+    );
+    mocks.projectLock.mockResolvedValue(project());
+    mocks.profileFind.mockResolvedValue(row(profile));
+    mocks.profileInsert.mockImplementation(async (values) =>
+      row(values.profile, {
+        id: "00000000-0000-4000-8000-000000000042",
+        version: values.version,
+        status: "complete",
+        hash: values.contentHash,
+      }),
+    );
+
+    await expect(
+      service.confirmProductProfile(scope, ids.project, ids.actor, {
+        baseVersion: 3,
+      }),
+    ).resolves.toMatchObject({ status: "complete" });
+
+    expect(mocks.competitorUpsert).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      expect.objectContaining({
+        fieldProvenancePath: "/competitorCandidates/0",
+        evidenceRefs: [
+          {
+            evidenceRefId: "00000000-0000-8000-8000-000000000041",
+            kind: "userEdit",
+          },
+        ],
+      }),
+    );
   });
 });
 
