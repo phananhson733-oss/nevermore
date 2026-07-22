@@ -102,18 +102,28 @@ export type {
 
 // DataForSEO Labs ranked-keywords adapter.
 export {
+  createDataForSeoCollectionScope,
   createDataForSeoAdapter,
+  dataForSeoParamsFromCollectionScope,
+  dataForSeoSnapshotSummary,
   dataforseoAdapter,
+  parseDataForSeoCollectionScope,
+  DATAFORSEO_COLLECTION_SCOPE_VERSION,
   DATAFORSEO_DATASET_KEY,
   DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_QUERY_KIND,
   DATAFORSEO_ROW_CAP_STOP_REASON,
 } from "./dataforseo/adapter.ts";
 export type {
   DataForSeoAdapterOptions,
+  DataForSeoCollectionLocation,
+  DataForSeoCollectionScope,
+  DataForSeoCollectionScopeInput,
   DataForSeoConfig,
   DataForSeoParams,
   DataForSeoRaw,
   DataForSeoRawRequest,
+  DataForSeoSnapshotSummary,
 } from "./dataforseo/adapter.ts";
 export {
   HttpDataForSeoClient,
