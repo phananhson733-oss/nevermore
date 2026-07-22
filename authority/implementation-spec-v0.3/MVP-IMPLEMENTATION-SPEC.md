@@ -10,7 +10,7 @@ owner: SignalFrame
 
 # Nevermore Unified Growth Opportunity — v0.3 可执行权威
 
-本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 34 个 operation 与 6 个 async operation，SQL 精确声明 36 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger，以及从最新可读 DiagnosticRun 冻结输入投影的可溯源多 URL Growth Map 列表与详情。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
+本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 36 个 operation 与 6 个 async operation，SQL 精确声明 36 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger，以及从最新可读 DiagnosticRun 冻结输入投影的可溯源多 URL Growth Map 与严格只读 Keyword Library 列表/详情。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
 
 规范词“必须 / MUST”“不得 / MUST NOT”是当前机器面或已审核变更边界的发布条件；“应 / SHOULD”是强建议，偏离时必须在代码评审中记录原因；“可 / MAY”是非阻塞增强。凡是标为“reviewed change sequence”“planned”或“stop gate 后”的内容，均不是当前可调用 API、已存在表或已交付产品事实。
 
@@ -911,6 +911,8 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `createDiagnosticRun` — 启动诊断。
 - `listProjectAuditUrls` — 从最新 completed/partial DiagnosticRun 的冻结输入读取有界多 URL portfolio；不返回伪造项目总数。
 - `getProjectAuditUrl` — 读取一个 canonical SitePage 的真实 Observation、resolved FindingTarget、Finding 与 canonical Execution ID 关系。
+- `listProjectAuditKeywords` — 读取有界 Keyword Library cursor page；保留精确 source occurrence、canonical metric pointer、mapped target、coverage 与 limitation，不返回伪造总数或过滤状态。
+- `getProjectAuditKeyword` — 按稳定 Keyword ID 读取同一严格只读投影，不暴露 Finding confirmation、Action state 或 mutation。
 - `listProjectFindings` — 列出 Finding 和 evidence summary。
 - `reviewProjectFinding` — confirm/ignore/needs-more-data。
 - `listProjectActions` — 列出 30/60/90 plan。

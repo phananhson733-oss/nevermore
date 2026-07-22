@@ -69,6 +69,8 @@ const EXPECTED_OPENAPI_OPERATIONS = [
   "createDiagnosticRun",
   "listProjectAuditUrls",
   "getProjectAuditUrl",
+  "listProjectAuditKeywords",
+  "getProjectAuditKeyword",
   "listProjectFindings",
   "reviewProjectFinding",
   "listProjectActions",
@@ -486,6 +488,244 @@ function checkOpenApi() {
       growthMapFinding.properties?.reviewRevision?.type === "integer" &&
       growthMapFinding.properties.reviewRevision.minimum === 0,
     "Growth Map Finding detail must carry the exact non-negative reviewRevision used for optimistic review concurrency",
+  );
+
+  const keywordListPathName = "/projects/{projectId}/audit/keywords";
+  const keywordDetailPathName =
+    "/projects/{projectId}/audit/keywords/{keywordId}";
+  const keywordListPath = document.paths?.[keywordListPathName];
+  const keywordDetailPath = document.paths?.[keywordDetailPathName];
+  const keywordList = keywordListPath?.get;
+  const keywordDetail = keywordDetailPath?.get;
+  invariant(
+    keywordList?.operationId === "listProjectAuditKeywords",
+    "Growth Map Keyword list path/operationId drift",
+  );
+  invariant(
+    keywordDetail?.operationId === "getProjectAuditKeyword",
+    "Growth Map Keyword detail path/operationId drift",
+  );
+  assertExactSet(
+    Object.keys(keywordListPath ?? {}).filter((key) => HTTP_METHODS.has(key)),
+    ["get"],
+    "Growth Map Keyword list methods",
+  );
+  assertExactSet(
+    Object.keys(keywordDetailPath ?? {}).filter((key) => HTTP_METHODS.has(key)),
+    ["get"],
+    "Growth Map Keyword detail methods",
+  );
+  const keywordListParameterRefs = (keywordList.parameters ?? []).map(
+    (parameter) => parameter.$ref,
+  );
+  assertExactSet(
+    keywordListParameterRefs,
+    [
+      "#/components/parameters/ProjectId",
+      "#/components/parameters/Limit",
+      "#/components/parameters/Cursor",
+    ],
+    "Growth Map Keyword list query must be exactly limit/cursor",
+  );
+  invariant(
+    keywordListParameterRefs.every((reference) => typeof reference === "string"),
+    "Growth Map Keyword list query must be exactly limit/cursor",
+  );
+  assertExactSet(
+    (keywordDetail.parameters ?? []).map((parameter) => parameter.$ref),
+    [
+      "#/components/parameters/ProjectId",
+      "#/components/parameters/KeywordId",
+    ],
+    "Growth Map Keyword detail parameters",
+  );
+  invariant(
+    keywordList.responses?.["200"]?.content?.["application/json"]?.schema
+      ?.$ref ===
+      "#/components/schemas/GrowthMapKeywordLibraryHttpResponse" &&
+      keywordDetail.responses?.["200"]?.content?.["application/json"]
+        ?.schema?.$ref ===
+        "#/components/schemas/GrowthMapKeywordDetailHttpResponse",
+    "Growth Map Keyword reads must return the standard HTTP envelope around the complete read model",
+  );
+  invariant(
+    keywordList.responses?.["422"]?.$ref ===
+      "#/components/responses/ValidationError" &&
+      keywordList.responses?.["503"]?.$ref ===
+        "#/components/responses/DependencyUnavailable" &&
+      keywordDetail.responses?.["503"]?.$ref ===
+        "#/components/responses/DependencyUnavailable",
+    "Growth Map Keyword reads must expose cursor validation and fail-closed dependency errors",
+  );
+
+  const keywordSchemas = document.components?.schemas ?? {};
+  const keywordSourceOccurrence =
+    keywordSchemas.GrowthMapKeywordSourceOccurrence;
+  invariant(
+    keywordSourceOccurrence?.discriminator?.propertyName === "sourceKind",
+    "Growth Map Keyword source occurrence discriminator drift",
+  );
+  assertExactSet(
+    Object.keys(keywordSourceOccurrence?.discriminator?.mapping ?? {}),
+    ["csv_import", "dataforseo_ranked", "gsc_top_query", "manual"],
+    "Growth Map Keyword source occurrence discriminator drift",
+  );
+  assertExactSet(
+    (keywordSourceOccurrence?.oneOf ?? []).map((shape) => shape.$ref),
+    [
+      "#/components/schemas/GrowthMapKeywordCsvImportOccurrence",
+      "#/components/schemas/GrowthMapKeywordDataForSeoRankedOccurrence",
+      "#/components/schemas/GrowthMapKeywordGscTopQueryOccurrence",
+      "#/components/schemas/GrowthMapKeywordManualOccurrence",
+    ],
+    "Growth Map Keyword source occurrence discriminator drift",
+  );
+
+  const keywordMappedTarget = keywordSchemas.GrowthMapKeywordMappedTarget;
+  invariant(
+    keywordMappedTarget?.discriminator?.propertyName === "kind",
+    "Growth Map Keyword mapped target discriminator drift",
+  );
+  assertExactSet(
+    Object.keys(keywordMappedTarget?.discriminator?.mapping ?? {}),
+    ["unassigned", "existing_page", "new_asset"],
+    "Growth Map Keyword mapped target discriminator drift",
+  );
+  assertExactSet(
+    (keywordMappedTarget?.oneOf ?? []).map((shape) => shape.$ref),
+    [
+      "#/components/schemas/GrowthMapKeywordUnassignedTarget",
+      "#/components/schemas/GrowthMapKeywordExistingPageTarget",
+      "#/components/schemas/GrowthMapKeywordNewAssetTarget",
+    ],
+    "Growth Map Keyword mapped target discriminator drift",
+  );
+
+  const canonicalKeywordMetricPointers = new Map([
+    ["GrowthMapKeywordVolumeMetric", "/valueJson/searchVolume"],
+    [
+      "GrowthMapKeywordDifficultyMetric",
+      "/valueJson/keywordDifficulty",
+    ],
+    ["GrowthMapKeywordCurrentRankMetric", "/valueJson/currentRank"],
+    ["GrowthMapKeywordCurrentUrlMetric", "/valueJson/currentUrl"],
+    [
+      "GrowthMapKeywordCompetitorDomainMetric",
+      "/valueJson/competitorDomain",
+    ],
+    [
+      "GrowthMapKeywordCompetitorRankMetric",
+      "/valueJson/competitorRank",
+    ],
+  ]);
+  for (const [schemaName, pointer] of canonicalKeywordMetricPointers) {
+    invariant(
+      keywordSchemas[schemaName]?.properties?.valuePointer?.const === pointer,
+      `Growth Map Keyword canonical metric pointer drift: ${schemaName}`,
+    );
+  }
+
+  const closedKeywordSchemas = [
+    "GrowthMapKeywordUnassignedTarget",
+    "GrowthMapKeywordExistingPageTarget",
+    "GrowthMapKeywordNewAssetTarget",
+    "GrowthMapKeywordCsvImportOccurrence",
+    "GrowthMapKeywordDataForSeoRankedOccurrence",
+    "GrowthMapKeywordGscTopQueryOccurrence",
+    "GrowthMapKeywordManualOccurrence",
+    ...canonicalKeywordMetricPointers.keys(),
+    "GrowthMapKeywordMetricLimitations",
+    "GrowthMapKeywordMetrics",
+    "GrowthMapKeywordClusterRef",
+    "GrowthMapKeywordClassificationLimitations",
+    "GrowthMapKeywordLibraryItem",
+    "GrowthMapKeywordLibraryPageMeta",
+    "GrowthMapKeywordLibraryResponse",
+    "GrowthMapKeywordDetailResponse",
+    "GrowthMapKeywordLibraryHttpResponse",
+    "GrowthMapKeywordDetailHttpResponse",
+  ];
+  for (const schemaName of closedKeywordSchemas) {
+    invariant(
+      keywordSchemas[schemaName]?.additionalProperties === false,
+      `Growth Map Keyword schema must be closed: ${schemaName}`,
+    );
+  }
+
+  const keywordItem = keywordSchemas.GrowthMapKeywordLibraryItem;
+  assertExactSet(
+    Object.keys(keywordItem?.properties ?? {}),
+    [
+      "projectId",
+      "keywordId",
+      "displayKeyword",
+      "normalizedKeyword",
+      "marketCode",
+      "languageTag",
+      "queryKind",
+      "status",
+      "revision",
+      "intent",
+      "buyerStage",
+      "cluster",
+      "classificationLimitations",
+      "mappedTarget",
+      "sourceOccurrences",
+      "metrics",
+      "coverage",
+    ],
+    "Growth Map Keyword item fields",
+  );
+  assertExactSet(
+    keywordItem?.required ?? [],
+    Object.keys(keywordItem?.properties ?? {}),
+    "Growth Map Keyword item required fields",
+  );
+  invariant(
+    keywordItem?.properties?.sourceOccurrences?.minItems === 1 &&
+      keywordItem.properties.sourceOccurrences.maxItems === 100 &&
+      keywordItem.properties.coverage?.$ref ===
+        "#/components/schemas/GrowthMapCoverage",
+    "Growth Map Keyword item must retain bounded source lineage and explicit coverage",
+  );
+
+  const keywordMetrics = keywordSchemas.GrowthMapKeywordMetrics;
+  assertExactSet(
+    Object.keys(keywordMetrics?.properties ?? {}),
+    [
+      "volume",
+      "kd",
+      "currentRank",
+      "currentUrl",
+      "competitorDomain",
+      "competitorRank",
+      "limitations",
+    ],
+    "Growth Map Keyword metrics fields",
+  );
+  invariant(
+    keywordMetrics?.properties?.limitations?.$ref ===
+      "#/components/schemas/GrowthMapKeywordMetricLimitations",
+    "Growth Map Keyword metrics must preserve explicit field limitations",
+  );
+
+  const keywordPage = keywordSchemas.GrowthMapKeywordLibraryResponse;
+  const keywordPageMeta = keywordSchemas.GrowthMapKeywordLibraryPageMeta;
+  assertExactSet(
+    Object.keys(keywordPage?.properties ?? {}),
+    ["projectId", "data", "meta"],
+    "Growth Map Keyword cursor page fields",
+  );
+  assertExactSet(
+    Object.keys(keywordPageMeta?.properties ?? {}),
+    ["limit", "nextCursor", "hasNext", "coverage"],
+    "Growth Map Keyword cursor page metadata fields",
+  );
+  invariant(
+    keywordPage?.properties?.data?.maxItems === 100 &&
+      keywordPageMeta?.properties?.coverage?.$ref ===
+        "#/components/schemas/GrowthMapCoverage",
+    "Growth Map Keyword cursor page must remain bounded with explicit coverage",
   );
 
   const asyncOperations = operations.filter(

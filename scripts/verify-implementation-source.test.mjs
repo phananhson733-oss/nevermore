@@ -60,7 +60,7 @@ test("freezes the eight traceability persistence tables in the 36-table contract
   );
 });
 
-test("freezes the 34 implemented operations and six async commands", () => {
+test("freezes the 36 implemented operations and six async commands", () => {
   for (const operationId of [
     "getProjectProductProfile",
     "updateProductProfileDraft",
@@ -70,6 +70,8 @@ test("freezes the 34 implemented operations and six async commands", () => {
     "confirmProductProfile",
     "listProjectAuditUrls",
     "getProjectAuditUrl",
+    "listProjectAuditKeywords",
+    "getProjectAuditKeyword",
   ]) {
     assert.match(verifier, new RegExp(`"${operationId}"`));
   }
@@ -89,6 +91,20 @@ test("freezes the 34 implemented operations and six async commands", () => {
     verifier,
     /async runtime: \$\{EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS\.length\} route handlers use the shared asyncAccepted envelope/,
   );
+});
+
+test("gates the strict read-only Keyword Library OpenAPI surface", () => {
+  for (const invariant of [
+    "Growth Map Keyword list path/operationId drift",
+    "Growth Map Keyword detail path/operationId drift",
+    "Growth Map Keyword list query must be exactly limit/cursor",
+    "Growth Map Keyword reads must return the standard HTTP envelope around the complete read model",
+    "Growth Map Keyword source occurrence discriminator drift",
+    "Growth Map Keyword mapped target discriminator drift",
+    "Growth Map Keyword canonical metric pointer drift",
+  ]) {
+    assert.match(verifier, new RegExp(invariant));
+  }
 });
 
 test("requires Growth Map reviews to expose their exact non-negative revision", () => {

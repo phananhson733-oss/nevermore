@@ -107,7 +107,7 @@ test("declares the activated v0.3 machine surface and exactly 36 application tab
   }
 });
 
-test("declares all 32 implemented operations and six real async commands", () => {
+test("declares all 36 implemented operations and six real async commands", () => {
   const operationBlock = authoritySpec.slice(
     authoritySpec.indexOf("<!-- API_OPERATIONS_START -->"),
     authoritySpec.indexOf("<!-- API_OPERATIONS_END -->"),
@@ -115,7 +115,7 @@ test("declares all 32 implemented operations and six real async commands", () =>
   const declaredOperations = [
     ...operationBlock.matchAll(/^- `([a-z][A-Za-z0-9]+)`/gm),
   ].map((match) => match[1]);
-  assert.equal(declaredOperations.length, 32);
+  assert.equal(declaredOperations.length, 36);
   for (const operationId of [
     "getProjectProductProfile",
     "updateProductProfileDraft",
@@ -123,6 +123,8 @@ test("declares all 32 implemented operations and six real async commands", () =>
     "reviewProductProfileCompetitor",
     "addProductProfileCompetitor",
     "confirmProductProfile",
+    "listProjectAuditKeywords",
+    "getProjectAuditKeyword",
   ]) {
     assert.ok(declaredOperations.includes(operationId), `${operationId} is missing`);
   }

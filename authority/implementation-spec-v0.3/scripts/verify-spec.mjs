@@ -12,7 +12,7 @@ const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
 const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
-const EXPECTED_OPERATION_COUNT = 34;
+const EXPECTED_OPERATION_COUNT = 36;
 const EXPECTED_ASYNC_OPERATION_COUNT = 6;
 const EXPECTED_TABLE_COUNT = 36;
 const MIGRATION_VERSION_VIEW_PATTERN =
@@ -505,6 +505,79 @@ check(
       "reviewRevision: { type: integer, minimum: 0 }",
     ),
   "Growth Map Finding must expose the exact non-negative reviewRevision required by optimistic review concurrency",
+);
+const keywordReadPathBlock = between(
+  files.openapi,
+  "  /projects/{projectId}/audit/keywords:",
+  "  /projects/{projectId}/findings:",
+);
+check(
+  keywordReadPathBlock.includes(
+    "operationId: listProjectAuditKeywords",
+  ) &&
+    keywordReadPathBlock.includes(
+      "operationId: getProjectAuditKeyword",
+    ) &&
+    keywordReadPathBlock.includes(
+      "#/components/schemas/GrowthMapKeywordLibraryHttpResponse",
+    ) &&
+    keywordReadPathBlock.includes(
+      "#/components/schemas/GrowthMapKeywordDetailHttpResponse",
+    ) &&
+    keywordReadPathBlock.includes("#/components/parameters/KeywordId") &&
+    !/^\s+(?:post|put|patch|delete):/m.test(keywordReadPathBlock),
+  "Growth Map Keyword authority paths must expose only the implemented list/detail reads",
+);
+const keywordSchemaBlock = between(
+  files.openapi,
+  "    GrowthMapKeywordUnassignedTarget:",
+  "    CreateDiagnosticRunRequest:",
+);
+check(
+  [
+    "csv_import: '#/components/schemas/GrowthMapKeywordCsvImportOccurrence'",
+    "dataforseo_ranked: '#/components/schemas/GrowthMapKeywordDataForSeoRankedOccurrence'",
+    "gsc_top_query: '#/components/schemas/GrowthMapKeywordGscTopQueryOccurrence'",
+    "manual: '#/components/schemas/GrowthMapKeywordManualOccurrence'",
+    "unassigned: '#/components/schemas/GrowthMapKeywordUnassignedTarget'",
+    "existing_page: '#/components/schemas/GrowthMapKeywordExistingPageTarget'",
+    "new_asset: '#/components/schemas/GrowthMapKeywordNewAssetTarget'",
+  ].every((mapping) => keywordSchemaBlock.includes(mapping)) &&
+    keywordSchemaBlock.includes("propertyName: sourceKind") &&
+    keywordSchemaBlock.includes("propertyName: kind"),
+  "Growth Map Keyword authority must preserve source and mapped-target discriminators",
+);
+check(
+  [
+    "/valueJson/searchVolume",
+    "/valueJson/keywordDifficulty",
+    "/valueJson/currentRank",
+    "/valueJson/currentUrl",
+    "/valueJson/competitorDomain",
+    "/valueJson/competitorRank",
+  ].every((pointer) =>
+    keywordSchemaBlock.includes(`const: ${pointer}`),
+  ),
+  "Growth Map Keyword authority must preserve every canonical metric pointer",
+);
+check(
+  /GrowthMapKeywordLibraryItem:\s+type: object\s+additionalProperties: false/.test(
+    keywordSchemaBlock,
+  ) &&
+    /GrowthMapKeywordLibraryPageMeta:\s+type: object\s+additionalProperties: false/.test(
+      keywordSchemaBlock,
+    ) &&
+    keywordSchemaBlock.includes(
+      "limitations: { $ref: '#/components/schemas/GrowthMapKeywordMetricLimitations' }",
+    ) &&
+    keywordSchemaBlock.includes(
+      "coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }",
+    ) &&
+    keywordSchemaBlock.includes("minItems: 1") &&
+    keywordSchemaBlock.includes("maxItems: 100") &&
+    keywordSchemaBlock.includes("GrowthMapKeywordLibraryResponse:") &&
+    keywordSchemaBlock.includes("GrowthMapKeywordDetailResponse:"),
+  "Growth Map Keyword authority must keep closed bounded coverage/limitation cursor contracts",
 );
 const exportBundleBlock = between(
   files.openapi,

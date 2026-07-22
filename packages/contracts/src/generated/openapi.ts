@@ -362,6 +362,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/audit/keywords": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the project Keyword Library
+         * @description Returns one bounded cursor page of stable Keyword identities with exact source
+         *     occurrences, canonical Observation metric pointers, governed mapped targets, and
+         *     explicit coverage and limitations. This read surface exposes no filters, synthetic
+         *     totals, Finding confirmation, Action state, or mutation controls.
+         */
+        get: operations["listProjectAuditKeywords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/keywords/{keywordId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one project Keyword Library entry
+         * @description Resolves one stable Keyword identity inside the selected project and returns the same
+         *     strict source, metric, mapping, coverage, and limitation contract as the cursor page.
+         */
+        get: operations["getProjectAuditKeyword"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/findings": {
         parameters: {
             query?: never;
@@ -1547,6 +1591,274 @@ export interface components {
         GrowthMapUrlDetailHttpResponse: {
             data: components["schemas"]["GrowthMapUrlDetailResponse"];
         };
+        GrowthMapKeywordUnassignedTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "unassigned";
+            /** @enum {string} */
+            reviewState: "unreviewed" | "approved" | "rejected";
+            revision: number;
+            reason: string | null;
+        };
+        GrowthMapKeywordExistingPageTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "existing_page";
+            /** @enum {string} */
+            reviewState: "unreviewed" | "approved" | "rejected";
+            revision: number;
+            reason: string | null;
+            sitePageId: components["schemas"]["Uuid"];
+            /** Format: uri */
+            normalizedUrl: string;
+        };
+        GrowthMapKeywordNewAssetTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "new_asset";
+            /** @enum {string} */
+            reviewState: "unreviewed" | "approved" | "rejected";
+            revision: number;
+            reason: string | null;
+        };
+        GrowthMapKeywordMappedTarget: components["schemas"]["GrowthMapKeywordUnassignedTarget"] | components["schemas"]["GrowthMapKeywordExistingPageTarget"] | components["schemas"]["GrowthMapKeywordNewAssetTarget"];
+        GrowthMapKeywordCsvImportOccurrence: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            sourceKind: "csv_import";
+            snapshotId: components["schemas"]["Uuid"];
+            sourceObservationId: components["schemas"]["Uuid"];
+            /** @constant */
+            sourcePointer: "/valueJson/keyword";
+            collectedAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            providerDataAsOf: string | null;
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            /** @constant */
+            scopeBasis: "user_provided";
+            scopeLimitation: string | null;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["LocaleCode"];
+            importPreviewId: components["schemas"]["Uuid"];
+        };
+        GrowthMapKeywordDataForSeoRankedOccurrence: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            sourceKind: "dataforseo_ranked";
+            snapshotId: components["schemas"]["Uuid"];
+            sourceObservationId: components["schemas"]["Uuid"];
+            /** @constant */
+            sourcePointer: "/valueJson/keyword";
+            collectedAt: components["schemas"]["Timestamp"];
+            providerDataAsOf: null;
+            /** @constant */
+            freshness: "unknown";
+            limitation: string | null;
+            /** @constant */
+            scopeBasis: "provider_collection_scope";
+            scopeLimitation: string | null;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["LocaleCode"];
+        };
+        GrowthMapKeywordGscTopQueryOccurrence: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            sourceKind: "gsc_top_query";
+            snapshotId: components["schemas"]["Uuid"];
+            sourceObservationId: components["schemas"]["Uuid"];
+            sourcePointer: string;
+            collectedAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            providerDataAsOf: string | null;
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            /** @constant */
+            scopeBasis: "project_context";
+            scopeLimitation: string;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["LocaleCode"];
+        };
+        GrowthMapKeywordManualOccurrence: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            sourceKind: "manual";
+            snapshotId: null;
+            sourceObservationId: null;
+            sourcePointer: null;
+            collectedAt: components["schemas"]["Timestamp"];
+            providerDataAsOf: null;
+            /** @constant */
+            freshness: "unknown";
+            limitation: string | null;
+            /** @constant */
+            scopeBasis: "manual";
+            scopeLimitation: string | null;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["LocaleCode"];
+        };
+        /** @description Exact immutable source occurrence. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation. */
+        GrowthMapKeywordSourceOccurrence: components["schemas"]["GrowthMapKeywordCsvImportOccurrence"] | components["schemas"]["GrowthMapKeywordDataForSeoRankedOccurrence"] | components["schemas"]["GrowthMapKeywordGscTopQueryOccurrence"] | components["schemas"]["GrowthMapKeywordManualOccurrence"];
+        GrowthMapKeywordVolumeMetric: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/searchVolume";
+            observedAt: components["schemas"]["Timestamp"];
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            value: number | null;
+        };
+        GrowthMapKeywordDifficultyMetric: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/keywordDifficulty";
+            observedAt: components["schemas"]["Timestamp"];
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            value: number | null;
+        };
+        GrowthMapKeywordCurrentRankMetric: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/currentRank";
+            observedAt: components["schemas"]["Timestamp"];
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            value: number | null;
+        };
+        GrowthMapKeywordCurrentUrlMetric: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/currentUrl";
+            observedAt: components["schemas"]["Timestamp"];
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            /** Format: uri */
+            value: string | null;
+        };
+        GrowthMapKeywordCompetitorDomainMetric: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/competitorDomain";
+            observedAt: components["schemas"]["Timestamp"];
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            value: string | null;
+        };
+        GrowthMapKeywordCompetitorRankMetric: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/competitorRank";
+            observedAt: components["schemas"]["Timestamp"];
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            value: number | null;
+        };
+        GrowthMapKeywordMetricLimitations: {
+            volume: string | null;
+            kd: string | null;
+            currentRank: string | null;
+            currentUrl: string | null;
+            competitorDomain: string | null;
+            competitorRank: string | null;
+        };
+        /** @description Every present projection points to its canonical normalized Observation value; every absent projection carries a field limitation. */
+        GrowthMapKeywordMetrics: {
+            volume: components["schemas"]["GrowthMapKeywordVolumeMetric"] | null;
+            kd: components["schemas"]["GrowthMapKeywordDifficultyMetric"] | null;
+            currentRank: components["schemas"]["GrowthMapKeywordCurrentRankMetric"] | null;
+            currentUrl: components["schemas"]["GrowthMapKeywordCurrentUrlMetric"] | null;
+            competitorDomain: components["schemas"]["GrowthMapKeywordCompetitorDomainMetric"] | null;
+            competitorRank: components["schemas"]["GrowthMapKeywordCompetitorRankMetric"] | null;
+            limitations: components["schemas"]["GrowthMapKeywordMetricLimitations"];
+        };
+        GrowthMapKeywordClusterRef: {
+            clusterId: components["schemas"]["Uuid"];
+            name: string;
+        };
+        GrowthMapKeywordClassificationLimitations: {
+            intent: string | null;
+            buyerStage: string | null;
+            cluster: string | null;
+        };
+        /** @description Stable project-scoped Keyword identity. Source occurrences and canonical metric Observation references are unique and share this row's market and canonical language tag. */
+        GrowthMapKeywordLibraryItem: {
+            projectId: components["schemas"]["Uuid"];
+            keywordId: components["schemas"]["Uuid"];
+            displayKeyword: string;
+            normalizedKeyword: string;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["LocaleCode"];
+            /** @enum {string} */
+            queryKind: "search_query" | "generative_query";
+            /** @enum {string} */
+            status: "candidate" | "approved" | "excluded" | "parked";
+            revision: number;
+            intent: string | null;
+            buyerStage: string | null;
+            cluster: components["schemas"]["GrowthMapKeywordClusterRef"] | null;
+            classificationLimitations: components["schemas"]["GrowthMapKeywordClassificationLimitations"];
+            mappedTarget: components["schemas"]["GrowthMapKeywordMappedTarget"];
+            sourceOccurrences: components["schemas"]["GrowthMapKeywordSourceOccurrence"][];
+            metrics: components["schemas"]["GrowthMapKeywordMetrics"];
+            coverage: components["schemas"]["GrowthMapCoverage"];
+        };
+        /** @description hasNext is true exactly when nextCursor is non-null. */
+        GrowthMapKeywordLibraryPageMeta: {
+            limit: number;
+            nextCursor: string | null;
+            hasNext: boolean;
+            coverage: components["schemas"]["GrowthMapCoverage"];
+        };
+        /** @description Bounded project-scoped cursor page with no synthetic total or filter state. */
+        GrowthMapKeywordLibraryResponse: {
+            projectId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapKeywordLibraryItem"][];
+            meta: components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
+        };
+        /** @description The selected Keyword item's projectId exactly matches the response scope. */
+        GrowthMapKeywordDetailResponse: {
+            projectId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapKeywordLibraryItem"];
+        };
+        GrowthMapKeywordLibraryHttpResponse: {
+            data: components["schemas"]["GrowthMapKeywordLibraryResponse"];
+        };
+        GrowthMapKeywordDetailHttpResponse: {
+            data: components["schemas"]["GrowthMapKeywordDetailResponse"];
+        };
         CreateDiagnosticRunRequest: {
             /** @description Must include a current-project crawl snapshot; omitted optional datasets use latest eligible snapshots only when explicitly selected by UI. */
             snapshotIds: components["schemas"]["Uuid"][];
@@ -2013,6 +2325,7 @@ export interface components {
     parameters: {
         ProjectId: components["schemas"]["Uuid"];
         SitePageId: components["schemas"]["Uuid"];
+        KeywordId: components["schemas"]["Uuid"];
         ProductProfileCandidateId: components["schemas"]["Uuid"];
         SourceConnectionId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
@@ -2709,6 +3022,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GrowthMapUrlDetailHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    listProjectAuditKeywords: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque base64url cursor returned by the previous page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current traceable Keyword Library cursor page. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapKeywordLibraryHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditKeyword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                keywordId: components["parameters"]["KeywordId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selected traceable Keyword Library entry. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapKeywordDetailHttpResponse"];
                 };
             };
             401: components["responses"]["Unauthenticated"];

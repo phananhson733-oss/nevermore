@@ -5,9 +5,9 @@ Authority 版本：**0.3.0**
 合同日期：**2026-07-21**
 当前已实现机器面：**0.3.0**
 
-本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 32 个 operation 与 6 个 async operation，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则；数据库包含 5 张可追溯 audit/page projection 表、`product_profile_runs` 与 `product_profile_invocation_attempts` 两张 Product Profile 冻结输入/调用预算账本，以及逐 DiagnosticRun 记录 Finding 明确目标成员的 `finding_targets` append-only 账本，总数为 36 张。
+本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 36 个 operation 与 6 个 async operation，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则；数据库包含 5 张可追溯 audit/page projection 表、`product_profile_runs` 与 `product_profile_invocation_attempts` 两张 Product Profile 冻结输入/调用预算账本，以及逐 DiagnosticRun 记录 Finding 明确目标成员的 `finding_targets` append-only 账本，总数为 36 张。
 
-这次激活把已经实现的 URL-first Product Profile 读取、草稿编辑、证据化合成、竞品审核/补录与确认操作，以及 versioned Growth Audit / Capability contract、只读 Opportunity projection 与最小 persistence 纳入事实面。Product Profile 合成只消费冻结的 Crawl Snapshot/PageSnapshot/Observation 引用；provider 调用先写 durable reservation，最多三次，未知结果阻止静默重试。它没有提前声明 Growth Audit create-run route、recheck operation、CMS publishing 或 content lifecycle；后续只有在实现、迁移、OpenAPI、锁文件和 verifier 同一提交更新时，才可以继续扩大 normative surface。
+这次激活把已经实现的 URL-first Product Profile 读取、草稿编辑、证据化合成、竞品审核/补录与确认操作，以及 versioned Growth Audit / Capability contract、只读 Opportunity/Keyword Library projection 与最小 persistence 纳入事实面。Keyword Library 仅提供有界 cursor page 和稳定 ID 详情，并保留精确 source occurrence、canonical metric pointer、mapped target、coverage 与 limitation；它不声明过滤、总数或 mutation。Product Profile 合成只消费冻结的 Crawl Snapshot/PageSnapshot/Observation 引用；provider 调用先写 durable reservation，最多三次，未知结果阻止静默重试。它没有提前声明 Growth Audit create-run route、recheck operation、CMS publishing 或 content lifecycle；后续只有在实现、迁移、OpenAPI、锁文件和 verifier 同一提交更新时，才可以继续扩大 normative surface。
 
 ## 权威顺序
 

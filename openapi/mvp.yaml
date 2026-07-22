@@ -617,6 +617,56 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
+  /projects/{projectId}/audit/keywords:
+    get:
+      tags: [Diagnosis]
+      summary: List the project Keyword Library
+      description: |
+        Returns one bounded cursor page of stable Keyword identities with exact source
+        occurrences, canonical Observation metric pointers, governed mapped targets, and
+        explicit coverage and limitations. This read surface exposes no filters, synthetic
+        totals, Finding confirmation, Action state, or mutation controls.
+      operationId: listProjectAuditKeywords
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Current traceable Keyword Library cursor page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrowthMapKeywordLibraryHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/audit/keywords/{keywordId}:
+    get:
+      tags: [Diagnosis]
+      summary: Read one project Keyword Library entry
+      description: |
+        Resolves one stable Keyword identity inside the selected project and returns the same
+        strict source, metric, mapping, coverage, and limitation contract as the cursor page.
+      operationId: getProjectAuditKeyword
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/KeywordId'
+      responses:
+        '200':
+          description: Selected traceable Keyword Library entry.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrowthMapKeywordDetailHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
   /projects/{projectId}/findings:
     get:
       tags: [Diagnosis]
@@ -912,6 +962,11 @@ components:
       schema: { $ref: '#/components/schemas/Uuid' }
     SitePageId:
       name: sitePageId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    KeywordId:
+      name: keywordId
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Uuid' }
@@ -2925,6 +2980,375 @@ components:
       required: [data]
       properties:
         data: { $ref: '#/components/schemas/GrowthMapUrlDetailResponse' }
+
+    GrowthMapKeywordUnassignedTarget:
+      type: object
+      additionalProperties: false
+      required: [kind, reviewState, revision, reason]
+      properties:
+        kind: { type: string, const: unassigned }
+        reviewState: { type: string, enum: [unreviewed, approved, rejected] }
+        revision: { type: integer, minimum: 0 }
+        reason: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+
+    GrowthMapKeywordExistingPageTarget:
+      type: object
+      additionalProperties: false
+      required: [kind, reviewState, revision, reason, sitePageId, normalizedUrl]
+      properties:
+        kind: { type: string, const: existing_page }
+        reviewState: { type: string, enum: [unreviewed, approved, rejected] }
+        revision: { type: integer, minimum: 0 }
+        reason: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        normalizedUrl: { type: string, format: uri, maxLength: 2048 }
+
+    GrowthMapKeywordNewAssetTarget:
+      type: object
+      additionalProperties: false
+      required: [kind, reviewState, revision, reason]
+      properties:
+        kind: { type: string, const: new_asset }
+        reviewState: { type: string, enum: [unreviewed, approved, rejected] }
+        revision: { type: integer, minimum: 0 }
+        reason: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+
+    GrowthMapKeywordMappedTarget:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapKeywordUnassignedTarget'
+        - $ref: '#/components/schemas/GrowthMapKeywordExistingPageTarget'
+        - $ref: '#/components/schemas/GrowthMapKeywordNewAssetTarget'
+      discriminator:
+        propertyName: kind
+        mapping:
+          unassigned: '#/components/schemas/GrowthMapKeywordUnassignedTarget'
+          existing_page: '#/components/schemas/GrowthMapKeywordExistingPageTarget'
+          new_asset: '#/components/schemas/GrowthMapKeywordNewAssetTarget'
+
+    GrowthMapKeywordCsvImportOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, sourceKind, snapshotId, sourceObservationId, sourcePointer, collectedAt, providerDataAsOf, freshness, limitation, scopeBasis, scopeLimitation, marketCode, languageTag, importPreviewId]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        sourceKind: { type: string, const: csv_import }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        sourceObservationId: { $ref: '#/components/schemas/Uuid' }
+        sourcePointer: { type: string, const: /valueJson/keyword }
+        collectedAt: { $ref: '#/components/schemas/Timestamp' }
+        providerDataAsOf: { type: [string, 'null'], format: date-time }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        scopeBasis: { type: string, const: user_provided }
+        scopeLimitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+        importPreviewId: { $ref: '#/components/schemas/Uuid' }
+
+    GrowthMapKeywordDataForSeoRankedOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, sourceKind, snapshotId, sourceObservationId, sourcePointer, collectedAt, providerDataAsOf, freshness, limitation, scopeBasis, scopeLimitation, marketCode, languageTag]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        sourceKind: { type: string, const: dataforseo_ranked }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        sourceObservationId: { $ref: '#/components/schemas/Uuid' }
+        sourcePointer: { type: string, const: /valueJson/keyword }
+        collectedAt: { $ref: '#/components/schemas/Timestamp' }
+        providerDataAsOf: { type: 'null' }
+        freshness: { type: string, const: unknown }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        scopeBasis: { type: string, const: provider_collection_scope }
+        scopeLimitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+
+    GrowthMapKeywordGscTopQueryOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, sourceKind, snapshotId, sourceObservationId, sourcePointer, collectedAt, providerDataAsOf, freshness, limitation, scopeBasis, scopeLimitation, marketCode, languageTag]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        sourceKind: { type: string, const: gsc_top_query }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        sourceObservationId: { $ref: '#/components/schemas/Uuid' }
+        sourcePointer:
+          type: string
+          pattern: '^/valueJson/topQueries/[0-9]+/query$'
+        collectedAt: { $ref: '#/components/schemas/Timestamp' }
+        providerDataAsOf: { type: [string, 'null'], format: date-time }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        scopeBasis: { type: string, const: project_context }
+        scopeLimitation: { type: string, minLength: 1, maxLength: 2000 }
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+
+    GrowthMapKeywordManualOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, sourceKind, snapshotId, sourceObservationId, sourcePointer, collectedAt, providerDataAsOf, freshness, limitation, scopeBasis, scopeLimitation, marketCode, languageTag]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        sourceKind: { type: string, const: manual }
+        snapshotId: { type: 'null' }
+        sourceObservationId: { type: 'null' }
+        sourcePointer: { type: 'null' }
+        collectedAt: { $ref: '#/components/schemas/Timestamp' }
+        providerDataAsOf: { type: 'null' }
+        freshness: { type: string, const: unknown }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        scopeBasis: { type: string, const: manual }
+        scopeLimitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+
+    GrowthMapKeywordSourceOccurrence:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapKeywordCsvImportOccurrence'
+        - $ref: '#/components/schemas/GrowthMapKeywordDataForSeoRankedOccurrence'
+        - $ref: '#/components/schemas/GrowthMapKeywordGscTopQueryOccurrence'
+        - $ref: '#/components/schemas/GrowthMapKeywordManualOccurrence'
+      discriminator:
+        propertyName: sourceKind
+        mapping:
+          csv_import: '#/components/schemas/GrowthMapKeywordCsvImportOccurrence'
+          dataforseo_ranked: '#/components/schemas/GrowthMapKeywordDataForSeoRankedOccurrence'
+          gsc_top_query: '#/components/schemas/GrowthMapKeywordGscTopQueryOccurrence'
+          manual: '#/components/schemas/GrowthMapKeywordManualOccurrence'
+      description: Exact immutable source occurrence. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation.
+      x-signalframe-runtime-refinement: keywordSourceFreshnessAndCanonicalIdentity
+
+    GrowthMapKeywordVolumeMetric:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, freshness, limitation, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/searchVolume }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        value: { type: [number, 'null'], minimum: 0 }
+
+    GrowthMapKeywordDifficultyMetric:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, freshness, limitation, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/keywordDifficulty }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        value: { type: [number, 'null'], minimum: 0, maximum: 100 }
+
+    GrowthMapKeywordCurrentRankMetric:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, freshness, limitation, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/currentRank }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        value: { type: [number, 'null'], exclusiveMinimum: 0 }
+
+    GrowthMapKeywordCurrentUrlMetric:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, freshness, limitation, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/currentUrl }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        value: { type: [string, 'null'], format: uri, minLength: 1, maxLength: 500 }
+
+    GrowthMapKeywordCompetitorDomainMetric:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, freshness, limitation, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/competitorDomain }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        value:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 253
+          pattern: '^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+
+    GrowthMapKeywordCompetitorRankMetric:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, freshness, limitation, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/competitorRank }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        value: { type: [number, 'null'], exclusiveMinimum: 0 }
+
+    GrowthMapKeywordMetricLimitations:
+      type: object
+      additionalProperties: false
+      required: [volume, kd, currentRank, currentUrl, competitorDomain, competitorRank]
+      properties:
+        volume: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        kd: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        currentRank: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        currentUrl: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        competitorDomain: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        competitorRank: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+
+    GrowthMapKeywordMetrics:
+      type: object
+      additionalProperties: false
+      required: [volume, kd, currentRank, currentUrl, competitorDomain, competitorRank, limitations]
+      properties:
+        volume:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordVolumeMetric'
+            - type: 'null'
+        kd:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordDifficultyMetric'
+            - type: 'null'
+        currentRank:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordCurrentRankMetric'
+            - type: 'null'
+        currentUrl:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordCurrentUrlMetric'
+            - type: 'null'
+        competitorDomain:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordCompetitorDomainMetric'
+            - type: 'null'
+        competitorRank:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordCompetitorRankMetric'
+            - type: 'null'
+        limitations: { $ref: '#/components/schemas/GrowthMapKeywordMetricLimitations' }
+      description: Every present projection points to its canonical normalized Observation value; every absent projection carries a field limitation.
+      x-signalframe-runtime-refinement: canonicalKeywordMetricPointersAndLimitations
+
+    GrowthMapKeywordClusterRef:
+      type: object
+      additionalProperties: false
+      required: [clusterId, name]
+      properties:
+        clusterId: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string, minLength: 1, maxLength: 500 }
+
+    GrowthMapKeywordClassificationLimitations:
+      type: object
+      additionalProperties: false
+      required: [intent, buyerStage, cluster]
+      properties:
+        intent: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        buyerStage: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        cluster: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+
+    GrowthMapKeywordLibraryItem:
+      type: object
+      additionalProperties: false
+      required: [projectId, keywordId, displayKeyword, normalizedKeyword, marketCode, languageTag, queryKind, status, revision, intent, buyerStage, cluster, classificationLimitations, mappedTarget, sourceOccurrences, metrics, coverage]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        keywordId: { $ref: '#/components/schemas/Uuid' }
+        displayKeyword: { type: string, minLength: 1, maxLength: 500 }
+        normalizedKeyword: { type: string, minLength: 1, maxLength: 500 }
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        languageTag: { $ref: '#/components/schemas/LocaleCode' }
+        queryKind: { type: string, enum: [search_query, generative_query] }
+        status: { type: string, enum: [candidate, approved, excluded, parked] }
+        revision: { type: integer, minimum: 0 }
+        intent: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        buyerStage: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        cluster:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordClusterRef'
+            - type: 'null'
+        classificationLimitations: { $ref: '#/components/schemas/GrowthMapKeywordClassificationLimitations' }
+        mappedTarget: { $ref: '#/components/schemas/GrowthMapKeywordMappedTarget' }
+        sourceOccurrences:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GrowthMapKeywordSourceOccurrence' }
+        metrics: { $ref: '#/components/schemas/GrowthMapKeywordMetrics' }
+        coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
+      description: Stable project-scoped Keyword identity. Source occurrences and canonical metric Observation references are unique and share this row's market and canonical language tag.
+      x-signalframe-runtime-refinement: normalizedKeywordIdentityAndExactSourceLineage
+
+    GrowthMapKeywordLibraryPageMeta:
+      type: object
+      additionalProperties: false
+      required: [limit, nextCursor, hasNext, coverage]
+      properties:
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        nextCursor:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1024
+          pattern: '^[A-Za-z0-9_-]+$'
+        hasNext: { type: boolean }
+        coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
+      description: hasNext is true exactly when nextCursor is non-null.
+      x-signalframe-runtime-refinement: cursorAvailabilityConsistency
+
+    GrowthMapKeywordLibraryResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, data, meta]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        data:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GrowthMapKeywordLibraryItem' }
+        meta: { $ref: '#/components/schemas/GrowthMapKeywordLibraryPageMeta' }
+      description: Bounded project-scoped cursor page with no synthetic total or filter state.
+      x-signalframe-runtime-refinement: keywordPageScopeAndIdentityUniqueness
+
+    GrowthMapKeywordDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, data]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        data: { $ref: '#/components/schemas/GrowthMapKeywordLibraryItem' }
+      description: The selected Keyword item's projectId exactly matches the response scope.
+      x-signalframe-runtime-refinement: keywordDetailScopeConsistency
+
+    GrowthMapKeywordLibraryHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/GrowthMapKeywordLibraryResponse' }
+
+    GrowthMapKeywordDetailHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/GrowthMapKeywordDetailResponse' }
 
     CreateDiagnosticRunRequest:
       type: object
