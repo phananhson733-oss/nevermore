@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  GrowthMapCompetitorDetailResponse,
+  GrowthMapCompetitorLibraryResponse,
+  GrowthMapKeywordDetailResponse,
+  GrowthMapKeywordLibraryResponse,
   GrowthMapUrlDetailResponse,
   GrowthMapUrlMetricObservation,
   GrowthMapUrlPortfolioResponse,
@@ -31,6 +35,24 @@ const ids = {
   siteFinding: "10000000-0000-4000-8000-000000000023",
   aggregateFinding: "10000000-0000-4000-8000-000000000024",
   aggregateEvidence: "10000000-0000-4000-8000-000000000025",
+  keyword: "10000000-0000-4000-8000-000000000026",
+  keyword2: "10000000-0000-4000-8000-000000000027",
+  keywordOccurrence: "10000000-0000-4000-8000-000000000028",
+  keywordManualOccurrence: "10000000-0000-4000-8000-000000000029",
+  keywordManualEntry: "10000000-0000-4000-8000-000000000030",
+  cluster: "10000000-0000-4000-8000-000000000031",
+  competitor: "10000000-0000-4000-8000-000000000032",
+  competitor2: "10000000-0000-4000-8000-000000000033",
+  competitorOccurrence: "10000000-0000-4000-8000-000000000034",
+  competitorOccurrence2: "10000000-0000-4000-8000-000000000035",
+  productProfile: "10000000-0000-4000-8000-000000000036",
+  competitorCandidate: "10000000-0000-4000-8000-000000000037",
+  import: "10000000-0000-4000-8000-000000000038",
+  manualEntry: "10000000-0000-4000-8000-000000000039",
+  serpSnapshot: "10000000-0000-4000-8000-000000000040",
+  serpObservation: "10000000-0000-4000-8000-000000000041",
+  aiSnapshot: "10000000-0000-4000-8000-000000000042",
+  aiObservation: "10000000-0000-4000-8000-000000000043",
 } as const;
 
 function comparisonBasis() {
@@ -247,6 +269,7 @@ function findings() {
       title: "Canonical points to another URL",
       severity: "high",
       reviewState: "unreviewed",
+      reviewRevision: 0,
       active: true,
       regressed: false,
       evidenceIds: [ids.evidence],
@@ -272,6 +295,7 @@ function findings() {
       title: "Product pages are weakly linked",
       severity: "medium",
       reviewState: "confirmed",
+      reviewRevision: 1,
       active: true,
       regressed: false,
       evidenceIds: [ids.templateEvidence],
@@ -559,6 +583,7 @@ describe("Growth Map URL contracts", () => {
                 title: "A canonical aggregate target affects this URL",
                 severity: "medium",
                 reviewState: "unreviewed",
+                reviewRevision: 0,
                 active: true,
                 regressed: false,
                 evidenceIds: [ids.aggregateEvidence],
@@ -1036,6 +1061,8 @@ describe("Growth Map URL contracts", () => {
 
     for (const invalidFinding of [
       { ...findings()[0], diagnosticRunId: foreign },
+      { ...findings()[0], reviewRevision: -1 },
+      (({ reviewRevision: _omitted, ...finding }) => finding)(findings()[0]!),
       { ...findings()[0], evidenceIds: [] },
       {
         ...findings()[0],
@@ -1178,5 +1205,1048 @@ describe("Growth Map URL contracts", () => {
         }).success,
       ).toBe(false);
     }
+  });
+});
+
+function keywordSourceOccurrence() {
+  return {
+    occurrenceId: ids.keywordOccurrence,
+    sourceKind: "dataforseo_ranked",
+    snapshotId: ids.metricSnapshot,
+    sourceObservationId: ids.metricObservation,
+    sourcePointer: "/valueJson/keyword",
+    collectedAt: "2026-07-21T08:00:00Z",
+    providerDataAsOf: null,
+    freshness: "unknown",
+    limitation:
+      "The provider response does not declare a separate data-as-of timestamp.",
+    scopeBasis: "provider_collection_scope",
+    scopeLimitation: null,
+    marketCode: "US",
+    languageTag: "en-US",
+  };
+}
+
+function keywordMetric(
+  valuePointer: string,
+  value: number | string | null,
+  limitation: string | null = null,
+) {
+  return {
+    snapshotId: ids.metricSnapshot,
+    observationId: ids.metricObservation,
+    valuePointer,
+    value,
+    observedAt: "2026-07-21T08:00:00Z",
+    freshness: "unknown",
+    limitation:
+      limitation ??
+      "Provider freshness is unknown because no data-as-of timestamp was supplied.",
+  };
+}
+
+function keywordItem() {
+  return {
+    projectId: ids.project,
+    keywordId: ids.keyword,
+    displayKeyword: "Customer Onboarding Software",
+    normalizedKeyword: "customer onboarding software",
+    marketCode: "US",
+    languageTag: "en-US",
+    queryKind: "search_query",
+    status: "candidate",
+    revision: 1,
+    intent: null,
+    buyerStage: "consideration",
+    cluster: {
+      clusterId: ids.cluster,
+      name: "customer onboarding",
+    },
+    classificationLimitations: {
+      intent: "Search intent has not been reviewed.",
+      buyerStage: null,
+      cluster: null,
+    },
+    mappedTarget: {
+      kind: "existing_page",
+      sitePageId: ids.sitePage,
+      normalizedUrl: "https://example.com/customer-onboarding/",
+      reviewState: "approved",
+      revision: 2,
+      reason: "The existing product page already owns this commercial intent.",
+    },
+    sourceOccurrences: [keywordSourceOccurrence()],
+    metrics: {
+      volume: keywordMetric("/valueJson/searchVolume", 0),
+      kd: null,
+      currentRank: keywordMetric("/valueJson/currentRank", 12),
+      currentUrl: keywordMetric(
+        "/valueJson/currentUrl",
+        "https://example.com/customer-onboarding/",
+      ),
+      competitorDomain: null,
+      competitorRank: null,
+      limitations: {
+        volume: null,
+        kd: "No canonical keyword-difficulty Observation is available.",
+        currentRank: null,
+        currentUrl: null,
+        competitorDomain: "This occurrence is for the project's own domain.",
+        competitorRank: "This occurrence is for the project's own domain.",
+      },
+    },
+    coverage: {
+      availability: "partial",
+      limitations: [
+        "Intent is awaiting review.",
+        "Keyword difficulty is unavailable from canonical Observations.",
+      ],
+    },
+  };
+}
+
+function keywordLibraryResponse() {
+  return {
+    projectId: ids.project,
+    data: [keywordItem()],
+    meta: {
+      limit: 50,
+      nextCursor: null,
+      hasNext: false,
+      coverage: {
+        availability: "partial",
+        limitations: ["Keyword difficulty is not connected."],
+      },
+    },
+  };
+}
+
+describe("Growth Map Keyword Library contracts", () => {
+  it("accepts a strict, traceable Keyword projection and preserves observed zero", () => {
+    const parsed = GrowthMapKeywordLibraryResponse.parse(
+      keywordLibraryResponse(),
+    );
+
+    expect(parsed.data[0]?.metrics.volume?.value).toBe(0);
+    expect(parsed.data[0]?.metrics.kd).toBeNull();
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: keywordItem(),
+      }).success,
+    ).toBe(true);
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        confirmActionId: ids.action,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires a stable normalized identity and accepts canonical BCP-47 without a region", () => {
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        data: [
+          {
+            ...keywordItem(),
+            languageTag: "en",
+            sourceOccurrences: keywordItem().sourceOccurrences.map(
+              (occurrence) => ({ ...occurrence, languageTag: "en" }),
+            ),
+          },
+        ],
+      }).success,
+    ).toBe(true);
+
+    for (const invalid of [
+      { normalizedKeyword: "Customer Onboarding Software" },
+      { normalizedKeyword: "customer  onboarding software" },
+      { languageTag: "EN-us" },
+      { languageTag: "en_US" },
+      { marketCode: "us" },
+      { queryKind: "query" },
+      { revision: -1 },
+    ]) {
+      expect(
+        GrowthMapKeywordLibraryResponse.safeParse({
+          ...keywordLibraryResponse(),
+          data: [{ ...keywordItem(), ...invalid }],
+        }).success,
+      ).toBe(false);
+    }
+
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        data: [
+          keywordItem(),
+          {
+            ...keywordItem(),
+            keywordId: ids.keyword2,
+            displayKeyword: "customer onboarding software",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps intent, buyer stage, cluster, and missing metrics explicitly unknown", () => {
+    const base = keywordItem();
+    for (const invalid of [
+      {
+        ...base,
+        classificationLimitations: {
+          ...base.classificationLimitations,
+          intent: null,
+        },
+      },
+      {
+        ...base,
+        buyerStage: null,
+        classificationLimitations: {
+          ...base.classificationLimitations,
+          buyerStage: null,
+        },
+      },
+      {
+        ...base,
+        cluster: null,
+        classificationLimitations: {
+          ...base.classificationLimitations,
+          cluster: null,
+        },
+      },
+      {
+        ...base,
+        metrics: {
+          ...base.metrics,
+          limitations: { ...base.metrics.limitations, kd: null },
+        },
+      },
+      {
+        ...base,
+        metrics: {
+          ...base.metrics,
+          volume: { ...base.metrics.volume, observationId: ids.gscOnlyObservation },
+        },
+      },
+      {
+        ...base,
+        metrics: {
+          ...base.metrics,
+          volume: { ...base.metrics.volume, value: null, limitation: null },
+        },
+      },
+      {
+        ...base,
+        metrics: {
+          ...base.metrics,
+          volume: {
+            ...base.metrics.volume,
+            valuePointer: "/items/0/keyword_info/search_volume",
+          },
+        },
+      },
+      {
+        ...base,
+        metrics: {
+          ...base.metrics,
+          currentRank: {
+            ...base.metrics.currentRank,
+            valuePointer: "/valueJson/searchVolume",
+          },
+        },
+      },
+    ]) {
+      expect(
+        GrowthMapKeywordLibraryResponse.safeParse({
+          ...keywordLibraryResponse(),
+          data: [invalid],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("makes existing-page, new-asset, and unassigned mapping identities disjoint", () => {
+    const base = keywordItem();
+    for (const mappedTarget of [
+      {
+        kind: "existing_page",
+        normalizedUrl: "https://example.com/customer-onboarding/",
+        reviewState: "approved",
+        revision: 1,
+        reason: null,
+      },
+      {
+        kind: "new_asset",
+        sitePageId: ids.sitePage,
+        normalizedUrl: "https://example.com/future-page/",
+        reviewState: "unreviewed",
+        revision: 0,
+        reason: null,
+      },
+      {
+        kind: "unassigned",
+        sitePageId: ids.sitePage,
+        reviewState: "unreviewed",
+        revision: 0,
+        reason: null,
+      },
+    ]) {
+      expect(
+        GrowthMapKeywordLibraryResponse.safeParse({
+          ...keywordLibraryResponse(),
+          data: [{ ...base, mappedTarget }],
+        }).success,
+      ).toBe(false);
+    }
+
+    for (const mappedTarget of [
+      {
+        kind: "new_asset",
+        reviewState: "unreviewed",
+        revision: 0,
+        reason: "No current page can satisfy the distinct decision intent.",
+      },
+      {
+        kind: "unassigned",
+        reviewState: "unreviewed",
+        revision: 0,
+        reason: "Mapping has not been reviewed.",
+      },
+    ]) {
+      expect(
+        GrowthMapKeywordLibraryResponse.safeParse({
+          ...keywordLibraryResponse(),
+          data: [{ ...base, mappedTarget }],
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("requires exact bounded source occurrence provenance without raw provider data", () => {
+    const base = keywordItem();
+    const manualOccurrence = {
+      occurrenceId: ids.keywordManualOccurrence,
+      sourceKind: "manual",
+      snapshotId: null,
+      sourceObservationId: null,
+      sourcePointer: null,
+      collectedAt: "2026-07-21T08:10:00Z",
+      providerDataAsOf: null,
+      freshness: "unknown",
+      limitation: "Manual input has no independent provider data-as-of time.",
+      scopeBasis: "manual",
+      scopeLimitation: null,
+      marketCode: "US",
+      languageTag: "en-US",
+    };
+    const csvOccurrence = {
+      occurrenceId: ids.keywordManualEntry,
+      sourceKind: "csv_import",
+      snapshotId: ids.metricSnapshot,
+      sourceObservationId: ids.metricObservation,
+      sourcePointer: "/valueJson/keyword",
+      importPreviewId: ids.import,
+      collectedAt: "2026-07-21T08:05:00Z",
+      providerDataAsOf: "2026-07-21T08:00:00Z",
+      freshness: "current",
+      limitation: null,
+      scopeBasis: "user_provided",
+      scopeLimitation: null,
+      marketCode: "US",
+      languageTag: "en-US",
+    };
+
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        data: [
+          {
+            ...base,
+            sourceOccurrences: [
+              keywordSourceOccurrence(),
+              manualOccurrence,
+              csvOccurrence,
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(true);
+
+    const unavailableMetrics = {
+      volume: null,
+      kd: null,
+      currentRank: null,
+      currentUrl: null,
+      competitorDomain: null,
+      competitorRank: null,
+      limitations: {
+        volume: "This occurrence only projects the exact GSC query text.",
+        kd: "No canonical keyword-difficulty Observation is available.",
+        currentRank: "GSC does not provide an exact absolute SERP rank.",
+        currentUrl: "The parent page Observation owns the landing-page URL.",
+        competitorDomain: "GSC contains no competitor domain.",
+        competitorRank: "GSC contains no competitor rank.",
+      },
+    };
+    const gscOccurrence = {
+      occurrenceId: ids.keywordOccurrence,
+      sourceKind: "gsc_top_query",
+      snapshotId: ids.gscOnlySnapshot,
+      sourceObservationId: ids.gscOnlyObservation,
+      sourcePointer: "/valueJson/topQueries/0/query",
+      collectedAt: "2026-07-21T08:00:00Z",
+      providerDataAsOf: "2026-07-20T00:00:00Z",
+      freshness: "current",
+      limitation: null,
+      scopeBasis: "project_context",
+      scopeLimitation:
+        "GSC Search Analytics was not filtered by market or language; this classification comes from confirmed project context.",
+      marketCode: "US",
+      languageTag: "en-US",
+    };
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        data: [
+          {
+            ...base,
+            sourceOccurrences: [gscOccurrence],
+            metrics: unavailableMetrics,
+          },
+          {
+            ...base,
+            keywordId: ids.keyword2,
+            displayKeyword: "Customer Onboarding Automation",
+            normalizedKeyword: "customer onboarding automation",
+            sourceOccurrences: [
+              {
+                ...gscOccurrence,
+                occurrenceId: ids.keywordManualOccurrence,
+                sourcePointer: "/valueJson/topQueries/1/query",
+              },
+            ],
+            metrics: unavailableMetrics,
+          },
+        ],
+      }).success,
+    ).toBe(true);
+
+    for (const sourceOccurrences of [
+      [keywordSourceOccurrence(), keywordSourceOccurrence()],
+      [
+        keywordSourceOccurrence(),
+        { ...keywordSourceOccurrence(), occurrenceId: ids.keywordManualOccurrence },
+      ],
+      [{ ...manualOccurrence, manualEntryId: ids.keywordManualEntry }],
+      [{ ...keywordSourceOccurrence(), snapshotId: null }],
+      [{ ...keywordSourceOccurrence(), sourceObservationId: null }],
+      [{ ...keywordSourceOccurrence(), providerTaskId: "private-task-id" }],
+      [{ ...csvOccurrence, rowNumber: 4 }],
+      [{ ...csvOccurrence, importId: ids.import }],
+      [
+        {
+          ...keywordSourceOccurrence(),
+          sourcePointer: "/items/0/keyword_data/keyword",
+        },
+      ],
+      [{ ...keywordSourceOccurrence(), scopeBasis: "project_context" }],
+      [
+        {
+          ...gscOccurrence,
+          scopeBasis: "provider_collection_scope",
+        },
+      ],
+      [{ ...gscOccurrence, scopeLimitation: null }],
+      [
+        {
+          ...keywordSourceOccurrence(),
+          providerDataAsOf: "2026-07-20T00:00:00Z",
+          freshness: "current",
+          limitation: null,
+        },
+      ],
+      [{ ...keywordSourceOccurrence(), capturedAt: "2026-07-21T08:00:00Z" }],
+      [{ ...keywordSourceOccurrence(), rawRequest: { password: "secret" } }],
+    ]) {
+      expect(
+        GrowthMapKeywordLibraryResponse.safeParse({
+          ...keywordLibraryResponse(),
+          data: [{ ...base, sourceOccurrences }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("enforces bounded cursor pages, unique IDs, and project-scoped detail", () => {
+    const base = keywordLibraryResponse();
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...base,
+        meta: { ...base.meta, limit: 0 },
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...base,
+        meta: { ...base.meta, nextCursor: "bmV4dA", hasNext: false },
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...base,
+        data: [keywordItem(), keywordItem()],
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...base,
+        data: [
+          keywordItem(),
+          {
+            ...keywordItem(),
+            keywordId: ids.keyword2,
+            displayKeyword: "Customer Onboarding Automation",
+            normalizedKeyword: "customer onboarding automation",
+            sourceOccurrences: [
+              {
+                ...keywordSourceOccurrence(),
+                occurrenceId: ids.keywordManualOccurrence,
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.site,
+        data: keywordItem(),
+      }).success,
+    ).toBe(false);
+  });
+});
+
+function unavailableCompetitorInsight(limitation: string) {
+  return {
+    availability: "unavailable",
+    value: null,
+    limitation,
+  };
+}
+
+function productProfileSnapshotEvidenceRef() {
+  return {
+    evidenceRefId: ids.evidence,
+    kind: "snapshot",
+    snapshotId: ids.currentCrawl,
+  };
+}
+
+function appEvidenceRef(evidenceId: string) {
+  return {
+    kind: "evidence",
+    evidenceId,
+  };
+}
+
+function productProfileOriginOccurrence() {
+  return {
+    occurrenceId: ids.competitorOccurrence,
+    originKind: "product_profile",
+    productProfileId: ids.productProfile,
+    profileVersion: 3,
+    candidateId: ids.competitorCandidate,
+    fieldProvenancePath: "/competitorCandidates/0",
+    observedAt: null,
+    evidenceRefs: [productProfileSnapshotEvidenceRef()],
+  };
+}
+
+function competitorCsvOriginOccurrence() {
+  return {
+    occurrenceId: ids.competitorOccurrence,
+    originKind: "csv_keyword_gap",
+    snapshotId: ids.metricSnapshot,
+    observationId: ids.metricObservation,
+    sourcePointer: "/valueJson/competitorDomain",
+    importPreviewId: ids.import,
+    observedAt: "2026-07-21T08:00:00Z",
+    evidenceRefs: [],
+  };
+}
+
+function competitorItem() {
+  return {
+    projectId: ids.project,
+    competitorId: ids.competitor,
+    domain: "example-competitor.com",
+    name: "Example Competitor",
+    reviewStatus: "candidate",
+    relationship: null,
+    analysisScope: [],
+    revision: 1,
+    originOccurrences: [productProfileOriginOccurrence()],
+    lastObservedAt: null,
+    serpOverlap: unavailableCompetitorInsight(
+      "No canonical recurring SERP-overlap Observation is available.",
+    ),
+    aiCitationInsight: unavailableCompetitorInsight(
+      "No canonical AI-citation Observation is available.",
+    ),
+    coverage: {
+      availability: "partial",
+      limitations: ["The candidate has not been approved for analysis."],
+    },
+  };
+}
+
+function approvedCompetitorItem() {
+  return {
+    ...competitorItem(),
+    competitorId: ids.competitor2,
+    domain: "approved-competitor.com",
+    name: null,
+    reviewStatus: "approved",
+    relationship: "direct",
+    analysisScope: ["positioning", "keyword_gap"],
+    originOccurrences: [
+      {
+        ...productProfileOriginOccurrence(),
+        occurrenceId: ids.competitorOccurrence2,
+        candidateId: ids.keyword2,
+        fieldProvenancePath: "/competitorCandidates/1",
+      },
+    ],
+  };
+}
+
+function competitorLibraryResponse() {
+  return {
+    projectId: ids.project,
+    data: [competitorItem(), approvedCompetitorItem()],
+    meta: {
+      limit: 50,
+      nextCursor: null,
+      hasNext: false,
+      coverage: {
+        availability: "partial",
+        limitations: ["SERP-overlap and AI-citation sources are unavailable."],
+      },
+    },
+  };
+}
+
+describe("Growth Map Competitor Library contracts", () => {
+  it("accepts strict candidate and approved competitor projections without Action state", () => {
+    const parsed = GrowthMapCompetitorLibraryResponse.parse(
+      competitorLibraryResponse(),
+    );
+    const productProfileOrigin = parsed.data[0]?.originOccurrences[0];
+    expect(productProfileOrigin?.originKind).toBe("product_profile");
+    if (productProfileOrigin?.originKind === "product_profile") {
+      expect(productProfileOrigin.fieldProvenancePath).toBe(
+        "/competitorCandidates/0",
+      );
+      expect(productProfileOrigin.evidenceRefs[0]).toEqual(
+        productProfileSnapshotEvidenceRef(),
+      );
+      expect("evidenceId" in productProfileOrigin.evidenceRefs[0]!).toBe(false);
+    }
+    expect(
+      GrowthMapCompetitorDetailResponse.safeParse({
+        projectId: ids.project,
+        data: competitorItem(),
+      }).success,
+    ).toBe(true);
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...competitorLibraryResponse(),
+        actionId: ids.action,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires approved competitors to have one relationship and non-empty unique scope", () => {
+    for (const invalid of [
+      { ...approvedCompetitorItem(), relationship: null },
+      { ...approvedCompetitorItem(), analysisScope: [] },
+      {
+        ...approvedCompetitorItem(),
+        analysisScope: ["keyword_gap", "keyword_gap"],
+      },
+      { ...competitorItem(), relationship: "direct" },
+      { ...competitorItem(), analysisScope: ["keyword_gap"] },
+      {
+        ...competitorItem(),
+        reviewStatus: "excluded",
+        relationship: "benchmark",
+      },
+      { ...approvedCompetitorItem(), relationship: "serp_competitor" },
+    ]) {
+      expect(
+        GrowthMapCompetitorLibraryResponse.safeParse({
+          ...competitorLibraryResponse(),
+          data: [invalid],
+        }).success,
+      ).toBe(false);
+    }
+
+    for (const relationship of [
+      "direct",
+      "indirect",
+      "status_quo",
+      "benchmark",
+      "publisher",
+    ]) {
+      expect(
+        GrowthMapCompetitorLibraryResponse.safeParse({
+          ...competitorLibraryResponse(),
+          data: [{ ...approvedCompetitorItem(), relationship }],
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("requires normalized domains and exact, unique origin provenance", () => {
+    const base = competitorItem();
+    for (const invalid of [
+      { ...base, domain: "Example-Competitor.com" },
+      { ...base, domain: "https://example-competitor.com" },
+      {
+        ...base,
+        originOccurrences: [
+          {
+            ...productProfileOriginOccurrence(),
+            profileVersion: undefined,
+          },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          { ...competitorCsvOriginOccurrence(), rowNumber: 4 },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          { ...competitorCsvOriginOccurrence(), importId: ids.import },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          {
+            ...productProfileOriginOccurrence(),
+            evidenceRefs: [
+              productProfileSnapshotEvidenceRef(),
+              {
+                ...productProfileSnapshotEvidenceRef(),
+                evidenceRefId: ids.templateEvidence,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          {
+            ...productProfileOriginOccurrence(),
+            fieldProvenancePath: undefined,
+          },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          {
+            ...productProfileOriginOccurrence(),
+            fieldProvenancePath: "/targetMarkets/0",
+          },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          productProfileOriginOccurrence(),
+          productProfileOriginOccurrence(),
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          productProfileOriginOccurrence(),
+          {
+            ...productProfileOriginOccurrence(),
+            occurrenceId: ids.competitorOccurrence2,
+          },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          {
+            ...productProfileOriginOccurrence(),
+            evidenceRefs: [
+              productProfileSnapshotEvidenceRef(),
+              productProfileSnapshotEvidenceRef(),
+            ],
+          },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          {
+            ...productProfileOriginOccurrence(),
+            evidenceRefs: [ids.evidence],
+          },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          {
+            ...productProfileOriginOccurrence(),
+            evidenceRefs: [appEvidenceRef(ids.evidence)],
+          },
+        ],
+      },
+      {
+        ...base,
+        originOccurrences: [
+          { ...productProfileOriginOccurrence(), credentials: "secret" },
+        ],
+      },
+    ]) {
+      expect(
+        GrowthMapCompetitorLibraryResponse.safeParse({
+          ...competitorLibraryResponse(),
+          data: [invalid],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("allows SERP and AI insights only when exact canonical origin refs exist", () => {
+    const serpOrigin = {
+      occurrenceId: ids.competitorOccurrence2,
+      originKind: "serp_overlap",
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      observedAt: "2026-07-21T09:00:00Z",
+      evidenceRefs: [appEvidenceRef(ids.aggregateEvidence)],
+    };
+    const availableSerpOverlap = {
+      availability: "available",
+      value: 0,
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      valuePointer: "/valueJson/serpOverlap",
+      observedAt: "2026-07-21T09:00:00Z",
+      limitation: null,
+    };
+    const withSerp = {
+      ...approvedCompetitorItem(),
+      originOccurrences: [productProfileOriginOccurrence(), serpOrigin],
+      lastObservedAt: "2026-07-21T09:00:00Z",
+      serpOverlap: availableSerpOverlap,
+    };
+
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...competitorLibraryResponse(),
+        data: [withSerp],
+      }).success,
+    ).toBe(true);
+    for (const evidenceRefs of [
+      [productProfileSnapshotEvidenceRef()],
+      [
+        appEvidenceRef(ids.aggregateEvidence),
+        appEvidenceRef(ids.aggregateEvidence),
+      ],
+    ]) {
+      expect(
+        GrowthMapCompetitorLibraryResponse.safeParse({
+          ...competitorLibraryResponse(),
+          data: [
+            {
+              ...withSerp,
+              originOccurrences: withSerp.originOccurrences.map((origin) =>
+                origin.originKind === "serp_overlap"
+                  ? { ...origin, evidenceRefs }
+                  : origin,
+              ),
+            },
+          ],
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...competitorLibraryResponse(),
+        data: [
+          {
+            ...withSerp,
+            originOccurrences: [productProfileOriginOccurrence()],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...competitorLibraryResponse(),
+        data: [
+          {
+            ...withSerp,
+            serpOverlap: {
+              ...availableSerpOverlap,
+              valuePointer: "/items/0/serp/overlap",
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...competitorLibraryResponse(),
+        data: [
+          {
+            ...competitorItem(),
+            serpOverlap: {
+              ...unavailableCompetitorInsight("No canonical source."),
+              snapshotId: ids.serpSnapshot,
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+
+    const aiOrigin = {
+      occurrenceId: ids.competitorOccurrence2,
+      originKind: "ai_citation",
+      snapshotId: ids.aiSnapshot,
+      observationId: ids.aiObservation,
+      observedAt: "2026-07-21T09:05:00Z",
+      evidenceRefs: [],
+    };
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...competitorLibraryResponse(),
+        data: [
+          {
+            ...approvedCompetitorItem(),
+            originOccurrences: [productProfileOriginOccurrence(), aiOrigin],
+            lastObservedAt: "2026-07-21T09:05:00Z",
+            aiCitationInsight: {
+              availability: "available",
+              value: "The competitor was cited for implementation guidance.",
+              snapshotId: ids.aiSnapshot,
+              observationId: ids.aiObservation,
+              valuePointer: "/valueJson/aiCitationInsight",
+              observedAt: "2026-07-21T09:05:00Z",
+              limitation: "One observed answer is not market-wide share.",
+            },
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("supports every exact origin branch without treating future sources as connected", () => {
+    const origins = [
+      productProfileOriginOccurrence(),
+      competitorCsvOriginOccurrence(),
+      {
+        occurrenceId: ids.competitorOccurrence,
+        originKind: "manual",
+        manualEntryId: ids.manualEntry,
+        observedAt: null,
+        evidenceRefs: [],
+      },
+      {
+        occurrenceId: ids.competitorOccurrence,
+        originKind: "serp_overlap",
+        snapshotId: ids.serpSnapshot,
+        observationId: ids.serpObservation,
+        observedAt: "2026-07-21T09:00:00Z",
+        evidenceRefs: [],
+      },
+      {
+        occurrenceId: ids.competitorOccurrence,
+        originKind: "ai_citation",
+        snapshotId: ids.aiSnapshot,
+        observationId: ids.aiObservation,
+        observedAt: "2026-07-21T09:05:00Z",
+        evidenceRefs: [],
+      },
+    ];
+
+    for (const origin of origins) {
+      expect(
+        GrowthMapCompetitorLibraryResponse.safeParse({
+          ...competitorLibraryResponse(),
+          data: [
+            {
+              ...competitorItem(),
+              originOccurrences: [origin],
+              lastObservedAt: origin.observedAt,
+            },
+          ],
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("enforces bounded cursor pages, unique library identities, and scoped detail", () => {
+    const base = competitorLibraryResponse();
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...base,
+        data: [competitorItem(), competitorItem()],
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...base,
+        data: [
+          competitorItem(),
+          {
+            ...approvedCompetitorItem(),
+            originOccurrences: [
+              {
+                ...productProfileOriginOccurrence(),
+                occurrenceId: ids.competitorOccurrence2,
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...base,
+        data: [
+          competitorItem(),
+          { ...approvedCompetitorItem(), domain: competitorItem().domain },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...base,
+        meta: { ...base.meta, limit: 101 },
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapCompetitorDetailResponse.safeParse({
+        projectId: ids.site,
+        data: competitorItem(),
+      }).success,
+    ).toBe(false);
   });
 });

@@ -1,7 +1,19 @@
 import { z } from "zod";
-import { Cursor, IsoDateTime, Uuid } from "./common.ts";
+import {
+  Bcp47Locale,
+  Cursor,
+  IsoDateTime,
+  MarketCode,
+  Uuid,
+} from "./common.ts";
 import { PriorityBand } from "./diagnostics.ts";
 import { SourceFreshness } from "./audit.ts";
+import {
+  ProductProfileCompetitorAnalysisScope,
+  ProductProfileCompetitorDomain,
+  ProductProfileEvidenceRef,
+  ProductProfileJsonPointer,
+} from "./product-profile.ts";
 
 const BoundedText = z.string().trim().min(1).max(2000);
 const BoundedLabel = z.string().trim().min(1).max(500);
@@ -449,6 +461,8 @@ export const GrowthMapUrlFinding = z
       "ignored",
       "needs_more_data",
     ]),
+    /** Exact optimistic-concurrency token required by canonical Finding review. */
+    reviewRevision: z.number().int().nonnegative(),
     active: z.boolean(),
     regressed: z.boolean(),
     evidenceIds: uniqueUuidArray(200).min(1),
@@ -906,4 +920,1162 @@ export const GrowthMapUrlDetailResponse =
   });
 export type GrowthMapUrlDetailResponse = z.infer<
   typeof GrowthMapUrlDetailResponse
+>;
+
+/**
+ * Keyword and Competitor libraries are governed read models. They deliberately
+ * expose source identity and honest absence, but never Finding confirmation or
+ * Action state. A Library row can inform a canonical Finding; it is not itself
+ * executable work.
+ */
+
+export const GrowthMapLibraryLanguageTag = Bcp47Locale.refine((value) => {
+  try {
+    const locale = new Intl.Locale(value);
+    return locale.toString() === value;
+  } catch {
+    return false;
+  }
+}, "Must be a canonical BCP-47 language tag");
+export type GrowthMapLibraryLanguageTag = z.infer<
+  typeof GrowthMapLibraryLanguageTag
+>;
+
+/** Pointer into the normalized Observation payload, never a private provider response. */
+export const GrowthMapCanonicalObservationValuePointer = JsonPointer.refine(
+  (value) => value.startsWith("/valueJson/"),
+  "Must point into the canonical normalized Observation valueJson payload",
+);
+export type GrowthMapCanonicalObservationValuePointer = z.infer<
+  typeof GrowthMapCanonicalObservationValuePointer
+>;
+
+export const GrowthMapLibraryPageMeta = z
+  .object({
+    limit: z.number().int().min(1).max(100),
+    nextCursor: Cursor.nullable(),
+    hasNext: z.boolean(),
+    coverage: GrowthMapCoverage,
+  })
+  .strict()
+  .superRefine((meta, ctx) => {
+    if (meta.hasNext !== (meta.nextCursor !== null)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["hasNext"],
+        message: "hasNext must match nextCursor availability",
+      });
+    }
+  });
+export type GrowthMapLibraryPageMeta = z.infer<
+  typeof GrowthMapLibraryPageMeta
+>;
+
+export const GrowthMapKeywordQueryKind = z.enum([
+  "search_query",
+  "generative_query",
+]);
+export type GrowthMapKeywordQueryKind = z.infer<
+  typeof GrowthMapKeywordQueryKind
+>;
+
+export const GrowthMapKeywordStatus = z.enum([
+  "candidate",
+  "approved",
+  "excluded",
+  "parked",
+]);
+export type GrowthMapKeywordStatus = z.infer<typeof GrowthMapKeywordStatus>;
+
+export const GrowthMapKeywordMappingReviewState = z.enum([
+  "unreviewed",
+  "approved",
+  "rejected",
+]);
+export type GrowthMapKeywordMappingReviewState = z.infer<
+  typeof GrowthMapKeywordMappingReviewState
+>;
+
+const KeywordMappingGovernanceShape = {
+  reviewState: GrowthMapKeywordMappingReviewState,
+  revision: z.number().int().nonnegative(),
+  reason: NullableLimitation,
+} as const;
+
+export const GrowthMapKeywordMappedTarget = z.discriminatedUnion("kind", [
+  z
+    .object({
+      ...KeywordMappingGovernanceShape,
+      kind: z.literal("unassigned"),
+    })
+    .strict(),
+  z
+    .object({
+      ...KeywordMappingGovernanceShape,
+      kind: z.literal("existing_page"),
+      sitePageId: Uuid,
+      normalizedUrl: z.string().trim().url().max(2048),
+    })
+    .strict(),
+  z
+    .object({
+      ...KeywordMappingGovernanceShape,
+      kind: z.literal("new_asset"),
+    })
+    .strict(),
+]);
+export type GrowthMapKeywordMappedTarget = z.infer<
+  typeof GrowthMapKeywordMappedTarget
+>;
+
+export const GrowthMapKeywordScopeBasis = z.enum([
+  "provider_collection_scope",
+  "user_provided",
+  "project_context",
+  "manual",
+]);
+export type GrowthMapKeywordScopeBasis = z.infer<
+  typeof GrowthMapKeywordScopeBasis
+>;
+
+const KeywordSourceOccurrenceCommonShape = {
+  occurrenceId: Uuid,
+  collectedAt: IsoDateTime,
+  providerDataAsOf: IsoDateTime.nullable(),
+  freshness: SourceFreshness,
+  limitation: NullableLimitation,
+  scopeBasis: GrowthMapKeywordScopeBasis,
+  scopeLimitation: NullableLimitation,
+  marketCode: MarketCode,
+  languageTag: GrowthMapLibraryLanguageTag,
+} as const;
+
+export const GrowthMapKeywordSourceKind = z.enum([
+  "csv_import",
+  "dataforseo_ranked",
+  "gsc_top_query",
+  "manual",
+]);
+export type GrowthMapKeywordSourceKind = z.infer<
+  typeof GrowthMapKeywordSourceKind
+>;
+
+const GrowthMapKeywordSourceOccurrenceObject = z.discriminatedUnion(
+  "sourceKind",
+  [
+    z
+      .object({
+        ...KeywordSourceOccurrenceCommonShape,
+        sourceKind: z.literal("csv_import"),
+        snapshotId: Uuid,
+        sourceObservationId: Uuid,
+        sourcePointer: z.literal("/valueJson/keyword"),
+        scopeBasis: z.literal("user_provided"),
+        importPreviewId: Uuid,
+      })
+      .strict(),
+    z
+      .object({
+        ...KeywordSourceOccurrenceCommonShape,
+        sourceKind: z.literal("dataforseo_ranked"),
+        snapshotId: Uuid,
+        sourceObservationId: Uuid,
+        sourcePointer: z.literal("/valueJson/keyword"),
+        providerDataAsOf: z.null(),
+        freshness: z.literal("unknown"),
+        scopeBasis: z.literal("provider_collection_scope"),
+      })
+      .strict(),
+    z
+      .object({
+        ...KeywordSourceOccurrenceCommonShape,
+        sourceKind: z.literal("gsc_top_query"),
+        snapshotId: Uuid,
+        sourceObservationId: Uuid,
+        sourcePointer: z
+          .string()
+          .regex(/^\/valueJson\/topQueries\/[0-9]+\/query$/),
+        scopeBasis: z.literal("project_context"),
+        scopeLimitation: BoundedText,
+      })
+      .strict(),
+    z
+      .object({
+        ...KeywordSourceOccurrenceCommonShape,
+        sourceKind: z.literal("manual"),
+        snapshotId: z.null(),
+        sourceObservationId: z.null(),
+        sourcePointer: z.null(),
+        providerDataAsOf: z.null(),
+        freshness: z.literal("unknown"),
+        scopeBasis: z.literal("manual"),
+      })
+      .strict(),
+  ],
+);
+
+export const GrowthMapKeywordSourceOccurrence =
+  GrowthMapKeywordSourceOccurrenceObject.superRefine((occurrence, ctx) => {
+    if (
+      occurrence.freshness !== "current" &&
+      occurrence.limitation === null
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["limitation"],
+        message: "Stale or unknown source freshness requires a limitation",
+      });
+    }
+    if (occurrence.providerDataAsOf === null) {
+      if (occurrence.freshness !== "unknown") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["freshness"],
+          message:
+            "A source without a provider data-as-of time has unknown freshness",
+        });
+      }
+      if (occurrence.limitation === null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["limitation"],
+          message:
+            "A missing provider data-as-of time requires an explicit limitation",
+        });
+      }
+    }
+    if (
+      occurrence.providerDataAsOf !== null &&
+      Date.parse(occurrence.providerDataAsOf) > Date.parse(occurrence.collectedAt)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["providerDataAsOf"],
+        message: "Provider data-as-of time cannot be after collection time",
+      });
+    }
+  });
+export type GrowthMapKeywordSourceOccurrence = z.infer<
+  typeof GrowthMapKeywordSourceOccurrence
+>;
+
+const KeywordMetricLineageShape = {
+  snapshotId: Uuid,
+  observationId: Uuid,
+  valuePointer: GrowthMapCanonicalObservationValuePointer,
+  observedAt: IsoDateTime,
+  freshness: SourceFreshness,
+  limitation: NullableLimitation,
+} as const;
+
+function addKeywordMetricAbsenceIssues(
+  projection: {
+    value: number | string | null;
+    freshness: z.infer<typeof SourceFreshness>;
+    limitation: string | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (projection.value === null && projection.limitation === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["limitation"],
+      message: "A null metric value requires an explicit limitation",
+    });
+  }
+  if (projection.freshness !== "current" && projection.limitation === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["limitation"],
+      message: "Stale or unknown metric freshness requires a limitation",
+    });
+  }
+}
+
+export const GrowthMapKeywordNumericMetric = z
+  .object({
+    ...KeywordMetricLineageShape,
+    value: z.number().finite().nullable(),
+  })
+  .strict()
+  .superRefine(addKeywordMetricAbsenceIssues);
+export type GrowthMapKeywordNumericMetric = z.infer<
+  typeof GrowthMapKeywordNumericMetric
+>;
+
+export const GrowthMapKeywordTextMetric = z
+  .object({
+    ...KeywordMetricLineageShape,
+    value: BoundedLabel.nullable(),
+  })
+  .strict()
+  .superRefine(addKeywordMetricAbsenceIssues);
+export type GrowthMapKeywordTextMetric = z.infer<
+  typeof GrowthMapKeywordTextMetric
+>;
+
+const KeywordMetricLimitations = z
+  .object({
+    volume: NullableLimitation,
+    kd: NullableLimitation,
+    currentRank: NullableLimitation,
+    currentUrl: NullableLimitation,
+    competitorDomain: NullableLimitation,
+    competitorRank: NullableLimitation,
+  })
+  .strict();
+
+const GrowthMapKeywordMetricsObject = z
+  .object({
+    volume: GrowthMapKeywordNumericMetric.nullable(),
+    kd: GrowthMapKeywordNumericMetric.nullable(),
+    currentRank: GrowthMapKeywordNumericMetric.nullable(),
+    currentUrl: GrowthMapKeywordTextMetric.nullable(),
+    competitorDomain: GrowthMapKeywordTextMetric.nullable(),
+    competitorRank: GrowthMapKeywordNumericMetric.nullable(),
+    limitations: KeywordMetricLimitations,
+  })
+  .strict();
+
+export const GrowthMapKeywordMetrics =
+  GrowthMapKeywordMetricsObject.superRefine((metrics, ctx) => {
+    const fields = [
+      "volume",
+      "kd",
+      "currentRank",
+      "currentUrl",
+      "competitorDomain",
+      "competitorRank",
+    ] as const;
+    const projections = new Set<string>();
+    const expectedPointers = {
+      volume: "/valueJson/searchVolume",
+      kd: "/valueJson/keywordDifficulty",
+      currentRank: "/valueJson/currentRank",
+      currentUrl: "/valueJson/currentUrl",
+      competitorDomain: "/valueJson/competitorDomain",
+      competitorRank: "/valueJson/competitorRank",
+    } as const;
+    for (const field of fields) {
+      const projection = metrics[field];
+      if (projection === null) {
+        if (metrics.limitations[field] === null) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["limitations", field],
+            message: `A missing ${field} projection requires a limitation`,
+          });
+        }
+        continue;
+      }
+      if (projection.valuePointer !== expectedPointers[field]) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field, "valuePointer"],
+          message: `${field} must use its canonical normalized Observation pointer`,
+        });
+      }
+      const key = `${projection.observationId}:${projection.valuePointer}`;
+      if (projections.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field, "valuePointer"],
+          message: "Metric Observation value pointers must be unique",
+        });
+      }
+      projections.add(key);
+    }
+
+    if (metrics.volume?.value !== null && metrics.volume?.value !== undefined) {
+      if (metrics.volume.value < 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["volume", "value"],
+          message: "Keyword volume cannot be negative",
+        });
+      }
+    }
+    if (metrics.kd?.value !== null && metrics.kd?.value !== undefined) {
+      if (metrics.kd.value < 0 || metrics.kd.value > 100) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["kd", "value"],
+          message: "Keyword difficulty must be between 0 and 100",
+        });
+      }
+    }
+    for (const field of ["currentRank", "competitorRank"] as const) {
+      const value = metrics[field]?.value;
+      if (value !== null && value !== undefined && value <= 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field, "value"],
+          message: `${field} must be positive when observed`,
+        });
+      }
+    }
+    if (
+      metrics.currentUrl?.value !== null &&
+      metrics.currentUrl?.value !== undefined
+    ) {
+      const result = z.string().url().max(2048).safeParse(metrics.currentUrl.value);
+      if (!result.success) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["currentUrl", "value"],
+          message: "Current URL must be an absolute URL",
+        });
+      }
+    }
+    if (
+      metrics.competitorDomain?.value !== null &&
+      metrics.competitorDomain?.value !== undefined &&
+      !ProductProfileCompetitorDomain.safeParse(metrics.competitorDomain.value)
+        .success
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["competitorDomain", "value"],
+        message: "Competitor domain must be a normalized lowercase hostname",
+      });
+    }
+  });
+export type GrowthMapKeywordMetrics = z.infer<
+  typeof GrowthMapKeywordMetrics
+>;
+
+export const GrowthMapKeywordClusterRef = z
+  .object({
+    clusterId: Uuid,
+    name: BoundedLabel,
+  })
+  .strict();
+export type GrowthMapKeywordClusterRef = z.infer<
+  typeof GrowthMapKeywordClusterRef
+>;
+
+const GrowthMapKeywordClassificationLimitations = z
+  .object({
+    intent: NullableLimitation,
+    buyerStage: NullableLimitation,
+    cluster: NullableLimitation,
+  })
+  .strict();
+
+function normalizedKeywordValue(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+function keywordSourceIdentity(
+  occurrence: z.infer<typeof GrowthMapKeywordSourceOccurrenceObject>,
+): string {
+  switch (occurrence.sourceKind) {
+    case "csv_import":
+      return `${occurrence.sourceKind}:${occurrence.importPreviewId}:${occurrence.snapshotId}:${occurrence.sourceObservationId}:${occurrence.sourcePointer}`;
+    case "dataforseo_ranked":
+      return `${occurrence.sourceKind}:${occurrence.snapshotId}:${occurrence.sourceObservationId}:${occurrence.sourcePointer}`;
+    case "gsc_top_query":
+      return `${occurrence.sourceKind}:${occurrence.snapshotId}:${occurrence.sourceObservationId}:${occurrence.sourcePointer}`;
+    case "manual":
+      return `${occurrence.sourceKind}:${occurrence.occurrenceId}`;
+  }
+}
+
+const GrowthMapKeywordLibraryItemObject = z
+  .object({
+    projectId: Uuid,
+    keywordId: Uuid,
+    displayKeyword: BoundedLabel,
+    normalizedKeyword: BoundedLabel,
+    marketCode: MarketCode,
+    languageTag: GrowthMapLibraryLanguageTag,
+    queryKind: GrowthMapKeywordQueryKind,
+    status: GrowthMapKeywordStatus,
+    revision: z.number().int().nonnegative(),
+    intent: BoundedLabel.nullable(),
+    buyerStage: BoundedLabel.nullable(),
+    cluster: GrowthMapKeywordClusterRef.nullable(),
+    classificationLimitations: GrowthMapKeywordClassificationLimitations,
+    mappedTarget: GrowthMapKeywordMappedTarget,
+    sourceOccurrences: z
+      .array(GrowthMapKeywordSourceOccurrence)
+      .min(1)
+      .max(100),
+    metrics: GrowthMapKeywordMetrics,
+    coverage: GrowthMapCoverage,
+  })
+  .strict();
+
+export const GrowthMapKeywordLibraryItem =
+  GrowthMapKeywordLibraryItemObject.superRefine((item, ctx) => {
+    if (item.normalizedKeyword !== normalizedKeywordValue(item.displayKeyword)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["normalizedKeyword"],
+        message:
+          "normalizedKeyword must be the NFKC, lowercase, single-space display keyword",
+      });
+    }
+
+    for (const field of ["intent", "buyerStage", "cluster"] as const) {
+      if (item[field] === null && item.classificationLimitations[field] === null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["classificationLimitations", field],
+          message: `Unknown ${field} requires an explicit limitation`,
+        });
+      }
+    }
+
+    const occurrenceIds = new Set<string>();
+    const sourceIdentities = new Set<string>();
+    item.sourceOccurrences.forEach((occurrence, index) => {
+      if (occurrenceIds.has(occurrence.occurrenceId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sourceOccurrences", index, "occurrenceId"],
+          message: "Keyword source occurrence IDs must be unique",
+        });
+      }
+      occurrenceIds.add(occurrence.occurrenceId);
+
+      const sourceIdentity = keywordSourceIdentity(occurrence);
+      if (sourceIdentities.has(sourceIdentity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sourceOccurrences", index],
+          message: "Exact Keyword source occurrences must be unique",
+        });
+      }
+      sourceIdentities.add(sourceIdentity);
+
+      if (occurrence.marketCode !== item.marketCode) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sourceOccurrences", index, "marketCode"],
+          message: "Keyword occurrence market must match the Library identity",
+        });
+      }
+      if (occurrence.languageTag !== item.languageTag) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sourceOccurrences", index, "languageTag"],
+          message: "Keyword occurrence language must match the Library identity",
+        });
+      }
+    });
+
+    for (const field of [
+      "volume",
+      "kd",
+      "currentRank",
+      "currentUrl",
+      "competitorDomain",
+      "competitorRank",
+    ] as const) {
+      const metric = item.metrics[field];
+      if (metric === null) continue;
+      const hasCanonicalOccurrence = item.sourceOccurrences.some(
+        (occurrence) =>
+          occurrence.snapshotId === metric.snapshotId &&
+          occurrence.sourceObservationId === metric.observationId,
+      );
+      if (!hasCanonicalOccurrence) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["metrics", field, "observationId"],
+          message:
+            "A Keyword metric must reference one exact source occurrence Observation",
+        });
+      }
+    }
+  });
+export type GrowthMapKeywordLibraryItem = z.infer<
+  typeof GrowthMapKeywordLibraryItem
+>;
+
+const GrowthMapKeywordLibraryResponseObject = z
+  .object({
+    projectId: Uuid,
+    data: z.array(GrowthMapKeywordLibraryItem).max(100),
+    meta: GrowthMapLibraryPageMeta,
+  })
+  .strict();
+
+export const GrowthMapKeywordLibraryResponse =
+  GrowthMapKeywordLibraryResponseObject.superRefine((response, ctx) => {
+    if (response.data.length > response.meta.limit) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["data"],
+        message: "A Keyword Library page cannot exceed its declared limit",
+      });
+    }
+    const keywordIds = new Set<string>();
+    const identities = new Set<string>();
+    const occurrenceIds = new Set<string>();
+    const sourceIdentities = new Set<string>();
+    response.data.forEach((item, index) => {
+      if (item.projectId !== response.projectId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["data", index, "projectId"],
+          message: "Keyword projectId must match the response scope",
+        });
+      }
+      if (keywordIds.has(item.keywordId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["data", index, "keywordId"],
+          message: "Keyword IDs must be unique within a cursor page",
+        });
+      }
+      keywordIds.add(item.keywordId);
+
+      const identity = `${item.normalizedKeyword}:${item.marketCode}:${item.languageTag}:${item.queryKind}`;
+      if (identities.has(identity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["data", index, "normalizedKeyword"],
+          message: "Stable Keyword identities must be unique within a project",
+        });
+      }
+      identities.add(identity);
+
+      item.sourceOccurrences.forEach((occurrence, occurrenceIndex) => {
+        if (occurrenceIds.has(occurrence.occurrenceId)) {
+          ctx.addIssue({
+            code: "custom",
+            path: [
+              "data",
+              index,
+              "sourceOccurrences",
+              occurrenceIndex,
+              "occurrenceId",
+            ],
+            message: "A source occurrence cannot belong to multiple Keywords",
+          });
+        }
+        occurrenceIds.add(occurrence.occurrenceId);
+        const sourceIdentity = keywordSourceIdentity(occurrence);
+        if (sourceIdentities.has(sourceIdentity)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["data", index, "sourceOccurrences", occurrenceIndex],
+            message:
+              "An exact source occurrence cannot populate multiple Keywords",
+          });
+        }
+        sourceIdentities.add(sourceIdentity);
+      });
+    });
+  });
+export type GrowthMapKeywordLibraryResponse = z.infer<
+  typeof GrowthMapKeywordLibraryResponse
+>;
+
+const GrowthMapKeywordDetailResponseObject = z
+  .object({
+    projectId: Uuid,
+    data: GrowthMapKeywordLibraryItem,
+  })
+  .strict();
+
+export const GrowthMapKeywordDetailResponse =
+  GrowthMapKeywordDetailResponseObject.superRefine((response, ctx) => {
+    if (response.data.projectId !== response.projectId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["data", "projectId"],
+        message: "Keyword projectId must match the detail response scope",
+      });
+    }
+  });
+export type GrowthMapKeywordDetailResponse = z.infer<
+  typeof GrowthMapKeywordDetailResponse
+>;
+
+export const GrowthMapCompetitorReviewStatus = z.enum([
+  "candidate",
+  "approved",
+  "excluded",
+]);
+export type GrowthMapCompetitorReviewStatus = z.infer<
+  typeof GrowthMapCompetitorReviewStatus
+>;
+
+export const GrowthMapCompetitorRelationship = z.enum([
+  "direct",
+  "indirect",
+  "status_quo",
+  "benchmark",
+  "publisher",
+]);
+export type GrowthMapCompetitorRelationship = z.infer<
+  typeof GrowthMapCompetitorRelationship
+>;
+
+const CompetitorOriginCommonShape = {
+  occurrenceId: Uuid,
+  observedAt: IsoDateTime.nullable(),
+} as const;
+
+export const GrowthMapCompetitorEvidenceRef = z
+  .object({
+    kind: z.literal("evidence"),
+    evidenceId: Uuid,
+  })
+  .strict();
+export type GrowthMapCompetitorEvidenceRef = z.infer<
+  typeof GrowthMapCompetitorEvidenceRef
+>;
+
+const UniqueCompetitorEvidenceRefs = z
+  .array(GrowthMapCompetitorEvidenceRef)
+  .max(100)
+  .refine(
+    (refs) => isUnique(refs.map((ref) => ref.evidenceId)),
+    "Canonical app Evidence refs must be unique",
+  );
+
+export const GrowthMapCompetitorProfileFieldProvenancePath =
+  ProductProfileJsonPointer.refine(
+    (path) => /^\/competitorCandidates(?:\/[0-9]+)?$/.test(path),
+    "Must point to the competitorCandidates root or one candidate index",
+  );
+export type GrowthMapCompetitorProfileFieldProvenancePath = z.infer<
+  typeof GrowthMapCompetitorProfileFieldProvenancePath
+>;
+
+function productProfileEvidenceIdentity(
+  ref: z.infer<typeof ProductProfileEvidenceRef>,
+): string {
+  switch (ref.kind) {
+    case "snapshot":
+      return `${ref.kind}:${ref.snapshotId}`;
+    case "pageSnapshot":
+      return `${ref.kind}:${ref.pageSnapshotId}`;
+    case "observation":
+      return `${ref.kind}:${ref.observationId}`;
+    case "analysisInvocation":
+      return `${ref.kind}:${ref.analysisInvocationId}`;
+    case "declaredHint":
+    case "userEdit":
+      return `${ref.kind}:${ref.evidenceRefId}`;
+  }
+}
+
+const UniqueProductProfileEvidenceRefs = z
+  .array(ProductProfileEvidenceRef)
+  .max(50)
+  .superRefine((refs, ctx) => {
+    const evidenceRefIds = new Set<string>();
+    const sourceIdentities = new Set<string>();
+    refs.forEach((ref, index) => {
+      if (evidenceRefIds.has(ref.evidenceRefId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [index, "evidenceRefId"],
+          message: "Product Profile evidenceRefId values must be unique",
+        });
+      }
+      evidenceRefIds.add(ref.evidenceRefId);
+
+      const identity = productProfileEvidenceIdentity(ref);
+      if (sourceIdentities.has(identity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [index],
+          message: "Typed Product Profile evidence sources must be unique",
+        });
+      }
+      sourceIdentities.add(identity);
+    });
+  });
+
+export const GrowthMapCompetitorOriginKind = z.enum([
+  "product_profile",
+  "csv_keyword_gap",
+  "manual",
+  "serp_overlap",
+  "ai_citation",
+]);
+export type GrowthMapCompetitorOriginKind = z.infer<
+  typeof GrowthMapCompetitorOriginKind
+>;
+
+export const GrowthMapCompetitorOriginOccurrence = z.discriminatedUnion(
+  "originKind",
+  [
+    z
+      .object({
+        ...CompetitorOriginCommonShape,
+        originKind: z.literal("product_profile"),
+        productProfileId: Uuid,
+        profileVersion: z.number().int().positive(),
+        candidateId: Uuid,
+        fieldProvenancePath: GrowthMapCompetitorProfileFieldProvenancePath,
+        evidenceRefs: UniqueProductProfileEvidenceRefs,
+      })
+      .strict(),
+    z
+      .object({
+        ...CompetitorOriginCommonShape,
+        originKind: z.literal("csv_keyword_gap"),
+        snapshotId: Uuid,
+        observationId: Uuid,
+        sourcePointer: z.literal("/valueJson/competitorDomain"),
+        importPreviewId: Uuid,
+        evidenceRefs: UniqueCompetitorEvidenceRefs,
+      })
+      .strict(),
+    z
+      .object({
+        ...CompetitorOriginCommonShape,
+        originKind: z.literal("manual"),
+        manualEntryId: Uuid,
+        evidenceRefs: UniqueCompetitorEvidenceRefs,
+      })
+      .strict(),
+    z
+      .object({
+        ...CompetitorOriginCommonShape,
+        originKind: z.literal("serp_overlap"),
+        snapshotId: Uuid,
+        observationId: Uuid,
+        evidenceRefs: UniqueCompetitorEvidenceRefs,
+      })
+      .strict(),
+    z
+      .object({
+        ...CompetitorOriginCommonShape,
+        originKind: z.literal("ai_citation"),
+        snapshotId: Uuid,
+        observationId: Uuid,
+        evidenceRefs: UniqueCompetitorEvidenceRefs,
+      })
+      .strict(),
+  ],
+);
+export type GrowthMapCompetitorOriginOccurrence = z.infer<
+  typeof GrowthMapCompetitorOriginOccurrence
+>;
+
+const UnavailableCompetitorInsight = z
+  .object({
+    availability: z.literal("unavailable"),
+    value: z.null(),
+    limitation: BoundedText,
+  })
+  .strict();
+
+const CompetitorInsightLineageShape = {
+  snapshotId: Uuid,
+  observationId: Uuid,
+  valuePointer: GrowthMapCanonicalObservationValuePointer,
+  observedAt: IsoDateTime,
+  limitation: NullableLimitation,
+} as const;
+
+const AvailableCompetitorSerpOverlap = z
+  .object({
+    ...CompetitorInsightLineageShape,
+    availability: z.literal("available"),
+    value: z.number().finite().nonnegative(),
+  })
+  .strict();
+
+export const GrowthMapCompetitorSerpOverlap = z.discriminatedUnion(
+  "availability",
+  [UnavailableCompetitorInsight, AvailableCompetitorSerpOverlap],
+);
+export type GrowthMapCompetitorSerpOverlap = z.infer<
+  typeof GrowthMapCompetitorSerpOverlap
+>;
+
+const AvailableCompetitorAiCitationInsight = z
+  .object({
+    ...CompetitorInsightLineageShape,
+    availability: z.literal("available"),
+    value: BoundedText,
+  })
+  .strict();
+
+export const GrowthMapCompetitorAiCitationInsight = z.discriminatedUnion(
+  "availability",
+  [UnavailableCompetitorInsight, AvailableCompetitorAiCitationInsight],
+);
+export type GrowthMapCompetitorAiCitationInsight = z.infer<
+  typeof GrowthMapCompetitorAiCitationInsight
+>;
+
+function competitorOriginIdentity(
+  origin: z.infer<typeof GrowthMapCompetitorOriginOccurrence>,
+): string {
+  switch (origin.originKind) {
+    case "product_profile":
+      return `${origin.originKind}:${origin.productProfileId}:${origin.profileVersion}:${origin.candidateId}:${origin.fieldProvenancePath}`;
+    case "csv_keyword_gap":
+      return `${origin.originKind}:${origin.importPreviewId}:${origin.snapshotId}:${origin.observationId}:${origin.sourcePointer}`;
+    case "manual":
+      return `${origin.originKind}:${origin.manualEntryId}`;
+    case "serp_overlap":
+    case "ai_citation":
+      return `${origin.originKind}:${origin.snapshotId}:${origin.observationId}`;
+  }
+}
+
+const GrowthMapCompetitorLibraryItemObject = z
+  .object({
+    projectId: Uuid,
+    competitorId: Uuid,
+    domain: ProductProfileCompetitorDomain,
+    name: z.string().trim().min(1).max(160).nullable(),
+    reviewStatus: GrowthMapCompetitorReviewStatus,
+    relationship: GrowthMapCompetitorRelationship.nullable(),
+    analysisScope: z
+      .array(ProductProfileCompetitorAnalysisScope)
+      .max(5)
+      .refine(isUnique, "analysisScope must be unique"),
+    revision: z.number().int().nonnegative(),
+    originOccurrences: z
+      .array(GrowthMapCompetitorOriginOccurrence)
+      .min(1)
+      .max(100),
+    lastObservedAt: IsoDateTime.nullable(),
+    serpOverlap: GrowthMapCompetitorSerpOverlap,
+    aiCitationInsight: GrowthMapCompetitorAiCitationInsight,
+    coverage: GrowthMapCoverage,
+  })
+  .strict();
+
+export const GrowthMapCompetitorLibraryItem =
+  GrowthMapCompetitorLibraryItemObject.superRefine((item, ctx) => {
+    if (item.reviewStatus === "approved") {
+      if (item.relationship === null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["relationship"],
+          message: "An approved Competitor requires a reviewed relationship",
+        });
+      }
+      if (item.analysisScope.length === 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["analysisScope"],
+          message: "An approved Competitor requires a non-empty analysis scope",
+        });
+      }
+    } else {
+      if (item.relationship !== null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["relationship"],
+          message:
+            "Candidate or excluded Competitors cannot expose an approved relationship",
+        });
+      }
+      if (item.analysisScope.length !== 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["analysisScope"],
+          message:
+            "Candidate or excluded Competitors cannot enter an approved analysis scope",
+        });
+      }
+    }
+
+    const occurrenceIds = new Set<string>();
+    const originIdentities = new Set<string>();
+    item.originOccurrences.forEach((origin, index) => {
+      if (occurrenceIds.has(origin.occurrenceId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["originOccurrences", index, "occurrenceId"],
+          message: "Competitor origin occurrence IDs must be unique",
+        });
+      }
+      occurrenceIds.add(origin.occurrenceId);
+
+      const identity = competitorOriginIdentity(origin);
+      if (originIdentities.has(identity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["originOccurrences", index],
+          message: "Exact Competitor origin occurrences must be unique",
+        });
+      }
+      originIdentities.add(identity);
+    });
+
+    const observedTimes = item.originOccurrences
+      .map((origin) => origin.observedAt)
+      .filter((value): value is string => value !== null)
+      .sort((left, right) => Date.parse(right) - Date.parse(left));
+    const expectedLastObservedAt = observedTimes[0] ?? null;
+    if (item.lastObservedAt !== expectedLastObservedAt) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["lastObservedAt"],
+        message:
+          "lastObservedAt must equal the latest traceable origin observation",
+      });
+    }
+
+    if (item.serpOverlap.availability === "available") {
+      const serpOverlap = item.serpOverlap;
+      if (serpOverlap.valuePointer !== "/valueJson/serpOverlap") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["serpOverlap", "valuePointer"],
+          message:
+            "SERP overlap must use its canonical normalized Observation pointer",
+        });
+      }
+      const source = item.originOccurrences.some(
+        (origin) =>
+          origin.originKind === "serp_overlap" &&
+          origin.snapshotId === serpOverlap.snapshotId &&
+          origin.observationId === serpOverlap.observationId &&
+          origin.observedAt === serpOverlap.observedAt,
+      );
+      if (!source) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["serpOverlap", "observationId"],
+          message:
+            "Available SERP overlap requires one exact canonical origin Observation",
+        });
+      }
+    }
+    if (item.aiCitationInsight.availability === "available") {
+      const aiCitationInsight = item.aiCitationInsight;
+      if (
+        aiCitationInsight.valuePointer !== "/valueJson/aiCitationInsight"
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["aiCitationInsight", "valuePointer"],
+          message:
+            "AI citation insight must use its canonical normalized Observation pointer",
+        });
+      }
+      const source = item.originOccurrences.some(
+        (origin) =>
+          origin.originKind === "ai_citation" &&
+          origin.snapshotId === aiCitationInsight.snapshotId &&
+          origin.observationId === aiCitationInsight.observationId &&
+          origin.observedAt === aiCitationInsight.observedAt,
+      );
+      if (!source) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["aiCitationInsight", "observationId"],
+          message:
+            "Available AI citation insight requires one exact canonical origin Observation",
+        });
+      }
+    }
+  });
+export type GrowthMapCompetitorLibraryItem = z.infer<
+  typeof GrowthMapCompetitorLibraryItem
+>;
+
+const GrowthMapCompetitorLibraryResponseObject = z
+  .object({
+    projectId: Uuid,
+    data: z.array(GrowthMapCompetitorLibraryItem).max(100),
+    meta: GrowthMapLibraryPageMeta,
+  })
+  .strict();
+
+export const GrowthMapCompetitorLibraryResponse =
+  GrowthMapCompetitorLibraryResponseObject.superRefine((response, ctx) => {
+    if (response.data.length > response.meta.limit) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["data"],
+        message: "A Competitor Library page cannot exceed its declared limit",
+      });
+    }
+    const competitorIds = new Set<string>();
+    const domains = new Set<string>();
+    const occurrenceIds = new Set<string>();
+    const originIdentities = new Set<string>();
+    response.data.forEach((item, index) => {
+      if (item.projectId !== response.projectId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["data", index, "projectId"],
+          message: "Competitor projectId must match the response scope",
+        });
+      }
+      if (competitorIds.has(item.competitorId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["data", index, "competitorId"],
+          message: "Competitor IDs must be unique within a cursor page",
+        });
+      }
+      competitorIds.add(item.competitorId);
+      if (domains.has(item.domain)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["data", index, "domain"],
+          message: "Competitor domains must be unique within a project",
+        });
+      }
+      domains.add(item.domain);
+
+      item.originOccurrences.forEach((origin, originIndex) => {
+        if (occurrenceIds.has(origin.occurrenceId)) {
+          ctx.addIssue({
+            code: "custom",
+            path: [
+              "data",
+              index,
+              "originOccurrences",
+              originIndex,
+              "occurrenceId",
+            ],
+            message: "An origin occurrence cannot belong to multiple Competitors",
+          });
+        }
+        occurrenceIds.add(origin.occurrenceId);
+        const originIdentity = competitorOriginIdentity(origin);
+        if (originIdentities.has(originIdentity)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["data", index, "originOccurrences", originIndex],
+            message:
+              "An exact origin occurrence cannot populate multiple Competitors",
+          });
+        }
+        originIdentities.add(originIdentity);
+      });
+    });
+  });
+export type GrowthMapCompetitorLibraryResponse = z.infer<
+  typeof GrowthMapCompetitorLibraryResponse
+>;
+
+const GrowthMapCompetitorDetailResponseObject = z
+  .object({
+    projectId: Uuid,
+    data: GrowthMapCompetitorLibraryItem,
+  })
+  .strict();
+
+export const GrowthMapCompetitorDetailResponse =
+  GrowthMapCompetitorDetailResponseObject.superRefine((response, ctx) => {
+    if (response.data.projectId !== response.projectId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["data", "projectId"],
+        message: "Competitor projectId must match the detail response scope",
+      });
+    }
+  });
+export type GrowthMapCompetitorDetailResponse = z.infer<
+  typeof GrowthMapCompetitorDetailResponse
 >;
