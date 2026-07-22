@@ -160,6 +160,10 @@ export function createDbHandle(
     connectionString,
     max,
     connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS,
+    // timestamptz is intentionally read as text by the repositories. Fix the
+    // session representation at startup so newly frozen manifests are UTC and
+    // do not depend on a database server's regional TimeZone setting.
+    options: "-c timezone=UTC",
     // Canonical writers must never remain eligible to reference a private
     // object after the 24-hour orphan floor. Server-side limits also ensure a
     // timed-out maintenance observation cannot linger indefinitely on a pooled

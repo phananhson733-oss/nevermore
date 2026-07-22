@@ -8,6 +8,40 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("adds a canonical keyword library without copying provider metrics", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0018_keyword_library_foundation.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.keyword_occurrences/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.keyword_entities/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.keyword_entity_sources/iu,
+    );
+    expect(migration).toMatch(
+      /source_kind\s*=\s*'manual'[\s\S]*?data_snapshot_id\s+IS\s+NULL[\s\S]*?normalized_observation_id\s+IS\s+NULL[\s\S]*?source_pointer\s+IS\s+NULL/iu,
+    );
+    expect(migration).toMatch(
+      /dataforseo[\s\S]*?dataforseo\.ranked_keywords\.v1[\s\S]*?NEW\.metric_key\s*=\s*'csv\.keyword_gap\.v1'/iu,
+    );
+    expect(migration).not.toMatch(
+      /keyword_occurrences\s*\([\s\S]*?\b(?:search_)?volume\s+(?:integer|numeric|bigint|real|double)/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0018_keyword_library_foundation'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
   it("adds an explicit append-only per-run Finding target ledger", () => {
     const migration = readFileSync(
       fileURLToPath(

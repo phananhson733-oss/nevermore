@@ -18,7 +18,8 @@ export type DatasetKey =
   | "crawl.site_graph.v1"
   | "gsc.page_query_daily.v1"
   | "ga4.organic_landing_daily.v1"
-  | "csv.keyword_gap.v1";
+  | "csv.keyword_gap.v1"
+  | "dataforseo.ranked_keywords.v1";
 
 export type Availability = "available" | "partial" | "unavailable";
 

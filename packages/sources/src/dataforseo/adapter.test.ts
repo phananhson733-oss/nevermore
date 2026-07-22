@@ -196,7 +196,7 @@ describe("DataForSEO ranked-keywords adapter", () => {
     });
     await expect(adapter.capabilities(config)).resolves.toEqual([
       expect.objectContaining({
-        datasetKey: "csv.keyword_gap.v1",
+        datasetKey: "dataforseo.ranked_keywords.v1",
         operation: "keyword_gap_import",
         available: true,
       }),

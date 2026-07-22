@@ -21,6 +21,11 @@ export { schema } from "./schema.ts";
 export { canonicalize, sha256Hex, contentHash } from "./hash.ts";
 export type { CanonicalValue } from "./hash.ts";
 export {
+  canonicalUtcTimestamptz,
+  isTimestamptzInstant,
+  sameTimestamptzInstant,
+} from "./instant.ts";
+export {
   LATEST_APP_MIGRATION,
   readMigrationVersion,
 } from "./migration-version.ts";
@@ -166,6 +171,49 @@ export type {
   FindingTargetResolutionState,
   FindingTargetRow,
 } from "./repositories/finding-targets.ts";
+export {
+  GrowthMapReadRepository,
+  MAX_GROWTH_MAP_ENTITY_LOOKUP,
+  MAX_GROWTH_MAP_SEARCH_LENGTH,
+  MAX_GROWTH_MAP_SNAPSHOT_LOOKUP,
+  MAX_GROWTH_MAP_URL_PAGE_SIZE,
+} from "./repositories/growth-map.ts";
+export type {
+  GrowthMapObservationLookup,
+  GrowthMapReadableRunRow,
+  GrowthMapUrlInventoryOptions,
+  GrowthMapUrlInventoryPage,
+  GrowthMapUrlInventoryRow,
+} from "./repositories/growth-map.ts";
+export {
+  KeywordOccurrencesRepository,
+  MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
+  normalizeKeywordIdentity,
+} from "./repositories/keyword-occurrences.ts";
+export type {
+  CanonicalKeywordOccurrenceInput,
+  KeywordLibraryUpsertResult,
+  KeywordOccurrenceInput,
+  KeywordOccurrenceListPage,
+  KeywordOccurrenceRow,
+  KeywordQueryKind,
+  KeywordScopeBasis,
+  KeywordSourceKind,
+  ManualKeywordOccurrenceInput,
+} from "./repositories/keyword-occurrences.ts";
+export {
+  KeywordsRepository,
+  MAX_KEYWORD_ENTITY_PAGE_SIZE,
+} from "./repositories/keywords.ts";
+export type {
+  KeywordEntityListOptions,
+  KeywordEntityListPage,
+  KeywordEntityRow,
+  KeywordMappingDecision,
+  KeywordMappingReviewState,
+  KeywordReviewMappingInput,
+  KeywordStatus,
+} from "./repositories/keywords.ts";
 export { FindingReviewEventsRepository } from "./repositories/findings-review.ts";
 export { EvidenceRepository } from "./repositories/evidence.ts";
 export type {

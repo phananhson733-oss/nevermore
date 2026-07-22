@@ -6,6 +6,7 @@ import {
   sha256Hex,
   type CanonicalValue,
 } from "../hash.ts";
+import { sameTimestamptzInstant } from "../instant.ts";
 import { pageSnapshots, sitePages } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
@@ -132,7 +133,7 @@ export class PageSnapshotsRepository extends Repository {
           row.data_snapshot_id === values.dataSnapshotId &&
           sameHash(row.content_hash, derivedContentHash) &&
           isDeepStrictEqual(row.extract, values.extract) &&
-          Date.parse(row.captured_at) === Date.parse(values.capturedAt),
+          sameTimestamptzInstant(row.captured_at, values.capturedAt),
       );
       if (isExactReplay) {
         return legacy;
@@ -168,7 +169,7 @@ export class PageSnapshotsRepository extends Repository {
       (existing.canonical_extract === null ||
         existing.canonical_extract === canonicalExtract) &&
       isDeepStrictEqual(existing.extract, values.extract) &&
-      Date.parse(existing.captured_at) === Date.parse(values.capturedAt)
+      sameTimestamptzInstant(existing.captured_at, values.capturedAt)
     ) {
       return existing;
     }

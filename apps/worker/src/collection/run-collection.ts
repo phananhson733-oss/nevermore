@@ -44,6 +44,7 @@ import {
   SupabaseStorageError,
   CRAWL_DATASET_KEY,
   CRAWL_METHOD_VERSION,
+  DATAFORSEO_DATASET_KEY,
   DEFAULT_CRAWL_USER_AGENT,
   type CollectionContext,
   type CollectionResult,
@@ -78,7 +79,7 @@ const DATASET_KEY: Record<string, string> = {
   gsc: "gsc.page_query_daily.v1",
   ga4: "ga4.organic_landing_daily.v1",
   csv: "csv.keyword_gap.v1",
-  dataforseo: "csv.keyword_gap.v1",
+  dataforseo: DATAFORSEO_DATASET_KEY,
 };
 
 const COLLECTION_SHUTDOWN_RETRY_SUMMARY =

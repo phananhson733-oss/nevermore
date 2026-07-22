@@ -23,7 +23,14 @@ import {
   type DataForSeoRankedKeywordsRequest,
 } from "./client.ts";
 
-export const DATAFORSEO_DATASET_KEY = "csv.keyword_gap.v1" as const;
+/**
+ * Provider-specific immutable Snapshot dataset identity. The normalized rows
+ * still use the shared `csv.keyword_gap.v1` Observation metric so the rule
+ * engine can consume one canonical keyword-gap projection while provenance is
+ * preserved by `provider`, `origin`, and this Snapshot dataset key.
+ */
+export const DATAFORSEO_DATASET_KEY =
+  "dataforseo.ranked_keywords.v1" as const;
 export const DATAFORSEO_METHOD_VERSION =
   "dataforseo.ranked_keywords.v1" as const;
 export const DATAFORSEO_ROW_CAP_STOP_REASON =

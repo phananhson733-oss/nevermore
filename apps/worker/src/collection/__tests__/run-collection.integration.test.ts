@@ -899,7 +899,7 @@ describeDb("collection runner (spec §13)", () => {
     expect(snapshot).toMatchObject({
       collection_run_id: runId,
       provider: "dataforseo",
-      dataset_key: "csv.keyword_gap.v1",
+      dataset_key: "dataforseo.ranked_keywords.v1",
       method_version: "dataforseo.ranked_keywords.v1",
       availability: "available",
       row_count: 2,

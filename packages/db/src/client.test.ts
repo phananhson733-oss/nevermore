@@ -106,6 +106,7 @@ describe("createDbHandle runtime boundaries", () => {
             readonly lock_timeout?: number;
             readonly statement_timeout?: number;
             readonly idle_in_transaction_session_timeout?: number;
+            readonly options?: string;
           };
         }
       ).options;
@@ -118,6 +119,7 @@ describe("createDbHandle runtime boundaries", () => {
       expect(options.idle_in_transaction_session_timeout).toBe(
         DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
       );
+      expect(options.options).toBe("-c timezone=UTC");
       expect(options.lock_timeout).toBeLessThan(24 * 60 * 60 * 1_000);
       expect(options.statement_timeout).toBeLessThan(
         24 * 60 * 60 * 1_000,

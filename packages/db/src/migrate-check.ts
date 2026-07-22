@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 36 app tables plus every named index, trigger, and callable routine
+ * exactly 39 app tables plus every named index, trigger, and callable routine
  * in the frozen SQL contract. Exits non-zero on drift. This is a structural
  * object-presence gate; the byte-for-byte migration/spec gate separately
  * prevents definition drift.
@@ -47,6 +47,9 @@ const EXPECTED_TABLES = [
   "page_snapshots",
   "product_profile_runs",
   "product_profile_invocation_attempts",
+  "keyword_occurrences",
+  "keyword_entities",
+  "keyword_entity_sources",
 ] as const;
 
 const REQUIRED_INDEXES = [
@@ -91,6 +94,10 @@ const REQUIRED_INDEXES = [
   "product_profile_runs_result_profile_idx",
   "product_profile_invocation_attempts_project_idx",
   "product_profile_invocation_attempts_unresolved_idx",
+  "keyword_occurrences_project_collected_idx",
+  "keyword_entities_project_created_idx",
+  "keyword_entities_project_review_idx",
+  "keyword_entity_sources_project_occurrence_idx",
 ] as const;
 
 const REQUIRED_TRIGGERS = [
@@ -149,6 +156,12 @@ const REQUIRED_TRIGGERS = [
   "async_runs_product_profile_result_guard",
   "product_profile_invocation_attempts_transition_guard",
   "icp_profiles_product_profile_provenance_guard",
+  "keyword_occurrences_lineage_guard",
+  "keyword_occurrences_append_only",
+  "keyword_entities_mutation_guard",
+  "keyword_entities_no_delete",
+  "keyword_entity_sources_lineage_guard",
+  "keyword_entity_sources_append_only",
 ] as const;
 
 const REQUIRED_ROUTINES = [
@@ -158,6 +171,10 @@ const REQUIRED_ROUTINES = [
   "finalize_product_profile_invocation_attempt",
   "mark_product_profile_invocation_outcome_unknown",
   "validate_product_profile_provenance",
+  "enforce_keyword_occurrence_lineage",
+  "enforce_keyword_entity_mutation",
+  "enforce_keyword_entity_source_lineage",
+  "upsert_keyword_library_occurrence",
 ] as const;
 
 export interface MigrateCheckResult {

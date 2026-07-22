@@ -1038,6 +1038,92 @@ export const findingTargets = app.table("finding_targets", {
 });
 
 // ---------------------------------------------------------------------------
+// 37. keyword_occurrences  (append-only canonical source membership)
+// ---------------------------------------------------------------------------
+export const keywordOccurrences = app.table("keyword_occurrences", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  data_snapshot_id: uuid().references(() => dataSnapshots.id),
+  normalized_observation_id: uuid().references(
+    () => normalizedObservations.id,
+  ),
+  display_keyword: text().notNull(),
+  normalized_keyword: text().notNull(),
+  market: text().notNull(),
+  language_tag: text().notNull(),
+  query_kind: text().notNull(),
+  source_kind: text().notNull(),
+  scope_basis: text().notNull(),
+  source_pointer: text(),
+  source_ref: text().notNull(),
+  collected_at: tz().notNull(),
+  provider_data_as_of: tz(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 38. keyword_entities  (stable project-scoped keyword identity)
+// ---------------------------------------------------------------------------
+export const keywordEntities = app.table("keyword_entities", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  display_keyword: text().notNull(),
+  normalized_keyword: text().notNull(),
+  market: text().notNull(),
+  language_tag: text().notNull(),
+  query_kind: text().notNull(),
+  status: text().notNull().default("candidate"),
+  intent: text(),
+  buyer_stage: text(),
+  cluster_key: text(),
+  mapping_decision: text().notNull().default("unassigned"),
+  mapped_site_page_id: uuid().references(() => sitePages.id),
+  mapping_review_state: text().notNull().default("unreviewed"),
+  mapping_revision: integer().notNull().default(0),
+  first_seen_at: tz().notNull(),
+  last_seen_at: tz().notNull(),
+  created_at: tz().notNull().defaultNow(),
+  updated_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 39. keyword_entity_sources  (append-only entity/occurrence provenance)
+// ---------------------------------------------------------------------------
+export const keywordEntitySources = app.table(
+  "keyword_entity_sources",
+  {
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    keyword_entity_id: uuid()
+      .notNull()
+      .references(() => keywordEntities.id),
+    keyword_occurrence_id: uuid()
+      .notNull()
+      .references(() => keywordOccurrences.id),
+    created_at: tz().notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.keyword_entity_id, t.keyword_occurrence_id],
+    }),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Aggregate schema (consumed by drizzle(pool, { schema })).
 // ---------------------------------------------------------------------------
 export const schema = {
@@ -1077,4 +1163,7 @@ export const schema = {
   sitePages,
   pageSnapshots,
   findingTargets,
+  keywordOccurrences,
+  keywordEntities,
+  keywordEntitySources,
 } as const;
