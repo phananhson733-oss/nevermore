@@ -1,7 +1,7 @@
 import type pg from "pg";
 
 export const LATEST_APP_MIGRATION =
-  "0015_frozen_crawl_seed" as const;
+  "0016_observation_site_page_lineage" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 

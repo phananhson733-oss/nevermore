@@ -26,6 +26,7 @@ import {
   materializePreparedCrawlPages,
   prepareCrawlPageMaterialization,
 } from "./materialize-crawl-pages.ts";
+import { resolveObservationSitePageLineage } from "./observation-site-page-lineage.ts";
 
 /**
  * Adapter-agnostic collection persistence (spec §7.6, §13.3). The raw payload is
@@ -77,17 +78,20 @@ export async function persistCollectionResult(
 ): Promise<string | null> {
   const { collectionRun: run, outcome } = input;
   const scope = { workspaceId: run.workspace_id, projectId: run.project_id };
-  const canonicalSite =
-    run.provider === "crawl"
-      ? await new SitesRepository(ctx.db).findById(scope, run.site_id)
-      : null;
+  const canonicalSite = await new SitesRepository(ctx.db).findById(
+    scope,
+    run.site_id,
+  );
+  if (!canonicalSite) {
+    throw new Error("collection Site disappeared before result persistence");
+  }
   // Fail closed before Storage/SQL writes if a crawl result is malformed or if
   // its raw facts drift from either the CollectionOutcome or the exact Site row
   // named by this collection run. The expected origin is never taken from raw.
   const crawlPages = prepareCrawlPageMaterialization({
     provider: run.provider,
     outcome,
-    ...(canonicalSite
+    ...(run.provider === "crawl"
       ? {
           expectedSite: {
             origin: canonicalSite.origin,
@@ -195,7 +199,7 @@ export async function persistCollectionResult(
         ...(outcome.summary ? { summary: outcome.summary } : {}),
       });
 
-      await materializePreparedCrawlPages(tx, {
+      const crawlExactSitePageIds = await materializePreparedCrawlPages(tx, {
         workspaceId: run.workspace_id,
         projectId: run.project_id,
         siteId: run.site_id,
@@ -204,11 +208,22 @@ export async function persistCollectionResult(
         pages: crawlPages,
       });
 
+      const observationsWithPageLineage =
+        await resolveObservationSitePageLineage({
+          tx,
+          scope,
+          siteId: run.site_id,
+          siteOrigin: canonicalSite.origin,
+          provider: run.provider,
+          observations: input.observations,
+          crawlExactSitePageIds,
+        });
+
       await new ObservationsRepository(tx).insertMany(
         scope,
         snapshot.id,
         run.provider,
-        input.observations,
+        observationsWithPageLineage,
       );
       await discrepancies.detectForSnapshot(scope, snapshot.id);
 

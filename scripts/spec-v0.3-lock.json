@@ -7,18 +7,18 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "f893701a6a7acd7f37276c2821ac1ca1aec2af2330247fc802b17db9bf20faa2",
-    "MVP-IMPLEMENTATION-SPEC.md": "44d146aeaa73154f8717db1ea6dd21e15ee65ea52f99ffed3f6d54f7cb57aaa0",
+    "MVP-IMPLEMENTATION-SPEC.md": "4853fd4272d70157f182670847826b1c47efda96e66610ee3880c23b64417edb",
     "openapi.yaml": "413f5a8c0a7e2ca81465171ca8841a2cf7eb142650f32e3777868cfe65c5ccaa",
-    "schema.sql": "fec0a1e3720202f50603435492102e45e28bbe27fa143cab91c7fc536161f595",
+    "schema.sql": "e6ca3cbdb5fc4e68e50c05690608479e85f5279cadd87256926e8d7f2942d1ea",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
-    "scripts/schema-smoke.sql": "65583b2a7931e9f6f1083c6b19e84035061fcbf689620c84b629c7df5a4368a9",
-    "scripts/verify-spec.mjs": "e8e3b7eca8d7401e0f4b14d0f512adde50e2a5d1ca9cd898a8addcaed31f9591"
+    "scripts/schema-smoke.sql": "4ff99ff32b704df081188257535313e1e1847076e754905dac34996886512db6",
+    "scripts/verify-spec.mjs": "a70c8025708420896d2dd3f1f5853444c575255cda01e3d1eb42a7ca7d5c7d96"
   },
   "implementationFiles": {
     "openapi/mvp.yaml": "413f5a8c0a7e2ca81465171ca8841a2cf7eb142650f32e3777868cfe65c5ccaa",
     "packages/contracts/src/generated/openapi.ts": "60195c85ea4b14df8bbae495986e2c5d3743d244ecec202236df955139ed05ae",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
-    "packages/db/migrations/schema-smoke.sql": "65583b2a7931e9f6f1083c6b19e84035061fcbf689620c84b629c7df5a4368a9",
+    "packages/db/migrations/schema-smoke.sql": "4ff99ff32b704df081188257535313e1e1847076e754905dac34996886512db6",
     "scripts/verify-implementation.mjs": "d4be89369cb25649faf5422d2a4de0dc3302861fcdfba4a4836054dce95f87bd"
   },
   "apiOperations": [

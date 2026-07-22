@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   normalizedUrlHash,
@@ -179,4 +180,142 @@ describe("SitePagesRepository", () => {
       expect(fake.calls).toEqual([]);
     },
   );
+
+  it("resolves one exact slash variant for a canonical subject after taking the shared lock", async () => {
+    const fake = fakeExecutor();
+    const slashVariant = row({
+      normalized_url: "https://example.test/pricing/",
+      normalized_url_hash: normalizedUrlHash(
+        "https://example.test/pricing/",
+      ),
+    });
+    fake.enqueue([], [slashVariant]);
+
+    const resolved = await new SitePagesRepository(
+      fake.executor,
+    ).resolveUnambiguousCanonicalSubjects(
+      { workspaceId: values.workspaceId, projectId: values.projectId },
+      values.siteId,
+      [
+        {
+          subjectRef: "https://example.test/pricing",
+          exactCandidates: [
+            "https://example.test/pricing",
+            "https://example.test/pricing/",
+          ],
+        },
+      ],
+    );
+
+    expect(resolved.get("https://example.test/pricing")).toEqual(
+      slashVariant,
+    );
+    expect(fake.calls.find((call) => call.method === "execute")).toBeDefined();
+    expect(fake.last("limit").args).toEqual([2]);
+    expect(fake.calls.filter((call) => call.method === "insert")).toHaveLength(
+      0,
+    );
+  });
+
+  it("returns null instead of choosing between two canonical-equivalent exact variants", async () => {
+    const fake = fakeExecutor();
+    const canonical = "https://example.test/pricing";
+    fake.enqueue(
+      [],
+      [
+        row({
+          normalized_url: canonical,
+          normalized_url_hash: normalizedUrlHash(canonical),
+        }),
+        row({
+          id: "00000000-0000-4000-8000-000000000005",
+          normalized_url: `${canonical}/`,
+          normalized_url_hash: normalizedUrlHash(`${canonical}/`),
+        }),
+      ],
+    );
+
+    const resolved = await new SitePagesRepository(
+      fake.executor,
+    ).resolveUnambiguousCanonicalSubjects(
+      { workspaceId: values.workspaceId, projectId: values.projectId },
+      values.siteId,
+      [
+        {
+          subjectRef: canonical,
+          exactCandidates: [canonical, `${canonical}/`],
+        },
+      ],
+    );
+
+    expect(resolved.get(canonical)).toBeNull();
+    expect(fake.calls.filter((call) => call.method === "insert")).toHaveLength(
+      0,
+    );
+  });
+
+  it("creates the canonical SitePage only when no exact variant exists", async () => {
+    const fake = fakeExecutor();
+    const canonical = "https://example.test/pricing";
+    const created = row({
+      normalized_url: canonical,
+      normalized_url_hash: normalizedUrlHash(canonical),
+    });
+    fake.enqueue([], [], [created]);
+
+    const resolved = await new SitePagesRepository(
+      fake.executor,
+    ).resolveUnambiguousCanonicalSubjects(
+      { workspaceId: values.workspaceId, projectId: values.projectId },
+      values.siteId,
+      [
+        {
+          subjectRef: canonical,
+          exactCandidates: [canonical, `${canonical}/`],
+        },
+      ],
+    );
+
+    expect(resolved.get(canonical)).toEqual(created);
+    expect(fake.last("values").args[0]).toMatchObject({
+      normalized_url: canonical,
+      normalized_url_hash: normalizedUrlHash(canonical),
+    });
+  });
+
+  it("takes canonical subject locks in one bounded, sorted, de-duplicated batch", async () => {
+    const fake = fakeExecutor();
+    fake.enqueue([]);
+
+    await new SitePagesRepository(fake.executor).lockCanonicalSubjects(
+      { workspaceId: values.workspaceId, projectId: values.projectId },
+      values.siteId,
+      [
+        "https://example.test/z",
+        "https://example.test/a",
+        "https://example.test/z",
+      ],
+    );
+
+    const executeCalls = fake.calls.filter(
+      (call) => call.method === "execute",
+    );
+    expect(executeCalls).toHaveLength(1);
+    const compiled = new PgDialect().sqlToQuery(
+      executeCalls[0]!.args[0] as never,
+    );
+    expect(compiled.sql).toContain(
+      "select app.lock_site_page_canonical_subjects(",
+    );
+    expect(compiled.params).toEqual([
+      values.workspaceId,
+      values.projectId,
+      values.siteId,
+      "https://example.test/a",
+      "https://example.test/z",
+    ]);
+    expect(fake.calls.filter((call) => call.method === "select")).toHaveLength(
+      0,
+    );
+  });
 });

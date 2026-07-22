@@ -8,6 +8,65 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("adds an append-only Observation to exact SitePage lineage without inventing PageSnapshots", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0016_observation_site_page_lineage.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /ALTER\s+TABLE\s+app\.normalized_observations[\s\S]*?ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+site_page_id\s+uuid/iu,
+    );
+    expect(migration).toMatch(
+      /FOREIGN\s+KEY\s*\(site_page_id\)[\s\S]*?REFERENCES\s+app\.site_pages\s*\(id\)\s+ON\s+DELETE\s+RESTRICT/iu,
+    );
+    expect(migration).toMatch(
+      /CHECK\s*\(site_page_id\s+IS\s+NULL\s+OR\s+subject_type\s*=\s*'url'\)/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+normalized_observations_site_page_metric_idx[\s\S]*?\(\s*project_id,\s*site_page_id,\s*metric_key,\s*observed_at\s+DESC,\s*id\s+DESC\s*\)[\s\S]*?WHERE\s+site_page_id\s+IS\s+NOT\s+NULL/iu,
+    );
+    expect(migration).toMatch(
+      /page\.workspace_id\s*=\s*NEW\.workspace_id[\s\S]*?page\.project_id\s*=\s*NEW\.project_id[\s\S]*?page\.site_id\s*=\s*snapshot\.site_id/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.lock_site_page_canonical_subjects\([\s\S]*?subject_refs\s+text\[\][\s\S]*?FOR\s+canonical_subject\s+IN[\s\S]*?SELECT\s+DISTINCT[\s\S]*?unnest\(subject_refs\)[\s\S]*?ORDER\s+BY[\s\S]*?pg_advisory_xact_lock\s*\(\s*hashtextextended[\s\S]*?5704921::bigint/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.lock_site_page_canonical_subject\(\)[\s\S]*?app\.lock_site_page_canonical_subjects\([\s\S]*?ARRAY\[canonical_subject\]/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TRIGGER\s+site_pages_canonical_subject_lock[\s\S]*?BEFORE\s+INSERT\s+ON\s+app\.site_pages[\s\S]*?EXECUTE\s+FUNCTION\s+app\.lock_site_page_canonical_subject/iu,
+    );
+    expect(migration).toMatch(
+      /IF\s+NEW\.site_page_id\s+IS\s+NULL\s+THEN[\s\S]*?NEW\.provider\s*=\s*'crawl'[\s\S]*?NEW\.metric_key\s*=\s*'crawl\.page\.v1'/iu,
+    );
+    expect(migration).toMatch(
+      /is_analytics_page\s*:=\s*\([\s\S]*?NEW\.provider\s*=\s*'gsc'[\s\S]*?NEW\.provider\s*=\s*'ga4'[\s\S]*?SELECT\s+count\(\*\)[\s\S]*?TG_OP\s*=\s*'INSERT'\s+AND\s+is_analytics_page[\s\S]*?candidate_count\s*<=\s*1/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_normalized_observation_site_page_lineage\(\)[\s\S]*?app\.lock_site_page_canonical_subjects\([\s\S]*?ARRAY\[canonical_subject\]/iu,
+    );
+    expect(migration).toMatch(
+      /ELSIF\s+is_analytics_page\s+THEN[\s\S]*?candidate_count\s*<>\s*1[\s\S]*?analytics observation SitePage lineage is ambiguous/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.value_json\s*->>\s*'fetchUrl'\s+IS\s+DISTINCT\s+FROM\s+page_normalized_url/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.provider\s*=\s*'crawl'[\s\S]*?NEW\.subject_ref\s+IS\s+DISTINCT\s+FROM\s+canonical_subject[\s\S]*?Crawl observation subject does not match its canonical fetch identity/iu,
+    );
+    expect(migration).not.toMatch(/page_snapshot_id/iu);
+    expect(migration).toMatch(
+      /SELECT\s+'0016_observation_site_page_lineage'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
   it("freezes an exact Product Profile Crawl seed on each collection run", () => {
     const migration = readFileSync(
       fileURLToPath(

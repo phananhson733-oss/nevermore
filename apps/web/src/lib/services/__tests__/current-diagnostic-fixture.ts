@@ -5,6 +5,7 @@ import {
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   ObservationsRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   type DataSnapshotRow,
@@ -127,12 +128,22 @@ export async function seedCurrentCrawlDiagnostic(
       { page } as unknown as Parameters<typeof contentHash>[0],
     ),
   });
+  const sitePage = await new SitePagesRepository(handle.db).upsertNormalizedUrl(
+    {
+      workspaceId: input.scope.workspaceId,
+      projectId: input.scope.projectId,
+      siteId: input.siteId,
+      normalizedUrl: page.fetchUrl,
+      templateKey: null,
+    },
+  );
   await new ObservationsRepository(handle.db).insertMany(
     input.scope,
     snapshot.id,
     "crawl",
     [
       {
+        sitePageId: sitePage.id,
         metricKey: METRIC_CRAWL_PAGE,
         subjectType: "url",
         subjectRef: evidenceSubjectRef,

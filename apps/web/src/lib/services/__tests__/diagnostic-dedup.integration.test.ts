@@ -22,6 +22,7 @@ import {
   DiagnosticRunsRepository,
   FindingsRepository,
   ObservationsRepository,
+  SitePagesRepository,
   SourceConnectionsRepository,
   type DataSnapshotRow,
   type FindingRow,
@@ -338,12 +339,23 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
       checksum: contentHash({ s: 1 }),
     });
     frozenSnapshot = snapshot;
+    const gonePage = page404("https://dedup.example/gone");
+    const sitePage = await new SitePagesRepository(
+      handle.db,
+    ).upsertNormalizedUrl({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      normalizedUrl: gonePage.fetchUrl,
+      templateKey: null,
+    });
     await new ObservationsRepository(handle.db).insertMany(
       scope,
       snapshot.id,
       "crawl",
       [
         {
+          sitePageId: sitePage.id,
           metricKey: METRIC_CRAWL_PAGE,
           subjectType: "url",
           subjectRef: "https://dedup.example/gone",
@@ -351,7 +363,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
           availability: "available",
           valueNumeric: null,
           valueText: null,
-          valueJson: page404("https://dedup.example/gone"),
+          valueJson: gonePage,
           unit: null,
           origin: "direct_public",
           grade: "B",

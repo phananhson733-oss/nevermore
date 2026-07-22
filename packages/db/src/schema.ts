@@ -449,6 +449,9 @@ export const normalizedObservations = app.table("normalized_observations", {
   snapshot_id: uuid()
     .notNull()
     .references(() => dataSnapshots.id),
+  site_page_id: uuid().references(
+    (): AnyPgColumn => sitePages.id,
+  ),
   provider: text().notNull(),
   metric_key: text().notNull(),
   subject_type: text().notNull(),

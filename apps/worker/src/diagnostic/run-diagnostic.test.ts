@@ -374,6 +374,7 @@ function observationRow(
     workspace_id: "workspace-1",
     project_id: "project-1",
     snapshot_id: config.snapshotId,
+    site_page_id: null,
     provider,
     metric_key: OBSERVATION_FIXTURES.find(
       (fixture) => fixture.provider === provider,
@@ -865,6 +866,7 @@ describe("diagnostic frozen snapshot validation", () => {
         workspace_id: scope.workspaceId,
         project_id: scope.projectId,
         snapshot_id: FROZEN_SNAPSHOT_ID,
+        site_page_id: null,
         provider: "ga4",
         metric_key: "ga4.landing.v1",
         subject_type: "url",

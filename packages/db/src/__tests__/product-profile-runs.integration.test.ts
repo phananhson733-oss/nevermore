@@ -1597,7 +1597,7 @@ describeDb("Product Profile synthesis persistence", () => {
         templateKey: null,
       });
       const extract = crawlPageExtract(normalizedUrl, randomUUID());
-      return new PageSnapshotsRepository(handle.db).create({
+      const created = await new PageSnapshotsRepository(handle.db).create({
         workspaceId: target.workspaceId,
         projectId: target.projectId,
         sitePageId: page.id,
@@ -1606,6 +1606,7 @@ describeDb("Product Profile synthesis persistence", () => {
         extract,
         capturedAt: snapshotCapturedAt,
       });
+      return { ...created, normalizedUrl };
     };
     const validPageSnapshot = await pageSnapshot(
       project,
@@ -1630,8 +1631,12 @@ describeDb("Product Profile synthesis persistence", () => {
       target: ProjectFixture,
       snapshotId: string,
       observedAt: string,
-      subjectRef: string,
+      pageSnapshot: {
+        readonly site_page_id: string;
+        readonly normalizedUrl: string;
+      },
     ) => {
+      const subjectRef = pageSnapshot.normalizedUrl;
       await new ObservationsRepository(handle.db).insertMany(
         scope(target),
         snapshotId,
@@ -1639,13 +1644,17 @@ describeDb("Product Profile synthesis persistence", () => {
         [
           {
             metricKey: "crawl.page.v1",
+            sitePageId: pageSnapshot.site_page_id,
             subjectType: "url",
             subjectRef,
             observedAt,
             availability: "available",
             valueNumeric: null,
             valueText: null,
-            valueJson: { indexed: true },
+            valueJson: {
+              fetchUrl: pageSnapshot.normalizedUrl,
+              indexed: true,
+            },
             unit: null,
             origin: "direct_public",
             grade: "B",
@@ -1665,19 +1674,19 @@ describeDb("Product Profile synthesis persistence", () => {
       project,
       project.sourceSnapshotId,
       "2026-07-22T08:00:00.000Z",
-      `valid:${randomUUID()}`,
+      validPageSnapshot,
     );
     const staleObservationId = await observation(
       project,
       staleSnapshot.id,
       capturedAt,
-      `stale:${randomUUID()}`,
+      stalePageSnapshot,
     );
     const foreignObservationId = await observation(
       fixture.foreignProject,
       fixture.foreignProject.sourceSnapshotId,
       "2026-07-22T08:00:00.000Z",
-      `foreign:${randomUUID()}`,
+      foreignPageSnapshot,
     );
 
     const validProfile = ProductProfileDraft.parse({

@@ -12,6 +12,7 @@ import {
   StorageObjectReferencesRepository,
   TelemetryRepository,
   type CollectionRunRow,
+  type ObservationInsert,
   type RunAttempt,
 } from "@sf/db";
 import type { WorkerContext } from "../context.ts";
@@ -90,6 +91,7 @@ function persist(
     readonly collectionRun?: CollectionRunRow;
     readonly outcome?: CollectionOutcome;
     readonly datasetKey?: string;
+    readonly observations?: readonly ObservationInsert[];
   } = {},
 ): Promise<string | null> {
   const selectedRun = overrides.collectionRun ?? collectionRun;
@@ -101,7 +103,7 @@ function persist(
     startedAtMs: Date.now(),
     attempt,
     outcome: overrides.outcome ?? outcome,
-    observations: [],
+    observations: overrides.observations ?? [],
   });
 }
 
@@ -139,6 +141,14 @@ beforeEach(() => {
     SitePagesRepository.prototype,
     "upsertNormalizedUrl",
   ).mockResolvedValue({ id: "site-page-1" } as never);
+  vi.spyOn(
+    SitePagesRepository.prototype,
+    "lockCanonicalSubjects",
+  ).mockResolvedValue();
+  vi.spyOn(
+    SitePagesRepository.prototype,
+    "resolveUnambiguousCanonicalSubjects",
+  ).mockResolvedValue(new Map());
   vi.spyOn(PageSnapshotsRepository.prototype, "create").mockResolvedValue({
     id: "page-snapshot-1",
   } as never);
@@ -310,6 +320,25 @@ describe("persistCollectionResult crawl page materialization", () => {
     };
   }
 
+  function crawlPageObservation(): ObservationInsert {
+    return {
+      metricKey: "crawl.page.v1",
+      subjectType: "url",
+      subjectRef: "https://example.com/pricing",
+      observedAt: capturedAt,
+      availability: "available",
+      valueNumeric: null,
+      valueText: null,
+      valueJson: pageProjection,
+      unit: null,
+      origin: "direct_public",
+      method: "observed",
+      grade: "B",
+      support: "supports",
+      limitation: "fixture crawl",
+    };
+  }
+
   it.each(["available", "partial"] as const)(
     "materializes every %s crawl page against the exact DataSnapshot inside the completion transaction",
     async (availability) => {
@@ -364,6 +393,26 @@ describe("persistCollectionResult crawl page materialization", () => {
       ).toBeLessThan(put.mock.invocationCallOrder[0]!);
     },
   );
+
+  it("binds each Crawl page observation to the SitePage with the exact value_json.fetchUrl", async () => {
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({
+        outcome: crawlOutcome(),
+        observations: [crawlPageObservation()],
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(ObservationsRepository.prototype.insertMany).toHaveBeenCalledWith(
+      { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+      "snapshot-1",
+      "crawl",
+      [expect.objectContaining({ sitePageId: "site-page-1" })],
+    );
+  });
 
   it("rejects a self-consistent foreign-origin crawl before Blob or canonical writes", async () => {
     const foreign = crawlOutcome();
@@ -449,6 +498,83 @@ describe("persistCollectionResult crawl page materialization", () => {
     expect(SitePagesRepository.prototype.upsertNormalizedUrl).not.toHaveBeenCalled();
     expect(PageSnapshotsRepository.prototype.create).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["one slash variant", { id: "site-page-slash" }],
+    ["multiple ambiguous variants", null],
+  ] as const)(
+    "resolves a GSC canonical subject through %s without a PageSnapshot",
+    async (_case, resolvedPage) => {
+      transaction.mockImplementationOnce(
+        async (callback: (tx: object) => Promise<unknown>) => callback({}),
+      );
+      const canonical = "https://example.com/pricing";
+      const gscRun = {
+        ...collectionRun,
+        provider: "gsc",
+        operation: "search_analytics",
+        method_version: "gsc.search_analytics.v1",
+      } as CollectionRunRow;
+      const gscOutcome = {
+        ...outcome,
+        raw: { rows: [] },
+      } satisfies CollectionOutcome;
+      const gscObservation: ObservationInsert = {
+        metricKey: "gsc.page.v1",
+        subjectType: "url",
+        subjectRef: canonical,
+        observedAt: capturedAt,
+        availability: "available",
+        valueNumeric: null,
+        valueText: null,
+        valueJson: { current28d: { clicks: 12 } },
+        unit: null,
+        origin: "first_party",
+        method: "observed",
+        grade: "A",
+        support: "supports",
+        limitation: "GSC fixture.",
+      };
+      vi.mocked(
+        SitePagesRepository.prototype.resolveUnambiguousCanonicalSubjects,
+      ).mockResolvedValueOnce(
+        new Map([[canonical, resolvedPage as never]]),
+      );
+
+      await expect(
+        persist({
+          collectionRun: gscRun,
+          outcome: gscOutcome,
+          datasetKey: "gsc.page_query_daily.v1",
+          observations: [gscObservation],
+        }),
+      ).resolves.toBe("snapshot-1");
+
+      expect(
+        SitePagesRepository.prototype.resolveUnambiguousCanonicalSubjects,
+      ).toHaveBeenCalledWith(
+        { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+        collectionRun.site_id,
+        [
+          {
+            subjectRef: canonical,
+            exactCandidates: [canonical, `${canonical}/`],
+          },
+        ],
+      );
+      expect(ObservationsRepository.prototype.insertMany).toHaveBeenCalledWith(
+        { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+        "snapshot-1",
+        "gsc",
+        [
+          expect.objectContaining({
+            sitePageId: resolvedPage?.id ?? null,
+          }),
+        ],
+      );
+      expect(PageSnapshotsRepository.prototype.create).not.toHaveBeenCalled();
+    },
+  );
 
   it("fails closed before upload when crawl raw does not match the collection outcome", async () => {
     const malformed = crawlOutcome();

@@ -33,6 +33,7 @@ import {
   FindingsRepository,
   ObservationsRepository,
   ProjectsRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   contentHash,
@@ -1485,13 +1486,23 @@ async function seedCrawlSnapshot(
     rowCount: input.pages.length,
     checksum: contentHash({ collectionRunId, capturedAt: input.capturedAt }),
   });
-  const observations: ObservationInsert[] = input.pages.map((page) => {
+  const observations: ObservationInsert[] = [];
+  const sitePages = new SitePagesRepository(handle.db);
+  for (const page of input.pages) {
     const subjectRef = subjectUrlOf(page.url);
     if (!subjectRef) throw new Error("artifact fixture Crawl URL is invalid");
-    return {
+    const sitePage = await sitePages.upsertNormalizedUrl({
+      workspaceId: input.scope.workspaceId,
+      projectId: input.scope.projectId,
+      siteId: input.siteId,
+      normalizedUrl: page.url,
+      templateKey: null,
+    });
+    observations.push({
       metricKey: METRIC_CRAWL_PAGE,
       subjectType: "url",
       subjectRef,
+      sitePageId: sitePage.id,
       observedAt: input.capturedAt,
       availability: "available",
       valueNumeric: null,
@@ -1502,8 +1513,8 @@ async function seedCrawlSnapshot(
       grade: "B",
       support: "supports",
       limitation: "static public crawl fixture",
-    };
-  });
+    });
+  }
   await new ObservationsRepository(handle.db).insertMany(
     input.scope,
     snapshot.id,

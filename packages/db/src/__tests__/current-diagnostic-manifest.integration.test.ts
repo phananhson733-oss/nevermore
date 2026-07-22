@@ -10,6 +10,7 @@ import { ImportPreviewsRepository } from "../repositories/import-previews.ts";
 import { ObservationsRepository } from "../repositories/observations.ts";
 import { ProjectsRepository } from "../repositories/projects.ts";
 import { SitesRepository } from "../repositories/sites.ts";
+import { SitePagesRepository } from "../repositories/site-pages.ts";
 import { SourceConnectionsRepository } from "../repositories/source-connections.ts";
 import { icpProfiles, workspaces } from "../schema.ts";
 
@@ -179,6 +180,17 @@ describeDb("current diagnostic manifest snapshot selection", () => {
 
   async function insertSnapshot(provider: Provider): Promise<FrozenSnapshot> {
     const config = PROVIDER_CONFIG[provider];
+    const crawlFetchUrl = "https://current-manifest.example/";
+    const crawlSitePage =
+      provider === "crawl"
+        ? await new SitePagesRepository(handle.db).upsertNormalizedUrl({
+            workspaceId: fixture.workspaceId,
+            projectId: fixture.projectId,
+            siteId: fixture.siteId,
+            normalizedUrl: crawlFetchUrl,
+            templateKey: null,
+          })
+        : null;
     const run = await new AsyncRunsRepository(handle.db).insertQueued({
       workspaceId: fixture.workspaceId,
       projectId: fixture.projectId,
@@ -248,16 +260,18 @@ describeDb("current diagnostic manifest snapshot selection", () => {
       [
         {
           metricKey: config.metricKey,
+          sitePageId: crawlSitePage?.id ?? null,
           subjectType: provider === "crawl" ? "url" : "keyword_cluster",
           subjectRef:
-            provider === "crawl"
-              ? "https://current-manifest.example/"
-              : "growth-audit",
+            provider === "crawl" ? crawlFetchUrl : "growth-audit",
           observedAt: CAPTURED_AT,
           availability: "available",
           valueNumeric: null,
           valueText: null,
-          valueJson: { provider },
+          valueJson:
+            provider === "crawl"
+              ? { provider, fetchUrl: crawlFetchUrl }
+              : { provider },
           unit: null,
           origin: config.origin,
           grade: config.grade,

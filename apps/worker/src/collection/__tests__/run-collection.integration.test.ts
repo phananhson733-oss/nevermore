@@ -1182,6 +1182,7 @@ describeDb("collection runner (spec §13)", () => {
     const pageObservation = observations.find(
       (row) => row.metric_key === "crawl.page.v1",
     );
+    expect(pageObservation?.site_page_id).toBe(sitePage.id);
     expect(pageObservation?.value_json).toMatchObject({
       internalOutlinks: [
         { targetSubjectUrl: `${seed.siteOrigin}/about` },
@@ -1371,6 +1372,15 @@ describeDb("collection runner (spec §13)", () => {
           (row.value_json as { fetchUrl?: string }).fetchUrl === landing,
       )?.value_json,
     ).toMatchObject({ canonicalTarget: externalCanonical });
+    for (const observation of pageObservations) {
+      const fetchUrl = (observation.value_json as { fetchUrl?: string })
+        .fetchUrl;
+      const page = sitePages.rows.find(
+        (candidate) => candidate.normalized_url === fetchUrl,
+      );
+      expect(page).toBeDefined();
+      expect(observation.site_page_id).toBe(page!.id);
+    }
   });
 
   it("rejects a self-consistent foreign-origin crawl before creating any canonical lineage", async () => {

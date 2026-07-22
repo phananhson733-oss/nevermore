@@ -34,6 +34,7 @@ import {
   ObservationsRepository,
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   contentHash,
@@ -59,6 +60,7 @@ import {
   METRIC_CRAWL_ROBOTS,
   METRIC_CSV_KEYWORD_GAP,
   METRIC_GA4_LANDING,
+  METRIC_GSC_PAGE,
   subjectUrlOf,
   type CrawlLinkProjection,
   type CrawlPageProjection,
@@ -397,20 +399,26 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
   it("fails at the database boundary when an observation drifts from its immutable snapshot provider", async () => {
     const seed = await seedProject(handle);
     const crawlSnapshot = await seedSnapshot(handle, seed, []);
+    const drifted = await attachExactSitePageLineage(
+      handle,
+      seed,
+      [
+        ga4Landing(`${seed.origin}/drifted`, {
+          sessions: 10,
+          engagedSessions: null,
+          engagementRate: null,
+          keyEvents: 1,
+          keyEventUnavailableReason: null,
+        }),
+      ],
+      "ga4",
+    );
     await expect(
       new ObservationsRepository(handle.db).insertMany(
         seed.scope,
         crawlSnapshot.id,
         "ga4",
-        [
-          ga4Landing(`${seed.origin}/drifted`, {
-            sessions: 10,
-            engagedSessions: null,
-            engagementRate: null,
-            keyEvents: 1,
-            keyEventUnavailableReason: null,
-          }),
-        ],
+        drifted,
       ),
     ).rejects.toThrow();
   });
@@ -1037,11 +1045,17 @@ async function seedSnapshot(
     rowCount: observations.length,
     checksum: contentHash({ s: collectionRunId }),
   });
+  const observationsWithLineage = await attachExactSitePageLineage(
+    handle,
+    seed,
+    observations,
+    provider,
+  );
   await new ObservationsRepository(handle.db).insertMany(
     seed.scope,
     snapshot.id,
     provider,
-    observations,
+    observationsWithLineage,
   );
   return {
     id: snapshot.id,
@@ -1055,6 +1069,55 @@ async function seedSnapshot(
     checksum: snapshot.checksum,
     sourceWindow: snapshot.source_window,
   };
+}
+
+async function attachExactSitePageLineage(
+  handle: DbHandle,
+  seed: Seed,
+  observations: readonly ObservationInsert[],
+  provider: SourceProvider,
+): Promise<readonly ObservationInsert[]> {
+  const sitePages = new SitePagesRepository(handle.db);
+  const bound: ObservationInsert[] = [];
+  for (const observation of observations) {
+    let exactUrl: string | null = null;
+    if (
+      provider === "crawl" &&
+      observation.metricKey === METRIC_CRAWL_PAGE &&
+      observation.subjectType === "url"
+    ) {
+      const value = observation.valueJson;
+      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        throw new Error("diagnostic fixture Crawl page projection is invalid");
+      }
+      const fetchUrl = (value as Record<string, unknown>)["fetchUrl"];
+      if (typeof fetchUrl !== "string") {
+        throw new Error("diagnostic fixture Crawl page fetchUrl is missing");
+      }
+      exactUrl = fetchUrl;
+    } else if (
+      (provider === "gsc" || provider === "ga4") &&
+      observation.subjectType === "url" &&
+      observation.metricKey ===
+        (provider === "gsc" ? METRIC_GSC_PAGE : METRIC_GA4_LANDING)
+    ) {
+      exactUrl = observation.subjectRef;
+    }
+
+    if (exactUrl === null) {
+      bound.push(observation);
+      continue;
+    }
+    const sitePage = await sitePages.upsertNormalizedUrl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      normalizedUrl: exactUrl,
+      templateKey: null,
+    });
+    bound.push({ ...observation, sitePageId: sitePage.id });
+  }
+  return bound;
 }
 
 async function seedDiagnosticRun(

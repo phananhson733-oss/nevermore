@@ -33,6 +33,7 @@ import {
   ObservationsRepository,
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   contentHash,
@@ -72,6 +73,7 @@ const logger: Logger = {
 interface Seed {
   readonly scope: ProjectScope;
   readonly siteId: string;
+  readonly siteOrigin: string;
   readonly sourceConnectionId: string;
   readonly actorId: string;
 }
@@ -179,6 +181,84 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
         .map((row) => row.value_numeric)
         .sort(),
     ).toEqual(["1", "2"]);
+  });
+
+  it("persists real GSC URL lineage for zero/one variants and keeps an ambiguous subject null", async () => {
+    const seed = await seedProject(handle);
+    const uniqueSubject = `${seed.siteOrigin}/unique`;
+    const uniqueSlash = `${uniqueSubject}/`;
+    const ambiguousSubject = `${seed.siteOrigin}/ambiguous`;
+    const pages = new SitePagesRepository(handle.db);
+    const uniquePage = await pages.upsertNormalizedUrl({
+      ...seed.scope,
+      siteId: seed.siteId,
+      normalizedUrl: uniqueSlash,
+      templateKey: null,
+    });
+    await pages.upsertNormalizedUrl({
+      ...seed.scope,
+      siteId: seed.siteId,
+      normalizedUrl: ambiguousSubject,
+      templateKey: null,
+    });
+    await pages.upsertNormalizedUrl({
+      ...seed.scope,
+      siteId: seed.siteId,
+      normalizedUrl: `${ambiguousSubject}/`,
+      templateKey: null,
+    });
+
+    const uniqueSnapshot = await persist(
+      handle,
+      ctx,
+      seed,
+      [numericObservationAt(uniqueSubject, 1)],
+      { ...WINDOW, end: "2026-06-29" },
+    );
+    const uniqueObservation = (
+      await new ObservationsRepository(handle.db).listBySnapshotIds(
+        seed.scope,
+        [uniqueSnapshot],
+      )
+    )[0]!;
+    expect(uniqueObservation.site_page_id).toBe(uniquePage.id);
+
+    const createdSubject = `${seed.siteOrigin}/created`;
+    const createdSnapshot = await persist(
+      handle,
+      ctx,
+      seed,
+      [numericObservationAt(createdSubject, 1)],
+      { ...WINDOW, end: "2026-06-30" },
+    );
+    const createdObservation = (
+      await new ObservationsRepository(handle.db).listBySnapshotIds(
+        seed.scope,
+        [createdSnapshot],
+      )
+    )[0]!;
+    const createdPage = await pages.findExactNormalizedUrl(
+      seed.scope,
+      seed.siteId,
+      createdSubject,
+    );
+    expect(createdPage).not.toBeNull();
+    expect(createdObservation.site_page_id).toBe(createdPage!.id);
+
+    const ambiguousSnapshot = await persist(
+      handle,
+      ctx,
+      seed,
+      [numericObservationAt(ambiguousSubject, 1)],
+      { ...WINDOW, end: "2026-07-01" },
+    );
+    const ambiguousObservation = (
+      await new ObservationsRepository(handle.db).listBySnapshotIds(
+        seed.scope,
+        [ambiguousSnapshot],
+      )
+    )[0]!;
+    expect(ambiguousObservation.site_page_id).toBeNull();
   });
 
   it("ignores exact duplicates, different windows, and observations from another project", async () => {
@@ -586,7 +666,9 @@ async function seedProject(handle: DbHandle): Promise<Seed> {
     defaultDeliveryLocale: "en",
     createdBy: actorId,
   });
-  const host = `discrepancy-${randomUUID().slice(0, 8)}.example`;
+  // Observation fixtures use https://fixture.test/... so the real collection
+  // writer can prove URL lineage instead of relying on a foreign-origin mock.
+  const host = "fixture.test";
   const site = await new SitesRepository(handle.db).insertPrimary({
     workspaceId: workspace!.id,
     projectId: project.id,
@@ -614,6 +696,7 @@ async function seedProject(handle: DbHandle): Promise<Seed> {
   return {
     scope: { workspaceId: workspace!.id, projectId: project.id },
     siteId: site.id,
+    siteOrigin: `https://${host}`,
     sourceConnectionId: source.id,
     actorId,
   };
@@ -686,6 +769,20 @@ function numericObservation(
 ): ObservationInsert {
   return {
     ...baseObservation(subjectKey),
+    availability: "available",
+    valueNumeric: value,
+    valueText: null,
+    valueJson: null,
+  };
+}
+
+function numericObservationAt(
+  subjectRef: string,
+  value: number,
+): ObservationInsert {
+  return {
+    ...baseObservation("same-origin"),
+    subjectRef,
     availability: "available",
     valueNumeric: value,
     valueText: null,

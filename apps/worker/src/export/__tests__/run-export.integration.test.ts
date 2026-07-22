@@ -16,6 +16,7 @@ import {
   FindingsRepository,
   ObservationsRepository,
   ProjectsRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   contentHash,
@@ -596,11 +597,21 @@ async function seedExportCrawlSnapshot(
       { page } as unknown as Parameters<typeof contentHash>[0],
     ),
   });
+  const sitePage = await new SitePagesRepository(handle.db).upsertNormalizedUrl(
+    {
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      normalizedUrl: pageUrl,
+      templateKey: null,
+    },
+  );
   const observations: ObservationInsert[] = [
     {
       metricKey: METRIC_CRAWL_PAGE,
       subjectType: "url",
       subjectRef: pageUrl,
+      sitePageId: sitePage.id,
       observedAt: capturedAt,
       availability: "available",
       valueNumeric: null,

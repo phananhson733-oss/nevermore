@@ -66,6 +66,13 @@ const frozenCrawlSeedMigration = readFileSync(
   ),
   "utf8",
 );
+const observationSitePageLineageMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0016_observation_site_page_lineage.sql",
+  ),
+  "utf8",
+);
 const authorityTables = [
   ...authoritySql.matchAll(
     /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?app\.([a-z][a-z0-9_]*)\s*\(/gi,
@@ -253,12 +260,13 @@ test("declares traceable Slice 1 persistence without a second mutable lifecycle"
   assert.match(authoritySql, /CREATE TRIGGER site_pages_set_updated_at/);
 });
 
-test("bounds every cumulative executable migration through Product Profile synthesis and frozen Crawl seeds", () => {
+test("bounds every cumulative executable migration through Observation-to-SitePage lineage", () => {
   for (const migrationVersion of [
     "0012_page_snapshot_lineage_hardening",
     "0013_exact_url_variant_rules",
     "0014_product_profile_synthesis",
     "0015_frozen_crawl_seed",
+    "0016_observation_site_page_lineage",
   ]) {
     assert.equal(
       authoritySql.match(
@@ -295,6 +303,9 @@ test("bounds every cumulative executable migration through Product Profile synth
     "enforce_product_profile_run_provenance",
     "enforce_product_profile_run_frozen_input",
     "enforce_product_profile_async_result_provenance",
+    "lock_site_page_canonical_subjects",
+    "lock_site_page_canonical_subject",
+    "enforce_normalized_observation_site_page_lineage",
   ]) {
     const expectedCount =
       functionName === "enforce_collection_run_provenance" ? 2 : 1;
@@ -326,6 +337,8 @@ test("bounds every cumulative executable migration through Product Profile synth
     "product_profile_runs_provenance_guard",
     "product_profile_runs_frozen_input_guard",
     "async_runs_product_profile_result_guard",
+    "normalized_observations_site_page_guard",
+    "site_pages_canonical_subject_lock",
   ]) {
     const expectedCount =
       triggerName === "collection_runs_provenance_guard" ? 2 : 1;
@@ -338,7 +351,7 @@ test("bounds every cumulative executable migration through Product Profile synth
   }
 });
 
-test("schema smoke exercises Product Profile reservations, provenance, and exact frozen Crawl seeds", () => {
+test("schema smoke exercises Product Profile, frozen Crawl seeds, and exact Observation page lineage", () => {
   assert.equal(authoritySchemaSmoke, implementationSchemaSmoke);
   for (const marker of [
     "expected exactly 35 app tables",
@@ -349,7 +362,14 @@ test("schema smoke exercises Product Profile reservations, provenance, and exact
     "product profile run accepted an unfrozen manifest",
     "Crawl seed accepted a different exact URL",
     "frozen Crawl seed identity was mutated",
-    "0015_frozen_crawl_seed",
+    "a new Crawl page Observation without SitePage lineage was accepted",
+    "Crawl Observation accepted a forged canonical subject_ref",
+    "ambiguous analytics Observation accepted a non-null SitePage",
+    "ambiguous analytics lineage did not remain explicitly null",
+    "Observation lineage fabricated a PageSnapshot",
+    "normalized Observation SitePage FK is missing or not restrictive",
+    "Observation SitePage lineage triggers are incomplete",
+    "0016_observation_site_page_lineage",
   ]) {
     assert.match(authoritySchemaSmoke, new RegExp(marker));
   }
@@ -461,6 +481,7 @@ function fixture(t, migrations) {
     "0013_exact_url_variant_rules.sql": exactVariantRulesMigration,
     "0014_product_profile_synthesis.sql": productProfileSynthesisMigration,
     "0015_frozen_crawl_seed.sql": frozenCrawlSeedMigration,
+    "0016_observation_site_page_lineage.sql": observationSitePageLineageMigration,
     ...migrations,
   };
   for (const [name, sql] of Object.entries(completeMigrations)) {
@@ -691,6 +712,28 @@ test("rejects frozen Crawl seed migration drift", (t) => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /exact cumulative 0015 frozen Crawl seed/i);
+});
+
+test("rejects Observation-to-SitePage lineage migration drift", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = observationSitePageLineageMigration.replace(
+    "normalized_observations_site_page_metric_idx",
+    "normalized_observations_site_page_metric_drift_idx",
+  );
+  assert.notEqual(mutatedMigration, observationSitePageLineageMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0016_observation_site_page_lineage.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /exact cumulative 0016 Observation-to-SitePage lineage/i,
+  );
 });
 
 test("rejects duplicate app migration ordinals", (t) => {

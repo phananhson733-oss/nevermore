@@ -979,6 +979,75 @@ if (fs.existsSync(frozenCrawlSeedMigrationPath)) {
     "frozen Crawl seed migration must bind the exact SitePage identity and URL",
   );
 }
+const observationSitePageLineageMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0016_observation_site_page_lineage.sql",
+);
+check(
+  fs.existsSync(observationSitePageLineageMigrationPath),
+  "Observation-to-SitePage lineage migration is missing",
+);
+if (fs.existsSync(observationSitePageLineageMigrationPath)) {
+  const observationSitePageLineageMigrationSource = fs.readFileSync(
+    observationSitePageLineageMigrationPath,
+    "utf8",
+  );
+  const observationSitePageLineageContract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: observationSitePageLineageMigrationSource,
+    migrationVersion: "0016_observation_site_page_lineage",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0016 Observation-to-SitePage lineage contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(observationSitePageLineageContract);
+  const observationSitePageLineageMigration = stripSqlComments(
+    observationSitePageLineageMigrationSource,
+  );
+  check(
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+site_page_id\s+uuid/i.test(
+      observationSitePageLineageMigration,
+    ) &&
+      /normalized_observations_site_page_fk[\s\S]*?FOREIGN\s+KEY\s*\(site_page_id\)[\s\S]*?REFERENCES\s+app\.site_pages\(id\)\s+ON\s+DELETE\s+RESTRICT/i.test(
+        observationSitePageLineageMigration,
+      ) &&
+      /normalized_observations_site_page_subject_check[\s\S]*?CHECK\s*\(site_page_id\s+IS\s+NULL\s+OR\s+subject_type\s*=\s*'url'\)/i.test(
+        observationSitePageLineageMigration,
+      ),
+    "Observation lineage migration must add the nullable SitePage FK and URL-subject check",
+  );
+  check(
+    /FUNCTION\s+app\.lock_site_page_canonical_subjects\s*\([\s\S]*?cardinality\(subject_refs\)\s+NOT\s+BETWEEN\s+1\s+AND\s+500[\s\S]*?SELECT\s+DISTINCT\s+candidate\.subject_ref[\s\S]*?ORDER\s+BY\s+candidate\.subject_ref[\s\S]*?pg_advisory_xact_lock/i.test(
+      observationSitePageLineageMigration,
+    ) &&
+      /CREATE\s+TRIGGER\s+site_pages_canonical_subject_lock[\s\S]*?EXECUTE\s+FUNCTION\s+app\.lock_site_page_canonical_subject\(\)/i.test(
+        observationSitePageLineageMigration,
+      ),
+    "SitePage lineage migration must acquire bounded canonical-subject locks in deterministic order",
+  );
+  check(
+    /NEW\.value_json\s*->>\s*'fetchUrl'\s+IS\s+DISTINCT\s+FROM\s+page_normalized_url/i.test(
+      observationSitePageLineageMigration,
+    ) &&
+      /NEW\.subject_ref\s+IS\s+DISTINCT\s+FROM\s+canonical_subject/i.test(
+        observationSitePageLineageMigration,
+      ) &&
+      /candidate_count\s*<>\s*1/i.test(observationSitePageLineageMigration) &&
+      /HAVING\s+count\(\*\)\s*=\s*1/i.test(
+        observationSitePageLineageMigration,
+      ),
+    "Observation lineage migration must reject forged Crawl identities and bind analytics only at cardinality one",
+  );
+  check(
+    /normalized_observations_site_page_metric_idx/i.test(
+      observationSitePageLineageMigration,
+    ) &&
+      !/\bpage_snapshot_id\b/i.test(observationSitePageLineageMigration) &&
+      !/INSERT\s+INTO\s+app\.page_snapshots/i.test(
+        observationSitePageLineageMigration,
+      ),
+    "Observation lineage migration must index exact SitePage reads without fabricating PageSnapshots",
+  );
+}
 verifyMigrationOwnedDefinitionUniqueness(cumulativeMigrationContracts);
 const authorityExecutableStatements = executableSqlStatements(files.sql);
 const canonicalSitePageFunctionIndex = authorityExecutableStatements.findIndex(
@@ -1011,6 +1080,8 @@ for (const triggerName of [
   "collection_runs_provenance_guard",
   "data_snapshots_provenance_guard",
   "normalized_observations_provenance_guard",
+  "normalized_observations_site_page_guard",
+  "site_pages_canonical_subject_lock",
   "diagnostic_runs_frozen_input_guard",
   "diagnostic_runs_current_manifest_guard",
   "diagnostic_run_rules_version_guard",
@@ -1033,6 +1104,8 @@ for (const constraintName of [
   "page_snapshots_site_page_data_snapshot_key",
   "evidence_source_lineage_required",
   "diagnostic_runs_rule_set_version_check",
+  "normalized_observations_site_page_fk",
+  "normalized_observations_site_page_subject_check",
 ]) {
   check(
     files.sql.includes(constraintName),
@@ -1044,8 +1117,8 @@ const authorityMigrationVersions = executableSqlStatements(files.sql)
   .filter((version) => version !== undefined);
 check(
   authorityMigrationVersions.length === 1 &&
-    authorityMigrationVersions[0] === "0015_frozen_crawl_seed",
-  "authority SQL must define exactly one final 0015 migration-version projection",
+    authorityMigrationVersions[0] === "0016_observation_site_page_lineage",
+  "authority SQL must define exactly one final 0016 migration-version projection",
 );
 check(
   /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(sqlWithoutComments),

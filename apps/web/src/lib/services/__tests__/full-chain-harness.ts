@@ -33,6 +33,7 @@ import {
   ImportPreviewsRepository,
   ObservationsRepository,
   ProjectsRepository,
+  SitePagesRepository,
   SourceConnectionsRepository,
   contentHash,
   type ObservationInsert,
@@ -452,6 +453,26 @@ async function seedCrawlSnapshot(
     parametersHash: contentHash({ c: collectionRunId }),
   });
   const observations = goldenObservations(origin, capturedAt, fixture);
+  const sitePages = new SitePagesRepository(handle.db);
+  const observationsWithLineage: ObservationInsert[] = [];
+  for (const observation of observations) {
+    if (observation.metricKey !== METRIC_CRAWL_PAGE) {
+      observationsWithLineage.push(observation);
+      continue;
+    }
+    const projection = observation.valueJson as CrawlPageProjection;
+    const sitePage = await sitePages.upsertNormalizedUrl({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      normalizedUrl: projection.fetchUrl,
+      templateKey: null,
+    });
+    observationsWithLineage.push({
+      ...observation,
+      sitePageId: sitePage.id,
+    });
+  }
   const snapshot = await new DataSnapshotsRepository(handle.db).insert({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
@@ -467,16 +488,16 @@ async function seedCrawlSnapshot(
     availability: "available",
     limitation: "static golden crawl fixture",
     rawObjectKey: null,
-    rowCount: observations.length,
+    rowCount: observationsWithLineage.length,
     checksum: contentHash({ s: collectionRunId }),
   });
   await new ObservationsRepository(handle.db).insertMany(
     scope,
     snapshot.id,
     "crawl",
-    observations,
+    observationsWithLineage,
   );
-  const pageCount = observations.filter(
+  const pageCount = observationsWithLineage.filter(
     (observation) => observation.metricKey === METRIC_CRAWL_PAGE,
   ).length;
   await collections.finalize(collectionRunId, {
@@ -639,6 +660,28 @@ async function seedProviderSnapshot(
   capturedAt: string,
   fixture: ProviderFixture,
 ): Promise<string> {
+  const sitePages = new SitePagesRepository(handle.db);
+  const observationsWithLineage: ObservationInsert[] = [];
+  for (const observation of fixture.observations) {
+    if (observation.subjectType !== "url") {
+      observationsWithLineage.push(observation);
+      continue;
+    }
+    const sitePage = await sitePages.findExactNormalizedUrl(
+      scope,
+      siteId,
+      observation.subjectRef,
+    );
+    if (!sitePage) {
+      throw new Error(
+        `fixture analytics observation requires an exact Crawl SitePage: ${observation.subjectRef}`,
+      );
+    }
+    observationsWithLineage.push({
+      ...observation,
+      sitePageId: sitePage.id,
+    });
+  }
   const connection = await new SourceConnectionsRepository(
     handle.db,
   ).insertConnection({
@@ -724,14 +767,14 @@ async function seedProviderSnapshot(
     availability: "available",
     limitation: fixture.limitation,
     rawObjectKey: null,
-    rowCount: fixture.observations.length,
+    rowCount: observationsWithLineage.length,
     checksum: contentHash({ s: collectionRunId }),
   });
   await new ObservationsRepository(handle.db).insertMany(
     scope,
     snapshot.id,
     fixture.provider,
-    fixture.observations,
+    observationsWithLineage,
   );
   await collections.finalize(collectionRunId, {
     rowCount: snapshot.row_count,

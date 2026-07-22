@@ -458,14 +458,23 @@ export async function materializePreparedCrawlPages(
     readonly capturedAt: string;
     readonly pages: readonly PreparedCrawlPage[];
   },
-): Promise<void> {
-  if (input.pages.length === 0) return;
+): Promise<ReadonlyMap<string, string>> {
+  if (input.pages.length === 0) return new Map();
   const scope = {
     workspaceId: input.workspaceId,
     projectId: input.projectId,
   };
   const sitePages = new SitePagesRepository(tx);
   const pageSnapshots = new PageSnapshotsRepository(tx);
+  // Exact `/path` and `/path/` rows share one aggregation subject. Acquire the
+  // subject locks before either variant is inserted so analytics resolution can
+  // never race an uncommitted Crawl variant and choose an arbitrary identity.
+  await sitePages.lockCanonicalSubjects(
+    scope,
+    input.siteId,
+    input.pages.map((page) => page.extract.subjectUrl),
+  );
+  const exactSitePageIds = new Map<string, string>();
   for (const prepared of input.pages) {
     const sitePage = await sitePages.upsertNormalizedUrl({
       ...scope,
@@ -481,5 +490,7 @@ export async function materializePreparedCrawlPages(
       extract: prepared.extract,
       capturedAt: input.capturedAt,
     });
+    exactSitePageIds.set(prepared.normalizedUrl, sitePage.id);
   }
+  return exactSitePageIds;
 }

@@ -454,13 +454,13 @@ VALUES
     '00000000-0000-4000-8000-000000000201',
     '00000000-0000-4000-8000-000000000701',
     'crawl',
-    'crawl.page.v1',
-    'url',
-    'https://example.com/pricing',
+    'crawl.robots.v1',
+    'site',
+    'https://example.com',
     now(),
     'available',
     0,
-    'links',
+    'directives',
     'direct_public',
     'B',
     'context',
@@ -519,9 +519,9 @@ BEGIN
       '00000000-0000-4000-8000-000000000201',
       '00000000-0000-4000-8000-000000000701',
       'crawl',
-      'crawl.page.v1',
-      'url',
-      'https://example.com/',
+      'crawl.robots.v1',
+      'site',
+      'https://example.com',
       now(),
       'unavailable',
       0,
@@ -2195,6 +2195,483 @@ BEGIN
 END;
 $$;
 
+-- Observation-to-SitePage lineage smoke uses only canonical rows and proves
+-- that analytics ambiguity remains explicit rather than being guessed.
+INSERT INTO app.source_connections (
+  id, workspace_id, project_id, site_id, provider, connection_type, state,
+  external_ref, scopes, limitation, connected_at, created_by
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001851',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  'gsc',
+  'oauth',
+  'connected',
+  'sc-domain:example.com',
+  ARRAY['https://www.googleapis.com/auth/webmasters.readonly']::text[],
+  'Schema smoke GSC lineage fixture.',
+  now(),
+  '00000000-0000-4000-8000-000000000101'
+);
+
+INSERT INTO app.async_runs (
+  id, workspace_id, project_id, kind, status, active_key, initiated_by,
+  started_at
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001861',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  'collection',
+  'running',
+  'collect:gsc:site-page-lineage-smoke',
+  '00000000-0000-4000-8000-000000000101',
+  now()
+);
+
+INSERT INTO app.collection_runs (
+  id, workspace_id, project_id, site_id, source_connection_id,
+  provider, operation, method_version, parameters_hash
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001861',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000001851',
+  'gsc',
+  'search_analytics',
+  'gsc.search_analytics.v1',
+  repeat('c', 64)
+);
+
+INSERT INTO app.data_snapshots (
+  id, workspace_id, project_id, site_id, collection_run_id,
+  source_connection_id, provider, dataset_key, schema_version,
+  method_version, captured_at, source_window, availability,
+  limitation, row_count, checksum
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001871',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000001861',
+  '00000000-0000-4000-8000-000000001851',
+  'gsc',
+  'gsc.page_query_daily.v1',
+  'gsc.page.v1',
+  'gsc.search_analytics.v1',
+  now(),
+  '{"start":"2026-05-01","end":"2026-06-25"}'::jsonb,
+  'available',
+  'Schema smoke GSC lineage fixture.',
+  2,
+  repeat('d', 64)
+);
+
+INSERT INTO app.site_pages (
+  id, workspace_id, project_id, site_id, normalized_url, normalized_url_hash
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000001801',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    'https://example.com/lineage-crawl',
+    encode(digest(convert_to('https://example.com/lineage-crawl', 'UTF8'), 'sha256'), 'hex')
+  ),
+  (
+    '00000000-0000-4000-8000-000000001802',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    'https://example.com/lineage-unique/',
+    encode(digest(convert_to('https://example.com/lineage-unique/', 'UTF8'), 'sha256'), 'hex')
+  ),
+  (
+    '00000000-0000-4000-8000-000000001803',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    'https://example.com/lineage-ambiguous',
+    encode(digest(convert_to('https://example.com/lineage-ambiguous', 'UTF8'), 'sha256'), 'hex')
+  ),
+  (
+    '00000000-0000-4000-8000-000000001804',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    'https://example.com/lineage-ambiguous/',
+    encode(digest(convert_to('https://example.com/lineage-ambiguous/', 'UTF8'), 'sha256'), 'hex')
+  ),
+  (
+    '00000000-0000-4000-8000-000000001805',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    'https://example.com/lineage-other',
+    encode(digest(convert_to('https://example.com/lineage-other', 'UTF8'), 'sha256'), 'hex')
+  );
+
+DO $$
+DECLARE
+  crawl_without_lineage_rejected boolean := false;
+  crawl_fetch_mismatch_rejected boolean := false;
+  crawl_subject_splice_rejected boolean := false;
+  non_url_lineage_rejected boolean := false;
+  analytics_ambiguous_lineage_rejected boolean := false;
+  analytics_wrong_variant_rejected boolean := false;
+  page_snapshot_count_before integer;
+  page_snapshot_count_after integer;
+BEGIN
+  SELECT count(*)
+  INTO page_snapshot_count_before
+  FROM app.page_snapshots
+  WHERE site_page_id IN (
+    '00000000-0000-4000-8000-000000001801',
+    '00000000-0000-4000-8000-000000001802',
+    '00000000-0000-4000-8000-000000001803',
+    '00000000-0000-4000-8000-000000001804',
+    '00000000-0000-4000-8000-000000001805'
+  );
+
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, site_page_id,
+    provider, metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  )
+  VALUES (
+    '00000000-0000-4000-8000-000000001901',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000701',
+    '00000000-0000-4000-8000-000000001801',
+    'crawl',
+    'crawl.page.v1',
+    'url',
+    'https://example.com/lineage-crawl',
+    (SELECT captured_at FROM app.data_snapshots
+      WHERE id = '00000000-0000-4000-8000-000000000701'),
+    'available',
+    '{"fetchUrl":"https://example.com/lineage-crawl","status":200}'::jsonb,
+    'direct_public',
+    'B',
+    'supports',
+    'Exact Crawl SitePage lineage.'
+  );
+
+  BEGIN
+    INSERT INTO app.normalized_observations (
+      id, workspace_id, project_id, snapshot_id, site_page_id,
+      provider, metric_key, subject_type, subject_ref, observed_at,
+      availability, value_json, origin, grade, support, limitation
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000001902',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000701',
+      NULL,
+      'crawl',
+      'crawl.page.v1',
+      'url',
+      'https://example.com/lineage-crawl',
+      (SELECT captured_at FROM app.data_snapshots
+        WHERE id = '00000000-0000-4000-8000-000000000701'),
+      'available',
+      '{"fetchUrl":"https://example.com/lineage-crawl","status":200}'::jsonb,
+      'direct_public',
+      'B',
+      'supports',
+      'Missing Crawl SitePage lineage must fail.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    crawl_without_lineage_rejected := true;
+  END;
+  IF NOT crawl_without_lineage_rejected THEN
+    RAISE EXCEPTION 'a new Crawl page Observation without SitePage lineage was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.normalized_observations (
+      id, workspace_id, project_id, snapshot_id, site_page_id,
+      provider, metric_key, subject_type, subject_ref, observed_at,
+      availability, value_json, origin, grade, support, limitation
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000001903',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000701',
+      '00000000-0000-4000-8000-000000001801',
+      'crawl',
+      'crawl.page.v1',
+      'url',
+      'https://example.com/lineage-crawl',
+      (SELECT captured_at FROM app.data_snapshots
+        WHERE id = '00000000-0000-4000-8000-000000000701'),
+      'available',
+      '{"fetchUrl":"https://example.com/lineage-other","status":200}'::jsonb,
+      'direct_public',
+      'B',
+      'supports',
+      'Mismatched Crawl fetch identity must fail.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    crawl_fetch_mismatch_rejected := true;
+  END;
+  IF NOT crawl_fetch_mismatch_rejected THEN
+    RAISE EXCEPTION 'Crawl Observation accepted a mismatched exact fetch SitePage';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.normalized_observations (
+      id, workspace_id, project_id, snapshot_id, site_page_id,
+      provider, metric_key, subject_type, subject_ref, observed_at,
+      availability, value_json, origin, grade, support, limitation
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000001909',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000701',
+      '00000000-0000-4000-8000-000000001801',
+      'crawl',
+      'crawl.page.v1',
+      'url',
+      'https://example.com/forged-canonical-subject',
+      (SELECT captured_at FROM app.data_snapshots
+        WHERE id = '00000000-0000-4000-8000-000000000701'),
+      'available',
+      '{"fetchUrl":"https://example.com/lineage-crawl","status":200}'::jsonb,
+      'direct_public',
+      'B',
+      'supports',
+      'Forged Crawl canonical subject must fail.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    crawl_subject_splice_rejected := true;
+  END;
+  IF NOT crawl_subject_splice_rejected THEN
+    RAISE EXCEPTION 'Crawl Observation accepted a forged canonical subject_ref';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.normalized_observations (
+      id, workspace_id, project_id, snapshot_id, site_page_id,
+      provider, metric_key, subject_type, subject_ref, observed_at,
+      availability, value_json, origin, grade, support, limitation
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000001904',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000701',
+      '00000000-0000-4000-8000-000000001801',
+      'crawl',
+      'crawl.robots.v1',
+      'site',
+      'https://example.com',
+      (SELECT captured_at FROM app.data_snapshots
+        WHERE id = '00000000-0000-4000-8000-000000000701'),
+      'available',
+      '{}'::jsonb,
+      'direct_public',
+      'B',
+      'context',
+      'Non-URL Observation must not reference SitePage.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    non_url_lineage_rejected := true;
+  END;
+  IF NOT non_url_lineage_rejected THEN
+    RAISE EXCEPTION 'a non-URL Observation accepted SitePage lineage';
+  END IF;
+
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, site_page_id,
+    provider, metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  )
+  VALUES (
+    '00000000-0000-4000-8000-000000001905',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000001871',
+    '00000000-0000-4000-8000-000000001802',
+    'gsc',
+    'gsc.page.v1',
+    'url',
+    'https://example.com/lineage-unique',
+    (SELECT captured_at FROM app.data_snapshots
+      WHERE id = '00000000-0000-4000-8000-000000001871'),
+    'available',
+    '{}'::jsonb,
+    'first_party',
+    'A',
+    'supports',
+    'Unique GSC slash variant lineage.'
+  );
+
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, site_page_id,
+    provider, metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  )
+  VALUES (
+    '00000000-0000-4000-8000-000000001910',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000001871',
+    '00000000-0000-4000-8000-000000001802',
+    'gsc',
+    'gsc.page.v1',
+    'url',
+    'https://example.com/lineage-unique/',
+    (SELECT captured_at FROM app.data_snapshots
+      WHERE id = '00000000-0000-4000-8000-000000001871'),
+    'available',
+    '{}'::jsonb,
+    'first_party',
+    'A',
+    'supports',
+    'Slash-form GSC subject resolves through the same canonical candidate set.'
+  );
+
+  BEGIN
+    INSERT INTO app.normalized_observations (
+      id, workspace_id, project_id, snapshot_id, site_page_id,
+      provider, metric_key, subject_type, subject_ref, observed_at,
+      availability, value_json, origin, grade, support, limitation
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000001906',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001871',
+      '00000000-0000-4000-8000-000000001803',
+      'gsc',
+      'gsc.page.v1',
+      'url',
+      'https://example.com/lineage-ambiguous',
+      (SELECT captured_at FROM app.data_snapshots
+        WHERE id = '00000000-0000-4000-8000-000000001871'),
+      'available',
+      '{}'::jsonb,
+      'first_party',
+      'A',
+      'supports',
+      'Ambiguous GSC lineage must not guess.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    analytics_ambiguous_lineage_rejected := true;
+  END;
+  IF NOT analytics_ambiguous_lineage_rejected THEN
+    RAISE EXCEPTION 'ambiguous analytics Observation accepted a non-null SitePage';
+  END IF;
+
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, site_page_id,
+    provider, metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  )
+  VALUES (
+    '00000000-0000-4000-8000-000000001907',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000001871',
+    NULL,
+    'gsc',
+    'gsc.page.v1',
+    'url',
+    'https://example.com/lineage-ambiguous',
+    (SELECT captured_at FROM app.data_snapshots
+      WHERE id = '00000000-0000-4000-8000-000000001871'),
+    'available',
+    '{}'::jsonb,
+    'first_party',
+    'A',
+    'context',
+    'Ambiguous GSC lineage remains explicitly unavailable.'
+  );
+
+  BEGIN
+    INSERT INTO app.normalized_observations (
+      id, workspace_id, project_id, snapshot_id, site_page_id,
+      provider, metric_key, subject_type, subject_ref, observed_at,
+      availability, value_json, origin, grade, support, limitation
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000001908',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001871',
+      '00000000-0000-4000-8000-000000001805',
+      'gsc',
+      'gsc.page.v1',
+      'url',
+      'https://example.com/lineage-unique',
+      (SELECT captured_at FROM app.data_snapshots
+        WHERE id = '00000000-0000-4000-8000-000000001871'),
+      'available',
+      '{}'::jsonb,
+      'first_party',
+      'A',
+      'supports',
+      'Wrong GSC exact variant must fail.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    analytics_wrong_variant_rejected := true;
+  END;
+  IF NOT analytics_wrong_variant_rejected THEN
+    RAISE EXCEPTION 'analytics Observation accepted a non-candidate SitePage';
+  END IF;
+
+  IF (
+    SELECT site_page_id
+    FROM app.normalized_observations
+    WHERE id = '00000000-0000-4000-8000-000000001901'
+  ) IS DISTINCT FROM '00000000-0000-4000-8000-000000001801'::uuid THEN
+    RAISE EXCEPTION 'exact Crawl SitePage lineage was not persisted';
+  END IF;
+
+  IF (
+    SELECT site_page_id
+    FROM app.normalized_observations
+    WHERE id = '00000000-0000-4000-8000-000000001905'
+  ) IS DISTINCT FROM '00000000-0000-4000-8000-000000001802'::uuid THEN
+    RAISE EXCEPTION 'unique analytics SitePage lineage was not persisted';
+  END IF;
+
+  IF (
+    SELECT site_page_id IS NULL
+    FROM app.normalized_observations
+    WHERE id = '00000000-0000-4000-8000-000000001907'
+  ) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'ambiguous analytics lineage did not remain explicitly null';
+  END IF;
+
+  SELECT count(*)
+  INTO page_snapshot_count_after
+  FROM app.page_snapshots
+  WHERE site_page_id IN (
+    '00000000-0000-4000-8000-000000001801',
+    '00000000-0000-4000-8000-000000001802',
+    '00000000-0000-4000-8000-000000001803',
+    '00000000-0000-4000-8000-000000001804',
+    '00000000-0000-4000-8000-000000001805'
+  );
+  IF page_snapshot_count_after IS DISTINCT FROM page_snapshot_count_before THEN
+    RAISE EXCEPTION 'Observation lineage fabricated a PageSnapshot';
+  END IF;
+END;
+$$;
+
+
 DO $$
 DECLARE
   locale_constraint_count integer;
@@ -2328,8 +2805,78 @@ BEGIN
     RAISE EXCEPTION 'diagnostic rule-set compatibility is stale';
   END IF;
   IF (
+    SELECT is_nullable = 'YES' AND data_type = 'uuid'
+    FROM information_schema.columns
+    WHERE table_schema = 'app'
+      AND table_name = 'normalized_observations'
+      AND column_name = 'site_page_id'
+  ) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'normalized Observation SitePage lineage column is missing or non-nullable';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE connamespace = 'app'::regnamespace
+      AND conrelid = 'app.normalized_observations'::regclass
+      AND conname = 'normalized_observations_site_page_fk'
+      AND contype = 'f'
+      AND confrelid = 'app.site_pages'::regclass
+      AND confdeltype = 'r'
+  ) THEN
+    RAISE EXCEPTION 'normalized Observation SitePage FK is missing or not restrictive';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE connamespace = 'app'::regnamespace
+      AND conrelid = 'app.normalized_observations'::regclass
+      AND conname = 'normalized_observations_site_page_subject_check'
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%site_page_id IS NULL%'
+      AND pg_get_constraintdef(oid) LIKE '%subject_type = ''url''%'
+  ) THEN
+    RAISE EXCEPTION 'normalized Observation URL-subject lineage check is missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND tablename = 'normalized_observations'
+      AND indexname = 'normalized_observations_site_page_metric_idx'
+      AND indexdef LIKE '%(project_id, site_page_id, metric_key, observed_at DESC, id DESC)%'
+      AND indexdef LIKE '%WHERE (site_page_id IS NOT NULL)%'
+  ) THEN
+    RAISE EXCEPTION 'normalized Observation SitePage metric index is missing';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger
+    WHERE NOT tgisinternal
+      AND (
+        (tgrelid = 'app.normalized_observations'::regclass
+          AND tgname = 'normalized_observations_site_page_guard')
+        OR
+        (tgrelid = 'app.site_pages'::regclass
+          AND tgname = 'site_pages_canonical_subject_lock')
+      )
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Observation SitePage lineage triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_proc
+    WHERE pronamespace = 'app'::regnamespace
+      AND proname IN (
+        'lock_site_page_canonical_subjects',
+        'lock_site_page_canonical_subject',
+        'enforce_normalized_observation_site_page_lineage'
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Observation SitePage lineage lock/guard functions are incomplete';
+  END IF;
+  IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0015_frozen_crawl_seed' THEN
+  ) IS DISTINCT FROM '0016_observation_site_page_lineage' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;

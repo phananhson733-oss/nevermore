@@ -977,7 +977,7 @@ pg-boss 自己的 schema/table 不计入这 35 张，由固定版本的 pg-boss 
 
 新增的 Slice 1 persistence 遵守以下不变量：`capability_runs` 以 canonical `async_runs.id` 为主键；`audit_runs` 只引用同一个 canonical Diagnostic/Capability run 且不拥有 `status`；`audit_module_results` 是不可变模块投影；`page_snapshots` 必须引用同 tenant/site 的 immutable `data_snapshots`；上述四类记录 append-only。`audit_runs_provenance_guard`、`site_pages_provenance_guard` 与 `page_snapshots_provenance_guard` 在数据库边界拒绝跨 workspace/project/site 拼接。`site_pages` 只维护项目内 URL identity，可更新 template identity，但不得承载不可溯源的指标或抽取内容。
 
-Product Profile persistence 只补充可追溯账本，不建立第二套画像 truth：`icp_profiles` 仍是 append-only canonical profile；`product_profile_runs` 以同一个 `async_runs.id` 冻结 base ICP、Crawl Snapshot、页面清单、selection/synthesis/prompt 版本与输入 hash；`product_profile_invocation_attempts` 在 provider 网络边界之前持久化 reservation，每个 run 最多三次，`reserved`/`outcome_unknown` 均阻止未经裁决的再次调用。所有模型生成语义字段必须带精确 canonical provenance；数据库函数必须拒绝跨 workspace/project/site、非 Crawl、过期 Snapshot、伪造 PageSnapshot/Observation 或不匹配 AnalysisInvocation 的引用。`collection_runs.crawl_seed_site_page_id` 与 `crawl_seed_url` 必须成对冻结并精确匹配同项目 `site_pages` identity，接受后不可改写。
+Product Profile persistence 只补充可追溯账本，不建立第二套画像 truth：`icp_profiles` 仍是 append-only canonical profile；`product_profile_runs` 以同一个 `async_runs.id` 冻结 base ICP、Crawl Snapshot、页面清单、selection/synthesis/prompt 版本与输入 hash；`product_profile_invocation_attempts` 在 provider 网络边界之前持久化 reservation，每个 run 最多三次，`reserved`/`outcome_unknown` 均阻止未经裁决的再次调用。所有模型生成语义字段必须带精确 canonical provenance；数据库函数必须拒绝跨 workspace/project/site、非 Crawl、过期 Snapshot、伪造 PageSnapshot/Observation 或不匹配 AnalysisInvocation 的引用。`collection_runs.crawl_seed_site_page_id` 与 `crawl_seed_url` 必须成对冻结并精确匹配同项目 `site_pages` identity，接受后不可改写。URL Observation 继续以 `subject_ref` 保留 provider 聚合 identity，同时用 nullable `site_page_id` 记录已被 collection commit 证明的精确 SitePage：Crawl page 必须与 `value_json.fetchUrl` 精确绑定；GSC/GA4 仅在 canonical/slash variant 恰有一个候选时绑定，歧义必须保持 unavailable 或被拒绝，且不得为 analytics 伪造 PageSnapshot。
 
 ### 12.2 Repository scope 与 RLS
 
@@ -1175,9 +1175,9 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 ### 17.1 合同与基础
 
-- **AC-001** `pnpm verify:authority` 通过；32 operationId、6 async operation、35 table 与当前应用 ordered migrations 完全一致；0012～0015 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0015_frozen_crawl_seed`。
+- **AC-001** `pnpm verify:authority` 通过；32 operationId、6 async operation、35 table 与当前应用 ordered migrations 完全一致；0012～0016 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0016_observation_site_page_lineage`。
 - **AC-002** Redocly lint 无 error；生成 client/server types 无手工 `any` patch。
-- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；35 表、Product Profile reservation/provenance routines、frozen Crawl seed constraints、索引与 trigger 存在。
+- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；35 表、Product Profile reservation/provenance routines、frozen Crawl seed constraints，以及 Observation→SitePage FK/check/partial index/lineage guards 均存在；Crawl exact fetch、GSC/GA4 唯一 canonical/slash variant、歧义拒绝与无伪造 PageSnapshot 均由 rollback-safe smoke 覆盖。
 - **AC-004** pg-boss schema 由库创建且不进入 Drizzle migration。
 - **AC-005** 未认证 API 401；跨 Workspace/project child ID 404；browser 不能直连 app schema。
 - **AC-006** 创建 Run 与 enqueue 任一侧故障均整体 rollback；不存在 queued-without-job 或 job-without-run。

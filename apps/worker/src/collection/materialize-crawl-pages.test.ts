@@ -651,6 +651,9 @@ describe("parseCrawlPageExtract", () => {
 
 describe("materializePreparedCrawlPages", () => {
   it("upserts stable identities and creates append-only snapshots against the exact DataSnapshot", async () => {
+    const lock = vi
+      .spyOn(SitePagesRepository.prototype, "lockCanonicalSubjects")
+      .mockResolvedValue();
     const upsert = vi
       .spyOn(SitePagesRepository.prototype, "upsertNormalizedUrl")
       .mockResolvedValue({ id: "site-page-1" } as never);
@@ -663,7 +666,7 @@ describe("materializePreparedCrawlPages", () => {
       expectedSite,
     });
 
-    await materializePreparedCrawlPages({} as never, {
+    const lineage = await materializePreparedCrawlPages({} as never, {
       workspaceId: "workspace-1",
       projectId: "project-1",
       siteId: "site-1",
@@ -672,6 +675,11 @@ describe("materializePreparedCrawlPages", () => {
       pages: prepared,
     });
 
+    expect(lock).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", projectId: "project-1" },
+      "site-1",
+      [prepared[0]!.extract.subjectUrl],
+    );
     expect(upsert).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       projectId: "project-1",
@@ -688,5 +696,9 @@ describe("materializePreparedCrawlPages", () => {
       extract: prepared[0]!.extract,
       capturedAt,
     });
+    expect(lineage.get(prepared[0]!.normalizedUrl)).toBe("site-page-1");
+    expect(lock.mock.invocationCallOrder[0]).toBeLessThan(
+      upsert.mock.invocationCallOrder[0]!,
+    );
   });
 });

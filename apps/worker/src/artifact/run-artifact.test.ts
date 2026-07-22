@@ -209,6 +209,7 @@ const crawlObservation = {
   workspace_id: scope.workspaceId,
   project_id: scope.projectId,
   snapshot_id: frozenSnapshotId,
+  site_page_id: null,
   provider: "crawl",
   metric_key: "crawl.page.v1",
   subject_type: "url",

@@ -18,6 +18,8 @@ export interface ObservationRow {
   readonly workspace_id: string;
   readonly project_id: string;
   readonly snapshot_id: string;
+  /** Exact SitePage lineage; null means unavailable or canonically ambiguous. */
+  readonly site_page_id: string | null;
   readonly provider: string;
   readonly metric_key: string;
   readonly subject_type: string;
@@ -37,6 +39,8 @@ export interface ObservationRow {
 
 /** A normalized observation ready for insertion (camelCase; adapter output shape). */
 export interface ObservationInsert {
+  /** Resolved by collection persistence, never inferred by a read projection. */
+  readonly sitePageId?: string | null;
   readonly metricKey: string;
   readonly subjectType: string;
   readonly subjectRef: string;
@@ -97,6 +101,7 @@ export class ObservationsRepository extends Repository {
         workspace_id: scope.workspaceId,
         project_id: scope.projectId,
         snapshot_id: snapshotId,
+        site_page_id: o.sitePageId ?? null,
         provider,
         metric_key: o.metricKey,
         subject_type: o.subjectType,

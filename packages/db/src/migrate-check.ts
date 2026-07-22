@@ -60,6 +60,7 @@ const REQUIRED_INDEXES = [
   "data_snapshots_project_provider_idx",
   "normalized_observations_lookup_idx",
   "normalized_observations_snapshot_idx",
+  "normalized_observations_site_page_metric_idx",
   "provider_discrepancies_pair_idx",
   "analysis_invocations_project_idx",
   "evidence_run_idx",
@@ -100,6 +101,7 @@ const REQUIRED_TRIGGERS = [
   "collection_runs_provenance_guard",
   "data_snapshots_provenance_guard",
   "normalized_observations_provenance_guard",
+  "normalized_observations_site_page_guard",
   "diagnostic_runs_frozen_input_guard",
   "diagnostic_runs_current_manifest_guard",
   "diagnostic_run_rules_version_guard",
@@ -125,6 +127,7 @@ const REQUIRED_TRIGGERS = [
   "artifact_revisions_append_only",
   "telemetry_events_append_only",
   "site_pages_set_updated_at",
+  "site_pages_canonical_subject_lock",
   "audit_runs_provenance_guard",
   "site_pages_provenance_guard",
   "page_snapshots_provenance_guard",
@@ -140,6 +143,7 @@ const REQUIRED_TRIGGERS = [
 ] as const;
 
 const REQUIRED_ROUTINES = [
+  "lock_site_page_canonical_subjects",
   "reserve_product_profile_invocation_attempt",
   "finalize_product_profile_invocation_attempt",
   "mark_product_profile_invocation_outcome_unknown",

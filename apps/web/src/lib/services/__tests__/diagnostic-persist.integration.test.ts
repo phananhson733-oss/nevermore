@@ -23,6 +23,7 @@ import {
   EvidenceRepository,
   FindingsRepository,
   ObservationsRepository,
+  SitePagesRepository,
   SourceConnectionsRepository,
   type ProjectScope,
 } from "@sf/db";
@@ -168,12 +169,22 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
       checksum: contentHash({ s: 1 }).padEnd(64, "0").slice(0, 64),
     });
     const gonePage = page404("https://diag2.example/gone");
+    const sitePage = await new SitePagesRepository(
+      handle.db,
+    ).upsertNormalizedUrl({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      normalizedUrl: gonePage.fetchUrl,
+      templateKey: null,
+    });
     await new ObservationsRepository(handle.db).insertMany(
       scope,
       snapshot.id,
       "crawl",
       [
         {
+          sitePageId: sitePage.id,
           metricKey: METRIC_CRAWL_PAGE,
           subjectType: "url",
           subjectRef: "https://diag2.example/gone",
