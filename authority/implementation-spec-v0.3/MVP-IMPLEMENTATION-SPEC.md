@@ -10,7 +10,7 @@ owner: SignalFrame
 
 # Nevermore Unified Growth Opportunity — v0.3 可执行权威
 
-本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确保留 26 个 operation 与 5 个 async operation，SQL 精确声明 33 张应用表，确定性规则仍为 `mvp.rules.0.2.0` 的 11 条规则。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
+本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确保留 26 个 operation 与 5 个 async operation，SQL 精确声明 33 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
 
 规范词“必须 / MUST”“不得 / MUST NOT”是当前机器面或已审核变更边界的发布条件；“应 / SHOULD”是强建议，偏离时必须在代码评审中记录原因；“可 / MAY”是非阻塞增强。凡是标为“reviewed change sequence”“planned”或“stop gate 后”的内容，均不是当前可调用 API、已存在表或已交付产品事实。
 
@@ -571,7 +571,11 @@ Collection request 组合固定：Crawl=`provider:crawl + operation:site_graph`�
 | 正则/启发式 | `derived` | `inferred` | C | 必须说明语言/覆盖限制 |
 | LLM 输出 | `generated` | `generated` | C | 必须有 `analysisInvocationId`，不得伪装 observed |
 
-`generated` 只保留给模型输出。任何没有 `analysis_invocation_id` 的 Evidence 不得标记 generated。
+Evidence 只允许三种互斥的 provenance shape：
+
+- 来源型 Evidence 必须保留真实 `source_provider`，并精确绑定当前 DiagnosticRun 冻结的 `snapshot_id + collection_run_id + capturedAt`。它可以使用该 provider 的 observed axes，也可以标记为可重放的 `derived/computed/B` 或受限启发式 `derived/inferred/C`；不得用 `system` 隐藏原始来源。
+- 无 source/invocation lineage 的纯确定性事实只能使用 `source_provider=system + derived/computed/B`，且必须精确属于同 workspace/project 的 DiagnosticRun。
+- 模型输出只能使用 `source_provider=llm + generated/generated/C`，必须绑定同一 DiagnosticRun 内成功的 `finding_summary` invocation、非空 output hash 与一致的 prompt version；任何没有 `analysis_invocation_id` 的 Evidence 不得标记 generated。
 
 ## 8. 诊断引擎
 
@@ -582,8 +586,8 @@ Collection request 组合固定：Crawl=`provider:crawl + operation:site_graph`�
 - `projectId`、`siteId`。
 - complete `icpProfileId/version/contentHash`。
 - 每个选中 dataset 的 `snapshotId/schemaVersion/methodVersion/checksum/capturedAt/window/availability`。
-- 每个 provider 最多冻结一个 Snapshot；CSV 与 DataForSEO 共用 canonical keyword-gap dataset slot，一次 DiagnosticRun 最多选择其中一个。客户端选择两者中最新的 usable Snapshot（同一 `capturedAt` 时优先 DataForSEO），服务端对同时提交两者返回 422 `VALIDATION_ERROR`，禁止合并后重复计算 demand 或错标 Evidence provider。
-- `ruleSetVersion=mvp.rules.0.2.0`。
+- 每个 provider 最多冻结一个 Snapshot；CSV 与 DataForSEO 可同时冻结在一次 DiagnosticRun 中，并分别保留各自的 `snapshotId/collectionRunId/provider` lineage。两者共用 canonical keyword-gap dataset coverage slot，但不得在 manifest 层互斥或抹平 provider。规则层按 canonical cluster/keyword identity 消除重复 demand；同一需求同时有两种来源时选择 grade B 的 DataForSEO 作为主要 Evidence，CSV grade C lineage 仍保留用于审计与重放，search volume 不得重复相加。
+- `ruleSetVersion=mvp.rules.0.2.1`。
 - `promptSetVersion=mvp.prompts.0.2.0`（即使本次不调用模型也记录）。
 - `deliveryLocale`。
 
@@ -614,7 +618,7 @@ Worker 必须按下列顺序执行，禁止把模型放到确定性规则之前�
 ```ts
 interface DiagnosticRule {
   id: RuleId;
-  version: 1;
+  version: 1 | 2;
   domain: DiagnosticDomain;
   requiredDatasets: DatasetRequirement[];
   evaluate(ctx: DiagnosticContext): Promise<RuleResult> | RuleResult;
@@ -631,17 +635,17 @@ Rule 必须是可重放纯逻辑：不访问网络、不直接读 DB、不调用
 
 ### 8.4 首版 11 条规则
 
-以下全部是 MVP 必做；阈值属于 `mvp.rules.0.2.0`，改动必须 bump rule set 和相应 rule version。
+以下全部是 MVP 必做；阈值属于 `mvp.rules.0.2.1`，改动必须 bump rule set 和相应 rule version。`0.2.1` 仅升级消费 exact slash/non-slash variants 的三条 technical rules；其余八条规则仍保留 version 1。
 
 | ID | Domain | Required | 精确触发条件 | 典型 Action |
 |---|---|---|---|---|
-| `TECH-HTTP-001@1` | technical_seo | Crawl | 4xx/5xx 按 status 聚合；status 0/空为 unavailable，不触发 | 修复/重定向 technical ticket |
-| `TECH-CANONICAL-002@1` | technical_seo | Crawl | reciprocal canonical、同源 canonical 指向未抓到/非 2xx、sitemap URL canonical 到他页；三类分别聚合 | canonical technical ticket |
-| `TECH-LINKGRAPH-005@1` | technical_seo | Crawl+ICP | commercial/priority 页面 `internalInlinks < 2`；partial crawl 时 inconclusive | internal-link technical ticket |
+| `TECH-HTTP-001@2` | technical_seo | Crawl | 同一 subject 的全部 exact fetch variants 均进入判断；4xx/5xx 按 status 聚合且同 subject/status 去重；status 0/空为 unavailable，不触发 | 修复/重定向 technical ticket |
+| `TECH-CANONICAL-002@2` | technical_seo | Crawl | 全部 exact variants 参与 reciprocal canonical、同源 canonical target health 与 sitemap contradiction 判断；三类分别聚合 | canonical technical ticket |
+| `TECH-LINKGRAPH-005@2` | technical_seo | Crawl+ICP | 合并同一 source subject 的全部 exact variants 内链且每个 source subject 只计一次；commercial/priority 页面 `internalInlinks < 2`；partial crawl 时 inconclusive | internal-link technical ticket |
 | `SEARCH-CTR-004@1` | search_performance | GSC | 28d impressions ≥1000、平均 position 1–10，CTR < 对应 benchmark ×0.5 | metadata rewrite |
 | `SEARCH-DECAY-002@1` | search_performance | GSC | 前 28d clicks ≥100，当前 28d 相比前窗口下降 ≥20% | content brief |
 | `CONTENT-COVERAGE-001@1` | content_intent | Crawl+ICP | 每个 priority offer/use case 均无 2xx indexable 页在 URL/title/H1 命中规范化核心 token | content brief |
-| `CONTENT-GAP-011@1` | content_intent | Crawl+ICP+CSV | cluster ≥10 keyword、sum available volume ≥500，且无相关 2xx indexable page | content brief |
+| `CONTENT-GAP-011@1` | content_intent | Crawl+ICP+Keyword Gap（CSV 或 DataForSEO） | cluster ≥10 keyword、去重后的 sum available volume ≥500，且无相关 2xx indexable page；同一 demand 同时有两种来源时优先 DataForSEO Evidence，不重复累加 | content brief |
 | `CRO-PATH-001@1` | conversion_journey | Crawl+ICP | commercial/priority 页没有直接内部链接到 conversion destination set | CTA/path technical ticket |
 | `CRO-LANDING-003@1` | conversion_journey | GA4 | 28d organic sessions ≥500、site baseline >0、page key-event rate < baseline×0.7 | landing content brief |
 | `GEO-ENTITY-001@1` | geo_ai | Crawl+ICP | 最多 20 个 priority/commercial 页中目标实体类型 0 覆盖，或具名+数字 proof block 覆盖 <50% | entity/proof technical ticket |
@@ -683,7 +687,7 @@ Proof block：同一段落同时含至少一个具名组织/客户线索（capit
 | Crawl | 拒绝创建 DiagnosticRun，422 `CRAWL_SNAPSHOT_REQUIRED` |
 | GSC | 两条 Search rule skipped；其他域继续 |
 | GA4 | CRO-LANDING skipped；CRO-PATH 继续；coverage 显示 qualitative partial |
-| CSV | CONTENT-GAP skipped；CONTENT-COVERAGE 继续 |
+| CSV 与 DataForSEO 均缺失 | CONTENT-GAP skipped；CONTENT-COVERAGE 继续 |
 | 部分 Crawl | HTTP/canonical 可运行并写 limitation；link graph/CRO path 视图完整性不足则 inconclusive |
 | 非英文站点 | 纯结构规则继续；英文正则/启发式规则 inconclusive 并显示限制 |
 
@@ -1184,12 +1188,12 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 - **AC-017** unavailable numeric 永不变 0；DB check 与 serializer contract test 同时覆盖。
 - **AC-018** Source connected 但无 snapshot 时 UI 不显示 available；freshness 到期显示 stale。
 - **AC-019** 同 provider activeKey 并发第二次 409 并返回现有 statusUrl。
-- **AC-020** DataForSEO enabled 路径以真实 Basic Auth fixture 走完 command→queue→provider status validation→immutable snapshot→vendor observation；row cap 为 partial、空结果不造 0/假词。disabled 路径返回稳定 FEATURE_DISABLED 且证明没有网络请求，凭据不进入 Web/client/log/telemetry。
+- **AC-020** DataForSEO enabled 路径以真实 Basic Auth fixture 走完 command→queue→provider status validation→immutable snapshot→vendor observation；row cap 为 partial、空结果不造 0/假词。disabled 路径返回稳定 FEATURE_DISABLED 且证明没有网络请求，凭据不进入 Web/client/log/telemetry。CSV 与 DataForSEO 同时 usable 时，current DiagnosticRun 可各冻结一个 Snapshot，Context/Evidence 分别保留两条 provider lineage；CONTENT-GAP 对重复 demand 只计算一次并优先使用 DataForSEO grade B Evidence。
 
 ### 17.4 诊断与计划
 
 - **AC-021** 11 条规则各有 pass/candidate/missing/edge fixture；输出 snapshot test 固定。
-- **AC-022** B2B 与 B2C fixture 五域各至少一个可执行 rule result；缺 GSC/GA4/CSV 精确降级。
+- **AC-022** B2B 与 B2C fixture 五域各至少一个可执行 rule result；缺 GSC/GA4/全部 Keyword Gap 来源时精确降级，只有 CSV 或只有 DataForSEO 时 CONTENT-GAP 均可执行。
 - **AC-023** Pipeline 顺序 contract test 证明 deterministic rules 早于任何 LLM invocation。
 - **AC-024** 每个 Finding 有 Evidence；Evidence mapping 与 generated invocation DB check 通过。
 - **AC-025** 相同 manifest 重跑产生相同 merge/finding key，不复制 Finding。
@@ -1250,6 +1254,6 @@ Definition of Done：
 5. 没有未完成占位标记代表 MVP 行为；Deferred 能力没有半成品入口。
 6. 旧 SignalFrame 仓未被本任务改动；vendor manifest 可追溯。
 7. Runbook 包含 provider outage、stuck job、OAuth revoke、credential rotation、export regeneration 和 rollback。
-8. 应用 `/api/mvp/health/version`、OpenAPI 与新生成的 export manifest 返回当前 implemented surface `0.3.0 / 2026-07-21`；历史 `0.2.0` export rows 仍可读取，但不得伪装成当前生成结果。rule/prompt set 继续固定为 `mvp.rules.0.2.0` / `mvp.prompts.0.2.0`。
+8. 应用 `/api/mvp/health/version`、OpenAPI 与新生成的 export manifest 返回当前 implemented surface `0.3.0 / 2026-07-21`；历史 `0.2.0` export rows 仍可读取，但不得伪装成当前生成结果。rule/prompt set 固定为 `mvp.rules.0.2.1` / `mvp.prompts.0.2.0`。
 
 达到以上条件才可称为 `implementation complete / pilot-ready`；“页面能打开”或“mock 流程可点”不等于完成。

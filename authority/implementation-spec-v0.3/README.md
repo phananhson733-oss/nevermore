@@ -5,7 +5,7 @@ Authority 版本：**0.3.0**
 合同日期：**2026-07-21**
 当前已实现机器面：**0.3.0**
 
-本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 仍精确保留 26 个 operation 与 5 个 async operation，确定性规则仍为 `mvp.rules.0.2.0` 的 11 条规则；数据库新增 5 张可追溯 audit/page projection 表，总数为 33 张。
+本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 仍精确保留 26 个 operation 与 5 个 async operation，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则；数据库新增 5 张可追溯 audit/page projection 表，总数为 33 张。
 
 这次激活只把已经实现的 versioned Growth Audit / Capability contract、只读 Opportunity projection 与最小 persistence 纳入事实面。它没有提前声明 create-run route、recheck operation、CMS publishing 或 content lifecycle；后续只有在实现、迁移、OpenAPI、锁文件和 verifier 同一提交更新时，才可以继续扩大 normative surface。
 

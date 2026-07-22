@@ -16,6 +16,24 @@ import test from "node:test";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const verifier = join(repositoryRoot, "scripts/verify-spec-lock.mjs");
 
+const REQUIRED_AUTHORITY_FILES = [
+  "README.md",
+  "MVP-IMPLEMENTATION-SPEC.md",
+  "openapi.yaml",
+  "schema.sql",
+  "schemas/service-bundle-manifest.schema.json",
+  "scripts/schema-smoke.sql",
+  "scripts/verify-spec.mjs",
+];
+
+const REQUIRED_IMPLEMENTATION_FILES = [
+  "openapi/mvp.yaml",
+  "packages/contracts/src/generated/openapi.ts",
+  "schemas/service-bundle-manifest.schema.json",
+  "packages/db/migrations/schema-smoke.sql",
+  "scripts/verify-implementation.mjs",
+];
+
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
@@ -70,10 +88,31 @@ function makeFixture(t, options = {}) {
     "packages/db/migrations/schema-smoke.sql",
     "BEGIN; ROLLBACK;\n",
   );
+  const implementationVerifier = write(
+    root,
+    "scripts/verify-implementation.mjs",
+    [
+      'import { writeFileSync } from "node:fs";',
+      'import { join } from "node:path";',
+      'const rootIndex = process.argv.indexOf("--root");',
+      'if (rootIndex === -1 || !process.argv[rootIndex + 1]) process.exit(8);',
+      'writeFileSync(join(process.argv[rootIndex + 1], "implementation-ran"), "yes");',
+      "",
+    ].join("\n"),
+  );
   write(
     root,
-    "packages/engine/src/rules/.gitkeep",
-    "",
+    "packages/engine/src/rules/fixture.ts",
+    [
+      "export const fixtureRule = {",
+      '  id: "TECH-HTTP-001",',
+      "  version: 2,",
+      '  domain: "technical_seo",',
+      "  requiredDatasets: [],",
+      '  evaluate() { return { status: "pass" }; },',
+      "} satisfies DiagnosticRule;",
+      "",
+    ].join("\n"),
   );
 
   const migrations = options.migrations ?? {
@@ -87,6 +126,16 @@ function makeFixture(t, options = {}) {
   }
 
   const authorityReadme = write(root, "authority/README.md", "fixture authority\n");
+  const authoritySpec = write(
+    root,
+    "authority/MVP-IMPLEMENTATION-SPEC.md",
+    "# Fixture implementation specification\n",
+  );
+  const authoritySchema = write(
+    root,
+    "authority/schema.sql",
+    "CREATE SCHEMA IF NOT EXISTS app;\n",
+  );
   const authorityVerifier = write(
     root,
     "authority/scripts/verify-spec.mjs",
@@ -125,7 +174,9 @@ function makeFixture(t, options = {}) {
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
     authorityFiles: {
       "README.md": sha256(authorityReadme),
+      "MVP-IMPLEMENTATION-SPEC.md": sha256(authoritySpec),
       "openapi.yaml": sha256(authorityOpenApi),
+      "schema.sql": sha256(authoritySchema),
       "schemas/service-bundle-manifest.schema.json": sha256(
         authorityBundleSchema,
       ),
@@ -141,16 +192,28 @@ function makeFixture(t, options = {}) {
       "packages/db/migrations/schema-smoke.sql": sha256(
         implementationSchemaSmoke,
       ),
+      "scripts/verify-implementation.mjs": sha256(implementationVerifier),
     },
     apiOperations: ["listProjects"],
     asyncOperations: [],
     tables,
-    rules: [],
+    rules: ["TECH-HTTP-001"],
+    ruleVersions: {
+      "TECH-HTTP-001": 2,
+    },
   };
   const lockPath = options.lockPath ?? "scripts/custom-lock.json";
   write(root, lockPath, `${JSON.stringify(lock, null, 2)}\n`);
 
   return { root, lock, lockPath };
+}
+
+function writeLock(fixture, lock = fixture.lock) {
+  write(
+    fixture.root,
+    fixture.lockPath,
+    `${JSON.stringify(lock, null, 2)}\n`,
+  );
 }
 
 function runVerifier(fixture, extraArguments = []) {
@@ -168,6 +231,10 @@ test("accepts a caller-supplied lock and scans the complete ordered migration se
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /2 tables/);
   assert.equal(readFileSync(join(fixture.root, "authority-ran"), "utf8"), "yes");
+  assert.equal(
+    readFileSync(join(fixture.root, "implementation-ran"), "utf8"),
+    "yes",
+  );
 });
 
 test("uses scripts/spec-v0.3-lock.json as the activated default lock path", (t) => {
@@ -289,6 +356,85 @@ test("rejects an authority file whose content no longer matches the lock", (t) =
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /authority file drifted/i);
+});
+
+for (const relativePath of REQUIRED_AUTHORITY_FILES) {
+  test(`rejects a lock missing the required authority hash for ${relativePath}`, (t) => {
+    const fixture = makeFixture(t);
+    delete fixture.lock.authorityFiles[relativePath];
+    writeLock(fixture);
+
+    const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, new RegExp(`authorityFiles is missing ${relativePath.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}`, "i"));
+  });
+}
+
+for (const relativePath of REQUIRED_IMPLEMENTATION_FILES) {
+  test(`rejects a lock missing the required implementation hash for ${relativePath}`, (t) => {
+    const fixture = makeFixture(t);
+    delete fixture.lock.implementationFiles[relativePath];
+    writeLock(fixture);
+
+    const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, new RegExp(`implementationFiles is missing ${relativePath.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}`, "i"));
+  });
+}
+
+test("rejects a diagnostic rule version that drifts from the frozen lock", (t) => {
+  const fixture = makeFixture(t);
+  const rulePath = join(
+    fixture.root,
+    "packages/engine/src/rules/fixture.ts",
+  );
+  write(
+    fixture.root,
+    "packages/engine/src/rules/fixture.ts",
+    readFileSync(rulePath, "utf8").replace("version: 2", "version: 999"),
+  );
+
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /TECH-HTTP-001.*version.*2/is);
+});
+
+test("rejects a tampered implementation verifier before executing it", (t) => {
+  const fixture = makeFixture(t);
+  write(
+    fixture.root,
+    "scripts/verify-implementation.mjs",
+    'throw new Error("tampered verifier");\n',
+  );
+
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /implementation file drifted.*scripts\/verify-implementation\.mjs/is,
+  );
+});
+
+test("rejects a hash-pinned implementation verifier that throws", (t) => {
+  const fixture = makeFixture(t);
+  const verifierPath = write(
+    fixture.root,
+    "scripts/verify-implementation.mjs",
+    'throw new Error("fixture implementation verifier exploded");\n',
+  );
+  fixture.lock.implementationFiles["scripts/verify-implementation.mjs"] =
+    sha256(verifierPath);
+  writeLock(fixture);
+
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /fixture implementation verifier exploded/i);
+  assert.match(result.stderr, /implementation verifier failed/i);
 });
 
 test("rejects non-operation implementation OpenAPI drift", (t) => {

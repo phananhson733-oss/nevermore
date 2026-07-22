@@ -1,5 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { diagnosticRunRules, diagnosticRuns } from "../schema.ts";
+import { contentHash, type CanonicalValue } from "../hash.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
 /**
@@ -51,6 +52,12 @@ export class DiagnosticRunsRepository extends Repository {
     inputManifest: Record<string, unknown>;
     inputHash: string;
   }): Promise<DiagnosticRunRow> {
+    const derivedInputHash = contentHash(
+      values.inputManifest as CanonicalValue,
+    );
+    if (derivedInputHash !== values.inputHash) {
+      throw new Error("diagnostic input hash does not match its frozen manifest");
+    }
     const [row] = await this.exec
       .insert(diagnosticRuns)
       .values({
@@ -90,7 +97,7 @@ export class DiagnosticRunsRepository extends Repository {
       .select()
       .from(diagnosticRuns)
       .where(projectPredicate(diagnosticRuns, scope))
-      .orderBy(desc(diagnosticRuns.created_at))
+      .orderBy(desc(diagnosticRuns.created_at), asc(diagnosticRuns.id))
       .limit(1);
     return (rows[0] as DiagnosticRunRow | undefined) ?? null;
   }

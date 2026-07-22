@@ -168,7 +168,7 @@ describeDb("finding_review_events is append-only (AC-027, spec §5.2)", () => {
       promptSetVersion: "mvp.prompts.0.2.0",
       outputLocale: "en",
       inputManifest: { snapshots: [] },
-      inputHash: contentHash({ run: run!.id }),
+      inputHash: contentHash({ snapshots: [] }),
     });
 
     const finding = await new FindingsRepository(handle.db).insert({

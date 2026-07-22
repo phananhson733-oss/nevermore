@@ -16,19 +16,21 @@ function reportEvidenceFixture(
   claim: string,
   subjectValue: string,
 ): ReportEvidenceFixture {
+  const uuidSuffix = String(index).padStart(12, "0");
   return {
-    id: `evidence-${index}`,
+    id: `30000000-0000-4000-8000-${uuidSuffix}`,
     sourceProvider: "crawl",
     origin: "direct_public",
     method: "observed",
-    grade: "A",
+    grade: "B",
     availability: "available",
     support: "supports",
     claim,
     subjectRefs: [{ type: "url", value: subjectValue }],
     observedAt: NOW,
     limitation: "This observation is bounded to the captured source window.",
-    snapshotId: null,
+    snapshotId: `10000000-0000-4000-8000-${uuidSuffix}`,
+    collectionRunId: `20000000-0000-4000-8000-${uuidSuffix}`,
     analysisInvocationId: null,
   };
 }

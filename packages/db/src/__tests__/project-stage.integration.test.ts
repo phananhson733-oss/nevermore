@@ -11,6 +11,7 @@ import { DataSnapshotsRepository } from "../repositories/data-snapshots.ts";
 import { ExportBundlesRepository } from "../repositories/export-bundles.ts";
 import { ProjectsRepository } from "../repositories/projects.ts";
 import { SitesRepository } from "../repositories/sites.ts";
+import { SourceConnectionsRepository } from "../repositories/source-connections.ts";
 
 const DATABASE_URL = process.env["DATABASE_URL"];
 const describeDb = DATABASE_URL ? describe : describe.skip;
@@ -74,6 +75,14 @@ describeDb("project lifecycle stage", () => {
       marketCodes: ["US"],
       languageCodes: ["en"],
     });
+    const crawlSource = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: scope.workspaceId,
+      projectId: project.id,
+      siteId: site.id,
+      createdBy: actor,
+    });
     const run = await new AsyncRunsRepository(handle.db).insertQueued({
       workspaceId: scope.workspaceId,
       projectId: project.id,
@@ -87,10 +96,10 @@ describeDb("project lifecycle stage", () => {
       workspaceId: scope.workspaceId,
       projectId: project.id,
       siteId: site.id,
-      sourceConnectionId: null,
+      sourceConnectionId: crawlSource.id,
       provider: "crawl",
       operation: "site_graph",
-      methodVersion: "crawl.site_graph.v1",
+      methodVersion: "crawl.site_graph.v2",
       parametersHash: "2".repeat(64),
     });
     await new DataSnapshotsRepository(handle.db).insert({
@@ -98,11 +107,11 @@ describeDb("project lifecycle stage", () => {
       projectId: project.id,
       siteId: site.id,
       collectionRunId: run.id,
-      sourceConnectionId: null,
+      sourceConnectionId: crawlSource.id,
       provider: "crawl",
       datasetKey: "crawl.site_graph.v1",
       schemaVersion: "0.2.0",
-      methodVersion: "crawl.site_graph.v1",
+      methodVersion: "crawl.site_graph.v2",
       capturedAt: new Date().toISOString(),
       sourceWindow: { start: null, end: null },
       availability: "partial",

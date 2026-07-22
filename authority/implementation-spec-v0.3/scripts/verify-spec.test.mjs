@@ -25,6 +25,33 @@ const authorityOpenApi = readFileSync(
   "utf8",
 );
 const authoritySql = readFileSync(join(authorityRoot, "schema.sql"), "utf8");
+const authoritySchemaSmoke = readFileSync(
+  join(authorityRoot, "scripts/schema-smoke.sql"),
+  "utf8",
+);
+const authorityBundleSchema = readFileSync(
+  join(authorityRoot, "schemas/service-bundle-manifest.schema.json"),
+  "utf8",
+);
+const repositoryRoot = resolve(authorityRoot, "../..");
+const implementationSchemaSmoke = readFileSync(
+  join(repositoryRoot, "packages/db/migrations/schema-smoke.sql"),
+  "utf8",
+);
+const pageSnapshotLineageMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0012_page_snapshot_lineage_hardening.sql",
+  ),
+  "utf8",
+);
+const exactVariantRulesMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0013_exact_url_variant_rules.sql",
+  ),
+  "utf8",
+);
 const authorityTables = [
   ...authoritySql.matchAll(
     /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?app\.([a-z][a-z0-9_]*)\s*\(/gi,
@@ -46,6 +73,63 @@ test("declares the activated v0.3 machine surface and exactly 33 application tab
     "page_snapshots",
   ]) {
     assert.ok(authorityTables.includes(table), `${table} is missing`);
+  }
+});
+
+test("allows concurrent CSV and DataForSEO lineage without double-counting demand", () => {
+  assert.match(authoritySpec, /CSV 与 DataForSEO 可同时冻结/);
+  assert.match(authoritySpec, /search volume 不得重复相加/);
+  assert.doesNotMatch(authoritySpec, /一次 DiagnosticRun 最多选择其中一个/);
+  assert.match(
+    authoritySpec,
+    /同一 demand 同时有两种来源时优先 DataForSEO Evidence，不重复累加/,
+  );
+});
+
+test("freezes the three mutually exclusive Evidence provenance shapes", () => {
+  assert.match(
+    authoritySpec,
+    /source_provider=system \+ derived\/computed\/B/,
+  );
+  assert.match(
+    authoritySpec,
+    /source_provider=llm \+ generated\/generated\/C/,
+  );
+  assert.match(
+    authoritySpec,
+    /snapshot_id \+ collection_run_id \+ capturedAt/,
+  );
+  assert.match(authoritySql, /signalframe\.evidence-provenance\.v2/);
+  assert.match(
+    authoritySql,
+    /system evidence must be deterministic derived\/computed\/B evidence/,
+  );
+  assert.match(
+    authoritySql,
+    /invocation-backed evidence must be generated LLM grade-C evidence/,
+  );
+});
+
+test("exposes collection-run lineage in the public Evidence contract", () => {
+  const start = authorityOpenApi.indexOf("    Evidence:");
+  const end = authorityOpenApi.indexOf("    SubjectRef:", start);
+  assert.ok(start >= 0 && end > start, "Evidence schema is missing");
+  const evidenceSchema = authorityOpenApi.slice(start, end);
+
+  assert.match(
+    evidenceSchema,
+    /required: \[[^\]]*snapshotId[^\]]*collectionRunId[^\]]*analysisInvocationId[^\]]*\]/,
+  );
+  assert.match(
+    evidenceSchema,
+    /collectionRunId: \{ type: \[string, 'null'\], format: uuid \}/,
+  );
+  for (const shape of [
+    "Source-backed Evidence",
+    "System-derived Evidence",
+    "LLM-generated Evidence",
+  ]) {
+    assert.match(evidenceSchema, new RegExp(`title: ${shape}`));
   }
 });
 
@@ -81,6 +165,30 @@ test("declares traceable Slice 1 persistence without a second mutable lifecycle"
     pageSnapshot,
     /data_snapshot_id uuid NOT NULL REFERENCES app\.data_snapshots\(id\) ON DELETE RESTRICT/,
   );
+  assert.match(
+    pageSnapshot,
+    /CONSTRAINT page_snapshots_canonical_extract_required\s+CHECK \(canonical_extract IS NOT NULL\)/,
+  );
+  assert.match(
+    pageSnapshot,
+    /CONSTRAINT page_snapshots_site_page_data_snapshot_key\s+UNIQUE \(site_page_id, data_snapshot_id\)/,
+  );
+  assert.match(
+    authoritySql,
+    /CREATE UNIQUE INDEX IF NOT EXISTS page_snapshots_verified_source_identity_idx[\s\S]*?WHERE canonical_extract IS NOT NULL/,
+  );
+  assert.match(
+    authoritySql,
+    /NEW\.captured_at IS DISTINCT FROM source_captured_at/,
+  );
+  assert.match(
+    authoritySql,
+    /canonical_extract_json IS DISTINCT FROM NEW\.extract/,
+  );
+  assert.match(
+    authoritySql,
+    /digest\(convert_to\(NEW\.canonical_extract, 'UTF8'\), 'sha256'\)/,
+  );
 
   for (const trigger of [
     "audit_runs_provenance_guard",
@@ -94,6 +202,102 @@ test("declares traceable Slice 1 persistence without a second mutable lifecycle"
     assert.match(authoritySql, new RegExp(`CREATE TRIGGER ${trigger}`));
   }
   assert.match(authoritySql, /CREATE TRIGGER site_pages_set_updated_at/);
+});
+
+test("bounds exact cumulative migrations and defines every owned object once", () => {
+  for (const migrationVersion of [
+    "0012_page_snapshot_lineage_hardening",
+    "0013_exact_url_variant_rules",
+  ]) {
+    assert.equal(
+      authoritySql.match(
+        new RegExp(`-- BEGIN EXACT EXECUTABLE MIGRATION ${migrationVersion}`, "g"),
+      )?.length,
+      1,
+    );
+    assert.equal(
+      authoritySql.match(
+        new RegExp(`-- END EXACT EXECUTABLE MIGRATION ${migrationVersion}`, "g"),
+      )?.length,
+      1,
+    );
+  }
+
+  for (const functionName of [
+    "enforce_site_page_provenance",
+    "enforce_collection_run_provenance",
+    "enforce_data_snapshot_provenance",
+    "enforce_normalized_observation_provenance",
+    "enforce_page_snapshot_provenance",
+    "enforce_diagnostic_run_frozen_input",
+    "enforce_evidence_provenance",
+    "enforce_current_diagnostic_manifest",
+    "expected_diagnostic_rule_version",
+    "enforce_diagnostic_rule_version_lineage",
+    "enforce_finding_rule_version_lineage",
+  ]) {
+    assert.equal(
+      authoritySql.match(
+        new RegExp(
+          `CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+app\\.${functionName}\\s*\\(`,
+          "gi",
+        ),
+      )?.length,
+      1,
+      `${functionName} must have one canonical definition`,
+    );
+  }
+
+  for (const triggerName of [
+    "site_pages_provenance_guard",
+    "collection_runs_provenance_guard",
+    "data_snapshots_provenance_guard",
+    "normalized_observations_provenance_guard",
+    "page_snapshots_provenance_guard",
+    "diagnostic_runs_frozen_input_guard",
+    "evidence_provenance_guard",
+    "diagnostic_runs_current_manifest_guard",
+    "diagnostic_run_rules_version_guard",
+    "findings_rule_version_guard",
+  ]) {
+    assert.equal(
+      authoritySql.match(new RegExp(`CREATE\\s+TRIGGER\\s+${triggerName}\\b`, "gi"))
+        ?.length,
+      1,
+      `${triggerName} must have one canonical definition`,
+    );
+  }
+});
+
+test("schema smoke mutates every page-snapshot lineage axis and expects rejection", () => {
+  assert.equal(authoritySchemaSmoke, implementationSchemaSmoke);
+  for (const marker of [
+    "a second extract for one page/source snapshot was accepted",
+    "a page snapshot with a different source capture time was accepted",
+    "a page snapshot hash unrelated to its retained bytes was accepted",
+    "retained page bytes unrelated to the page extract were accepted",
+    "a new page snapshot without retained extract bytes was accepted",
+    "a page snapshot with an unknown extract schema was accepted",
+    "a page snapshot for another fetch URL was accepted",
+  ]) {
+    assert.match(authoritySchemaSmoke, new RegExp(marker));
+  }
+  assert.match(
+    authoritySchemaSmoke,
+    /page_snapshots_canonical_extract_required[\s\S]*?convalidated/,
+  );
+  assert.match(
+    authoritySchemaSmoke,
+    /page_snapshots_site_page_data_snapshot_key/,
+  );
+  assert.match(
+    authoritySchemaSmoke,
+    /'snapshots',[\s\S]*?'provider', 'csv'[\s\S]*?'provider', 'dataforseo'/,
+  );
+  assert.match(
+    authoritySchemaSmoke,
+    /current diagnostic accepted duplicate provider snapshots/,
+  );
 });
 
 test("keeps historical 0.2 exports readable while defaulting new exports to 0.3", () => {
@@ -156,14 +360,57 @@ function fixture(t, migrations) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const migrationDirectory = join(root, "packages/db/migrations");
   mkdirSync(migrationDirectory, { recursive: true });
-  for (const [name, sql] of Object.entries(migrations)) {
+  writeFileSync(
+    join(migrationDirectory, "schema-smoke.sql"),
+    implementationSchemaSmoke,
+  );
+  const completeMigrations = {
+    "0012_page_snapshot_lineage_hardening.sql": pageSnapshotLineageMigration,
+    "0013_exact_url_variant_rules.sql": exactVariantRulesMigration,
+    ...migrations,
+  };
+  for (const [name, sql] of Object.entries(completeMigrations)) {
     writeFileSync(join(migrationDirectory, name), `${sql}\n`);
   }
   return root;
 }
 
-function run(appRoot) {
-  return spawnSync(process.execPath, [verifier, "--app-root", appRoot], {
+function writeAuthorityFixture(appRoot, schemaSql) {
+  const fixtureAuthorityRoot = join(
+    appRoot,
+    "authority/implementation-spec-v0.3",
+  );
+  mkdirSync(join(fixtureAuthorityRoot, "schemas"), { recursive: true });
+  mkdirSync(join(fixtureAuthorityRoot, "scripts"), { recursive: true });
+  mkdirSync(join(appRoot, "docs/plans"), { recursive: true });
+
+  for (const [name, contents] of Object.entries({
+    "README.md": authorityReadme,
+    "MVP-IMPLEMENTATION-SPEC.md": authoritySpec,
+    "openapi.yaml": authorityOpenApi,
+    "schema.sql": schemaSql,
+    "schemas/service-bundle-manifest.schema.json": authorityBundleSchema,
+    "scripts/schema-smoke.sql": authoritySchemaSmoke,
+    "scripts/verify-spec.mjs": "// verifier fixture target\n",
+  })) {
+    writeFileSync(join(fixtureAuthorityRoot, name), contents);
+  }
+  for (const planName of [
+    "2026-07-21-unified-growth-opportunity-prd.md",
+    "2026-07-21-unified-growth-opportunity-design.md",
+    "2026-07-21-unified-growth-opportunity-implementation.md",
+  ]) {
+    writeFileSync(join(appRoot, "docs/plans", planName), "fixture\n");
+  }
+  return fixtureAuthorityRoot;
+}
+
+function run(appRoot, fixtureAuthorityRoot) {
+  const arguments_ = [verifier, "--app-root", appRoot];
+  if (fixtureAuthorityRoot) {
+    arguments_.push("--authority-root", fixtureAuthorityRoot);
+  }
+  return spawnSync(process.execPath, arguments_, {
     encoding: "utf8",
   });
 }
@@ -184,6 +431,83 @@ test("compares the authority table contract with every ordered app migration", (
   );
 });
 
+test("rejects executable migration SQL hidden before the first blank line", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = pageSnapshotLineageMigration.replace(
+    "BEGIN;\n\n",
+    "BEGIN;\nSELECT 1;\n\n",
+  );
+  assert.notEqual(mutatedMigration, pageSnapshotLineageMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0012_page_snapshot_lineage_hardening.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exact cumulative 0012 lineage contract/i);
+});
+
+test("rejects executable migration SQL after the version projection", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = exactVariantRulesMigration.replace(
+    "\nCOMMIT;",
+    "\nSELECT 1;\n\nCOMMIT;",
+  );
+  assert.notEqual(mutatedMigration, exactVariantRulesMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0013_exact_url_variant_rules.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /schema_migration_version projection immediately before COMMIT/i,
+  );
+});
+
+test("rejects a later authority override of an exactly embedded function", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+  });
+  const epilogueMarker =
+    "-- The browser must not access canonical tables directly through the Supabase Data API.";
+  const mutatedAuthoritySql = authoritySql.replace(
+    epilogueMarker,
+    `CREATE OR REPLACE FUNCTION app.enforce_page_snapshot_provenance()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $override$
+BEGIN
+  RETURN NEW;
+END;
+$override$;
+
+${epilogueMarker}`,
+  );
+  assert.notEqual(mutatedAuthoritySql, authoritySql);
+  const fixtureAuthorityRoot = writeAuthorityFixture(
+    appRoot,
+    mutatedAuthoritySql,
+  );
+
+  const result = run(appRoot, fixtureAuthorityRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /migration-owned function app\.enforce_page_snapshot_provenance exactly once \(found 2\)/i,
+  );
+});
+
 test("rejects an app migration set that omits an authority table", (t) => {
   const appRoot = fixture(t, {
     "0001_init.sql": tableSql(authorityTables.slice(0, -1)),
@@ -193,6 +517,48 @@ test("rejects an app migration set that omits an authority table", (t) => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /application migration tables/i);
+});
+
+test("rejects a page-snapshot migration that omits the canonical hash guard", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0012_page_snapshot_lineage_hardening.sql": `
+      ALTER TABLE app.page_snapshots ADD COLUMN IF NOT EXISTS canonical_extract text;
+      ALTER TABLE app.page_snapshots ADD CONSTRAINT page_snapshots_canonical_extract_required
+        CHECK (canonical_extract IS NOT NULL) NOT VALID;
+      CREATE UNIQUE INDEX page_snapshots_verified_source_identity_idx
+        ON app.page_snapshots(site_page_id, data_snapshot_id)
+        WHERE canonical_extract IS NOT NULL;
+      ALTER TABLE app.page_snapshots
+        ADD CONSTRAINT page_snapshots_site_page_data_snapshot_key
+        UNIQUE (site_page_id, data_snapshot_id);
+    `,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /full PageSnapshot lineage guard/i);
+});
+
+test("rejects an exact-variant migration that omits diagnostic rule lineage", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0013_exact_url_variant_rules.sql": `
+      ALTER TABLE app.diagnostic_runs
+        ADD CONSTRAINT diagnostic_runs_rule_set_version_check
+        CHECK (rule_set_version IN ('mvp.rules.0.2.0', 'mvp.rules.0.2.1'));
+    `,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exact cumulative 0013 diagnostic and rule-lineage contract/i);
 });
 
 test("rejects duplicate app migration ordinals", (t) => {

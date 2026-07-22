@@ -19,6 +19,8 @@ import {
   contentHash,
   DataSnapshotsRepository,
   IdempotencyRepository,
+  SourceConnectionsRepository,
+  type DataSnapshotRow,
   type ProjectScope,
 } from "@sf/db";
 import {
@@ -26,9 +28,12 @@ import {
   clientProjects,
   diagnosticRuns,
   icpProfiles,
+  sites,
   workspaces,
 } from "@sf/db/schema";
+import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
 import { ProblemError } from "@sf/observability";
+import { CRAWL_METHOD_VERSION } from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDiagnosticRun } from "@/lib/services/diagnostics";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
@@ -50,8 +55,18 @@ async function createDiagnosticFixture(
   handle: DbHandle,
   workspaceId: string,
   suffix: string,
-  opts: { crawlAvailability?: "available" | "partial" | "unavailable" } = {},
-): Promise<{ scope: ProjectScope; snapshotId: string; confirmedProfileId: string }> {
+  opts: {
+    crawlAvailability?: "available" | "partial" | "unavailable";
+    crawlMethodVersion?: string;
+    useSecondarySite?: boolean;
+  } = {},
+): Promise<{
+  scope: ProjectScope;
+  siteId: string;
+  snapshot: DataSnapshotRow;
+  confirmedProfileId: string;
+  confirmedProfileHash: string;
+}> {
   const created = await createProject(
     { workspaceId },
     actor,
@@ -67,6 +82,38 @@ async function createDiagnosticFixture(
     safeGuard,
   );
   const scope = { workspaceId, projectId: created.project.id };
+  let siteId = created.project.site.id;
+  const sources = new SourceConnectionsRepository(handle.db);
+  let crawlSource = await sources.findConnectedByProvider(scope, "crawl");
+  if (!crawlSource) throw new Error("fixture default Crawl source missing");
+  if (opts.useSecondarySite) {
+    const [secondarySite] = await handle.db
+      .insert(sites)
+      .values({
+        workspace_id: workspaceId,
+        project_id: scope.projectId,
+        origin: `https://secondary-${suffix}.example`,
+        host: `secondary-${suffix}.example`,
+        market_codes: ["US"],
+        language_codes: ["en"],
+        is_primary: false,
+      })
+      .returning();
+    await sources.disconnect(scope, crawlSource.id);
+    crawlSource = await sources.insertConnection({
+      workspaceId,
+      projectId: scope.projectId,
+      siteId: secondarySite!.id,
+      provider: "crawl",
+      connectionType: "public",
+      state: "connected",
+      limitation: "Static public crawl fixture.",
+      connectedAt: true,
+      createdBy: actor,
+    });
+    siteId = secondarySite!.id;
+  }
+  const confirmedProfileHash = contentHash({ fixture: suffix });
   const [icp] = await handle.db
     .insert(icpProfiles)
     .values({
@@ -75,7 +122,7 @@ async function createDiagnosticFixture(
       version: 1,
       status: "complete",
       profile: { productName: "Diagnostic fixture" },
-      content_hash: contentHash({ fixture: suffix }),
+      content_hash: confirmedProfileHash,
       created_by: actor,
     })
     .returning();
@@ -100,27 +147,28 @@ async function createDiagnosticFixture(
       completed_at: capturedAt,
     })
     .returning();
-  await new CollectionRunsRepository(handle.db).insertPlaceholder({
+  const collections = new CollectionRunsRepository(handle.db);
+  await collections.insertPlaceholder({
     runId: collectionRun!.id,
     workspaceId,
     projectId: scope.projectId,
-    siteId: created.project.site.id,
-    sourceConnectionId: null,
+    siteId,
+    sourceConnectionId: crawlSource.id,
     provider: "crawl",
     operation: "site_graph",
-    methodVersion: "crawl.site_graph.v1",
+    methodVersion: opts.crawlMethodVersion ?? CRAWL_METHOD_VERSION,
     parametersHash: contentHash({ collection: suffix }),
   });
   const snapshot = await new DataSnapshotsRepository(handle.db).insert({
     workspaceId,
     projectId: scope.projectId,
-    siteId: created.project.site.id,
+    siteId,
     collectionRunId: collectionRun!.id,
-    sourceConnectionId: null,
+    sourceConnectionId: crawlSource.id,
     provider: "crawl",
     datasetKey: "crawl.site_graph.v1",
     schemaVersion: "0.2.0",
-    methodVersion: "crawl.site_graph.v1",
+    methodVersion: opts.crawlMethodVersion ?? CRAWL_METHOD_VERSION,
     capturedAt,
     sourceWindow: { start: null, end: null },
     availability: opts.crawlAvailability ?? "available",
@@ -129,7 +177,25 @@ async function createDiagnosticFixture(
     rowCount: 0,
     checksum: contentHash({ snapshot: suffix }),
   });
-  return { scope, snapshotId: snapshot.id, confirmedProfileId: icp!.id };
+  await collections.finalize(collectionRun!.id, {
+    rowCount: snapshot.row_count,
+    sourceWindow: snapshot.source_window,
+    providerUsage: { urlsFetched: 0, pagesCollected: 0 },
+    stopReason: null,
+  });
+  await sources.setLastSnapshot(
+    crawlSource.id,
+    snapshot.id,
+    snapshot.availability,
+    snapshot.limitation,
+  );
+  return {
+    scope,
+    siteId,
+    snapshot,
+    confirmedProfileId: icp!.id,
+    confirmedProfileHash,
+  };
 }
 
 describeDb("createDiagnosticRun idempotency ordering", () => {
@@ -158,7 +224,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
       fixture.scope.projectId,
       actor,
       key,
-      { snapshotIds: [fixture.snapshotId], outputLocale: "en" as const },
+      { snapshotIds: [fixture.snapshot.id], outputLocale: "en" as const },
     ] as const;
 
     const [left, right] = await Promise.all([
@@ -188,7 +254,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
     queueFixture.send.mockClear();
     const fixture = await createDiagnosticFixture(handle, workspaceId, randomUUID());
     const body = {
-      snapshotIds: [fixture.snapshotId],
+      snapshotIds: [fixture.snapshot.id],
       outputLocale: "en" as const,
     };
     const results = await Promise.allSettled([
@@ -240,7 +306,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
         fixture.scope.projectId,
         actor,
         randomUUID(),
-        { snapshotIds: [fixture.snapshotId], outputLocale: "en" },
+        { snapshotIds: [fixture.snapshot.id], outputLocale: "en" },
       ),
     ).rejects.toMatchObject({
       code: "CRAWL_SNAPSHOT_REQUIRED",
@@ -258,6 +324,30 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
         ),
       );
     expect(runs).toHaveLength(0);
+  });
+
+  it("rejects an obsolete crawl method before enqueueing a diagnostic run", async () => {
+    queueFixture.send.mockClear();
+    const fixture = await createDiagnosticFixture(
+      handle,
+      workspaceId,
+      randomUUID(),
+      { crawlMethodVersion: "crawl.site_graph.v1" },
+    );
+
+    await expect(
+      createDiagnosticRun(
+        { workspaceId },
+        fixture.scope.projectId,
+        actor,
+        randomUUID(),
+        { snapshotIds: [fixture.snapshot.id], outputLocale: "en" },
+      ),
+    ).rejects.toMatchObject({
+      code: "CRAWL_SNAPSHOT_REQUIRED",
+      status: 422,
+    });
+    expect(queueFixture.send).not.toHaveBeenCalled();
   });
 
   it("freezes the confirmed profile even when the working pointer advances to a later draft", async () => {
@@ -292,7 +382,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
       fixture.scope.projectId,
       actor,
       randomUUID(),
-      { snapshotIds: [fixture.snapshotId], outputLocale: "en" },
+      { snapshotIds: [fixture.snapshot.id], outputLocale: "en" },
     );
     const [persisted] = await handle.db
       .select({
@@ -308,11 +398,77 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
     });
   });
 
+  it("derives the exact Site and freezes a complete JCS-addressed manifest", async () => {
+    queueFixture.send.mockClear();
+    const fixture = await createDiagnosticFixture(
+      handle,
+      workspaceId,
+      randomUUID(),
+      { useSecondarySite: true },
+    );
+
+    const accepted = await createDiagnosticRun(
+      { workspaceId },
+      fixture.scope.projectId,
+      actor,
+      randomUUID(),
+      { snapshotIds: [fixture.snapshot.id], outputLocale: "en-US" },
+    );
+    const [persisted] = await handle.db
+      .select()
+      .from(diagnosticRuns)
+      .where(eq(diagnosticRuns.id, accepted.run.id));
+    const expectedManifest = {
+      projectId: fixture.scope.projectId,
+      siteId: fixture.siteId,
+      icp: {
+        id: fixture.confirmedProfileId,
+        version: 1,
+        contentHash: fixture.confirmedProfileHash,
+      },
+      snapshots: [
+        {
+          snapshotId: fixture.snapshot.id,
+          provider: fixture.snapshot.provider,
+          datasetKey: fixture.snapshot.dataset_key,
+          schemaVersion: fixture.snapshot.schema_version,
+          methodVersion: CRAWL_METHOD_VERSION,
+          checksum: fixture.snapshot.checksum,
+          capturedAt: fixture.snapshot.captured_at,
+          sourceWindow: fixture.snapshot.source_window,
+          availability: fixture.snapshot.availability,
+        },
+      ],
+      ruleSetVersion: RULE_SET_VERSION,
+      promptSetVersion: PROMPT_SET_VERSION,
+      deliveryLocale: "en-US",
+    };
+
+    expect(persisted).toMatchObject({
+      site_id: fixture.siteId,
+      rule_set_version: RULE_SET_VERSION,
+      prompt_set_version: PROMPT_SET_VERSION,
+      output_locale: "en-US",
+      input_manifest: expectedManifest,
+      input_hash: contentHash(
+        expectedManifest as Parameters<typeof contentHash>[0],
+      ),
+    });
+    expect(persisted!.input_hash).toBe(
+      contentHash(
+        persisted!.input_manifest as Parameters<typeof contentHash>[0],
+      ),
+    );
+  });
+
   it("replays the original 202 after archive and ICP pointer changes", async () => {
     queueFixture.send.mockClear();
     const fixture = await createDiagnosticFixture(handle, workspaceId, randomUUID());
     const key = randomUUID();
-    const body = { snapshotIds: [fixture.snapshotId], outputLocale: "en" as const };
+    const body = {
+      snapshotIds: [fixture.snapshot.id],
+      outputLocale: "en" as const,
+    };
     const first = await createDiagnosticRun(
       { workspaceId },
       fixture.scope.projectId,
@@ -347,7 +503,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
         fixture.scope.projectId,
         actor,
         key,
-        { snapshotIds: [fixture.snapshotId], outputLocale: "zh-CN" },
+        { snapshotIds: [fixture.snapshot.id], outputLocale: "zh-CN" },
       ),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED", status: 409 });
 

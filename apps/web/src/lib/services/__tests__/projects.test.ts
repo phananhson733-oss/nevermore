@@ -200,10 +200,13 @@ describe("createProject", () => {
     const body: CreateProjectRequest = {
       mode: "product_profile",
       productUrl:
-        "https://Example.com/products/growth/?utm_source=demo&plan=pro",
+        "https://Example.com:443/products/growth/?utm_source=demo&plan=pro",
       businessHint: "Hybrid B2B and B2C growth workspace",
     };
-    const guard = vi.fn(async () => safeVerdict);
+    const guard = vi.fn(async (url: string) => ({
+      ...safeVerdict,
+      normalizedUrl: url,
+    }));
 
     const result = await createProject(
       scope,
@@ -213,7 +216,9 @@ describe("createProject", () => {
       guard,
     );
 
-    expect(guard).toHaveBeenCalledWith("https://example.com");
+    expect(guard).toHaveBeenCalledWith(
+      "https://example.com/products/growth/?plan=pro",
+    );
     expect(ProjectsRepository.prototype.insert).toHaveBeenCalledWith({
       workspaceId: scope.workspaceId,
       clientName: "example.com",
@@ -231,8 +236,7 @@ describe("createProject", () => {
     );
     expect(SitePagesRepository.prototype.upsertNormalizedUrl).toHaveBeenCalledWith(
       expect.objectContaining({
-        normalizedUrl: "https://example.com/products/growth?plan=pro",
-        normalizedUrlHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        normalizedUrl: "https://example.com/products/growth/?plan=pro",
       }),
     );
     expect(IcpProfilesRepository.prototype.insertVersion).toHaveBeenCalledWith(
@@ -241,7 +245,7 @@ describe("createProject", () => {
         status: "draft",
         profile: expect.objectContaining({
           profileSchemaVersion: "product-profile.0.3.0",
-          sourcePageUrl: "https://example.com/products/growth?plan=pro",
+          sourcePageUrl: "https://example.com/products/growth/?plan=pro",
           sourceSnapshotId: null,
           analysisInvocationId: null,
           productName: null,
@@ -415,6 +419,83 @@ describe("createProject", () => {
     expect(guard).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      body: { ...baseBody, siteUrl: "https://customer-secret.example:8443" },
+      pointer: "/siteUrl",
+    },
+    {
+      body: {
+        mode: "product_profile" as const,
+        productUrl: "http://customer-secret.example:2375/product/",
+      },
+      pointer: "/productUrl",
+    },
+  ])(
+    "rejects a non-standard port before guard or persistence without exposing target details",
+    async ({ body, pointer }) => {
+      const guard = vi.fn(async () => safeVerdict);
+
+      const rejection = await createProject(
+        scope,
+        actorId,
+        idempotencyKey,
+        body,
+        guard,
+        { environment: "production", siteOriginProbe: vi.fn(async () => true) },
+      ).catch((error: unknown) => error);
+
+      expect(rejection).toMatchObject({
+        code: "VALIDATION_ERROR",
+        status: 422,
+        fieldErrors: [expect.objectContaining({ pointer })],
+      });
+      expect(JSON.stringify(rejection)).not.toContain(
+        "customer-secret.example",
+      );
+      expect(JSON.stringify(rejection)).not.toContain("8443");
+      expect(JSON.stringify(rejection)).not.toContain("2375");
+      expect(guard).not.toHaveBeenCalled();
+      expect(ProjectsRepository.prototype.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not read or expose an unsafe guard's target-specific reason", async () => {
+    let reasonReads = 0;
+    const guard = vi.fn(async () => ({
+      safe: false as const,
+      normalizedUrl: null,
+      pinnedIp: null,
+      get reason(): string {
+        reasonReads += 1;
+        return "customer-secret.example resolved to 10.0.0.7";
+      },
+    }));
+
+    const rejection = await createProject(
+      scope,
+      actorId,
+      idempotencyKey,
+      baseBody,
+      guard,
+    ).catch((error: unknown) => error);
+
+    expect(rejection).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+      fieldErrors: [
+        expect.objectContaining({
+          pointer: "/siteUrl",
+          code: "blocked_url",
+          message: "Use a public URL on a standard HTTP(S) port.",
+        }),
+      ],
+    });
+    expect(reasonReads).toBe(0);
+    expect(JSON.stringify(rejection)).not.toContain("customer-secret.example");
+    expect(JSON.stringify(rejection)).not.toContain("10.0.0.7");
+  });
+
   it("upgrades production HTTP origins to HTTPS only after a pinned reachability probe", async () => {
     const guard = vi.fn(async () => safeVerdict);
     const probe = vi.fn(async () => true);
@@ -441,6 +522,43 @@ describe("createProject", () => {
       expect.objectContaining({
         origin: "https://example.com",
         host: "example.com",
+      }),
+    );
+  });
+
+  it("guards and persists the exact deep fetch URL during a production HTTPS upgrade", async () => {
+    const guard = vi.fn(async (url: string) => ({
+      ...safeVerdict,
+      normalizedUrl: url,
+    }));
+    const probe = vi.fn(async () => true);
+
+    await createProject(
+      scope,
+      actorId,
+      idempotencyKey,
+      {
+        mode: "product_profile",
+        productUrl: "http://example.com:80/products/growth/?plan=pro",
+      },
+      guard,
+      {
+        environment: "production",
+        siteOriginProbe: probe,
+      },
+    );
+
+    const exactPageUrl =
+      "https://example.com/products/growth/?plan=pro";
+    expect(guard).toHaveBeenCalledOnce();
+    expect(guard).toHaveBeenCalledWith(exactPageUrl);
+    expect(probe).toHaveBeenCalledWith({
+      origin: "https://example.com",
+      pinnedIp: "203.0.113.10",
+    });
+    expect(SitePagesRepository.prototype.upsertNormalizedUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        normalizedUrl: exactPageUrl,
       }),
     );
   });

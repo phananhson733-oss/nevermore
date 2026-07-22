@@ -7,17 +7,33 @@ import { asyncRuns, icpProfiles, workspaces } from "@sf/db/schema";
 import {
   ActionsRepository,
   AsyncRunsRepository,
+  CollectionRunsRepository,
+  DataSnapshotsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
   ExecutionArtifactsRepository,
   ExportBundlesRepository,
   FindingsRepository,
+  ObservationsRepository,
   ProjectsRepository,
   SitesRepository,
+  SourceConnectionsRepository,
   contentHash,
+  type DataSnapshotRow,
+  type ObservationInsert,
   type PgBoss,
   type ProjectScope,
 } from "@sf/db";
+import {
+  FINDING_REGISTRY,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
+import {
+  CRAWL_METHOD_VERSION,
+  METRIC_CRAWL_PAGE,
+  type CrawlPageProjection,
+} from "@sf/sources";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../../context.ts";
 import { runMigrations } from "../../../../../packages/db/src/migrate.ts";
@@ -256,13 +272,21 @@ async function seedExport(handle: DbHandle): Promise<{
     createdBy: actorId,
   });
   const scope = { workspaceId: workspace!.id, projectId: project.id };
+  const host = `export-${randomUUID().slice(0, 8)}.example`;
+  const origin = `https://${host}`;
   const site = await new SitesRepository(handle.db).insertPrimary({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
-    origin: `https://${randomUUID()}.example`,
-    host: `${randomUUID()}.example`,
+    origin,
+    host,
     marketCodes: ["US"],
     languageCodes: ["en"],
+  });
+  await new SourceConnectionsRepository(handle.db).insertDefaultCrawl({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId: site.id,
+    createdBy: actorId,
   });
   const [icp] = await handle.db
     .insert(icpProfiles)
@@ -276,6 +300,13 @@ async function seedExport(handle: DbHandle): Promise<{
       created_by: actorId,
     })
     .returning();
+  const snapshot = await seedExportCrawlSnapshot(
+    handle,
+    scope,
+    site.id,
+    actorId,
+    origin,
+  );
   const diagnosticRunId = randomUUID();
   await handle.db.insert(asyncRuns).values({
     id: diagnosticRunId,
@@ -288,40 +319,48 @@ async function seedExport(handle: DbHandle): Promise<{
     started_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
   });
+  const diagnosticManifest = exportDiagnosticManifest(
+    scope.projectId,
+    site.id,
+    icp!,
+    snapshot,
+  );
   await new DiagnosticRunsRepository(handle.db).insert({
     runId: diagnosticRunId,
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
     siteId: site.id,
     icpProfileId: icp!.id,
-    icpProfileVersion: 1,
-    ruleSetVersion: "mvp.rules.0.2.0",
-    promptSetVersion: "mvp.prompts.0.2.0",
+    icpProfileVersion: icp!.version,
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
     outputLocale: "en",
-    inputManifest: {},
-    inputHash: contentHash({ diagnosticRunId }),
+    inputManifest: diagnosticManifest,
+    inputHash: contentHash(
+      diagnosticManifest as unknown as Parameters<typeof contentHash>[0],
+    ),
   });
+  const findingMeta = FINDING_REGISTRY["TECH-HTTP-001"];
   const finding = await new FindingsRepository(handle.db).insert({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
     findingKey: contentHash({ finding: diagnosticRunId }),
-    ruleId: "TECH-CRAWL-001",
-    ruleVersion: 1,
-    ruleFamily: "technical",
-    intent: "crawlability",
-    domain: "technical_seo",
-    titleKey: "finding.fixture",
-    titleArgs: {},
-    summary: "Snapshot fixture finding",
+    ruleId: "TECH-HTTP-001",
+    ruleVersion: 2,
+    ruleFamily: findingMeta.ruleFamily,
+    intent: findingMeta.intent,
+    domain: findingMeta.domain,
+    titleKey: findingMeta.titleKey,
+    titleArgs: { status: 404, count: 1 },
+    summary: "One crawled page returned HTTP 404.",
     summaryLocale: "en",
-    subjectRefs: ["https://example.test/"],
+    subjectRefs: ["http_status:404"],
     severity: "medium",
     confidence: "high",
     reviewState: "confirmed",
     runId: diagnosticRunId,
     seenAt: new Date().toISOString(),
   });
-  const observedAt = new Date().toISOString();
   const [evidenceId] = await new EvidenceRepository(handle.db).insertMany(
     {
       workspaceId: scope.workspaceId,
@@ -336,10 +375,12 @@ async function seedExport(handle: DbHandle): Promise<{
         grade: "B",
         availability: "available",
         support: "supports",
-        subjectRefs: ["https://example.test/"],
-        claim: "Snapshot fixture finding observation.",
-        observedAt,
+        subjectRefs: [`${origin}/missing`],
+        claim: "One crawled page returned HTTP 404.",
+        observedAt: snapshot.captured_at,
         limitation: "Disposable export integration fixture.",
+        snapshotId: snapshot.id,
+        collectionRunId: snapshot.collection_run_id,
       },
     ],
   );
@@ -357,17 +398,17 @@ async function seedExport(handle: DbHandle): Promise<{
     sourceFindingId: finding.id,
     sourceDiagnosticRunId: diagnosticRunId,
     actionKey: contentHash({ action: finding.id }),
-    templateId: "technical-ticket",
+    templateId: "fix_http_status.v1",
     templateVersion: 1,
-    title: "Fix crawlability",
-    description: "Apply the fixture change.",
+    title: "Fix broken or error HTTP responses",
+    description: "Restore or redirect the missing fixture URL.",
     contentLocale: "en",
     priorityBand: "medium",
     roadmapLane: "next",
     status: "planned",
     effort: "small",
     risk: "low",
-    expectedOutcome: "Crawlability improves.",
+    expectedOutcome: "The missing fixture URL returns 2xx or a correct redirect.",
     evidenceRefs: [],
     createdBy: actorId,
   });
@@ -440,4 +481,155 @@ async function seedExport(handle: DbHandle): Promise<{
     artifactId: artifact.id,
     exportRunId: exportRun.id,
   };
+}
+
+function exportDiagnosticManifest(
+  projectId: string,
+  siteId: string,
+  icp: { readonly id: string; readonly version: number; readonly content_hash: string },
+  snapshot: DataSnapshotRow,
+): Record<string, unknown> {
+  return {
+    projectId,
+    siteId,
+    icp: {
+      id: icp.id,
+      version: icp.version,
+      contentHash: icp.content_hash,
+    },
+    snapshots: [
+      {
+        snapshotId: snapshot.id,
+        provider: snapshot.provider,
+        datasetKey: snapshot.dataset_key,
+        schemaVersion: snapshot.schema_version,
+        methodVersion: snapshot.method_version,
+        checksum: snapshot.checksum,
+        capturedAt: snapshot.captured_at,
+        sourceWindow: snapshot.source_window,
+        availability: snapshot.availability,
+      },
+    ],
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
+    deliveryLocale: "en",
+  };
+}
+
+async function seedExportCrawlSnapshot(
+  handle: DbHandle,
+  scope: ProjectScope,
+  siteId: string,
+  actorId: string,
+  origin: string,
+): Promise<DataSnapshotRow> {
+  const source = await new SourceConnectionsRepository(
+    handle.db,
+  ).findConnectedByProvider(scope, "crawl");
+  if (!source || source.site_id !== siteId) {
+    throw new Error("export fixture requires the Site's Crawl connection");
+  }
+  const capturedAt = new Date().toISOString();
+  const collectionRunId = randomUUID();
+  const pageUrl = `${origin}/missing`;
+  const page: CrawlPageProjection = {
+    fetchUrl: pageUrl,
+    status: 404,
+    finalStatus: 404,
+    redirectChain: [],
+    canonicalTarget: null,
+    robotsIndexable: false,
+    robotsDirectives: ["noindex"],
+    title: null,
+    metaDescription: null,
+    h1: [],
+    headings: [],
+    wordCount: 0,
+    internalOutlinks: [],
+    jsonLd: { types: [], errorCount: 0 },
+    sitemapMember: false,
+    bodyExcerpt: null,
+    paragraphs: [],
+    responseMs: 1,
+    contentType: "text/html",
+  };
+  await handle.db.insert(asyncRuns).values({
+    id: collectionRunId,
+    workspace_id: scope.workspaceId,
+    project_id: scope.projectId,
+    kind: "collection",
+    status: "completed",
+    contract_version: CONTRACT_VERSION,
+    initiated_by: actorId,
+    started_at: capturedAt,
+    completed_at: capturedAt,
+  });
+  const collections = new CollectionRunsRepository(handle.db);
+  await collections.insertPlaceholder({
+    runId: collectionRunId,
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    sourceConnectionId: source.id,
+    provider: "crawl",
+    operation: "site_graph",
+    methodVersion: CRAWL_METHOD_VERSION,
+    parametersHash: contentHash({ fixture: collectionRunId }),
+  });
+  const snapshot = await new DataSnapshotsRepository(handle.db).insert({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    collectionRunId,
+    sourceConnectionId: source.id,
+    provider: "crawl",
+    datasetKey: "crawl.site_graph.v1",
+    schemaVersion: "0.2.0",
+    methodVersion: CRAWL_METHOD_VERSION,
+    capturedAt,
+    sourceWindow: { start: null, end: null },
+    availability: "available",
+    limitation: "Deterministic public Crawl export fixture.",
+    rawObjectKey: null,
+    rowCount: 1,
+    checksum: contentHash(
+      { page } as unknown as Parameters<typeof contentHash>[0],
+    ),
+  });
+  const observations: ObservationInsert[] = [
+    {
+      metricKey: METRIC_CRAWL_PAGE,
+      subjectType: "url",
+      subjectRef: pageUrl,
+      observedAt: capturedAt,
+      availability: "available",
+      valueNumeric: null,
+      valueText: null,
+      valueJson: page,
+      unit: null,
+      origin: "direct_public",
+      grade: "B",
+      support: "supports",
+      limitation: "Deterministic public Crawl export fixture.",
+    },
+  ];
+  await new ObservationsRepository(handle.db).insertMany(
+    scope,
+    snapshot.id,
+    "crawl",
+    observations,
+  );
+  await collections.finalize(collectionRunId, {
+    rowCount: snapshot.row_count,
+    sourceWindow: snapshot.source_window,
+    providerUsage: { urlsFetched: 1, pagesCollected: 1 },
+    stopReason: null,
+  });
+  await new SourceConnectionsRepository(handle.db).setLastSnapshot(
+    source.id,
+    snapshot.id,
+    snapshot.availability,
+    snapshot.limitation,
+  );
+  return snapshot;
 }

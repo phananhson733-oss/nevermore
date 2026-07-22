@@ -96,18 +96,33 @@ function totalAvailableVolume(keywords: readonly CsvKeywordProjection[]): number
   return totalVolume;
 }
 
-/** Token field bags for every eligible indexable page (dropping null bags). */
+/**
+ * One unioned token bag per canonical subject. Any healthy exact variant can
+ * establish subject-level coverage; absence is not inferred from one arbitrary
+ * transport response.
+ */
 function buildPageBags(ctx: DiagnosticContext): ReadonlySet<string>[] {
   const bags: ReadonlySet<string>[] = [];
-  for (const [subjectUrl, page] of ctx.indexablePages()) {
+  for (const [subjectUrl, variants] of ctx.indexablePages()) {
     let urlPath: string;
     try {
       urlPath = new URL(subjectUrl).pathname;
     } catch {
       continue;
     }
-    const bag = pageFieldBag({ urlPath, title: page.title, h1: page.h1 });
-    if (bag) bags.push(bag);
+    const subjectBag = new Set<string>();
+    let hasSearchableVariant = false;
+    for (const page of variants) {
+      const variantBag = pageFieldBag({
+        urlPath,
+        title: page.title,
+        h1: page.h1,
+      });
+      if (!variantBag) continue;
+      hasSearchableVariant = true;
+      for (const token of variantBag) subjectBag.add(token);
+    }
+    if (hasSearchableVariant) bags.push(subjectBag);
   }
   return bags;
 }
@@ -119,27 +134,38 @@ function buildCandidate(
   totalVolume: number,
 ): FindingCandidate {
   const subjectRef = `keyword_cluster:${clusterKey}`;
-  const csvPartial = ctx.datasetAvailability("csv") === "partial";
   const crawlPartial = ctx.datasetAvailability("crawl") === "partial";
-  const keywordGapProvider = ctx.keywordGapProvider(clusterKey);
-  const isDataForSeo = keywordGapProvider === "dataforseo";
-  const sourceLimitation = isDataForSeo
-    ? DATAFORSEO_LIMITATION
-    : CSV_LIMITATION;
-  const keywordGapEvidence: EvidenceDraft = {
-    sourceProvider: keywordGapProvider,
-    origin: isDataForSeo ? "vendor_observation" : "user_provided",
-    method: "observed",
-    grade: isDataForSeo ? "B" : "C",
-    availability: csvPartial ? "partial" : "available",
-    support: "supports",
-    subjectRefs: [subjectRef],
-    claim: `${isDataForSeo ? "Observed" : "Imported"} keyword cluster "${clusterKey}" carries ${keywordCount} keywords with ${totalVolume} combined monthly search volume.`,
-    observedAt: ctx.observedAt(keywordGapProvider),
-    limitation: csvPartial
-      ? `${sourceLimitation} The selected keyword-gap snapshot is partial, so omitted rows may affect completeness.`
-      : sourceLimitation,
-  };
+  const keywordGapEvidence = ctx
+    .keywordGapContributions(clusterKey)
+    .map(({ provider, keywords }): EvidenceDraft => {
+      const availability = ctx.providerAvailability(provider);
+      const partial = availability === "partial";
+      const isDataForSeo = provider === "dataforseo";
+      const sourceLimitation = isDataForSeo
+        ? DATAFORSEO_LIMITATION
+        : CSV_LIMITATION;
+      const availableVolume = totalAvailableVolume(keywords);
+      const reportedVolumeRows = keywords.filter(
+        (keyword) => keyword.searchVolume !== null,
+      ).length;
+      const volumeClaim =
+        reportedVolumeRows > 0
+          ? ` with ${availableVolume} combined available monthly search volume`
+          : "; none of those retained source rows reports monthly search volume";
+      const keywordLabel = keywords.length === 1 ? "keyword" : "keywords";
+      return {
+        sourceProvider: provider,
+        origin: isDataForSeo ? "vendor_observation" : "user_provided",
+        method: "observed",
+        grade: isDataForSeo ? "B" : "C",
+        availability,
+        support: "supports",
+        subjectRefs: [subjectRef],
+        claim: `After semantic demand de-duplication, the ${isDataForSeo ? "DataForSEO source" : "user-provided CSV source"} contributes ${keywords.length} ${keywordLabel}${volumeClaim} to cluster "${clusterKey}".`,
+        observedAt: ctx.observedAt(provider),
+        limitation: `${sourceLimitation} Rows without reported search volume are excluded from this provider's volume sum.${partial ? " The selected keyword-gap snapshot is partial, so omitted rows may affect completeness." : ""}`,
+      };
+    });
   const contentEvidence: EvidenceDraft = {
     sourceProvider: "crawl",
     origin: "derived",
@@ -159,6 +185,6 @@ function buildCandidate(
     severity: "high",
     titleArgs: { clusterKey, keywordCount, totalVolume },
     metrics: { clusterKey, keywordCount, totalVolume },
-    evidence: [keywordGapEvidence, contentEvidence],
+    evidence: [...keywordGapEvidence, contentEvidence],
   };
 }

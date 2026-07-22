@@ -1,8 +1,11 @@
 import { expect, test } from "@playwright/test";
 import {
   E2E_PROJECT_ID,
+  E2E_SITE_ID,
+  E2E_SNAPSHOT_PROVENANCE,
   installCriticalFlowApi,
   sourceSlot,
+  type MockDataSnapshot,
 } from "./mock-api.ts";
 
 const BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
@@ -12,23 +15,27 @@ type SourceProvider = Parameters<typeof sourceSlot>[0];
 
 function usableSource(provider: SourceProvider, ordinal: number) {
   const suffix = String(ordinal).padStart(12, "0");
+  const provenance = E2E_SNAPSHOT_PROVENANCE[provider];
+  const latestSnapshot = {
+    id: `10000000-0000-4000-8000-${suffix}`,
+    siteId: E2E_SITE_ID,
+    provider,
+    datasetKey: provenance.datasetKey,
+    schemaVersion: "0.2.0",
+    methodVersion: provenance.methodVersion,
+    capturedAt: "2026-07-18T12:00:00.000Z",
+    sourceWindow: { start: null, end: null },
+    availability: "available",
+    limitation: "No known limitation.",
+    rowCount: 12,
+    checksum: ordinal.toString(16).padStart(2, "0").repeat(32),
+  } satisfies MockDataSnapshot;
+
   return sourceSlot(provider, {
     id: `00000000-0000-4000-8000-${suffix}`,
     state: "available",
     connectedAt: "2026-07-18T12:00:00.000Z",
-    latestSnapshot: {
-      id: `10000000-0000-4000-8000-${suffix}`,
-      provider,
-      datasetKey: `${provider}.canonical.v1`,
-      schemaVersion: "1.0.0",
-      methodVersion: `${provider}.method.v1`,
-      capturedAt: "2026-07-18T12:00:00.000Z",
-      sourceWindow: { start: null, end: null },
-      availability: "available",
-      limitation: "No known limitation.",
-      rowCount: 12,
-      checksum: `sha256:e2e-${provider}`,
-    },
+    latestSnapshot,
   });
 }
 

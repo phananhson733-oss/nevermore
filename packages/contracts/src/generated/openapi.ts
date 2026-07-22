@@ -796,6 +796,7 @@ export interface components {
         };
         DataSnapshot: {
             id: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
             provider: components["schemas"]["Provider"];
             datasetKey: string;
             schemaVersion: string;
@@ -841,8 +842,90 @@ export interface components {
             /** Format: uuid */
             snapshotId: string | null;
             /** Format: uuid */
+            collectionRunId: string | null;
+            /** Format: uuid */
             analysisInvocationId: string | null;
-        };
+        } & (({
+            /** @enum {string} */
+            sourceProvider?: "crawl" | "gsc" | "ga4" | "csv" | "dataforseo";
+            snapshotId?: components["schemas"]["Uuid"];
+            collectionRunId?: components["schemas"]["Uuid"];
+            analysisInvocationId?: null;
+        } & ({
+            /** @enum {string} */
+            sourceProvider?: "gsc" | "ga4";
+            /** @constant */
+            origin?: "first_party";
+            /** @constant */
+            method?: "observed";
+            /** @constant */
+            grade?: "A";
+        } | {
+            /** @constant */
+            sourceProvider?: "crawl";
+            /** @constant */
+            origin?: "direct_public";
+            /** @constant */
+            method?: "observed";
+            /** @constant */
+            grade?: "B";
+        } | {
+            /** @constant */
+            sourceProvider?: "dataforseo";
+            /** @constant */
+            origin?: "vendor_observation";
+            /** @constant */
+            method?: "observed";
+            /** @constant */
+            grade?: "B";
+        } | {
+            /** @constant */
+            sourceProvider?: "csv";
+            /** @constant */
+            origin?: "user_provided";
+            /** @constant */
+            method?: "observed";
+            /** @constant */
+            grade?: "C";
+        } | {
+            /** @constant */
+            origin?: "derived";
+            /** @constant */
+            method?: "computed";
+            /** @constant */
+            grade?: "B";
+        } | {
+            /** @constant */
+            origin?: "derived";
+            /** @constant */
+            method?: "inferred";
+            /** @constant */
+            grade?: "C";
+        })) | {
+            /** @constant */
+            sourceProvider?: "system";
+            /** @constant */
+            origin?: "derived";
+            /** @constant */
+            method?: "computed";
+            /** @constant */
+            grade?: "B";
+            snapshotId?: null;
+            collectionRunId?: null;
+            analysisInvocationId?: null;
+        } | {
+            /** @constant */
+            sourceProvider?: "llm";
+            /** @constant */
+            origin?: "generated";
+            /** @constant */
+            method?: "generated";
+            /** @constant */
+            grade?: "C";
+            snapshotId?: null;
+            collectionRunId?: null;
+            analysisInvocationId?: components["schemas"]["Uuid"];
+        });
         SubjectRef: {
             /** @enum {string} */
             type: "url" | "site" | "page_set" | "http_status" | "canonical_issue" | "keyword_cluster" | "user_agent";
@@ -851,8 +934,8 @@ export interface components {
         Finding: {
             id: components["schemas"]["Uuid"];
             ruleId: string;
-            /** @constant */
-            ruleVersion: 1;
+            /** @enum {integer} */
+            ruleVersion: 1 | 2;
             domain: components["schemas"]["DiagnosticDomain"];
             titleKey: string;
             titleArgs: {

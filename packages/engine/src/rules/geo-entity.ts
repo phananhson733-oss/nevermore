@@ -29,9 +29,9 @@ const PAGE_SET_REF = "page_set:priority_commercial";
 
 const ENTITY_PROOF_LIMITATION = "Entity/proof detection is an English-only heuristic.";
 
-type PageEntry = readonly [string, CrawlPageProjection];
+type PageEntry = readonly [string, readonly CrawlPageProjection[]];
 
-/** Up to MAX_PAGES indexable priority/commercial pages, in crawl order. */
+/** Up to MAX_PAGES indexable priority/commercial subjects, in stable URL order. */
 function selectPages(ctx: DiagnosticContext): readonly PageEntry[] {
   return ctx
     .indexablePages()
@@ -71,8 +71,14 @@ function evaluate(ctx: DiagnosticContext): RuleResult {
     return { status: "skipped", reason: "not_applicable" };
   }
 
-  const entityMissingCount = selected.filter(([, page]) => page.jsonLd.types.length === 0).length;
-  const proofCount = selected.filter(([, page]) => hasProofBlock(page.paragraphs)).length;
+  // These are negative subject-level facts: every healthy exact variant must
+  // lack the feature before the canonical subject is counted as missing it.
+  const entityMissingCount = selected.filter(([, variants]) =>
+    variants.every((page) => page.jsonLd.types.length === 0),
+  ).length;
+  const proofCount = selected.filter(([, variants]) =>
+    variants.some((page) => hasProofBlock(page.paragraphs)),
+  ).length;
   const proofCoverageRatio = proofCount / selected.length;
 
   const entityGap = entityMissingCount === selected.length;

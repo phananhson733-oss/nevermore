@@ -1,6 +1,36 @@
 import type { Page, Route } from "@playwright/test";
+import type { components } from "../packages/contracts/src/generated/openapi.ts";
 
 export const E2E_PROJECT_ID = "00000000-0000-4000-8000-000000000042";
+export const E2E_SITE_ID = "00000000-0000-4000-8000-000000000043";
+export const E2E_SECONDARY_SITE_ID =
+  "00000000-0000-4000-8000-000000000045";
+
+export type MockDataSnapshot = components["schemas"]["DataSnapshot"];
+export type MockEvidence = components["schemas"]["Evidence"];
+
+export const E2E_SNAPSHOT_PROVENANCE = {
+  crawl: {
+    datasetKey: "crawl.site_graph.v1",
+    methodVersion: "crawl.site_graph.v2",
+  },
+  gsc: {
+    datasetKey: "gsc.page_query_daily.v1",
+    methodVersion: "gsc.search_analytics.v1",
+  },
+  ga4: {
+    datasetKey: "ga4.organic_landing_daily.v1",
+    methodVersion: "ga4.organic_landing.v1",
+  },
+  csv: {
+    datasetKey: "csv.keyword_gap.v1",
+    methodVersion: "csv.keyword_gap.v1",
+  },
+  dataforseo: {
+    datasetKey: "csv.keyword_gap.v1",
+    methodVersion: "dataforseo.ranked_keywords.v1",
+  },
+} as const;
 
 export interface CriticalFlowApiState {
   readonly collectionRequests: unknown[];
@@ -23,7 +53,7 @@ const project = {
   projectName: "E2E Critical Flow",
   stage: "planning",
   site: {
-    id: "00000000-0000-4000-8000-000000000043",
+    id: E2E_SITE_ID,
     origin: "https://example.test",
     host: "example.test",
     marketCodes: ["US"],
@@ -31,6 +61,7 @@ const project = {
   },
   contextStatus: "complete",
   currentIcpProfileVersion: 1,
+  confirmedIcpProfileVersion: 1,
   defaultDeliveryLocale: "en",
   createdAt: NOW,
   updatedAt: NOW,
@@ -51,17 +82,19 @@ const coverage = {
 
 const crawlSnapshot = {
   id: "00000000-0000-4000-8000-000000000101",
+  siteId: E2E_SITE_ID,
   provider: "crawl",
-  datasetKey: "crawl_pages",
-  schemaVersion: "1.0.0",
-  methodVersion: "crawl-v1",
+  datasetKey: E2E_SNAPSHOT_PROVENANCE.crawl.datasetKey,
+  schemaVersion: "0.2.0",
+  methodVersion: E2E_SNAPSHOT_PROVENANCE.crawl.methodVersion,
   capturedAt: NOW,
   sourceWindow: { start: null, end: null },
   availability: "available",
   limitation: "Static HTML only; JavaScript-rendered content may be absent.",
   rowCount: 12,
-  checksum: "sha256:e2e-crawl",
-};
+  checksum: "c".repeat(64),
+} satisfies MockDataSnapshot;
+const CRAWL_COLLECTION_RUN_ID = "00000000-0000-4000-8000-000000000102";
 
 function asyncRun(
   id: string,
@@ -123,12 +156,12 @@ export function sourceSlot(
   };
 }
 
-const evidence = {
+const evidence: MockEvidence = {
   id: "00000000-0000-4000-8000-000000000201",
   sourceProvider: "crawl",
   origin: "direct_public",
   method: "observed",
-  grade: "A",
+  grade: "B",
   availability: "available",
   support: "supports",
   claim: "The URL returned HTTP 500.",
@@ -136,6 +169,7 @@ const evidence = {
   observedAt: NOW,
   limitation: "One captured response.",
   snapshotId: crawlSnapshot.id,
+  collectionRunId: CRAWL_COLLECTION_RUN_ID,
   analysisInvocationId: null,
 };
 
@@ -143,7 +177,7 @@ function finding(reviewState: "unreviewed" | "confirmed") {
   return {
     id: "00000000-0000-4000-8000-000000000202",
     ruleId: "TECH-HTTP-001",
-    ruleVersion: 1,
+    ruleVersion: 2,
     domain: "technical_seo",
     titleKey: "finding.tech.http_status",
     titleArgs: {},
@@ -190,7 +224,7 @@ export function diagnosisFindingsEnvelopeFixture(
       ruleResults: [
         {
           ruleId: "TECH-HTTP-001",
-          ruleVersion: 1,
+          ruleVersion: 2,
           domain: "technical_seo",
           status: "candidate",
           reason: null,

@@ -1,25 +1,35 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   E2E_PROJECT_ID,
+  E2E_SITE_ID,
+  E2E_SNAPSHOT_PROVENANCE,
   installCriticalFlowApi,
   sourceSlot,
+  type MockDataSnapshot,
 } from "./mock-api.ts";
 
 const API_BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
 const CAPTURED_AT = "2026-07-20T08:30:00.000Z";
 const LONG_CHECKSUM = "0123456789abcdef".repeat(4);
+const SNAPSHOT_IDS = {
+  crawl: "00000000-0000-4000-8000-000000000101",
+  gsc: "00000000-0000-4000-8000-000000000102",
+  csv: "00000000-0000-4000-8000-000000000104",
+} as const;
 
 function snapshot(
   provider: "crawl" | "gsc" | "csv",
   availability: "available" | "partial",
-  overrides: Readonly<Record<string, unknown>> = {},
-) {
+  overrides: Partial<MockDataSnapshot> = {},
+): MockDataSnapshot {
+  const provenance = E2E_SNAPSHOT_PROVENANCE[provider];
   return {
-    id: `snapshot-${provider}`,
+    id: SNAPSHOT_IDS[provider],
+    siteId: E2E_SITE_ID,
     provider,
-    datasetKey: `${provider}.canonical.v1`,
+    datasetKey: provenance.datasetKey,
     schemaVersion: "0.2.0",
-    methodVersion: `${provider}.method.v1`,
+    methodVersion: provenance.methodVersion,
     capturedAt: CAPTURED_AT,
     sourceWindow: { start: "2026-06-01", end: "2026-06-30" },
     availability,
@@ -39,10 +49,7 @@ async function json(route: Route, body: unknown): Promise<void> {
 }
 
 async function installSourcesProjection(page: Page): Promise<void> {
-  const crawl = snapshot("crawl", "available", {
-    datasetKey: "crawl.site_graph.v1",
-    methodVersion: "crawl.fetch.v3",
-  });
+  const crawl = snapshot("crawl", "available");
   const gsc = snapshot("gsc", "partial");
   const csv = snapshot("csv", "available");
   const sources = [
@@ -74,7 +81,7 @@ async function installSourcesProjection(page: Page): Promise<void> {
     gsc,
     csv,
     snapshot("crawl", "available", {
-      id: "snapshot-crawl-previous",
+      id: "00000000-0000-4000-8000-000000000111",
       capturedAt: "2026-07-19T08:30:00.000Z",
     }),
   ];
@@ -126,7 +133,7 @@ test("Sources derives readiness and exposes canonical immutable provenance", asy
   await expect(crawl).toContainText("Latest immutable snapshot");
   await expect(crawl).toContainText("crawl.site_graph.v1");
   await expect(crawl).toContainText("0.2.0");
-  await expect(crawl).toContainText("crawl.fetch.v3");
+  await expect(crawl).toContainText("crawl.site_graph.v2");
   await expect(crawl).toContainText("Jun 1, 2026 – Jun 30, 2026");
   await expect(crawl).toContainText("12,345");
   await expect(crawl).toContainText("0123456789ab…89abcdef");

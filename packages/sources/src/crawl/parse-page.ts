@@ -19,6 +19,16 @@ function truncate(value: string, maxChars: number): string {
   return value.slice(0, maxChars);
 }
 
+/**
+ * Exact transport identity discovered in HTML. This is intentionally kept out
+ * of `crawl.page.v1`; persisted link facts continue to use aggregation
+ * `subjectUrl`s while the frontier uses this fetch URL verbatim.
+ */
+export interface CrawlFetchTarget {
+  readonly fetchUrl: string;
+  readonly subjectUrl: string;
+}
+
 /** The content-derived fields of `CrawlPageProjection` (HTTP fields added by the engine). */
 export interface ParsedPage {
   readonly title: string | null;
@@ -31,6 +41,10 @@ export interface ParsedPage {
   readonly headings: readonly string[];
   readonly wordCount: number;
   readonly internalOutlinks: readonly CrawlLinkProjection[];
+  /** Ephemeral frontier inputs; never copied into `crawl.page.v1`. */
+  readonly internalFetchTargets: readonly CrawlFetchTarget[];
+  /** Exact canonical-link fetch target paired with persisted `canonicalTarget`. */
+  readonly canonicalFetchTarget: CrawlFetchTarget | null;
   readonly jsonLd: CrawlJsonLdProjection;
   readonly paragraphs: readonly string[];
   readonly bodyExcerpt: string | null;
@@ -221,8 +235,19 @@ function anchorAccessibleName(openingTag: string, content: string): string | nul
   return null;
 }
 
-function collectInternalOutlinks(html: string, pageUrl: string, pageOrigin: string): readonly CrawlLinkProjection[] {
+function collectInternalOutlinks(
+  html: string,
+  pageUrl: string,
+  pageOrigin: string,
+): {
+  readonly projections: readonly CrawlLinkProjection[];
+  readonly fetchTargets: readonly CrawlFetchTarget[];
+} {
   const byTarget = new Map<string, CrawlLinkProjection>();
+  const fetchTargetsBySubject = new Map<
+    string,
+    Map<string, CrawlFetchTarget>
+  >();
   for (const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)) {
     const openingTag = `<a${match[1] ?? ""}>`;
     const href = attr(openingTag, "href");
@@ -236,19 +261,58 @@ function collectInternalOutlinks(html: string, pageUrl: string, pageOrigin: stri
       continue;
     }
     if (targetOrigin !== pageOrigin) continue;
-    if (pair.subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) continue;
-    if (byTarget.has(pair.subjectUrl)) continue;
-    const rel = attr(openingTag, "rel")?.trim();
-    byTarget.set(pair.subjectUrl, {
-      targetSubjectUrl: pair.subjectUrl,
-      rel: rel ? truncate(rel, CRAWL_PROJECTION_LIMITS.maxRelChars) : null,
-      anchorText: anchorAccessibleName(openingTag, match[2] ?? ""),
-    });
-    if (byTarget.size >= CRAWL_PROJECTION_LIMITS.maxInternalOutlinks) break;
+    if (
+      pair.subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
+      pair.fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars
+    )
+      continue;
+    if (!byTarget.has(pair.subjectUrl)) {
+      // Once the bounded subject projection is full, keep scanning the
+      // document for an additional exact fetch variant of an already admitted
+      // subject. Breaking here would drop `/last/` when `/last` is the 500th
+      // subject even though both belong to the same bounded subject fact.
+      if (byTarget.size >= CRAWL_PROJECTION_LIMITS.maxInternalOutlinks) {
+        continue;
+      }
+      const rel = attr(openingTag, "rel")?.trim();
+      byTarget.set(pair.subjectUrl, {
+        targetSubjectUrl: pair.subjectUrl,
+        rel: rel ? truncate(rel, CRAWL_PROJECTION_LIMITS.maxRelChars) : null,
+        anchorText: anchorAccessibleName(openingTag, match[2] ?? ""),
+      });
+    }
+    const subjectTargets =
+      fetchTargetsBySubject.get(pair.subjectUrl) ??
+      new Map<string, CrawlFetchTarget>();
+    // canonical_url.v1 can expose at most slash and non-slash fetch variants
+    // for one subject. Cap per subject, not globally: duplicate forms must not
+    // starve another admitted link subject from having any frontier identity.
+    if (!subjectTargets.has(pair.fetchUrl) && subjectTargets.size < 2) {
+      subjectTargets.set(pair.fetchUrl, {
+        fetchUrl: pair.fetchUrl,
+        subjectUrl: pair.subjectUrl,
+      });
+      fetchTargetsBySubject.set(pair.subjectUrl, subjectTargets);
+    }
   }
-  return [...byTarget.values()].sort((left, right) =>
-    left.targetSubjectUrl < right.targetSubjectUrl ? -1 : left.targetSubjectUrl > right.targetSubjectUrl ? 1 : 0,
-  );
+  return {
+    projections: [...byTarget.values()].sort((left, right) =>
+      left.targetSubjectUrl < right.targetSubjectUrl
+        ? -1
+        : left.targetSubjectUrl > right.targetSubjectUrl
+          ? 1
+          : 0,
+    ),
+    fetchTargets: [...fetchTargetsBySubject.values()]
+      .flatMap((targets) => [...targets.values()])
+      .sort((left, right) =>
+        left.fetchUrl < right.fetchUrl
+          ? -1
+          : left.fetchUrl > right.fetchUrl
+            ? 1
+            : 0,
+      ),
+  };
 }
 
 /** Robots directives (meta robots or X-Robots-Tag) → indexable boolean. */
@@ -292,13 +356,21 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
 
   const canonicalTag = firstTag(html, /<link\b[^>]*\brel\s*=\s*["']canonical["'][^>]*>/i);
   const canonicalHref = attr(canonicalTag, "href");
-  const resolvedCanonical = canonicalHref
-    ? canonicalizeUrl(canonicalHref, pageUrl)?.subjectUrl ?? null
+  const canonicalPair = canonicalHref
+    ? canonicalizeUrl(canonicalHref, pageUrl)
     : null;
   const canonicalTarget =
-    resolvedCanonical !== null &&
-    resolvedCanonical.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars
-      ? resolvedCanonical
+    canonicalPair !== null &&
+    canonicalPair.subjectUrl.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars &&
+    canonicalPair.fetchUrl.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars
+      ? canonicalPair.fetchUrl
+      : null;
+  const canonicalFetchTarget =
+    canonicalTarget !== null && canonicalPair
+      ? {
+          fetchUrl: canonicalPair.fetchUrl,
+          subjectUrl: canonicalPair.subjectUrl,
+        }
       : null;
 
   const metaTags = [...html.matchAll(/<meta\b[^>]*>/gi)].map((tag) => tag[0]);
@@ -312,6 +384,7 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
   );
   const bodyText = extractNormalisedBody(html);
   const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
+  const outlinks = collectInternalOutlinks(html, pageUrl, pageOrigin);
 
   return {
     title: tagText(html, "title", CRAWL_PROJECTION_LIMITS.maxTitleChars),
@@ -322,7 +395,9 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
     h1: collectH1(html),
     headings: collectHeadings(html),
     wordCount,
-    internalOutlinks: collectInternalOutlinks(html, pageUrl, pageOrigin),
+    internalOutlinks: outlinks.projections,
+    internalFetchTargets: outlinks.fetchTargets,
+    canonicalFetchTarget,
     jsonLd: collectJsonLd(html),
     paragraphs: collectParagraphs(html),
     bodyExcerpt: bodyText

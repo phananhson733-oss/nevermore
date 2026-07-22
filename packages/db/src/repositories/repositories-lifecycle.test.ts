@@ -412,6 +412,7 @@ describe("artifact and finding repositories", () => {
       }),
     ).resolves.toBe(finding);
     await repo.touchSeen("finding-1", {
+      ruleVersion: 2,
       severity: "critical",
       confidence: "high",
       titleArgs: { status: 503 },
@@ -423,6 +424,7 @@ describe("artifact and finding repositories", () => {
       regressed: true,
     });
     expect(fake.last("set").args[0]).toMatchObject({
+      rule_version: 2,
       active: true,
       regressed: true,
       resolved_at: null,
@@ -746,11 +748,13 @@ describe("project and source repositories", () => {
     await expect(repo.mapPrimariesByProjects(scope, [])).resolves.toEqual(
       new Map(),
     );
-    fake.enqueue([site], [site], []);
+    fake.enqueue([site], [site], [site], [], []);
     await expect(
       repo.mapPrimariesByProjects(scope, ["project-1"]),
     ).resolves.toEqual(new Map([["project-1", site]]));
     await expect(repo.findPrimary(scope)).resolves.toBe(site);
+    await expect(repo.findById(scope, "site-1")).resolves.toBe(site);
+    await expect(repo.findById(scope, "missing")).resolves.toBeNull();
     await repo.updatePrimaryProjections(scope, {
       marketCodes: ["GB"],
       languageCodes: ["en-GB"],

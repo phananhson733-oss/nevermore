@@ -156,6 +156,9 @@ export async function runPipeline(input: {
 
   const ruleResults: RuleResultRecord[] = [];
   const buckets: { ruleId: RuleId; candidates: FindingCandidate[] }[] = [];
+  const ruleVersionById = new Map<RuleId, number>(
+    rules.map((rule) => [rule.id, rule.version]),
+  );
 
   for (const rule of rules) {
     const start = performance.now();
@@ -255,7 +258,7 @@ export async function runPipeline(input: {
       return {
         findingKey: key,
         ruleId: c.ruleId,
-        ruleVersion: 1,
+        ruleVersion: requiredRuleVersion(ruleVersionById, c.ruleId),
         ruleFamily: meta.ruleFamily,
         intent: meta.intent,
         domain: meta.domain,
@@ -278,6 +281,17 @@ export async function runPipeline(input: {
     findings,
     coverage: buildCoverage(ruleResults, ctx, deliveryLocale),
   };
+}
+
+function requiredRuleVersion(
+  ruleVersionById: ReadonlyMap<RuleId, number>,
+  ruleId: RuleId,
+): number {
+  const version = ruleVersionById.get(ruleId);
+  if (version === undefined) {
+    throw new Error(`Missing rule version for candidate-producing rule ${ruleId}`);
+  }
+  return version;
 }
 
 function needsGeneratedSummary(locale: string): boolean {

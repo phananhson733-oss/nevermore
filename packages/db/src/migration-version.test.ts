@@ -8,6 +8,71 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("accepts historical and exact-variant rule sets while advancing the projection", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0013_exact_url_variant_rules.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /CHECK\s*\(rule_set_version\s+IN\s*\(\s*'mvp\.rules\.0\.2\.0'\s*,\s*'mvp\.rules\.0\.2\.1'\s*\)\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0013_exact_url_variant_rules'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
+  it("hardens new page snapshots while preserving explicit legacy history", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0012_page_snapshot_lineage_hardening.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+canonical_extract\s+text/iu,
+    );
+    expect(migration).toMatch(
+      /ADD\s+CONSTRAINT\s+page_snapshots_canonical_extract_required[\s\S]*?CHECK\s*\(canonical_extract\s+IS\s+NOT\s+NULL\)\s+NOT\s+VALID/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+page_snapshots_verified_source_identity_idx[\s\S]*?\(site_page_id,\s*data_snapshot_id\)[\s\S]*?WHERE\s+canonical_extract\s+IS\s+NOT\s+NULL/iu,
+    );
+    expect(migration).toMatch(
+      /ADD\s+CONSTRAINT\s+page_snapshots_site_page_data_snapshot_key[\s\S]*?UNIQUE\s*\(site_page_id,\s*data_snapshot_id\)/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.captured_at\s+IS\s+DISTINCT\s+FROM\s+source_captured_at/iu,
+    );
+    expect(migration).toMatch(
+      /digest\s*\(convert_to\s*\(NEW\.canonical_extract,\s*'UTF8'\),\s*'sha256'\)/iu,
+    );
+    expect(migration).toMatch(
+      /canonical_extract_json\s+IS\s+DISTINCT\s+FROM\s+NEW\.extract/iu,
+    );
+    expect(migration).not.toMatch(
+      /UPDATE\s+app\.page_snapshots[\s\S]*?SET\s+(?:content_hash|extract|canonical_extract)/iu,
+    );
+    expect(migration).not.toMatch(
+      /ALTER\s+TABLE\s+app\.page_snapshots[\s\S]*?ALTER\s+COLUMN\s+canonical_extract\s+SET\s+NOT\s+NULL/iu,
+    );
+    expect(migration).toMatch(
+      /IF\s+NOT\s+EXISTS\s*\([\s\S]*?GROUP\s+BY\s+site_page_id,\s*data_snapshot_id[\s\S]*?HAVING\s+count\(\*\)\s*>\s*1[\s\S]*?\)\s+AND\s+NOT\s+EXISTS/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0012_page_snapshot_lineage_hardening'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
   it("adds a separate confirmed profile pointer and permits unknown site scope", () => {
     const migration = readFileSync(
       fileURLToPath(

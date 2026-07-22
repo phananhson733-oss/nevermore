@@ -24,6 +24,7 @@ function snapshot(
 ): DataSnapshot {
   return {
     id: `snapshot-${provider}`,
+    siteId: "site-1",
     provider,
     datasetKey: `${provider}.canonical.v1`,
     schemaVersion: "0.2.0",

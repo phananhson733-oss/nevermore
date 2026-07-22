@@ -139,6 +139,31 @@ describe("croPathRule (CRO-PATH-001)", () => {
     expect(result.metrics.destinationCount).toBe(1);
   });
 
+  it("does not fabricate a missing path when healthy exact variants disagree", () => {
+    const subjectUrl = "https://x.com/product";
+    const observations = [
+      crawlObs(DEST, page(DEST, [])),
+      crawlObs(subjectUrl, page(subjectUrl, [])),
+      crawlObs(subjectUrl, page(`${subjectUrl}/`, [DEST])),
+    ];
+
+    const forward = croPathRule.evaluate(
+      buildCtx({ icp: ICP_WITH_DEMO, observations }),
+    );
+    const reversed = croPathRule.evaluate(
+      buildCtx({
+        icp: ICP_WITH_DEMO,
+        observations: [...observations].reverse(),
+      }),
+    );
+
+    expect(forward).toEqual(reversed);
+    expect(forward).toEqual({
+      status: "pass",
+      metrics: { affectedCount: 0, destinationCount: 1 },
+    });
+  });
+
   it("skips not_applicable when no conversion destination resolves", () => {
     const ctx = buildCtx({
       icp: {

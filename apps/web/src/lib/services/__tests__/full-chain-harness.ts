@@ -41,6 +41,7 @@ import {
 } from "@sf/db";
 import {
   LocalFsBlobStore,
+  CRAWL_METHOD_VERSION,
   METRIC_CRAWL_PAGE,
   METRIC_CRAWL_ROBOTS,
   METRIC_CSV_KEYWORD_GAP,
@@ -86,10 +87,10 @@ import { runExport } from "../../../../../worker/src/export/run-export.ts";
  *  - a commercial priority page with
  *    < 2 internal inlinks              → TECH-LINKGRAPH-005 (technical_seo)
  *  - an ICP offer no page covers       → CONTENT-COVERAGE-001 (content_intent)
- * Crawl is AVAILABLE while GSC/GA4/CSV are UNAVAILABLE, so the search/gap/landing
- * rules are `skipped` and the run is `partial` — the honest degradation path
- * (spec §1.3: an unavailable metric is null, never 0; missing datasets skip
- * their rules, they never fabricate a defect).
+ * The common chain freezes AVAILABLE Crawl/GSC/GA4/CSV snapshots and therefore
+ * proves complete five-domain coverage. `runMissingProviderDiagnostic` reuses
+ * the same Crawl facts without the other providers to prove the separate honest
+ * degradation path: unavailable is never relabeled as zero or as a defect.
  */
 
 export const DATABASE_URL = process.env["DATABASE_URL"]!;
@@ -237,7 +238,7 @@ function mkPage(o: {
     redirectChain: [],
     canonicalTarget: o.canonicalTarget ?? null,
     robotsIndexable: o.robotsIndexable ?? true,
-    robotsDirectives: [],
+    robotsDirectives: o.robotsIndexable === false ? ["noindex"] : [],
     title: o.title ?? null,
     metaDescription: null,
     h1: o.h1 ?? [],
@@ -438,7 +439,8 @@ async function seedCrawlSnapshot(
     started_at: capturedAt,
     completed_at: capturedAt,
   });
-  await new CollectionRunsRepository(handle.db).insertPlaceholder({
+  const collections = new CollectionRunsRepository(handle.db);
+  await collections.insertPlaceholder({
     runId: collectionRunId,
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
@@ -446,7 +448,7 @@ async function seedCrawlSnapshot(
     sourceConnectionId: connection.id,
     provider: "crawl",
     operation: "site_graph",
-    methodVersion: "crawl.site_graph.v1",
+    methodVersion: CRAWL_METHOD_VERSION,
     parametersHash: contentHash({ c: collectionRunId }),
   });
   const observations = goldenObservations(origin, capturedAt, fixture);
@@ -459,7 +461,7 @@ async function seedCrawlSnapshot(
     provider: "crawl",
     datasetKey: "crawl.site_graph.v1",
     schemaVersion: "0.2.0",
-    methodVersion: "crawl.site_graph.v1",
+    methodVersion: CRAWL_METHOD_VERSION,
     capturedAt,
     sourceWindow: { start: null, end: null },
     availability: "available",
@@ -474,6 +476,18 @@ async function seedCrawlSnapshot(
     "crawl",
     observations,
   );
+  const pageCount = observations.filter(
+    (observation) => observation.metricKey === METRIC_CRAWL_PAGE,
+  ).length;
+  await collections.finalize(collectionRunId, {
+    rowCount: snapshot.row_count,
+    sourceWindow: snapshot.source_window,
+    providerUsage: {
+      urlsFetched: pageCount,
+      pagesCollected: pageCount,
+    },
+    stopReason: null,
+  });
   await new SourceConnectionsRepository(handle.db).setLastSnapshot(
     connection.id,
     snapshot.id,
@@ -622,9 +636,9 @@ async function seedProviderSnapshot(
   siteId: string,
   origin: string,
   actor: string,
+  capturedAt: string,
   fixture: ProviderFixture,
 ): Promise<string> {
-  const capturedAt = new Date().toISOString();
   const connection = await new SourceConnectionsRepository(
     handle.db,
   ).insertConnection({
@@ -679,7 +693,8 @@ async function seedProviderSnapshot(
     importPreviewId = preview.id;
   }
 
-  await new CollectionRunsRepository(handle.db).insertPlaceholder({
+  const collections = new CollectionRunsRepository(handle.db);
+  await collections.insertPlaceholder({
     runId: collectionRunId,
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
@@ -718,6 +733,12 @@ async function seedProviderSnapshot(
     fixture.provider,
     fixture.observations,
   );
+  await collections.finalize(collectionRunId, {
+    rowCount: snapshot.row_count,
+    sourceWindow: snapshot.source_window,
+    providerUsage: { rows: snapshot.row_count },
+    stopReason: null,
+  });
   await new SourceConnectionsRepository(handle.db).setLastSnapshot(
     connection.id,
     snapshot.id,
@@ -737,26 +758,26 @@ async function seedFullProviderSnapshots(
 ): Promise<string[]> {
   const capturedAt = new Date().toISOString();
   return Promise.all([
-    seedProviderSnapshot(handle, scope, siteId, origin, actor, {
+    seedProviderSnapshot(handle, scope, siteId, origin, actor, capturedAt, {
       provider: "gsc",
       connectionType: "oauth",
       datasetKey: "gsc.page_query_daily.v1",
       operation: "search_analytics",
-      methodVersion: "gsc.search_analytics.v1",
+      methodVersion: "gsc.page_query_daily.v1",
       observations: gscObservations(origin, capturedAt),
       limitation:
         "Search Console returns top rows by clicks, not the full query universe.",
     }),
-    seedProviderSnapshot(handle, scope, siteId, origin, actor, {
+    seedProviderSnapshot(handle, scope, siteId, origin, actor, capturedAt, {
       provider: "ga4",
       connectionType: "oauth",
       datasetKey: "ga4.organic_landing_daily.v1",
       operation: "organic_landing",
-      methodVersion: "ga4.organic_landing.v1",
+      methodVersion: "ga4.organic_landing_daily.v1",
       observations: ga4Observations(origin, capturedAt),
       limitation: "GA4 organic landing data with mapped fixture key events.",
     }),
-    seedProviderSnapshot(handle, scope, siteId, origin, actor, {
+    seedProviderSnapshot(handle, scope, siteId, origin, actor, capturedAt, {
       provider: "csv",
       connectionType: "file_import",
       datasetKey: "csv.keyword_gap.v1",
@@ -855,6 +876,18 @@ export async function runCommonChain(
     workspaceId,
     projectId: scope.projectId,
   });
+  const completedDiagnostic = await new AsyncRunsRepository(handle.db).findById(
+    scope,
+    diag.run.id,
+  );
+  if (
+    completedDiagnostic?.status !== "completed" &&
+    completedDiagnostic?.status !== "partial"
+  ) {
+    throw new Error(
+      `golden diagnostic failed before rule assertions (${completedDiagnostic?.last_error_code ?? "missing run"})`,
+    );
+  }
 
   // Confirm the top technical finding → same-transaction Action (spec §9.1).
   const findings = await listProjectFindings({ workspaceId }, scope.projectId, {
@@ -972,6 +1005,15 @@ export async function runMissingProviderDiagnostic(
     workspaceId,
     projectId: scope.projectId,
   });
+  const completedDiagnostic = await new AsyncRunsRepository(handle.db).findById(
+    scope,
+    diag.run.id,
+  );
+  if (completedDiagnostic?.status !== "partial") {
+    throw new Error(
+      `crawl-only diagnostic did not finish partial (${completedDiagnostic?.last_error_code ?? completedDiagnostic?.status ?? "missing run"})`,
+    );
+  }
   return { scope, actor, snapshotId, diagRunId: diag.run.id };
 }
 

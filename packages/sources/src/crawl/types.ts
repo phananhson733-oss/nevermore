@@ -14,7 +14,10 @@ import type {
 } from "../observations.ts";
 
 export const CRAWL_DATASET_KEY = "crawl.site_graph.v1";
-export const CRAWL_METHOD_VERSION = "crawl.site_graph.v1";
+// v2 retains every exact initial fetch identity in CrawlRaw/PageSnapshot,
+// exact canonical hrefs, and journey-correct first/final status semantics; v1
+// collapsed slash variants that shared one aggregation subject.
+export const CRAWL_METHOD_VERSION = "crawl.site_graph.v2";
 
 /** Defense-in-depth run cap from spec §14.2; counts fetch-decoded body bytes. */
 export const CRAWL_MAX_TOTAL_DECODED_BYTES = 128 * 1024 * 1024;
@@ -102,11 +105,11 @@ export interface CrawlParams {
 }
 
 /**
- * One crawled page. `subjectUrl` is the terminal response URL's canonical_url.v1
- * aggregation key. `projection.fetchUrl` is that terminal content fetch URL,
- * while projection status/finalStatus describe the initial/terminal responses
- * of the selected redirect journey. `projection` is the exact `crawl.page.v1`
- * value emitted as an observation.
+ * One exact crawl journey. `subjectUrl` is the initial request URL's
+ * canonical_url.v1 aggregation key and may therefore repeat across records.
+ * `projection.fetchUrl` is the exact initial HTTP identity retained for
+ * Evidence/PageSnapshot lineage; projection status/finalStatus describe that
+ * journey's initial/terminal responses and redirectChain retains its targets.
  */
 export interface CrawlPageRecord {
   readonly subjectUrl: string;

@@ -165,7 +165,7 @@ test("each evidence trace exposes canonical provenance and Escape restores focus
   ).toBeVisible();
   await expect(drawer.getByText("Available", { exact: true })).toBeVisible();
   await expect(drawer.getByText("Supports", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("Grade A", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("Grade B", { exact: true })).toBeVisible();
   await expect(drawer).toContainText("Jul 18, 2026");
   await expect(drawer).toContainText("The URL returned HTTP 500.");
   await expect(drawer).toContainText("direct_public");

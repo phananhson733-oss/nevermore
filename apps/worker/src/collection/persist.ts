@@ -6,6 +6,7 @@ import {
   ObservationsRepository,
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
+  SitesRepository,
   SourceConnectionsRepository,
   StorageObjectReferencesRepository,
   TelemetryRepository,
@@ -21,6 +22,10 @@ import {
   type SourceWindow,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
+import {
+  materializePreparedCrawlPages,
+  prepareCrawlPageMaterialization,
+} from "./materialize-crawl-pages.ts";
 
 /**
  * Adapter-agnostic collection persistence (spec §7.6, §13.3). The raw payload is
@@ -72,6 +77,25 @@ export async function persistCollectionResult(
 ): Promise<string | null> {
   const { collectionRun: run, outcome } = input;
   const scope = { workspaceId: run.workspace_id, projectId: run.project_id };
+  const canonicalSite =
+    run.provider === "crawl"
+      ? await new SitesRepository(ctx.db).findById(scope, run.site_id)
+      : null;
+  // Fail closed before Storage/SQL writes if a crawl result is malformed or if
+  // its raw facts drift from either the CollectionOutcome or the exact Site row
+  // named by this collection run. The expected origin is never taken from raw.
+  const crawlPages = prepareCrawlPageMaterialization({
+    provider: run.provider,
+    outcome,
+    ...(canonicalSite
+      ? {
+          expectedSite: {
+            origin: canonicalSite.origin,
+            host: canonicalSite.host,
+          },
+        }
+      : {}),
+  });
 
   // The key is known before either side touches Storage, so the writer and
   // orphan cleanup can serialize their final decisions on the same advisory
@@ -169,6 +193,15 @@ export async function persistCollectionResult(
         rowCount: outcome.rowCount,
         checksum: uploaded.sha256,
         ...(outcome.summary ? { summary: outcome.summary } : {}),
+      });
+
+      await materializePreparedCrawlPages(tx, {
+        workspaceId: run.workspace_id,
+        projectId: run.project_id,
+        siteId: run.site_id,
+        dataSnapshotId: snapshot.id,
+        capturedAt: outcome.capturedAt,
+        pages: crawlPages,
       });
 
       await new ObservationsRepository(tx).insertMany(

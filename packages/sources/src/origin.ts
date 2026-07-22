@@ -19,20 +19,22 @@ export interface NormalizedOrigin {
  * Returns null when the input is not an unambiguous http(s) URL without
  * userinfo, or when it contains a non-root path/query/fragment that an
  * origin-only Site record could not preserve honestly. On success:
- * - `origin`: `scheme://host` with any non-default port, a lowercase host, and
- *   no path or trailing slash (e.g. "https://example.com", "http://host:8080").
+ * - `origin`: `scheme://host` on the scheme's standard port, with a lowercase
+ *   host and no path or trailing slash (e.g. "https://example.com"). Admission
+ *   permits only standard HTTP(S) ports; WHATWG has already removed an
+ *   explicitly written default port by this point.
  * - `host`: the lowercase hostname.
  */
 export function normalizeSiteOrigin(rawUrl: string): NormalizedOrigin | null {
   const normalized = normalizeUrl(rawUrl);
   if (!normalized) return null;
   const { url } = normalized;
+  if (url.port !== "") return null;
   if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
     return null;
   }
   const host = url.hostname.toLowerCase();
   const protocol = url.protocol.toLowerCase();
-  // url.port is "" for the scheme's default port (80/443), so those are dropped.
-  const origin = url.port ? `${protocol}//${host}:${url.port}` : `${protocol}//${host}`;
+  const origin = `${protocol}//${host}`;
   return { origin, host };
 }

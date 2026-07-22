@@ -43,6 +43,7 @@ function snapshot(
 ): DataSnapshotDto {
   return {
     id,
+    siteId: "site-1",
     provider: "crawl",
     datasetKey: "crawl_pages",
     schemaVersion: "1.0.0",
@@ -87,6 +88,7 @@ function finding(id: string, evidenceId: string): FindingDto {
         observedAt: NOW,
         limitation: "One captured response.",
         snapshotId: "snapshot-new",
+        collectionRunId: "collection-run-new",
         analysisInvocationId: null,
       },
     ],
@@ -154,6 +156,21 @@ describe("buildOverviewHighlights", () => {
       status: "draft",
       updatedAt: NOW,
     });
+  });
+
+  it("uses the lowest snapshot id when captured timestamps are equal", () => {
+    const higherId = snapshot("snapshot-z", NOW);
+    const lowerId = snapshot("snapshot-a", NOW);
+    const highlights = (snapshots: readonly DataSnapshotDto[]) =>
+      buildOverviewHighlights({
+        actions: [],
+        snapshots,
+        findings: [],
+        artifacts: [],
+      });
+
+    expect(highlights([higherId, lowerId]).latestSnapshot).toBe(lowerId);
+    expect(highlights([lowerId, higherId]).latestSnapshot).toBe(lowerId);
   });
 
   it("keeps a genuinely empty project unavailable instead of inventing values", () => {

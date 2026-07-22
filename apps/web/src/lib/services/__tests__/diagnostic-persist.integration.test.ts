@@ -16,22 +16,30 @@ process.env["LOG_LEVEL"] ??= "error";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { asyncRuns, workspaces } from "@sf/db/schema";
 import {
+  CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
   FindingsRepository,
   ObservationsRepository,
+  SourceConnectionsRepository,
   type ProjectScope,
 } from "@sf/db";
 import {
   ALL_RULES,
   DiagnosticContext,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
   parseIcp,
   runPipeline,
   type ObservationView,
 } from "@sf/engine";
-import { METRIC_CRAWL_PAGE, type CrawlPageProjection } from "@sf/sources";
+import {
+  CRAWL_METHOD_VERSION,
+  METRIC_CRAWL_PAGE,
+  type CrawlPageProjection,
+} from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 
@@ -111,6 +119,10 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
 
   it("runs the pipeline over a 404-page snapshot and persists a TECH-HTTP-001 finding + evidence", async () => {
     const capturedAt = new Date().toISOString();
+    const crawlSource = await new SourceConnectionsRepository(
+      handle.db,
+    ).findConnectedByProvider(scope, "crawl");
+    if (!crawlSource) throw new Error("fixture Crawl connection missing");
 
     // Seed a crawl collection run + snapshot + one 404-page observation.
     const [run] = await handle.db
@@ -125,22 +137,28 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
         completed_at: capturedAt,
       })
       .returning();
-    await handle.db.execute(
-      // collection_runs shares the async_runs id (minimal placeholder).
-      // Using drizzle raw insert keeps the test independent of the repo shape.
-      (await import("drizzle-orm"))
-        .sql`insert into app.collection_runs (id, workspace_id, project_id, site_id, provider, operation, method_version, parameters_hash) values (${run!.id}, ${scope.workspaceId}, ${scope.projectId}, ${siteId}, 'crawl', 'site_graph', 'crawl.site_graph.v1', ${contentHash({ x: 1 })})`,
-    );
+    const collections = new CollectionRunsRepository(handle.db);
+    await collections.insertPlaceholder({
+      runId: run!.id,
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      sourceConnectionId: crawlSource.id,
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      parametersHash: contentHash({ x: 1 }),
+    });
     const snapshot = await new DataSnapshotsRepository(handle.db).insert({
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
       siteId,
       collectionRunId: run!.id,
-      sourceConnectionId: null,
+      sourceConnectionId: crawlSource.id,
       provider: "crawl",
       datasetKey: "crawl.site_graph.v1",
       schemaVersion: "0.2.0",
-      methodVersion: "crawl.site_graph.v1",
+      methodVersion: CRAWL_METHOD_VERSION,
       capturedAt,
       sourceWindow: { start: null, end: null },
       availability: "available",
@@ -171,6 +189,18 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
           limitation: "current public response",
         },
       ],
+    );
+    await collections.finalize(run!.id, {
+      rowCount: snapshot.row_count,
+      sourceWindow: snapshot.source_window,
+      providerUsage: { urlsFetched: 1, pagesCollected: 1 },
+      stopReason: null,
+    });
+    await new SourceConnectionsRepository(handle.db).setLastSnapshot(
+      crawlSource.id,
+      snapshot.id,
+      snapshot.availability,
+      snapshot.limitation,
     );
 
     // Build the frozen context + run the real pipeline.
@@ -216,6 +246,7 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
       httpFinding,
       "the 404 page should trigger TECH-HTTP-001",
     ).toBeDefined();
+    expect(httpFinding!.ruleVersion).toBe(2);
     expect(httpFinding!.evidence.length).toBeGreaterThan(0);
 
     // Persist a diagnostic run + the finding + its evidence, the way the worker does.
@@ -231,18 +262,42 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
         completed_at: capturedAt,
       })
       .returning();
+    const frozenIcp = await seedIcp(handle, scope, actor);
+    const inputManifest = {
+      projectId: scope.projectId,
+      siteId,
+      icp: frozenIcp,
+      snapshots: [
+        {
+          snapshotId: snapshot.id,
+          provider: snapshot.provider,
+          datasetKey: snapshot.dataset_key,
+          schemaVersion: snapshot.schema_version,
+          methodVersion: snapshot.method_version,
+          checksum: snapshot.checksum,
+          capturedAt: snapshot.captured_at,
+          sourceWindow: snapshot.source_window,
+          availability: snapshot.availability,
+        },
+      ],
+      ruleSetVersion: RULE_SET_VERSION,
+      promptSetVersion: PROMPT_SET_VERSION,
+      deliveryLocale: "en",
+    };
     await new DiagnosticRunsRepository(handle.db).insert({
       runId: diagAsync!.id,
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
       siteId,
-      icpProfileId: await seedIcp(handle, scope, actor),
-      icpProfileVersion: 1,
-      ruleSetVersion: "mvp.rules.0.2.0",
-      promptSetVersion: "mvp.prompts.0.2.0",
+      icpProfileId: frozenIcp.id,
+      icpProfileVersion: frozenIcp.version,
+      ruleSetVersion: RULE_SET_VERSION,
+      promptSetVersion: PROMPT_SET_VERSION,
       outputLocale: "en",
-      inputManifest: { snapshots: [{ snapshotId: snapshot.id }] },
-      inputHash: contentHash({ r: diagAsync!.id }),
+      inputManifest,
+      inputHash: contentHash(
+        inputManifest as Parameters<typeof contentHash>[0],
+      ),
     });
 
     const findingsRepo = new FindingsRepository(handle.db);
@@ -288,6 +343,12 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
         claim: e.claim,
         observedAt: e.observedAt,
         limitation: e.limitation,
+        ...(e.sourceProvider === "crawl"
+          ? {
+              snapshotId: snapshot.id,
+              collectionRunId: run!.id,
+            }
+          : {}),
       })),
     );
     // Uses the valid finding_observations.role ('primary'|'supporting'|...); a bad
@@ -320,7 +381,7 @@ async function seedIcp(
   handle: DbHandle,
   scope: ProjectScope,
   actor: string,
-): Promise<string> {
+): Promise<{ id: string; version: number; contentHash: string }> {
   const mod = await import("@sf/db/schema");
   const [icp] = await handle.db
     .insert(mod.icpProfiles)
@@ -336,5 +397,9 @@ async function seedIcp(
       created_by: actor,
     })
     .returning();
-  return icp!.id;
+  return {
+    id: icp!.id,
+    version: icp!.version,
+    contentHash: icp!.content_hash,
+  };
 }

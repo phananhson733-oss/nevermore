@@ -186,75 +186,260 @@ INSERT INTO app.source_connections (
   id, workspace_id, project_id, site_id, provider, connection_type, state,
   limitation, connected_at, created_by
 )
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000501',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    'crawl',
+    'public',
+    'connected',
+    'Static HTML public crawl only.',
+    now(),
+    '00000000-0000-4000-8000-000000000101'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000502',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    'csv',
+    'file_import',
+    'connected',
+    'User-provided keyword-gap import.',
+    now(),
+    '00000000-0000-4000-8000-000000000101'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000503',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    'dataforseo',
+    'api_key_stub',
+    'connected',
+    'Vendor keyword-gap observation source.',
+    now(),
+    '00000000-0000-4000-8000-000000000101'
+  );
+
+INSERT INTO app.import_previews (
+  id, workspace_id, project_id, site_id, created_by, token_hash,
+  template_id, raw_object_key, file_checksum, row_count, detected_columns,
+  suggested_mapping, preview_rows, expires_at
+)
 VALUES (
-  '00000000-0000-4000-8000-000000000501',
+  '00000000-0000-4000-8000-000000001401',
   '00000000-0000-4000-8000-000000000001',
   '00000000-0000-4000-8000-000000000201',
   '00000000-0000-4000-8000-000000000301',
-  'crawl',
-  'public',
-  'connected',
-  'Static HTML public crawl only.',
-  now(),
-  '00000000-0000-4000-8000-000000000101'
+  '00000000-0000-4000-8000-000000000101',
+  decode(repeat('a', 64), 'hex'),
+  'keyword_gap_v1',
+  'raw-import/00000000-0000-4000-8000-000000000201/00000000-0000-4000-8000-000000001401/preview.csv',
+  repeat('a', 64),
+  1,
+  '["keyword"]'::jsonb,
+  '{"keyword":"keyword"}'::jsonb,
+  '[{"keyword":"growth audit"}]'::jsonb,
+  now() + interval '30 minutes'
 );
 
 INSERT INTO app.async_runs (
   id, workspace_id, project_id, kind, status, active_key, initiated_by,
   started_at, completed_at
 )
-VALUES (
-  '00000000-0000-4000-8000-000000000601',
-  '00000000-0000-4000-8000-000000000001',
-  '00000000-0000-4000-8000-000000000201',
-  'collection',
-  'completed',
-  'collect:crawl:site_graph',
-  '00000000-0000-4000-8000-000000000101',
-  now(),
-  now()
-);
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000601',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    'collection',
+    'completed',
+    'collect:crawl:site_graph',
+    '00000000-0000-4000-8000-000000000101',
+    now(),
+    now()
+  ),
+  (
+    '00000000-0000-4000-8000-000000000606',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    'collection',
+    'completed',
+    'collect:csv:keyword_gap',
+    '00000000-0000-4000-8000-000000000101',
+    now(),
+    now()
+  ),
+  (
+    '00000000-0000-4000-8000-000000000607',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    'collection',
+    'completed',
+    'collect:dataforseo:keyword_gap',
+    '00000000-0000-4000-8000-000000000101',
+    now(),
+    now()
+  );
 
 INSERT INTO app.collection_runs (
-  id, workspace_id, project_id, site_id, source_connection_id, provider,
-  operation, method_version, parameters_hash, row_count
+  id, workspace_id, project_id, site_id, source_connection_id,
+  import_preview_id, provider, operation, method_version, parameters_hash
 )
-VALUES (
-  '00000000-0000-4000-8000-000000000601',
-  '00000000-0000-4000-8000-000000000001',
-  '00000000-0000-4000-8000-000000000201',
-  '00000000-0000-4000-8000-000000000301',
-  '00000000-0000-4000-8000-000000000501',
-  'crawl',
-  'site_graph',
-  'crawl.v1',
-  repeat('2', 64),
-  1
-);
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000601',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    '00000000-0000-4000-8000-000000000501',
+    NULL,
+    'crawl',
+    'site_graph',
+    'crawl.site_graph.v2',
+    repeat('2', 64)
+  ),
+  (
+    '00000000-0000-4000-8000-000000000606',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    '00000000-0000-4000-8000-000000000502',
+    '00000000-0000-4000-8000-000000001401',
+    'csv',
+    'keyword_gap_import',
+    'csv.keyword_gap.v1',
+    repeat('5', 64)
+  ),
+  (
+    '00000000-0000-4000-8000-000000000607',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    '00000000-0000-4000-8000-000000000503',
+    NULL,
+    'dataforseo',
+    'keyword_gap_import',
+    'dataforseo.ranked_keywords.v1',
+    repeat('6', 64)
+  );
 
 INSERT INTO app.data_snapshots (
   id, workspace_id, project_id, site_id, collection_run_id, source_connection_id,
   provider, dataset_key, schema_version, method_version, captured_at, source_window,
   availability, limitation, row_count, checksum
 )
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000701',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    '00000000-0000-4000-8000-000000000601',
+    '00000000-0000-4000-8000-000000000501',
+    'crawl',
+    'crawl.site_graph.v1',
+    'crawl.site_graph.v2',
+    'crawl.site_graph.v2',
+    now(),
+    '{"start":null,"end":null}'::jsonb,
+    'available',
+    'Static HTML public crawl only.',
+    1,
+    repeat('3', 64)
+  ),
+  (
+    '00000000-0000-4000-8000-000000000702',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    '00000000-0000-4000-8000-000000000606',
+    '00000000-0000-4000-8000-000000000502',
+    'csv',
+    'csv.keyword_gap.v1',
+    '0.2.0',
+    'csv.keyword_gap.v1',
+    now(),
+    '{"start":null,"end":null}'::jsonb,
+    'available',
+    'User-provided keyword-gap import.',
+    1,
+    repeat('6', 64)
+  ),
+  (
+    '00000000-0000-4000-8000-000000000703',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    '00000000-0000-4000-8000-000000000607',
+    '00000000-0000-4000-8000-000000000503',
+    'dataforseo',
+    'csv.keyword_gap.v1',
+    'dataforseo.ranked_keywords.v1',
+    'dataforseo.ranked_keywords.v1',
+    now(),
+    '{"start":null,"end":null}'::jsonb,
+    'available',
+    'Vendor keyword-gap observation source.',
+    1,
+    repeat('7', 64)
+  );
+
+UPDATE app.collection_runs
+SET row_count = 1,
+    source_window = '{"start":null,"end":null}'::jsonb
+WHERE id IN (
+  '00000000-0000-4000-8000-000000000601',
+  '00000000-0000-4000-8000-000000000606',
+  '00000000-0000-4000-8000-000000000607'
+);
+
+INSERT INTO app.async_runs (
+  id, workspace_id, project_id, kind, status, active_key, initiated_by,
+  started_at
+)
 VALUES (
-  '00000000-0000-4000-8000-000000000701',
+  '00000000-0000-4000-8000-000000000605',
   '00000000-0000-4000-8000-000000000001',
   '00000000-0000-4000-8000-000000000201',
-  '00000000-0000-4000-8000-000000000301',
-  '00000000-0000-4000-8000-000000000601',
-  '00000000-0000-4000-8000-000000000501',
-  'crawl',
-  'crawl.site_graph.v1',
-  '1',
-  'crawl.v1',
-  now(),
-  '{"start":null,"end":null}'::jsonb,
-  'available',
-  'Static HTML public crawl only.',
-  1,
-  repeat('3', 64)
+  'collection',
+  'running',
+  'collect:crawl:placeholder-bypass',
+  '00000000-0000-4000-8000-000000000101',
+  now()
 );
+
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.collection_runs (
+      id, workspace_id, project_id, site_id, source_connection_id, provider,
+      operation, method_version, parameters_hash, row_count
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000605',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000501',
+      'crawl',
+      'site_graph',
+      'crawl.site_graph.v2',
+      repeat('9', 64),
+      1
+    );
+  EXCEPTION WHEN check_violation THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'collection run terminal INSERT bypass was accepted';
+  END IF;
+END;
+$$;
 
 -- An observed zero is valid when availability is explicitly available.
 INSERT INTO app.normalized_observations (
@@ -262,24 +447,61 @@ INSERT INTO app.normalized_observations (
   subject_ref, observed_at, availability, value_numeric, unit, origin, grade,
   support, limitation
 )
-VALUES (
-  '00000000-0000-4000-8000-000000000801',
-  '00000000-0000-4000-8000-000000000001',
-  '00000000-0000-4000-8000-000000000201',
-  '00000000-0000-4000-8000-000000000701',
-  'crawl',
-  'page.internal_inlinks',
-  'url',
-  'https://example.com/pricing',
-  now(),
-  'available',
-  0,
-  'links',
-  'direct_public',
-  'B',
-  'context',
-  'Only links present in the static HTML crawl are counted.'
-);
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000801',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000701',
+    'crawl',
+    'crawl.page.v1',
+    'url',
+    'https://example.com/pricing',
+    now(),
+    'available',
+    0,
+    'links',
+    'direct_public',
+    'B',
+    'context',
+    'Only links present in the static HTML crawl are counted.'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000802',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000702',
+    'csv',
+    'csv.keyword_gap.v1',
+    'keyword_cluster',
+    'growth-audit',
+    now(),
+    'available',
+    12,
+    'keywords',
+    'user_provided',
+    'C',
+    'context',
+    'User-provided rows retain their source identity.'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000803',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000703',
+    'dataforseo',
+    'csv.keyword_gap.v1',
+    'keyword_cluster',
+    'growth-audit',
+    now(),
+    'available',
+    10,
+    'keywords',
+    'vendor_observation',
+    'B',
+    'context',
+    'Vendor observations retain their source identity.'
+  );
 
 -- Unavailable is never allowed to carry a synthetic zero.
 DO $$
@@ -297,7 +519,7 @@ BEGIN
       '00000000-0000-4000-8000-000000000201',
       '00000000-0000-4000-8000-000000000701',
       'crawl',
-      'page.fake_metric',
+      'crawl.page.v1',
       'url',
       'https://example.com/',
       now(),
@@ -313,6 +535,40 @@ BEGIN
   END;
   IF NOT rejected THEN
     RAISE EXCEPTION 'unavailable observation with zero was accepted';
+  END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.normalized_observations (
+      workspace_id, project_id, snapshot_id, provider, metric_key, subject_type,
+      subject_ref, observed_at, availability, value_numeric, origin, grade,
+      support, limitation
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000701',
+      'crawl',
+      'gsc.page.v1',
+      'url',
+      'https://example.com/provider-splice',
+      now(),
+      'available',
+      1,
+      'direct_public',
+      'B',
+      'context',
+      'This row intentionally splices a GSC metric into a crawl snapshot.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'observation metric/provider/dataset splice was accepted';
   END IF;
 END;
 $$;
@@ -345,12 +601,156 @@ VALUES (
   '00000000-0000-4000-8000-000000000301',
   '00000000-0000-4000-8000-000000000401',
   1,
-  'mvp.rules.0.2.0',
+  'mvp.rules.0.2.1',
   'mvp.prompts.0.2.0',
   'en',
-  '{"snapshotIds":["00000000-0000-4000-8000-000000000701"]}'::jsonb,
+  jsonb_build_object(
+    'projectId', '00000000-0000-4000-8000-000000000201',
+    'siteId', '00000000-0000-4000-8000-000000000301',
+    'ruleSetVersion', 'mvp.rules.0.2.1',
+    'promptSetVersion', 'mvp.prompts.0.2.0',
+    'deliveryLocale', 'en',
+    'icp', jsonb_build_object(
+      'id', '00000000-0000-4000-8000-000000000401',
+      'version', 1,
+      'contentHash', repeat('1', 64)
+    ),
+    'snapshots',
+    jsonb_build_array(
+      jsonb_build_object(
+        'snapshotId', '00000000-0000-4000-8000-000000000701',
+        'provider', 'crawl',
+        'datasetKey', 'crawl.site_graph.v1',
+        'schemaVersion', 'crawl.site_graph.v2',
+        'methodVersion', 'crawl.site_graph.v2',
+        'checksum', repeat('3', 64),
+        'availability', 'available',
+        'sourceWindow', '{"start":null,"end":null}'::jsonb,
+        'capturedAt', now()
+      ),
+      jsonb_build_object(
+        'snapshotId', '00000000-0000-4000-8000-000000000702',
+        'provider', 'csv',
+        'datasetKey', 'csv.keyword_gap.v1',
+        'schemaVersion', '0.2.0',
+        'methodVersion', 'csv.keyword_gap.v1',
+        'checksum', repeat('6', 64),
+        'availability', 'available',
+        'sourceWindow', '{"start":null,"end":null}'::jsonb,
+        'capturedAt', now()
+      ),
+      jsonb_build_object(
+        'snapshotId', '00000000-0000-4000-8000-000000000703',
+        'provider', 'dataforseo',
+        'datasetKey', 'csv.keyword_gap.v1',
+        'schemaVersion', 'dataforseo.ranked_keywords.v1',
+        'methodVersion', 'dataforseo.ranked_keywords.v1',
+        'checksum', repeat('7', 64),
+        'availability', 'available',
+        'sourceWindow', '{"start":null,"end":null}'::jsonb,
+        'capturedAt', now()
+      )
+    )
+  ),
   repeat('4', 64),
   '{"overall":"complete"}'::jsonb
+);
+
+INSERT INTO app.async_runs (
+  id, workspace_id, project_id, kind, status, active_key, initiated_by,
+  started_at, completed_at
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000608',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  'diagnostic',
+  'completed',
+  'diagnostic:duplicate-provider',
+  '00000000-0000-4000-8000-000000000101',
+  now(),
+  now()
+);
+
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.diagnostic_runs (
+      id, workspace_id, project_id, site_id, icp_profile_id,
+      icp_profile_version, rule_set_version, prompt_set_version,
+      output_locale, input_manifest, input_hash, coverage
+    )
+    SELECT
+      '00000000-0000-4000-8000-000000000608',
+      workspace_id,
+      project_id,
+      site_id,
+      icp_profile_id,
+      icp_profile_version,
+      rule_set_version,
+      prompt_set_version,
+      output_locale,
+      jsonb_set(
+        input_manifest,
+        '{snapshots}',
+        (input_manifest -> 'snapshots')
+          || jsonb_build_array(input_manifest -> 'snapshots' -> 1)
+      ),
+      repeat('8', 64),
+      '{}'::jsonb
+    FROM app.diagnostic_runs
+    WHERE id = '00000000-0000-4000-8000-000000000602';
+  EXCEPTION WHEN check_violation THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'current diagnostic accepted duplicate provider snapshots';
+  END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.diagnostic_run_rules (
+      diagnostic_run_id, rule_id, rule_version, domain,
+      status, reason, metrics, duration_ms
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000602',
+      'TECH-LINKGRAPH-005',
+      1,
+      'technical_seo',
+      'candidate',
+      NULL,
+      '{}'::jsonb,
+      1
+    );
+  EXCEPTION WHEN check_violation THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'current diagnostic accepted a legacy technical rule version';
+  END IF;
+END;
+$$;
+
+INSERT INTO app.diagnostic_run_rules (
+  diagnostic_run_id, rule_id, rule_version, domain,
+  status, reason, metrics, duration_ms
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000602',
+  'TECH-LINKGRAPH-005',
+  2,
+  'technical_seo',
+  'candidate',
+  NULL,
+  '{}'::jsonb,
+  1
 );
 
 -- Model-generated evidence must reference an immutable AnalysisInvocation.
@@ -411,6 +811,213 @@ VALUES (
   'Only links present in the static HTML crawl are counted.'
 );
 
+-- Bespoke observed-provider mappings retain the provider grade while sharing
+-- the same exact frozen-lineage enforcement.
+INSERT INTO app.evidence (
+  workspace_id, project_id, diagnostic_run_id, snapshot_id, collection_run_id,
+  source_provider, origin, method, grade, availability, support, subject_refs,
+  claim, observed_at, limitation
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000602',
+    '00000000-0000-4000-8000-000000000702',
+    '00000000-0000-4000-8000-000000000606',
+    'csv', 'user_provided', 'observed', 'C', 'available', 'supports',
+    '[{"type":"keyword_cluster","value":"growth-audit"}]'::jsonb,
+    'The frozen CSV import contains the growth-audit keyword cluster.',
+    now(),
+    'The source and export settings remain user-provided.'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000602',
+    '00000000-0000-4000-8000-000000000703',
+    '00000000-0000-4000-8000-000000000607',
+    'dataforseo', 'vendor_observation', 'observed', 'B', 'available', 'supports',
+    '[{"type":"keyword_cluster","value":"growth-audit"}]'::jsonb,
+    'The frozen vendor snapshot observes the growth-audit keyword cluster.',
+    now(),
+    'Vendor estimates retain their market, language, filter, and row-cap limits.'
+  );
+
+-- Deterministic rules may compute or infer conclusions from the exact frozen
+-- source snapshot without relabelling the underlying row as an observation.
+INSERT INTO app.evidence (
+  workspace_id, project_id, diagnostic_run_id, snapshot_id, collection_run_id,
+  source_provider, origin, method, grade, availability, support, subject_refs,
+  claim, observed_at, limitation
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000602',
+    '00000000-0000-4000-8000-000000000701',
+    '00000000-0000-4000-8000-000000000601',
+    'crawl', 'derived', 'computed', 'B', 'available', 'supports',
+    '[{"type":"page_set","value":"low_internal_inlinks"}]'::jsonb,
+    'The frozen crawl graph deterministically computes a low-inlink page set.',
+    now(),
+    'The computation is replayable from the frozen crawl snapshot.'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000602',
+    '00000000-0000-4000-8000-000000000701',
+    '00000000-0000-4000-8000-000000000601',
+    'crawl', 'derived', 'inferred', 'C', 'available', 'supports',
+    '[{"type":"page_set","value":"missing_entity_proof"}]'::jsonb,
+    'The frozen crawl content heuristically lacks entity proof.',
+    now(),
+    'The inference is limited to the documented language heuristic.'
+  );
+
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.evidence (
+      workspace_id, project_id, diagnostic_run_id, snapshot_id,
+      collection_run_id, source_provider, origin, method, grade,
+      availability, support, subject_refs, claim, observed_at, limitation
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000602',
+      '00000000-0000-4000-8000-000000000701',
+      '00000000-0000-4000-8000-000000000601',
+      'crawl',
+      'direct_public',
+      'observed',
+      'A',
+      'available',
+      'supports',
+      '[{"type":"url","value":"https://example.com/pricing"}]'::jsonb,
+      'This row intentionally overstates the trust grade.',
+      now(),
+      'Only links present in the static HTML crawl are counted.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'source evidence with a forged trust grade was accepted';
+  END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+  pseudo_provider_rejected boolean := false;
+  computed_grade_rejected boolean := false;
+  inferred_grade_rejected boolean := false;
+  derived_method_rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.evidence (
+      workspace_id, project_id, diagnostic_run_id, snapshot_id,
+      collection_run_id, source_provider, origin, method, grade,
+      availability, support, subject_refs, claim, observed_at, limitation
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000602',
+      '00000000-0000-4000-8000-000000000701',
+      '00000000-0000-4000-8000-000000000601',
+      'system', 'derived', 'computed', 'B', 'available', 'supports',
+      '[{"type":"page_set","value":"forged_provider"}]'::jsonb,
+      'This row tries to hide crawl lineage behind the system provider.',
+      now(),
+      'Intentional invalid smoke fixture.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    pseudo_provider_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.evidence (
+      workspace_id, project_id, diagnostic_run_id, snapshot_id,
+      collection_run_id, source_provider, origin, method, grade,
+      availability, support, subject_refs, claim, observed_at, limitation
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000602',
+      '00000000-0000-4000-8000-000000000701',
+      '00000000-0000-4000-8000-000000000601',
+      'crawl', 'derived', 'computed', 'A', 'available', 'supports',
+      '[{"type":"page_set","value":"forged_computed_grade"}]'::jsonb,
+      'This deterministic computation overstates its grade.',
+      now(),
+      'Intentional invalid smoke fixture.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    computed_grade_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.evidence (
+      workspace_id, project_id, diagnostic_run_id, snapshot_id,
+      collection_run_id, source_provider, origin, method, grade,
+      availability, support, subject_refs, claim, observed_at, limitation
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000602',
+      '00000000-0000-4000-8000-000000000701',
+      '00000000-0000-4000-8000-000000000601',
+      'crawl', 'derived', 'inferred', 'B', 'available', 'supports',
+      '[{"type":"page_set","value":"forged_inferred_grade"}]'::jsonb,
+      'This heuristic inference overstates its grade.',
+      now(),
+      'Intentional invalid smoke fixture.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    inferred_grade_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.evidence (
+      workspace_id, project_id, diagnostic_run_id, snapshot_id,
+      collection_run_id, source_provider, origin, method, grade,
+      availability, support, subject_refs, claim, observed_at, limitation
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000602',
+      '00000000-0000-4000-8000-000000000701',
+      '00000000-0000-4000-8000-000000000601',
+      'crawl', 'derived', 'observed', 'B', 'available', 'supports',
+      '[{"type":"page_set","value":"forged_derived_method"}]'::jsonb,
+      'This derived claim tries to masquerade as observed.',
+      now(),
+      'Intentional invalid smoke fixture.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    derived_method_rejected := true;
+  END;
+
+  IF NOT pseudo_provider_rejected THEN
+    RAISE EXCEPTION 'source lineage hidden behind a pseudo-provider was accepted';
+  END IF;
+  IF NOT computed_grade_rejected THEN
+    RAISE EXCEPTION 'derived computed evidence with a forged grade was accepted';
+  END IF;
+  IF NOT inferred_grade_rejected THEN
+    RAISE EXCEPTION 'derived inferred evidence with a forged grade was accepted';
+  END IF;
+  IF NOT derived_method_rejected THEN
+    RAISE EXCEPTION 'derived evidence with an observed method was accepted';
+  END IF;
+END;
+$$;
+
 -- Historical evidence is append-only.
 DO $$
 DECLARE
@@ -440,7 +1047,7 @@ VALUES (
   '00000000-0000-4000-8000-000000000201',
   repeat('5', 64),
   'TECH-LINKGRAPH-005',
-  1,
+  2,
   'internal-link-equity',
   'strengthen_internal_links',
   'technical_seo',
@@ -847,12 +1454,18 @@ VALUES (
   '00000000-0000-4000-8000-000000000201',
   '00000000-0000-4000-8000-000000000301',
   'https://example.com/customer-onboarding',
-  repeat('b', 64)
+  encode(
+    digest(
+      convert_to('https://example.com/customer-onboarding', 'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  )
 );
 
 INSERT INTO app.page_snapshots (
   id, workspace_id, project_id, site_page_id, data_snapshot_id,
-  content_hash, extract, captured_at
+  content_hash, canonical_extract, extract, captured_at
 )
 VALUES (
   '00000000-0000-4000-8000-000000001701',
@@ -860,8 +1473,9 @@ VALUES (
   '00000000-0000-4000-8000-000000000201',
   '00000000-0000-4000-8000-000000001601',
   '00000000-0000-4000-8000-000000000701',
-  repeat('c', 64),
-  '{"canonical":"https://example.com/customer-onboarding"}'::jsonb,
+  encode(digest(convert_to('{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}', 'UTF8'), 'sha256'), 'hex'),
+  '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}',
+  '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}'::jsonb,
   now()
 );
 
@@ -872,6 +1486,15 @@ DECLARE
   audit_mutation_rejected boolean := false;
   module_mutation_rejected boolean := false;
   page_snapshot_mutation_rejected boolean := false;
+  duplicate_page_source_rejected boolean := false;
+  page_snapshot_capture_mismatch_rejected boolean := false;
+  page_snapshot_hash_mismatch_rejected boolean := false;
+  page_snapshot_payload_mismatch_rejected boolean := false;
+  page_snapshot_missing_canonical_rejected boolean := false;
+  page_snapshot_schema_mismatch_rejected boolean := false;
+  page_snapshot_fetch_identity_rejected boolean := false;
+  site_page_hash_mismatch_rejected boolean := false;
+  site_page_identity_mutation_rejected boolean := false;
   forbidden_status_count integer;
 BEGIN
   BEGIN
@@ -933,6 +1556,180 @@ BEGIN
   END;
   IF NOT page_snapshot_mutation_rejected THEN
     RAISE EXCEPTION 'page snapshot mutation was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.page_snapshots (
+      workspace_id, project_id, site_page_id, data_snapshot_id,
+      content_hash, canonical_extract, extract, captured_at
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001601',
+      '00000000-0000-4000-8000-000000000701',
+      encode(digest(convert_to('{"depth":1,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}', 'UTF8'), 'sha256'), 'hex'),
+      '{"depth":1,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}',
+      '{"depth":1,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}'::jsonb,
+      now()
+    );
+  EXCEPTION WHEN unique_violation THEN
+    duplicate_page_source_rejected := true;
+  END;
+  IF NOT duplicate_page_source_rejected THEN
+    RAISE EXCEPTION 'a second extract for one page/source snapshot was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.page_snapshots (
+      workspace_id, project_id, site_page_id, data_snapshot_id,
+      content_hash, canonical_extract, extract, captured_at
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001601',
+      '00000000-0000-4000-8000-000000000701',
+      encode(digest(convert_to('{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}', 'UTF8'), 'sha256'), 'hex'),
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}',
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}'::jsonb,
+      now() + interval '1 second'
+    );
+  EXCEPTION WHEN check_violation THEN
+    page_snapshot_capture_mismatch_rejected := true;
+  END;
+  IF NOT page_snapshot_capture_mismatch_rejected THEN
+    RAISE EXCEPTION 'a page snapshot with a different source capture time was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.page_snapshots (
+      workspace_id, project_id, site_page_id, data_snapshot_id,
+      content_hash, canonical_extract, extract, captured_at
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001601',
+      '00000000-0000-4000-8000-000000000701',
+      repeat('f', 64),
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}',
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}'::jsonb,
+      now()
+    );
+  EXCEPTION WHEN check_violation THEN
+    page_snapshot_hash_mismatch_rejected := true;
+  END;
+  IF NOT page_snapshot_hash_mismatch_rejected THEN
+    RAISE EXCEPTION 'a page snapshot hash unrelated to its retained bytes was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.page_snapshots (
+      workspace_id, project_id, site_page_id, data_snapshot_id,
+      content_hash, canonical_extract, extract, captured_at
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001601',
+      '00000000-0000-4000-8000-000000000701',
+      encode(digest(convert_to('{"depth":1,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}', 'UTF8'), 'sha256'), 'hex'),
+      '{"depth":1,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}',
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}'::jsonb,
+      now()
+    );
+  EXCEPTION WHEN check_violation THEN
+    page_snapshot_payload_mismatch_rejected := true;
+  END;
+  IF NOT page_snapshot_payload_mismatch_rejected THEN
+    RAISE EXCEPTION 'retained page bytes unrelated to the page extract were accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.page_snapshots (
+      workspace_id, project_id, site_page_id, data_snapshot_id,
+      content_hash, extract, captured_at
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001601',
+      '00000000-0000-4000-8000-000000000701',
+      encode(digest(convert_to('{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}', 'UTF8'), 'sha256'), 'hex'),
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}'::jsonb,
+      now()
+    );
+  EXCEPTION WHEN check_violation THEN
+    page_snapshot_missing_canonical_rejected := true;
+  END;
+  IF NOT page_snapshot_missing_canonical_rejected THEN
+    RAISE EXCEPTION 'a new page snapshot without retained extract bytes was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.page_snapshots (
+      workspace_id, project_id, site_page_id, data_snapshot_id,
+      content_hash, canonical_extract, extract, captured_at
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001601',
+      '00000000-0000-4000-8000-000000000701',
+      encode(digest(convert_to('{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v0","subjectUrl":"https://example.com/customer-onboarding"}', 'UTF8'), 'sha256'), 'hex'),
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v0","subjectUrl":"https://example.com/customer-onboarding"}',
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/customer-onboarding"},"schemaVersion":"crawl.page-extract.v0","subjectUrl":"https://example.com/customer-onboarding"}'::jsonb,
+      now()
+    );
+  EXCEPTION WHEN check_violation THEN
+    page_snapshot_schema_mismatch_rejected := true;
+  END;
+  IF NOT page_snapshot_schema_mismatch_rejected THEN
+    RAISE EXCEPTION 'a page snapshot with an unknown extract schema was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.page_snapshots (
+      workspace_id, project_id, site_page_id, data_snapshot_id,
+      content_hash, canonical_extract, extract, captured_at
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000001601',
+      '00000000-0000-4000-8000-000000000701',
+      encode(digest(convert_to('{"depth":0,"projection":{"fetchUrl":"https://example.com/other"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}', 'UTF8'), 'sha256'), 'hex'),
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/other"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}',
+      '{"depth":0,"projection":{"fetchUrl":"https://example.com/other"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/customer-onboarding"}'::jsonb,
+      now()
+    );
+  EXCEPTION WHEN check_violation THEN
+    page_snapshot_fetch_identity_rejected := true;
+  END;
+  IF NOT page_snapshot_fetch_identity_rejected THEN
+    RAISE EXCEPTION 'a page snapshot for another fetch URL was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.site_pages (
+      workspace_id, project_id, site_id, normalized_url, normalized_url_hash
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      'https://example.com/forged-hash',
+      repeat('f', 64)
+    );
+  EXCEPTION WHEN check_violation THEN
+    site_page_hash_mismatch_rejected := true;
+  END;
+  IF NOT site_page_hash_mismatch_rejected THEN
+    RAISE EXCEPTION 'a site page with a caller-forged URL hash was accepted';
+  END IF;
+
+  BEGIN
+    UPDATE app.site_pages
+    SET normalized_url = 'https://example.com/mutated'
+    WHERE id = '00000000-0000-4000-8000-000000001601';
+  EXCEPTION WHEN check_violation THEN
+    site_page_identity_mutation_rejected := true;
+  END;
+  IF NOT site_page_identity_mutation_rejected THEN
+    RAISE EXCEPTION 'a durable site page identity was mutated';
   END IF;
 
   SELECT count(*) INTO forbidden_status_count
@@ -1004,9 +1801,83 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'export bundle schema-version compatibility is stale';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE connamespace = 'app'::regnamespace
+      AND conrelid = 'app.page_snapshots'::regclass
+      AND conname = 'page_snapshots_canonical_extract_required'
+      AND convalidated
+      AND pg_get_constraintdef(oid) LIKE '%canonical_extract IS NOT NULL%'
+  ) THEN
+    RAISE EXCEPTION 'page snapshot canonical extract requirement is missing or unvalidated';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE connamespace = 'app'::regnamespace
+      AND conrelid = 'app.page_snapshots'::regclass
+      AND conname = 'page_snapshots_site_page_data_snapshot_key'
+      AND pg_get_constraintdef(oid) LIKE '%UNIQUE (site_page_id, data_snapshot_id)%'
+  ) THEN
+    RAISE EXCEPTION 'page snapshot page/source identity is not globally unique';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND tablename = 'page_snapshots'
+      AND indexname = 'page_snapshots_verified_source_identity_idx'
+      AND indexdef LIKE '%UNIQUE INDEX%'
+      AND indexdef LIKE '%(site_page_id, data_snapshot_id)%'
+      AND indexdef LIKE '%WHERE (canonical_extract IS NOT NULL)%'
+  ) THEN
+    RAISE EXCEPTION 'verified page snapshot identity index is missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE connamespace = 'app'::regnamespace
+      AND conrelid = 'app.evidence'::regclass
+      AND conname = 'evidence_source_lineage_required'
+      AND convalidated
+      AND obj_description(oid, 'pg_constraint') = 'signalframe.evidence-provenance.v2'
+      AND pg_get_constraintdef(oid) LIKE '%snapshot_id IS NOT NULL%'
+      AND pg_get_constraintdef(oid) LIKE '%collection_run_id IS NOT NULL%'
+      AND pg_get_constraintdef(oid) LIKE '%source_provider = ''system''%'
+      AND pg_get_constraintdef(oid) LIKE '%source_provider = ''llm''%'
+      AND pg_get_constraintdef(oid) LIKE '%source_provider = ''dataforseo''%'
+      AND pg_get_constraintdef(oid) LIKE '%origin = ''derived''%'
+      AND pg_get_constraintdef(oid) LIKE '%origin = ''generated''%'
+      AND pg_get_constraintdef(oid) LIKE '%method = ''computed''%'
+      AND pg_get_constraintdef(oid) LIKE '%method = ''inferred''%'
+      AND pg_get_constraintdef(oid) LIKE '%grade = ''C''%'
+  ) THEN
+    RAISE EXCEPTION 'evidence provenance-shape requirement is missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger
+    WHERE tgrelid = 'app.evidence'::regclass
+      AND tgname = 'evidence_provenance_guard'
+      AND NOT tgisinternal
+  ) THEN
+    RAISE EXCEPTION 'evidence provenance guard is missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE connamespace = 'app'::regnamespace
+      AND conrelid = 'app.diagnostic_runs'::regclass
+      AND conname = 'diagnostic_runs_rule_set_version_check'
+      AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.0%'
+      AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.1%'
+  ) THEN
+    RAISE EXCEPTION 'diagnostic rule-set compatibility is stale';
+  END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0011_product_profile_foundation' THEN
+  ) IS DISTINCT FROM '0013_exact_url_variant_rules' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;

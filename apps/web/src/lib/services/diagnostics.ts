@@ -8,10 +8,12 @@ import {
   IdempotencyRepository,
   ProjectsRepository,
   SitesRepository,
+  type CanonicalValue,
   type DataSnapshotRow,
   type WorkspaceScope,
 } from "@sf/db";
 import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import { CRAWL_METHOD_VERSION } from "@sf/sources";
 import { CONTRACT_VERSION, type CreateDiagnosticRunRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
@@ -58,10 +60,47 @@ function snapshotManifestEntry(s: DataSnapshotRow) {
   };
 }
 
+export function buildDiagnosticFrozenInput(input: {
+  readonly projectId: string;
+  readonly siteId: string;
+  readonly icp: {
+    readonly id: string;
+    readonly version: number;
+    readonly contentHash: string;
+  };
+  readonly snapshots: readonly DataSnapshotRow[];
+  readonly deliveryLocale: string;
+}): {
+  readonly manifest: Record<string, unknown>;
+  readonly inputHash: string;
+} {
+  const orderedSnapshots = [...input.snapshots].sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  );
+  const manifest = {
+    projectId: input.projectId,
+    siteId: input.siteId,
+    icp: {
+      id: input.icp.id,
+      version: input.icp.version,
+      contentHash: input.icp.contentHash,
+    },
+    snapshots: orderedSnapshots.map(snapshotManifestEntry),
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
+    deliveryLocale: input.deliveryLocale,
+  };
+  return {
+    manifest,
+    inputHash: contentHash(manifest as CanonicalValue),
+  };
+}
+
 /**
- * A diagnostic manifest may freeze one snapshot per provider and only one
- * provider for the canonical keyword-gap dataset slot. Enforcing this on the
- * server keeps direct API clients from double-counting CSV and DataForSEO rows.
+ * A diagnostic manifest may freeze one snapshot per provider. CSV and
+ * DataForSEO may coexist: they share a logical keyword-gap slot, but retain
+ * distinct provider lineage and are de-duplicated by the engine at cluster
+ * level rather than by discarding one immutable source.
  */
 export function assertDiagnosticSnapshotSelection(
   snapshots: readonly Pick<DataSnapshotRow, "provider">[],
@@ -73,12 +112,24 @@ export function assertDiagnosticSnapshotSelection(
       "Select at most one snapshot per provider.",
     );
   }
-  if (providers.includes("csv") && providers.includes("dataforseo")) {
+}
+
+/**
+ * Snapshot selection is the diagnostic's exact Site identity. Deriving it from
+ * immutable snapshots avoids silently substituting the project's primary Site
+ * when a project legitimately owns more than one Site.
+ */
+export function diagnosticSnapshotSiteId(
+  snapshots: readonly Pick<DataSnapshotRow, "site_id">[],
+): string {
+  const siteId = snapshots[0]?.site_id;
+  if (!siteId || snapshots.some((snapshot) => snapshot.site_id !== siteId)) {
     throw new ProblemError(
-      "VALIDATION_ERROR",
-      "Select at most one snapshot for the keyword-gap dataset.",
+      "SNAPSHOT_PROJECT_MISMATCH",
+      "Selected snapshots must belong to one site.",
     );
   }
+  return siteId;
 }
 
 function replay(
@@ -172,10 +223,6 @@ export async function createDiagnosticRun(
     );
   }
 
-  const site = await new SitesRepository(db).findPrimary(projectScope);
-  if (!site)
-    throw new ProblemError("NOT_FOUND", "Project has no primary site.");
-
   // Load + validate the selected snapshots (project-scoped).
   const snapshots = await new DataSnapshotsRepository(db).findByIds(
     projectScope,
@@ -187,11 +234,23 @@ export async function createDiagnosticRun(
       "A selected snapshot does not belong to this project.",
     );
   }
+  const selectedSiteId = diagnosticSnapshotSiteId(snapshots);
+  const site = await new SitesRepository(db).findById(
+    projectScope,
+    selectedSiteId,
+  );
+  if (!site) {
+    throw new ProblemError(
+      "SNAPSHOT_PROJECT_MISMATCH",
+      "The selected snapshot site does not belong to this project.",
+    );
+  }
   // Hard gate 2: at least one usable crawl snapshot.
   if (
     !snapshots.some(
       (s) =>
         s.provider === "crawl" &&
+        s.method_version === CRAWL_METHOD_VERSION &&
         (s.availability === "available" || s.availability === "partial"),
     )
   ) {
@@ -200,8 +259,9 @@ export async function createDiagnosticRun(
       "A crawl snapshot is required to diagnose.",
     );
   }
-  // Two provider snapshots for one logical dataset would merge observations in
-  // unspecified order and can double-count evidence.
+  // One immutable snapshot per provider keeps lineage unambiguous. CSV and
+  // DataForSEO may coexist; the engine de-duplicates shared keyword demand by
+  // canonical cluster identity instead of discarding either source.
   assertDiagnosticSnapshotSelection(snapshots);
 
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
@@ -281,11 +341,6 @@ export async function createDiagnosticRun(
         );
       }
 
-      const currentSite = await txSites.findPrimary(projectScope);
-      if (!currentSite) {
-        throw new ProblemError("NOT_FOUND", "Project has no primary site.");
-      }
-
       const currentSnapshots = await txSnapshots.findByIds(
         projectScope,
         body.snapshotIds,
@@ -296,10 +351,22 @@ export async function createDiagnosticRun(
           "A selected snapshot does not belong to this project.",
         );
       }
+      const currentSiteId = diagnosticSnapshotSiteId(currentSnapshots);
+      const currentSite = await txSites.findById(
+        projectScope,
+        currentSiteId,
+      );
+      if (!currentSite) {
+        throw new ProblemError(
+          "SNAPSHOT_PROJECT_MISMATCH",
+          "The selected snapshot site does not belong to this project.",
+        );
+      }
       if (
         !currentSnapshots.some(
           (snapshot) =>
             snapshot.provider === "crawl" &&
+            snapshot.method_version === CRAWL_METHOD_VERSION &&
             (snapshot.availability === "available" ||
               snapshot.availability === "partial"),
         )
@@ -311,10 +378,7 @@ export async function createDiagnosticRun(
       }
       assertDiagnosticSnapshotSelection(currentSnapshots);
 
-      const orderedCurrentSnapshots = [...currentSnapshots].sort((a, b) =>
-        a.id < b.id ? -1 : 1,
-      );
-      const currentInputManifest = {
+      const frozenInput = buildDiagnosticFrozenInput({
         projectId,
         siteId: currentSite.id,
         icp: {
@@ -322,14 +386,9 @@ export async function createDiagnosticRun(
           version: confirmedIcp.version,
           contentHash: confirmedIcp.content_hash,
         },
-        snapshots: orderedCurrentSnapshots.map(snapshotManifestEntry),
-        ruleSetVersion: RULE_SET_VERSION,
-        promptSetVersion: PROMPT_SET_VERSION,
+        snapshots: currentSnapshots,
         deliveryLocale: body.outputLocale,
-      };
-      const currentInputHash = contentHash(
-        currentInputManifest as unknown as Parameters<typeof contentHash>[0],
-      );
+      });
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
@@ -353,8 +412,8 @@ export async function createDiagnosticRun(
         ruleSetVersion: RULE_SET_VERSION,
         promptSetVersion: PROMPT_SET_VERSION,
         outputLocale: body.outputLocale,
-        inputManifest: currentInputManifest,
-        inputHash: currentInputHash,
+        inputManifest: frozenInput.manifest,
+        inputHash: frozenInput.inputHash,
       });
       await enqueueRunInTx(boss, tx, "diagnose", {
         runId: run.id,

@@ -1,7 +1,8 @@
-import { and, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { sites } from "../schema.ts";
 import {
   Repository,
+  projectChildPredicate,
   projectPredicate,
   workspacePredicate,
   type ProjectScope,
@@ -80,6 +81,16 @@ export class SitesRepository extends Repository {
       .select()
       .from(sites)
       .where(and(projectPredicate(sites, scope), sql`${sites.is_primary}`))
+      .limit(1);
+    return (rows[0] as SiteRow | undefined) ?? null;
+  }
+
+  /** One exact Site child, scoped in SQL to the owning workspace and project. */
+  async findById(scope: ProjectScope, id: string): Promise<SiteRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(sites)
+      .where(projectChildPredicate(sites, scope, eq(sites.id, id)))
       .limit(1);
     return (rows[0] as SiteRow | undefined) ?? null;
   }

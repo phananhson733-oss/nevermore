@@ -41,6 +41,14 @@ export function parseSitemapXml(xml: string): SitemapDocument {
 export interface SitemapDeps {
   /** Returns the response body on a 2xx fetch, else null. Guard + budget applied by the engine. */
   readonly fetchText: (url: string) => Promise<string | null>;
+  /**
+   * Ephemeral frontier seam. The persisted projection remains subject-only,
+   * while the engine receives the exact URL declared by the sitemap.
+   */
+  readonly onMember?: (target: {
+    readonly fetchUrl: string;
+    readonly subjectUrl: string;
+  }) => void;
 }
 
 /**
@@ -89,8 +97,13 @@ export async function collectSitemap(
     }
     for (const loc of document.locs) {
       if (members.size >= MAX_SITEMAP_URLS) break;
-      const subjectUrl = canonicalizeUrl(loc)?.subjectUrl;
-      if (subjectUrl && sameOrigin(subjectUrl)) members.add(subjectUrl);
+      const pair = canonicalizeUrl(loc);
+      if (!pair || !sameOrigin(pair.fetchUrl)) continue;
+      deps.onMember?.({
+        fetchUrl: pair.fetchUrl,
+        subjectUrl: pair.subjectUrl,
+      });
+      members.add(pair.subjectUrl);
     }
   };
 

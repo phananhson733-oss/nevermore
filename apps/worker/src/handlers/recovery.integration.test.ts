@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CONTRACT_VERSION } from "@sf/contracts";
 import {
   AsyncRunsRepository,
+  DiagnosticRunsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
   createBoss,
@@ -20,6 +21,8 @@ import {
   clientProjects,
   collectionRuns,
   dataSnapshots,
+  diagnosticRuns,
+  icpProfiles,
   sites,
   sourceConnections,
   workspaces,
@@ -53,6 +56,7 @@ describeDb("worker canonical run recovery", () => {
   let boss: PgBoss;
   let scope: ProjectScope;
   let siteId: string;
+  let icpProfileId: string;
   let ctx: WorkerContext;
   // Keep repeated runs against the same disposable database ahead of jobs
   // intentionally left live by earlier executions of this recovery fixture.
@@ -91,6 +95,19 @@ describeDb("worker canonical run recovery", () => {
       })
       .returning();
     siteId = site!.id;
+    const [icpProfile] = await handle.db
+      .insert(icpProfiles)
+      .values({
+        workspace_id: scope.workspaceId,
+        project_id: scope.projectId,
+        version: 1,
+        status: "complete",
+        profile: {},
+        content_hash: HASH,
+        created_by: ACTOR_ID,
+      })
+      .returning();
+    icpProfileId = icpProfile!.id;
     ctx = {
       db: handle.db,
       boss,
@@ -199,6 +216,82 @@ describeDb("worker canonical run recovery", () => {
         data: { runId: legacyCompleted },
       }),
     ).toHaveLength(1);
+  });
+
+  it("terminalizes active legacy diagnostic executors before delivery or queue lookup and preserves completed history", async () => {
+    const delivered = await seedRun({
+      status: "queued",
+      contractVersion: "0.2.0",
+    });
+    await seedFrozenDiagnostic(delivered, "mvp.rules.0.2.0");
+    const deliveryJobId = await boss.send(
+      "diagnose",
+      payload(delivered, "0.2.0"),
+      { id: delivered, priority: ++priority },
+    );
+    expect(deliveryJobId).toBe(delivered);
+    const deliveryJob = await fetchOwn(deliveryJobId!);
+    const execute = vi.fn(async () => undefined);
+
+    await prepareRunDelivery(ctx, deliveryJob, execute);
+
+    expect(execute).not.toHaveBeenCalled();
+    await expectRun(
+      delivered,
+      "failed",
+      "DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED",
+    );
+    await boss.complete("diagnose", deliveryJob.id);
+
+    const swept = await seedRun({
+      status: "running",
+      contractVersion: "0.2.0",
+    });
+    await seedFrozenDiagnostic(swept, "mvp.rules.0.2.0");
+    const sweepJobId = await boss.send(
+      "diagnose",
+      payload(swept, "0.2.0"),
+      { id: swept, priority: ++priority },
+    );
+    expect(sweepJobId).toBe(swept);
+
+    const historical = randomUUID();
+    await handle.db.insert(asyncRuns).values({
+      id: historical,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      kind: "diagnostic",
+      status: "completed",
+      contract_version: "0.2.0",
+      request_payload: {},
+      initiated_by: ACTOR_ID,
+      queued_at: OLD,
+      started_at: OLD,
+      completed_at: OLD,
+      result_type: "diagnostic_run",
+      result_id: historical,
+    });
+    await seedFrozenDiagnostic(historical, "mvp.rules.0.2.0");
+    const historicalBefore = await new DiagnosticRunsRepository(
+      handle.db,
+    ).findById(scope, historical);
+
+    await reconcileActiveRuns(ctx, {
+      scope,
+      now: NOW,
+      missingAfterMs: 60 * 60 * 1_000,
+    });
+
+    await expectRun(
+      swept,
+      "failed",
+      "DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED",
+    );
+    await expectRun(historical, "completed", null);
+    await expect(
+      new DiagnosticRunsRepository(handle.db).findById(scope, historical),
+    ).resolves.toEqual(historicalBefore);
+    await boss.cancel("diagnose", swept);
   });
 
   it("turns a final transient reset into failed without overwriting a runner terminal result", async () => {
@@ -964,6 +1057,33 @@ describeDb("worker canonical run recovery", () => {
       ...(input.status === "running" ? { started_at: OLD } : {}),
     });
     return runId;
+  }
+
+  async function seedFrozenDiagnostic(
+    runId: string,
+    ruleSetVersion: string,
+  ): Promise<void> {
+    await handle.db.insert(diagnosticRuns).values({
+      id: runId,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      site_id: siteId,
+      icp_profile_id: icpProfileId,
+      icp_profile_version: 1,
+      rule_set_version: ruleSetVersion,
+      prompt_set_version: "mvp.prompts.0.2.0",
+      output_locale: "en",
+      input_manifest: {
+        projectId: scope.projectId,
+        siteId,
+        icp: { id: icpProfileId, version: 1, contentHash: HASH },
+        snapshots: [],
+        ruleSetVersion,
+        promptSetVersion: "mvp.prompts.0.2.0",
+        deliveryLocale: "en",
+      },
+      input_hash: HASH,
+    });
   }
 
   async function expectRun(

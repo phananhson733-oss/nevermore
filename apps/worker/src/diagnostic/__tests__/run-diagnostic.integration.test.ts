@@ -29,25 +29,41 @@ import {
   DiagnosticRunsRepository,
   EvidenceRepository,
   FindingsRepository,
+  IcpProfilesRepository,
+  ImportPreviewsRepository,
   ObservationsRepository,
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
   SitesRepository,
+  SourceConnectionsRepository,
   contentHash,
+  type CanonicalValue,
   type ObservationInsert,
   type PgBoss,
   type ProjectScope,
 } from "@sf/db";
-import { FINDING_REGISTRY, findingKey, type RuleId } from "@sf/engine";
 import {
+  FINDING_REGISTRY,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+  findingKey,
+  type RuleId,
+} from "@sf/engine";
+import {
+  CRAWL_DATASET_KEY,
+  CRAWL_METHOD_VERSION,
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
   LocalFsBlobStore,
   METRIC_CRAWL_PAGE,
   METRIC_CRAWL_ROBOTS,
+  METRIC_CSV_KEYWORD_GAP,
   METRIC_GA4_LANDING,
   subjectUrlOf,
   type CrawlLinkProjection,
   type CrawlPageProjection,
   type CrawlRobotsProjection,
+  type CsvKeywordProjection,
   type Ga4LandingProjection,
 } from "@sf/sources";
 import type { Logger } from "@sf/observability";
@@ -89,6 +105,21 @@ interface Seed {
   readonly actor: string;
 }
 
+type SourceProvider = "crawl" | "gsc" | "ga4" | "csv" | "dataforseo";
+
+interface SeededSnapshot {
+  readonly id: string;
+  readonly collectionRunId: string;
+  readonly provider: SourceProvider;
+  readonly availability: "available";
+  readonly capturedAt: string;
+  readonly datasetKey: string;
+  readonly schemaVersion: string;
+  readonly methodVersion: string;
+  readonly checksum: string;
+  readonly sourceWindow: Record<string, unknown>;
+}
+
 describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
   let handle: DbHandle;
   let ctx: WorkerContext;
@@ -116,28 +147,45 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
   it("AC-026: a completed (all-rules-ran) run auto-resolves a stale finding", async () => {
     const seed = await seedProject(handle);
     const icpId = await seedIcp(handle, seed, cleanProfile(seed.origin));
-    const snapshotId = await seedSnapshot(
+    const crawlSnapshot = await seedSnapshot(
       handle,
       seed,
-      cleanObservations(seed.origin),
+      cleanObservations(seed.origin).filter(
+        (observation) => observation.metricKey !== METRIC_GA4_LANDING,
+      ),
     );
+    const gscSnapshot = await seedSnapshot(handle, seed, [], "gsc");
+    const ga4Snapshot = await seedSnapshot(
+      handle,
+      seed,
+      cleanObservations(seed.origin).filter(
+        (observation) => observation.metricKey === METRIC_GA4_LANDING,
+      ),
+      "ga4",
+    );
+    const csvSnapshot = await seedSnapshot(handle, seed, [], "csv");
 
     const priorRunId = await seedDiagnosticRun(
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl"]),
+      manifestOf([crawlSnapshot]),
       "completed",
     );
-    const stale = await seedFinding(handle, seed, priorRunId, "TECH-HTTP-001", [
-      "http_status:404",
-    ]);
+    const stale = await seedFinding(
+      handle,
+      seed,
+      priorRunId,
+      crawlSnapshot,
+      "TECH-HTTP-001",
+      ["http_status:404"],
+    );
 
     const runId = await seedDiagnosticRun(
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl", "gsc", "ga4", "csv"]),
+      manifestOf([crawlSnapshot, gscSnapshot, ga4Snapshot, csvSnapshot]),
       "queued",
     );
     await runDiagnostic(ctx, {
@@ -162,10 +210,246 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     expect(resolved?.resolved_at).not.toBeNull();
   });
 
+  it("persists source evidence with the exact frozen snapshot and collection run", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const crawlSnapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(`${seed.origin}/lineage`),
+        mkPage({
+          fetchUrl: `${seed.origin}/lineage`,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+    ]);
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([crawlSnapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    expect(await runStatusOf(handle, seed.scope, runId)).toBe("partial");
+    const persisted = await handle.pool.query<{
+      source_provider: string;
+      snapshot_id: string | null;
+      collection_run_id: string | null;
+      analysis_invocation_id: string | null;
+    }>(
+      `select source_provider, snapshot_id, collection_run_id, analysis_invocation_id
+         from app.evidence
+        where diagnostic_run_id = $1
+        order by id`,
+      [runId],
+    );
+    expect(persisted.rows.length).toBeGreaterThan(0);
+    expect(persisted.rows).toEqual(
+      persisted.rows.map(() => ({
+        source_provider: "crawl",
+        snapshot_id: crawlSnapshot.id,
+        collection_run_id: crawlSnapshot.collectionRunId,
+        analysis_invocation_id: null,
+      })),
+    );
+  });
+
+  it("persists each mixed keyword contribution against only its own frozen source lineage", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const crawlSnapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(`${seed.origin}/pricing`),
+        mkPage({ fetchUrl: `${seed.origin}/pricing`, title: "Pricing" }),
+      ),
+    ]);
+    const csvSnapshot = await seedSnapshot(
+      handle,
+      seed,
+      [
+        keywordGap({
+          keyword: "project portfolio planning",
+          clusterKey: "project management",
+          searchVolume: 50,
+          currentUrl: null,
+          currentRank: null,
+          competitorDomain: "competitor.example",
+          competitorRank: 7,
+          marketCode: "US",
+          languageCode: "en",
+        }),
+        ...Array.from({ length: 10 }, (_, index) =>
+          keywordGap({
+            keyword: `project management workflow ${index}`,
+            clusterKey: "project management",
+            searchVolume: 900,
+            currentUrl: null,
+            currentRank: null,
+            competitorDomain: "competitor.example",
+            competitorRank: 4 + index,
+            marketCode: "US",
+            languageCode: "en",
+          }),
+        ),
+      ],
+      "csv",
+    );
+    const dataForSeoSnapshot = await seedSnapshot(
+      handle,
+      seed,
+      Array.from({ length: 10 }, (_, index) =>
+        keywordGap(
+          {
+            keyword: `project management workflow ${index}`,
+            clusterKey: "project management",
+            searchVolume: 100,
+            currentUrl: `${seed.origin}/workflow`,
+            currentRank: 8 + index,
+            competitorDomain: null,
+            competitorRank: null,
+            marketCode: "US",
+            languageCode: "en",
+          },
+          "dataforseo",
+        ),
+      ),
+      "dataforseo",
+    );
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([crawlSnapshot, csvSnapshot, dataForSeoSnapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    expect(await runStatusOf(handle, seed.scope, runId)).toBe("partial");
+    const persisted = await handle.pool.query<{
+      source_provider: string;
+      snapshot_id: string;
+      collection_run_id: string;
+      claim: string;
+    }>(
+      `select source_provider, snapshot_id, collection_run_id, claim
+         from app.evidence
+        where diagnostic_run_id = $1
+          and source_provider in ('csv', 'dataforseo')
+        order by source_provider`,
+      [runId],
+    );
+    expect(persisted.rows).toEqual([
+      {
+        source_provider: "csv",
+        snapshot_id: csvSnapshot.id,
+        collection_run_id: csvSnapshot.collectionRunId,
+        claim: expect.stringContaining(
+          "contributes 1 keyword with 50 combined available monthly search volume",
+        ),
+      },
+      {
+        source_provider: "dataforseo",
+        snapshot_id: dataForSeoSnapshot.id,
+        collection_run_id: dataForSeoSnapshot.collectionRunId,
+        claim: expect.stringContaining(
+          "contributes 10 keywords with 1000 combined available monthly search volume",
+        ),
+      },
+    ]);
+    expect(persisted.rows.every((row) => !row.claim.includes("1050"))).toBe(
+      true,
+    );
+  });
+
+  it("fails at the database boundary when a manifest provider masquerades as its immutable snapshot", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const crawlSnapshot = await seedSnapshot(handle, seed, [
+      crawlPage(su(`${seed.origin}/`), mkPage({ fetchUrl: `${seed.origin}/` })),
+    ]);
+    const corruptedManifest = manifestOf([crawlSnapshot]);
+    const entries = corruptedManifest["snapshots"] as Record<string, unknown>[];
+    entries[0] = { ...entries[0], provider: "ga4" };
+    await expect(
+      seedDiagnosticRun(
+        handle,
+        seed,
+        icpId,
+        corruptedManifest,
+        "queued",
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("fails at the database boundary when an observation drifts from its immutable snapshot provider", async () => {
+    const seed = await seedProject(handle);
+    const crawlSnapshot = await seedSnapshot(handle, seed, []);
+    await expect(
+      new ObservationsRepository(handle.db).insertMany(
+        seed.scope,
+        crawlSnapshot.id,
+        "ga4",
+        [
+          ga4Landing(`${seed.origin}/drifted`, {
+            sessions: 10,
+            engagedSessions: null,
+            engagementRate: null,
+            keyEvents: 1,
+            keyEventUnavailableReason: null,
+          }),
+        ],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("fails at the database boundary when crawl carries another provider's metric", async () => {
+    const seed = await seedProject(handle);
+    const sourceUrl = su(`${seed.origin}/metric-injection`);
+    const crawlObservation = crawlPage(
+      sourceUrl,
+      mkPage({ fetchUrl: sourceUrl }),
+    );
+    await expect(
+      seedSnapshot(handle, seed, [
+        { ...crawlObservation, metricKey: METRIC_GA4_LANDING },
+      ]),
+    ).rejects.toThrow();
+  });
+
+  it("fails at the database boundary when an observation timestamp differs from its snapshot", async () => {
+    const seed = await seedProject(handle);
+    const sourceUrl = su(`${seed.origin}/historical-row`);
+    const crawlObservation = crawlPage(
+      sourceUrl,
+      mkPage({ fetchUrl: sourceUrl }),
+    );
+    const historicalAt = new Date(
+      Date.parse(OBSERVED_AT) - 60_000,
+    ).toISOString();
+    await expect(
+      seedSnapshot(handle, seed, [
+        { ...crawlObservation, observedAt: historicalAt },
+      ]),
+    ).rejects.toThrow();
+  });
+
   it("AC-026: a partial run (skipped dataset) resolves NOTHING", async () => {
     const seed = await seedProject(handle);
     const icpId = await seedIcp(handle, seed, minimalProfile());
-    const snapshotId = await seedSnapshot(handle, seed, [
+    const snapshot = await seedSnapshot(handle, seed, [
       crawlPage(su(`${seed.origin}/`), mkPage({ fetchUrl: `${seed.origin}/` })),
     ]);
 
@@ -173,19 +457,24 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl"]),
+      manifestOf([snapshot]),
       "completed",
     );
-    const stale = await seedFinding(handle, seed, priorRunId, "TECH-HTTP-001", [
-      "http_status:404",
-    ]);
+    const stale = await seedFinding(
+      handle,
+      seed,
+      priorRunId,
+      snapshot,
+      "TECH-HTTP-001",
+      ["http_status:404"],
+    );
 
     // Only crawl is declared available → GSC/GA4/CSV rules are `skipped` → partial.
     const runId = await seedDiagnosticRun(
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl"]),
+      manifestOf([snapshot]),
       "queued",
     );
     await runDiagnostic(ctx, {
@@ -206,7 +495,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
   it("AC-026: a re-hit of a resolved finding flips it to regressed", async () => {
     const seed = await seedProject(handle);
     const icpId = await seedIcp(handle, seed, minimalProfile());
-    const snapshotId = await seedSnapshot(handle, seed, [
+    const snapshot = await seedSnapshot(handle, seed, [
       crawlPage(
         su(`${seed.origin}/gone`),
         mkPage({
@@ -222,13 +511,14 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl"]),
+      manifestOf([snapshot]),
       "completed",
     );
     const finding = await seedFinding(
       handle,
       seed,
       priorRunId,
+      snapshot,
       "TECH-HTTP-001",
       ["http_status:404"],
     );
@@ -249,7 +539,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl"]),
+      manifestOf([snapshot]),
       "queued",
     );
     await runDiagnostic(ctx, {
@@ -270,7 +560,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
   it("AC-028: a cross-run re-hit preserves the human review state and merges evidence into the existing Action", async () => {
     const seed = await seedProject(handle);
     const icpId = await seedIcp(handle, seed, minimalProfile());
-    const snapshotId = await seedSnapshot(handle, seed, [
+    const snapshot = await seedSnapshot(handle, seed, [
       crawlPage(
         su(`${seed.origin}/gone`),
         mkPage({
@@ -286,13 +576,14 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl"]),
+      manifestOf([snapshot]),
       "completed",
     );
     const finding = await seedFinding(
       handle,
       seed,
       priorRunId,
+      snapshot,
       "TECH-HTTP-001",
       ["http_status:404"],
     );
@@ -336,7 +627,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl"]),
+      manifestOf([snapshot]),
       "queued",
     );
     await runDiagnostic(ctx, {
@@ -352,6 +643,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     );
     expect(rehit?.review_state).toBe("confirmed");
     expect(rehit?.review_revision).toBe(2);
+    expect(rehit?.rule_version).toBe(2);
 
     // The Action's human priority/status are untouched; only evidence is merged.
     const mergedAction = await new ActionsRepository(handle.db).findById(
@@ -370,7 +662,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     const icpId = await seedIcp(handle, seed, minimalProfile());
     const conflictingSubject = su(`${seed.origin}/conflicting`);
     const cleanSubject = su(`${seed.origin}/clean-500`);
-    const frozenSnapshotId = await seedSnapshot(handle, seed, [
+    const frozenSnapshot = await seedSnapshot(handle, seed, [
       crawlPage(
         conflictingSubject,
         mkPage({
@@ -390,7 +682,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
         }),
       ),
     ]);
-    const comparisonSnapshotId = await seedSnapshot(handle, seed, [
+    const comparisonSnapshot = await seedSnapshot(handle, seed, [
       crawlPage(
         conflictingSubject,
         mkPage({ fetchUrl: conflictingSubject }),
@@ -398,10 +690,10 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     ]);
     const frozenRows = await new ObservationsRepository(
       handle.db,
-    ).listBySnapshotIds(seed.scope, [frozenSnapshotId]);
+    ).listBySnapshotIds(seed.scope, [frozenSnapshot.id]);
     const comparisonRows = await new ObservationsRepository(
       handle.db,
-    ).listBySnapshotIds(seed.scope, [comparisonSnapshotId]);
+    ).listBySnapshotIds(seed.scope, [comparisonSnapshot.id]);
     const left = frozenRows.find(
       (row) => row.subject_ref === conflictingSubject,
     );
@@ -423,7 +715,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       handle,
       seed,
       icpId,
-      manifestOf(frozenSnapshotId, ["crawl"]),
+      manifestOf([frozenSnapshot]),
       "queued",
     );
     await runDiagnostic(ctx, {
@@ -452,7 +744,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     // A later run freezes a third snapshot. Although it has the same subjects,
     // neither side of the recorded pair belongs to that manifest, so confidence
     // must not be downgraded by stale/non-frozen data.
-    const unrelatedSnapshotId = await seedSnapshot(handle, seed, [
+    const unrelatedSnapshot = await seedSnapshot(handle, seed, [
       crawlPage(
         conflictingSubject,
         mkPage({
@@ -476,7 +768,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       handle,
       seed,
       icpId,
-      manifestOf(unrelatedSnapshotId, ["crawl"]),
+      manifestOf([unrelatedSnapshot]),
       "queued",
     );
     await runDiagnostic(ctx, {
@@ -497,7 +789,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     const seed = await seedProject(handle);
     const projects = new ProjectsRepository(handle.db);
     const icpId = await seedIcp(handle, seed, minimalProfile());
-    const snapshotId = await seedSnapshot(handle, seed, [
+    const snapshot = await seedSnapshot(handle, seed, [
       crawlPage(
         su(`${seed.origin}/archived-diagnostic`),
         mkPage({
@@ -517,7 +809,7 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
       handle,
       seed,
       icpId,
-      manifestOf(snapshotId, ["crawl"]),
+      manifestOf([snapshot]),
       "queued",
     );
     await handle.pool.query(
@@ -604,13 +896,107 @@ async function seedIcp(
   return icp!.id;
 }
 
-/** Insert a crawl snapshot holding the given observations (shared collection run). */
+const PROVIDER_FIXTURE_CONFIG: Record<
+  SourceProvider,
+  {
+    readonly operation: string;
+    readonly datasetKey: string;
+    readonly methodVersion: string;
+  }
+> = {
+  crawl: {
+    operation: "site_graph",
+    datasetKey: CRAWL_DATASET_KEY,
+    methodVersion: CRAWL_METHOD_VERSION,
+  },
+  gsc: {
+    operation: "search_analytics",
+    datasetKey: "gsc.page_query_daily.v1",
+    methodVersion: "gsc.page_query_daily.v1",
+  },
+  ga4: {
+    operation: "organic_landing",
+    datasetKey: "ga4.organic_landing_daily.v1",
+    methodVersion: "ga4.organic_landing_daily.v1",
+  },
+  csv: {
+    operation: "keyword_gap_import",
+    datasetKey: "csv.keyword_gap.v1",
+    methodVersion: "csv.keyword_gap.v1",
+  },
+  dataforseo: {
+    operation: "keyword_gap_import",
+    datasetKey: DATAFORSEO_DATASET_KEY,
+    methodVersion: DATAFORSEO_METHOD_VERSION,
+  },
+};
+
+/** Insert one provider-honest immutable snapshot and its collection run. */
 async function seedSnapshot(
   handle: DbHandle,
   seed: Seed,
   observations: readonly ObservationInsert[],
-): Promise<string> {
+  provider: SourceProvider = "crawl",
+): Promise<SeededSnapshot> {
   const collectionRunId = randomUUID();
+  const config = PROVIDER_FIXTURE_CONFIG[provider];
+  const sources = new SourceConnectionsRepository(handle.db);
+  const existingSource =
+    provider === "csv"
+      ? null
+      : await sources.findConnectedByProvider(seed.scope, provider);
+  const sourceConnectionId =
+    provider === "csv"
+      ? null
+      : existingSource
+        ? existingSource.id
+      : provider === "crawl"
+        ? (
+            await sources.insertDefaultCrawl({
+              workspaceId: seed.scope.workspaceId,
+              projectId: seed.scope.projectId,
+              siteId: seed.siteId,
+              createdBy: seed.actor,
+            })
+          ).id
+        : (
+            await sources.insertConnection({
+              workspaceId: seed.scope.workspaceId,
+              projectId: seed.scope.projectId,
+              siteId: seed.siteId,
+              provider,
+              connectionType:
+                provider === "dataforseo" ? "api_key_stub" : "oauth",
+              state: "connected",
+              limitation: `test ${provider} source connection`,
+              connectedAt: true,
+              createdBy: seed.actor,
+            })
+          ).id;
+  const importPreviewId = provider === "csv"
+    ? (
+        await new ImportPreviewsRepository(handle.db).insert({
+          workspaceId: seed.scope.workspaceId,
+          projectId: seed.scope.projectId,
+          siteId: seed.siteId,
+          createdBy: seed.actor,
+          tokenHash: Buffer.from(
+            contentHash({ preview: collectionRunId }),
+            "hex",
+          ),
+          templateId: "keyword_gap_v1",
+          rawObjectKey: `diagnostic-fixture/${collectionRunId}.csv`,
+          fileChecksum: contentHash({ csv: collectionRunId }),
+          rowCount: observations.length,
+          detectedColumns: [],
+          suggestedMapping: {},
+          previewRows: [],
+          validationErrors: [],
+          validationWarnings: [],
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        })
+      ).id
+    : null;
   await handle.db.insert(asyncRuns).values({
     id: collectionRunId,
     workspace_id: seed.scope.workspaceId,
@@ -626,26 +1012,27 @@ async function seedSnapshot(
     workspaceId: seed.scope.workspaceId,
     projectId: seed.scope.projectId,
     siteId: seed.siteId,
-    sourceConnectionId: null,
-    provider: "crawl",
-    operation: "site_graph",
-    methodVersion: "crawl.site_graph.v1",
+    sourceConnectionId,
+    provider,
+    operation: config.operation,
+    methodVersion: config.methodVersion,
     parametersHash: contentHash({ c: collectionRunId }),
+    importPreviewId,
   });
   const snapshot = await new DataSnapshotsRepository(handle.db).insert({
     workspaceId: seed.scope.workspaceId,
     projectId: seed.scope.projectId,
     siteId: seed.siteId,
     collectionRunId,
-    sourceConnectionId: null,
-    provider: "crawl",
-    datasetKey: "crawl.site_graph.v1",
+    sourceConnectionId,
+    provider,
+    datasetKey: config.datasetKey,
     schemaVersion: "0.2.0",
-    methodVersion: "crawl.site_graph.v1",
+    methodVersion: config.methodVersion,
     capturedAt: OBSERVED_AT,
     sourceWindow: { start: null, end: null },
     availability: "available",
-    limitation: "test crawl snapshot",
+    limitation: `test ${provider} snapshot`,
     rawObjectKey: null,
     rowCount: observations.length,
     checksum: contentHash({ s: collectionRunId }),
@@ -653,10 +1040,21 @@ async function seedSnapshot(
   await new ObservationsRepository(handle.db).insertMany(
     seed.scope,
     snapshot.id,
-    "crawl",
+    provider,
     observations,
   );
-  return snapshot.id;
+  return {
+    id: snapshot.id,
+    collectionRunId,
+    provider,
+    availability: "available",
+    capturedAt: snapshot.captured_at,
+    datasetKey: snapshot.dataset_key,
+    schemaVersion: snapshot.schema_version,
+    methodVersion: snapshot.method_version,
+    checksum: snapshot.checksum,
+    sourceWindow: snapshot.source_window,
+  };
 }
 
 async function seedDiagnosticRun(
@@ -667,6 +1065,24 @@ async function seedDiagnosticRun(
   status: "queued" | "completed",
 ): Promise<string> {
   const runId = randomUUID();
+  const icp = await new IcpProfilesRepository(handle.db).findById(
+    seed.scope,
+    icpProfileId,
+  );
+  if (!icp) throw new Error("diagnostic test ICP missing");
+  const frozenManifest = {
+    projectId: seed.scope.projectId,
+    siteId: seed.siteId,
+    icp: {
+      id: icp.id,
+      version: icp.version,
+      contentHash: icp.content_hash,
+    },
+    snapshots: inputManifest["snapshots"],
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
+    deliveryLocale: "en",
+  };
   await handle.db.insert(asyncRuns).values({
     id: runId,
     workspace_id: seed.scope.workspaceId,
@@ -685,11 +1101,11 @@ async function seedDiagnosticRun(
     siteId: seed.siteId,
     icpProfileId,
     icpProfileVersion: 1,
-    ruleSetVersion: "mvp.rules.0.2.0",
-    promptSetVersion: "mvp.prompts.0.2.0",
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
     outputLocale: "en",
-    inputManifest,
-    inputHash: contentHash({ r: runId }),
+    inputManifest: frozenManifest,
+    inputHash: contentHash(frozenManifest as unknown as CanonicalValue),
   });
   return runId;
 }
@@ -698,6 +1114,7 @@ async function seedFinding(
   handle: DbHandle,
   seed: Seed,
   runId: string,
+  snapshot: SeededSnapshot,
   ruleId: RuleId,
   subjectRefs: readonly string[],
 ): Promise<{ id: string; key: string }> {
@@ -708,7 +1125,13 @@ async function seedFinding(
     projectId: seed.scope.projectId,
     findingKey: key,
     ruleId,
-    ruleVersion: 1,
+    ruleVersion: [
+      "TECH-HTTP-001",
+      "TECH-CANONICAL-002",
+      "TECH-LINKGRAPH-005",
+    ].includes(ruleId)
+      ? 2
+      : 1,
     ruleFamily: meta.ruleFamily,
     intent: meta.intent,
     domain: meta.domain,
@@ -741,6 +1164,8 @@ async function seedFinding(
         claim: "Seeded prior-run finding observation.",
         observedAt: OBSERVED_AT,
         limitation: "Disposable diagnostic integration fixture.",
+        snapshotId: snapshot.id,
+        collectionRunId: snapshot.collectionRunId,
       },
     ],
   );
@@ -766,16 +1191,18 @@ async function runStatusOf(
 
 // --- fixture builders -------------------------------------------------------
 
-function manifestOf(
-  snapshotId: string,
-  providers: readonly string[],
-): Record<string, unknown> {
+function manifestOf(snapshots: readonly SeededSnapshot[]): Record<string, unknown> {
   return {
-    snapshots: providers.map((provider) => ({
-      snapshotId,
-      provider,
-      availability: "available",
-      capturedAt: OBSERVED_AT,
+    snapshots: snapshots.map((snapshot) => ({
+      snapshotId: snapshot.id,
+      provider: snapshot.provider,
+      datasetKey: snapshot.datasetKey,
+      schemaVersion: snapshot.schemaVersion,
+      methodVersion: snapshot.methodVersion,
+      checksum: snapshot.checksum,
+      availability: snapshot.availability,
+      capturedAt: snapshot.capturedAt,
+      sourceWindow: snapshot.sourceWindow,
     })),
   };
 }
@@ -905,7 +1332,7 @@ function mkPage(o: {
     redirectChain: [],
     canonicalTarget: null,
     robotsIndexable: o.robotsIndexable ?? true,
-    robotsDirectives: [],
+    robotsDirectives: o.robotsIndexable === false ? ["noindex"] : [],
     title: o.title ?? null,
     metaDescription: null,
     h1: o.h1 ?? [],
@@ -960,5 +1387,26 @@ function ga4Landing(
     grade: "A",
     support: "supports",
     limitation: "ga4 landing metrics",
+  };
+}
+
+function keywordGap(
+  projection: CsvKeywordProjection,
+  provider: "csv" | "dataforseo" = "csv",
+): ObservationInsert {
+  return {
+    metricKey: METRIC_CSV_KEYWORD_GAP,
+    subjectType: "keyword_cluster",
+    subjectRef: projection.clusterKey,
+    observedAt: OBSERVED_AT,
+    availability: "available",
+    valueNumeric: null,
+    valueText: null,
+    valueJson: projection,
+    unit: null,
+    origin: provider === "dataforseo" ? "vendor_observation" : "user_provided",
+    grade: provider === "dataforseo" ? "B" : "C",
+    support: "supports",
+    limitation: `${provider} keyword-gap fixture`,
   };
 }

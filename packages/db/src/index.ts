@@ -114,7 +114,10 @@ export type {
   AuditModuleResultRow,
   AuditModuleResultInsert,
 } from "./repositories/audit-runs.ts";
-export { SitePagesRepository } from "./repositories/site-pages.ts";
+export {
+  normalizedUrlHash,
+  SitePagesRepository,
+} from "./repositories/site-pages.ts";
 export type {
   SitePageRow,
   SitePageListPage,
@@ -129,7 +132,12 @@ export type { FindingRow, FindingListPage } from "./repositories/findings.ts";
 export { FindingReviewEventsRepository } from "./repositories/findings-review.ts";
 export { EvidenceRepository } from "./repositories/evidence.ts";
 export type {
+  EvidenceAvailability,
+  EvidenceGrade,
   EvidenceInsert,
+  EvidenceMethod,
+  EvidenceOrigin,
+  EvidenceSupport,
   FindingObservationInsert,
 } from "./repositories/evidence.ts";
 export { ActionsRepository } from "./repositories/actions.ts";

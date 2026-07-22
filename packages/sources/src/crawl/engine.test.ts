@@ -112,6 +112,17 @@ function makeFetcher(routes: Record<string, Route>): { fetcher: CrawlFetcher; ca
   return { fetcher, calls };
 }
 
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
 const ROBOTS_TXT = [
   "User-agent: *",
   "Disallow: /admin/",
@@ -242,6 +253,439 @@ describe("crawlSite", () => {
       ),
     ).toBe(true);
   });
+
+  it("keeps a discovered page's trailing slash for transport while folding only its aggregation identity", async () => {
+    const home = `<html><head><title>Home</title></head><body>
+      <a href="/pricing/">Pricing</a></body></html>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () => html(home),
+      "https://example.com/pricing/": () =>
+        html("<html><head><title>Pricing</title></head></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(calls).toContain("https://example.com/pricing/");
+    expect(calls).not.toContain("https://example.com/pricing");
+    expect(raw.pages).toContainEqual(
+      expect.objectContaining({
+        subjectUrl: "https://example.com/pricing",
+        projection: expect.objectContaining({
+          fetchUrl: "https://example.com/pricing/",
+        }),
+      }),
+    );
+    expect(JSON.stringify(raw)).not.toContain("internalFetchTargets");
+    expect(JSON.stringify(raw)).not.toContain("canonicalFetchTarget");
+  });
+
+  it("preserves exact slash paths across an /a/ to /b/ redirect journey", async () => {
+    const home = `<html><head><title>Home</title></head><body>
+      <a href="/a/">Redirecting page</a></body></html>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () => html(home),
+      "https://example.com/a/": () => redirect("/b/"),
+      "https://example.com/b/": () =>
+        html("<html><head><title>B</title></head></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(calls).toContain("https://example.com/a/");
+    expect(calls).toContain("https://example.com/b/");
+    expect(calls).not.toContain("https://example.com/a");
+    expect(calls).not.toContain("https://example.com/b");
+    expect(raw.pages).toContainEqual(
+      expect.objectContaining({
+        subjectUrl: "https://example.com/a",
+        projection: expect.objectContaining({
+          fetchUrl: "https://example.com/a/",
+          status: 301,
+          finalStatus: 200,
+          redirectChain: ["https://example.com/b/"],
+        }),
+      }),
+    );
+  });
+
+  it("uses an exact sitemap member fetch URL while persisting only its aggregation subject", async () => {
+    const sitemapBody = `<urlset>
+      <url><loc>https://example.com/docs/</loc></url>
+    </urlset>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => html(HOME_HTML),
+      "https://example.com/docs/": () =>
+        html(
+          '<html><head><title>Docs</title><link rel="canonical" href="/docs/"></head></html>',
+        ),
+      "https://example.com/about": () => html(ABOUT_HTML),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(calls).toContain("https://example.com/docs/");
+    expect(calls).not.toContain("https://example.com/docs");
+    expect(raw.sitemap.subjectUrls).toContain("https://example.com/docs");
+    expect(raw.pages).toContainEqual(
+      expect.objectContaining({
+        subjectUrl: "https://example.com/docs",
+        projection: expect.objectContaining({
+          fetchUrl: "https://example.com/docs/",
+          canonicalTarget: "https://example.com/docs/",
+          sitemapMember: true,
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    ["/a", "/a/", "/b"],
+    ["/b", "/a/", "/a"],
+  ])(
+    "allocates a tight URL budget to distinct sitemap subjects before extra exact variants: %j",
+    async (...members) => {
+      const urls = members.map((path) => `https://example.com${path}`);
+      const sitemapBody = `<urlset>${urls
+        .map((url) => `<url><loc>${url}</loc></url>`)
+        .join("")}</urlset>`;
+      const { fetcher, calls } = makeFetcher({
+        "https://example.com/robots.txt": () =>
+          text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+        "https://example.com/sitemap.xml": () => xml(sitemapBody),
+        "https://example.com/": () =>
+          html("<html><head><title>Home</title></head></html>"),
+        "https://example.com/a": () =>
+          html("<html><head><title>A</title></head></html>"),
+        "https://example.com/a/": () =>
+          html("<html><head><title>A slash</title></head></html>"),
+        "https://example.com/b": () =>
+          html("<html><head><title>B</title></head></html>"),
+      });
+
+      const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+        guard: GUARD,
+        budget: {
+          ...FAST_BUDGET,
+          maxUrls: 3,
+          perHostConcurrency: 1,
+        },
+      });
+
+      expect(raw.stopReason).toBe("max_urls");
+      expect(calls).toEqual([
+        "https://example.com/robots.txt",
+        "https://example.com/sitemap.xml",
+        "https://example.com/",
+        "https://example.com/a",
+        "https://example.com/b",
+      ]);
+      expect(raw.pages.map((page) => page.projection.fetchUrl)).toEqual([
+        "https://example.com/",
+        "https://example.com/a",
+        "https://example.com/b",
+      ]);
+    },
+  );
+
+  it("keeps redirect request and directly fetched terminal identities as separate factual records", async () => {
+    const oldUrl = "https://example.com/old";
+    const targetUrl = "https://example.com/target";
+    const targetHtml = `<html><head><title>Terminal target</title></head>
+      <body><a href="child">Child</a></body></html>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+      "https://example.com/sitemap.xml": () =>
+        xml(`<urlset>
+          <url><loc>${oldUrl}</loc></url>
+          <url><loc>${targetUrl}</loc></url>
+        </urlset>`),
+      "https://example.com/": () =>
+        html("<html><head><title>Home</title></head></html>"),
+      [oldUrl]: () => redirect(targetUrl),
+      [targetUrl]: () => html(targetHtml),
+      "https://example.com/child": () =>
+        html("<html><head><title>Child</title></head></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+    const oldPage = raw.pages.find(
+      (page) => page.projection.fetchUrl === oldUrl,
+    );
+    const targetPage = raw.pages.find(
+      (page) => page.projection.fetchUrl === targetUrl,
+    );
+
+    expect(calls.filter((url) => url === targetUrl)).toHaveLength(2);
+    expect(oldPage).toMatchObject({
+      subjectUrl: oldUrl,
+      projection: {
+        fetchUrl: oldUrl,
+        status: 301,
+        finalStatus: 200,
+        redirectChain: [targetUrl],
+        title: "Terminal target",
+        sitemapMember: true,
+      },
+    });
+    expect(targetPage).toMatchObject({
+      subjectUrl: targetUrl,
+      projection: {
+        fetchUrl: targetUrl,
+        status: 200,
+        finalStatus: 200,
+        redirectChain: [],
+        title: "Terminal target",
+        sitemapMember: true,
+      },
+    });
+    expect(
+      oldPage?.projection.internalOutlinks.map(
+        (link) => link.targetSubjectUrl,
+      ),
+    ).toContain("https://example.com/child");
+  });
+
+  it("marks only the exact fetch URL declared by the sitemap as a member", async () => {
+    const landing = "https://example.com/landing";
+    const landingSlash = "https://example.com/landing/";
+    const home = `<html><head><title>Home</title></head><body>
+      <a href="${landingSlash}">Landing slash variant</a></body></html>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+      "https://example.com/sitemap.xml": () =>
+        xml(`<urlset><url><loc>${landing}</loc></url></urlset>`),
+      "https://example.com/": () => html(home),
+      [landing]: () =>
+        html("<html><head><title>Landing</title></head></html>"),
+      [landingSlash]: () =>
+        html("<html><head><title>Landing slash</title></head></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    expect(calls).toEqual(expect.arrayContaining([landing, landingSlash]));
+    expect(raw.sitemap.subjectUrls).toContain(landing);
+    const pagesByFetchUrl = new Map(
+      raw.pages.map((page) => [page.projection.fetchUrl, page] as const),
+    );
+    expect(pagesByFetchUrl.get(landing)).toMatchObject({
+      subjectUrl: landing,
+      projection: { fetchUrl: landing, sitemapMember: true },
+    });
+    expect(pagesByFetchUrl.get(landingSlash)).toMatchObject({
+      subjectUrl: landing,
+      projection: { fetchUrl: landingSlash, sitemapMember: false },
+    });
+  });
+
+  it("keeps a frontier target for every bounded sitemap subject when slash variants repeat", async () => {
+    const repeatedVariants = Array.from(
+      { length: CRAWL_PROJECTION_LIMITS.maxSitemapUrls / 2 },
+      (_unused, index) => {
+        const suffix = String(index).padStart(4, "0");
+        return `<url><loc>https://example.com/z-${suffix}</loc></url>
+          <url><loc>https://example.com/z-${suffix}/</loc></url>`;
+      },
+    ).join("");
+    const sitemapBody = `<urlset>${repeatedVariants}
+      <url><loc>https://example.com/a-target/</loc></url>
+    </urlset>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () => html(HOME_HTML),
+      "https://example.com/a-target/": () =>
+        html("<html><head><title>Target</title></head></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxUrls: 2,
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(raw.sitemap.subjectUrls).toContain(
+      "https://example.com/a-target",
+    );
+    expect(calls).toContain("https://example.com/a-target/");
+    expect(calls).not.toContain("https://example.com/a-target");
+  });
+
+  it("discovers links from every successful exact fetch regardless of slash-variant completion order", async () => {
+    const landing = "https://example.com/landing";
+    const landingSlash = "https://example.com/landing/";
+    const uniqueTargets = [
+      "https://example.com/canonical-from-no-slash",
+      "https://example.com/link-from-no-slash",
+      "https://example.com/canonical-from-slash",
+      "https://example.com/link-from-slash",
+    ] as const;
+
+    const crawlWithFirstCompletion = async (
+      first: "no-slash" | "slash",
+    ): Promise<{ readonly calls: readonly string[]; readonly raw: Awaited<ReturnType<typeof crawlSite>> }> => {
+      const noSlashResponse = deferred<Response>();
+      const slashResponse = deferred<Response>();
+      const noSlashStarted = deferred<void>();
+      const slashStarted = deferred<void>();
+      const firstTargetStarted = deferred<void>();
+      const calls: string[] = [];
+      const fetcher: CrawlFetcher = {
+        async fetch(url) {
+          calls.push(url);
+          if (url === "https://example.com/robots.txt") {
+            return text("User-agent: *\nDisallow:\n");
+          }
+          if (url === "https://example.com/sitemap.xml") {
+            return xml(
+              `<urlset><url><loc>${landing}</loc></url><url><loc>${landingSlash}</loc></url></urlset>`,
+            );
+          }
+          if (url === "https://example.com/") {
+            return html("<html><head><title>Home</title></head></html>");
+          }
+          if (url === landing) {
+            noSlashStarted.resolve();
+            return noSlashResponse.promise;
+          }
+          if (url === landingSlash) {
+            slashStarted.resolve();
+            return slashResponse.promise;
+          }
+          if (uniqueTargets.includes(url as (typeof uniqueTargets)[number])) {
+            const targetForFirstPage =
+              first === "no-slash"
+                ? url.includes("from-no-slash")
+                : url.includes("from-slash");
+            if (targetForFirstPage) firstTargetStarted.resolve();
+            return html(`<html><head><title>${url}</title></head></html>`);
+          }
+          return new Response("not found", { status: 404 });
+        },
+      };
+
+      const pending = crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+        guard: GUARD,
+        budget: {
+          ...FAST_BUDGET,
+          maxUrls: 12,
+          perHostConcurrency: 3,
+        },
+      });
+      await Promise.all([noSlashStarted.promise, slashStarted.promise]);
+
+      if (first === "no-slash") {
+        noSlashResponse.resolve(
+          html(`<html><head><title>No slash</title><link rel="canonical" href="/canonical-from-no-slash"></head><body><a href="/link-from-no-slash">Link</a></body></html>`),
+        );
+      } else {
+        slashResponse.resolve(
+          html(`<html><head><title>Slash</title><link rel="canonical" href="/canonical-from-slash"></head><body><a href="/link-from-slash">Link</a></body></html>`),
+        );
+      }
+      // Do not release the other representation until the first one has been
+      // accepted and its frontier work has begun. This makes both completion
+      // orders deterministic instead of relying on timers or scheduler luck.
+      await firstTargetStarted.promise;
+
+      if (first === "no-slash") {
+        slashResponse.resolve(
+          html(`<html><head><title>Slash</title><link rel="canonical" href="/canonical-from-slash"></head><body><a href="/link-from-slash">Link</a></body></html>`),
+        );
+      } else {
+        noSlashResponse.resolve(
+          html(`<html><head><title>No slash</title><link rel="canonical" href="/canonical-from-no-slash"></head><body><a href="/link-from-no-slash">Link</a></body></html>`),
+        );
+      }
+
+      return { calls, raw: await pending };
+    };
+
+    const noSlashFirst = await crawlWithFirstCompletion("no-slash");
+    const slashFirst = await crawlWithFirstCompletion("slash");
+
+    for (const result of [noSlashFirst, slashFirst]) {
+      expect(result.calls).toEqual(expect.arrayContaining([...uniqueTargets]));
+      expect(
+        result.raw.pages
+          .filter((page) => page.subjectUrl === landing)
+          .map((page) => page.projection.fetchUrl),
+      ).toEqual([landing, landingSlash]);
+    }
+    const stablePages = (pages: typeof noSlashFirst.raw.pages) =>
+      pages.map((page) => ({
+        ...page,
+        projection: { ...page.projection, responseMs: null },
+      }));
+    expect(stablePages(noSlashFirst.raw.pages)).toEqual(
+      stablePages(slashFirst.raw.pages),
+    );
+    expect([...noSlashFirst.calls].sort()).toEqual(
+      [...slashFirst.calls].sort(),
+    );
+  });
+
+  it.each([
+    "https://example.com:8443/internal",
+    "http://example.com:2375/internal",
+  ])(
+    "blocks redirect transport to a non-standard port: %s",
+    async (redirectTarget) => {
+      const home = `<html><head><title>Home</title></head><body>
+        <a href="/go">Go</a></body></html>`;
+      const { fetcher, calls } = makeFetcher({
+        "https://example.com/robots.txt": () =>
+          text("User-agent: *\nDisallow:\n"),
+        "https://example.com/sitemap.xml": () =>
+          new Response("not found", { status: 404 }),
+        "https://example.com/": () => html(home),
+        "https://example.com/go": () => redirect(redirectTarget),
+        [redirectTarget]: () =>
+          html("<html><title>Must not be fetched</title></html>"),
+      });
+
+      const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+        guard: GUARD,
+        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+      });
+
+      expect(calls).toContain("https://example.com/go");
+      expect(calls).not.toContain(redirectTarget);
+      expect(raw.providerUsage.urlsBlocked).toBeGreaterThanOrEqual(1);
+    },
+  );
 
   it("crawls a normal site into pages, robots, and sitemap", async () => {
     const { fetcher } = makeFetcher({
@@ -762,7 +1206,7 @@ describe("crawlSite", () => {
     expect(raw.pages[0]?.subjectUrl).toBe("https://example.com/");
   });
 
-  it("uses the canonical final redirect URL as page identity and relative-link base", async () => {
+  it("keeps request identity while using the final redirect URL as the relative-link base", async () => {
     const robotsBody =
       "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
     const sitemapBody = `<urlset>
@@ -784,19 +1228,36 @@ describe("crawlSite", () => {
       guard: GUARD,
       budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
     });
-    const targetPages = raw.pages.filter(
-      (page) => page.subjectUrl === "https://example.com/dir/page",
+    const rootPage = raw.pages.find(
+      (page) => page.projection.fetchUrl === "https://example.com/",
+    );
+    const targetPage = raw.pages.find(
+      (page) => page.projection.fetchUrl === "https://example.com/dir/page",
     );
 
-    expect(targetPages).toHaveLength(1);
-    expect(targetPages[0]?.projection).toMatchObject({
+    expect(rootPage).toMatchObject({
+      subjectUrl: "https://example.com/",
+      projection: {
+        fetchUrl: "https://example.com/",
+        status: 301,
+        finalStatus: 200,
+        redirectChain: ["https://example.com/dir/page"],
+        sitemapMember: true,
+      },
+    });
+    expect(rootPage?.projection.internalOutlinks).toContainEqual(
+      expect.objectContaining({
+        targetSubjectUrl: "https://example.com/dir/child",
+      }),
+    );
+    expect(targetPage?.projection).toMatchObject({
       fetchUrl: "https://example.com/dir/page",
-      status: 301,
+      status: 200,
       finalStatus: 200,
-      redirectChain: ["https://example.com/dir/page"],
+      redirectChain: [],
       sitemapMember: true,
     });
-    expect(targetPages[0]?.projection.internalOutlinks).toContainEqual(
+    expect(targetPage?.projection.internalOutlinks).toContainEqual(
       expect.objectContaining({
         targetSubjectUrl: "https://example.com/dir/child",
       }),
@@ -807,11 +1268,11 @@ describe("crawlSite", () => {
       ),
     ).toBe(true);
     expect(calls.filter((url) => url === "https://example.com/dir/page"))
-      .toHaveLength(1);
+      .toHaveLength(2);
     expect(calls).not.toContain("https://example.com/child");
   });
 
-  it("selects one deterministic final-subject winner under concurrent direct and alias fetches", async () => {
+  it("keeps concurrent direct and alias journeys as deterministic separate records", async () => {
     const robotsBody =
       "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";
     const sitemapBody = `<urlset>
@@ -879,17 +1340,41 @@ describe("crawlSite", () => {
     const finalPages = raw.pages.filter(
       (page) => page.subjectUrl === "https://example.com/dir/page",
     );
+    const aliasAPage = raw.pages.find(
+      (page) => page.projection.fetchUrl === "https://example.com/alias-a",
+    );
+    const aliasBPage = raw.pages.find(
+      (page) => page.projection.fetchUrl === "https://example.com/alias-b",
+    );
     const child = raw.pages.find(
       (page) => page.subjectUrl === "https://example.com/dir/child",
     );
 
     expect(finalCalls).toBe(3);
     expect(finalPages).toHaveLength(1);
-    expect(finalPages[0]?.projection.status).toBe(301);
+    expect(finalPages[0]?.projection.status).toBe(200);
     expect(finalPages[0]?.projection.finalStatus).toBe(200);
     expect(finalPages[0]?.projection.fetchUrl).toBe(
       "https://example.com/dir/page",
     );
+    expect(aliasAPage).toMatchObject({
+      subjectUrl: "https://example.com/alias-a",
+      projection: {
+        fetchUrl: "https://example.com/alias-a",
+        status: 301,
+        finalStatus: 200,
+        redirectChain: ["https://example.com/dir/page"],
+      },
+    });
+    expect(aliasBPage).toMatchObject({
+      subjectUrl: "https://example.com/alias-b",
+      projection: {
+        fetchUrl: "https://example.com/alias-b",
+        status: 302,
+        finalStatus: 200,
+        redirectChain: ["https://example.com/dir/page"],
+      },
+    });
     expect(child?.depth).toBe(2);
     expect(new Set(raw.pages.map((page) => page.subjectUrl)).size).toBe(
       raw.pages.length,

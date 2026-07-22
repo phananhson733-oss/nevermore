@@ -16,6 +16,24 @@ const scriptRepositoryRoot = resolve(
   "..",
 );
 
+const requiredAuthorityFiles = [
+  "README.md",
+  "MVP-IMPLEMENTATION-SPEC.md",
+  "openapi.yaml",
+  "schema.sql",
+  "schemas/service-bundle-manifest.schema.json",
+  "scripts/schema-smoke.sql",
+  "scripts/verify-spec.mjs",
+];
+
+const requiredImplementationFiles = [
+  "openapi/mvp.yaml",
+  "packages/contracts/src/generated/openapi.ts",
+  "schemas/service-bundle-manifest.schema.json",
+  "packages/db/migrations/schema-smoke.sql",
+  "scripts/verify-implementation.mjs",
+];
+
 function parseArguments(argv) {
   const options = {
     root: scriptRepositoryRoot,
@@ -87,6 +105,38 @@ function assertSameSet(actual, expected, label) {
   );
 }
 
+function assertUnique(values, label) {
+  const duplicates = values.filter(
+    (value, index) => values.indexOf(value) !== index,
+  );
+  assert.deepEqual(
+    sorted(duplicates),
+    [],
+    `${label} contains duplicate entries`,
+  );
+}
+
+function assertRequiredHashes(value, requiredPaths, label) {
+  assert.ok(
+    value && typeof value === "object" && !Array.isArray(value),
+    `lockFormat 2 requires ${label} hashes`,
+  );
+  for (const relativePath of requiredPaths) {
+    assert.equal(
+      typeof value[relativePath],
+      "string",
+      `${label} is missing ${relativePath}`,
+    );
+  }
+  for (const [relativePath, hash] of Object.entries(value)) {
+    assert.match(
+      hash,
+      /^[a-f0-9]{64}$/,
+      `${label} has an invalid SHA-256 hash for ${relativePath}`,
+    );
+  }
+}
+
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
@@ -95,6 +145,32 @@ function stripSqlComments(source) {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/--[^\r\n]*/g, " ");
+}
+
+function diagnosticRules() {
+  const rulesDirectory = fromRoot("packages/engine/src/rules");
+  const ruleExportPattern =
+    /export\s+const\s+([A-Za-z_$][A-Za-z0-9_$]*Rule)\s*=\s*\{([\s\S]*?)\}\s+satisfies\s+DiagnosticRule\s*;/g;
+  const rules = [];
+
+  for (const name of readdirSync(rulesDirectory)) {
+    if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;
+    const source = readFileSync(join(rulesDirectory, name), "utf8");
+    for (const match of source.matchAll(ruleExportPattern)) {
+      const exportName = match[1];
+      const definition = match[2];
+      const id = definition.match(
+        /^\s*id:\s*["']((?:TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3})["']\s*,/m,
+      )?.[1];
+      const version = definition.match(/^\s*version:\s*([0-9]+)\s*,/m)?.[1];
+      assert.ok(id, `${name} ${exportName} is missing a frozen rule id`);
+      assert.ok(version, `${name} ${exportName} is missing a numeric rule version`);
+      rules.push({ id, version: Number(version) });
+    }
+  }
+
+  assert.ok(rules.length > 0, "at least one exported diagnostic rule is required");
+  return rules;
 }
 
 function migrationTables() {
@@ -178,16 +254,52 @@ for (const operationId of lock.asyncOperations) {
 const tables = migrationTables();
 assertSameSet(tables, lock.tables, "application tables");
 
-const rulesDir = fromRoot("packages/engine/src/rules");
-const rules = readdirSync(rulesDir)
-  .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
-  .flatMap((name) => [
-    ...readFileSync(join(rulesDir, name), "utf8").matchAll(
-      /\bid:\s*"((?:TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3})"/g,
-    ),
-  ])
-  .map((match) => match[1]);
-assertSameSet(rules, lock.rules, "diagnostic rules");
+assertRequiredHashes(
+  lock.authorityFiles,
+  requiredAuthorityFiles,
+  "authorityFiles",
+);
+assertRequiredHashes(
+  lock.implementationFiles,
+  requiredImplementationFiles,
+  "implementationFiles",
+);
+
+assert.ok(Array.isArray(lock.rules), "rules must be an array");
+assert.ok(lock.rules.length > 0, "at least one frozen diagnostic rule is required");
+for (const [index, ruleId] of lock.rules.entries()) {
+  assert.equal(typeof ruleId, "string", `rules[${index}] must be a string`);
+}
+assertUnique(lock.rules, "frozen diagnostic rules");
+assert.ok(
+  lock.ruleVersions &&
+    typeof lock.ruleVersions === "object" &&
+    !Array.isArray(lock.ruleVersions),
+  "lockFormat 2 requires ruleVersions",
+);
+assertSameSet(
+  Object.keys(lock.ruleVersions),
+  lock.rules,
+  "diagnostic rule version keys",
+);
+for (const [ruleId, version] of Object.entries(lock.ruleVersions)) {
+  assert.ok(
+    Number.isInteger(version) && version > 0,
+    `${ruleId} frozen rule version must be a positive integer`,
+  );
+}
+
+const rules = diagnosticRules();
+const ruleIds = rules.map((rule) => rule.id);
+assertUnique(ruleIds, "exported diagnostic rules");
+assertSameSet(ruleIds, lock.rules, "diagnostic rules");
+for (const rule of rules) {
+  assert.equal(
+    rule.version,
+    lock.ruleVersions[rule.id],
+    `${rule.id} rule version drifted from frozen version ${lock.ruleVersions[rule.id]}`,
+  );
+}
 
 const configuredAuthority =
   options.authorityRoot ??
@@ -203,41 +315,38 @@ if (authorityIsRequired) {
   assert.ok(authorityAvailable, "configured authority root does not exist");
 }
 
-const requiredImplementationFiles = [
-  "openapi/mvp.yaml",
-  "packages/contracts/src/generated/openapi.ts",
-  "schemas/service-bundle-manifest.schema.json",
-  "packages/db/migrations/schema-smoke.sql",
-];
-if (lock.lockFormat >= 2) {
+for (const [relativePath, expectedHash] of Object.entries(
+  lock.implementationFiles,
+)) {
+  const implementationPath = fromRoot(relativePath);
   assert.ok(
-    lock.implementationFiles &&
-      typeof lock.implementationFiles === "object" &&
-      !Array.isArray(lock.implementationFiles),
-    "lockFormat 2 requires implementationFiles hashes",
+    existsSync(implementationPath),
+    `implementation file is missing: ${relativePath}`,
   );
-  for (const relativePath of requiredImplementationFiles) {
-    assert.equal(
-      typeof lock.implementationFiles[relativePath],
-      "string",
-      `implementationFiles is missing ${relativePath}`,
-    );
-  }
-  for (const [relativePath, expectedHash] of Object.entries(
-    lock.implementationFiles,
-  )) {
-    const implementationPath = fromRoot(relativePath);
-    assert.ok(
-      existsSync(implementationPath),
-      `implementation file is missing: ${relativePath}`,
-    );
-    assert.equal(
-      sha256(implementationPath),
-      expectedHash,
-      `implementation file drifted from the frozen ${lock.productVersion} lock: ${relativePath}`,
-    );
-  }
+  assert.equal(
+    sha256(implementationPath),
+    expectedHash,
+    `implementation file drifted from the frozen ${lock.productVersion} lock: ${relativePath}`,
+  );
 }
+
+const implementationVerifier = fromRoot("scripts/verify-implementation.mjs");
+const implementationVerification = spawnSync(
+  process.execPath,
+  [implementationVerifier, "--root", repoRoot],
+  { cwd: repoRoot, encoding: "utf8" },
+);
+if (implementationVerification.stdout) {
+  process.stdout.write(implementationVerification.stdout);
+}
+if (implementationVerification.stderr) {
+  process.stderr.write(implementationVerification.stderr);
+}
+assert.equal(
+  implementationVerification.status,
+  0,
+  "clone-local implementation verifier failed",
+);
 
 if (authorityAvailable) {
   for (const [relativePath, expectedHash] of Object.entries(lock.authorityFiles)) {

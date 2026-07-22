@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AsyncRunsRepository,
+  DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
   IdempotencyRepository,
   OAuthIntentsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
   type AsyncRunRow,
+  type DiagnosticRunRow,
   type JobWithMetadata,
 } from "@sf/db";
 import { CONTRACT_VERSION } from "@sf/contracts";
+import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
 import {
@@ -30,6 +33,10 @@ const PAYLOAD = {
 const SOURCE_CONNECTION_ID = "00000000-0000-4000-8000-000000000005";
 
 beforeEach(() => {
+  vi.spyOn(
+    DiagnosticRunsRepository.prototype,
+    "findById",
+  ).mockResolvedValue(diagnosticRun());
   vi.spyOn(
     AsyncRunsRepository.prototype,
     "lockActiveForRecovery",
@@ -95,17 +102,29 @@ describe("prepareRunDelivery", () => {
       PAYLOAD.runId,
       1,
     );
+    expect(
+      DiagnosticRunsRepository.prototype.findById,
+    ).toHaveBeenCalledWith(
+      { workspaceId: PAYLOAD.workspaceId, projectId: PAYLOAD.projectId },
+      PAYLOAD.runId,
+    );
     expect(execute).toHaveBeenCalledWith(
       PAYLOAD,
       expect.objectContaining({ logger: ctx.logger }),
     );
   });
 
-  it("accepts the legacy payload contract during a rolling upgrade", async () => {
+  it("keeps the legacy payload contract available to non-diagnostic runners", async () => {
     vi.spyOn(
       AsyncRunsRepository.prototype,
       "prepareDelivery",
-    ).mockResolvedValue(run("diagnostic", {}, "0.2.0"));
+    ).mockResolvedValue(
+      run(
+        "collection",
+        { provider: "crawl", sourceConnectionId: SOURCE_CONNECTION_ID },
+        "0.2.0",
+      ),
+    );
     const execute = vi.fn(async () => undefined);
     const legacyPayload = { ...PAYLOAD, contractVersion: "0.2.0" };
     const job = { ...metadataJob(1), data: legacyPayload };
@@ -116,6 +135,50 @@ describe("prepareRunDelivery", () => {
       legacyPayload,
       expect.objectContaining({ logger: expect.any(Object) }),
     );
+    expect(
+      DiagnosticRunsRepository.prototype.findById,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("terminalizes a legacy frozen diagnostic executor before invoking its runner", async () => {
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue(run("diagnostic", {}, "0.2.0"));
+    vi.mocked(
+      DiagnosticRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce(diagnosticRun("mvp.rules.0.2.0"));
+    const reconcile = vi
+      .spyOn(AsyncRunsRepository.prototype, "reconcileActiveToTerminal")
+      .mockResolvedValue(true);
+    const execute = vi.fn(async () => undefined);
+    const legacyPayload = { ...PAYLOAD, contractVersion: "0.2.0" };
+    const { ctx, lines } = contextWithCapturedLogger();
+
+    await prepareRunDelivery(
+      ctx,
+      { ...metadataJob(0), data: legacyPayload },
+      execute,
+    );
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(reconcile).toHaveBeenCalledWith(
+      { workspaceId: PAYLOAD.workspaceId, projectId: PAYLOAD.projectId },
+      PAYLOAD.runId,
+      {
+        status: "failed",
+        lastErrorCode: "DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED",
+        lastErrorSummary:
+          "The frozen diagnostic executor version is unsupported.",
+      },
+    );
+    expect(lines).toContainEqual({
+      event: "run_delivery_reconciled",
+      fields: {
+        code: "DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED",
+        runId: PAYLOAD.runId,
+      },
+    });
   });
 
   it.each([
@@ -550,6 +613,45 @@ describe("prepareRunDelivery", () => {
 });
 
 describe("reconcileActiveRuns", () => {
+  it("terminalizes a legacy frozen diagnostic executor before consulting its live queue job", async () => {
+    const row = run("diagnostic", {}, "0.2.0");
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    vi.mocked(
+      DiagnosticRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce(diagnosticRun("mvp.rules.0.2.0"));
+    const terminal = vi
+      .spyOn(AsyncRunsRepository.prototype, "reconcileActiveToTerminal")
+      .mockResolvedValue(true);
+    const getJobById = vi.fn(async () => jobFor(row, "active"));
+    const findJobs = vi.fn(async () => [jobFor(row, "active")]);
+    const { ctx, lines } = contextWithCapturedLogger({
+      getJobById,
+      findJobs,
+    });
+
+    await reconcileActiveRuns(ctx);
+
+    expect(getJobById).not.toHaveBeenCalled();
+    expect(findJobs).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(scopeFor(row), row.id, {
+      status: "failed",
+      lastErrorCode: "DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED",
+      lastErrorSummary:
+        "The frozen diagnostic executor version is unsupported.",
+    });
+    expect(lines).toContainEqual({
+      event: "run_recovery_reconciled",
+      fields: {
+        code: "DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED",
+        runId: row.id,
+        status: "failed",
+      },
+    });
+  });
+
   it.each(["created", "retry", "active"] as const)(
     "keeps a scoped %s queue job active",
     async (state) => {
@@ -1116,6 +1218,38 @@ describe("startRunRecoveryLoop", () => {
     expect(listActive).not.toHaveBeenCalled();
   });
 });
+
+function diagnosticRun(
+  ruleSetVersion: string = RULE_SET_VERSION,
+): DiagnosticRunRow {
+  return {
+    id: PAYLOAD.runId,
+    workspace_id: PAYLOAD.workspaceId,
+    project_id: PAYLOAD.projectId,
+    site_id: "00000000-0000-4000-8000-000000000006",
+    icp_profile_id: "00000000-0000-4000-8000-000000000007",
+    icp_profile_version: 1,
+    rule_set_version: ruleSetVersion,
+    prompt_set_version: PROMPT_SET_VERSION,
+    output_locale: "en",
+    input_manifest: {
+      projectId: PAYLOAD.projectId,
+      siteId: "00000000-0000-4000-8000-000000000006",
+      icp: {
+        id: "00000000-0000-4000-8000-000000000007",
+        version: 1,
+        contentHash: "a".repeat(64),
+      },
+      snapshots: [],
+      ruleSetVersion,
+      promptSetVersion: PROMPT_SET_VERSION,
+      deliveryLocale: "en",
+    },
+    input_hash: "a".repeat(64),
+    coverage: {},
+    created_at: "2026-07-18T00:00:00.000Z",
+  };
+}
 
 function run(
   kind: string,

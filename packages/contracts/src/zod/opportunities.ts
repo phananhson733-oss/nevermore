@@ -40,12 +40,30 @@ export const OPPORTUNITY_RULE_IDS = [
 export const OpportunityRuleId = z.enum(OPPORTUNITY_RULE_IDS);
 export type OpportunityRuleId = z.infer<typeof OpportunityRuleId>;
 
+const EXACT_VARIANT_RULE_IDS = new Set<OpportunityRuleId>([
+  "TECH-HTTP-001",
+  "TECH-CANONICAL-002",
+  "TECH-LINKGRAPH-005",
+]);
+
 export const OpportunityRuleReference = z
   .object({
     ruleId: OpportunityRuleId,
-    ruleVersion: z.literal(1),
+    ruleVersion: z.union([z.literal(1), z.literal(2)]),
   })
-  .strict();
+  .strict()
+  .superRefine((reference, ctx) => {
+    const expectedVersion = EXACT_VARIANT_RULE_IDS.has(reference.ruleId)
+      ? 2
+      : 1;
+    if (reference.ruleVersion !== expectedVersion) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ruleVersion"],
+        message: `${reference.ruleId} requires rule version ${expectedVersion}`,
+      });
+    }
+  });
 export type OpportunityRuleReference = z.infer<
   typeof OpportunityRuleReference
 >;
@@ -66,17 +84,45 @@ const CanonicalEvidenceTrace = z
     evidenceId: Uuid,
     diagnosticRunId: Uuid,
     snapshotId: Uuid.nullable(),
+    collectionRunId: Uuid.nullable(),
     analysisInvocationId: Uuid.nullable().default(null),
     ...OpportunityTraceBase,
   })
   .strict()
   .superRefine((trace, ctx) => {
-    if (trace.snapshotId === null && trace.analysisInvocationId === null) {
+    const hasSnapshot = trace.snapshotId !== null;
+    const hasCollectionRun = trace.collectionRunId !== null;
+    const hasAnalysisInvocation = trace.analysisInvocationId !== null;
+
+    if (trace.sourceProvider === "system") {
+      if (hasSnapshot || hasCollectionRun || hasAnalysisInvocation) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sourceProvider"],
+          message: "system Evidence must be lineage-free",
+        });
+      }
+      return;
+    }
+
+    if (trace.sourceProvider === "llm") {
+      if (!hasAnalysisInvocation || hasSnapshot || hasCollectionRun) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["analysisInvocationId"],
+          message:
+            "LLM Evidence must trace only to an Analysis Invocation",
+        });
+      }
+      return;
+    }
+
+    if (!hasSnapshot || !hasCollectionRun || hasAnalysisInvocation) {
       ctx.addIssue({
         code: "custom",
-        path: ["snapshotId"],
+        path: !hasSnapshot ? ["snapshotId"] : ["collectionRunId"],
         message:
-          "canonical Evidence must trace to a Snapshot or Analysis Invocation",
+          "source-backed Evidence must trace to one Snapshot and Collection Run only",
       });
     }
   });

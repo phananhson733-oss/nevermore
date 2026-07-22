@@ -34,13 +34,17 @@ function makePage(overrides: Partial<CrawlPageProjection>): CrawlPageProjection 
 }
 
 function pageObs(subjectUrl: string, page: CrawlPageProjection): ObservationView {
+  const pageWithSubjectFetch =
+    page.fetchUrl === "https://x.com/" && subjectUrl !== "https://x.com/"
+      ? { ...page, fetchUrl: subjectUrl }
+      : page;
   return {
     metricKey: METRIC_CRAWL_PAGE,
     subjectType: "url",
     subjectRef: subjectUrl,
     provider: "crawl",
     availability: "available",
-    valueJson: page,
+    valueJson: pageWithSubjectFetch,
     observedAt: OBSERVED_AT,
   };
 }
@@ -59,6 +63,63 @@ function buildCtx(
 }
 
 describe("TECH-HTTP-001 tech-http-status", () => {
+  it("reports the exact failing slash fetch URL with order-invariant evidence", () => {
+    const subjectUrl = "https://x.com/product";
+    const observations = [
+      pageObs(
+        subjectUrl,
+        makePage({ fetchUrl: `${subjectUrl}/`, finalStatus: 503 }),
+      ),
+      pageObs(
+        subjectUrl,
+        makePage({ fetchUrl: subjectUrl, finalStatus: 200 }),
+      ),
+    ];
+
+    const forward = techHttpStatusRule.evaluate(buildCtx(observations));
+    const reversed = techHttpStatusRule.evaluate(
+      buildCtx([...observations].reverse()),
+    );
+
+    expect(forward).toEqual(reversed);
+    if (forward.status !== "candidate") throw new Error("expected candidate");
+    expect(forward.candidates).toEqual([
+      expect.objectContaining({
+        subjectRefs: ["http_status:503"],
+        metrics: { count: 1, statusCode: 503 },
+        evidence: [
+          expect.objectContaining({ subjectRefs: [`${subjectUrl}/`] }),
+        ],
+      }),
+    ]);
+  });
+
+  it("counts one aggregation subject once when both exact variants share a broken status", () => {
+    const subjectUrl = "https://x.com/duplicate";
+    const result = techHttpStatusRule.evaluate(
+      buildCtx([
+        pageObs(
+          subjectUrl,
+          makePage({ fetchUrl: subjectUrl, finalStatus: 404 }),
+        ),
+        pageObs(
+          subjectUrl,
+          makePage({ fetchUrl: `${subjectUrl}/`, finalStatus: 404 }),
+        ),
+      ]),
+    );
+
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.metrics).toEqual({
+      count: 1,
+      statusCode: 404,
+    });
+    expect(result.candidates[0]?.evidence[0]?.subjectRefs).toEqual([
+      subjectUrl,
+      `${subjectUrl}/`,
+    ]);
+  });
+
   it("emits one candidate per broken status code (5xx and commercial 4xx are high)", () => {
     const ctx = buildCtx([
       pageObs("https://x.com/pricing", makePage({ finalStatus: 404 })),

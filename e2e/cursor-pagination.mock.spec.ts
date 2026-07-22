@@ -1,10 +1,14 @@
 import { expect, test, type Route } from "@playwright/test";
 import {
   E2E_PROJECT_ID,
+  E2E_SECONDARY_SITE_ID,
+  E2E_SITE_ID,
+  E2E_SNAPSHOT_PROVENANCE,
   diagnosisFindingFixture,
   diagnosisFindingsEnvelopeFixture,
   installCriticalFlowApi,
   type CriticalFlowApiState,
+  type MockDataSnapshot,
 } from "./mock-api.ts";
 
 const API_BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
@@ -85,20 +89,28 @@ function artifactFixture(
   };
 }
 
-function snapshotFixture(index: number) {
+function snapshotFixture(
+  index: number,
+  provider: MockDataSnapshot["provider"] = "crawl",
+  overrides: Partial<MockDataSnapshot> = {},
+): MockDataSnapshot {
   const suffix = String(900 + index).padStart(12, "0");
+  const provenance = E2E_SNAPSHOT_PROVENANCE[provider];
   return {
     id: `00000000-0000-4000-8000-${suffix}`,
-    provider: "crawl",
-    datasetKey: "crawl_pages",
-    schemaVersion: "1.0.0",
-    methodVersion: "crawl-v1",
+    siteId: E2E_SITE_ID,
+    provider,
+    datasetKey: provenance.datasetKey,
+    schemaVersion: "0.2.0",
+    methodVersion: provenance.methodVersion,
     capturedAt: `2026-07-${String(20 - index).padStart(2, "0")}T00:00:00.000Z`,
     sourceWindow: { start: null, end: null },
     availability: "available",
-    limitation: "Static HTML only.",
+    limitation:
+      provider === "crawl" ? "Static HTML only." : "No known limitation.",
     rowCount: index,
-    checksum: `sha256:snapshot-${index}`,
+    checksum: (index % 16).toString(16).repeat(64),
+    ...overrides,
   };
 }
 
@@ -193,25 +205,31 @@ test("Diagnosis keeps the first sidecar canonical and retries a de-duplicated ne
   expect(nextPageAttempts).toBe(3);
 });
 
-test("Diagnosis exhausts snapshot pages before freezing the latest capture per provider", async ({
+test("Diagnosis exhausts pages, ignores legacy crawl, and freezes only same-site providers", async ({
   page,
 }) => {
-  const persistedLaterButCapturedOlder = {
-    ...snapshotFixture(1),
+  const persistedLaterButCapturedOlder = snapshotFixture(1, "crawl", {
     id: "00000000-0000-4000-8000-000000000911",
     capturedAt: "2026-07-18T00:00:00.000Z",
-  };
-  const capturedLatestCrawl = {
-    ...snapshotFixture(2),
+  });
+  const capturedLatestCrawl = snapshotFixture(2, "crawl", {
     id: "00000000-0000-4000-8000-000000000912",
     capturedAt: "2026-07-20T00:00:00.000Z",
-  };
-  const capturedLatestGa4 = {
-    ...snapshotFixture(3),
+  });
+  const capturedLatestGa4 = snapshotFixture(3, "ga4", {
     id: "00000000-0000-4000-8000-000000000913",
-    provider: "ga4",
     capturedAt: "2026-07-19T00:00:00.000Z",
-  };
+  });
+  const newerLegacyCrawl = snapshotFixture(4, "crawl", {
+    id: "00000000-0000-4000-8000-000000000914",
+    methodVersion: "crawl.site_graph.v1",
+    capturedAt: "2026-07-22T00:00:00.000Z",
+  });
+  const newerWrongSiteGa4 = snapshotFixture(5, "ga4", {
+    id: "00000000-0000-4000-8000-000000000915",
+    siteId: E2E_SECONDARY_SITE_ID,
+    capturedAt: "2026-07-21T00:00:00.000Z",
+  });
 
   await page.route(`**${API_BASE}/snapshots**`, async (route) => {
     const url = new URL(route.request().url());
@@ -220,10 +238,13 @@ test("Diagnosis exhausts snapshot pages before freezing the latest capture per p
       route,
       url.searchParams.get("cursor") === null
         ? listEnvelope(
-            [persistedLaterButCapturedOlder],
+            [persistedLaterButCapturedOlder, newerLegacyCrawl],
             "diagnosis-snapshots-2",
           )
-        : listEnvelope([capturedLatestCrawl, capturedLatestGa4], null),
+        : listEnvelope(
+            [capturedLatestCrawl, capturedLatestGa4, newerWrongSiteGa4],
+            null,
+          ),
     );
   });
 

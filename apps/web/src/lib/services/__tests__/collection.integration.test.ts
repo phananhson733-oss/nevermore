@@ -14,7 +14,11 @@ process.env["LOG_LEVEL"] ??= "error";
 
 import { eq, sql } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
-import { IdempotencyRepository, SourceConnectionsRepository } from "@sf/db";
+import {
+  CollectionRunsRepository,
+  IdempotencyRepository,
+  SourceConnectionsRepository,
+} from "@sf/db";
 import { asyncRuns, clientProjects, sourceConnections, workspaces } from "@sf/db/schema";
 import { ProblemError } from "@sf/observability";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -47,6 +51,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
   let handle: DbHandle;
   let workspaceId: string;
   let projectId: string;
+  let siteId: string;
   const actor = randomUUID();
 
   beforeAll(async () => {
@@ -68,6 +73,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
       safeGuard,
     );
     projectId = created.project.id;
+    siteId = created.project.site.id;
   });
   afterAll(async () => {
     await handle?.end();
@@ -86,6 +92,17 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
     // The run is pollable via the unified status endpoint.
     const polled = await getProjectRun({ workspaceId }, projectId, result.run.id);
     expect(polled.id).toBe(result.run.id);
+    const crawlSource = await new SourceConnectionsRepository(
+      handle.db,
+    ).findConnectedByProvider({ workspaceId, projectId }, "crawl");
+    expect(crawlSource).not.toBeNull();
+    await expect(
+      new CollectionRunsRepository(handle.db).findById(result.run.id),
+    ).resolves.toMatchObject({
+      site_id: siteId,
+      source_connection_id: crawlSource!.id,
+      method_version: "crawl.site_graph.v2",
+    });
   });
 
   it("409s a second active run for the same provider/operation (AC-019)", async () => {

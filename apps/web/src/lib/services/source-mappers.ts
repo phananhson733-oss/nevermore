@@ -19,6 +19,7 @@ export interface SourceWindowDto {
 
 export interface DataSnapshotDto {
   id: string;
+  siteId: string;
   provider: string;
   datasetKey: string;
   schemaVersion: string;
@@ -66,6 +67,7 @@ function readWindow(raw: Record<string, unknown>): SourceWindowDto {
 export function toDataSnapshotDto(row: DataSnapshotRow): DataSnapshotDto {
   return {
     id: row.id,
+    siteId: row.site_id,
     provider: row.provider,
     datasetKey: row.dataset_key,
     schemaVersion: row.schema_version,

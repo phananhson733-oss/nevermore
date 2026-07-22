@@ -7,10 +7,15 @@ describe("normalizeSiteOrigin", () => {
       origin: "https://example.com",
       host: "example.com",
     });
-    expect(normalizeSiteOrigin("http://Example.COM:8080/")).toEqual({
-      origin: "http://example.com:8080",
+    expect(normalizeSiteOrigin("http://Example.COM:80/")).toEqual({
+      origin: "http://example.com",
       host: "example.com",
     });
+  });
+
+  it("rejects non-standard ports at project-origin admission", () => {
+    expect(normalizeSiteOrigin("https://example.com:8443/")).toBeNull();
+    expect(normalizeSiteOrigin("http://example.com:2375/")).toBeNull();
   });
 
   it("rejects components an origin-only Site row would otherwise discard", () => {

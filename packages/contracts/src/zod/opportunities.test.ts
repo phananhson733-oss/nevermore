@@ -5,6 +5,7 @@ import {
   ConfirmedOpportunity,
   GrowthOpportunity,
   OpportunityRuleId,
+  OpportunityRuleReference,
   PrimaryOpportunityTarget,
   ReviewableOpportunity,
   RULE_OPPORTUNITY_PROJECTION,
@@ -28,6 +29,7 @@ const baseOpportunity = {
       evidenceId: "30000000-0000-4000-8000-000000000011",
       diagnosticRunId: "30000000-0000-4000-8000-000000000012",
       snapshotId: "30000000-0000-4000-8000-000000000013",
+      collectionRunId: "30000000-0000-4000-8000-000000000015",
       sourceProvider: "crawl",
       availability: "available",
       support: "supports",
@@ -188,6 +190,33 @@ describe("Growth Opportunity projection contracts", () => {
     ).toBe(false);
   });
 
+  it("pins exact-variant technical rules to v2 and unchanged rules to v1", () => {
+    expect(
+      OpportunityRuleReference.safeParse({
+        ruleId: "TECH-HTTP-001",
+        ruleVersion: 2,
+      }).success,
+    ).toBe(true);
+    expect(
+      OpportunityRuleReference.safeParse({
+        ruleId: "TECH-HTTP-001",
+        ruleVersion: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      OpportunityRuleReference.safeParse({
+        ruleId: "CONTENT-COVERAGE-001",
+        ruleVersion: 1,
+      }).success,
+    ).toBe(true);
+    expect(
+      OpportunityRuleReference.safeParse({
+        ruleId: "CONTENT-COVERAGE-001",
+        ruleVersion: 2,
+      }).success,
+    ).toBe(false);
+  });
+
   it("requires a confirmed Action to belong to the primary Finding", () => {
     const confirmed = {
       ...baseOpportunity,
@@ -307,6 +336,70 @@ describe("Growth Opportunity projection contracts", () => {
         evidenceSummary: baseOpportunity.evidenceSummary.map((trace) => ({
           ...trace,
           support: "context",
+        })),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("preserves the mutually exclusive collection, system, and LLM Evidence lineage shapes", () => {
+    const sourceBacked = CandidateOpportunity.parse({
+      ...baseOpportunity,
+      readiness: "candidate",
+    });
+    expect(sourceBacked.evidenceSummary[0]).toMatchObject({
+      snapshotId: "30000000-0000-4000-8000-000000000013",
+      collectionRunId: "30000000-0000-4000-8000-000000000015",
+      analysisInvocationId: null,
+    });
+
+    expect(
+      CandidateOpportunity.safeParse({
+        ...baseOpportunity,
+        readiness: "candidate",
+        evidenceSummary: baseOpportunity.evidenceSummary.map((trace) => ({
+          ...trace,
+          collectionRunId: null,
+        })),
+      }).success,
+    ).toBe(false);
+
+    expect(
+      CandidateOpportunity.safeParse({
+        ...baseOpportunity,
+        readiness: "candidate",
+        evidenceSummary: baseOpportunity.evidenceSummary.map((trace) => ({
+          ...trace,
+          sourceProvider: "system",
+          snapshotId: null,
+          collectionRunId: null,
+          analysisInvocationId: null,
+        })),
+      }).success,
+    ).toBe(true);
+
+    expect(
+      CandidateOpportunity.safeParse({
+        ...baseOpportunity,
+        readiness: "candidate",
+        evidenceSummary: baseOpportunity.evidenceSummary.map((trace) => ({
+          ...trace,
+          sourceProvider: "llm",
+          snapshotId: null,
+          collectionRunId: null,
+          analysisInvocationId: "30000000-0000-4000-8000-000000000016",
+        })),
+      }).success,
+    ).toBe(true);
+    expect(
+      CandidateOpportunity.safeParse({
+        ...baseOpportunity,
+        readiness: "candidate",
+        evidenceSummary: baseOpportunity.evidenceSummary.map((trace) => ({
+          ...trace,
+          sourceProvider: "llm",
+          snapshotId: null,
+          collectionRunId: "30000000-0000-4000-8000-000000000015",
+          analysisInvocationId: "30000000-0000-4000-8000-000000000016",
         })),
       }).success,
     ).toBe(false);

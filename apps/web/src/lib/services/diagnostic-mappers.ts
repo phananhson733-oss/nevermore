@@ -53,6 +53,7 @@ export interface EvidenceDto {
   observedAt: string;
   limitation: string;
   snapshotId: string | null;
+  collectionRunId: string | null;
   analysisInvocationId: string | null;
 }
 
@@ -69,6 +70,8 @@ export interface EvidenceRowLike {
   observed_at: string;
   limitation: string;
   snapshot_id: string | null;
+  /** Repository reads always provide this; optional only for legacy typed fixtures. */
+  collection_run_id?: string | null;
   analysis_invocation_id: string | null;
 }
 
@@ -86,6 +89,7 @@ export function toEvidenceDto(row: EvidenceRowLike): EvidenceDto {
     observedAt: row.observed_at,
     limitation: row.limitation,
     snapshotId: row.snapshot_id,
+    collectionRunId: row.collection_run_id ?? null,
     analysisInvocationId: row.analysis_invocation_id,
   };
 }

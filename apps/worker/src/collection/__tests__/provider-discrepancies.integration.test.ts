@@ -55,6 +55,9 @@ const WINDOW: SourceWindow = {
   start: "2026-06-01",
   end: "2026-06-28",
 };
+const FIXTURE_DATASET_KEY = "gsc.page_query_daily.v1";
+const FIXTURE_METHOD_VERSION = "gsc.search_analytics.v1";
+const FIXTURE_METRIC_KEY = "gsc.page.v1";
 
 const NOOP = (): void => undefined;
 const logger: Logger = {
@@ -69,6 +72,7 @@ const logger: Logger = {
 interface Seed {
   readonly scope: ProjectScope;
   readonly siteId: string;
+  readonly sourceConnectionId: string;
   readonly actorId: string;
 }
 
@@ -101,19 +105,19 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
   it("records stable, de-duplicated pairs only for substantive numeric/text/json/null conflicts", async () => {
     const seed = await seedProject(handle);
     const baseline = [
-      numericObservation("crawl.fixture.numeric", 1),
-      textObservation("crawl.fixture.text", "left"),
-      jsonObservation("crawl.fixture.json", { a: 1, b: [2, 3] }),
-      unavailableObservation("crawl.fixture.null", "unavailable"),
-      jsonObservation("crawl.fixture.same", { a: 1, b: [2, 3] }),
+      numericObservation("gsc.fixture.numeric", 1),
+      textObservation("gsc.fixture.text", "left"),
+      jsonObservation("gsc.fixture.json", { a: 1, b: [2, 3] }),
+      unavailableObservation("gsc.fixture.null", "unavailable"),
+      jsonObservation("gsc.fixture.same", { a: 1, b: [2, 3] }),
     ];
     const changed = [
-      numericObservation("crawl.fixture.numeric", 2),
-      textObservation("crawl.fixture.text", "right"),
-      jsonObservation("crawl.fixture.json", { a: 1, b: [2, 4] }),
-      unavailableObservation("crawl.fixture.null", "partial"),
+      numericObservation("gsc.fixture.numeric", 2),
+      textObservation("gsc.fixture.text", "right"),
+      jsonObservation("gsc.fixture.json", { a: 1, b: [2, 4] }),
+      unavailableObservation("gsc.fixture.null", "partial"),
       // JSON object key order is not a substantive value change.
-      jsonObservation("crawl.fixture.same", { b: [2, 3], a: 1 }),
+      jsonObservation("gsc.fixture.same", { b: [2, 3], a: 1 }),
     ];
 
     const baselineSnapshotId = await persist(
@@ -133,12 +137,15 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
 
     const repo = new ProviderDiscrepanciesRepository(handle.db);
     const rows = await repo.listByProject(seed.scope);
-    expect(rows.map((row) => row.metric_key).sort()).toEqual([
-      "crawl.fixture.json",
-      "crawl.fixture.null",
-      "crawl.fixture.numeric",
-      "crawl.fixture.text",
+    expect(rows.map((row) => row.subject_ref).sort()).toEqual([
+      fixtureSubjectRef("gsc.fixture.json"),
+      fixtureSubjectRef("gsc.fixture.null"),
+      fixtureSubjectRef("gsc.fixture.numeric"),
+      fixtureSubjectRef("gsc.fixture.text"),
     ]);
+    expect(rows.every((row) => row.metric_key === FIXTURE_METRIC_KEY)).toBe(
+      true,
+    );
     expect(
       rows.every(
         (row) => row.left_observation_id < row.right_observation_id,
@@ -164,7 +171,11 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
     ).listBySnapshotIds(seed.scope, [baselineSnapshotId, changedSnapshotId]);
     expect(
       observations
-        .filter((row) => row.metric_key === "crawl.fixture.numeric")
+        .filter(
+          (row) =>
+            row.metric_key === FIXTURE_METRIC_KEY &&
+            row.subject_ref === fixtureSubjectRef("gsc.fixture.numeric"),
+        )
         .map((row) => row.value_numeric)
         .sort(),
     ).toEqual(["1", "2"]);
@@ -173,34 +184,34 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
   it("ignores exact duplicates, different windows, and observations from another project", async () => {
     const first = await seedProject(handle);
     const foreign = await seedProject(handle);
-    const metricKey = "crawl.fixture.scope";
+    const subjectKey = "gsc.fixture.scope";
 
     const firstSnapshotId = await persist(
       handle,
       ctx,
       first,
-      [textObservation(metricKey, "same")],
+      [textObservation(subjectKey, "same")],
       WINDOW,
     );
     const foreignSnapshotId = await persist(
       handle,
       ctx,
       foreign,
-      [textObservation(metricKey, "foreign-conflict")],
+      [textObservation(subjectKey, "foreign-conflict")],
       WINDOW,
     );
     await persist(
       handle,
       ctx,
       first,
-      [textObservation(metricKey, "same")],
+      [textObservation(subjectKey, "same")],
       WINDOW,
     );
     await persist(
       handle,
       ctx,
       first,
-      [textObservation(metricKey, "different-window")],
+      [textObservation(subjectKey, "different-window")],
       { ...WINDOW, end: "2026-06-29" },
     );
 
@@ -218,7 +229,7 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
     )[0]!;
     await expect(
       new ProviderDiscrepanciesRepository(handle.db).insert(first.scope, {
-        metricKey,
+        metricKey: FIXTURE_METRIC_KEY,
         subjectType: "url",
         subjectRef: firstObservation.subject_ref,
         leftObservationId: firstObservation.id,
@@ -239,7 +250,7 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
       handle,
       ctx,
       seed,
-      [numericObservation("crawl.fixture.rollback", 1)],
+      [numericObservation("gsc.fixture.rollback", 1)],
       WINDOW,
     );
 
@@ -248,7 +259,7 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
     await expect(
       persistCollectionResult(ctx, {
         collectionRun: run,
-        datasetKey: "crawl.site_graph.v1",
+        datasetKey: FIXTURE_DATASET_KEY,
         schemaVersion: "0.2.0",
         actorId: seed.actorId,
         startedAtMs: Date.now(),
@@ -270,7 +281,7 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
           limitation: "rollback fixture",
           raw: { fixture: "rollback" },
         },
-        observations: [numericObservation("crawl.fixture.rollback", 2)],
+        observations: [numericObservation("gsc.fixture.rollback", 2)],
       }),
     ).rejects.toThrow();
 
@@ -302,7 +313,7 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
 
     const input = {
       collectionRun,
-      datasetKey: "crawl.site_graph.v1",
+      datasetKey: FIXTURE_DATASET_KEY,
       schemaVersion: "0.2.0",
       actorId: seed.actorId,
       startedAtMs: Date.now(),
@@ -316,7 +327,7 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
         limitation: "attempt-fencing fixture",
         raw: { fixture: "attempt-fencing" },
       },
-      observations: [numericObservation("crawl.fixture.attempt-fencing", 1)],
+      observations: [numericObservation("gsc.fixture.attempt-fencing", 1)],
     };
 
     const winnerSnapshotId = await persistCollectionResult(ctx, {
@@ -376,17 +387,16 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
       seed.scope.projectId,
       "collecting",
     );
-    const source = await sources.insertDefaultCrawl({
-      workspaceId: seed.scope.workspaceId,
-      projectId: seed.scope.projectId,
-      siteId: seed.siteId,
-      createdBy: seed.actorId,
-    });
+    const source = await sources.findById(
+      seed.scope,
+      seed.sourceConnectionId,
+    );
+    if (!source) throw new Error("GSC discrepancy source fixture missing");
     await sources.updateState(
       seed.scope,
       source.id,
       "syncing",
-      "Accepted crawl remains frozen after archive.",
+      "Accepted GSC collection remains frozen after archive.",
     );
     const collectionRun = await seedCollectionRun(handle, seed, source.id);
 
@@ -444,7 +454,7 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
     try {
       const persistence = persistCollectionResult(ctx, {
         collectionRun,
-        datasetKey: "crawl.site_graph.v1",
+        datasetKey: FIXTURE_DATASET_KEY,
         schemaVersion: "0.2.0",
         actorId: seed.actorId,
         startedAtMs: Date.now(),
@@ -464,7 +474,7 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
           limitation: "Accepted collection completed after archive.",
           raw: { fixture: "archived-accepted-collection" },
         },
-        observations: [numericObservation("crawl.fixture.archived", 1)],
+        observations: [numericObservation("gsc.fixture.archived", 1)],
       });
       firstLock = await Promise.race([
         projectLockAttempted,
@@ -537,7 +547,7 @@ async function persist(
   const run = await seedCollectionRun(handle, seed);
   const snapshotId = await persistCollectionResult(ctx, {
     collectionRun: run,
-    datasetKey: "crawl.site_graph.v1",
+    datasetKey: FIXTURE_DATASET_KEY,
     schemaVersion: "0.2.0",
     actorId: seed.actorId,
     startedAtMs: Date.now(),
@@ -585,9 +595,26 @@ async function seedProject(handle: DbHandle): Promise<Seed> {
     marketCodes: ["US"],
     languageCodes: ["en"],
   });
+  const source = await new SourceConnectionsRepository(
+    handle.db,
+  ).insertConnection({
+    workspaceId: workspace!.id,
+    projectId: project.id,
+    siteId: site.id,
+    provider: "gsc",
+    connectionType: "oauth",
+    state: "connected",
+    externalRef: `https://${host}`,
+    scopes: ["webmasters.readonly"],
+    config: { propertyUrl: `https://${host}` },
+    limitation: "Disposable GSC discrepancy fixture.",
+    connectedAt: true,
+    createdBy: actorId,
+  });
   return {
     scope: { workspaceId: workspace!.id, projectId: project.id },
     siteId: site.id,
+    sourceConnectionId: source.id,
     actorId,
   };
 }
@@ -595,7 +622,7 @@ async function seedProject(handle: DbHandle): Promise<Seed> {
 async function seedCollectionRun(
   handle: DbHandle,
   seed: Seed,
-  sourceConnectionId: string | null = null,
+  sourceConnectionId: string = seed.sourceConnectionId,
 ): Promise<CollectionRunRow> {
   const runId = randomUUID();
   await handle.db.insert(asyncRuns).values({
@@ -615,9 +642,9 @@ async function seedCollectionRun(
     site_id: seed.siteId,
     source_connection_id: sourceConnectionId,
     import_preview_id: null,
-    provider: "crawl",
-    operation: "site_graph",
-    method_version: "crawl.site_graph.v1",
+    provider: "gsc",
+    operation: "search_analytics",
+    method_version: FIXTURE_METHOD_VERSION,
     parameters_hash: contentHash({ runId }),
   });
   const run = await new CollectionRunsRepository(handle.db).findById(runId);
@@ -637,27 +664,28 @@ async function snapshotCount(
 }
 
 function baseObservation(
-  metricKey: string,
+  subjectKey: string,
 ): Omit<ObservationInsert, "availability" | "valueNumeric" | "valueText" | "valueJson"> {
   return {
-    metricKey,
+    metricKey: FIXTURE_METRIC_KEY,
     subjectType: "url",
-    subjectRef: `https://fixture.test/${metricKey}`,
+    subjectRef: fixtureSubjectRef(subjectKey),
     observedAt: CAPTURED_AT,
     unit: null,
-    origin: "direct_public",
-    grade: "B",
+    origin: "first_party",
+    method: "observed",
+    grade: "A",
     support: "supports",
     limitation: "discrepancy test observation",
   };
 }
 
 function numericObservation(
-  metricKey: string,
+  subjectKey: string,
   value: number,
 ): ObservationInsert {
   return {
-    ...baseObservation(metricKey),
+    ...baseObservation(subjectKey),
     availability: "available",
     valueNumeric: value,
     valueText: null,
@@ -665,9 +693,9 @@ function numericObservation(
   };
 }
 
-function textObservation(metricKey: string, value: string): ObservationInsert {
+function textObservation(subjectKey: string, value: string): ObservationInsert {
   return {
-    ...baseObservation(metricKey),
+    ...baseObservation(subjectKey),
     availability: "available",
     valueNumeric: null,
     valueText: value,
@@ -675,9 +703,9 @@ function textObservation(metricKey: string, value: string): ObservationInsert {
   };
 }
 
-function jsonObservation(metricKey: string, value: unknown): ObservationInsert {
+function jsonObservation(subjectKey: string, value: unknown): ObservationInsert {
   return {
-    ...baseObservation(metricKey),
+    ...baseObservation(subjectKey),
     availability: "available",
     valueNumeric: null,
     valueText: null,
@@ -686,14 +714,18 @@ function jsonObservation(metricKey: string, value: unknown): ObservationInsert {
 }
 
 function unavailableObservation(
-  metricKey: string,
+  subjectKey: string,
   availability: "partial" | "unavailable",
 ): ObservationInsert {
   return {
-    ...baseObservation(metricKey),
+    ...baseObservation(subjectKey),
     availability,
     valueNumeric: null,
     valueText: null,
     valueJson: null,
   };
+}
+
+function fixtureSubjectRef(subjectKey: string): string {
+  return `https://fixture.test/${subjectKey}`;
 }

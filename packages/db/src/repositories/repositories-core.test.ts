@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { contentHash } from "../hash.ts";
 import { ActionsRepository } from "./actions.ts";
 import { AnalysisInvocationsRepository } from "./analysis-invocations.ts";
 import {
@@ -698,6 +699,7 @@ describe("core repositories", () => {
   it("stores diagnostic manifests, coverage, and per-rule timings", async () => {
     const { repo, db } = repository(DiagnosticRunsRepository);
     const run = { id: "diagnostic-1" };
+    const inputManifest = { snapshots: ["snapshot-1"] };
     db.enqueue([run], [run], [], [run]);
     await expect(
       repo.insert({
@@ -710,13 +712,36 @@ describe("core repositories", () => {
         ruleSetVersion: "v2",
         promptSetVersion: "v2",
         outputLocale: "zh-CN",
-        inputManifest: { snapshots: ["snapshot-1"] },
-        inputHash: "hash",
+        inputManifest,
+        inputHash: contentHash(inputManifest),
       }),
     ).resolves.toBe(run);
+    await expect(
+      repo.insert({
+        runId: "diagnostic-forged",
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        siteId: "site-1",
+        icpProfileId: "icp-1",
+        icpProfileVersion: 3,
+        ruleSetVersion: "v2",
+        promptSetVersion: "v2",
+        outputLocale: "zh-CN",
+        inputManifest,
+        inputHash: contentHash({ forged: true }),
+      }),
+    ).rejects.toThrow("diagnostic input hash does not match");
     await expect(repo.findById(scope, "diagnostic-1")).resolves.toBe(run);
     await expect(repo.findById(scope, "missing")).resolves.toBeNull();
     await expect(repo.findLatest(scope)).resolves.toBe(run);
+    expect(
+      db.last("orderBy").args.map((expression) =>
+        new PgDialect().sqlToQuery(expression as never).sql,
+      ),
+    ).toEqual([
+      '"app"."diagnostic_runs"."created_at" desc',
+      '"app"."diagnostic_runs"."id" asc',
+    ]);
     await repo.setCoverage("diagnostic-1", { usable: 4, total: 5 });
     expect(db.last("set").args[0]).toEqual({
       coverage: { usable: 4, total: 5 },
@@ -778,9 +803,9 @@ describe("core repositories", () => {
       repo.insertMany(batch, [
         {
           sourceProvider: "crawl",
-          origin: "observed",
-          method: "deterministic",
-          grade: "a",
+          origin: "direct_public",
+          method: "observed",
+          grade: "B",
           availability: "available",
           support: "supports",
           subjectRefs: ["/pricing"],
@@ -788,12 +813,13 @@ describe("core repositories", () => {
           observedAt: "2026-07-18T00:00:00.000Z",
           limitation: "Static HTML",
           snapshotId: "snapshot-1",
+          collectionRunId: "collection-1",
         },
         {
-          sourceProvider: "model",
+          sourceProvider: "llm",
           origin: "generated",
-          method: "structured_llm",
-          grade: "c",
+          method: "generated",
+          grade: "C",
           availability: "available",
           support: "context",
           subjectRefs: [],
@@ -810,6 +836,7 @@ describe("core repositories", () => {
     >[];
     expect(inserted[0]).toMatchObject({
       snapshot_id: "snapshot-1",
+      collection_run_id: "collection-1",
       analysis_invocation_id: null,
     });
     expect(inserted[1]).toMatchObject({

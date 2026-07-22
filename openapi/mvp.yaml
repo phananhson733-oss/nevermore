@@ -1537,9 +1537,10 @@ components:
     DataSnapshot:
       type: object
       additionalProperties: false
-      required: [id, provider, datasetKey, schemaVersion, methodVersion, capturedAt, sourceWindow, availability, limitation, rowCount, checksum]
+      required: [id, siteId, provider, datasetKey, schemaVersion, methodVersion, capturedAt, sourceWindow, availability, limitation, rowCount, checksum]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
         provider: { $ref: '#/components/schemas/Provider' }
         datasetKey: { type: string }
         schemaVersion: { type: string }
@@ -1581,7 +1582,7 @@ components:
     Evidence:
       type: object
       additionalProperties: false
-      required: [id, sourceProvider, origin, method, grade, availability, support, claim, subjectRefs, observedAt, limitation, snapshotId, analysisInvocationId]
+      required: [id, sourceProvider, origin, method, grade, availability, support, claim, subjectRefs, observedAt, limitation, snapshotId, collectionRunId, analysisInvocationId]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         sourceProvider: { type: string, enum: [crawl, gsc, ga4, csv, dataforseo, system, llm] }
@@ -1598,7 +1599,62 @@ components:
         observedAt: { $ref: '#/components/schemas/Timestamp' }
         limitation: { type: string, minLength: 1 }
         snapshotId: { type: [string, 'null'], format: uuid }
+        collectionRunId: { type: [string, 'null'], format: uuid }
         analysisInvocationId: { type: [string, 'null'], format: uuid }
+      oneOf:
+        - title: Source-backed Evidence
+          properties:
+            sourceProvider: { type: string, enum: [crawl, gsc, ga4, csv, dataforseo] }
+            snapshotId: { $ref: '#/components/schemas/Uuid' }
+            collectionRunId: { $ref: '#/components/schemas/Uuid' }
+            analysisInvocationId: { type: 'null' }
+          oneOf:
+            - properties:
+                sourceProvider: { type: string, enum: [gsc, ga4] }
+                origin: { type: string, const: first_party }
+                method: { type: string, const: observed }
+                grade: { type: string, const: A }
+            - properties:
+                sourceProvider: { type: string, const: crawl }
+                origin: { type: string, const: direct_public }
+                method: { type: string, const: observed }
+                grade: { type: string, const: B }
+            - properties:
+                sourceProvider: { type: string, const: dataforseo }
+                origin: { type: string, const: vendor_observation }
+                method: { type: string, const: observed }
+                grade: { type: string, const: B }
+            - properties:
+                sourceProvider: { type: string, const: csv }
+                origin: { type: string, const: user_provided }
+                method: { type: string, const: observed }
+                grade: { type: string, const: C }
+            - properties:
+                origin: { type: string, const: derived }
+                method: { type: string, const: computed }
+                grade: { type: string, const: B }
+            - properties:
+                origin: { type: string, const: derived }
+                method: { type: string, const: inferred }
+                grade: { type: string, const: C }
+        - title: System-derived Evidence
+          properties:
+            sourceProvider: { type: string, const: system }
+            origin: { type: string, const: derived }
+            method: { type: string, const: computed }
+            grade: { type: string, const: B }
+            snapshotId: { type: 'null' }
+            collectionRunId: { type: 'null' }
+            analysisInvocationId: { type: 'null' }
+        - title: LLM-generated Evidence
+          properties:
+            sourceProvider: { type: string, const: llm }
+            origin: { type: string, const: generated }
+            method: { type: string, const: generated }
+            grade: { type: string, const: C }
+            snapshotId: { type: 'null' }
+            collectionRunId: { type: 'null' }
+            analysisInvocationId: { $ref: '#/components/schemas/Uuid' }
     SubjectRef:
       type: object
       additionalProperties: false
@@ -1614,7 +1670,7 @@ components:
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         ruleId: { type: string, pattern: '^(TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3}$' }
-        ruleVersion: { type: integer, const: 1 }
+        ruleVersion: { type: integer, enum: [1, 2] }
         domain: { $ref: '#/components/schemas/DiagnosticDomain' }
         titleKey: { type: string }
         titleArgs: { type: object, additionalProperties: true }

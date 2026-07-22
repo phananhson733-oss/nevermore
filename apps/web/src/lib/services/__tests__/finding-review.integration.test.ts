@@ -14,10 +14,9 @@ process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
 import { createDbHandle, type DbHandle } from "@sf/db/client";
-import { asyncRuns, icpProfiles, workspaces } from "@sf/db/schema";
+import { icpProfiles, workspaces } from "@sf/db/schema";
 import {
   ActionsRepository,
-  DiagnosticRunsRepository,
   EvidenceRepository,
   FindingsRepository,
   contentHash,
@@ -27,6 +26,7 @@ import { ProblemError } from "@sf/observability";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import { reviewProjectFinding } from "@/lib/services/finding-review";
 import { archiveWinsProjectRace } from "./project-archive-race";
+import { seedCurrentCrawlDiagnostic } from "./current-diagnostic-fixture";
 
 const DATABASE_URL = process.env["DATABASE_URL"]!;
 const describeDb = process.env["DATABASE_URL"] ? describe : describe.skip;
@@ -45,7 +45,7 @@ async function seedFinding(
   siteId: string,
   actor: string,
 ): Promise<string> {
-  const projectScope = scope;
+  const icpContentHash = contentHash({ v: randomUUID() });
   const [icp] = await handle.db
     .insert(icpProfiles)
     .values({
@@ -59,41 +59,18 @@ async function seedFinding(
         siteLanguageCodes: ["en"],
         defaultDeliveryLocale: "en",
       },
-      content_hash: contentHash({ v: randomUUID() }),
+      content_hash: icpContentHash,
       created_by: actor,
     })
     .returning();
 
-  const nowTs = new Date().toISOString();
-  const [run] = await handle.db
-    .insert(asyncRuns)
-    .values({
-      workspace_id: scope.workspaceId,
-      project_id: scope.projectId,
-      kind: "diagnostic",
-      status: "completed",
-      active_key: null,
-      initiated_by: actor,
-      started_at: nowTs,
-      completed_at: nowTs,
-    })
-    .returning();
-
-  await new DiagnosticRunsRepository(handle.db).insert({
-    runId: run!.id,
-    workspaceId: scope.workspaceId,
-    projectId: scope.projectId,
+  const diagnostic = await seedCurrentCrawlDiagnostic(handle, {
+    scope,
     siteId,
-    icpProfileId: icp!.id,
-    icpProfileVersion: 1,
-    ruleSetVersion: "mvp.rules.0.2.0",
-    promptSetVersion: "mvp.prompts.0.2.0",
-    outputLocale: "en",
-    inputManifest: { snapshots: [] },
-    inputHash: contentHash({ run: run!.id }),
+    actorId: actor,
+    icp: { id: icp!.id, version: 1, contentHash: icpContentHash },
   });
 
-  const now = new Date().toISOString();
   const finding = await new FindingsRepository(handle.db).insert({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
@@ -102,7 +79,7 @@ async function seedFinding(
       k: "http_status:404",
     }),
     ruleId: "TECH-HTTP-001",
-    ruleVersion: 1,
+    ruleVersion: 2,
     ruleFamily: "http-status",
     intent: "restore_or_redirect",
     domain: "technical_seo",
@@ -114,15 +91,15 @@ async function seedFinding(
     severity: "high",
     confidence: "high",
     reviewState: "unreviewed",
-    runId: run!.id,
-    seenAt: now,
+    runId: diagnostic.runId,
+    seenAt: diagnostic.capturedAt,
   });
 
   const [evidenceId] = await new EvidenceRepository(handle.db).insertMany(
     {
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
-      diagnosticRunId: run!.id,
+      diagnosticRunId: diagnostic.runId,
     },
     [
       {
@@ -132,10 +109,12 @@ async function seedFinding(
         grade: "B",
         availability: "available",
         support: "supports",
-        subjectRefs: ["https://x.example/gone"],
+        subjectRefs: [diagnostic.evidenceSubjectRef],
         claim: "Page returns 404.",
-        observedAt: now,
+        observedAt: diagnostic.capturedAt,
         limitation: "Current public response only.",
+        snapshotId: diagnostic.snapshot.id,
+        collectionRunId: diagnostic.collectionRunId,
       },
     ],
   );
@@ -143,11 +122,10 @@ async function seedFinding(
     {
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
-      diagnosticRunId: run!.id,
+      diagnosticRunId: diagnostic.runId,
     },
     [{ findingId: finding.id, evidenceId: evidenceId!, role: "primary" }],
   );
-  void projectScope;
   return finding.id;
 }
 

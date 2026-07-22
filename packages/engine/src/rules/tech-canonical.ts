@@ -14,7 +14,7 @@
  * / tracking variants do not create phantom conflicts. Pure and replayable.
  */
 
-import { subjectUrlOf } from "@sf/sources";
+import { canonicalizeUrl } from "@sf/sources";
 import type { DiagnosticContext } from "../context.ts";
 import type {
   DiagnosticRule,
@@ -39,9 +39,18 @@ function is2xx(status: number | null): boolean {
   return status !== null && status >= 200 && status < 300;
 }
 
+interface CanonicalIssueRefs {
+  readonly subjectUrls: Set<string>;
+  readonly fetchUrls: Set<string>;
+}
+
+function emptyIssueRefs(): CanonicalIssueRefs {
+  return { subjectUrls: new Set<string>(), fetchUrls: new Set<string>() };
+}
+
 export const techCanonicalRule = {
   id: "TECH-CANONICAL-002",
-  version: 1,
+  version: 2,
   domain: "technical_seo",
   requiredDatasets: [{ dataset: "crawl", required: true }],
   evaluate(ctx: DiagnosticContext): RuleResult {
@@ -49,59 +58,108 @@ export const techCanonicalRule = {
       return { status: "skipped", reason: "missing_dataset" };
     }
 
-    // Canonical subjectUrl target per page + the set of crawled 2xx page keys.
-    const canonicalOf = new Map<string, string | null>();
+    // Keep the declaring exact fetchUrl for each normalized relationship. This
+    // lets Findings aggregate on stable subjectUrl while Evidence remains an
+    // exact replayable HTTP/HTML fact (spec §7.6).
+    const canonicalDeclarations = new Map<
+      string,
+      Map<string, Set<string>>
+    >();
     const twoxxKeys = new Set<string>();
-    for (const [subjectUrl, page] of ctx.pages) {
-      if (is2xx(page.status)) twoxxKeys.add(subjectUrl);
-      const target = page.canonicalTarget
-        ? subjectUrlOf(page.canonicalTarget, page.fetchUrl)
-        : null;
-      canonicalOf.set(subjectUrl, target);
+    for (const [subjectUrl, variants] of ctx.pageVariants) {
+      const declarationsByTarget = new Map<string, Set<string>>();
+      for (const page of variants) {
+        // Canonical/body fields come from the terminal document. When the
+        // initial request redirected, they must not be attributed to that
+        // non-2xx source fetch identity.
+        if (!is2xx(page.status)) continue;
+        twoxxKeys.add(subjectUrl);
+        const targetSubjectUrl = page.canonicalTarget
+          ? canonicalizeUrl(page.canonicalTarget, page.fetchUrl)?.subjectUrl ?? null
+          : null;
+        if (targetSubjectUrl) {
+          const fetchUrls =
+            declarationsByTarget.get(targetSubjectUrl) ?? new Set<string>();
+          fetchUrls.add(page.fetchUrl);
+          declarationsByTarget.set(targetSubjectUrl, fetchUrls);
+        }
+      }
+      canonicalDeclarations.set(subjectUrl, declarationsByTarget);
     }
 
-    const reciprocal = new Set<string>();
-    const brokenTarget = new Set<string>();
-    const sitemapContradiction = new Set<string>();
+    const reciprocal = emptyIssueRefs();
+    const brokenTarget = emptyIssueRefs();
+    const sitemapContradiction = emptyIssueRefs();
 
-    for (const [subjectUrl, page] of ctx.pages) {
-      const target = canonicalOf.get(subjectUrl) ?? null;
-      if (target === null) continue;
+    for (const [subjectUrl, variants] of ctx.pageVariants) {
+      for (const page of variants) {
+        if (!is2xx(page.status)) continue;
+        const targetPair = page.canonicalTarget
+          ? canonicalizeUrl(page.canonicalTarget, page.fetchUrl)
+          : null;
+        if (targetPair === null) continue;
+        const target = targetPair.subjectUrl;
 
-      // reciprocal: A→B and B→A, A≠B.
-      if (target !== subjectUrl && canonicalOf.get(target) === subjectUrl) {
-        reciprocal.add(subjectUrl);
-        reciprocal.add(target);
-      }
+        // reciprocal: A→B and any exact B variant canonicalizes back to A.
+        if (
+          target !== subjectUrl &&
+          canonicalDeclarations.get(target)?.has(subjectUrl)
+        ) {
+          reciprocal.subjectUrls.add(subjectUrl);
+          reciprocal.subjectUrls.add(target);
+          reciprocal.fetchUrls.add(page.fetchUrl);
+          for (const reverseFetchUrl of
+            canonicalDeclarations.get(target)?.get(subjectUrl) ?? []) {
+            reciprocal.fetchUrls.add(reverseFetchUrl);
+          }
+        }
 
-      // broken_target: same-origin canonical to an uncrawled / non-2xx page.
-      // External canonicals are intentional and unverifiable — never flagged.
-      if (sameOrigin(subjectUrl, target) && !twoxxKeys.has(target)) {
-        brokenTarget.add(subjectUrl);
-      }
+        // broken_target: same-origin canonical to a subject without any 2xx
+        // exact response. External canonicals remain intentionally unverified.
+        if (sameOrigin(subjectUrl, target) && !twoxxKeys.has(target)) {
+          brokenTarget.subjectUrls.add(subjectUrl);
+          brokenTarget.fetchUrls.add(page.fetchUrl);
+        }
 
-      // sitemap_contradiction: a sitemap page canonicalizing elsewhere.
-      if (page.sitemapMember && target !== subjectUrl) {
-        sitemapContradiction.add(subjectUrl);
+        // A sitemap URL and its canonical must agree at exact fetch identity,
+        // so /path/ → /path remains visible even though both aggregate to the
+        // same subjectUrl.
+        const declaringFetchUrl =
+          canonicalizeUrl(page.fetchUrl)?.fetchUrl ?? page.fetchUrl;
+        if (
+          page.sitemapMember &&
+          targetPair.fetchUrl !== declaringFetchUrl
+        ) {
+          sitemapContradiction.subjectUrls.add(subjectUrl);
+          sitemapContradiction.fetchUrls.add(page.fetchUrl);
+        }
       }
     }
 
     const observedAt = ctx.observedAt("crawl");
     const candidates: FindingCandidate[] = [];
-    const add = (subtype: string, urls: ReadonlySet<string>, claim: string): void => {
-      if (urls.size === 0) return;
-      candidates.push(buildCandidate(ctx, subtype, [...urls], claim, observedAt));
+    const add = (
+      subtype: string,
+      refs: CanonicalIssueRefs,
+      claim: string,
+    ): void => {
+      if (refs.subjectUrls.size === 0) return;
+      candidates.push(buildCandidate(ctx, subtype, refs, claim, observedAt));
     };
-    add("reciprocal", reciprocal, `${reciprocal.size} page(s) form reciprocal canonical loops.`);
+    add(
+      "reciprocal",
+      reciprocal,
+      `${reciprocal.subjectUrls.size} page(s) form reciprocal canonical loops.`,
+    );
     add(
       "broken_target",
       brokenTarget,
-      `${brokenTarget.size} page(s) canonicalize to an uncrawled or non-2xx same-origin URL.`,
+      `${brokenTarget.subjectUrls.size} page(s) canonicalize to an uncrawled or non-2xx same-origin URL.`,
     );
     add(
       "sitemap_contradiction",
       sitemapContradiction,
-      `${sitemapContradiction.size} sitemap page(s) canonicalize to a different page.`,
+      `${sitemapContradiction.subjectUrls.size} sitemap page(s) canonicalize to a different page.`,
     );
 
     if (candidates.length === 0) {
@@ -114,12 +172,15 @@ export const techCanonicalRule = {
 function buildCandidate(
   ctx: DiagnosticContext,
   subtype: string,
-  urls: readonly string[],
+  refs: CanonicalIssueRefs,
   claim: string,
   observedAt: string,
 ): FindingCandidate {
-  const sorted = [...urls].sort();
-  const severity: Severity = sorted.some((u) => ctx.isCommercial(u)) ? "high" : "medium";
+  const subjectUrls = [...refs.subjectUrls].sort();
+  const fetchUrls = [...refs.fetchUrls].sort();
+  const severity: Severity = subjectUrls.some((url) => ctx.isCommercial(url))
+    ? "high"
+    : "medium";
   const evidence: EvidenceDraft = {
     sourceProvider: "crawl",
     origin: "direct_public",
@@ -127,7 +188,7 @@ function buildCandidate(
     grade: "B",
     availability: "available",
     support: "supports",
-    subjectRefs: sorted,
+    subjectRefs: fetchUrls,
     claim,
     observedAt,
     limitation: CANONICAL_LIMITATION,
@@ -135,8 +196,8 @@ function buildCandidate(
   return {
     subjectRefs: [`canonical_issue:${subtype}`],
     severity,
-    titleArgs: { subtype, count: sorted.length },
-    metrics: { count: sorted.length },
+    titleArgs: { subtype, count: subjectUrls.length },
+    metrics: { count: subjectUrls.length },
     evidence: [evidence],
   };
 }

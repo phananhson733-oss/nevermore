@@ -95,6 +95,7 @@ export interface OverviewAction {
 /** Latest immutable source snapshot selected by its real capture timestamp. */
 export interface OverviewSnapshot {
   readonly id: string;
+  readonly siteId: string;
   readonly provider: string;
   readonly datasetKey: string;
   readonly schemaVersion: string;
@@ -126,8 +127,9 @@ export interface OverviewEvidence {
   }[];
   readonly observedAt: string;
   readonly limitation: string;
-  readonly snapshotId?: string | null;
-  readonly analysisInvocationId?: string | null;
+  readonly snapshotId: string | null;
+  readonly collectionRunId: string | null;
+  readonly analysisInvocationId: string | null;
 }
 
 /** Minimal canonical Artifact projection used by Overview's delivery focus. */

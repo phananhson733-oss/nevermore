@@ -40,7 +40,7 @@ const SCRIPT_REPO_ROOT = resolve(
 
 const PRODUCT_VERSION = "0.3.0";
 const CONTRACT_VERSION = "2026-07-21";
-const RULE_SET_VERSION = "mvp.rules.0.2.0";
+const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
 const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
@@ -163,6 +163,20 @@ const EXPECTED_RULES = [
   "GEO-ENTITY-001",
   "GEO-CRAWLER-002",
 ];
+
+const EXPECTED_RULE_VERSIONS = new Map([
+  ["TECH-HTTP-001", 2],
+  ["TECH-CANONICAL-002", 2],
+  ["TECH-LINKGRAPH-005", 2],
+  ["SEARCH-CTR-004", 1],
+  ["SEARCH-DECAY-002", 1],
+  ["CONTENT-COVERAGE-001", 1],
+  ["CONTENT-GAP-011", 1],
+  ["CRO-PATH-001", 1],
+  ["CRO-LANDING-003", 1],
+  ["GEO-ENTITY-001", 1],
+  ["GEO-CRAWLER-002", 1],
+]);
 
 const WORKSPACE_PACKAGES = [
   "package.json",
@@ -300,6 +314,36 @@ function checkOpenApi() {
   invariant(
     document.info?.version === PRODUCT_VERSION,
     `OpenAPI info.version must be ${PRODUCT_VERSION}`,
+  );
+
+  const evidenceSchema = document.components?.schemas?.Evidence;
+  invariant(
+    evidenceSchema && typeof evidenceSchema === "object",
+    "OpenAPI Evidence schema is missing",
+  );
+  invariant(
+    Array.isArray(evidenceSchema.required) &&
+      ["snapshotId", "collectionRunId", "analysisInvocationId"].every(
+        (field) => evidenceSchema.required.includes(field),
+      ),
+    "OpenAPI Evidence must require explicit nullable provenance identifiers",
+  );
+  invariant(
+    evidenceSchema.properties?.collectionRunId?.format === "uuid" &&
+      Array.isArray(evidenceSchema.properties.collectionRunId.type) &&
+      evidenceSchema.properties.collectionRunId.type.includes("null"),
+    "OpenAPI Evidence collectionRunId must be a nullable UUID",
+  );
+  invariant(
+    Array.isArray(evidenceSchema.oneOf) &&
+      [
+        "Source-backed Evidence",
+        "System-derived Evidence",
+        "LLM-generated Evidence",
+      ].every((title) =>
+        evidenceSchema.oneOf.some((shape) => shape.title === title),
+      ),
+    "OpenAPI Evidence must preserve the three mutually exclusive provenance shapes",
   );
 
   const operations = [];
@@ -760,10 +804,23 @@ function checkIntegrationDatabaseSafety() {
     `${INTEGRATION_SETUP_FILE} must import requireSafeTestDatabaseUrl from test-database-safety.ts`,
   );
   invariant(
-    /\brequireSafeTestDatabaseUrl\s*\(\s*process\.env\s*\[\s*["']DATABASE_URL["']\s*\]/.test(
+    /\bimport\s*\{\s*runMigrations\s*\}\s*from\s*["']\.\/migrate\.ts["'];?/.test(
       setup,
     ),
-    `${INTEGRATION_SETUP_FILE} must call requireSafeTestDatabaseUrl for process.env["DATABASE_URL"]`,
+    `${INTEGRATION_SETUP_FILE} must import runMigrations from migrate.ts`,
+  );
+  const safeDatabaseBinding = setup.match(
+    /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*requireSafeTestDatabaseUrl\s*\(\s*process\.env\s*\[\s*["']DATABASE_URL["']\s*\]/,
+  );
+  invariant(
+    safeDatabaseBinding,
+    `${INTEGRATION_SETUP_FILE} must bind requireSafeTestDatabaseUrl(process.env["DATABASE_URL"]) before schema bootstrap`,
+  );
+  invariant(
+    new RegExp(
+      `\\bawait\\s+runMigrations\\s*\\(\\s*${safeDatabaseBinding[1]}\\s*\\)`,
+    ).test(setup),
+    `${INTEGRATION_SETUP_FILE} must migrate only the URL returned by requireSafeTestDatabaseUrl`,
   );
 
   const integrationSources = ["apps", "packages"]
@@ -784,7 +841,7 @@ function checkIntegrationDatabaseSafety() {
     )})`,
   );
 
-  return `integration safety: Vitest preflight validates DATABASE_URL; ${integrationSources.length} integration/harness sources have no dev-database fallback`;
+  return `integration safety: Vitest preflight validates DATABASE_URL and migrates the disposable database; ${integrationSources.length} integration/harness sources have no dev-database fallback`;
 }
 
 function stripSqlComments(sql) {
@@ -866,6 +923,39 @@ function checkDatabaseContract() {
       pageSnapshots,
     ),
     "page_snapshots must retain RESTRICT lineage to canonical data snapshots",
+  );
+  invariant(
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+canonical_extract\s+text/i.test(
+      migration,
+    ) &&
+      /CHECK\s*\(canonical_extract\s+IS\s+NOT\s+NULL\)\s+NOT\s+VALID/i.test(
+        migration,
+      ),
+    "page_snapshots must preserve legacy rows while requiring retained application bytes on every new row",
+  );
+  invariant(
+    /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+page_snapshots_verified_source_identity_idx[\s\S]*?WHERE\s+canonical_extract\s+IS\s+NOT\s+NULL/i.test(
+      migration,
+    ),
+    "verified page snapshots must be unique by page and canonical source snapshot",
+  );
+  invariant(
+    /NEW\.captured_at\s+IS\s+DISTINCT\s+FROM\s+source_captured_at/i.test(
+      migration,
+    ) &&
+      /canonical_extract_json\s+IS\s+DISTINCT\s+FROM\s+NEW\.extract/i.test(
+        migration,
+      ) &&
+      /digest\s*\(convert_to\s*\(NEW\.canonical_extract,\s*'UTF8'\),\s*'sha256'\)/i.test(
+        migration,
+      ),
+    "page snapshot provenance must bind capture time, JSON semantics, application-retained bytes, and sha256 without claiming database-side JCS validation",
+  );
+  invariant(
+    !/UPDATE\s+app\.page_snapshots[\s\S]*?SET\s+(?:content_hash|extract|canonical_extract)/i.test(
+      migration,
+    ),
+    "page snapshot hardening must not rewrite immutable legacy content or hashes",
   );
 
   for (const indexName of [
@@ -997,7 +1087,11 @@ function checkRuleContract() {
   );
   assertExactOrder(ruleIds, EXPECTED_RULES, "executable frozen rules");
   for (const rule of rules) {
-    invariant(rule.version === 1, `${rule.id} must remain at rule version 1`);
+    const expectedVersion = EXPECTED_RULE_VERSIONS.get(rule.id);
+    invariant(
+      rule.version === expectedVersion,
+      `${rule.id} must remain at rule version ${expectedVersion}`,
+    );
     invariant(
       registry[rule.id]?.domain === rule.domain,
       `${rule.id} domain differs between ALL_RULES and FINDING_REGISTRY`,

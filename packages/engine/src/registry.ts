@@ -7,7 +7,7 @@ import type { DiagnosticDomain, RuleId } from "./rule.ts";
  * Changing any of these requires bumping `RULE_SET_VERSION` and the rule version.
  */
 
-export const RULE_SET_VERSION = "mvp.rules.0.2.0";
+export const RULE_SET_VERSION = "mvp.rules.0.2.1";
 export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 
 export interface FindingMeta {

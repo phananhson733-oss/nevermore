@@ -251,6 +251,8 @@ interface GuardedFetchDeps {
 type GuardedFetch =
   | {
       readonly kind: "ok";
+      /** Exact URL used for the first transport request after safety guard normalization. */
+      readonly requestUrl: string;
       readonly firstStatus: number;
       readonly finalStatus: number;
       readonly finalUrl: string;
@@ -434,6 +436,7 @@ async function guardedFetch(
   deps: GuardedFetchDeps,
 ): Promise<GuardedFetch> {
   let current = startUrl;
+  let requestUrl: string | null = null;
   const chain: string[] = [];
   let firstStatus: number | null = null;
   let redirects = 0;
@@ -468,6 +471,7 @@ async function guardedFetch(
     if (deps.allowUrl && !deps.allowUrl(current)) {
       return { kind: "disallowed" };
     }
+    requestUrl ??= current;
     let target: URL;
     try {
       target = new URL(current);
@@ -551,6 +555,7 @@ async function guardedFetch(
         drain(response);
         return {
           kind: "ok",
+          requestUrl: requestUrl ?? current,
           firstStatus: firstStatus ?? status,
           finalStatus: status,
           finalUrl: current,
@@ -585,6 +590,7 @@ async function guardedFetch(
         if ("tooLarge" in read) return { kind: "too_large" };
         return {
           kind: "ok",
+          requestUrl: requestUrl ?? current,
           firstStatus: firstStatus ?? status,
           finalStatus: status,
           finalUrl: current,
@@ -789,23 +795,68 @@ export async function crawlSite(
     robots.projection.sitemaps.length > 0
       ? robots.projection.sitemaps
       : [`${origin}/sitemap.xml`];
+  const exactSitemapMembers = new Map<
+    string,
+    readonly { readonly fetchUrl: string; readonly subjectUrl: string }[]
+  >();
   const sitemap = boundedSitemapProjection(
     await collectSitemap(crawlOrigin, sitemapSeeds, {
       fetchText,
+      onMember(target) {
+        if (target.fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) return;
+        const current = exactSitemapMembers.get(target.subjectUrl) ?? [];
+        if (current.some((candidate) => candidate.fetchUrl === target.fetchUrl))
+          return;
+        // canonical_url.v1 can produce at most the slash and non-slash fetch
+        // variants for one subject. Retaining both preserves exact transport
+        // semantics without letting duplicate declarations consume the
+        // subject-level sitemap budget.
+        const candidates = [...current, target]
+          .sort((left, right) =>
+            left.fetchUrl < right.fetchUrl
+              ? -1
+              : left.fetchUrl > right.fetchUrl
+                ? 1
+                : 0,
+          )
+          .slice(0, 2);
+        exactSitemapMembers.set(target.subjectUrl, candidates);
+      },
     }),
   );
   usage.sitemapUrlCount = sitemap.urlCount;
-  const sitemapMembers = new Set(sitemap.subjectUrls);
+  const boundedSitemapTargetsBySubject = sitemap.subjectUrls.map(
+    (subjectUrl) => exactSitemapMembers.get(subjectUrl) ?? [],
+  );
+  // Allocate the finite fetch budget fairly: every admitted sitemap subject
+  // gets its deterministic primary transport before slash/non-slash extras.
+  // Otherwise `/a` + `/a/` can consume the last slot and starve `/b`.
+  const boundedSitemapTargets = [
+    ...boundedSitemapTargetsBySubject.flatMap((targets) =>
+      targets[0] ? [targets[0]] : [],
+    ),
+    ...boundedSitemapTargetsBySubject.flatMap((targets) => targets.slice(1)),
+  ];
+  const sitemapMemberFetchUrls = new Set(
+    boundedSitemapTargets.map((target) => target.fetchUrl),
+  );
 
   // Seed the BFS frontier.
-  const seenDepth = new Map<string, number>();
+  // Fetch identity controls transport deduplication. `subjectUrl` is retained
+  // only for eventual page aggregation; deriving fetch URLs from it would lose
+  // meaningful trailing-slash semantics.
+  const seenFetchDepth = new Map<string, number>();
   const queue: QueueEntry[] = [];
   const enqueue = (
     subjectUrl: string,
     fetchUrl: string,
     depth: number,
   ): void => {
-    if (originOf(subjectUrl) !== crawlOrigin) return;
+    if (
+      originOf(subjectUrl) !== crawlOrigin ||
+      originOf(fetchUrl) !== crawlOrigin
+    )
+      return;
     if (
       subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
       fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars
@@ -815,11 +866,11 @@ export async function crawlSite(
       hitDepthLimit = true;
       return;
     }
-    const previousDepth = seenDepth.get(subjectUrl);
+    const previousDepth = seenFetchDepth.get(fetchUrl);
     if (previousDepth !== undefined && previousDepth <= depth) return;
-    seenDepth.set(subjectUrl, depth);
+    seenFetchDepth.set(fetchUrl, depth);
     const queuedIndex = queue.findIndex(
-      (entry) => entry.subjectUrl === subjectUrl,
+      (entry) => entry.fetchUrl === fetchUrl,
     );
     if (queuedIndex >= 0) {
       queue[queuedIndex] = { fetchUrl, subjectUrl, depth };
@@ -830,9 +881,8 @@ export async function crawlSite(
 
   const originPair = canonicalizeUrl(`${origin}/`);
   if (originPair) enqueue(originPair.subjectUrl, originPair.fetchUrl, 0);
-  for (const member of sitemap.subjectUrls) {
-    const pair = canonicalizeUrl(member);
-    if (pair) enqueue(pair.subjectUrl, pair.fetchUrl, 1);
+  for (const target of boundedSitemapTargets) {
+    enqueue(target.subjectUrl, target.fetchUrl, 1);
   }
 
   interface PageCandidate {
@@ -841,7 +891,12 @@ export async function crawlSite(
     readonly journeyFetchUrl: string;
     readonly redirectCount: number;
   }
-  const pagesBySubject = new Map<string, PageCandidate>();
+  // Persist one factual page record per exact initial HTTP request identity. Multiple
+  // fetch URLs may intentionally share one subjectUrl (for example `/path` and
+  // `/path/`); subject identity belongs to downstream aggregation and must not
+  // discard either response before Evidence/PageSnapshot materialization.
+  const pagesByFetchUrl = new Map<string, PageCandidate>();
+  const completedFetchDepth = new Map<string, number>();
   const compareAscii = (left: string, right: string): number =>
     left < right ? -1 : left > right ? 1 : 0;
   const comparePageCandidates = (
@@ -862,13 +917,14 @@ export async function crawlSite(
     return compareAscii(left.journeyFetchUrl, right.journeyFetchUrl);
   };
   const upsertPage = (candidate: PageCandidate): boolean => {
-    const existing = pagesBySubject.get(candidate.record.subjectUrl);
+    const fetchUrl = candidate.record.projection.fetchUrl;
+    const existing = pagesByFetchUrl.get(fetchUrl);
     if (existing && comparePageCandidates(candidate, existing) >= 0) {
       usage.urlsSkipped += 1;
       return false;
     }
-    pagesBySubject.set(candidate.record.subjectUrl, candidate);
-    usage.pagesCollected = pagesBySubject.size;
+    pagesByFetchUrl.set(fetchUrl, candidate);
+    usage.pagesCollected = pagesByFetchUrl.size;
     return true;
   };
   let crawledCount = 0;
@@ -884,8 +940,8 @@ export async function crawlSite(
   };
 
   const processEntry = async (entry: QueueEntry): Promise<void> => {
-    const existingPage = pagesBySubject.get(entry.subjectUrl);
-    if (existingPage && existingPage.record.depth < entry.depth) {
+    const completedDepth = completedFetchDepth.get(entry.fetchUrl);
+    if (completedDepth !== undefined && completedDepth <= entry.depth) {
       usage.urlsSkipped += 1;
       return;
     }
@@ -938,21 +994,30 @@ export async function crawlSite(
       return;
     }
 
+    const requestPair = canonicalizeUrl(result.requestUrl);
     const finalPair = canonicalizeUrl(result.finalUrl);
     if (
+      !requestPair ||
       !finalPair ||
+      originOf(requestPair.subjectUrl) !== crawlOrigin ||
       originOf(finalPair.subjectUrl) !== crawlOrigin ||
+      requestPair.subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
+      requestPair.fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
       finalPair.subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
       finalPair.fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars
     ) {
       usage.urlsBlocked += 1;
       return;
     }
-    const finalSubjectUrl = finalPair.subjectUrl;
+    const requestSubjectUrl = requestPair.subjectUrl;
+    const requestFetchUrl = requestPair.fetchUrl;
     const finalFetchUrl = finalPair.fetchUrl;
-    const previousFinalDepth = seenDepth.get(finalSubjectUrl);
-    if (previousFinalDepth === undefined || entry.depth < previousFinalDepth) {
-      seenDepth.set(finalSubjectUrl, entry.depth);
+    const previousCompletedDepth = completedFetchDepth.get(requestFetchUrl);
+    if (
+      previousCompletedDepth === undefined ||
+      entry.depth < previousCompletedDepth
+    ) {
+      completedFetchDepth.set(requestFetchUrl, entry.depth);
     }
 
     const parsed = parsePage(result.body, finalFetchUrl);
@@ -961,8 +1026,9 @@ export async function crawlSite(
       result.xRobotsTag,
     );
     const projection: CrawlPageProjection = {
-      // HTTP semantics: final content URL, initial journey status, terminal status.
-      fetchUrl: finalFetchUrl,
+      // One record describes one complete journey: the initial request/status
+      // remain attached, while finalStatus + redirectChain describe its end.
+      fetchUrl: requestFetchUrl,
       status: result.firstStatus,
       finalStatus: result.finalStatus,
       redirectChain: result.redirectChain.filter(
@@ -978,9 +1044,7 @@ export async function crawlSite(
       wordCount: parsed.wordCount,
       internalOutlinks: parsed.internalOutlinks,
       jsonLd: parsed.jsonLd,
-      sitemapMember:
-        sitemapMembers.has(entry.subjectUrl) ||
-        sitemapMembers.has(finalSubjectUrl),
+      sitemapMember: sitemapMemberFetchUrls.has(requestFetchUrl),
       bodyExcerpt: parsed.bodyExcerpt,
       paragraphs: parsed.paragraphs,
       responseMs,
@@ -990,27 +1054,36 @@ export async function crawlSite(
           CRAWL_PROJECTION_LIMITS.maxContentTypeChars,
         ) ?? null,
     };
-    const accepted = upsertPage({
+    upsertPage({
       record: {
-        // Aggregation identity follows the terminal URL, never its redirect alias.
-        subjectUrl: finalSubjectUrl,
+        // Page materialization binds to the request that initiated this journey.
+        subjectUrl: requestSubjectUrl,
         depth: entry.depth,
         projection,
       },
-      journeySubjectUrl: entry.subjectUrl,
-      journeyFetchUrl: entry.fetchUrl,
+      journeySubjectUrl: requestSubjectUrl,
+      journeyFetchUrl: requestFetchUrl,
       redirectCount: result.redirectChain.length,
     });
-    if (!accepted) return;
 
+    // Every successful exact transport contributes discovery facts and remains
+    // independently persisted. Shared subject identity must not make crawl
+    // coverage depend on concurrent completion order when `/path` and `/path/`
+    // aggregate to the same subject.
     if (result.finalStatus >= 200 && result.finalStatus < 300) {
-      for (const link of parsed.internalOutlinks) {
-        const pair = canonicalizeUrl(link.targetSubjectUrl);
-        if (pair) enqueue(pair.subjectUrl, pair.fetchUrl, entry.depth + 1);
+      for (const target of parsed.internalFetchTargets) {
+        enqueue(
+          target.subjectUrl,
+          target.fetchUrl,
+          entry.depth + 1,
+        );
       }
-      if (parsed.canonicalTarget) {
-        const pair = canonicalizeUrl(parsed.canonicalTarget);
-        if (pair) enqueue(pair.subjectUrl, pair.fetchUrl, entry.depth + 1);
+      if (parsed.canonicalFetchTarget) {
+        enqueue(
+          parsed.canonicalFetchTarget.subjectUrl,
+          parsed.canonicalFetchTarget.fetchUrl,
+          entry.depth + 1,
+        );
       }
     }
   };
@@ -1043,7 +1116,7 @@ export async function crawlSite(
 
   if (!stopReason && hitDepthLimit) stopReason = STOP_MAX_DEPTH;
 
-  const pages = [...pagesBySubject.values()].map(
+  const pages = [...pagesByFetchUrl.values()].map(
     (candidate) => candidate.record,
   );
   const reachedNothing = pages.length === 0 && usage.urlsFetched === 0;
@@ -1059,13 +1132,12 @@ export async function crawlSite(
       ? `Public crawl of ${origin} returned no fetchable pages.`
       : `Public crawl of ${origin}: ${pages.length} page(s) within the fixed budget.`;
 
-  const orderedPages = [...pages].sort((left, right) =>
-    left.subjectUrl < right.subjectUrl
-      ? -1
-      : left.subjectUrl > right.subjectUrl
-        ? 1
-        : 0,
-  );
+  const orderedPages = [...pages].sort((left, right) => {
+    const subjectOrder = compareAscii(left.subjectUrl, right.subjectUrl);
+    return subjectOrder !== 0
+      ? subjectOrder
+      : compareAscii(left.projection.fetchUrl, right.projection.fetchUrl);
+  });
 
   return {
     origin,

@@ -194,6 +194,81 @@ describe("contentGapRule (CONTENT-GAP-011)", () => {
     expect(result.metrics).toEqual({ qualifyingClusters: 1 });
   });
 
+  it("uses a same-subject indexable exact variant when the ASCII-first variant redirects", () => {
+    const subjectUrl = "https://example.com/pricing";
+    const redirect = makePage({
+      fetchUrl: subjectUrl,
+      status: 301,
+      finalStatus: 200,
+      redirectChain: [`${subjectUrl}/`],
+      title: "Pricing",
+      h1: ["Pricing"],
+    });
+    const indexable = makePage({
+      fetchUrl: `${subjectUrl}/`,
+      title: "Project Management Software",
+      h1: ["Project Management Software"],
+    });
+    const observations = [
+      ...clusterObs("project-management", QUALIFYING_CLUSTER),
+      crawlObs(subjectUrl, indexable),
+      crawlObs(subjectUrl, redirect),
+    ];
+
+    for (const ordered of [observations, [...observations].reverse()]) {
+      expect(
+        contentGapRule.evaluate(
+          buildContext({
+            icp: icpOf({}),
+            observations: ordered,
+          }),
+        ),
+      ).toEqual({
+        status: "pass",
+        metrics: { qualifyingClusters: 1 },
+      });
+    }
+  });
+
+  it("does not fabricate a gap when healthy exact variants disagree on intent coverage", () => {
+    const subjectUrl = "https://example.com/pricing";
+    const observations = [
+      ...clusterObs("project-management", QUALIFYING_CLUSTER),
+      crawlObs(
+        subjectUrl,
+        makePage({
+          fetchUrl: subjectUrl,
+          title: "Project Pricing",
+          h1: ["Project"],
+        }),
+      ),
+      crawlObs(
+        subjectUrl,
+        makePage({
+          fetchUrl: `${subjectUrl}/`,
+          title: "Management Software",
+          h1: ["Management"],
+        }),
+      ),
+    ];
+
+    const forward = contentGapRule.evaluate(
+      buildContext({ icp: icpOf({}), observations }),
+    );
+    const reversed = contentGapRule.evaluate(
+      buildContext({
+        icp: icpOf({}),
+        observations: [...observations].reverse(),
+      }),
+    );
+
+    expect(forward).toEqual(reversed);
+    expect(forward).toEqual({
+      status: "pass",
+      metrics: { qualifyingClusters: 1 },
+    });
+  });
+
   it("matches the frozen cluster key rather than the highest-volume keyword", () => {
     const ctx = buildContext({
       icp: icpOf({}),
@@ -372,6 +447,41 @@ describe("contentGapRule (CONTENT-GAP-011)", () => {
     expect(contentGapRule.evaluate(ctx)).toEqual({
       status: "skipped",
       reason: "missing_dataset",
+    });
+  });
+
+  it("skips with missing_dataset when crawl is unavailable", () => {
+    const ctx = buildContext({
+      icp: icpOf({}),
+      observations: clusterObs("project-management", QUALIFYING_CLUSTER),
+      coverage: { crawl: "unavailable" },
+    });
+
+    expect(contentGapRule.evaluate(ctx)).toEqual({
+      status: "skipped",
+      reason: "missing_dataset",
+    });
+  });
+
+  it("is inconclusive when an indexable observation has an invalid subject URL", () => {
+    const ctx = buildContext({
+      icp: icpOf({}),
+      observations: [
+        ...clusterObs("project-management", QUALIFYING_CLUSTER),
+        crawlObs(
+          "not-a-url",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing",
+            h1: ["Pricing"],
+          }),
+        ),
+      ],
+    });
+
+    expect(contentGapRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "intent_match_unavailable",
     });
   });
 });

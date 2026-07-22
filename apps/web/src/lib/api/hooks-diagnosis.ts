@@ -175,8 +175,10 @@ export interface FindingListEnvelope {
 /** An immutable data snapshot the run reads from (OpenAPI `DataSnapshot`). */
 export interface DataSnapshot {
   readonly id: string;
+  readonly siteId: string;
   readonly provider: Provider;
   readonly datasetKey: string;
+  readonly methodVersion: string;
   readonly capturedAt: string;
   readonly availability: Availability;
   readonly limitation: string;
@@ -235,6 +237,14 @@ export interface ReviewFindingVars {
 
 /** Poll cadence for a diagnostic run (spec §9.1): 1s → 2s → 4s → 5s (then holds). */
 const POLL_SCHEDULE = [1000, 2000, 4000, 5000] as const;
+const CURRENT_DIAGNOSTIC_CRAWL_METHOD_VERSION = "crawl.site_graph.v2";
+const DIAGNOSTIC_PROVIDER_ORDER: readonly Provider[] = [
+  "crawl",
+  "gsc",
+  "ga4",
+  "csv",
+  "dataforseo",
+];
 
 /** A run is terminal once it can no longer transition (no more polling needed). */
 export function isRunTerminal(status: RunStatus): boolean {
@@ -247,58 +257,83 @@ export function isRunTerminal(status: RunStatus): boolean {
 }
 
 /**
- * The snapshot ids a diagnostic run should freeze: the latest snapshot per
- * provider (by `capturedAt`). CSV and DataForSEO share one canonical keyword-gap
- * dataset slot, so only the newest usable one is retained (DataForSEO wins an
- * exact timestamp tie). The crawl snapshot is included when present; the server
- * rejects a run without one (422 `CRAWL_SNAPSHOT_REQUIRED`).
+ * The snapshot ids a diagnostic run should freeze. The newest usable snapshot
+ * produced by the current crawl method determines the exact Site; every other
+ * provider is then selected only from that Site. CSV and DataForSEO may coexist:
+ * each prefers its latest usable snapshot, falling back to its latest
+ * unavailable snapshot when needed to preserve coverage lineage. Returning an
+ * empty selection when no current crawl exists keeps the UI aligned with the
+ * server's `CRAWL_SNAPSHOT_REQUIRED` hard gate.
  */
 export function selectLatestSnapshotIds(
   snapshots: readonly DataSnapshot[],
 ): readonly string[] {
-  const latest = new Map<Provider, DataSnapshot>();
-  const keywordGapSnapshots: DataSnapshot[] = [];
-  for (const snapshot of snapshots) {
-    if (snapshot.provider === "csv" || snapshot.provider === "dataforseo") {
-      keywordGapSnapshots.push(snapshot);
-      continue;
-    }
-    const current = latest.get(snapshot.provider);
-    if (current === undefined || snapshot.capturedAt > current.capturedAt) {
-      latest.set(snapshot.provider, snapshot);
-    }
+  const currentCrawl = latestSnapshot(
+    snapshots.filter(isCurrentUsableCrawlSnapshot),
+  );
+  if (currentCrawl === undefined) return [];
+
+  const selected: DataSnapshot[] = [currentCrawl];
+  const siteSnapshots = snapshots.filter(
+    (snapshot) => snapshot.siteId === currentCrawl.siteId,
+  );
+
+  for (const provider of DIAGNOSTIC_PROVIDER_ORDER) {
+    if (provider === "crawl") continue;
+    const providerSnapshots = siteSnapshots.filter(
+      (snapshot) => snapshot.provider === provider,
+    );
+    const candidates =
+      provider === "csv" || provider === "dataforseo"
+        ? usableSnapshotsOrAll(providerSnapshots)
+        : providerSnapshots;
+    const latest = latestSnapshot(candidates);
+    if (latest !== undefined) selected.push(latest);
   }
 
-  const usableKeywordGapSnapshots = keywordGapSnapshots.filter(
-    (snapshot) =>
-      snapshot.availability === "available" ||
-      snapshot.availability === "partial",
-  );
-  const keywordGapCandidates =
-    usableKeywordGapSnapshots.length > 0
-      ? usableKeywordGapSnapshots
-      : keywordGapSnapshots;
-  let latestKeywordGap: DataSnapshot | undefined;
-  for (const snapshot of keywordGapCandidates) {
-    if (
-      latestKeywordGap === undefined ||
-      snapshot.capturedAt > latestKeywordGap.capturedAt ||
-      (snapshot.capturedAt === latestKeywordGap.capturedAt &&
-        snapshot.provider === "dataforseo" &&
-        latestKeywordGap.provider === "csv")
-    ) {
-      latestKeywordGap = snapshot;
-    }
-  }
-  if (latestKeywordGap !== undefined) {
-    latest.set(latestKeywordGap.provider, latestKeywordGap);
-  }
-  return Array.from(latest.values(), (snapshot) => snapshot.id);
+  return selected.map((snapshot) => snapshot.id);
 }
 
-/** Whether the project has at least one crawl snapshot (a diagnosis precondition). */
+function isUsableSnapshot(snapshot: DataSnapshot): boolean {
+  return (
+    snapshot.availability === "available" || snapshot.availability === "partial"
+  );
+}
+
+function isCurrentUsableCrawlSnapshot(snapshot: DataSnapshot): boolean {
+  return (
+    snapshot.provider === "crawl" &&
+    snapshot.methodVersion === CURRENT_DIAGNOSTIC_CRAWL_METHOD_VERSION &&
+    isUsableSnapshot(snapshot)
+  );
+}
+
+function usableSnapshotsOrAll(
+  snapshots: readonly DataSnapshot[],
+): readonly DataSnapshot[] {
+  const usable = snapshots.filter(isUsableSnapshot);
+  return usable.length > 0 ? usable : snapshots;
+}
+
+function latestSnapshot(
+  snapshots: readonly DataSnapshot[],
+): DataSnapshot | undefined {
+  let latest: DataSnapshot | undefined;
+  for (const snapshot of snapshots) {
+    if (
+      latest === undefined ||
+      snapshot.capturedAt > latest.capturedAt ||
+      (snapshot.capturedAt === latest.capturedAt && snapshot.id < latest.id)
+    ) {
+      latest = snapshot;
+    }
+  }
+  return latest;
+}
+
+/** Whether a usable current crawl can anchor a single-Site diagnosis. */
 export function hasCrawlSnapshot(snapshots: readonly DataSnapshot[]): boolean {
-  return snapshots.some((snapshot) => snapshot.provider === "crawl");
+  return snapshots.some(isCurrentUsableCrawlSnapshot);
 }
 
 /**

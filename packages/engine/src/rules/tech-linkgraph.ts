@@ -24,7 +24,7 @@ const LINKGRAPH_LIMITATION =
 
 export const techLinkgraphRule = {
   id: "TECH-LINKGRAPH-005",
-  version: 1,
+  version: 2,
   domain: "technical_seo",
   requiredDatasets: [
     { dataset: "crawl", required: true },
@@ -39,22 +39,35 @@ export const techLinkgraphRule = {
       return { status: "inconclusive", reason: "partial_crawl_incomplete_link_graph" };
     }
 
-    const affected: string[] = [];
+    const affectedSubjectUrls: string[] = [];
+    const affectedFetchUrls = new Set<string>();
     let anyPriority = false;
-    for (const [subjectUrl] of ctx.indexablePages()) {
+    for (const [subjectUrl, variants] of ctx.pageVariants) {
+      const indexableVariants = variants.filter(
+        (page) =>
+          page.robotsIndexable &&
+          page.status !== null &&
+          page.status >= 200 &&
+          page.status < 300,
+      );
+      if (indexableVariants.length === 0) continue;
       if (!ctx.isCommercial(subjectUrl)) continue;
       const inlinks = ctx.internalInlinks.get(subjectUrl) ?? 0;
       if (inlinks < MIN_INTERNAL_INLINKS) {
-        affected.push(subjectUrl);
+        affectedSubjectUrls.push(subjectUrl);
+        for (const page of indexableVariants) {
+          affectedFetchUrls.add(page.fetchUrl);
+        }
         if (ctx.isPriority(subjectUrl)) anyPriority = true;
       }
     }
 
-    if (affected.length === 0) {
+    if (affectedSubjectUrls.length === 0) {
       return { status: "pass", metrics: { affectedCount: 0 } };
     }
 
-    const sorted = [...affected].sort();
+    const sortedSubjectUrls = [...affectedSubjectUrls].sort();
+    const sortedFetchUrls = [...affectedFetchUrls].sort();
     const severity: Severity = anyPriority ? "high" : "medium";
     const evidence: EvidenceDraft = {
       sourceProvider: "crawl",
@@ -63,16 +76,16 @@ export const techLinkgraphRule = {
       grade: "B",
       availability: "available",
       support: "supports",
-      subjectRefs: sorted,
-      claim: `${sorted.length} commercial page(s) receive fewer than ${MIN_INTERNAL_INLINKS} internal inlinks.`,
+      subjectRefs: sortedFetchUrls,
+      claim: `${sortedSubjectUrls.length} commercial page(s) receive fewer than ${MIN_INTERNAL_INLINKS} internal inlinks.`,
       observedAt: ctx.observedAt("crawl"),
       limitation: LINKGRAPH_LIMITATION,
     };
     const candidate: FindingCandidate = {
       subjectRefs: ["page_set:low_internal_inlinks"],
       severity,
-      titleArgs: { affectedCount: sorted.length },
-      metrics: { affectedCount: sorted.length },
+      titleArgs: { affectedCount: sortedSubjectUrls.length },
+      metrics: { affectedCount: sortedSubjectUrls.length },
       evidence: [evidence],
     };
     return { status: "candidate", candidates: [candidate] };

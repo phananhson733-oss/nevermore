@@ -2,9 +2,12 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import {
   E2E_PROJECT_ID,
+  E2E_SITE_ID,
+  E2E_SNAPSHOT_PROVENANCE,
   installCriticalFlowApi,
   sourceSlot,
   type CriticalFlowApiState,
+  type MockDataSnapshot,
 } from "./mock-api.ts";
 
 let api: CriticalFlowApiState;
@@ -213,10 +216,11 @@ test("AC-046: Sources exposes permission, partial, and automatic rate-limit retr
   };
   const partialSnapshot = {
     id: "00000000-0000-4000-8000-000000000151",
+    siteId: E2E_SITE_ID,
     provider: "ga4",
-    datasetKey: "ga4.organic_landing_daily.v1",
+    datasetKey: E2E_SNAPSHOT_PROVENANCE.ga4.datasetKey,
     schemaVersion: "0.2.0",
-    methodVersion: "ga4.organic_landing.v1",
+    methodVersion: E2E_SNAPSHOT_PROVENANCE.ga4.methodVersion,
     capturedAt: "2026-07-18T12:00:00.000Z",
     sourceWindow: {
       start: "2026-05-23T00:00:00.000Z",
@@ -227,7 +231,7 @@ test("AC-046: Sources exposes permission, partial, and automatic rate-limit retr
       "GA4 key-event report is incompatible; session rows remain available.",
     rowCount: 42,
     checksum: "a".repeat(64),
-  };
+  } satisfies MockDataSnapshot;
   const sources = [
     sourceSlot("crawl", {
       state: "syncing",

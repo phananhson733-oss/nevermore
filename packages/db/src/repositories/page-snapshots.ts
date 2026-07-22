@@ -1,6 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, or } from "drizzle-orm";
+import {
+  canonicalize,
+  sha256Hex,
+  type CanonicalValue,
+} from "../hash.ts";
 import { pageSnapshots } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
@@ -15,6 +20,8 @@ export interface PageSnapshotRow {
   readonly site_page_id: string;
   readonly data_snapshot_id: string;
   readonly content_hash: string;
+  /** Null only on immutable pre-0012 rows whose source serialization was not retained. */
+  readonly canonical_extract: string | null;
   readonly extract: Record<string, unknown>;
   readonly captured_at: string;
   readonly created_at: string;
@@ -44,10 +51,37 @@ export class PageSnapshotsRepository extends Repository {
     extract: Record<string, unknown>;
     capturedAt: string;
   }): Promise<PageSnapshotRow> {
+    const canonicalExtract = canonicalize(values.extract as CanonicalValue);
+    const derivedContentHash = sha256Hex(canonicalExtract);
+    if (!sameHash(derivedContentHash, values.contentHash)) {
+      throw new Error("page snapshot content hash does not match extract");
+    }
     const scope = {
       workspaceId: values.workspaceId,
       projectId: values.projectId,
     };
+    const legacyRows = await this.findLegacyByCanonicalIdentity(
+      scope,
+      values.sitePageId,
+      values.dataSnapshotId,
+    );
+    const legacy = legacyRows[0];
+    if (legacy) {
+      const isExactReplay = legacyRows.every(
+        (row) =>
+          row.workspace_id === values.workspaceId &&
+          row.project_id === values.projectId &&
+          row.site_page_id === values.sitePageId &&
+          row.data_snapshot_id === values.dataSnapshotId &&
+          sameHash(row.content_hash, derivedContentHash) &&
+          isDeepStrictEqual(row.extract, values.extract) &&
+          Date.parse(row.captured_at) === Date.parse(values.capturedAt),
+      );
+      if (isExactReplay) {
+        return legacy;
+      }
+      throw new Error("page snapshot replay conflicts with immutable values");
+    }
     const [inserted] = await this.exec
       .insert(pageSnapshots)
       .values({
@@ -55,17 +89,12 @@ export class PageSnapshotsRepository extends Repository {
         project_id: values.projectId,
         site_page_id: values.sitePageId,
         data_snapshot_id: values.dataSnapshotId,
-        content_hash: values.contentHash,
+        content_hash: derivedContentHash,
+        canonical_extract: canonicalExtract,
         extract: values.extract,
         captured_at: values.capturedAt,
       })
-      .onConflictDoNothing({
-        target: [
-          pageSnapshots.site_page_id,
-          pageSnapshots.data_snapshot_id,
-          pageSnapshots.content_hash,
-        ],
-      })
+      .onConflictDoNothing()
       .returning();
     if (inserted) return inserted as PageSnapshotRow;
 
@@ -73,13 +102,14 @@ export class PageSnapshotsRepository extends Repository {
       scope,
       values.sitePageId,
       values.dataSnapshotId,
-      values.contentHash,
     );
     if (
       existing &&
       existing.workspace_id === values.workspaceId &&
       existing.project_id === values.projectId &&
-      sameHash(existing.content_hash, values.contentHash) &&
+      sameHash(existing.content_hash, derivedContentHash) &&
+      (existing.canonical_extract === null ||
+        existing.canonical_extract === canonicalExtract) &&
       isDeepStrictEqual(existing.extract, values.extract) &&
       Date.parse(existing.captured_at) === Date.parse(values.capturedAt)
     ) {
@@ -92,7 +122,6 @@ export class PageSnapshotsRepository extends Repository {
     scope: ProjectScope,
     sitePageId: string,
     dataSnapshotId: string,
-    contentHash: string,
   ): Promise<PageSnapshotRow | null> {
     const rows = await this.exec
       .select()
@@ -102,11 +131,29 @@ export class PageSnapshotsRepository extends Repository {
           projectPredicate(pageSnapshots, scope),
           eq(pageSnapshots.site_page_id, sitePageId),
           eq(pageSnapshots.data_snapshot_id, dataSnapshotId),
-          eq(pageSnapshots.content_hash, contentHash),
         ),
       )
       .limit(1);
     return (rows[0] as PageSnapshotRow | undefined) ?? null;
+  }
+
+  private async findLegacyByCanonicalIdentity(
+    scope: ProjectScope,
+    sitePageId: string,
+    dataSnapshotId: string,
+  ): Promise<PageSnapshotRow[]> {
+    return (await this.exec
+      .select()
+      .from(pageSnapshots)
+      .where(
+        and(
+          projectPredicate(pageSnapshots, scope),
+          eq(pageSnapshots.site_page_id, sitePageId),
+          eq(pageSnapshots.data_snapshot_id, dataSnapshotId),
+          isNull(pageSnapshots.canonical_extract),
+        ),
+      )
+      .orderBy(asc(pageSnapshots.id))) as PageSnapshotRow[];
   }
 
   async findById(

@@ -38,13 +38,17 @@ function link(targetSubjectUrl: string): CrawlLinkProjection {
 }
 
 function pageObs(subjectUrl: string, page: CrawlPageProjection): ObservationView {
+  const pageWithSubjectFetch =
+    page.fetchUrl === "https://x.com/" && subjectUrl !== "https://x.com/"
+      ? { ...page, fetchUrl: subjectUrl }
+      : page;
   return {
     metricKey: METRIC_CRAWL_PAGE,
     subjectType: "url",
     subjectRef: subjectUrl,
     provider: "crawl",
     availability: "available",
-    valueJson: page,
+    valueJson: pageWithSubjectFetch,
     observedAt: OBSERVED_AT,
   };
 }
@@ -68,6 +72,136 @@ function buildCtx(
 }
 
 describe("TECH-LINKGRAPH-005 tech-linkgraph", () => {
+  it("uses links unique to exact source variants and remains observation-order invariant", () => {
+    const sourceA = "https://x.com/source-a";
+    const sourceB = "https://x.com/source-b";
+    const target = "https://x.com/pricing";
+    const observations = [
+      pageObs(sourceA, makePage({ fetchUrl: sourceA, internalOutlinks: [] })),
+      pageObs(
+        sourceA,
+        makePage({
+          fetchUrl: `${sourceA}/`,
+          internalOutlinks: [link(target)],
+        }),
+      ),
+      pageObs(
+        sourceB,
+        makePage({ fetchUrl: sourceB, internalOutlinks: [link(target)] }),
+      ),
+      pageObs(target, makePage({ fetchUrl: target })),
+    ];
+
+    const forwardCtx = buildCtx(observations);
+    const reversedCtx = buildCtx([...observations].reverse());
+
+    expect(forwardCtx.internalInlinks.get(target)).toBe(2);
+    expect(reversedCtx.internalInlinks.get(target)).toBe(2);
+    expect(techLinkgraphRule.evaluate(forwardCtx)).toEqual({
+      status: "pass",
+      metrics: { affectedCount: 0 },
+    });
+    expect(techLinkgraphRule.evaluate(reversedCtx)).toEqual(
+      techLinkgraphRule.evaluate(forwardCtx),
+    );
+  });
+
+  it("counts slash variants of one source subject only once for the same target", () => {
+    const source = "https://x.com/source";
+    const target = "https://x.com/pricing";
+    const ctx = buildCtx([
+      pageObs(
+        source,
+        makePage({ fetchUrl: source, internalOutlinks: [link(target)] }),
+      ),
+      pageObs(
+        source,
+        makePage({
+          fetchUrl: `${source}/`,
+          internalOutlinks: [link(target)],
+        }),
+      ),
+      pageObs(target, makePage({ fetchUrl: target })),
+    ]);
+
+    expect(ctx.internalInlinks.get(target)).toBe(1);
+    const result = techLinkgraphRule.evaluate(ctx);
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.evidence[0]?.subjectRefs).toEqual([target]);
+  });
+
+  it("cites every exact indexable target variant without duplicating the finding subject", () => {
+    const target = "https://x.com/pricing";
+    const observations = [
+      pageObs(
+        target,
+        makePage({
+          fetchUrl: target,
+          status: 200,
+          finalStatus: 200,
+          robotsIndexable: true,
+        }),
+      ),
+      pageObs(
+        target,
+        makePage({
+          fetchUrl: `${target}/`,
+          status: 204,
+          finalStatus: 204,
+          robotsIndexable: true,
+        }),
+      ),
+    ];
+
+    const forward = techLinkgraphRule.evaluate(buildCtx(observations));
+    const reversed = techLinkgraphRule.evaluate(
+      buildCtx([...observations].reverse()),
+    );
+
+    expect(forward).toEqual(reversed);
+    if (forward.status !== "candidate") throw new Error("expected candidate");
+    expect(forward.candidates[0]?.metrics).toEqual({ affectedCount: 1 });
+    expect(forward.candidates[0]?.evidence[0]?.subjectRefs).toEqual([
+      target,
+      `${target}/`,
+    ]);
+  });
+
+  it("evaluates a commercial subject when only its slash variant is indexable 2xx", () => {
+    const target = "https://x.com/pricing";
+    const observations = [
+      pageObs(
+        target,
+        makePage({
+          fetchUrl: target,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+      pageObs(
+        target,
+        makePage({
+          fetchUrl: `${target}/`,
+          status: 200,
+          finalStatus: 200,
+          robotsIndexable: true,
+        }),
+      ),
+    ];
+
+    const forward = techLinkgraphRule.evaluate(buildCtx(observations));
+    const reversed = techLinkgraphRule.evaluate(
+      buildCtx([...observations].reverse()),
+    );
+
+    expect(forward).toEqual(reversed);
+    if (forward.status !== "candidate") throw new Error("expected candidate");
+    expect(forward.candidates[0]?.evidence[0]?.subjectRefs).toEqual([
+      `${target}/`,
+    ]);
+  });
+
   it("flags commercial pages with fewer than 2 internal inlinks (priority -> high)", () => {
     const ctx = buildCtx(
       [

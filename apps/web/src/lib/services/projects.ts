@@ -172,7 +172,26 @@ export async function createProject(
         },
       );
     }
-    const secureVerdict = await guard(secureOrigin.origin);
+    if (submittedProductUrl) submittedProductUrl.protocol = "https:";
+    const secureProductPage = submittedProductUrl
+      ? canonicalizeUrl(submittedProductUrl.toString())
+      : null;
+    if (productProfileMode && !secureProductPage) {
+      throw new ProblemError(
+        "VALIDATION_ERROR",
+        "productUrl could not be canonicalized.",
+        {
+          errors: [{
+            pointer: "/productUrl",
+            code: "invalid_url",
+            message: "The product page URL is invalid.",
+          }],
+        },
+      );
+    }
+    const secureVerdict = await guard(
+      secureProductPage?.fetchUrl ?? secureOrigin.origin,
+    );
     verdict = secureVerdict;
     const probe = runtime.siteOriginProbe ?? probeSiteOrigin;
     const reachable =
@@ -196,22 +215,6 @@ export async function createProject(
       );
     }
     normalized = secureOrigin;
-    if (submittedProductUrl) submittedProductUrl.protocol = "https:";
-  }
-
-  // 3. SSRF guard: reject localhost, private, link-local, metadata. The HTTPS
-  // upgrade branch already guarded this exact normalized origin before probing.
-  verdict ??= await guard(normalized.origin);
-  if (!verdict.safe) {
-    throw new ProblemError("VALIDATION_ERROR", "The submitted URL is not an allowed public address.", {
-      errors: [
-        {
-          pointer: productProfileMode ? "/productUrl" : "/siteUrl",
-          code: "blocked_url",
-          message: verdict.reason ?? "URL resolves to a blocked address.",
-        },
-      ],
-    });
   }
 
   const canonicalProductPage = submittedProductUrl
@@ -229,6 +232,21 @@ export async function createProject(
         }],
       },
     );
+  }
+
+  // 3. SSRF guard: reject localhost, private, link-local, metadata. The HTTPS
+  // upgrade branch already guarded the exact page/origin before probing.
+  verdict ??= await guard(canonicalProductPage?.fetchUrl ?? normalized.origin);
+  if (!verdict.safe) {
+    throw new ProblemError("VALIDATION_ERROR", "The submitted URL is not an allowed public address.", {
+      errors: [
+        {
+          pointer: productProfileMode ? "/productUrl" : "/siteUrl",
+          code: "blocked_url",
+          message: "Use a public URL on a standard HTTP(S) port.",
+        },
+      ],
+    });
   }
 
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
@@ -299,17 +317,19 @@ export async function createProject(
 
     let initialProfile: IcpProfileRow | null = null;
     if (productProfileMode && canonicalProductPage) {
+      // Product-page identity is a fetch identity, not an aggregation key.
+      // Preserve path slash semantics and hash the exact value we persist.
+      const productPageUrl = canonicalProductPage.fetchUrl;
       await sitePages.upsertNormalizedUrl({
         workspaceId: scope.workspaceId,
         projectId: project.id,
         siteId: site.id,
-        normalizedUrl: canonicalProductPage.subjectUrl,
-        normalizedUrlHash: contentHash(canonicalProductPage.subjectUrl),
+        normalizedUrl: productPageUrl,
         templateKey: null,
       });
       const profile = createInitialProductProfileDraft({
         sourceSiteId: site.id,
-        sourcePageUrl: canonicalProductPage.subjectUrl,
+        sourcePageUrl: productPageUrl,
         ...(body.businessHint === undefined
           ? {}
           : { businessHint: body.businessHint }),

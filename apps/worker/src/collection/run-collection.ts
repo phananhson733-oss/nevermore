@@ -37,6 +37,7 @@ import {
   SourceError,
   SupabaseStorageError,
   CRAWL_DATASET_KEY,
+  CRAWL_METHOD_VERSION,
   DEFAULT_CRAWL_USER_AGENT,
   type CollectionContext,
   type CollectionResult,
@@ -634,6 +635,12 @@ async function collectByProvider(
 
   switch (run.provider) {
     case "crawl": {
+      if (run.method_version !== CRAWL_METHOD_VERSION) {
+        throw new SourceError(
+          "INVALID_CONFIGURATION",
+          "The crawl run method version is not supported by this worker.",
+        );
+      }
       const fetcher = providerMetrics.wrapCrawlFetcher(
         ctx.crawl?.fetcher ??
           createDefaultCrawlFetcher(DEFAULT_CRAWL_USER_AGENT),

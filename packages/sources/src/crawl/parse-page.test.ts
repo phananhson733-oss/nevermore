@@ -52,6 +52,136 @@ describe("parsePage", () => {
     expect(about?.anchorText).toBe("About");
   });
 
+  it("keeps exact fetch targets privately while persisted links remain aggregation identities", () => {
+    const page = parsePage(
+      `<body>
+        <a href="/pricing/">Pricing slash</a>
+        <a href="/pricing">Pricing no slash</a>
+      </body>`,
+      BASE,
+    );
+
+    expect(page.internalOutlinks).toEqual([
+      {
+        targetSubjectUrl: "https://example.com/pricing",
+        rel: null,
+        anchorText: "Pricing slash",
+      },
+    ]);
+    expect(page.internalFetchTargets).toEqual([
+      {
+        fetchUrl: "https://example.com/pricing",
+        subjectUrl: "https://example.com/pricing",
+      },
+      {
+        fetchUrl: "https://example.com/pricing/",
+        subjectUrl: "https://example.com/pricing",
+      },
+    ]);
+  });
+
+  it("persists the exact canonical href instead of its slash-folded subject", () => {
+    const slashCanonical = parsePage(
+      `<html><head><link rel="canonical" href="/docs/"></head></html>`,
+      "https://example.com/docs",
+    );
+    const noSlashCanonical = parsePage(
+      `<html><head><link rel="canonical" href="/docs"></head></html>`,
+      "https://example.com/docs/",
+    );
+
+    expect(slashCanonical.canonicalTarget).toBe("https://example.com/docs/");
+    expect(slashCanonical.canonicalFetchTarget).toEqual({
+      fetchUrl: "https://example.com/docs/",
+      subjectUrl: "https://example.com/docs",
+    });
+    expect(noSlashCanonical.canonicalTarget).toBe(
+      "https://example.com/docs",
+    );
+    expect(noSlashCanonical.canonicalFetchTarget).toEqual({
+      fetchUrl: "https://example.com/docs",
+      subjectUrl: "https://example.com/docs",
+    });
+  });
+
+  it("does not let slash variants starve admitted link subjects from the exact crawl frontier", () => {
+    const duplicateSubjects = Math.floor(
+      CRAWL_PROJECTION_LIMITS.maxInternalOutlinks / 2,
+    );
+    const duplicateLinks = Array.from(
+      { length: duplicateSubjects },
+      (_unused, index) =>
+        `<a href="/duplicate-${index}">No slash</a><a href="/duplicate-${index}/">Slash</a>`,
+    ).join("");
+    const remainingLinks = Array.from(
+      {
+        length:
+          CRAWL_PROJECTION_LIMITS.maxInternalOutlinks - duplicateSubjects,
+      },
+      (_unused, index) =>
+        `<a href="/later-${index}">Later subject</a>`,
+    ).join("");
+
+    const page = parsePage(
+      `<body>${duplicateLinks}${remainingLinks}</body>`,
+      BASE,
+    );
+    const frontierSubjects = new Set(
+      page.internalFetchTargets.map((target) => target.subjectUrl),
+    );
+
+    expect(page.internalOutlinks).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxInternalOutlinks,
+    );
+    expect(frontierSubjects).toEqual(
+      new Set(page.internalOutlinks.map((link) => link.targetSubjectUrl)),
+    );
+    expect(page.internalFetchTargets).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxInternalOutlinks + duplicateSubjects,
+    );
+  });
+
+  it("keeps both exact variants of the final admitted subject at the projection boundary", () => {
+    const earlierSubjects = Array.from(
+      { length: CRAWL_PROJECTION_LIMITS.maxInternalOutlinks - 1 },
+      (_unused, index) => `<a href="/page-${index}">Page ${index}</a>`,
+    ).join("");
+    const page = parsePage(
+      `<body>${earlierSubjects}
+        <a href="/last">Last without slash</a>
+        <a href="/last/">Last with slash</a>
+        <a href="/overflow">Must not enter bounded subjects</a>
+      </body>`,
+      BASE,
+    );
+
+    expect(page.internalOutlinks).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxInternalOutlinks,
+    );
+    expect(
+      page.internalOutlinks.some(
+        (link) => link.targetSubjectUrl === "https://example.com/overflow",
+      ),
+    ).toBe(false);
+    expect(
+      page.internalFetchTargets.filter(
+        (target) => target.subjectUrl === "https://example.com/last",
+      ),
+    ).toEqual([
+      {
+        fetchUrl: "https://example.com/last",
+        subjectUrl: "https://example.com/last",
+      },
+      {
+        fetchUrl: "https://example.com/last/",
+        subjectUrl: "https://example.com/last",
+      },
+    ]);
+    expect(page.internalFetchTargets).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxInternalOutlinks + 1,
+    );
+  });
+
   it("marks a noindex page as not indexable", () => {
     const html = `<html><head><meta name="robots" content="noindex, nofollow"></head><body><p>x</p></body></html>`;
     const page = parsePage(html, BASE);

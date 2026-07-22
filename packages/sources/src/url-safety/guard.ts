@@ -49,6 +49,12 @@ export function createCanonicalUrlGuard(dependencies: UrlGuardDependencies = {})
   return async (rawUrl: string): Promise<UrlGuardResult> => {
     const parsed = normalizeUrl(rawUrl);
     if (!parsed) return rejected("URL must be an unambiguous http(s) URL without userinfo");
+    // WHATWG drops explicit default ports (HTTP 80 / HTTPS 443). Any remaining
+    // port is non-standard and is rejected before DNS or transport so crawls
+    // cannot be redirected toward alternate service surfaces.
+    if (parsed.url.port !== "") {
+      return rejected("Only standard HTTP(S) ports are allowed");
+    }
     if (isBlockedHost(parsed.hostname)) return rejected("Cloud metadata hostname is blocked");
     const literal = normaliseIpv4(parsed.hostname) ?? (isIP(parsed.hostname) ? parsed.hostname : null);
     let addresses: readonly string[];

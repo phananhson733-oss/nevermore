@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { dataSnapshots } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
@@ -131,7 +131,11 @@ export class DataSnapshotsRepository extends Repository {
       )) as DataSnapshotRow[];
   }
 
-  /** The most recent snapshot for a source connection (drives source availability/freshness). */
+  /**
+   * The most recent snapshot for a source connection (drives availability/freshness).
+   * Equal capture times use the lowest canonical UUID/ASCII id, matching in-memory
+   * latest-snapshot selection and keeping repeated reads deterministic.
+   */
   async findLatestByConnection(
     scope: ProjectScope,
     sourceConnectionId: string,
@@ -145,12 +149,15 @@ export class DataSnapshotsRepository extends Repository {
           eq(dataSnapshots.source_connection_id, sourceConnectionId),
         ),
       )
-      .orderBy(desc(dataSnapshots.captured_at))
+      .orderBy(desc(dataSnapshots.captured_at), asc(dataSnapshots.id))
       .limit(1);
     return (rows[0] as DataSnapshotRow | undefined) ?? null;
   }
 
-  /** The most recent snapshot for a provider (crawl has a null connection at times). */
+  /**
+   * The most recent snapshot for a provider (crawl has a null connection at times).
+   * Keep the same lowest-id tie-break as connection and in-memory selection.
+   */
   async findLatestByProvider(
     scope: ProjectScope,
     provider: string,
@@ -164,7 +171,7 @@ export class DataSnapshotsRepository extends Repository {
           eq(dataSnapshots.provider, provider),
         ),
       )
-      .orderBy(desc(dataSnapshots.captured_at))
+      .orderBy(desc(dataSnapshots.captured_at), asc(dataSnapshots.id))
       .limit(1);
     return (rows[0] as DataSnapshotRow | undefined) ?? null;
   }

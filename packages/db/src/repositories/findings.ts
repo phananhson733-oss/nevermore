@@ -150,6 +150,7 @@ export class FindingsRepository extends Repository {
   async touchSeen(
     id: string,
     values: {
+      ruleVersion: number;
       severity: string;
       confidence: string;
       titleArgs: Record<string, unknown>;
@@ -165,6 +166,7 @@ export class FindingsRepository extends Repository {
     await this.exec
       .update(findings)
       .set({
+        rule_version: values.ruleVersion,
         severity: values.severity,
         confidence: values.confidence,
         title_args: values.titleArgs,

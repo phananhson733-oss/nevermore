@@ -7,23 +7,38 @@ const EVIDENCE_QUERY_CHUNK_SIZE = 500;
 /**
  * `evidence` and `finding_observations` are append-only (spec §7.7, §12.3).
  * Evidence records the five axes (origin/method/grade/availability/support) and
- * links to its snapshot / collection run / analysis invocation. `generated`
- * evidence MUST have an `analysis_invocation_id` — a DB check enforces this, so a
- * model output can never masquerade as observed (AC-024).
+ * links to its snapshot / collection run / analysis invocation. Source-backed
+ * evidence carries both snapshot and collection lineage; generated evidence
+ * carries only an analysis invocation. Database checks enforce the valid axis
+ * combinations, so callers cannot relabel generated or derived claims as
+ * observations (AC-024, spec §7.7).
  */
+
+export type EvidenceOrigin =
+  | "first_party"
+  | "direct_public"
+  | "vendor_observation"
+  | "user_provided"
+  | "derived"
+  | "generated";
+export type EvidenceMethod = "observed" | "computed" | "inferred" | "generated";
+export type EvidenceGrade = "A" | "B" | "C";
+export type EvidenceAvailability = "available" | "partial" | "unavailable";
+export type EvidenceSupport = "supports" | "contradicts" | "context";
 
 export interface EvidenceInsert {
   readonly sourceProvider: string;
-  readonly origin: string;
-  readonly method: string;
-  readonly grade: string;
-  readonly availability: string;
-  readonly support: string;
+  readonly origin: EvidenceOrigin;
+  readonly method: EvidenceMethod;
+  readonly grade: EvidenceGrade;
+  readonly availability: EvidenceAvailability;
+  readonly support: EvidenceSupport;
   readonly subjectRefs: unknown[];
   readonly claim: string;
   readonly observedAt: string;
   readonly limitation: string;
   readonly snapshotId?: string | null;
+  readonly collectionRunId?: string | null;
   readonly analysisInvocationId?: string | null;
 }
 
@@ -87,6 +102,8 @@ export interface EvidenceRow {
   readonly observed_at: string;
   readonly limitation: string;
   readonly snapshot_id: string | null;
+  /** Present on repository reads; optional keeps historical typed fixtures source-compatible. */
+  readonly collection_run_id?: string | null;
   readonly analysis_invocation_id: string | null;
 }
 
@@ -115,6 +132,7 @@ export class EvidenceRepository extends Repository {
           project_id: values.projectId,
           diagnostic_run_id: values.diagnosticRunId,
           snapshot_id: e.snapshotId ?? null,
+          collection_run_id: e.collectionRunId ?? null,
           analysis_invocation_id: e.analysisInvocationId ?? null,
           source_provider: e.sourceProvider,
           origin: e.origin,

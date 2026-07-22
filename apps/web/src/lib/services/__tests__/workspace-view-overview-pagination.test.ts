@@ -107,6 +107,7 @@ function finding(
             observedAt: TIME,
             limitation: "One captured response.",
             snapshotId: "snapshot-target",
+            collectionRunId: "collection-run-target",
             analysisInvocationId: null,
           },
         ]
@@ -137,6 +138,7 @@ function artifact(id: string, actionId: string): ArtifactDto {
 function snapshot(id: string, capturedAt: string): DataSnapshotDto {
   return {
     id,
+    siteId: "site-1",
     provider: "crawl",
     datasetKey: "crawl_pages",
     schemaVersion: "1.0.0",

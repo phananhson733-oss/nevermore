@@ -30,7 +30,10 @@ test("freezes the activated v0.3 machine versions without bumping rules or promp
     verifier,
     /const BUNDLE_SCHEMA_VERSION = "signalframe\.service-bundle\.0\.3\.0";/,
   );
-  assert.match(verifier, /const RULE_SET_VERSION = "mvp\.rules\.0\.2\.0";/);
+  assert.match(verifier, /const RULE_SET_VERSION = "mvp\.rules\.0\.2\.1";/);
+  assert.match(verifier, /\["TECH-HTTP-001", 2\]/);
+  assert.match(verifier, /\["TECH-CANONICAL-002", 2\]/);
+  assert.match(verifier, /\["TECH-LINKGRAPH-005", 2\]/);
   assert.match(verifier, /const PROMPT_SET_VERSION = "mvp\.prompts\.0\.2\.0";/);
 });
 
@@ -66,4 +69,31 @@ test("gates Slice 1 persistence on canonical provenance and immutability", () =>
   ]) {
     assert.match(verifier, new RegExp(`"${guard}"`));
   }
+  for (const invariant of [
+    "page_snapshots_verified_source_identity_idx",
+    "canonical_extract_json",
+    "source_captured_at",
+    "retained application bytes",
+  ]) {
+    assert.match(verifier, new RegExp(invariant));
+  }
+});
+
+test("gates every integration file on a safe latest-schema database bootstrap", () => {
+  assert.match(
+    verifier,
+    /must import runMigrations from migrate\.ts/,
+  );
+  assert.match(
+    verifier,
+    /must bind requireSafeTestDatabaseUrl\(process\.env\["DATABASE_URL"\]\) before schema bootstrap/,
+  );
+  assert.match(
+    verifier,
+    /must migrate only the URL returned by requireSafeTestDatabaseUrl/,
+  );
+  assert.match(
+    verifier,
+    /validates DATABASE_URL and migrates the disposable database/,
+  );
 });

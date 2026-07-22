@@ -12,6 +12,7 @@ import {
   exportBundles,
   importPreviews,
   sites,
+  sourceConnections,
   workspaces,
 } from "../schema.ts";
 
@@ -48,6 +49,7 @@ describeDb("canonical storage object references", () => {
     const workspaceId = randomUUID();
     const projectId = randomUUID();
     const siteId = randomUUID();
+    const sourceConnectionId = randomUUID();
     const actorId = randomUUID();
     const importPreviewId = randomUUID();
     const collectionRunId = randomUUID();
@@ -84,6 +86,18 @@ describeDb("canonical storage object references", () => {
           host: `${projectId}.example.test`,
           market_codes: ["US"],
           language_codes: ["en"],
+        });
+        await tx.insert(sourceConnections).values({
+          id: sourceConnectionId,
+          workspace_id: workspaceId,
+          project_id: projectId,
+          site_id: siteId,
+          provider: "crawl",
+          connection_type: "public",
+          state: "connected",
+          limitation: "Disposable storage reference crawl source.",
+          connected_at: new Date().toISOString(),
+          created_by: actorId,
         });
         await tx.insert(importPreviews).values({
           id: importPreviewId,
@@ -122,9 +136,10 @@ describeDb("canonical storage object references", () => {
           workspace_id: workspaceId,
           project_id: projectId,
           site_id: siteId,
+          source_connection_id: sourceConnectionId,
           provider: "crawl",
           operation: "site_graph",
-          method_version: "integration.fixture.v1",
+          method_version: "crawl.site_graph.v2",
           parameters_hash: HASH,
         });
         await tx.insert(dataSnapshots).values({
@@ -133,10 +148,11 @@ describeDb("canonical storage object references", () => {
           project_id: projectId,
           site_id: siteId,
           collection_run_id: collectionRunId,
+          source_connection_id: sourceConnectionId,
           provider: "crawl",
           dataset_key: "crawl.site_graph.v1",
-          schema_version: "integration.fixture.v1",
-          method_version: "integration.fixture.v1",
+          schema_version: "0.2.0",
+          method_version: "crawl.site_graph.v2",
           captured_at: new Date().toISOString(),
           source_window: { start: null, end: null },
           availability: "available",

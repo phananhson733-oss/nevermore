@@ -12,6 +12,7 @@ import {
 } from "@sf/db";
 import { CONTRACT_VERSION, type CreateCollectionRunRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
+import { CRAWL_METHOD_VERSION } from "@sf/sources";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
 import { getEnv } from "@/env";
@@ -23,7 +24,11 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Fixed provider → operation/queue/method wiring (spec §7.5). */
 const PROVIDER_CONFIG = {
-  crawl: { operation: "site_graph", queue: "collect.crawl", methodVersion: "crawl.site_graph.v1" },
+  crawl: {
+    operation: "site_graph",
+    queue: "collect.crawl",
+    methodVersion: CRAWL_METHOD_VERSION,
+  },
   gsc: {
     operation: "search_analytics",
     queue: "collect.gsc",

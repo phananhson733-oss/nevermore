@@ -1,7 +1,11 @@
 import { expect, test, type Route } from "@playwright/test";
 import {
   E2E_PROJECT_ID,
+  E2E_SECONDARY_SITE_ID,
+  E2E_SITE_ID,
+  E2E_SNAPSHOT_PROVENANCE,
   installCriticalFlowApi,
+  type MockDataSnapshot,
   type CriticalFlowApiState,
 } from "./mock-api.ts";
 
@@ -10,24 +14,28 @@ const SNAPSHOTS_ROUTE =
 
 const crawlSnapshot = {
   id: "00000000-0000-4000-8000-000000000101",
+  siteId: E2E_SITE_ID,
   provider: "crawl",
-  datasetKey: "crawl_pages",
-  schemaVersion: "1.0.0",
-  methodVersion: "crawl-v1",
+  datasetKey: E2E_SNAPSHOT_PROVENANCE.crawl.datasetKey,
+  schemaVersion: "0.2.0",
+  methodVersion: E2E_SNAPSHOT_PROVENANCE.crawl.methodVersion,
   capturedAt: "2026-07-18T12:00:00.000Z",
   sourceWindow: { start: null, end: null },
   availability: "available",
   limitation: "Static HTML only.",
   rowCount: 12,
-  checksum: "sha256:e2e-crawl",
-};
+  checksum: "c".repeat(64),
+} satisfies MockDataSnapshot;
 
-async function serveSnapshots(route: Route): Promise<void> {
+async function serveSnapshots(
+  route: Route,
+  snapshots: readonly MockDataSnapshot[] = [crawlSnapshot],
+): Promise<void> {
   await route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({
-      data: [crawlSnapshot],
+      data: snapshots,
       meta: { nextCursor: null, hasNext: false, limit: 100 },
     }),
   });
@@ -123,4 +131,38 @@ test("a snapshot-chain error leaves findings visible and keeps diagnosis fenced 
   ).toBeEnabled();
   await expect(page.getByText("Something went wrong", { exact: true })).toHaveCount(0);
   expect(attempts).toBeGreaterThanOrEqual(2);
+});
+
+test("legacy crawl and a wrong-site optional snapshot never enable diagnosis", async ({
+  page,
+}) => {
+  const legacyCrawl = {
+    ...crawlSnapshot,
+    id: "00000000-0000-4000-8000-000000000102",
+    methodVersion: "crawl.site_graph.v1",
+  } satisfies MockDataSnapshot;
+  const wrongSiteGa4 = {
+    ...crawlSnapshot,
+    id: "00000000-0000-4000-8000-000000000103",
+    siteId: E2E_SECONDARY_SITE_ID,
+    provider: "ga4",
+    datasetKey: E2E_SNAPSHOT_PROVENANCE.ga4.datasetKey,
+    methodVersion: E2E_SNAPSHOT_PROVENANCE.ga4.methodVersion,
+    limitation: "GA4 snapshot belongs to another Site.",
+    checksum: "a".repeat(64),
+  } satisfies MockDataSnapshot;
+
+  await page.route(SNAPSHOTS_ROUTE, (route) =>
+    serveSnapshots(route, [legacyCrawl, wrongSiteGa4]),
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/diagnosis`);
+
+  await expect(
+    page.getByRole("button", { name: "Re-run diagnosis" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText(/A completed site crawl is required before diagnosis/),
+  ).toBeVisible();
+  expect(api.diagnosticRequests).toHaveLength(0);
 });

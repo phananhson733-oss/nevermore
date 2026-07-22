@@ -530,6 +530,9 @@
   background: rgba(8, 14, 22, 0.47);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
+  /* Animate only the scrim paint. Fading this parent with `opacity` also fades
+   * every drawer control and temporarily destroys otherwise valid text/button
+   * contrast while the panel opens. */
   animation: backdropIn 170ms ease-out both;
 }
 .drawer {
@@ -1076,7 +1079,10 @@
 
 @keyframes backdropIn {
   from {
-    opacity: 0;
+    background-color: rgba(8, 14, 22, 0);
+  }
+  to {
+    background-color: rgba(8, 14, 22, 0.47);
   }
 }
 @keyframes drawerIn {

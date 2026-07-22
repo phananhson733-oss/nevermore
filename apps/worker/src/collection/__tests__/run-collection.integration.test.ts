@@ -21,25 +21,37 @@ process.env["LOG_LEVEL"] ??= "error";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CONTRACT_VERSION } from "@sf/contracts";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
-import { asyncRuns, collectionRuns, workspaces } from "@sf/db/schema";
+import {
+  asyncRuns,
+  collectionRuns,
+  normalizedObservations,
+  pageSnapshots,
+  workspaces,
+} from "@sf/db/schema";
 import {
   AsyncRunsRepository,
   CollectionRunsRepository,
   DataSnapshotsRepository,
   ImportPreviewsRepository,
   ObservationsRepository,
+  PageSnapshotsRepository,
   ProjectsRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   SourceCredentialsRepository,
   contentHash,
+  normalizedUrlHash,
   toRunAttempt,
+  type CanonicalValue,
+  type ObservationInsert,
   type PgBoss,
   type ProjectScope,
 } from "@sf/db";
 import {
   BlobObjectAlreadyExistsError,
   CRAWL_BUDGET,
+  CRAWL_METHOD_VERSION,
   DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
   InvalidBlobObjectKeyError,
   LocalFsBlobStore,
@@ -56,6 +68,10 @@ import {
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../../context.ts";
 import { registerCollectHandlers } from "../../handlers/collect.ts";
+import {
+  persistCollectionResult,
+  type CollectionOutcome,
+} from "../persist.ts";
 import { runCollection } from "../run-collection.ts";
 
 /**
@@ -222,6 +238,64 @@ describeDb("collection runner (spec §13)", () => {
   });
   afterAll(async () => {
     await handle?.end();
+  });
+
+  it("fails closed before transport when a queued crawl run names an unsupported method version", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    const crawlConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      createdBy: seed.actor,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: "crawl.site_graph.v1",
+      sourceConnectionId: crawlConnection.id,
+      importPreviewId: null,
+      requestPayload: {},
+    });
+    const fetch = vi.fn(async () =>
+      new Response("legacy method must not reach transport", { status: 404 }),
+    );
+
+    await runCollection(
+      {
+        ...ctx,
+        crawl: {
+          fetcher: { fetch },
+          engineOptions: {
+            guard: async (url: string) => ({
+              safe: true as const,
+              normalizedUrl: new URL(url).href,
+              pinnedIp: "93.184.216.34",
+              reason: null,
+            }),
+          },
+        },
+      },
+      {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+      },
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await snapshotCount(handle, seed.scope)).toBe(0);
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(seed.scope, runId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      last_error_code: "INVALID_CONFIGURATION",
+    });
+    await expect(
+      new CollectionRunsRepository(handle.db).findById(runId),
+    ).resolves.toMatchObject({ row_count: null });
   });
 
   it("AC-041: a successful CSV collection writes exactly one snapshot; a redelivered (already-claimed) job does not double-write", async () => {
@@ -569,7 +643,7 @@ describeDb("collection runner (spec §13)", () => {
     await seedCollectionRun(handle, seed, runId, {
       provider: "crawl",
       operation: "site_graph",
-      methodVersion: "crawl.site_graph.v1",
+      methodVersion: CRAWL_METHOD_VERSION,
       sourceConnectionId: crawlConnection.id,
       importPreviewId: null,
       requestPayload: {},
@@ -708,6 +782,7 @@ describeDb("collection runner (spec §13)", () => {
       pages: Array<{
         subjectUrl: string;
         projection: {
+          fetchUrl: string;
           internalOutlinks: Array<{ targetSubjectUrl: string }>;
         };
       }>;
@@ -736,6 +811,42 @@ describeDb("collection runner (spec §13)", () => {
       subjectUrls: [`${seed.siteOrigin}/`, `${seed.siteOrigin}/about`],
     });
 
+    // The provider-level raw object is not enough for URL-first review. Every
+    // collected page must also have a durable project URL identity and an
+    // immutable page extract tied to this exact DataSnapshot, even when the
+    // crawl is partial. These rows are what Product Profile synthesis and the
+    // Growth Map URL detail may consume without re-reading "latest" data.
+    const sitePages = await new SitePagesRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(sitePages.rows).toHaveLength(1);
+    const sitePage = sitePages.rows[0]!;
+    expect(sitePage).toMatchObject({
+      site_id: seed.siteId,
+      normalized_url: raw.pages[0]!.projection.fetchUrl,
+      normalized_url_hash: normalizedUrlHash(
+        raw.pages[0]!.projection.fetchUrl,
+      ),
+    });
+
+    const pageSnapshot = await new PageSnapshotsRepository(
+      handle.db,
+    ).findLatestByPage(seed.scope, sitePage.id);
+    expect(pageSnapshot).not.toBeNull();
+    expect(pageSnapshot).toMatchObject({
+      data_snapshot_id: snapshot.id,
+      captured_at: snapshot.captured_at,
+      extract: {
+        subjectUrl: raw.pages[0]!.subjectUrl,
+        depth: 0,
+        projection: raw.pages[0]!.projection,
+      },
+    });
+    expect(pageSnapshot!.content_hash).toBe(
+      contentHash(pageSnapshot!.extract as CanonicalValue),
+    );
+
     const observations = await new ObservationsRepository(
       handle.db,
     ).listBySnapshotIds(seed.scope, [snapshot.id]);
@@ -756,6 +867,349 @@ describeDb("collection runner (spec §13)", () => {
         { targetSubjectUrl: `${seed.siteOrigin}/pricing` },
       ],
     });
+  });
+
+  it("persists every exact slash variant and retains a cross-origin canonical as evidence without fetching it", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    const crawlConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      createdBy: seed.actor,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      sourceConnectionId: crawlConnection.id,
+      importPreviewId: null,
+      requestPayload: {},
+    });
+
+    const landing = `${seed.siteOrigin}/landing`;
+    const landingSlash = `${landing}/`;
+    const externalCanonical = "https://publisher.example/original-landing";
+    const routes = new Map<string, () => Response>([
+      [
+        `${seed.siteOrigin}/robots.txt`,
+        () =>
+          new Response(`Sitemap: ${seed.siteOrigin}/sitemap.xml`, {
+            headers: { "content-type": "text/plain" },
+          }),
+      ],
+      [
+        `${seed.siteOrigin}/sitemap.xml`,
+        () =>
+          new Response(
+            `<urlset><url><loc>${seed.siteOrigin}/</loc></url><url><loc>${landing}</loc></url><url><loc>${landingSlash}</loc></url></urlset>`,
+            { headers: { "content-type": "application/xml" } },
+          ),
+      ],
+      [
+        `${seed.siteOrigin}/`,
+        () =>
+          new Response("<html><head><title>Home</title></head></html>", {
+            headers: { "content-type": "text/html" },
+          }),
+      ],
+      [
+        landing,
+        () =>
+          new Response(
+            `<html><head><title>No slash</title><link rel="canonical" href="${externalCanonical}"></head></html>`,
+            { headers: { "content-type": "text/html" } },
+          ),
+      ],
+      [
+        landingSlash,
+        () =>
+          new Response(
+            '<html><head><title>Slash</title><link rel="canonical" href="/landing"></head></html>',
+            { headers: { "content-type": "text/html" } },
+          ),
+      ],
+    ]);
+    const calls: string[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        calls.push(url);
+        const route = routes.get(url);
+        return route
+          ? route()
+          : new Response("fixture route missing", { status: 404 });
+      },
+    };
+    const offlineCtx = {
+      ...ctx,
+      crawl: {
+        fetcher,
+        engineOptions: {
+          guard: async (url: string) => ({
+            safe: true as const,
+            normalizedUrl: new URL(url).href,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+          budget: {
+            ...CRAWL_BUDGET,
+            maxUrls: 3,
+            perHostConcurrency: 1,
+            minHostDelayMs: 0,
+          },
+        },
+      },
+    };
+
+    await runCollection(offlineCtx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    expect(calls).toEqual([
+      `${seed.siteOrigin}/robots.txt`,
+      `${seed.siteOrigin}/sitemap.xml`,
+      `${seed.siteOrigin}/`,
+      landing,
+      landingSlash,
+    ]);
+    expect(calls).not.toContain(externalCanonical);
+
+    const snapshots = await new DataSnapshotsRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(snapshots.rows).toHaveLength(1);
+    const snapshot = snapshots.rows[0]!;
+    expect(snapshot).toMatchObject({
+      collection_run_id: runId,
+      provider: "crawl",
+      availability: "available",
+      row_count: 3,
+    });
+
+    const rawBytes = await ctx.blobStore.get(snapshot.raw_object_key!);
+    expect(rawBytes).not.toBeNull();
+    const raw = JSON.parse(rawBytes!.toString("utf8")) as {
+      pages: Array<{
+        subjectUrl: string;
+        projection: { fetchUrl: string; canonicalTarget: string | null };
+      }>;
+    };
+    expect(raw.pages.map((page) => page.projection.fetchUrl)).toEqual([
+      `${seed.siteOrigin}/`,
+      landing,
+      landingSlash,
+    ]);
+    expect(
+      raw.pages.filter((page) => page.subjectUrl === landing),
+    ).toHaveLength(2);
+    expect(
+      raw.pages.find((page) => page.projection.fetchUrl === landing)?.projection
+        .canonicalTarget,
+    ).toBe(externalCanonical);
+
+    const sitePages = await new SitePagesRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(
+      sitePages.rows.map((page) => page.normalized_url).sort(),
+    ).toEqual([`${seed.siteOrigin}/`, landing, landingSlash].sort());
+    for (const sitePage of sitePages.rows) {
+      const pageSnapshot = await new PageSnapshotsRepository(
+        handle.db,
+      ).findLatestByPage(seed.scope, sitePage.id);
+      expect(pageSnapshot).toMatchObject({
+        data_snapshot_id: snapshot.id,
+        captured_at: snapshot.captured_at,
+      });
+      expect(pageSnapshot?.canonical_extract).not.toBeNull();
+      expect(
+        (pageSnapshot?.extract["projection"] as { fetchUrl?: string })
+          .fetchUrl,
+      ).toBe(sitePage.normalized_url);
+    }
+
+    const observations = await new ObservationsRepository(
+      handle.db,
+    ).listBySnapshotIds(seed.scope, [snapshot.id]);
+    const pageObservations = observations.filter(
+      (row) => row.metric_key === "crawl.page.v1",
+    );
+    expect(pageObservations).toHaveLength(3);
+    expect(
+      pageObservations.filter((row) => row.subject_ref === landing),
+    ).toHaveLength(2);
+    expect(
+      pageObservations.find(
+        (row) =>
+          (row.value_json as { fetchUrl?: string }).fetchUrl === landing,
+      )?.value_json,
+    ).toMatchObject({ canonicalTarget: externalCanonical });
+  });
+
+  it("rejects a self-consistent foreign-origin crawl before creating any canonical lineage", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    const crawlConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      createdBy: seed.actor,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      sourceConnectionId: crawlConnection.id,
+      importPreviewId: null,
+      requestPayload: {},
+    });
+    const claimed = await new AsyncRunsRepository(handle.db).claim(
+      seed.scope,
+      runId,
+    );
+    expect(claimed).not.toBeNull();
+    const collectionRun = await new CollectionRunsRepository(
+      handle.db,
+    ).findById(runId);
+    expect(collectionRun).not.toBeNull();
+
+    const foreignOrigin = `https://foreign-${randomUUID().slice(0, 8)}.example`;
+    const foreignPage = `${foreignOrigin}/pricing`;
+    const foreignFetch = `${foreignPage}/`;
+    const capturedAt = "2026-07-19T00:00:00.000Z";
+    const sourceWindow = { start: capturedAt, end: capturedAt } as const;
+    const providerUsage = {
+      urlsFetched: 1,
+      pagesCollected: 1,
+      urlsSkipped: 0,
+      urlsBlocked: 0,
+      urlsDisallowed: 0,
+      urlsErrored: 0,
+      redirectsFollowed: 0,
+      bytesFetched: 512,
+      robotsFetched: 1,
+      sitemapUrlCount: 1,
+    };
+    const projection = {
+      fetchUrl: foreignFetch,
+      status: 200,
+      finalStatus: 200,
+      redirectChain: [],
+      canonicalTarget: foreignPage,
+      robotsIndexable: true,
+      robotsDirectives: ["index", "follow"],
+      title: "Foreign pricing",
+      metaDescription: null,
+      h1: ["Pricing"],
+      headings: ["Pricing"],
+      wordCount: 1,
+      internalOutlinks: [],
+      jsonLd: { types: [], errorCount: 0 },
+      sitemapMember: true,
+      bodyExcerpt: "Pricing",
+      paragraphs: ["Pricing"],
+      responseMs: 1,
+      contentType: "text/html; charset=utf-8",
+    } as const;
+    const limitation = "foreign-origin persistence boundary fixture";
+    const foreignOutcome: CollectionOutcome = {
+      availability: "available",
+      capturedAt,
+      sourceWindow,
+      rowCount: 1,
+      stopReason: null,
+      providerUsage,
+      limitation,
+      raw: {
+        origin: foreignOrigin,
+        host: new URL(foreignOrigin).hostname,
+        pages: [{ subjectUrl: foreignPage, depth: 0, projection }],
+        robots: { fetched: true, groups: [], sitemaps: [] },
+        sitemap: {
+          fetched: true,
+          urlCount: 1,
+          subjectUrls: [foreignPage],
+        },
+        availability: "available",
+        capturedAt,
+        sourceWindow,
+        stopReason: null,
+        providerUsage,
+        limitation,
+      },
+    };
+    const foreignObservation = {
+      metricKey: "crawl.page.v1",
+      subjectType: "url",
+      subjectRef: foreignPage,
+      observedAt: capturedAt,
+      availability: "available",
+      valueNumeric: null,
+      valueText: null,
+      valueJson: projection,
+      unit: null,
+      origin: "direct_public",
+      method: "observed",
+      grade: "B",
+      support: "supports",
+      limitation,
+    } satisfies ObservationInsert;
+
+    await expect(
+      persistCollectionResult(ctx, {
+        collectionRun: collectionRun!,
+        datasetKey: "crawl.site_graph.v1",
+        schemaVersion: "0.2.0",
+        actorId: seed.actor,
+        startedAtMs: Date.now(),
+        attempt: toRunAttempt(claimed!),
+        outcome: foreignOutcome,
+        observations: [foreignObservation],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      message: "Crawl raw payload does not match its collection outcome.",
+    });
+
+    expect(await snapshotCount(handle, seed.scope)).toBe(0);
+    const sitePages = await new SitePagesRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(sitePages.rows).toHaveLength(0);
+    const allPageSnapshots = await handle.db
+      .select({ id: pageSnapshots.id, projectId: pageSnapshots.project_id })
+      .from(pageSnapshots);
+    expect(
+      allPageSnapshots.filter(
+        (row) => row.projectId === seed.scope.projectId,
+      ),
+    ).toHaveLength(0);
+    const allObservations = await handle.db
+      .select({
+        id: normalizedObservations.id,
+        projectId: normalizedObservations.project_id,
+      })
+      .from(normalizedObservations);
+    expect(
+      allObservations.filter(
+        (row) => row.projectId === seed.scope.projectId,
+      ),
+    ).toHaveLength(0);
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(seed.scope, runId),
+    ).resolves.toMatchObject({ status: "running" });
+    await expect(
+      new CollectionRunsRepository(handle.db).findById(runId),
+    ).resolves.toMatchObject({ row_count: null });
   });
 
   it("AC-041: claim() is a queued→running winner-only transition", async () => {
@@ -780,12 +1234,30 @@ describeDb("collection runner (spec §13)", () => {
   it("AC-041: a permanent adapter error terminates the run `failed` with no reset-to-queued", async () => {
     const seed = await seedProject(handle);
     const runId = randomUUID();
-    // A GSC run with no source connection cannot be configured — INVALID_CONFIGURATION.
+    const connection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertConnection({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      provider: "gsc",
+      connectionType: "oauth",
+      state: "connected",
+      externalRef: seed.siteOrigin,
+      scopes: ["webmasters.readonly"],
+      config: { propertyUrl: seed.siteOrigin },
+      limitation: "GSC OAuth connection awaiting credential fixture.",
+      connectedAt: true,
+      createdBy: seed.actor,
+    });
+    // The canonical GSC connection is real and provider-matched, but its
+    // credential is intentionally absent. That reaches the permanent
+    // AUTH_REQUIRED adapter boundary without violating collection provenance.
     await seedCollectionRun(handle, seed, runId, {
       provider: "gsc",
       operation: "search_analytics",
       methodVersion: "gsc.search_analytics.v1",
-      sourceConnectionId: null,
+      sourceConnectionId: connection.id,
       importPreviewId: null,
       requestPayload: {},
     });
@@ -802,7 +1274,7 @@ describeDb("collection runner (spec §13)", () => {
       runId,
     );
     expect(run?.status).toBe("failed");
-    expect(run?.last_error_code).toBe("INVALID_CONFIGURATION");
+    expect(run?.last_error_code).toBe("AUTH_REQUIRED");
     expect(await snapshotCount(handle, seed.scope)).toBe(0);
   });
 

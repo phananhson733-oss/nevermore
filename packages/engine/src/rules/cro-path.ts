@@ -47,10 +47,14 @@ export const croPathRule = {
     const affected: string[] = [];
     let anyPriority = false;
 
-    for (const [url, page] of ctx.indexablePages()) {
+    for (const [url, variants] of ctx.indexablePages()) {
       if (!ctx.isCommercial(url)) continue;
       if (dests.has(url)) continue; // a destination page is exempt from linking to itself
-      const linked = page.internalOutlinks.some((link) => dests.has(link.targetSubjectUrl));
+      // A missing-path finding is a subject-level negative fact. If any healthy
+      // exact variant exposes a destination link, absence is not established.
+      const linked = variants.some((page) =>
+        page.internalOutlinks.some((link) => dests.has(link.targetSubjectUrl)),
+      );
       if (linked) continue;
       affected.push(url);
       if (ctx.isPriority(url)) anyPriority = true;

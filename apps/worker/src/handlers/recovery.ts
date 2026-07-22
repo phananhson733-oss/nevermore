@@ -1,5 +1,6 @@
 import {
   AsyncRunsRepository,
+  DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
   IdempotencyRepository,
   OAuthIntentsRepository,
@@ -12,6 +13,11 @@ import {
 } from "@sf/db";
 import { CONTRACT_VERSION } from "@sf/contracts";
 import { withRunContext, type WorkerContext } from "../context.ts";
+import {
+  DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
+  DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED_SUMMARY,
+  supportsCurrentDiagnosticExecutor,
+} from "../diagnostic/executor-version.ts";
 
 export const RUN_RECOVERY_INTERVAL_MS = 60_000;
 export const RUN_RECOVERY_MISSING_AFTER_MS = 60 * 60 * 1_000;
@@ -191,6 +197,36 @@ export async function prepareRunDelivery<T extends CanonicalJobPayload>(
       reconciled ? "run_delivery_reconciled" : "run_delivery_skipped",
       {
         code: contractFailure.code,
+        runId: job.data.runId,
+      },
+    );
+    return;
+  }
+
+  if (await hasUnsupportedDiagnosticExecutor(runCtx, prepared, scope)) {
+    let reconciled = false;
+    try {
+      reconciled = await reconcileCanonicalAndProjection(
+        runCtx,
+        prepared,
+        scope,
+        {
+          status: "failed",
+          lastErrorCode: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
+          lastErrorSummary: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED_SUMMARY,
+        },
+      );
+    } catch {
+      runCtx.logger.error("run_delivery_reconciliation_failed", {
+        code: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
+        runId: job.data.runId,
+      });
+      return;
+    }
+    runCtx.logger.warn(
+      reconciled ? "run_delivery_reconciled" : "run_delivery_skipped",
+      {
+        code: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
         runId: job.data.runId,
       },
     );
@@ -426,6 +462,20 @@ async function reconcileOne(
     workspaceId: run.workspace_id,
     projectId: run.project_id,
   };
+  if (await hasUnsupportedDiagnosticExecutor(ctx, run, scope, signal)) {
+    await terminalize(
+      ctx,
+      run,
+      scope,
+      {
+        status: "failed",
+        code: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
+        summary: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED_SUMMARY,
+      },
+      signal,
+    );
+    return;
+  }
   const queue = queueForRun(run);
   if (!queue) {
     await terminalize(
@@ -634,6 +684,22 @@ function isSupportedJobContract(value: unknown): value is string {
 
 function isLiveQueueState(state: JobWithMetadata["state"]): boolean {
   return state === "created" || state === "retry" || state === "active";
+}
+
+async function hasUnsupportedDiagnosticExecutor(
+  ctx: WorkerContext,
+  run: AsyncRunRow,
+  scope: ProjectScope,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (run.kind !== "diagnostic") return false;
+  throwIfRecoveryAborted(signal);
+  const diagnostic = await new DiagnosticRunsRepository(ctx.db).findById(
+    scope,
+    run.id,
+  );
+  throwIfRecoveryAborted(signal);
+  return diagnostic !== null && !supportsCurrentDiagnosticExecutor(diagnostic);
 }
 
 async function terminalize(

@@ -148,7 +148,7 @@ describeDb("createProject (AC-007)", () => {
       .from(sitePages)
       .where(eq(sitePages.project_id, result.project.id));
     expect(page?.normalized_url).toBe(
-      "https://profile.example.com/products/growth?plan=pro",
+      "https://profile.example.com/products/growth/?plan=pro",
     );
 
     const [profile] = await handle.db
@@ -162,7 +162,7 @@ describeDb("createProject (AC-007)", () => {
         profileSchemaVersion: "product-profile.0.3.0",
         sourceSiteId: result.project.site.id,
         sourcePageUrl:
-          "https://profile.example.com/products/growth?plan=pro",
+          "https://profile.example.com/products/growth/?plan=pro",
         sourceSnapshotId: null,
         analysisInvocationId: null,
         productName: null,

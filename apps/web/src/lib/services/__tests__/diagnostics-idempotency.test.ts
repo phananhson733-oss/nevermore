@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  contentHash,
   IdempotencyRepository,
   ProjectsRepository,
+  type DataSnapshotRow,
   type IdempotencyRow,
 } from "@sf/db";
 import type { CreateDiagnosticRunRequest } from "@sf/contracts";
+import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import { CRAWL_METHOD_VERSION } from "@sf/sources";
 
 const mocks = vi.hoisted(() => ({
   contentHash: vi.fn(),
@@ -18,8 +22,12 @@ vi.mock("@sf/db", async () => {
 vi.mock("@/lib/db", () => ({ getDb: () => ({ db: {} }) }));
 vi.mock("@/lib/boss", () => ({ getBoss: vi.fn() }));
 
-const { assertDiagnosticSnapshotSelection, createDiagnosticRun } =
-  await import("../diagnostics.ts");
+const {
+  buildDiagnosticFrozenInput,
+  diagnosticSnapshotSiteId,
+  assertDiagnosticSnapshotSelection,
+  createDiagnosticRun,
+} = await import("../diagnostics.ts");
 
 const workspaceId = "00000000-0000-4000-8000-000000000011";
 const projectId = "00000000-0000-4000-8000-000000000012";
@@ -145,11 +153,21 @@ describe("createDiagnosticRun wire-body idempotency", () => {
 });
 
 describe("diagnostic snapshot selection", () => {
-  it("rejects CSV and DataForSEO in the same keyword-gap slot", () => {
+  it("allows CSV and DataForSEO to retain separate lineage in one keyword-gap slot", () => {
     expect(() =>
       assertDiagnosticSnapshotSelection([
         { provider: "crawl" },
         { provider: "csv" },
+        { provider: "dataforseo" },
+      ]),
+    ).not.toThrow();
+  });
+
+  it("rejects more than one snapshot from the same provider", () => {
+    expect(() =>
+      assertDiagnosticSnapshotSelection([
+        { provider: "crawl" },
+        { provider: "dataforseo" },
         { provider: "dataforseo" },
       ]),
     ).toThrow(
@@ -157,14 +175,90 @@ describe("diagnostic snapshot selection", () => {
     );
   });
 
-  it("allows one keyword-gap provider alongside the other canonical providers", () => {
+  it("rejects snapshots that do not identify one exact site", () => {
     expect(() =>
-      assertDiagnosticSnapshotSelection([
-        { provider: "crawl" },
-        { provider: "gsc" },
-        { provider: "ga4" },
-        { provider: "dataforseo" },
+      diagnosticSnapshotSiteId([
+        { site_id: "site-primary" },
+        { site_id: "site-secondary" },
       ]),
-    ).not.toThrow();
+    ).toThrow(
+      expect.objectContaining({
+        code: "SNAPSHOT_PROJECT_MISMATCH",
+        status: 422,
+      }),
+    );
+  });
+
+  it("derives the exact site from the selected immutable snapshots", () => {
+    expect(
+      diagnosticSnapshotSiteId([
+        { site_id: "site-secondary" },
+        { site_id: "site-secondary" },
+      ]),
+    ).toBe("site-secondary");
+  });
+
+  it("freezes the complete snapshot metadata and hashes the JCS manifest", () => {
+    const snapshot = {
+      id: firstSnapshotId,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      site_id: "site-secondary",
+      collection_run_id: "00000000-0000-4000-8000-000000000021",
+      source_connection_id: "00000000-0000-4000-8000-000000000022",
+      provider: "crawl",
+      dataset_key: "crawl.site_graph.v1",
+      schema_version: "0.2.0",
+      method_version: CRAWL_METHOD_VERSION,
+      captured_at: "2026-07-21T01:02:03.000Z",
+      source_window: { end: null, start: null },
+      availability: "available",
+      limitation: "Static public crawl only.",
+      raw_object_key: "raw/fixture.json",
+      row_count: 3,
+      checksum: "a".repeat(64),
+      summary: {},
+      created_at: "2026-07-21T01:02:04.000Z",
+    } satisfies DataSnapshotRow;
+
+    const frozen = buildDiagnosticFrozenInput({
+      projectId,
+      siteId: snapshot.site_id,
+      icp: {
+        id: "00000000-0000-4000-8000-000000000023",
+        version: 4,
+        contentHash: "b".repeat(64),
+      },
+      snapshots: [snapshot],
+      deliveryLocale: "en-US",
+    });
+
+    const expectedManifest = {
+      projectId,
+      siteId: snapshot.site_id,
+      icp: {
+        id: "00000000-0000-4000-8000-000000000023",
+        version: 4,
+        contentHash: "b".repeat(64),
+      },
+      snapshots: [
+        {
+          snapshotId: snapshot.id,
+          provider: "crawl",
+          datasetKey: "crawl.site_graph.v1",
+          schemaVersion: "0.2.0",
+          methodVersion: CRAWL_METHOD_VERSION,
+          checksum: "a".repeat(64),
+          capturedAt: "2026-07-21T01:02:03.000Z",
+          sourceWindow: { end: null, start: null },
+          availability: "available",
+        },
+      ],
+      ruleSetVersion: RULE_SET_VERSION,
+      promptSetVersion: PROMPT_SET_VERSION,
+      deliveryLocale: "en-US",
+    };
+    expect(frozen.manifest).toEqual(expectedManifest);
+    expect(frozen.inputHash).toBe(contentHash(expectedManifest));
   });
 });

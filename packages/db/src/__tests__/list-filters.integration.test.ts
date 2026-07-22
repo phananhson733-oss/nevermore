@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDbHandle, type DbHandle } from "../client.ts";
+import { contentHash } from "../hash.ts";
 import { runMigrations } from "../migrate.ts";
 import { icpProfiles, workspaces } from "../schema.ts";
 import { AsyncRunsRepository } from "../repositories/async-runs.ts";
@@ -11,6 +12,7 @@ import { DiagnosticRunsRepository } from "../repositories/diagnostic-runs.ts";
 import { FindingsRepository } from "../repositories/findings.ts";
 import { ProjectsRepository } from "../repositories/projects.ts";
 import { SitesRepository } from "../repositories/sites.ts";
+import { SourceConnectionsRepository } from "../repositories/source-connections.ts";
 
 const DATABASE_URL = process.env["DATABASE_URL"];
 const describeDb = DATABASE_URL ? describe : describe.skip;
@@ -53,8 +55,37 @@ describeDb("OpenAPI list filters", () => {
       languageCodes: ["en"],
     });
 
+    const sourceConnections = new SourceConnectionsRepository(handle.db);
+    const crawlSource = await sourceConnections.insertDefaultCrawl({
+      ...projectScope,
+      siteId: site.id,
+      createdBy: actorId,
+    });
+    const gscSource = await sourceConnections.insertConnection({
+      ...projectScope,
+      siteId: site.id,
+      provider: "gsc",
+      connectionType: "oauth",
+      state: "connected",
+      externalRef: "sc-domain:list-filter.example",
+      scopes: ["webmasters.readonly"],
+      config: { propertyType: "domain" },
+      limitation: "Disposable GSC list-filter fixture.",
+      connectedAt: true,
+      createdBy: actorId,
+    });
+
     const snapshots = new DataSnapshotsRepository(handle.db);
+    const collectionRuns = new CollectionRunsRepository(handle.db);
     for (const provider of ["crawl", "gsc", "gsc"] as const) {
+      const sourceConnectionId =
+        provider === "crawl" ? crawlSource.id : gscSource.id;
+      const methodVersion =
+        provider === "crawl"
+          ? "crawl.site_graph.v2"
+          : "gsc.page_query_daily.v1";
+      const sourceWindow = { start: null, end: null };
+      const capturedAt = new Date().toISOString();
       const run = await new AsyncRunsRepository(handle.db).insertQueued({
         ...projectScope,
         kind: "collection",
@@ -66,31 +97,37 @@ describeDb("OpenAPI list filters", () => {
         runId: run.id,
         ...projectScope,
         siteId: site.id,
-        sourceConnectionId: null,
+        sourceConnectionId,
         provider,
         operation: provider === "crawl" ? "site_graph" : "search_analytics",
-        methodVersion: `${provider}.fixture.v1`,
+        methodVersion,
         parametersHash: "1".repeat(64),
       });
       await snapshots.insert({
         ...projectScope,
         siteId: site.id,
         collectionRunId: run.id,
-        sourceConnectionId: null,
+        sourceConnectionId,
         provider,
         datasetKey:
           provider === "crawl"
             ? "crawl.site_graph.v1"
             : "gsc.page_query_daily.v1",
-        schemaVersion: "0.2.0",
-        methodVersion: `${provider}.fixture.v1`,
-        capturedAt: new Date().toISOString(),
-        sourceWindow: { start: null, end: null },
+        schemaVersion: methodVersion,
+        methodVersion,
+        capturedAt,
+        sourceWindow,
         availability: "available",
         limitation: "fixture",
         rawObjectKey: null,
         rowCount: 1,
         checksum: provider === "crawl" ? "2".repeat(64) : "3".repeat(64),
+      });
+      await collectionRuns.finalize(run.id, {
+        rowCount: 1,
+        sourceWindow,
+        providerUsage: {},
+        stopReason: null,
       });
     }
 
@@ -142,7 +179,7 @@ describeDb("OpenAPI list filters", () => {
       promptSetVersion: "mvp.prompts.0.2.0",
       outputLocale: "en",
       inputManifest: { snapshots: [] },
-      inputHash: "5".repeat(64),
+      inputHash: contentHash({ snapshots: [] }),
     });
 
     const findings = new FindingsRepository(handle.db);

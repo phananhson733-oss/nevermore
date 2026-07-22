@@ -30,7 +30,7 @@ function brokenCode(finalStatus: number | null): number | null {
 
 export const techHttpStatusRule = {
   id: "TECH-HTTP-001",
-  version: 1,
+  version: 2,
   domain: "technical_seo",
   requiredDatasets: [{ dataset: "crawl", required: true }],
   evaluate(ctx: DiagnosticContext): RuleResult {
@@ -38,14 +38,24 @@ export const techHttpStatusRule = {
       return { status: "skipped", reason: "missing_dataset" };
     }
 
-    // Group the affected subjectUrls by their broken status code.
-    const byCode = new Map<number, string[]>();
-    for (const [subjectUrl, page] of ctx.pages) {
-      const code = brokenCode(page.finalStatus);
-      if (code === null) continue;
-      const list = byCode.get(code) ?? [];
-      list.push(subjectUrl);
-      byCode.set(code, list);
+    // Findings aggregate by stable subjectUrl while Evidence retains every
+    // exact fetchUrl that returned the broken status (spec §7.6).
+    const byCode = new Map<
+      number,
+      { subjectUrls: Set<string>; fetchUrls: Set<string> }
+    >();
+    for (const [subjectUrl, variants] of ctx.pageVariants) {
+      for (const page of variants) {
+        const code = brokenCode(page.finalStatus);
+        if (code === null) continue;
+        const affected = byCode.get(code) ?? {
+          subjectUrls: new Set<string>(),
+          fetchUrls: new Set<string>(),
+        };
+        affected.subjectUrls.add(subjectUrl);
+        affected.fetchUrls.add(page.fetchUrl);
+        byCode.set(code, affected);
+      }
     }
 
     if (byCode.size === 0) {
@@ -55,9 +65,11 @@ export const techHttpStatusRule = {
     const observedAt = ctx.observedAt("crawl");
     const codes = [...byCode.keys()].sort((a, b) => a - b);
     const candidates: readonly FindingCandidate[] = codes.map((code) => {
-      const urls = [...(byCode.get(code) ?? [])].sort();
+      const affected = byCode.get(code);
+      const subjectUrls = [...(affected?.subjectUrls ?? [])].sort();
+      const fetchUrls = [...(affected?.fetchUrls ?? [])].sort();
       const isServerError = code >= 500;
-      const anyCommercial = urls.some((u) => ctx.isCommercial(u));
+      const anyCommercial = subjectUrls.some((url) => ctx.isCommercial(url));
       // 5xx is always high; 4xx is high only when a priority/commercial URL is hit.
       const severity: Severity = isServerError || anyCommercial ? "high" : "medium";
       const evidence: EvidenceDraft = {
@@ -67,16 +79,16 @@ export const techHttpStatusRule = {
         grade: "B",
         availability: "available",
         support: "supports",
-        subjectRefs: urls,
-        claim: `${urls.length} crawled page(s) returned HTTP ${code}.`,
+        subjectRefs: fetchUrls,
+        claim: `${subjectUrls.length} crawled page(s) returned HTTP ${code}.`,
         observedAt,
         limitation: HTTP_LIMITATION,
       };
       return {
         subjectRefs: [`http_status:${code}`],
         severity,
-        titleArgs: { status: code, count: urls.length },
-        metrics: { count: urls.length, statusCode: code },
+        titleArgs: { status: code, count: subjectUrls.length },
+        metrics: { count: subjectUrls.length, statusCode: code },
         evidence: [evidence],
       };
     });

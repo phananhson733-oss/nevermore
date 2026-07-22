@@ -92,9 +92,9 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-GAP-0
         "evidence": [
           {
             "availability": "available",
-            "claim": "Imported keyword cluster "project-management" carries 10 keywords with 1400 combined monthly search volume.",
+            "claim": "After semantic demand de-duplication, the user-provided CSV source contributes 10 keywords with 1400 combined available monthly search volume to cluster "project-management".",
             "grade": "C",
-            "limitation": "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows.",
+            "limitation": "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows. Rows without reported search volume are excluded from this provider's volume sum.",
             "method": "observed",
             "observedAt": "2026-07-18T00:00:00.000Z",
             "origin": "user_provided",
@@ -143,9 +143,9 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-GAP-0
         "evidence": [
           {
             "availability": "available",
-            "claim": "Imported keyword cluster "exact-threshold" carries 10 keywords with 500 combined monthly search volume.",
+            "claim": "After semantic demand de-duplication, the user-provided CSV source contributes 10 keywords with 500 combined available monthly search volume to cluster "exact-threshold".",
             "grade": "C",
-            "limitation": "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows.",
+            "limitation": "Search volume is user-provided CSV data; clustering is a heuristic over the imported rows. Rows without reported search volume are excluded from this provider's volume sum.",
             "method": "observed",
             "observedAt": "2026-07-18T00:00:00.000Z",
             "origin": "user_provided",

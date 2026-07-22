@@ -16,6 +16,49 @@ describe("canonical URL guard", () => {
     await expect(guard("https://www.example.com/a")).resolves.toEqual({ safe: true, normalizedUrl: "https://www.example.com/a", pinnedIp: "93.184.216.34", reason: null });
   });
 
+  it("preserves exact fetch-path slash semantics and normalizes default ports", async () => {
+    await expect(
+      guard("https://www.example.com:443/products/growth/?plan=pro"),
+    ).resolves.toEqual({
+      safe: true,
+      normalizedUrl:
+        "https://www.example.com/products/growth/?plan=pro",
+      pinnedIp: "93.184.216.34",
+      reason: null,
+    });
+    await expect(guard("http://www.example.com:80/docs/")).resolves.toEqual({
+      safe: true,
+      normalizedUrl: "http://www.example.com/docs/",
+      pinnedIp: "93.184.216.34",
+      reason: null,
+    });
+  });
+
+  it.each([
+    "https://customer-secret.example:8443/path",
+    "http://customer-secret.example:2375/",
+  ])(
+    "rejects a non-standard transport port before DNS without leaking target details: %s",
+    async (rawUrl) => {
+      const lookup = vi.fn(async () => ["93.184.216.34"]);
+      const portGuard = createCanonicalUrlGuard({ lookup });
+
+      const result = await portGuard(rawUrl);
+
+      expect(result).toEqual({
+        safe: false,
+        normalizedUrl: null,
+        pinnedIp: null,
+        reason: "Only standard HTTP(S) ports are allowed",
+      });
+      expect(lookup).not.toHaveBeenCalled();
+      expect(JSON.stringify(result)).not.toContain("customer-secret.example");
+      expect(JSON.stringify(result)).not.toContain("8443");
+      expect(JSON.stringify(result)).not.toContain("2375");
+      expect(JSON.stringify(result)).not.toContain("93.184.216.34");
+    },
+  );
+
   it("rejects non-HTTP schemes and credentials", async () => {
     expect((await guard("file:///etc/passwd")).safe).toBe(false);
     expect((await guard("https://user:pass@example.com/")).safe).toBe(false);

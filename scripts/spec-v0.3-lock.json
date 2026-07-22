@@ -6,19 +6,20 @@
   "migrationDirectory": "packages/db/migrations",
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
-    "README.md": "73df5fe3072af38b95fadd2a2eaabbf2d75498118c297b19daa1a54a4ea0201d",
-    "MVP-IMPLEMENTATION-SPEC.md": "10fc2b831334a9824c09560bbc5b898ba48693ce96b88ca55d997d5986a1f7bd",
-    "openapi.yaml": "394ea642f1bb1efdfa1afbd1d52a4cfe053279ae5c6869dabc5180c9473e731a",
-    "schema.sql": "237de75051a249c94980e75042b758a382e025f4c5f74931830e4ad023c89011",
-    "schemas/service-bundle-manifest.schema.json": "a0999d56ae868e9741914c2f9f0911f5f8b503600b4cd4d7630421cec2ee5cee",
-    "scripts/schema-smoke.sql": "d65efb8195480eb87424eb8f1e4d50bff8d4d106f736e129534953f3da02df5f",
-    "scripts/verify-spec.mjs": "f7df9ce92ad10c2cc1ce13f17fa446a413581435a9a2d9481badf52b9ad86afc"
+    "README.md": "c41fdb46930f8eb30f54aed76f1fc6a7bcfbc5d5cd9a9d0d41d8173246ad4fca",
+    "MVP-IMPLEMENTATION-SPEC.md": "6fe56ccc5d2325fc56c3dee6df0ca81aedf8316091464a83dce528c5a13b445a",
+    "openapi.yaml": "82312e5df203d296a64e2025f8fa7a2126cd8b21ca808684c75c59ebad2660cb",
+    "schema.sql": "ff1ec1ffc0b3b2c7c79d4379b1edbc9c67eb08f5356f61ae0308ee0b8c6eb752",
+    "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
+    "scripts/schema-smoke.sql": "fd55ede786827bb4155c8220e8f9de1f2a27dd46191214ccdd41c2ba07300955",
+    "scripts/verify-spec.mjs": "13f56e2f621c3e8c260b826578e38a62ee49b13286cfea985525f2f55a843daf"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "394ea642f1bb1efdfa1afbd1d52a4cfe053279ae5c6869dabc5180c9473e731a",
-    "packages/contracts/src/generated/openapi.ts": "087ce0d93eff71288ec60ae7abde1ded54dfb87a9e00347f5de293498ca659fc",
-    "schemas/service-bundle-manifest.schema.json": "a0999d56ae868e9741914c2f9f0911f5f8b503600b4cd4d7630421cec2ee5cee",
-    "packages/db/migrations/schema-smoke.sql": "d65efb8195480eb87424eb8f1e4d50bff8d4d106f736e129534953f3da02df5f"
+    "openapi/mvp.yaml": "82312e5df203d296a64e2025f8fa7a2126cd8b21ca808684c75c59ebad2660cb",
+    "packages/contracts/src/generated/openapi.ts": "21df78b3951162de9b585962bca7acb16edf812105b3ae976ead4a0f43d3c607",
+    "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
+    "packages/db/migrations/schema-smoke.sql": "fd55ede786827bb4155c8220e8f9de1f2a27dd46191214ccdd41c2ba07300955",
+    "scripts/verify-implementation.mjs": "8ac800e7edccd17667865457be2748cf31420fb8130c82d4b0309dd9ade0b97d"
   },
   "apiOperations": [
     "listProjects",
@@ -102,5 +103,18 @@
     "TECH-CANONICAL-002",
     "TECH-HTTP-001",
     "TECH-LINKGRAPH-005"
-  ]
+  ],
+  "ruleVersions": {
+    "CONTENT-COVERAGE-001": 1,
+    "CONTENT-GAP-011": 1,
+    "CRO-LANDING-003": 1,
+    "CRO-PATH-001": 1,
+    "GEO-CRAWLER-002": 1,
+    "GEO-ENTITY-001": 1,
+    "SEARCH-CTR-004": 1,
+    "SEARCH-DECAY-002": 1,
+    "TECH-CANONICAL-002": 2,
+    "TECH-HTTP-001": 2,
+    "TECH-LINKGRAPH-005": 2
+  }
 }

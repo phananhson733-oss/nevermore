@@ -88,6 +88,7 @@ export interface SnapshotWindow {
 /** An immutable collected dataset (OpenAPI `DataSnapshot`). */
 export interface DataSnapshot {
   readonly id: string;
+  readonly siteId: string;
   readonly provider: Provider;
   readonly datasetKey: string;
   readonly schemaVersion: string;

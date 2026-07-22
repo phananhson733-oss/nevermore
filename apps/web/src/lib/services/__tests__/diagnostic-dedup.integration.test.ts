@@ -15,25 +15,33 @@ process.env["LOG_LEVEL"] ??= "error";
 
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { asyncRuns, icpProfiles, workspaces } from "@sf/db/schema";
-import { sql } from "drizzle-orm";
 import {
+  CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   FindingsRepository,
   ObservationsRepository,
+  SourceConnectionsRepository,
+  type DataSnapshotRow,
   type FindingRow,
   type ProjectScope,
 } from "@sf/db";
 import {
   ALL_RULES,
   DiagnosticContext,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
   parseIcp,
   runPipeline,
   type ObservationView,
   type RunFinding,
 } from "@sf/engine";
-import { METRIC_CRAWL_PAGE, type CrawlPageProjection } from "@sf/sources";
+import {
+  CRAWL_METHOD_VERSION,
+  METRIC_CRAWL_PAGE,
+  type CrawlPageProjection,
+} from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 
@@ -119,6 +127,7 @@ async function upsertFinding(
   }
   const regressed = existing.resolved_at !== null || existing.active === false;
   await repo.touchSeen(existing.id, {
+    ruleVersion: finding.ruleVersion,
     severity: finding.severity,
     confidence: finding.confidence,
     titleArgs,
@@ -137,6 +146,8 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
   let scope: ProjectScope;
   let siteId: string;
   let icpProfileId: string;
+  let icpContentHash: string;
+  let frozenSnapshot: DataSnapshotRow;
   const actor = randomUUID();
 
   beforeAll(async () => {
@@ -163,6 +174,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     scope = { workspaceId, projectId: created.project.id };
     siteId = created.project.site.id;
 
+    icpContentHash = contentHash({ icp: randomUUID() });
     const [icp] = await handle.db
       .insert(icpProfiles)
       .values({
@@ -171,7 +183,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
         version: 1,
         status: "complete",
         profile: { productName: "Dedup", siteLanguageCodes: ["en"] },
-        content_hash: contentHash({ icp: randomUUID() }),
+        content_hash: icpContentHash,
         created_by: actor,
       })
       .returning();
@@ -211,7 +223,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
   }
 
   /** Insert an async + diagnostic run row, returning the run id (evidence/finding FK). */
-  async function seedDiagnosticRun(snapshotId: string): Promise<string> {
+  async function seedDiagnosticRun(snapshot: DataSnapshotRow): Promise<string> {
     const nowTs = new Date().toISOString();
     const [run] = await handle.db
       .insert(asyncRuns)
@@ -225,6 +237,31 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
         completed_at: nowTs,
       })
       .returning();
+    const inputManifest = {
+      projectId: scope.projectId,
+      siteId,
+      icp: {
+        id: icpProfileId,
+        version: 1,
+        contentHash: icpContentHash,
+      },
+      snapshots: [
+        {
+          snapshotId: snapshot.id,
+          provider: snapshot.provider,
+          datasetKey: snapshot.dataset_key,
+          schemaVersion: snapshot.schema_version,
+          methodVersion: snapshot.method_version,
+          checksum: snapshot.checksum,
+          capturedAt: snapshot.captured_at,
+          sourceWindow: snapshot.source_window,
+          availability: snapshot.availability,
+        },
+      ],
+      ruleSetVersion: RULE_SET_VERSION,
+      promptSetVersion: PROMPT_SET_VERSION,
+      deliveryLocale: "en",
+    };
     await new DiagnosticRunsRepository(handle.db).insert({
       runId: run!.id,
       workspaceId: scope.workspaceId,
@@ -232,11 +269,13 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
       siteId,
       icpProfileId,
       icpProfileVersion: 1,
-      ruleSetVersion: "mvp.rules.0.2.0",
-      promptSetVersion: "mvp.prompts.0.2.0",
+      ruleSetVersion: RULE_SET_VERSION,
+      promptSetVersion: PROMPT_SET_VERSION,
       outputLocale: "en",
-      inputManifest: { snapshots: [{ snapshotId }] },
-      inputHash: contentHash({ r: run!.id }),
+      inputManifest,
+      inputHash: contentHash(
+        inputManifest as Parameters<typeof contentHash>[0],
+      ),
     });
     return run!.id;
   }
@@ -252,6 +291,10 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
   it("two runs over identical inputs re-hit ONE finding row (no duplicate)", async () => {
     // Seed one crawl snapshot with a single 404-page observation.
     const capturedAt = new Date().toISOString();
+    const crawlSource = await new SourceConnectionsRepository(
+      handle.db,
+    ).findConnectedByProvider(scope, "crawl");
+    if (!crawlSource) throw new Error("fixture Crawl connection missing");
     const [collectRun] = await handle.db
       .insert(asyncRuns)
       .values({
@@ -264,19 +307,28 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
         completed_at: capturedAt,
       })
       .returning();
-    await handle.db.execute(
-      sql`insert into app.collection_runs (id, workspace_id, project_id, site_id, provider, operation, method_version, parameters_hash) values (${collectRun!.id}, ${scope.workspaceId}, ${scope.projectId}, ${siteId}, 'crawl', 'site_graph', 'crawl.site_graph.v1', ${contentHash({ x: 1 })})`,
-    );
+    const collections = new CollectionRunsRepository(handle.db);
+    await collections.insertPlaceholder({
+      runId: collectRun!.id,
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      sourceConnectionId: crawlSource.id,
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      parametersHash: contentHash({ x: 1 }),
+    });
     const snapshot = await new DataSnapshotsRepository(handle.db).insert({
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
       siteId,
       collectionRunId: collectRun!.id,
-      sourceConnectionId: null,
+      sourceConnectionId: crawlSource.id,
       provider: "crawl",
       datasetKey: "crawl.site_graph.v1",
       schemaVersion: "0.2.0",
-      methodVersion: "crawl.site_graph.v1",
+      methodVersion: CRAWL_METHOD_VERSION,
       capturedAt,
       sourceWindow: { start: null, end: null },
       availability: "available",
@@ -285,6 +337,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
       rowCount: 1,
       checksum: contentHash({ s: 1 }),
     });
+    frozenSnapshot = snapshot;
     await new ObservationsRepository(handle.db).insertMany(
       scope,
       snapshot.id,
@@ -307,6 +360,18 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
         },
       ],
     );
+    await collections.finalize(collectRun!.id, {
+      rowCount: snapshot.row_count,
+      sourceWindow: snapshot.source_window,
+      providerUsage: { urlsFetched: 1, pagesCollected: 1 },
+      stopReason: null,
+    });
+    await new SourceConnectionsRepository(handle.db).setLastSnapshot(
+      crawlSource.id,
+      snapshot.id,
+      snapshot.availability,
+      snapshot.limitation,
+    );
 
     const observationRows = await new ObservationsRepository(
       handle.db,
@@ -328,6 +393,8 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     const findB = pipelineB.findings.find((f) => f.ruleId === "TECH-HTTP-001");
     expect(findA, "run A should surface TECH-HTTP-001").toBeDefined();
     expect(findB, "run B should surface TECH-HTTP-001").toBeDefined();
+    expect(findA!.ruleVersion).toBe(2);
+    expect(findB!.ruleVersion).toBe(2);
     // §8.6: cross-run identity is stable — the two runs produce the SAME key.
     expect(findB!.findingKey).toBe(findA!.findingKey);
 
@@ -335,7 +402,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     const findingKey = findA!.findingKey;
 
     // Persist run 1 (first sighting -> insert).
-    const runId1 = await seedDiagnosticRun(snapshot.id);
+    const runId1 = await seedDiagnosticRun(snapshot);
     const now1 = new Date().toISOString();
     const first = await upsertFinding(repo, scope, runId1, findA!, now1);
     expect(first.isRehit).toBe(false);
@@ -344,7 +411,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     expect(afterRun1.last_seen_run_id).toBe(runId1);
 
     // Persist run 2 (identical inputs -> re-hit the SAME row, not a duplicate).
-    const runId2 = await seedDiagnosticRun(snapshot.id);
+    const runId2 = await seedDiagnosticRun(snapshot);
     const now2 = new Date().toISOString();
     const second = await upsertFinding(repo, scope, runId2, findB!, now2);
     expect(second.isRehit).toBe(true);
@@ -355,6 +422,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     expect(afterRun2.id).toBe(first.id);
     expect(afterRun2.first_seen_run_id).toBe(runId1); // first sighting preserved
     expect(afterRun2.last_seen_run_id).toBe(runId2); // advanced to run 2
+    expect(afterRun2.rule_version).toBe(2);
   });
 
   it("the DB backstops dedup: a duplicate (project, finding_key) insert is rejected", async () => {
@@ -381,7 +449,8 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
       "the finding already exists from the first test",
     ).not.toBeNull();
 
-    const runId = await seedDiagnosticRun("noop");
+    if (!frozenSnapshot) throw new Error("dedup fixture snapshot missing");
+    const runId = await seedDiagnosticRun(frozenSnapshot);
     let caught: unknown;
     try {
       await repo.insert({

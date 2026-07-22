@@ -135,6 +135,44 @@ describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
     expect(result.metrics).toEqual({ coveredCount: 1 });
   });
 
+  it("does not fabricate a coverage gap when healthy exact variants disagree", () => {
+    const subjectUrl = "https://example.com/pricing";
+    const observations = [
+      crawlObs(
+        subjectUrl,
+        makePage({
+          fetchUrl: subjectUrl,
+          title: "Team Pricing",
+          h1: ["Team"],
+        }),
+      ),
+      crawlObs(
+        subjectUrl,
+        makePage({
+          fetchUrl: `${subjectUrl}/`,
+          title: "Collaboration Software",
+          h1: ["Collaboration"],
+        }),
+      ),
+    ];
+
+    const forward = contentCoverageRule.evaluate(
+      buildContext({
+        icp: icpOf({ offers: ["team collaboration"] }),
+        observations,
+      }),
+    );
+    const reversed = contentCoverageRule.evaluate(
+      buildContext({
+        icp: icpOf({ offers: ["team collaboration"] }),
+        observations: [...observations].reverse(),
+      }),
+    );
+
+    expect(forward).toEqual(reversed);
+    expect(forward).toEqual({ status: "pass", metrics: { coveredCount: 1 } });
+  });
+
   it("is inconclusive when no page has a title or H1", () => {
     const ctx = buildContext({
       icp: icpOf({ offers: ["team collaboration"] }),

@@ -1,7 +1,10 @@
+import { isDeepStrictEqual } from "node:util";
 import {
   ActionsRepository,
   AnalysisInvocationsRepository,
   AsyncRunsRepository,
+  contentHash,
+  DataSnapshotsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
   FindingsRepository,
@@ -9,14 +12,19 @@ import {
   ObservationsRepository,
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
+  SitesRepository,
   TelemetryRepository,
   toRunAttempt,
+  type DataSnapshotRow,
   type DiagnosticRunRow,
+  type CanonicalValue,
   type EvidenceInsert,
   type FindingObservationInsert,
+  type ObservationRow,
   type ProjectScope,
   type RunAttempt,
 } from "@sf/db";
+import { isBcp47LanguageTag } from "@sf/contracts";
 import {
   LLMError,
   createOpenAIFindingSummaryClient,
@@ -27,6 +35,8 @@ import {
 import {
   ALL_RULES,
   DiagnosticContext,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
   parseIcp,
   runPipeline,
   type CoverageInput,
@@ -36,12 +46,35 @@ import {
   type RunFinding,
 } from "@sf/engine";
 import type { Logger } from "@sf/observability";
+import {
+  CRAWL_DATASET_KEY,
+  CRAWL_BUDGET,
+  CRAWL_METHOD_VERSION,
+  CRAWL_PROJECTION_LIMITS,
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  METRIC_CRAWL_PAGE,
+  METRIC_CRAWL_ROBOTS,
+  METRIC_CRAWL_SITEMAP,
+  METRIC_CSV_KEYWORD_GAP,
+  METRIC_GA4_LANDING,
+  METRIC_GSC_PAGE,
+  canonicalizeUrl,
+  clusterKey,
+  normalizeSiteOrigin,
+} from "@sf/sources";
+import { z } from "zod";
 import type { WorkerContext } from "../context.ts";
 import {
   isTransientInfrastructureError,
   transientFailureCode,
 } from "../handlers/transient-errors.ts";
 import { runtimeFailureMetadata } from "../runtime-failure.ts";
+import {
+  DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
+  DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED_SUMMARY,
+  supportsCurrentDiagnosticExecutor,
+} from "./executor-version.ts";
 
 /**
  * Diagnostic job runner (spec §8.2, §8.6). Loads the frozen manifest + its
@@ -290,39 +323,812 @@ export function warnOnSlowRules(
 interface ManifestSnapshot {
   readonly snapshotId: string;
   readonly provider: string;
+  readonly datasetKey: string;
+  readonly schemaVersion: string;
+  readonly methodVersion: string;
+  readonly checksum: string;
   readonly availability: string;
   readonly capturedAt: string;
+  readonly sourceWindow: Record<string, unknown>;
 }
 
-function readManifestSnapshots(
-  manifest: Record<string, unknown>,
-): ManifestSnapshot[] {
+interface ManifestIcp {
+  readonly id: string;
+  readonly version: number;
+  readonly contentHash: string;
+}
+
+interface FrozenDiagnosticManifest {
+  readonly icp: ManifestIcp;
+  readonly snapshots: readonly ManifestSnapshot[];
+}
+
+export interface EvidenceLineage {
+  readonly snapshotId: string;
+  readonly collectionRunId: string;
+}
+
+interface FrozenSnapshotSelection {
+  readonly lineageByProvider: ReadonlyMap<string, EvidenceLineage>;
+  readonly snapshotsById: ReadonlyMap<string, DataSnapshotRow>;
+}
+
+interface ObservationSourceRegistration {
+  readonly datasetKey: string;
+  readonly methodVersion: string;
+  readonly origin: string;
+  readonly grade: string;
+  readonly subjectTypeByMetric: ReadonlyMap<string, string>;
+}
+
+/**
+ * The only provider/dataset/method/metric tuples the current source adapters can
+ * produce. In particular, CSV and DataForSEO intentionally share the logical
+ * keyword-gap metric and dataset while retaining distinct provider provenance.
+ */
+const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
+  string,
+  ObservationSourceRegistration
+> = new Map([
+  [
+    "crawl",
+    {
+      datasetKey: CRAWL_DATASET_KEY,
+      methodVersion: CRAWL_METHOD_VERSION,
+      origin: "direct_public",
+      grade: "B",
+      subjectTypeByMetric: new Map([
+        [METRIC_CRAWL_PAGE, "url"],
+        [METRIC_CRAWL_ROBOTS, "site"],
+        [METRIC_CRAWL_SITEMAP, "site"],
+      ]),
+    },
+  ],
+  [
+    "gsc",
+    {
+      datasetKey: "gsc.page_query_daily.v1",
+      methodVersion: "gsc.page_query_daily.v1",
+      origin: "first_party",
+      grade: "A",
+      subjectTypeByMetric: new Map([[METRIC_GSC_PAGE, "url"]]),
+    },
+  ],
+  [
+    "ga4",
+    {
+      datasetKey: "ga4.organic_landing_daily.v1",
+      methodVersion: "ga4.organic_landing_daily.v1",
+      origin: "first_party",
+      grade: "A",
+      subjectTypeByMetric: new Map([[METRIC_GA4_LANDING, "url"]]),
+    },
+  ],
+  [
+    "csv",
+    {
+      datasetKey: "csv.keyword_gap.v1",
+      methodVersion: "csv.keyword_gap.v1",
+      origin: "user_provided",
+      grade: "C",
+      subjectTypeByMetric: new Map([
+        [METRIC_CSV_KEYWORD_GAP, "keyword_cluster"],
+      ]),
+    },
+  ],
+  [
+    "dataforseo",
+    {
+      datasetKey: DATAFORSEO_DATASET_KEY,
+      methodVersion: DATAFORSEO_METHOD_VERSION,
+      origin: "vendor_observation",
+      grade: "B",
+      subjectTypeByMetric: new Map([
+        [METRIC_CSV_KEYWORD_GAP, "keyword_cluster"],
+      ]),
+    },
+  ],
+]);
+
+const OBSERVATION_CONTRACT_MISMATCH =
+  "observation does not match its frozen source contract";
+const nonnegativeInteger = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+const finiteNonnegative = z.number().finite().nonnegative();
+const boundedCrawlUrl = z.url().max(CRAWL_PROJECTION_LIMITS.maxUrlChars);
+const nullableBoundedString = (maximum: number) =>
+  z.string().max(maximum).nullable();
+
+const crawlLinkProjectionSchema = z
+  .object({
+    targetSubjectUrl: boundedCrawlUrl,
+    rel: nullableBoundedString(CRAWL_PROJECTION_LIMITS.maxRelChars),
+    anchorText: nullableBoundedString(
+      CRAWL_PROJECTION_LIMITS.maxAnchorTextChars,
+    ),
+  })
+  .strict();
+
+const crawlPageProjectionSchema = z
+  .object({
+    fetchUrl: boundedCrawlUrl,
+    status: z.number().int().min(100).max(599).nullable(),
+    finalStatus: z.number().int().min(100).max(599).nullable(),
+    redirectChain: z
+      .array(boundedCrawlUrl)
+      .max(CRAWL_BUDGET.maxRedirects),
+    canonicalTarget: boundedCrawlUrl.nullable(),
+    robotsIndexable: z.boolean(),
+    robotsDirectives: z
+      .array(
+        z.string().max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
+      )
+      .max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectives),
+    title: nullableBoundedString(CRAWL_PROJECTION_LIMITS.maxTitleChars),
+    metaDescription: nullableBoundedString(
+      CRAWL_PROJECTION_LIMITS.maxMetaDescriptionChars,
+    ),
+    h1: z
+      .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxH1Chars))
+      .max(CRAWL_PROJECTION_LIMITS.maxH1),
+    headings: z
+      .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxHeadingChars))
+      .max(CRAWL_PROJECTION_LIMITS.maxHeadings),
+    wordCount: nonnegativeInteger.nullable(),
+    internalOutlinks: z
+      .array(crawlLinkProjectionSchema)
+      .max(CRAWL_PROJECTION_LIMITS.maxInternalOutlinks),
+    jsonLd: z
+      .object({
+        types: z
+          .array(
+            z.string().max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars),
+          )
+          .max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypes),
+        errorCount: nonnegativeInteger.max(
+          CRAWL_PROJECTION_LIMITS.maxJsonLdBlocks,
+        ),
+      })
+      .strict(),
+    sitemapMember: z.boolean(),
+    bodyExcerpt: nullableBoundedString(
+      CRAWL_PROJECTION_LIMITS.maxBodyExcerptChars,
+    ),
+    paragraphs: z
+      .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxParagraphChars))
+      .max(CRAWL_PROJECTION_LIMITS.maxParagraphs),
+    responseMs: finiteNonnegative.nullable(),
+    contentType: nullableBoundedString(
+      CRAWL_PROJECTION_LIMITS.maxContentTypeChars,
+    ),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.robotsIndexable ===
+      !value.robotsDirectives.some(
+        (directive) => directive === "noindex" || directive === "none",
+      ),
+  )
+  .refine((value) => value.status !== null && value.finalStatus !== null)
+  .refine(
+    (value) =>
+      value.status !== null &&
+      value.finalStatus !== null &&
+      (value.redirectChain.length === 0
+        ? value.status === value.finalStatus
+        : [301, 302, 303, 307, 308].includes(value.status)),
+  );
+
+const robotsRuleSchema = z
+  .string()
+  .max(CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars);
+const crawlRobotsProjectionSchema = z
+  .object({
+    fetched: z.boolean(),
+    groups: z
+      .array(
+        z
+          .object({
+            userAgent: z
+              .string()
+              .max(CRAWL_PROJECTION_LIMITS.maxUserAgentChars),
+            disallow: z
+              .array(robotsRuleSchema)
+              .max(CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup),
+            allow: z
+              .array(robotsRuleSchema)
+              .max(CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup),
+          })
+          .strict(),
+      )
+      .max(CRAWL_PROJECTION_LIMITS.maxRobotsGroups),
+    sitemaps: z
+      .array(boundedCrawlUrl)
+      .max(CRAWL_PROJECTION_LIMITS.maxSitemaps),
+  })
+  .strict();
+
+const crawlSitemapProjectionSchema = z
+  .object({
+    fetched: z.boolean(),
+    urlCount: nonnegativeInteger.max(
+      CRAWL_PROJECTION_LIMITS.maxSitemapUrls,
+    ),
+    subjectUrls: z
+      .array(boundedCrawlUrl)
+      .max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls),
+  })
+  .strict()
+  .refine((value) => value.urlCount === value.subjectUrls.length);
+
+const gscWindowMetricsSchema = z
+  .object({
+    clicks: finiteNonnegative,
+    impressions: finiteNonnegative,
+    position: finiteNonnegative.nullable(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      (value.impressions === 0 && value.position === null) ||
+      (value.impressions > 0 && value.position !== null),
+  );
+const gscTopQuerySchema = z
+  .object({
+    query: z.string(),
+    clicks: finiteNonnegative,
+    impressions: finiteNonnegative,
+    position: finiteNonnegative.nullable(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      (value.impressions === 0 && value.position === null) ||
+      (value.impressions > 0 && value.position !== null),
+  );
+const gscPageProjectionSchema = z
+  .object({
+    current28d: gscWindowMetricsSchema,
+    previous28d: gscWindowMetricsSchema,
+    topQueries: z.array(gscTopQuerySchema).max(10),
+  })
+  .strict();
+
+const ga4UnavailableReasonSchema = z.enum([
+  "GA4_KEY_EVENT_UNMAPPED",
+  "GA4_KEY_EVENT_REPORT_INCOMPATIBLE",
+  "GA4_KEY_EVENT_REPORT_TRUNCATED",
+]);
+const ga4LandingProjectionSchema = z
+  .object({
+    sessions: nonnegativeInteger,
+    engagedSessions: nonnegativeInteger.nullable(),
+    engagementRate: z.number().finite().min(0).max(1).nullable(),
+    keyEvents: nonnegativeInteger.nullable(),
+    keyEventUnavailableReason: ga4UnavailableReasonSchema.nullable(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.engagedSessions === null
+        ? value.engagementRate === null
+        : value.engagedSessions <= value.sessions &&
+          (value.sessions === 0
+            ? value.engagementRate === null
+            : value.engagementRate ===
+              value.engagedSessions / value.sessions),
+  )
+  .refine(
+    (value) =>
+      (value.keyEvents === null) ===
+      (value.keyEventUnavailableReason !== null),
+  );
+
+const absoluteHttpUrlSchema = z.string().refine((value) => {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.href === value
+    );
+  } catch {
+    return false;
+  }
+});
+const competitorDomainSchema = z
+  .string()
+  .regex(
+    /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/,
+  );
+const keywordGapProjectionSchema = z
+  .object({
+    keyword: z.string().min(1).refine((value) => value.trim() === value),
+    clusterKey: z.string().min(1).refine((value) => value.trim() === value),
+    searchVolume: finiteNonnegative.nullable(),
+    currentUrl: absoluteHttpUrlSchema.nullable(),
+    currentRank: finiteNonnegative.nullable(),
+    competitorDomain: competitorDomainSchema.nullable(),
+    competitorRank: finiteNonnegative.nullable(),
+    marketCode: z.string().regex(/^[A-Z]{2}$/),
+    languageCode: z.string().refine(isBcp47LanguageTag),
+  })
+  .strict();
+
+const SOURCE_EVIDENCE_PROVIDERS = new Set(
+  OBSERVATION_SOURCE_REGISTRY.keys(),
+);
+const SNAPSHOT_AVAILABILITIES = new Set([
+  "available",
+  "partial",
+  "unavailable",
+]);
+const MANIFEST_KEYS = [
+  "deliveryLocale",
+  "icp",
+  "projectId",
+  "promptSetVersion",
+  "ruleSetVersion",
+  "siteId",
+  "snapshots",
+] as const;
+const ICP_MANIFEST_KEYS = ["contentHash", "id", "version"] as const;
+const SNAPSHOT_MANIFEST_KEYS = [
+  "availability",
+  "capturedAt",
+  "checksum",
+  "datasetKey",
+  "methodVersion",
+  "provider",
+  "schemaVersion",
+  "snapshotId",
+  "sourceWindow",
+] as const;
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  const orderedExpected = [...expected].sort();
+  return (
+    actual.length === orderedExpected.length &&
+    actual.every((key, index) => key === orderedExpected[index])
+  );
+}
+
+function requiredManifestString(
+  entry: Record<string, unknown>,
+  key: string,
+): string {
+  const value = entry[key];
+  if (typeof value !== "string" || value.length === 0 || value.trim() !== value) {
+    throw new Error("frozen snapshot manifest is malformed");
+  }
+  return value;
+}
+
+function requiredManifestObject(
+  entry: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> {
+  const value = entry[key];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("frozen diagnostic manifest is malformed");
+  }
+  return value as Record<string, unknown>;
+}
+
+function readManifestSnapshots(manifest: Record<string, unknown>): ManifestSnapshot[] {
   const raw = manifest["snapshots"];
-  if (!Array.isArray(raw)) return [];
-  return raw.map((s) => {
-    const o = s as Record<string, unknown>;
-    return {
-      snapshotId: String(o["snapshotId"]),
-      provider: String(o["provider"]),
-      availability: String(o["availability"]),
-      capturedAt: String(o["capturedAt"]),
+  if (!Array.isArray(raw)) {
+    throw new Error("frozen snapshot manifest is malformed");
+  }
+  const snapshots: ManifestSnapshot[] = [];
+  const snapshotIds = new Set<string>();
+  const providers = new Set<string>();
+  for (const value of raw) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new Error("frozen snapshot manifest is malformed");
+    }
+    const entry = value as Record<string, unknown>;
+    if (!hasExactKeys(entry, SNAPSHOT_MANIFEST_KEYS)) {
+      throw new Error("frozen snapshot manifest is malformed");
+    }
+    const sourceWindow = requiredManifestObject(entry, "sourceWindow");
+    const snapshot: ManifestSnapshot = {
+      snapshotId: requiredManifestString(entry, "snapshotId"),
+      provider: requiredManifestString(entry, "provider"),
+      datasetKey: requiredManifestString(entry, "datasetKey"),
+      schemaVersion: requiredManifestString(entry, "schemaVersion"),
+      methodVersion: requiredManifestString(entry, "methodVersion"),
+      checksum: requiredManifestString(entry, "checksum"),
+      availability: requiredManifestString(entry, "availability"),
+      capturedAt: requiredManifestString(entry, "capturedAt"),
+      sourceWindow,
     };
-  });
+    const sourceRegistration = OBSERVATION_SOURCE_REGISTRY.get(
+      snapshot.provider,
+    );
+    if (
+      !sourceRegistration ||
+      !SNAPSHOT_AVAILABILITIES.has(snapshot.availability) ||
+      snapshotIds.has(snapshot.snapshotId) ||
+      providers.has(snapshot.provider)
+    ) {
+      throw new Error("frozen snapshot manifest selection is ambiguous");
+    }
+    snapshotIds.add(snapshot.snapshotId);
+    providers.add(snapshot.provider);
+    snapshots.push(snapshot);
+  }
+  if (
+    !snapshots.some(
+      (snapshot) =>
+        snapshot.provider === "crawl" &&
+        snapshot.methodVersion === CRAWL_METHOD_VERSION &&
+        (snapshot.availability === "available" ||
+          snapshot.availability === "partial"),
+    )
+  ) {
+    throw new Error("frozen diagnostic manifest requires a usable crawl snapshot");
+  }
+  return snapshots;
+}
+
+function readFrozenDiagnosticManifest(
+  diagnostic: DiagnosticRunRow,
+): FrozenDiagnosticManifest {
+  const manifest = diagnostic.input_manifest;
+  if (
+    !hasExactKeys(manifest, MANIFEST_KEYS) ||
+    contentHash(manifest as unknown as CanonicalValue) !==
+      diagnostic.input_hash ||
+    manifest["projectId"] !== diagnostic.project_id ||
+    manifest["siteId"] !== diagnostic.site_id ||
+    manifest["ruleSetVersion"] !== diagnostic.rule_set_version ||
+    manifest["promptSetVersion"] !== diagnostic.prompt_set_version ||
+    manifest["deliveryLocale"] !== diagnostic.output_locale ||
+    diagnostic.rule_set_version !== RULE_SET_VERSION ||
+    diagnostic.prompt_set_version !== PROMPT_SET_VERSION
+  ) {
+    throw new Error("frozen diagnostic manifest does not match its run");
+  }
+
+  const rawIcp = requiredManifestObject(manifest, "icp");
+  if (!hasExactKeys(rawIcp, ICP_MANIFEST_KEYS)) {
+    throw new Error("frozen ICP manifest is malformed");
+  }
+  const version = rawIcp["version"];
+  if (!Number.isInteger(version) || (version as number) < 1) {
+    throw new Error("frozen ICP manifest is malformed");
+  }
+  const icp: ManifestIcp = {
+    id: requiredManifestString(rawIcp, "id"),
+    version: version as number,
+    contentHash: requiredManifestString(rawIcp, "contentHash"),
+  };
+  if (
+    icp.id !== diagnostic.icp_profile_id ||
+    icp.version !== diagnostic.icp_profile_version
+  ) {
+    throw new Error("frozen ICP manifest does not match its run");
+  }
+
+  return { icp, snapshots: readManifestSnapshots(manifest) };
+}
+
+function validateFrozenSnapshotSelection(
+  manifestSnapshots: readonly ManifestSnapshot[],
+  actualSnapshots: readonly DataSnapshotRow[],
+  siteId: string,
+): FrozenSnapshotSelection {
+  if (actualSnapshots.length !== manifestSnapshots.length) {
+    throw new Error("frozen snapshot selection is incomplete");
+  }
+  const snapshotsById = new Map<string, DataSnapshotRow>();
+  for (const snapshot of actualSnapshots) {
+    if (snapshotsById.has(snapshot.id)) {
+      throw new Error("frozen snapshot selection is ambiguous");
+    }
+    snapshotsById.set(snapshot.id, snapshot);
+  }
+
+  const lineageByProvider = new Map<string, EvidenceLineage>();
+  for (const manifestSnapshot of manifestSnapshots) {
+    const actual = snapshotsById.get(manifestSnapshot.snapshotId);
+    const sourceRegistration = actual
+      ? OBSERVATION_SOURCE_REGISTRY.get(actual.provider)
+      : undefined;
+    if (
+      !actual ||
+      !sourceRegistration ||
+      actual.dataset_key !== sourceRegistration.datasetKey ||
+      actual.method_version !== sourceRegistration.methodVersion ||
+      actual.site_id !== siteId ||
+      actual.provider !== manifestSnapshot.provider ||
+      actual.dataset_key !== manifestSnapshot.datasetKey ||
+      actual.schema_version !== manifestSnapshot.schemaVersion ||
+      actual.method_version !== manifestSnapshot.methodVersion ||
+      actual.checksum !== manifestSnapshot.checksum ||
+      actual.availability !== manifestSnapshot.availability ||
+      actual.captured_at !== manifestSnapshot.capturedAt ||
+      !isDeepStrictEqual(actual.source_window, manifestSnapshot.sourceWindow)
+    ) {
+      throw new Error("frozen snapshot manifest does not match its snapshot");
+    }
+    if (lineageByProvider.has(actual.provider)) {
+      throw new Error("frozen snapshot selection is ambiguous");
+    }
+    lineageByProvider.set(actual.provider, {
+      snapshotId: actual.id,
+      collectionRunId: actual.collection_run_id,
+    });
+  }
+  return { lineageByProvider, snapshotsById };
+}
+
+/**
+ * Reject every normalized row that the frozen source adapter could not have
+ * produced. This runs before DiagnosticContext construction, so a historical or
+ * cross-provider row cannot be reinterpreted by metric-key dispatch.
+ */
+function invalidFrozenObservation(): never {
+  throw new Error(OBSERVATION_CONTRACT_MISMATCH);
+}
+
+function canonicalSubjectAtOrigin(
+  subjectRef: string,
+  siteOrigin: string,
+): boolean {
+  const pair = canonicalizeUrl(subjectRef);
+  if (!pair || pair.subjectUrl !== subjectRef) return false;
+  try {
+    return new URL(pair.subjectUrl).origin === siteOrigin;
+  } catch {
+    return false;
+  }
+}
+
+function canonicalFetchAtOrigin(
+  fetchUrl: string,
+  siteOrigin: string,
+): ReturnType<typeof canonicalizeUrl> {
+  const pair = canonicalizeUrl(fetchUrl);
+  if (!pair || pair.fetchUrl !== fetchUrl) return null;
+  try {
+    return new URL(pair.fetchUrl).origin === siteOrigin ? pair : null;
+  } catch {
+    return null;
+  }
+}
+
+function validateCrawlPageIdentity(
+  value: z.infer<typeof crawlPageProjectionSchema>,
+  subjectRef: string,
+  siteOrigin: string,
+): boolean {
+  const fetch = canonicalFetchAtOrigin(value.fetchUrl, siteOrigin);
+  if (!fetch || fetch.subjectUrl !== subjectRef) return false;
+  if (
+    value.canonicalTarget !== null &&
+    canonicalizeUrl(value.canonicalTarget)?.fetchUrl !== value.canonicalTarget
+  ) {
+    return false;
+  }
+  for (const redirect of value.redirectChain) {
+    if (!canonicalFetchAtOrigin(redirect, siteOrigin)) return false;
+  }
+  for (const link of value.internalOutlinks) {
+    if (!canonicalSubjectAtOrigin(link.targetSubjectUrl, siteOrigin)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function validateAvailableObservationValue(
+  observation: ObservationRow,
+  siteOrigin: string,
+): void {
+  if (
+    observation.value_numeric !== null ||
+    observation.value_text !== null ||
+    observation.value_json === null ||
+    observation.value_json === undefined ||
+    observation.unit !== null
+  ) {
+    invalidFrozenObservation();
+  }
+
+  switch (observation.metric_key) {
+    case METRIC_CRAWL_PAGE: {
+      const parsed = crawlPageProjectionSchema.safeParse(
+        observation.value_json,
+      );
+      if (
+        !parsed.success ||
+        !validateCrawlPageIdentity(
+          parsed.data,
+          observation.subject_ref,
+          siteOrigin,
+        )
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    }
+    case METRIC_CRAWL_ROBOTS:
+      if (
+        !crawlRobotsProjectionSchema.safeParse(observation.value_json)
+          .success ||
+        observation.subject_ref !== siteOrigin
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    case METRIC_CRAWL_SITEMAP: {
+      const parsed = crawlSitemapProjectionSchema.safeParse(
+        observation.value_json,
+      );
+      if (
+        !parsed.success ||
+        observation.subject_ref !== siteOrigin ||
+        !parsed.data.subjectUrls.every((subjectUrl) =>
+          canonicalSubjectAtOrigin(subjectUrl, siteOrigin),
+        )
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    }
+    case METRIC_GSC_PAGE:
+      if (
+        !gscPageProjectionSchema.safeParse(observation.value_json).success ||
+        !canonicalSubjectAtOrigin(observation.subject_ref, siteOrigin)
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    case METRIC_GA4_LANDING:
+      if (
+        !ga4LandingProjectionSchema.safeParse(observation.value_json).success ||
+        !canonicalSubjectAtOrigin(observation.subject_ref, siteOrigin)
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    case METRIC_CSV_KEYWORD_GAP: {
+      const parsed = keywordGapProjectionSchema.safeParse(
+        observation.value_json,
+      );
+      if (!parsed.success || parsed.data.clusterKey !== observation.subject_ref) {
+        invalidFrozenObservation();
+      }
+      const value = parsed.data;
+      // `currentUrl` is a provider-observed ranking/result projection, not the
+      // identity of the keyword-cluster subject. CSV imports and DataForSEO may
+      // legitimately report an absolute URL on another origin (for example a
+      // competitor result). Keep the strict absolute-URL schema above, while
+      // preserving the provider fact exactly instead of inventing a Site-scope
+      // constraint that the collection adapters do not make.
+      if (
+        observation.provider === "csv" &&
+        (value.keyword.length > 500 ||
+          (value.searchVolume !== null &&
+            !Number.isSafeInteger(value.searchVolume)))
+      ) {
+        invalidFrozenObservation();
+      }
+      if (
+        observation.provider === "dataforseo" &&
+        (value.competitorDomain !== null ||
+          value.competitorRank !== null ||
+          clusterKey(value.keyword) !== value.clusterKey ||
+          !/^[a-z]{2,8}$/.test(value.languageCode))
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    }
+    default:
+      invalidFrozenObservation();
+  }
+}
+
+function validateFrozenObservations(
+  observations: readonly ObservationRow[],
+  frozenSelection: FrozenSnapshotSelection,
+  siteOrigin: string,
+): void {
+  for (const observation of observations) {
+    const snapshot = frozenSelection.snapshotsById.get(observation.snapshot_id);
+    const sourceRegistration = snapshot
+      ? OBSERVATION_SOURCE_REGISTRY.get(snapshot.provider)
+      : undefined;
+    const expectedSubjectType = sourceRegistration?.subjectTypeByMetric.get(
+      observation.metric_key,
+    );
+    if (
+      !snapshot ||
+      !sourceRegistration ||
+      observation.provider !== snapshot.provider ||
+      snapshot.dataset_key !== sourceRegistration.datasetKey ||
+      snapshot.method_version !== sourceRegistration.methodVersion ||
+      expectedSubjectType === undefined ||
+      observation.subject_type !== expectedSubjectType ||
+      observation.observed_at !== snapshot.captured_at ||
+      observation.origin !== sourceRegistration.origin ||
+      observation.grade !== sourceRegistration.grade ||
+      observation.method !== "observed" ||
+      observation.support !== "supports" ||
+      observation.unit !== null ||
+      !SNAPSHOT_AVAILABILITIES.has(observation.availability) ||
+      (snapshot.availability === "unavailable" &&
+        observation.availability !== "unavailable")
+    ) {
+      invalidFrozenObservation();
+    }
+
+    if (observation.availability === "available") {
+      validateAvailableObservationValue(observation, siteOrigin);
+      continue;
+    }
+    if (
+      observation.value_numeric !== null ||
+      observation.value_text !== null ||
+      observation.value_json !== null
+    ) {
+      invalidFrozenObservation();
+    }
+    if (
+      observation.metric_key === METRIC_CRAWL_ROBOTS ||
+      observation.metric_key === METRIC_CRAWL_SITEMAP
+    ) {
+      if (observation.subject_ref !== siteOrigin) invalidFrozenObservation();
+    } else if (
+      (observation.metric_key === METRIC_CRAWL_PAGE ||
+        observation.metric_key === METRIC_GSC_PAGE ||
+        observation.metric_key === METRIC_GA4_LANDING) &&
+      !canonicalSubjectAtOrigin(observation.subject_ref, siteOrigin)
+    ) {
+      invalidFrozenObservation();
+    }
+  }
+}
+
+export function lineageForEvidenceProvider(
+  sourceProvider: string,
+  lineageByProvider: ReadonlyMap<string, EvidenceLineage>,
+): EvidenceLineage | null {
+  if (!SOURCE_EVIDENCE_PROVIDERS.has(sourceProvider)) return null;
+  const lineage = lineageByProvider.get(sourceProvider);
+  if (!lineage) {
+    throw new Error("source evidence has no frozen snapshot lineage");
+  }
+  return lineage;
 }
 
 function buildCoverage(snaps: readonly ManifestSnapshot[]): {
   coverage: CoverageInput;
   capturedAt: Record<string, string>;
+  availabilityByProvider: Record<string, DatasetAvailability>;
 } {
-  const availFor = (provider: string): DatasetAvailability => {
-    const s = snaps.find((x) => x.provider === provider);
-    if (!s) return "unavailable";
-    return s.availability === "available" || s.availability === "partial"
-      ? (s.availability as DatasetAvailability)
-      : "unavailable";
-  };
   const capturedAt: Record<string, string> = {};
-  for (const s of snaps) capturedAt[s.provider] = s.capturedAt;
+  const availabilityByProvider: Record<string, DatasetAvailability> = {};
+  for (const snapshot of snaps) {
+    capturedAt[snapshot.provider] = snapshot.capturedAt;
+    availabilityByProvider[snapshot.provider] =
+      snapshot.availability === "available" ||
+      snapshot.availability === "partial"
+        ? snapshot.availability
+        : "unavailable";
+  }
+  const availFor = (provider: string): DatasetAvailability =>
+    availabilityByProvider[provider] ?? "unavailable";
   const keywordGapAvailability = (): DatasetAvailability => {
     const sources = [availFor("csv"), availFor("dataforseo")];
     if (sources.includes("available")) return "available";
@@ -339,6 +1145,7 @@ function buildCoverage(snaps: readonly ManifestSnapshot[]): {
       csv: keywordGapAvailability(),
     },
     capturedAt,
+    availabilityByProvider,
   };
 }
 
@@ -363,6 +1170,14 @@ export async function runDiagnostic(
       status: "failed",
       lastErrorCode: "NOT_FOUND",
       lastErrorSummary: "diagnostic run missing",
+    });
+    return;
+  }
+  if (!supportsCurrentDiagnosticExecutor(diagRun)) {
+    await runs.setTerminal(attempt, {
+      status: "failed",
+      lastErrorCode: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
+      lastErrorSummary: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED_SUMMARY,
     });
     return;
   }
@@ -416,19 +1231,55 @@ async function computeAndPersist(
   actorId: string,
   attempt: RunAttempt,
 ): Promise<{ status: "completed" | "partial"; findingCount: number } | null> {
-  const manifestSnaps = readManifestSnapshots(diagRun.input_manifest);
+  const frozenManifest = readFrozenDiagnosticManifest(diagRun);
+  const manifestSnaps = frozenManifest.snapshots;
   const snapshotIds = manifestSnaps.map((s) => s.snapshotId);
+  const actualSnapshots = await new DataSnapshotsRepository(ctx.db).findByIds(
+    scope,
+    snapshotIds,
+  );
+  const frozenSelection = validateFrozenSnapshotSelection(
+    manifestSnaps,
+    actualSnapshots,
+    diagRun.site_id,
+  );
+
+  const site = await new SitesRepository(ctx.db).findById(
+    scope,
+    diagRun.site_id,
+  );
+  const normalizedSite = site ? normalizeSiteOrigin(site.origin) : null;
+  if (
+    !site ||
+    !normalizedSite ||
+    normalizedSite.origin !== site.origin ||
+    normalizedSite.host !== site.host
+  ) {
+    throw new Error("frozen diagnostic Site identity is unavailable");
+  }
 
   const icpRow = await new IcpProfilesRepository(ctx.db).findById(
     scope,
     diagRun.icp_profile_id,
   );
-  if (!icpRow) throw new Error("frozen ICP profile missing");
+  if (
+    !icpRow ||
+    icpRow.status !== "complete" ||
+    icpRow.version !== frozenManifest.icp.version ||
+    icpRow.content_hash !== frozenManifest.icp.contentHash
+  ) {
+    throw new Error("frozen ICP profile does not match its manifest");
+  }
   const icp = parseIcp(icpRow.profile);
 
   const observationRows = await new ObservationsRepository(
     ctx.db,
   ).listBySnapshotIds(scope, snapshotIds);
+  validateFrozenObservations(
+    observationRows,
+    frozenSelection,
+    normalizedSite.origin,
+  );
   const discrepancyRows = await new ProviderDiscrepanciesRepository(
     ctx.db,
   ).listUnresolvedBySnapshotIds(scope, snapshotIds);
@@ -442,12 +1293,14 @@ async function computeAndPersist(
     observedAt: o.observed_at,
   }));
 
-  const { coverage, capturedAt } = buildCoverage(manifestSnaps);
+  const { coverage, capturedAt, availabilityByProvider } =
+    buildCoverage(manifestSnaps);
   const diagCtx = DiagnosticContext.build({
     icp,
     deliveryLocale: diagRun.output_locale,
     observations,
     coverage,
+    availabilityByProvider,
     capturedAt,
   });
 
@@ -471,6 +1324,14 @@ async function computeAndPersist(
   // be surfaced before the canonical persistence transaction can complete.
   summaryGenerator?.assertHealthy();
   warnOnSlowRules(ctx.logger, diagRun.id, pipeline.ruleResults);
+  for (const finding of pipeline.findings) {
+    for (const evidence of finding.evidence) {
+      lineageForEvidenceProvider(
+        evidence.sourceProvider,
+        frozenSelection.lineageByProvider,
+      );
+    }
+  }
 
   // A run is `completed` (and may therefore auto-resolve stale findings, §8.6)
   // ONLY when every rule actually ran to pass/candidate — a single skipped
@@ -536,6 +1397,7 @@ async function computeAndPersist(
         diagRun.id,
         findingId,
         finding,
+        frozenSelection.lineageByProvider,
       );
       // §9.2: a cross-run re-hit merges the new evidence into an existing,
       // non-dismissed Action without touching human priority/status.
@@ -648,6 +1510,7 @@ async function upsertFinding(
   // Re-hit: refresh + reactivate, preserve human review state; regressed if resolved.
   const regressed = existing.resolved_at !== null || existing.active === false;
   await repo.touchSeen(existing.id, {
+    ruleVersion: finding.ruleVersion,
     severity: finding.severity,
     confidence: finding.confidence,
     titleArgs,
@@ -675,19 +1538,32 @@ async function persistEvidence(
   runId: string,
   findingId: string,
   finding: RunFinding,
+  lineageByProvider: ReadonlyMap<string, EvidenceLineage>,
 ): Promise<string[]> {
-  const rows: EvidenceInsert[] = finding.evidence.map((e) => ({
-    sourceProvider: e.sourceProvider,
-    origin: e.origin,
-    method: e.method,
-    grade: e.grade,
-    availability: e.availability,
-    support: e.support,
-    subjectRefs: [...e.subjectRefs],
-    claim: e.claim,
-    observedAt: e.observedAt,
-    limitation: e.limitation,
-  }));
+  const rows: EvidenceInsert[] = finding.evidence.map((e) => {
+    const lineage = lineageForEvidenceProvider(
+      e.sourceProvider,
+      lineageByProvider,
+    );
+    return {
+      sourceProvider: e.sourceProvider,
+      origin: e.origin,
+      method: e.method,
+      grade: e.grade,
+      availability: e.availability,
+      support: e.support,
+      subjectRefs: [...e.subjectRefs],
+      claim: e.claim,
+      observedAt: e.observedAt,
+      limitation: e.limitation,
+      ...(lineage
+        ? {
+            snapshotId: lineage.snapshotId,
+            collectionRunId: lineage.collectionRunId,
+          }
+        : {}),
+    };
+  });
   const evidenceIds = await repo.insertMany(
     {
       workspaceId: scope.workspaceId,

@@ -5,6 +5,7 @@ import {
   diagnosisFindingFixture,
   diagnosisFindingsEnvelopeFixture,
   installCriticalFlowApi,
+  type MockEvidence,
 } from "./mock-api.ts";
 
 const API_BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
@@ -79,16 +80,23 @@ async function installLinkedFindingApi(
                   sourceProvider: "crawl",
                   origin: "direct_public",
                   method: "observed",
-                  grade: "A",
+                  grade: "B",
                   availability: "available",
                   support: "supports",
                   claim: "The linked page returned a server error.",
-                  subjectRefs: [],
+                  subjectRefs: [
+                    {
+                      type: "url",
+                      value: "https://example.test/failing-product-page",
+                    },
+                  ],
                   observedAt: NOW,
                   limitation: "One captured response.",
-                  snapshotId: null,
+                  snapshotId: "00000000-0000-4000-8000-000000000992",
+                  collectionRunId:
+                    "00000000-0000-4000-8000-000000000993",
                   analysisInvocationId: null,
-                },
+                } satisfies MockEvidence,
               ],
             }),
           ]),

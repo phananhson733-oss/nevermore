@@ -67,18 +67,33 @@ export const contentCoverageRule = {
   },
 } satisfies DiagnosticRule;
 
-/** Token field bags for every eligible indexable page (dropping null bags). */
+/**
+ * One unioned token bag per canonical subject. Any healthy exact variant can
+ * establish subject-level coverage; absence is not inferred from one arbitrary
+ * transport response.
+ */
 function buildPageBags(ctx: DiagnosticContext): ReadonlySet<string>[] {
   const bags: ReadonlySet<string>[] = [];
-  for (const [subjectUrl, page] of ctx.indexablePages()) {
+  for (const [subjectUrl, variants] of ctx.indexablePages()) {
     let urlPath: string;
     try {
       urlPath = new URL(subjectUrl).pathname;
     } catch {
       continue;
     }
-    const bag = pageFieldBag({ urlPath, title: page.title, h1: page.h1 });
-    if (bag) bags.push(bag);
+    const subjectBag = new Set<string>();
+    let hasSearchableVariant = false;
+    for (const page of variants) {
+      const variantBag = pageFieldBag({
+        urlPath,
+        title: page.title,
+        h1: page.h1,
+      });
+      if (!variantBag) continue;
+      hasSearchableVariant = true;
+      for (const token of variantBag) subjectBag.add(token);
+    }
+    if (hasSearchableVariant) bags.push(subjectBag);
   }
   return bags;
 }

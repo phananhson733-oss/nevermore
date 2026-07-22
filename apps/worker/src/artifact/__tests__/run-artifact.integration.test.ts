@@ -34,19 +34,27 @@ import {
   ObservationsRepository,
   ProjectsRepository,
   SitesRepository,
+  SourceConnectionsRepository,
   contentHash,
   toRunAttempt,
+  type DataSnapshotRow,
   type FindingRow,
   type PgBoss,
   type JobWithMetadata,
   type ObservationInsert,
   type ProjectScope,
 } from "@sf/db";
-import { FINDING_REGISTRY } from "@sf/engine";
+import {
+  FINDING_REGISTRY,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import { MAX_ARTIFACT_EVIDENCE_ROWS } from "@sf/artifacts";
 import {
   LocalFsBlobStore,
+  CRAWL_METHOD_VERSION,
   METRIC_CRAWL_PAGE,
+  subjectUrlOf,
   type CrawlPageProjection,
 } from "@sf/sources";
 import type { Logger } from "@sf/observability";
@@ -89,6 +97,19 @@ interface ArtifactFixture {
   readonly sourceDiagnosticRunId: string;
   readonly sourceIcpProfileId: string;
   readonly subjectUrl: string;
+  readonly diagnosticLineage: readonly DiagnosticLineage[];
+}
+
+interface DiagnosticLineage {
+  readonly snapshotId: string;
+  readonly collectionRunId: string;
+  readonly capturedAt: string;
+}
+
+interface IcpSeed {
+  readonly id: string;
+  readonly version: number;
+  readonly contentHash: string;
 }
 
 interface DiagnosticSeedContext {
@@ -100,7 +121,7 @@ interface DiagnosticSeedContext {
 }
 
 interface PreparedDiagnosticInputs {
-  readonly inputManifests: readonly Record<string, unknown>[];
+  readonly snapshotsByRun: readonly (readonly DataSnapshotRow[])[];
   readonly subjectRefs: readonly string[];
 }
 
@@ -222,7 +243,7 @@ describeDb("artifact runner (spec §10)", () => {
     const fx = await seedArtifact(handle, {
       artifactType: "metadata_rewrite",
       prepareDiagnosticInputs: async (seed) => {
-        firstSeenSnapshotId = await seedCrawlSnapshot(handle, {
+        const firstSeenSnapshot = await seedCrawlSnapshot(handle, {
           ...seed,
           capturedAt: "2026-07-20T01:00:00.000Z",
           pages: [
@@ -233,7 +254,8 @@ describeDb("artifact runner (spec §10)", () => {
             },
           ],
         });
-        frozenSnapshotId = await seedCrawlSnapshot(handle, {
+        firstSeenSnapshotId = firstSeenSnapshot.id;
+        const frozenSnapshot = await seedCrawlSnapshot(handle, {
           ...seed,
           capturedAt: "2026-07-20T02:00:00.000Z",
           pages: [
@@ -249,7 +271,8 @@ describeDb("artifact runner (spec §10)", () => {
             },
           ],
         });
-        newerSnapshotId = await seedCrawlSnapshot(handle, {
+        frozenSnapshotId = frozenSnapshot.id;
+        const newerSnapshot = await seedCrawlSnapshot(handle, {
           ...seed,
           capturedAt: "2026-07-20T03:00:00.000Z",
           pages: [
@@ -261,11 +284,9 @@ describeDb("artifact runner (spec §10)", () => {
             },
           ],
         });
+        newerSnapshotId = newerSnapshot.id;
         return {
-          inputManifests: [
-            crawlManifest(firstSeenSnapshotId, "2026-07-20T01:00:00.000Z"),
-            crawlManifest(frozenSnapshotId, "2026-07-20T02:00:00.000Z"),
-          ],
+          snapshotsByRun: [[firstSeenSnapshot], [frozenSnapshot]],
           subjectRefs: [seed.subjectUrl],
         };
       },
@@ -281,9 +302,20 @@ describeDb("artifact runner (spec §10)", () => {
     const frozenDiagnostic = await new DiagnosticRunsRepository(
       handle.db,
     ).findById(fx.scope, finding!.last_seen_run_id);
-    expect(frozenDiagnostic?.input_manifest).toEqual(
-      crawlManifest(frozenSnapshotId, "2026-07-20T02:00:00.000Z"),
+    const frozenSnapshot = await new DataSnapshotsRepository(handle.db).findById(
+      fx.scope,
+      frozenSnapshotId,
     );
+    expect(frozenSnapshot).not.toBeNull();
+    expect(frozenDiagnostic?.input_manifest).toMatchObject({
+      projectId: fx.scope.projectId,
+      siteId: frozenDiagnostic?.site_id,
+      icp: { id: fx.sourceIcpProfileId, version: 1 },
+      snapshots: [snapshotManifestEntry(frozenSnapshot!)],
+      ruleSetVersion: RULE_SET_VERSION,
+      promptSetVersion: PROMPT_SET_VERSION,
+      deliveryLocale: "en",
+    });
 
     const content = await generateTemplateRevision(handle, ctx, fx);
     expect(content).toMatchObject({
@@ -304,7 +336,7 @@ describeDb("artifact runner (spec §10)", () => {
     const fx = await seedArtifact(handle, {
       artifactType: "metadata_rewrite",
       prepareDiagnosticInputs: async (seed) => {
-        frozenSnapshotId = await seedCrawlSnapshot(handle, {
+        const frozenSnapshot = await seedCrawlSnapshot(handle, {
           ...seed,
           capturedAt: "2026-07-20T04:00:00.000Z",
           pages: [
@@ -320,10 +352,9 @@ describeDb("artifact runner (spec §10)", () => {
             },
           ],
         });
+        frozenSnapshotId = frozenSnapshot.id;
         return {
-          inputManifests: [
-            crawlManifest(frozenSnapshotId, "2026-07-20T04:00:00.000Z"),
-          ],
+          snapshotsByRun: [[frozenSnapshot]],
           subjectRefs: [seed.subjectUrl],
         };
       },
@@ -362,73 +393,68 @@ describeDb("artifact runner (spec §10)", () => {
     });
   });
 
-  it("fails closed when the last-seen diagnostic manifest contains multiple crawl snapshots", async () => {
+  it("rejects an ambiguous current diagnostic manifest with multiple crawl snapshots", async () => {
     let crawlSnapshotA = "";
     let crawlSnapshotB = "";
-    const fx = await seedArtifact(handle, {
-      artifactType: "metadata_rewrite",
-      prepareDiagnosticInputs: async (seed) => {
-        crawlSnapshotA = await seedCrawlSnapshot(handle, {
-          ...seed,
-          capturedAt: "2026-07-20T05:00:00.000Z",
-          pages: [
-            {
-              url: seed.subjectUrl,
-              title: "Ambiguous title A",
-              metaDescription: "Ambiguous description A.",
-            },
-          ],
-        });
-        crawlSnapshotB = await seedCrawlSnapshot(handle, {
-          ...seed,
-          capturedAt: "2026-07-20T06:00:00.000Z",
-          pages: [
-            {
-              url: seed.subjectUrl,
-              title: "Ambiguous title B",
-              metaDescription: "Ambiguous description B.",
-            },
-          ],
-        });
-        return {
-          inputManifests: [
-            crawlManifest(
-              [crawlSnapshotA, crawlSnapshotB],
-              [
-                "2026-07-20T05:00:00.000Z",
-                "2026-07-20T06:00:00.000Z",
-              ],
-            ),
-          ],
-          subjectRefs: [seed.subjectUrl],
-        };
-      },
-    });
-
-    const snapshots = await new DataSnapshotsRepository(handle.db).findByIds(
-      fx.scope,
-      [crawlSnapshotA, crawlSnapshotB],
-    );
-    expect(snapshots).toHaveLength(2);
-    expect(snapshots.every((snapshot) => snapshot.provider === "crawl")).toBe(
-      true,
-    );
-
-    const content = await generateTemplateRevision(handle, ctx, fx);
-    expect(content).toMatchObject({
-      url: fx.subjectUrl,
-      currentTitle: null,
-      currentDescription: null,
-    });
+    await expect(
+      seedArtifact(handle, {
+        artifactType: "metadata_rewrite",
+        prepareDiagnosticInputs: async (seed) => {
+          const snapshotA = await seedCrawlSnapshot(handle, {
+            ...seed,
+            capturedAt: "2026-07-20T05:00:00.000Z",
+            pages: [
+              {
+                url: seed.subjectUrl,
+                title: "Ambiguous title A",
+                metaDescription: "Ambiguous description A.",
+              },
+            ],
+          });
+          const snapshotB = await seedCrawlSnapshot(handle, {
+            ...seed,
+            capturedAt: "2026-07-20T06:00:00.000Z",
+            pages: [
+              {
+                url: seed.subjectUrl,
+                title: "Ambiguous title B",
+                metaDescription: "Ambiguous description B.",
+              },
+            ],
+          });
+          crawlSnapshotA = snapshotA.id;
+          crawlSnapshotB = snapshotB.id;
+          return {
+            snapshotsByRun: [[snapshotA, snapshotB]],
+            subjectRefs: [seed.subjectUrl],
+          };
+        },
+      }),
+    ).rejects.toMatchObject({ cause: { code: "23514" } });
+    expect(crawlSnapshotA).not.toBe("");
+    expect(crawlSnapshotB).not.toBe("");
+    expect(crawlSnapshotA).not.toBe(crawlSnapshotB);
   });
 
   it("sends only evidence linked to the finding's last-seen diagnostic run", async () => {
     const fx = await seedArtifact(handle, {
       generationMode: "structured_llm",
-      prepareDiagnosticInputs: async (seed) => ({
-        inputManifests: [{ snapshots: [] }, { snapshots: [] }],
-        subjectRefs: [seed.subjectUrl],
-      }),
+      prepareDiagnosticInputs: async (seed) => {
+        const oldSnapshot = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T07:00:00.000Z",
+          pages: [metadataPage(seed.subjectUrl, "Old evidence page")],
+        });
+        const frozenSnapshot = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T08:00:00.000Z",
+          pages: [metadataPage(seed.subjectUrl, "Frozen evidence page")],
+        });
+        return {
+          snapshotsByRun: [[oldSnapshot], [frozenSnapshot]],
+          subjectRefs: [seed.subjectUrl],
+        };
+      },
     });
     expect(fx.diagnosticRunIds).toHaveLength(2);
     const evidence = new EvidenceRepository(handle.db);
@@ -448,8 +474,10 @@ describeDb("artifact runner (spec §10)", () => {
           support: "context",
           subjectRefs: [fx.subjectUrl],
           claim: "OLD_RUN_EVIDENCE_MUST_NOT_REACH_THE_PROMPT",
-          observedAt: "2026-07-20T07:00:00.000Z",
+          observedAt: fx.diagnosticLineage[0]!.capturedAt,
           limitation: "historical fixture",
+          snapshotId: fx.diagnosticLineage[0]!.snapshotId,
+          collectionRunId: fx.diagnosticLineage[0]!.collectionRunId,
         },
       ],
     );
@@ -464,13 +492,15 @@ describeDb("artifact runner (spec §10)", () => {
           sourceProvider: "crawl",
           origin: "direct_public",
           method: "observed",
-          grade: "A",
+          grade: "B",
           availability: "available",
           support: "supports",
           subjectRefs: [fx.subjectUrl],
           claim: "FROZEN_LAST_SEEN_EVIDENCE_REACHES_THE_PROMPT",
-          observedAt: "2026-07-20T08:00:00.000Z",
+          observedAt: fx.diagnosticLineage[1]!.capturedAt,
           limitation: "last-seen fixture",
+          snapshotId: fx.diagnosticLineage[1]!.snapshotId,
+          collectionRunId: fx.diagnosticLineage[1]!.collectionRunId,
         },
       ],
     );
@@ -555,8 +585,10 @@ describeDb("artifact runner (spec §10)", () => {
           support: "context",
           subjectRefs: [fx.subjectUrl],
           claim: `Frozen overflow evidence ${String(index)}`,
-          observedAt: "2026-07-20T09:00:00.000Z",
+          observedAt: fx.diagnosticLineage[0]!.capturedAt,
           limitation: "overflow fixture",
+          snapshotId: fx.diagnosticLineage[0]!.snapshotId,
+          collectionRunId: fx.diagnosticLineage[0]!.collectionRunId,
         }),
       ),
     );
@@ -602,10 +634,22 @@ describeDb("artifact runner (spec §10)", () => {
   it("fails before an external call when a frozen link points to cross-run evidence", async () => {
     const fx = await seedArtifact(handle, {
       generationMode: "structured_llm",
-      prepareDiagnosticInputs: async (seed) => ({
-        inputManifests: [{ snapshots: [] }, { snapshots: [] }],
-        subjectRefs: [seed.subjectUrl],
-      }),
+      prepareDiagnosticInputs: async (seed) => {
+        const oldSnapshot = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T10:00:00.000Z",
+          pages: [metadataPage(seed.subjectUrl, "Cross-run old page")],
+        });
+        const frozenSnapshot = await seedCrawlSnapshot(handle, {
+          ...seed,
+          capturedAt: "2026-07-20T11:00:00.000Z",
+          pages: [metadataPage(seed.subjectUrl, "Cross-run frozen page")],
+        });
+        return {
+          snapshotsByRun: [[oldSnapshot], [frozenSnapshot]],
+          subjectRefs: [seed.subjectUrl],
+        };
+      },
     });
     const evidence = new EvidenceRepository(handle.db);
     const [oldRunEvidenceId] = await evidence.insertMany(
@@ -624,8 +668,10 @@ describeDb("artifact runner (spec §10)", () => {
           support: "context",
           subjectRefs: [fx.subjectUrl],
           claim: "Cross-run evidence must fail the integrity check",
-          observedAt: "2026-07-20T10:00:00.000Z",
+          observedAt: fx.diagnosticLineage[0]!.capturedAt,
           limitation: "cross-run fixture",
+          snapshotId: fx.diagnosticLineage[0]!.snapshotId,
+          collectionRunId: fx.diagnosticLineage[0]!.collectionRunId,
         },
       ],
     );
@@ -976,36 +1022,70 @@ async function seedArtifact(
     marketCodes: ["US"],
     languageCodes: ["en"],
   });
+  await new SourceConnectionsRepository(handle.db).insertDefaultCrawl({
+    workspaceId,
+    projectId: project.id,
+    siteId: site.id,
+    createdBy: actor,
+  });
 
   // A finding + action are the artifact's allowlisted prompt source (spec §10.2).
-  const icpId = await seedIcp(handle, scope, actor);
+  const icp = await seedIcp(handle, scope, actor);
+  const diagnosticSeed = {
+    scope,
+    siteId: site.id,
+    actor,
+    origin,
+    subjectUrl,
+  } satisfies DiagnosticSeedContext;
   const prepared = options?.prepareDiagnosticInputs
-    ? await options.prepareDiagnosticInputs({
-        scope,
-        siteId: site.id,
-        actor,
-        origin,
-        subjectUrl,
-      })
+    ? await options.prepareDiagnosticInputs(diagnosticSeed)
     : {
-        inputManifests: [{ snapshots: [] }],
+        snapshotsByRun: [
+          [
+            await seedCrawlSnapshot(handle, {
+              ...diagnosticSeed,
+              capturedAt: new Date().toISOString(),
+              pages: [
+                {
+                  url: `${origin}/fixture-not-found`,
+                  title: null,
+                  metaDescription: null,
+                  status: 404,
+                },
+              ],
+            }),
+          ],
+        ],
         subjectRefs: ["http_status:404"],
       };
-  if (prepared.inputManifests.length === 0) {
+  if (prepared.snapshotsByRun.length === 0) {
     throw new Error("artifact fixture requires at least one diagnostic run");
   }
   const diagnosticRunIds: string[] = [];
-  for (const inputManifest of prepared.inputManifests) {
-    diagnosticRunIds.push(
-      await seedDiagnosticRun(
-        handle,
-        scope,
-        site.id,
-        actor,
-        icpId,
-        inputManifest,
-      ),
+  const diagnosticLineage: DiagnosticLineage[] = [];
+  for (const snapshots of prepared.snapshotsByRun) {
+    const crawlSnapshots = snapshots.filter(
+      (snapshot) => snapshot.provider === "crawl",
     );
+    const diagnosticRunId = await seedDiagnosticRun(
+      handle,
+      scope,
+      site.id,
+      actor,
+      icp,
+      snapshots,
+    );
+    diagnosticRunIds.push(diagnosticRunId);
+    const crawlSnapshot = crawlSnapshots[0];
+    if (crawlSnapshots.length !== 1 || !crawlSnapshot) {
+      throw new Error("artifact fixture requires one frozen Crawl snapshot");
+    }
+    diagnosticLineage.push({
+      snapshotId: crawlSnapshot.id,
+      collectionRunId: crawlSnapshot.collection_run_id,
+      capturedAt: crawlSnapshot.captured_at,
+    });
   }
   const finding = await seedFinding(handle, scope, diagnosticRunIds[0]!, {
     ruleId:
@@ -1016,6 +1096,7 @@ async function seedArtifact(
   });
   for (let index = 1; index < diagnosticRunIds.length; index += 1) {
     await new FindingsRepository(handle.db).touchSeen(finding.id, {
+      ruleVersion: finding.rule_version,
       severity: finding.severity,
       confidence: finding.confidence,
       titleArgs: finding.title_args,
@@ -1028,6 +1109,10 @@ async function seedArtifact(
     });
   }
   const sourceDiagnosticRunId = diagnosticRunIds.at(-1)!;
+  const sourceLineage = diagnosticLineage.at(-1);
+  if (!sourceLineage) {
+    throw new Error("artifact fixture requires exact Crawl diagnostic lineage");
+  }
   const evidence = new EvidenceRepository(handle.db);
   const [sourceEvidenceId] = await evidence.insertMany(
     {
@@ -1045,8 +1130,10 @@ async function seedArtifact(
         support: "supports",
         subjectRefs: [...prepared.subjectRefs],
         claim: "The source diagnostic observed this finding.",
-        observedAt: new Date().toISOString(),
+        observedAt: sourceLineage.capturedAt,
         limitation: "Static integration fixture proving Action source lineage.",
+        snapshotId: sourceLineage.snapshotId,
+        collectionRunId: sourceLineage.collectionRunId,
       },
     ],
   );
@@ -1104,8 +1191,9 @@ async function seedArtifact(
     findingId: finding.id,
     diagnosticRunIds,
     sourceDiagnosticRunId,
-    sourceIcpProfileId: icpId,
+    sourceIcpProfileId: icp.id,
     subjectUrl,
+    diagnosticLineage,
   };
   const seedRunId = await queueArtifactRun(handle, fixture);
   await new ExecutionArtifactsRepository(handle.db).insert({
@@ -1164,7 +1252,7 @@ async function seedIcp(
   handle: DbHandle,
   scope: ProjectScope,
   actor: string,
-): Promise<string> {
+): Promise<IcpSeed> {
   const [icp] = await handle.db
     .insert(icpProfiles)
     .values({
@@ -1177,7 +1265,11 @@ async function seedIcp(
       created_by: actor,
     })
     .returning();
-  return icp!.id;
+  return {
+    id: icp!.id,
+    version: icp!.version,
+    contentHash: icp!.content_hash,
+  };
 }
 
 async function seedDiagnosticRun(
@@ -1185,8 +1277,8 @@ async function seedDiagnosticRun(
   scope: ProjectScope,
   siteId: string,
   actor: string,
-  icpProfileId: string,
-  inputManifest: Record<string, unknown> = { snapshots: [] },
+  icp: IcpSeed,
+  snapshots: readonly DataSnapshotRow[],
 ): Promise<string> {
   const runId = randomUUID();
   const at = new Date().toISOString();
@@ -1200,18 +1292,26 @@ async function seedDiagnosticRun(
     started_at: at,
     completed_at: at,
   });
+  const inputManifest = diagnosticManifest(
+    scope.projectId,
+    siteId,
+    icp,
+    snapshots,
+  );
   await new DiagnosticRunsRepository(handle.db).insert({
     runId,
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
     siteId,
-    icpProfileId,
-    icpProfileVersion: 1,
-    ruleSetVersion: "mvp.rules.0.2.0",
-    promptSetVersion: "mvp.prompts.0.2.0",
+    icpProfileId: icp.id,
+    icpProfileVersion: icp.version,
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
     outputLocale: "en",
     inputManifest,
-    inputHash: contentHash({ r: runId }),
+    inputHash: contentHash(
+      inputManifest as unknown as Parameters<typeof contentHash>[0],
+    ),
   });
   return runId;
 }
@@ -1232,7 +1332,7 @@ async function seedFinding(
     projectId: scope.projectId,
     findingKey: contentHash({ finding: randomUUID() }),
     ruleId,
-    ruleVersion: 1,
+    ruleVersion: ruleId === "TECH-HTTP-001" ? 2 : 1,
     ruleFamily: meta.ruleFamily,
     intent: meta.intent,
     domain: meta.domain,
@@ -1274,22 +1374,56 @@ async function generateTemplateRevision(
   return revision?.content_json;
 }
 
-function crawlManifest(
-  snapshotIds: string | readonly string[],
-  capturedAts: string | readonly string[],
-): Record<string, unknown> {
-  const ids = typeof snapshotIds === "string" ? [snapshotIds] : snapshotIds;
-  const times = typeof capturedAts === "string" ? [capturedAts] : capturedAts;
-  if (ids.length !== times.length) {
-    throw new Error("crawl manifest fixture lengths differ");
-  }
+function snapshotManifestEntry(snapshot: DataSnapshotRow) {
   return {
-    snapshots: ids.map((snapshotId, index) => ({
-      snapshotId,
-      provider: "crawl",
-      availability: "available",
-      capturedAt: times[index],
-    })),
+    snapshotId: snapshot.id,
+    provider: snapshot.provider,
+    datasetKey: snapshot.dataset_key,
+    schemaVersion: snapshot.schema_version,
+    methodVersion: snapshot.method_version,
+    checksum: snapshot.checksum,
+    capturedAt: snapshot.captured_at,
+    sourceWindow: snapshot.source_window,
+    availability: snapshot.availability,
+  };
+}
+
+function diagnosticManifest(
+  projectId: string,
+  siteId: string,
+  icp: IcpSeed,
+  snapshots: readonly DataSnapshotRow[],
+): Record<string, unknown> {
+  const orderedSnapshots = [...snapshots].sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  );
+  return {
+    projectId,
+    siteId,
+    icp: {
+      id: icp.id,
+      version: icp.version,
+      contentHash: icp.contentHash,
+    },
+    snapshots: orderedSnapshots.map(snapshotManifestEntry),
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
+    deliveryLocale: "en",
+  };
+}
+
+interface CrawlPageSeed {
+  readonly url: string;
+  readonly title: string | null;
+  readonly metaDescription: string | null;
+  readonly status?: number;
+}
+
+function metadataPage(url: string, title: string): CrawlPageSeed {
+  return {
+    url,
+    title,
+    metaDescription: `${title} description.`,
   };
 }
 
@@ -1300,13 +1434,15 @@ async function seedCrawlSnapshot(
     readonly siteId: string;
     readonly actor: string;
     readonly capturedAt: string;
-    readonly pages: readonly {
-      readonly url: string;
-      readonly title: string;
-      readonly metaDescription: string;
-    }[];
+    readonly pages: readonly CrawlPageSeed[];
   },
-): Promise<string> {
+): Promise<DataSnapshotRow> {
+  const source = await new SourceConnectionsRepository(
+    handle.db,
+  ).findConnectedByProvider(input.scope, "crawl");
+  if (!source || source.site_id !== input.siteId) {
+    throw new Error("artifact fixture requires the Site's Crawl connection");
+  }
   const collectionRunId = randomUUID();
   await handle.db.insert(asyncRuns).values({
     id: collectionRunId,
@@ -1325,28 +1461,22 @@ async function seedCrawlSnapshot(
     workspaceId: input.scope.workspaceId,
     projectId: input.scope.projectId,
     siteId: input.siteId,
-    sourceConnectionId: null,
+    sourceConnectionId: source.id,
     provider: "crawl",
     operation: "site_graph",
-    methodVersion: "crawl.site_graph.v1",
+    methodVersion: CRAWL_METHOD_VERSION,
     parametersHash: contentHash({ collectionRunId }),
-  });
-  await collections.finalize(collectionRunId, {
-    rowCount: input.pages.length,
-    sourceWindow: { start: null, end: null },
-    providerUsage: {},
-    stopReason: null,
   });
   const snapshot = await new DataSnapshotsRepository(handle.db).insert({
     workspaceId: input.scope.workspaceId,
     projectId: input.scope.projectId,
     siteId: input.siteId,
     collectionRunId,
-    sourceConnectionId: null,
+    sourceConnectionId: source.id,
     provider: "crawl",
     datasetKey: "crawl.site_graph.v1",
     schemaVersion: "0.2.0",
-    methodVersion: "crawl.site_graph.v1",
+    methodVersion: CRAWL_METHOD_VERSION,
     capturedAt: input.capturedAt,
     sourceWindow: { start: null, end: null },
     availability: "available",
@@ -1355,51 +1485,68 @@ async function seedCrawlSnapshot(
     rowCount: input.pages.length,
     checksum: contentHash({ collectionRunId, capturedAt: input.capturedAt }),
   });
-  const observations: ObservationInsert[] = input.pages.map((page) => ({
-    metricKey: METRIC_CRAWL_PAGE,
-    subjectType: "url",
-    subjectRef: page.url,
-    observedAt: input.capturedAt,
-    availability: "available",
-    valueNumeric: null,
-    valueText: null,
-    valueJson: crawlPageProjection(page),
-    unit: null,
-    origin: "direct_public",
-    grade: "B",
-    support: "context",
-    limitation: "static public crawl fixture",
-  }));
+  const observations: ObservationInsert[] = input.pages.map((page) => {
+    const subjectRef = subjectUrlOf(page.url);
+    if (!subjectRef) throw new Error("artifact fixture Crawl URL is invalid");
+    return {
+      metricKey: METRIC_CRAWL_PAGE,
+      subjectType: "url",
+      subjectRef,
+      observedAt: input.capturedAt,
+      availability: "available",
+      valueNumeric: null,
+      valueText: null,
+      valueJson: crawlPageProjection(page),
+      unit: null,
+      origin: "direct_public",
+      grade: "B",
+      support: "supports",
+      limitation: "static public crawl fixture",
+    };
+  });
   await new ObservationsRepository(handle.db).insertMany(
     input.scope,
     snapshot.id,
     "crawl",
     observations,
   );
-  return snapshot.id;
+  await collections.finalize(collectionRunId, {
+    rowCount: snapshot.row_count,
+    sourceWindow: snapshot.source_window,
+    providerUsage: {
+      urlsFetched: input.pages.length,
+      pagesCollected: input.pages.length,
+    },
+    stopReason: null,
+  });
+  await new SourceConnectionsRepository(handle.db).setLastSnapshot(
+    source.id,
+    snapshot.id,
+    snapshot.availability,
+    snapshot.limitation,
+  );
+  return snapshot;
 }
 
-function crawlPageProjection(input: {
-  readonly url: string;
-  readonly title: string;
-  readonly metaDescription: string;
-}): CrawlPageProjection {
+function crawlPageProjection(input: CrawlPageSeed): CrawlPageProjection {
+  const status = input.status ?? 200;
+  const robotsIndexable = status < 400;
   return {
     fetchUrl: input.url,
-    status: 200,
-    finalStatus: 200,
+    status,
+    finalStatus: status,
     redirectChain: [],
     canonicalTarget: null,
-    robotsIndexable: true,
-    robotsDirectives: [],
+    robotsIndexable,
+    robotsDirectives: robotsIndexable ? [] : ["noindex"],
     title: input.title,
     metaDescription: input.metaDescription,
-    h1: [input.title],
-    headings: [input.title],
-    wordCount: 300,
+    h1: input.title ? [input.title] : [],
+    headings: input.title ? [input.title] : [],
+    wordCount: input.title ? 300 : 0,
     internalOutlinks: [],
     jsonLd: { types: [], errorCount: 0 },
-    sitemapMember: true,
+    sitemapMember: status >= 200 && status < 300,
     bodyExcerpt: null,
     paragraphs: [],
     responseMs: 20,

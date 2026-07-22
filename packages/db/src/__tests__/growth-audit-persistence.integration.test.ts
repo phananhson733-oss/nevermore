@@ -2,12 +2,20 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDbHandle, type Db, type DbHandle } from "../client.ts";
-import { contentHash } from "../hash.ts";
+import {
+  canonicalize,
+  contentHash,
+  type CanonicalValue,
+} from "../hash.ts";
 import { runMigrations } from "../migrate.ts";
 import { AuditRunsRepository } from "../repositories/audit-runs.ts";
 import { CapabilityRunsRepository } from "../repositories/capability-runs.ts";
 import { PageSnapshotsRepository } from "../repositories/page-snapshots.ts";
-import { SitePagesRepository } from "../repositories/site-pages.ts";
+import { SourceConnectionsRepository } from "../repositories/source-connections.ts";
+import {
+  normalizedUrlHash,
+  SitePagesRepository,
+} from "../repositories/site-pages.ts";
 import {
   asyncRuns,
   auditModuleResults,
@@ -26,6 +34,21 @@ import {
 
 const DATABASE_URL = process.env["DATABASE_URL"];
 const describeDb = DATABASE_URL ? describe : describe.skip;
+const CRAWL_METHOD_VERSION = "crawl.site_graph.v2";
+const CRAWL_DATASET_KEY = "crawl.site_graph.v1";
+
+function crawlPageExtract(
+  fetchUrl: string,
+  extra: Record<string, CanonicalValue> = {},
+): { readonly [key: string]: CanonicalValue } {
+  return {
+    schemaVersion: "crawl.page-extract.v1",
+    subjectUrl: fetchUrl,
+    depth: 0,
+    projection: { fetchUrl },
+    ...extra,
+  };
+}
 
 function pgCode(error: unknown): string | undefined {
   let candidate = error;
@@ -54,6 +77,7 @@ interface CanonicalFixture {
   readonly siteId: string;
   readonly diagnosticRunId: string;
   readonly dataSnapshotId: string;
+  readonly dataSnapshotCapturedAt: string;
   readonly otherWorkspaceId: string;
   readonly otherProjectId: string;
 }
@@ -67,6 +91,7 @@ async function createCanonicalFixture(db: Db): Promise<CanonicalFixture> {
   const diagnosticRunId = randomUUID();
   const collectionRunId = randomUUID();
   const dataSnapshotId = randomUUID();
+  const dataSnapshotCapturedAt = new Date().toISOString();
   const otherWorkspaceId = randomUUID();
   const otherProjectId = randomUUID();
 
@@ -100,6 +125,14 @@ async function createCanonicalFixture(db: Db): Promise<CanonicalFixture> {
     host: `${projectId}.example.test`,
     market_codes: ["US"],
     language_codes: ["en"],
+  });
+  const crawlSource = await new SourceConnectionsRepository(
+    db,
+  ).insertDefaultCrawl({
+    workspaceId,
+    projectId,
+    siteId,
+    createdBy: actorId,
   });
   await db.insert(icpProfiles).values({
     id: icpProfileId,
@@ -145,9 +178,10 @@ async function createCanonicalFixture(db: Db): Promise<CanonicalFixture> {
     workspace_id: workspaceId,
     project_id: projectId,
     site_id: siteId,
+    source_connection_id: crawlSource.id,
     provider: "crawl",
     operation: "site_graph",
-    method_version: "integration.fixture.v1",
+    method_version: CRAWL_METHOD_VERSION,
     parameters_hash: contentHash({ fixtureId: randomUUID() }),
   });
   await db.insert(dataSnapshots).values({
@@ -156,17 +190,27 @@ async function createCanonicalFixture(db: Db): Promise<CanonicalFixture> {
     project_id: projectId,
     site_id: siteId,
     collection_run_id: collectionRunId,
+    source_connection_id: crawlSource.id,
     provider: "crawl",
-    dataset_key: "crawl.site_graph.v1",
-    schema_version: "integration.fixture.v1",
-    method_version: "integration.fixture.v1",
-    captured_at: new Date().toISOString(),
-    source_window: { fixtureId: randomUUID() },
+    dataset_key: CRAWL_DATASET_KEY,
+    schema_version: CRAWL_METHOD_VERSION,
+    method_version: CRAWL_METHOD_VERSION,
+    captured_at: dataSnapshotCapturedAt,
+    source_window: { start: null, end: null },
     availability: "available",
     limitation: "Disposable integration fixture.",
     row_count: 1,
     checksum: contentHash({ fixtureId: randomUUID() }),
   });
+  await db
+    .update(collectionRuns)
+    .set({
+      row_count: 1,
+      source_window: { start: null, end: null },
+      provider_usage: {},
+      stop_reason: null,
+    })
+    .where(eq(collectionRuns.id, collectionRunId));
 
   return {
     actorId,
@@ -175,6 +219,7 @@ async function createCanonicalFixture(db: Db): Promise<CanonicalFixture> {
     siteId,
     diagnosticRunId,
     dataSnapshotId,
+    dataSnapshotCapturedAt,
     otherWorkspaceId,
     otherProjectId,
   };
@@ -194,7 +239,7 @@ async function createAuditProjection(
   const sitePagesRepository = new SitePagesRepository(db);
   const pageSnapshotsRepository = new PageSnapshotsRepository(db);
   const normalizedUrl = `https://${fixture.projectId}.example.test/${randomUUID()}`;
-  const normalizedUrlHash = contentHash({ normalizedUrl });
+  const pageUrlHash = normalizedUrlHash(normalizedUrl);
 
   const capability = await capabilityRunsRepository.create({
     workspaceId: fixture.workspaceId,
@@ -239,24 +284,26 @@ async function createAuditProjection(
     projectId: fixture.projectId,
     siteId: fixture.siteId,
     normalizedUrl,
-    normalizedUrlHash,
     templateKey: null,
+  });
+  const pageExtract = crawlPageExtract(normalizedUrl, {
+    fixtureId: randomUUID(),
   });
   const pageSnapshot = await pageSnapshotsRepository.create({
     workspaceId: fixture.workspaceId,
     projectId: fixture.projectId,
     sitePageId: page.id,
     dataSnapshotId: fixture.dataSnapshotId,
-    contentHash: contentHash({ fixtureId: randomUUID() }),
-    extract: { canonical: normalizedUrl, fixtureId: randomUUID() },
-    capturedAt: new Date().toISOString(),
+    contentHash: contentHash(pageExtract),
+    extract: pageExtract,
+    capturedAt: fixture.dataSnapshotCapturedAt,
   });
 
   return {
     auditId: audit.id,
     pageId: page.id,
     pageSnapshotId: pageSnapshot.id,
-    normalizedUrlHash,
+    normalizedUrlHash: pageUrlHash,
   };
 }
 
@@ -383,17 +430,19 @@ describeDb("growth audit persistence boundary", () => {
         normalized_url: `https://${fixture.projectId}.example.test/duplicate`,
         normalized_url_hash: created.normalizedUrlHash,
       }),
-      "23505",
+      "23514",
     );
+    const missingSourceExtract = { fixtureId: randomUUID() };
     await expectPgCode(
       handle.db.insert(pageSnapshots).values({
         workspace_id: fixture.workspaceId,
         project_id: fixture.projectId,
         site_page_id: created.pageId,
         data_snapshot_id: randomUUID(),
-        content_hash: contentHash({ fixtureId: randomUUID() }),
-        extract: { fixtureId: randomUUID() },
-        captured_at: new Date().toISOString(),
+        content_hash: contentHash(missingSourceExtract),
+        canonical_extract: canonicalize(missingSourceExtract),
+        extract: missingSourceExtract,
+        captured_at: fixture.dataSnapshotCapturedAt,
       }),
       "23514",
     );
@@ -608,6 +657,151 @@ describeDb("growth audit persistence boundary", () => {
     ).resolves.toHaveLength(2);
   });
 
+  it("binds each page snapshot to one source snapshot instant and one JCS-derived extract", async () => {
+    const fixture = await createCanonicalFixture(handle.db);
+    const scope = {
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+    };
+    const [sourceSnapshot] = await handle.db
+      .select({ captured_at: dataSnapshots.captured_at })
+      .from(dataSnapshots)
+      .where(eq(dataSnapshots.id, fixture.dataSnapshotId));
+    expect(sourceSnapshot).toBeDefined();
+
+    const sitePagesRepository = new SitePagesRepository(handle.db);
+    const pageSnapshotsRepository = new PageSnapshotsRepository(handle.db);
+    const createPage = async (suffix: string) => {
+      const normalizedUrl = `https://${fixture.projectId}.example.test/${suffix}`;
+      return sitePagesRepository.upsertNormalizedUrl({
+        workspaceId: fixture.workspaceId,
+        projectId: fixture.projectId,
+        siteId: fixture.siteId,
+        normalizedUrl,
+        templateKey: null,
+      });
+    };
+
+    const canonicalPage = await createPage(`canonical-${randomUUID()}`);
+    const canonicalExtract = crawlPageExtract(canonicalPage.normalized_url);
+    const canonicalPayload = canonicalize(canonicalExtract);
+    const duplicateExtract = crawlPageExtract(canonicalPage.normalized_url, {
+      conflict: true,
+    });
+    const created = await pageSnapshotsRepository.create({
+      ...scope,
+      sitePageId: canonicalPage.id,
+      dataSnapshotId: fixture.dataSnapshotId,
+      contentHash: contentHash(canonicalExtract),
+      extract: canonicalExtract,
+      capturedAt: sourceSnapshot!.captured_at,
+    });
+
+    await expectPgCode(
+      handle.pool.query(
+        `INSERT INTO app.page_snapshots (
+           workspace_id, project_id, site_page_id, data_snapshot_id,
+           content_hash, canonical_extract, extract, captured_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+        [
+          fixture.workspaceId,
+          fixture.projectId,
+          canonicalPage.id,
+          fixture.dataSnapshotId,
+          contentHash(duplicateExtract),
+          canonicalize(duplicateExtract),
+          JSON.stringify(duplicateExtract),
+          sourceSnapshot!.captured_at,
+        ],
+      ),
+      "23505",
+    );
+    await expect(
+      pageSnapshotsRepository.findById(scope, created.id),
+    ).resolves.toMatchObject({
+      content_hash: contentHash(canonicalExtract),
+      canonical_extract: canonicalPayload,
+      extract: canonicalExtract,
+      captured_at: sourceSnapshot!.captured_at,
+    });
+
+    const wrongInstantPage = await createPage(`wrong-instant-${randomUUID()}`);
+    const wrongInstantExtract = crawlPageExtract(
+      wrongInstantPage.normalized_url,
+    );
+    const wrongInstant = new Date(
+      Date.parse(sourceSnapshot!.captured_at) + 1_000,
+    ).toISOString();
+    await expectPgCode(
+      handle.pool.query(
+        `INSERT INTO app.page_snapshots (
+           workspace_id, project_id, site_page_id, data_snapshot_id,
+           content_hash, canonical_extract, extract, captured_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+        [
+          fixture.workspaceId,
+          fixture.projectId,
+          wrongInstantPage.id,
+          fixture.dataSnapshotId,
+          contentHash(wrongInstantExtract),
+          canonicalize(wrongInstantExtract),
+          JSON.stringify(wrongInstantExtract),
+          wrongInstant,
+        ],
+      ),
+      "23514",
+    );
+
+    const wrongHashPage = await createPage(`wrong-hash-${randomUUID()}`);
+    const wrongHashExtract = crawlPageExtract(wrongHashPage.normalized_url);
+    await expectPgCode(
+      handle.pool.query(
+        `INSERT INTO app.page_snapshots (
+           workspace_id, project_id, site_page_id, data_snapshot_id,
+           content_hash, canonical_extract, extract, captured_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+        [
+          fixture.workspaceId,
+          fixture.projectId,
+          wrongHashPage.id,
+          fixture.dataSnapshotId,
+          "f".repeat(64),
+          canonicalize(wrongHashExtract),
+          JSON.stringify(wrongHashExtract),
+          sourceSnapshot!.captured_at,
+        ],
+      ),
+      "23514",
+    );
+
+    const wrongPayloadPage = await createPage(`wrong-payload-${randomUUID()}`);
+    const wrongPayloadExtract = crawlPageExtract(
+      wrongPayloadPage.normalized_url,
+    );
+    const otherExtract = crawlPageExtract(wrongPayloadPage.normalized_url, {
+      depth: 9,
+    });
+    await expectPgCode(
+      handle.pool.query(
+        `INSERT INTO app.page_snapshots (
+           workspace_id, project_id, site_page_id, data_snapshot_id,
+           content_hash, canonical_extract, extract, captured_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+        [
+          fixture.workspaceId,
+          fixture.projectId,
+          wrongPayloadPage.id,
+          fixture.dataSnapshotId,
+          contentHash(otherExtract),
+          canonicalize(otherExtract),
+          JSON.stringify(wrongPayloadExtract),
+          sourceSnapshot!.captured_at,
+        ],
+      ),
+      "23514",
+    );
+  });
+
   it("rejects cross-tenant and cross-lineage provenance at the database boundary", async () => {
     const fixture = await createCanonicalFixture(handle.db);
     const created = await createAuditProjection(handle.db, fixture);
@@ -664,15 +858,20 @@ describeDb("growth audit persistence boundary", () => {
       }),
       "23514",
     );
+    const crossTenantExtract = crawlPageExtract(
+      `https://${fixture.projectId}.example.test/cross-tenant`,
+      { fixtureId: randomUUID() },
+    );
     await expectPgCode(
       handle.db.insert(pageSnapshots).values({
         workspace_id: fixture.otherWorkspaceId,
         project_id: fixture.otherProjectId,
         site_page_id: created.pageId,
         data_snapshot_id: fixture.dataSnapshotId,
-        content_hash: contentHash({ fixtureId: randomUUID() }),
-        extract: { fixtureId: randomUUID() },
-        captured_at: new Date().toISOString(),
+        content_hash: contentHash(crossTenantExtract),
+        canonical_extract: canonicalize(crossTenantExtract),
+        extract: crossTenantExtract,
+        captured_at: fixture.dataSnapshotCapturedAt,
       }),
       "23514",
     );
@@ -771,7 +970,6 @@ describeDb("growth audit persistence boundary", () => {
       projectId: fixture.projectId,
       siteId: fixture.siteId,
       normalizedUrl,
-      normalizedUrlHash: contentHash({ normalizedUrl }),
       templateKey: null,
     };
     const page = await sitePagesRepository.upsertNormalizedUrl(pageValues);
@@ -779,14 +977,17 @@ describeDb("growth audit persistence boundary", () => {
       sitePagesRepository.upsertNormalizedUrl(pageValues),
     ).resolves.toMatchObject({ id: page.id });
 
+    const pageSnapshotExtract = crawlPageExtract(normalizedUrl, {
+      fixtureId: randomUUID(),
+    });
     const pageSnapshotValues = {
       workspaceId: fixture.workspaceId,
       projectId: fixture.projectId,
       sitePageId: page.id,
       dataSnapshotId: fixture.dataSnapshotId,
-      contentHash: contentHash({ fixtureId: randomUUID() }),
-      extract: { canonical: normalizedUrl, fixtureId: randomUUID() },
-      capturedAt: new Date().toISOString(),
+      contentHash: contentHash(pageSnapshotExtract),
+      extract: pageSnapshotExtract,
+      capturedAt: fixture.dataSnapshotCapturedAt,
     };
     const pageSnapshot = await pageSnapshotsRepository.create(
       pageSnapshotValues,
@@ -794,10 +995,14 @@ describeDb("growth audit persistence boundary", () => {
     await expect(
       pageSnapshotsRepository.create(pageSnapshotValues),
     ).resolves.toEqual(pageSnapshot);
+    const conflictingExtract = crawlPageExtract(normalizedUrl, {
+      fixtureId: randomUUID(),
+    });
     await expect(
       pageSnapshotsRepository.create({
         ...pageSnapshotValues,
-        extract: { canonical: normalizedUrl, fixtureId: randomUUID() },
+        contentHash: contentHash(conflictingExtract),
+        extract: conflictingExtract,
       }),
     ).rejects.toThrow("page snapshot replay conflicts");
   });
@@ -864,21 +1069,51 @@ describeDb("growth audit persistence boundary", () => {
           projectId: fixture.projectId,
           siteId: fixture.siteId,
           normalizedUrl,
-          normalizedUrlHash: contentHash({ normalizedUrl }),
           templateKey: null,
+        });
+        const pageSnapshotExtract = crawlPageExtract(normalizedUrl, {
+          fixtureId: randomUUID(),
         });
         const pageSnapshotValues = {
           workspaceId: fixture.workspaceId,
           projectId: fixture.projectId,
           sitePageId: page.id,
           dataSnapshotId: fixture.dataSnapshotId,
-          contentHash: contentHash({ fixtureId: randomUUID() }),
-          extract: { canonical: normalizedUrl, fixtureId: randomUUID() },
-          capturedAt: new Date().toISOString(),
+          contentHash: contentHash(pageSnapshotExtract),
+          extract: pageSnapshotExtract,
+          capturedAt: fixture.dataSnapshotCapturedAt,
         };
         await pageSnapshotsRepository.create(pageSnapshotValues);
         await pageSnapshotsRepository.create(pageSnapshotValues);
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("preserves an existing page template when a crawl upsert has no template knowledge", async () => {
+    const fixture = await createCanonicalFixture(handle.db);
+    const repository = new SitePagesRepository(handle.db);
+    const normalizedUrl = `https://${fixture.projectId}.example.test/pricing/`;
+    const values = {
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+      siteId: fixture.siteId,
+      normalizedUrl,
+    };
+    const classified = await repository.upsertNormalizedUrl({
+      ...values,
+      templateKey: "pricing",
+    });
+
+    const replayedByCrawl = await repository.upsertNormalizedUrl({
+      ...values,
+      templateKey: null,
+    });
+
+    expect(replayedByCrawl).toMatchObject({
+      id: classified.id,
+      normalized_url: normalizedUrl,
+      normalized_url_hash: normalizedUrlHash(normalizedUrl),
+      template_key: "pricing",
+    });
   });
 });

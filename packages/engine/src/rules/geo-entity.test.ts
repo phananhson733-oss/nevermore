@@ -161,6 +161,43 @@ describe("GEO-ENTITY-001", () => {
     expect(result.metrics).toMatchObject({ selectedCount: 2, proofCoverageRatio: 1 });
   });
 
+  it("does not fabricate entity or proof gaps when healthy exact variants disagree", () => {
+    const subjectUrl = "https://example.com/pricing";
+    const pages = [
+      [
+        subjectUrl,
+        page({
+          fetchUrl: subjectUrl,
+          jsonLd: { types: ["Product"], errorCount: 0 },
+          paragraphs: [PLAIN_PARAGRAPH],
+        }),
+      ],
+      [
+        subjectUrl,
+        page({
+          fetchUrl: `${subjectUrl}/`,
+          jsonLd: { types: [], errorCount: 0 },
+          paragraphs: [PROOF_PARAGRAPH],
+        }),
+      ],
+    ] as const;
+
+    const forward = geoEntityRule.evaluate(buildContext({ pages }));
+    const reversed = geoEntityRule.evaluate(
+      buildContext({ pages: [...pages].reverse() }),
+    );
+
+    expect(forward).toEqual(reversed);
+    expect(forward).toEqual({
+      status: "pass",
+      metrics: {
+        selectedCount: 1,
+        entityMissingCount: 0,
+        proofCoverageRatio: 1,
+      },
+    });
+  });
+
   it("skips as not_applicable when there are no priority/commercial pages", () => {
     const ctx = buildContext({
       pages: [["https://example.com/blog/post", page({ paragraphs: [PLAIN_PARAGRAPH] })]],

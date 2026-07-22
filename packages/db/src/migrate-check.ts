@@ -73,6 +73,7 @@ const REQUIRED_INDEXES = [
   "site_pages_site_idx",
   "page_snapshots_page_captured_idx",
   "page_snapshots_project_captured_idx",
+  "page_snapshots_verified_source_identity_idx",
 ] as const;
 
 const REQUIRED_TRIGGERS = [
@@ -87,8 +88,15 @@ const REQUIRED_TRIGGERS = [
   "import_previews_set_updated_at",
   "async_runs_set_updated_at",
   "async_runs_terminal_status_immutable",
+  "collection_runs_provenance_guard",
+  "data_snapshots_provenance_guard",
+  "normalized_observations_provenance_guard",
+  "diagnostic_runs_frozen_input_guard",
+  "diagnostic_runs_current_manifest_guard",
+  "diagnostic_run_rules_version_guard",
   "provider_discrepancies_set_updated_at",
   "findings_set_updated_at",
+  "findings_rule_version_guard",
   "actions_set_updated_at",
   "actions_source_lineage_guard",
   "execution_artifacts_set_updated_at",
@@ -100,6 +108,7 @@ const REQUIRED_TRIGGERS = [
   "normalized_observations_append_only",
   "diagnostic_run_rules_append_only",
   "analysis_invocations_append_only",
+  "evidence_provenance_guard",
   "evidence_append_only",
   "finding_observations_append_only",
   "finding_review_events_append_only",

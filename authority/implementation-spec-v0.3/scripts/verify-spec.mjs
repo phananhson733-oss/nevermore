@@ -5,14 +5,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
-const authorityRoot = path.resolve(scriptDirectory, "..");
+const defaultAuthorityRoot = path.resolve(scriptDirectory, "..");
 const PRODUCT_VERSION = "0.3.0";
 const CONTRACT_VERSION = "2026-07-21";
 const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
 const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
-const RULE_SET_VERSION = "mvp.rules.0.2.0";
+const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 const EXPECTED_TABLE_COUNT = 33;
+const MIGRATION_VERSION_VIEW_PATTERN =
+  /^CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version\s+AS\s+SELECT\s+'([^']+)'::text\s+AS\s+migration_version$/is;
 const SLICE_1_TABLES = [
   "capability_runs",
   "audit_runs",
@@ -20,20 +22,50 @@ const SLICE_1_TABLES = [
   "site_pages",
   "page_snapshots",
 ];
+const EXPECTED_RULE_VERSIONS = new Map([
+  ["TECH-HTTP-001", 2],
+  ["TECH-CANONICAL-002", 2],
+  ["TECH-LINKGRAPH-005", 2],
+  ["SEARCH-CTR-004", 1],
+  ["SEARCH-DECAY-002", 1],
+  ["CONTENT-COVERAGE-001", 1],
+  ["CONTENT-GAP-011", 1],
+  ["CRO-PATH-001", 1],
+  ["CRO-LANDING-003", 1],
+  ["GEO-ENTITY-001", 1],
+  ["GEO-CRAWLER-002", 1],
+]);
 
 function parseArguments(argv) {
-  if (argv.length === 0) {
-    return { appRoot: path.resolve(authorityRoot, "../..") };
+  let authorityRoot = defaultAuthorityRoot;
+  let appRoot;
+
+  for (let index = 0; index < argv.length; index += 2) {
+    const option = argv[index];
+    const value = argv[index + 1];
+    if (!value) {
+      throw new Error(
+        "usage: node authority/implementation-spec-v0.3/scripts/verify-spec.mjs [--app-root <repository>] [--authority-root <authority-directory>]",
+      );
+    }
+    if (option === "--app-root") {
+      appRoot = path.resolve(value);
+    } else if (option === "--authority-root") {
+      authorityRoot = path.resolve(value);
+    } else {
+      throw new Error(
+        "usage: node authority/implementation-spec-v0.3/scripts/verify-spec.mjs [--app-root <repository>] [--authority-root <authority-directory>]",
+      );
+    }
   }
-  if (argv.length === 2 && argv[0] === "--app-root" && argv[1]) {
-    return { appRoot: path.resolve(argv[1]) };
-  }
-  throw new Error(
-    "usage: node authority/implementation-spec-v0.3/scripts/verify-spec.mjs [--app-root <repository>]",
-  );
+
+  return {
+    appRoot: appRoot ?? path.resolve(authorityRoot, "../.."),
+    authorityRoot,
+  };
 }
 
-const { appRoot } = parseArguments(process.argv.slice(2));
+const { appRoot, authorityRoot } = parseArguments(process.argv.slice(2));
 const readAuthority = (name) =>
   fs.readFileSync(path.join(authorityRoot, name), "utf8");
 
@@ -84,6 +116,241 @@ function stripSqlComments(source) {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/--[^\r\n]*/g, " ");
+}
+
+function executableSqlStatements(source) {
+  const statements = [];
+  let statement = "";
+  let state = "code";
+  let blockCommentDepth = 0;
+  let dollarDelimiter = "";
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const next = source[index + 1];
+
+    if (state === "line-comment") {
+      if (character === "\n") {
+        statement += character;
+        state = "code";
+      }
+      continue;
+    }
+
+    if (state === "block-comment") {
+      if (character === "/" && next === "*") {
+        blockCommentDepth += 1;
+        index += 1;
+      } else if (character === "*" && next === "/") {
+        blockCommentDepth -= 1;
+        index += 1;
+        if (blockCommentDepth === 0) state = "code";
+      } else if (character === "\n") {
+        statement += character;
+      }
+      continue;
+    }
+
+    if (state === "single-quote") {
+      statement += character;
+      if (character === "'" && next === "'") {
+        statement += next;
+        index += 1;
+      } else if (character === "'") {
+        state = "code";
+      }
+      continue;
+    }
+
+    if (state === "double-quote") {
+      statement += character;
+      if (character === '"' && next === '"') {
+        statement += next;
+        index += 1;
+      } else if (character === '"') {
+        state = "code";
+      }
+      continue;
+    }
+
+    if (state === "dollar-quote") {
+      if (source.startsWith(dollarDelimiter, index)) {
+        statement += dollarDelimiter;
+        index += dollarDelimiter.length - 1;
+        state = "code";
+      } else {
+        statement += character;
+      }
+      continue;
+    }
+
+    if (character === "-" && next === "-") {
+      state = "line-comment";
+      index += 1;
+      continue;
+    }
+    if (character === "/" && next === "*") {
+      statement += " ";
+      state = "block-comment";
+      blockCommentDepth = 1;
+      index += 1;
+      continue;
+    }
+    if (character === "'") {
+      statement += character;
+      state = "single-quote";
+      continue;
+    }
+    if (character === '"') {
+      statement += character;
+      state = "double-quote";
+      continue;
+    }
+    if (character === "$") {
+      const delimiter = source
+        .slice(index)
+        .match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0];
+      if (delimiter) {
+        statement += delimiter;
+        dollarDelimiter = delimiter;
+        index += delimiter.length - 1;
+        state = "dollar-quote";
+        continue;
+      }
+    }
+    if (character === ";") {
+      const executable = statement.trim();
+      if (executable) statements.push(executable);
+      statement = "";
+      continue;
+    }
+    statement += character;
+  }
+
+  const executable = statement.trim();
+  if (executable) statements.push(executable);
+  return statements;
+}
+
+function migrationExecutableContract(source, migrationVersion) {
+  const statements = executableSqlStatements(source);
+  const startsWithBegin = /^BEGIN$/i.test(statements[0] ?? "");
+  const endsWithCommit = /^COMMIT$/i.test(statements.at(-1) ?? "");
+  check(
+    startsWithBegin && endsWithCommit,
+    `${migrationVersion} must use BEGIN/COMMIT transaction framing with no executable prologue or epilogue`,
+  );
+
+  const migrationViews = statements
+    .map((statement, index) => ({
+      index,
+      version: statement.match(MIGRATION_VERSION_VIEW_PATTERN)?.[1],
+    }))
+    .filter(({ version }) => version !== undefined);
+  const hasExactFinalView =
+    migrationViews.length === 1 &&
+    migrationViews[0].index === statements.length - 2 &&
+    migrationViews[0].version === migrationVersion;
+  check(
+    hasExactFinalView,
+    `${migrationVersion} must end with its exact schema_migration_version projection immediately before COMMIT`,
+  );
+
+  if (!startsWithBegin || !endsWithCommit || !hasExactFinalView) return [];
+  return statements.slice(1, migrationViews[0].index);
+}
+
+function markedExecutableContract(source, migrationVersion) {
+  const startMarker = `-- BEGIN EXACT EXECUTABLE MIGRATION ${migrationVersion}`;
+  const endMarker = `-- END EXACT EXECUTABLE MIGRATION ${migrationVersion}`;
+  const startIndexes = [...source.matchAll(new RegExp(startMarker, "g"))].map(
+    (match) => match.index,
+  );
+  const endIndexes = [...source.matchAll(new RegExp(endMarker, "g"))].map(
+    (match) => match.index,
+  );
+  check(
+    startIndexes.length === 1 && endIndexes.length === 1,
+    `authority SQL must contain exactly one bounded ${migrationVersion} executable block`,
+  );
+  if (
+    startIndexes.length !== 1 ||
+    endIndexes.length !== 1 ||
+    endIndexes[0] <= startIndexes[0]
+  ) {
+    return [];
+  }
+  return executableSqlStatements(
+    source.slice(startIndexes[0] + startMarker.length, endIndexes[0]),
+  );
+}
+
+function exactExecutableMigrationCoverage({
+  authoritySource,
+  migrationSource,
+  migrationVersion,
+  failureMessage,
+}) {
+  const expected = migrationExecutableContract(
+    migrationSource,
+    migrationVersion,
+  );
+  const actual = markedExecutableContract(authoritySource, migrationVersion);
+  check(
+    expected.length > 0 &&
+      actual.length === expected.length &&
+      actual.every((statement, index) => statement === expected[index]),
+    failureMessage,
+  );
+  return expected;
+}
+
+function migrationOwnedDefinitions(statements) {
+  const definitions = [];
+  for (const statement of statements) {
+    const functionName = statement.match(
+      /^CREATE(?:\s+OR\s+REPLACE)?\s+FUNCTION\s+app\.([a-z][a-z0-9_]*)\s*\(/i,
+    )?.[1];
+    if (functionName) {
+      definitions.push({ kind: "function", name: `app.${functionName}` });
+    }
+    const triggerName = statement.match(
+      /^CREATE(?:\s+OR\s+REPLACE)?\s+TRIGGER\s+([a-z][a-z0-9_]*)\b/i,
+    )?.[1];
+    if (triggerName) {
+      definitions.push({ kind: "trigger", name: triggerName });
+    }
+  }
+  return definitions;
+}
+
+function verifyMigrationOwnedDefinitionUniqueness(migrationContracts) {
+  const expectedDefinitions = migrationContracts.flatMap((contract) =>
+    migrationOwnedDefinitions(contract),
+  );
+  const expectedKeys = expectedDefinitions.map(
+    ({ kind, name }) => `${kind}:${name}`,
+  );
+  const duplicateExpectedKeys = expectedKeys.filter(
+    (key, index) => expectedKeys.indexOf(key) !== index,
+  );
+  check(
+    duplicateExpectedKeys.length === 0,
+    `application cumulative migrations redefine owned database objects: ${unique(duplicateExpectedKeys).join(", ")}`,
+  );
+
+  const authorityDefinitions = migrationOwnedDefinitions(
+    executableSqlStatements(files.sql),
+  );
+  for (const { kind, name } of expectedDefinitions) {
+    const definitionCount = authorityDefinitions.filter(
+      (definition) => definition.kind === kind && definition.name === name,
+    ).length;
+    check(
+      definitionCount === 1,
+      `authority SQL must define migration-owned ${kind} ${name} exactly once (found ${definitionCount})`,
+    );
+  }
 }
 
 function applicationMigrationTables() {
@@ -161,6 +428,21 @@ check(
   files.spec.includes(`implemented_surface_version: ${PRODUCT_VERSION}`),
   `authority must identify the implemented ${PRODUCT_VERSION} machine surface`,
 );
+check(
+  files.spec.includes("CSV 与 DataForSEO 可同时冻结") &&
+    files.spec.includes("search volume 不得重复相加"),
+  "authority must preserve concurrent CSV/DataForSEO lineage without double-counting demand",
+);
+check(
+  !files.spec.includes("一次 DiagnosticRun 最多选择其中一个"),
+  "authority must not restore the obsolete CSV/DataForSEO mutual exclusion",
+);
+check(
+  files.spec.includes("source_provider=system + derived/computed/B") &&
+    files.spec.includes("source_provider=llm + generated/generated/C") &&
+    files.spec.includes("snapshot_id + collection_run_id + capturedAt"),
+  "authority must freeze the three mutually exclusive Evidence provenance shapes",
+);
 check(files.openapi.includes("openapi: 3.1.0"), "OpenAPI must be 3.1.0");
 check(
   files.openapi.includes(`version: ${PRODUCT_VERSION}`),
@@ -175,6 +457,25 @@ check(
   "session cookie security scheme missing",
 );
 check(files.openapi.includes("statusUrl"), "async statusUrl schema missing");
+const publicEvidenceBlock = between(
+  files.openapi,
+  "    Evidence:",
+  "    SubjectRef:",
+);
+check(
+  /required: \[[^\]]*snapshotId[^\]]*collectionRunId[^\]]*analysisInvocationId[^\]]*\]/.test(
+    publicEvidenceBlock,
+  ) &&
+    publicEvidenceBlock.includes(
+      "collectionRunId: { type: [string, 'null'], format: uuid }",
+    ) &&
+    [
+      "Source-backed Evidence",
+      "System-derived Evidence",
+      "LLM-generated Evidence",
+    ].every((title) => publicEvidenceBlock.includes(`title: ${title}`)),
+  "public Evidence must expose exact collection-run lineage and all three provenance shapes",
+);
 const exportBundleBlock = between(
   files.openapi,
   "    ExportBundle:",
@@ -212,6 +513,13 @@ check(
   "generated evidence lineage check missing",
 );
 check(
+  files.sql.includes("signalframe.evidence-provenance.v2") &&
+    files.sql.includes("system evidence must be deterministic derived/computed/B evidence") &&
+    files.sql.includes("invocation-backed evidence must be generated LLM grade-C evidence") &&
+    files.sql.includes("evidence trust axes do not match observed or derived semantics"),
+  "Evidence provenance v2 fingerprint or trust-axis guards are missing",
+);
+check(
   files.sql.includes("async_runs_one_active_key_idx"),
   "active-run uniqueness index missing",
 );
@@ -223,6 +531,14 @@ for (const databaseObject of [
   "CREATE TRIGGER export_bundles_invariant_guard",
   "CREATE OR REPLACE FUNCTION app.is_bcp47_language_tag(candidate text)",
   "CREATE OR REPLACE FUNCTION app.are_bcp47_language_tags(candidates text[])",
+  "CREATE OR REPLACE FUNCTION app.enforce_collection_run_provenance()",
+  "CREATE OR REPLACE FUNCTION app.enforce_data_snapshot_provenance()",
+  "CREATE OR REPLACE FUNCTION app.enforce_normalized_observation_provenance()",
+  "CREATE OR REPLACE FUNCTION app.enforce_diagnostic_run_frozen_input()",
+  "CREATE OR REPLACE FUNCTION app.enforce_current_diagnostic_manifest()",
+  "CREATE OR REPLACE FUNCTION app.expected_diagnostic_rule_version(",
+  "CREATE OR REPLACE FUNCTION app.enforce_diagnostic_rule_version_lineage()",
+  "CREATE OR REPLACE FUNCTION app.enforce_finding_rule_version_lineage()",
 ]) {
   check(
     files.sql.includes(databaseObject),
@@ -248,6 +564,20 @@ check(
   files.schemaSmoke.includes("ROLLBACK;"),
   "schema smoke test must roll back fixture data",
 );
+const implementationSchemaSmokePath = path.join(
+  appRoot,
+  "packages/db/migrations/schema-smoke.sql",
+);
+check(
+  fs.existsSync(implementationSchemaSmokePath),
+  "application schema smoke is missing",
+);
+if (fs.existsSync(implementationSchemaSmokePath)) {
+  check(
+    files.schemaSmoke === fs.readFileSync(implementationSchemaSmokePath, "utf8"),
+    "authority schema smoke must be byte-identical to the application schema smoke",
+  );
+}
 for (const phrase of [
   "expected exactly 33 app tables",
   "unavailable observation with zero was accepted",
@@ -259,6 +589,7 @@ for (const phrase of [
   "audit run mutation was accepted",
   "audit module result mutation was accepted",
   "page snapshot mutation was accepted",
+  "current diagnostic accepted duplicate provider snapshots",
   "growth audit projection introduced a second status",
   "async run contract-version default is stale",
   "export bundle schema-version compatibility is stale",
@@ -428,10 +759,180 @@ check(
   ),
   "page_snapshots must retain RESTRICT lineage to canonical data snapshots",
 );
+check(
+  /canonical_extract\s+text/i.test(pageSnapshots) &&
+    /CONSTRAINT\s+page_snapshots_canonical_extract_required\s+CHECK\s*\(canonical_extract\s+IS\s+NOT\s+NULL\)/i.test(
+      pageSnapshots,
+    ),
+  "page_snapshots must retain the exact JCS bytes required for new projections",
+);
+check(
+  /CONSTRAINT\s+page_snapshots_site_page_data_snapshot_key\s+UNIQUE\s*\(site_page_id,\s*data_snapshot_id\)/i.test(
+    pageSnapshots,
+  ),
+  "page_snapshots must have one canonical projection per page/source snapshot",
+);
+check(
+  /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+page_snapshots_verified_source_identity_idx[\s\S]*?WHERE\s+canonical_extract\s+IS\s+NOT\s+NULL/i.test(
+    sqlWithoutComments,
+  ),
+  "verified page snapshots must retain their partial unique upgrade index",
+);
+check(
+  /NEW\.captured_at\s+IS\s+DISTINCT\s+FROM\s+source_captured_at/i.test(
+    sqlWithoutComments,
+  ) &&
+    /canonical_extract_json\s+IS\s+DISTINCT\s+FROM\s+NEW\.extract/i.test(
+      sqlWithoutComments,
+    ) &&
+    /digest\s*\(convert_to\s*\(NEW\.canonical_extract,\s*'UTF8'\),\s*'sha256'\)/i.test(
+      sqlWithoutComments,
+    ),
+  "page snapshot trigger must bind capture time, extract, retained JCS bytes, and sha256",
+);
+const evidence = tableDefinition("evidence");
+check(
+  /CONSTRAINT\s+evidence_source_lineage_required\s+CHECK[\s\S]*?snapshot_id\s+IS\s+NOT\s+NULL[\s\S]*?collection_run_id\s+IS\s+NOT\s+NULL/i.test(
+    evidence,
+  ),
+  "source-backed evidence must require immutable snapshot and collection lineage",
+);
+check(
+  /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_evidence_provenance\(\)/i.test(
+    sqlWithoutComments,
+  ) &&
+    /frozen_snapshot\.entry\s*->>\s*'snapshotId'\s*=\s*NEW\.snapshot_id::text/i.test(
+      sqlWithoutComments,
+    ),
+  "evidence provenance guard must bind source evidence to the frozen diagnostic manifest",
+);
+
+const pageSnapshotLineageMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0012_page_snapshot_lineage_hardening.sql",
+);
+const cumulativeMigrationContracts = [];
+check(
+  fs.existsSync(pageSnapshotLineageMigrationPath),
+  "page snapshot lineage hardening migration is missing",
+);
+if (fs.existsSync(pageSnapshotLineageMigrationPath)) {
+  const pageSnapshotLineageMigration = fs.readFileSync(
+    pageSnapshotLineageMigrationPath,
+    "utf8",
+  );
+  const pageSnapshotLineageMigrationWithoutComments = stripSqlComments(
+    pageSnapshotLineageMigration,
+  );
+  const pageSnapshotLineageContract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: pageSnapshotLineageMigration,
+    migrationVersion: "0012_page_snapshot_lineage_hardening",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0012 lineage contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(pageSnapshotLineageContract);
+  check(
+    /CHECK\s*\(canonical_extract\s+IS\s+NOT\s+NULL\)\s+NOT\s+VALID/i.test(
+      pageSnapshotLineageMigrationWithoutComments,
+    ) &&
+      /WHERE\s+canonical_extract\s+IS\s+NOT\s+NULL/i.test(
+        pageSnapshotLineageMigrationWithoutComments,
+      ),
+    "page snapshot migration must preserve explicit legacy rows while hardening every new row",
+  );
+  check(
+    /ADD\s+CONSTRAINT\s+page_snapshots_site_page_data_snapshot_key[\s\S]*?UNIQUE\s*\(site_page_id,\s*data_snapshot_id\)/i.test(
+      pageSnapshotLineageMigrationWithoutComments,
+    ) &&
+      /NEW\.captured_at\s+IS\s+DISTINCT\s+FROM\s+source_captured_at/i.test(
+        pageSnapshotLineageMigrationWithoutComments,
+      ) &&
+      /canonical_extract_json\s+IS\s+DISTINCT\s+FROM\s+NEW\.extract/i.test(
+        pageSnapshotLineageMigrationWithoutComments,
+      ) &&
+      /digest\s*\(convert_to\s*\(NEW\.canonical_extract,\s*'UTF8'\),\s*'sha256'\)/i.test(
+        pageSnapshotLineageMigrationWithoutComments,
+      ),
+    "application migration must implement page/source uniqueness and the full PageSnapshot lineage guard",
+  );
+  check(
+    !/UPDATE\s+app\.page_snapshots[\s\S]*?SET\s+(?:content_hash|extract|canonical_extract)/i.test(
+      pageSnapshotLineageMigrationWithoutComments,
+    ) &&
+      !/ALTER\s+TABLE\s+app\.page_snapshots[\s\S]*?ALTER\s+COLUMN\s+canonical_extract\s+SET\s+NOT\s+NULL/i.test(
+        pageSnapshotLineageMigrationWithoutComments,
+      ),
+    "page snapshot migration must not rewrite immutable legacy content or hashes",
+  );
+}
+const exactVariantRulesMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0013_exact_url_variant_rules.sql",
+);
+check(
+  fs.existsSync(exactVariantRulesMigrationPath),
+  "exact URL variant rule-set migration is missing",
+);
+if (fs.existsSync(exactVariantRulesMigrationPath)) {
+  const exactVariantRulesMigrationSource = fs.readFileSync(
+    exactVariantRulesMigrationPath,
+    "utf8",
+  );
+  const exactVariantRulesMigration = stripSqlComments(
+    exactVariantRulesMigrationSource,
+  );
+  const exactVariantRulesContract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: exactVariantRulesMigrationSource,
+    migrationVersion: "0013_exact_url_variant_rules",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0013 diagnostic and rule-lineage contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(exactVariantRulesContract);
+  check(
+    /CHECK\s*\(rule_set_version\s+IN\s*\(\s*'mvp\.rules\.0\.2\.0'\s*,\s*'mvp\.rules\.0\.2\.1'\s*\)\s*\)/i.test(
+      exactVariantRulesMigration,
+    ),
+    "rule-set migration must preserve historical 0.2.0 runs and accept current 0.2.1 runs",
+  );
+}
+verifyMigrationOwnedDefinitionUniqueness(cumulativeMigrationContracts);
+const authorityExecutableStatements = executableSqlStatements(files.sql);
+const canonicalSitePageFunctionIndex = authorityExecutableStatements.findIndex(
+  (statement) =>
+    /^CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_site_page_provenance\s*\(/i.test(
+      statement,
+    ),
+);
+const sitePageTriggerDefinitions = authorityExecutableStatements
+  .map((statement, index) => ({ statement, index }))
+  .filter(({ statement }) =>
+    /^CREATE(?:\s+OR\s+REPLACE)?\s+TRIGGER\s+site_pages_provenance_guard\b/i.test(
+      statement,
+    ),
+  );
+check(
+  canonicalSitePageFunctionIndex >= 0 &&
+    sitePageTriggerDefinitions.length === 1 &&
+    sitePageTriggerDefinitions[0].index > canonicalSitePageFunctionIndex &&
+    /ON\s+app\.site_pages[\s\S]*?EXECUTE\s+FUNCTION\s+app\.enforce_site_page_provenance\(\)/i.test(
+      sitePageTriggerDefinitions[0].statement,
+    ),
+  "site_pages provenance trigger must bind once after its canonical 0012 function",
+);
 for (const triggerName of [
   "audit_runs_provenance_guard",
   "site_pages_provenance_guard",
   "page_snapshots_provenance_guard",
+  "evidence_provenance_guard",
+  "collection_runs_provenance_guard",
+  "data_snapshots_provenance_guard",
+  "normalized_observations_provenance_guard",
+  "diagnostic_runs_frozen_input_guard",
+  "diagnostic_runs_current_manifest_guard",
+  "diagnostic_run_rules_version_guard",
+  "findings_rule_version_guard",
   "capability_runs_append_only",
   "audit_runs_append_only",
   "audit_module_results_append_only",
@@ -441,25 +942,55 @@ for (const triggerName of [
     new RegExp(`CREATE\\s+TRIGGER\\s+${triggerName}\\b`, "i").test(
       sqlWithoutComments,
     ),
-    `append-only trigger missing: ${triggerName}`,
+    `database trigger missing: ${triggerName}`,
   );
 }
+for (const constraintName of [
+  "site_pages_project_id_normalized_url_hash_key",
+  "page_snapshots_canonical_extract_required",
+  "page_snapshots_site_page_data_snapshot_key",
+  "evidence_source_lineage_required",
+  "diagnostic_runs_rule_set_version_check",
+]) {
+  check(
+    files.sql.includes(constraintName),
+    `cumulative lineage constraint missing: ${constraintName}`,
+  );
+}
+const authorityMigrationVersions = executableSqlStatements(files.sql)
+  .map((statement) => statement.match(MIGRATION_VERSION_VIEW_PATTERN)?.[1])
+  .filter((version) => version !== undefined);
+check(
+  authorityMigrationVersions.length === 1 &&
+    authorityMigrationVersions[0] === "0013_exact_url_variant_rules",
+  "authority SQL must define exactly one final 0013 migration-version projection",
+);
 check(
   /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(sqlWithoutComments),
   "site_pages updated_at trigger missing",
 );
 
-const mvpRules = unique(
-  [
-    ...files.spec.matchAll(
-      /`((?:TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3})@1`/g,
-    ),
-  ].map((match) => match[1]),
-);
+const ruleDeclarations = [
+  ...files.spec.matchAll(
+    /`((?:TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3})@([12])`/g,
+  ),
+].map((match) => ({ id: match[1], version: Number(match[2]) }));
+const mvpRules = unique(ruleDeclarations.map((rule) => rule.id));
 check(
   mvpRules.length === 11,
   `expected 11 frozen MVP rules, got ${mvpRules.length}`,
 );
+for (const [ruleId, expectedVersion] of EXPECTED_RULE_VERSIONS) {
+  const versions = unique(
+    ruleDeclarations
+      .filter((rule) => rule.id === ruleId)
+      .map((rule) => rule.version),
+  );
+  check(
+    versions.length === 1 && versions[0] === expectedVersion,
+    `${ruleId} must be frozen at rule version ${expectedVersion}`,
+  );
+}
 for (const prefix of ["TECH", "SEARCH", "CONTENT", "CRO", "GEO"]) {
   check(
     mvpRules.some((rule) => rule.startsWith(`${prefix}-`)),

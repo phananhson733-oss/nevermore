@@ -5,6 +5,7 @@ import { ProblemError } from "@sf/observability";
 import {
   ActionsRepository,
   AsyncRunsRepository,
+  DataSnapshotsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
   FindingsRepository,
@@ -71,7 +72,8 @@ const ARTIFACT_ACCEPTANCE_CASES = [
  * createProjectExport({kind:"service_bundle"}) → runExport (worker), asserting the
  * bundle finalizes, its manifest validates against
  * schemas/service-bundle-manifest.schema.json, and the service_bundle carries the
- * internal diagnostic detail. AC-022 degradation is asserted on the same run.
+ * internal diagnostic detail. AC-022 degradation is asserted with a separate
+ * crawl-only diagnostic so it cannot dilute the complete all-provider chain.
  */
 
 const describeDb = DB_AVAILABLE ? describe : describe.skip;
@@ -129,6 +131,9 @@ describeDb(
       expect(byRule.has("TECH-HTTP-001")).toBe(true); // technical_seo
       expect(byRule.has("TECH-CANONICAL-002")).toBe(true); // technical_seo
       expect(byRule.has("TECH-LINKGRAPH-005")).toBe(true); // technical_seo
+      expect(byRule.get("TECH-HTTP-001")?.ruleVersion).toBe(2);
+      expect(byRule.get("TECH-CANONICAL-002")?.ruleVersion).toBe(2);
+      expect(byRule.get("TECH-LINKGRAPH-005")?.ruleVersion).toBe(2);
       expect(byRule.has("SEARCH-CTR-004")).toBe(true); // search_performance
       expect(byRule.has("CONTENT-COVERAGE-001")).toBe(true); // content_intent
       expect(byRule.has("CRO-LANDING-003")).toBe(true); // conversion_journey
@@ -326,6 +331,27 @@ describeDb(
         contractVersion: CONTRACT_VERSION,
         requestPayload: { lineageDriftFixture: nonce },
       });
+      const frozenSnapshots = sourceRun.input_manifest["snapshots"];
+      const frozenCrawl = Array.isArray(frozenSnapshots)
+        ? frozenSnapshots.find(
+            (entry) =>
+              typeof entry === "object" &&
+              entry !== null &&
+              Reflect.get(entry, "provider") === "crawl",
+          )
+        : null;
+      const frozenSnapshotId = frozenCrawl
+        ? Reflect.get(frozenCrawl, "snapshotId")
+        : null;
+      if (typeof frozenSnapshotId !== "string") {
+        throw new Error("lineage drift fixture has no frozen Crawl snapshot");
+      }
+      const frozenSnapshot = await new DataSnapshotsRepository(
+        handle.db,
+      ).findById(driftChain.scope, frozenSnapshotId);
+      if (!frozenSnapshot) {
+        throw new Error("lineage drift frozen Crawl snapshot is missing");
+      }
       await diagnosticRuns.insert({
         runId: laterRun.id,
         workspaceId: driftChain.scope.workspaceId,
@@ -336,11 +362,8 @@ describeDb(
         ruleSetVersion: sourceRun.rule_set_version,
         promptSetVersion: sourceRun.prompt_set_version,
         outputLocale: sourceRun.output_locale,
-        inputManifest: {
-          ...sourceRun.input_manifest,
-          lineageDriftFixture: nonce,
-        },
-        inputHash: contentHash({ lineageDriftFixture: nonce }),
+        inputManifest: sourceRun.input_manifest,
+        inputHash: sourceRun.input_hash,
       });
       const claimed = await asyncRuns.claim(driftChain.scope, laterRun.id);
       if (!claimed) throw new Error("lineage drift diagnostic was not claimable");
@@ -362,8 +385,10 @@ describeDb(
             support: "supports",
             subjectRefs: sourceFinding.subject_refs,
             claim: "The later diagnostic observed the same canonical finding.",
-            observedAt: new Date().toISOString(),
+            observedAt: frozenSnapshot.captured_at,
             limitation: "Isolated integration fixture for lineage drift.",
+            snapshotId: frozenSnapshot.id,
+            collectionRunId: frozenSnapshot.collection_run_id,
           },
         ],
       );
@@ -382,6 +407,7 @@ describeDb(
         ],
       );
       await findingsRepo.touchSeen(sourceFinding.id, {
+        ruleVersion: sourceFinding.rule_version,
         severity: sourceFinding.severity,
         confidence: sourceFinding.confidence,
         titleArgs: sourceFinding.title_args,
@@ -561,7 +587,7 @@ describeDb(
       expect(serviceBundle.manifest["schemaVersion"]).toBe(
         "signalframe.service-bundle.0.3.0",
       );
-      expect(serviceBundle.manifest["ruleSetVersion"]).toBe("mvp.rules.0.2.0");
+      expect(serviceBundle.manifest["ruleSetVersion"]).toBe("mvp.rules.0.2.1");
     });
 
     it("the service_bundle INCLUDES the internal diagnostic detail (spec §10.5)", () => {

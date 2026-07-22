@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import { DiagnosticContext } from "./context.ts";
 import { parseIcp } from "./icp.ts";
 import { runPipeline } from "./pipeline.ts";
+import { RULE_SET_VERSION } from "./registry.ts";
 import type {
   DiagnosticRule,
   EvidenceDraft,
   FindingCandidate,
 } from "./rule.ts";
+import { ALL_RULES } from "./rules/index.ts";
 
 function emptyContext(): DiagnosticContext {
   return DiagnosticContext.build({
@@ -53,6 +55,47 @@ function candidate(
 }
 
 describe("runPipeline async rule contract (spec §8.3)", () => {
+  it("exposes the exact mixed rule-version registry for rule set 0.2.1", () => {
+    expect(RULE_SET_VERSION).toBe("mvp.rules.0.2.1");
+    expect(Object.fromEntries(ALL_RULES.map((rule) => [rule.id, rule.version])))
+      .toEqual({
+        "TECH-HTTP-001": 2,
+        "TECH-CANONICAL-002": 2,
+        "TECH-LINKGRAPH-005": 2,
+        "SEARCH-CTR-004": 1,
+        "SEARCH-DECAY-002": 1,
+        "CONTENT-COVERAGE-001": 1,
+        "CONTENT-GAP-011": 1,
+        "CRO-PATH-001": 1,
+        "CRO-LANDING-003": 1,
+        "GEO-ENTITY-001": 1,
+        "GEO-CRAWLER-002": 1,
+      });
+  });
+
+  it("persists each candidate-producing rule's declared version", async () => {
+    const versionedRule: DiagnosticRule = {
+      id: "TECH-HTTP-001",
+      version: 2,
+      domain: "technical_seo",
+      requiredDatasets: [],
+      evaluate: () => ({
+        status: "candidate",
+        candidates: [candidate("http_status:503", "https://x.test/down")],
+      }),
+    };
+
+    const result = await runPipeline({
+      projectId: "00000000-0000-4000-8000-000000000001",
+      ctx: emptyContext(),
+      rules: [versionedRule],
+      deliveryLocale: "en",
+    });
+
+    expect(result.ruleResults[0]?.ruleVersion).toBe(2);
+    expect(result.findings[0]?.ruleVersion).toBe(2);
+  });
+
   it("awaits each rule in registry order", async () => {
     const events: string[] = [];
     const rules: DiagnosticRule[] = [

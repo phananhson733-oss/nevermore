@@ -193,6 +193,18 @@ describe("toSourceConnectionDto — effective state downgrade (spec §5.2, AC-01
 });
 
 describe("null-not-zero honesty in the snapshot DTO (spec §1.3, AC-018)", () => {
+  it("preserves the snapshot Site and method identity needed by diagnosis selection", () => {
+    const dto = toDataSnapshotDto(
+      snapshot({
+        site_id: "site-diagnostic",
+        method_version: "crawl.site_graph.v2",
+      }),
+    );
+
+    expect(dto.siteId).toBe("site-diagnostic");
+    expect(dto.methodVersion).toBe("crawl.site_graph.v2");
+  });
+
   it("keeps an enabled DataForSEO legacy slot disconnected until collection provisions it", () => {
     const dto = toSourceConnectionDto({
       projectId: "proj-1",

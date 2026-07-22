@@ -16,13 +16,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDbHandle, type DbHandle } from "../client.ts";
 import { runMigrations } from "../migrate.ts";
 import {
+  analysisInvocations,
   asyncRuns,
   clientProjects,
   icpProfiles,
   sites,
   workspaces,
 } from "../schema.ts";
-import { AnalysisInvocationsRepository } from "../repositories/analysis-invocations.ts";
 import { DiagnosticRunsRepository } from "../repositories/diagnostic-runs.ts";
 import { EvidenceRepository, type EvidenceInsert } from "../repositories/evidence.ts";
 import { contentHash } from "../hash.ts";
@@ -35,12 +35,13 @@ import { contentHash } from "../hash.ts";
  *          OR (analysis_invocation_id IS NOT NULL AND method = 'generated'))
  * so a model output (spec §7.7: origin `generated`, method `generated`, grade C)
  * can NEVER masquerade as observed evidence. This test asserts the CHECK fires on
- * a generated row with no invocation id, that legitimately observed evidence needs
+ * a generated row with no invocation id, that deterministic system evidence needs
  * no invocation id, and that a properly-attributed generated row is accepted.
  */
 
 const DATABASE_URL = process.env["DATABASE_URL"];
 const describeDb = DATABASE_URL ? describe : describe.skip;
+const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 
 /** Dig a Postgres error code out of a possibly-wrapped driver error. */
 function pgCode(err: unknown): string | undefined {
@@ -126,10 +127,10 @@ describeDb("evidence generated-origin CHECK (AC-024, spec §7.7)", () => {
       icpProfileId: icp!.id,
       icpProfileVersion: 1,
       ruleSetVersion: "mvp.rules.0.2.0",
-      promptSetVersion: "mvp.prompts.0.2.0",
+      promptSetVersion: PROMPT_SET_VERSION,
       outputLocale: "en",
       inputManifest: { snapshots: [] },
-      inputHash: hex64(),
+      inputHash: contentHash({ snapshots: [] }),
     });
     diagnosticRunId = run!.id;
   });
@@ -171,47 +172,49 @@ describeDb("evidence generated-origin CHECK (AC-024, spec §7.7)", () => {
     expect(pgCode(caught)).toBe("23514");
   });
 
-  it("accepts legitimately OBSERVED evidence with no invocation id (spec §7.7)", async () => {
+  it("accepts deterministic SYSTEM evidence with no invocation id (spec §7.7)", async () => {
     const ids = await new EvidenceRepository(handle.db).insertMany(runScope(), [
       {
-        sourceProvider: "crawl",
-        origin: "direct_public",
-        method: "observed",
+        sourceProvider: "system",
+        origin: "derived",
+        method: "computed",
         grade: "B",
         availability: "available",
         support: "supports",
         subjectRefs: ["https://ac024.example/gone"],
-        claim: "Page returns HTTP 404.",
+        claim: "The deterministic health gate is active.",
         observedAt: now(),
-        limitation: "Current public response only.",
+        limitation: "Internal computation; not a source observation.",
       },
     ]);
     expect(ids.length).toBe(1);
   });
 
   it("accepts a generated row WHEN attributed to an analysis invocation", async () => {
-    const invocationId = await new AnalysisInvocationsRepository(
-      handle.db,
-    ).insert({
-      workspaceId,
-      projectId,
-      asyncRunId: diagnosticRunId,
-      task: "finding_summary",
-      provider: "openai",
-      model: "test-model",
-      promptSetVersion: "mvp.prompts.0.2.0",
-      inputHash: hex64(),
-      outputHash: hex64(),
-      status: "succeeded",
-      inputTokens: 10,
-      outputTokens: 5,
-      costUsd: null,
-      latencyMs: 42,
-      errorCode: null,
-    });
+    const [invocation] = await handle.db
+      .insert(analysisInvocations)
+      .values({
+        workspace_id: workspaceId,
+        project_id: projectId,
+        async_run_id: diagnosticRunId,
+        diagnostic_run_id: diagnosticRunId,
+        task: "finding_summary",
+        provider: "openai",
+        model: "test-model",
+        prompt_set_version: PROMPT_SET_VERSION,
+        input_hash: hex64(),
+        output_hash: hex64(),
+        status: "succeeded",
+        input_tokens: 10,
+        output_tokens: 5,
+        cost_usd: null,
+        latency_ms: 42,
+        error_code: null,
+      })
+      .returning({ id: analysisInvocations.id });
 
     const ids = await new EvidenceRepository(handle.db).insertMany(runScope(), [
-      generatedRow(invocationId),
+      generatedRow(invocation!.id),
     ]);
     expect(ids.length).toBe(1);
   });

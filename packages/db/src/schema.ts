@@ -920,6 +920,9 @@ export const pageSnapshots = app.table("page_snapshots", {
     .notNull()
     .references(() => dataSnapshots.id),
   content_hash: text().notNull(),
+  // Nullable only for immutable rows written before migration 0012. The
+  // database check/trigger requires this field on every new PageSnapshot.
+  canonical_extract: text(),
   extract: jsonb().$type<JsonObject>().notNull(),
   captured_at: tz().notNull(),
   created_at: tz().notNull().defaultNow(),

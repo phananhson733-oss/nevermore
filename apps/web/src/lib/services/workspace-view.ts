@@ -162,7 +162,15 @@ function latestSnapshot(
     const latestTime = Date.parse(latest.capturedAt);
     const candidateTime = Date.parse(candidate.capturedAt);
     if (Number.isNaN(candidateTime)) return latest;
-    if (Number.isNaN(latestTime) || candidateTime > latestTime) return candidate;
+    if (
+      Number.isNaN(latestTime) ||
+      candidateTime > latestTime ||
+      // Snapshot ids are canonical UUID text. Lowest ASCII id matches the DB's
+      // ascending UUID tie-break and makes equal-time selection input-order free.
+      (candidateTime === latestTime && candidate.id < latest.id)
+    ) {
+      return candidate;
+    }
     return latest;
   }, null);
 }

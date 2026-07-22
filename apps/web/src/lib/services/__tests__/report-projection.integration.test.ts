@@ -27,6 +27,10 @@ import { reviewProjectFinding } from "@/lib/services/finding-review";
 import { listProjectFindings } from "@/lib/services/findings-list";
 import { listProjectActions, updateProjectAction } from "@/lib/services/actions-service";
 import { getProjectReport } from "@/lib/services/report";
+import {
+  seedCurrentCrawlDiagnostic,
+  type CurrentDiagnosticFixture,
+} from "./current-diagnostic-fixture";
 
 const DATABASE_URL = process.env["DATABASE_URL"]!;
 const describeDb = process.env["DATABASE_URL"] ? describe : describe.skip;
@@ -51,7 +55,12 @@ const COVERAGE_LIMITATIONS: readonly string[] = [
   "GSC snapshot is stale; search-performance findings may lag.",
 ];
 
-async function seedIcp(handle: DbHandle, scope: Scope, actor: string): Promise<string> {
+async function seedIcp(
+  handle: DbHandle,
+  scope: Scope,
+  actor: string,
+): Promise<{ id: string; version: number; contentHash: string }> {
+  const icpContentHash = contentHash({ icp: randomUUID() });
   const [icp] = await handle.db
     .insert(icpProfiles)
     .values({
@@ -60,11 +69,11 @@ async function seedIcp(handle: DbHandle, scope: Scope, actor: string): Promise<s
       version: 1,
       status: "complete",
       profile: { productName: "Acme", siteLanguageCodes: ["en"], defaultDeliveryLocale: "en" },
-      content_hash: contentHash({ icp: randomUUID() }),
+      content_hash: icpContentHash,
       created_by: actor,
     })
     .returning();
-  return icp!.id;
+  return { id: icp!.id, version: 1, contentHash: icpContentHash };
 }
 
 /** Seed one diagnostic run (completed) with coverage limitations set. */
@@ -72,38 +81,17 @@ async function seedDiagnosticRun(
   handle: DbHandle,
   scope: Scope,
   siteId: string,
-  icpId: string,
+  icp: { id: string; version: number; contentHash: string },
   actor: string,
-): Promise<string> {
-  const nowTs = new Date().toISOString();
-  const [run] = await handle.db
-    .insert(asyncRuns)
-    .values({
-      workspace_id: scope.workspaceId,
-      project_id: scope.projectId,
-      kind: "diagnostic",
-      status: "completed",
-      active_key: null,
-      initiated_by: actor,
-      started_at: nowTs,
-      completed_at: nowTs,
-    })
-    .returning();
-  const diagRepo = new DiagnosticRunsRepository(handle.db);
-  await diagRepo.insert({
-    runId: run!.id,
-    workspaceId: scope.workspaceId,
-    projectId: scope.projectId,
+): Promise<CurrentDiagnosticFixture> {
+  const diagnostic = await seedCurrentCrawlDiagnostic(handle, {
+    scope,
     siteId,
-    icpProfileId: icpId,
-    icpProfileVersion: 1,
-    ruleSetVersion: "mvp.rules.0.2.0",
-    promptSetVersion: "mvp.prompts.0.2.0",
-    outputLocale: "en",
-    inputManifest: { snapshots: [] },
-    inputHash: contentHash({ run: run!.id }),
+    actorId: actor,
+    icp,
   });
-  await diagRepo.setCoverage(run!.id, {
+  const diagRepo = new DiagnosticRunsRepository(handle.db);
+  await diagRepo.setCoverage(diagnostic.runId, {
     overall: "partial",
     domains: {
       technical_seo: "complete",
@@ -114,14 +102,14 @@ async function seedDiagnosticRun(
     },
     limitations: [...COVERAGE_LIMITATIONS],
   });
-  return run!.id;
+  return diagnostic;
 }
 
 /** Seed a TECH-HTTP-001 finding + primary evidence under a diagnostic run. */
 async function seedFinding(
   handle: DbHandle,
   scope: Scope,
-  runId: string,
+  diagnostic: CurrentDiagnosticFixture,
   input: {
     findingKey: string;
     severity: "high" | "low";
@@ -131,13 +119,12 @@ async function seedFinding(
     evidenceLimitation: string;
   },
 ): Promise<string> {
-  const now = new Date().toISOString();
   const finding = await new FindingsRepository(handle.db).insert({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
     findingKey: input.findingKey,
     ruleId: "TECH-HTTP-001",
-    ruleVersion: 1,
+    ruleVersion: 2,
     ruleFamily: "http-status",
     intent: "restore_or_redirect",
     domain: "technical_seo",
@@ -149,11 +136,15 @@ async function seedFinding(
     severity: input.severity,
     confidence: input.confidence,
     reviewState: "unreviewed",
-    runId,
-    seenAt: now,
+    runId: diagnostic.runId,
+    seenAt: diagnostic.capturedAt,
   });
   const [evidenceId] = await new EvidenceRepository(handle.db).insertMany(
-    { workspaceId: scope.workspaceId, projectId: scope.projectId, diagnosticRunId: runId },
+    {
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      diagnosticRunId: diagnostic.runId,
+    },
     [
       {
         sourceProvider: "crawl",
@@ -162,15 +153,21 @@ async function seedFinding(
         grade: "B",
         availability: "available",
         support: "supports",
-        subjectRefs: [input.subjectRef],
+        subjectRefs: [diagnostic.evidenceSubjectRef],
         claim: "Page returns 404.",
-        observedAt: now,
+        observedAt: diagnostic.capturedAt,
         limitation: input.evidenceLimitation,
+        snapshotId: diagnostic.snapshot.id,
+        collectionRunId: diagnostic.collectionRunId,
       },
     ],
   );
   await new EvidenceRepository(handle.db).linkObservations(
-    { workspaceId: scope.workspaceId, projectId: scope.projectId, diagnosticRunId: runId },
+    {
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      diagnosticRunId: diagnostic.runId,
+    },
     [{ findingId: finding.id, evidenceId: evidenceId!, role: "primary" }],
   );
   return finding.id;
@@ -267,11 +264,17 @@ describeDb("Report projection == list projections (spec §10.4, AC-035, AC-036)"
     scope = { workspaceId, projectId: created.project.id };
     defaultDeliveryLocale = created.project.defaultDeliveryLocale;
 
-    const icpId = await seedIcp(handle, scope, actor);
-    const runId = await seedDiagnosticRun(handle, scope, created.project.site.id, icpId, actor);
+    const icp = await seedIcp(handle, scope, actor);
+    const diagnostic = await seedDiagnosticRun(
+      handle,
+      scope,
+      created.project.site.id,
+      icp,
+      actor,
+    );
 
     // Two active findings with DIFFERENT deterministic priority so ordering matters.
-    const findingAId = await seedFinding(handle, scope, runId, {
+    const findingAId = await seedFinding(handle, scope, diagnostic, {
       findingKey: contentHash({ p: scope.projectId, k: "http_status:404:a" }),
       severity: "high",
       confidence: "high",
@@ -279,7 +282,7 @@ describeDb("Report projection == list projections (spec §10.4, AC-035, AC-036)"
       summary: "Three high-value pages return HTTP 404.",
       evidenceLimitation: "Current public response only; historical status not observed.",
     });
-    const findingBId = await seedFinding(handle, scope, runId, {
+    const findingBId = await seedFinding(handle, scope, diagnostic, {
       findingKey: contentHash({ p: scope.projectId, k: "http_status:404:b" }),
       severity: "low",
       confidence: "high",
