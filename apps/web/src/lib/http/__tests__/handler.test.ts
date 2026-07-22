@@ -414,4 +414,19 @@ describe("HTTP request completion metrics", () => {
       "/api/mvp/:unknown",
     );
   });
+
+  it("recognizes Competitor Library reads without logging the selected Competitor id", () => {
+    const prefix =
+      "https://example.test/api/mvp/projects/customer-project/audit/competitors";
+
+    expect(apiRouteTemplate(prefix)).toBe(
+      "/api/mvp/projects/:projectId/audit/competitors",
+    );
+    expect(apiRouteTemplate(`${prefix}/customer-secret-competitor`)).toBe(
+      "/api/mvp/projects/:projectId/audit/competitors/:competitorId",
+    );
+    expect(
+      apiRouteTemplate(`${prefix}/customer-secret-competitor/history`),
+    ).toBe("/api/mvp/:unknown");
+  });
 });
