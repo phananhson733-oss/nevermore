@@ -399,4 +399,19 @@ describe("HTTP request completion metrics", () => {
       apiRouteTemplate(`${prefix}/customer-secret-site-page/evidence`),
     ).toBe("/api/mvp/:unknown");
   });
+
+  it("recognizes Keyword Library reads without logging the selected Keyword id", () => {
+    const prefix =
+      "https://example.test/api/mvp/projects/customer-project/audit/keywords";
+
+    expect(apiRouteTemplate(prefix)).toBe(
+      "/api/mvp/projects/:projectId/audit/keywords",
+    );
+    expect(apiRouteTemplate(`${prefix}/customer-secret-keyword`)).toBe(
+      "/api/mvp/projects/:projectId/audit/keywords/:keywordId",
+    );
+    expect(apiRouteTemplate(`${prefix}/customer-secret-keyword/history`)).toBe(
+      "/api/mvp/:unknown",
+    );
+  });
 });

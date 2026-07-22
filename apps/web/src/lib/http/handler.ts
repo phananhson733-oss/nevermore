@@ -93,16 +93,17 @@ export function apiRouteTemplate(rawUrl: string): string {
   if (
     resource === "audit" &&
     segments.length === 4 &&
-    segments[3] === "urls"
+    (segments[3] === "urls" || segments[3] === "keywords")
   ) {
-    return `${base}/audit/urls`;
+    return `${base}/audit/${segments[3]}`;
   }
   if (
     resource === "audit" &&
     segments.length === 5 &&
-    segments[3] === "urls"
+    (segments[3] === "urls" || segments[3] === "keywords")
   ) {
-    return `${base}/audit/urls/:sitePageId`;
+    const parameter = segments[3] === "urls" ? ":sitePageId" : ":keywordId";
+    return `${base}/audit/${segments[3]}/${parameter}`;
   }
   if (
     segments.length === 4 &&
