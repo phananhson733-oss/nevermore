@@ -23,7 +23,7 @@ describe("same-origin mutation guard", () => {
     expect(() => assertSameOriginMutation(request("HEAD"))).not.toThrow();
   });
 
-  it("allows same-origin browser mutations and non-browser API clients", () => {
+  it("allows same-origin browser mutations", () => {
     expect(() =>
       assertSameOriginMutation(
         request("POST", {
@@ -32,7 +32,6 @@ describe("same-origin mutation guard", () => {
         }),
       ),
     ).not.toThrow();
-    expect(() => assertSameOriginMutation(request("PATCH"))).not.toThrow();
   });
 
   it("rejects a cross-site browser mutation even when no Origin is available", () => {
@@ -99,13 +98,13 @@ describe("same-origin mutation guard", () => {
     }
   });
 
-  it("allows a headerless non-browser mutation only when its effective host is configured", () => {
+  it("rejects a headerless non-browser mutation on a public origin", () => {
     expect(() =>
       assertSameOriginMutation(
         request("PATCH", { host: "app.signalframe.test" }),
         "https://app.signalframe.test",
       ),
-    ).not.toThrow();
+    ).toThrowError(expect.objectContaining({ code: "BAD_REQUEST" }));
   });
 
   it("fails closed on an invalid configured origin without reflecting it", () => {

@@ -91,6 +91,20 @@ export function apiRouteTemplate(rawUrl: string): string {
     return `${base}/product-profile/competitors/:candidateId`;
   }
   if (
+    resource === "audit" &&
+    segments.length === 4 &&
+    segments[3] === "urls"
+  ) {
+    return `${base}/audit/urls`;
+  }
+  if (
+    resource === "audit" &&
+    segments.length === 5 &&
+    segments[3] === "urls"
+  ) {
+    return `${base}/audit/urls/:sitePageId`;
+  }
+  if (
     segments.length === 4 &&
     (resource === "findings" ||
       resource === "actions" ||
@@ -177,12 +191,54 @@ function rejectCrossOriginMutation(): never {
   throw new ProblemError("BAD_REQUEST", "Cross-origin mutation is not allowed.");
 }
 
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function loopbackAliasesEnabled(): boolean {
+  const nodeEnv = process.env["NODE_ENV"];
+  return nodeEnv === "development" || nodeEnv === "test";
+}
+
+function localLoopbackMutationEnabled(expected: URL): boolean {
+  return (
+    loopbackAliasesEnabled() &&
+    LOOPBACK_HOSTNAMES.has(expected.hostname.toLowerCase())
+  );
+}
+
+function sameMutationOrigin(candidate: URL, expected: URL): boolean {
+  if (candidate.origin === expected.origin) return true;
+  if (!loopbackAliasesEnabled()) return false;
+  return (
+    candidate.protocol === expected.protocol &&
+    candidate.port === expected.port &&
+    LOOPBACK_HOSTNAMES.has(candidate.hostname.toLowerCase()) &&
+    LOOPBACK_HOSTNAMES.has(expected.hostname.toLowerCase())
+  );
+}
+
+function sameMutationHost(candidate: string, expected: URL): boolean {
+  if (candidate.toLowerCase() === expected.host.toLowerCase()) return true;
+  if (!localLoopbackMutationEnabled(expected)) {
+    return false;
+  }
+  const port = expected.port === "" ? "" : `:${expected.port}`;
+  const allowed = new Set([
+    `localhost${port}`,
+    `127.0.0.1${port}`,
+    `[::1]${port}`,
+  ]);
+  return allowed.has(candidate.toLowerCase());
+}
+
 /**
  * Reject browser cross-site mutations before they reach a service transaction.
  * Both the effective Host and any Origin header are anchored to the configured
  * public APP_ORIGIN, rather than trusting an attacker-controlled Host to define
- * what "same origin" means. Headerless CLI clients remain supported only on the
- * configured effective host.
+ * what "same origin" means. Development and test additionally normalize only
+ * localhost, 127.0.0.1, and [::1], while retaining the configured scheme and
+ * port. Non-local mutations require both a verified Origin and same-origin
+ * Fetch Metadata; headerless CLI clients are supported only on that effective
+ * local origin.
  */
 export function assertSameOriginMutation(
   request: NextRequest,
@@ -192,20 +248,27 @@ export function assertSameOriginMutation(
 
   const expected = parseConfiguredOrigin(expectedOrigin);
   const requestUrl = new URL(request.url);
-  if (requestUrl.origin !== expected.origin) rejectCrossOriginMutation();
+  if (!sameMutationOrigin(requestUrl, expected)) rejectCrossOriginMutation();
 
   const host = request.headers.get("host");
-  if (host !== null && host.toLowerCase() !== expected.host.toLowerCase()) {
+  if (host !== null && !sameMutationHost(host, expected)) {
     rejectCrossOriginMutation();
   }
 
+  const allowsHeaderlessMutation = localLoopbackMutationEnabled(expected);
   const fetchSite = request.headers.get("sec-fetch-site");
-  if (fetchSite !== null && fetchSite !== "same-origin") {
+  if (
+    (fetchSite === null && !allowsHeaderlessMutation) ||
+    (fetchSite !== null && fetchSite !== "same-origin")
+  ) {
     rejectCrossOriginMutation();
   }
 
   const origin = request.headers.get("origin");
-  if (!origin) return;
+  if (!origin) {
+    if (allowsHeaderlessMutation) return;
+    rejectCrossOriginMutation();
+  }
 
   let parsedOrigin: URL;
   try {
@@ -217,7 +280,7 @@ export function assertSameOriginMutation(
     origin !== parsedOrigin.origin ||
     parsedOrigin.username !== "" ||
     parsedOrigin.password !== "" ||
-    parsedOrigin.origin !== expected.origin
+    !sameMutationOrigin(parsedOrigin, expected)
   ) {
     rejectCrossOriginMutation();
   }

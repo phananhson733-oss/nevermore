@@ -1,10 +1,191 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { ProblemError } from "@sf/observability";
-import { apiRouteTemplate, route } from "@/lib/http/handler";
+import {
+  apiRouteTemplate,
+  assertSameOriginMutation,
+  route,
+} from "@/lib/http/handler";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
+function mutationRequest(
+  origin: string,
+  overrides: Readonly<Record<string, string | null>> = {},
+): NextRequest {
+  const url = new URL(origin);
+  const headers = new Headers({
+    host: url.host,
+    origin: url.origin,
+    "sec-fetch-site": "same-origin",
+  });
+  for (const [name, value] of Object.entries(overrides)) {
+    if (value === null) {
+      headers.delete(name);
+    } else {
+      headers.set(name, value);
+    }
+  }
+  return new NextRequest(`${url.origin}/api/mvp/projects/project-id/audit/urls`, {
+    method: "PATCH",
+    headers,
+  });
+}
+
+describe("mutation origin enforcement", () => {
+  it.each([
+    ["development", "http://localhost:3112", "http://127.0.0.1:3112"],
+    ["development", "http://localhost:3112", "http://[::1]:3112"],
+    ["development", "http://127.0.0.1:3112", "http://localhost:3112"],
+    ["test", "http://[::1]:3112", "http://127.0.0.1:3112"],
+  ])(
+    "in %s, treats %s and %s as the same loopback origin",
+    (nodeEnv, configuredOrigin, requestOrigin) => {
+      vi.stubEnv("NODE_ENV", nodeEnv);
+      vi.stubEnv("APP_ORIGIN", configuredOrigin);
+
+      expect(() =>
+        assertSameOriginMutation(mutationRequest(requestOrigin)),
+      ).not.toThrow();
+    },
+  );
+
+  it("keeps exact APP_ORIGIN mutations valid in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_ORIGIN", "https://app.example.test");
+
+    expect(() =>
+      assertSameOriginMutation(mutationRequest("https://app.example.test")),
+    ).not.toThrow();
+  });
+
+  it.each([
+    ["production", "a missing Origin", { origin: null }],
+    [
+      "production",
+      "a missing Sec-Fetch-Site",
+      { "sec-fetch-site": null },
+    ],
+    [
+      "production",
+      "both provenance headers missing",
+      { origin: null, "sec-fetch-site": null },
+    ],
+    [
+      "staging",
+      "both provenance headers missing",
+      { origin: null, "sec-fetch-site": null },
+    ],
+  ])("in %s, rejects %s", (nodeEnv, _label, headers) => {
+    vi.stubEnv("NODE_ENV", nodeEnv);
+    vi.stubEnv("APP_ORIGIN", "https://app.example.test");
+
+    expect(() =>
+      assertSameOriginMutation(
+        mutationRequest("https://app.example.test", headers),
+      ),
+    ).toThrow("Cross-origin mutation is not allowed.");
+  });
+
+  it.each(["development", "test"])(
+    "allows a headerless loopback CLI mutation in %s",
+    (nodeEnv) => {
+      vi.stubEnv("NODE_ENV", nodeEnv);
+      vi.stubEnv("APP_ORIGIN", "http://localhost:3112");
+
+      expect(() =>
+        assertSameOriginMutation(
+          mutationRequest("http://127.0.0.1:3112", {
+            origin: null,
+            "sec-fetch-site": null,
+          }),
+        ),
+      ).not.toThrow();
+    },
+  );
+
+  it("rejects a headerless CLI mutation for a non-loopback APP_ORIGIN in development", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("APP_ORIGIN", "https://app.example.test");
+
+    expect(() =>
+      assertSameOriginMutation(
+        mutationRequest("https://app.example.test", {
+          origin: null,
+          "sec-fetch-site": null,
+        }),
+      ),
+    ).toThrow("Cross-origin mutation is not allowed.");
+  });
+
+  it.each(["production", "staging"])(
+    "rejects loopback aliases when NODE_ENV is %s",
+    (nodeEnv) => {
+      vi.stubEnv("NODE_ENV", nodeEnv);
+      vi.stubEnv("APP_ORIGIN", "http://localhost:3112");
+
+      expect(() =>
+        assertSameOriginMutation(
+          mutationRequest("http://127.0.0.1:3112"),
+        ),
+      ).toThrow("Cross-origin mutation is not allowed.");
+    },
+  );
+
+  it.each([
+    ["a non-loopback request URL", "http://attacker.test:3112", {}],
+    [
+      "a forged Host header",
+      "http://127.0.0.1:3112",
+      { host: "localhost.attacker.test:3112" },
+    ],
+    [
+      "a forged Origin header",
+      "http://127.0.0.1:3112",
+      { origin: "http://localhost.attacker.test:3112" },
+    ],
+    [
+      "a userinfo-shaped Origin header",
+      "http://127.0.0.1:3112",
+      { origin: "http://localhost:3112@attacker.test" },
+    ],
+    [
+      "a cross-site Fetch Metadata header",
+      "http://127.0.0.1:3112",
+      { "sec-fetch-site": "cross-site" },
+    ],
+  ])("rejects %s in development", (_label, requestOrigin, headers) => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("APP_ORIGIN", "http://localhost:3112");
+
+    expect(() =>
+      assertSameOriginMutation(mutationRequest(requestOrigin, headers)),
+    ).toThrow("Cross-origin mutation is not allowed.");
+  });
+
+  it.each([
+    ["a different port", "http://127.0.0.1:3113"],
+    ["a different scheme", "https://127.0.0.1:3112"],
+  ])("rejects %s between loopback aliases", (_label, requestOrigin) => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("APP_ORIGIN", "http://localhost:3112");
+
+    expect(() =>
+      assertSameOriginMutation(mutationRequest(requestOrigin)),
+    ).toThrow("Cross-origin mutation is not allowed.");
+  });
+
+  it("does not let a loopback request substitute for a non-loopback APP_ORIGIN", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("APP_ORIGIN", "http://app.example.test:3112");
+
+    expect(() =>
+      assertSameOriginMutation(mutationRequest("http://127.0.0.1:3112")),
+    ).toThrow("Cross-origin mutation is not allowed.");
+  });
 });
 
 describe("route unexpected-error logging", () => {
@@ -202,5 +383,20 @@ describe("HTTP request completion metrics", () => {
     expect(apiRouteTemplate(`${prefix}/customer-secret`)).toBe(
       "/api/mvp/:unknown",
     );
+  });
+
+  it("recognizes Growth Map URL reads without logging the selected SitePage id", () => {
+    const prefix =
+      "https://example.test/api/mvp/projects/customer-project/audit/urls";
+
+    expect(apiRouteTemplate(prefix)).toBe(
+      "/api/mvp/projects/:projectId/audit/urls",
+    );
+    expect(apiRouteTemplate(`${prefix}/customer-secret-site-page`)).toBe(
+      "/api/mvp/projects/:projectId/audit/urls/:sitePageId",
+    );
+    expect(
+      apiRouteTemplate(`${prefix}/customer-secret-site-page/evidence`),
+    ).toBe("/api/mvp/:unknown");
   });
 });
