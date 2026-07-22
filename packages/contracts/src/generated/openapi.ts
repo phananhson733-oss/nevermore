@@ -317,6 +317,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/audit/urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the latest readable Growth Map URL portfolio
+         * @description Returns one bounded page of canonical Site Pages proven by the latest completed or
+         *     partial DiagnosticRun's frozen Crawl/GSC/GA4 inputs. The response deliberately has no
+         *     project-wide total. Missing observations remain unavailable with explicit limitations;
+         *     unresolved or definition-only Finding targets are never assigned to URL rows.
+         */
+        get: operations["listProjectAuditUrls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/urls/{sitePageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one URL from the latest readable Growth Map portfolio
+         * @description Resolves the selected canonical Site Page only inside the latest completed or partial
+         *     DiagnosticRun. Finding membership comes exclusively from resolved FindingTarget rows
+         *     for that exact run; mutable subject_refs are never used as URL membership.
+         */
+        get: operations["getProjectAuditUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/findings": {
         parameters: {
             query?: never;
@@ -1160,6 +1205,348 @@ export interface components {
             data: components["schemas"]["DataSnapshot"][];
             meta: components["schemas"]["PageMeta"];
         };
+        /** @description Degraded or unavailable coverage always has at least one limitation; missing data is never projected as zero. */
+        GrowthMapCoverage: {
+            /** @enum {string} */
+            availability: "available" | "partial" | "stale" | "unavailable";
+            limitations: string[];
+        };
+        GrowthMapMetricNumericValueSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "value_numeric";
+        };
+        GrowthMapMetricJsonValueSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "value_json";
+            pointer: string;
+        };
+        GrowthMapMetricValueSource: components["schemas"]["GrowthMapMetricNumericValueSource"] | components["schemas"]["GrowthMapMetricJsonValueSource"];
+        /** @description One scalar extracted from one immutable URL Observation. Partial or unavailable values are null and carry a limitation; stale or unknown freshness also carries a limitation. */
+        GrowthMapUrlMetricObservation: {
+            /** @enum {string} */
+            provider: "crawl" | "gsc" | "ga4";
+            /** @enum {string} */
+            metricKey: "crawl.page.v1" | "gsc.page.v1" | "ga4.landing.v1";
+            /** Format: uri */
+            subjectRef: string;
+            valueSource: components["schemas"]["GrowthMapMetricValueSource"];
+            value: number | null;
+            unit: string | null;
+            /** @enum {string} */
+            availability: "available" | "partial" | "unavailable";
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"];
+            observedAt: components["schemas"]["Timestamp"];
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+        } & ({
+            /** @constant */
+            provider?: "crawl";
+            /** @constant */
+            metricKey?: "crawl.page.v1";
+        } | {
+            /** @constant */
+            provider?: "gsc";
+            /** @constant */
+            metricKey?: "gsc.page.v1";
+        } | {
+            /** @constant */
+            provider?: "ga4";
+            /** @constant */
+            metricKey?: "ga4.landing.v1";
+        });
+        GrowthMapPageSnapshotIdentitySource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "page_snapshot";
+            /** @constant */
+            provider: "crawl";
+            snapshotId: components["schemas"]["Uuid"];
+            pageSnapshotId: components["schemas"]["Uuid"];
+            observedAt: components["schemas"]["Timestamp"];
+        };
+        GrowthMapUrlObservationIdentitySource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "url_observation";
+            /** @enum {string} */
+            provider: "crawl" | "gsc" | "ga4";
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"];
+            /** Format: uri */
+            subjectRef: string;
+            observedAt: components["schemas"]["Timestamp"];
+        };
+        GrowthMapUrlIdentitySource: components["schemas"]["GrowthMapPageSnapshotIdentitySource"] | components["schemas"]["GrowthMapUrlObservationIdentitySource"];
+        GrowthMapComparisonAnchor: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            crawlSnapshotId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"];
+            pageSnapshotId: components["schemas"]["Uuid"];
+        };
+        /** @description Before/current anchors share project, Site, and canonical SitePage; run, Crawl Snapshot, and PageSnapshot identifiers are distinct. */
+        GrowthMapFindingComparisonBasis: {
+            findingIds: components["schemas"]["Uuid"][];
+            before: components["schemas"]["GrowthMapComparisonAnchor"];
+            current: components["schemas"]["GrowthMapComparisonAnchor"];
+        };
+        GrowthMapFindingPriorityBasis: {
+            /** @constant */
+            derivationVersion: "max_finding_severity.v1";
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"];
+            findingIds: components["schemas"]["Uuid"][];
+        };
+        GrowthMapUnavailablePriority: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            availability: "unavailable";
+            value: null;
+            limitation: string;
+        };
+        GrowthMapAvailablePriority: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            availability: "available";
+            value: components["schemas"]["PriorityBand"];
+            basis: components["schemas"]["GrowthMapFindingPriorityBasis"];
+            limitation: string | null;
+        };
+        GrowthMapUrlPriority: components["schemas"]["GrowthMapUnavailablePriority"] | components["schemas"]["GrowthMapAvailablePriority"];
+        GrowthMapUnavailableDelta: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            availability: "unavailable";
+            value: null;
+            limitation: string;
+        };
+        GrowthMapAvailableDelta: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            availability: "available";
+            /** @enum {string} */
+            value: "improved" | "unchanged" | "regressed";
+            basis: components["schemas"]["GrowthMapFindingComparisonBasis"];
+            summary: string;
+            limitation: string | null;
+        };
+        GrowthMapUrlDelta: components["schemas"]["GrowthMapUnavailableDelta"] | components["schemas"]["GrowthMapAvailableDelta"];
+        GrowthMapDirectUrlFindingRelation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            relation: "direct_url";
+            /** @constant */
+            targetKind: "url";
+            /** Format: uri */
+            targetRef: string;
+            sitePageId: components["schemas"]["Uuid"];
+            /** Format: uuid */
+            pageSnapshotId: string | null;
+        };
+        GrowthMapTemplateFindingRelation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            relation: "affected_by_template";
+            /** @constant */
+            targetKind: "template";
+            targetRef: string;
+        };
+        GrowthMapSiteFindingRelation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            relation: "affected_by_site";
+            /** @constant */
+            targetKind: "site";
+            targetRef: string;
+        };
+        GrowthMapPageSetFindingRelation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            relation: "affected_by_page_set";
+            /** @constant */
+            targetKind: "page_set";
+            targetRef: string;
+        };
+        GrowthMapHttpStatusFindingRelation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            relation: "affected_by_http_status";
+            /** @constant */
+            targetKind: "http_status";
+            targetRef: string;
+        };
+        GrowthMapCanonicalIssueFindingRelation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            relation: "affected_by_canonical_issue";
+            /** @constant */
+            targetKind: "canonical_issue";
+            targetRef: string;
+        };
+        GrowthMapKeywordClusterFindingRelation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            relation: "affected_by_keyword_cluster";
+            /** @constant */
+            targetKind: "keyword_cluster";
+            targetRef: string;
+        };
+        GrowthMapUserAgentFindingRelation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            relation: "affected_by_user_agent";
+            /** @constant */
+            targetKind: "user_agent";
+            targetRef: string;
+        };
+        GrowthMapFindingTargetRelation: components["schemas"]["GrowthMapDirectUrlFindingRelation"] | components["schemas"]["GrowthMapTemplateFindingRelation"] | components["schemas"]["GrowthMapSiteFindingRelation"] | components["schemas"]["GrowthMapPageSetFindingRelation"] | components["schemas"]["GrowthMapHttpStatusFindingRelation"] | components["schemas"]["GrowthMapCanonicalIssueFindingRelation"] | components["schemas"]["GrowthMapKeywordClusterFindingRelation"] | components["schemas"]["GrowthMapUserAgentFindingRelation"];
+        GrowthMapExecutionRef: {
+            actionId: components["schemas"]["Uuid"];
+            artifactIds: components["schemas"]["Uuid"][];
+        };
+        GrowthMapUrlFinding: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            findingId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            ruleId: string;
+            ruleVersion: number;
+            title: string;
+            severity: components["schemas"]["PriorityBand"];
+            reviewState: components["schemas"]["FindingReviewState"];
+            reviewRevision: number;
+            active: boolean;
+            regressed: boolean;
+            evidenceIds: components["schemas"]["Uuid"][];
+            targetRelation: components["schemas"]["GrowthMapFindingTargetRelation"];
+            executionRef: components["schemas"]["GrowthMapExecutionRef"] | null;
+        };
+        /** @description One canonical SitePage in the current frozen DiagnosticRun. Title is present only when verified from an immutable Crawl PageSnapshot; page type, cluster, and owner remain null unless persisted. */
+        GrowthMapUrlPortfolioItem: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            crawlSnapshotId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"];
+            /** Format: uuid */
+            pageSnapshotId: string | null;
+            /** Format: date-time */
+            pageSnapshotCapturedAt: string | null;
+            identitySources: components["schemas"]["GrowthMapUrlIdentitySource"][];
+            /** Format: uri */
+            normalizedUrl: string;
+            title: string | null;
+            pageType: string | null;
+            templateKey: string | null;
+            clusterKey: string | null;
+            /** Format: uuid */
+            ownerId: string | null;
+            coverage: components["schemas"]["GrowthMapCoverage"];
+            metricObservations: components["schemas"]["GrowthMapUrlMetricObservation"][];
+            findingIds: components["schemas"]["Uuid"][];
+            reviewableFindingIds: components["schemas"]["Uuid"][];
+            priority: components["schemas"]["GrowthMapUrlPriority"];
+            delta: components["schemas"]["GrowthMapUrlDelta"];
+        };
+        /** @description hasNext is true exactly when nextCursor is non-null. */
+        GrowthMapUrlPortfolioMeta: {
+            limit: number;
+            nextCursor: string | null;
+            hasNext: boolean;
+            coverage: components["schemas"]["GrowthMapCoverage"];
+        };
+        /** @description Bounded current-run URL portfolio. It intentionally exposes no project-wide total and every item repeats the same immutable scope identifiers. */
+        GrowthMapUrlPortfolioResponse: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            crawlSnapshotId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapUrlPortfolioItem"][];
+            meta: components["schemas"]["GrowthMapUrlPortfolioMeta"];
+        };
+        /** @description Selected canonical SitePage. findingIds exactly match findings, direct targets match the selected URL, and execution links contain canonical IDs only. */
+        GrowthMapUrlDetail: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            crawlSnapshotId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"];
+            /** Format: uuid */
+            pageSnapshotId: string | null;
+            /** Format: date-time */
+            pageSnapshotCapturedAt: string | null;
+            identitySources: components["schemas"]["GrowthMapUrlIdentitySource"][];
+            /** Format: uri */
+            normalizedUrl: string;
+            title: string | null;
+            pageType: string | null;
+            templateKey: string | null;
+            clusterKey: string | null;
+            /** Format: uuid */
+            ownerId: string | null;
+            coverage: components["schemas"]["GrowthMapCoverage"];
+            metricObservations: components["schemas"]["GrowthMapUrlMetricObservation"][];
+            findingIds: components["schemas"]["Uuid"][];
+            reviewableFindingIds: components["schemas"]["Uuid"][];
+            priority: components["schemas"]["GrowthMapUrlPriority"];
+            delta: components["schemas"]["GrowthMapUrlDelta"];
+            findings: components["schemas"]["GrowthMapUrlFinding"][];
+        };
+        /** @description Scope identifiers exactly match the selected URL detail. */
+        GrowthMapUrlDetailResponse: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            crawlSnapshotId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapUrlDetail"];
+        };
+        GrowthMapUrlPortfolioHttpResponse: {
+            data: components["schemas"]["GrowthMapUrlPortfolioResponse"];
+        };
+        GrowthMapUrlDetailHttpResponse: {
+            data: components["schemas"]["GrowthMapUrlDetailResponse"];
+        };
         CreateDiagnosticRunRequest: {
             /** @description Must include a current-project crawl snapshot; omitted optional datasets use latest eligible snapshots only when explicitly selected by UI. */
             snapshotIds: components["schemas"]["Uuid"][];
@@ -1485,6 +1872,8 @@ export interface components {
             project: components["schemas"]["Project"];
             coverage: components["schemas"]["Coverage"];
             activeRuns: components["schemas"]["AsyncRun"][];
+            /** @description Exact latest readable diagnostic run used to select the Overview work queue; null when no frozen audit exists. */
+            frozenDiagnosticRunId: components["schemas"]["Uuid"] | null;
             topActions: components["schemas"]["Action"][];
             latestSnapshot: components["schemas"]["DataSnapshot"] | null;
             topActionEvidence: components["schemas"]["Evidence"][];
@@ -1623,6 +2012,7 @@ export interface components {
     };
     parameters: {
         ProjectId: components["schemas"]["Uuid"];
+        SitePageId: components["schemas"]["Uuid"];
         ProductProfileCandidateId: components["schemas"]["Uuid"];
         SourceConnectionId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
@@ -2264,6 +2654,66 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             429: components["responses"]["RateLimited"];
+        };
+    };
+    listProjectAuditUrls: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque base64url cursor returned by the previous page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Trimmed, non-empty literal substring matched against canonical URL. Repeated scalar query parameters are rejected. */
+                search?: string;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current traceable URL portfolio page without a synthetic total. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapUrlPortfolioHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                sitePageId: components["parameters"]["SitePageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selected URL projection with exact source, Finding, Action, and Artifact identifiers. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapUrlDetailHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     listProjectFindings: {

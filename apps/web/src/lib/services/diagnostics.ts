@@ -1,5 +1,6 @@
 import {
   AsyncRunsRepository,
+  canonicalUtcTimestamptz,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
@@ -54,7 +55,7 @@ function snapshotManifestEntry(s: DataSnapshotRow) {
     schemaVersion: s.schema_version,
     methodVersion: s.method_version,
     checksum: s.checksum,
-    capturedAt: s.captured_at,
+    capturedAt: canonicalUtcTimestamptz(s.captured_at),
     sourceWindow: s.source_window,
     availability: s.availability,
   };

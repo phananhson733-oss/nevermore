@@ -4,7 +4,7 @@ import { getRequestConfig } from "next-intl/server";
 
 /**
  * next-intl request config: resolve the UI locale from the `sf_ui_locale` cookie
- * (default `en`), and load the matching chrome messages (spec §4.3).
+ * (default `zh-CN`), and load the matching chrome messages (spec §4.3).
  */
 export default getRequestConfig(async () => {
   const cookieStore = await cookies();

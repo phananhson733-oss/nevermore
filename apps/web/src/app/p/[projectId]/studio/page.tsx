@@ -1,16 +1,19 @@
-import { StudioClient } from "./_studio.tsx";
+import { redirect } from "next/navigation";
+import {
+  canonicalProjectRoute,
+  type ProjectRouteSearchParams,
+} from "../_compatibility-route.ts";
 
 interface StudioPageProps {
   readonly params: Promise<{ readonly projectId: string }>;
+  readonly searchParams: Promise<ProjectRouteSearchParams>;
 }
 
-/**
- * Studio (execution artifacts) screen (spec §4.2, §10.1, §10.3). Server
- * component: unwrap the async `params` (Next 16) and hand the project id to the
- * client view that owns the artifact/action queries. Rendered inside the project
- * shell layout — content only, no chrome.
- */
-export default async function StudioPage({ params }: StudioPageProps) {
-  const { projectId } = await params;
-  return <StudioClient projectId={projectId} />;
+/** Compatibility route for pre-migration Studio deep links. */
+export default async function StudioPage({
+  params,
+  searchParams,
+}: StudioPageProps) {
+  const [{ projectId }, query] = await Promise.all([params, searchParams]);
+  redirect(canonicalProjectRoute(projectId, "execution", query));
 }

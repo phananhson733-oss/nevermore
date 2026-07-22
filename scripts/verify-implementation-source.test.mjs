@@ -60,7 +60,7 @@ test("freezes the eight traceability persistence tables in the 36-table contract
   );
 });
 
-test("freezes the 32 implemented operations and six async commands", () => {
+test("freezes the 34 implemented operations and six async commands", () => {
   for (const operationId of [
     "getProjectProductProfile",
     "updateProductProfileDraft",
@@ -68,6 +68,8 @@ test("freezes the 32 implemented operations and six async commands", () => {
     "reviewProductProfileCompetitor",
     "addProductProfileCompetitor",
     "confirmProductProfile",
+    "listProjectAuditUrls",
+    "getProjectAuditUrl",
   ]) {
     assert.match(verifier, new RegExp(`"${operationId}"`));
   }
@@ -86,6 +88,21 @@ test("freezes the 32 implemented operations and six async commands", () => {
   assert.match(
     verifier,
     /async runtime: \$\{EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS\.length\} route handlers use the shared asyncAccepted envelope/,
+  );
+});
+
+test("requires Growth Map reviews to expose their exact non-negative revision", () => {
+  assert.match(
+    verifier,
+    /growthMapFinding\.required\.includes\("reviewRevision"\)/,
+  );
+  assert.match(
+    verifier,
+    /growthMapFinding\.properties\.reviewRevision\.minimum === 0/,
+  );
+  assert.match(
+    verifier,
+    /exact non-negative reviewRevision used for optimistic review concurrency/,
   );
 });
 

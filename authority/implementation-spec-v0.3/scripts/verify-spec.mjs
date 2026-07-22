@@ -12,7 +12,7 @@ const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
 const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
-const EXPECTED_OPERATION_COUNT = 32;
+const EXPECTED_OPERATION_COUNT = 34;
 const EXPECTED_ASYNC_OPERATION_COUNT = 6;
 const EXPECTED_TABLE_COUNT = 36;
 const MIGRATION_VERSION_VIEW_PATTERN =
@@ -491,6 +491,20 @@ check(
       "LLM-generated Evidence",
     ].every((title) => publicEvidenceBlock.includes(`title: ${title}`)),
   "public Evidence must expose exact collection-run lineage and all three provenance shapes",
+);
+const growthMapFindingBlock = between(
+  files.openapi,
+  "    GrowthMapUrlFinding:",
+  "    GrowthMapUrlPortfolioItem:",
+);
+check(
+  /required: \[[^\]]*reviewState[^\]]*reviewRevision[^\]]*\]/.test(
+    growthMapFindingBlock,
+  ) &&
+    growthMapFindingBlock.includes(
+      "reviewRevision: { type: integer, minimum: 0 }",
+    ),
+  "Growth Map Finding must expose the exact non-negative reviewRevision required by optimistic review concurrency",
 );
 const exportBundleBlock = between(
   files.openapi,

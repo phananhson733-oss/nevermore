@@ -1,4 +1,4 @@
-import { AsyncRunsRepository } from "@sf/db";
+import { AsyncRunsRepository, GrowthMapReadRepository } from "@sf/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactDto } from "@/lib/services/artifact-mappers";
 import type {
@@ -217,6 +217,31 @@ describe("workspace complete pagination and snapshot reads", () => {
       AsyncRunsRepository.prototype,
       "listActiveByProject",
     ).mockResolvedValue([]);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "findLatestReadableRun",
+    ).mockResolvedValue({ id: "00000000-0000-4000-8000-000000000090" } as never);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listCurrentRunUrls",
+    ).mockResolvedValue({
+      rows: [
+        {
+          site_page_id: "00000000-0000-4000-8000-000000000091",
+        },
+      ],
+      nextCursor: null,
+    } as never);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listResolvedTargets",
+    ).mockResolvedValue([
+      ...Array.from({ length: 100 }, (_, index) => ({
+        finding_id: `recent-finding-${index}`,
+      })),
+      { finding_id: "old-critical-finding" },
+      { finding_id: "finding" },
+    ] as never);
     installSinglePageDefaults();
   });
 
@@ -331,6 +356,76 @@ describe("workspace complete pagination and snapshot reads", () => {
       vi.mocked(AsyncRunsRepository.prototype.listActiveByProject).mock
         .contexts[0],
     ).toMatchObject({ exec: READ_TX });
+  });
+
+  it("keeps project-wide work cards from two URLs in the exact frozen run and excludes a stale-run action", async () => {
+    const firstUrl = "00000000-0000-4000-8000-000000000101";
+    const secondUrl = "00000000-0000-4000-8000-000000000102";
+    const firstFinding = "00000000-0000-4000-8000-000000000111";
+    const secondFinding = "00000000-0000-4000-8000-000000000112";
+    const staleFinding = "00000000-0000-4000-8000-000000000113";
+
+    vi.mocked(
+      GrowthMapReadRepository.prototype.listCurrentRunUrls,
+    ).mockResolvedValue({
+      rows: [{ site_page_id: firstUrl }, { site_page_id: secondUrl }],
+      nextCursor: null,
+    } as never);
+    vi.mocked(
+      GrowthMapReadRepository.prototype.listResolvedTargets,
+    ).mockResolvedValue([
+      { finding_id: firstFinding, site_page_id: firstUrl },
+      { finding_id: secondFinding, site_page_id: secondUrl },
+    ] as never);
+    mocks.listProjectActions.mockResolvedValue({
+      data: [
+        action("stale-critical", staleFinding, "critical"),
+        action("url-one-high", firstFinding, "high"),
+        action("url-two-medium", secondFinding, "medium"),
+      ],
+      nextCursor: null,
+      limit: 100,
+    });
+
+    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview", null);
+
+    expect(view.view).toBe("overview");
+    if (view.view !== "overview") throw new Error("expected Overview view");
+    expect(view.topActions.map((item) => item.id)).toEqual([
+      "url-one-high",
+      "url-two-medium",
+    ]);
+    expect(view.frozenDiagnosticRunId).toBe(
+      "00000000-0000-4000-8000-000000000090",
+    );
+    expect(
+      vi.mocked(GrowthMapReadRepository.prototype.listResolvedTargets),
+    ).toHaveBeenCalledWith(
+      SCOPE,
+      "00000000-0000-4000-8000-000000000090",
+      [firstUrl, secondUrl],
+    );
+  });
+
+  it("returns a null frozen run and no legacy work cards when no readable audit exists", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(null);
+    mocks.listProjectActions.mockResolvedValue({
+      data: [action("legacy-critical", "legacy-finding", "critical")],
+      nextCursor: null,
+      limit: 100,
+    });
+
+    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview", null);
+
+    expect(view.view).toBe("overview");
+    if (view.view !== "overview") throw new Error("expected Overview view");
+    expect(view.frozenDiagnosticRunId).toBeNull();
+    expect(view.topActions).toEqual([]);
+    expect(
+      GrowthMapReadRepository.prototype.listCurrentRunUrls,
+    ).not.toHaveBeenCalled();
   });
 
   it("fails explicitly when a resource cursor stops advancing", async () => {

@@ -1,14 +1,10 @@
 "use client";
 
 import {
-  Database,
-  FileText,
+  ChartNoAxesCombined,
   LayoutDashboard,
-  ListTodo,
-  PenTool,
-  Search,
-  Target,
-  type LucideIcon,
+  Map,
+  Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -24,50 +20,25 @@ import {
   projectHistoryPosition,
   withProjectHistoryPosition,
 } from "./_project-history-position.ts";
+import {
+  PRIMARY_NAV_ITEMS,
+  activePrimaryNavKey,
+  currentProjectPageLabelKey,
+  type PrimaryNavKey,
+} from "./_nav-model.ts";
 import styles from "./nav.module.css";
 
 /**
- * Project section navigation (client) for the app-shell sidebar. Grouped into
- * Workspace / Evidence & Diagnosis / Execution & Delivery (visual language from
- * the delivery Artifact). `usePathname` marks the active tab with
- * `aria-current="page"`, which drives the mint left-accent. Every section is a
- * live route.
+ * Customer-visible project navigation. The shell exposes exactly four stable
+ * concepts while legacy routes remain valid compatibility aliases.
  */
 
-type NavKey =
-  | "overview"
-  | "context"
-  | "sources"
-  | "diagnosis"
-  | "plan"
-  | "studio"
-  | "report";
-
-type NavGroup = "workspace" | "evidence" | "delivery";
-
-interface NavItem {
-  readonly key: NavKey;
-  readonly group: NavGroup;
-  readonly icon: LucideIcon;
-}
-
-const NAV_ITEMS: readonly NavItem[] = [
-  { key: "overview", group: "workspace", icon: LayoutDashboard },
-  { key: "context", group: "workspace", icon: Target },
-  { key: "sources", group: "evidence", icon: Database },
-  { key: "diagnosis", group: "evidence", icon: Search },
-  { key: "plan", group: "delivery", icon: ListTodo },
-  { key: "studio", group: "delivery", icon: PenTool },
-  { key: "report", group: "delivery", icon: FileText },
-];
-
-/** The first path segment under `/p/{projectId}/`, or null when not matched. */
-function activeSegment(pathname: string, projectId: string): string | null {
-  const prefix = `/p/${projectId}/`;
-  if (!pathname.startsWith(prefix)) return null;
-  const seg = pathname.slice(prefix.length).split("/")[0] ?? "";
-  return seg.length > 0 ? seg : null;
-}
+const PRIMARY_NAV_ICONS: Readonly<Record<PrimaryNavKey, typeof Map>> = {
+  overview: LayoutDashboard,
+  "growth-map": Map,
+  execution: Wrench,
+  results: ChartNoAxesCombined,
+};
 
 export function ProjectNav({
   projectId,
@@ -80,10 +51,9 @@ export function ProjectNav({
   const tContext = useTranslations("context");
   const tShell = useTranslations("appShell");
   const pathname = usePathname();
-  const active = activeSegment(pathname, projectId);
+  const active = activePrimaryNavKey(pathname, projectId);
   const historyPositionRef = useRef<number | null>(null);
   const historyPathRef = useRef<string | null>(null);
-  let lastGroup: NavGroup | "" = "";
 
   // Give every project-shell entry a position without pushing a duplicate
   // entry. Studio can then reverse a cancelled Back or Forward traversal while
@@ -133,32 +103,23 @@ export function ProjectNav({
 
   return (
     <nav className={styles.nav} aria-label={tShell("projectSections")}>
-      {NAV_ITEMS.map((item) => {
+      {PRIMARY_NAV_ITEMS.map((item) => {
         const isActive = active === item.key;
-        const Icon = item.icon;
+        const Icon = PRIMARY_NAV_ICONS[item.key];
         const badge =
-          item.key === "diagnosis"
-            ? navigationBadges.diagnosis
-            : item.key === "studio"
-              ? navigationBadges.studio
-              : null;
+          item.badgeKey === null ? null : navigationBadges[item.badgeKey];
         const badgeDescriptionId = `sf-${item.key}-nav-count`;
-        const showGroup = item.group !== lastGroup;
-        lastGroup = item.group;
         return (
           <div className={styles.entry} key={item.key}>
-            {showGroup ? (
-              <p className={styles.groupLabel}>{t(item.group)}</p>
-            ) : null}
             <Link
-              href={`/p/${projectId}/${item.key}`}
+              href={`/p/${projectId}/${item.hrefSegment}`}
               className={cx(styles.item, isActive && styles.active)}
               aria-current={isActive ? "page" : undefined}
               aria-describedby={badge === null ? undefined : badgeDescriptionId}
               onClick={(event) => confirmNavigation(event, isActive)}
             >
               <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
-              <span>{t(item.key)}</span>
+              <span>{t(item.labelKey)}</span>
               {badge === null ? null : (
                 <span data-nav-count="" aria-hidden="true">
                   {badge > 99 ? "99+" : badge}
@@ -167,9 +128,9 @@ export function ProjectNav({
             </Link>
             {badge === null ? null : (
               <span id={badgeDescriptionId} data-nav-count-label="">
-                {item.key === "diagnosis"
-                  ? tShell("diagnosisBadge", { count: badge })
-                  : tShell("studioBadge", { count: badge })}
+                {item.badgeKey === "diagnosis"
+                  ? tShell("growthMapBadge", { count: badge })
+                  : tShell("executionBadge", { count: badge })}
               </span>
             )}
           </div>
@@ -193,12 +154,11 @@ export function CurrentPageLabel({
 }) {
   const t = useTranslations("nav");
   const pathname = usePathname();
-  const seg = activeSegment(pathname, projectId);
-  const match = seg ? NAV_ITEMS.find((item) => item.key === seg) : undefined;
-  if (!match) return null;
+  const labelKey = currentProjectPageLabelKey(pathname, projectId);
+  if (labelKey === null) return null;
   return (
     <span className={className} aria-current="page">
-      {t(match.key)}
+      {t(labelKey)}
     </span>
   );
 }

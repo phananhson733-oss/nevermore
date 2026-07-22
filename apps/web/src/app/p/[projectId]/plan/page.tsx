@@ -1,15 +1,16 @@
-import { PlanClient } from "./_plan.tsx";
+import { redirect } from "next/navigation";
+import {
+  canonicalProjectRoute,
+  type ProjectRouteSearchParams,
+} from "../_compatibility-route.ts";
 
 interface PlanPageProps {
   readonly params: Promise<{ readonly projectId: string }>;
+  readonly searchParams: Promise<ProjectRouteSearchParams>;
 }
 
-/**
- * Plan screen (spec §4.2, §9.3). Server component: unwrap the async `params`
- * (Next 16) and hand the project id to the client view that owns the actions
- * query. Rendered inside the project shell layout — content only, no chrome.
- */
-export default async function PlanPage({ params }: PlanPageProps) {
-  const { projectId } = await params;
-  return <PlanClient projectId={projectId} />;
+/** Compatibility route for pre-migration Plan deep links. */
+export default async function PlanPage({ params, searchParams }: PlanPageProps) {
+  const [{ projectId }, query] = await Promise.all([params, searchParams]);
+  redirect(canonicalProjectRoute(projectId, "execution", query));
 }

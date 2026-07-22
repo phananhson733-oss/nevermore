@@ -1,16 +1,19 @@
-import { DiagnosisClient } from "./_diagnosis.tsx";
+import { redirect } from "next/navigation";
+import {
+  growthMapCompatibilityRoute,
+  type ProjectRouteSearchParams,
+} from "../_compatibility-route.ts";
 
 interface DiagnosisPageProps {
   readonly params: Promise<{ readonly projectId: string }>;
+  readonly searchParams: Promise<ProjectRouteSearchParams>;
 }
 
-/**
- * Diagnosis screen (spec §4.2, §8, §9.1). Server component: unwrap the async
- * `params` (Next 16) and hand the project id to the client view that owns the
- * findings / run queries. Rendered inside the project shell layout — content
- * only, no chrome.
- */
-export default async function DiagnosisPage({ params }: DiagnosisPageProps) {
-  const { projectId } = await params;
-  return <DiagnosisClient projectId={projectId} />;
+/** Compatibility route: Diagnosis is now the selected-object Growth Map view. */
+export default async function DiagnosisPage({
+  params,
+  searchParams,
+}: DiagnosisPageProps) {
+  const [{ projectId }, query] = await Promise.all([params, searchParams]);
+  redirect(growthMapCompatibilityRoute(projectId, query));
 }

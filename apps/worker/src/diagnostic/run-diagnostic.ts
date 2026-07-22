@@ -18,6 +18,7 @@ import {
   ProviderDiscrepanciesRepository,
   SitePagesRepository,
   SitesRepository,
+  sameTimestamptzInstant,
   TelemetryRepository,
   toRunAttempt,
   type DataSnapshotRow,
@@ -864,7 +865,10 @@ function validateFrozenSnapshotSelection(
       actual.method_version !== manifestSnapshot.methodVersion ||
       actual.checksum !== manifestSnapshot.checksum ||
       actual.availability !== manifestSnapshot.availability ||
-      actual.captured_at !== manifestSnapshot.capturedAt ||
+      !sameTimestamptzInstant(
+        actual.captured_at,
+        manifestSnapshot.capturedAt,
+      ) ||
       !isDeepStrictEqual(actual.source_window, manifestSnapshot.sourceWindow)
     ) {
       throw new Error("frozen snapshot manifest does not match its snapshot");
@@ -1069,7 +1073,10 @@ function validateFrozenObservations(
       snapshot.method_version !== sourceRegistration.methodVersion ||
       expectedSubjectType === undefined ||
       observation.subject_type !== expectedSubjectType ||
-      observation.observed_at !== snapshot.captured_at ||
+      !sameTimestamptzInstant(
+        observation.observed_at,
+        snapshot.captured_at,
+      ) ||
       observation.origin !== sourceRegistration.origin ||
       observation.grade !== sourceRegistration.grade ||
       observation.method !== "observed" ||
@@ -1139,7 +1146,7 @@ function validateFrozenPageIdentity(
     page.project_id !== scope.projectId ||
     page.site_id !== siteId ||
     page.data_snapshot_id !== crawlSnapshot.id ||
-    page.captured_at !== crawlSnapshot.captured_at ||
+    !sameTimestamptzInstant(page.captured_at, crawlSnapshot.captured_at) ||
     !hasDurableUrlIdentity(
       page.normalized_url,
       page.normalized_url_hash,

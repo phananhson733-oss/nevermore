@@ -558,6 +558,65 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
+  /projects/{projectId}/audit/urls:
+    get:
+      tags: [Diagnosis]
+      summary: List the latest readable Growth Map URL portfolio
+      description: |
+        Returns one bounded page of canonical Site Pages proven by the latest completed or
+        partial DiagnosticRun's frozen Crawl/GSC/GA4 inputs. The response deliberately has no
+        project-wide total. Missing observations remain unavailable with explicit limitations;
+        unresolved or definition-only Finding targets are never assigned to URL rows.
+      operationId: listProjectAuditUrls
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: search
+          in: query
+          description: Trimmed, non-empty literal substring matched against canonical URL. Repeated scalar query parameters are rejected.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+            pattern: '\S'
+      responses:
+        '200':
+          description: Current traceable URL portfolio page without a synthetic total.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrowthMapUrlPortfolioHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/audit/urls/{sitePageId}:
+    get:
+      tags: [Diagnosis]
+      summary: Read one URL from the latest readable Growth Map portfolio
+      description: |
+        Resolves the selected canonical Site Page only inside the latest completed or partial
+        DiagnosticRun. Finding membership comes exclusively from resolved FindingTarget rows
+        for that exact run; mutable subject_refs are never used as URL membership.
+      operationId: getProjectAuditUrl
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/SitePageId'
+      responses:
+        '200':
+          description: Selected URL projection with exact source, Finding, Action, and Artifact identifiers.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrowthMapUrlDetailHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
   /projects/{projectId}/findings:
     get:
       tags: [Diagnosis]
@@ -851,6 +910,11 @@ components:
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Uuid' }
+    SitePageId:
+      name: sitePageId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
     ProductProfileCandidateId:
       name: candidateId
       in: path
@@ -907,6 +971,7 @@ components:
         type: string
         minLength: 1
         maxLength: 1024
+        pattern: '^[A-Za-z0-9_-]+$'
       description: Opaque base64url cursor returned by the previous page.
     Limit:
       name: limit
@@ -2355,6 +2420,512 @@ components:
         data: { type: array, items: { $ref: '#/components/schemas/DataSnapshot' } }
         meta: { $ref: '#/components/schemas/PageMeta' }
 
+    GrowthMapCoverage:
+      type: object
+      additionalProperties: false
+      required: [availability, limitations]
+      properties:
+        availability:
+          type: string
+          enum: [available, partial, stale, unavailable]
+        limitations:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 2000 }
+      description: Degraded or unavailable coverage always has at least one limitation; missing data is never projected as zero.
+      x-signalframe-runtime-refinement: nonAvailableCoverageRequiresLimitation
+
+    GrowthMapMetricNumericValueSource:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, const: value_numeric }
+
+    GrowthMapMetricJsonValueSource:
+      type: object
+      additionalProperties: false
+      required: [kind, pointer]
+      properties:
+        kind: { type: string, const: value_json }
+        pointer:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: '^/(?:[^/~]|~0|~1)*(?:/(?:[^/~]|~0|~1)*)*$'
+
+    GrowthMapMetricValueSource:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapMetricNumericValueSource'
+        - $ref: '#/components/schemas/GrowthMapMetricJsonValueSource'
+      discriminator:
+        propertyName: kind
+        mapping:
+          value_numeric: '#/components/schemas/GrowthMapMetricNumericValueSource'
+          value_json: '#/components/schemas/GrowthMapMetricJsonValueSource'
+
+    GrowthMapUrlMetricObservation:
+      type: object
+      additionalProperties: false
+      required: [provider, metricKey, subjectRef, valueSource, value, unit, availability, snapshotId, observationId, sitePageId, observedAt, freshness, limitation]
+      properties:
+        provider: { type: string, enum: [crawl, gsc, ga4] }
+        metricKey: { type: string, enum: [crawl.page.v1, gsc.page.v1, ga4.landing.v1] }
+        subjectRef: { type: string, format: uri, maxLength: 2048 }
+        valueSource: { $ref: '#/components/schemas/GrowthMapMetricValueSource' }
+        value: { type: [number, 'null'] }
+        unit: { type: [string, 'null'], minLength: 1, maxLength: 50 }
+        availability: { type: string, enum: [available, partial, unavailable] }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        freshness: { type: string, enum: [current, stale, unknown] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+      oneOf:
+        - title: Crawl URL metric
+          properties:
+            provider: { type: string, const: crawl }
+            metricKey: { type: string, const: crawl.page.v1 }
+        - title: GSC URL metric
+          properties:
+            provider: { type: string, const: gsc }
+            metricKey: { type: string, const: gsc.page.v1 }
+        - title: GA4 landing-page metric
+          properties:
+            provider: { type: string, const: ga4 }
+            metricKey: { type: string, const: ga4.landing.v1 }
+      discriminator:
+        propertyName: provider
+      description: One scalar extracted from one immutable URL Observation. Partial or unavailable values are null and carry a limitation; stale or unknown freshness also carries a limitation.
+      x-signalframe-runtime-refinement: providerMetricKeyAndAvailabilityValueConsistency
+
+    GrowthMapPageSnapshotIdentitySource:
+      type: object
+      additionalProperties: false
+      required: [kind, provider, snapshotId, pageSnapshotId, observedAt]
+      properties:
+        kind: { type: string, const: page_snapshot }
+        provider: { type: string, const: crawl }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        pageSnapshotId: { $ref: '#/components/schemas/Uuid' }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+
+    GrowthMapUrlObservationIdentitySource:
+      type: object
+      additionalProperties: false
+      required: [kind, provider, snapshotId, observationId, sitePageId, subjectRef, observedAt]
+      properties:
+        kind: { type: string, const: url_observation }
+        provider: { type: string, enum: [crawl, gsc, ga4] }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        subjectRef: { type: string, format: uri, maxLength: 2048 }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+
+    GrowthMapUrlIdentitySource:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapPageSnapshotIdentitySource'
+        - $ref: '#/components/schemas/GrowthMapUrlObservationIdentitySource'
+      discriminator:
+        propertyName: kind
+        mapping:
+          page_snapshot: '#/components/schemas/GrowthMapPageSnapshotIdentitySource'
+          url_observation: '#/components/schemas/GrowthMapUrlObservationIdentitySource'
+
+    GrowthMapComparisonAnchor:
+      type: object
+      additionalProperties: false
+      required: [projectId, siteId, diagnosticRunId, crawlSnapshotId, sitePageId, pageSnapshotId]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        crawlSnapshotId: { $ref: '#/components/schemas/Uuid' }
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        pageSnapshotId: { $ref: '#/components/schemas/Uuid' }
+
+    GrowthMapFindingComparisonBasis:
+      type: object
+      additionalProperties: false
+      required: [findingIds, before, current]
+      properties:
+        findingIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+        before: { $ref: '#/components/schemas/GrowthMapComparisonAnchor' }
+        current: { $ref: '#/components/schemas/GrowthMapComparisonAnchor' }
+      description: Before/current anchors share project, Site, and canonical SitePage; run, Crawl Snapshot, and PageSnapshot identifiers are distinct.
+      x-signalframe-runtime-refinement: immutableSamePageDistinctRunComparison
+
+    GrowthMapFindingPriorityBasis:
+      type: object
+      additionalProperties: false
+      required: [derivationVersion, projectId, siteId, diagnosticRunId, sitePageId, findingIds]
+      properties:
+        derivationVersion: { type: string, const: max_finding_severity.v1 }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        findingIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+
+    GrowthMapUnavailablePriority:
+      type: object
+      additionalProperties: false
+      required: [availability, value, limitation]
+      properties:
+        availability: { type: string, const: unavailable }
+        value: { type: 'null' }
+        limitation: { type: string, minLength: 1, maxLength: 2000 }
+
+    GrowthMapAvailablePriority:
+      type: object
+      additionalProperties: false
+      required: [availability, value, basis, limitation]
+      properties:
+        availability: { type: string, const: available }
+        value: { $ref: '#/components/schemas/PriorityBand' }
+        basis: { $ref: '#/components/schemas/GrowthMapFindingPriorityBasis' }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+
+    GrowthMapUrlPriority:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapUnavailablePriority'
+        - $ref: '#/components/schemas/GrowthMapAvailablePriority'
+      discriminator:
+        propertyName: availability
+        mapping:
+          unavailable: '#/components/schemas/GrowthMapUnavailablePriority'
+          available: '#/components/schemas/GrowthMapAvailablePriority'
+
+    GrowthMapUnavailableDelta:
+      type: object
+      additionalProperties: false
+      required: [availability, value, limitation]
+      properties:
+        availability: { type: string, const: unavailable }
+        value: { type: 'null' }
+        limitation: { type: string, minLength: 1, maxLength: 2000 }
+
+    GrowthMapAvailableDelta:
+      type: object
+      additionalProperties: false
+      required: [availability, value, basis, summary, limitation]
+      properties:
+        availability: { type: string, const: available }
+        value: { type: string, enum: [improved, unchanged, regressed] }
+        basis: { $ref: '#/components/schemas/GrowthMapFindingComparisonBasis' }
+        summary: { type: string, minLength: 1, maxLength: 2000 }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+
+    GrowthMapUrlDelta:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapUnavailableDelta'
+        - $ref: '#/components/schemas/GrowthMapAvailableDelta'
+      discriminator:
+        propertyName: availability
+        mapping:
+          unavailable: '#/components/schemas/GrowthMapUnavailableDelta'
+          available: '#/components/schemas/GrowthMapAvailableDelta'
+
+    GrowthMapDirectUrlFindingRelation:
+      type: object
+      additionalProperties: false
+      required: [relation, targetKind, targetRef, sitePageId, pageSnapshotId]
+      properties:
+        relation: { type: string, const: direct_url }
+        targetKind: { type: string, const: url }
+        targetRef: { type: string, format: uri, maxLength: 2048 }
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        pageSnapshotId: { type: [string, 'null'], format: uuid }
+
+    GrowthMapTemplateFindingRelation:
+      type: object
+      additionalProperties: false
+      required: [relation, targetKind, targetRef]
+      properties:
+        relation: { type: string, const: affected_by_template }
+        targetKind: { type: string, const: template }
+        targetRef: { type: string, minLength: 1, maxLength: 500 }
+
+    GrowthMapSiteFindingRelation:
+      type: object
+      additionalProperties: false
+      required: [relation, targetKind, targetRef]
+      properties:
+        relation: { type: string, const: affected_by_site }
+        targetKind: { type: string, const: site }
+        targetRef: { type: string, minLength: 1, maxLength: 500 }
+
+    GrowthMapPageSetFindingRelation:
+      type: object
+      additionalProperties: false
+      required: [relation, targetKind, targetRef]
+      properties:
+        relation: { type: string, const: affected_by_page_set }
+        targetKind: { type: string, const: page_set }
+        targetRef: { type: string, minLength: 1, maxLength: 500 }
+
+    GrowthMapHttpStatusFindingRelation:
+      type: object
+      additionalProperties: false
+      required: [relation, targetKind, targetRef]
+      properties:
+        relation: { type: string, const: affected_by_http_status }
+        targetKind: { type: string, const: http_status }
+        targetRef: { type: string, pattern: '^[1-5][0-9]{2}$' }
+
+    GrowthMapCanonicalIssueFindingRelation:
+      type: object
+      additionalProperties: false
+      required: [relation, targetKind, targetRef]
+      properties:
+        relation: { type: string, const: affected_by_canonical_issue }
+        targetKind: { type: string, const: canonical_issue }
+        targetRef: { type: string, minLength: 1, maxLength: 500 }
+
+    GrowthMapKeywordClusterFindingRelation:
+      type: object
+      additionalProperties: false
+      required: [relation, targetKind, targetRef]
+      properties:
+        relation: { type: string, const: affected_by_keyword_cluster }
+        targetKind: { type: string, const: keyword_cluster }
+        targetRef: { type: string, minLength: 1, maxLength: 500 }
+
+    GrowthMapUserAgentFindingRelation:
+      type: object
+      additionalProperties: false
+      required: [relation, targetKind, targetRef]
+      properties:
+        relation: { type: string, const: affected_by_user_agent }
+        targetKind: { type: string, const: user_agent }
+        targetRef: { type: string, minLength: 1, maxLength: 500 }
+
+    GrowthMapFindingTargetRelation:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapDirectUrlFindingRelation'
+        - $ref: '#/components/schemas/GrowthMapTemplateFindingRelation'
+        - $ref: '#/components/schemas/GrowthMapSiteFindingRelation'
+        - $ref: '#/components/schemas/GrowthMapPageSetFindingRelation'
+        - $ref: '#/components/schemas/GrowthMapHttpStatusFindingRelation'
+        - $ref: '#/components/schemas/GrowthMapCanonicalIssueFindingRelation'
+        - $ref: '#/components/schemas/GrowthMapKeywordClusterFindingRelation'
+        - $ref: '#/components/schemas/GrowthMapUserAgentFindingRelation'
+      discriminator:
+        propertyName: relation
+        mapping:
+          direct_url: '#/components/schemas/GrowthMapDirectUrlFindingRelation'
+          affected_by_template: '#/components/schemas/GrowthMapTemplateFindingRelation'
+          affected_by_site: '#/components/schemas/GrowthMapSiteFindingRelation'
+          affected_by_page_set: '#/components/schemas/GrowthMapPageSetFindingRelation'
+          affected_by_http_status: '#/components/schemas/GrowthMapHttpStatusFindingRelation'
+          affected_by_canonical_issue: '#/components/schemas/GrowthMapCanonicalIssueFindingRelation'
+          affected_by_keyword_cluster: '#/components/schemas/GrowthMapKeywordClusterFindingRelation'
+          affected_by_user_agent: '#/components/schemas/GrowthMapUserAgentFindingRelation'
+
+    GrowthMapExecutionRef:
+      type: object
+      additionalProperties: false
+      required: [actionId, artifactIds]
+      properties:
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        artifactIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+
+    GrowthMapUrlFinding:
+      type: object
+      additionalProperties: false
+      required: [projectId, siteId, findingId, diagnosticRunId, ruleId, ruleVersion, title, severity, reviewState, reviewRevision, active, regressed, evidenceIds, targetRelation, executionRef]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        findingId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        ruleId: { type: string, pattern: '^(TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3}$' }
+        ruleVersion: { type: integer, minimum: 1 }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        severity: { $ref: '#/components/schemas/PriorityBand' }
+        reviewState: { $ref: '#/components/schemas/FindingReviewState' }
+        reviewRevision: { type: integer, minimum: 0 }
+        active: { type: boolean }
+        regressed: { type: boolean }
+        evidenceIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+        targetRelation: { $ref: '#/components/schemas/GrowthMapFindingTargetRelation' }
+        executionRef:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapExecutionRef'
+            - type: 'null'
+
+    GrowthMapUrlPortfolioItem:
+      type: object
+      additionalProperties: false
+      required: [projectId, siteId, diagnosticRunId, crawlSnapshotId, sitePageId, pageSnapshotId, pageSnapshotCapturedAt, identitySources, normalizedUrl, title, pageType, templateKey, clusterKey, ownerId, coverage, metricObservations, findingIds, reviewableFindingIds, priority, delta]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        crawlSnapshotId: { $ref: '#/components/schemas/Uuid' }
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        pageSnapshotId: { type: [string, 'null'], format: uuid }
+        pageSnapshotCapturedAt: { type: [string, 'null'], format: date-time }
+        identitySources:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GrowthMapUrlIdentitySource' }
+        normalizedUrl: { type: string, format: uri, maxLength: 2048 }
+        title: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        pageType: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        templateKey: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        clusterKey: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        ownerId: { type: [string, 'null'], format: uuid }
+        coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
+        metricObservations:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/GrowthMapUrlMetricObservation' }
+        findingIds:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+        reviewableFindingIds:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+        priority: { $ref: '#/components/schemas/GrowthMapUrlPriority' }
+        delta: { $ref: '#/components/schemas/GrowthMapUrlDelta' }
+      description: One canonical SitePage in the current frozen DiagnosticRun. Title is present only when verified from an immutable Crawl PageSnapshot; page type, cluster, and owner remain null unless persisted.
+      x-signalframe-runtime-refinement: exactIdentityMetricPriorityAndDeltaLineage
+
+    GrowthMapUrlPortfolioMeta:
+      type: object
+      additionalProperties: false
+      required: [limit, nextCursor, hasNext, coverage]
+      properties:
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        nextCursor:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1024
+          pattern: '^[A-Za-z0-9_-]+$'
+        hasNext: { type: boolean }
+        coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
+      description: hasNext is true exactly when nextCursor is non-null.
+      x-signalframe-runtime-refinement: cursorAvailabilityConsistency
+
+    GrowthMapUrlPortfolioResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, siteId, diagnosticRunId, crawlSnapshotId, data, meta]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        crawlSnapshotId: { $ref: '#/components/schemas/Uuid' }
+        data:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GrowthMapUrlPortfolioItem' }
+        meta: { $ref: '#/components/schemas/GrowthMapUrlPortfolioMeta' }
+      description: Bounded current-run URL portfolio. It intentionally exposes no project-wide total and every item repeats the same immutable scope identifiers.
+      x-signalframe-runtime-refinement: portfolioScopeAndCanonicalIdentityUniqueness
+
+    GrowthMapUrlDetail:
+      type: object
+      additionalProperties: false
+      required: [projectId, siteId, diagnosticRunId, crawlSnapshotId, sitePageId, pageSnapshotId, pageSnapshotCapturedAt, identitySources, normalizedUrl, title, pageType, templateKey, clusterKey, ownerId, coverage, metricObservations, findingIds, reviewableFindingIds, priority, delta, findings]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        crawlSnapshotId: { $ref: '#/components/schemas/Uuid' }
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        pageSnapshotId: { type: [string, 'null'], format: uuid }
+        pageSnapshotCapturedAt: { type: [string, 'null'], format: date-time }
+        identitySources:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GrowthMapUrlIdentitySource' }
+        normalizedUrl: { type: string, format: uri, maxLength: 2048 }
+        title: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        pageType: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        templateKey: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        clusterKey: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        ownerId: { type: [string, 'null'], format: uuid }
+        coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
+        metricObservations:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/GrowthMapUrlMetricObservation' }
+        findingIds:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+        reviewableFindingIds:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+        priority: { $ref: '#/components/schemas/GrowthMapUrlPriority' }
+        delta: { $ref: '#/components/schemas/GrowthMapUrlDelta' }
+        findings:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/GrowthMapUrlFinding' }
+      description: Selected canonical SitePage. findingIds exactly match findings, direct targets match the selected URL, and execution links contain canonical IDs only.
+      x-signalframe-runtime-refinement: exactSelectedUrlFindingAndExecutionLineage
+
+    GrowthMapUrlDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, siteId, diagnosticRunId, crawlSnapshotId, data]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        crawlSnapshotId: { $ref: '#/components/schemas/Uuid' }
+        data: { $ref: '#/components/schemas/GrowthMapUrlDetail' }
+      description: Scope identifiers exactly match the selected URL detail.
+      x-signalframe-runtime-refinement: detailScopeConsistency
+
+    GrowthMapUrlPortfolioHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/GrowthMapUrlPortfolioResponse' }
+
+    GrowthMapUrlDetailHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/GrowthMapUrlDetailResponse' }
+
     CreateDiagnosticRunRequest:
       type: object
       additionalProperties: false
@@ -2773,7 +3344,7 @@ components:
     OverviewView:
       type: object
       additionalProperties: false
-      required: [view, project, coverage, activeRuns, topActions, latestSnapshot, topActionEvidence, deliveryFocus]
+      required: [view, project, coverage, activeRuns, frozenDiagnosticRunId, topActions, latestSnapshot, topActionEvidence, deliveryFocus]
       properties:
         view: { const: overview }
         project: { $ref: '#/components/schemas/Project' }
@@ -2782,7 +3353,12 @@ components:
           type: array
           maxItems: 20
           items: { $ref: '#/components/schemas/AsyncRun' }
-        topActions: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/Action' } }
+        frozenDiagnosticRunId:
+          description: Exact latest readable diagnostic run used to select the Overview work queue; null when no frozen audit exists.
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        topActions: { type: array, maxItems: 3, items: { $ref: '#/components/schemas/Action' } }
         latestSnapshot:
           oneOf:
             - $ref: '#/components/schemas/DataSnapshot'

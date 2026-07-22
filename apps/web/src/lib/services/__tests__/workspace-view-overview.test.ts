@@ -189,6 +189,63 @@ describe("buildOverviewHighlights", () => {
     });
   });
 
+  it("returns at most three customer work cards from the exact frozen audit Finding set", () => {
+    const staleCritical = action(
+      "stale-critical",
+      "finding-stale",
+      "critical",
+    );
+    const currentHigh = action("current-high", "finding-high", "high");
+    const currentMedium = action("current-medium", "finding-medium", "medium");
+    const currentLow = action("current-low", "finding-low", "low");
+    const fourthCurrentLow = action(
+      "current-low-fourth",
+      "finding-low-fourth",
+      "low",
+    );
+    const dismissedCurrentCritical = action(
+      "current-dismissed-critical",
+      "finding-dismissed",
+      "critical",
+      "dismissed",
+    );
+    const completedCurrentCritical = action(
+      "current-done-critical",
+      "finding-done",
+      "critical",
+      "done",
+    );
+
+    const result = buildOverviewHighlights({
+      actions: [
+        staleCritical,
+        currentLow,
+        currentMedium,
+        fourthCurrentLow,
+        currentHigh,
+        dismissedCurrentCritical,
+        completedCurrentCritical,
+      ],
+      snapshots: [],
+      findings: [],
+      artifacts: [],
+      currentRunFindingIds: new Set([
+        "finding-high",
+        "finding-medium",
+        "finding-low",
+        "finding-low-fourth",
+        "finding-dismissed",
+        "finding-done",
+      ]),
+    });
+
+    expect(result.topActions.map((item) => item.id)).toEqual([
+      "current-high",
+      "current-medium",
+      "current-low",
+    ]);
+  });
+
   it("keeps partial source data while leaving missing evidence and delivery unavailable", () => {
     const blocked = action("blocked", "missing-finding", "high", "blocked");
     const partial = snapshot("snapshot-partial", NOW, "partial");

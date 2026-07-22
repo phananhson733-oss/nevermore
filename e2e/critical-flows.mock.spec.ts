@@ -23,7 +23,7 @@ test("project navigation exposes live destinations and localizes stage chrome", 
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Preview report" })).toHaveAttribute(
     "href",
-    `/p/${E2E_PROJECT_ID}/report`,
+    `/p/${E2E_PROJECT_ID}/results`,
   );
   await expect(
     page.getByRole("link", { name: "Review diagnosis" }).first(),
@@ -227,7 +227,7 @@ test("report output locale deep-links on first load, survives refresh, and drive
     page.getByText("Deliverable language: en", { exact: true }),
   ).toBeVisible();
   await expect(page).toHaveURL(
-    `/p/${E2E_PROJECT_ID}/report?outputLocale=fr-FR`,
+    `/p/${E2E_PROJECT_ID}/results?outputLocale=fr-FR`,
   );
 
   await page.reload();
@@ -235,7 +235,7 @@ test("report output locale deep-links on first load, survives refresh, and drive
     "fr-FR",
   );
   await expect(page).toHaveURL(
-    `/p/${E2E_PROJECT_ID}/report?outputLocale=fr-FR`,
+    `/p/${E2E_PROJECT_ID}/results?outputLocale=fr-FR`,
   );
 
   const localePicker = page.getByLabel("Requested methodology locale");
@@ -243,7 +243,7 @@ test("report output locale deep-links on first load, survives refresh, and drive
   await localePicker.press("Enter");
   await expect(localePicker).toHaveValue("fr-FR");
   await expect(page).toHaveURL(
-    `/p/${E2E_PROJECT_ID}/report?outputLocale=fr-FR`,
+    `/p/${E2E_PROJECT_ID}/results?outputLocale=fr-FR`,
   );
 
   let releaseReport = () => {};
@@ -267,7 +267,7 @@ test("report output locale deep-links on first load, survives refresh, and drive
     await page.getByRole("button", { name: "Client bundle", exact: true }).click();
     await expect(localePicker).toHaveValue("de-DE");
     await expect(page).toHaveURL(
-      `/p/${E2E_PROJECT_ID}/report?outputLocale=de-DE`,
+      `/p/${E2E_PROJECT_ID}/results?outputLocale=de-DE`,
     );
 
     // The previous fr-FR report remains visible while the de-DE read is gated.
@@ -288,7 +288,7 @@ test("report output locale deep-links on first load, survives refresh, and drive
   await expect(page.getByText("行动语言：en", { exact: true })).toBeVisible();
   await expect(page.getByText("交付物语言：en", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(
-    `/p/${E2E_PROJECT_ID}/report?outputLocale=de-DE`,
+    `/p/${E2E_PROJECT_ID}/results?outputLocale=de-DE`,
   );
   await expect(page.getByRole("heading", { name: "E2E Critical Flow" })).toBeVisible();
 
@@ -335,7 +335,7 @@ test("clearing report locale restores the project default for the same-click exp
     .getByRole("button", { name: "Service bundle", exact: true })
     .click();
 
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/report`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results`);
   await expect(localePicker).toHaveValue("en");
   await expect.poll(() => api.exportRequests.length).toBe(1);
   expect(api.exportRequests[0]).toMatchObject({

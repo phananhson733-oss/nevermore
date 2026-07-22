@@ -67,6 +67,8 @@ const EXPECTED_OPENAPI_OPERATIONS = [
   "listProjectSnapshots",
   "getProjectRun",
   "createDiagnosticRun",
+  "listProjectAuditUrls",
+  "getProjectAuditUrl",
   "listProjectFindings",
   "reviewProjectFinding",
   "listProjectActions",
@@ -393,6 +395,97 @@ function checkOpenApi() {
     operationIds,
     EXPECTED_OPENAPI_OPERATIONS,
     "OpenAPI operationIds",
+  );
+
+  const growthMapList =
+    document.paths?.["/projects/{projectId}/audit/urls"]?.get;
+  const growthMapDetail =
+    document.paths?.["/projects/{projectId}/audit/urls/{sitePageId}"]?.get;
+  invariant(
+    growthMapList?.operationId === "listProjectAuditUrls",
+    "Growth Map URL list path/operationId drift",
+  );
+  invariant(
+    growthMapDetail?.operationId === "getProjectAuditUrl",
+    "Growth Map URL detail path/operationId drift",
+  );
+  const listParameterRefs = (growthMapList.parameters ?? [])
+    .filter((parameter) => typeof parameter?.$ref === "string")
+    .map((parameter) => parameter.$ref);
+  assertExactSet(
+    listParameterRefs,
+    [
+      "#/components/parameters/ProjectId",
+      "#/components/parameters/Limit",
+      "#/components/parameters/Cursor",
+    ],
+    "Growth Map URL list shared parameters",
+  );
+  const sharedLimit = document.components?.parameters?.Limit?.schema;
+  invariant(
+    sharedLimit?.type === "integer" &&
+      sharedLimit.minimum === 1 &&
+      sharedLimit.maximum === 100 &&
+      sharedLimit.default === 50,
+    "Growth Map URL list limit must remain an integer with default 50 and bounds 1..100",
+  );
+  const sharedCursor = document.components?.parameters?.Cursor?.schema;
+  invariant(
+    sharedCursor?.type === "string" &&
+      sharedCursor.minLength === 1 &&
+      sharedCursor.maxLength === 1024 &&
+      sharedCursor.pattern === "^[A-Za-z0-9_-]+$",
+    "Growth Map URL list cursor must remain a bounded opaque base64url string",
+  );
+  const inlineListParameters = (growthMapList.parameters ?? []).filter(
+    (parameter) => typeof parameter?.$ref !== "string",
+  );
+  invariant(
+    inlineListParameters.length === 1 &&
+      inlineListParameters[0]?.name === "search" &&
+      inlineListParameters[0]?.in === "query" &&
+      inlineListParameters[0]?.schema?.type === "string" &&
+      inlineListParameters[0]?.schema?.minLength === 1 &&
+      inlineListParameters[0]?.schema?.maxLength === 256 &&
+      inlineListParameters[0]?.schema?.pattern === "\\S",
+    "Growth Map URL list query must be exactly limit/cursor/search with bounded search",
+  );
+  assertExactSet(
+    (growthMapDetail.parameters ?? []).map((parameter) => parameter.$ref),
+    [
+      "#/components/parameters/ProjectId",
+      "#/components/parameters/SitePageId",
+    ],
+    "Growth Map URL detail parameters",
+  );
+  invariant(
+    !JSON.stringify([growthMapList, growthMapDetail]).includes("auditRunId"),
+    "Growth Map URL reads must not expose historical auditRunId without immutable Finding snapshots",
+  );
+  invariant(
+    growthMapList.responses?.["200"]?.content?.["application/json"]?.schema
+      ?.$ref ===
+      "#/components/schemas/GrowthMapUrlPortfolioHttpResponse" &&
+      growthMapDetail.responses?.["200"]?.content?.["application/json"]
+        ?.schema?.$ref ===
+        "#/components/schemas/GrowthMapUrlDetailHttpResponse",
+    "Growth Map URL reads must return the standard HTTP envelope around the complete read model",
+  );
+  invariant(
+    growthMapList.responses?.["503"]?.$ref ===
+      "#/components/responses/DependencyUnavailable" &&
+      growthMapDetail.responses?.["503"]?.$ref ===
+        "#/components/responses/DependencyUnavailable",
+    "Growth Map URL reads must expose fail-closed frozen-lineage failures as DEPENDENCY_UNAVAILABLE",
+  );
+  const growthMapFinding =
+    document.components?.schemas?.GrowthMapUrlFinding;
+  invariant(
+    Array.isArray(growthMapFinding?.required) &&
+      growthMapFinding.required.includes("reviewRevision") &&
+      growthMapFinding.properties?.reviewRevision?.type === "integer" &&
+      growthMapFinding.properties.reviewRevision.minimum === 0,
+    "Growth Map Finding detail must carry the exact non-negative reviewRevision used for optimistic review concurrency",
   );
 
   const asyncOperations = operations.filter(

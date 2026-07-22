@@ -40,17 +40,17 @@ test("mobile project shell keeps a compact persistent navigation", async ({
   await projectNav.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
   });
-  const reportLink = page.getByRole("link", { name: "Report", exact: true });
-  await expect(reportLink).toBeVisible();
+  const resultsLink = page.getByRole("link", { name: "Results", exact: true });
+  await expect(resultsLink).toBeVisible();
 
   await expect(
     page
-      .getByRole("link", { name: "Diagnosis", exact: true })
+      .getByRole("link", { name: "Growth Map", exact: true })
       .locator("[data-nav-count]"),
   ).toHaveText("1");
   await expect(
     page
-      .getByRole("link", { name: "Studio", exact: true })
+      .getByRole("link", { name: "Execution", exact: true })
       .locator("[data-nav-count]"),
   ).toHaveText("1");
 

@@ -10,22 +10,8 @@ import {
   hasUnsavedContextChanges,
   shouldConfirmContextNavigation,
 } from "./_context-navigation-guard";
+import { projectSwitchHref } from "./_project-switcher-model.ts";
 import styles from "./layout.module.css";
-
-const PROJECT_SECTIONS = new Set([
-  "overview",
-  "context",
-  "sources",
-  "diagnosis",
-  "plan",
-  "studio",
-  "report",
-]);
-
-function currentSection(pathname: string): string {
-  const segment = pathname.split("/").filter(Boolean)[2];
-  return segment && PROJECT_SECTIONS.has(segment) ? segment : "overview";
-}
 
 interface ProjectSwitcherIdentity {
   readonly primary: string;
@@ -75,11 +61,6 @@ function projectSwitcherOptionText(
   option: Pick<ProjectShellOption, "label" | "host">,
 ): string {
   return `${option.label} · ${option.host}`;
-}
-
-/** Preserve the operator's current live section when changing projects. */
-export function projectSwitchHref(pathname: string, projectId: string): string {
-  return `/p/${projectId}/${currentSection(pathname)}`;
 }
 
 export function ProjectSwitcher({

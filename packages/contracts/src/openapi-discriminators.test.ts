@@ -78,6 +78,12 @@ type _ConnectResponsePhase = Expect<
 type _OverviewView = Expect<
   Equal<components["schemas"]["OverviewView"]["view"], "overview">
 >;
+type _OverviewFrozenDiagnosticRun = Expect<
+  Equal<
+    components["schemas"]["OverviewView"]["frozenDiagnosticRunId"],
+    components["schemas"]["Uuid"] | null
+  >
+>;
 type _PlanView = Expect<
   Equal<components["schemas"]["PlanView"]["view"], "plan">
 >;

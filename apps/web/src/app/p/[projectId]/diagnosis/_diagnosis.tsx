@@ -16,7 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, Check, CircleDashed, ShieldCheck } from "lucide-react";
 import {
   Button,
@@ -720,6 +720,7 @@ function FindingsSection({
 /* ------------------------------------------------------------- Container --- */
 
 export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
+  const workbenchLocale = useLocale();
   const t = useTranslations("diagnosis");
   const tCommon = useTranslations("common");
 
@@ -824,7 +825,10 @@ export function DiagnosisClient({ projectId }: { readonly projectId: string }) {
     try {
       const accepted = await createRun.mutateAsync({
         snapshotIds: selectLatestSnapshotIds(snaps),
-        outputLocale: proj.defaultDeliveryLocale,
+        // Diagnostic summaries and limitations are workbench decisions, not
+        // English market deliverables. Blog/Artifact locale is selected later
+        // in Execution and must not leak into the audit reading language.
+        outputLocale: workbenchLocale,
       });
       handledRun.current = null;
       setActiveRunId(accepted.run.id);

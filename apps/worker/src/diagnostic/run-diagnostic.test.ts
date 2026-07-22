@@ -871,6 +871,32 @@ describe("diagnostic frozen snapshot validation", () => {
     );
   });
 
+  it("accepts one immutable instant rendered with different explicit time zones", async () => {
+    const offsetInstant = "2026-07-19 08:00:00.000000+08";
+    const observation = availableObservationRow(OBSERVATION_FIXTURES[0], {
+      observed_at: offsetInstant,
+    });
+    const result = await runObservationValidationFixture(
+      "crawl",
+      observation,
+      {
+        frozenPages: [frozenPageIdentity({ captured_at: offsetInstant })],
+      },
+    );
+
+    expect(result.contextBuild).toHaveBeenCalledOnce();
+    expect(result.contextBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observations: [
+          expect.objectContaining({
+            observationId: observation.id,
+            observedAt: offsetInstant,
+          }),
+        ],
+      }),
+    );
+  });
+
   it("preserves a canonical GSC subject separately from its exact slash SitePage identity", async () => {
     const observation = availableObservationRow(OBSERVATION_FIXTURES[3], {
       site_page_id: ANALYTICS_SITE_PAGE_ID,

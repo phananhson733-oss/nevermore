@@ -303,6 +303,7 @@ export function overviewWorkspaceFixture(
     project,
     coverage,
     activeRuns: [],
+    frozenDiagnosticRunId: null,
     topActions: [action],
     latestSnapshot: crawlSnapshot,
     // One canonical evidence id even though the Diagnosis fixture intentionally

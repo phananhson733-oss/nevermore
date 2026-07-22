@@ -49,6 +49,7 @@ const VIEW: OverviewView = {
   },
   coverage: { overall: "complete", domains: {}, limitations: [] },
   activeRuns: [],
+  frozenDiagnosticRunId: null,
   topActions: [],
   latestSnapshot: null,
   topActionEvidence: [],

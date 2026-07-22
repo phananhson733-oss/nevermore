@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,6 +30,7 @@ import {
 } from "@sf/contracts";
 import {
   Clock3,
+  CircleAlert,
   CircleCheckBig,
   ClipboardList,
   FileText,
@@ -56,7 +58,10 @@ import {
 } from "@/components/ui";
 import { ApiError, useProject } from "@/lib/api";
 import type { Project } from "@/lib/api";
-import { uniqueCursorItems } from "@/lib/api/cursor-pages";
+import {
+  COMPLETE_CURSOR_MAX_PAGES,
+  uniqueCursorItems,
+} from "@/lib/api/cursor-pages";
 import {
   expectedArtifactType,
   isTerminalRun,
@@ -84,6 +89,24 @@ import {
   projectHistoryPosition,
   projectHistoryTraversalDelta,
 } from "../_project-history-position.ts";
+import {
+  executionLocationUrl,
+  executionTargetAfterQueue,
+  executionUrlWithTarget,
+  parseExecutionDeepLink,
+  queuedActionBlocksGeneration,
+  queuedActionTargetAfterQueue,
+  queuedActionTargetAfterRefresh,
+  queuedActionTargetAfterTerminal,
+  recoveryAttemptCanCommit,
+  recoveryOwnsExecutionTarget,
+  resolveActiveGenerationRecovery,
+  resolveQueuedActionProjection,
+  resolveExecutionDeepLink,
+  type ExecutionDeepLink,
+  type ExecutionDeepLinkResolution,
+  type QueuedActionTarget,
+} from "../execution/_execution-deep-link.ts";
 import {
   canDiscardArtifactChanges,
   isArtifactEditorDirty,
@@ -118,10 +141,56 @@ function artifactGenerationKey(
   return `${actionId}:${artifactType}`;
 }
 
+function executionDeepLinkKey(deepLink: ExecutionDeepLink): string {
+  switch (deepLink.kind) {
+    case "none":
+      return "none";
+    case "invalid":
+      return `invalid:${deepLink.invalidKeys.join(",")}`;
+    case "target":
+      return `target:${deepLink.actionId ?? ""}:${deepLink.artifactId ?? ""}`;
+  }
+}
+
+function executionDeepLinkResolutionKey(
+  resolution: ExecutionDeepLinkResolution,
+): string {
+  switch (resolution.kind) {
+    case "pending":
+      return `pending:${resolution.resource}`;
+    case "artifact":
+      return `artifact:${resolution.artifactId}`;
+    case "action":
+      return `action:${resolution.actionId}`;
+    case "ambiguous":
+      return `ambiguous:${resolution.actionId}`;
+    case "default":
+    case "invalid":
+    case "not_found":
+      return resolution.kind;
+  }
+}
+
+type ExecutionTargetStateKind =
+  | "loading"
+  | "ambiguous"
+  | "unavailable"
+  | "queued";
+
+function executionQueryValue(
+  searchParams: { readonly getAll: (name: string) => readonly string[] },
+  key: "actionId" | "artifactId",
+): string | readonly string[] | undefined {
+  const values = searchParams.getAll(key);
+  if (values.length === 0) return undefined;
+  return values.length === 1 ? values[0] : values;
+}
+
 interface ActiveGenerationRecovery {
   readonly key: string;
   readonly actionId: string;
   readonly artifactType: ArtifactType;
+  readonly refreshing: boolean;
 }
 
 function artifactStatusTone(status: ArtifactStatus): StatusTone {
@@ -494,6 +563,7 @@ interface ArtifactCardProps {
   readonly artifact: Artifact;
   readonly actionTitle: string | undefined;
   readonly generationActive: boolean;
+  readonly selectionBlocked: boolean;
   readonly selected: boolean;
   readonly onOpen: () => void;
   readonly onRegenerate: (() => void) | undefined;
@@ -503,6 +573,7 @@ function ArtifactCard({
   artifact,
   actionTitle,
   generationActive,
+  selectionBlocked,
   selected,
   onOpen,
   onRegenerate,
@@ -569,7 +640,12 @@ function ArtifactCard({
       ) : null}
 
       <div className={styles.artActions}>
-        <Button variant="secondary" size="sm" onClick={onOpen}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onOpen}
+          disabled={selectionBlocked}
+        >
           {selected ? t("openSelected") : t("open")}
         </Button>
         {onRegenerate !== undefined ? (
@@ -640,7 +716,11 @@ function ArtifactEditor({
   const discardLocalChanges = useCallback((): void => {
     setDraft(savedDraft);
     setNote("");
-  }, [savedDraft]);
+    // Keep the parent selection guard in lock-step with the editor-level
+    // browser/navigation guard so a confirmed URL transition is not prompted
+    // a second time and can never race an apparently dirty parent state.
+    onDirtyChange(artifact.id, false);
+  }, [artifact.id, onDirtyChange, savedDraft]);
 
   useUnsavedArtifactNavigationGuard(
     dirty,
@@ -959,6 +1039,60 @@ function EditorPlaceholder({
       >
         {t("generate")}
       </Button>
+    </Panel>
+  );
+}
+
+function ExecutionTargetState({
+  kind,
+  retryable,
+  onRetry,
+  onClear,
+}: {
+  readonly kind: ExecutionTargetStateKind;
+  readonly retryable: boolean;
+  readonly onRetry: () => void;
+  readonly onClear: () => void;
+}) {
+  const t = useTranslations("studio");
+  const title =
+    kind === "loading"
+      ? t("deepLinkLoading")
+      : kind === "ambiguous"
+        ? t("deepLinkAmbiguous")
+        : kind === "queued"
+          ? t("deepLinkQueued")
+          : t("deepLinkUnavailable");
+
+  return (
+    <Panel
+      padding="lg"
+      className={styles.editorPlaceholder}
+      data-studio-editor={`deep-link-${kind}`}
+      data-studio-deep-link-state={kind}
+      role={kind === "loading" || kind === "queued" ? "status" : "alert"}
+    >
+      <span className={styles.placeholderIcon}>
+        {kind === "loading" ? (
+          <Spinner size="sm" label={title} />
+        ) : kind === "queued" ? (
+          <Clock3 aria-hidden="true" size={24} />
+        ) : (
+          <CircleAlert aria-hidden="true" size={24} />
+        )}
+      </span>
+      <span className="sf-eyebrow">{t("editorCanvas")}</span>
+      <h2 className={styles.placeholderTitle}>{title}</h2>
+      <div className={styles.heroActions}>
+        {retryable ? (
+          <Button variant="secondary" onClick={onRetry}>
+            {t("retryDeepLink")}
+          </Button>
+        ) : null}
+        <Button variant="text" onClick={onClear}>
+          {t("clearDeepLink")}
+        </Button>
+      </div>
     </Panel>
   );
 }
@@ -1429,16 +1563,40 @@ function ActionPicker({
   );
 }
 
-export function StudioClient({ projectId }: { readonly projectId: string }) {
+export function StudioClient({
+  projectId,
+  initialDeepLink,
+}: {
+  readonly projectId: string;
+  readonly initialDeepLink: ExecutionDeepLink;
+}) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const currentExecutionLocation = executionLocationUrl(pathname, searchParams);
+  const currentUrlDeepLinkKey = executionDeepLinkKey(
+    parseExecutionDeepLink({
+      actionId: executionQueryValue(searchParams, "actionId"),
+      artifactId: executionQueryValue(searchParams, "artifactId"),
+    }),
+  );
 
   const artifactsQuery = useProjectArtifacts(projectId);
   const actionsQuery = useProjectActions(projectId);
+  const refetchArtifacts = artifactsQuery.refetch;
   const queryClient = useQueryClient();
   const artifacts = uniqueCursorItems(artifactsQuery.data);
   const actions = uniqueCursorItems(actionsQuery.data);
 
+  const [activeDeepLink, setActiveDeepLink] =
+    useState<ExecutionDeepLink>(initialDeepLink);
+  const activeDeepLinkRef = useRef<ExecutionDeepLink>(initialDeepLink);
+  const latestExecutionSearch = useRef<string>(searchParams.toString());
+  latestExecutionSearch.current = searchParams.toString();
+  const [artifactProjectionSettlements, setArtifactProjectionSettlements] =
+    useState<readonly QueuedActionTarget[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dirtyArtifactId, setDirtyArtifactId] = useState<string | null>(null);
   const [generateAction, setGenerateAction] = useState<ArtifactAction | null>(
@@ -1464,9 +1622,29 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     readonly ActiveGenerationRecovery[]
   >([]);
   const autoSelectedArtifact = useRef<boolean>(false);
+  const lastServerDeepLinkKey = useRef<string>(
+    executionDeepLinkKey(initialDeepLink),
+  );
+  const lastServerExecutionLocation = useRef<string>(currentExecutionLocation);
+  const acceptedExecutionLocation = useRef<string>(currentExecutionLocation);
+  const deepLinkAutoFetchRequestKey = useRef<string | null>(null);
+  const recoveryAttemptSequence = useRef<number>(0);
+  const recoveryAttemptByKey = useRef<Map<string, number>>(new Map());
+  const recoveryProjectRef = useRef<string | null>(null);
   // Runs already observed terminal/error, so a stale artifact list cannot
   // re-seed a settled monitor before the canonical list refetch completes.
   const finishedRuns = useRef<Set<string>>(new Set<string>());
+
+  useLayoutEffect(() => {
+    recoveryProjectRef.current = projectId;
+    return () => {
+      if (recoveryProjectRef.current === projectId) {
+        recoveryProjectRef.current = null;
+      }
+      recoveryAttemptByKey.current.clear();
+    };
+  }, [projectId]);
+
   const onEditorDirtyChange = useCallback(
     (artifactId: string, dirty: boolean): void => {
       setDirtyArtifactId((value) => {
@@ -1498,16 +1676,6 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
       }
       return next.length === current.length ? current : next;
     });
-    if (projectedArtifacts.length === 0) return;
-    const projectedKeys = new Set(
-      projectedArtifacts.map((artifact) =>
-        artifactGenerationKey(artifact.actionId, artifact.artifactType),
-      ),
-    );
-    setActiveGenerationRecoveries((current) => {
-      const next = current.filter((recovery) => !projectedKeys.has(recovery.key));
-      return next.length === current.length ? current : next;
-    });
   }, [artifacts]);
 
   const onRunTerminal = useCallback(
@@ -1530,12 +1698,45 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
           return [...withoutRun, run].slice(-3);
         });
       }
-      void queryClient.invalidateQueries({
-        queryKey: ["artifacts", projectId],
-        refetchType: "active",
-      });
+      const terminalStatus = run.status;
+      if (
+        terminalStatus === "completed" ||
+        terminalStatus === "partial" ||
+        terminalStatus === "failed" ||
+        terminalStatus === "cancelled"
+      ) {
+        const resultArtifactId =
+          run.resultRef?.type === "artifact" ? run.resultRef.id : null;
+        setArtifactProjectionSettlements((current) =>
+          current.flatMap((settlement) => {
+            const next = queuedActionTargetAfterTerminal(settlement, {
+              runId: run.id,
+              status: terminalStatus,
+              resultArtifactId,
+            });
+            return next === null ? [] : [next];
+          }),
+        );
+      }
+      const artifactRefresh = refetchArtifacts();
+      const finishArtifactRefresh = (failed: boolean): void => {
+        setArtifactProjectionSettlements((current) =>
+          current.map(
+            (settlement) =>
+              queuedActionTargetAfterRefresh(
+                settlement,
+                run.id,
+                failed,
+              ) ?? settlement,
+          ),
+        );
+      };
+      void artifactRefresh.then(
+        (result) => finishArtifactRefresh(result.isError),
+        () => finishArtifactRefresh(true),
+      );
     },
-    [projectId, queryClient],
+    [refetchArtifacts],
   );
 
   const onRunQueryError = useCallback(
@@ -1568,6 +1769,29 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   const eligibleActions = actions.filter(
     (action) => action.status !== "dismissed",
   );
+  const generationEligibleActions = eligibleActions.filter(
+    (action) =>
+      !queuedActionBlocksGeneration(
+        artifactProjectionSettlements,
+        action.id,
+      ) &&
+      !activeGenerationRecoveries.some(
+        (recovery) => recovery.actionId === action.id,
+      ),
+  );
+  const settlementKeys = new Set(
+    artifactProjectionSettlements.map((settlement) =>
+      artifactGenerationKey(
+        settlement.actionId,
+        settlement.artifactType as ArtifactType,
+      ),
+    ),
+  );
+  const recoveryKeys = new Set(
+    activeGenerationRecoveries.map((recovery) => recovery.key),
+  );
+  const recoveryPaginationKey = JSON.stringify([...recoveryKeys].sort());
+  const generationFenceKeys = new Set([...settlementKeys, ...recoveryKeys]);
   const canonicalLiveKeys = new Set(
     artifacts
       .filter((a) => a.status !== "archived")
@@ -1576,7 +1800,8 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
   const liveKeys = new Set([
     ...canonicalLiveKeys,
     ...Object.values(localActiveKeysByRun),
-    ...activeGenerationRecoveries.map((recovery) => recovery.key),
+    ...recoveryKeys,
+    ...settlementKeys,
   ]);
   const activeKeys = new Set(
     artifacts
@@ -1589,9 +1814,6 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
       ),
   );
   for (const key of Object.values(localActiveKeysByRun)) activeKeys.add(key);
-  for (const recovery of activeGenerationRecoveries) {
-    activeKeys.add(recovery.key);
-  }
   const selected = artifacts.find((a) => a.id === selectedId) ?? null;
   const selectedAction =
     selected === null ? undefined : actionById.get(selected.actionId);
@@ -1605,9 +1827,389 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     artifactsInitialError ||
     actionsInitialLoading ||
     actionsInitialError;
+  const activeDeepLinkKey = executionDeepLinkKey(activeDeepLink);
+  const initialDeepLinkKey = executionDeepLinkKey(initialDeepLink);
+  const artifactsComplete =
+    artifactsQuery.data !== undefined && artifactsQuery.hasNextPage === false;
+  const actionsComplete =
+    actionsQuery.data !== undefined && actionsQuery.hasNextPage === false;
+  const deepLinkResolution = resolveExecutionDeepLink(
+    activeDeepLink,
+    artifacts,
+    actions,
+    { artifactsComplete, actionsComplete },
+  );
+  const deepLinkResolutionKey =
+    executionDeepLinkResolutionKey(deepLinkResolution);
+  const actionTargetFormOpen =
+    activeDeepLink.kind === "target" &&
+    activeDeepLink.artifactId === null &&
+    activeDeepLink.actionId !== null &&
+    activeDeepLink.actionId === generateAction?.id;
+  const activeDeepLinkArtifact =
+    activeDeepLink.kind === "target" && activeDeepLink.artifactId !== null
+      ? (artifacts.find(
+          (artifact) => artifact.id === activeDeepLink.artifactId,
+        ) ?? null)
+      : null;
+  const activeTargetSettlement =
+    activeDeepLink.kind !== "target"
+      ? null
+      : activeDeepLink.artifactId === null &&
+          activeDeepLink.actionId !== null
+        ? (artifactProjectionSettlements.find(
+            (settlement) => settlement.actionId === activeDeepLink.actionId,
+          ) ?? null)
+        : activeDeepLinkArtifact === null
+          ? null
+          : (artifactProjectionSettlements.find(
+              (settlement) =>
+                settlement.actionId === activeDeepLinkArtifact.actionId &&
+                settlement.artifactType ===
+                  activeDeepLinkArtifact.artifactType,
+            ) ?? null);
+  const activeTargetRecovery =
+    activeDeepLink.kind !== "target"
+      ? null
+      : activeDeepLink.artifactId === null &&
+          activeDeepLink.actionId !== null
+        ? (activeGenerationRecoveries.find(
+            (recovery) => recovery.actionId === activeDeepLink.actionId,
+          ) ?? null)
+        : activeDeepLinkArtifact === null
+          ? null
+          : (activeGenerationRecoveries.find(
+              (recovery) =>
+                recovery.actionId === activeDeepLinkArtifact.actionId &&
+                recovery.artifactType === activeDeepLinkArtifact.artifactType,
+            ) ?? null);
+  const artifactProjectionIdentities = artifacts.map((artifact) => ({
+    id: artifact.id,
+    actionId: artifact.actionId,
+    artifactType: artifact.artifactType,
+    activeRunId: artifact.activeRun?.id ?? null,
+  }));
+  const artifactSettlementProofs = artifactProjectionSettlements.flatMap(
+    (settlement) => {
+      const resolution = resolveQueuedActionProjection(
+        settlement,
+        artifactProjectionIdentities,
+      );
+      return resolution.kind === "artifact"
+        ? [
+            {
+              runId: settlement.runId,
+              actionId: settlement.actionId,
+              artifactId: resolution.artifactId,
+            },
+          ]
+        : [];
+    },
+  );
+  const artifactSettlementProofKey = JSON.stringify(artifactSettlementProofs);
+  const actionTargetQueued =
+    activeTargetSettlement !== null || activeTargetRecovery !== null;
+  const deepLinkPendingBlocked =
+    deepLinkResolution.kind === "pending" &&
+    (deepLinkResolution.resource === "artifacts"
+      ? !artifactsQuery.isFetching &&
+        (artifactsInitialError ||
+          artifactsQuery.isFetchNextPageError ||
+          (artifactsQuery.hasNextPage === true &&
+            (artifactsQuery.data?.pages.length ?? 0) >=
+              COMPLETE_CURSOR_MAX_PAGES))
+      : !actionsQuery.isFetching &&
+        (actionsInitialError ||
+          actionsQuery.isFetchNextPageError ||
+          (actionsQuery.hasNextPage === true &&
+            (actionsQuery.data?.pages.length ?? 0) >=
+              COMPLETE_CURSOR_MAX_PAGES)));
+  const deepLinkNoticeKind = (() => {
+    if (actionTargetFormOpen) return null;
+    if (actionTargetQueued) return "queued" as const;
+    if (deepLinkResolution.kind === "ambiguous") return "ambiguous" as const;
+    if (
+      deepLinkResolution.kind === "invalid" ||
+      deepLinkResolution.kind === "not_found" ||
+      deepLinkPendingBlocked
+    ) {
+      return "unavailable" as const;
+    }
+    if (deepLinkResolution.kind === "pending") return "loading" as const;
+    return null;
+  })() satisfies ExecutionTargetStateKind | null;
+  const deepLinkRetryable =
+    activeTargetSettlement !== null
+      ? activeTargetSettlement.phase === "settling" &&
+        !activeTargetSettlement.refreshing
+      : activeTargetRecovery !== null
+        ? !activeTargetRecovery.refreshing
+        : deepLinkResolution.kind === "pending" &&
+          deepLinkPendingBlocked &&
+          (deepLinkResolution.resource === "artifacts"
+            ? artifactsInitialError || artifactsQuery.isFetchNextPageError
+            : actionsInitialError || actionsQuery.isFetchNextPageError);
+
+  useEffect(() => {
+    // The URL hook can update before the async server page prop. Only accept a
+    // location after both views describe the same target; otherwise a dirty
+    // rollback could snapshot the attempted URL instead of the last accepted one.
+    if (currentUrlDeepLinkKey !== initialDeepLinkKey) return;
+    const selectionChanged =
+      lastServerDeepLinkKey.current !== initialDeepLinkKey;
+    const locationChanged =
+      lastServerExecutionLocation.current !== currentExecutionLocation;
+    if (!selectionChanged && !locationChanged) return;
+    lastServerDeepLinkKey.current = initialDeepLinkKey;
+    lastServerExecutionLocation.current = currentExecutionLocation;
+    if (!selectionChanged) {
+      acceptedExecutionLocation.current = currentExecutionLocation;
+      return;
+    }
+    const keepsCurrentSelection =
+      initialDeepLink.kind === "target" &&
+      ((initialDeepLink.artifactId !== null &&
+        initialDeepLink.artifactId === selectedId &&
+        (initialDeepLink.actionId === null ||
+          initialDeepLink.actionId === selected?.actionId)) ||
+        (initialDeepLink.artifactId === null &&
+          initialDeepLink.actionId !== null &&
+          (initialDeepLink.actionId === generateAction?.id ||
+            artifactProjectionSettlements.some(
+              (settlement) =>
+                settlement.actionId === initialDeepLink.actionId,
+            ) ||
+            activeGenerationRecoveries.some(
+              (recovery) => recovery.actionId === initialDeepLink.actionId,
+            ))));
+    if (keepsCurrentSelection) {
+      acceptedExecutionLocation.current = currentExecutionLocation;
+      commitActiveDeepLink(initialDeepLink);
+      autoSelectedArtifact.current = true;
+      return;
+    }
+    if (selectedEditorDirty && !confirmEditorDiscard()) {
+      if (selected !== null) {
+        commitActiveDeepLink({
+          kind: "target",
+          actionId: selected.actionId,
+          artifactId: selected.id,
+        });
+        autoSelectedArtifact.current = true;
+        router.replace(acceptedExecutionLocation.current, { scroll: false });
+      }
+      return;
+    }
+    acceptedExecutionLocation.current = currentExecutionLocation;
+    commitActiveDeepLink(initialDeepLink);
+    autoSelectedArtifact.current = true;
+    setDirtyArtifactId(null);
+    setSelectedId(null);
+    setGenerateAction(null);
+    setPickerOpen(false);
+  }, [
+    currentExecutionLocation,
+    currentUrlDeepLinkKey,
+    artifactProjectionSettlements,
+    activeGenerationRecoveries,
+    generateAction?.id,
+    initialDeepLinkKey,
+    selectedEditorDirty,
+    selectedId,
+  ]);
 
   useEffect(() => {
     if (
+      activeGenerationRecoveries.length > 0 &&
+      artifactsQuery.data !== undefined &&
+      artifactsQuery.hasNextPage === true
+    ) {
+      if (
+        artifactsQuery.isFetching ||
+        artifactsQuery.data.pages.length >= COMPLETE_CURSOR_MAX_PAGES
+      ) {
+        return;
+      }
+      const pages = artifactsQuery.data.pages;
+      const requestKey = JSON.stringify([
+        recoveryPaginationKey,
+        "recovery-artifacts",
+        pages.length,
+        pages.at(-1)?.meta.nextCursor ?? "",
+        artifactsQuery.dataUpdatedAt,
+      ]);
+      if (deepLinkAutoFetchRequestKey.current === requestKey) return;
+      deepLinkAutoFetchRequestKey.current = requestKey;
+      void artifactsQuery.fetchNextPage();
+      return;
+    }
+    if (
+      deepLinkResolution.kind !== "pending" ||
+      deepLinkPendingBlocked ||
+      actionTargetFormOpen
+    ) {
+      return;
+    }
+    if (deepLinkResolution.resource === "artifacts") {
+      if (
+        artifactsQuery.data === undefined ||
+        artifactsQuery.hasNextPage !== true ||
+        artifactsQuery.isFetching
+      ) {
+        return;
+      }
+      const pages = artifactsQuery.data.pages;
+      const requestKey = JSON.stringify([
+        activeDeepLinkKey,
+        "artifacts",
+        pages.length,
+        pages.at(-1)?.meta.nextCursor ?? "",
+        artifactsQuery.dataUpdatedAt,
+      ]);
+      if (deepLinkAutoFetchRequestKey.current === requestKey) return;
+      deepLinkAutoFetchRequestKey.current = requestKey;
+      void artifactsQuery.fetchNextPage();
+      return;
+    }
+    if (
+      actionsQuery.data === undefined ||
+      actionsQuery.hasNextPage !== true ||
+      actionsQuery.isFetching
+    ) {
+      return;
+    }
+    const pages = actionsQuery.data.pages;
+    const requestKey = JSON.stringify([
+      activeDeepLinkKey,
+      "actions",
+      pages.length,
+      pages.at(-1)?.meta.nextCursor ?? "",
+      actionsQuery.dataUpdatedAt,
+    ]);
+    if (deepLinkAutoFetchRequestKey.current === requestKey) return;
+    deepLinkAutoFetchRequestKey.current = requestKey;
+    void actionsQuery.fetchNextPage();
+  }, [
+    activeDeepLinkKey,
+    activeGenerationRecoveries.length,
+    actionTargetFormOpen,
+    actionsQuery.data,
+    actionsQuery.dataUpdatedAt,
+    actionsQuery.fetchNextPage,
+    actionsQuery.hasNextPage,
+    actionsQuery.isFetching,
+    artifactsQuery.data,
+    artifactsQuery.dataUpdatedAt,
+    artifactsQuery.fetchNextPage,
+    artifactsQuery.hasNextPage,
+    artifactsQuery.isFetching,
+    deepLinkPendingBlocked,
+    deepLinkResolutionKey,
+    recoveryPaginationKey,
+  ]);
+
+  useEffect(() => {
+    if (artifactSettlementProofs.length === 0) return;
+    const provenRunIds = new Set(
+      artifactSettlementProofs.map((proof) => proof.runId),
+    );
+    setArtifactProjectionSettlements((current) =>
+      current.filter((settlement) => !provenRunIds.has(settlement.runId)),
+    );
+    if (
+      activeDeepLink.kind !== "target" ||
+      activeDeepLink.artifactId !== null ||
+      activeDeepLink.actionId === null
+    ) {
+      return;
+    }
+    const activeProof = artifactSettlementProofs.find(
+      (proof) => proof.actionId === activeDeepLink.actionId,
+    );
+    if (activeProof === undefined) return;
+    const artifact = artifacts.find(
+      (item) => item.id === activeProof.artifactId,
+    );
+    if (artifact === undefined) return;
+    autoSelectedArtifact.current = true;
+    setDirtyArtifactId(null);
+    setSelectedId(artifact.id);
+    setGenerateAction(null);
+    setPickerOpen(false);
+    replaceExecutionTarget(artifact.actionId, artifact.id);
+  }, [activeDeepLinkKey, artifactSettlementProofKey]);
+
+  useEffect(() => {
+    if (
+      actionTargetFormOpen ||
+      activeTargetSettlement !== null ||
+      activeTargetRecovery !== null
+    ) {
+      return;
+    }
+    switch (deepLinkResolution.kind) {
+      case "artifact": {
+        const artifact = artifacts.find(
+          (item) => item.id === deepLinkResolution.artifactId,
+        );
+        if (artifact === undefined) return;
+        autoSelectedArtifact.current = true;
+        if (selectedId !== artifact.id) {
+          setDirtyArtifactId(null);
+          setSelectedId(artifact.id);
+          setGenerateAction(null);
+          setPickerOpen(false);
+        }
+        if (
+          activeDeepLink.kind !== "target" ||
+          activeDeepLink.actionId !== artifact.actionId ||
+          activeDeepLink.artifactId !== artifact.id
+        ) {
+          replaceExecutionTarget(artifact.actionId, artifact.id);
+        }
+        return;
+      }
+      case "action": {
+        if (actionTargetQueued) return;
+        const action = actions.find(
+          (item) => item.id === deepLinkResolution.actionId,
+        );
+        if (action === undefined || generateAction?.id === action.id) return;
+        autoSelectedArtifact.current = true;
+        setDirtyArtifactId(null);
+        setSelectedId(null);
+        setPickerOpen(false);
+        setGenerateAction(action);
+        return;
+      }
+      case "invalid":
+      case "ambiguous":
+      case "not_found":
+        autoSelectedArtifact.current = true;
+        if (selectedId !== null) {
+          setDirtyArtifactId(null);
+          setSelectedId(null);
+        }
+        if (generateAction !== null) setGenerateAction(null);
+        setPickerOpen(false);
+        return;
+      case "default":
+      case "pending":
+        return;
+    }
+  }, [
+    actionTargetFormOpen,
+    activeTargetSettlement?.runId,
+    activeTargetRecovery?.key,
+    activeDeepLinkKey,
+    deepLinkResolutionKey,
+    generateAction?.id,
+    selectedId,
+  ]);
+
+  useEffect(() => {
+    if (
+      deepLinkResolution.kind !== "default" ||
       autoSelectedArtifact.current ||
       selectedId !== null ||
       artifacts.length === 0
@@ -1615,8 +2217,116 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
       return;
     }
     autoSelectedArtifact.current = true;
-    setSelectedId(artifacts[0]?.id ?? null);
-  }, [artifacts, selectedId]);
+    const artifact = artifacts[0];
+    if (artifact === undefined) return;
+    setSelectedId(artifact.id);
+    replaceExecutionTarget(artifact.actionId, artifact.id);
+  }, [
+    artifacts[0]?.actionId,
+    artifacts[0]?.id,
+    deepLinkResolution.kind,
+    selectedId,
+  ]);
+
+  function commitActiveDeepLink(next: ExecutionDeepLink): void {
+    activeDeepLinkRef.current = next;
+    setActiveDeepLink(next);
+  }
+
+  function replaceExecutionTarget(
+    actionId: string,
+    artifactId: string | null,
+  ): void {
+    commitActiveDeepLink({ kind: "target", actionId, artifactId });
+    const nextLocation = executionUrlWithTarget(
+      pathname,
+      new URLSearchParams(latestExecutionSearch.current),
+      {
+        actionId,
+        artifactId,
+      },
+    );
+    acceptedExecutionLocation.current = nextLocation;
+    router.replace(nextLocation, { scroll: false });
+  }
+
+  function clearExecutionTarget(): void {
+    autoSelectedArtifact.current = true;
+    commitActiveDeepLink({ kind: "none" });
+    setDirtyArtifactId(null);
+    setSelectedId(null);
+    setGenerateAction(null);
+    setPickerOpen(false);
+    const nextLocation = executionUrlWithTarget(
+      pathname,
+      new URLSearchParams(latestExecutionSearch.current),
+      null,
+    );
+    acceptedExecutionLocation.current = nextLocation;
+    router.replace(nextLocation, { scroll: false });
+  }
+
+  function retryExecutionTarget(): void {
+    if (activeTargetSettlement !== null) {
+      if (
+        activeTargetSettlement.phase !== "settling" ||
+        activeTargetSettlement.refreshing
+      ) {
+        return;
+      }
+      const runId = activeTargetSettlement.runId;
+      setArtifactProjectionSettlements((current) =>
+        current.map((settlement) =>
+          settlement.runId === runId
+            ? {
+                ...settlement,
+                refreshing: true,
+                lastRefreshFailed: false,
+              }
+            : settlement,
+        ),
+      );
+      const artifactRefresh = refetchArtifacts();
+      const finishArtifactRefresh = (failed: boolean): void => {
+        setArtifactProjectionSettlements((current) =>
+          current.map(
+            (settlement) =>
+              queuedActionTargetAfterRefresh(settlement, runId, failed) ??
+              settlement,
+          ),
+        );
+      };
+      void artifactRefresh.then(
+        (result) => finishArtifactRefresh(result.isError),
+        () => finishArtifactRefresh(true),
+      );
+      return;
+    }
+    if (activeTargetRecovery !== null) {
+      if (activeTargetRecovery.refreshing) return;
+      void recoverAlreadyActive(
+        activeTargetRecovery.actionId,
+        activeTargetRecovery.artifactType,
+      );
+      return;
+    }
+    if (deepLinkResolution.kind !== "pending") return;
+    const resource = deepLinkResolution.resource;
+
+    if (resource === "artifacts") {
+      if (artifactsQuery.data === undefined) {
+        void artifactsQuery.refetch();
+      } else if (artifactsQuery.isFetchNextPageError) {
+        void artifactsQuery.fetchNextPage();
+      }
+      return;
+    }
+    if (actionsQuery.data === undefined) {
+      void actionsQuery.refetch();
+    } else if (actionsQuery.isFetchNextPageError) {
+      void actionsQuery.fetchNextPage();
+    }
+  }
 
   function confirmEditorDiscard(): boolean {
     return canDiscardArtifactChanges(selectedEditorDirty, () =>
@@ -1626,19 +2336,57 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
 
   function selectArtifact(artifactId: string): void {
     if (artifactId === selectedId) return;
+    const artifact = artifacts.find((item) => item.id === artifactId);
+    if (artifact === undefined) return;
+    if (
+      generationFenceKeys.has(
+        artifactGenerationKey(artifact.actionId, artifact.artifactType),
+      )
+    ) {
+      return;
+    }
     if (!confirmEditorDiscard()) return;
+    setGenerateAction(null);
+    setPickerOpen(false);
     setSelectedId(artifactId);
+    replaceExecutionTarget(artifact.actionId, artifact.id);
   }
 
   function closeEditor(): void {
     if (!confirmEditorDiscard()) return;
-    setSelectedId(null);
+    clearExecutionTarget();
   }
 
   function openGenerate(action: ArtifactAction): void {
+    if (
+      queuedActionBlocksGeneration(artifactProjectionSettlements, action.id) ||
+      activeGenerationRecoveries.some(
+        (recovery) => recovery.actionId === action.id,
+      )
+    ) {
+      return;
+    }
     if (!confirmEditorDiscard()) return;
     setGenerateAction(action);
     setPickerOpen(false);
+    replaceExecutionTarget(action.id, null);
+  }
+
+  function cancelGenerate(): void {
+    if (
+      activeDeepLink.kind === "target" &&
+      activeDeepLink.artifactId === null &&
+      activeDeepLink.actionId === generateAction?.id
+    ) {
+      if (selected !== null) {
+        setGenerateAction(null);
+        replaceExecutionTarget(selected.actionId, selected.id);
+      } else {
+        clearExecutionTarget();
+      }
+      return;
+    }
+    setGenerateAction(null);
   }
 
   function openPicker(): void {
@@ -1673,9 +2421,42 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     );
     setGenerateAction(null);
     setPickerOpen(false);
-    if (artifactId !== null) {
+    const queuedTarget = executionTargetAfterQueue(actionId, artifactId);
+    if (queuedTarget.artifactId !== null) {
       setDirtyArtifactId(null);
-      setSelectedId(artifactId);
+      setSelectedId(queuedTarget.artifactId);
+      replaceExecutionTarget(queuedTarget.actionId, queuedTarget.artifactId);
+      return;
+    }
+    // A 202 can precede the artifact projection. Keep the accepted action-only
+    // identity in both state and URL, but suppress reopening the submitted form.
+    autoSelectedArtifact.current = true;
+    setDirtyArtifactId(null);
+    setSelectedId(null);
+    commitActiveDeepLink({ kind: "target", ...queuedTarget });
+    const settlement = queuedActionTargetAfterQueue(
+      actionId,
+      run.id,
+      artifactType,
+    );
+    setArtifactProjectionSettlements((current) => [
+      ...current.filter(
+        (candidate) =>
+          candidate.actionId !== actionId ||
+          candidate.artifactType !== artifactType,
+      ),
+      run.resultRef?.type === "artifact"
+        ? { ...settlement, expectedArtifactId: run.resultRef.id }
+        : settlement,
+    ]);
+    const nextLocation = executionUrlWithTarget(
+      pathname,
+      new URLSearchParams(latestExecutionSearch.current),
+      queuedTarget,
+    );
+    acceptedExecutionLocation.current = nextLocation;
+    if (nextLocation !== currentExecutionLocation) {
+      router.replace(nextLocation, { scroll: false });
     }
   }
 
@@ -1687,37 +2468,80 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
       key: artifactGenerationKey(actionId, artifactType),
       actionId,
       artifactType,
+      refreshing: true,
+    };
+    const attemptId = recoveryAttemptSequence.current + 1;
+    recoveryAttemptSequence.current = attemptId;
+    recoveryAttemptByKey.current.set(recovery.key, attemptId);
+    const attemptIsCurrent = (): boolean =>
+      recoveryAttemptCanCommit(
+        { attemptId, projectId },
+        {
+          attemptId: recoveryAttemptByKey.current.get(recovery.key),
+          projectId: recoveryProjectRef.current,
+        },
+      );
+    const leaveRecoveryPending = (): void => {
+      if (!attemptIsCurrent()) return;
+      setActiveGenerationRecoveries((current) =>
+        current.map((item) =>
+          item.key === recovery.key ? { ...item, refreshing: false } : item,
+        ),
+      );
     };
     setActiveGenerationRecoveries((current) => {
       const withoutKey = current.filter((item) => item.key !== recovery.key);
       return [...withoutKey, recovery];
     });
+    autoSelectedArtifact.current = true;
+    setDirtyArtifactId(null);
+    setSelectedId(null);
     setGenerateAction(null);
     setPickerOpen(false);
 
     const refreshed = await artifactsQuery.refetch();
     // A refetch error can retain the previous successful pages in `data`.
     // Never treat that stale cache as proof that the conflicting run settled.
-    if (!refreshed.isSuccess) return;
-    const recoveredArtifact = uniqueCursorItems(refreshed.data).find(
-      (artifact) =>
-        artifact.actionId === actionId &&
-        artifact.artifactType === artifactType,
-    );
-    const recoveredRun = recoveredArtifact?.activeRun ?? null;
-    if (recoveredArtifact === undefined) return;
-    if (recoveredRun === null || isTerminalRun(recoveredRun.status)) {
-      // The conflict was truthful when the POST was evaluated, but the winning
-      // run can finish before this refetch reaches the artifact projection. A
-      // matching canonical artifact with no live run is definitive settlement,
-      // so retaining the conservative recovery fence would lock regeneration
-      // forever. A missing artifact remains ambiguous and deliberately keeps
-      // the retryable fence above.
-      setActiveGenerationRecoveries((current) =>
-        current.filter((item) => item.key !== recovery.key),
-      );
+    if (!refreshed.isSuccess) {
+      leaveRecoveryPending();
       return;
     }
+    const refreshedArtifacts = uniqueCursorItems(refreshed.data);
+    const resolution = resolveActiveGenerationRecovery(
+      actionId,
+      artifactType,
+      refreshedArtifacts.map((artifact) => ({
+        id: artifact.id,
+        actionId: artifact.actionId,
+        artifactType: artifact.artifactType,
+        artifactLive: artifact.status !== "archived",
+        liveRunId:
+          artifact.activeRun !== null &&
+          !isTerminalRun(artifact.activeRun.status)
+            ? artifact.activeRun.id
+            : null,
+      })),
+      refreshed.data.pages.at(-1)?.meta.nextCursor === null,
+    );
+    if (resolution.kind !== "active") {
+      leaveRecoveryPending();
+      return;
+    }
+    const recoveredArtifact = refreshedArtifacts.find(
+      (artifact) => artifact.id === resolution.artifactId,
+    );
+    const recoveredRun = recoveredArtifact?.activeRun ?? null;
+    if (
+      recoveredArtifact === undefined ||
+      recoveredRun === null ||
+      recoveredRun.id !== resolution.runId ||
+      isTerminalRun(recoveredRun.status)
+    ) {
+      leaveRecoveryPending();
+      return;
+    }
+    if (!attemptIsCurrent()) return;
+    recoveryAttemptByKey.current.delete(recovery.key);
 
     // This id comes from the canonical artifact projection, not from parsing
     // provider detail or guessing the Location header hidden by ApiError.
@@ -1740,8 +2564,21 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
     setActiveGenerationRecoveries((current) =>
       current.filter((item) => item.key !== recovery.key),
     );
+    const currentTarget = activeDeepLinkRef.current;
+    const latestSearchParams = new URLSearchParams(
+      latestExecutionSearch.current,
+    );
+    const currentUrlTarget = parseExecutionDeepLink({
+      actionId: executionQueryValue(latestSearchParams, "actionId"),
+      artifactId: executionQueryValue(latestSearchParams, "artifactId"),
+    });
+    const stillOwnsTarget =
+      recoveryOwnsExecutionTarget(actionId, currentTarget) &&
+      recoveryOwnsExecutionTarget(actionId, currentUrlTarget);
+    if (!stillOwnsTarget) return;
     setDirtyArtifactId(null);
     setSelectedId(recoveredArtifact.id);
+    replaceExecutionTarget(recoveredArtifact.actionId, recoveredArtifact.id);
   }
 
   function retryFailedRun(runId: string): void {
@@ -1774,13 +2611,14 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
               onClick={openPicker}
               disabled={
                 generationUnavailable ||
-                (eligibleActions.length === 0 && !actionsQuery.hasNextPage)
+                (generationEligibleActions.length === 0 &&
+                  !actionsQuery.hasNextPage)
               }
               aria-busy={generationUnavailable}
               aria-describedby={
                 actionsInitialLoading ||
                 (!actionsInitialError &&
-                  eligibleActions.length === 0 &&
+                  generationEligibleActions.length === 0 &&
                   !actionsQuery.hasNextPage)
                   ? "sf-gen-note"
                   : undefined
@@ -1793,7 +2631,7 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
                 {tCommon("loading")}
               </p>
             ) : !actionsInitialError &&
-              eligibleActions.length === 0 &&
+              generationEligibleActions.length === 0 &&
               !actionsQuery.hasNextPage ? (
               <p id="sf-gen-note" className={styles.heroNote}>
                 {t("noActions")}
@@ -1893,6 +2731,7 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
           <Button
             variant="secondary"
             size="sm"
+            disabled={recovery.refreshing}
             onClick={() =>
               void recoverAlreadyActive(
                 recovery.actionId,
@@ -1971,6 +2810,13 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
                       <div className={styles.cardGrid}>
                         {list.map((artifact) => {
                           const action = actionById.get(artifact.actionId);
+                          const generationFenced =
+                            generationFenceKeys.has(
+                              artifactGenerationKey(
+                                artifact.actionId,
+                                artifact.artifactType,
+                              ),
+                            );
                           return (
                             <ArtifactCard
                               key={artifact.id}
@@ -1982,11 +2828,13 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
                                   artifact.artifactType,
                                 ),
                               )}
+                              selectionBlocked={generationFenced}
                               selected={selected?.id === artifact.id}
                               onOpen={() => selectArtifact(artifact.id)}
                               onRegenerate={
                                 action !== undefined &&
-                                action.status !== "dismissed"
+                                action.status !== "dismissed" &&
+                                !generationFenced
                                   ? () => openGenerate(action)
                                   : undefined
                               }
@@ -2029,7 +2877,14 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
           data-studio-editor-column=""
           aria-label={t("editorCanvas")}
         >
-          {generateAction !== null ? (
+          {deepLinkNoticeKind !== null ? (
+            <ExecutionTargetState
+              kind={deepLinkNoticeKind}
+              retryable={deepLinkRetryable}
+              onRetry={retryExecutionTarget}
+              onClear={clearExecutionTarget}
+            />
+          ) : generateAction !== null ? (
             <GenerateForm
               projectId={projectId}
               action={generateAction}
@@ -2044,11 +2899,11 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
               onAlreadyActive={(artifactType) =>
                 recoverAlreadyActive(generateAction.id, artifactType)
               }
-              onCancel={() => setGenerateAction(null)}
+              onCancel={cancelGenerate}
             />
           ) : pickerOpen ? (
             <ActionPicker
-              actions={eligibleActions}
+              actions={generationEligibleActions}
               liveKeys={liveKeys}
               activeKeys={activeKeys}
               hasMore={actionsQuery.hasNextPage}
@@ -2070,7 +2925,8 @@ export function StudioClient({ projectId }: { readonly projectId: string }) {
             <EditorPlaceholder
               generationUnavailable={generationUnavailable}
               canGenerate={
-                eligibleActions.length > 0 || actionsQuery.hasNextPage
+                generationEligibleActions.length > 0 ||
+                actionsQuery.hasNextPage
               }
               onGenerate={openPicker}
             />

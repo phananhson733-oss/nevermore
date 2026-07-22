@@ -16,6 +16,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import {
   CollectionRunsRepository,
+  canonicalUtcTimestamptz,
   contentHash,
   DataSnapshotsRepository,
   IdempotencyRepository,
@@ -434,7 +435,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
           schemaVersion: fixture.snapshot.schema_version,
           methodVersion: CRAWL_METHOD_VERSION,
           checksum: fixture.snapshot.checksum,
-          capturedAt: fixture.snapshot.captured_at,
+          capturedAt: canonicalUtcTimestamptz(fixture.snapshot.captured_at),
           sourceWindow: fixture.snapshot.source_window,
           availability: fixture.snapshot.availability,
         },

@@ -487,16 +487,16 @@ async function generateReadyArtifact(
   projectId: string,
   keyboard: boolean,
 ): Promise<void> {
-  const studioLink = page.getByRole("link", { name: "Studio", exact: true });
+  const studioLink = page.getByRole("link", { name: "Execution", exact: true });
   if (keyboard) {
     await studioLink.focus();
     await expect(studioLink).toBeFocused();
     await studioLink.press("Enter");
-    await page.waitForURL(`/p/${projectId}/studio`);
+    await page.waitForURL(`/p/${projectId}/execution`);
   } else {
     await studioLink.click();
   }
-  await expect(page).toHaveURL(`/p/${projectId}/studio`);
+  await expect(page).toHaveURL(`/p/${projectId}/execution`);
   const studioHero = page.locator("[data-studio-page-hero]");
   const studioWorkspace = page.locator("[data-studio-workspace]");
   const editorCanvas = page.locator("[data-studio-editor-column]");
@@ -558,12 +558,12 @@ async function verifyReportAndExport(
   kind: "service" | "client",
   keyboard: boolean,
 ): Promise<void> {
-  const reportLink = page.getByRole("link", { name: "Report", exact: true });
+  const reportLink = page.getByRole("link", { name: "Results", exact: true });
   if (keyboard) {
     await reportLink.focus();
     await expect(reportLink).toBeFocused();
     await reportLink.press("Enter");
-    await page.waitForURL(`/p/${projectId}/report`);
+    await page.waitForURL(`/p/${projectId}/results`);
   } else {
     await reportLink.click();
   }

@@ -11,6 +11,7 @@ import {
   ProductProfileRunsRepository,
   ProjectsRepository,
   sha256Hex,
+  sameTimestamptzInstant,
   toRunAttempt,
   type CanonicalValue,
   type DataSnapshotRow,
@@ -131,10 +132,6 @@ function invalidResult(): never {
   throw new ProductProfileResultError();
 }
 
-function exactTimestamp(left: string, right: string): boolean {
-  return left === right;
-}
-
 function exactObjectHash(value: unknown, expected: string): boolean {
   try {
     const canonical = canonicalize(value as CanonicalValue);
@@ -242,7 +239,7 @@ function validateCrawlSnapshot(
     row.dataset_key !== frozen.datasetKey ||
     row.schema_version !== frozen.schemaVersion ||
     row.method_version !== frozen.methodVersion ||
-    !exactTimestamp(row.captured_at, frozen.capturedAt) ||
+    !sameTimestamptzInstant(row.captured_at, frozen.capturedAt) ||
     row.checksum !== frozen.checksum ||
     row.availability !== frozen.availability ||
     row.row_count !== frozen.rowCount ||
@@ -281,7 +278,7 @@ function validateOnePage(
     row.normalized_url_hash !== frozen.normalizedUrlHash ||
     row.normalized_url_hash !== normalizedUrlHash(row.normalized_url) ||
     row.content_hash !== frozen.contentHash ||
-    !exactTimestamp(row.captured_at, frozen.capturedAt) ||
+    !sameTimestamptzInstant(row.captured_at, frozen.capturedAt) ||
     row.canonical_extract === null ||
     !pageAtSourceOrigin(row.normalized_url, sourcePageUrl)
   ) {

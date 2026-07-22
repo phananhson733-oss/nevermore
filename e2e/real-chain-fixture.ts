@@ -5,11 +5,20 @@ import {
   ObservationsRepository,
   SourceConnectionsRepository,
   contentHash,
+  type CanonicalValue,
   type DbHandle,
   type ObservationInsert,
   type ProjectScope,
 } from "../packages/db/src/index.ts";
 import {
+  CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
+  materializePreparedCrawlPages,
+  parseCrawlPageExtract,
+  type PreparedCrawlPage,
+} from "../apps/worker/src/collection/materialize-crawl-pages.ts";
+import { resolveObservationSitePageLineage } from "../apps/worker/src/collection/observation-site-page-lineage.ts";
+import {
+  CRAWL_METHOD_VERSION,
   METRIC_CRAWL_PAGE,
   METRIC_CRAWL_ROBOTS,
   METRIC_GA4_LANDING,
@@ -269,14 +278,15 @@ function crawlPage(input: {
   readonly internalOutlinks?: readonly CrawlLinkProjection[];
 }): CrawlPageProjection {
   const status = input.status ?? 200;
+  const robotsIndexable = input.robotsIndexable ?? true;
   return {
     fetchUrl: input.fetchUrl,
     status,
     finalStatus: status,
     redirectChain: [],
     canonicalTarget: input.canonicalTarget ?? null,
-    robotsIndexable: input.robotsIndexable ?? true,
-    robotsDirectives: [],
+    robotsIndexable,
+    robotsDirectives: robotsIndexable ? [] : ["noindex"],
     title: input.title ?? null,
     metaDescription: null,
     h1: input.h1 ?? [],
@@ -403,6 +413,43 @@ interface SnapshotFixture {
   readonly observations: readonly ObservationInsert[];
 }
 
+/**
+ * Build the same immutable Crawl PageSnapshot extract consumed by the worker.
+ * The provider seam starts after network collection, so this helper must
+ * materialize the durable exact-page lineage that real collection persistence
+ * would have created from the retained raw Crawl pages. It never synthesizes a
+ * page absent from the fixture's canonical crawl.page.v1 Observations.
+ */
+function preparedCrawlPages(
+  observations: readonly ObservationInsert[],
+): readonly PreparedCrawlPage[] {
+  return observations
+    .flatMap((observation): readonly PreparedCrawlPage[] => {
+      if (observation.metricKey !== METRIC_CRAWL_PAGE) return [];
+      const projection = observation.valueJson as CrawlPageProjection;
+      const extract = parseCrawlPageExtract({
+        schemaVersion: CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
+        subjectUrl: observation.subjectRef,
+        depth: new URL(projection.fetchUrl).pathname === "/" ? 0 : 1,
+        projection,
+      });
+      return [
+        {
+          normalizedUrl: projection.fetchUrl,
+          contentHash: contentHash(extract as CanonicalValue),
+          extract,
+        },
+      ];
+    })
+    .sort((left, right) =>
+      left.normalizedUrl < right.normalizedUrl
+        ? -1
+        : left.normalizedUrl > right.normalizedUrl
+          ? 1
+          : 0,
+    );
+}
+
 async function persistSnapshot(
   handle: DbHandle,
   project: ProjectFixtureScope,
@@ -428,7 +475,21 @@ async function persistSnapshot(
         });
   if (!connection) throw new Error("default Crawl source was not found");
 
-  const capturedAt = new Date().toISOString();
+  const observedAt = [
+    ...new Set(fixture.observations.map((observation) => observation.observedAt)),
+  ];
+  if (observedAt.length !== 1 || !observedAt[0]) {
+    throw new Error(
+      "real E2E snapshot fixture requires one immutable Observation capture time",
+    );
+  }
+  const capturedAt = observedAt[0];
+  const sourceWindow = {
+    start: new Date(
+      Date.parse(capturedAt) - 56 * 24 * 60 * 60 * 1_000,
+    ).toISOString(),
+    end: capturedAt,
+  };
   const runId = randomUUID();
   await handle.pool.query(
     `INSERT INTO app.async_runs
@@ -466,28 +527,45 @@ async function persistSnapshot(
     schemaVersion: "0.2.0",
     methodVersion: fixture.methodVersion,
     capturedAt,
-    sourceWindow: {
-      start: new Date(Date.now() - 56 * 24 * 60 * 60 * 1000).toISOString(),
-      end: capturedAt,
-    },
+    sourceWindow,
     availability: "available",
     limitation: fixture.limitation,
     rawObjectKey: null,
     rowCount: fixture.observations.length,
     checksum: contentHash({ snapshot: runId }),
   });
-  await new ObservationsRepository(handle.db).insertMany(
-    project.scope,
-    snapshot.id,
-    fixture.provider,
-    fixture.observations,
-  );
+  await handle.db.transaction(async (tx) => {
+    const exactCrawlPageIds = await materializePreparedCrawlPages(tx, {
+      workspaceId: project.scope.workspaceId,
+      projectId: project.scope.projectId,
+      siteId: project.siteId,
+      dataSnapshotId: snapshot.id,
+      capturedAt,
+      pages:
+        fixture.provider === "crawl"
+          ? preparedCrawlPages(fixture.observations)
+          : [],
+    });
+    const observationsWithPageLineage =
+      await resolveObservationSitePageLineage({
+        tx,
+        scope: project.scope,
+        siteId: project.siteId,
+        siteOrigin: project.origin,
+        provider: fixture.provider,
+        observations: fixture.observations,
+        crawlExactSitePageIds: exactCrawlPageIds,
+      });
+    await new ObservationsRepository(tx).insertMany(
+      project.scope,
+      snapshot.id,
+      fixture.provider,
+      observationsWithPageLineage,
+    );
+  });
   await collectionRuns.finalize(runId, {
     rowCount: fixture.observations.length,
-    sourceWindow: {
-      start: new Date(Date.now() - 56 * 24 * 60 * 60 * 1000).toISOString(),
-      end: capturedAt,
-    },
+    sourceWindow,
     providerUsage: { requestCount: 0 },
     stopReason: null,
   });
@@ -579,27 +657,26 @@ export async function seedOfflineProviderSnapshots(
     }),
   ];
   const actorId = randomUUID();
-  return Promise.all([
-    persistSnapshot(handle, project, actorId, {
-      provider: "crawl",
-      connectionType: "public",
-      datasetKey: "crawl.site_graph.v1",
-      operation: "site_graph",
-      methodVersion: "crawl.site_graph.v1",
-      externalRef: null,
-      limitation,
-      observations: crawlObservations(
-        project.origin,
-        capturedAt,
-        definition,
-      ),
-    }),
+  // Crawl commits first because analytics may bind only to an already durable,
+  // unambiguous SitePage identity. Parallelizing these fixture snapshots would
+  // introduce a race that real collection persistence explicitly serializes.
+  const crawlSnapshotId = await persistSnapshot(handle, project, actorId, {
+    provider: "crawl",
+    connectionType: "public",
+    datasetKey: "crawl.site_graph.v1",
+    operation: "site_graph",
+    methodVersion: CRAWL_METHOD_VERSION,
+    externalRef: null,
+    limitation,
+    observations: crawlObservations(project.origin, capturedAt, definition),
+  });
+  const analyticsSnapshotIds = await Promise.all([
     persistSnapshot(handle, project, actorId, {
       provider: "gsc",
       connectionType: "oauth",
       datasetKey: "gsc.page_query_daily.v1",
       operation: "search_analytics",
-      methodVersion: "gsc.search_analytics.v1",
+      methodVersion: "gsc.page_query_daily.v1",
       externalRef: project.origin,
       limitation,
       observations: gsc,
@@ -609,10 +686,11 @@ export async function seedOfflineProviderSnapshots(
       connectionType: "oauth",
       datasetKey: "ga4.organic_landing_daily.v1",
       operation: "organic_landing",
-      methodVersion: "ga4.organic_landing.v1",
+      methodVersion: "ga4.organic_landing_daily.v1",
       externalRef: "properties/offline-fixture",
       limitation,
       observations: ga4,
     }),
   ]);
+  return [crawlSnapshotId, ...analyticsSnapshotIds];
 }

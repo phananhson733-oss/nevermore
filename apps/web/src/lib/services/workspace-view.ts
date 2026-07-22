@@ -1,4 +1,11 @@
-import { AsyncRunsRepository, type WorkspaceScope } from "@sf/db";
+import {
+  AsyncRunsRepository,
+  GrowthMapReadRepository,
+  MAX_GROWTH_MAP_URL_PAGE_SIZE,
+  type Executor,
+  type ProjectScope,
+  type WorkspaceScope,
+} from "@sf/db";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getProject } from "./projects";
@@ -118,6 +125,7 @@ export interface OverviewView {
   project: ProjectDto;
   coverage: CoverageDto;
   activeRuns: AsyncRunDto[];
+  frozenDiagnosticRunId: string | null;
   topActions: ActionDto[];
   latestSnapshot: DataSnapshotDto | null;
   topActionEvidence: EvidenceDto[];
@@ -194,8 +202,17 @@ export function buildOverviewHighlights(input: {
   readonly snapshots: readonly DataSnapshotDto[];
   readonly findings: readonly FindingDto[];
   readonly artifacts: readonly ArtifactDto[];
+  readonly currentRunFindingIds?: ReadonlySet<string>;
 }): OverviewHighlights {
-  const topActions = input.actions
+  const exactRunActions = input.currentRunFindingIds
+    ? input.actions.filter((action) =>
+        input.currentRunFindingIds?.has(action.findingId),
+      )
+    : input.actions;
+  const topActions = exactRunActions
+    .filter(
+      (action) => action.status !== "done" && action.status !== "dismissed",
+    )
     .map((action, index) => ({ action, index }))
     .sort((left, right) => {
       const priority =
@@ -203,7 +220,7 @@ export function buildOverviewHighlights(input: {
         priorityRank(right.action.priorityBand);
       return priority === 0 ? left.index - right.index : priority;
     })
-    .slice(0, 5)
+    .slice(0, 3)
     .map(({ action }) => action);
   const topAction = topActions[0] ?? null;
   const sourceFinding = topAction
@@ -227,6 +244,62 @@ export function buildOverviewHighlights(input: {
         }
       : null,
   };
+}
+
+/**
+ * Resolve the Finding membership of the exact latest frozen Growth Map audit.
+ * Overview must not mix old project Actions into today's customer decisions.
+ * The target ledger is the canonical per-run membership boundary; the
+ * cross-run Finding row by itself is insufficient.
+ */
+interface FrozenAuditMembership {
+  readonly diagnosticRunId: string | null;
+  readonly findingIds: ReadonlySet<string>;
+}
+
+async function loadLatestFrozenAuditMembership(
+  exec: Executor,
+  projectScope: ProjectScope,
+): Promise<FrozenAuditMembership> {
+  const repository = new GrowthMapReadRepository(exec);
+  const run = await repository.findLatestReadableRun(projectScope);
+  if (!run) return { diagnosticRunId: null, findingIds: new Set() };
+
+  const findingIds = new Set<string>();
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+  let pageCount = 0;
+
+  while (true) {
+    const page = await repository.listCurrentRunUrls(projectScope, run.id, {
+      limit: MAX_GROWTH_MAP_URL_PAGE_SIZE,
+      cursor,
+    });
+    pageCount += 1;
+    const targets = await repository.listResolvedTargets(
+      projectScope,
+      run.id,
+      page.rows.map((row) => row.site_page_id),
+    );
+    targets.forEach((target) => findingIds.add(target.finding_id));
+
+    if (page.nextCursor === null) {
+      return { diagnosticRunId: run.id, findingIds };
+    }
+    if (
+      page.nextCursor === cursor ||
+      seenCursors.has(page.nextCursor) ||
+      pageCount >= WORKSPACE_MAX_PAGES_PER_RESOURCE
+    ) {
+      throw workspacePaginationFailure(
+        "Overview",
+        "findings",
+        "the frozen audit URL membership could not be paginated safely.",
+      );
+    }
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
 }
 
 /**
@@ -289,6 +362,10 @@ export async function getWorkspaceView(
           const activeRunRows = await new AsyncRunsRepository(
             tx,
           ).listActiveByProject(projectScope);
+          const frozenAudit = await loadLatestFrozenAuditMembership(
+            tx,
+            projectScope,
+          );
           const findings = await loadCompleteWorkspaceResource(
             "Overview",
             "findings",
@@ -352,12 +429,14 @@ export async function getWorkspaceView(
             snapshots,
             findings,
             artifacts: studio,
+            currentRunFindingIds: frozenAudit.findingIds,
           });
           return {
             view: "overview",
             project,
             coverage: overviewCoverage ?? EMPTY_COVERAGE,
             activeRuns: activeRunRows.map(toAsyncRunDto),
+            frozenDiagnosticRunId: frozenAudit.diagnosticRunId,
             ...highlights,
           };
         }

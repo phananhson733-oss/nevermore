@@ -210,7 +210,7 @@ describe("diagnostic snapshot selection", () => {
       dataset_key: "crawl.site_graph.v1",
       schema_version: "0.2.0",
       method_version: CRAWL_METHOD_VERSION,
-      captured_at: "2026-07-21T01:02:03.000Z",
+      captured_at: "2026-07-21 09:02:03.000000+08",
       source_window: { end: null, start: null },
       availability: "available",
       limitation: "Static public crawl only.",

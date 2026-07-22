@@ -49,6 +49,48 @@ describe("i18n message key parity", () => {
     expect(zhCN.sources.keyEventsPlaceholder).toBe("购买, 注册");
   });
 
+  it("keeps Growth Map chrome Chinese-first while preserving canonical ID terms", () => {
+    expect(zhCN.nav).toMatchObject({
+      overview: "概览",
+      growthMap: "增长地图",
+      execution: "执行中心",
+      results: "效果追踪",
+    });
+    expect(zhCN.growthMap).toMatchObject({
+      selectedUrl: "所选 URL",
+      observedMetricsEyebrow: "审计证据 · 只读",
+      findingsEyebrow: "机会审核",
+    });
+    expect(zhCN.growthMap.ids).toEqual({
+      observation: "观测记录 ID（Observation）",
+      evidence: "证据 ID（Evidence）",
+      finding: "问题记录 ID（Finding）",
+      pageSnapshot: "页面快照 ID（PageSnapshot）",
+      snapshot: "数据快照 ID（Snapshot）",
+      sitePage: "页面对象 ID（SitePage）",
+      diagnosticRun: "诊断运行 ID",
+      crawlSnapshot: "抓取快照 ID",
+    });
+    expect(en.growthMap.ids).toEqual({
+      observation: "Observation ID",
+      evidence: "Evidence ID",
+      finding: "Finding ID",
+      pageSnapshot: "PageSnapshot ID",
+      snapshot: "Snapshot ID",
+      sitePage: "SitePage ID",
+      diagnosticRun: "Diagnostic Run ID",
+      crawlSnapshot: "Crawl Snapshot ID",
+    });
+    expect(en.growthMap.noData).toBe("No data");
+    expect(zhCN.growthMap.noData).toBe("数据不足");
+    expect(en.growthMap.sourceOriginalLimitation).toBe(
+      "Source record · original wording",
+    );
+    expect(zhCN.growthMap.sourceOriginalLimitation).toBe(
+      "来源记录 · 保留原文",
+    );
+  });
+
   it("localizes every Context control group and app-shell accessibility name", () => {
     expect(en.context.fields.marketCodes).toBe("Target markets");
     expect(zhCN.context.fields).toMatchObject({
@@ -120,5 +162,25 @@ describe("i18n message key parity", () => {
       latestSnapshot: "最新快照",
       limitations: "限制说明",
     });
+  });
+
+  it("keeps the customer Overview Chinese-first and labels provider wording as a source record", () => {
+    expect(zhCN.overview.customer.sources.providers).toEqual({
+      gsc: "Google Search Console",
+      ga4: "Google Analytics 4",
+      github: "GitHub",
+    });
+    expect(zhCN.overview.customer.sources.originalRecord).toBe(
+      "来源记录 / 原始说明（保留原文）",
+    );
+    expect(zhCN.overview.customer.priority.resultUnavailable).toContain(
+      "审计前后结果",
+    );
+    expect(zhCN.overview.customer.priority.resultUnavailableDescription).toContain(
+      "数据源快照不等于增长 Result",
+    );
+    expect(en.overview.customer.sources.originalRecord).toBe(
+      "Source record / original wording",
+    );
   });
 });

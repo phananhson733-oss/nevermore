@@ -1,34 +1,19 @@
-import { ReportClient } from "./_report.tsx";
+import { redirect } from "next/navigation";
+import {
+  canonicalProjectRoute,
+  type ProjectRouteSearchParams,
+} from "../_compatibility-route.ts";
 
 interface ReportPageProps {
   readonly params: Promise<{ readonly projectId: string }>;
-  readonly searchParams: Promise<{
-    readonly outputLocale?: string | string[];
-  }>;
+  readonly searchParams: Promise<ProjectRouteSearchParams>;
 }
 
-function firstQueryValue(
-  value: string | string[] | undefined,
-): string | undefined {
-  return Array.isArray(value) ? (value[0] ?? undefined) : value;
-}
-
-/**
- * Report screen (spec §4.2, §10.4). Server component: unwrap the async `params`
- * (Next 16) and hand the project id to the client view that owns the report +
- * export queries. Rendered inside the project shell layout — content only, no
- * chrome (the shell's sidebar + topbar are hidden by the print stylesheet).
- */
+/** Compatibility route for pre-migration Report deep links. */
 export default async function ReportPage({
   params,
   searchParams,
 }: ReportPageProps) {
-  const { projectId } = await params;
-  const { outputLocale } = await searchParams;
-  return (
-    <ReportClient
-      projectId={projectId}
-      initialOutputLocale={firstQueryValue(outputLocale)}
-    />
-  );
+  const [{ projectId }, query] = await Promise.all([params, searchParams]);
+  redirect(canonicalProjectRoute(projectId, "results", query));
 }

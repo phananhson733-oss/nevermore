@@ -94,7 +94,7 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   ]);
 
   expect(pageA.url()).toContain(`/p/${projectA.projectId}/sources`);
-  expect(pageB.url()).toContain(`/p/${projectB.projectId}/report`);
+  expect(pageB.url()).toContain(`/p/${projectB.projectId}/results`);
 
   // `<main>` belongs to the server-rendered shell and is visible before the
   // client queries begin. Wait for the page-specific projections above, then

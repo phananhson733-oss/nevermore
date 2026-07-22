@@ -632,6 +632,29 @@ describe("runProductProfileSynthesis", () => {
     );
   });
 
+  it("revalidates an old frozen UTC manifest against offset database text for the same instant", async () => {
+    const offsetInstant = "2026-07-22 09:00:00.000000+08";
+    vi.mocked(DataSnapshotsRepository.prototype.findById).mockResolvedValueOnce({
+      ...snapshot,
+      captured_at: offsetInstant,
+    });
+    vi.mocked(
+      PageSnapshotsRepository.prototype.findByIdsWithSitePageIdentity,
+    ).mockResolvedValueOnce([{ ...pageRow, captured_at: offsetInstant }]);
+
+    await runProductProfileSynthesis(
+      ctx,
+      { runId: IDS.run, ...scope },
+      dependencies,
+    );
+
+    expect(synthesizeProductProfile).toHaveBeenCalledOnce();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
   it("fails closed before a model call when immutable PageSnapshot lineage was tampered", async () => {
     vi.mocked(PageSnapshotsRepository.prototype.findByIdsWithSitePageIdentity).mockResolvedValueOnce([
       { ...pageRow, content_hash: "d".repeat(64) },

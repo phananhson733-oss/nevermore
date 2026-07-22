@@ -150,6 +150,8 @@ export interface OverviewView {
   readonly project: Project;
   readonly coverage: Coverage;
   readonly activeRuns: readonly unknown[];
+  /** Exact latest readable frozen audit used to select `topActions`. */
+  readonly frozenDiagnosticRunId: string | null;
   readonly topActions: readonly OverviewAction[];
   readonly latestSnapshot: OverviewSnapshot | null;
   readonly topActionEvidence: readonly OverviewEvidence[];

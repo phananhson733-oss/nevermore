@@ -63,6 +63,7 @@ import {
   type RoadmapLane,
 } from "@/lib/api/hooks-plan";
 import { ProblemNotice, ProblemState } from "../_problem-display";
+import { growthMapFindingRoute } from "../_compatibility-route";
 import { allowedActionStatusTargets } from "./_action-status-transitions";
 import { evidenceProviderLabel } from "./_provider-label";
 import styles from "./plan.module.css";
@@ -711,6 +712,10 @@ function FindingRelation({
     () => (finding === null ? [] : uniqueEvidence(finding.evidence)),
     [finding],
   );
+  const findingUrl =
+    finding?.subjectRefs.find(
+      (subject) => subject.type === "url" && subject.value.trim().length > 0,
+    )?.value ?? null;
 
   return (
     <section className={styles.findingSection}>
@@ -795,7 +800,7 @@ function FindingRelation({
           ) : null}
 
           <Link
-            href={`/p/${projectId}/diagnosis#sf-finding-${finding.id}`}
+            href={growthMapFindingRoute(projectId, finding.id, findingUrl)}
             className={styles.findingLink}
           >
             {t("openDiagnosis")}
@@ -833,7 +838,7 @@ function FindingRelation({
             </Button>
           ) : (
             <Link
-              href={`/p/${projectId}/diagnosis`}
+              href={`/p/${projectId}/growth-map?object=pages`}
               className={styles.findingLink}
             >
               {t("openDiagnosis")}
@@ -1095,7 +1100,7 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
           </div>
           <div className={styles.heroActions}>
             <Link
-              href={`/p/${projectId}/diagnosis`}
+              href={`/p/${projectId}/growth-map?object=pages`}
               className={styles.secondaryLink}
             >
               <ArrowLeft aria-hidden="true" size={17} />

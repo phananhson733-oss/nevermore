@@ -2,7 +2,8 @@ export const LOCALES = ["en", "zh-CN"] as const;
 
 export type UiLocale = (typeof LOCALES)[number];
 
-export const DEFAULT_LOCALE: UiLocale = "en";
+/** Chinese-first customer workspace; an explicit cookie still selects English. */
+export const DEFAULT_LOCALE: UiLocale = "zh-CN";
 
 export const UI_LOCALE_COOKIE = "sf_ui_locale";
 

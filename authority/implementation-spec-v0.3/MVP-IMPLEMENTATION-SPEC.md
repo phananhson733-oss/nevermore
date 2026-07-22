@@ -10,7 +10,7 @@ owner: SignalFrame
 
 # Nevermore Unified Growth Opportunity — v0.3 可执行权威
 
-本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 32 个 operation 与 6 个 async operation，SQL 精确声明 36 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，以及逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
+本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 34 个 operation 与 6 个 async operation，SQL 精确声明 36 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger，以及从最新可读 DiagnosticRun 冻结输入投影的可溯源多 URL Growth Map 列表与详情。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
 
 规范词“必须 / MUST”“不得 / MUST NOT”是当前机器面或已审核变更边界的发布条件；“应 / SHOULD”是强建议，偏离时必须在代码评审中记录原因；“可 / MAY”是非阻塞增强。凡是标为“reviewed change sequence”“planned”或“stop gate 后”的内容，均不是当前可调用 API、已存在表或已交付产品事实。
 
@@ -909,6 +909,8 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `listProjectSnapshots` — 列出 snapshots。
 - `getProjectRun` — 统一读取所有异步 run。
 - `createDiagnosticRun` — 启动诊断。
+- `listProjectAuditUrls` — 从最新 completed/partial DiagnosticRun 的冻结输入读取有界多 URL portfolio；不返回伪造项目总数。
+- `getProjectAuditUrl` — 读取一个 canonical SitePage 的真实 Observation、resolved FindingTarget、Finding 与 canonical Execution ID 关系。
 - `listProjectFindings` — 列出 Finding 和 evidence summary。
 - `reviewProjectFinding` — confirm/ignore/needs-more-data。
 - `listProjectActions` — 列出 30/60/90 plan。
@@ -935,7 +937,17 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 
 `importProjectSourceFile(mode=preview)` 返回 200；其 confirm 分支返回 202。其他列表/详情读取 200，Project 创建 201，Context/Finding/Action/Artifact patch 200，disconnect 204，OAuth callback 303。
 
-### 11.3 Workspace view
+### 11.3 Growth Map URL read model
+
+`GET /projects/{projectId}/audit/urls` 与 `GET /projects/{projectId}/audit/urls/{sitePageId}` 是面向客户的多 URL Growth Map 读取面，不是新的 canonical store。二者只能读取最新 `completed|partial` DiagnosticRun 及其冻结 input manifest，且必须同时验证 Workspace、Project、Site、Snapshot 与 Run scope。列表 query 仅允许 `limit`（默认 50，1–100）、opaque base64url `cursor` 与 trim 后 1–256 字符的 literal `search`；不得开放缺少 immutable historical Finding snapshot 支撑的 `auditRunId`。
+
+URL 详情中的每条 `GrowthMapUrlFinding` 必须原样携带 canonical Finding 当前的非负 `reviewRevision`。前台 Opportunity Review 只能把这一个 revision 作为该 Finding 的 `baseRevision` 提交；不得猜测 revision、批量确认 supporting Finding，或从 Action/Artifact 状态反推 review 并发令牌。
+
+URL inventory 只允许由冻结 Crawl `PageSnapshot` 或冻结 GSC/GA4 且持久化非空 `site_page_id` 的 URL Observation 建立；不得 union 任意项目 `SitePage`。页面标题只来自已校验 hash/schema 的 immutable Crawl page extract；`pageType`、`clusterKey` 与 `ownerId` 未持久化时必须为 null，不得从路径猜测。URL Finding membership 只能来自同一 DiagnosticRun 中 `resolution_state='resolved'` 的 `finding_targets.site_page_id`；`unresolved`、`definition_only` 与可变 `findings.subject_refs` 不得被强行分配到 URL 行。
+
+每个 metric scalar 必须公开 provider、Snapshot、Observation、SitePage、JSON Pointer/value source、observedAt、freshness 与 limitation。缺失值为 null + unavailable，不得为 0。Priority 只可由当前 Run URL Finding 的确定性最高 severity 推导并返回完整 basis；Delta 在没有两个 immutable recheck anchor 前必须为 unavailable。Action 与 Artifact 只以 canonical ID 关联，不复制或猜测其可变状态。列表 intentionally 不提供 project total；cursor page 的 `hasNext` 与 `nextCursor` 必须一致。
+
+### 11.4 Workspace view
 
 `GET /projects/{projectId}/workspace?view=overview|plan|studio|report` 是 UI 聚合读模型，减少七屏瀑布请求；它不得成为独立 canonical store。`view=plan` 与 Actions API、`view=studio` 与 Artifacts API、`view=report` 与 Report API 必须由同一 repository/service projection 产生，contract test 比较一致性。
 
@@ -1190,7 +1202,7 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 ### 17.1 合同与基础
 
-- **AC-001** `pnpm verify:authority` 通过；32 operationId、6 async operation、36 table 与当前应用 ordered migrations 完全一致；0012～0017 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0017_finding_target_ledger`。
+- **AC-001** `pnpm verify:authority` 通过；34 operationId、6 async operation、36 table 与当前应用 ordered migrations 完全一致；0012～0017 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0017_finding_target_ledger`。
 - **AC-002** Redocly lint 无 error；生成 client/server types 无手工 `any` patch。
 - **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；36 表、41 个 named index、55 个 trigger、6 个 runtime routine、Product Profile reservation/provenance routines、frozen Crawl seed constraints、Observation→SitePage lineage guards，以及 Finding target relation/resolution/lineage/append-only guards 均存在；Crawl exact fetch、GSC/GA4 唯一 canonical/slash variant、歧义拒绝、无伪造 PageSnapshot、逐 Run target ledger 与最终 `0017_finding_target_ledger` version projection 均由 rollback-safe smoke 覆盖。
 - **AC-004** pg-boss schema 由库创建且不进入 Drizzle migration。

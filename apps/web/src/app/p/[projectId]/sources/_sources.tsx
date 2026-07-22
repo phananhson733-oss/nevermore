@@ -1790,7 +1790,7 @@ function SnapshotPolicyFootline({
       <Link
         href={
           readyForDiagnosis
-            ? `/p/${projectId}/diagnosis`
+            ? `/p/${projectId}/growth-map?object=pages`
             : "#source-readiness"
         }
         className={styles.diagnosisLink}
