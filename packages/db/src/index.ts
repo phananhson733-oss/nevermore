@@ -53,6 +53,10 @@ export type {
   IcpProfileRow,
   IcpProfileData,
   IcpStatus,
+  ProductProfileCanonicalEvidenceKind,
+  ProductProfileProvenanceIssue,
+  ProductProfileProvenanceIssueCode,
+  ProductProfileProvenancePreflightResult,
 } from "./repositories/icp-profiles.ts";
 export { SourceConnectionsRepository } from "./repositories/source-connections.ts";
 export type { SourceConnectionRow } from "./repositories/source-connections.ts";
@@ -75,8 +79,14 @@ export type {
   RunKind,
   RunStatus,
 } from "./repositories/async-runs.ts";
-export { CollectionRunsRepository } from "./repositories/collection-runs.ts";
-export type { CollectionRunRow } from "./repositories/collection-runs.ts";
+export {
+  collectionRunParametersHash,
+  CollectionRunsRepository,
+} from "./repositories/collection-runs.ts";
+export type {
+  CollectionRunParameterIdentity,
+  CollectionRunRow,
+} from "./repositories/collection-runs.ts";
 export { DataSnapshotsRepository } from "./repositories/data-snapshots.ts";
 export type {
   DataSnapshotRow,
@@ -106,6 +116,18 @@ export type {
   DiagnosticRunRow,
   RuleResultInsert,
 } from "./repositories/diagnostic-runs.ts";
+export { ProductProfileRunsRepository } from "./repositories/product-profile-runs.ts";
+export type { ProductProfileRunRow } from "./repositories/product-profile-runs.ts";
+export { ProductProfileInvocationAttemptsRepository } from "./repositories/product-profile-invocation-attempts.ts";
+export type {
+  ProductProfileInvocationAttemptRow,
+  ProductProfileInvocationAttemptStatus,
+  ProductProfileInvocationFinalizeResult,
+  ProductProfileInvocationMetadata,
+  ProductProfileInvocationOutcomeUnknownResult,
+  ProductProfileInvocationPreflight,
+  ProductProfileInvocationReservationResult,
+} from "./repositories/product-profile-invocation-attempts.ts";
 export { CapabilityRunsRepository } from "./repositories/capability-runs.ts";
 export type { CapabilityRunRow } from "./repositories/capability-runs.ts";
 export { AuditRunsRepository } from "./repositories/audit-runs.ts";
@@ -149,6 +171,7 @@ export type {
   ArtifactListPage,
 } from "./repositories/execution-artifacts.ts";
 export { AnalysisInvocationsRepository } from "./repositories/analysis-invocations.ts";
+export type { AnalysisInvocationTask } from "./repositories/analysis-invocations.ts";
 export { ExportBundlesRepository } from "./repositories/export-bundles.ts";
 export type { ExportBundleRow } from "./repositories/export-bundles.ts";
 export {

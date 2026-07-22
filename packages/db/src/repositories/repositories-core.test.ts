@@ -288,7 +288,11 @@ describe("core repositories", () => {
 
   it("persists analysis invocation accounting without storing model content", async () => {
     const { repo, db } = repository(AnalysisInvocationsRepository);
-    db.enqueue([{ id: "invocation-1" }], [{ id: "invocation-2" }]);
+    db.enqueue(
+      [{ id: "invocation-1" }],
+      [{ id: "invocation-2" }],
+      [{ id: "invocation-3" }],
+    );
 
     await expect(
       repo.insert({
@@ -333,6 +337,30 @@ describe("core repositories", () => {
       errorCode: "PROVIDER_FAILURE",
     });
     expect(db.last("values").args[0]).toMatchObject({ cost_usd: null });
+
+    await expect(
+      repo.insert({
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        asyncRunId: "profile-run-1",
+        task: "product_profile_synthesis",
+        provider: "openai",
+        model: "gpt",
+        promptSetVersion: "product-profile-prompts.0.3.0",
+        inputHash: "input-hash",
+        outputHash: "output-hash",
+        status: "succeeded",
+        inputTokens: 20,
+        outputTokens: 30,
+        costUsd: 0.25,
+        latencyMs: 450,
+        errorCode: null,
+      }),
+    ).resolves.toBe("invocation-3");
+    expect(db.last("values").args[0]).toMatchObject({
+      async_run_id: "profile-run-1",
+      task: "product_profile_synthesis",
+    });
   });
 
   it("counts one project-scoped run/task aggregate and fails closed on unsafe counts", async () => {
@@ -359,6 +387,24 @@ describe("core repositories", () => {
       scope.projectId,
       "run-1",
       "finding_summary",
+    ]);
+
+    db.enqueue([{ count: "2" }]);
+    await expect(
+      repo.countByAsyncRunTask(
+        scope,
+        "profile-run-1",
+        "product_profile_synthesis",
+      ),
+    ).resolves.toBe(2);
+    const profilePredicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(profilePredicate.params).toEqual([
+      scope.workspaceId,
+      scope.projectId,
+      "profile-run-1",
+      "product_profile_synthesis",
     ]);
 
     for (const invalid of [
@@ -408,6 +454,16 @@ describe("core repositories", () => {
           failure_count_24h: "1",
         },
         {
+          kind: "product_profile_synthesis",
+          queued_depth: "1",
+          running_depth: "0",
+          oldest_queued_age_ms: "50",
+          average_run_duration_ms_24h: "100",
+          max_run_duration_ms_24h: "100",
+          retry_count_24h: "0",
+          failure_count_24h: "0",
+        },
+        {
           kind: "__proto__",
           queued_depth: "999",
         },
@@ -423,6 +479,16 @@ describe("core repositories", () => {
         maxRunDurationMs24h: 9000,
         retryCount24h: 4,
         failureCount24h: 1,
+      },
+      {
+        kind: "product_profile_synthesis",
+        queuedDepth: 1,
+        runningDepth: 0,
+        oldestQueuedAgeMs: 50,
+        averageRunDurationMs24h: 100,
+        maxRunDurationMs24h: 100,
+        retryCount24h: 0,
+        failureCount24h: 0,
       },
     ]);
     const metricSql = new PgDialect().sqlToQuery(

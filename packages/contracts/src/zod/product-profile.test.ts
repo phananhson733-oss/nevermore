@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  AddProductProfileCompetitorRequest,
+  ConfirmProductProfileRequest,
+  CreateProductProfileSynthesisRunRequest,
   ConfirmedProductProfile,
   createInitialProductProfileDraft,
   PRODUCT_PROFILE_SCHEMA_VERSION,
   ProductProfileDraft,
+  ProductProfileEditablePatch,
+  ProductProfileRowDto,
   ProductProfileSchemaVersion,
+  ReviewProductProfileCompetitorRequest,
+  UpdateProductProfileDraftRequest,
 } from "./product-profile.ts";
 
 const ids = {
@@ -19,6 +26,41 @@ const ids = {
 } as const;
 
 const now = "2026-07-22T08:00:00Z";
+
+const tracedProfilePaths = [
+  "/businessHint",
+  "/productName",
+  "/oneLiner",
+  "/category",
+  "/productType",
+  "/businessModels",
+  "/valueProposition",
+  "/coreFeatures",
+  "/targetMarkets",
+  "/targetAudiences",
+  "/competitorCandidates/0",
+] as const;
+
+function evidenceId(index: number): string {
+  return `90000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+}
+
+function tracedProfileProvenance() {
+  return tracedProfilePaths.map((path, index) => ({
+    path,
+    derivation: "inferred" as const,
+    confidence: "medium" as const,
+    evidenceRefs: [
+      {
+        evidenceRefId: evidenceId(index),
+        kind: "analysisInvocation" as const,
+        analysisInvocationId: ids.invocation,
+      },
+    ],
+    limitation: null,
+    observedAt: now,
+  }));
+}
 
 function completeProfile() {
   return {
@@ -70,22 +112,7 @@ function completeProfile() {
         confidence: "medium",
       },
     ],
-    fieldProvenance: [
-      {
-        path: "/productName",
-        derivation: "observed",
-        confidence: "high",
-        evidenceRefs: [
-          {
-            evidenceRefId: ids.evidence,
-            kind: "pageSnapshot",
-            pageSnapshotId: ids.pageSnapshot,
-          },
-        ],
-        limitation: null,
-        observedAt: now,
-      },
-    ],
+    fieldProvenance: tracedProfileProvenance(),
     missingFields: [],
     conflictingFields: [],
   } as const;
@@ -102,6 +129,7 @@ describe("ProductProfileDraft", () => {
         sourceSnapshotId: null,
         analysisInvocationId: null,
         generatedAt: null,
+        businessHint: null,
         productName: null,
         oneLiner: null,
         category: null,
@@ -113,7 +141,18 @@ describe("ProductProfileDraft", () => {
         targetAudiences: [],
         competitorCandidates: [],
         fieldProvenance: [],
-        missingFields: ["/productName"],
+        missingFields: [
+          "/productName",
+          "/oneLiner",
+          "/category",
+          "/productType",
+          "/businessModels",
+          "/valueProposition",
+          "/coreFeatures",
+          "/targetMarkets",
+          "/targetAudiences",
+          "/competitorCandidates",
+        ],
       }).productName,
     ).toBeNull();
   });
@@ -189,7 +228,8 @@ describe("ProductProfileDraft", () => {
             confidence: "low",
             evidenceRefs: [
               {
-                evidenceRefId: ids.evidence,
+                evidenceRefId:
+                  value.fieldProvenance[0]!.evidenceRefs[0]!.evidenceRefId,
                 kind: "analysisInvocation",
                 analysisInvocationId: ids.invocation,
               },
@@ -220,6 +260,73 @@ describe("ProductProfileDraft", () => {
             observedAt: null,
           },
         ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects populated semantic facts without provenance coverage", () => {
+    const value = completeProfile();
+    expect(
+      ProductProfileDraft.safeParse({
+        ...value,
+        fieldProvenance: value.fieldProvenance.filter(
+          (entry) => entry.path !== "/category",
+        ),
+      }).success,
+    ).toBe(false);
+    expect(
+      ProductProfileDraft.safeParse({
+        ...value,
+        fieldProvenance: value.fieldProvenance.filter(
+          (entry) => entry.path !== "/competitorCandidates/0",
+        ),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires honest missing markers and rejects stale markers on populated facts", () => {
+    const value = completeProfile();
+    expect(
+      ProductProfileDraft.safeParse({
+        ...value,
+        category: null,
+        fieldProvenance: value.fieldProvenance.filter(
+          (entry) => entry.path !== "/category",
+        ),
+      }).success,
+    ).toBe(false);
+    expect(
+      ProductProfileDraft.safeParse({
+        ...value,
+        missingFields: ["/category"],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("binds synthesis metadata and evidence references to one frozen lineage", () => {
+    const value = completeProfile();
+    expect(
+      ProductProfileDraft.safeParse({
+        ...value,
+        analysisInvocationId: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      ProductProfileDraft.safeParse({
+        ...value,
+        fieldProvenance: value.fieldProvenance.map((entry, index) =>
+          index === 0
+            ? {
+                ...entry,
+                evidenceRefs: [
+                  {
+                    ...entry.evidenceRefs[0],
+                    analysisInvocationId: ids.other,
+                  },
+                ],
+              }
+            : entry,
+        ),
       }).success,
     ).toBe(false);
   });
@@ -272,6 +379,32 @@ describe("ConfirmedProductProfile", () => {
       }).success,
     ).toBe(false);
   });
+
+  it.each([
+    ["targetCompanyOrAudience", null],
+    ["buyerRoles", []],
+    ["userRoles", []],
+    ["useCases", []],
+    ["triggers", []],
+    ["pains", []],
+    ["jtbd", []],
+  ] as const)(
+    "requires substantive Primary audience field %s only at confirmation",
+    (field, invalid) => {
+      const value = completeProfile();
+      const incompleteAudience = {
+        ...value.targetAudiences[0],
+        [field]: invalid,
+      };
+      const incomplete = {
+        ...value,
+        targetAudiences: [incompleteAudience],
+      };
+
+      expect(ProductProfileDraft.safeParse(incomplete).success).toBe(true);
+      expect(ConfirmedProductProfile.safeParse(incomplete).success).toBe(false);
+    },
+  );
 
   it("requires unique candidate IDs, market codes, and competitor domains", () => {
     const value = completeProfile();
@@ -340,6 +473,19 @@ describe("ConfirmedProductProfile", () => {
             analysisScope: [],
           },
         ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("does not fabricate or require a competitor pool at confirmation", () => {
+    expect(
+      ConfirmedProductProfile.safeParse({
+        ...completeProfile(),
+        competitorCandidates: [],
+        fieldProvenance: completeProfile().fieldProvenance.filter(
+          (entry) => !entry.path.startsWith("/competitorCandidates"),
+        ),
+        missingFields: ["/competitorCandidates"],
       }).success,
     ).toBe(true);
   });
@@ -441,5 +587,229 @@ describe("createInitialProductProfileDraft", () => {
     expect(changed.fieldProvenance[0]?.evidenceRefs[0]?.evidenceRefId).not.toBe(
       first.fieldProvenance[0]?.evidenceRefs[0]?.evidenceRefId,
     );
+  });
+});
+
+describe("Product Profile public command contracts", () => {
+  it("requires an existing base version for every versioned command", () => {
+    expect(
+      CreateProductProfileSynthesisRunRequest.parse({ baseVersion: 1 }),
+    ).toEqual({ baseVersion: 1 });
+    expect(
+      UpdateProductProfileDraftRequest.parse({
+        baseVersion: 2,
+        patch: { category: "Customer onboarding" },
+      }),
+    ).toEqual({
+      baseVersion: 2,
+      patch: { category: "Customer onboarding" },
+    });
+    expect(ConfirmProductProfileRequest.parse({ baseVersion: 3 })).toEqual({
+      baseVersion: 3,
+    });
+
+    for (const schema of [
+      CreateProductProfileSynthesisRunRequest,
+      ConfirmProductProfileRequest,
+    ]) {
+      expect(schema.safeParse({ baseVersion: 0 }).success).toBe(false);
+      expect(schema.safeParse({ baseVersion: 1.5 }).success).toBe(false);
+      expect(
+        schema.safeParse({ baseVersion: 1, invented: true }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("allows only editable customer fields and requires a non-empty patch", () => {
+    expect(
+      ProductProfileEditablePatch.safeParse({
+        productName: "RelayOps",
+        category: null,
+        businessModels: [],
+        targetMarkets: [{ marketCode: "US", priority: "primary" }],
+        targetAudiences: completeProfile().targetAudiences,
+      }).success,
+    ).toBe(true);
+
+    expect(ProductProfileEditablePatch.safeParse({}).success).toBe(false);
+    for (const forbidden of [
+      "sourceSiteId",
+      "sourceSnapshotId",
+      "analysisInvocationId",
+      "generatedAt",
+      "fieldProvenance",
+      "missingFields",
+      "conflictingFields",
+      "competitorCandidates",
+    ]) {
+      expect(
+        ProductProfileEditablePatch.safeParse({ [forbidden]: "forged" })
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps update envelopes strict and rejects malformed nested candidates", () => {
+    expect(
+      UpdateProductProfileDraftRequest.safeParse({
+        baseVersion: 1,
+        patch: {},
+      }).success,
+    ).toBe(false);
+    expect(
+      UpdateProductProfileDraftRequest.safeParse({
+        baseVersion: 1,
+        patch: { targetMarkets: [{ marketCode: "usa", priority: "primary" }] },
+      }).success,
+    ).toBe(false);
+    expect(
+      UpdateProductProfileDraftRequest.safeParse({
+        baseVersion: 1,
+        patch: { productName: "RelayOps" },
+        sourceSnapshotId: ids.snapshot,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("reviews a competitor without accepting client-owned provenance", () => {
+    expect(
+      ReviewProductProfileCompetitorRequest.parse({
+        baseVersion: 4,
+        reviewStatus: "approved",
+        relationship: "direct",
+        analysisScope: ["keyword_gap", "content"],
+        reason: "Overlapping audience and acquisition strategy",
+        similarity: 0.74,
+      }),
+    ).toMatchObject({ reviewStatus: "approved", relationship: "direct" });
+
+    expect(
+      ReviewProductProfileCompetitorRequest.safeParse({
+        baseVersion: 4,
+        reviewStatus: "trusted",
+      }).success,
+    ).toBe(false);
+    expect(
+      ReviewProductProfileCompetitorRequest.safeParse({
+        baseVersion: 4,
+        reviewStatus: "approved",
+        analysisScope: ["content", "content"],
+      }).success,
+    ).toBe(false);
+    expect(
+      ReviewProductProfileCompetitorRequest.safeParse({
+        baseVersion: 4,
+        reviewStatus: "approved",
+        evidenceRefs: [{ kind: "userEdit" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts only grounded fields for a declared competitor", () => {
+    expect(
+      AddProductProfileCompetitorRequest.parse({
+        baseVersion: 4,
+        name: "Userpilot",
+        domain: "userpilot.com",
+        relationship: "direct",
+        analysisScope: ["positioning", "keyword_gap"],
+      }),
+    ).toMatchObject({ domain: "userpilot.com", relationship: "direct" });
+
+    for (const invalid of [
+      {
+        baseVersion: 4,
+        name: "Userpilot",
+        domain: "https://userpilot.com",
+        relationship: "direct",
+        analysisScope: ["positioning"],
+      },
+      {
+        baseVersion: 4,
+        name: "Userpilot",
+        domain: "userpilot.com",
+        relationship: "benchmark",
+        analysisScope: ["positioning"],
+      },
+      {
+        baseVersion: 4,
+        name: "Userpilot",
+        domain: "userpilot.com",
+        relationship: "direct",
+        analysisScope: [],
+      },
+      {
+        baseVersion: 4,
+        name: "Userpilot",
+        domain: "userpilot.com",
+        relationship: "direct",
+        analysisScope: ["positioning"],
+        candidateId: ids.competitor,
+      },
+    ]) {
+      expect(AddProductProfileCompetitorRequest.safeParse(invalid).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("validates the explicit version row DTO and never accepts an opaque profile", () => {
+    const row = {
+      id: ids.other,
+      projectId: ids.site,
+      version: 2,
+      status: "draft",
+      profile: completeProfile(),
+      contentHash: "a".repeat(64),
+      createdAt: now,
+      isCurrent: true,
+      isConfirmed: false,
+    } as const;
+
+    expect(ProductProfileRowDto.parse(row)).toEqual(row);
+    expect(
+      ProductProfileRowDto.safeParse({
+        ...row,
+        profile: { invented: "opaque payload" },
+      }).success,
+    ).toBe(false);
+    expect(
+      ProductProfileRowDto.safeParse({
+        ...row,
+        contentHash: "not-a-sha256",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("makes a complete row carry a substantively confirmed profile", () => {
+    const confirmedRow = {
+      id: ids.other,
+      projectId: ids.site,
+      version: 3,
+      status: "complete",
+      profile: completeProfile(),
+      contentHash: "b".repeat(64),
+      createdAt: now,
+      isCurrent: false,
+      isConfirmed: true,
+    } as const;
+    expect(ProductProfileRowDto.safeParse(confirmedRow).success).toBe(true);
+
+    const primary = completeProfile().targetAudiences[0];
+    expect(
+      ProductProfileRowDto.safeParse({
+        ...confirmedRow,
+        profile: {
+          ...completeProfile(),
+          targetAudiences: [{ ...primary, buyerRoles: [] }],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      ProductProfileRowDto.safeParse({
+        ...confirmedRow,
+        status: "draft",
+      }).success,
+    ).toBe(false);
   });
 });

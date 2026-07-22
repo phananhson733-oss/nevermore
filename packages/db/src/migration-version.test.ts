@@ -8,6 +8,77 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("freezes an exact Product Profile Crawl seed on each collection run", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0015_frozen_crawl_seed.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+crawl_seed_site_page_id\s+uuid/iu,
+    );
+    expect(migration).toMatch(
+      /FOREIGN\s+KEY\s*\(crawl_seed_site_page_id\)[\s\S]*?REFERENCES\s+app\.site_pages\s*\(id\)\s+ON\s+DELETE\s+RESTRICT/iu,
+    );
+    expect(migration).toMatch(
+      /CHECK\s*\(\s*\(crawl_seed_site_page_id\s+IS\s+NULL\)\s*=\s*\(crawl_seed_url\s+IS\s+NULL\)\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /CHECK\s*\(crawl_seed_site_page_id\s+IS\s+NULL\s+OR\s+provider\s*=\s*'crawl'\)/iu,
+    );
+    expect(migration).toMatch(
+      /length\s*\(crawl_seed_url\)\s+BETWEEN\s+1\s+AND\s+2048/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.crawl_seed_site_page_id\s+IS\s+DISTINCT\s+FROM\s+OLD\.crawl_seed_site_page_id/iu,
+    );
+    expect(migration).toMatch(
+      /page\.normalized_url_hash\s*=\s*encode\s*\(\s*digest\s*\(\s*convert_to\s*\(NEW\.crawl_seed_url,\s*'UTF8'\)\s*,\s*'sha256'\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0015_frozen_crawl_seed'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
+  it("activates the Product Profile synthesis ledger contract", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0014_product_profile_synthesis.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.product_profile_runs/iu,
+    );
+    expect(migration).toMatch(
+      /kind\s+IN\s*\([\s\S]*?'product_profile_synthesis'/iu,
+    );
+    expect(migration).toMatch(
+      /result_type\s+IS\s+NULL\s+OR\s+result_type\s+IN\s*\([\s\S]*?'icp_profile'/iu,
+    );
+    expect(migration).toMatch(
+      /task\s+IN\s*\([\s\S]*?'product_profile_synthesis'/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TRIGGER\s+product_profile_runs_provenance_guard/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TRIGGER\s+product_profile_runs_frozen_input_guard/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0014_product_profile_synthesis'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
   it("accepts historical and exact-variant rule sets while advancing the projection", () => {
     const migration = readFileSync(
       fileURLToPath(

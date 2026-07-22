@@ -12,7 +12,9 @@ const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
 const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
-const EXPECTED_TABLE_COUNT = 33;
+const EXPECTED_OPERATION_COUNT = 32;
+const EXPECTED_ASYNC_OPERATION_COUNT = 6;
+const EXPECTED_TABLE_COUNT = 35;
 const MIGRATION_VERSION_VIEW_PATTERN =
   /^CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version\s+AS\s+SELECT\s+'([^']+)'::text\s+AS\s+migration_version$/is;
 const SLICE_1_TABLES = [
@@ -21,6 +23,8 @@ const SLICE_1_TABLES = [
   "audit_module_results",
   "site_pages",
   "page_snapshots",
+  "product_profile_runs",
+  "product_profile_invocation_attempts",
 ];
 const EXPECTED_RULE_VERSIONS = new Map([
   ["TECH-HTTP-001", 2],
@@ -328,27 +332,27 @@ function verifyMigrationOwnedDefinitionUniqueness(migrationContracts) {
   const expectedDefinitions = migrationContracts.flatMap((contract) =>
     migrationOwnedDefinitions(contract),
   );
-  const expectedKeys = expectedDefinitions.map(
-    ({ kind, name }) => `${kind}:${name}`,
-  );
-  const duplicateExpectedKeys = expectedKeys.filter(
-    (key, index) => expectedKeys.indexOf(key) !== index,
-  );
-  check(
-    duplicateExpectedKeys.length === 0,
-    `application cumulative migrations redefine owned database objects: ${unique(duplicateExpectedKeys).join(", ")}`,
-  );
+  const expectedCounts = new Map();
+  for (const definition of expectedDefinitions) {
+    const key = `${definition.kind}:${definition.name}`;
+    expectedCounts.set(key, (expectedCounts.get(key) ?? 0) + 1);
+  }
 
   const authorityDefinitions = migrationOwnedDefinitions(
     executableSqlStatements(files.sql),
   );
-  for (const { kind, name } of expectedDefinitions) {
+  for (const [key, expectedCount] of expectedCounts) {
+    const separator = key.indexOf(":");
+    const kind = key.slice(0, separator);
+    const name = key.slice(separator + 1);
     const definitionCount = authorityDefinitions.filter(
       (definition) => definition.kind === kind && definition.name === name,
     ).length;
+    const expectation =
+      expectedCount === 1 ? "exactly once" : `exactly ${expectedCount} times`;
     check(
-      definitionCount === 1,
-      `authority SQL must define migration-owned ${kind} ${name} exactly once (found ${definitionCount})`,
+      definitionCount === expectedCount,
+      `authority SQL must define migration-owned ${kind} ${name} ${expectation} (found ${definitionCount})`,
     );
   }
 }
@@ -579,7 +583,7 @@ if (fs.existsSync(implementationSchemaSmokePath)) {
   );
 }
 for (const phrase of [
-  "expected exactly 33 app tables",
+  "expected exactly 35 app tables",
   "unavailable observation with zero was accepted",
   "generated evidence without invocation was accepted",
   "append-only evidence update was accepted",
@@ -594,6 +598,13 @@ for (const phrase of [
   "async run contract-version default is stale",
   "export bundle schema-version compatibility is stale",
   "database migration version projection is stale",
+  "product profile invocation reservation was not persisted",
+  "a fourth product profile invocation reservation was accepted",
+  "unresolved product profile invocation allowed another provider call",
+  "product profile provenance accepted a foreign canonical reference",
+  "product profile run accepted an unfrozen manifest",
+  "Crawl seed accepted a different exact URL",
+  "frozen Crawl seed identity was mutated",
 ]) {
   check(
     files.schemaSmoke.includes(phrase),
@@ -639,12 +650,12 @@ const openapiOperations = [
   ),
 ].map((match) => match[1]);
 check(
-  declaredOperations.length === 26,
-  `expected 26 declared API operations, got ${declaredOperations.length}`,
+  declaredOperations.length === EXPECTED_OPERATION_COUNT,
+  `expected ${EXPECTED_OPERATION_COUNT} declared API operations, got ${declaredOperations.length}`,
 );
 check(
-  openapiOperations.length === 26,
-  `expected 26 OpenAPI operations, got ${openapiOperations.length}`,
+  openapiOperations.length === EXPECTED_OPERATION_COUNT,
+  `expected ${EXPECTED_OPERATION_COUNT} OpenAPI operations, got ${openapiOperations.length}`,
 );
 exactSet(openapiOperations, declaredOperations, "API operations");
 
@@ -657,8 +668,8 @@ const asyncOperations = [
   ...asyncBlock.matchAll(/^- `([a-z][A-Za-z0-9]+)`/gm),
 ].map((match) => match[1]);
 check(
-  asyncOperations.length === 5,
-  `expected 5 async operations, got ${asyncOperations.length}`,
+  asyncOperations.length === EXPECTED_ASYNC_OPERATION_COUNT,
+  `expected ${EXPECTED_ASYNC_OPERATION_COUNT} async operations, got ${asyncOperations.length}`,
 );
 for (const operationId of asyncOperations) {
   const marker = `operationId: ${operationId}`;
@@ -897,6 +908,77 @@ if (fs.existsSync(exactVariantRulesMigrationPath)) {
     "rule-set migration must preserve historical 0.2.0 runs and accept current 0.2.1 runs",
   );
 }
+const productProfileSynthesisMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0014_product_profile_synthesis.sql",
+);
+check(
+  fs.existsSync(productProfileSynthesisMigrationPath),
+  "Product Profile synthesis migration is missing",
+);
+if (fs.existsSync(productProfileSynthesisMigrationPath)) {
+  const productProfileSynthesisMigrationSource = fs.readFileSync(
+    productProfileSynthesisMigrationPath,
+    "utf8",
+  );
+  const productProfileSynthesisContract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: productProfileSynthesisMigrationSource,
+    migrationVersion: "0014_product_profile_synthesis",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0014 Product Profile synthesis and reservation contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(productProfileSynthesisContract);
+  const productProfileSynthesisMigration = stripSqlComments(
+    productProfileSynthesisMigrationSource,
+  );
+  for (const requiredObject of [
+    "product_profile_runs",
+    "product_profile_invocation_attempts",
+    "reserve_product_profile_invocation_attempt",
+    "finalize_product_profile_invocation_attempt",
+    "mark_product_profile_invocation_outcome_unknown",
+    "validate_product_profile_provenance",
+  ]) {
+    check(
+      productProfileSynthesisMigration.includes(requiredObject),
+      `Product Profile synthesis migration is missing ${requiredObject}`,
+    );
+  }
+}
+const frozenCrawlSeedMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0015_frozen_crawl_seed.sql",
+);
+check(
+  fs.existsSync(frozenCrawlSeedMigrationPath),
+  "frozen Crawl seed migration is missing",
+);
+if (fs.existsSync(frozenCrawlSeedMigrationPath)) {
+  const frozenCrawlSeedMigrationSource = fs.readFileSync(
+    frozenCrawlSeedMigrationPath,
+    "utf8",
+  );
+  const frozenCrawlSeedContract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: frozenCrawlSeedMigrationSource,
+    migrationVersion: "0015_frozen_crawl_seed",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0015 frozen Crawl seed contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(frozenCrawlSeedContract);
+  const frozenCrawlSeedMigration = stripSqlComments(
+    frozenCrawlSeedMigrationSource,
+  );
+  check(
+    /crawl_seed_site_page_id\s+uuid/i.test(frozenCrawlSeedMigration) &&
+      /crawl_seed_url\s+text/i.test(frozenCrawlSeedMigration) &&
+      /collection run Crawl seed does not match its exact SitePage identity/i.test(
+        frozenCrawlSeedMigration,
+      ),
+    "frozen Crawl seed migration must bind the exact SitePage identity and URL",
+  );
+}
 verifyMigrationOwnedDefinitionUniqueness(cumulativeMigrationContracts);
 const authorityExecutableStatements = executableSqlStatements(files.sql);
 const canonicalSitePageFunctionIndex = authorityExecutableStatements.findIndex(
@@ -962,8 +1044,8 @@ const authorityMigrationVersions = executableSqlStatements(files.sql)
   .filter((version) => version !== undefined);
 check(
   authorityMigrationVersions.length === 1 &&
-    authorityMigrationVersions[0] === "0013_exact_url_variant_rules",
-  "authority SQL must define exactly one final 0013 migration-version projection",
+    authorityMigrationVersions[0] === "0015_frozen_crawl_seed",
+  "authority SQL must define exactly one final 0015 migration-version projection",
 );
 check(
   /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(sqlWithoutComments),

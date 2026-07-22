@@ -22,6 +22,7 @@ export type QueueName =
   | "collect.csv"
   | "collect.dataforseo"
   | "diagnose"
+  | "profile.synthesize"
   | "artifact.generate"
   | "export.bundle";
 
@@ -70,6 +71,12 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
   },
   diagnose: {
     expireInSeconds: 600,
+    retryLimit: 2,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
+  "profile.synthesize": {
+    expireInSeconds: 300,
     retryLimit: 2,
     retryBackoff: true,
     heartbeatSeconds: 60,

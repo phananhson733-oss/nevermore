@@ -105,6 +105,50 @@ export class SitePagesRepository extends Repository {
     return (rows[0] as SitePageRow | undefined) ?? null;
   }
 
+  /**
+   * Resolve the exact persisted URL bytes for one Site. The hash keeps the
+   * indexed lookup cheap, while the URL and Site predicates make a collision
+   * or a cross-Site row fail closed instead of becoming durable provenance.
+   */
+  async findExactNormalizedUrl(
+    scope: ProjectScope,
+    siteId: string,
+    normalizedUrl: string,
+  ): Promise<SitePageRow | null> {
+    if (normalizedUrl.length < 1 || normalizedUrl.length > 2048) {
+      throw new RangeError(
+        "normalized URL must contain 1 to 2048 characters",
+      );
+    }
+    const urlHash = normalizedUrlHash(normalizedUrl);
+    const rows = await this.exec
+      .select()
+      .from(sitePages)
+      .where(
+        and(
+          projectPredicate(sitePages, scope),
+          eq(sitePages.site_id, siteId),
+          eq(sitePages.normalized_url_hash, urlHash),
+          eq(sitePages.normalized_url, normalizedUrl),
+        ),
+      )
+      .limit(1);
+    const row = rows[0] as SitePageRow | undefined;
+    if (!row) return null;
+    if (
+      row.workspace_id !== scope.workspaceId ||
+      row.project_id !== scope.projectId ||
+      row.site_id !== siteId ||
+      row.normalized_url !== normalizedUrl ||
+      row.normalized_url_hash !== urlHash
+    ) {
+      throw new Error(
+        "site page exact URL lookup returned a foreign identity",
+      );
+    }
+    return row;
+  }
+
   async listByProject(
     scope: ProjectScope,
     options: { readonly limit: number; readonly cursor: string | null },

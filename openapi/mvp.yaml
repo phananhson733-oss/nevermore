@@ -153,6 +153,150 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
+  /projects/{projectId}/product-profile:
+    get:
+      tags: [Projects]
+      summary: Read the current, confirmed, and actively synthesizing Product Profile versions
+      operationId: getProjectProductProfile
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Product Profile review workspace backed by append-only profile versions.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductProfileWorkspaceResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Projects]
+      summary: Append a customer-edited Product Profile draft version
+      operationId: updateProductProfileDraft
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProductProfileDraftRequest' }
+      responses:
+        '200':
+          description: Current Product Profile version; a semantic no-op may return the existing row.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductProfileRowResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/product-profile/synthesis-runs:
+    post:
+      tags: [Projects, Runs]
+      summary: Queue Product Profile synthesis from a frozen Site snapshot manifest
+      operationId: createProductProfileSynthesisRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProductProfileSynthesisRunRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/product-profile/competitors/{candidateId}:
+    patch:
+      tags: [Projects]
+      summary: Review or correct one Product Profile competitor candidate
+      operationId: reviewProductProfileCompetitor
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ProductProfileCandidateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewProductProfileCompetitorRequest' }
+      responses:
+        '200':
+          description: Current Product Profile version after the reviewed candidate is appended.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductProfileRowResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/product-profile/competitors:
+    post:
+      tags: [Projects]
+      summary: Add one customer-declared competitor to the Product Profile
+      operationId: addProductProfileCompetitor
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddProductProfileCompetitorRequest' }
+      responses:
+        '200':
+          description: Current Product Profile version with the server-identified approved competitor.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductProfileRowResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /projects/{projectId}/product-profile/confirm:
+    post:
+      tags: [Projects]
+      summary: Confirm one reviewed Product Profile version without starting an Audit
+      operationId: confirmProductProfile
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmProductProfileRequest' }
+      responses:
+        '200':
+          description: Confirmed Product Profile row. No diagnostic or Audit run is created.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfirmedProductProfileRowResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
   /projects/{projectId}/workspace:
     get:
       tags: [Projects]
@@ -373,7 +517,7 @@ paths:
   /projects/{projectId}/runs/{runId}:
     get:
       tags: [Runs]
-      summary: Poll any collection, diagnostic, artifact, or export run
+      summary: Poll any collection, Product Profile synthesis, diagnostic, artifact, or export run
       operationId: getProjectRun
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -707,6 +851,11 @@ components:
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Uuid' }
+    ProductProfileCandidateId:
+      name: candidateId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
     SourceConnectionId:
       name: sourceConnectionId
       in: path
@@ -890,7 +1039,7 @@ components:
       enum: [connecting, connected, syncing, available, partial, stale, permission_denied, unavailable, disconnected]
     RunKind:
       type: string
-      enum: [collection, diagnostic, artifact_generation, export]
+      enum: [collection, product_profile_synthesis, diagnostic, artifact_generation, export]
     RunStatus:
       type: string
       enum: [queued, running, completed, partial, failed, cancelled]
@@ -1006,6 +1155,643 @@ components:
           minLength: 1
           maxLength: 1000
           description: Optional customer-declared business context. This is recorded as declared provenance, never as an observed fact.
+
+    ProductProfileTargetMarket:
+      type: object
+      additionalProperties: false
+      required: [marketCode, priority]
+      properties:
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        priority: { type: string, enum: [primary, secondary] }
+
+    ProductProfileTargetAudience:
+      type: object
+      additionalProperties: false
+      required:
+        - candidateId
+        - reviewStatus
+        - targetCompanyOrAudience
+        - buyerRoles
+        - userRoles
+        - useCases
+        - triggers
+        - pains
+        - jtbd
+        - outcomes
+        - barriers
+        - qualificationSignals
+        - disqualifiers
+      properties:
+        candidateId: { $ref: '#/components/schemas/Uuid' }
+        reviewStatus:
+          type: string
+          enum: [primary, secondary, excluded, candidate]
+        targetCompanyOrAudience:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 2000
+        buyerRoles:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        userRoles:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        useCases:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        triggers:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        pains:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        jtbd:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        outcomes:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        barriers:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        qualificationSignals:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        disqualifiers:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+
+    ProductProfileCompetitorRelationship:
+      type: string
+      enum: [direct, indirect]
+    ProductProfileCompetitorAnalysisScope:
+      type: string
+      enum: [positioning, product_capability, keyword_gap, content, serp_visibility]
+    ProductProfileCompetitorReviewStatus:
+      type: string
+      enum: [candidate, approved, excluded]
+    ProductProfileCompetitorDomain:
+      type: string
+      minLength: 1
+      maxLength: 253
+      pattern: '^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+      description: Normalized lowercase hostname without a scheme, port, or path.
+    ProductProfileCompetitorCandidate:
+      type: object
+      additionalProperties: false
+      required: [candidateId, name, domain, relationship, analysisScope, similarity, reason, reviewStatus, confidence]
+      properties:
+        candidateId: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        domain: { $ref: '#/components/schemas/ProductProfileCompetitorDomain' }
+        relationship:
+          oneOf:
+            - $ref: '#/components/schemas/ProductProfileCompetitorRelationship'
+            - type: 'null'
+        analysisScope:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileCompetitorAnalysisScope' }
+        similarity: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        reviewStatus: { $ref: '#/components/schemas/ProductProfileCompetitorReviewStatus' }
+        confidence: { type: string, enum: [high, medium, low, unknown] }
+
+    ProductProfileSnapshotEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [evidenceRefId, kind, snapshotId]
+      properties:
+        evidenceRefId: { $ref: '#/components/schemas/Uuid' }
+        kind: { const: snapshot }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+    ProductProfilePageSnapshotEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [evidenceRefId, kind, pageSnapshotId]
+      properties:
+        evidenceRefId: { $ref: '#/components/schemas/Uuid' }
+        kind: { const: pageSnapshot }
+        pageSnapshotId: { $ref: '#/components/schemas/Uuid' }
+    ProductProfileObservationEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [evidenceRefId, kind, observationId]
+      properties:
+        evidenceRefId: { $ref: '#/components/schemas/Uuid' }
+        kind: { const: observation }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+    ProductProfileAnalysisInvocationEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [evidenceRefId, kind, analysisInvocationId]
+      properties:
+        evidenceRefId: { $ref: '#/components/schemas/Uuid' }
+        kind: { const: analysisInvocation }
+        analysisInvocationId: { $ref: '#/components/schemas/Uuid' }
+    ProductProfileDeclaredHintEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [evidenceRefId, kind]
+      properties:
+        evidenceRefId: { $ref: '#/components/schemas/Uuid' }
+        kind: { const: declaredHint }
+    ProductProfileUserEditEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [evidenceRefId, kind]
+      properties:
+        evidenceRefId: { $ref: '#/components/schemas/Uuid' }
+        kind: { const: userEdit }
+    ProductProfileEvidenceRef:
+      oneOf:
+        - $ref: '#/components/schemas/ProductProfileSnapshotEvidenceRef'
+        - $ref: '#/components/schemas/ProductProfilePageSnapshotEvidenceRef'
+        - $ref: '#/components/schemas/ProductProfileObservationEvidenceRef'
+        - $ref: '#/components/schemas/ProductProfileAnalysisInvocationEvidenceRef'
+        - $ref: '#/components/schemas/ProductProfileDeclaredHintEvidenceRef'
+        - $ref: '#/components/schemas/ProductProfileUserEditEvidenceRef'
+      discriminator:
+        propertyName: kind
+        mapping:
+          snapshot: '#/components/schemas/ProductProfileSnapshotEvidenceRef'
+          pageSnapshot: '#/components/schemas/ProductProfilePageSnapshotEvidenceRef'
+          observation: '#/components/schemas/ProductProfileObservationEvidenceRef'
+          analysisInvocation: '#/components/schemas/ProductProfileAnalysisInvocationEvidenceRef'
+          declaredHint: '#/components/schemas/ProductProfileDeclaredHintEvidenceRef'
+          userEdit: '#/components/schemas/ProductProfileUserEditEvidenceRef'
+
+    ProductProfileFieldProvenance:
+      type: object
+      additionalProperties: false
+      required: [path, derivation, confidence, evidenceRefs, limitation, observedAt]
+      properties:
+        path:
+          type: string
+          maxLength: 1000
+          pattern: '^(?:\/(?:[^~/]|~0|~1)*)+$'
+        derivation:
+          type: string
+          enum: [declared, observed, computed, inferred, missing, contradicted]
+        confidence: { type: string, enum: [high, medium, low, unknown] }
+        evidenceRefs:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/ProductProfileEvidenceRef' }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        observedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+      allOf:
+        - if:
+            properties: { derivation: { const: declared } }
+            required: [derivation]
+          then:
+            properties:
+              evidenceRefs:
+                type: array
+                minItems: 1
+                maxItems: 50
+                items:
+                  oneOf:
+                    - $ref: '#/components/schemas/ProductProfileDeclaredHintEvidenceRef'
+                    - $ref: '#/components/schemas/ProductProfileUserEditEvidenceRef'
+        - if:
+            properties: { derivation: { enum: [observed, computed, inferred] } }
+            required: [derivation]
+          then:
+            properties:
+              observedAt: { $ref: '#/components/schemas/Timestamp' }
+              evidenceRefs:
+                contains:
+                  oneOf:
+                    - $ref: '#/components/schemas/ProductProfileSnapshotEvidenceRef'
+                    - $ref: '#/components/schemas/ProductProfilePageSnapshotEvidenceRef'
+                    - $ref: '#/components/schemas/ProductProfileObservationEvidenceRef'
+                    - $ref: '#/components/schemas/ProductProfileAnalysisInvocationEvidenceRef'
+                minContains: 1
+        - if:
+            properties: { derivation: { const: contradicted } }
+            required: [derivation]
+          then:
+            properties:
+              observedAt: { $ref: '#/components/schemas/Timestamp' }
+              evidenceRefs: { minItems: 2 }
+        - if:
+            properties: { derivation: { const: missing } }
+            required: [derivation]
+          then:
+            properties:
+              confidence: { const: unknown }
+              evidenceRefs: { maxItems: 0 }
+              observedAt: { type: 'null' }
+
+    ProductProfileDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - profileSchemaVersion
+        - sourceSiteId
+        - sourcePageUrl
+        - sourceSnapshotId
+        - analysisInvocationId
+        - generatedAt
+        - businessHint
+        - productName
+        - oneLiner
+        - category
+        - productType
+        - businessModels
+        - valueProposition
+        - coreFeatures
+        - targetMarkets
+        - targetAudiences
+        - competitorCandidates
+        - fieldProvenance
+        - missingFields
+        - conflictingFields
+      properties:
+        profileSchemaVersion: { const: product-profile.0.3.0 }
+        sourceSiteId: { $ref: '#/components/schemas/Uuid' }
+        sourcePageUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Public http(s) product page preserved as the profile subject URL.
+        sourceSnapshotId: { type: [string, 'null'], format: uuid }
+        analysisInvocationId: { type: [string, 'null'], format: uuid }
+        generatedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        businessHint: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
+        productName: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        oneLiner: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
+        category: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        productType: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        businessModels:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 160 }
+        valueProposition: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        coreFeatures:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        targetMarkets:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileTargetMarket' }
+        targetAudiences:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProductProfileTargetAudience' }
+        competitorCandidates:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProductProfileCompetitorCandidate' }
+        fieldProvenance:
+          type: array
+          maxItems: 2000
+          items: { $ref: '#/components/schemas/ProductProfileFieldProvenance' }
+        missingFields:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 1000
+            pattern: '^(?:\/(?:[^~/]|~0|~1)*)+$'
+        conflictingFields:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 1000
+            pattern: '^(?:\/(?:[^~/]|~0|~1)*)+$'
+
+    ConfirmedProductProfile:
+      type: object
+      additionalProperties: false
+      description: A reviewed Product Profile. Confirmation requires substantive product, market, and Primary audience fields but never fabricates or requires a competitor count.
+      x-signalframe-runtime-refinement: ConfirmedProductProfile
+      required:
+        - profileSchemaVersion
+        - sourceSiteId
+        - sourcePageUrl
+        - sourceSnapshotId
+        - analysisInvocationId
+        - generatedAt
+        - businessHint
+        - productName
+        - oneLiner
+        - category
+        - productType
+        - businessModels
+        - valueProposition
+        - coreFeatures
+        - targetMarkets
+        - targetAudiences
+        - competitorCandidates
+        - fieldProvenance
+        - missingFields
+        - conflictingFields
+      properties:
+        profileSchemaVersion: { const: product-profile.0.3.0 }
+        sourceSiteId: { $ref: '#/components/schemas/Uuid' }
+        sourcePageUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Public http(s) product page preserved as the profile subject URL.
+        sourceSnapshotId: { type: [string, 'null'], format: uuid }
+        analysisInvocationId: { type: [string, 'null'], format: uuid }
+        generatedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        businessHint: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
+        productName: { type: string, minLength: 1, maxLength: 160 }
+        oneLiner: { type: string, minLength: 1, maxLength: 1000 }
+        category: { type: string, minLength: 1, maxLength: 160 }
+        productType: { type: string, minLength: 1, maxLength: 160 }
+        businessModels:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 160 }
+        valueProposition: { type: string, minLength: 1, maxLength: 2000 }
+        coreFeatures:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        targetMarkets:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileTargetMarket' }
+          contains:
+            type: object
+            required: [priority]
+            properties:
+              priority: { const: primary }
+          minContains: 1
+          maxContains: 1
+        targetAudiences:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProductProfileTargetAudience' }
+          contains:
+            type: object
+            required: [reviewStatus, targetCompanyOrAudience, buyerRoles, userRoles, useCases, triggers, pains, jtbd]
+            properties:
+              reviewStatus: { const: primary }
+              targetCompanyOrAudience: { type: string, minLength: 1, maxLength: 2000 }
+              buyerRoles: { type: array, minItems: 1 }
+              userRoles: { type: array, minItems: 1 }
+              useCases: { type: array, minItems: 1 }
+              triggers: { type: array, minItems: 1 }
+              pains: { type: array, minItems: 1 }
+              jtbd: { type: array, minItems: 1 }
+          minContains: 1
+          maxContains: 1
+          not:
+            contains:
+              type: object
+              required: [reviewStatus]
+              properties:
+                reviewStatus: { const: primary }
+            minContains: 2
+        competitorCandidates:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ProductProfileCompetitorCandidate'
+            if:
+              properties: { reviewStatus: { const: approved } }
+              required: [reviewStatus]
+            then:
+              properties:
+                relationship: { $ref: '#/components/schemas/ProductProfileCompetitorRelationship' }
+                analysisScope: { minItems: 1 }
+        fieldProvenance:
+          type: array
+          maxItems: 2000
+          items: { $ref: '#/components/schemas/ProductProfileFieldProvenance' }
+        missingFields:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 1000
+            pattern: '^(?:\/(?:[^~/]|~0|~1)*)+$'
+        conflictingFields:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 1000
+            pattern: '^(?:\/(?:[^~/]|~0|~1)*)+$'
+
+    ProductProfileEditablePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Customer-editable fields only. Source, provenance, missing/conflicting markers, and competitor candidates remain server-owned.
+      properties:
+        businessHint: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
+        productName: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        oneLiner: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
+        category: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        productType: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        businessModels:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 160 }
+        valueProposition: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        coreFeatures:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        targetMarkets:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileTargetMarket' }
+        targetAudiences:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProductProfileTargetAudience' }
+
+    CreateProductProfileSynthesisRunRequest:
+      type: object
+      additionalProperties: false
+      required: [baseVersion]
+      properties:
+        baseVersion: { type: integer, minimum: 1 }
+    UpdateProductProfileDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [baseVersion, patch]
+      properties:
+        baseVersion: { type: integer, minimum: 1 }
+        patch: { $ref: '#/components/schemas/ProductProfileEditablePatch' }
+    ReviewProductProfileCompetitorRequest:
+      type: object
+      additionalProperties: false
+      required: [baseVersion, reviewStatus]
+      properties:
+        baseVersion: { type: integer, minimum: 1 }
+        reviewStatus: { $ref: '#/components/schemas/ProductProfileCompetitorReviewStatus' }
+        relationship:
+          oneOf:
+            - $ref: '#/components/schemas/ProductProfileCompetitorRelationship'
+            - type: 'null'
+        analysisScope:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileCompetitorAnalysisScope' }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        similarity: { type: [number, 'null'], minimum: 0, maximum: 1 }
+    AddProductProfileCompetitorRequest:
+      type: object
+      additionalProperties: false
+      required: [baseVersion, name, domain, relationship, analysisScope]
+      properties:
+        baseVersion: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        domain: { $ref: '#/components/schemas/ProductProfileCompetitorDomain' }
+        relationship: { $ref: '#/components/schemas/ProductProfileCompetitorRelationship' }
+        analysisScope:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileCompetitorAnalysisScope' }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+    ConfirmProductProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [baseVersion]
+      properties:
+        baseVersion: { type: integer, minimum: 1 }
+
+    ProductProfileDraftRowDto:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, version, status, profile, contentHash, createdAt, isCurrent, isConfirmed]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1 }
+        status: { const: draft }
+        profile: { $ref: '#/components/schemas/ProductProfileDraft' }
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        isCurrent: { type: boolean }
+        isConfirmed: { const: false }
+    ConfirmedProductProfileRowDto:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, version, status, profile, contentHash, createdAt, isCurrent, isConfirmed]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1 }
+        status: { const: complete }
+        profile: { $ref: '#/components/schemas/ConfirmedProductProfile' }
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        isCurrent: { type: boolean }
+        isConfirmed: { const: true }
+    ProductProfileRowDto:
+      oneOf:
+        - $ref: '#/components/schemas/ProductProfileDraftRowDto'
+        - $ref: '#/components/schemas/ConfirmedProductProfileRowDto'
+      discriminator:
+        propertyName: status
+        mapping:
+          draft: '#/components/schemas/ProductProfileDraftRowDto'
+          complete: '#/components/schemas/ConfirmedProductProfileRowDto'
+    ProductProfileRowResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ProductProfileRowDto' }
+    ConfirmedProductProfileRowResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ConfirmedProductProfileRowDto' }
+    ProductProfileActiveSynthesisRun:
+      allOf:
+        - $ref: '#/components/schemas/AsyncRun'
+        - type: object
+          required: [kind, status, resultRef]
+          properties:
+            kind: { const: product_profile_synthesis }
+            status: { type: string, enum: [queued, running] }
+            resultRef: { type: 'null' }
+    ProductProfileWorkspace:
+      type: object
+      additionalProperties: false
+      required: [projectId, currentProfile, confirmedProfile, activeSynthesisRun]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        currentProfile:
+          oneOf:
+            - $ref: '#/components/schemas/ProductProfileRowDto'
+            - type: 'null'
+        confirmedProfile:
+          oneOf:
+            - $ref: '#/components/schemas/ConfirmedProductProfileRowDto'
+            - type: 'null'
+        activeSynthesisRun:
+          oneOf:
+            - $ref: '#/components/schemas/ProductProfileActiveSynthesisRun'
+            - type: 'null'
+    ProductProfileWorkspaceResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ProductProfileWorkspace' }
 
     Project:
       type: object
@@ -1497,7 +2283,9 @@ components:
           additionalProperties: false
           required: [type, id]
           properties:
-            type: { type: string, enum: [collection_run, diagnostic_run, artifact, export] }
+            type:
+              type: string
+              enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export]
             id: { $ref: '#/components/schemas/Uuid' }
         queuedAt: { $ref: '#/components/schemas/Timestamp' }
         startedAt:
@@ -1525,7 +2313,9 @@ components:
               additionalProperties: false
               required: [type, id]
               properties:
-                type: { type: string, enum: [collection_run, diagnostic_run, artifact, export] }
+                type:
+                  type: string
+                  enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export]
                 id: { $ref: '#/components/schemas/Uuid' }
     AsyncRunResponse:
       type: object

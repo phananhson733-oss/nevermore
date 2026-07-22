@@ -311,6 +311,10 @@ export const collectionRuns = app.table("collection_runs", {
     .references(() => sites.id),
   source_connection_id: uuid().references(() => sourceConnections.id),
   import_preview_id: uuid().references(() => importPreviews.id),
+  crawl_seed_site_page_id: uuid().references(
+    (): AnyPgColumn => sitePages.id,
+  ),
+  crawl_seed_url: text(),
   provider: text().notNull(),
   operation: text().notNull(),
   method_version: text().notNull(),
@@ -363,6 +367,73 @@ export const dataSnapshots = app.table("data_snapshots", {
     .default(sql`'{}'::jsonb`),
   created_at: tz().notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// 12a. product_profile_runs  (id shares async_runs.id)
+// ---------------------------------------------------------------------------
+export const productProfileRuns = app.table("product_profile_runs", {
+  id: uuid()
+    .primaryKey()
+    .references(() => asyncRuns.id),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  base_icp_profile_id: uuid()
+    .notNull()
+    .references(() => icpProfiles.id),
+  base_icp_profile_version: integer().notNull(),
+  base_icp_profile_content_hash: text().notNull(),
+  source_snapshot_id: uuid()
+    .notNull()
+    .references(() => dataSnapshots.id),
+  synthesis_version: text().notNull(),
+  prompt_set_version: text().notNull(),
+  input_manifest: jsonb().$type<JsonObject>().notNull(),
+  input_hash: text().notNull(),
+  prompt_input_hash: text(),
+  result_icp_profile_id: uuid().references(() => icpProfiles.id),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 12b. product_profile_invocation_attempts  (durable pre-call reservation)
+// ---------------------------------------------------------------------------
+export const productProfileInvocationAttempts = app.table(
+  "product_profile_invocation_attempts",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    product_profile_run_id: uuid()
+      .notNull()
+      .references(() => productProfileRuns.id),
+    ordinal: smallint().notNull(),
+    async_attempt_count: integer().notNull(),
+    provider: text().notNull(),
+    model: text().notNull(),
+    prompt_set_version: text().notNull(),
+    input_hash: text().notNull(),
+    planned_analysis_invocation_id: uuid().notNull(),
+    status: text().notNull().default("reserved"),
+    analysis_invocation_id: uuid().references(
+      (): AnyPgColumn => analysisInvocations.id,
+    ),
+    terminal_error_code: text(),
+    reserved_at: tz().notNull().defaultNow(),
+    provider_returned_at: tz(),
+    finalized_at: tz(),
+  },
+);
 
 // ---------------------------------------------------------------------------
 // 13. normalized_observations  (append-only)
@@ -944,6 +1015,8 @@ export const schema = {
   asyncRuns,
   collectionRuns,
   dataSnapshots,
+  productProfileRuns,
+  productProfileInvocationAttempts,
   normalizedObservations,
   providerDiscrepancies,
   diagnosticRuns,

@@ -51,6 +51,12 @@ const EXPECTED_OPENAPI_OPERATIONS = [
   "getProject",
   "getProjectContext",
   "updateProjectContext",
+  "getProjectProductProfile",
+  "updateProductProfileDraft",
+  "createProductProfileSynthesisRun",
+  "reviewProductProfileCompetitor",
+  "addProductProfileCompetitor",
+  "confirmProductProfile",
   "getProjectWorkspaceView",
   "listProjectSources",
   "connectProjectSource",
@@ -75,6 +81,7 @@ const EXPECTED_OPENAPI_OPERATIONS = [
 ];
 
 const EXPECTED_ASYNC_OPERATIONS = [
+  "createProductProfileSynthesisRun",
   "importProjectSourceFile",
   "createCollectionRun",
   "createDiagnosticRun",
@@ -83,6 +90,10 @@ const EXPECTED_ASYNC_OPERATIONS = [
 ];
 
 const EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS = [
+  {
+    operationId: "createProductProfileSynthesisRun",
+    file: "apps/web/src/app/api/mvp/projects/[projectId]/product-profile/synthesis-runs/route.ts",
+  },
   {
     operationId: "importProjectSourceFile",
     file: "apps/web/src/app/api/mvp/projects/[projectId]/sources/[sourceRef]/import/route.ts",
@@ -148,6 +159,8 @@ const EXPECTED_TABLES = [
   "audit_module_results",
   "site_pages",
   "page_snapshots",
+  "product_profile_runs",
+  "product_profile_invocation_attempts",
 ];
 
 const EXPECTED_RULES = [
@@ -372,8 +385,8 @@ function checkOpenApi() {
 
   const operationIds = operations.map((operation) => operation.operationId);
   invariant(
-    operationIds.length === 26,
-    `expected 26 OpenAPI operations, found ${operationIds.length}`,
+    operationIds.length === EXPECTED_OPENAPI_OPERATIONS.length,
+    `expected ${EXPECTED_OPENAPI_OPERATIONS.length} OpenAPI operations, found ${operationIds.length}`,
   );
   assertExactSet(
     operationIds,
@@ -385,8 +398,8 @@ function checkOpenApi() {
     (operation) => operation.responses["202"] !== undefined,
   );
   invariant(
-    asyncOperations.length === 5,
-    `expected 5 async 202 operations, found ${asyncOperations.length}`,
+    asyncOperations.length === EXPECTED_ASYNC_OPERATIONS.length,
+    `expected ${EXPECTED_ASYNC_OPERATIONS.length} async 202 operations, found ${asyncOperations.length}`,
   );
   assertExactSet(
     asyncOperations.map((operation) => operation.operationId),
@@ -426,13 +439,13 @@ function checkOpenApi() {
     "OpenAPI readable export bundle schema versions",
   );
 
-  return "OpenAPI: 26 operations, 5 shared 202 statusUrl operations";
+  return `OpenAPI: ${EXPECTED_OPENAPI_OPERATIONS.length} operations, ${EXPECTED_ASYNC_OPERATIONS.length} shared 202 statusUrl operations`;
 }
 
 function checkAsyncRouteImplementations() {
   invariant(
-    EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS.length === 5,
-    "expected exactly 5 runtime async route implementations",
+    EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS.length === EXPECTED_ASYNC_OPERATIONS.length,
+    `expected exactly ${EXPECTED_ASYNC_OPERATIONS.length} runtime async route implementations`,
   );
   assertExactSet(
     EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS.map((route) => route.operationId),
@@ -485,7 +498,7 @@ function checkAsyncRouteImplementations() {
     "shared asyncAccepted responder must preserve the { data } envelope, 202 status, Location, and Retry-After",
   );
 
-  return "async runtime: 5 route handlers use the shared asyncAccepted envelope";
+  return `async runtime: ${EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS.length} route handlers use the shared asyncAccepted envelope`;
 }
 
 function checkRunPollingImplementation() {

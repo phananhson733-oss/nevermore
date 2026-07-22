@@ -177,6 +177,231 @@
     "createError": "项目创建失败，请重试。",
     "siteUrlInvalid": "请输入有效的网址，需包含 https://。"
   },
+  "productProfile": {
+    "heroEyebrow": "产品画像 · ICP",
+    "loading": {
+      "title": "正在加载 Product Profile",
+      "detail": "正在读取客户当前审核版本及其事实依据。"
+    },
+    "errors": {
+      "loadTitle": "无法加载 Product Profile"
+    },
+    "empty": {
+      "title": "还没有正式的 Product Profile",
+      "detail": "这个项目尚无可展示的 URL-first Product Profile 版本。系统不会用旧 ICP 或推测值代替。"
+    },
+    "actions": {
+      "close": "关闭",
+      "cancel": "取消",
+      "saving": "保存中…",
+      "save": "保存为新版本",
+      "keepEditing": "继续编辑",
+      "discard": "放弃更改",
+      "apply": "应用审核",
+      "retry": "重试",
+      "edit": "编辑 Product Profile",
+      "synthesize": "基于网站证据生成",
+      "synthesizing": "生成中…",
+      "runCrawl": "采集网站证据",
+      "addCompetitor": "添加竞品",
+      "reviewCompetitor": "审核 / 纠正",
+      "confirm": "确认 Product Profile",
+      "confirmBlocked": "暂不能确认"
+    },
+    "states": {
+      "unconfirmed": "待补充 / 未确认",
+      "confirmed": "客户已确认",
+      "draftVersion": "草稿 · v{version}"
+    },
+    "facts": {
+      "declared": "客户声明",
+      "observed": "网站观测",
+      "computed": "计算所得",
+      "inferred": "基于证据推导",
+      "missing": "待补充",
+      "contradicted": "证据冲突",
+      "conflicting": "证据冲突",
+      "unconfirmed": "未确认"
+    },
+    "confidence": {
+      "high": "高置信度",
+      "medium": "中置信度",
+      "low": "低置信度",
+      "unknown": "置信度未知"
+    },
+    "fields": {
+      "businessHint": "初始业务背景",
+      "productName": "产品名称",
+      "oneLiner": "一句话定位",
+      "category": "产品类别",
+      "productType": "产品类型",
+      "businessModels": "商业模式",
+      "valueProposition": "价值主张",
+      "coreFeatures": "核心功能",
+      "primaryMarket": "主要海外市场",
+      "secondaryMarkets": "次要市场",
+      "primaryIcp": "Primary ICP 候选",
+      "targetCompanyOrAudience": "目标企业 / 目标用户",
+      "buyerRoles": "Buyer Roles",
+      "userRoles": "User Roles",
+      "useCases": "使用场景",
+      "triggers": "购买触发因素",
+      "pains": "核心痛点",
+      "jtbd": "JTBD",
+      "outcomes": "预期结果",
+      "barriers": "决策阻力",
+      "qualificationSignals": "合格信号",
+      "disqualifiers": "排除条件"
+    },
+    "editor": {
+      "eyebrow": "客户审核",
+      "title": "编辑 Product Profile 与 Primary ICP",
+      "description": "这里只保存用户实际修改的字段，并以客户声明事实写入新的版本。",
+      "sections": {
+        "product": "产品身份与价值",
+        "market": "目标市场",
+        "icp": "Primary ICP"
+      },
+      "choose": "请选择…",
+      "custom": "其他 / 自定义",
+      "customProductType": "自定义产品类型",
+      "otherBusinessModels": "其他商业模式",
+      "onePerLine": "每行一项。",
+      "chooseIcp": "选择已有候选，或新建一个…",
+      "newIcp": "新建 Primary ICP",
+      "preserveOtherIcp": "其他 ICP 候选保持不变，只有当前选择会成为 Primary ICP。",
+      "unsaved": "有未保存的更改",
+      "noChanges": "没有更改",
+      "discardTitle": "放弃本次编辑？",
+      "discardDescription": "这些 Product Profile 更改尚未保存为新版本。"
+    },
+    "feedback": {
+      "saved": "Product Profile 已保存",
+      "savedDetail": "新的客户编辑草稿版本已成为当前版本。",
+      "saveFailed": "Product Profile 保存失败",
+      "synthesisQueued": "已进入证据分析队列",
+      "synthesisQueuedDetail": "系统正在分析冻结的 Crawl 快照；下方进度来自真实运行状态。",
+      "synthesisComplete": "Product Profile 已生成",
+      "synthesisCompleteDetail": "当前草稿已写入本次冻结证据分析结果，请审核后再确认。",
+      "synthesisFailed": "Product Profile 无法开始或完成生成",
+      "crawlQueued": "网站采集已进入队列",
+      "crawlQueuedDetail": "Crawl 正在采集产品 URL 与同站页面；完成后不会自动重试生成。",
+      "crawlComplete": "网站证据已就绪",
+      "crawlCompleteDetail": "请先查看采集结果，再明确点击重试 Product Profile 生成。",
+      "crawlFailed": "网站证据采集失败",
+      "runEnded": "运行以 {status} 状态结束。",
+      "competitorSaved": "竞品池已更新",
+      "competitorSavedDetail": "客户审核结果已写入新的 Product Profile 版本。",
+      "competitorFailed": "竞品审核未保存",
+      "confirmed": "Product Profile 已确认",
+      "confirmedDetail": "该审核版本现在是项目正式的 Product Profile 与 ICP 背景。",
+      "confirmFailed": "Product Profile 无法确认"
+    },
+    "run": {
+      "synthesisTitle": "正在基于冻结证据生成 Product Profile",
+      "crawlTitle": "正在采集当前网站证据",
+      "statuses": {
+        "queued": "排队中",
+        "running": "运行中"
+      }
+    },
+    "recovery": {
+      "title": "需要一份当前 Crawl 快照",
+      "detail": "先真实采集产品页面与同站证据。采集完成后，生成仍是一个独立的客户操作。"
+    },
+    "sections": {
+      "identity": {
+        "eyebrow": "产品身份",
+        "title": "产品是什么，以及为什么值得购买"
+      },
+      "business": {
+        "eyebrow": "商业模式",
+        "title": "价值如何被打包并交付"
+      },
+      "market": {
+        "eyebrow": "目标市场",
+        "title": "海外增长计划面向哪些市场"
+      },
+      "icp": {
+        "eyebrow": "核心 ICP",
+        "title": "谁购买、谁使用、需要完成什么任务"
+      },
+      "competitors": {
+        "eyebrow": "竞品池",
+        "title": "SEO / GEO 分析使用的对比集合"
+      },
+      "evidence": {
+        "eyebrow": "事实依据",
+        "title": "这份 Product Profile 从哪里来"
+      }
+    },
+    "markets": {
+      "primary": "主要市场",
+      "secondary": "次要市场"
+    },
+    "competitors": {
+      "description": "候选、已批准和已排除的公司都会保留显示，让分析范围清晰可见。",
+      "reviewEyebrow": "竞品审核",
+      "addEyebrow": "客户声明",
+      "addTitle": "添加已批准竞品",
+      "name": "竞品名称",
+      "domain": "标准化域名",
+      "status": "审核状态",
+      "relationship": "竞争关系",
+      "scope": "分析范围",
+      "reason": "纳入竞品池的原因",
+      "identityCorrection": "接口会保留已发现候选的名称和域名。如果身份错误，请排除该候选，再单独添加纠正后的公司。",
+      "statuses": {
+        "candidate": "候选",
+        "approved": "已批准",
+        "excluded": "已排除"
+      },
+      "relationships": {
+        "direct": "直接竞品",
+        "indirect": "间接竞品"
+      },
+      "scopes": {
+        "positioning": "定位",
+        "product_capability": "产品能力",
+        "keyword_gap": "关键词缺口",
+        "content": "内容",
+        "serp_visibility": "SERP 可见度"
+      }
+    },
+    "evidence": {
+      "source": "产品来源 URL",
+      "snapshot": "冻结的 Crawl 快照",
+      "invocation": "分析调用",
+      "generatedAt": "生成时间",
+      "notFrozen": "尚无冻结快照",
+      "notGenerated": "尚无分析调用",
+      "provenance": "{count} 个字段依据",
+      "missing": "{count} 个待补充字段",
+      "conflicts": "{count} 个冲突",
+      "reviewDetails": "查看未解决字段",
+      "missingTitle": "待补充",
+      "conflictTitle": "存在冲突"
+    },
+    "confirmation": {
+      "eyebrow": "客户决策",
+      "railLabel": "Product Profile 确认",
+      "title": "确认准备度",
+      "detail": "确认与生成、Audit 相互独立；每项必需事实都要完整且可追溯。",
+      "confirmedDetail": "此版本已由客户明确确认，可以作为后续工作的正式背景。",
+      "blocked": "请先在“编辑 Product Profile”中补齐未勾选项目。",
+      "activeRunBlocked": "请等待当前证据分析完成，再编辑或确认这个版本。",
+      "dialogTitle": "确认这份 Product Profile？",
+      "dialogDetail": "当前草稿将成为后续 SEO / GEO 与技术分析使用的正式 Product Profile 和 Primary ICP。本操作不会启动 Audit。",
+      "items": {
+        "identity": "产品身份",
+        "business": "商业模式",
+        "value": "价值与核心功能",
+        "markets": "一个主要市场",
+        "primaryIcp": "完整的 Primary ICP",
+        "competitors": "有效的竞品审核"
+      }
+    }
+  },
   "context": {
     "title": "背景",
     "subtitle": "定义作为所有诊断依据的目标客户画像。",

@@ -4,9 +4,10 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 33 app tables plus every named index and trigger in the frozen SQL
- * contract. Exits non-zero on drift. This is a structural object-presence gate;
- * the byte-for-byte migration/spec gate separately prevents definition drift.
+ * exactly 35 app tables plus every named index, trigger, and callable routine
+ * in the frozen SQL contract. Exits non-zero on drift. This is a structural
+ * object-presence gate; the byte-for-byte migration/spec gate separately
+ * prevents definition drift.
  */
 
 const EXPECTED_TABLES = [
@@ -43,6 +44,8 @@ const EXPECTED_TABLES = [
   "audit_module_results",
   "site_pages",
   "page_snapshots",
+  "product_profile_runs",
+  "product_profile_invocation_attempts",
 ] as const;
 
 const REQUIRED_INDEXES = [
@@ -74,6 +77,12 @@ const REQUIRED_INDEXES = [
   "page_snapshots_page_captured_idx",
   "page_snapshots_project_captured_idx",
   "page_snapshots_verified_source_identity_idx",
+  "product_profile_runs_project_created_idx",
+  "product_profile_runs_base_profile_idx",
+  "product_profile_runs_source_snapshot_idx",
+  "product_profile_runs_result_profile_idx",
+  "product_profile_invocation_attempts_project_idx",
+  "product_profile_invocation_attempts_unresolved_idx",
 ] as const;
 
 const REQUIRED_TRIGGERS = [
@@ -123,6 +132,18 @@ const REQUIRED_TRIGGERS = [
   "audit_runs_append_only",
   "audit_module_results_append_only",
   "page_snapshots_append_only",
+  "product_profile_runs_provenance_guard",
+  "product_profile_runs_frozen_input_guard",
+  "async_runs_product_profile_result_guard",
+  "product_profile_invocation_attempts_transition_guard",
+  "icp_profiles_product_profile_provenance_guard",
+] as const;
+
+const REQUIRED_ROUTINES = [
+  "reserve_product_profile_invocation_attempt",
+  "finalize_product_profile_invocation_attempt",
+  "mark_product_profile_invocation_outcome_unknown",
+  "validate_product_profile_provenance",
 ] as const;
 
 export interface MigrateCheckResult {
@@ -166,6 +187,17 @@ export async function checkMigrations(connectionString: string): Promise<Migrate
       if (!trgSet.has(trg)) problems.push(`missing trigger ${trg}`);
     }
 
+    const routines = await client.query<{ routine_name: string }>(
+      `SELECT routine_name FROM information_schema.routines
+       WHERE routine_schema = 'app'`,
+    );
+    const routineSet = new Set(routines.rows.map((r) => r.routine_name));
+    for (const routine of REQUIRED_ROUTINES) {
+      if (!routineSet.has(routine)) {
+        problems.push(`missing routine app.${routine}`);
+      }
+    }
+
     try {
       const version = await client.query<{ migration_version: unknown }>(
         "SELECT migration_version FROM app.schema_migration_version",
@@ -199,7 +231,8 @@ async function main(): Promise<void> {
   }
   console.log(
     `Migration check passed: ${EXPECTED_TABLES.length} app tables, ` +
-      `${REQUIRED_INDEXES.length} indexes, and ${REQUIRED_TRIGGERS.length} triggers present.`,
+      `${REQUIRED_INDEXES.length} indexes, ${REQUIRED_TRIGGERS.length} triggers, and ` +
+      `${REQUIRED_ROUTINES.length} routines present.`,
   );
 }
 

@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { contentHash } from "../hash.ts";
 import { collectionRuns } from "../schema.ts";
 import { Repository } from "./base.ts";
 
@@ -16,6 +17,8 @@ export interface CollectionRunRow {
   readonly site_id: string;
   readonly source_connection_id: string | null;
   readonly import_preview_id: string | null;
+  readonly crawl_seed_site_page_id: string | null;
+  readonly crawl_seed_url: string | null;
   readonly provider: string;
   readonly operation: string;
   readonly method_version: string;
@@ -23,6 +26,35 @@ export interface CollectionRunRow {
   readonly row_count: number | null;
   readonly stop_reason: string | null;
   readonly created_at: string;
+}
+
+export interface CollectionRunParameterIdentity {
+  readonly provider: string;
+  readonly operation: string;
+  readonly siteId: string;
+  readonly crawlSeedSitePageId: string | null;
+  readonly crawlSeedUrl: string | null;
+}
+
+/**
+ * Address the exact collection input selected by the command transaction. A
+ * Crawl Product Profile seed is first-class input identity; a trailing slash
+ * therefore changes the hash instead of being normalized away later.
+ */
+export function collectionRunParametersHash(
+  identity: CollectionRunParameterIdentity,
+): string {
+  return contentHash({
+    provider: identity.provider,
+    operation: identity.operation,
+    siteId: identity.siteId,
+    ...(identity.provider === "crawl"
+      ? {
+          crawlSeedSitePageId: identity.crawlSeedSitePageId,
+          crawlSeedUrl: identity.crawlSeedUrl,
+        }
+      : {}),
+  });
 }
 
 export class CollectionRunsRepository extends Repository {
@@ -53,7 +85,17 @@ export class CollectionRunsRepository extends Repository {
     methodVersion: string;
     parametersHash: string;
     importPreviewId?: string | null;
+    crawlSeedSitePageId?: string | null;
+    crawlSeedUrl?: string | null;
   }): Promise<CollectionRunRow> {
+    const crawlSeedSitePageId = values.crawlSeedSitePageId ?? null;
+    const crawlSeedUrl = values.crawlSeedUrl ?? null;
+    if ((crawlSeedSitePageId === null) !== (crawlSeedUrl === null)) {
+      throw new TypeError("Crawl seed SitePage id and URL must be supplied together");
+    }
+    if (values.provider !== "crawl" && crawlSeedSitePageId !== null) {
+      throw new TypeError("Only Crawl collection runs may carry a frozen seed");
+    }
     const [row] = await this.exec
       .insert(collectionRuns)
       .values({
@@ -63,6 +105,8 @@ export class CollectionRunsRepository extends Repository {
         site_id: values.siteId,
         source_connection_id: values.sourceConnectionId,
         import_preview_id: values.importPreviewId ?? null,
+        crawl_seed_site_page_id: crawlSeedSitePageId,
+        crawl_seed_url: crawlSeedUrl,
         provider: values.provider,
         operation: values.operation,
         method_version: values.methodVersion,

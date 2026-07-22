@@ -133,4 +133,50 @@ describe("SitePagesRepository", () => {
       new SitePagesRepository(fake.executor).upsertNormalizedUrl(values),
     ).rejects.toThrow("site page URL hash conflicts with durable identity");
   });
+
+  it("finds an exact URL identity only inside the requested Site scope", async () => {
+    const fake = fakeExecutor();
+    const persisted = row();
+    fake.enqueue([persisted]);
+
+    await expect(
+      new SitePagesRepository(fake.executor).findExactNormalizedUrl(
+        { workspaceId: values.workspaceId, projectId: values.projectId },
+        values.siteId,
+        values.normalizedUrl,
+      ),
+    ).resolves.toEqual(persisted);
+
+    expect(fake.last("where").args[0]).toBeDefined();
+    expect(fake.last("limit").args).toEqual([1]);
+  });
+
+  it("fails closed if an exact URL lookup returns a different durable identity", async () => {
+    const fake = fakeExecutor();
+    fake.enqueue([row({ site_id: "00000000-0000-4000-8000-000000000099" })]);
+
+    await expect(
+      new SitePagesRepository(fake.executor).findExactNormalizedUrl(
+        { workspaceId: values.workspaceId, projectId: values.projectId },
+        values.siteId,
+        values.normalizedUrl,
+      ),
+    ).rejects.toThrow("site page exact URL lookup returned a foreign identity");
+  });
+
+  it.each(["", "x".repeat(2049)])(
+    "rejects an unbounded exact URL lookup before querying",
+    async (normalizedUrl) => {
+      const fake = fakeExecutor();
+
+      await expect(
+        new SitePagesRepository(fake.executor).findExactNormalizedUrl(
+          { workspaceId: values.workspaceId, projectId: values.projectId },
+          values.siteId,
+          normalizedUrl,
+        ),
+      ).rejects.toThrow("normalized URL must contain 1 to 2048 characters");
+      expect(fake.calls).toEqual([]);
+    },
+  );
 });

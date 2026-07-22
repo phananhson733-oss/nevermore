@@ -1,16 +1,23 @@
 import {
   AsyncRunsRepository,
+  collectionRunParametersHash,
   CollectionRunsRepository,
   contentHash,
   enqueueRunInTx,
+  IcpProfilesRepository,
   IdempotencyRepository,
   ProjectsRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   type QueueName,
   type WorkspaceScope,
 } from "@sf/db";
-import { CONTRACT_VERSION, type CreateCollectionRunRequest } from "@sf/contracts";
+import {
+  CONTRACT_VERSION,
+  ProductProfileDraft,
+  type CreateCollectionRunRequest,
+} from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { CRAWL_METHOD_VERSION } from "@sf/sources";
 import { getDb } from "@/lib/db";
@@ -268,6 +275,61 @@ export async function createCollectionRun(
         throw new ProblemError("NOT_FOUND", "Project has no primary site.");
       }
 
+      let crawlSeedSitePageId: string | null = null;
+      let crawlSeedUrl: string | null = null;
+      if (body.provider === "crawl" && currentProject.current_icp_profile_id) {
+        const currentProfile = await new IcpProfilesRepository(tx).findById(
+          projectScope,
+          currentProject.current_icp_profile_id,
+        );
+        if (!currentProfile) {
+          throw new ProblemError(
+            "CONTEXT_INCOMPLETE",
+            "The current Product Profile cannot be resolved for this Crawl.",
+          );
+        }
+
+        const parsedProfile = ProductProfileDraft.safeParse(
+          currentProfile.profile,
+        );
+        if (!parsedProfile.success) {
+          const schemaVersion = currentProfile.profile["profileSchemaVersion"];
+          if (
+            typeof schemaVersion === "string" &&
+            schemaVersion.startsWith("product-profile.")
+          ) {
+            throw new ProblemError(
+              "CONTEXT_INCOMPLETE",
+              "The current Product Profile is invalid and cannot seed a Crawl.",
+            );
+          }
+          // Historical ICP payloads predate the URL-first Product Profile
+          // contract. They remain valid and intentionally carry no deep seed.
+        } else {
+          if (parsedProfile.data.sourceSiteId !== currentSite.id) {
+            throw new ProblemError(
+              "CONTEXT_INCOMPLETE",
+              "The Product Profile source Site does not match the current project Site.",
+            );
+          }
+          const sourcePage = await new SitePagesRepository(
+            tx,
+          ).findExactNormalizedUrl(
+            projectScope,
+            currentSite.id,
+            parsedProfile.data.sourcePageUrl,
+          );
+          if (!sourcePage) {
+            throw new ProblemError(
+              "CONTEXT_INCOMPLETE",
+              "The Product Profile source page is missing from the project's durable URL inventory.",
+            );
+          }
+          crawlSeedSitePageId = sourcePage.id;
+          crawlSeedUrl = sourcePage.normalized_url;
+        }
+      }
+
       let currentConnection = body.sourceConnectionId
         ? await txSources.findConnectedByIdForUpdate(
             projectScope,
@@ -300,10 +362,12 @@ export async function createCollectionRun(
         );
       }
 
-      const parametersHash = contentHash({
+      const parametersHash = collectionRunParametersHash({
         provider: body.provider,
         operation,
         siteId: currentSite.id,
+        crawlSeedSitePageId,
+        crawlSeedUrl,
       });
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
@@ -329,6 +393,8 @@ export async function createCollectionRun(
         operation,
         methodVersion: config.methodVersion,
         parametersHash,
+        crawlSeedSitePageId,
+        crawlSeedUrl,
       });
       await enqueueRunInTx(boss, tx, config.queue, {
         runId: run.id,

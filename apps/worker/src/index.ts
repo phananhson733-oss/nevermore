@@ -16,6 +16,7 @@ import { getWorkerEnv } from "./env.ts";
 import { buildWorkerContext } from "./context.ts";
 import { registerCollectHandlers } from "./handlers/collect.ts";
 import { registerDiagnoseHandler } from "./handlers/diagnose.ts";
+import { registerProfileSynthesizeHandler } from "./handlers/profile-synthesize.ts";
 import { registerArtifactHandlers } from "./handlers/artifact.ts";
 import {
   getWorkerMaintenanceFromStartError,
@@ -40,7 +41,7 @@ import {
 
 /**
  * Worker bootstrap (spec §3.1, §13). Readiness is acquired last: pg-boss must be
- * started, all eight queue handlers registered, and blocking startup recovery
+ * started, all nine queue handlers registered, and blocking startup recovery
  * completed before the process owns the advisory readiness lease.
  */
 
@@ -279,6 +280,9 @@ async function start(options: WorkerStartOptions = {}): Promise<WorkerRuntime> {
     await registerDiagnoseHandler(workerCtx);
     const interruptedAfterDiagnose = finishInterruptedBoot(db, boss);
     if (interruptedAfterDiagnose) return await interruptedAfterDiagnose;
+    await registerProfileSynthesizeHandler(workerCtx);
+    const interruptedAfterProfile = finishInterruptedBoot(db, boss);
+    if (interruptedAfterProfile) return await interruptedAfterProfile;
     await registerArtifactHandlers(workerCtx);
     const interruptedAfterHandlers = finishInterruptedBoot(db, boss);
     if (interruptedAfterHandlers) return await interruptedAfterHandlers;

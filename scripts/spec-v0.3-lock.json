@@ -6,20 +6,20 @@
   "migrationDirectory": "packages/db/migrations",
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
-    "README.md": "c41fdb46930f8eb30f54aed76f1fc6a7bcfbc5d5cd9a9d0d41d8173246ad4fca",
-    "MVP-IMPLEMENTATION-SPEC.md": "6fe56ccc5d2325fc56c3dee6df0ca81aedf8316091464a83dce528c5a13b445a",
-    "openapi.yaml": "82312e5df203d296a64e2025f8fa7a2126cd8b21ca808684c75c59ebad2660cb",
-    "schema.sql": "ff1ec1ffc0b3b2c7c79d4379b1edbc9c67eb08f5356f61ae0308ee0b8c6eb752",
+    "README.md": "f893701a6a7acd7f37276c2821ac1ca1aec2af2330247fc802b17db9bf20faa2",
+    "MVP-IMPLEMENTATION-SPEC.md": "44d146aeaa73154f8717db1ea6dd21e15ee65ea52f99ffed3f6d54f7cb57aaa0",
+    "openapi.yaml": "413f5a8c0a7e2ca81465171ca8841a2cf7eb142650f32e3777868cfe65c5ccaa",
+    "schema.sql": "fec0a1e3720202f50603435492102e45e28bbe27fa143cab91c7fc536161f595",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
-    "scripts/schema-smoke.sql": "fd55ede786827bb4155c8220e8f9de1f2a27dd46191214ccdd41c2ba07300955",
-    "scripts/verify-spec.mjs": "13f56e2f621c3e8c260b826578e38a62ee49b13286cfea985525f2f55a843daf"
+    "scripts/schema-smoke.sql": "65583b2a7931e9f6f1083c6b19e84035061fcbf689620c84b629c7df5a4368a9",
+    "scripts/verify-spec.mjs": "e8e3b7eca8d7401e0f4b14d0f512adde50e2a5d1ca9cd898a8addcaed31f9591"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "82312e5df203d296a64e2025f8fa7a2126cd8b21ca808684c75c59ebad2660cb",
-    "packages/contracts/src/generated/openapi.ts": "21df78b3951162de9b585962bca7acb16edf812105b3ae976ead4a0f43d3c607",
+    "openapi/mvp.yaml": "413f5a8c0a7e2ca81465171ca8841a2cf7eb142650f32e3777868cfe65c5ccaa",
+    "packages/contracts/src/generated/openapi.ts": "60195c85ea4b14df8bbae495986e2c5d3743d244ecec202236df955139ed05ae",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
-    "packages/db/migrations/schema-smoke.sql": "fd55ede786827bb4155c8220e8f9de1f2a27dd46191214ccdd41c2ba07300955",
-    "scripts/verify-implementation.mjs": "8ac800e7edccd17667865457be2748cf31420fb8130c82d4b0309dd9ade0b97d"
+    "packages/db/migrations/schema-smoke.sql": "65583b2a7931e9f6f1083c6b19e84035061fcbf689620c84b629c7df5a4368a9",
+    "scripts/verify-implementation.mjs": "d4be89369cb25649faf5422d2a4de0dc3302861fcdfba4a4836054dce95f87bd"
   },
   "apiOperations": [
     "listProjects",
@@ -27,6 +27,12 @@
     "getProject",
     "getProjectContext",
     "updateProjectContext",
+    "getProjectProductProfile",
+    "updateProductProfileDraft",
+    "createProductProfileSynthesisRun",
+    "reviewProductProfileCompetitor",
+    "addProductProfileCompetitor",
+    "confirmProductProfile",
     "getProjectWorkspaceView",
     "listProjectSources",
     "connectProjectSource",
@@ -50,6 +56,7 @@
     "getProjectExport"
   ],
   "asyncOperations": [
+    "createProductProfileSynthesisRun",
     "importProjectSourceFile",
     "createCollectionRun",
     "createDiagnosticRun",
@@ -89,7 +96,9 @@
     "audit_runs",
     "audit_module_results",
     "site_pages",
-    "page_snapshots"
+    "page_snapshots",
+    "product_profile_runs",
+    "product_profile_invocation_attempts"
   ],
   "rules": [
     "CONTENT-COVERAGE-001",

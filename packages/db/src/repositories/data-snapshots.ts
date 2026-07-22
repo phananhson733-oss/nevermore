@@ -40,6 +40,42 @@ export interface SnapshotListPage {
   readonly nextCursor: string | null;
 }
 
+/**
+ * Metadata that may enter a frozen Product Profile synthesis manifest. Storage
+ * pointers and provider payload projections are deliberately excluded.
+ */
+export interface EligibleCrawlDataSnapshotRow {
+  readonly id: string;
+  readonly workspace_id: string;
+  readonly project_id: string;
+  readonly site_id: string;
+  readonly collection_run_id: string;
+  readonly source_connection_id: string | null;
+  readonly provider: string;
+  readonly dataset_key: string;
+  readonly schema_version: string;
+  readonly method_version: string;
+  readonly captured_at: string;
+  readonly availability: string;
+  readonly limitation: string;
+  readonly row_count: number;
+  readonly checksum: string;
+  readonly created_at: string;
+}
+
+const MAX_CRAWL_SNAPSHOT_SELECTOR_LENGTH = 256;
+
+function assertBoundedSelector(label: string, value: string): void {
+  if (
+    value.trim().length === 0 ||
+    value.length > MAX_CRAWL_SNAPSHOT_SELECTOR_LENGTH
+  ) {
+    throw new RangeError(
+      `${label} must be between 1 and ${MAX_CRAWL_SNAPSHOT_SELECTOR_LENGTH} characters`,
+    );
+  }
+}
+
 function encodeCursor(row: { created_at: string; id: string }): string {
   return encodeTimestampUuidCursor(row.created_at, row.id);
 }
@@ -129,6 +165,57 @@ export class DataSnapshotsRepository extends Repository {
           inArray(dataSnapshots.id, [...ids]),
         ),
       )) as DataSnapshotRow[];
+  }
+
+  /**
+   * Select the exact Crawl method whose immutable PageSnapshots may be frozen
+   * into a Product Profile synthesis input manifest. `partial` remains
+   * eligible because its limitations travel with the snapshot; unavailable or
+   * failed collection records never do.
+   */
+  async findLatestEligibleCrawlBySite(
+    scope: ProjectScope,
+    siteId: string,
+    datasetKey: string,
+    methodVersion: string,
+  ): Promise<EligibleCrawlDataSnapshotRow | null> {
+    assertBoundedSelector("siteId", siteId);
+    assertBoundedSelector("datasetKey", datasetKey);
+    assertBoundedSelector("methodVersion", methodVersion);
+
+    const rows = await this.exec
+      .select({
+        id: dataSnapshots.id,
+        workspace_id: dataSnapshots.workspace_id,
+        project_id: dataSnapshots.project_id,
+        site_id: dataSnapshots.site_id,
+        collection_run_id: dataSnapshots.collection_run_id,
+        source_connection_id: dataSnapshots.source_connection_id,
+        provider: dataSnapshots.provider,
+        dataset_key: dataSnapshots.dataset_key,
+        schema_version: dataSnapshots.schema_version,
+        method_version: dataSnapshots.method_version,
+        captured_at: dataSnapshots.captured_at,
+        availability: dataSnapshots.availability,
+        limitation: dataSnapshots.limitation,
+        row_count: dataSnapshots.row_count,
+        checksum: dataSnapshots.checksum,
+        created_at: dataSnapshots.created_at,
+      })
+      .from(dataSnapshots)
+      .where(
+        and(
+          projectPredicate(dataSnapshots, scope),
+          eq(dataSnapshots.site_id, siteId),
+          eq(dataSnapshots.provider, "crawl"),
+          eq(dataSnapshots.dataset_key, datasetKey),
+          eq(dataSnapshots.method_version, methodVersion),
+          inArray(dataSnapshots.availability, ["available", "partial"]),
+        ),
+      )
+      .orderBy(desc(dataSnapshots.captured_at), asc(dataSnapshots.id))
+      .limit(1);
+    return (rows[0] as EligibleCrawlDataSnapshotRow | undefined) ?? null;
   }
 
   /**

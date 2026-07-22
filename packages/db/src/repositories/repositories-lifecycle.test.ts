@@ -763,6 +763,12 @@ describe("project and source repositories", () => {
       market_codes: ["GB"],
       language_codes: ["en-GB"],
     });
+
+    await repo.updatePrimaryMarketCodes(scope, ["US", "GB"]);
+    expect(fake.last("set").args[0]).toEqual({
+      market_codes: ["US", "GB"],
+    });
+    expect(fake.last("set").args[0]).not.toHaveProperty("language_codes");
   });
 
   it("maps connected sources and lifecycle updates", async () => {

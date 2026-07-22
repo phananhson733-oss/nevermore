@@ -14,6 +14,7 @@ export const WORKER_HEALTH_STOP_TIMEOUT_MS = 5_000;
 
 const RUN_KINDS = [
   "collection",
+  "product_profile_synthesis",
   "diagnostic",
   "artifact_generation",
   "export",

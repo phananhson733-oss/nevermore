@@ -5,8 +5,8 @@ SET search_path = app, public;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 33 THEN
-    RAISE EXCEPTION 'expected exactly 33 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 35 THEN
+    RAISE EXCEPTION 'expected exactly 35 app tables';
   END IF;
 END;
 $$;
@@ -1479,6 +1479,458 @@ VALUES (
   now()
 );
 
+-- A URL-first Crawl run freezes one exact SitePage identity. The accepted row
+-- and both negative cases exercise migration 0015, not a client projection.
+INSERT INTO app.async_runs (
+  id, workspace_id, project_id, kind, status, active_key, initiated_by,
+  attempt_count, started_at
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000681',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    'collection',
+    'running',
+    'collect:crawl:frozen-product-page',
+    '00000000-0000-4000-8000-000000000101',
+    1,
+    now()
+  ),
+  (
+    '00000000-0000-4000-8000-000000000682',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    'collection',
+    'running',
+    'collect:crawl:mismatched-product-page',
+    '00000000-0000-4000-8000-000000000101',
+    1,
+    now()
+  );
+
+INSERT INTO app.collection_runs (
+  id, workspace_id, project_id, site_id, source_connection_id,
+  provider, operation, method_version, parameters_hash,
+  crawl_seed_site_page_id, crawl_seed_url
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000681',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000000501',
+  'crawl',
+  'site_graph',
+  'crawl.site_graph.v2',
+  repeat('8', 64),
+  '00000000-0000-4000-8000-000000001601',
+  'https://example.com/customer-onboarding'
+);
+
+DO $$
+DECLARE
+  mismatched_seed_rejected boolean := false;
+  seed_mutation_rejected boolean := false;
+BEGIN
+  IF (
+    SELECT crawl_seed_site_page_id =
+             '00000000-0000-4000-8000-000000001601'::uuid
+       AND crawl_seed_url = 'https://example.com/customer-onboarding'
+    FROM app.collection_runs
+    WHERE id = '00000000-0000-4000-8000-000000000681'
+  ) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'exact frozen Crawl seed was not persisted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.collection_runs (
+      id, workspace_id, project_id, site_id, source_connection_id,
+      provider, operation, method_version, parameters_hash,
+      crawl_seed_site_page_id, crawl_seed_url
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000000682',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000501',
+      'crawl',
+      'site_graph',
+      'crawl.site_graph.v2',
+      repeat('9', 64),
+      '00000000-0000-4000-8000-000000001601',
+      'https://example.com/customer-onboarding/'
+    );
+  EXCEPTION WHEN check_violation THEN
+    mismatched_seed_rejected := true;
+  END;
+  IF NOT mismatched_seed_rejected THEN
+    RAISE EXCEPTION 'Crawl seed accepted a different exact URL';
+  END IF;
+
+  BEGIN
+    UPDATE app.collection_runs
+    SET crawl_seed_url = 'https://example.com/customer-onboarding/'
+    WHERE id = '00000000-0000-4000-8000-000000000681';
+  EXCEPTION WHEN check_violation THEN
+    seed_mutation_rejected := true;
+  END;
+  IF NOT seed_mutation_rejected THEN
+    RAISE EXCEPTION 'frozen Crawl seed identity was mutated';
+  END IF;
+END;
+$$;
+
+-- Product Profile synthesis freezes one canonical input manifest and reserves
+-- provider budget durably before any network boundary.
+INSERT INTO app.async_runs (
+  id, workspace_id, project_id, kind, status, active_key, initiated_by,
+  attempt_count, started_at
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000691',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  'product_profile_synthesis',
+  'running',
+  'product-profile:smoke',
+  '00000000-0000-4000-8000-000000000101',
+  1,
+  now()
+);
+
+INSERT INTO app.product_profile_runs (
+  id, workspace_id, project_id, site_id,
+  base_icp_profile_id, base_icp_profile_version,
+  base_icp_profile_content_hash, source_snapshot_id,
+  synthesis_version, prompt_set_version, input_manifest, input_hash
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000691',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000000403',
+  2,
+  repeat('3', 64),
+  '00000000-0000-4000-8000-000000000701',
+  'product-profile-synthesis.0.3.0',
+  'mvp.prompts.product-profile.0.3.0',
+  jsonb_build_object(
+    'schemaVersion', 'product-profile-synthesis-input.0.3.0',
+    'selectionPolicyVersion', 'product-profile-page-selection.0.3.0',
+    'projectId', '00000000-0000-4000-8000-000000000201',
+    'siteId', '00000000-0000-4000-8000-000000000301',
+    'sourcePageUrl', 'https://example.com/customer-onboarding',
+    'baseProfile', jsonb_build_object(
+      'id', '00000000-0000-4000-8000-000000000403',
+      'version', 2,
+      'contentHash', repeat('3', 64),
+      'status', 'draft'
+    ),
+    'crawlSnapshot', jsonb_build_object(
+      'id', '00000000-0000-4000-8000-000000000701'
+    ),
+    'pages', jsonb_build_array(jsonb_build_object(
+      'pageSnapshotId', '00000000-0000-4000-8000-000000001701',
+      'sitePageId', '00000000-0000-4000-8000-000000001601',
+      'dataSnapshotId', '00000000-0000-4000-8000-000000000701',
+      'normalizedUrl', 'https://example.com/customer-onboarding'
+    ))
+  ),
+  repeat('a', 64)
+);
+
+INSERT INTO app.async_runs (
+  id, workspace_id, project_id, kind, status, active_key, initiated_by
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000692',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  'product_profile_synthesis',
+  'queued',
+  'product-profile:unfrozen-smoke',
+  '00000000-0000-4000-8000-000000000101'
+);
+
+DO $$
+DECLARE
+  unfrozen_manifest_rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.product_profile_runs (
+      id, workspace_id, project_id, site_id,
+      base_icp_profile_id, base_icp_profile_version,
+      base_icp_profile_content_hash, source_snapshot_id,
+      synthesis_version, prompt_set_version, input_manifest, input_hash
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000000692',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000403',
+      2,
+      repeat('3', 64),
+      '00000000-0000-4000-8000-000000000701',
+      'product-profile-synthesis.0.3.0',
+      'mvp.prompts.product-profile.0.3.0',
+      jsonb_build_object(
+        'projectId', '00000000-0000-4000-8000-000000000201',
+        'siteId', '00000000-0000-4000-8000-000000000301',
+        'sourcePageUrl', 'https://example.com/customer-onboarding',
+        'baseProfile', jsonb_build_object(
+          'id', '00000000-0000-4000-8000-000000000403',
+          'version', 2,
+          'contentHash', repeat('3', 64),
+          'status', 'draft'
+        ),
+        'crawlSnapshot', jsonb_build_object(
+          'id', '00000000-0000-4000-8000-000000000702'
+        )
+      ),
+      repeat('c', 64)
+    );
+  EXCEPTION WHEN check_violation THEN
+    unfrozen_manifest_rejected := true;
+  END;
+  IF NOT unfrozen_manifest_rejected THEN
+    RAISE EXCEPTION 'product profile run accepted an unfrozen manifest';
+  END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+  reservation jsonb;
+  result jsonb;
+  reservation_id uuid;
+BEGIN
+  reservation := app.reserve_product_profile_invocation_attempt(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000691',
+    1,
+    'openai',
+    'gpt-smoke',
+    'mvp.prompts.product-profile.0.3.0',
+    repeat('b', 64)
+  );
+  IF reservation ->> 'kind' IS DISTINCT FROM 'reserved'
+     OR (
+       SELECT count(*)
+       FROM app.product_profile_invocation_attempts
+       WHERE product_profile_run_id =
+         '00000000-0000-4000-8000-000000000691'
+     ) <> 1 THEN
+    RAISE EXCEPTION 'product profile invocation reservation was not persisted';
+  END IF;
+  reservation_id := (reservation #>> '{reservation,id}')::uuid;
+
+  UPDATE app.async_runs
+  SET attempt_count = 2
+  WHERE id = '00000000-0000-4000-8000-000000000691';
+
+  result := app.reserve_product_profile_invocation_attempt(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000691',
+    2,
+    'openai',
+    'gpt-smoke',
+    'mvp.prompts.product-profile.0.3.0',
+    repeat('b', 64)
+  );
+  IF result ->> 'kind' IS DISTINCT FROM 'unresolved'
+     OR (
+       SELECT count(*)
+       FROM app.product_profile_invocation_attempts
+       WHERE product_profile_run_id =
+         '00000000-0000-4000-8000-000000000691'
+     ) <> 1 THEN
+    RAISE EXCEPTION 'unresolved product profile invocation allowed another provider call';
+  END IF;
+
+  result := app.finalize_product_profile_invocation_attempt(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000691',
+    1,
+    reservation_id,
+    'openai',
+    'gpt-smoke',
+    'mvp.prompts.product-profile.0.3.0',
+    repeat('b', 64),
+    NULL,
+    'failed',
+    NULL,
+    NULL,
+    NULL,
+    1,
+    'PROVIDER_FAILED'
+  );
+  IF result ->> 'kind' IS DISTINCT FROM 'finalized' THEN
+    RAISE EXCEPTION 'first product profile reservation did not finalize';
+  END IF;
+
+  reservation := app.reserve_product_profile_invocation_attempt(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000691',
+    2,
+    'openai',
+    'gpt-smoke',
+    'mvp.prompts.product-profile.0.3.0',
+    repeat('b', 64)
+  );
+  reservation_id := (reservation #>> '{reservation,id}')::uuid;
+  result := app.finalize_product_profile_invocation_attempt(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000691',
+    2,
+    reservation_id,
+    'openai',
+    'gpt-smoke',
+    'mvp.prompts.product-profile.0.3.0',
+    repeat('b', 64),
+    NULL,
+    'failed',
+    NULL,
+    NULL,
+    NULL,
+    1,
+    'PROVIDER_FAILED'
+  );
+  IF result ->> 'kind' IS DISTINCT FROM 'finalized' THEN
+    RAISE EXCEPTION 'second product profile reservation did not finalize';
+  END IF;
+
+  UPDATE app.async_runs
+  SET attempt_count = 3
+  WHERE id = '00000000-0000-4000-8000-000000000691';
+
+  reservation := app.reserve_product_profile_invocation_attempt(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000691',
+    3,
+    'openai',
+    'gpt-smoke',
+    'mvp.prompts.product-profile.0.3.0',
+    repeat('b', 64)
+  );
+  reservation_id := (reservation #>> '{reservation,id}')::uuid;
+  result := app.finalize_product_profile_invocation_attempt(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000691',
+    3,
+    reservation_id,
+    'openai',
+    'gpt-smoke',
+    'mvp.prompts.product-profile.0.3.0',
+    repeat('b', 64),
+    repeat('e', 64),
+    'succeeded',
+    10,
+    20,
+    0.001,
+    2,
+    NULL
+  );
+  IF result ->> 'kind' IS DISTINCT FROM 'finalized' THEN
+    RAISE EXCEPTION 'third product profile reservation did not finalize';
+  END IF;
+
+  UPDATE app.async_runs
+  SET attempt_count = 4
+  WHERE id = '00000000-0000-4000-8000-000000000691';
+
+  result := app.reserve_product_profile_invocation_attempt(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000691',
+    4,
+    'openai',
+    'gpt-smoke',
+    'mvp.prompts.product-profile.0.3.0',
+    repeat('b', 64)
+  );
+  IF result ->> 'kind' IS DISTINCT FROM 'budget_exhausted'
+     OR (
+       SELECT count(*)
+       FROM app.product_profile_invocation_attempts
+       WHERE product_profile_run_id =
+         '00000000-0000-4000-8000-000000000691'
+     ) <> 3 THEN
+    RAISE EXCEPTION 'a fourth product profile invocation reservation was accepted';
+  END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+  successful_invocation_id uuid;
+  invalid_profile jsonb;
+  validation jsonb;
+  invalid_profile_rejected boolean := false;
+BEGIN
+  SELECT analysis_invocation_id
+  INTO successful_invocation_id
+  FROM app.product_profile_invocation_attempts
+  WHERE product_profile_run_id =
+      '00000000-0000-4000-8000-000000000691'
+    AND status = 'succeeded';
+
+  invalid_profile := jsonb_build_object(
+    'profileSchemaVersion', 'product-profile.0.3.0',
+    'sourceSiteId', '00000000-0000-4000-8000-000000000301',
+    'sourceSnapshotId', '00000000-0000-4000-8000-000000000701',
+    'analysisInvocationId', successful_invocation_id::text,
+    'generatedAt', '2026-07-22T00:00:00.000Z',
+    'fieldProvenance', jsonb_build_array(jsonb_build_object(
+      'fieldPath', '/product/name',
+      'evidenceRefs', jsonb_build_array(jsonb_build_object(
+        'kind', 'pageSnapshot',
+        'pageSnapshotId', '00000000-0000-4000-8000-000000009999'
+      ))
+    ))
+  );
+  validation := app.validate_product_profile_provenance(
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    invalid_profile
+  );
+  IF validation ->> 'ok' IS DISTINCT FROM 'false'
+     OR validation::text NOT LIKE '%page_snapshot_missing%' THEN
+    RAISE EXCEPTION 'product profile provenance accepted a foreign canonical reference';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.icp_profiles (
+      workspace_id, project_id, version, status, profile, content_hash, created_by
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      3,
+      'draft',
+      invalid_profile,
+      repeat('d', 64),
+      '00000000-0000-4000-8000-000000000101'
+    );
+  EXCEPTION WHEN check_violation THEN
+    invalid_profile_rejected := true;
+  END;
+  IF NOT invalid_profile_rejected THEN
+    RAISE EXCEPTION 'invalid Product Profile provenance reached canonical ICP storage';
+  END IF;
+END;
+$$;
+
 DO $$
 DECLARE
   duplicate_module_rejected boolean := false;
@@ -1877,7 +2329,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0013_exact_url_variant_rules' THEN
+  ) IS DISTINCT FROM '0015_frozen_crawl_seed' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;

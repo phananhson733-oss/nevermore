@@ -1,0 +1,894 @@
+import AxeBuilder from "@axe-core/playwright";
+import {
+  expect,
+  test,
+  type Page,
+  type Route,
+} from "@playwright/test";
+import {
+  ConfirmedProductProfileRowDto as ConfirmedProductProfileRowSchema,
+  ProductProfileDraft as ProductProfileDraftSchema,
+  ProductProfileDraftRowDto as ProductProfileDraftRowSchema,
+  type ConfirmedProductProfileRowDto,
+  type ProductProfileDraft,
+  type ProductProfileDraftRowDto,
+  type ProductProfileRowDto,
+  type ProductProfileTargetAudience,
+} from "../packages/contracts/src/index.ts";
+import {
+  E2E_PROJECT_ID,
+  installCriticalFlowApi,
+  type CriticalFlowApiState,
+} from "./mock-api.ts";
+
+const NOW = "2026-07-22T08:30:00.000Z";
+const PROFILE_PATH =
+  `/api/mvp/projects/${E2E_PROJECT_ID}/product-profile` as const;
+const RUNS_PATH = `/api/mvp/projects/${E2E_PROJECT_ID}/runs` as const;
+const SITE_ID = "00000000-0000-4000-8000-000000000043";
+const PROFILE_ROW_ID = "00000000-0000-4000-8000-000000000601";
+const PRIMARY_AUDIENCE_ID = "00000000-0000-4000-8000-000000000610";
+const SECONDARY_AUDIENCE_ID = "00000000-0000-4000-8000-000000000611";
+const GUIDE_CX_ID = "00000000-0000-4000-8000-000000000620";
+const USERPILOT_ID = "00000000-0000-4000-8000-000000000621";
+const APPCUES_ID = "00000000-0000-4000-8000-000000000622";
+const DECLARED_COMPETITOR_ID = "00000000-0000-4000-8000-000000000623";
+const SYNTHESIS_RUN_ID = "00000000-0000-4000-8000-000000000630";
+
+interface ProductProfileRun {
+  readonly id: string;
+  readonly projectId: string;
+  readonly kind: string;
+  readonly status:
+    | "queued"
+    | "running"
+    | "completed"
+    | "partial"
+    | "failed"
+    | "cancelled";
+  readonly progress: {
+    readonly phase: string;
+    readonly current: number;
+    readonly total: number | null;
+    readonly messageKey: string;
+  };
+  readonly lastError: { readonly code: string; readonly summary: string } | null;
+  readonly resultRef: { readonly type: string; readonly id: string } | null;
+  readonly queuedAt: string;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
+}
+
+interface ProductProfileWorkspace {
+  readonly projectId: string;
+  readonly currentProfile: ProductProfileRowDto | null;
+  readonly confirmedProfile: ConfirmedProductProfileRowDto | null;
+  readonly activeSynthesisRun:
+    | (ProductProfileRun & {
+        readonly kind: "product_profile_synthesis";
+        readonly status: "queued" | "running";
+        readonly resultRef: null;
+      })
+    | null;
+}
+
+const PRIMARY_AUDIENCE = {
+  candidateId: PRIMARY_AUDIENCE_ID,
+  reviewStatus: "primary",
+  targetCompanyOrAudience: "B2B SaaS companies with 50–500 employees",
+  buyerRoles: ["VP Customer Success"],
+  userRoles: ["Customer Operations Lead"],
+  useCases: ["Standardize onboarding handoffs"],
+  triggers: ["Rising implementation volume"],
+  pains: ["Inconsistent handoffs"],
+  jtbd: ["Launch customers predictably"],
+  outcomes: ["Shorter time to value"],
+  barriers: ["Fragmented tooling"],
+  qualificationSignals: ["Dedicated customer operations team"],
+  disqualifiers: ["No repeatable onboarding motion"],
+} as const satisfies ProductProfileTargetAudience;
+
+const SECONDARY_AUDIENCE = {
+  candidateId: SECONDARY_AUDIENCE_ID,
+  reviewStatus: "secondary",
+  targetCompanyOrAudience: "Implementation agencies serving global SaaS teams",
+  buyerRoles: ["Agency Principal"],
+  userRoles: ["Implementation Manager"],
+  useCases: ["Coordinate multi-client implementations"],
+  triggers: ["Portfolio delivery is scaling"],
+  pains: ["Cross-client work is hard to standardize"],
+  jtbd: ["Deliver each implementation on schedule"],
+  outcomes: ["More predictable delivery margin"],
+  barriers: ["Client-specific process variance"],
+  qualificationSignals: ["Runs five or more concurrent implementations"],
+  disqualifiers: ["One-off consulting only"],
+} as const satisfies ProductProfileTargetAudience;
+
+const SEMANTIC_ROOTS = [
+  "/businessHint",
+  "/productName",
+  "/oneLiner",
+  "/category",
+  "/productType",
+  "/businessModels",
+  "/valueProposition",
+  "/coreFeatures",
+  "/targetMarkets",
+  "/targetAudiences",
+  "/competitorCandidates",
+] as const;
+
+function productProfileFixture(): ProductProfileDraft {
+  return ProductProfileDraftSchema.parse({
+    profileSchemaVersion: "product-profile.0.3.0",
+    sourceSiteId: SITE_ID,
+    sourcePageUrl: "https://relayops.com/product/",
+    sourceSnapshotId: null,
+    analysisInvocationId: null,
+    generatedAt: null,
+    businessHint: "Chinese B2B team serving an overseas market.",
+    productName: "RelayOps API Canonical",
+    oneLiner: "Customer onboarding operations for global B2B teams.",
+    category: "Customer Operations",
+    productType: "B2B SaaS",
+    businessModels: ["Subscription"],
+    valueProposition:
+      "Standardize complex onboarding without slowing customer-facing teams.",
+    coreFeatures: ["Workflow orchestration", "Handoff visibility"],
+    targetMarkets: [
+      { marketCode: "US", priority: "primary" },
+      { marketCode: "GB", priority: "secondary" },
+    ],
+    targetAudiences: [PRIMARY_AUDIENCE, SECONDARY_AUDIENCE],
+    competitorCandidates: [
+      {
+        candidateId: GUIDE_CX_ID,
+        name: "GuideCX",
+        domain: "guidecx.com",
+        relationship: "direct",
+        analysisScope: ["positioning", "keyword_gap"],
+        similarity: 0.88,
+        reason: "Overlapping customer onboarding workflow category.",
+        reviewStatus: "approved",
+        confidence: "high",
+      },
+      {
+        candidateId: USERPILOT_ID,
+        name: "Userpilot",
+        domain: "userpilot.com",
+        relationship: null,
+        analysisScope: [],
+        similarity: 0.64,
+        reason: "Discovered from the onboarding software SERP.",
+        reviewStatus: "candidate",
+        confidence: "medium",
+      },
+      {
+        candidateId: APPCUES_ID,
+        name: "Appcues",
+        domain: "appcues.com",
+        relationship: null,
+        analysisScope: [],
+        similarity: 0.42,
+        reason: "Reviewed and excluded from the direct comparison set.",
+        reviewStatus: "excluded",
+        confidence: "medium",
+      },
+    ],
+    fieldProvenance: SEMANTIC_ROOTS.map((path, index) => ({
+      path,
+      derivation: "declared",
+      confidence: "high",
+      evidenceRefs: [
+        {
+          evidenceRefId: `00000000-0000-4000-8000-${String(700 + index).padStart(12, "0")}`,
+          kind: "userEdit",
+        },
+      ],
+      limitation: null,
+      observedAt: null,
+    })),
+    missingFields: [],
+    conflictingFields: [],
+  });
+}
+
+function contentHash(version: number): string {
+  return (version % 16).toString(16).repeat(64);
+}
+
+function draftRow(
+  profile: ProductProfileDraft = productProfileFixture(),
+  version = 4,
+): ProductProfileDraftRowDto {
+  return ProductProfileDraftRowSchema.parse({
+    id: PROFILE_ROW_ID,
+    projectId: E2E_PROJECT_ID,
+    version,
+    status: "draft",
+    profile,
+    contentHash: contentHash(version),
+    createdAt: NOW,
+    isCurrent: true,
+    isConfirmed: false,
+  });
+}
+
+function draftWorkspace(
+  activeSynthesisRun: ProductProfileWorkspace["activeSynthesisRun"] = null,
+): ProductProfileWorkspace {
+  return {
+    projectId: E2E_PROJECT_ID,
+    currentProfile: draftRow(),
+    confirmedProfile: null,
+    activeSynthesisRun,
+  };
+}
+
+function runningSynthesisRun(): ProductProfileRun & {
+  readonly kind: "product_profile_synthesis";
+  readonly status: "running";
+  readonly resultRef: null;
+} {
+  return {
+    id: SYNTHESIS_RUN_ID,
+    projectId: E2E_PROJECT_ID,
+    kind: "product_profile_synthesis",
+    status: "running",
+    progress: {
+      phase: "analyzing_frozen_snapshot",
+      current: 2,
+      total: 5,
+      messageKey: "worker.product_profile.running",
+    },
+    lastError: null,
+    resultRef: null,
+    queuedAt: NOW,
+    startedAt: "2026-07-22T08:30:01.000Z",
+    completedAt: null,
+  };
+}
+
+interface ProductProfileApiState {
+  workspace: ProductProfileWorkspace;
+  readonly critical: CriticalFlowApiState;
+  readonly reads: string[];
+  readonly draftPatches: unknown[];
+  readonly competitorReviews: unknown[];
+  readonly competitorAdds: unknown[];
+  readonly confirmations: unknown[];
+  readonly synthesisStarts: unknown[];
+  readonly auditStarts: string[];
+  readonly runs: Map<string, ProductProfileRun>;
+}
+
+async function json(route: Route, data: unknown, status = 200): Promise<void> {
+  await route.fulfill({
+    status,
+    contentType: "application/json",
+    body: JSON.stringify({ data }),
+  });
+}
+
+function currentDraft(state: ProductProfileApiState): ProductProfileDraftRowDto {
+  const current = state.workspace.currentProfile;
+  if (!current || current.status !== "draft") {
+    throw new Error("Product Profile mock expected a current draft row");
+  }
+  return current;
+}
+
+function replaceCurrentDraft(
+  state: ProductProfileApiState,
+  profile: ProductProfileDraft,
+): ProductProfileDraftRowDto {
+  const current = currentDraft(state);
+  const next = draftRow(profile, current.version + 1);
+  state.workspace = { ...state.workspace, currentProfile: next };
+  return next;
+}
+
+async function installProductProfileApi(
+  page: Page,
+  initialWorkspace: ProductProfileWorkspace = draftWorkspace(),
+): Promise<ProductProfileApiState> {
+  const critical = await installCriticalFlowApi(page);
+  const state: ProductProfileApiState = {
+    workspace: initialWorkspace,
+    critical,
+    reads: [],
+    draftPatches: [],
+    competitorReviews: [],
+    competitorAdds: [],
+    confirmations: [],
+    synthesisStarts: [],
+    auditStarts: [],
+    runs: new Map(),
+  };
+  if (initialWorkspace.activeSynthesisRun) {
+    state.runs.set(
+      initialWorkspace.activeSynthesisRun.id,
+      initialWorkspace.activeSynthesisRun,
+    );
+  }
+
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const path = new URL(request.url()).pathname;
+    if (path.includes("/diagnostic-runs") || path.includes("/audit")) {
+      state.auditStarts.push(path);
+    }
+  });
+
+  await page.route(`**${RUNS_PATH}/**`, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const runId = path.split("/").at(-1) ?? "";
+    const run = state.runs.get(runId);
+    if (request.method() === "GET" && run) {
+      await json(route, run);
+      return;
+    }
+    await route.fulfill({
+      status: 501,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "about:blank",
+        title: "Product Profile mock route missing",
+        status: 501,
+        code: "E2E_PRODUCT_PROFILE_ROUTE_MISSING",
+        detail: `${request.method()} ${path} is not mocked.`,
+        requestId: "e2e-product-profile",
+      }),
+    });
+  });
+
+  await page.route(`**${PROFILE_PATH}**`, async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const path = new URL(request.url()).pathname;
+
+    if (method === "GET" && path === PROFILE_PATH) {
+      state.reads.push(path);
+      await json(route, state.workspace);
+      return;
+    }
+
+    if (method === "PATCH" && path === PROFILE_PATH) {
+      const body = request.postDataJSON() as {
+        readonly baseVersion: number;
+        readonly patch: Partial<ProductProfileDraft>;
+      };
+      state.draftPatches.push(body);
+      const nextProfile = ProductProfileDraftSchema.parse({
+        ...currentDraft(state).profile,
+        ...body.patch,
+      });
+      await json(route, replaceCurrentDraft(state, nextProfile));
+      return;
+    }
+
+    if (method === "POST" && path === `${PROFILE_PATH}/synthesis-runs`) {
+      const body = request.postDataJSON();
+      state.synthesisStarts.push(body);
+      const run = runningSynthesisRun();
+      state.runs.set(run.id, run);
+      state.workspace = { ...state.workspace, activeSynthesisRun: run };
+      await json(
+        route,
+        {
+          run,
+          statusUrl: `${RUNS_PATH}/${run.id}`,
+          resourceRef: null,
+        },
+        202,
+      );
+      return;
+    }
+
+    if (
+      method === "PATCH" &&
+      path.startsWith(`${PROFILE_PATH}/competitors/`)
+    ) {
+      const candidateId = path.split("/").at(-1) ?? "";
+      const body = request.postDataJSON() as {
+        readonly baseVersion: number;
+        readonly reviewStatus: "candidate" | "approved" | "excluded";
+        readonly relationship?: "direct" | "indirect" | null;
+        readonly analysisScope?: readonly (
+          | "positioning"
+          | "product_capability"
+          | "keyword_gap"
+          | "content"
+          | "serp_visibility"
+        )[];
+        readonly reason?: string;
+        readonly similarity?: number | null;
+      };
+      state.competitorReviews.push({ candidateId, body });
+      const current = currentDraft(state);
+      const nextProfile = ProductProfileDraftSchema.parse({
+        ...current.profile,
+        competitorCandidates: current.profile.competitorCandidates.map(
+          (candidate) =>
+            candidate.candidateId === candidateId
+              ? {
+                  ...candidate,
+                  reviewStatus: body.reviewStatus,
+                  relationship:
+                    "relationship" in body
+                      ? body.relationship
+                      : candidate.relationship,
+                  analysisScope:
+                    body.analysisScope ?? candidate.analysisScope,
+                  reason: body.reason ?? candidate.reason,
+                  similarity:
+                    "similarity" in body
+                      ? body.similarity
+                      : candidate.similarity,
+                }
+              : candidate,
+        ),
+      });
+      await json(route, replaceCurrentDraft(state, nextProfile));
+      return;
+    }
+
+    if (method === "POST" && path === `${PROFILE_PATH}/competitors`) {
+      const body = request.postDataJSON() as {
+        readonly baseVersion: number;
+        readonly name: string;
+        readonly domain: string;
+        readonly relationship: "direct" | "indirect";
+        readonly analysisScope: readonly (
+          | "positioning"
+          | "product_capability"
+          | "keyword_gap"
+          | "content"
+          | "serp_visibility"
+        )[];
+        readonly reason?: string;
+      };
+      state.competitorAdds.push(body);
+      const current = currentDraft(state);
+      const nextProfile = ProductProfileDraftSchema.parse({
+        ...current.profile,
+        competitorCandidates: [
+          ...current.profile.competitorCandidates,
+          {
+            candidateId: DECLARED_COMPETITOR_ID,
+            name: body.name,
+            domain: body.domain,
+            relationship: body.relationship,
+            analysisScope: body.analysisScope,
+            similarity: null,
+            reason: body.reason ?? "Customer-declared competitor.",
+            reviewStatus: "approved",
+            confidence: "high",
+          },
+        ],
+      });
+      await json(route, replaceCurrentDraft(state, nextProfile));
+      return;
+    }
+
+    if (method === "POST" && path === `${PROFILE_PATH}/confirm`) {
+      const body = request.postDataJSON();
+      state.confirmations.push(body);
+      const current = currentDraft(state);
+      const confirmed: ConfirmedProductProfileRowDto =
+        ConfirmedProductProfileRowSchema.parse({
+          ...current,
+          status: "complete",
+          isConfirmed: true,
+        });
+      state.workspace = {
+        ...state.workspace,
+        currentProfile: confirmed,
+        confirmedProfile: confirmed,
+        activeSynthesisRun: null,
+      };
+      await json(route, confirmed);
+      return;
+    }
+
+    await route.fulfill({
+      status: 501,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "about:blank",
+        title: "Product Profile mock route missing",
+        status: 501,
+        code: "E2E_PRODUCT_PROFILE_ROUTE_MISSING",
+        detail: `${method} ${path} is not mocked.`,
+        requestId: "e2e-product-profile",
+      }),
+    });
+  });
+
+  return state;
+}
+
+async function useChineseUi(page: Page): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: "sf_ui_locale",
+      value: "zh-CN",
+      domain: "localhost",
+      path: "/",
+    },
+  ]);
+}
+
+async function gotoProductProfile(page: Page): Promise<void> {
+  await useChineseUi(page);
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+  await expect(
+    page.getByRole("heading", { name: "RelayOps API Canonical" }),
+  ).toBeVisible();
+}
+
+async function blockingAxeViolations(
+  page: Page,
+  selector: string,
+): Promise<string[]> {
+  const results = await new AxeBuilder({ page })
+    .include(selector)
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  return results.violations
+    .filter(
+      (violation) =>
+        violation.impact === "critical" || violation.impact === "serious",
+    )
+    .map(
+      (violation) =>
+        `${violation.id} (${violation.impact}) @ ${violation.nodes
+          .flatMap((node) => node.target)
+          .join(", ")}`,
+    );
+}
+
+async function hasPageOverflow(page: Page): Promise<boolean> {
+  return page.evaluate(
+    () =>
+      document.documentElement.scrollWidth >
+      document.documentElement.clientWidth + 1,
+  );
+}
+
+test("does not substitute a client fixture when the canonical API is unavailable", async ({
+  page,
+}) => {
+  await installCriticalFlowApi(page);
+  await page.route(`**${PROFILE_PATH}`, async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "about:blank",
+        title: "Product Profile unavailable",
+        status: 503,
+        code: "PROFILE_SOURCE_UNAVAILABLE",
+        detail: "The canonical Product Profile read model is unavailable.",
+        requestId: "e2e-no-profile-fallback",
+      }),
+    });
+  });
+  await useChineseUi(page);
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+
+  const alert = page.locator("#main-content").getByRole("alert");
+  await expect(
+    alert.getByRole("heading", { name: "无法加载 Product Profile" }),
+  ).toBeVisible();
+  await expect(alert).toContainText(
+    "The canonical Product Profile read model is unavailable.",
+  );
+  await expect(
+    page.getByRole("heading", { name: "RelayOps API Canonical" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("草稿 · v4", { exact: true })).toHaveCount(0);
+});
+
+test("loads an API-backed draft in the Chinese-first customer view and sends only changed roots", async ({
+  page,
+}) => {
+  const api = await installProductProfileApi(page);
+  await gotoProductProfile(page);
+
+  await expect.poll(() => api.reads.length).toBeGreaterThan(0);
+  await expect(page.getByText("草稿 · v4", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("paragraph").filter({ hasText: /^产品身份$/ }),
+  ).toBeVisible();
+  await expect(page.getByText("Buyer Roles", { exact: true })).toBeVisible();
+  await expect(page.getByText("JTBD", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "SEO / GEO 分析使用的对比集合",
+    }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "编辑 Product Profile" }).click();
+  const editor = page.getByRole("dialog", {
+    name: "编辑 Product Profile 与 Primary ICP",
+  });
+  await expect(editor).toBeVisible();
+
+  await editor.getByLabel("产品名称").fill("RelayOps Global");
+  await editor.getByLabel("产品类别").fill("Customer Success Operations");
+  await editor.getByLabel("产品类型").selectOption("Developer Tool");
+  await editor
+    .getByRole("checkbox", { name: "Services", exact: true })
+    .check();
+  await editor.getByLabel("主要海外市场").selectOption("GB");
+  await editor.getByRole("checkbox", { name: "US", exact: true }).check();
+  await editor
+    .getByLabel("Primary ICP 候选")
+    .selectOption(SECONDARY_AUDIENCE_ID);
+  await editor
+    .getByLabel("目标企业 / 目标用户")
+    .fill("Implementation agencies with a repeatable SaaS delivery motion");
+  await editor.getByRole("button", { name: "保存为新版本" }).click();
+
+  await expect.poll(() => api.draftPatches.length).toBe(1);
+  expect(api.draftPatches[0]).toEqual({
+    baseVersion: 4,
+    patch: {
+      productName: "RelayOps Global",
+      category: "Customer Success Operations",
+      productType: "Developer Tool",
+      businessModels: ["Subscription", "Services"],
+      targetMarkets: [
+        { marketCode: "GB", priority: "primary" },
+        { marketCode: "US", priority: "secondary" },
+      ],
+      targetAudiences: [
+        { ...PRIMARY_AUDIENCE, reviewStatus: "secondary" },
+        {
+          ...SECONDARY_AUDIENCE,
+          reviewStatus: "primary",
+          targetCompanyOrAudience:
+            "Implementation agencies with a repeatable SaaS delivery motion",
+        },
+      ],
+    },
+  });
+  expect(
+    Object.keys(
+      (api.draftPatches[0] as { patch: Record<string, unknown> }).patch,
+    ).sort(),
+  ).toEqual([
+    "businessModels",
+    "category",
+    "productName",
+    "productType",
+    "targetAudiences",
+    "targetMarkets",
+  ]);
+
+  await expect(
+    page.getByRole("heading", { name: "RelayOps Global" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Product Profile 已保存", { exact: true }),
+  ).toBeVisible();
+});
+
+test("enforces approved/candidate/excluded rules and records a declared competitor through the API", async ({
+  page,
+}) => {
+  const api = await installProductProfileApi(page);
+  await gotoProductProfile(page);
+
+  const approved = page.locator("article").filter({ hasText: "GuideCX" });
+  const candidate = page.locator("article").filter({ hasText: "Userpilot" });
+  const excluded = page.locator("article").filter({ hasText: "Appcues" });
+  await expect(approved.getByText("已批准", { exact: true })).toBeVisible();
+  await expect(candidate.getByText("候选", { exact: true })).toBeVisible();
+  await expect(excluded.getByText("已排除", { exact: true })).toBeVisible();
+
+  await candidate.getByRole("button", { name: "审核 / 纠正" }).click();
+  const reviewDialog = page.getByRole("dialog", { name: "Userpilot" });
+  const applyReview = reviewDialog.getByRole("button", { name: "应用审核" });
+  await expect(applyReview).toBeEnabled();
+
+  await reviewDialog.getByLabel("审核状态").selectOption("approved");
+  await expect(applyReview).toBeDisabled();
+  await reviewDialog.getByLabel("审核状态").selectOption("excluded");
+  await expect(applyReview).toBeEnabled();
+  await applyReview.click();
+
+  await expect.poll(() => api.competitorReviews.length).toBe(1);
+  expect(api.competitorReviews[0]).toEqual({
+    candidateId: USERPILOT_ID,
+    body: {
+      baseVersion: 4,
+      reviewStatus: "excluded",
+      relationship: null,
+      analysisScope: [],
+      reason: "Discovered from the onboarding software SERP.",
+    },
+  });
+
+  await page.getByRole("button", { name: "添加竞品" }).click();
+  const addDialog = page.getByRole("dialog", { name: "添加已批准竞品" });
+  await addDialog.getByLabel("竞品名称").fill("ChurnZero");
+  await addDialog
+    .getByLabel("标准化域名")
+    .fill("https://ChurnZero.com/platform");
+  await addDialog.getByLabel("竞争关系").selectOption("indirect");
+  await addDialog
+    .getByRole("group", { name: "分析范围" })
+    .getByRole("checkbox", { name: "关键词缺口" })
+    .check();
+  await addDialog
+    .getByLabel("纳入竞品池的原因")
+    .fill("Customer-declared alternative in enterprise evaluations.");
+  await addDialog.getByRole("button", { name: "应用审核" }).click();
+
+  await expect.poll(() => api.competitorAdds.length).toBe(1);
+  expect(api.competitorAdds[0]).toEqual({
+    baseVersion: 5,
+    name: "ChurnZero",
+    domain: "churnzero.com",
+    relationship: "indirect",
+    analysisScope: ["keyword_gap"],
+    reason: "Customer-declared alternative in enterprise evaluations.",
+  });
+  const declared = page.locator("article").filter({ hasText: "ChurnZero" });
+  await expect(declared.getByText("已批准", { exact: true })).toBeVisible();
+  await expect(declared.getByText("间接竞品", { exact: true })).toBeVisible();
+});
+
+test("confirmation stays independent from Audit and makes the confirmed profile read-only", async ({
+  page,
+}) => {
+  const api = await installProductProfileApi(page);
+  await gotoProductProfile(page);
+
+  await page
+    .getByRole("button", { name: "确认 Product Profile", exact: true })
+    .click();
+  const confirmation = page.getByRole("dialog", {
+    name: "确认这份 Product Profile？",
+  });
+  await expect(confirmation).toContainText("本操作不会启动 Audit");
+  await confirmation
+    .getByRole("button", { name: "确认 Product Profile", exact: true })
+    .click();
+
+  await expect.poll(() => api.confirmations.length).toBe(1);
+  expect(api.confirmations).toEqual([{ baseVersion: 4 }]);
+  expect(api.auditStarts).toEqual([]);
+  expect(api.critical.diagnosticRequests).toEqual([]);
+
+  await expect(page.getByText("客户已确认", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("此版本已由客户明确确认，可以作为后续工作的正式背景。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "编辑 Product Profile" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "基于网站证据生成" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "添加竞品" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "审核 / 纠正" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "确认 Product Profile" }),
+  ).toHaveCount(0);
+});
+
+test("renders the active synthesis as inline canonical run progress", async ({
+  page,
+}) => {
+  const active = runningSynthesisRun();
+  const api = await installProductProfileApi(page, draftWorkspace(active));
+  await gotoProductProfile(page);
+
+  await expect(
+    page.getByText("正在基于冻结证据生成 Product Profile", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("运行中 · analyzing_frozen_snapshot", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("2/5", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "生成中…" })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "编辑 Product Profile" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "暂不能确认" }),
+  ).toBeDisabled();
+  expect(api.synthesisStarts).toEqual([]);
+  expect(api.auditStarts).toEqual([]);
+});
+
+test("contains modal focus, closes with Escape, and restores the launch control", async ({
+  page,
+}) => {
+  await installProductProfileApi(page);
+  await gotoProductProfile(page);
+
+  const trigger = page.getByRole("button", { name: "编辑 Product Profile" });
+  await trigger.click();
+  const editor = page.getByRole("dialog", {
+    name: "编辑 Product Profile 与 Primary ICP",
+  });
+  const close = editor.getByRole("button", { name: "关闭" });
+  const cancel = editor.getByRole("button", { name: "取消" });
+  await expect(editor).toBeVisible();
+  await expect(close).toBeFocused();
+
+  const backgroundState = await page.locator("#main-content").evaluate((main) => {
+    let root: Element = main;
+    while (root.parentElement && root.parentElement !== document.body) {
+      root = root.parentElement;
+    }
+    return {
+      inert: root.hasAttribute("inert"),
+      ariaHidden: root.getAttribute("aria-hidden"),
+    };
+  });
+  expect(backgroundState).toEqual({ inert: true, ariaHidden: "true" });
+
+  await page.keyboard.press("Shift+Tab");
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+  expect(
+    await blockingAxeViolations(
+      page,
+      "[data-product-profile-modal-backdrop]",
+    ),
+  ).toEqual([]);
+
+  await page.keyboard.press("Escape");
+  await expect(editor).toBeHidden();
+  await expect(trigger).toBeFocused();
+  const restoredBackground = await page
+    .locator("#main-content")
+    .evaluate((main) => {
+      let root: Element = main;
+      while (root.parentElement && root.parentElement !== document.body) {
+        root = root.parentElement;
+      }
+      return {
+        inert: root.hasAttribute("inert"),
+        ariaHidden: root.getAttribute("aria-hidden"),
+      };
+    });
+  expect(restoredBackground).toEqual({ inert: false, ariaHidden: null });
+});
+
+test("has no page-level overflow or blocking axe findings on desktop and 390px", async ({
+  page,
+}) => {
+  await installProductProfileApi(page);
+  await useChineseUi(page);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+  await expect(
+    page.getByRole("heading", { name: "RelayOps API Canonical" }),
+  ).toBeVisible();
+  expect(await hasPageOverflow(page), "desktop Product Profile overflow").toBe(
+    false,
+  );
+  expect(await blockingAxeViolations(page, "#main-content")).toEqual([]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.getByRole("paragraph").filter({ hasText: /^产品身份$/ }),
+  ).toBeVisible();
+  expect(await hasPageOverflow(page), "390px Product Profile overflow").toBe(
+    false,
+  );
+  expect(await blockingAxeViolations(page, "#main-content")).toEqual([]);
+});

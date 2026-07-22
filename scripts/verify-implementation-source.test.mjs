@@ -37,13 +37,15 @@ test("freezes the activated v0.3 machine versions without bumping rules or promp
   assert.match(verifier, /const PROMPT_SET_VERSION = "mvp\.prompts\.0\.2\.0";/);
 });
 
-test("freezes the five Slice 1 persistence tables in the 33-table contract", () => {
+test("freezes the seven Slice 1 persistence tables in the 35-table contract", () => {
   for (const table of [
     "capability_runs",
     "audit_runs",
     "audit_module_results",
     "site_pages",
     "page_snapshots",
+    "product_profile_runs",
+    "product_profile_invocation_attempts",
   ]) {
     assert.match(verifier, new RegExp(`"${table}"`));
   }
@@ -53,7 +55,36 @@ test("freezes the five Slice 1 persistence tables in the 33-table contract", () 
   assert.ok(expectedTablesBlock);
   assert.equal(
     [...expectedTablesBlock[1].matchAll(/^\s+"[a-z][a-z0-9_]*",$/gm)].length,
-    33,
+    35,
+  );
+});
+
+test("freezes the 32 implemented operations and six async commands", () => {
+  for (const operationId of [
+    "getProjectProductProfile",
+    "updateProductProfileDraft",
+    "createProductProfileSynthesisRun",
+    "reviewProductProfileCompetitor",
+    "addProductProfileCompetitor",
+    "confirmProductProfile",
+  ]) {
+    assert.match(verifier, new RegExp(`"${operationId}"`));
+  }
+  assert.match(
+    verifier,
+    /expected \$\{EXPECTED_OPENAPI_OPERATIONS\.length\} OpenAPI operations, found \$\{operationIds\.length\}/,
+  );
+  assert.match(
+    verifier,
+    /expected \$\{EXPECTED_ASYNC_OPERATIONS\.length\} async 202 operations, found \$\{asyncOperations\.length\}/,
+  );
+  assert.match(
+    verifier,
+    /OpenAPI: \$\{EXPECTED_OPENAPI_OPERATIONS\.length\} operations, \$\{EXPECTED_ASYNC_OPERATIONS\.length\} shared 202 statusUrl operations/,
+  );
+  assert.match(
+    verifier,
+    /async runtime: \$\{EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS\.length\} route handlers use the shared asyncAccepted envelope/,
   );
 });
 

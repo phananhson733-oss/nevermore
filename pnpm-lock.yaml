@@ -273,6 +273,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@sf/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@sf/observability':
         specifier: workspace:*
         version: link:../observability

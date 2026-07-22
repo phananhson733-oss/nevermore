@@ -52,28 +52,77 @@ const exactVariantRulesMigration = readFileSync(
   ),
   "utf8",
 );
+const productProfileSynthesisMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0014_product_profile_synthesis.sql",
+  ),
+  "utf8",
+);
+const frozenCrawlSeedMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0015_frozen_crawl_seed.sql",
+  ),
+  "utf8",
+);
 const authorityTables = [
   ...authoritySql.matchAll(
     /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?app\.([a-z][a-z0-9_]*)\s*\(/gi,
   ),
 ].map((match) => match[1]);
 
-test("declares the activated v0.3 machine surface and exactly 33 application tables", () => {
+test("declares the activated v0.3 machine surface and exactly 35 application tables", () => {
   assert.match(authorityReadme, /状态：\*\*activated\*\*/);
   assert.match(authorityReadme, /当前已实现机器面：\*\*0\.3\.0\*\*/);
   assert.match(authoritySpec, /status: activated/);
   assert.match(authoritySpec, /implemented_surface_version: 0\.3\.0/);
   assert.match(authorityOpenApi, /^\s+version: 0\.3\.0$/m);
-  assert.equal(authorityTables.length, 33);
+  assert.equal(authorityTables.length, 35);
   for (const table of [
     "capability_runs",
     "audit_runs",
     "audit_module_results",
     "site_pages",
     "page_snapshots",
+    "product_profile_runs",
+    "product_profile_invocation_attempts",
   ]) {
     assert.ok(authorityTables.includes(table), `${table} is missing`);
   }
+});
+
+test("declares all 32 implemented operations and six real async commands", () => {
+  const operationBlock = authoritySpec.slice(
+    authoritySpec.indexOf("<!-- API_OPERATIONS_START -->"),
+    authoritySpec.indexOf("<!-- API_OPERATIONS_END -->"),
+  );
+  const declaredOperations = [
+    ...operationBlock.matchAll(/^- `([a-z][A-Za-z0-9]+)`/gm),
+  ].map((match) => match[1]);
+  assert.equal(declaredOperations.length, 32);
+  for (const operationId of [
+    "getProjectProductProfile",
+    "updateProductProfileDraft",
+    "createProductProfileSynthesisRun",
+    "reviewProductProfileCompetitor",
+    "addProductProfileCompetitor",
+    "confirmProductProfile",
+  ]) {
+    assert.ok(declaredOperations.includes(operationId), `${operationId} is missing`);
+  }
+
+  const asyncBlock = authoritySpec.slice(
+    authoritySpec.indexOf("<!-- ASYNC_OPERATIONS_START -->"),
+    authoritySpec.indexOf("<!-- ASYNC_OPERATIONS_END -->"),
+  );
+  const declaredAsyncOperations = [
+    ...asyncBlock.matchAll(/^- `([a-z][A-Za-z0-9]+)`/gm),
+  ].map((match) => match[1]);
+  assert.equal(declaredAsyncOperations.length, 6);
+  assert.ok(
+    declaredAsyncOperations.includes("createProductProfileSynthesisRun"),
+  );
 });
 
 test("allows concurrent CSV and DataForSEO lineage without double-counting demand", () => {
@@ -204,10 +253,12 @@ test("declares traceable Slice 1 persistence without a second mutable lifecycle"
   assert.match(authoritySql, /CREATE TRIGGER site_pages_set_updated_at/);
 });
 
-test("bounds exact cumulative migrations and defines every owned object once", () => {
+test("bounds every cumulative executable migration through Product Profile synthesis and frozen Crawl seeds", () => {
   for (const migrationVersion of [
     "0012_page_snapshot_lineage_hardening",
     "0013_exact_url_variant_rules",
+    "0014_product_profile_synthesis",
+    "0015_frozen_crawl_seed",
   ]) {
     assert.equal(
       authoritySql.match(
@@ -235,7 +286,18 @@ test("bounds exact cumulative migrations and defines every owned object once", (
     "expected_diagnostic_rule_version",
     "enforce_diagnostic_rule_version_lineage",
     "enforce_finding_rule_version_lineage",
+    "enforce_product_profile_invocation_attempt_transition",
+    "reserve_product_profile_invocation_attempt",
+    "finalize_product_profile_invocation_attempt",
+    "mark_product_profile_invocation_outcome_unknown",
+    "validate_product_profile_provenance",
+    "enforce_icp_profile_product_profile_provenance",
+    "enforce_product_profile_run_provenance",
+    "enforce_product_profile_run_frozen_input",
+    "enforce_product_profile_async_result_provenance",
   ]) {
+    const expectedCount =
+      functionName === "enforce_collection_run_provenance" ? 2 : 1;
     assert.equal(
       authoritySql.match(
         new RegExp(
@@ -243,8 +305,8 @@ test("bounds exact cumulative migrations and defines every owned object once", (
           "gi",
         ),
       )?.length,
-      1,
-      `${functionName} must have one canonical definition`,
+      expectedCount,
+      `${functionName} must match the cumulative migration history`,
     );
   }
 
@@ -259,13 +321,37 @@ test("bounds exact cumulative migrations and defines every owned object once", (
     "diagnostic_runs_current_manifest_guard",
     "diagnostic_run_rules_version_guard",
     "findings_rule_version_guard",
+    "product_profile_invocation_attempts_transition_guard",
+    "icp_profiles_product_profile_provenance_guard",
+    "product_profile_runs_provenance_guard",
+    "product_profile_runs_frozen_input_guard",
+    "async_runs_product_profile_result_guard",
   ]) {
+    const expectedCount =
+      triggerName === "collection_runs_provenance_guard" ? 2 : 1;
     assert.equal(
       authoritySql.match(new RegExp(`CREATE\\s+TRIGGER\\s+${triggerName}\\b`, "gi"))
         ?.length,
-      1,
-      `${triggerName} must have one canonical definition`,
+      expectedCount,
+      `${triggerName} must match the cumulative migration history`,
     );
+  }
+});
+
+test("schema smoke exercises Product Profile reservations, provenance, and exact frozen Crawl seeds", () => {
+  assert.equal(authoritySchemaSmoke, implementationSchemaSmoke);
+  for (const marker of [
+    "expected exactly 35 app tables",
+    "product profile invocation reservation was not persisted",
+    "a fourth product profile invocation reservation was accepted",
+    "unresolved product profile invocation allowed another provider call",
+    "product profile provenance accepted a foreign canonical reference",
+    "product profile run accepted an unfrozen manifest",
+    "Crawl seed accepted a different exact URL",
+    "frozen Crawl seed identity was mutated",
+    "0015_frozen_crawl_seed",
+  ]) {
+    assert.match(authoritySchemaSmoke, new RegExp(marker));
   }
 });
 
@@ -346,8 +432,14 @@ test("retains cumulative async-run and export-bundle invariant guards", () => {
   }
 });
 
+const cumulativeMigrationOwnedTables = new Set([
+  "product_profile_runs",
+  "product_profile_invocation_attempts",
+]);
+
 function tableSql(tables) {
   return tables
+    .filter((table) => !cumulativeMigrationOwnedTables.has(table))
     .map(
       (table) =>
         `CREATE TABLE IF NOT EXISTS app.${table} (id uuid PRIMARY KEY);`,
@@ -367,6 +459,8 @@ function fixture(t, migrations) {
   const completeMigrations = {
     "0012_page_snapshot_lineage_hardening.sql": pageSnapshotLineageMigration,
     "0013_exact_url_variant_rules.sql": exactVariantRulesMigration,
+    "0014_product_profile_synthesis.sql": productProfileSynthesisMigration,
+    "0015_frozen_crawl_seed.sql": frozenCrawlSeedMigration,
     ...migrations,
   };
   for (const [name, sql] of Object.entries(completeMigrations)) {
@@ -510,7 +604,7 @@ ${epilogueMarker}`,
 
 test("rejects an app migration set that omits an authority table", (t) => {
   const appRoot = fixture(t, {
-    "0001_init.sql": tableSql(authorityTables.slice(0, -1)),
+    "0001_init.sql": tableSql(authorityTables.slice(1)),
   });
 
   const result = run(appRoot);
@@ -559,6 +653,44 @@ test("rejects an exact-variant migration that omits diagnostic rule lineage", (t
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /exact cumulative 0013 diagnostic and rule-lineage contract/i);
+});
+
+test("rejects Product Profile migration drift in the durable three-call budget", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = productProfileSynthesisMigration.replace(
+    "ordinal smallint NOT NULL CHECK (ordinal BETWEEN 1 AND 3)",
+    "ordinal smallint NOT NULL CHECK (ordinal BETWEEN 1 AND 4)",
+  );
+  assert.notEqual(mutatedMigration, productProfileSynthesisMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0014_product_profile_synthesis.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exact cumulative 0014 Product Profile synthesis/i);
+});
+
+test("rejects frozen Crawl seed migration drift", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = frozenCrawlSeedMigration.replace(
+    "length(NEW.crawl_seed_url) NOT BETWEEN 1 AND 2048",
+    "length(NEW.crawl_seed_url) NOT BETWEEN 1 AND 4096",
+  );
+  assert.notEqual(mutatedMigration, frozenCrawlSeedMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0015_frozen_crawl_seed.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exact cumulative 0015 frozen Crawl seed/i);
 });
 
 test("rejects duplicate app migration ordinals", (t) => {

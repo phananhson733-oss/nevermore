@@ -10,7 +10,7 @@ owner: SignalFrame
 
 # Nevermore Unified Growth Opportunity — v0.3 可执行权威
 
-本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确保留 26 个 operation 与 5 个 async operation，SQL 精确声明 33 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
+本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 32 个 operation 与 6 个 async operation，SQL 精确声明 35 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
 
 规范词“必须 / MUST”“不得 / MUST NOT”是当前机器面或已审核变更边界的发布条件；“应 / SHOULD”是强建议，偏离时必须在代码评审中记录原因；“可 / MAY”是非阻塞增强。凡是标为“reviewed change sequence”“planned”或“stop gate 后”的内容，均不是当前可调用 API、已存在表或已交付产品事实。
 
@@ -128,6 +128,7 @@ v0.3 明确禁止以下并行或提前建设：
 | 领域 | 首版范围 |
 |---|---|
 | 项目背景 | 项目、站点、ICP、Persona、市场、语言、转化、限制、90 天目标；draft/complete 两种保存 |
+| 产品画像 | URL-first Product Profile 读取/编辑/确认；从冻结 Crawl Snapshot/PageSnapshot/Observation 合成可审核字段和竞品候选；provider 调用由 durable reservation 限额且可追溯 |
 | 数据中心 | Crawl、GSC、GA4、Keyword Gap CSV、DataForSEO ranked keywords；统一 Run/Snapshot/Observation 血缘 |
 | 诊断 | 11 条确定性规则、五个域、覆盖状态、Evidence、跨 Run 稳定 Finding |
 | Growth Audit | versioned Capability/Audit contract、只读 Opportunity projection；最小 audit/page persistence 只引用 canonical Run/Snapshot，不复制状态或证据事实 |
@@ -880,6 +881,12 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `getProject` — 读取项目 aggregate。
 - `getProjectContext` — 读取当前 ICP 版本；首次保存前返回 null。
 - `updateProjectContext` — 保存 draft/complete ICP 新版本。
+- `getProjectProductProfile` — 读取当前、已确认和正在合成的 Product Profile 版本及其来源状态。
+- `updateProductProfileDraft` — 仅把用户实际修改的字段追加为新的 Product Profile draft 版本。
+- `createProductProfileSynthesisRun` — 从冻结 Crawl 证据清单启动 Product Profile 合成。
+- `reviewProductProfileCompetitor` — 审核、更正或排除一个竞品候选并追加新版本。
+- `addProductProfileCompetitor` — 补录一个用户声明的竞品并追加新版本。
+- `confirmProductProfile` — 显式确认已审核版本；不得隐式启动诊断或 Audit。
 - `getProjectWorkspaceView` — 读取 overview/plan/studio/report 聚合视图。
 - `listProjectSources` — 读取连接、capability、最新 snapshot。
 - `connectProjectSource` — OAuth authorize/property selection。
@@ -909,6 +916,7 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `importProjectSourceFile`（仅 `mode=confirm`）
 - `createCollectionRun`
 - `createDiagnosticRun`
+- `createProductProfileSynthesisRun`
 - `createActionArtifact`
 - `createProjectExport`
 <!-- ASYNC_OPERATIONS_END -->
@@ -923,7 +931,7 @@ Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `met
 
 ## 12. PostgreSQL 合同
 
-### 12.1 33 张应用表
+### 12.1 35 张应用表
 
 表的 DDL、check、FK、索引和 append-only trigger 以 [schema.sql](schema.sql) 为准。以下集合由 verifier 与 SQL 做精确一致性检查。
 
@@ -961,11 +969,15 @@ Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `met
 - `audit_module_results`
 - `site_pages`
 - `page_snapshots`
+- `product_profile_runs`
+- `product_profile_invocation_attempts`
 <!-- TABLES_END -->
 
-pg-boss 自己的 schema/table 不计入这 33 张，由固定版本的 pg-boss 自行迁移；不得复制到 Drizzle migrations 或手改。
+pg-boss 自己的 schema/table 不计入这 35 张，由固定版本的 pg-boss 自行迁移；不得复制到 Drizzle migrations 或手改。
 
 新增的 Slice 1 persistence 遵守以下不变量：`capability_runs` 以 canonical `async_runs.id` 为主键；`audit_runs` 只引用同一个 canonical Diagnostic/Capability run 且不拥有 `status`；`audit_module_results` 是不可变模块投影；`page_snapshots` 必须引用同 tenant/site 的 immutable `data_snapshots`；上述四类记录 append-only。`audit_runs_provenance_guard`、`site_pages_provenance_guard` 与 `page_snapshots_provenance_guard` 在数据库边界拒绝跨 workspace/project/site 拼接。`site_pages` 只维护项目内 URL identity，可更新 template identity，但不得承载不可溯源的指标或抽取内容。
+
+Product Profile persistence 只补充可追溯账本，不建立第二套画像 truth：`icp_profiles` 仍是 append-only canonical profile；`product_profile_runs` 以同一个 `async_runs.id` 冻结 base ICP、Crawl Snapshot、页面清单、selection/synthesis/prompt 版本与输入 hash；`product_profile_invocation_attempts` 在 provider 网络边界之前持久化 reservation，每个 run 最多三次，`reserved`/`outcome_unknown` 均阻止未经裁决的再次调用。所有模型生成语义字段必须带精确 canonical provenance；数据库函数必须拒绝跨 workspace/project/site、非 Crawl、过期 Snapshot、伪造 PageSnapshot/Observation 或不匹配 AnalysisInvocation 的引用。`collection_runs.crawl_seed_site_page_id` 与 `crawl_seed_url` 必须成对冻结并精确匹配同项目 `site_pages` identity，接受后不可改写。
 
 ### 12.2 Repository scope 与 RLS
 
@@ -1104,7 +1116,7 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 - 初始化独立 pnpm monorepo、Node/Next/TS lint/typecheck/test。
 - 复制 OpenAPI、SQL，生成 API types；CI 运行 Redocly 和 spec verifier。
-- 启动本地 Supabase/Postgres 与 pg-boss；应用 33 表 migration。
+- 启动本地 Supabase/Postgres 与 pg-boss；应用 35 表 migration。
 - 实现 Supabase Auth、单 Workspace bootstrap、repository scope、requestId/problem details。
 - 捕获旧仓 status/diff/hash baseline；不修改旧仓。
 
@@ -1163,9 +1175,9 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 ### 17.1 合同与基础
 
-- **AC-001** `pnpm verify:authority` 通过；26 operationId、5 async operation、33 table 与当前应用 ordered migrations 完全一致。
+- **AC-001** `pnpm verify:authority` 通过；32 operationId、6 async operation、35 table 与当前应用 ordered migrations 完全一致；0012～0015 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0015_frozen_crawl_seed`。
 - **AC-002** Redocly lint 无 error；生成 client/server types 无手工 `any` patch。
-- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；33 表、索引、trigger 存在。
+- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；35 表、Product Profile reservation/provenance routines、frozen Crawl seed constraints、索引与 trigger 存在。
 - **AC-004** pg-boss schema 由库创建且不进入 Drizzle migration。
 - **AC-005** 未认证 API 401；跨 Workspace/project child ID 404；browser 不能直连 app schema。
 - **AC-006** 创建 Run 与 enqueue 任一侧故障均整体 rollback；不存在 queued-without-job 或 job-without-run。

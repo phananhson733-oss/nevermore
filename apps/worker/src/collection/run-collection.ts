@@ -1,7 +1,10 @@
 import {
   AsyncRunsRepository,
+  collectionRunParametersHash,
   CollectionRunsRepository,
+  contentHash,
   ProjectsRepository,
+  SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
   SourceCredentialsRepository,
@@ -617,6 +620,77 @@ export async function runCollection(
   }
 }
 
+/**
+ * Resolve only the command-time frozen Crawl seed. The worker never consults
+ * the project's mutable current Product Profile, so a profile edit after queue
+ * acceptance cannot redirect this run.
+ */
+async function resolveFrozenCrawlSeedUrl(
+  ctx: CollectionWorkerContext,
+  run: CollectionRunRow,
+  scope: { readonly workspaceId: string; readonly projectId: string },
+): Promise<string | null> {
+  const seedPageId = run.crawl_seed_site_page_id;
+  const seedUrl = run.crawl_seed_url;
+  if ((seedPageId === null) !== (seedUrl === null)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen Crawl seed identity is incomplete.",
+    );
+  }
+  if (run.provider !== "crawl") {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "A non-Crawl collection cannot carry a frozen Crawl seed.",
+    );
+  }
+
+  const expectedParametersHash = collectionRunParametersHash({
+    provider: run.provider,
+    operation: run.operation,
+    siteId: run.site_id,
+    crawlSeedSitePageId: seedPageId,
+    crawlSeedUrl: seedUrl,
+  });
+  // Rows accepted before 0015 had no seed columns in their hash. They remain
+  // executable after the forward migration, but arbitrary hashes do not.
+  const legacyNullSeedHash =
+    seedPageId === null && seedUrl === null
+      ? contentHash({
+          provider: run.provider,
+          operation: run.operation,
+          siteId: run.site_id,
+        })
+      : null;
+  if (
+    run.parameters_hash !== expectedParametersHash &&
+    run.parameters_hash !== legacyNullSeedHash
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen Crawl seed parameters do not match the accepted command.",
+    );
+  }
+  if (seedPageId === null || seedUrl === null) return null;
+
+  if (seedUrl.length < 1 || seedUrl.length > 2048) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen Crawl seed URL is invalid.",
+    );
+  }
+  const sourcePage = await new SitePagesRepository(
+    ctx.db,
+  ).findExactNormalizedUrl(scope, run.site_id, seedUrl);
+  if (!sourcePage || sourcePage.id !== seedPageId) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen Crawl seed does not match its project SitePage.",
+    );
+  }
+  return seedUrl;
+}
+
 async function collectByProvider(
   ctx: CollectionWorkerContext,
   run: CollectionRunRow,
@@ -641,6 +715,7 @@ async function collectByProvider(
           "The crawl run method version is not supported by this worker.",
         );
       }
+      const seedUrl = await resolveFrozenCrawlSeedUrl(ctx, run, scope);
       const fetcher = providerMetrics.wrapCrawlFetcher(
         ctx.crawl?.fetcher ??
           createDefaultCrawlFetcher(DEFAULT_CRAWL_USER_AGENT),
@@ -652,7 +727,11 @@ async function collectByProvider(
           : {}),
       });
       const result = await adapter.collect(
-        { origin: site.origin, host: site.host },
+        {
+          origin: site.origin,
+          host: site.host,
+          ...(seedUrl === null ? {} : { seedUrl }),
+        },
         adapterCtx,
       );
       const observations = await drain(

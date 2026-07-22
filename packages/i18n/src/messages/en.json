@@ -177,6 +177,231 @@
     "createError": "We couldn't create the project. Please try again.",
     "siteUrlInvalid": "Enter a valid URL, including https://."
   },
+  "productProfile": {
+    "heroEyebrow": "PRODUCT PROFILE · ICP",
+    "loading": {
+      "title": "Loading Product Profile",
+      "detail": "Reading the current customer-reviewed profile and its evidence state."
+    },
+    "errors": {
+      "loadTitle": "Product Profile could not be loaded"
+    },
+    "empty": {
+      "title": "No formal Product Profile yet",
+      "detail": "This project does not have a URL-first Product Profile version that can be shown. No legacy or inferred values have been substituted."
+    },
+    "actions": {
+      "close": "Close",
+      "cancel": "Cancel",
+      "saving": "Saving…",
+      "save": "Save new version",
+      "keepEditing": "Keep editing",
+      "discard": "Discard changes",
+      "apply": "Apply review",
+      "retry": "Retry",
+      "edit": "Edit Product Profile",
+      "synthesize": "Generate from site evidence",
+      "synthesizing": "Generating…",
+      "runCrawl": "Collect site evidence",
+      "addCompetitor": "Add competitor",
+      "reviewCompetitor": "Review / correct",
+      "confirm": "Confirm Product Profile",
+      "confirmBlocked": "Not ready to confirm"
+    },
+    "states": {
+      "unconfirmed": "To be completed / unconfirmed",
+      "confirmed": "Customer confirmed",
+      "draftVersion": "Draft · v{version}"
+    },
+    "facts": {
+      "declared": "Customer declared",
+      "observed": "Site observed",
+      "computed": "Computed",
+      "inferred": "Evidence-derived",
+      "missing": "Missing",
+      "contradicted": "Conflicting evidence",
+      "conflicting": "Conflicting evidence",
+      "unconfirmed": "Unconfirmed"
+    },
+    "confidence": {
+      "high": "High confidence",
+      "medium": "Medium confidence",
+      "low": "Low confidence",
+      "unknown": "Unknown confidence"
+    },
+    "fields": {
+      "businessHint": "Initial business context",
+      "productName": "Product name",
+      "oneLiner": "One-line positioning",
+      "category": "Product category",
+      "productType": "Product type",
+      "businessModels": "Business model",
+      "valueProposition": "Value proposition",
+      "coreFeatures": "Core features",
+      "primaryMarket": "Primary overseas market",
+      "secondaryMarkets": "Secondary markets",
+      "primaryIcp": "Primary ICP candidate",
+      "targetCompanyOrAudience": "Target company / audience",
+      "buyerRoles": "Buyer Roles",
+      "userRoles": "User Roles",
+      "useCases": "Use cases",
+      "triggers": "Buying triggers",
+      "pains": "Core pains",
+      "jtbd": "JTBD",
+      "outcomes": "Expected outcomes",
+      "barriers": "Decision barriers",
+      "qualificationSignals": "Qualification signals",
+      "disqualifiers": "Disqualifiers"
+    },
+    "editor": {
+      "eyebrow": "CUSTOMER REVIEW",
+      "title": "Edit Product Profile and Primary ICP",
+      "description": "Only the fields changed here are saved as customer-declared facts in a new version.",
+      "sections": {
+        "product": "Product identity and value",
+        "market": "Target markets",
+        "icp": "Primary ICP"
+      },
+      "choose": "Select…",
+      "custom": "Other / custom",
+      "customProductType": "Custom product type",
+      "otherBusinessModels": "Other business models",
+      "onePerLine": "One item per line.",
+      "chooseIcp": "Select an existing candidate or create one…",
+      "newIcp": "Create a new Primary ICP",
+      "preserveOtherIcp": "Other ICP candidates remain unchanged. Only the selected candidate becomes Primary ICP.",
+      "unsaved": "Unsaved changes",
+      "noChanges": "No changes",
+      "discardTitle": "Discard these edits?",
+      "discardDescription": "Your Product Profile changes have not been saved as a new version."
+    },
+    "feedback": {
+      "saved": "Product Profile saved",
+      "savedDetail": "A new customer-edited draft version is now current.",
+      "saveFailed": "Product Profile was not saved",
+      "synthesisQueued": "Evidence analysis queued",
+      "synthesisQueuedDetail": "The frozen Crawl snapshot is being analyzed. Progress below comes from the real run.",
+      "synthesisComplete": "Product Profile generated",
+      "synthesisCompleteDetail": "The current draft now reflects the completed frozen-evidence analysis. Review it before confirmation.",
+      "synthesisFailed": "Product Profile generation could not start or finish",
+      "crawlQueued": "Site collection queued",
+      "crawlQueuedDetail": "Crawl is collecting the product URL and same-site pages. Generation will not retry automatically.",
+      "crawlComplete": "Site evidence is ready",
+      "crawlCompleteDetail": "Review the collection result, then explicitly retry Product Profile generation.",
+      "crawlFailed": "Site evidence collection failed",
+      "runEnded": "The run ended with status {status}.",
+      "competitorSaved": "Competitor pool updated",
+      "competitorSavedDetail": "The customer review was saved in a new Product Profile version.",
+      "competitorFailed": "Competitor review was not saved",
+      "confirmed": "Product Profile confirmed",
+      "confirmedDetail": "This reviewed version is now the project’s canonical Product Profile and ICP context.",
+      "confirmFailed": "Product Profile could not be confirmed"
+    },
+    "run": {
+      "synthesisTitle": "Generating Product Profile from frozen evidence",
+      "crawlTitle": "Collecting current site evidence",
+      "statuses": {
+        "queued": "Queued",
+        "running": "Running"
+      }
+    },
+    "recovery": {
+      "title": "A current Crawl snapshot is required",
+      "detail": "Collect the real product page and same-site evidence first. When the run finishes, generation remains a separate customer action."
+    },
+    "sections": {
+      "identity": {
+        "eyebrow": "PRODUCT IDENTITY",
+        "title": "What the product is and why it matters"
+      },
+      "business": {
+        "eyebrow": "BUSINESS MODEL",
+        "title": "How value is packaged and delivered"
+      },
+      "market": {
+        "eyebrow": "TARGET MARKETS",
+        "title": "Where the overseas growth program competes"
+      },
+      "icp": {
+        "eyebrow": "PRIMARY ICP",
+        "title": "Who buys, who uses, and what job must be done"
+      },
+      "competitors": {
+        "eyebrow": "COMPETITOR POOL",
+        "title": "The comparison set used for SEO / GEO analysis"
+      },
+      "evidence": {
+        "eyebrow": "FACTUAL BASIS",
+        "title": "Where this Product Profile came from"
+      }
+    },
+    "markets": {
+      "primary": "Primary market",
+      "secondary": "Secondary market"
+    },
+    "competitors": {
+      "description": "Candidate, approved, and excluded companies stay visible so the analysis scope is explicit.",
+      "reviewEyebrow": "COMPETITOR REVIEW",
+      "addEyebrow": "CUSTOMER DECLARED",
+      "addTitle": "Add an approved competitor",
+      "name": "Competitor name",
+      "domain": "Normalized domain",
+      "status": "Review status",
+      "relationship": "Relationship",
+      "scope": "Analysis scope",
+      "reason": "Why it belongs in the pool",
+      "identityCorrection": "The endpoint keeps a discovered candidate’s name and domain immutable. If identity is wrong, exclude this candidate and add the corrected company separately.",
+      "statuses": {
+        "candidate": "Candidate",
+        "approved": "Approved",
+        "excluded": "Excluded"
+      },
+      "relationships": {
+        "direct": "Direct competitor",
+        "indirect": "Indirect competitor"
+      },
+      "scopes": {
+        "positioning": "Positioning",
+        "product_capability": "Product capability",
+        "keyword_gap": "Keyword gap",
+        "content": "Content",
+        "serp_visibility": "SERP visibility"
+      }
+    },
+    "evidence": {
+      "source": "Product source URL",
+      "snapshot": "Frozen Crawl snapshot",
+      "invocation": "Analysis invocation",
+      "generatedAt": "Generated at",
+      "notFrozen": "No frozen snapshot yet",
+      "notGenerated": "No analysis invocation yet",
+      "provenance": "{count} field provenance anchors",
+      "missing": "{count} missing fields",
+      "conflicts": "{count} conflicts",
+      "reviewDetails": "Review unresolved fields",
+      "missingTitle": "Missing",
+      "conflictTitle": "Conflicting"
+    },
+    "confirmation": {
+      "eyebrow": "CUSTOMER DECISION",
+      "railLabel": "Product Profile confirmation",
+      "title": "Confirmation readiness",
+      "detail": "Confirmation is separate from generation and from Audit. Every required fact must be complete and traceable.",
+      "confirmedDetail": "This version has been explicitly confirmed by the customer and is ready to ground downstream work.",
+      "blocked": "Complete the unchecked items in Edit Product Profile before confirmation.",
+      "activeRunBlocked": "Wait for the current evidence analysis to finish before editing or confirming this version.",
+      "dialogTitle": "Confirm this Product Profile?",
+      "dialogDetail": "The current draft becomes the canonical Product Profile and Primary ICP for downstream SEO / GEO and technical analysis. This action does not start an Audit.",
+      "items": {
+        "identity": "Product identity",
+        "business": "Business model",
+        "value": "Value and core features",
+        "markets": "One primary market",
+        "primaryIcp": "Complete Primary ICP",
+        "competitors": "Valid competitor review"
+      }
+    }
+  },
   "context": {
     "title": "Context",
     "subtitle": "Define the ideal customer profile that grounds every diagnosis.",

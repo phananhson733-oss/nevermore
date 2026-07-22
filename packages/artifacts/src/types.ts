@@ -18,6 +18,15 @@ export const ARTIFACT_FORMAT: Record<ArtifactType, ContentFormat> = {
 
 export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 
+/** Closed task vocabulary persisted by AnalysisInvocation. */
+export const ANALYSIS_INVOCATION_TASKS = [
+  "artifact_generation",
+  "finding_summary",
+  "product_profile_synthesis",
+] as const;
+export type AnalysisInvocationTask =
+  (typeof ANALYSIS_INVOCATION_TASKS)[number];
+
 /** Maximum items accepted by any bounded artifact prompt/output collection. */
 export const MAX_ARTIFACT_COLLECTION_ITEMS = 100;
 
@@ -96,7 +105,7 @@ export interface ArtifactValidationResult {
 
 /** Immutable record of one model call (spec §10.2). No prompt/output text. */
 export interface AnalysisInvocationRecord {
-  readonly task: string;
+  readonly task: AnalysisInvocationTask;
   readonly provider: string;
   readonly model: string;
   readonly promptSetVersion: string;

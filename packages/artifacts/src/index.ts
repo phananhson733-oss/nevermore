@@ -23,6 +23,32 @@ export type {
   FindingSummaryClientOptions,
   LLMFindingSummaryResult,
 } from "./llm/finding-summary-client.ts";
+export {
+  OpenAIProductProfileClient,
+  createOpenAIProductProfileClient,
+  prepareProductProfileSynthesis,
+  productProfilePageKeyForIndex,
+  PRODUCT_PROFILE_PROMPT_SET_VERSION,
+  PRODUCT_PROFILE_SEMANTIC_PATHS,
+  MAX_PRODUCT_PROFILE_PAGES,
+  MAX_PRODUCT_PROFILE_H1,
+  MAX_PRODUCT_PROFILE_HEADINGS,
+  MAX_PRODUCT_PROFILE_PARAGRAPHS,
+  MAX_PRODUCT_PROFILE_JSON_LD_TYPES,
+  MAX_PRODUCT_PROFILE_RESPONSE_CHARS,
+} from "./llm/product-profile-client.ts";
+export type {
+  ProductProfileClientOptions,
+  ProductProfilePageDescriptor,
+  ProductProfilePageKeyMapEntry,
+  ProductProfileSemanticCandidateEnvelope,
+  ProductProfileSynthesisClient,
+  ProductProfileSynthesisInput,
+  ProductProfileSynthesisPreflight,
+  ProductProfileSynthesisResult,
+} from "./llm/product-profile-client.ts";
+export { buildProductProfileDraft } from "./product-profile-draft.ts";
+export type { BuildProductProfileDraftInput } from "./product-profile-draft.ts";
 
 // Deterministic templates (spec §10.1).
 export {

@@ -15,6 +15,9 @@ import test from "node:test";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const verifier = join(repositoryRoot, "scripts/verify-spec-lock.mjs");
+const activatedLock = JSON.parse(
+  readFileSync(join(repositoryRoot, "scripts/spec-v0.3-lock.json"), "utf8"),
+);
 
 const REQUIRED_AUTHORITY_FILES = [
   "README.md",
@@ -223,6 +226,39 @@ function runVerifier(fixture, extraArguments = []) {
     { encoding: "utf8" },
   );
 }
+
+test("freezes the activated Product Profile surface at 32 operations, six async commands, and 35 tables", () => {
+  assert.equal(activatedLock.apiOperations.length, 32);
+  assert.equal(activatedLock.asyncOperations.length, 6);
+  assert.equal(activatedLock.tables.length, 35);
+
+  for (const operationId of [
+    "getProjectProductProfile",
+    "updateProductProfileDraft",
+    "createProductProfileSynthesisRun",
+    "reviewProductProfileCompetitor",
+    "addProductProfileCompetitor",
+    "confirmProductProfile",
+  ]) {
+    assert.ok(
+      activatedLock.apiOperations.includes(operationId),
+      `${operationId} is missing from the activated lock`,
+    );
+  }
+
+  assert.ok(
+    activatedLock.asyncOperations.includes("createProductProfileSynthesisRun"),
+  );
+  for (const table of [
+    "product_profile_runs",
+    "product_profile_invocation_attempts",
+  ]) {
+    assert.ok(
+      activatedLock.tables.includes(table),
+      `${table} is missing from the activated lock`,
+    );
+  }
+});
 
 test("accepts a caller-supplied lock and scans the complete ordered migration set", (t) => {
   const fixture = makeFixture(t);

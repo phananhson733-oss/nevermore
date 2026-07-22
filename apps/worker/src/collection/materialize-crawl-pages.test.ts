@@ -12,6 +12,7 @@ import {
 import {
   CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
   materializePreparedCrawlPages,
+  parseCrawlPageExtract,
   prepareCrawlPageMaterialization,
   type CrawlPageMaterializationOutcome,
 } from "./materialize-crawl-pages.ts";
@@ -612,6 +613,39 @@ describe("prepareCrawlPageMaterialization", () => {
     });
 
     expect(second).toEqual(first);
+  });
+});
+
+describe("parseCrawlPageExtract", () => {
+  const currentExtract = {
+    schemaVersion: CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
+    subjectUrl: "https://example.com/pricing",
+    depth: 1,
+    projection,
+  } as const;
+
+  it("accepts only the current strict, canonical PageSnapshot extract", () => {
+    expect(parseCrawlPageExtract(currentExtract)).toEqual(currentExtract);
+  });
+
+  it.each([
+    ["legacy extract", { ...currentExtract, schemaVersion: "crawl.page-extract.v0" }],
+    ["unknown field", { ...currentExtract, providerPayload: "must-not-pass" }],
+    ["null extract", null],
+    [
+      "non-canonical fetch identity",
+      {
+        ...currentExtract,
+        projection: {
+          ...projection,
+          fetchUrl: "https://EXAMPLE.com/pricing/",
+        },
+      },
+    ],
+  ])("rejects a %s", (_label, extract) => {
+    expect(() => parseCrawlPageExtract(extract)).toThrow(
+      "Crawl PageSnapshot extract is invalid.",
+    );
   });
 });
 

@@ -57,6 +57,92 @@ export interface paths {
         patch: operations["updateProjectContext"];
         trace?: never;
     };
+    "/projects/{projectId}/product-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the current, confirmed, and actively synthesizing Product Profile versions */
+        get: operations["getProjectProductProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Append a customer-edited Product Profile draft version */
+        patch: operations["updateProductProfileDraft"];
+        trace?: never;
+    };
+    "/projects/{projectId}/product-profile/synthesis-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue Product Profile synthesis from a frozen Site snapshot manifest */
+        post: operations["createProductProfileSynthesisRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/product-profile/competitors/{candidateId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Review or correct one Product Profile competitor candidate */
+        patch: operations["reviewProductProfileCompetitor"];
+        trace?: never;
+    };
+    "/projects/{projectId}/product-profile/competitors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add one customer-declared competitor to the Product Profile */
+        post: operations["addProductProfileCompetitor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/product-profile/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm one reviewed Product Profile version without starting an Audit */
+        post: operations["confirmProductProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/workspace": {
         parameters: {
             query?: never;
@@ -204,7 +290,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Poll any collection, diagnostic, artifact, or export run */
+        /** Poll any collection, Product Profile synthesis, diagnostic, artifact, or export run */
         get: operations["getProjectRun"];
         put?: never;
         post?: never;
@@ -420,7 +506,7 @@ export interface components {
         /** @enum {string} */
         SourceState: "connecting" | "connected" | "syncing" | "available" | "partial" | "stale" | "permission_denied" | "unavailable" | "disconnected";
         /** @enum {string} */
-        RunKind: "collection" | "diagnostic" | "artifact_generation" | "export";
+        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export";
         /** @enum {string} */
         RunStatus: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
         /** @enum {string} */
@@ -488,6 +574,263 @@ export interface components {
             productUrl: string;
             /** @description Optional customer-declared business context. This is recorded as declared provenance, never as an observed fact. */
             businessHint?: string;
+        };
+        ProductProfileTargetMarket: {
+            marketCode: components["schemas"]["MarketCode"];
+            /** @enum {string} */
+            priority: "primary" | "secondary";
+        };
+        ProductProfileTargetAudience: {
+            candidateId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            reviewStatus: "primary" | "secondary" | "excluded" | "candidate";
+            targetCompanyOrAudience: string | null;
+            buyerRoles: string[];
+            userRoles: string[];
+            useCases: string[];
+            triggers: string[];
+            pains: string[];
+            jtbd: string[];
+            outcomes: string[];
+            barriers: string[];
+            qualificationSignals: string[];
+            disqualifiers: string[];
+        };
+        /** @enum {string} */
+        ProductProfileCompetitorRelationship: "direct" | "indirect";
+        /** @enum {string} */
+        ProductProfileCompetitorAnalysisScope: "positioning" | "product_capability" | "keyword_gap" | "content" | "serp_visibility";
+        /** @enum {string} */
+        ProductProfileCompetitorReviewStatus: "candidate" | "approved" | "excluded";
+        /** @description Normalized lowercase hostname without a scheme, port, or path. */
+        ProductProfileCompetitorDomain: string;
+        ProductProfileCompetitorCandidate: {
+            candidateId: components["schemas"]["Uuid"];
+            name: string;
+            domain: components["schemas"]["ProductProfileCompetitorDomain"];
+            relationship: components["schemas"]["ProductProfileCompetitorRelationship"] | null;
+            analysisScope: components["schemas"]["ProductProfileCompetitorAnalysisScope"][];
+            similarity: number | null;
+            reason: string;
+            reviewStatus: components["schemas"]["ProductProfileCompetitorReviewStatus"];
+            /** @enum {string} */
+            confidence: "high" | "medium" | "low" | "unknown";
+        };
+        ProductProfileSnapshotEvidenceRef: {
+            evidenceRefId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "snapshot";
+            snapshotId: components["schemas"]["Uuid"];
+        };
+        ProductProfilePageSnapshotEvidenceRef: {
+            evidenceRefId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "pageSnapshot";
+            pageSnapshotId: components["schemas"]["Uuid"];
+        };
+        ProductProfileObservationEvidenceRef: {
+            evidenceRefId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "observation";
+            observationId: components["schemas"]["Uuid"];
+        };
+        ProductProfileAnalysisInvocationEvidenceRef: {
+            evidenceRefId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "analysisInvocation";
+            analysisInvocationId: components["schemas"]["Uuid"];
+        };
+        ProductProfileDeclaredHintEvidenceRef: {
+            evidenceRefId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "declaredHint";
+        };
+        ProductProfileUserEditEvidenceRef: {
+            evidenceRefId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "userEdit";
+        };
+        ProductProfileEvidenceRef: components["schemas"]["ProductProfileSnapshotEvidenceRef"] | components["schemas"]["ProductProfilePageSnapshotEvidenceRef"] | components["schemas"]["ProductProfileObservationEvidenceRef"] | components["schemas"]["ProductProfileAnalysisInvocationEvidenceRef"] | components["schemas"]["ProductProfileDeclaredHintEvidenceRef"] | components["schemas"]["ProductProfileUserEditEvidenceRef"];
+        ProductProfileFieldProvenance: {
+            path: string;
+            /** @enum {string} */
+            derivation: "declared" | "observed" | "computed" | "inferred" | "missing" | "contradicted";
+            /** @enum {string} */
+            confidence: "high" | "medium" | "low" | "unknown";
+            evidenceRefs: components["schemas"]["ProductProfileEvidenceRef"][];
+            limitation: string | null;
+            observedAt: components["schemas"]["Timestamp"] | null;
+        } & (unknown & unknown & unknown & unknown);
+        ProductProfileDraft: {
+            /** @constant */
+            profileSchemaVersion: "product-profile.0.3.0";
+            sourceSiteId: components["schemas"]["Uuid"];
+            /**
+             * Format: uri
+             * @description Public http(s) product page preserved as the profile subject URL.
+             */
+            sourcePageUrl: string;
+            /** Format: uuid */
+            sourceSnapshotId: string | null;
+            /** Format: uuid */
+            analysisInvocationId: string | null;
+            generatedAt: components["schemas"]["Timestamp"] | null;
+            businessHint: string | null;
+            productName: string | null;
+            oneLiner: string | null;
+            category: string | null;
+            productType: string | null;
+            businessModels: string[];
+            valueProposition: string | null;
+            coreFeatures: string[];
+            targetMarkets: components["schemas"]["ProductProfileTargetMarket"][];
+            targetAudiences: components["schemas"]["ProductProfileTargetAudience"][];
+            competitorCandidates: components["schemas"]["ProductProfileCompetitorCandidate"][];
+            fieldProvenance: components["schemas"]["ProductProfileFieldProvenance"][];
+            missingFields: string[];
+            conflictingFields: string[];
+        };
+        /** @description A reviewed Product Profile. Confirmation requires substantive product, market, and Primary audience fields but never fabricates or requires a competitor count. */
+        ConfirmedProductProfile: {
+            /** @constant */
+            profileSchemaVersion: "product-profile.0.3.0";
+            sourceSiteId: components["schemas"]["Uuid"];
+            /**
+             * Format: uri
+             * @description Public http(s) product page preserved as the profile subject URL.
+             */
+            sourcePageUrl: string;
+            /** Format: uuid */
+            sourceSnapshotId: string | null;
+            /** Format: uuid */
+            analysisInvocationId: string | null;
+            generatedAt: components["schemas"]["Timestamp"] | null;
+            businessHint: string | null;
+            productName: string;
+            oneLiner: string;
+            category: string;
+            productType: string;
+            businessModels: string[];
+            valueProposition: string;
+            coreFeatures: string[];
+            targetMarkets: components["schemas"]["ProductProfileTargetMarket"][];
+            targetAudiences: components["schemas"]["ProductProfileTargetAudience"][];
+            competitorCandidates: components["schemas"]["ProductProfileCompetitorCandidate"][];
+            fieldProvenance: components["schemas"]["ProductProfileFieldProvenance"][];
+            missingFields: string[];
+            conflictingFields: string[];
+        };
+        /** @description Customer-editable fields only. Source, provenance, missing/conflicting markers, and competitor candidates remain server-owned. */
+        ProductProfileEditablePatch: {
+            businessHint?: string | null;
+            productName?: string | null;
+            oneLiner?: string | null;
+            category?: string | null;
+            productType?: string | null;
+            businessModels?: string[];
+            valueProposition?: string | null;
+            coreFeatures?: string[];
+            targetMarkets?: components["schemas"]["ProductProfileTargetMarket"][];
+            targetAudiences?: components["schemas"]["ProductProfileTargetAudience"][];
+        };
+        CreateProductProfileSynthesisRunRequest: {
+            baseVersion: number;
+        };
+        UpdateProductProfileDraftRequest: {
+            baseVersion: number;
+            patch: components["schemas"]["ProductProfileEditablePatch"];
+        };
+        ReviewProductProfileCompetitorRequest: {
+            baseVersion: number;
+            reviewStatus: components["schemas"]["ProductProfileCompetitorReviewStatus"];
+            relationship?: components["schemas"]["ProductProfileCompetitorRelationship"] | null;
+            analysisScope?: components["schemas"]["ProductProfileCompetitorAnalysisScope"][];
+            reason?: string;
+            similarity?: number | null;
+        };
+        AddProductProfileCompetitorRequest: {
+            baseVersion: number;
+            name: string;
+            domain: components["schemas"]["ProductProfileCompetitorDomain"];
+            relationship: components["schemas"]["ProductProfileCompetitorRelationship"];
+            analysisScope: components["schemas"]["ProductProfileCompetitorAnalysisScope"][];
+            reason?: string;
+        };
+        ConfirmProductProfileRequest: {
+            baseVersion: number;
+        };
+        ProductProfileDraftRowDto: {
+            id: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            version: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: "draft";
+            profile: components["schemas"]["ProductProfileDraft"];
+            contentHash: string;
+            createdAt: components["schemas"]["Timestamp"];
+            isCurrent: boolean;
+            /** @constant */
+            isConfirmed: false;
+        };
+        ConfirmedProductProfileRowDto: {
+            id: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            version: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: "complete";
+            profile: components["schemas"]["ConfirmedProductProfile"];
+            contentHash: string;
+            createdAt: components["schemas"]["Timestamp"];
+            isCurrent: boolean;
+            /** @constant */
+            isConfirmed: true;
+        };
+        ProductProfileRowDto: components["schemas"]["ProductProfileDraftRowDto"] | components["schemas"]["ConfirmedProductProfileRowDto"];
+        ProductProfileRowResponse: {
+            data: components["schemas"]["ProductProfileRowDto"];
+        };
+        ConfirmedProductProfileRowResponse: {
+            data: components["schemas"]["ConfirmedProductProfileRowDto"];
+        };
+        ProductProfileActiveSynthesisRun: components["schemas"]["AsyncRun"] & {
+            /** @constant */
+            kind: "product_profile_synthesis";
+            /** @enum {string} */
+            status: "queued" | "running";
+            resultRef: null;
+        };
+        ProductProfileWorkspace: {
+            projectId: components["schemas"]["Uuid"];
+            currentProfile: components["schemas"]["ProductProfileRowDto"] | null;
+            confirmedProfile: components["schemas"]["ConfirmedProductProfileRowDto"] | null;
+            activeSynthesisRun: components["schemas"]["ProductProfileActiveSynthesisRun"] | null;
+        };
+        ProductProfileWorkspaceResponse: {
+            data: components["schemas"]["ProductProfileWorkspace"];
         };
         Project: {
             id: components["schemas"]["Uuid"];
@@ -773,7 +1116,7 @@ export interface components {
             } | null;
             resultRef: {
                 /** @enum {string} */
-                type: "collection_run" | "diagnostic_run" | "artifact" | "export";
+                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export";
                 id: components["schemas"]["Uuid"];
             } | null;
             queuedAt: components["schemas"]["Timestamp"];
@@ -786,7 +1129,7 @@ export interface components {
                 statusUrl: string;
                 resourceRef: {
                     /** @enum {string} */
-                    type: "collection_run" | "diagnostic_run" | "artifact" | "export";
+                    type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export";
                     id: components["schemas"]["Uuid"];
                 } | null;
             };
@@ -1280,6 +1623,7 @@ export interface components {
     };
     parameters: {
         ProjectId: components["schemas"]["Uuid"];
+        ProductProfileCandidateId: components["schemas"]["Uuid"];
         SourceConnectionId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
         FindingId: components["schemas"]["Uuid"];
@@ -1437,6 +1781,187 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IcpProfileResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getProjectProductProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Product Profile review workspace backed by append-only profile versions. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductProfileWorkspaceResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateProductProfileDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProductProfileDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Current Product Profile version; a semantic no-op may return the existing row. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductProfileRowResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createProductProfileSynthesisRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProductProfileSynthesisRunRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["AsyncAccepted"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    reviewProductProfileCompetitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                candidateId: components["parameters"]["ProductProfileCandidateId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewProductProfileCompetitorRequest"];
+            };
+        };
+        responses: {
+            /** @description Current Product Profile version after the reviewed candidate is appended. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductProfileRowResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    addProductProfileCompetitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddProductProfileCompetitorRequest"];
+            };
+        };
+        responses: {
+            /** @description Current Product Profile version with the server-identified approved competitor. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductProfileRowResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    confirmProductProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmProductProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Confirmed Product Profile row. No diagnostic or Audit run is created. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmedProductProfileRowResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];

@@ -26,6 +26,8 @@ export const CRAWL_PAGE_EXTRACT_SCHEMA_VERSION = "crawl.page-extract.v1";
 
 const CRAWL_RAW_MISMATCH_MESSAGE =
   "Crawl raw payload does not match its collection outcome.";
+const CRAWL_PAGE_EXTRACT_INVALID_MESSAGE =
+  "Crawl PageSnapshot extract is invalid.";
 const MAX_PROVIDER_USAGE_KEYS = 64;
 const MAX_PROVIDER_USAGE_KEY_CHARS = 128;
 const MAX_HOST_CHARS = 253;
@@ -118,6 +120,15 @@ const crawlProjectionSchema = z
 
 const crawlPageSchema = z
   .object({
+    subjectUrl: boundedUrl,
+    depth: nonnegativeInteger.max(CRAWL_BUDGET.maxDepth),
+    projection: crawlProjectionSchema,
+  })
+  .strict();
+
+const crawlPageExtractSchema = z
+  .object({
+    schemaVersion: z.literal(CRAWL_PAGE_EXTRACT_SCHEMA_VERSION),
     subjectUrl: boundedUrl,
     depth: nonnegativeInteger.max(CRAWL_BUDGET.maxDepth),
     projection: crawlProjectionSchema,
@@ -223,6 +234,13 @@ function invalidCrawlRaw(): never {
   throw new SourceError("INVALID_RESPONSE", CRAWL_RAW_MISMATCH_MESSAGE);
 }
 
+function invalidCrawlPageExtract(): never {
+  throw new SourceError(
+    "INVALID_RESPONSE",
+    CRAWL_PAGE_EXTRACT_INVALID_MESSAGE,
+  );
+}
+
 function originIdentity(value: string): {
   readonly origin: string;
   readonly hostname: string;
@@ -294,6 +312,27 @@ function canonicalPageIdentity(
       return false;
     }
   });
+}
+
+/**
+ * Strict runtime reader for the only PageSnapshot extract version understood by
+ * the current worker. Historical/null/extended shapes are deliberately refused:
+ * immutable content-addressed rows may never be silently reinterpreted.
+ */
+export function parseCrawlPageExtract(value: unknown): CrawlPageExtract {
+  const parsed = crawlPageExtractSchema.safeParse(value);
+  if (!parsed.success) invalidCrawlPageExtract();
+
+  let expectedOrigin: string;
+  try {
+    expectedOrigin = new URL(parsed.data.projection.fetchUrl).origin;
+  } catch {
+    invalidCrawlPageExtract();
+  }
+  if (!canonicalPageIdentity(parsed.data, expectedOrigin)) {
+    invalidCrawlPageExtract();
+  }
+  return parsed.data;
 }
 
 function parseAlignedCrawlRaw(

@@ -17,6 +17,7 @@
     "smoke": "tsx src/smoke.ts"
   },
   "dependencies": {
+    "@sf/contracts": "workspace:*",
     "@sf/observability": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg": "catalog:",

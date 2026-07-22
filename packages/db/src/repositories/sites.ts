@@ -111,4 +111,19 @@ export class SitesRepository extends Repository {
       })
       .where(and(projectPredicate(sites, scope), sql`${sites.is_primary}`));
   }
+
+  /**
+   * Project only the reviewed Product Profile markets. Product Profile does not
+   * model a content language, so confirmation must preserve the independently
+   * observed/configured `language_codes` projection instead of clearing it.
+   */
+  async updatePrimaryMarketCodes(
+    scope: ProjectScope,
+    marketCodes: string[],
+  ): Promise<void> {
+    await this.exec
+      .update(sites)
+      .set({ market_codes: marketCodes })
+      .where(and(projectPredicate(sites, scope), sql`${sites.is_primary}`));
+  }
 }

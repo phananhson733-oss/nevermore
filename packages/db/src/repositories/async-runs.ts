@@ -14,7 +14,8 @@ export type RunKind =
   | "collection"
   | "diagnostic"
   | "artifact_generation"
-  | "export";
+  | "export"
+  | "product_profile_synthesis";
 export type RunStatus =
   | "queued"
   | "running"
@@ -111,7 +112,8 @@ export class AsyncRunsRepository extends Repository {
           ('collection'::text),
           ('diagnostic'::text),
           ('artifact_generation'::text),
-          ('export'::text)
+          ('export'::text),
+          ('product_profile_synthesis'::text)
       )
       select
         run_kinds.kind,
@@ -494,7 +496,8 @@ function runKind(value: unknown): RunKind | null {
   return value === "collection" ||
     value === "diagnostic" ||
     value === "artifact_generation" ||
-    value === "export"
+    value === "export" ||
+    value === "product_profile_synthesis"
     ? value
     : null;
 }

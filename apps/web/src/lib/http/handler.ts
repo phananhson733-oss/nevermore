@@ -60,6 +60,7 @@ export function apiRouteTemplate(rawUrl: string): string {
   if (
     segments.length === 3 &&
     (resource === "context" ||
+      resource === "product-profile" ||
       resource === "workspace" ||
       resource === "collection-runs" ||
       resource === "diagnostic-runs" ||
@@ -72,6 +73,22 @@ export function apiRouteTemplate(rawUrl: string): string {
       resource === "sources")
   ) {
     return `${base}/${resource}`;
+  }
+  if (
+    resource === "product-profile" &&
+    segments.length === 4 &&
+    (segments[3] === "synthesis-runs" ||
+      segments[3] === "competitors" ||
+      segments[3] === "confirm")
+  ) {
+    return `${base}/product-profile/${segments[3]}`;
+  }
+  if (
+    resource === "product-profile" &&
+    segments.length === 5 &&
+    segments[3] === "competitors"
+  ) {
+    return `${base}/product-profile/competitors/:candidateId`;
   }
   if (
     segments.length === 4 &&

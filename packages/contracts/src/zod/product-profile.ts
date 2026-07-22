@@ -243,7 +243,8 @@ export const ProductProfileFieldProvenance = z
 
     if (
       entry.derivation === "declared" &&
-      (!hasDeclared || entry.evidenceRefs.some((ref) => !declaredKinds.has(ref.kind)))
+      (!hasDeclared ||
+        entry.evidenceRefs.some((ref) => !declaredKinds.has(ref.kind)))
     ) {
       ctx.addIssue({
         code: "custom",
@@ -380,44 +381,374 @@ function addProfileIdentityIssues(
 
 const ProductProfileObject = z.object(ProductProfileShape).strict();
 
+const ProductProfileSemanticFields = [
+  { key: "businessHint", path: "/businessHint", optional: true },
+  { key: "productName", path: "/productName", optional: false },
+  { key: "oneLiner", path: "/oneLiner", optional: false },
+  { key: "category", path: "/category", optional: false },
+  { key: "productType", path: "/productType", optional: false },
+  { key: "businessModels", path: "/businessModels", optional: false },
+  { key: "valueProposition", path: "/valueProposition", optional: false },
+  { key: "coreFeatures", path: "/coreFeatures", optional: false },
+  { key: "targetMarkets", path: "/targetMarkets", optional: false },
+  { key: "targetAudiences", path: "/targetAudiences", optional: false },
+  {
+    key: "competitorCandidates",
+    path: "/competitorCandidates",
+    optional: false,
+  },
+] as const satisfies readonly {
+  readonly key: keyof z.infer<typeof ProductProfileObject>;
+  readonly path: string;
+  readonly optional: boolean;
+}[];
+
+const FactSupportingDerivations = new Set<
+  ProductProfileProvenanceDerivation
+>(["declared", "observed", "computed", "inferred", "contradicted"]);
+
+function pathIsWithin(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}/`);
+}
+
+function semanticValueIsEmpty(value: unknown): boolean {
+  return value === null || (Array.isArray(value) && value.length === 0);
+}
+
+function hasFactProvenance(
+  profile: z.infer<typeof ProductProfileObject>,
+  root: string,
+): boolean {
+  return profile.fieldProvenance.some(
+    (entry) =>
+      pathIsWithin(entry.path, root) &&
+      FactSupportingDerivations.has(entry.derivation),
+  );
+}
+
+function addProfileLineageIssues(
+  profile: z.infer<typeof ProductProfileObject>,
+  ctx: z.RefinementCtx,
+): void {
+  const lineageValues = [
+    profile.sourceSnapshotId,
+    profile.analysisInvocationId,
+    profile.generatedAt,
+  ];
+  const presentLineageValues = lineageValues.filter(
+    (value) => value !== null,
+  ).length;
+  if (presentLineageValues !== 0 && presentLineageValues !== lineageValues.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["sourceSnapshotId"],
+      message:
+        "sourceSnapshotId, analysisInvocationId, and generatedAt must be all null or all present",
+    });
+  }
+
+  const hasCanonicalEvidence = profile.fieldProvenance.some((entry) =>
+    entry.evidenceRefs.some((ref) =>
+      [
+        "snapshot",
+        "pageSnapshot",
+        "observation",
+        "analysisInvocation",
+      ].includes(ref.kind),
+    ),
+  );
+  if (hasCanonicalEvidence && presentLineageValues !== lineageValues.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["fieldProvenance"],
+      message:
+        "canonical evidence requires a complete frozen synthesis lineage",
+    });
+  }
+
+  profile.fieldProvenance.forEach((entry, entryIndex) => {
+    entry.evidenceRefs.forEach((ref, refIndex) => {
+      if (
+        ref.kind === "snapshot" &&
+        ref.snapshotId !== profile.sourceSnapshotId
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: [
+            "fieldProvenance",
+            entryIndex,
+            "evidenceRefs",
+            refIndex,
+            "snapshotId",
+          ],
+          message: "snapshot evidence must match sourceSnapshotId",
+        });
+      }
+      if (
+        ref.kind === "analysisInvocation" &&
+        ref.analysisInvocationId !== profile.analysisInvocationId
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: [
+            "fieldProvenance",
+            entryIndex,
+            "evidenceRefs",
+            refIndex,
+            "analysisInvocationId",
+          ],
+          message:
+            "analysis invocation evidence must match analysisInvocationId",
+        });
+      }
+    });
+  });
+}
+
+function addProfileSemanticIssues(
+  profile: z.infer<typeof ProductProfileObject>,
+  ctx: z.RefinementCtx,
+): void {
+  const missing = new Set(profile.missingFields);
+  const conflicting = new Set(profile.conflictingFields);
+
+  for (const field of ProductProfileSemanticFields) {
+    const value = profile[field.key];
+    if (semanticValueIsEmpty(value)) {
+      if (!field.optional && !missing.has(field.path) && !conflicting.has(field.path)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field.key],
+          message: `${field.path} must be marked missing or conflicting while empty`,
+        });
+      }
+      continue;
+    }
+
+    if (missing.has(field.path)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["missingFields"],
+        message: `${field.path} cannot be marked missing while populated`,
+      });
+    }
+    if (!hasFactProvenance(profile, field.path)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [field.key],
+        message: `${field.path} requires traceable field provenance`,
+      });
+    }
+
+    if (!Array.isArray(value) || value.length === 0) continue;
+    const rootCoverage = profile.fieldProvenance.some(
+      (entry) =>
+        entry.path === field.path &&
+        FactSupportingDerivations.has(entry.derivation),
+    );
+    if (rootCoverage) continue;
+    value.forEach((_item, index) => {
+      const itemRoot = `${field.path}/${index}`;
+      if (!hasFactProvenance(profile, itemRoot)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field.key, index],
+          message: `${itemRoot} requires traceable field provenance`,
+        });
+      }
+    });
+  }
+}
+
 export const ProductProfileDraft = ProductProfileObject.superRefine(
-  addProfileIdentityIssues,
+  (profile, ctx) => {
+    addProfileIdentityIssues(profile, ctx);
+    addProfileLineageIssues(profile, ctx);
+    addProfileSemanticIssues(profile, ctx);
+  },
 );
 export type ProductProfileDraft = z.infer<typeof ProductProfileDraft>;
 
-export const ConfirmedProductProfile = ProductProfileObject.superRefine(
+/**
+ * Customer-editable projection of a Product Profile draft. Source identity,
+ * model invocation metadata, provenance, missing/conflicting markers, and the
+ * competitor pool are server-owned and therefore deliberately absent.
+ */
+export const ProductProfileEditablePatch = z
+  .object({
+    businessHint: ProductProfileBusinessHint.nullable(),
+    productName: z.string().trim().min(1).max(160).nullable(),
+    oneLiner: z.string().trim().min(1).max(1000).nullable(),
+    category: z.string().trim().min(1).max(160).nullable(),
+    productType: z.string().trim().min(1).max(160).nullable(),
+    businessModels: z
+      .array(z.string().trim().min(1).max(160))
+      .max(20)
+      .refine(unique, "businessModels must be unique"),
+    valueProposition: LongText.nullable(),
+    coreFeatures: UniqueShortTextList,
+    targetMarkets: z
+      .array(ProductProfileTargetMarket)
+      .max(20)
+      .refine(
+        (markets) => unique(markets.map((market) => market.marketCode)),
+        "target market codes must be unique",
+      ),
+    targetAudiences: z
+      .array(ProductProfileTargetAudience)
+      .max(100)
+      .refine(
+        (audiences) =>
+          unique(audiences.map((audience) => audience.candidateId)),
+        "target audience candidateId values must be unique",
+      ),
+  })
+  .strict()
+  .partial()
+  .refine(
+    (patch) => Object.keys(patch).length > 0,
+    "At least one editable Product Profile field must be provided",
+  );
+export type ProductProfileEditablePatch = z.infer<
+  typeof ProductProfileEditablePatch
+>;
+
+export const ProductProfileBaseVersion = z.number().int().min(1);
+export type ProductProfileBaseVersion = z.infer<
+  typeof ProductProfileBaseVersion
+>;
+
+export const CreateProductProfileSynthesisRunRequest = z
+  .object({
+    baseVersion: ProductProfileBaseVersion,
+  })
+  .strict();
+export type CreateProductProfileSynthesisRunRequest = z.infer<
+  typeof CreateProductProfileSynthesisRunRequest
+>;
+
+export const UpdateProductProfileDraftRequest = z
+  .object({
+    baseVersion: ProductProfileBaseVersion,
+    patch: ProductProfileEditablePatch,
+  })
+  .strict();
+export type UpdateProductProfileDraftRequest = z.infer<
+  typeof UpdateProductProfileDraftRequest
+>;
+
+const OptionalUniqueCompetitorAnalysisScope = z
+  .array(ProductProfileCompetitorAnalysisScope)
+  .max(5)
+  .refine(unique, "analysisScope must be unique");
+
+export const ReviewProductProfileCompetitorRequest = z
+  .object({
+    baseVersion: ProductProfileBaseVersion,
+    reviewStatus: ProductProfileCompetitorReviewStatus,
+    relationship: ProductProfileCompetitorRelationship.nullable().optional(),
+    analysisScope: OptionalUniqueCompetitorAnalysisScope.optional(),
+    reason: LongText.optional(),
+    similarity: z.number().min(0).max(1).nullable().optional(),
+  })
+  .strict();
+export type ReviewProductProfileCompetitorRequest = z.infer<
+  typeof ReviewProductProfileCompetitorRequest
+>;
+
+export const AddProductProfileCompetitorRequest = z
+  .object({
+    baseVersion: ProductProfileBaseVersion,
+    name: z.string().trim().min(1).max(160),
+    domain: ProductProfileCompetitorDomain,
+    relationship: ProductProfileCompetitorRelationship,
+    analysisScope: z
+      .array(ProductProfileCompetitorAnalysisScope)
+      .min(1)
+      .max(5)
+      .refine(unique, "analysisScope must be unique"),
+    reason: LongText.optional(),
+  })
+  .strict();
+export type AddProductProfileCompetitorRequest = z.infer<
+  typeof AddProductProfileCompetitorRequest
+>;
+
+export const ConfirmProductProfileRequest = z
+  .object({
+    baseVersion: ProductProfileBaseVersion,
+  })
+  .strict();
+export type ConfirmProductProfileRequest = z.infer<
+  typeof ConfirmProductProfileRequest
+>;
+
+export const ProductProfileRowStatus = z.enum(["draft", "complete"]);
+export type ProductProfileRowStatus = z.infer<
+  typeof ProductProfileRowStatus
+>;
+
+const ProductProfileRowIdentityShape = {
+  id: Uuid,
+  projectId: Uuid,
+  version: z.number().int().min(1),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  createdAt: IsoDateTime,
+  isCurrent: z.boolean(),
+} as const;
+
+const ConfirmedProductProfileObject = ProductProfileObject.extend({
+  productName: z.string().trim().min(1).max(160),
+  oneLiner: z.string().trim().min(1).max(1000),
+  category: z.string().trim().min(1).max(160),
+  productType: z.string().trim().min(1).max(160),
+  businessModels: z
+    .array(z.string().trim().min(1).max(160))
+    .min(1)
+    .max(20)
+    .refine(unique, "businessModels must be unique"),
+  valueProposition: LongText,
+  coreFeatures: z
+    .array(ShortText)
+    .min(1)
+    .max(100)
+    .refine(unique, "Values must be unique"),
+  targetMarkets: z.array(ProductProfileTargetMarket).min(1).max(20),
+  targetAudiences: z.array(ProductProfileTargetAudience).min(1).max(100),
+});
+
+const ConfirmedRequiredSemanticRoots = [
+  "/productName",
+  "/oneLiner",
+  "/category",
+  "/productType",
+  "/businessModels",
+  "/valueProposition",
+  "/coreFeatures",
+  "/targetMarkets",
+  "/targetAudiences",
+] as const;
+
+export const ConfirmedProductProfile = ConfirmedProductProfileObject.superRefine(
   (profile, ctx) => {
     addProfileIdentityIssues(profile, ctx);
+    addProfileLineageIssues(profile, ctx);
+    addProfileSemanticIssues(profile, ctx);
 
-    for (const field of [
-      "productName",
-      "oneLiner",
-      "category",
-      "productType",
-      "valueProposition",
-    ] as const) {
-      if (profile[field] === null) {
+    for (const root of ConfirmedRequiredSemanticRoots) {
+      if (
+        [...profile.missingFields, ...profile.conflictingFields].some((path) =>
+          pathIsWithin(path, root),
+        )
+      ) {
         ctx.addIssue({
           code: "custom",
-          path: [field],
-          message: `${field} is required for a confirmed product profile`,
+          path: ["missingFields"],
+          message: `confirmed Product Profile cannot retain an unresolved ${root} marker`,
         });
       }
     }
-    if (profile.businessModels.length === 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["businessModels"],
-        message: "a confirmed product profile requires a business model",
-      });
-    }
-    if (profile.coreFeatures.length === 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["coreFeatures"],
-        message: "a confirmed product profile requires a core feature",
-      });
-    }
+
     if (
       profile.targetMarkets.filter((market) => market.priority === "primary")
         .length !== 1
@@ -441,12 +772,82 @@ export const ConfirmedProductProfile = ProductProfileObject.superRefine(
       });
     }
 
+    const primaryAudienceIndex = profile.targetAudiences.findIndex(
+      (audience) => audience.reviewStatus === "primary",
+    );
+    const primaryAudience = profile.targetAudiences[primaryAudienceIndex];
+    if (primaryAudience) {
+      if (primaryAudience.targetCompanyOrAudience === null) {
+        ctx.addIssue({
+          code: "custom",
+          path: [
+            "targetAudiences",
+            primaryAudienceIndex,
+            "targetCompanyOrAudience",
+          ],
+          message:
+            "the primary target audience requires a target company or audience",
+        });
+      }
+      for (const field of [
+        "buyerRoles",
+        "userRoles",
+        "useCases",
+        "triggers",
+        "pains",
+        "jtbd",
+      ] as const) {
+        if (primaryAudience[field].length === 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["targetAudiences", primaryAudienceIndex, field],
+            message: `the primary target audience requires at least one ${field} value`,
+          });
+        }
+      }
+    }
+
     checkConfirmedCompetitors(profile, ctx);
   },
 );
 export type ConfirmedProductProfile = z.infer<
   typeof ConfirmedProductProfile
 >;
+
+export const ProductProfileDraftRowDto = z
+  .object({
+    ...ProductProfileRowIdentityShape,
+    status: z.literal("draft"),
+    profile: ProductProfileDraft,
+    isConfirmed: z.literal(false),
+  })
+  .strict();
+export type ProductProfileDraftRowDto = z.infer<
+  typeof ProductProfileDraftRowDto
+>;
+
+export const ConfirmedProductProfileRowDto = z
+  .object({
+    ...ProductProfileRowIdentityShape,
+    status: z.literal("complete"),
+    profile: ConfirmedProductProfile,
+    isConfirmed: z.literal(true),
+  })
+  .strict();
+export type ConfirmedProductProfileRowDto = z.infer<
+  typeof ConfirmedProductProfileRowDto
+>;
+
+/**
+ * Public append-only version row. Draft rows cannot claim confirmation, and a
+ * complete row must carry the stronger confirmed profile rather than opaque
+ * or merely draft-valid JSON.
+ */
+export const ProductProfileRowDto = z.discriminatedUnion("status", [
+  ProductProfileDraftRowDto,
+  ConfirmedProductProfileRowDto,
+]);
+export type ProductProfileRowDto = z.infer<typeof ProductProfileRowDto>;
 
 function checkConfirmedCompetitors(
   profile: z.infer<typeof ProductProfileObject>,

@@ -15,8 +15,13 @@ process.env["LOG_LEVEL"] ??= "error";
 import { eq, sql } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import {
+  collectionRunParametersHash,
   CollectionRunsRepository,
+  contentHash,
   IdempotencyRepository,
+  IcpProfilesRepository,
+  ProjectsRepository,
+  SitePagesRepository,
   SourceConnectionsRepository,
 } from "@sf/db";
 import { asyncRuns, clientProjects, sourceConnections, workspaces } from "@sf/db/schema";
@@ -102,7 +107,169 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
       site_id: siteId,
       source_connection_id: crawlSource!.id,
       method_version: "crawl.site_graph.v2",
+      crawl_seed_site_page_id: null,
+      crawl_seed_url: null,
     });
+  });
+
+  it("freezes the exact URL-first Product Profile page and hashes both seed fields", async () => {
+    const [profileWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `WS-profile-seed-${randomUUID()}` })
+      .returning();
+    const created = await createProject(
+      { workspaceId: profileWorkspace!.id },
+      actor,
+      randomUUID(),
+      {
+        mode: "product_profile",
+        productUrl:
+          "https://profile-seed.example.com/products/growth/?utm_source=demo&plan=pro",
+        businessHint: "B2B growth software",
+      },
+      safeGuard,
+    );
+    const profileScope = {
+      workspaceId: profileWorkspace!.id,
+      projectId: created.project.id,
+    };
+    const sourcePageUrl =
+      "https://profile-seed.example.com/products/growth/?plan=pro";
+    const page = await new SitePagesRepository(
+      handle.db,
+    ).findExactNormalizedUrl(
+      profileScope,
+      created.project.site.id,
+      sourcePageUrl,
+    );
+    expect(page).not.toBeNull();
+
+    const accepted = await createCollectionRun(
+      { workspaceId: profileWorkspace!.id },
+      created.project.id,
+      actor,
+      randomUUID(),
+      { provider: "crawl" },
+    );
+    const stored = await new CollectionRunsRepository(handle.db).findById(
+      accepted.run.id,
+    );
+    expect(stored).toMatchObject({
+      crawl_seed_site_page_id: page!.id,
+      crawl_seed_url: sourcePageUrl,
+      parameters_hash: collectionRunParametersHash({
+        provider: "crawl",
+        operation: "site_graph",
+        siteId: created.project.site.id,
+        crawlSeedSitePageId: page!.id,
+        crawlSeedUrl: sourcePageUrl,
+      }),
+    });
+
+    // A queued run is a frozen command. Repointing the mutable current profile
+    // afterwards cannot alter the accepted Crawl identity.
+    const legacyProfile = { productName: "Later legacy profile" };
+    const replacement = await new IcpProfilesRepository(handle.db).insertVersion({
+      workspaceId: profileWorkspace!.id,
+      projectId: created.project.id,
+      version: 2,
+      status: "draft",
+      profile: legacyProfile,
+      contentHash: contentHash({ status: "draft", profile: legacyProfile }),
+      createdBy: actor,
+    });
+    await new ProjectsRepository(handle.db).setCurrentIcpProfile(
+      { workspaceId: profileWorkspace!.id },
+      created.project.id,
+      replacement.id,
+    );
+    await expect(
+      new CollectionRunsRepository(handle.db).findById(accepted.run.id),
+    ).resolves.toMatchObject({
+      crawl_seed_site_page_id: page!.id,
+      crawl_seed_url: sourcePageUrl,
+    });
+  });
+
+  it("rejects a foreign Product Profile at persistence and a missing exact SitePage before queueing", async () => {
+    const [profileWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `WS-invalid-profile-seed-${randomUUID()}` })
+      .returning();
+    const created = await createProject(
+      { workspaceId: profileWorkspace!.id },
+      actor,
+      randomUUID(),
+      {
+        mode: "product_profile",
+        productUrl: "https://invalid-profile-seed.example.com/product/",
+      },
+      safeGuard,
+    );
+    const workspaceScope = { workspaceId: profileWorkspace!.id };
+    const projectScope = {
+      ...workspaceScope,
+      projectId: created.project.id,
+    };
+    const project = await new ProjectsRepository(handle.db).findById(
+      workspaceScope,
+      created.project.id,
+    );
+    const current = await new IcpProfilesRepository(handle.db).findById(
+      projectScope,
+      project!.current_icp_profile_id!,
+    );
+
+    const foreignSiteProfile = {
+      ...current!.profile,
+      sourceSiteId: randomUUID(),
+    };
+    await expect(
+      new IcpProfilesRepository(handle.db).insertVersion({
+        workspaceId: profileWorkspace!.id,
+        projectId: created.project.id,
+        version: 2,
+        status: "draft",
+        profile: foreignSiteProfile,
+        contentHash: contentHash({ status: "draft", profile: foreignSiteProfile }),
+        createdBy: actor,
+      }),
+    ).rejects.toMatchObject({
+      cause: {
+        code: "23514",
+        detail: expect.stringContaining("source_site_missing"),
+      },
+    });
+
+    const missingPageProfile = {
+      ...current!.profile,
+      sourcePageUrl:
+        "https://invalid-profile-seed.example.com/not-a-persisted-page/",
+    };
+    const v2 = await new IcpProfilesRepository(handle.db).insertVersion({
+      workspaceId: profileWorkspace!.id,
+      projectId: created.project.id,
+      version: 2,
+      status: "draft",
+      profile: missingPageProfile,
+      contentHash: contentHash({ status: "draft", profile: missingPageProfile }),
+      createdBy: actor,
+    });
+    await new ProjectsRepository(handle.db).setCurrentIcpProfile(
+      workspaceScope,
+      created.project.id,
+      v2.id,
+    );
+    await expect(
+      createCollectionRun(
+        workspaceScope,
+        created.project.id,
+        actor,
+        randomUUID(),
+        { provider: "crawl" },
+      ),
+    ).rejects.toMatchObject({ code: "CONTEXT_INCOMPLETE", status: 422 });
+    expect(await countProjectRuns(handle, created.project.id)).toBe(0);
   });
 
   it("409s a second active run for the same provider/operation (AC-019)", async () => {

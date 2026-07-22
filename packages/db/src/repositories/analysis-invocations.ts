@@ -13,6 +13,11 @@ import {
  * reference one of these ids.
  */
 
+export type AnalysisInvocationTask =
+  | "finding_summary"
+  | "artifact_generation"
+  | "product_profile_synthesis";
+
 export class AnalysisInvocationsRepository extends Repository {
   /**
    * Count persisted calls for one run/task without loading append-only rows.
@@ -22,7 +27,7 @@ export class AnalysisInvocationsRepository extends Repository {
   async countByAsyncRunTask(
     scope: ProjectScope,
     asyncRunId: string,
-    task: "finding_summary",
+    task: AnalysisInvocationTask,
   ): Promise<number> {
     const rows = (await this.exec
       .select({ count: sql<string>`count(*)::text` })
@@ -52,7 +57,7 @@ export class AnalysisInvocationsRepository extends Repository {
     workspaceId: string;
     projectId: string;
     asyncRunId: string | null;
-    task: string;
+    task: AnalysisInvocationTask;
     provider: string;
     model: string;
     promptSetVersion: string;

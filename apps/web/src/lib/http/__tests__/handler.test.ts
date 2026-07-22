@@ -178,4 +178,29 @@ describe("HTTP request completion metrics", () => {
       "/api/mvp/:unknown",
     );
   });
+
+  it("recognizes every Product Profile route without logging customer ids", () => {
+    const prefix =
+      "https://example.test/api/mvp/projects/018f1552-d1f7-7000-8000-000000000001/product-profile";
+    expect(apiRouteTemplate(prefix)).toBe(
+      "/api/mvp/projects/:projectId/product-profile",
+    );
+    expect(apiRouteTemplate(`${prefix}/synthesis-runs`)).toBe(
+      "/api/mvp/projects/:projectId/product-profile/synthesis-runs",
+    );
+    expect(apiRouteTemplate(`${prefix}/competitors`)).toBe(
+      "/api/mvp/projects/:projectId/product-profile/competitors",
+    );
+    expect(apiRouteTemplate(`${prefix}/confirm`)).toBe(
+      "/api/mvp/projects/:projectId/product-profile/confirm",
+    );
+    expect(
+      apiRouteTemplate(`${prefix}/competitors/customer-secret-candidate`),
+    ).toBe(
+      "/api/mvp/projects/:projectId/product-profile/competitors/:candidateId",
+    );
+    expect(apiRouteTemplate(`${prefix}/customer-secret`)).toBe(
+      "/api/mvp/:unknown",
+    );
+  });
 });

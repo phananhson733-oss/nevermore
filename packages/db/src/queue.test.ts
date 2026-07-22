@@ -36,6 +36,16 @@ describe("pg-boss queue contract", () => {
     });
   });
 
+  it("gives Product Profile synthesis a conservative five-minute window", () => {
+    expect(QUEUE_NAMES).toContain("profile.synthesize");
+    expect(QUEUE_CONFIG["profile.synthesize"]).toEqual({
+      expireInSeconds: 300,
+      retryLimit: 2,
+      retryBackoff: true,
+      heartbeatSeconds: 60,
+    });
+  });
+
   it("constructs normal and enqueue-only clients without opening connections", () => {
     expect(createBoss("postgres://user@localhost/db")).toBeInstanceOf(PgBoss);
     expect(

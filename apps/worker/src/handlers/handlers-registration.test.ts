@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WorkerContext } from "../context.ts";
 import { runCollection } from "../collection/run-collection.ts";
+import { runProductProfileSynthesis } from "../product-profile/run-product-profile-synthesis.ts";
 import { registerArtifactHandlers } from "./artifact.ts";
 import { registerCollectHandlers } from "./collect.ts";
 import { registerDiagnoseHandler } from "./diagnose.ts";
+import { registerProfileSynthesizeHandler } from "./profile-synthesize.ts";
 import { prepareRunDelivery } from "./recovery.ts";
 
 // This suite verifies only pg-boss registration options and queue names. Keep
@@ -13,6 +15,9 @@ vi.mock("../collection/run-collection.ts", () => ({ runCollection: vi.fn() }));
 vi.mock("../diagnostic/run-diagnostic.ts", () => ({ runDiagnostic: vi.fn() }));
 vi.mock("../artifact/run-artifact.ts", () => ({ runArtifact: vi.fn() }));
 vi.mock("../export/run-export.ts", () => ({ runExport: vi.fn() }));
+vi.mock("../product-profile/run-product-profile-synthesis.ts", () => ({
+  runProductProfileSynthesis: vi.fn(),
+}));
 vi.mock("./recovery.ts", () => ({
   prepareRunDelivery: vi.fn(
     async (
@@ -34,9 +39,10 @@ describe("worker handler registration", () => {
 
     await registerCollectHandlers(ctx);
     await registerDiagnoseHandler(ctx);
+    await registerProfileSynthesizeHandler(ctx);
     await registerArtifactHandlers(ctx);
 
-    expect(work).toHaveBeenCalledTimes(8);
+    expect(work).toHaveBeenCalledTimes(9);
     expect(work.mock.calls.map((call) => call[0])).toEqual([
       "collect.crawl",
       "collect.gsc",
@@ -44,6 +50,7 @@ describe("worker handler registration", () => {
       "collect.csv",
       "collect.dataforseo",
       "diagnose",
+      "profile.synthesize",
       "artifact.generate",
       "export.bundle",
     ]);
@@ -51,6 +58,41 @@ describe("worker handler registration", () => {
       expect(call[1]).toEqual({ includeMetadata: true });
       expect(call[2]).toEqual(expect.any(Function));
     }
+  });
+
+  it("keeps Product Profile delivery fencing outside the canonical payload", async () => {
+    vi.clearAllMocks();
+    let handler:
+      | ((jobs: readonly Record<string, unknown>[]) => Promise<void>)
+      | undefined;
+    const work = vi.fn(
+      async (
+        _queue: string,
+        _options: unknown,
+        callback: (jobs: readonly Record<string, unknown>[]) => Promise<void>,
+      ) => {
+        handler = callback;
+        return "worker-id";
+      },
+    );
+    const ctx = {
+      boss: { work },
+      logger: { info: vi.fn() },
+    } as unknown as WorkerContext;
+    await registerProfileSynthesizeHandler(ctx);
+    if (!handler) throw new Error("profile.synthesize handler missing");
+    const data = {
+      runId: "00000000-0000-4000-8000-000000000001",
+      workspaceId: "00000000-0000-4000-8000-000000000002",
+      projectId: "00000000-0000-4000-8000-000000000003",
+    };
+    const job = { data, retryCount: 1, retryLimit: 2 };
+
+    await handler([job]);
+
+    expect(prepareRunDelivery).toHaveBeenCalledWith(ctx, job, expect.any(Function));
+    expect(runProductProfileSynthesis).toHaveBeenCalledWith(ctx, data);
+    expect(data).not.toHaveProperty("retryCount");
   });
 
   it("keeps delivery fencing and passes retry exhaustion metadata outside the canonical payload", async () => {

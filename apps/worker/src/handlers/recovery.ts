@@ -129,6 +129,8 @@ export function queueForRun(
     }
     case "diagnostic":
       return "diagnose";
+    case "product_profile_synthesis":
+      return "profile.synthesize";
     case "artifact_generation":
       return "artifact.generate";
     case "export":

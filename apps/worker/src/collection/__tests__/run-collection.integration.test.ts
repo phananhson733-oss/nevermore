@@ -30,6 +30,7 @@ import {
 } from "@sf/db/schema";
 import {
   AsyncRunsRepository,
+  collectionRunParametersHash,
   CollectionRunsRepository,
   DataSnapshotsRepository,
   ImportPreviewsRepository,
@@ -296,6 +297,326 @@ describeDb("collection runner (spec §13)", () => {
     await expect(
       new CollectionRunsRepository(handle.db).findById(runId),
     ).resolves.toMatchObject({ row_count: null });
+  });
+
+  it("fetches the root and the exact frozen deep Product Profile URL", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    const crawlConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      createdBy: seed.actor,
+    });
+    const seedUrl = `${seed.siteOrigin}/products/growth/`;
+    const seedPage = await new SitePagesRepository(
+      handle.db,
+    ).upsertNormalizedUrl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      normalizedUrl: seedUrl,
+      templateKey: null,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      sourceConnectionId: crawlConnection.id,
+      importPreviewId: null,
+      requestPayload: {},
+      crawlSeedSitePageId: seedPage.id,
+      crawlSeedUrl: seedUrl,
+      parametersHash: collectionRunParametersHash({
+        provider: "crawl",
+        operation: "site_graph",
+        siteId: seed.siteId,
+        crawlSeedSitePageId: seedPage.id,
+        crawlSeedUrl: seedUrl,
+      }),
+    });
+
+    const calls: string[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        calls.push(url);
+        if (url === `${seed.siteOrigin}/robots.txt`) {
+          return new Response("User-agent: *\nAllow: /", {
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        if (url === `${seed.siteOrigin}/sitemap.xml`) {
+          return new Response("missing sitemap", { status: 404 });
+        }
+        if (url === `${seed.siteOrigin}/`) {
+          return new Response(
+            "<html><head><title>Root</title></head><body><h1>Root</h1></body></html>",
+            { headers: { "content-type": "text/html" } },
+          );
+        }
+        if (url === seedUrl) {
+          return new Response(
+            "<html><head><title>Growth product</title></head><body><h1>Growth</h1></body></html>",
+            { headers: { "content-type": "text/html" } },
+          );
+        }
+        return new Response("unexpected", { status: 404 });
+      },
+    };
+
+    await runCollection(
+      {
+        ...ctx,
+        crawl: {
+          fetcher,
+          engineOptions: {
+            guard: async (url: string) => ({
+              safe: true as const,
+              normalizedUrl: new URL(url).href,
+              pinnedIp: "93.184.216.34",
+              reason: null,
+            }),
+            budget: {
+              ...CRAWL_BUDGET,
+              maxUrls: 2,
+              perHostConcurrency: 1,
+              minHostDelayMs: 0,
+            },
+          },
+        },
+      },
+      {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+      },
+    );
+
+    expect(calls).toEqual([
+      `${seed.siteOrigin}/robots.txt`,
+      `${seed.siteOrigin}/sitemap.xml`,
+      `${seed.siteOrigin}/`,
+      seedUrl,
+    ]);
+    expect(calls).not.toContain(seedUrl.slice(0, -1));
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(seed.scope, runId),
+    ).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("rejects a tampered null-seed Crawl hash before transport", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    const crawlConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      createdBy: seed.actor,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      sourceConnectionId: crawlConnection.id,
+      importPreviewId: null,
+      requestPayload: {},
+      parametersHash: "0".repeat(64),
+    });
+    const fetch = vi.fn(async () => new Response("must not fetch"));
+
+    await runCollection(
+      {
+        ...ctx,
+        crawl: { fetcher: { fetch } },
+      },
+      {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+      },
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(seed.scope, runId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      last_error_code: "INVALID_CONFIGURATION",
+    });
+  });
+
+  it("rejects a corrupt frozen seed hash before Crawl transport", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    const crawlConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      createdBy: seed.actor,
+    });
+    const seedUrl = `${seed.siteOrigin}/products/hash-bound/`;
+    const seedPage = await new SitePagesRepository(
+      handle.db,
+    ).upsertNormalizedUrl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      normalizedUrl: seedUrl,
+      templateKey: null,
+    });
+    const expectedHash = collectionRunParametersHash({
+      provider: "crawl",
+      operation: "site_graph",
+      siteId: seed.siteId,
+      crawlSeedSitePageId: seedPage.id,
+      crawlSeedUrl: seedUrl,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      sourceConnectionId: crawlConnection.id,
+      importPreviewId: null,
+      requestPayload: {},
+      crawlSeedSitePageId: seedPage.id,
+      crawlSeedUrl: seedUrl,
+      parametersHash: expectedHash,
+    });
+    const persisted = await new CollectionRunsRepository(handle.db).findById(
+      runId,
+    );
+    const lookup = vi
+      .spyOn(CollectionRunsRepository.prototype, "findById")
+      .mockResolvedValueOnce({
+        ...persisted!,
+        parameters_hash: "0".repeat(64),
+      });
+    const fetch = vi.fn(async () => new Response("must not fetch"));
+    try {
+      await runCollection(
+        {
+          ...ctx,
+          crawl: {
+            fetcher: { fetch },
+          },
+        },
+        {
+          runId,
+          workspaceId: seed.scope.workspaceId,
+          projectId: seed.scope.projectId,
+        },
+      );
+    } finally {
+      lookup.mockRestore();
+    }
+
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(seed.scope, runId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      last_error_code: "INVALID_CONFIGURATION",
+    });
+  });
+
+  it("rejects a self-consistent foreign frozen SitePage before Crawl transport", async () => {
+    const owner = await seedProject(handle);
+    const foreign = await seedProject(handle);
+    const runId = randomUUID();
+    const crawlConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: owner.scope.workspaceId,
+      projectId: owner.scope.projectId,
+      siteId: owner.siteId,
+      createdBy: owner.actor,
+    });
+    const ownerUrl = `${owner.siteOrigin}/products/owner/`;
+    const ownerPage = await new SitePagesRepository(
+      handle.db,
+    ).upsertNormalizedUrl({
+      workspaceId: owner.scope.workspaceId,
+      projectId: owner.scope.projectId,
+      siteId: owner.siteId,
+      normalizedUrl: ownerUrl,
+      templateKey: null,
+    });
+    const foreignUrl = `${foreign.siteOrigin}/products/foreign/`;
+    const foreignPage = await new SitePagesRepository(
+      handle.db,
+    ).upsertNormalizedUrl({
+      workspaceId: foreign.scope.workspaceId,
+      projectId: foreign.scope.projectId,
+      siteId: foreign.siteId,
+      normalizedUrl: foreignUrl,
+      templateKey: null,
+    });
+    await seedCollectionRun(handle, owner, runId, {
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      sourceConnectionId: crawlConnection.id,
+      importPreviewId: null,
+      requestPayload: {},
+      crawlSeedSitePageId: ownerPage.id,
+      crawlSeedUrl: ownerUrl,
+      parametersHash: collectionRunParametersHash({
+        provider: "crawl",
+        operation: "site_graph",
+        siteId: owner.siteId,
+        crawlSeedSitePageId: ownerPage.id,
+        crawlSeedUrl: ownerUrl,
+      }),
+    });
+    const persisted = await new CollectionRunsRepository(handle.db).findById(
+      runId,
+    );
+    const lookup = vi
+      .spyOn(CollectionRunsRepository.prototype, "findById")
+      .mockResolvedValueOnce({
+        ...persisted!,
+        crawl_seed_site_page_id: foreignPage.id,
+        crawl_seed_url: foreignUrl,
+        parameters_hash: collectionRunParametersHash({
+          provider: "crawl",
+          operation: "site_graph",
+          siteId: owner.siteId,
+          crawlSeedSitePageId: foreignPage.id,
+          crawlSeedUrl: foreignUrl,
+        }),
+      });
+    const fetch = vi.fn(async () => new Response("must not fetch"));
+    try {
+      await runCollection(
+        {
+          ...ctx,
+          crawl: {
+            fetcher: { fetch },
+          },
+        },
+        {
+          runId,
+          workspaceId: owner.scope.workspaceId,
+          projectId: owner.scope.projectId,
+        },
+      );
+    } finally {
+      lookup.mockRestore();
+    }
+
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(owner.scope, runId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      last_error_code: "INVALID_CONFIGURATION",
+    });
   });
 
   it("AC-041: a successful CSV collection writes exactly one snapshot; a redelivered (already-claimed) job does not double-write", async () => {
@@ -2762,6 +3083,9 @@ async function seedCollectionRun(
     sourceConnectionId: string | null;
     importPreviewId: string | null;
     requestPayload: Record<string, unknown>;
+    crawlSeedSitePageId?: string | null;
+    crawlSeedUrl?: string | null;
+    parametersHash?: string;
   },
 ): Promise<void> {
   await handle.db.insert(asyncRuns).values({
@@ -2780,10 +3104,20 @@ async function seedCollectionRun(
     site_id: seed.siteId,
     source_connection_id: input.sourceConnectionId,
     import_preview_id: input.importPreviewId,
+    crawl_seed_site_page_id: input.crawlSeedSitePageId ?? null,
+    crawl_seed_url: input.crawlSeedUrl ?? null,
     provider: input.provider,
     operation: input.operation,
     method_version: input.methodVersion,
-    parameters_hash: contentHash({ run: runId }),
+    parameters_hash:
+      input.parametersHash ??
+      collectionRunParametersHash({
+        provider: input.provider,
+        operation: input.operation,
+        siteId: seed.siteId,
+        crawlSeedSitePageId: input.crawlSeedSitePageId ?? null,
+        crawlSeedUrl: input.crawlSeedUrl ?? null,
+      }),
   });
 }
 

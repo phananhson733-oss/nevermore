@@ -71,6 +71,9 @@ describe("queueForRun", () => {
       "collect.dataforseo",
     );
     expect(queueForRun(run("diagnostic", {}))).toBe("diagnose");
+    expect(queueForRun(run("product_profile_synthesis", {}))).toBe(
+      "profile.synthesize",
+    );
     expect(queueForRun(run("artifact_generation", {}))).toBe(
       "artifact.generate",
     );
