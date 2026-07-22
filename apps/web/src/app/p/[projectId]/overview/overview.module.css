@@ -127,12 +127,12 @@
 
 .primaryLink {
   color: var(--sf-accent-contrast);
-  background: var(--sf-accent);
+  background: color-mix(in srgb, var(--sf-accent) 78%, var(--sf-fg));
   box-shadow: var(--sf-shadow-accent);
 }
 
 .primaryLink:hover {
-  background: var(--sf-cobalt-dark);
+  background: color-mix(in srgb, var(--sf-accent) 68%, var(--sf-fg));
   transform: translateY(-1px);
 }
 
@@ -697,7 +697,15 @@
 }
 
 .portfolioMetrics dd {
-  margin: 7px 0 4px;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  margin: 7px 0 0;
+}
+
+.portfolioMetricValue {
+  margin-bottom: 4px;
   color: var(--sf-fg);
   font-family: var(--sf-font-display);
   font-size: 31px;
@@ -775,7 +783,7 @@
   align-items: center;
   gap: 9px;
   padding: 13px;
-  color: var(--sf-muted);
+  color: var(--sf-fg);
   background: var(--sf-mint-soft);
   border: 1px solid color-mix(in srgb, var(--sf-mint) 36%, var(--sf-border));
   border-radius: var(--sf-radius-control);
@@ -1125,6 +1133,7 @@
 
 @media (max-width: 760px) {
   .hero {
+    flex-direction: column;
     align-items: flex-start;
   }
 

@@ -435,27 +435,43 @@ function PortfolioSection({
           <dl className={styles.portfolioMetrics}>
             <div>
               <dt>{t("portfolio.loadedUrls")}</dt>
-              <dd>{summary.loadedUrlCount}</dd>
-              <small>
-                {summary.hasMore
-                  ? t("portfolio.boundedPageMore")
-                  : t("portfolio.boundedPageComplete")}
-              </small>
+              <dd>
+                <span className={styles.portfolioMetricValue}>
+                  {summary.loadedUrlCount}
+                </span>
+                <small>
+                  {summary.hasMore
+                    ? t("portfolio.boundedPageMore")
+                    : t("portfolio.boundedPageComplete")}
+                </small>
+              </dd>
             </div>
             <div>
               <dt>{t("portfolio.opportunityUrls")}</dt>
-              <dd>{summary.opportunityUrlCount}</dd>
-              <small>{t("portfolio.currentPageScope")}</small>
+              <dd>
+                <span className={styles.portfolioMetricValue}>
+                  {summary.opportunityUrlCount}
+                </span>
+                <small>{t("portfolio.currentPageScope")}</small>
+              </dd>
             </div>
             <div>
               <dt>{t("portfolio.findings")}</dt>
-              <dd>{summary.findingCount}</dd>
-              <small>{t("portfolio.currentRunOnly")}</small>
+              <dd>
+                <span className={styles.portfolioMetricValue}>
+                  {summary.findingCount}
+                </span>
+                <small>{t("portfolio.currentRunOnly")}</small>
+              </dd>
             </div>
             <div>
               <dt>{t("portfolio.toReview")}</dt>
-              <dd>{summary.reviewableFindingCount}</dd>
-              <small>{t("portfolio.oneByOne")}</small>
+              <dd>
+                <span className={styles.portfolioMetricValue}>
+                  {summary.reviewableFindingCount}
+                </span>
+                <small>{t("portfolio.oneByOne")}</small>
+              </dd>
             </div>
           </dl>
           <div className={styles.priorityMix}>
