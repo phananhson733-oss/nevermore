@@ -32,10 +32,12 @@ import {
   ExportBundlesRepository,
   ImportPreviewsRepository,
   ObservationsRepository,
+  PageSnapshotsRepository,
   ProjectsRepository,
   SitePagesRepository,
   SourceConnectionsRepository,
   contentHash,
+  type CanonicalValue,
   type ObservationInsert,
   type PgBoss,
   type ProjectScope,
@@ -67,6 +69,10 @@ import { createProjectExport } from "@/lib/services/export-service";
 import { getProjectReport } from "@/lib/services/report";
 import { getBoss } from "@/lib/boss";
 import type { WorkerContext } from "../../../../../worker/src/context.ts";
+import {
+  CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
+  type CrawlPageExtract,
+} from "../../../../../worker/src/collection/materialize-crawl-pages.ts";
 import { runDiagnostic } from "../../../../../worker/src/diagnostic/run-diagnostic.ts";
 import { runArtifact } from "../../../../../worker/src/artifact/run-artifact.ts";
 import { runExport } from "../../../../../worker/src/export/run-export.ts";
@@ -455,6 +461,11 @@ async function seedCrawlSnapshot(
   const observations = goldenObservations(origin, capturedAt, fixture);
   const sitePages = new SitePagesRepository(handle.db);
   const observationsWithLineage: ObservationInsert[] = [];
+  const crawlPageSeeds: Array<{
+    readonly sitePageId: string;
+    readonly subjectUrl: string;
+    readonly projection: CrawlPageProjection;
+  }> = [];
   for (const observation of observations) {
     if (observation.metricKey !== METRIC_CRAWL_PAGE) {
       observationsWithLineage.push(observation);
@@ -467,6 +478,17 @@ async function seedCrawlSnapshot(
       siteId,
       normalizedUrl: projection.fetchUrl,
       templateKey: null,
+    });
+    const subjectUrl = su(projection.fetchUrl);
+    if (observation.subjectRef !== subjectUrl) {
+      throw new Error(
+        `fixture Crawl Observation subject does not match its exact page: ${projection.fetchUrl}`,
+      );
+    }
+    crawlPageSeeds.push({
+      sitePageId: sitePage.id,
+      subjectUrl,
+      projection,
     });
     observationsWithLineage.push({
       ...observation,
@@ -491,6 +513,24 @@ async function seedCrawlSnapshot(
     rowCount: observationsWithLineage.length,
     checksum: contentHash({ s: collectionRunId }),
   });
+  const pageSnapshots = new PageSnapshotsRepository(handle.db);
+  for (const page of crawlPageSeeds) {
+    const extract: CrawlPageExtract = {
+      schemaVersion: CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
+      subjectUrl: page.subjectUrl,
+      depth: 0,
+      projection: page.projection,
+    };
+    await pageSnapshots.create({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      sitePageId: page.sitePageId,
+      dataSnapshotId: snapshot.id,
+      contentHash: contentHash(extract as CanonicalValue),
+      extract,
+      capturedAt,
+    });
+  }
   await new ObservationsRepository(handle.db).insertMany(
     scope,
     snapshot.id,

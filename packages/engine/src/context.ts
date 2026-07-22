@@ -34,8 +34,17 @@ import {
 
 export type DatasetAvailability = "available" | "partial" | "unavailable";
 
+/** Immutable lineage copied from one persisted normalized observation. */
+export interface ObservationLineageView {
+  readonly observationId: string;
+  readonly snapshotId: string;
+  readonly sitePageId: string | null;
+  readonly sitePageUrl: string | null;
+  readonly pageSnapshotId: string | null;
+}
+
 /** A flat observation as loaded from `normalized_observations` (worker → engine). */
-export interface ObservationView {
+export interface ObservationView extends ObservationLineageView {
   readonly metricKey: string;
   readonly subjectType: string;
   readonly subjectRef: string;
@@ -43,6 +52,12 @@ export interface ObservationView {
   readonly availability: string;
   readonly valueJson: unknown;
   readonly observedAt: string;
+}
+
+/** Projection and lineage are retained together; rules never re-join by URL. */
+export interface UrlObservationProjection<T> extends ObservationLineageView {
+  readonly subjectRef: string;
+  readonly projection: T;
 }
 
 export interface CoverageInput {
@@ -103,10 +118,33 @@ export class DiagnosticContext {
   readonly pages: ReadonlyMap<string, CrawlPageProjection>;
   /** Every exact crawl response, grouped by subjectUrl and ordered by fetchUrl. */
   readonly pageVariants: ReadonlyMap<string, readonly CrawlPageProjection[]>;
+  /** Exact crawl projections with their persisted observation/SitePage lineage. */
+  readonly crawlPageObservations: ReadonlyMap<
+    string,
+    readonly UrlObservationProjection<CrawlPageProjection>[]
+  >;
   readonly robots: CrawlRobotsProjection | null;
   readonly sitemap: CrawlSitemapProjection | null;
   readonly gsc: ReadonlyMap<string, GscPageProjection>;
   readonly ga4: ReadonlyMap<string, Ga4LandingProjection>;
+  /** Unique subject-level rows retain persisted analytics lineage. */
+  readonly gscObservations: ReadonlyMap<
+    string,
+    UrlObservationProjection<GscPageProjection>
+  >;
+  readonly ga4Observations: ReadonlyMap<
+    string,
+    UrlObservationProjection<Ga4LandingProjection>
+  >;
+  /** All rows remain available for replay/audit, including ambiguous duplicates. */
+  readonly gscObservationGroups: ReadonlyMap<
+    string,
+    readonly UrlObservationProjection<GscPageProjection>[]
+  >;
+  readonly ga4ObservationGroups: ReadonlyMap<
+    string,
+    readonly UrlObservationProjection<Ga4LandingProjection>[]
+  >;
   readonly csvClusters: ReadonlyMap<string, readonly CsvKeywordProjection[]>;
   /** Actual provider(s) that supplied any observation for each cluster. */
   readonly keywordGapProviders: ReadonlyMap<string, ReadonlySet<"csv" | "dataforseo">>;
@@ -123,6 +161,12 @@ export class DiagnosticContext {
   readonly internalInlinks: ReadonlyMap<string, number>;
 
   private readonly prioritySet: ReadonlySet<string>;
+  private readonly crawlObservationsByFetchUrl: ReadonlyMap<
+    string,
+    readonly UrlObservationProjection<CrawlPageProjection>[]
+  >;
+  private readonly ambiguousGscSubjects: ReadonlySet<string>;
+  private readonly ambiguousGa4Subjects: ReadonlySet<string>;
 
   private constructor(input: DiagnosticContextInput) {
     this.icp = input.icp;
@@ -134,9 +178,18 @@ export class DiagnosticContext {
     });
     this.prioritySet = priorityUrlSet(input.icp.priorityUrls);
 
-    const pageGroups = new Map<string, CrawlPageProjection[]>();
-    const gsc = new Map<string, GscPageProjection>();
-    const ga4 = new Map<string, Ga4LandingProjection>();
+    const pageGroups = new Map<
+      string,
+      UrlObservationProjection<CrawlPageProjection>[]
+    >();
+    const gscGroups = new Map<
+      string,
+      UrlObservationProjection<GscPageProjection>[]
+    >();
+    const ga4Groups = new Map<
+      string,
+      UrlObservationProjection<Ga4LandingProjection>[]
+    >();
     const keywordRows = new Map<
       string,
       Map<string, KeywordProjectionRow>
@@ -153,7 +206,12 @@ export class DiagnosticContext {
         case METRIC_CRAWL_PAGE:
           if (obs.valueJson) {
             const variants = pageGroups.get(obs.subjectRef) ?? [];
-            variants.push(obs.valueJson as CrawlPageProjection);
+            variants.push(
+              observationProjection(
+                obs,
+                obs.valueJson as CrawlPageProjection,
+              ),
+            );
             pageGroups.set(obs.subjectRef, variants);
           }
           break;
@@ -164,10 +222,25 @@ export class DiagnosticContext {
           if (obs.valueJson) sitemap = obs.valueJson as CrawlSitemapProjection;
           break;
         case METRIC_GSC_PAGE:
-          if (obs.valueJson) gsc.set(obs.subjectRef, obs.valueJson as GscPageProjection);
+          if (obs.valueJson) {
+            const rows = gscGroups.get(obs.subjectRef) ?? [];
+            rows.push(
+              observationProjection(obs, obs.valueJson as GscPageProjection),
+            );
+            gscGroups.set(obs.subjectRef, rows);
+          }
           break;
         case METRIC_GA4_LANDING:
-          if (obs.valueJson) ga4.set(obs.subjectRef, obs.valueJson as Ga4LandingProjection);
+          if (obs.valueJson) {
+            const rows = ga4Groups.get(obs.subjectRef) ?? [];
+            rows.push(
+              observationProjection(
+                obs,
+                obs.valueJson as Ga4LandingProjection,
+              ),
+            );
+            ga4Groups.set(obs.subjectRef, rows);
+          }
           break;
         case METRIC_CSV_KEYWORD_GAP: {
           if (!obs.valueJson) break;
@@ -204,17 +277,66 @@ export class DiagnosticContext {
       string,
       readonly CrawlPageProjection[]
     >();
+    const crawlPageObservations = new Map<
+      string,
+      readonly UrlObservationProjection<CrawlPageProjection>[]
+    >();
+    const crawlObservationsByFetchUrl = new Map<
+      string,
+      UrlObservationProjection<CrawlPageProjection>[]
+    >();
     for (const subjectRef of [...pageGroups.keys()].sort(compareAscii)) {
-      const variants = Object.freeze(
-        [...(pageGroups.get(subjectRef) ?? [])].sort((left, right) =>
-          compareAscii(left.fetchUrl, right.fetchUrl),
+      const observations = Object.freeze(
+        [...(pageGroups.get(subjectRef) ?? [])].sort(
+          (left, right) =>
+            compareAscii(
+              left.projection.fetchUrl,
+              right.projection.fetchUrl,
+            ) || compareAscii(left.observationId, right.observationId),
         ),
+      );
+      const variants = Object.freeze(
+        observations.map((observation) => observation.projection),
       );
       const representative = variants[0];
       if (!representative) continue;
       pages.set(subjectRef, representative);
       pageVariants.set(subjectRef, variants);
+      crawlPageObservations.set(subjectRef, observations);
+      for (const observation of observations) {
+        const fetchUrl = observation.projection.fetchUrl;
+        const exact = crawlObservationsByFetchUrl.get(fetchUrl) ?? [];
+        exact.push(observation);
+        crawlObservationsByFetchUrl.set(fetchUrl, exact);
+      }
     }
+
+    const gsc = new Map<string, GscPageProjection>();
+    const ga4 = new Map<string, Ga4LandingProjection>();
+    const gscObservations = new Map<
+      string,
+      UrlObservationProjection<GscPageProjection>
+    >();
+    const ga4Observations = new Map<
+      string,
+      UrlObservationProjection<Ga4LandingProjection>
+    >();
+    const ambiguousGscSubjects = new Set<string>();
+    const ambiguousGa4Subjects = new Set<string>();
+    const gscObservationGroups = orderUrlObservationGroups(gscGroups);
+    const ga4ObservationGroups = orderUrlObservationGroups(ga4Groups);
+    materializeUrlObservationGroups(
+      gscObservationGroups,
+      gsc,
+      gscObservations,
+      ambiguousGscSubjects,
+    );
+    materializeUrlObservationGroups(
+      ga4ObservationGroups,
+      ga4,
+      ga4Observations,
+      ambiguousGa4Subjects,
+    );
 
     const csv = new Map<string, readonly CsvKeywordProjection[]>();
     const keywordGapContributionsByCluster = new Map<
@@ -277,10 +399,18 @@ export class DiagnosticContext {
 
     this.pages = pages;
     this.pageVariants = pageVariants;
+    this.crawlPageObservations = crawlPageObservations;
+    this.crawlObservationsByFetchUrl = crawlObservationsByFetchUrl;
     this.robots = robots;
     this.sitemap = sitemap;
     this.gsc = gsc;
     this.ga4 = ga4;
+    this.gscObservations = gscObservations;
+    this.ga4Observations = ga4Observations;
+    this.gscObservationGroups = gscObservationGroups;
+    this.ga4ObservationGroups = ga4ObservationGroups;
+    this.ambiguousGscSubjects = ambiguousGscSubjects;
+    this.ambiguousGa4Subjects = ambiguousGa4Subjects;
     this.csvClusters = csv;
     this.keywordGapProviders = keywordGapProviders;
     this.keywordGapContributionsByCluster =
@@ -374,6 +504,30 @@ export class DiagnosticContext {
     return this.capturedAt[provider] ?? this.capturedAt["crawl"] ?? new Date(0).toISOString();
   }
 
+  /** One exact crawl observation, or null when absent/ambiguous. */
+  crawlObservationForFetchUrl(
+    fetchUrl: string,
+  ): UrlObservationProjection<CrawlPageProjection> | null {
+    const rows = this.crawlObservationsByFetchUrl.get(fetchUrl);
+    return rows?.length === 1 ? rows[0] ?? null : null;
+  }
+
+  /** One frozen GSC subject observation, or null when absent/ambiguous. */
+  gscObservationForSubject(
+    subjectRef: string,
+  ): UrlObservationProjection<GscPageProjection> | null {
+    if (this.ambiguousGscSubjects.has(subjectRef)) return null;
+    return this.gscObservations.get(subjectRef) ?? null;
+  }
+
+  /** One frozen GA4 subject observation, or null when absent/ambiguous. */
+  ga4ObservationForSubject(
+    subjectRef: string,
+  ): UrlObservationProjection<Ga4LandingProjection> | null {
+    if (this.ambiguousGa4Subjects.has(subjectRef)) return null;
+    return this.ga4Observations.get(subjectRef) ?? null;
+  }
+
   /** Availability of one actual frozen provider snapshot, not a merged slot. */
   providerAvailability(provider: string): DatasetAvailability {
     const availability = this.availabilityByProvider[provider];
@@ -406,6 +560,62 @@ export class DiagnosticContext {
 
 function compareAscii(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function observationProjection<T>(
+  observation: ObservationView,
+  projection: T,
+): UrlObservationProjection<T> {
+  return {
+    observationId: observation.observationId,
+    snapshotId: observation.snapshotId,
+    sitePageId: observation.sitePageId,
+    sitePageUrl: observation.sitePageUrl,
+    pageSnapshotId: observation.pageSnapshotId,
+    subjectRef: observation.subjectRef,
+    projection,
+  };
+}
+
+function materializeUrlObservationGroups<T>(
+  groups: ReadonlyMap<string, readonly UrlObservationProjection<T>[]>,
+  projections: Map<string, T>,
+  uniqueObservations: Map<string, UrlObservationProjection<T>>,
+  ambiguousSubjects: Set<string>,
+): void {
+  for (const subjectRef of [...groups.keys()].sort(compareAscii)) {
+    const rows = [...(groups.get(subjectRef) ?? [])].sort((left, right) =>
+      compareAscii(left.observationId, right.observationId),
+    );
+    const representative = rows[0];
+    if (!representative) continue;
+    if (rows.length === 1) {
+      projections.set(subjectRef, representative.projection);
+      uniqueObservations.set(subjectRef, representative);
+    } else {
+      ambiguousSubjects.add(subjectRef);
+    }
+  }
+}
+
+function orderUrlObservationGroups<T>(
+  groups: ReadonlyMap<string, readonly UrlObservationProjection<T>[]>,
+): ReadonlyMap<string, readonly UrlObservationProjection<T>[]> {
+  const ordered = new Map<
+    string,
+    readonly UrlObservationProjection<T>[]
+  >();
+  for (const subjectRef of [...groups.keys()].sort(compareAscii)) {
+    ordered.set(
+      subjectRef,
+      Object.freeze(
+        [...(groups.get(subjectRef) ?? [])].sort((left, right) =>
+          compareAscii(left.observationId, right.observationId),
+        ),
+      ),
+    );
+  }
+  return ordered;
 }
 
 function isIndexablePage(page: CrawlPageProjection): boolean {

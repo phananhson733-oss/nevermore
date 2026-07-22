@@ -51,7 +51,14 @@ function candidate(
     titleArgs: { status: 404, count: 1 },
     metrics: { count: 1 },
     evidence: [observedEvidence(evidenceSubjectRef)],
-  };
+    target: {
+      version: 1,
+      relation: "affected_by_http_status",
+      targetKind: "http_status",
+      targetRef: subjectRef.replace("http_status:", ""),
+      members: [],
+    },
+  } as FindingCandidate;
 }
 
 describe("runPipeline async rule contract (spec §8.3)", () => {
@@ -94,6 +101,104 @@ describe("runPipeline async rule contract (spec §8.3)", () => {
 
     expect(result.ruleResults[0]?.ruleVersion).toBe(2);
     expect(result.findings[0]?.ruleVersion).toBe(2);
+  });
+
+  it("passes the explicit candidate target through unchanged to RunFinding", async () => {
+    const source = candidate("http_status:503", "https://x.test/down");
+    const rule: DiagnosticRule = {
+      id: "TECH-HTTP-001",
+      version: 2,
+      domain: "technical_seo",
+      requiredDatasets: [],
+      evaluate: () => ({ status: "candidate", candidates: [source] }),
+    };
+
+    const result = await runPipeline({
+      projectId: "00000000-0000-4000-8000-000000000001",
+      ctx: emptyContext(),
+      rules: [rule],
+      deliveryLocale: "en",
+    });
+
+    expect(
+      (result.findings[0] as unknown as { readonly target: unknown }).target,
+    ).toEqual(
+      (source as unknown as { readonly target: unknown }).target,
+    );
+  });
+
+  it("contains divergent merge targets to their offending rule and continues unrelated rules", async () => {
+    const first = candidate("http_status:503", "https://x.test/down");
+    const divergent: FindingCandidate = {
+      ...first,
+      target: {
+        version: 1,
+        relation: "affected_by_http_status",
+        targetKind: "http_status",
+        targetRef: "500",
+        members: [],
+      },
+    };
+    const unrelated: FindingCandidate = {
+      ...candidate(
+        "page_set:missing_conversion_path",
+        "https://x.test/product",
+      ),
+      target: {
+        version: 1,
+        relation: "affected_by_page_set",
+        targetKind: "page_set",
+        targetRef: "missing_conversion_path",
+        members: [],
+      },
+    };
+    const rules: DiagnosticRule[] = [
+      {
+        id: "TECH-HTTP-001",
+        version: 2,
+        domain: "technical_seo",
+        requiredDatasets: [],
+        evaluate: () => ({
+          status: "candidate",
+          candidates: [first, divergent],
+        }),
+      },
+      {
+        id: "CRO-PATH-001",
+        version: 1,
+        domain: "conversion_journey",
+        requiredDatasets: [],
+        evaluate: () => ({ status: "candidate", candidates: [unrelated] }),
+      },
+    ];
+
+    const result = await runPipeline({
+      projectId: "00000000-0000-4000-8000-000000000001",
+      ctx: emptyContext(),
+      rules,
+      deliveryLocale: "en",
+    });
+
+    expect(result.ruleResults).toEqual([
+      expect.objectContaining({
+        ruleId: "TECH-HTTP-001",
+        status: "inconclusive",
+        reason: "divergent_finding_target",
+      }),
+      expect.objectContaining({
+        ruleId: "CRO-PATH-001",
+        status: "candidate",
+        reason: null,
+      }),
+    ]);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      ruleId: "CRO-PATH-001",
+      target: {
+        relation: "affected_by_page_set",
+        targetRef: "missing_conversion_path",
+      },
+    });
   });
 
   it("awaits each rule in registry order", async () => {

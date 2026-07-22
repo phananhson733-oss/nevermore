@@ -13,6 +13,7 @@ import { FINDING_REGISTRY } from "./registry.ts";
 import {
   mergeRunCandidates,
   findingKey,
+  DivergentFindingTargetError,
   type MergedCandidate,
 } from "./merge.ts";
 import {
@@ -21,6 +22,7 @@ import {
   type Confidence,
 } from "./confidence.ts";
 import { buildSummary } from "./summaries.ts";
+import type { FindingTargetDraft } from "./target.ts";
 
 /**
  * The fixed diagnostic pipeline (spec §8.2). Deterministic rules run in registry
@@ -61,6 +63,7 @@ export interface RunFinding {
   readonly reviewState: "unreviewed" | "needs_more_data";
   readonly priorityRelevant: boolean;
   readonly evidence: readonly EvidenceDraft[];
+  readonly target: FindingTargetDraft;
 }
 
 export interface DiagnosticCoverage {
@@ -187,8 +190,33 @@ export async function runPipeline(input: {
     });
   }
 
-  // Step 8: merge candidates within the run.
-  const merged = mergeRunCandidates(buckets);
+  // Step 8: merge candidates within the run. A divergent explicit target is a
+  // rule contract failure, not permission to abort unrelated deterministic
+  // rules. Remove every involved rule, label it inconclusive, and retry.
+  let activeBuckets = [...buckets];
+  let merged: MergedCandidate[];
+  while (true) {
+    try {
+      merged = mergeRunCandidates(activeBuckets);
+      break;
+    } catch (error) {
+      if (!(error instanceof DivergentFindingTargetError)) throw error;
+      const failedRuleIds = new Set(error.ruleIds);
+      activeBuckets = activeBuckets.filter(
+        (bucket) => !failedRuleIds.has(bucket.ruleId),
+      );
+      for (let index = 0; index < ruleResults.length; index += 1) {
+        const result = ruleResults[index];
+        if (!result || !failedRuleIds.has(result.ruleId)) continue;
+        ruleResults[index] = {
+          ...result,
+          status: "inconclusive",
+          reason: "divergent_finding_target",
+          metrics: {},
+        };
+      }
+    }
+  }
   const discrepancySubjects = new Set(discrepancySubjectRefs);
 
   const summaries = new Map<
@@ -273,6 +301,7 @@ export async function runPipeline(input: {
         reviewState: autoReviewState(confidence),
         priorityRelevant: priorityRelevant(ctx, c),
         evidence: c.evidence,
+        target: c.target,
       };
     });
 

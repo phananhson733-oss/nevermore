@@ -6,6 +6,7 @@ import type {
   RuleResult,
   Severity,
 } from "../rule.ts";
+import { crawlTargetMembers, findingTarget } from "../target.ts";
 
 /**
  * CRO-PATH-001 (spec §8.4, conversion_journey). A commercial page with no direct
@@ -45,6 +46,7 @@ export const croPathRule = {
     }
 
     const affected: string[] = [];
+    const affectedFetchUrls = new Set<string>();
     let anyPriority = false;
 
     for (const [url, variants] of ctx.indexablePages()) {
@@ -57,6 +59,7 @@ export const croPathRule = {
       );
       if (linked) continue;
       affected.push(url);
+      for (const page of variants) affectedFetchUrls.add(page.fetchUrl);
       if (ctx.isPriority(url)) anyPriority = true;
     }
 
@@ -80,12 +83,22 @@ export const croPathRule = {
       observedAt: ctx.observedAt("crawl"),
       limitation: CRAWL_LIMITATION,
     };
+    const members = crawlTargetMembers(ctx, [...affectedFetchUrls]);
+    if (members === null) {
+      return { status: "inconclusive", reason: "missing_observation_lineage" };
+    }
     const candidate: FindingCandidate = {
       subjectRefs: [CANDIDATE_KEY],
       severity,
       titleArgs: { affectedCount: affected.length, destinationCount: dests.size },
       metrics: { affectedCount: affected.length, destinationCount: dests.size },
       evidence: [evidence],
+      target: findingTarget(
+        { relation: "affected_by_page_set", targetKind: "page_set" },
+        "missing_conversion_path",
+        members,
+        "observation_members",
+      ),
     };
     return { status: "candidate", candidates: [candidate] };
   },

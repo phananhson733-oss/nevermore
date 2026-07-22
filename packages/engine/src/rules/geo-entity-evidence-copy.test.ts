@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticContext } from "../context.ts";
 import { parseIcp } from "../icp.ts";
 import { geoEntityRule } from "./geo-entity.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 
 const PAGE: CrawlPageProjection = {
   fetchUrl: "https://example.com/pricing",
@@ -35,6 +36,10 @@ describe("GEO-ENTITY-001 evidence copy", () => {
       deliveryLocale: "en",
       observations: [
         {
+          ...testObservationLineage(`crawl:${PAGE.fetchUrl}`, {
+            sitePageUrl: PAGE.fetchUrl,
+            pageSnapshot: true,
+          }),
           metricKey: METRIC_CRAWL_PAGE,
           subjectType: "url",
           subjectRef: "https://example.com/pricing",

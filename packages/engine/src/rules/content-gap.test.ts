@@ -7,6 +7,7 @@ import {
 } from "../context.ts";
 import { parseIcp, type EngineIcp } from "../icp.ts";
 import { runPipeline } from "../pipeline.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { contentGapRule } from "./content-gap.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00.000Z";
@@ -71,6 +72,10 @@ function makePage(
 
 function crawlObs(subjectUrl: string, page: CrawlPageProjection): ObservationView {
   return {
+    ...testObservationLineage(`crawl:${page.fetchUrl}`, {
+      sitePageUrl: page.fetchUrl,
+      pageSnapshot: true,
+    }),
     metricKey: METRIC_CRAWL_PAGE,
     subjectType: "url",
     subjectRef: subjectUrl,
@@ -100,6 +105,7 @@ function clusterObs(
   specs: readonly (readonly [string, number | null])[],
 ): ObservationView[] {
   return specs.map(([keyword, volume]) => ({
+    ...testObservationLineage(`csv:${clusterKey}:${keyword}`),
     metricKey: METRIC_CSV_KEYWORD_GAP,
     subjectType: "keyword_cluster",
     subjectRef: clusterKey,

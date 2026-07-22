@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticContext } from "../context.ts";
 import type { CoverageInput, ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { techHttpStatusRule } from "./tech-http-status.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00Z";
@@ -39,6 +40,10 @@ function pageObs(subjectUrl: string, page: CrawlPageProjection): ObservationView
       ? { ...page, fetchUrl: subjectUrl }
       : page;
   return {
+    ...testObservationLineage(`crawl:${pageWithSubjectFetch.fetchUrl}`, {
+      sitePageUrl: pageWithSubjectFetch.fetchUrl,
+      pageSnapshot: true,
+    }),
     metricKey: METRIC_CRAWL_PAGE,
     subjectType: "url",
     subjectRef: subjectUrl,
@@ -90,8 +95,37 @@ describe("TECH-HTTP-001 tech-http-status", () => {
         evidence: [
           expect.objectContaining({ subjectRefs: [`${subjectUrl}/`] }),
         ],
+        target: expect.objectContaining({
+          version: 1,
+          relation: "affected_by_http_status",
+          targetKind: "http_status",
+          targetRef: "503",
+          members: [
+            expect.objectContaining({
+              resolutionState: "resolved",
+              basisKind: "crawl_exact_fetch",
+              memberRef: `${subjectUrl}/`,
+              sitePageUrl: `${subjectUrl}/`,
+            }),
+          ],
+        }),
       }),
     ]);
+  });
+
+  it("fails closed when an exact crawl member lacks its frozen PageSnapshot", () => {
+    const observation = pageObs(
+      "https://x.com/down",
+      makePage({ fetchUrl: "https://x.com/down", finalStatus: 503 }),
+    );
+    const result = techHttpStatusRule.evaluate(
+      buildCtx([{ ...observation, pageSnapshotId: null }]),
+    );
+
+    expect(result).toEqual({
+      status: "inconclusive",
+      reason: "missing_observation_lineage",
+    });
   });
 
   it("counts one aggregation subject once when both exact variants share a broken status", () => {

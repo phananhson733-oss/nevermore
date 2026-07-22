@@ -6,6 +6,7 @@ import type {
   RuleResult,
   Severity,
 } from "../rule.ts";
+import { analyticsTargetResolution, findingTarget } from "../target.ts";
 
 /**
  * CRO-LANDING-003 (spec §8.4, conversion_journey). A landing page whose GA4
@@ -25,6 +26,20 @@ const BASELINE_UNAVAILABLE = "ga4_baseline_unavailable";
 const GA4_LIMITATION =
   "Conversion rate uses GA4 key events under the project's key-event mapping; pages with unmapped key events are excluded and only pages with at least 500 sessions are evaluated.";
 
+function hasAmbiguousBaselineParticipant(ctx: DiagnosticContext): boolean {
+  for (const observations of ctx.ga4ObservationGroups.values()) {
+    if (observations.length <= 1) continue;
+    // Every mapped page contributes to the aggregate baseline, regardless of
+    // its page-level session threshold. Picking or silently dropping one of
+    // several immutable rows would make both baseline and trigger status
+    // unprovable. Unmapped duplicates affect neither calculation.
+    if (observations.some(({ projection }) => projection.keyEvents !== null)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export const croLandingRule = {
   id: "CRO-LANDING-003",
   version: 1,
@@ -33,6 +48,9 @@ export const croLandingRule = {
   evaluate(ctx: DiagnosticContext): RuleResult {
     if (!ctx.hasDataset("ga4")) {
       return { status: "skipped", reason: "missing_dataset" };
+    }
+    if (hasAmbiguousBaselineParticipant(ctx)) {
+      return { status: "inconclusive", reason: "missing_observation_lineage" };
     }
 
     // Site baseline from the aggregate totals, over pages with a usable count.
@@ -60,6 +78,12 @@ export const croLandingRule = {
 
       const severity: Severity =
         ctx.isPriority(url) || ctx.isCommercial(url) ? "high" : "medium";
+      const targetResolution = analyticsTargetResolution(
+        ctx.ga4ObservationForSubject(url),
+      );
+      if (targetResolution.status === "missing_lineage") {
+        return { status: "inconclusive", reason: "missing_observation_lineage" };
+      }
       const evidence: EvidenceDraft = {
         sourceProvider: "ga4",
         origin: "first_party",
@@ -83,6 +107,12 @@ export const croLandingRule = {
           keyEvents: page.keyEvents,
         },
         evidence: [evidence],
+        target: findingTarget(
+          { relation: "direct_url", targetKind: "url" },
+          targetResolution.targetRef,
+          [targetResolution.member],
+          "observation_members",
+        ),
       });
     }
 

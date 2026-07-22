@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticContext } from "./context.ts";
 import type { ObservationView } from "./context.ts";
 import { parseIcp } from "./icp.ts";
+import { testObservationLineage } from "./test-observation-lineage.ts";
 
 const OBSERVED_AT = "2026-07-22T00:00:00Z";
 const SUBJECT_URL = "https://example.com/pricing";
@@ -41,6 +42,10 @@ function pageObservation(
   subjectRef = SUBJECT_URL,
 ): ObservationView {
   return {
+    ...testObservationLineage(`crawl:${page.fetchUrl}`, {
+      sitePageUrl: page.fetchUrl,
+      pageSnapshot: true,
+    }),
     metricKey: METRIC_CRAWL_PAGE,
     subjectType: "url",
     subjectRef,
@@ -56,6 +61,9 @@ function keywordObservation(
   projection: CsvKeywordProjection,
 ): ObservationView {
   return {
+    ...testObservationLineage(
+      `${provider}:${projection.clusterKey}:${projection.keyword}`,
+    ),
     metricKey: METRIC_CSV_KEYWORD_GAP,
     subjectType: "keyword_cluster",
     subjectRef: projection.clusterKey,

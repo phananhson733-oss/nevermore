@@ -6,6 +6,7 @@ import {
   type ObservationView,
 } from "../context.ts";
 import { parseIcp, type EngineIcp } from "../icp.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { contentCoverageRule } from "./content-coverage.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00.000Z";
@@ -49,6 +50,10 @@ function makePage(
 
 function crawlObs(subjectUrl: string, page: CrawlPageProjection): ObservationView {
   return {
+    ...testObservationLineage(`crawl:${page.fetchUrl}`, {
+      sitePageUrl: page.fetchUrl,
+      pageSnapshot: true,
+    }),
     metricKey: METRIC_CRAWL_PAGE,
     subjectType: "url",
     subjectRef: subjectUrl,
@@ -193,6 +198,27 @@ describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
   it("is inconclusive when an intent contains no matchable tokens", () => {
     const ctx = buildContext({
       icp: icpOf({ offers: ["the and"] }),
+      observations: [
+        crawlObs(
+          "https://example.com/pricing",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing",
+            h1: ["Pricing"],
+          }),
+        ),
+      ],
+    });
+
+    expect(contentCoverageRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "intent_match_unavailable",
+    });
+  });
+
+  it("is inconclusive when a matchable ICP intent has no stable target slug", () => {
+    const ctx = buildContext({
+      icp: icpOf({ offers: ["客户管理"] }),
       observations: [
         crawlObs(
           "https://example.com/pricing",

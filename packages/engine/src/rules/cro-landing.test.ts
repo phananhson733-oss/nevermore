@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { METRIC_GA4_LANDING, type Ga4LandingProjection } from "@sf/sources";
 import { DiagnosticContext, type CoverageInput, type ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { croLandingRule } from "./cro-landing.ts";
 
 const CAPTURED_AT = "2026-07-17T00:00:00.000Z";
@@ -16,8 +17,13 @@ function landing(sessions: number, keyEvents: number | null): Ga4LandingProjecti
   };
 }
 
-function ga4Obs(subjectUrl: string, projection: Ga4LandingProjection): ObservationView {
+function ga4Obs(
+  subjectUrl: string,
+  projection: Ga4LandingProjection,
+  sitePageUrl: string | null = subjectUrl,
+): ObservationView {
   return {
+    ...testObservationLineage(`ga4:${subjectUrl}`, { sitePageUrl }),
     metricKey: METRIC_GA4_LANDING,
     subjectType: "url",
     subjectRef: subjectUrl,
@@ -95,6 +101,109 @@ describe("croLandingRule (CRO-LANDING-003)", () => {
     expect(result.status).toBe("pass");
     if (result.status !== "pass") throw new Error("expected pass");
     expect(result.metrics.baseline).toBeCloseTo(190 / 2300, 12);
+  });
+
+  it("emits explicit unresolved membership when the triggering GA4 observation has no SitePage", () => {
+    const pricing = "https://x.com/pricing";
+    const result = croLandingRule.evaluate(
+      buildCtx({
+        observations: [
+          ga4Obs("https://x.com/good", landing(1_000, 100)),
+          ga4Obs(pricing, landing(1_000, 20), null),
+        ],
+      }),
+    );
+
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.target).toMatchObject({
+      relation: "direct_url",
+      targetKind: "url",
+      targetRef: pricing,
+      members: [
+        {
+          resolutionState: "unresolved",
+          basisKind: "unresolved_observation",
+          memberRef: pricing,
+        },
+      ],
+    });
+  });
+
+  it("retains duplicate GA4 rows but makes mixed healthy/triggering lineage inconclusive", () => {
+    const duplicateUrl = "https://x.com/pricing";
+    const healthyBase = ga4Obs(duplicateUrl, landing(1_000, 100));
+    const triggeringBase = ga4Obs(duplicateUrl, landing(1_000, 10));
+    const ctx = buildCtx({
+      observations: [
+        {
+          ...healthyBase,
+          observationId: "00000000-0000-4000-8000-000000000001",
+        },
+        {
+          ...triggeringBase,
+          observationId: "00000000-0000-4000-8000-000000000099",
+        },
+      ],
+    });
+
+    expect(ctx.ga4ObservationGroups.get(duplicateUrl)).toHaveLength(2);
+    expect(ctx.ga4.has(duplicateUrl)).toBe(false);
+    expect(croLandingRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "missing_observation_lineage",
+    });
+  });
+
+  it("does not let an unrelated ambiguous unmapped subject suppress a unique trigger", () => {
+    const duplicateUrl = "https://x.com/unmapped-duplicate";
+    const firstDuplicate = ga4Obs(duplicateUrl, landing(1_000, null));
+    const secondDuplicate = ga4Obs(duplicateUrl, landing(1_000, null));
+    const ctx = buildCtx({
+      observations: [
+        {
+          ...firstDuplicate,
+          observationId: "00000000-0000-4000-8000-000000000001",
+        },
+        {
+          ...secondDuplicate,
+          observationId: "00000000-0000-4000-8000-000000000002",
+        },
+        ga4Obs("https://x.com/good", landing(1_000, 100)),
+        ga4Obs("https://x.com/pricing", landing(1_000, 20)),
+      ],
+    });
+
+    const result = croLandingRule.evaluate(ctx);
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.subjectRefs).toEqual([
+      "https://x.com/pricing",
+    ]);
+  });
+
+  it("fails closed when an ambiguous subject has usable baseline metrics", () => {
+    const duplicateUrl = "https://x.com/healthy-duplicate";
+    const firstDuplicate = ga4Obs(duplicateUrl, landing(1_000, 100));
+    const secondDuplicate = ga4Obs(duplicateUrl, landing(1_000, 100));
+    const ctx = buildCtx({
+      observations: [
+        {
+          ...firstDuplicate,
+          observationId: "00000000-0000-4000-8000-000000000001",
+        },
+        {
+          ...secondDuplicate,
+          observationId: "00000000-0000-4000-8000-000000000002",
+        },
+        ga4Obs("https://x.com/good", landing(1_000, 100)),
+        ga4Obs("https://x.com/pricing", landing(1_000, 20)),
+      ],
+    });
+
+    expect(croLandingRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "missing_observation_lineage",
+    });
   });
 
   it("is inconclusive when every page has an unmapped key-event count", () => {

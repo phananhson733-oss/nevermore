@@ -14,6 +14,7 @@
 import type { CsvKeywordProjection } from "@sf/sources";
 import type { DiagnosticContext } from "../context.ts";
 import type { DiagnosticRule, EvidenceDraft, FindingCandidate } from "../rule.ts";
+import { findingTarget } from "../target.ts";
 import { matchIntent, pageFieldBag } from "../util/intent-match.ts";
 
 const MIN_KEYWORDS = 10;
@@ -186,5 +187,14 @@ function buildCandidate(
     titleArgs: { clusterKey, keywordCount, totalVolume },
     metrics: { clusterKey, keywordCount, totalVolume },
     evidence: [...keywordGapEvidence, contentEvidence],
+    target: findingTarget(
+      {
+        relation: "affected_by_keyword_cluster",
+        targetKind: "keyword_cluster",
+      },
+      clusterKey,
+      [],
+      "target_definition",
+    ),
   };
 }

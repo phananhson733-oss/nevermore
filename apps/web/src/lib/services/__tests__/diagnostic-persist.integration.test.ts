@@ -23,8 +23,10 @@ import {
   EvidenceRepository,
   FindingsRepository,
   ObservationsRepository,
+  PageSnapshotsRepository,
   SitePagesRepository,
   SourceConnectionsRepository,
+  type CanonicalValue,
   type ProjectScope,
 } from "@sf/db";
 import {
@@ -178,6 +180,21 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
       normalizedUrl: gonePage.fetchUrl,
       templateKey: null,
     });
+    const pageExtract = {
+      schemaVersion: "crawl.page-extract.v1",
+      subjectUrl: gonePage.fetchUrl,
+      depth: 0,
+      projection: gonePage,
+    };
+    const pageSnapshot = await new PageSnapshotsRepository(handle.db).create({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      sitePageId: sitePage.id,
+      dataSnapshotId: snapshot.id,
+      contentHash: contentHash(pageExtract as unknown as CanonicalValue),
+      extract: pageExtract,
+      capturedAt,
+    });
     await new ObservationsRepository(handle.db).insertMany(
       scope,
       snapshot.id,
@@ -218,15 +235,31 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
     const observationRows = await new ObservationsRepository(
       handle.db,
     ).listBySnapshotIds(scope, [snapshot.id]);
-    const observations: ObservationView[] = observationRows.map((o) => ({
-      metricKey: o.metric_key,
-      subjectType: o.subject_type,
-      subjectRef: o.subject_ref,
-      provider: o.provider,
-      availability: o.availability,
-      valueJson: o.value_json,
-      observedAt: o.observed_at,
-    }));
+    const observations: ObservationView[] = observationRows.map((o) => {
+      if (
+        o.snapshot_id !== snapshot.id ||
+        o.site_page_id !== sitePage.id ||
+        o.subject_ref !== gonePage.fetchUrl
+      ) {
+        throw new Error(
+          "diagnostic persistence fixture crawl lineage does not match its page",
+        );
+      }
+      return {
+        observationId: o.id,
+        snapshotId: o.snapshot_id,
+        sitePageId: o.site_page_id,
+        sitePageUrl: gonePage.fetchUrl,
+        pageSnapshotId: pageSnapshot.id,
+        metricKey: o.metric_key,
+        subjectType: o.subject_type,
+        subjectRef: o.subject_ref,
+        provider: o.provider,
+        availability: o.availability,
+        valueJson: o.value_json,
+        observedAt: o.observed_at,
+      };
+    });
     const ctx = DiagnosticContext.build({
       icp: parseIcp({
         siteLanguageCodes: ["en"],

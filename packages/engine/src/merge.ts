@@ -5,6 +5,7 @@ import type {
   Severity,
 } from "./rule.ts";
 import { FINDING_REGISTRY } from "./registry.ts";
+import { findingTargetsEqual, type FindingTargetDraft } from "./target.ts";
 import { canonicalize, contentHash } from "./util/hash.ts";
 
 /**
@@ -33,6 +34,19 @@ export interface MergedCandidate {
   readonly titleArgs: Record<string, string | number>;
   readonly metrics: Record<string, number | string | null>;
   readonly evidence: readonly EvidenceDraft[];
+  readonly target: FindingTargetDraft;
+}
+
+export class DivergentFindingTargetError extends Error {
+  readonly ruleIds: readonly RuleId[];
+
+  constructor(leftRuleId: RuleId, rightRuleId: RuleId) {
+    super("Divergent finding target for unchanged merge identity");
+    this.name = "DivergentFindingTargetError";
+    this.ruleIds = Object.freeze(
+      [...new Set([leftRuleId, rightRuleId])].sort(),
+    );
+  }
 }
 
 function sortedSubjectRefs(refs: readonly string[]): string[] {
@@ -94,8 +108,12 @@ export function mergeRunCandidates(
           titleArgs: candidate.titleArgs,
           metrics: candidate.metrics,
           evidence: candidate.evidence,
+          target: candidate.target,
         });
         continue;
+      }
+      if (!findingTargetsEqual(existing.target, candidate.target)) {
+        throw new DivergentFindingTargetError(existing.ruleId, ruleId);
       }
       const severity =
         SEVERITY_RANK[candidate.severity] > SEVERITY_RANK[existing.severity]

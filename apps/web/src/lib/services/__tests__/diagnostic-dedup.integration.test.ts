@@ -22,8 +22,10 @@ import {
   DiagnosticRunsRepository,
   FindingsRepository,
   ObservationsRepository,
+  PageSnapshotsRepository,
   SitePagesRepository,
   SourceConnectionsRepository,
+  type CanonicalValue,
   type DataSnapshotRow,
   type FindingRow,
   type ProjectScope,
@@ -149,6 +151,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
   let icpProfileId: string;
   let icpContentHash: string;
   let frozenSnapshot: DataSnapshotRow;
+  let frozenObservations: readonly ObservationView[];
   const actor = randomUUID();
 
   beforeAll(async () => {
@@ -349,6 +352,21 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
       normalizedUrl: gonePage.fetchUrl,
       templateKey: null,
     });
+    const pageExtract = {
+      schemaVersion: "crawl.page-extract.v1",
+      subjectUrl: gonePage.fetchUrl,
+      depth: 0,
+      projection: gonePage,
+    };
+    const pageSnapshot = await new PageSnapshotsRepository(handle.db).create({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      sitePageId: sitePage.id,
+      dataSnapshotId: snapshot.id,
+      contentHash: contentHash(pageExtract as unknown as CanonicalValue),
+      extract: pageExtract,
+      capturedAt,
+    });
     await new ObservationsRepository(handle.db).insertMany(
       scope,
       snapshot.id,
@@ -388,15 +406,30 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     const observationRows = await new ObservationsRepository(
       handle.db,
     ).listBySnapshotIds(scope, [snapshot.id]);
-    const observations: ObservationView[] = observationRows.map((o) => ({
-      metricKey: o.metric_key,
-      subjectType: o.subject_type,
-      subjectRef: o.subject_ref,
-      provider: o.provider,
-      availability: o.availability,
-      valueJson: o.value_json,
-      observedAt: o.observed_at,
-    }));
+    const observations: ObservationView[] = observationRows.map((o) => {
+      if (
+        o.snapshot_id !== snapshot.id ||
+        o.site_page_id !== sitePage.id ||
+        o.subject_ref !== gonePage.fetchUrl
+      ) {
+        throw new Error("dedup fixture crawl lineage does not match its page");
+      }
+      return {
+        observationId: o.id,
+        snapshotId: o.snapshot_id,
+        sitePageId: o.site_page_id,
+        sitePageUrl: gonePage.fetchUrl,
+        pageSnapshotId: pageSnapshot.id,
+        metricKey: o.metric_key,
+        subjectType: o.subject_type,
+        subjectRef: o.subject_ref,
+        provider: o.provider,
+        availability: o.availability,
+        valueJson: o.value_json,
+        observedAt: o.observed_at,
+      };
+    });
+    frozenObservations = observations;
 
     // Run the PURE pipeline twice over the same inputs.
     const pipelineA = await runOnce(snapshot.id, observations);
@@ -440,17 +473,11 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
   it("the DB backstops dedup: a duplicate (project, finding_key) insert is rejected", async () => {
     // Even if code forgot findByKey, UNIQUE (project_id, finding_key) prevents a
     // second row for the same finding identity (migration 0001_init.sql:442).
-    const pipeline = await runOnce("noop", [
-      {
-        metricKey: METRIC_CRAWL_PAGE,
-        subjectType: "url",
-        subjectRef: "https://dedup.example/gone",
-        provider: "crawl",
-        availability: "available",
-        valueJson: page404("https://dedup.example/gone"),
-        observedAt: new Date().toISOString(),
-      },
-    ]);
+    if (!frozenObservations) {
+      throw new Error("dedup fixture observation lineage missing");
+    }
+    if (!frozenSnapshot) throw new Error("dedup fixture snapshot missing");
+    const pipeline = await runOnce(frozenSnapshot.id, [...frozenObservations]);
     const finding = pipeline.findings.find((f) => f.ruleId === "TECH-HTTP-001");
     expect(finding).toBeDefined();
 
@@ -461,7 +488,6 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
       "the finding already exists from the first test",
     ).not.toBeNull();
 
-    if (!frozenSnapshot) throw new Error("dedup fixture snapshot missing");
     const runId = await seedDiagnosticRun(frozenSnapshot);
     let caught: unknown;
     try {

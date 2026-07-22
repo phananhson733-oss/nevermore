@@ -8,10 +8,15 @@ import {
   DiagnosticRunsRepository,
   EvidenceRepository,
   FindingsRepository,
+  FindingTargetsRepository,
   IcpProfilesRepository,
+  MAX_SITE_PAGE_ID_LOOKUP,
+  normalizedUrlHash,
   ObservationsRepository,
+  PageSnapshotsRepository,
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
+  SitePagesRepository,
   SitesRepository,
   TelemetryRepository,
   toRunAttempt,
@@ -20,9 +25,12 @@ import {
   type CanonicalValue,
   type EvidenceInsert,
   type FindingObservationInsert,
+  type FindingTargetInsert,
   type ObservationRow,
+  type PageSnapshotWithSitePageIdentityRow,
   type ProjectScope,
   type RunAttempt,
+  type SitePageRow,
 } from "@sf/db";
 import { isBcp47LanguageTag } from "@sf/contracts";
 import {
@@ -64,6 +72,7 @@ import {
   normalizeSiteOrigin,
 } from "@sf/sources";
 import { z } from "zod";
+import { exactCandidatesForCanonicalSubject } from "../collection/observation-site-page-lineage.ts";
 import type { WorkerContext } from "../context.ts";
 import {
   isTransientInfrastructureError,
@@ -1100,6 +1109,235 @@ function validateFrozenObservations(
   }
 }
 
+const OBSERVATION_LINEAGE_MISMATCH =
+  "observation does not match its frozen durable page lineage";
+
+function invalidObservationLineage(): never {
+  throw new Error(OBSERVATION_LINEAGE_MISMATCH);
+}
+
+function hasDurableUrlIdentity(
+  normalizedUrl: string,
+  normalizedUrlHashValue: string,
+  siteOrigin: string,
+): boolean {
+  return (
+    normalizedUrlHash(normalizedUrl) === normalizedUrlHashValue &&
+    canonicalFetchAtOrigin(normalizedUrl, siteOrigin)?.fetchUrl === normalizedUrl
+  );
+}
+
+function validateFrozenPageIdentity(
+  page: PageSnapshotWithSitePageIdentityRow,
+  scope: ProjectScope,
+  siteId: string,
+  siteOrigin: string,
+  crawlSnapshot: DataSnapshotRow,
+): void {
+  if (
+    page.workspace_id !== scope.workspaceId ||
+    page.project_id !== scope.projectId ||
+    page.site_id !== siteId ||
+    page.data_snapshot_id !== crawlSnapshot.id ||
+    page.captured_at !== crawlSnapshot.captured_at ||
+    !hasDurableUrlIdentity(
+      page.normalized_url,
+      page.normalized_url_hash,
+      siteOrigin,
+    )
+  ) {
+    invalidObservationLineage();
+  }
+}
+
+function validateSitePageIdentity(
+  page: SitePageRow,
+  scope: ProjectScope,
+  siteId: string,
+  siteOrigin: string,
+): void {
+  if (
+    page.workspace_id !== scope.workspaceId ||
+    page.project_id !== scope.projectId ||
+    page.site_id !== siteId ||
+    !hasDurableUrlIdentity(
+      page.normalized_url,
+      page.normalized_url_hash,
+      siteOrigin,
+    )
+  ) {
+    invalidObservationLineage();
+  }
+}
+
+/**
+ * Join immutable Observation lineage only through durable IDs. The frozen Crawl
+ * PageSnapshot read is the authoritative exact fetch identity; analytics rows
+ * may share that page or resolve through their own persisted SitePage FK. No
+ * URL is recovered from subjectRef or evidence.
+ */
+async function loadObservationViews(
+  ctx: WorkerContext,
+  scope: ProjectScope,
+  siteId: string,
+  siteOrigin: string,
+  observations: readonly ObservationRow[],
+  frozenSelection: FrozenSnapshotSelection,
+): Promise<ObservationView[]> {
+  const crawlLineage = frozenSelection.lineageByProvider.get("crawl");
+  const crawlSnapshot = crawlLineage
+    ? frozenSelection.snapshotsById.get(crawlLineage.snapshotId)
+    : undefined;
+  if (!crawlSnapshot || crawlSnapshot.provider !== "crawl") {
+    invalidObservationLineage();
+  }
+
+  const frozenPages = await new PageSnapshotsRepository(
+    ctx.db,
+  ).listByDataSnapshotWithSitePageIdentity(scope, crawlSnapshot.id);
+  const pageBySitePageId = new Map<
+    string,
+    PageSnapshotWithSitePageIdentityRow
+  >();
+  const pageSnapshotIds = new Set<string>();
+  for (const page of frozenPages) {
+    validateFrozenPageIdentity(
+      page,
+      scope,
+      siteId,
+      siteOrigin,
+      crawlSnapshot,
+    );
+    if (
+      pageBySitePageId.has(page.site_page_id) ||
+      pageSnapshotIds.has(page.page_snapshot_id)
+    ) {
+      invalidObservationLineage();
+    }
+    pageBySitePageId.set(page.site_page_id, page);
+    pageSnapshotIds.add(page.page_snapshot_id);
+  }
+
+  const observationIds = new Set<string>();
+  const unresolvedSitePageIds = new Set<string>();
+  for (const observation of observations) {
+    if (observationIds.has(observation.id)) invalidObservationLineage();
+    observationIds.add(observation.id);
+    if (
+      observation.site_page_id !== null &&
+      observation.subject_type !== "url"
+    ) {
+      invalidObservationLineage();
+    }
+    if (
+      observation.site_page_id !== null &&
+      !pageBySitePageId.has(observation.site_page_id)
+    ) {
+      unresolvedSitePageIds.add(observation.site_page_id);
+    }
+  }
+
+  const sitePageById = new Map<string, SitePageRow>();
+  const orderedSitePageIds = [...unresolvedSitePageIds].sort();
+  const sitePagesRepository = new SitePagesRepository(ctx.db);
+  for (
+    let offset = 0;
+    offset < orderedSitePageIds.length;
+    offset += MAX_SITE_PAGE_ID_LOOKUP
+  ) {
+    const expectedIds = orderedSitePageIds.slice(
+      offset,
+      offset + MAX_SITE_PAGE_ID_LOOKUP,
+    );
+    const expectedIdSet = new Set(expectedIds);
+    const loaded = await sitePagesRepository.findByIds(scope, expectedIds);
+    for (const page of loaded) {
+      if (
+        !expectedIdSet.has(page.id) ||
+        sitePageById.has(page.id)
+      ) {
+        invalidObservationLineage();
+      }
+      validateSitePageIdentity(page, scope, siteId, siteOrigin);
+      sitePageById.set(page.id, page);
+    }
+  }
+  if (
+    orderedSitePageIds.some((sitePageId) => !sitePageById.has(sitePageId))
+  ) {
+    invalidObservationLineage();
+  }
+
+  return observations.map((observation) => {
+    const frozenPage =
+      observation.site_page_id === null
+        ? undefined
+        : pageBySitePageId.get(observation.site_page_id);
+    const sitePage =
+      observation.site_page_id === null
+        ? undefined
+        : sitePageById.get(observation.site_page_id);
+    if (
+      observation.site_page_id !== null &&
+      frozenPage === undefined &&
+      sitePage === undefined
+    ) {
+      invalidObservationLineage();
+    }
+    const sitePageUrl =
+      frozenPage?.normalized_url ?? sitePage?.normalized_url ?? null;
+    const pageSnapshotId = frozenPage?.page_snapshot_id ?? null;
+
+    if (
+      (observation.metric_key === METRIC_GSC_PAGE ||
+        observation.metric_key === METRIC_GA4_LANDING) &&
+      observation.site_page_id !== null
+    ) {
+      const exactCandidates = exactCandidatesForCanonicalSubject(
+        observation.subject_ref,
+        siteOrigin,
+      );
+      if (
+        sitePageUrl === null ||
+        exactCandidates === null ||
+        !exactCandidates.includes(sitePageUrl)
+      ) {
+        invalidObservationLineage();
+      }
+    }
+
+    if (observation.metric_key === METRIC_CRAWL_PAGE) {
+      const projection = crawlPageProjectionSchema.safeParse(
+        observation.value_json,
+      );
+      if (
+        observation.snapshot_id !== crawlSnapshot.id ||
+        observation.site_page_id === null ||
+        frozenPage === undefined ||
+        !projection.success ||
+        projection.data.fetchUrl !== frozenPage.normalized_url
+      ) {
+        invalidObservationLineage();
+      }
+    }
+
+    return {
+      observationId: observation.id,
+      snapshotId: observation.snapshot_id,
+      sitePageId: observation.site_page_id,
+      sitePageUrl,
+      pageSnapshotId,
+      metricKey: observation.metric_key,
+      subjectType: observation.subject_type,
+      subjectRef: observation.subject_ref,
+      provider: observation.provider,
+      availability: observation.availability,
+      valueJson: observation.value_json,
+      observedAt: observation.observed_at,
+    } satisfies ObservationView;
+  });
+}
+
 export function lineageForEvidenceProvider(
   sourceProvider: string,
   lineageByProvider: ReadonlyMap<string, EvidenceLineage>,
@@ -1280,18 +1518,17 @@ async function computeAndPersist(
     frozenSelection,
     normalizedSite.origin,
   );
+  const observations = await loadObservationViews(
+    ctx,
+    scope,
+    diagRun.site_id,
+    normalizedSite.origin,
+    observationRows,
+    frozenSelection,
+  );
   const discrepancyRows = await new ProviderDiscrepanciesRepository(
     ctx.db,
   ).listUnresolvedBySnapshotIds(scope, snapshotIds);
-  const observations: ObservationView[] = observationRows.map((o) => ({
-    metricKey: o.metric_key,
-    subjectType: o.subject_type,
-    subjectRef: o.subject_ref,
-    provider: o.provider,
-    availability: o.availability,
-    valueJson: o.value_json,
-    observedAt: o.observed_at,
-  }));
 
   const { coverage, capturedAt, availabilityByProvider } =
     buildCoverage(manifestSnaps);
@@ -1380,6 +1617,7 @@ async function computeAndPersist(
     );
 
     const findingsRepo = new FindingsRepository(tx);
+    const findingTargetsRepo = new FindingTargetsRepository(tx);
     const evidenceRepo = new EvidenceRepository(tx);
     const actionsRepo = new ActionsRepository(tx);
 
@@ -1390,6 +1628,15 @@ async function computeAndPersist(
         diagRun.id,
         finding,
         now,
+      );
+      await findingTargetsRepo.insertMany(
+        scope,
+        findingTargetInsertsForFinding(
+          diagRun.site_id,
+          findingId,
+          diagRun.id,
+          finding.target,
+        ),
       );
       const evidenceIds = await persistEvidence(
         evidenceRepo,
@@ -1465,6 +1712,61 @@ async function computeAndPersist(
   if (!persisted) return null;
 
   return { status: runStatus, findingCount: pipeline.findings.length };
+}
+
+/** Translate the engine's explicit target draft without consulting subjectRefs. */
+export function findingTargetInsertsForFinding(
+  siteId: string,
+  findingId: string,
+  diagnosticRunId: string,
+  target: RunFinding["target"],
+): FindingTargetInsert[] {
+  const root = {
+    siteId,
+    findingId,
+    diagnosticRunId,
+    relation: target.relation,
+    targetKind: target.targetKind,
+    targetRef: target.targetRef,
+  } as const;
+  if (target.members.length === 0) {
+    return [
+      {
+        ...root,
+        resolutionState: "definition_only",
+        basisKind: "target_definition",
+        sitePageId: null,
+        pageSnapshotId: null,
+        sourceObservationId: null,
+        memberRef: null,
+        limitation: null,
+      },
+    ];
+  }
+  return target.members.map((member): FindingTargetInsert => {
+    if (member.resolutionState === "resolved") {
+      return {
+        ...root,
+        resolutionState: member.resolutionState,
+        basisKind: member.basisKind,
+        sitePageId: member.sitePageId,
+        pageSnapshotId: member.pageSnapshotId,
+        sourceObservationId: member.observationId,
+        memberRef: member.memberRef,
+        limitation: null,
+      };
+    }
+    return {
+      ...root,
+      resolutionState: member.resolutionState,
+      basisKind: member.basisKind,
+      sitePageId: null,
+      pageSnapshotId: null,
+      sourceObservationId: member.observationId,
+      memberRef: member.memberRef,
+      limitation: member.limitation,
+    };
+  });
 }
 
 async function upsertFinding(

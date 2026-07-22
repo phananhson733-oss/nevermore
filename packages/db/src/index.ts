@@ -137,6 +137,7 @@ export type {
   AuditModuleResultInsert,
 } from "./repositories/audit-runs.ts";
 export {
+  MAX_SITE_PAGE_ID_LOOKUP,
   normalizedUrlHash,
   SitePagesRepository,
 } from "./repositories/site-pages.ts";
@@ -148,9 +149,23 @@ export { PageSnapshotsRepository } from "./repositories/page-snapshots.ts";
 export type {
   PageSnapshotRow,
   PageSnapshotListPage,
+  PageSnapshotWithSitePageIdentityRow,
 } from "./repositories/page-snapshots.ts";
 export { FindingsRepository } from "./repositories/findings.ts";
 export type { FindingRow, FindingListPage } from "./repositories/findings.ts";
+export {
+  FindingTargetsRepository,
+  MAX_FINDING_TARGET_INSERT,
+  MAX_FINDING_TARGET_LOOKUP,
+} from "./repositories/finding-targets.ts";
+export type {
+  FindingTargetBasisKind,
+  FindingTargetInsert,
+  FindingTargetKind,
+  FindingTargetRelation,
+  FindingTargetResolutionState,
+  FindingTargetRow,
+} from "./repositories/finding-targets.ts";
 export { FindingReviewEventsRepository } from "./repositories/findings-review.ts";
 export { EvidenceRepository } from "./repositories/evidence.ts";
 export type {

@@ -32,10 +32,20 @@ export interface CanonicalSubjectCandidates {
 }
 
 const SITE_PAGE_IDENTITY_QUERY_CHUNK = 500;
+export const MAX_SITE_PAGE_ID_LOOKUP = 500;
+const MAX_SITE_PAGE_ID_LENGTH = 256;
 
 function assertBoundedUrlIdentity(value: string, label: string): void {
   if (value.length < 1 || value.length > 2048) {
     throw new RangeError(`${label} must contain 1 to 2048 characters`);
+  }
+}
+
+function assertBoundedSitePageId(value: string): void {
+  if (value.trim().length === 0 || value.length > MAX_SITE_PAGE_ID_LENGTH) {
+    throw new RangeError(
+      `sitePageId must be between 1 and ${MAX_SITE_PAGE_ID_LENGTH} characters`,
+    );
   }
 }
 
@@ -136,6 +146,31 @@ export class SitePagesRepository extends Repository {
       .where(and(projectPredicate(sitePages, scope), eq(sitePages.id, id)))
       .limit(1);
     return (rows[0] as SitePageRow | undefined) ?? null;
+  }
+
+  /** Load one bounded, de-duplicated SitePage set without leaving Project scope. */
+  async findByIds(
+    scope: ProjectScope,
+    ids: readonly string[],
+  ): Promise<SitePageRow[]> {
+    if (ids.length === 0) return [];
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length > MAX_SITE_PAGE_ID_LOOKUP) {
+      throw new RangeError(
+        `site page lookup accepts at most ${MAX_SITE_PAGE_ID_LOOKUP} unique IDs`,
+      );
+    }
+    for (const id of uniqueIds) assertBoundedSitePageId(id);
+    return (await this.exec
+      .select()
+      .from(sitePages)
+      .where(
+        and(
+          projectPredicate(sitePages, scope),
+          inArray(sitePages.id, uniqueIds),
+        ),
+      )
+      .orderBy(asc(sitePages.id))) as SitePageRow[];
   }
 
   async findByNormalizedUrlHash(

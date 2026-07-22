@@ -16,6 +16,7 @@ import type {
   RuleResult,
   Severity,
 } from "../rule.ts";
+import { crawlTargetMembers, findingTarget } from "../target.ts";
 
 const MIN_INTERNAL_INLINKS = 2;
 
@@ -81,12 +82,22 @@ export const techLinkgraphRule = {
       observedAt: ctx.observedAt("crawl"),
       limitation: LINKGRAPH_LIMITATION,
     };
+    const members = crawlTargetMembers(ctx, sortedFetchUrls);
+    if (members === null) {
+      return { status: "inconclusive", reason: "missing_observation_lineage" };
+    }
     const candidate: FindingCandidate = {
       subjectRefs: ["page_set:low_internal_inlinks"],
       severity,
       titleArgs: { affectedCount: sortedSubjectUrls.length },
       metrics: { affectedCount: sortedSubjectUrls.length },
       evidence: [evidence],
+      target: findingTarget(
+        { relation: "affected_by_page_set", targetKind: "page_set" },
+        "low_internal_inlinks",
+        members,
+        "observation_members",
+      ),
     };
     return { status: "candidate", candidates: [candidate] };
   },

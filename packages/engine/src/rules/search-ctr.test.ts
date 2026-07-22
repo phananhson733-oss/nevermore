@@ -5,6 +5,7 @@ import { DiagnosticContext } from "../context.ts";
 import type { CoverageInput, ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
 import { runPipeline } from "../pipeline.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { searchCtrRule } from "./search-ctr.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00Z";
@@ -21,8 +22,13 @@ function gscPage(
   };
 }
 
-function observation(subjectRef: string, valueJson: GscPageProjection): ObservationView {
+function observation(
+  subjectRef: string,
+  valueJson: GscPageProjection,
+  sitePageUrl: string | null = subjectRef,
+): ObservationView {
   return {
+    ...testObservationLineage(`gsc:${subjectRef}`, { sitePageUrl }),
     metricKey: METRIC_GSC_PAGE,
     subjectType: "url",
     subjectRef,
@@ -107,6 +113,153 @@ describe("searchCtrRule (SEARCH-CTR-004)", () => {
     expect(result.status).toBe("candidate");
     if (result.status !== "candidate") throw new Error("expected candidate");
     expect(result.candidates[0]!.severity).toBe("medium");
+  });
+
+  it("uses the exact slash SitePage URL as targetRef while retaining the canonical observation memberRef", () => {
+    const exactSitePageUrl = `${PAGE_URL}/`;
+    const page = gscPage({ clicks: 20, impressions: 2000, position: 3 });
+    const result = searchCtrRule.evaluate(
+      buildCtx({
+        observations: [observation(PAGE_URL, page, exactSitePageUrl)],
+      }),
+    );
+
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.target).toMatchObject({
+      relation: "direct_url",
+      targetKind: "url",
+      targetRef: exactSitePageUrl,
+      members: [
+        {
+          resolutionState: "resolved",
+          basisKind: "observation_site_page",
+          observationId: expect.any(String),
+          snapshotId: expect.any(String),
+          sitePageId: expect.any(String),
+          sitePageUrl: exactSitePageUrl,
+          pageSnapshotId: null,
+          memberRef: PAGE_URL,
+        },
+      ],
+    });
+  });
+
+  it("keeps a persisted null SitePage lineage as an explicit unresolved direct member", () => {
+    const page = gscPage({ clicks: 20, impressions: 2000, position: 3 });
+    const result = searchCtrRule.evaluate(
+      buildCtx({ observations: [observation(PAGE_URL, page, null)] }),
+    );
+
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.target).toEqual({
+      version: 1,
+      relation: "direct_url",
+      targetKind: "url",
+      targetRef: PAGE_URL,
+      members: [
+        {
+          resolutionState: "unresolved",
+          basisKind: "unresolved_observation",
+          observationId: expect.any(String),
+          snapshotId: expect.any(String),
+          memberRef: PAGE_URL,
+          limitation: expect.stringContaining("no unambiguous persisted SitePage"),
+        },
+      ],
+    });
+  });
+
+  it("fails closed for a half-populated analytics SitePage lineage", () => {
+    const page = gscPage({ clicks: 20, impressions: 2000, position: 3 });
+    const observationWithCorruptLineage = observation(PAGE_URL, page);
+
+    expect(
+      searchCtrRule.evaluate(
+        buildCtx({
+          observations: [
+            { ...observationWithCorruptLineage, sitePageId: null },
+          ],
+        }),
+      ),
+    ).toEqual({
+      status: "inconclusive",
+      reason: "missing_observation_lineage",
+    });
+  });
+
+  it("retains duplicate analytics rows for audit but refuses ambiguous rule membership", () => {
+    const healthy = gscPage({ clicks: 400, impressions: 2000, position: 3 });
+    const triggering = gscPage({ clicks: 20, impressions: 2000, position: 3 });
+    const firstBase = observation(PAGE_URL, healthy);
+    const first = {
+      ...firstBase,
+      observationId: "00000000-0000-4000-8000-000000000001",
+    };
+    const secondBase = observation(PAGE_URL, triggering);
+    const second = {
+      ...secondBase,
+      observationId: "00000000-0000-4000-8000-000000000099",
+    };
+    const ctx = buildCtx({ observations: [first, second] });
+
+    expect(ctx.gscObservationGroups.get(PAGE_URL)).toHaveLength(2);
+    expect(ctx.gsc.has(PAGE_URL)).toBe(false);
+    expect(ctx.gscObservationForSubject(PAGE_URL)).toBeNull();
+    expect(searchCtrRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "missing_observation_lineage",
+    });
+  });
+
+  it("emits a unique page-local candidate when an unrelated ambiguous subject is healthy", () => {
+    const ambiguousUrl = "https://x.com/healthy-duplicate";
+    const healthy = gscPage({ clicks: 400, impressions: 2000, position: 3 });
+    const uniqueTrigger = gscPage({ clicks: 20, impressions: 2000, position: 3 });
+    const firstAmbiguous = observation(ambiguousUrl, healthy);
+    const secondAmbiguous = observation(ambiguousUrl, healthy);
+    const ctx = buildCtx({
+      observations: [
+        {
+          ...firstAmbiguous,
+          observationId: "00000000-0000-4000-8000-000000000001",
+        },
+        {
+          ...secondAmbiguous,
+          observationId: "00000000-0000-4000-8000-000000000002",
+        },
+        observation(PAGE_URL, uniqueTrigger),
+      ],
+    });
+
+    const result = searchCtrRule.evaluate(ctx);
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.subjectRefs).toEqual([PAGE_URL]);
+  });
+
+  it("fails closed for an ambiguous trigger even when another trigger has unique lineage", () => {
+    const ambiguousUrl = "https://x.com/ambiguous-trigger";
+    const triggering = gscPage({ clicks: 20, impressions: 2000, position: 3 });
+    const firstAmbiguous = observation(ambiguousUrl, triggering);
+    const secondAmbiguous = observation(ambiguousUrl, triggering);
+    const ctx = buildCtx({
+      observations: [
+        {
+          ...firstAmbiguous,
+          observationId: "00000000-0000-4000-8000-000000000001",
+        },
+        {
+          ...secondAmbiguous,
+          observationId: "00000000-0000-4000-8000-000000000002",
+        },
+        observation(PAGE_URL, triggering),
+      ],
+    });
+
+    expect(searchCtrRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "missing_observation_lineage",
+    });
   });
 
   it("passes when CTR is healthy or impressions/position are out of scope", () => {

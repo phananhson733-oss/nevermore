@@ -37,7 +37,7 @@ test("freezes the activated v0.3 machine versions without bumping rules or promp
   assert.match(verifier, /const PROMPT_SET_VERSION = "mvp\.prompts\.0\.2\.0";/);
 });
 
-test("freezes the seven Slice 1 persistence tables in the 35-table contract", () => {
+test("freezes the eight traceability persistence tables in the 36-table contract", () => {
   for (const table of [
     "capability_runs",
     "audit_runs",
@@ -46,6 +46,7 @@ test("freezes the seven Slice 1 persistence tables in the 35-table contract", ()
     "page_snapshots",
     "product_profile_runs",
     "product_profile_invocation_attempts",
+    "finding_targets",
   ]) {
     assert.match(verifier, new RegExp(`"${table}"`));
   }
@@ -55,7 +56,7 @@ test("freezes the seven Slice 1 persistence tables in the 35-table contract", ()
   assert.ok(expectedTablesBlock);
   assert.equal(
     [...expectedTablesBlock[1].matchAll(/^\s+"[a-z][a-z0-9_]*",$/gm)].length,
-    35,
+    36,
   );
 });
 
@@ -97,6 +98,8 @@ test("gates Slice 1 persistence on canonical provenance and immutability", () =>
     "audit_runs_append_only",
     "audit_module_results_append_only",
     "page_snapshots_append_only",
+    "finding_targets_lineage_guard",
+    "finding_targets_append_only",
   ]) {
     assert.match(verifier, new RegExp(`"${guard}"`));
   }

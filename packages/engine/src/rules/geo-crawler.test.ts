@@ -5,6 +5,7 @@ import { DiagnosticContext } from "../context.ts";
 import type { CoverageInput, ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
 import type { FindingCandidate, RuleResult } from "../rule.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { geoCrawlerRule } from "./geo-crawler.ts";
 
 const OBSERVED_AT = "2026-07-01T00:00:00.000Z";
@@ -24,6 +25,7 @@ function buildContext(opts: BuildOpts): DiagnosticContext {
   const observations: ObservationView[] = [];
   if (opts.robots) {
     observations.push({
+      ...testObservationLineage("crawl:robots:https://example.com"),
       metricKey: METRIC_CRAWL_ROBOTS,
       subjectType: "site",
       subjectRef: "https://example.com",

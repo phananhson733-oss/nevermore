@@ -29,6 +29,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-COVER
         "subjectRefs": [
           "page_set:offer:team-collaboration",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_page_set",
+          "targetKind": "page_set",
+          "targetRef": "offer:team-collaboration",
+          "version": 1,
+        },
         "titleArgs": {
           "kind": "offer",
           "target": "team collaboration",
@@ -59,6 +66,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-COVER
         "subjectRefs": [
           "page_set:use_case:remote-onboarding",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_page_set",
+          "targetKind": "page_set",
+          "targetRef": "use_case:remote-onboarding",
+          "version": 1,
+        },
         "titleArgs": {
           "kind": "use_case",
           "target": "remote onboarding",
@@ -128,6 +142,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-GAP-0
         "subjectRefs": [
           "keyword_cluster:project-management",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_keyword_cluster",
+          "targetKind": "keyword_cluster",
+          "targetRef": "project-management",
+          "version": 1,
+        },
         "titleArgs": {
           "clusterKey": "project-management",
           "keywordCount": 10,
@@ -179,6 +200,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CONTENT-GAP-0
         "subjectRefs": [
           "keyword_cluster:exact-threshold",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_keyword_cluster",
+          "targetKind": "keyword_cluster",
+          "targetRef": "exact-threshold",
+          "version": 1,
+        },
         "titleArgs": {
           "clusterKey": "exact-threshold",
           "keywordCount": 10,
@@ -232,6 +260,24 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CRO-LANDING-0
         "subjectRefs": [
           "https://example.com/pricing",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "observation_site_page",
+              "memberRef": "https://example.com/pricing",
+              "observationId": "81e690ea-107d-4083-8d20-c4fd09677a2a",
+              "pageSnapshotId": null,
+              "resolutionState": "resolved",
+              "sitePageId": "3cdaa70a-52ec-467b-8570-fb0068f394a2",
+              "sitePageUrl": "https://example.com/pricing",
+              "snapshotId": "eda231f2-ddd9-40ca-862c-b4786c3a622d",
+            },
+          ],
+          "relation": "direct_url",
+          "targetKind": "url",
+          "targetRef": "https://example.com/pricing",
+          "version": 1,
+        },
         "titleArgs": {
           "baselinePct": 7.27,
           "pageRatePct": 4,
@@ -288,6 +334,24 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CRO-PATH-001 
         "subjectRefs": [
           "page_set:missing_conversion_path",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/product",
+              "observationId": "80f8cc58-9c7e-45ce-8a5f-a16e4a42f9e6",
+              "pageSnapshotId": "990229e5-d004-48cf-8159-a3f72ab3a276",
+              "resolutionState": "resolved",
+              "sitePageId": "7f8d7c82-766b-425f-8a2b-8b59f8f6aec7",
+              "sitePageUrl": "https://example.com/product",
+              "snapshotId": "c509ae79-3992-4761-83ac-21d761ed9530",
+            },
+          ],
+          "relation": "affected_by_page_set",
+          "targetKind": "page_set",
+          "targetRef": "missing_conversion_path",
+          "version": 1,
+        },
         "titleArgs": {
           "affectedCount": 1,
           "destinationCount": 1,
@@ -343,6 +407,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-CRAWLER-0
         "subjectRefs": [
           "user_agent:OAI-SearchBot",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_user_agent",
+          "targetKind": "user_agent",
+          "targetRef": "OAI-SearchBot",
+          "version": 1,
+        },
         "titleArgs": {
           "rule": "/",
           "scope": "site",
@@ -374,6 +445,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-CRAWLER-0
         "subjectRefs": [
           "user_agent:ChatGPT-User",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_user_agent",
+          "targetKind": "user_agent",
+          "targetRef": "ChatGPT-User",
+          "version": 1,
+        },
         "titleArgs": {
           "rule": "/",
           "scope": "site",
@@ -405,6 +483,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-CRAWLER-0
         "subjectRefs": [
           "user_agent:PerplexityBot",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_user_agent",
+          "targetKind": "user_agent",
+          "targetRef": "PerplexityBot",
+          "version": 1,
+        },
         "titleArgs": {
           "rule": "/",
           "scope": "site",
@@ -436,6 +521,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-CRAWLER-0
         "subjectRefs": [
           "user_agent:ClaudeBot",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_user_agent",
+          "targetKind": "user_agent",
+          "targetRef": "ClaudeBot",
+          "version": 1,
+        },
         "titleArgs": {
           "rule": "/",
           "scope": "site",
@@ -472,6 +564,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-CRAWLER-0
         "subjectRefs": [
           "user_agent:OAI-SearchBot",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_user_agent",
+          "targetKind": "user_agent",
+          "targetRef": "OAI-SearchBot",
+          "version": 1,
+        },
         "titleArgs": {
           "rule": "/",
           "scope": "site",
@@ -503,6 +602,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-CRAWLER-0
         "subjectRefs": [
           "user_agent:ChatGPT-User",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_user_agent",
+          "targetKind": "user_agent",
+          "targetRef": "ChatGPT-User",
+          "version": 1,
+        },
         "titleArgs": {
           "rule": "/",
           "scope": "site",
@@ -534,6 +640,13 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-CRAWLER-0
         "subjectRefs": [
           "user_agent:PerplexityBot",
         ],
+        "target": {
+          "members": [],
+          "relation": "affected_by_user_agent",
+          "targetKind": "user_agent",
+          "targetRef": "PerplexityBot",
+          "version": 1,
+        },
         "titleArgs": {
           "rule": "/",
           "scope": "site",
@@ -588,6 +701,34 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > GEO-ENTITY-00
         "subjectRefs": [
           "page_set:priority_commercial",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/pricing",
+              "observationId": "966cfb54-7a2b-4e73-85d6-083d098f65eb",
+              "pageSnapshotId": "8f954428-0089-4434-8f12-5e53267c96c6",
+              "resolutionState": "resolved",
+              "sitePageId": "3cdaa70a-52ec-467b-8570-fb0068f394a2",
+              "sitePageUrl": "https://example.com/pricing",
+              "snapshotId": "d4937cd9-1723-43ca-87e8-ff70b849c099",
+            },
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/product",
+              "observationId": "703309c7-de5d-4d08-8c83-855ce2b9d5e1",
+              "pageSnapshotId": "a1694a5c-73c1-45da-8c74-f951c59a36c6",
+              "resolutionState": "resolved",
+              "sitePageId": "7f8d7c82-766b-425f-8a2b-8b59f8f6aec7",
+              "sitePageUrl": "https://example.com/product",
+              "snapshotId": "44f8e1a4-4e54-41ea-8e27-ec5869ce1068",
+            },
+          ],
+          "relation": "affected_by_page_set",
+          "targetKind": "page_set",
+          "targetRef": "priority_commercial",
+          "version": 1,
+        },
         "titleArgs": {
           "entityMissingCount": 2,
           "proofCoveragePercent": 0,
@@ -648,6 +789,24 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > SEARCH-CTR-00
         "subjectRefs": [
           "https://example.com/product",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "observation_site_page",
+              "memberRef": "https://example.com/product",
+              "observationId": "a149e979-97d1-4794-87e9-4088c7cee59b",
+              "pageSnapshotId": null,
+              "resolutionState": "resolved",
+              "sitePageId": "7f8d7c82-766b-425f-8a2b-8b59f8f6aec7",
+              "sitePageUrl": "https://example.com/product",
+              "snapshotId": "3d46e03e-0547-46c2-84b8-4eb3fdc5500d",
+            },
+          ],
+          "relation": "direct_url",
+          "targetKind": "url",
+          "targetRef": "https://example.com/product",
+          "version": 1,
+        },
         "titleArgs": {
           "url": "https://example.com/product",
         },
@@ -706,6 +865,24 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > SEARCH-DECAY-
         "subjectRefs": [
           "https://example.com/product",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "observation_site_page",
+              "memberRef": "https://example.com/product",
+              "observationId": "7c7e633d-41d9-4d01-86a6-332c78b8b41f",
+              "pageSnapshotId": null,
+              "resolutionState": "resolved",
+              "sitePageId": "7f8d7c82-766b-425f-8a2b-8b59f8f6aec7",
+              "sitePageUrl": "https://example.com/product",
+              "snapshotId": "6be55c85-8254-465a-86a2-f733cf35bfd9",
+            },
+          ],
+          "relation": "direct_url",
+          "targetKind": "url",
+          "targetRef": "https://example.com/product",
+          "version": 1,
+        },
         "titleArgs": {
           "url": "https://example.com/product",
         },
@@ -741,6 +918,24 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > SEARCH-DECAY-
         "subjectRefs": [
           "https://example.com/threshold",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "observation_site_page",
+              "memberRef": "https://example.com/threshold",
+              "observationId": "816f8e92-909d-48b7-8b3a-e9c26d408c29",
+              "pageSnapshotId": null,
+              "resolutionState": "resolved",
+              "sitePageId": "ebf28528-f290-43a8-8abe-15210c5ff2c1",
+              "sitePageUrl": "https://example.com/threshold",
+              "snapshotId": "b0f96d0d-f12a-4913-87bc-6c118d2fd514",
+            },
+          ],
+          "relation": "direct_url",
+          "targetKind": "url",
+          "targetRef": "https://example.com/threshold",
+          "version": 1,
+        },
         "titleArgs": {
           "url": "https://example.com/threshold",
         },
@@ -791,6 +986,34 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-CANONICA
         "subjectRefs": [
           "canonical_issue:reciprocal",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/a",
+              "observationId": "2fe7ca30-eed2-4e79-8570-f427257a98b0",
+              "pageSnapshotId": "b108b269-6db5-4845-8133-a390d0e98f45",
+              "resolutionState": "resolved",
+              "sitePageId": "068dc0e0-5fbe-4c7d-81c5-c1343e29bfda",
+              "sitePageUrl": "https://example.com/a",
+              "snapshotId": "993499cb-8e67-4c03-86ad-1eb5ace22df2",
+            },
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/b",
+              "observationId": "dbb17194-4044-4efb-8e56-6a45648611fe",
+              "pageSnapshotId": "36c3a342-a2b9-4d04-823e-ebe225a982cd",
+              "resolutionState": "resolved",
+              "sitePageId": "320c6566-a166-4df7-8c69-e01c5d5e2015",
+              "sitePageUrl": "https://example.com/b",
+              "snapshotId": "537a93a8-3dfd-43e9-8c6f-47b8976b1bb4",
+            },
+          ],
+          "relation": "affected_by_canonical_issue",
+          "targetKind": "canonical_issue",
+          "targetRef": "reciprocal",
+          "version": 1,
+        },
         "titleArgs": {
           "count": 2,
           "subtype": "reciprocal",
@@ -847,6 +1070,24 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-HTTP-001
         "subjectRefs": [
           "http_status:404",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/pricing",
+              "observationId": "d3fe2a6f-69be-41ef-8a37-5d1f4c938057",
+              "pageSnapshotId": "69a04244-2ef3-4b38-8148-7e1ef78dfec1",
+              "resolutionState": "resolved",
+              "sitePageId": "3cdaa70a-52ec-467b-8570-fb0068f394a2",
+              "sitePageUrl": "https://example.com/pricing",
+              "snapshotId": "83d284e9-a45d-4cca-8566-acf1fff995ee",
+            },
+          ],
+          "relation": "affected_by_http_status",
+          "targetKind": "http_status",
+          "targetRef": "404",
+          "version": 1,
+        },
         "titleArgs": {
           "count": 1,
           "status": 404,
@@ -877,6 +1118,24 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-HTTP-001
         "subjectRefs": [
           "http_status:500",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/about",
+              "observationId": "39d5c1d9-4008-4956-8fa8-85fb4f41db78",
+              "pageSnapshotId": "df76d929-6717-4c9b-8e78-5073929a8c4b",
+              "resolutionState": "resolved",
+              "sitePageId": "9d6225b3-488e-4752-8c81-a5ca247c0d0a",
+              "sitePageUrl": "https://example.com/about",
+              "snapshotId": "1859e76a-9e3f-486e-8618-15dd30f54a51",
+            },
+          ],
+          "relation": "affected_by_http_status",
+          "targetKind": "http_status",
+          "targetRef": "500",
+          "version": 1,
+        },
         "titleArgs": {
           "count": 1,
           "status": 500,
@@ -932,6 +1191,24 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-LINKGRAP
         "subjectRefs": [
           "page_set:low_internal_inlinks",
         ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/pricing",
+              "observationId": "b25d81a8-bec0-47a1-8790-98d8ac592710",
+              "pageSnapshotId": "40e3de3f-5eaa-4232-810f-787d62b66bba",
+              "resolutionState": "resolved",
+              "sitePageId": "3cdaa70a-52ec-467b-8570-fb0068f394a2",
+              "sitePageUrl": "https://example.com/pricing",
+              "snapshotId": "f3fc340e-5fe8-47a2-8a43-b2d298009828",
+            },
+          ],
+          "relation": "affected_by_page_set",
+          "targetKind": "page_set",
+          "targetRef": "low_internal_inlinks",
+          "version": 1,
+        },
         "titleArgs": {
           "affectedCount": 1,
         },

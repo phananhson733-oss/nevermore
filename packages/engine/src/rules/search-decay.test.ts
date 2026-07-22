@@ -4,6 +4,7 @@ import type { GscPageProjection } from "@sf/sources";
 import { DiagnosticContext } from "../context.ts";
 import type { CoverageInput, ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { searchDecayRule } from "./search-decay.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00Z";
@@ -19,6 +20,7 @@ function gscPage(currentClicks: number, previousClicks: number): GscPageProjecti
 
 function observation(subjectRef: string, valueJson: GscPageProjection): ObservationView {
   return {
+    ...testObservationLineage(`gsc:${subjectRef}`, { sitePageUrl: subjectRef }),
     metricKey: METRIC_GSC_PAGE,
     subjectType: "url",
     subjectRef,
@@ -83,6 +85,52 @@ describe("searchDecayRule (SEARCH-DECAY-002)", () => {
     expect(evidence.subjectRefs).toEqual([PAGE_URL]);
     expect(evidence.claim).toContain("from 200");
     expect(evidence.claim).toContain("to 100");
+  });
+
+  it("emits a unique decaying page when an unrelated ambiguous subject is stable", () => {
+    const ambiguousUrl = "https://x.com/stable-duplicate";
+    const firstAmbiguous = observation(ambiguousUrl, gscPage(190, 200));
+    const secondAmbiguous = observation(ambiguousUrl, gscPage(180, 200));
+    const ctx = buildCtx({
+      observations: [
+        {
+          ...firstAmbiguous,
+          observationId: "00000000-0000-4000-8000-000000000001",
+        },
+        {
+          ...secondAmbiguous,
+          observationId: "00000000-0000-4000-8000-000000000002",
+        },
+        observation(PAGE_URL, gscPage(100, 200)),
+      ],
+    });
+
+    const result = searchDecayRule.evaluate(ctx);
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.subjectRefs).toEqual([PAGE_URL]);
+  });
+
+  it("fails closed when an ambiguous subject itself meets the decay threshold", () => {
+    const first = observation(PAGE_URL, gscPage(100, 200));
+    const second = observation(PAGE_URL, gscPage(90, 200));
+    const ctx = buildCtx({
+      observations: [
+        {
+          ...first,
+          observationId: "00000000-0000-4000-8000-000000000001",
+        },
+        {
+          ...second,
+          observationId: "00000000-0000-4000-8000-000000000002",
+        },
+      ],
+    });
+
+    expect(searchDecayRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "missing_observation_lineage",
+    });
   });
 
   it("marks a non-priority decaying page medium", () => {

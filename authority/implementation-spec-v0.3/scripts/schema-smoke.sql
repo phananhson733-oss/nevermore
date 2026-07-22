@@ -5,8 +5,140 @@ SET search_path = app, public;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 35 THEN
-    RAISE EXCEPTION 'expected exactly 35 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 36 THEN
+    RAISE EXCEPTION 'expected exactly 36 app tables';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname = ANY (ARRAY[
+        'client_projects_workspace_updated_idx',
+        'sites_one_primary_per_project_idx',
+        'source_connections_one_active_provider_idx',
+        'source_connections_project_idx',
+        'oauth_intents_expiry_idx',
+        'import_previews_expiry_idx',
+        'async_runs_one_active_key_idx',
+        'async_runs_project_status_idx',
+        'data_snapshots_project_provider_idx',
+        'normalized_observations_lookup_idx',
+        'normalized_observations_snapshot_idx',
+        'normalized_observations_site_page_metric_idx',
+        'provider_discrepancies_pair_idx',
+        'analysis_invocations_project_idx',
+        'evidence_run_idx',
+        'findings_project_filter_idx',
+        'finding_observations_finding_run_idx',
+        'finding_targets_one_direct_root_idx',
+        'finding_targets_one_definition_root_idx',
+        'finding_targets_one_observation_member_idx',
+        'finding_targets_site_page_read_idx',
+        'finding_targets_finding_run_read_idx',
+        'finding_targets_operational_idx',
+        'actions_plan_idx',
+        'execution_artifacts_one_active_type_idx',
+        'execution_artifacts_project_idx',
+        'export_bundles_project_idx',
+        'idempotency_keys_expiry_idx',
+        'telemetry_events_name_created_idx',
+        'audit_runs_project_created_idx',
+        'site_pages_project_updated_idx',
+        'site_pages_site_idx',
+        'page_snapshots_page_captured_idx',
+        'page_snapshots_project_captured_idx',
+        'page_snapshots_verified_source_identity_idx',
+        'product_profile_runs_project_created_idx',
+        'product_profile_runs_base_profile_idx',
+        'product_profile_runs_source_snapshot_idx',
+        'product_profile_runs_result_profile_idx',
+        'product_profile_invocation_attempts_project_idx',
+        'product_profile_invocation_attempts_unresolved_idx'
+      ]::text[])
+  ) <> 41 THEN
+    RAISE EXCEPTION 'expected all 41 named app indexes';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger trigger_row
+    JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
+    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'app'
+      AND NOT trigger_row.tgisinternal
+      AND trigger_row.tgname = ANY (ARRAY[
+        'workspaces_set_updated_at',
+        'operator_profiles_set_updated_at',
+        'client_projects_set_updated_at',
+        'client_projects_icp_profile_provenance_guard',
+        'sites_set_updated_at',
+        'source_connections_set_updated_at',
+        'source_credentials_set_updated_at',
+        'oauth_intents_set_updated_at',
+        'import_previews_set_updated_at',
+        'async_runs_set_updated_at',
+        'async_runs_terminal_status_immutable',
+        'collection_runs_provenance_guard',
+        'data_snapshots_provenance_guard',
+        'normalized_observations_provenance_guard',
+        'normalized_observations_site_page_guard',
+        'diagnostic_runs_frozen_input_guard',
+        'diagnostic_runs_current_manifest_guard',
+        'diagnostic_run_rules_version_guard',
+        'provider_discrepancies_set_updated_at',
+        'findings_set_updated_at',
+        'findings_rule_version_guard',
+        'actions_set_updated_at',
+        'actions_source_lineage_guard',
+        'execution_artifacts_set_updated_at',
+        'execution_artifacts_status_transition_guard',
+        'export_bundles_invariant_guard',
+        'idempotency_keys_set_updated_at',
+        'icp_profiles_append_only',
+        'data_snapshots_append_only',
+        'normalized_observations_append_only',
+        'diagnostic_run_rules_append_only',
+        'analysis_invocations_append_only',
+        'evidence_provenance_guard',
+        'evidence_append_only',
+        'finding_observations_append_only',
+        'finding_targets_lineage_guard',
+        'finding_targets_append_only',
+        'finding_review_events_append_only',
+        'action_override_audit_append_only',
+        'artifact_revisions_append_only',
+        'telemetry_events_append_only',
+        'site_pages_set_updated_at',
+        'site_pages_canonical_subject_lock',
+        'audit_runs_provenance_guard',
+        'site_pages_provenance_guard',
+        'page_snapshots_provenance_guard',
+        'capability_runs_append_only',
+        'audit_runs_append_only',
+        'audit_module_results_append_only',
+        'page_snapshots_append_only',
+        'product_profile_runs_provenance_guard',
+        'product_profile_runs_frozen_input_guard',
+        'async_runs_product_profile_result_guard',
+        'product_profile_invocation_attempts_transition_guard',
+        'icp_profiles_product_profile_provenance_guard'
+      ]::text[])
+  ) <> 55 THEN
+    RAISE EXCEPTION 'expected all 55 app triggers';
+  END IF;
+  IF (
+    SELECT count(DISTINCT procedure.proname)
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname = ANY (ARRAY[
+        'lock_site_page_canonical_subjects',
+        'finding_target_relation_key',
+        'reserve_product_profile_invocation_attempt',
+        'finalize_product_profile_invocation_attempt',
+        'mark_product_profile_invocation_outcome_unknown',
+        'validate_product_profile_provenance'
+      ]::text[])
+  ) <> 6 THEN
+    RAISE EXCEPTION 'expected all 6 runtime routines';
   END IF;
 END;
 $$;
@@ -2874,9 +3006,68 @@ BEGIN
   ) <> 3 THEN
     RAISE EXCEPTION 'Observation SitePage lineage lock/guard functions are incomplete';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'app.finding_targets'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%resolution_state%'
+      AND pg_get_constraintdef(oid) LIKE '%resolved%'
+      AND pg_get_constraintdef(oid) LIKE '%unresolved%'
+      AND pg_get_constraintdef(oid) LIKE '%definition_only%'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'app.finding_targets'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%direct_url%'
+      AND pg_get_constraintdef(oid) LIKE '%affected_by_user_agent%'
+      AND pg_get_constraintdef(oid) LIKE '%target_kind%'
+  ) THEN
+    RAISE EXCEPTION 'Finding target ledger relation and resolution constraints are missing';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND tablename = 'finding_targets'
+      AND indexname = ANY (ARRAY[
+        'finding_targets_one_direct_root_idx',
+        'finding_targets_one_definition_root_idx',
+        'finding_targets_one_observation_member_idx',
+        'finding_targets_site_page_read_idx',
+        'finding_targets_finding_run_read_idx',
+        'finding_targets_operational_idx'
+      ]::text[])
+  ) <> 6 THEN
+    RAISE EXCEPTION 'Finding target ledger indexes are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger
+    WHERE tgrelid = 'app.finding_targets'::regclass
+      AND NOT tgisinternal
+      AND tgname IN (
+        'finding_targets_lineage_guard',
+        'finding_targets_append_only'
+      )
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Finding target lineage and append-only guards are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT proname)
+    FROM pg_proc
+    WHERE pronamespace = 'app'::regnamespace
+      AND proname IN (
+        'finding_target_relation_key',
+        'enforce_finding_target_lineage'
+      )
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Finding target runtime routines are incomplete';
+  END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0016_observation_site_page_lineage' THEN
+  ) IS DISTINCT FROM '0017_finding_target_ledger' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;

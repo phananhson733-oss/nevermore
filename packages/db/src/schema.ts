@@ -1003,6 +1003,41 @@ export const pageSnapshots = app.table("page_snapshots", {
 });
 
 // ---------------------------------------------------------------------------
+// 36. finding_targets  (append-only per-DiagnosticRun target membership)
+// ---------------------------------------------------------------------------
+export const findingTargets = app.table("finding_targets", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  finding_id: uuid()
+    .notNull()
+    .references(() => findings.id),
+  diagnostic_run_id: uuid()
+    .notNull()
+    .references(() => diagnosticRuns.id),
+  relation: text().notNull(),
+  target_kind: text().notNull(),
+  target_ref: text().notNull(),
+  resolution_state: text().notNull(),
+  basis_kind: text().notNull(),
+  site_page_id: uuid().references(() => sitePages.id),
+  page_snapshot_id: uuid().references(() => pageSnapshots.id),
+  source_observation_id: uuid().references(() => normalizedObservations.id),
+  member_ref: text(),
+  limitation: text(),
+  // The insert trigger replaces this placeholder with the canonical DB hash.
+  relation_key: text().notNull().default(sql`repeat('0', 64)`),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Aggregate schema (consumed by drizzle(pool, { schema })).
 // ---------------------------------------------------------------------------
 export const schema = {
@@ -1041,4 +1076,5 @@ export const schema = {
   auditModuleResults,
   sitePages,
   pageSnapshots,
+  findingTargets,
 } as const;

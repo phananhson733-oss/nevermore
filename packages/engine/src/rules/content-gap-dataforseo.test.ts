@@ -9,6 +9,7 @@ import {
   type ObservationView,
 } from "../context.ts";
 import { parseIcp } from "../icp.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { contentGapRule } from "./content-gap.ts";
 
 const OBSERVED_AT = "2026-07-20T00:00:00.000Z";
@@ -41,6 +42,10 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
   it("keeps vendor provenance and grade B instead of presenting it as CSV", () => {
     const observations: ObservationView[] = [
       {
+        ...testObservationLineage("crawl:https://example.com/pricing", {
+          sitePageUrl: "https://example.com/pricing",
+          pageSnapshot: true,
+        }),
         metricKey: METRIC_CRAWL_PAGE,
         subjectType: "url",
         subjectRef: "https://example.com/pricing",
@@ -50,6 +55,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
         observedAt: OBSERVED_AT,
       },
       ...Array.from({ length: 10 }, (_, index): ObservationView => ({
+        ...testObservationLineage(`dataforseo:project-management:${index}`),
         metricKey: METRIC_CSV_KEYWORD_GAP,
         subjectType: "keyword_cluster",
         subjectRef: "project management",
@@ -109,6 +115,10 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
 
   it("uses the selected cluster provider snapshot availability instead of merged keyword-gap coverage", () => {
     const crawl: ObservationView = {
+      ...testObservationLineage("crawl:https://example.com/pricing", {
+        sitePageUrl: "https://example.com/pricing",
+        pageSnapshot: true,
+      }),
       metricKey: METRIC_CRAWL_PAGE,
       subjectType: "url",
       subjectRef: "https://example.com/pricing",
@@ -121,6 +131,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
       provider: "csv" | "dataforseo",
     ): ObservationView[] =>
       Array.from({ length: 10 }, (_, index): ObservationView => ({
+        ...testObservationLineage(`${provider}:project-management:${index}`),
         metricKey: METRIC_CSV_KEYWORD_GAP,
         subjectType: "keyword_cluster",
         subjectRef: "project management",
@@ -243,6 +254,10 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
 
   it("deduplicates true provider overlap without dropping market or language demand", () => {
     const crawl: ObservationView = {
+      ...testObservationLineage("crawl:https://example.com/pricing", {
+        sitePageUrl: "https://example.com/pricing",
+        pageSnapshot: true,
+      }),
       metricKey: METRIC_CRAWL_PAGE,
       subjectType: "url",
       subjectRef: "https://example.com/pricing",
@@ -252,6 +267,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
       observedAt: OBSERVED_AT,
     };
     const csv = Array.from({ length: 10 }, (_, index): ObservationView => ({
+      ...testObservationLineage(`csv:project-management:us-en:${index}`),
       metricKey: METRIC_CSV_KEYWORD_GAP,
       subjectType: "keyword_cluster",
       subjectRef: "project management",
@@ -271,6 +287,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
       observedAt: OBSERVED_AT,
     })).concat(
       {
+        ...testObservationLineage("csv:project-portfolio-planning"),
         metricKey: METRIC_CSV_KEYWORD_GAP,
         subjectType: "keyword_cluster",
         subjectRef: "project management",
@@ -290,6 +307,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
         observedAt: OBSERVED_AT,
       },
       {
+        ...testObservationLineage("csv:project-management:gb-en-gb"),
         metricKey: METRIC_CSV_KEYWORD_GAP,
         subjectType: "keyword_cluster",
         subjectRef: "project management",
@@ -309,6 +327,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
         observedAt: OBSERVED_AT,
       },
       {
+        ...testObservationLineage("csv:project-management:us-fr"),
         metricKey: METRIC_CSV_KEYWORD_GAP,
         subjectType: "keyword_cluster",
         subjectRef: "project management",
@@ -331,6 +350,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
     const dataForSeo = Array.from(
       { length: 10 },
       (_, index): ObservationView => ({
+        ...testObservationLineage(`dataforseo:project-management:${index}`),
         metricKey: METRIC_CSV_KEYWORD_GAP,
         subjectType: "keyword_cluster",
         subjectRef: "project management",
@@ -429,6 +449,10 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
   it("does not turn an unreported provider volume into an observed zero", () => {
     const observations: ObservationView[] = [
       {
+        ...testObservationLineage("crawl:https://example.com/pricing", {
+          sitePageUrl: "https://example.com/pricing",
+          pageSnapshot: true,
+        }),
         metricKey: METRIC_CRAWL_PAGE,
         subjectType: "url",
         subjectRef: "https://example.com/pricing",
@@ -438,6 +462,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
         observedAt: OBSERVED_AT,
       },
       {
+        ...testObservationLineage("csv:project-portfolio-planning"),
         metricKey: METRIC_CSV_KEYWORD_GAP,
         subjectType: "keyword_cluster",
         subjectRef: "project management",
@@ -457,6 +482,7 @@ describe("CONTENT-GAP-011 DataForSEO evidence", () => {
         observedAt: OBSERVED_AT,
       },
       ...Array.from({ length: 10 }, (_, index): ObservationView => ({
+        ...testObservationLineage(`dataforseo:project-management:${index}`),
         metricKey: METRIC_CSV_KEYWORD_GAP,
         subjectType: "keyword_cluster",
         subjectRef: "project management",

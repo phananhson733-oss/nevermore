@@ -15,6 +15,7 @@ import type {
   Severity,
 } from "../rule.ts";
 import { ctrBenchmark, ctrThreshold } from "../util/ctr-benchmark.ts";
+import { analyticsTargetResolution, findingTarget } from "../target.ts";
 
 const GSC_LIMITATION =
   "Search Console returns top rows by clicks, not the full query universe.";
@@ -76,7 +77,7 @@ function evaluatePage(
   ctx: DiagnosticContext,
   subjectUrl: string,
   page: GscPageProjection,
-): FindingCandidate | null {
+): FindingCandidate | "missing_lineage" | null {
   const { clicks, impressions, position } = page.current28d;
   if (impressions < MIN_IMPRESSIONS) return null;
   if (position === null || position < MIN_POSITION || position > MAX_POSITION) return null;
@@ -90,6 +91,12 @@ function evaluatePage(
 
   const severity: Severity =
     ctx.isPriority(subjectUrl) || ctx.isCommercial(subjectUrl) ? "high" : "medium";
+  const targetResolution = analyticsTargetResolution(
+    ctx.gscObservationForSubject(subjectUrl),
+  );
+  if (targetResolution.status === "missing_lineage") {
+    return "missing_lineage";
+  }
 
   return {
     subjectRefs: [subjectUrl],
@@ -99,7 +106,31 @@ function evaluatePage(
     evidence: [
       ctrEvidence(ctx, subjectUrl, ctr, position, benchmark, threshold, page.topQueries),
     ],
+    target: findingTarget(
+      { relation: "direct_url", targetKind: "url" },
+      targetResolution.targetRef,
+      [targetResolution.member],
+      "observation_members",
+    ),
   };
+}
+
+function hasAmbiguousTrigger(ctx: DiagnosticContext): boolean {
+  for (const [subjectUrl, observations] of ctx.gscObservationGroups) {
+    if (observations.length <= 1) continue;
+    for (const observation of observations) {
+      // Ambiguous rows are evaluated only far enough to determine whether the
+      // subject would trigger. evaluatePage returns before target creation when
+      // its persisted one-to-one lineage cannot be selected.
+      if (
+        evaluatePage(ctx, subjectUrl, observation.projection) ===
+        "missing_lineage"
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 export const searchCtrRule = {
@@ -112,10 +143,16 @@ export const searchCtrRule = {
     if (availability === "unavailable") {
       return { status: "skipped", reason: "missing_dataset" };
     }
+    if (hasAmbiguousTrigger(ctx)) {
+      return { status: "inconclusive", reason: "missing_observation_lineage" };
+    }
 
     const candidates: FindingCandidate[] = [];
     for (const [subjectUrl, page] of ctx.gsc) {
       const candidate = evaluatePage(ctx, subjectUrl, page);
+      if (candidate === "missing_lineage") {
+        return { status: "inconclusive", reason: "missing_observation_lineage" };
+      }
       if (candidate) candidates.push(candidate);
     }
 

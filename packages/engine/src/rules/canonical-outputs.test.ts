@@ -19,6 +19,7 @@ import {
 } from "../context.ts";
 import { parseIcp } from "../icp.ts";
 import type { RuleId, RuleResult } from "../rule.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { ALL_RULES } from "./index.ts";
 
 /**
@@ -82,7 +83,23 @@ function observation(
   subjectRef: string,
   valueJson: unknown,
 ): ObservationView {
+  const crawlFetchUrl =
+    metricKey === METRIC_CRAWL_PAGE
+      ? (valueJson as CrawlPageProjection).fetchUrl
+      : null;
+  const analyticsUrl =
+    metricKey === METRIC_GSC_PAGE || metricKey === METRIC_GA4_LANDING
+      ? subjectRef
+      : null;
+  const sitePageUrl = crawlFetchUrl ?? analyticsUrl;
   return {
+    ...testObservationLineage(
+      `${provider}:${subjectRef}:${JSON.stringify(valueJson)}`,
+      {
+        sitePageUrl,
+        pageSnapshot: crawlFetchUrl !== null,
+      },
+    ),
     metricKey,
     subjectType,
     subjectRef,
@@ -637,4 +654,148 @@ describe("AC-021 canonical outputs for all 11 deterministic rules", () => {
       expect(output).toMatchSnapshot();
     });
   }
+
+  it("maps every candidate-producing rule to an explicit FindingTargetDraft v1", async () => {
+    const actual = Object.fromEntries(
+      await Promise.all(
+        ALL_RULES.map(async (rule) => {
+          const result = await rule.evaluate(FIXTURES[rule.id].candidate);
+          if (result.status !== "candidate") return [rule.id, []] as const;
+          return [
+            rule.id,
+            result.candidates.map((candidate) =>
+              stableOutput(
+                (candidate as unknown as { readonly target: unknown }).target,
+              ),
+            ),
+          ] as const;
+        }),
+      ),
+    );
+
+    expect(actual).toMatchObject({
+      "TECH-HTTP-001": [
+        {
+          version: 1,
+          relation: "affected_by_http_status",
+          targetKind: "http_status",
+          targetRef: "404",
+        },
+        {
+          version: 1,
+          relation: "affected_by_http_status",
+          targetKind: "http_status",
+          targetRef: "500",
+        },
+      ],
+      "TECH-CANONICAL-002": [
+        {
+          version: 1,
+          relation: "affected_by_canonical_issue",
+          targetKind: "canonical_issue",
+          targetRef: "reciprocal",
+        },
+      ],
+      "TECH-LINKGRAPH-005": [
+        {
+          version: 1,
+          relation: "affected_by_page_set",
+          targetKind: "page_set",
+          targetRef: "low_internal_inlinks",
+        },
+      ],
+      "SEARCH-CTR-004": [
+        {
+          version: 1,
+          relation: "direct_url",
+          targetKind: "url",
+        },
+      ],
+      "SEARCH-DECAY-002": [
+        {
+          version: 1,
+          relation: "direct_url",
+          targetKind: "url",
+        },
+      ],
+      "CONTENT-COVERAGE-001": [
+        {
+          version: 1,
+          relation: "affected_by_page_set",
+          targetKind: "page_set",
+          targetRef: "offer:team-collaboration",
+          members: [],
+        },
+        {
+          version: 1,
+          relation: "affected_by_page_set",
+          targetKind: "page_set",
+          targetRef: "use_case:remote-onboarding",
+          members: [],
+        },
+      ],
+      "CONTENT-GAP-011": [
+        {
+          version: 1,
+          relation: "affected_by_keyword_cluster",
+          targetKind: "keyword_cluster",
+          targetRef: "project-management",
+          members: [],
+        },
+      ],
+      "CRO-PATH-001": [
+        {
+          version: 1,
+          relation: "affected_by_page_set",
+          targetKind: "page_set",
+          targetRef: "missing_conversion_path",
+        },
+      ],
+      "CRO-LANDING-003": [
+        {
+          version: 1,
+          relation: "direct_url",
+          targetKind: "url",
+        },
+      ],
+      "GEO-ENTITY-001": [
+        {
+          version: 1,
+          relation: "affected_by_page_set",
+          targetKind: "page_set",
+          targetRef: "priority_commercial",
+        },
+      ],
+      "GEO-CRAWLER-002": [
+        {
+          version: 1,
+          relation: "affected_by_user_agent",
+          targetKind: "user_agent",
+          targetRef: "OAI-SearchBot",
+          members: [],
+        },
+        {
+          version: 1,
+          relation: "affected_by_user_agent",
+          targetKind: "user_agent",
+          targetRef: "ChatGPT-User",
+          members: [],
+        },
+        {
+          version: 1,
+          relation: "affected_by_user_agent",
+          targetKind: "user_agent",
+          targetRef: "PerplexityBot",
+          members: [],
+        },
+        {
+          version: 1,
+          relation: "affected_by_user_agent",
+          targetKind: "user_agent",
+          targetRef: "ClaudeBot",
+          members: [],
+        },
+      ],
+    });
+  });
 });

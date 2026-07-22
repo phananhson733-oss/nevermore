@@ -23,6 +23,7 @@ import type {
   RuleResult,
   Severity,
 } from "../rule.ts";
+import { crawlTargetMembers, findingTarget } from "../target.ts";
 
 const CANONICAL_LIMITATION =
   "Canonical relationships reflect the crawl snapshot's HTML; rel=canonical is a hint a search engine may override.";
@@ -138,13 +139,19 @@ export const techCanonicalRule = {
 
     const observedAt = ctx.observedAt("crawl");
     const candidates: FindingCandidate[] = [];
+    let missingLineage = false;
     const add = (
       subtype: string,
       refs: CanonicalIssueRefs,
       claim: string,
     ): void => {
       if (refs.subjectUrls.size === 0) return;
-      candidates.push(buildCandidate(ctx, subtype, refs, claim, observedAt));
+      const candidate = buildCandidate(ctx, subtype, refs, claim, observedAt);
+      if (candidate === null) {
+        missingLineage = true;
+        return;
+      }
+      candidates.push(candidate);
     };
     add(
       "reciprocal",
@@ -162,6 +169,10 @@ export const techCanonicalRule = {
       `${sitemapContradiction.subjectUrls.size} sitemap page(s) canonicalize to a different page.`,
     );
 
+    if (missingLineage) {
+      return { status: "inconclusive", reason: "missing_observation_lineage" };
+    }
+
     if (candidates.length === 0) {
       return { status: "pass", metrics: { canonicalIssues: 0 } };
     }
@@ -175,7 +186,7 @@ function buildCandidate(
   refs: CanonicalIssueRefs,
   claim: string,
   observedAt: string,
-): FindingCandidate {
+): FindingCandidate | null {
   const subjectUrls = [...refs.subjectUrls].sort();
   const fetchUrls = [...refs.fetchUrls].sort();
   const severity: Severity = subjectUrls.some((url) => ctx.isCommercial(url))
@@ -193,11 +204,22 @@ function buildCandidate(
     observedAt,
     limitation: CANONICAL_LIMITATION,
   };
+  const members = crawlTargetMembers(ctx, fetchUrls);
+  if (members === null) return null;
   return {
     subjectRefs: [`canonical_issue:${subtype}`],
     severity,
     titleArgs: { subtype, count: subjectUrls.length },
     metrics: { count: subjectUrls.length },
     evidence: [evidence],
+    target: findingTarget(
+      {
+        relation: "affected_by_canonical_issue",
+        targetKind: "canonical_issue",
+      },
+      subtype,
+      members,
+      "observation_members",
+    ),
   };
 }

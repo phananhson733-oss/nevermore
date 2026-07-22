@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 35 app tables plus every named index, trigger, and callable routine
+ * exactly 36 app tables plus every named index, trigger, and callable routine
  * in the frozen SQL contract. Exits non-zero on drift. This is a structural
  * object-presence gate; the byte-for-byte migration/spec gate separately
  * prevents definition drift.
@@ -31,6 +31,7 @@ const EXPECTED_TABLES = [
   "evidence",
   "findings",
   "finding_observations",
+  "finding_targets",
   "finding_review_events",
   "actions",
   "action_override_audit",
@@ -66,6 +67,12 @@ const REQUIRED_INDEXES = [
   "evidence_run_idx",
   "findings_project_filter_idx",
   "finding_observations_finding_run_idx",
+  "finding_targets_one_direct_root_idx",
+  "finding_targets_one_definition_root_idx",
+  "finding_targets_one_observation_member_idx",
+  "finding_targets_site_page_read_idx",
+  "finding_targets_finding_run_read_idx",
+  "finding_targets_operational_idx",
   "actions_plan_idx",
   "execution_artifacts_one_active_type_idx",
   "execution_artifacts_project_idx",
@@ -122,6 +129,8 @@ const REQUIRED_TRIGGERS = [
   "evidence_provenance_guard",
   "evidence_append_only",
   "finding_observations_append_only",
+  "finding_targets_lineage_guard",
+  "finding_targets_append_only",
   "finding_review_events_append_only",
   "action_override_audit_append_only",
   "artifact_revisions_append_only",
@@ -144,6 +153,7 @@ const REQUIRED_TRIGGERS = [
 
 const REQUIRED_ROUTINES = [
   "lock_site_page_canonical_subjects",
+  "finding_target_relation_key",
   "reserve_product_profile_invocation_attempt",
   "finalize_product_profile_invocation_attempt",
   "mark_product_profile_invocation_outcome_unknown",

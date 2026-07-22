@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { METRIC_CRAWL_PAGE, type CrawlPageProjection } from "@sf/sources";
 import { DiagnosticContext, type CoverageInput, type ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { croPathRule } from "./cro-path.ts";
 
 const CAPTURED_AT = "2026-07-17T00:00:00.000Z";
@@ -37,6 +38,10 @@ function page(fetchUrl: string, links: readonly string[]): CrawlPageProjection {
 
 function crawlObs(subjectUrl: string, projection: CrawlPageProjection): ObservationView {
   return {
+    ...testObservationLineage(`crawl:${projection.fetchUrl}`, {
+      sitePageUrl: projection.fetchUrl,
+      pageSnapshot: true,
+    }),
     metricKey: METRIC_CRAWL_PAGE,
     subjectType: "url",
     subjectRef: subjectUrl,

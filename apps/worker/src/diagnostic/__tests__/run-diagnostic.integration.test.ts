@@ -18,7 +18,7 @@ process.env["RAW_IMPORT_BUCKET"] ??= "raw-imports";
 process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { asyncRuns, icpProfiles, workspaces } from "@sf/db/schema";
 import {
@@ -29,14 +29,17 @@ import {
   DiagnosticRunsRepository,
   EvidenceRepository,
   FindingsRepository,
+  FindingTargetsRepository,
   IcpProfilesRepository,
   ImportPreviewsRepository,
   ObservationsRepository,
+  PageSnapshotsRepository,
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
   SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
+  TelemetryRepository,
   contentHash,
   type CanonicalValue,
   type ObservationInsert,
@@ -67,9 +70,11 @@ import {
   type CrawlRobotsProjection,
   type CsvKeywordProjection,
   type Ga4LandingProjection,
+  type GscPageProjection,
 } from "@sf/sources";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../../context.ts";
+import { CRAWL_PAGE_EXTRACT_SCHEMA_VERSION } from "../../collection/materialize-crawl-pages.ts";
 import { runDiagnostic } from "../run-diagnostic.ts";
 
 /**
@@ -100,6 +105,10 @@ const testLogger: Logger = {
   error: NOOP,
 };
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 interface Seed {
   readonly scope: ProjectScope;
   readonly siteId: string;
@@ -120,6 +129,10 @@ interface SeededSnapshot {
   readonly methodVersion: string;
   readonly checksum: string;
   readonly sourceWindow: Record<string, unknown>;
+}
+
+interface SeedSnapshotOptions {
+  readonly analyticsLineage?: "subject" | "slash" | "ambiguous";
 }
 
 describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
@@ -264,6 +277,111 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     );
   });
 
+  it("persists one exact target-ledger member for every URL in a multi-page technical finding", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const fetchUrls = [`${seed.origin}/broken-a`, `${seed.origin}/broken-b`];
+    const crawlSnapshot = await seedSnapshot(
+      handle,
+      seed,
+      fetchUrls.map((fetchUrl) =>
+        crawlPage(
+          su(fetchUrl),
+          mkPage({
+            fetchUrl,
+            status: 404,
+            finalStatus: 404,
+            robotsIndexable: false,
+          }),
+        ),
+      ),
+    );
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([crawlSnapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    expect(await runStatusOf(handle, seed.scope, runId)).toBe("partial");
+    const finding = await new FindingsRepository(handle.db).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "TECH-HTTP-001", [
+        "http_status:404",
+      ]),
+    );
+    expect(finding).not.toBeNull();
+    const observations = await new ObservationsRepository(
+      handle.db,
+    ).listBySnapshotIds(seed.scope, [crawlSnapshot.id]);
+    const crawlObservations = observations
+      .filter((row) => row.metric_key === METRIC_CRAWL_PAGE)
+      .sort((left, right) => left.subject_ref.localeCompare(right.subject_ref));
+    const frozenPages = await new PageSnapshotsRepository(
+      handle.db,
+    ).listByDataSnapshotWithSitePageIdentity(
+      seed.scope,
+      crawlSnapshot.id,
+    );
+    const frozenPageBySitePage = new Map(
+      frozenPages.map((page) => [page.site_page_id, page]),
+    );
+    const rows = await new FindingTargetsRepository(handle.db).listForFindings(
+      seed.scope,
+      runId,
+      [finding!.id],
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.member_ref).sort()).toEqual(fetchUrls);
+    expect(
+      rows.map((row) => {
+        const observation = crawlObservations.find(
+          (candidate) => candidate.id === row.source_observation_id,
+        );
+        const frozenPage = observation?.site_page_id
+          ? frozenPageBySitePage.get(observation.site_page_id)
+          : undefined;
+        return {
+          relation: row.relation,
+          targetKind: row.target_kind,
+          targetRef: row.target_ref,
+          resolutionState: row.resolution_state,
+          basisKind: row.basis_kind,
+          sitePageId: row.site_page_id,
+          pageSnapshotId: row.page_snapshot_id,
+          sourceObservationId: row.source_observation_id,
+          memberRef: row.member_ref,
+          limitation: row.limitation,
+          exactObservationSitePageId: observation?.site_page_id ?? null,
+          exactFrozenPageSnapshotId: frozenPage?.page_snapshot_id ?? null,
+        };
+      }),
+    ).toEqual(
+      rows.map((row) => ({
+        relation: "affected_by_http_status",
+        targetKind: "http_status",
+        targetRef: "404",
+        resolutionState: "resolved",
+        basisKind: "crawl_exact_fetch",
+        sitePageId: row.site_page_id,
+        pageSnapshotId: row.page_snapshot_id,
+        sourceObservationId: row.source_observation_id,
+        memberRef: row.member_ref,
+        limitation: null,
+        exactObservationSitePageId: row.site_page_id,
+        exactFrozenPageSnapshotId: row.page_snapshot_id,
+      })),
+    );
+  });
+
   it("persists each mixed keyword contribution against only its own frozen source lineage", async () => {
     const seed = await seedProject(handle);
     const icpId = await seedIcp(handle, seed, minimalProfile());
@@ -374,6 +492,141 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     expect(persisted.rows.every((row) => !row.claim.includes("1050"))).toBe(
       true,
     );
+    const finding = await new FindingsRepository(handle.db).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "CONTENT-GAP-011", [
+        "keyword_cluster:project management",
+      ]),
+    );
+    expect(finding).not.toBeNull();
+    await expect(
+      new FindingTargetsRepository(handle.db).listForFindings(
+        seed.scope,
+        runId,
+        [finding!.id],
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        site_id: seed.siteId,
+        finding_id: finding!.id,
+        diagnostic_run_id: runId,
+        relation: "affected_by_keyword_cluster",
+        target_kind: "keyword_cluster",
+        target_ref: "project management",
+        resolution_state: "definition_only",
+        basis_kind: "target_definition",
+        site_page_id: null,
+        page_snapshot_id: null,
+        source_observation_id: null,
+        member_ref: null,
+        limitation: null,
+      }),
+    ]);
+  });
+
+  it("preserves a canonical GSC subject while targeting its exact slash SitePage", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const subjectRef = `${seed.origin}/search-page`;
+    const crawlSnapshot = await seedSnapshot(handle, seed, []);
+    const gscSnapshot = await seedSnapshot(
+      handle,
+      seed,
+      [gscPage(subjectRef, lowCtrProjection())],
+      "gsc",
+      { analyticsLineage: "slash" },
+    );
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([crawlSnapshot, gscSnapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const finding = await new FindingsRepository(handle.db).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "SEARCH-CTR-004", [subjectRef]),
+    );
+    expect(finding?.subject_refs).toEqual([subjectRef]);
+    await expect(
+      new FindingTargetsRepository(handle.db).listForFindings(
+        seed.scope,
+        runId,
+        [finding!.id],
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        relation: "direct_url",
+        target_kind: "url",
+        target_ref: `${subjectRef}/`,
+        resolution_state: "resolved",
+        basis_kind: "observation_site_page",
+        site_page_id: expect.any(String),
+        page_snapshot_id: null,
+        source_observation_id: expect.any(String),
+        member_ref: subjectRef,
+        limitation: null,
+      }),
+    ]);
+  });
+
+  it("persists deliberately ambiguous GSC SitePage lineage as an explicit unresolved target", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const subjectRef = `${seed.origin}/ambiguous-search-page`;
+    const crawlSnapshot = await seedSnapshot(handle, seed, []);
+    const gscSnapshot = await seedSnapshot(
+      handle,
+      seed,
+      [gscPage(subjectRef, lowCtrProjection())],
+      "gsc",
+      { analyticsLineage: "ambiguous" },
+    );
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([crawlSnapshot, gscSnapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const finding = await new FindingsRepository(handle.db).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "SEARCH-CTR-004", [subjectRef]),
+    );
+    expect(finding).not.toBeNull();
+    const rows = await new FindingTargetsRepository(handle.db).listForFindings(
+      seed.scope,
+      runId,
+      [finding!.id],
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({
+        relation: "direct_url",
+        target_kind: "url",
+        target_ref: subjectRef,
+        resolution_state: "unresolved",
+        basis_kind: "unresolved_observation",
+        site_page_id: null,
+        page_snapshot_id: null,
+        source_observation_id: expect.any(String),
+        member_ref: subjectRef,
+        limitation: expect.stringContaining("no unambiguous persisted SitePage"),
+      }),
+    ]);
   });
 
   it("fails at the database boundary when a manifest provider masquerades as its immutable snapshot", async () => {
@@ -412,6 +665,8 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
         }),
       ],
       "ga4",
+      crawlSnapshot.id,
+      crawlSnapshot.capturedAt,
     );
     await expect(
       new ObservationsRepository(handle.db).insertMany(
@@ -563,6 +818,257 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
     expect(after?.active).toBe(true);
     expect(after?.regressed).toBe(true);
     expect(after?.resolved_at).toBeNull();
+  });
+
+  it("appends current-run target rows on re-hit without mutating the prior run ledger", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const snapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(`${seed.origin}/rehit-target`),
+        mkPage({
+          fetchUrl: `${seed.origin}/rehit-target`,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+    ]);
+    const firstRunId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+    );
+    await runDiagnostic(ctx, {
+      runId: firstRunId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+    const finding = await new FindingsRepository(handle.db).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "TECH-HTTP-001", [
+        "http_status:404",
+      ]),
+    );
+    expect(finding).not.toBeNull();
+    const targets = new FindingTargetsRepository(handle.db);
+    const priorRows = await targets.listForFindings(
+      seed.scope,
+      firstRunId,
+      [finding!.id],
+    );
+    expect(priorRows).toHaveLength(1);
+
+    const currentRunId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+    );
+    await runDiagnostic(ctx, {
+      runId: currentRunId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const priorRowsAfterRehit = await targets.listForFindings(
+      seed.scope,
+      firstRunId,
+      [finding!.id],
+    );
+    const currentRows = await targets.listForFindings(
+      seed.scope,
+      currentRunId,
+      [finding!.id],
+    );
+    expect(priorRowsAfterRehit).toEqual(priorRows);
+    expect(currentRows).toHaveLength(1);
+    expect(currentRows[0]).toMatchObject({
+      finding_id: finding!.id,
+      diagnostic_run_id: currentRunId,
+      relation: priorRows[0]!.relation,
+      target_kind: priorRows[0]!.target_kind,
+      target_ref: priorRows[0]!.target_ref,
+      resolution_state: priorRows[0]!.resolution_state,
+      basis_kind: priorRows[0]!.basis_kind,
+      site_page_id: priorRows[0]!.site_page_id,
+      page_snapshot_id: priorRows[0]!.page_snapshot_id,
+      source_observation_id: priorRows[0]!.source_observation_id,
+      member_ref: priorRows[0]!.member_ref,
+      limitation: priorRows[0]!.limitation,
+    });
+    expect(currentRows[0]!.id).not.toBe(priorRows[0]!.id);
+  });
+
+  it("replays the exact target rows idempotently inside one accepted attempt", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const snapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(`${seed.origin}/idempotent-target`),
+        mkPage({
+          fetchUrl: `${seed.origin}/idempotent-target`,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+    ]);
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+    );
+    const insertMany = FindingTargetsRepository.prototype.insertMany;
+    let replayInsertCount: number | null = null;
+    vi.spyOn(
+      FindingTargetsRepository.prototype,
+      "insertMany",
+    ).mockImplementation(async function (
+      this: FindingTargetsRepository,
+      scope,
+      rows,
+    ) {
+      const inserted = await insertMany.call(this, scope, rows);
+      replayInsertCount = await insertMany.call(this, scope, rows);
+      return inserted;
+    });
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    expect(replayInsertCount).toBe(0);
+    const persisted = await handle.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from app.finding_targets
+        where diagnostic_run_id = $1`,
+      [runId],
+    );
+    expect(persisted.rows[0]?.count).toBe("1");
+  });
+
+  it("rolls back target rows with the terminal transaction and retries cleanly", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const snapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(`${seed.origin}/rollback-target`),
+        mkPage({
+          fetchUrl: `${seed.origin}/rollback-target`,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+    ]);
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+    );
+    const tailFailure = vi
+      .spyOn(TelemetryRepository.prototype, "emit")
+      .mockRejectedValueOnce(
+        Object.assign(new Error("forced serialization failure"), {
+          code: "40001",
+        }),
+      );
+
+    await expect(
+      runDiagnostic(ctx, {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+      }),
+    ).rejects.toMatchObject({ code: "40001" });
+
+    expect(await runStatusOf(handle, seed.scope, runId)).toBe("queued");
+    const rolledBack = await handle.pool.query<{
+      target_count: string;
+      evidence_count: string;
+      finding_count: string;
+      rule_count: string;
+    }>(
+      `select
+         (select count(*) from app.finding_targets where diagnostic_run_id = $1)::text as target_count,
+         (select count(*) from app.evidence where diagnostic_run_id = $1)::text as evidence_count,
+         (select count(*) from app.findings where last_seen_run_id = $1)::text as finding_count,
+         (select count(*) from app.diagnostic_run_rules where diagnostic_run_id = $1)::text as rule_count`,
+      [runId],
+    );
+    expect(rolledBack.rows[0]).toEqual({
+      target_count: "0",
+      evidence_count: "0",
+      finding_count: "0",
+      rule_count: "0",
+    });
+
+    tailFailure.mockRestore();
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+    expect(await runStatusOf(handle, seed.scope, runId)).toBe("partial");
+    const retried = await handle.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from app.finding_targets
+        where diagnostic_run_id = $1`,
+      [runId],
+    );
+    expect(retried.rows[0]?.count).toBe("1");
+  });
+
+  it("writes no target rows when the terminal transaction detects a stale attempt", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const snapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(`${seed.origin}/stale-target`),
+        mkPage({
+          fetchUrl: `${seed.origin}/stale-target`,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+        }),
+      ),
+    ]);
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+    );
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "lockAttemptForUpdate",
+    ).mockResolvedValue(null);
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const persisted = await handle.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from app.finding_targets
+        where diagnostic_run_id = $1`,
+      [runId],
+    );
+    expect(persisted.rows[0]?.count).toBe("0");
+    expect(await runStatusOf(handle, seed.scope, runId)).toBe("running");
   });
 
   it("AC-028: a cross-run re-hit preserves the human review state and merges evidence into the existing Action", async () => {
@@ -945,6 +1451,7 @@ async function seedSnapshot(
   seed: Seed,
   observations: readonly ObservationInsert[],
   provider: SourceProvider = "crawl",
+  options: SeedSnapshotOptions = {},
 ): Promise<SeededSnapshot> {
   const collectionRunId = randomUUID();
   const config = PROVIDER_FIXTURE_CONFIG[provider];
@@ -1050,6 +1557,9 @@ async function seedSnapshot(
     seed,
     observations,
     provider,
+    snapshot.id,
+    snapshot.captured_at,
+    options,
   );
   await new ObservationsRepository(handle.db).insertMany(
     seed.scope,
@@ -1076,8 +1586,12 @@ async function attachExactSitePageLineage(
   seed: Seed,
   observations: readonly ObservationInsert[],
   provider: SourceProvider,
+  dataSnapshotId: string,
+  capturedAt: string,
+  options: SeedSnapshotOptions = {},
 ): Promise<readonly ObservationInsert[]> {
   const sitePages = new SitePagesRepository(handle.db);
+  const pageSnapshots = new PageSnapshotsRepository(handle.db);
   const bound: ObservationInsert[] = [];
   for (const observation of observations) {
     let exactUrl: string | null = null;
@@ -1101,7 +1615,26 @@ async function attachExactSitePageLineage(
       observation.metricKey ===
         (provider === "gsc" ? METRIC_GSC_PAGE : METRIC_GA4_LANDING)
     ) {
-      exactUrl = observation.subjectRef;
+      if (options.analyticsLineage === "ambiguous") {
+        for (const normalizedUrl of [
+          observation.subjectRef,
+          `${observation.subjectRef}/`,
+        ]) {
+          await sitePages.upsertNormalizedUrl({
+            workspaceId: seed.scope.workspaceId,
+            projectId: seed.scope.projectId,
+            siteId: seed.siteId,
+            normalizedUrl,
+            templateKey: null,
+          });
+        }
+        bound.push(observation);
+        continue;
+      }
+      exactUrl =
+        options.analyticsLineage === "slash"
+          ? `${observation.subjectRef}/`
+          : observation.subjectRef;
     }
 
     if (exactUrl === null) {
@@ -1115,6 +1648,23 @@ async function attachExactSitePageLineage(
       normalizedUrl: exactUrl,
       templateKey: null,
     });
+    if (provider === "crawl") {
+      const extract = {
+        schemaVersion: CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
+        subjectUrl: observation.subjectRef,
+        depth: 0,
+        projection: observation.valueJson,
+      };
+      await pageSnapshots.create({
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+        sitePageId: sitePage.id,
+        dataSnapshotId,
+        contentHash: contentHash(extract as CanonicalValue),
+        extract,
+        capturedAt,
+      });
+    }
     bound.push({ ...observation, sitePageId: sitePage.id });
   }
   return bound;
@@ -1429,6 +1979,42 @@ function crawlPage(
     grade: "B",
     support: "supports",
     limitation: "public crawl fetch",
+  };
+}
+
+function lowCtrProjection(): GscPageProjection {
+  return {
+    current28d: { clicks: 1, impressions: 2_000, position: 2 },
+    previous28d: { clicks: 0, impressions: 0, position: null },
+    topQueries: [
+      {
+        query: "widget pricing",
+        clicks: 1,
+        impressions: 2_000,
+        position: 2,
+      },
+    ],
+  };
+}
+
+function gscPage(
+  subjectRef: string,
+  projection: GscPageProjection,
+): ObservationInsert {
+  return {
+    metricKey: METRIC_GSC_PAGE,
+    subjectType: "url",
+    subjectRef,
+    observedAt: OBSERVED_AT,
+    availability: "available",
+    valueNumeric: null,
+    valueText: null,
+    valueJson: projection,
+    unit: null,
+    origin: "first_party",
+    grade: "A",
+    support: "supports",
+    limitation: "gsc page metrics",
   };
 }
 

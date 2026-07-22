@@ -5,8 +5,12 @@ import {
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   IcpProfilesRepository,
+  MAX_SITE_PAGE_ID_LOOKUP,
+  normalizedUrlHash,
   ObservationsRepository,
+  PageSnapshotsRepository,
   ProviderDiscrepanciesRepository,
+  SitePagesRepository,
   SitesRepository,
   toRunAttempt,
   type AsyncRunRow,
@@ -20,11 +24,13 @@ import {
   DiagnosticContext,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
+  type FindingTargetDraft,
 } from "@sf/engine";
 import type { Logger } from "@sf/observability";
 import { CRAWL_METHOD_VERSION } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
+  findingTargetInsertsForFinding,
   lineageForEvidenceProvider,
   runDiagnostic,
   warnOnSlowRules,
@@ -60,10 +66,189 @@ describe("diagnostic slow-rule warnings (spec §8.3)", () => {
   });
 });
 
+describe("diagnostic Finding target translation", () => {
+  const siteId = "00000000-0000-4000-8000-000000000040";
+  const findingId = "00000000-0000-4000-8000-000000000041";
+  const diagnosticRunId = "00000000-0000-4000-8000-000000000042";
+
+  it("persists an asset target with no members as one definition-only root", () => {
+    const target = {
+      version: 1,
+      relation: "affected_by_keyword_cluster",
+      targetKind: "keyword_cluster",
+      targetRef: "project management",
+      members: [],
+    } satisfies FindingTargetDraft;
+
+    expect(
+      findingTargetInsertsForFinding(
+        siteId,
+        findingId,
+        diagnosticRunId,
+        target,
+      ),
+    ).toEqual([
+      {
+        siteId,
+        findingId,
+        diagnosticRunId,
+        relation: "affected_by_keyword_cluster",
+        targetKind: "keyword_cluster",
+        targetRef: "project management",
+        resolutionState: "definition_only",
+        basisKind: "target_definition",
+        sitePageId: null,
+        pageSnapshotId: null,
+        sourceObservationId: null,
+        memberRef: null,
+        limitation: null,
+      },
+    ]);
+  });
+
+  it("maps resolved aggregate members without inferring from Finding subject refs", () => {
+    const target = {
+      version: 1,
+      relation: "affected_by_page_set",
+      targetKind: "page_set",
+      targetRef: "commercial_pages",
+      members: [
+        {
+          resolutionState: "resolved",
+          basisKind: "crawl_exact_fetch",
+          observationId: "00000000-0000-4000-8000-000000000043",
+          snapshotId: "00000000-0000-4000-8000-000000000044",
+          sitePageId: "00000000-0000-4000-8000-000000000045",
+          sitePageUrl: `${SITE_ORIGIN}/exact/`,
+          pageSnapshotId: "00000000-0000-4000-8000-000000000046",
+          memberRef: `${SITE_ORIGIN}/exact/`,
+        },
+      ],
+    } satisfies FindingTargetDraft;
+
+    expect(
+      findingTargetInsertsForFinding(
+        siteId,
+        findingId,
+        diagnosticRunId,
+        target,
+      ),
+    ).toEqual([
+      {
+        siteId,
+        findingId,
+        diagnosticRunId,
+        relation: "affected_by_page_set",
+        targetKind: "page_set",
+        targetRef: "commercial_pages",
+        resolutionState: "resolved",
+        basisKind: "crawl_exact_fetch",
+        sitePageId: "00000000-0000-4000-8000-000000000045",
+        pageSnapshotId: "00000000-0000-4000-8000-000000000046",
+        sourceObservationId: "00000000-0000-4000-8000-000000000043",
+        memberRef: `${SITE_ORIGIN}/exact/`,
+        limitation: null,
+      },
+    ]);
+  });
+
+  it("preserves an unresolved GSC direct target and its explicit limitation", () => {
+    const target = {
+      version: 1,
+      relation: "direct_url",
+      targetKind: "url",
+      targetRef: `${SITE_ORIGIN}/canonical`,
+      members: [
+        {
+          resolutionState: "unresolved",
+          basisKind: "unresolved_observation",
+          observationId: "00000000-0000-4000-8000-000000000047",
+          snapshotId: "00000000-0000-4000-8000-000000000048",
+          memberRef: `${SITE_ORIGIN}/canonical`,
+          limitation: "Frozen GSC lineage is ambiguous.",
+        },
+      ],
+    } satisfies FindingTargetDraft;
+
+    expect(
+      findingTargetInsertsForFinding(
+        siteId,
+        findingId,
+        diagnosticRunId,
+        target,
+      ),
+    ).toEqual([
+      {
+        siteId,
+        findingId,
+        diagnosticRunId,
+        relation: "direct_url",
+        targetKind: "url",
+        targetRef: `${SITE_ORIGIN}/canonical`,
+        resolutionState: "unresolved",
+        basisKind: "unresolved_observation",
+        sitePageId: null,
+        pageSnapshotId: null,
+        sourceObservationId: "00000000-0000-4000-8000-000000000047",
+        memberRef: `${SITE_ORIGIN}/canonical`,
+        limitation: "Frozen GSC lineage is ambiguous.",
+      },
+    ]);
+  });
+
+  it("emits one exact ledger row per URL in a multi-page technical target", () => {
+    const target = {
+      version: 1,
+      relation: "affected_by_http_status",
+      targetKind: "http_status",
+      targetRef: "404",
+      members: [
+        {
+          resolutionState: "resolved",
+          basisKind: "crawl_exact_fetch",
+          observationId: "00000000-0000-4000-8000-000000000050",
+          snapshotId: FROZEN_SNAPSHOT_ID,
+          sitePageId: "00000000-0000-4000-8000-000000000051",
+          sitePageUrl: `${SITE_ORIGIN}/one`,
+          pageSnapshotId: "00000000-0000-4000-8000-000000000052",
+          memberRef: `${SITE_ORIGIN}/one`,
+        },
+        {
+          resolutionState: "resolved",
+          basisKind: "crawl_exact_fetch",
+          observationId: "00000000-0000-4000-8000-000000000053",
+          snapshotId: FROZEN_SNAPSHOT_ID,
+          sitePageId: "00000000-0000-4000-8000-000000000054",
+          sitePageUrl: `${SITE_ORIGIN}/two`,
+          pageSnapshotId: "00000000-0000-4000-8000-000000000055",
+          memberRef: `${SITE_ORIGIN}/two`,
+        },
+      ],
+    } satisfies FindingTargetDraft;
+
+    const rows = findingTargetInsertsForFinding(
+      siteId,
+      findingId,
+      diagnosticRunId,
+      target,
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.memberRef)).toEqual([
+      `${SITE_ORIGIN}/one`,
+      `${SITE_ORIGIN}/two`,
+    ]);
+    expect(rows.every((row) => row.limitation === null)).toBe(true);
+  });
+});
+
 const FROZEN_AT = "2026-07-19T00:00:00.000Z";
 const FROZEN_SNAPSHOT_ID = "00000000-0000-4000-8000-000000000010";
 const FROZEN_COLLECTION_RUN_ID = "00000000-0000-4000-8000-000000000011";
 const SITE_ORIGIN = "https://example.com";
+const CRAWL_SITE_PAGE_ID = "00000000-0000-4000-8000-000000000021";
+const CRAWL_PAGE_SNAPSHOT_ID = "00000000-0000-4000-8000-000000000022";
+const ANALYTICS_SITE_PAGE_ID = "00000000-0000-4000-8000-000000000023";
 
 const SOURCE_FIXTURE_CONFIG = {
   crawl: {
@@ -412,20 +597,78 @@ function availableObservationRow(
     metric_key: fixture.metricKey,
     subject_type: fixture.subjectType,
     subject_ref: subjectRef,
+    site_page_id:
+      fixture.metricKey === "crawl.page.v1" ? CRAWL_SITE_PAGE_ID : null,
     availability: "available",
     value_json: validProjectionFor(fixture),
     ...overrides,
   });
 }
 
+type FrozenPageIdentity = Awaited<
+  ReturnType<
+    PageSnapshotsRepository["listByDataSnapshotWithSitePageIdentity"]
+  >
+>[number];
+
+function frozenPageIdentity(
+  overrides: Partial<FrozenPageIdentity> = {},
+): FrozenPageIdentity {
+  const normalizedUrl = `${SITE_ORIGIN}/fixture`;
+  return {
+    page_snapshot_id: CRAWL_PAGE_SNAPSHOT_ID,
+    workspace_id: "workspace-1",
+    project_id: "project-1",
+    site_page_id: CRAWL_SITE_PAGE_ID,
+    data_snapshot_id: FROZEN_SNAPSHOT_ID,
+    content_hash: contentHash({ page: normalizedUrl }),
+    canonical_extract: "{}",
+    extract: {},
+    captured_at: FROZEN_AT,
+    created_at: FROZEN_AT,
+    normalized_url: normalizedUrl,
+    normalized_url_hash: normalizedUrlHash(normalizedUrl),
+    site_id: "site-1",
+    ...overrides,
+  };
+}
+
+type SitePageIdentity = Awaited<
+  ReturnType<SitePagesRepository["findByIds"]>
+>[number];
+
+function sitePageIdentity(
+  overrides: Partial<SitePageIdentity> = {},
+): SitePageIdentity {
+  const normalizedUrl = `${SITE_ORIGIN}/fixture/`;
+  return {
+    id: ANALYTICS_SITE_PAGE_ID,
+    workspace_id: "workspace-1",
+    project_id: "project-1",
+    site_id: "site-1",
+    normalized_url: normalizedUrl,
+    normalized_url_hash: normalizedUrlHash(normalizedUrl),
+    template_key: null,
+    created_at: FROZEN_AT,
+    updated_at: FROZEN_AT,
+    ...overrides,
+  };
+}
+
 async function runObservationValidationFixture(
   provider: SourceProvider,
   observation: ObservationRow,
+  lineage: {
+    readonly frozenPages?: readonly FrozenPageIdentity[];
+    readonly sitePages?: readonly SitePageIdentity[];
+  } = {},
 ): Promise<{
   readonly contextBuild: ReturnType<typeof vi.spyOn>;
   readonly terminal: ReturnType<typeof vi.spyOn>;
   readonly transaction: ReturnType<typeof vi.fn>;
   readonly errorLog: ReturnType<typeof vi.fn>;
+  readonly frozenPages: ReturnType<typeof vi.spyOn>;
+  readonly sitePages: ReturnType<typeof vi.spyOn>;
 }> {
   const crawl = frozenSource("crawl");
   const source = provider === "crawl" ? crawl : frozenSource(provider);
@@ -455,6 +698,50 @@ async function runObservationValidationFixture(
     ObservationsRepository.prototype,
     "listBySnapshotIds",
   ).mockResolvedValue([observation]);
+  const value =
+    typeof observation.value_json === "object" &&
+    observation.value_json !== null &&
+    !Array.isArray(observation.value_json)
+      ? (observation.value_json as Record<string, unknown>)
+      : null;
+  const fetchUrl = value?.["fetchUrl"];
+  const frozenPages =
+    lineage.frozenPages ??
+    (observation.provider === "crawl" &&
+    observation.metric_key === "crawl.page.v1" &&
+    observation.site_page_id !== null
+      ? [
+          frozenPageIdentity({
+            site_page_id: observation.site_page_id,
+            normalized_url:
+              typeof fetchUrl === "string"
+                ? fetchUrl
+                : `${SITE_ORIGIN}/fixture`,
+            normalized_url_hash: normalizedUrlHash(
+              typeof fetchUrl === "string"
+                ? fetchUrl
+                : `${SITE_ORIGIN}/fixture`,
+            ),
+          }),
+        ]
+      : []);
+  const frozenPagesRead = vi.spyOn(
+    PageSnapshotsRepository.prototype,
+    "listByDataSnapshotWithSitePageIdentity",
+  ).mockResolvedValue([...frozenPages]);
+  const sitePagesRead = vi
+    .spyOn(SitePagesRepository.prototype, "findByIds")
+    .mockImplementation(async (_scope, ids) =>
+      lineage.sitePages !== undefined
+        ? lineage.sitePages.filter((page) => ids.includes(page.id))
+        : observation.site_page_id !== null &&
+            ids.includes(observation.site_page_id) &&
+            !frozenPages.some(
+              (page) => page.site_page_id === observation.site_page_id,
+            )
+          ? [sitePageIdentity({ id: observation.site_page_id })]
+          : [],
+    );
   const contextBuild = vi.spyOn(DiagnosticContext, "build");
 
   await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
@@ -464,6 +751,8 @@ async function runObservationValidationFixture(
     terminal,
     transaction,
     errorLog: ctx.logger.error as ReturnType<typeof vi.fn>,
+    frozenPages: frozenPagesRead,
+    sitePages: sitePagesRead,
   };
 }
 
@@ -543,6 +832,361 @@ describe("diagnostic frozen snapshot validation", () => {
     expect(() =>
       lineageForEvidenceProvider("ga4", new Map()),
     ).toThrowError(/lineage/i);
+  });
+
+  it("passes exact immutable Crawl observation, SitePage, and PageSnapshot identities into Context", async () => {
+    const exactFetchUrl = `${SITE_ORIGIN}/fixture/`;
+    const observation = availableObservationRow(OBSERVATION_FIXTURES[0], {
+      subject_ref: `${SITE_ORIGIN}/fixture`,
+      value_json: {
+        ...validProjectionFor(OBSERVATION_FIXTURES[0]),
+        fetchUrl: exactFetchUrl,
+      },
+    });
+
+    const result = await runObservationValidationFixture(
+      "crawl",
+      observation,
+    );
+
+    expect(result.frozenPages).toHaveBeenCalledOnce();
+    expect(result.frozenPages).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", projectId: "project-1" },
+      FROZEN_SNAPSHOT_ID,
+    );
+    expect(result.sitePages).not.toHaveBeenCalled();
+    expect(result.contextBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observations: [
+          expect.objectContaining({
+            observationId: observation.id,
+            snapshotId: FROZEN_SNAPSHOT_ID,
+            sitePageId: CRAWL_SITE_PAGE_ID,
+            sitePageUrl: exactFetchUrl,
+            pageSnapshotId: CRAWL_PAGE_SNAPSHOT_ID,
+            subjectRef: `${SITE_ORIGIN}/fixture`,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("preserves a canonical GSC subject separately from its exact slash SitePage identity", async () => {
+    const observation = availableObservationRow(OBSERVATION_FIXTURES[3], {
+      site_page_id: ANALYTICS_SITE_PAGE_ID,
+      subject_ref: `${SITE_ORIGIN}/fixture`,
+    });
+
+    const result = await runObservationValidationFixture("gsc", observation);
+
+    expect(result.frozenPages).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", projectId: "project-1" },
+      FROZEN_SNAPSHOT_ID,
+    );
+    expect(result.sitePages).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", projectId: "project-1" },
+      [ANALYTICS_SITE_PAGE_ID],
+    );
+    expect(result.contextBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observations: [
+          expect.objectContaining({
+            observationId: observation.id,
+            snapshotId: SOURCE_FIXTURE_CONFIG.gsc.snapshotId,
+            subjectRef: `${SITE_ORIGIN}/fixture`,
+            sitePageId: ANALYTICS_SITE_PAGE_ID,
+            sitePageUrl: `${SITE_ORIGIN}/fixture/`,
+            pageSnapshotId: null,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("reuses the real frozen Crawl PageSnapshot when analytics references the same SitePage", async () => {
+    const exactUrl = `${SITE_ORIGIN}/fixture/`;
+    const observation = availableObservationRow(OBSERVATION_FIXTURES[3], {
+      site_page_id: CRAWL_SITE_PAGE_ID,
+      subject_ref: `${SITE_ORIGIN}/fixture`,
+    });
+    const result = await runObservationValidationFixture("gsc", observation, {
+      frozenPages: [
+        frozenPageIdentity({
+          normalized_url: exactUrl,
+          normalized_url_hash: normalizedUrlHash(exactUrl),
+        }),
+      ],
+    });
+
+    expect(result.sitePages).not.toHaveBeenCalled();
+    expect(result.contextBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observations: [
+          expect.objectContaining({
+            observationId: observation.id,
+            snapshotId: SOURCE_FIXTURE_CONFIG.gsc.snapshotId,
+            sitePageId: CRAWL_SITE_PAGE_ID,
+            sitePageUrl: exactUrl,
+            pageSnapshotId: CRAWL_PAGE_SNAPSHOT_ID,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("keeps a GSC URL with deliberately null SitePage lineage explicitly unresolved", async () => {
+    const observation = availableObservationRow(OBSERVATION_FIXTURES[3], {
+      site_page_id: null,
+    });
+
+    const result = await runObservationValidationFixture("gsc", observation);
+
+    expect(result.sitePages).not.toHaveBeenCalled();
+    expect(result.contextBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observations: [
+          expect.objectContaining({
+            observationId: observation.id,
+            snapshotId: SOURCE_FIXTURE_CONFIG.gsc.snapshotId,
+            sitePageId: null,
+            sitePageUrl: null,
+            pageSnapshotId: null,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("loads observation-only SitePage identities in bounded deterministic chunks", async () => {
+    const crawl = frozenSource("crawl");
+    const gsc = frozenSource("gsc");
+    const fixture = diagnosticFixture({
+      snapshots: [crawl.manifest, gsc.manifest],
+    });
+    const observations = Array.from(
+      { length: MAX_SITE_PAGE_ID_LOOKUP + 1 },
+      (_, index) => {
+        const suffix = (index + 100).toString().padStart(12, "0");
+        return availableObservationRow(OBSERVATION_FIXTURES[3], {
+          id: `00000000-0000-4000-8000-${suffix}`,
+          site_page_id: `10000000-0000-4000-8000-${suffix}`,
+          subject_ref: `${SITE_ORIGIN}/fixture-${index}`,
+        });
+      },
+    );
+    const pageById = new Map(
+      observations.map((observation, index) => {
+        const normalizedUrl = `${SITE_ORIGIN}/fixture-${index}`;
+        return [
+          observation.site_page_id!,
+          sitePageIdentity({
+            id: observation.site_page_id!,
+            normalized_url: normalizedUrl,
+            normalized_url_hash: normalizedUrlHash(normalizedUrl),
+          }),
+        ];
+      }),
+    );
+    const transaction = vi.fn();
+    const ctx = unitContext(transaction);
+    mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+    vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+      crawl.snapshot,
+      gsc.snapshot,
+    ]);
+    vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue(
+      validIcpRow(),
+    );
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIds",
+    ).mockResolvedValue(observations);
+    vi.spyOn(
+      PageSnapshotsRepository.prototype,
+      "listByDataSnapshotWithSitePageIdentity",
+    ).mockResolvedValue([]);
+    const sitePagesRead = vi
+      .spyOn(SitePagesRepository.prototype, "findByIds")
+      .mockImplementation(async (_scope, ids) =>
+        ids.map((id) => pageById.get(id)!),
+      );
+    vi.spyOn(
+      ProviderDiscrepanciesRepository.prototype,
+      "listUnresolvedBySnapshotIds",
+    ).mockResolvedValue([]);
+    const contextBuild = vi.spyOn(DiagnosticContext, "build");
+
+    await runDiagnostic(ctx, {
+      runId: fixture.run.id,
+      ...fixture.scope,
+    });
+
+    expect(sitePagesRead).toHaveBeenCalledTimes(2);
+    expect(sitePagesRead.mock.calls[0]?.[1]).toHaveLength(
+      MAX_SITE_PAGE_ID_LOOKUP,
+    );
+    expect(sitePagesRead.mock.calls[1]?.[1]).toHaveLength(1);
+    expect(contextBuild).toHaveBeenCalledOnce();
+    expect(transaction).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed before Context and transaction when a non-null observation SitePage is missing", async () => {
+    const observation = availableObservationRow(OBSERVATION_FIXTURES[3], {
+      site_page_id: ANALYTICS_SITE_PAGE_ID,
+    });
+
+    const result = await runObservationValidationFixture("gsc", observation, {
+      frozenPages: [],
+      sitePages: [],
+    });
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
+    expect(result.terminal).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+        lastErrorSummary: "diagnostic failed",
+      },
+    );
+  });
+
+  it.each([
+    { provider: "gsc", fixture: OBSERVATION_FIXTURES[3] },
+    { provider: "ga4", fixture: OBSERVATION_FIXTURES[4] },
+  ] as const)(
+    "fails closed when $provider points at a same-Site page outside its canonical exact candidates",
+    async ({ provider, fixture }) => {
+      const observation = availableObservationRow(fixture, {
+        site_page_id: ANALYTICS_SITE_PAGE_ID,
+        subject_ref: `${SITE_ORIGIN}/pricing`,
+      });
+      const wrongUrl = `${SITE_ORIGIN}/about/`;
+
+      const result = await runObservationValidationFixture(
+        provider,
+        observation,
+        {
+          frozenPages: [],
+          sitePages: [
+            sitePageIdentity({
+              normalized_url: wrongUrl,
+              normalized_url_hash: normalizedUrlHash(wrongUrl),
+            }),
+          ],
+        },
+      );
+
+      expect(result.contextBuild).not.toHaveBeenCalled();
+      expect(result.transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it("fails closed before Context when a Crawl page lacks its exact frozen PageSnapshot", async () => {
+    const observation = availableObservationRow(OBSERVATION_FIXTURES[0]);
+
+    const result = await runObservationValidationFixture(
+      "crawl",
+      observation,
+      {
+        frozenPages: [],
+        sitePages: [sitePageIdentity({ id: CRAWL_SITE_PAGE_ID })],
+      },
+    );
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a Crawl page cannot prove its exact fetch projection", async () => {
+    const observation = observationRow("crawl", {
+      metric_key: "crawl.page.v1",
+      subject_type: "url",
+      subject_ref: `${SITE_ORIGIN}/fixture`,
+      site_page_id: CRAWL_SITE_PAGE_ID,
+    });
+
+    const result = await runObservationValidationFixture(
+      "crawl",
+      observation,
+      { frozenPages: [frozenPageIdentity()] },
+    );
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      corruption: "foreign workspace",
+      page: frozenPageIdentity({ workspace_id: "workspace-2" }),
+    },
+    {
+      corruption: "foreign project",
+      page: frozenPageIdentity({ project_id: "project-2" }),
+    },
+    {
+      corruption: "foreign Site",
+      page: frozenPageIdentity({ site_id: "site-2" }),
+    },
+    {
+      corruption: "different DataSnapshot",
+      page: frozenPageIdentity({
+        data_snapshot_id: "00000000-0000-4000-8000-000000000099",
+      }),
+    },
+  ])(
+    "rejects a frozen Crawl PageSnapshot with $corruption before Context",
+    async ({ page }) => {
+      const result = await runObservationValidationFixture(
+        "crawl",
+        availableObservationRow(OBSERVATION_FIXTURES[0]),
+        { frozenPages: [page] },
+      );
+
+      expect(result.contextBuild).not.toHaveBeenCalled();
+      expect(result.transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects duplicate frozen Crawl SitePage mappings before Context", async () => {
+    const result = await runObservationValidationFixture(
+      "crawl",
+      availableObservationRow(OBSERVATION_FIXTURES[0]),
+      {
+        frozenPages: [
+          frozenPageIdentity(),
+          frozenPageIdentity({
+            page_snapshot_id: "00000000-0000-4000-8000-000000000098",
+          }),
+        ],
+      },
+    );
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a frozen PageSnapshot mapped to more than one SitePage", async () => {
+    const secondUrl = `${SITE_ORIGIN}/other`;
+    const result = await runObservationValidationFixture(
+      "crawl",
+      availableObservationRow(OBSERVATION_FIXTURES[0]),
+      {
+        frozenPages: [
+          frozenPageIdentity(),
+          frozenPageIdentity({
+            site_page_id: "00000000-0000-4000-8000-000000000097",
+            normalized_url: secondUrl,
+            normalized_url_hash: normalizedUrlHash(secondUrl),
+          }),
+        ],
+      },
+    );
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1330,8 +1974,14 @@ describe("diagnostic frozen snapshot validation", () => {
       "listBySnapshotIds",
     ).mockResolvedValue([
       availableObservationRow(OBSERVATION_FIXTURES[5]),
-      availableObservationRow(OBSERVATION_FIXTURES[6]),
+      availableObservationRow(OBSERVATION_FIXTURES[6], {
+        id: "00000000-0000-4000-8000-000000000029",
+      }),
     ]);
+    vi.spyOn(
+      PageSnapshotsRepository.prototype,
+      "listByDataSnapshotWithSitePageIdentity",
+    ).mockResolvedValue([]);
     const contextBuild = vi.spyOn(DiagnosticContext, "build");
 
     await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });

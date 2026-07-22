@@ -10,7 +10,7 @@ owner: SignalFrame
 
 # Nevermore Unified Growth Opportunity — v0.3 可执行权威
 
-本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 32 个 operation 与 6 个 async operation，SQL 精确声明 35 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
+本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 32 个 operation 与 6 个 async operation，SQL 精确声明 36 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，以及逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
 
 规范词“必须 / MUST”“不得 / MUST NOT”是当前机器面或已审核变更边界的发布条件；“应 / SHOULD”是强建议，偏离时必须在代码评审中记录原因；“可 / MAY”是非阻塞增强。凡是标为“reviewed change sequence”“planned”或“stop gate 后”的内容，均不是当前可调用 API、已存在表或已交付产品事实。
 
@@ -696,13 +696,25 @@ Proof block：同一段落同时含至少一个具名组织/客户线索（capit
 
 - Run 内 merge key：canonical JSON `{domain, ruleFamily, sortedSubjectRefs, intent}`。
 - 跨 Run finding key：sha256 canonical JSON `{projectId, domain, ruleFamily, sortedSubjectRefs, intent}`。
-- 聚合规则的 subjectRef 使用稳定集合键，不把本次 URL 成员清单写进 key；成员列表放 Evidence。
+- 聚合规则的 subjectRef 使用稳定集合键，不把本次 URL 成员清单写进 key；Evidence 解释结论，`finding_targets` 则把本次 DiagnosticRun 的明确目标定义与成员持久化为不可变事实，两者不可互相代替。
 - 命中已有 key：更新 `lastSeenRunId/lastSeenAt/active=true`，保留人工 reviewState。
 - 只有 `completed`（非 partial）的后续 Run 且该规则实际执行为 pass，才能将旧 Finding `active=false/resolvedAt=now`。
 - partial/skipped/inconclusive Run 不得自动 resolve 旧 Finding。
 - resolved finding 再次命中时 active=true，reviewState 保留并在 UI 标记 regressed。
 
-### 8.7 Confidence
+### 8.7 Finding 的逐 Run 目标成员事实
+
+`findings` 继续是跨 Run 的稳定 projection；`finding_targets` 只记录某一 Finding 在某一 `diagnostic_run_id` 中实际成立的目标根与成员，不创建第二套 Finding lifecycle。每个 candidate 必须携带一个显式 target：`direct_url`、`affected_by_template`、`affected_by_site`、`affected_by_page_set`、`affected_by_http_status`、`affected_by_canonical_issue`、`affected_by_keyword_cluster` 或 `affected_by_user_agent`。同一 Finding/Run 的所有成员必须共享同一个 relation、target kind、target ref 与 definition/member mode；数据库按完整语义 tuple 生成 `relation_key`，调用方不得自行决定该 identity。
+
+目标行只有三种诚实状态：
+
+- `resolved`：成员必须引用冻结在该 DiagnosticRun manifest 中的 immutable Observation，并绑定该 Observation 已证明的精确 SitePage。Crawl exact-fetch 成员还必须绑定同一 Crawl Snapshot 的 frozen PageSnapshot；GSC/GA4 的可选 PageSnapshot 只能是同页、同一 Run 已冻结 Crawl Snapshot 的上下文，不能伪造 analytics PageSnapshot。
+- `unresolved`：只允许页级 GSC/GA4 Observation 无法唯一绑定 SitePage 时使用；必须保留原始 Observation `subject_ref`、非空 limitation，且 SitePage/PageSnapshot 均为空。不得把 unresolved URL 猜测为站点页面。
+- `definition_only`：用于规则只有稳定集合/模板/关键词簇/User-Agent 定义而没有可证明成员时；不得携带 Observation、SitePage、PageSnapshot 或 member ref。
+
+Diagnostic worker 必须在同一终态事务中先创建或 re-hit 当前 Finding，再写该 run 的 target rows、Evidence/Observation links 与 rule result；任一写入失败则整体回滚。精确重试依靠语义唯一键 no-op，不得复制行；Finding 已被后续 Run 推进时，只允许与既有历史 row 在 scope 和完整语义 tuple 上完全一致的重放到达该 no-op，任何 novel stale-run insert 仍必须拒绝。跨 Run 再次命中写新的逐 Run rows，保留旧 rows。迁移不得为既有历史 Finding 回填 target，也不得从当前 `subject_refs`、Evidence 文本或后续 SitePage 状态推断历史成员；没有行的历史 Run 必须继续显示为目标成员不可用。
+
+### 8.8 Confidence
 
 Confidence 由引擎统一派生，规则与 LLM 不得自行指定：
 
@@ -931,7 +943,7 @@ Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `met
 
 ## 12. PostgreSQL 合同
 
-### 12.1 35 张应用表
+### 12.1 36 张应用表
 
 表的 DDL、check、FK、索引和 append-only trigger 以 [schema.sql](schema.sql) 为准。以下集合由 verifier 与 SQL 做精确一致性检查。
 
@@ -956,6 +968,7 @@ Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `met
 - `evidence`
 - `findings`
 - `finding_observations`
+- `finding_targets`
 - `finding_review_events`
 - `actions`
 - `action_override_audit`
@@ -973,11 +986,13 @@ Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `met
 - `product_profile_invocation_attempts`
 <!-- TABLES_END -->
 
-pg-boss 自己的 schema/table 不计入这 35 张，由固定版本的 pg-boss 自行迁移；不得复制到 Drizzle migrations 或手改。
+pg-boss 自己的 schema/table 不计入这 36 张，由固定版本的 pg-boss 自行迁移；不得复制到 Drizzle migrations 或手改。
 
 新增的 Slice 1 persistence 遵守以下不变量：`capability_runs` 以 canonical `async_runs.id` 为主键；`audit_runs` 只引用同一个 canonical Diagnostic/Capability run 且不拥有 `status`；`audit_module_results` 是不可变模块投影；`page_snapshots` 必须引用同 tenant/site 的 immutable `data_snapshots`；上述四类记录 append-only。`audit_runs_provenance_guard`、`site_pages_provenance_guard` 与 `page_snapshots_provenance_guard` 在数据库边界拒绝跨 workspace/project/site 拼接。`site_pages` 只维护项目内 URL identity，可更新 template identity，但不得承载不可溯源的指标或抽取内容。
 
 Product Profile persistence 只补充可追溯账本，不建立第二套画像 truth：`icp_profiles` 仍是 append-only canonical profile；`product_profile_runs` 以同一个 `async_runs.id` 冻结 base ICP、Crawl Snapshot、页面清单、selection/synthesis/prompt 版本与输入 hash；`product_profile_invocation_attempts` 在 provider 网络边界之前持久化 reservation，每个 run 最多三次，`reserved`/`outcome_unknown` 均阻止未经裁决的再次调用。所有模型生成语义字段必须带精确 canonical provenance；数据库函数必须拒绝跨 workspace/project/site、非 Crawl、过期 Snapshot、伪造 PageSnapshot/Observation 或不匹配 AnalysisInvocation 的引用。`collection_runs.crawl_seed_site_page_id` 与 `crawl_seed_url` 必须成对冻结并精确匹配同项目 `site_pages` identity，接受后不可改写。URL Observation 继续以 `subject_ref` 保留 provider 聚合 identity，同时用 nullable `site_page_id` 记录已被 collection commit 证明的精确 SitePage：Crawl page 必须与 `value_json.fetchUrl` 精确绑定；GSC/GA4 仅在 canonical/slash variant 恰有一个候选时绑定，歧义必须保持 unavailable 或被拒绝，且不得为 analytics 伪造 PageSnapshot。
+
+Finding target persistence 也只补充可追溯账本：新 target 的 workspace/project/site/run 必须与当前 Finding sighting 一致；仅 scope 与完整 tuple 都精确命中既有 row 的历史重放可幂等 no-op，novel stale-run row 必须拒绝。规则决定允许的 relation 与 provenance shape；lineage guard 重新验证 frozen manifest、Observation provider/metric、SitePage 和 PageSnapshot，append-only guard 禁止更新或删除。它不改变 `findings.finding_key`、review state、Action ownership 或 resolve/regress 规则，也不为迁移前历史数据做任何回填或推断。
 
 ### 12.2 Repository scope 与 RLS
 
@@ -989,7 +1004,7 @@ Product Profile persistence 只补充可追溯账本，不建立第二套画像 
 
 ### 12.3 不可变与删除
 
-- ICP versions、snapshots、observations、diagnostic rule results、analysis invocations、evidence links、review/audit events、artifact revisions、telemetry 为 append-only。
+- ICP versions、snapshots、observations、diagnostic rule results、analysis invocations、evidence links、Finding target rows、review/audit events、artifact revisions、telemetry 为 append-only。
 - Project 首版只有 soft archive；没有 canonical hard-delete endpoint。
 - Source disconnect 不删除 credentials 之外的历史；credential ciphertext 可立即清除，snapshot 保留。
 - raw import object 90 天 lifecycle；export object 30 天 lifecycle；canonical rows pilot 期间保留。
@@ -1029,7 +1044,7 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 - Worker 首先 `SELECT ... FOR UPDATE` Run；终态直接 ack，不重复执行。
 - 只有 queued→running 的 winner 执行；attempt 递增。
 - Snapshot、finding merge、artifact revision、export bundle 都有 unique key；重试不得产生重复 canonical 对象。
-- 完成 domain write 和 Run terminal status 在同一 DB 事务。Storage 不参与 DB 事务：worker 先把完整对象上传到不可猜测且不可覆盖的 final key（key 含 projectId/runId/random nonce）并校验 sha256，再在事务中写 object key 与 terminal status；上传失败不写 canonical row，DB 事务失败则 best-effort 删除未引用 orphan，并由每日 orphan cleanup 兜底。客户端下载 URL 只从已提交的 DB row 签发。
+- 完成 domain write 和 Run terminal status 在同一 DB 事务；diagnostic domain write 包括 Finding merge/re-hit、逐 Run `finding_targets`、Finding-Observation/Evidence links 与 rule result。Storage 不参与 DB 事务：worker 先把完整对象上传到不可猜测且不可覆盖的 final key（key 含 projectId/runId/random nonce）并校验 sha256，再在事务中写 object key 与 terminal status；上传失败不写 canonical row，DB 事务失败则 best-effort 删除未引用 orphan，并由每日 orphan cleanup 兜底。客户端下载 URL 只从已提交的 DB row 签发。
 - `/health/live` 只证明进程；`/health/ready` 检查 DB、pg-boss schema 和 worker heartbeat。
 
 ### 13.4 Active run 冲突
@@ -1116,7 +1131,7 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 - 初始化独立 pnpm monorepo、Node/Next/TS lint/typecheck/test。
 - 复制 OpenAPI、SQL，生成 API types；CI 运行 Redocly 和 spec verifier。
-- 启动本地 Supabase/Postgres 与 pg-boss；应用 35 表 migration。
+- 启动本地 Supabase/Postgres 与 pg-boss；应用 36 表 migration。
 - 实现 Supabase Auth、单 Workspace bootstrap、repository scope、requestId/problem details。
 - 捕获旧仓 status/diff/hash baseline；不修改旧仓。
 
@@ -1175,9 +1190,9 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 ### 17.1 合同与基础
 
-- **AC-001** `pnpm verify:authority` 通过；32 operationId、6 async operation、35 table 与当前应用 ordered migrations 完全一致；0012～0016 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0016_observation_site_page_lineage`。
+- **AC-001** `pnpm verify:authority` 通过；32 operationId、6 async operation、36 table 与当前应用 ordered migrations 完全一致；0012～0017 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0017_finding_target_ledger`。
 - **AC-002** Redocly lint 无 error；生成 client/server types 无手工 `any` patch。
-- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；35 表、Product Profile reservation/provenance routines、frozen Crawl seed constraints，以及 Observation→SitePage FK/check/partial index/lineage guards 均存在；Crawl exact fetch、GSC/GA4 唯一 canonical/slash variant、歧义拒绝与无伪造 PageSnapshot 均由 rollback-safe smoke 覆盖。
+- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；36 表、41 个 named index、55 个 trigger、6 个 runtime routine、Product Profile reservation/provenance routines、frozen Crawl seed constraints、Observation→SitePage lineage guards，以及 Finding target relation/resolution/lineage/append-only guards 均存在；Crawl exact fetch、GSC/GA4 唯一 canonical/slash variant、歧义拒绝、无伪造 PageSnapshot、逐 Run target ledger 与最终 `0017_finding_target_ledger` version projection 均由 rollback-safe smoke 覆盖。
 - **AC-004** pg-boss schema 由库创建且不进入 Drizzle migration。
 - **AC-005** 未认证 API 401；跨 Workspace/project child ID 404；browser 不能直连 app schema。
 - **AC-006** 创建 Run 与 enqueue 任一侧故障均整体 rollback；不存在 queued-without-job 或 job-without-run。
@@ -1208,6 +1223,7 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 - **AC-022** B2B 与 B2C fixture 五域各至少一个可执行 rule result；缺 GSC/GA4/全部 Keyword Gap 来源时精确降级，只有 CSV 或只有 DataForSEO 时 CONTENT-GAP 均可执行。
 - **AC-023** Pipeline 顺序 contract test 证明 deterministic rules 早于任何 LLM invocation。
 - **AC-024** 每个 Finding 有 Evidence；Evidence mapping 与 generated invocation DB check 通过。
+- **AC-024a** 当前 DiagnosticRun 的每个 Finding 在同一终态事务写入且只写入一个明确 target root：resolved 成员可追到 frozen Observation/SitePage（Crawl 再到 PageSnapshot），unresolved analytics 保留 limitation，definition-only 不伪造成员；历史 Run 不回填、不从 `subject_refs` 推断，重试不复制，跨 Run re-hit 保留各自 ledger rows。
 - **AC-025** 相同 manifest 重跑产生相同 merge/finding key，不复制 Finding。
 - **AC-026** completed pass 可 resolve；partial/skipped/inconclusive 不能 resolve；再现标 regressed。
 - **AC-027** ignored 无 reason、needs_more_data 无 note 均 422；review event append-only。

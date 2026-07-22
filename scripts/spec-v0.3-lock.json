@@ -6,20 +6,20 @@
   "migrationDirectory": "packages/db/migrations",
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
-    "README.md": "f893701a6a7acd7f37276c2821ac1ca1aec2af2330247fc802b17db9bf20faa2",
-    "MVP-IMPLEMENTATION-SPEC.md": "4853fd4272d70157f182670847826b1c47efda96e66610ee3880c23b64417edb",
+    "README.md": "f742c39c199ce94e395ed995a32020cbd66bdcfef692c57d2eaf4f5506e81468",
+    "MVP-IMPLEMENTATION-SPEC.md": "168aaa94cd8990c4922b95271c6bc6f9be8577cbdae3ea2dd0fe5ee29e5a646d",
     "openapi.yaml": "413f5a8c0a7e2ca81465171ca8841a2cf7eb142650f32e3777868cfe65c5ccaa",
-    "schema.sql": "e6ca3cbdb5fc4e68e50c05690608479e85f5279cadd87256926e8d7f2942d1ea",
+    "schema.sql": "4239be55b4cbb0851a05400c1d591b4294aeacfec3a04e428ec915fe665f3686",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
-    "scripts/schema-smoke.sql": "4ff99ff32b704df081188257535313e1e1847076e754905dac34996886512db6",
-    "scripts/verify-spec.mjs": "a70c8025708420896d2dd3f1f5853444c575255cda01e3d1eb42a7ca7d5c7d96"
+    "scripts/schema-smoke.sql": "ebf3615b2e8df432456b5caaa928adf251867f08b55326148460b8206afe41b1",
+    "scripts/verify-spec.mjs": "dea1443c23cfd43a57eb464431429faa2a478f97daeebcf4784c38fcb7ba7533"
   },
   "implementationFiles": {
     "openapi/mvp.yaml": "413f5a8c0a7e2ca81465171ca8841a2cf7eb142650f32e3777868cfe65c5ccaa",
     "packages/contracts/src/generated/openapi.ts": "60195c85ea4b14df8bbae495986e2c5d3743d244ecec202236df955139ed05ae",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
-    "packages/db/migrations/schema-smoke.sql": "4ff99ff32b704df081188257535313e1e1847076e754905dac34996886512db6",
-    "scripts/verify-implementation.mjs": "d4be89369cb25649faf5422d2a4de0dc3302861fcdfba4a4836054dce95f87bd"
+    "packages/db/migrations/schema-smoke.sql": "ebf3615b2e8df432456b5caaa928adf251867f08b55326148460b8206afe41b1",
+    "scripts/verify-implementation.mjs": "26f56b007fc5317225ea48f18aafa5e45f6c520782ef566711377d86bb6c65c5"
   },
   "apiOperations": [
     "listProjects",
@@ -98,7 +98,8 @@
     "site_pages",
     "page_snapshots",
     "product_profile_runs",
-    "product_profile_invocation_attempts"
+    "product_profile_invocation_attempts",
+    "finding_targets"
   ],
   "rules": [
     "CONTENT-COVERAGE-001",

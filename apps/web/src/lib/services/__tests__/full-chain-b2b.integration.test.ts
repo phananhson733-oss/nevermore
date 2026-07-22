@@ -8,11 +8,15 @@ import {
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
+  FindingTargetsRepository,
   FindingsRepository,
+  ObservationsRepository,
+  PageSnapshotsRepository,
   ProjectsRepository,
   contentHash,
   toRunAttempt,
 } from "@sf/db";
+import { METRIC_CRAWL_PAGE } from "@sf/sources";
 import { createActionArtifact } from "@/lib/services/artifacts";
 import { createDiagnosticRun } from "@/lib/services/diagnostics";
 import { createProjectExport } from "@/lib/services/export-service";
@@ -181,6 +185,52 @@ describeDb(
           .get("CONTENT-COVERAGE-001")!
           .evidence.every((e) => e.grade === "C"),
       ).toBe(true);
+    });
+
+    it("persists the HTTP finding against its exact frozen Crawl page lineage", async () => {
+      const targets = await new FindingTargetsRepository(
+        handle.db,
+      ).listForFindings(chain.scope, chain.diagRunId, [chain.httpFindingId]);
+      expect(targets).toHaveLength(1);
+      const target = targets[0]!;
+
+      const observations = await new ObservationsRepository(
+        handle.db,
+      ).listBySnapshotIds(chain.scope, [chain.snapshotId]);
+      const observation = observations.find(
+        (candidate) => candidate.id === target.source_observation_id,
+      );
+      const frozenPages = await new PageSnapshotsRepository(
+        handle.db,
+      ).listByDataSnapshotWithSitePageIdentity(
+        chain.scope,
+        chain.snapshotId,
+      );
+      const frozenPage = frozenPages.find(
+        (candidate) => candidate.page_snapshot_id === target.page_snapshot_id,
+      );
+
+      expect(target).toMatchObject({
+        finding_id: chain.httpFindingId,
+        diagnostic_run_id: chain.diagRunId,
+        relation: "affected_by_http_status",
+        target_kind: "http_status",
+        target_ref: "404",
+        resolution_state: "resolved",
+        basis_kind: "crawl_exact_fetch",
+        limitation: null,
+      });
+      expect(observation).toMatchObject({
+        snapshot_id: chain.snapshotId,
+        site_page_id: target.site_page_id,
+        provider: "crawl",
+        metric_key: METRIC_CRAWL_PAGE,
+      });
+      expect(frozenPage).toMatchObject({
+        data_snapshot_id: chain.snapshotId,
+        site_page_id: target.site_page_id,
+        normalized_url: target.member_ref,
+      });
     });
 
     it("AC-022: a separate missing-provider fixture is `partial` with precise skipped rules and no fabricated defects", () => {

@@ -16,6 +16,7 @@ import type {
   RuleResult,
   Severity,
 } from "../rule.ts";
+import { crawlTargetMembers, findingTarget } from "../target.ts";
 
 const HTTP_LIMITATION =
   "Status reflects a single crawl fetch of each URL, not every request path, method, or geography.";
@@ -64,7 +65,8 @@ export const techHttpStatusRule = {
 
     const observedAt = ctx.observedAt("crawl");
     const codes = [...byCode.keys()].sort((a, b) => a - b);
-    const candidates: readonly FindingCandidate[] = codes.map((code) => {
+    const candidates: FindingCandidate[] = [];
+    for (const code of codes) {
       const affected = byCode.get(code);
       const subjectUrls = [...(affected?.subjectUrls ?? [])].sort();
       const fetchUrls = [...(affected?.fetchUrls ?? [])].sort();
@@ -84,14 +86,27 @@ export const techHttpStatusRule = {
         observedAt,
         limitation: HTTP_LIMITATION,
       };
-      return {
+      const members = crawlTargetMembers(ctx, fetchUrls);
+      if (members === null) {
+        return { status: "inconclusive", reason: "missing_observation_lineage" };
+      }
+      candidates.push({
         subjectRefs: [`http_status:${code}`],
         severity,
         titleArgs: { status: code, count: subjectUrls.length },
         metrics: { count: subjectUrls.length, statusCode: code },
         evidence: [evidence],
-      };
-    });
+        target: findingTarget(
+          {
+            relation: "affected_by_http_status",
+            targetKind: "http_status",
+          },
+          String(code),
+          members,
+          "observation_members",
+        ),
+      });
+    }
 
     return { status: "candidate", candidates };
   },

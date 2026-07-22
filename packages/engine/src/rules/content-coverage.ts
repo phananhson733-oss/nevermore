@@ -10,6 +10,7 @@
 
 import type { DiagnosticContext } from "../context.ts";
 import type { DiagnosticRule, EvidenceDraft, FindingCandidate } from "../rule.ts";
+import { findingTarget } from "../target.ts";
 import { matchIntent, pageFieldBag } from "../util/intent-match.ts";
 
 type TargetKind = "offer" | "use_case";
@@ -54,7 +55,12 @@ export const contentCoverageRule = {
         inconclusiveCount += 1;
         continue;
       }
-      candidates.push(buildCandidate(ctx, target));
+      const candidate = buildCandidate(ctx, target);
+      if (candidate === null) {
+        inconclusiveCount += 1;
+        continue;
+      }
+      candidates.push(candidate);
     }
 
     if (candidates.length > 0) {
@@ -106,8 +112,14 @@ function collectTargets(ctx: DiagnosticContext): CoverageTarget[] {
   ];
 }
 
-function buildCandidate(ctx: DiagnosticContext, target: CoverageTarget): FindingCandidate {
-  const subjectRef = `page_set:${target.kind}:${slugify(target.text)}`;
+function buildCandidate(
+  ctx: DiagnosticContext,
+  target: CoverageTarget,
+): FindingCandidate | null {
+  const slug = slugify(target.text);
+  if (slug.length === 0) return null;
+  const targetRef = `${target.kind}:${slug}`;
+  const subjectRef = `page_set:${targetRef}`;
   const evidence: EvidenceDraft = {
     sourceProvider: "crawl",
     origin: "derived",
@@ -127,6 +139,12 @@ function buildCandidate(ctx: DiagnosticContext, target: CoverageTarget): Finding
     titleArgs: { target: target.text, kind: target.kind },
     metrics: { target: target.text, kind: target.kind },
     evidence: [evidence],
+    target: findingTarget(
+      { relation: "affected_by_page_set", targetKind: "page_set" },
+      targetRef,
+      [],
+      "target_definition",
+    ),
   };
 }
 

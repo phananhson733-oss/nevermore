@@ -14,7 +14,7 @@ const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 const EXPECTED_OPERATION_COUNT = 32;
 const EXPECTED_ASYNC_OPERATION_COUNT = 6;
-const EXPECTED_TABLE_COUNT = 35;
+const EXPECTED_TABLE_COUNT = 36;
 const MIGRATION_VERSION_VIEW_PATTERN =
   /^CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version\s+AS\s+SELECT\s+'([^']+)'::text\s+AS\s+migration_version$/is;
 const SLICE_1_TABLES = [
@@ -25,6 +25,7 @@ const SLICE_1_TABLES = [
   "page_snapshots",
   "product_profile_runs",
   "product_profile_invocation_attempts",
+  "finding_targets",
 ];
 const EXPECTED_RULE_VERSIONS = new Map([
   ["TECH-HTTP-001", 2],
@@ -442,6 +443,17 @@ check(
   "authority must not restore the obsolete CSV/DataForSEO mutual exclusion",
 );
 check(
+  files.spec.includes("`resolved`：成员必须引用冻结在该 DiagnosticRun manifest") &&
+    files.spec.includes("`unresolved`：只允许页级 GSC/GA4 Observation") &&
+    files.spec.includes("`definition_only`：用于规则只有稳定集合") &&
+    files.spec.includes("scope 和完整语义 tuple 上完全一致的重放") &&
+    files.spec.includes("任何 novel stale-run insert 仍必须拒绝") &&
+    files.spec.includes("迁移不得为既有历史 Finding 回填 target") &&
+    files.spec.includes("不得从当前 `subject_refs`") &&
+    files.spec.includes("任一写入失败则整体回滚"),
+  "authority must freeze truthful per-run Finding target membership, transactional persistence, and exact-only historical retry semantics",
+);
+check(
   files.spec.includes("source_provider=system + derived/computed/B") &&
     files.spec.includes("source_provider=llm + generated/generated/C") &&
     files.spec.includes("snapshot_id + collection_run_id + capturedAt"),
@@ -583,7 +595,10 @@ if (fs.existsSync(implementationSchemaSmokePath)) {
   );
 }
 for (const phrase of [
-  "expected exactly 35 app tables",
+  "expected exactly 36 app tables",
+  "expected all 41 named app indexes",
+  "expected all 55 app triggers",
+  "expected all 6 runtime routines",
   "unavailable observation with zero was accepted",
   "generated evidence without invocation was accepted",
   "append-only evidence update was accepted",
@@ -605,6 +620,10 @@ for (const phrase of [
   "product profile run accepted an unfrozen manifest",
   "Crawl seed accepted a different exact URL",
   "frozen Crawl seed identity was mutated",
+  "Finding target ledger relation and resolution constraints are missing",
+  "Finding target ledger indexes are incomplete",
+  "Finding target lineage and append-only guards are incomplete",
+  "Finding target runtime routines are incomplete",
 ]) {
   check(
     files.schemaSmoke.includes(phrase),
@@ -1048,6 +1067,78 @@ if (fs.existsSync(observationSitePageLineageMigrationPath)) {
     "Observation lineage migration must index exact SitePage reads without fabricating PageSnapshots",
   );
 }
+const findingTargetLedgerMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0017_finding_target_ledger.sql",
+);
+check(
+  fs.existsSync(findingTargetLedgerMigrationPath),
+  "Finding target ledger migration is missing",
+);
+if (fs.existsSync(findingTargetLedgerMigrationPath)) {
+  const findingTargetLedgerMigrationSource = fs.readFileSync(
+    findingTargetLedgerMigrationPath,
+    "utf8",
+  );
+  const findingTargetLedgerContract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: findingTargetLedgerMigrationSource,
+    migrationVersion: "0017_finding_target_ledger",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0017 Finding target ledger contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(findingTargetLedgerContract);
+  const findingTargetLedgerMigration = stripSqlComments(
+    findingTargetLedgerMigrationSource,
+  );
+  check(
+    /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.finding_targets/i.test(
+      findingTargetLedgerMigration,
+    ) &&
+      /resolution_state\s+text\s+NOT\s+NULL\s+CHECK\s*\(resolution_state\s+IN\s*\(\s*'resolved'\s*,\s*'unresolved'\s*,\s*'definition_only'\s*\)\s*\)/i.test(
+        findingTargetLedgerMigration,
+      ) &&
+      /basis_kind\s+text\s+NOT\s+NULL\s+CHECK\s*\(basis_kind\s+IN\s*\([\s\S]*?'crawl_exact_fetch'[\s\S]*?'observation_site_page'[\s\S]*?'unresolved_observation'[\s\S]*?'target_definition'/i.test(
+        findingTargetLedgerMigration,
+      ),
+    "Finding target ledger must freeze resolved, unresolved, and definition-only provenance shapes",
+  );
+  check(
+    /finding_last_seen_run_id\s+IS\s+DISTINCT\s+FROM\s+NEW\.diagnostic_run_id/i.test(
+      findingTargetLedgerMigration,
+    ) &&
+      /observation_site_page_id\s+IS\s+DISTINCT\s+FROM\s+NEW\.site_page_id/i.test(
+        findingTargetLedgerMigration,
+      ) &&
+      /page_snapshot\.data_snapshot_id\s*=\s*observation_snapshot_id/i.test(
+        findingTargetLedgerMigration,
+      ) &&
+      /Finding target Observation is not frozen in its DiagnosticRun manifest/i.test(
+        findingTargetLedgerMigration,
+      ),
+    "Finding target ledger must bind the current Finding sighting to exact Observation, SitePage, PageSnapshot, and frozen-run lineage",
+  );
+  check(
+    /CREATE\s+TRIGGER\s+finding_targets_lineage_guard[\s\S]*?EXECUTE\s+FUNCTION\s+app\.enforce_finding_target_lineage\(\)/i.test(
+      findingTargetLedgerMigration,
+    ) &&
+      /CREATE\s+TRIGGER\s+finding_targets_append_only[\s\S]*?EXECUTE\s+FUNCTION\s+app\.reject_append_only_mutation\(\)/i.test(
+        findingTargetLedgerMigration,
+      ) &&
+      /finding_targets_site_page_read_idx/i.test(findingTargetLedgerMigration) &&
+      /finding_targets_finding_run_read_idx/i.test(
+        findingTargetLedgerMigration,
+      ) &&
+      /finding_targets_operational_idx/i.test(findingTargetLedgerMigration),
+    "Finding target ledger must keep immutable guarded rows and all operational read indexes",
+  );
+  check(
+    !/\b(?:INSERT\s+INTO|UPDATE)\s+app\.finding_targets\b/i.test(
+      findingTargetLedgerMigration,
+    ),
+    "Finding target ledger migration must not backfill or infer historical target membership",
+  );
+}
 verifyMigrationOwnedDefinitionUniqueness(cumulativeMigrationContracts);
 const authorityExecutableStatements = executableSqlStatements(files.sql);
 const canonicalSitePageFunctionIndex = authorityExecutableStatements.findIndex(
@@ -1082,6 +1173,8 @@ for (const triggerName of [
   "normalized_observations_provenance_guard",
   "normalized_observations_site_page_guard",
   "site_pages_canonical_subject_lock",
+  "finding_targets_lineage_guard",
+  "finding_targets_append_only",
   "diagnostic_runs_frozen_input_guard",
   "diagnostic_runs_current_manifest_guard",
   "diagnostic_run_rules_version_guard",
@@ -1106,6 +1199,9 @@ for (const constraintName of [
   "diagnostic_runs_rule_set_version_check",
   "normalized_observations_site_page_fk",
   "normalized_observations_site_page_subject_check",
+  "finding_targets_one_direct_root_idx",
+  "finding_targets_one_definition_root_idx",
+  "finding_targets_one_observation_member_idx",
 ]) {
   check(
     files.sql.includes(constraintName),
@@ -1117,8 +1213,8 @@ const authorityMigrationVersions = executableSqlStatements(files.sql)
   .filter((version) => version !== undefined);
 check(
   authorityMigrationVersions.length === 1 &&
-    authorityMigrationVersions[0] === "0016_observation_site_page_lineage",
-  "authority SQL must define exactly one final 0016 migration-version projection",
+    authorityMigrationVersions[0] === "0017_finding_target_ledger",
+  "authority SQL must define exactly one final 0017 migration-version projection",
 );
 check(
   /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(sqlWithoutComments),

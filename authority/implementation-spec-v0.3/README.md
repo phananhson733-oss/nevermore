@@ -5,7 +5,7 @@ Authority 版本：**0.3.0**
 合同日期：**2026-07-21**
 当前已实现机器面：**0.3.0**
 
-本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 32 个 operation 与 6 个 async operation，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则；数据库包含 5 张可追溯 audit/page projection 表，以及 `product_profile_runs`、`product_profile_invocation_attempts` 两张 Product Profile 冻结输入/调用预算账本，总数为 35 张。
+本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 32 个 operation 与 6 个 async operation，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则；数据库包含 5 张可追溯 audit/page projection 表、`product_profile_runs` 与 `product_profile_invocation_attempts` 两张 Product Profile 冻结输入/调用预算账本，以及逐 DiagnosticRun 记录 Finding 明确目标成员的 `finding_targets` append-only 账本，总数为 36 张。
 
 这次激活把已经实现的 URL-first Product Profile 读取、草稿编辑、证据化合成、竞品审核/补录与确认操作，以及 versioned Growth Audit / Capability contract、只读 Opportunity projection 与最小 persistence 纳入事实面。Product Profile 合成只消费冻结的 Crawl Snapshot/PageSnapshot/Observation 引用；provider 调用先写 durable reservation，最多三次，未知结果阻止静默重试。它没有提前声明 Growth Audit create-run route、recheck operation、CMS publishing 或 content lifecycle；后续只有在实现、迁移、OpenAPI、锁文件和 verifier 同一提交更新时，才可以继续扩大 normative surface。
 
@@ -51,9 +51,10 @@ Growth Opportunity 是上述 canonical objects 的客户可读 projection。在 
 - 11 条确定性规则，覆盖 Technical SEO、Search、Content、Conversion、GEO 五个诊断域。
 - 3 类可编辑执行物：`content_brief`、`metadata_rewrite`、`technical_ticket`。
 - versioned Growth Audit / Capability contract、只读 Opportunity projection，以及 `capability_runs`、`audit_runs`、`audit_module_results`、`site_pages`、`page_snapshots` 五张可追溯 persistence 表。
+- `finding_targets` 逐当前 DiagnosticRun 持久化每个 Finding 的显式目标定义或成员；resolved 行绑定精确 Observation/SitePage（Crawl 还绑定 PageSnapshot），unresolved 行保留 analytics Observation 与 limitation，definition-only 行只保存稳定目标定义。历史 Finding 不回填、不从可变 projection 或 `subject_refs` 推断成员。
 - 浏览器报告与版本化 JSON ZIP 导出；没有外部写入、自动发布或结果归因。
 - English / 简体中文产品 chrome；客户内容语言与 UI 语言彼此独立。
-- 32 个 operation、6 个 async operation、35 张应用表；清单由主规格中的 markers 与机器合同、ordered migrations 精确比对。
+- 32 个 operation、6 个 async operation、36 张应用表；清单由主规格中的 markers 与机器合同、ordered migrations 精确比对。
 
 ## Reviewed Slice 1 change sequence
 

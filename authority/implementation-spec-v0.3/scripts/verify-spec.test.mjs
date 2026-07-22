@@ -73,19 +73,26 @@ const observationSitePageLineageMigration = readFileSync(
   ),
   "utf8",
 );
+const findingTargetLedgerMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0017_finding_target_ledger.sql",
+  ),
+  "utf8",
+);
 const authorityTables = [
   ...authoritySql.matchAll(
     /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?app\.([a-z][a-z0-9_]*)\s*\(/gi,
   ),
 ].map((match) => match[1]);
 
-test("declares the activated v0.3 machine surface and exactly 35 application tables", () => {
+test("declares the activated v0.3 machine surface and exactly 36 application tables", () => {
   assert.match(authorityReadme, /状态：\*\*activated\*\*/);
   assert.match(authorityReadme, /当前已实现机器面：\*\*0\.3\.0\*\*/);
   assert.match(authoritySpec, /status: activated/);
   assert.match(authoritySpec, /implemented_surface_version: 0\.3\.0/);
   assert.match(authorityOpenApi, /^\s+version: 0\.3\.0$/m);
-  assert.equal(authorityTables.length, 35);
+  assert.equal(authorityTables.length, 36);
   for (const table of [
     "capability_runs",
     "audit_runs",
@@ -94,6 +101,7 @@ test("declares the activated v0.3 machine surface and exactly 35 application tab
     "page_snapshots",
     "product_profile_runs",
     "product_profile_invocation_attempts",
+    "finding_targets",
   ]) {
     assert.ok(authorityTables.includes(table), `${table} is missing`);
   }
@@ -140,6 +148,17 @@ test("allows concurrent CSV and DataForSEO lineage without double-counting deman
     authoritySpec,
     /同一 demand 同时有两种来源时优先 DataForSEO Evidence，不重复累加/,
   );
+});
+
+test("freezes truthful per-run Finding target membership and retry semantics", () => {
+  assert.match(authoritySpec, /`resolved`：成员必须引用冻结在该 DiagnosticRun manifest/);
+  assert.match(authoritySpec, /`unresolved`：只允许页级 GSC\/GA4 Observation/);
+  assert.match(authoritySpec, /`definition_only`：用于规则只有稳定集合/);
+  assert.match(authoritySpec, /scope 和完整语义 tuple 上完全一致的重放/);
+  assert.match(authoritySpec, /任何 novel stale-run insert 仍必须拒绝/);
+  assert.match(authoritySpec, /迁移不得为既有历史 Finding 回填 target/);
+  assert.match(authoritySpec, /不得从当前 `subject_refs`/);
+  assert.match(authoritySpec, /任一写入失败则整体回滚/);
 });
 
 test("freezes the three mutually exclusive Evidence provenance shapes", () => {
@@ -260,13 +279,14 @@ test("declares traceable Slice 1 persistence without a second mutable lifecycle"
   assert.match(authoritySql, /CREATE TRIGGER site_pages_set_updated_at/);
 });
 
-test("bounds every cumulative executable migration through Observation-to-SitePage lineage", () => {
+test("bounds every cumulative executable migration through the Finding target ledger", () => {
   for (const migrationVersion of [
     "0012_page_snapshot_lineage_hardening",
     "0013_exact_url_variant_rules",
     "0014_product_profile_synthesis",
     "0015_frozen_crawl_seed",
     "0016_observation_site_page_lineage",
+    "0017_finding_target_ledger",
   ]) {
     assert.equal(
       authoritySql.match(
@@ -306,6 +326,8 @@ test("bounds every cumulative executable migration through Observation-to-SitePa
     "lock_site_page_canonical_subjects",
     "lock_site_page_canonical_subject",
     "enforce_normalized_observation_site_page_lineage",
+    "finding_target_relation_key",
+    "enforce_finding_target_lineage",
   ]) {
     const expectedCount =
       functionName === "enforce_collection_run_provenance" ? 2 : 1;
@@ -339,6 +361,8 @@ test("bounds every cumulative executable migration through Observation-to-SitePa
     "async_runs_product_profile_result_guard",
     "normalized_observations_site_page_guard",
     "site_pages_canonical_subject_lock",
+    "finding_targets_lineage_guard",
+    "finding_targets_append_only",
   ]) {
     const expectedCount =
       triggerName === "collection_runs_provenance_guard" ? 2 : 1;
@@ -351,10 +375,13 @@ test("bounds every cumulative executable migration through Observation-to-SitePa
   }
 });
 
-test("schema smoke exercises Product Profile, frozen Crawl seeds, and exact Observation page lineage", () => {
+test("schema smoke exercises Product Profile, exact page lineage, and the Finding target ledger", () => {
   assert.equal(authoritySchemaSmoke, implementationSchemaSmoke);
   for (const marker of [
-    "expected exactly 35 app tables",
+    "expected exactly 36 app tables",
+    "expected all 41 named app indexes",
+    "expected all 55 app triggers",
+    "expected all 6 runtime routines",
     "product profile invocation reservation was not persisted",
     "a fourth product profile invocation reservation was accepted",
     "unresolved product profile invocation allowed another provider call",
@@ -369,7 +396,11 @@ test("schema smoke exercises Product Profile, frozen Crawl seeds, and exact Obse
     "Observation lineage fabricated a PageSnapshot",
     "normalized Observation SitePage FK is missing or not restrictive",
     "Observation SitePage lineage triggers are incomplete",
-    "0016_observation_site_page_lineage",
+    "Finding target ledger relation and resolution constraints are missing",
+    "Finding target ledger indexes are incomplete",
+    "Finding target lineage and append-only guards are incomplete",
+    "Finding target runtime routines are incomplete",
+    "0017_finding_target_ledger",
   ]) {
     assert.match(authoritySchemaSmoke, new RegExp(marker));
   }
@@ -455,6 +486,7 @@ test("retains cumulative async-run and export-bundle invariant guards", () => {
 const cumulativeMigrationOwnedTables = new Set([
   "product_profile_runs",
   "product_profile_invocation_attempts",
+  "finding_targets",
 ]);
 
 function tableSql(tables) {
@@ -482,6 +514,7 @@ function fixture(t, migrations) {
     "0014_product_profile_synthesis.sql": productProfileSynthesisMigration,
     "0015_frozen_crawl_seed.sql": frozenCrawlSeedMigration,
     "0016_observation_site_page_lineage.sql": observationSitePageLineageMigration,
+    "0017_finding_target_ledger.sql": findingTargetLedgerMigration,
     ...migrations,
   };
   for (const [name, sql] of Object.entries(completeMigrations)) {
@@ -734,6 +767,25 @@ test("rejects Observation-to-SitePage lineage migration drift", (t) => {
     result.stderr,
     /exact cumulative 0016 Observation-to-SitePage lineage/i,
   );
+});
+
+test("rejects Finding target ledger migration drift", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = findingTargetLedgerMigration.replace(
+    "finding_targets_operational_idx",
+    "finding_targets_operational_drift_idx",
+  );
+  assert.notEqual(mutatedMigration, findingTargetLedgerMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0017_finding_target_ledger.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exact cumulative 0017 Finding target ledger/i);
 });
 
 test("rejects duplicate app migration ordinals", (t) => {

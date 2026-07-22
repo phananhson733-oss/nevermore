@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticContext } from "../context.ts";
 import type { CoverageInput, ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { techCanonicalRule } from "./tech-canonical.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00Z";
@@ -39,6 +40,10 @@ function pageObs(subjectUrl: string, page: CrawlPageProjection): ObservationView
       ? { ...page, fetchUrl: subjectUrl }
       : page;
   return {
+    ...testObservationLineage(`crawl:${pageWithSubjectFetch.fetchUrl}`, {
+      sitePageUrl: pageWithSubjectFetch.fetchUrl,
+      pageSnapshot: true,
+    }),
     metricKey: METRIC_CRAWL_PAGE,
     subjectType: "url",
     subjectRef: subjectUrl,

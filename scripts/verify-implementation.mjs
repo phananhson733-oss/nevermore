@@ -161,6 +161,7 @@ const EXPECTED_TABLES = [
   "page_snapshots",
   "product_profile_runs",
   "product_profile_invocation_attempts",
+  "finding_targets",
 ];
 
 const EXPECTED_RULES = [
@@ -971,15 +972,56 @@ function checkDatabaseContract() {
     "page snapshot hardening must not rewrite immutable legacy content or hashes",
   );
 
+  const findingTargets = tableDefinition("finding_targets");
+  invariant(
+    /finding_id\s+uuid\s+NOT NULL[\s\S]*?REFERENCES\s+app\.findings\(id\)\s+ON DELETE RESTRICT/i.test(
+      findingTargets,
+    ) &&
+      /diagnostic_run_id\s+uuid\s+NOT NULL[\s\S]*?REFERENCES\s+app\.diagnostic_runs\(id\)\s+ON DELETE RESTRICT/i.test(
+        findingTargets,
+      ) &&
+      /source_observation_id\s+uuid[\s\S]*?REFERENCES\s+app\.normalized_observations\(id\)\s+ON DELETE RESTRICT/i.test(
+        findingTargets,
+      ),
+    "finding_targets must retain immutable Finding, DiagnosticRun, and Observation lineage",
+  );
+  invariant(
+    /resolution_state\s+text\s+NOT NULL\s+CHECK\s*\(resolution_state\s+IN\s*\(\s*'resolved','unresolved','definition_only'/i.test(
+      findingTargets,
+    ) &&
+      /basis_kind\s+text\s+NOT NULL\s+CHECK\s*\(basis_kind\s+IN\s*\(\s*'crawl_exact_fetch',\s*'observation_site_page',\s*'unresolved_observation',\s*'target_definition'/i.test(
+        findingTargets,
+      ),
+    "finding_targets must distinguish resolved, unresolved, and definition-only provenance",
+  );
+  invariant(
+    /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.finding_target_relation_key\b/i.test(
+      migration,
+    ) &&
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_finding_target_lineage\b/i.test(
+        migration,
+      ),
+    "finding target identity and frozen-lineage guards must be database-owned",
+  );
+
   for (const indexName of [
     "audit_runs_project_created_idx",
     "site_pages_project_updated_idx",
     "site_pages_site_idx",
     "page_snapshots_page_captured_idx",
     "page_snapshots_project_captured_idx",
+    "finding_targets_one_direct_root_idx",
+    "finding_targets_one_definition_root_idx",
+    "finding_targets_one_observation_member_idx",
+    "finding_targets_site_page_read_idx",
+    "finding_targets_finding_run_read_idx",
+    "finding_targets_operational_idx",
   ]) {
     invariant(
-      new RegExp(`CREATE\\s+INDEX\\s+IF NOT EXISTS\\s+${indexName}\\b`, "i").test(
+      new RegExp(
+        `CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+IF NOT EXISTS\\s+${indexName}\\b`,
+        "i",
+      ).test(
         migration,
       ),
       `required Slice 1 index is missing: ${indexName}`,
@@ -993,6 +1035,8 @@ function checkDatabaseContract() {
     "audit_runs_append_only",
     "audit_module_results_append_only",
     "page_snapshots_append_only",
+    "finding_targets_lineage_guard",
+    "finding_targets_append_only",
   ]) {
     invariant(
       new RegExp(`CREATE\\s+TRIGGER\\s+${triggerName}\\b`, "i").test(migration),

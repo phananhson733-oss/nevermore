@@ -5,6 +5,7 @@ import { DiagnosticContext } from "../context.ts";
 import type { CoverageInput, ObservationView } from "../context.ts";
 import { parseIcp } from "../icp.ts";
 import type { FindingCandidate, RuleResult } from "../rule.ts";
+import { testObservationLineage } from "../test-observation-lineage.ts";
 import { geoEntityRule } from "./geo-entity.ts";
 
 const OBSERVED_AT = "2026-07-01T00:00:00.000Z";
@@ -47,15 +48,26 @@ interface BuildOpts {
 }
 
 function buildContext(opts: BuildOpts): DiagnosticContext {
-  const observations: ObservationView[] = opts.pages.map(([url, projection]) => ({
-    metricKey: METRIC_CRAWL_PAGE,
-    subjectType: "url",
-    subjectRef: url,
-    provider: "crawl",
-    availability: "available",
-    valueJson: projection,
-    observedAt: OBSERVED_AT,
-  }));
+  const observations: ObservationView[] = opts.pages.map(([url, projection]) => {
+    const exactProjection =
+      projection.fetchUrl === "https://example.com/" &&
+      url !== "https://example.com/"
+        ? { ...projection, fetchUrl: url }
+        : projection;
+    return {
+      ...testObservationLineage(`crawl:${exactProjection.fetchUrl}`, {
+        sitePageUrl: exactProjection.fetchUrl,
+        pageSnapshot: true,
+      }),
+      metricKey: METRIC_CRAWL_PAGE,
+      subjectType: "url",
+      subjectRef: url,
+      provider: "crawl",
+      availability: "available",
+      valueJson: exactProjection,
+      observedAt: OBSERVED_AT,
+    };
+  });
   const coverage: CoverageInput = {
     crawl: opts.crawl ?? "available",
     gsc: "unavailable",

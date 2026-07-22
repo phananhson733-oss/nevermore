@@ -17,6 +17,7 @@ import type {
   RuleResult,
   Severity,
 } from "../rule.ts";
+import { findingTarget } from "../target.ts";
 
 type RobotsGroup = CrawlRobotsProjection["groups"][number];
 
@@ -105,6 +106,15 @@ function candidateFor(
     titleArgs: { userAgent, rule: info.rule, scope: info.scope },
     metrics: { userAgent, scope: info.scope },
     evidence: [evidence],
+    target: findingTarget(
+      {
+        relation: "affected_by_user_agent",
+        targetKind: "user_agent",
+      },
+      userAgent,
+      [],
+      "target_definition",
+    ),
   };
 }
 

@@ -7,6 +7,7 @@
  */
 
 import type { DiagnosticContext } from "./context.ts";
+import type { FindingTargetDraft } from "./target.ts";
 
 export type DiagnosticDomain =
   | "technical_seo"
@@ -76,6 +77,8 @@ export interface FindingCandidate {
   readonly titleArgs: Record<string, string | number>;
   readonly metrics: Record<string, number | string | null>;
   readonly evidence: readonly EvidenceDraft[];
+  /** Explicit persisted target/membership; never inferred from evidence refs. */
+  readonly target: FindingTargetDraft;
 }
 
 export type RuleResult =

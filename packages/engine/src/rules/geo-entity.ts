@@ -17,6 +17,7 @@ import type {
   Severity,
 } from "../rule.ts";
 import { hasProofBlock } from "../util/proof-block.ts";
+import { crawlTargetMembers, findingTarget } from "../target.ts";
 
 /** Max priority/commercial pages inspected per run (spec §8.4). */
 const MAX_PAGES = 20;
@@ -95,6 +96,9 @@ function evaluate(ctx: DiagnosticContext): RuleResult {
   }
 
   const urls = selected.map(([url]) => url);
+  const fetchUrls = selected.flatMap(([, variants]) =>
+    variants.map((page) => page.fetchUrl),
+  );
   const anyPriority = selected.some(([url]) => ctx.isPriority(url));
   const severity: Severity = entityGap && proofGap && anyPriority ? "high" : "medium";
 
@@ -107,6 +111,11 @@ function evaluate(ctx: DiagnosticContext): RuleResult {
         `structured entity types and ${proofCount} contain a proof block ` +
         `(proof coverage ${Math.round(proofCoverageRatio * 100)}%).`;
 
+  const members = crawlTargetMembers(ctx, fetchUrls);
+  if (members === null) {
+    return { status: "inconclusive", reason: "missing_observation_lineage" };
+  }
+
   const candidate: FindingCandidate = {
     subjectRefs: [PAGE_SET_REF],
     severity,
@@ -117,6 +126,12 @@ function evaluate(ctx: DiagnosticContext): RuleResult {
     },
     metrics,
     evidence: [buildEvidence(ctx, urls, claim)],
+    target: findingTarget(
+      { relation: "affected_by_page_set", targetKind: "page_set" },
+      "priority_commercial",
+      members,
+      "observation_members",
+    ),
   };
 
   return { status: "candidate", candidates: [candidate] };

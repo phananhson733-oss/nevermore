@@ -4,26 +4,38 @@ import { contentHash } from "./util/hash.ts";
 import { FINDING_REGISTRY } from "./registry.ts";
 import type { FindingCandidate } from "./rule.ts";
 
-const draft = (subjectRefs: string[], severity: FindingCandidate["severity"]): FindingCandidate => ({
-  subjectRefs,
-  severity,
-  titleArgs: {},
-  metrics: {},
-  evidence: [
-    {
-      sourceProvider: "crawl",
-      origin: "direct_public",
-      method: "observed",
-      grade: "B",
-      availability: "available",
-      support: "supports",
-      subjectRefs,
-      claim: "c",
-      observedAt: "2026-07-18T00:00:00Z",
-      limitation: "l",
+const draft = (
+  subjectRefs: string[],
+  severity: FindingCandidate["severity"],
+  targetRef = "500",
+): FindingCandidate =>
+  ({
+    subjectRefs,
+    severity,
+    titleArgs: {},
+    metrics: {},
+    evidence: [
+      {
+        sourceProvider: "crawl",
+        origin: "direct_public",
+        method: "observed",
+        grade: "B",
+        availability: "available",
+        support: "supports",
+        subjectRefs,
+        claim: "c",
+        observedAt: "2026-07-18T00:00:00Z",
+        limitation: "l",
+      },
+    ],
+    target: {
+      version: 1,
+      relation: "affected_by_http_status",
+      targetKind: "http_status",
+      targetRef,
+      members: [],
     },
-  ],
-});
+  }) as FindingCandidate;
 
 describe("findingKey (spec §8.6)", () => {
   it("is the sha256 of the canonical {projectId,domain,ruleFamily,sortedSubjectRefs,intent}", () => {
@@ -67,5 +79,19 @@ describe("mergeRunCandidates (spec §8.6)", () => {
       { ruleId: "TECH-HTTP-001", candidates: [draft(["http_status:404"], "high"), draft(["http_status:500"], "high")] },
     ]);
     expect(merged).toHaveLength(2);
+  });
+
+  it("fails closed when one unchanged merge identity carries divergent targets", () => {
+    expect(() =>
+      mergeRunCandidates([
+        {
+          ruleId: "TECH-HTTP-001",
+          candidates: [
+            draft(["http_status:500"], "medium", "500"),
+            draft(["http_status:500"], "high", "503"),
+          ],
+        },
+      ]),
+    ).toThrow(/divergent finding target/i);
   });
 });

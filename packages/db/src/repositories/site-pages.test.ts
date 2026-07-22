@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
+  MAX_SITE_PAGE_ID_LOOKUP,
   normalizedUrlHash,
   SitePagesRepository,
   type SitePageRow,
@@ -317,5 +318,48 @@ describe("SitePagesRepository", () => {
     expect(fake.calls.filter((call) => call.method === "select")).toHaveLength(
       0,
     );
+  });
+
+  it("loads a bounded de-duplicated SitePage id set in deterministic order", async () => {
+    const fake = fakeExecutor();
+    const second = row({ id: "00000000-0000-4000-8000-000000000005" });
+    const first = row();
+    fake.enqueue([first, second]);
+
+    await expect(
+      new SitePagesRepository(fake.executor).findByIds(
+        { workspaceId: values.workspaceId, projectId: values.projectId },
+        [second.id, first.id, second.id],
+      ),
+    ).resolves.toEqual([first, second]);
+
+    const predicate = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"workspace_id" = $1');
+    expect(predicate.sql).toContain('"project_id" = $2');
+    expect(predicate.sql).toContain('"id" in');
+    expect(fake.last("orderBy").args).toHaveLength(1);
+  });
+
+  it("short-circuits empty SitePage id reads and rejects oversized sets", async () => {
+    const fake = fakeExecutor();
+    const repository = new SitePagesRepository(fake.executor);
+    const scope = {
+      workspaceId: values.workspaceId,
+      projectId: values.projectId,
+    };
+
+    await expect(repository.findByIds(scope, [])).resolves.toEqual([]);
+    await expect(
+      repository.findByIds(
+        scope,
+        Array.from(
+          { length: MAX_SITE_PAGE_ID_LOOKUP + 1 },
+          (_, index) => `page-${index}`,
+        ),
+      ),
+    ).rejects.toThrow(/at most/i);
+    expect(fake.calls).toEqual([]);
   });
 });

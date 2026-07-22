@@ -12,10 +12,25 @@ export type {
   EvidenceDraft,
 } from "./rule.ts";
 
+export { findingTarget } from "./target.ts";
+export type {
+  FindingTargetRelation,
+  FindingTargetKind,
+  FindingTargetDefinition,
+  FindingTargetDraftV1,
+  FindingTargetDraft,
+  FindingTargetConstructionMode,
+  FindingTargetMember,
+  ResolvedFindingTargetMember,
+  UnresolvedFindingTargetMember,
+} from "./target.ts";
+
 export { DiagnosticContext } from "./context.ts";
 export type {
   DiagnosticContextInput,
   ObservationView,
+  ObservationLineageView,
+  UrlObservationProjection,
   CoverageInput,
   DatasetAvailability,
 } from "./context.ts";
@@ -43,7 +58,11 @@ export type {
 export { deriveConfidence, autoReviewState } from "./confidence.ts";
 export type { Confidence, ConfidenceOptions } from "./confidence.ts";
 
-export { mergeRunCandidates, findingKey } from "./merge.ts";
+export {
+  mergeRunCandidates,
+  findingKey,
+  DivergentFindingTargetError,
+} from "./merge.ts";
 export type { MergedCandidate } from "./merge.ts";
 
 export { derivePriority, LANE_WINDOW } from "./priority.ts";

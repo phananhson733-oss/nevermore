@@ -8,6 +8,70 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("adds an explicit append-only per-run Finding target ledger", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0017_finding_target_ledger.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.finding_targets/iu,
+    );
+    expect(migration).toMatch(
+      /UNIQUE\s*\(finding_id,\s*diagnostic_run_id,\s*relation_key\)/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.finding_target_relation_key/iu,
+    );
+    expect(migration).toMatch(
+      /jsonb_build_object\([\s\S]*?'relation'[\s\S]*?'targetKind'[\s\S]*?'targetRef'[\s\S]*?'resolutionState'[\s\S]*?'basisKind'[\s\S]*?'sitePageId'[\s\S]*?'pageSnapshotId'[\s\S]*?'sourceObservationId'[\s\S]*?'memberRef'[\s\S]*?'limitation'/iu,
+    );
+    expect(migration).toMatch(
+      /finding_last_seen_run_id\s+IS\s+DISTINCT\s+FROM\s+NEW\.diagnostic_run_id/iu,
+    );
+    expect(migration).toMatch(
+      /jsonb_array_elements\([\s\S]*?diagnostic\.input_manifest\s*->\s*'snapshots'/iu,
+    );
+    expect(migration).toMatch(
+      /observation_site_page_id\s+IS\s+DISTINCT\s+FROM\s+NEW\.site_page_id/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.member_ref\s+IS\s+DISTINCT\s+FROM\s+observation_fetch_url/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.member_ref\s+IS\s+DISTINCT\s+FROM\s+observation_subject_ref/iu,
+    );
+    expect(migration).toMatch(
+      /FOR\s+UPDATE[\s\S]*?existing\.relation\s+IS\s+DISTINCT\s+FROM\s+NEW\.relation[\s\S]*?existing\.target_ref\s+IS\s+DISTINCT\s+FROM\s+NEW\.target_ref/iu,
+    );
+    expect(migration).toMatch(
+      /WHEN\s+'TECH-HTTP-001'\s+THEN\s+'affected_by_http_status'[\s\S]*?WHEN\s+'CONTENT-GAP-011'\s+THEN\s+'affected_by_keyword_cluster'[\s\S]*?WHEN\s+'GEO-CRAWLER-002'\s+THEN\s+'affected_by_user_agent'/iu,
+    );
+    expect(migration).toMatch(
+      /finding_targets_one_direct_root_idx[\s\S]*?WHERE\s+relation\s*=\s*'direct_url'/iu,
+    );
+    expect(migration).toMatch(
+      /finding_targets_one_definition_root_idx[\s\S]*?WHERE\s+resolution_state\s*=\s*'definition_only'/iu,
+    );
+    expect(migration).toMatch(
+      /finding_targets_one_observation_member_idx[\s\S]*?source_observation_id\s+IS\s+NOT\s+NULL/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.target_ref\s+IS\s+DISTINCT\s+FROM\s+observation_final_status/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TRIGGER\s+finding_targets_append_only[\s\S]*?BEFORE\s+UPDATE\s+OR\s+DELETE/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0017_finding_target_ledger'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
   it("adds an append-only Observation to exact SitePage lineage without inventing PageSnapshots", () => {
     const migration = readFileSync(
       fileURLToPath(
