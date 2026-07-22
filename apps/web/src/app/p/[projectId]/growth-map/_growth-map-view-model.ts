@@ -75,20 +75,59 @@ export function resolveVisibleKeywordSelection(
   return visibleKeywordIds[0] ?? null;
 }
 
+/** A Competitor detail can only be driven by an entity on the visible page. */
+export function resolveVisibleCompetitorSelection(
+  requestedCompetitorId: string | null | undefined,
+  visibleCompetitorIds: readonly string[],
+): string | null {
+  if (
+    requestedCompetitorId != null &&
+    visibleCompetitorIds.includes(requestedCompetitorId)
+  ) {
+    return requestedCompetitorId;
+  }
+  return visibleCompetitorIds[0] ?? null;
+}
+
 export type KeywordLibraryReadState =
   | "loading"
   | "error"
   | "empty"
+  | "cursor_empty"
   | "ready";
 
 export function keywordLibraryReadState(input: {
   readonly isPending: boolean;
   readonly isError: boolean;
   readonly itemCount: number;
+  readonly cursor?: string | null;
 }): KeywordLibraryReadState {
   if (input.isPending) return "loading";
   if (input.isError) return "error";
-  return input.itemCount === 0 ? "empty" : "ready";
+  if (input.itemCount > 0) return "ready";
+  return input.cursor == null || input.cursor === "" ? "empty" : "cursor_empty";
+}
+
+/**
+ * Cursor APIs expose only a forward token. Keying each known predecessor by
+ * the current URL cursor keeps browser back/forward from consuming a stale
+ * positional stack while still allowing an in-session Previous action.
+ */
+export function rememberGrowthMapCursorPredecessor(
+  predecessors: ReadonlyMap<string, string | null>,
+  currentCursor: string | null,
+  nextCursor: string,
+): ReadonlyMap<string, string | null> {
+  const next = new Map(predecessors);
+  next.set(nextCursor, currentCursor);
+  return next;
+}
+
+export function resolveGrowthMapCursorPredecessor(
+  predecessors: ReadonlyMap<string, string | null>,
+  currentCursor: string | null,
+): string | null | undefined {
+  return currentCursor === null ? undefined : predecessors.get(currentCursor);
 }
 
 export type KeywordDetailReadState =
@@ -106,6 +145,72 @@ export function keywordDetailReadState(input: {
   if (input.isPending) return "loading";
   if (input.isError) return "error";
   return "ready";
+}
+
+export type CompetitorLibraryReadState = KeywordLibraryReadState;
+
+export function competitorLibraryReadState(input: {
+  readonly isPending: boolean;
+  readonly isError: boolean;
+  readonly itemCount: number;
+  readonly cursor?: string | null;
+}): CompetitorLibraryReadState {
+  return keywordLibraryReadState(input);
+}
+
+export type CompetitorDetailReadState = KeywordDetailReadState;
+
+export function competitorDetailReadState(input: {
+  readonly selectedCompetitorId: string | null;
+  readonly isPending: boolean;
+  readonly isError: boolean;
+}): CompetitorDetailReadState {
+  return keywordDetailReadState({
+    selectedKeywordId: input.selectedCompetitorId,
+    isPending: input.isPending,
+    isError: input.isError,
+  });
+}
+
+export type GrowthMapPlatformLimitationKey =
+  | "keywordNoEntries"
+  | "competitorNoEntries"
+  | "competitorOriginHistoryLimited"
+  | "competitorSerpWriterUnavailable"
+  | "competitorAiCitationWriterUnavailable"
+  | "competitorCandidate"
+  | "competitorExcluded"
+  | "competitorSourceApprovedReviewPending";
+
+const PLATFORM_LIMITATION_KEYS: Readonly<
+  Record<string, GrowthMapPlatformLimitationKey>
+> = {
+  "No canonical Keyword Library entries are available on this cursor page.":
+    "keywordNoEntries",
+  "No canonical Keyword Library entries are available.": "keywordNoEntries",
+  "No canonical Competitor Library entries are available on this cursor page.":
+    "competitorNoEntries",
+  "No canonical Competitor Library entries are available.":
+    "competitorNoEntries",
+  "Only the most recent 100 immutable origin occurrences are included; older canonical origin history remains available in storage.":
+    "competitorOriginHistoryLimited",
+  "SERP overlap is unavailable because Competitor Library v1 has no canonical SERP-overlap writer.":
+    "competitorSerpWriterUnavailable",
+  "AI citation insight is unavailable because Competitor Library v1 has no canonical AI-citation writer.":
+    "competitorAiCitationWriterUnavailable",
+  "This Competitor is still a candidate and has not been approved for analysis.":
+    "competitorCandidate",
+  "This Competitor has been excluded from the approved analysis scope.":
+    "competitorExcluded",
+  "A Product Profile source is approved, but this stable Competitor Library entity is still awaiting its own review.":
+    "competitorSourceApprovedReviewPending",
+};
+
+/** Translate only known platform chrome; customer/source wording stays verbatim. */
+export function growthMapPlatformLimitationKey(
+  limitation: string,
+): GrowthMapPlatformLimitationKey | null {
+  return PLATFORM_LIMITATION_KEYS[limitation] ?? null;
 }
 
 /**
@@ -141,6 +246,7 @@ interface GrowthMapLocationPatch {
   readonly mode?: GrowthMapObjectMode;
   readonly selectedSitePageId?: string | null;
   readonly selectedKeywordId?: string | null;
+  readonly selectedCompetitorId?: string | null;
   readonly selectedFindingId?: string | null;
   readonly search?: string | null;
   readonly cursor?: string | null;
@@ -165,6 +271,7 @@ export function growthMapLocationHref(
       params.delete("cursor");
       params.delete("selectedSitePageId");
       params.delete("selectedKeywordId");
+      params.delete("selectedCompetitorId");
       params.delete("findingId");
     }
 
@@ -176,9 +283,14 @@ export function growthMapLocationHref(
       params.delete("selectedSitePageId");
       params.delete("findingId");
     }
-    if (patch.mode === "pages") params.delete("selectedKeywordId");
+    if (patch.mode === "pages") {
+      params.delete("selectedKeywordId");
+      params.delete("selectedCompetitorId");
+    }
+    if (patch.mode === "keywords") {
+      params.delete("selectedCompetitorId");
+    }
     if (patch.mode === "competitors") {
-      params.delete("cursor");
       params.delete("selectedKeywordId");
     }
   }
@@ -196,6 +308,14 @@ export function growthMapLocationHref(
       params.delete("selectedKeywordId");
     } else {
       params.set("selectedKeywordId", patch.selectedKeywordId);
+    }
+  }
+
+  if (patch.selectedCompetitorId !== undefined) {
+    if (patch.selectedCompetitorId === null) {
+      params.delete("selectedCompetitorId");
+    } else {
+      params.set("selectedCompetitorId", patch.selectedCompetitorId);
     }
   }
 

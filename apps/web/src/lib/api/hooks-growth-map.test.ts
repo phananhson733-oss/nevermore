@@ -1,14 +1,20 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildGrowthMapCompetitorDetailQueryOptions,
+  buildGrowthMapCompetitorsQueryOptions,
   buildGrowthMapKeywordDetailQueryOptions,
   buildGrowthMapKeywordsQueryOptions,
   buildGrowthMapUrlDetailQueryOptions,
   buildGrowthMapUrlsQueryOptions,
+  getGrowthMapCompetitorDetail,
+  getGrowthMapCompetitors,
   getGrowthMapKeywordDetail,
   getGrowthMapKeywords,
   getGrowthMapUrlDetail,
   getGrowthMapUrls,
+  growthMapCompetitorDetailQueryKey,
+  growthMapCompetitorsQueryKey,
   growthMapKeywordDetailQueryKey,
   growthMapKeywordsQueryKey,
   growthMapUrlDetailQueryKey,
@@ -31,6 +37,19 @@ const KEYWORD_OCCURRENCE = "00000000-0000-4000-8000-000000000012";
 const KEYWORD_SNAPSHOT = "00000000-0000-4000-8000-000000000013";
 const KEYWORD_OBSERVATION = "00000000-0000-4000-8000-000000000014";
 const IMPORT_PREVIEW = "00000000-0000-4000-8000-000000000015";
+const COMPETITOR_A = "00000000-0000-4000-8000-000000000016";
+const COMPETITOR_B = "00000000-0000-4000-8000-000000000017";
+const COMPETITOR_PROFILE_ORIGIN = "00000000-0000-4000-8000-000000000018";
+const COMPETITOR_CSV_ORIGIN = "00000000-0000-4000-8000-000000000019";
+const COMPETITOR_MANUAL_ORIGIN = "00000000-0000-4000-8000-000000000020";
+const PRODUCT_PROFILE = "00000000-0000-4000-8000-000000000021";
+const COMPETITOR_CANDIDATE = "00000000-0000-4000-8000-000000000022";
+const PROFILE_EVIDENCE_REF = "00000000-0000-4000-8000-000000000023";
+const COMPETITOR_SNAPSHOT = "00000000-0000-4000-8000-000000000024";
+const COMPETITOR_OBSERVATION = "00000000-0000-4000-8000-000000000025";
+const COMPETITOR_IMPORT_PREVIEW = "00000000-0000-4000-8000-000000000026";
+const COMPETITOR_EVIDENCE = "00000000-0000-4000-8000-000000000027";
+const MANUAL_ENTRY = "00000000-0000-4000-8000-000000000028";
 const OBSERVED_AT = "2026-07-21T00:00:00.000Z";
 const UI_LOCALE = "en" as const;
 
@@ -214,6 +233,100 @@ function keywordDetailResponse(keywordId = KEYWORD_A) {
   return {
     projectId: PROJECT_ID,
     data: keywordItem(keywordId),
+  } as const;
+}
+
+function competitorItem(competitorId = COMPETITOR_A) {
+  const primary = competitorId === COMPETITOR_A;
+  return {
+    projectId: PROJECT_ID,
+    competitorId,
+    domain: primary ? "example-competitor.com" : "other-competitor.com",
+    name: primary ? "Example Competitor" : "Other Competitor",
+    reviewStatus: "candidate",
+    relationship: null,
+    analysisScope: [],
+    revision: 0,
+    originOccurrences: [
+      {
+        occurrenceId: COMPETITOR_PROFILE_ORIGIN,
+        originKind: "product_profile",
+        productProfileId: PRODUCT_PROFILE,
+        profileVersion: 2,
+        candidateId: COMPETITOR_CANDIDATE,
+        fieldProvenancePath: "/competitorCandidates/0",
+        observedAt: null,
+        evidenceRefs: [
+          {
+            evidenceRefId: PROFILE_EVIDENCE_REF,
+            kind: "snapshot",
+            snapshotId: CRAWL_SNAPSHOT_ID,
+          },
+        ],
+      },
+      {
+        occurrenceId: COMPETITOR_CSV_ORIGIN,
+        originKind: "csv_keyword_gap",
+        snapshotId: COMPETITOR_SNAPSHOT,
+        observationId: COMPETITOR_OBSERVATION,
+        sourcePointer: "/valueJson/competitorDomain",
+        importPreviewId: COMPETITOR_IMPORT_PREVIEW,
+        observedAt: OBSERVED_AT,
+        evidenceRefs: [
+          { kind: "evidence", evidenceId: COMPETITOR_EVIDENCE },
+        ],
+      },
+      {
+        occurrenceId: COMPETITOR_MANUAL_ORIGIN,
+        originKind: "manual",
+        manualEntryId: MANUAL_ENTRY,
+        observedAt: null,
+        evidenceRefs: [],
+      },
+    ],
+    lastObservedAt: OBSERVED_AT,
+    serpOverlap: {
+      availability: "unavailable",
+      value: null,
+      limitation:
+        "SERP overlap is unavailable because Competitor Library v1 has no canonical SERP-overlap writer.",
+    },
+    aiCitationInsight: {
+      availability: "unavailable",
+      value: null,
+      limitation:
+        "AI citation insight is unavailable because Competitor Library v1 has no canonical AI-citation writer.",
+    },
+    coverage: {
+      availability: "partial",
+      limitations: [
+        "This Competitor is still a candidate and has not been approved for analysis.",
+        "A Product Profile source is approved, but this stable Competitor Library entity is still awaiting its own review.",
+      ],
+    },
+  } as const;
+}
+
+function competitorLibraryResponse() {
+  return {
+    projectId: PROJECT_ID,
+    data: [competitorItem()],
+    meta: {
+      limit: 50,
+      nextCursor: null,
+      hasNext: false,
+      coverage: {
+        availability: "partial",
+        limitations: competitorItem().coverage.limitations,
+      },
+    },
+  } as const;
+}
+
+function competitorDetailResponse(competitorId = COMPETITOR_A) {
+  return {
+    projectId: PROJECT_ID,
+    data: competitorItem(competitorId),
   } as const;
 }
 
@@ -533,6 +646,141 @@ describe("Growth Map browser API boundary", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getGrowthMapKeywords(PROJECT_ID)).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes Competitor cursor params into one stable key and encoded URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok(competitorLibraryResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const params = { cursor: "next+/=", limit: 25 } as const;
+    const options = buildGrowthMapCompetitorsQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      params,
+    );
+    await getGrowthMapCompetitors(PROJECT_ID, params);
+
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "competitors",
+      { cursor: "next+/=", limit: 25 },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitors?limit=25&cursor=next%2B%2F%3D`,
+      expect.any(Object),
+    );
+  });
+
+  it("uses the Competitor page default and omits an empty cursor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok(competitorLibraryResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const options = buildGrowthMapCompetitorsQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      { cursor: "" },
+    );
+    await getGrowthMapCompetitors(PROJECT_ID, { cursor: "" });
+
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "competitors",
+      { cursor: null, limit: 50 },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitors?limit=50`,
+      expect.any(Object),
+    );
+  });
+
+  it("keys Competitor detail by exact id and active UI locale", () => {
+    expect(
+      growthMapCompetitorDetailQueryKey(PROJECT_ID, UI_LOCALE, COMPETITOR_A),
+    ).not.toEqual(
+      growthMapCompetitorDetailQueryKey(PROJECT_ID, UI_LOCALE, COMPETITOR_B),
+    );
+    expect(
+      growthMapCompetitorsQueryKey(PROJECT_ID, "en", { limit: 25 }),
+    ).not.toEqual(
+      growthMapCompetitorsQueryKey(PROJECT_ID, "zh-CN", { limit: 25 }),
+    );
+    expect(
+      buildGrowthMapCompetitorDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        null,
+      ).enabled,
+    ).toBe(false);
+    expect(
+      buildGrowthMapCompetitorDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        COMPETITOR_A,
+      ).enabled,
+    ).toBe(true);
+  });
+
+  it("switching Competitor id performs a distinct detail request", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(competitorDetailResponse(COMPETITOR_A)))
+      .mockResolvedValueOnce(ok(competitorDetailResponse(COMPETITOR_B)));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const observer = new QueryObserver(
+      client,
+      buildGrowthMapCompetitorDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        COMPETITOR_A,
+      ),
+    );
+
+    const unsubscribe = observer.subscribe(() => undefined);
+    await observer.refetch();
+    observer.setOptions(
+      buildGrowthMapCompetitorDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        COMPETITOR_B,
+      ),
+    );
+    await observer.refetch();
+    unsubscribe();
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitors/${COMPETITOR_A}`,
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitors/${COMPETITOR_B}`,
+    ]);
+  });
+
+  it("does not construct a Competitor detail request without an exact id", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getGrowthMapCompetitorDetail(PROJECT_ID, null)).rejects.toThrow(
+      "competitorId",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on an invalid Competitor Library projection", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      ok({
+        projectId: PROJECT_ID,
+        data: [{ competitorId: COMPETITOR_A, syntheticScore: 98 }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getGrowthMapCompetitors(PROJECT_ID)).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

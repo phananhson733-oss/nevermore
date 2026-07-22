@@ -91,15 +91,38 @@ describe("i18n message key parity", () => {
     );
   });
 
-  it("keeps the traceable Keyword Library Chinese-first without unsupported actions", () => {
+  it("keeps the libraries Chinese-first, customer-readable, and free of unsupported actions", () => {
     expect(zhCN.growthMap.keywordLibrary).toMatchObject({
-      libraryScopeTitle: "只汇总可追溯的关键词记录",
+      libraryScopeTitle: "已入库关键词及其来源",
       selectedKeyword: "所选关键词",
-      classificationTitle: "分类与页面映射",
-      metricsTitle: "真实关键词指标",
-      sourcesTitle: "真实来源记录",
-      notAvailable: "数据不足",
+      classificationTitle: "分类与页面",
+      metricsTitle: "关键词指标",
+      sourcesTitle: "来源记录",
+      notAvailable: "暂无数据",
+      viewSourceDetails: "查看来源详情",
+      viewRecordDetails: "查看记录详情",
     });
+    expect(zhCN.growthMap.competitorLibrary).toMatchObject({
+      libraryScopeTitle: "已入库竞品及其来源",
+      governanceEyebrow: "审核信息",
+      noCanonicalObservation: "暂无可用数据",
+      originsTitle: "来源记录",
+      viewOriginDetails: "查看来源详情",
+      viewRecordDetails: "查看记录详情",
+    });
+    expect(
+      zhCN.growthMap.platformLimitations.competitorSerpWriterUnavailable,
+    ).toContain("Competitor Library v1");
+    expect(
+      zhCN.growthMap.platformLimitations.competitorSerpWriterUnavailable,
+    ).toContain("SERP-overlap");
+    expect(
+      zhCN.growthMap.platformLimitations.competitorAiCitationWriterUnavailable,
+    ).toContain("AI citation");
+    expect(
+      zhCN.growthMap.platformLimitations
+        .competitorSourceApprovedReviewPending,
+    ).toContain("Product Profile");
     expect(zhCN.growthMap.keywordLibrary.metric).toEqual({
       volume: "搜索量",
       kd: "关键词难度（KD）",
@@ -120,6 +143,10 @@ describe("i18n message key parity", () => {
     expect(zhCN.growthMap.keywordLibrary).not.toHaveProperty("addAction");
     expect(en.growthMap.keywordLibrary).not.toHaveProperty("importAction");
     expect(en.growthMap.keywordLibrary).not.toHaveProperty("addAction");
+    expect(zhCN.growthMap.competitorLibrary).not.toHaveProperty("manualAction");
+    expect(zhCN.growthMap.competitorLibrary).not.toHaveProperty("addAction");
+    expect(en.growthMap.competitorLibrary).not.toHaveProperty("manualAction");
+    expect(en.growthMap.competitorLibrary).not.toHaveProperty("addAction");
   });
 
   it("localizes every Context control group and app-shell accessibility name", () => {

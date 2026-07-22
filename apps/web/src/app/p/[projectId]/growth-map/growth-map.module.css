@@ -1814,6 +1814,22 @@
   margin-top: 10px;
 }
 
+.keywordMetricObservedAt {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 11px 0 0;
+  color: var(--sf-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.keywordMetricObservedAt time {
+  color: var(--sf-fg);
+  text-align: right;
+}
+
 .keywordMetricMeta {
   display: grid;
   gap: 6px;
@@ -1940,6 +1956,41 @@
   border-top: 1px solid var(--sf-border);
 }
 
+.traceDisclosure {
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.traceDisclosure > summary,
+.recordDisclosure > summary {
+  width: fit-content;
+  color: var(--sf-cobalt-text);
+  font-size: 12px;
+  font-weight: 780;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.traceDisclosure > summary:hover,
+.recordDisclosure > summary:hover,
+.traceDisclosure[open] > summary,
+.recordDisclosure[open] > summary {
+  color: var(--gm-ink);
+}
+
+.traceDisclosure > summary:focus-visible,
+.recordDisclosure > summary:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+.traceDisclosure .keywordMetricMeta,
+.traceDisclosure .keywordSourceRefs {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .keywordSourceNote {
   display: grid;
   grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
@@ -1955,15 +2006,19 @@
 }
 
 .keywordDetailFooter {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
   padding: 15px 20px;
   background: var(--sf-surface-deep);
   border-radius: 0 0 14px 14px;
 }
 
-.keywordDetailFooter > span {
+.recordDisclosureBody {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.recordDisclosureBody > span {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -1981,6 +2036,481 @@
 .keywordDetailFooter strong {
   color: var(--sf-fg);
   font-size: 13px;
+}
+
+.competitorWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.48fr) minmax(420px, 0.95fr);
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.competitorLedger {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 14px;
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.competitorLedgerHeader,
+.competitorRowButton {
+  display: grid;
+  grid-template-columns:
+    minmax(190px, 1.25fr)
+    minmax(142px, 0.86fr)
+    minmax(176px, 1fr)
+    minmax(186px, 1.08fr);
+  align-items: center;
+  gap: 13px;
+}
+
+.competitorLedgerHeader {
+  min-height: 50px;
+  padding: 0 15px;
+  color: var(--sf-muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  background: var(--sf-surface-deep);
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.competitorList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.competitorRow + .competitorRow {
+  border-top: 1px solid var(--sf-border);
+}
+
+.competitorRowButton {
+  position: relative;
+  width: 100%;
+  min-height: 108px;
+  padding: 15px;
+  color: var(--sf-fg);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.competitorRowButton::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  content: "";
+  background: var(--sf-mint);
+  opacity: 0;
+}
+
+.competitorRowButton:hover {
+  background: color-mix(in srgb, var(--gm-mint-wash) 42%, var(--sf-surface));
+}
+
+.competitorRowSelected,
+.competitorRowSelected:hover {
+  background: color-mix(in srgb, var(--gm-mint-wash) 79%, var(--sf-surface));
+}
+
+.competitorRowSelected::before {
+  opacity: 1;
+}
+
+.competitorRowButton:focus-visible {
+  z-index: 1;
+}
+
+.competitorIdentityCell,
+.competitorGovernanceCell,
+.competitorScopeCell,
+.competitorOriginSummary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.competitorIdentityCell {
+  gap: 4px;
+}
+
+.competitorIdentityCell strong {
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 16px;
+  font-weight: 820;
+  line-height: 1.35;
+}
+
+.competitorIdentityCell small,
+.competitorGovernanceCell > span:last-child,
+.competitorOriginSummary time {
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.competitorGovernanceCell {
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.competitorStatus {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 27px;
+  align-items: center;
+  padding: 0 9px;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 999px;
+}
+
+.competitorStatusCandidate {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+}
+
+.competitorStatusApproved {
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+}
+
+.competitorStatusExcluded {
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+}
+
+.competitorMissing {
+  color: var(--sf-muted) !important;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.competitorScopeCell,
+.competitorScopeChips {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.competitorScopeCell small,
+.competitorScopeChips small {
+  padding: 3px 6px;
+  color: var(--sf-violet-text);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.3;
+  background: var(--sf-violet-soft);
+  border-radius: 5px;
+}
+
+.competitorOriginSummary {
+  position: relative;
+  gap: 5px;
+  padding-right: 24px;
+}
+
+.competitorOriginSummary > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.competitorOriginSummary small {
+  padding: 3px 6px;
+  color: var(--sf-mint-text);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.3;
+  background: var(--sf-mint-soft);
+  border-radius: 5px;
+}
+
+.competitorOriginSummary > svg {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  color: var(--sf-muted);
+  transform: translateY(-50%);
+  transition: color 140ms ease, translate 140ms ease;
+}
+
+.competitorRowButton:hover .competitorOriginSummary > svg,
+.competitorRowSelected .competitorOriginSummary > svg {
+  color: var(--gm-ink);
+  translate: 2px 0;
+}
+
+.competitorDetailPanel {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sf-border-strong) transparent;
+}
+
+.competitorDetailHeader {
+  padding: 22px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--gm-mint-wash) 72%, var(--sf-surface)),
+      var(--sf-surface) 68%
+    );
+  border-bottom: 1px solid var(--sf-border);
+  border-radius: 14px 14px 0 0;
+}
+
+.competitorDetailHeader h2 {
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+  color: var(--gm-ink);
+  font-size: clamp(27px, 2.25vw, 36px);
+  line-height: 1.12;
+}
+
+.competitorDetailHeader > p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-muted);
+  font-size: 14px;
+}
+
+.competitorDetailTags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.competitorDetailTags > span:last-child {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  padding: 0 9px;
+  color: var(--sf-violet-text);
+  font-size: 13px;
+  font-weight: 780;
+  background: var(--sf-violet-soft);
+  border-radius: 999px;
+}
+
+.competitorInsightGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.competitorInsightCard {
+  min-width: 0;
+  padding: 13px;
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+}
+
+.competitorInsightCard > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.competitorInsightCard > header > strong {
+  color: var(--sf-fg);
+  font-size: 14px;
+}
+
+.competitorInsightAvailability {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  border-radius: 999px;
+}
+
+.competitorInsightAvailable {
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+}
+
+.competitorInsightUnavailable {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+}
+
+.competitorInsightValue {
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+  color: var(--gm-ink);
+  font-size: 22px;
+  font-weight: 820;
+  font-variant-numeric: tabular-nums;
+}
+
+.competitorInsightLimitation {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 9px;
+  color: var(--sf-amber-text);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--sf-amber-soft);
+  border-radius: 7px;
+}
+
+.competitorInsightLimitation svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.competitorObservedState {
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.competitorOriginFacts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 13px 0 0;
+}
+
+.competitorOriginFacts > div {
+  min-width: 0;
+  padding: 9px;
+  background: var(--sf-surface);
+  border-radius: 7px;
+}
+
+.competitorOriginFacts dt {
+  color: var(--sf-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.competitorOriginFacts dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.competitorOriginFacts code {
+  overflow-wrap: anywhere;
+  color: inherit;
+  font-size: inherit;
+}
+
+.competitorEvidenceBlock {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.competitorEvidenceBlock > strong {
+  color: var(--sf-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.competitorEvidenceEmpty {
+  margin: 5px 0 0;
+  color: var(--sf-muted);
+  font-size: 12px;
+}
+
+.competitorEvidenceList {
+  display: grid;
+  gap: 6px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.competitorEvidenceList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 8px 9px;
+  background: var(--sf-surface);
+  border-radius: 7px;
+}
+
+.competitorEvidenceList li > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.competitorEvidenceList strong {
+  color: var(--sf-fg);
+  font-size: 12px;
+}
+
+.competitorEvidenceList code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-muted);
+  font-size: 11px;
+}
+
+.competitorEvidenceList li > code {
+  text-align: right;
+}
+
+.competitorManageLink,
+.competitorInlineSourceLink {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--sf-cobalt-text);
+  font-size: 14px;
+  font-weight: 780;
+  text-decoration: none;
+}
+
+.competitorManageLink {
+  min-height: 43px;
+  margin-top: 20px;
+  padding: 0 15px;
+  color: var(--gm-ink);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: 10px;
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.competitorInlineSourceLink {
+  margin-top: 8px;
+}
+
+.competitorManageLink:hover,
+.competitorInlineSourceLink:hover {
+  color: var(--gm-ink);
+}
+
+.competitorManageLink:focus-visible,
+.competitorInlineSourceLink:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
 }
 
 .libraryUnavailable {
@@ -2048,6 +2578,21 @@
   line-height: 1.55;
 }
 
+.cursorPageEmpty {
+  display: flex;
+  min-height: 300px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  text-align: center;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 14px;
+  box-shadow: var(--sf-shadow-sm);
+}
+
 .pageState,
 .portfolioEmpty {
   display: flex;
@@ -2088,6 +2633,17 @@
   .keywordWorkspace {
     grid-template-columns: minmax(0, 1.4fr) minmax(380px, 0.9fr);
   }
+  .competitorWorkspace {
+    grid-template-columns: minmax(0, 1.36fr) minmax(380px, 0.9fr);
+  }
+  .competitorLedgerHeader,
+  .competitorRowButton {
+    grid-template-columns:
+      minmax(174px, 1.1fr)
+      minmax(132px, 0.82fr)
+      minmax(158px, 0.94fr)
+      minmax(170px, 1fr);
+  }
   .ledgerHeader,
   .rowButton {
     grid-template-columns: minmax(240px, 2fr) 70px 82px 82px 75px 105px;
@@ -2099,6 +2655,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .keywordWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .competitorWorkspace {
     grid-template-columns: minmax(0, 1fr);
   }
   .detailPanel {
@@ -2147,6 +2706,9 @@
   .keywordLedgerHeader {
     display: none;
   }
+  .competitorLedgerHeader {
+    display: none;
+  }
   .rowButton {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 14px 8px;
@@ -2159,7 +2721,16 @@
     min-height: 0;
     padding: 16px;
   }
+  .competitorRowButton {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 9px;
+    min-height: 0;
+    padding: 16px;
+  }
   .keywordIdentityCell {
+    grid-column: 1 / -1;
+  }
+  .competitorIdentityCell {
     grid-column: 1 / -1;
   }
   .keywordKindCell,
@@ -2173,6 +2744,22 @@
   .keywordKindCell::before,
   .keywordStatusCell::before,
   .keywordSourceSummary::before {
+    content: attr(data-column);
+    color: var(--sf-muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .competitorGovernanceCell,
+  .competitorScopeCell,
+  .competitorOriginSummary {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  .competitorGovernanceCell::before,
+  .competitorScopeCell::before,
+  .competitorOriginSummary::before {
     content: attr(data-column);
     color: var(--sf-muted);
     font-size: 12px;
@@ -2237,19 +2824,30 @@
   .keywordRowButton {
     grid-template-columns: 1fr 1fr;
   }
+  .competitorRowButton {
+    grid-template-columns: 1fr 1fr;
+  }
   .keywordSourceSummary {
     grid-column: 1 / -1;
   }
+  .competitorOriginSummary {
+    grid-column: 1 / -1;
+  }
   .keywordDetailHeader,
-  .keywordDetailSection {
+  .keywordDetailSection,
+  .competitorDetailHeader {
     padding-inline: 16px;
   }
   .keywordDetailPanel > .limitations {
     margin-inline: 16px;
   }
+  .competitorDetailPanel > .limitations {
+    margin-inline: 16px;
+  }
   .keywordClassificationGrid,
   .keywordSourceFacts,
-  .keywordDetailFooter {
+  .recordDisclosureBody,
+  .competitorOriginFacts {
     grid-template-columns: minmax(0, 1fr);
   }
   .keywordMetricMeta > div,
@@ -2259,6 +2857,12 @@
   }
   .keywordMetricMeta dd,
   .keywordSourceRefs dd {
+    text-align: left;
+  }
+  .competitorEvidenceList li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .competitorEvidenceList li > code {
     text-align: left;
   }
   .detailHeader,

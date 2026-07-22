@@ -2,6 +2,10 @@
 
 import type {
   GrowthMapCoverage,
+  GrowthMapCompetitorAiCitationInsight,
+  GrowthMapCompetitorLibraryItem,
+  GrowthMapCompetitorOriginOccurrence,
+  GrowthMapCompetitorSerpOverlap,
   GrowthMapKeywordLibraryItem,
   GrowthMapKeywordNumericMetric,
   GrowthMapKeywordSourceOccurrence,
@@ -23,7 +27,7 @@ import {
   Database,
   FileSearch,
   Globe2,
-  Map,
+  Map as MapIcon,
   Search,
   ShieldCheck,
   Sparkles,
@@ -38,6 +42,7 @@ import {
   useMemo,
   useState,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import {
   Button,
@@ -50,6 +55,8 @@ import {
 import { useReviewFinding } from "@/lib/api/hooks-diagnosis";
 import {
   refreshGrowthMapAfterFindingReview,
+  useGrowthMapCompetitorDetail,
+  useGrowthMapCompetitors,
   useGrowthMapKeywordDetail,
   useGrowthMapKeywords,
   useGrowthMapUrlDetail,
@@ -60,10 +67,13 @@ import { executionHrefForRef } from "../execution/_execution-deep-link.ts";
 import {
   GROWTH_MAP_OBJECT_MODES,
   buildGrowthMapReviewCommand,
+  competitorDetailReadState,
+  competitorLibraryReadState,
   findMetricObservation,
   findingTargetLabelKey,
   growthMapDetailAllowsFindingReview,
   growthMapLocationHref,
+  growthMapPlatformLimitationKey,
   identitySourceKey,
   keywordDetailReadState,
   keywordLibraryReadState,
@@ -73,7 +83,10 @@ import {
   metricValueLabelKey,
   normalizeGrowthMapObjectMode,
   presentGrowthMapReviewProblem,
+  rememberGrowthMapCursorPredecessor,
+  resolveGrowthMapCursorPredecessor,
   resolveVisibleSitePageSelectionForFinding,
+  resolveVisibleCompetitorSelection,
   resolveVisibleKeywordSelection,
   safeExternalPageUrl,
   shouldShowGrowthMapReviewError,
@@ -107,8 +120,8 @@ const COVERAGE_CLASS = {
   unavailable: styles.coverageUnavailable,
 } as const;
 
-const MODE_ICONS: Readonly<Record<GrowthMapObjectMode, typeof Map>> = {
-  pages: Map,
+const MODE_ICONS: Readonly<Record<GrowthMapObjectMode, typeof MapIcon>> = {
+  pages: MapIcon,
   keywords: BookOpenText,
   competitors: Target,
 };
@@ -317,10 +330,46 @@ function LimitationList({
       </strong>
       <ul>
         {limitations.map((limitation) => (
-          <li key={limitation}>{limitation}</li>
+          <li key={limitation}>
+            <PlatformLimitationText limitation={limitation} />
+          </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+function PlatformLimitationText({
+  limitation,
+}: {
+  readonly limitation: string;
+}) {
+  const t = useTranslations("growthMap.platformLimitations");
+  const key = growthMapPlatformLimitationKey(limitation);
+  return key === null ? limitation : t(key);
+}
+
+function LibraryCursorPageEmpty({
+  icon,
+  title,
+  description,
+  actionLabel,
+  onReset,
+}: {
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly description: string;
+  readonly actionLabel: string;
+  readonly onReset: () => void;
+}) {
+  return (
+    <section className={styles.cursorPageEmpty} aria-live="polite">
+      <EmptyState icon={icon} title={title} description={description} />
+      <Button type="button" variant="secondary" size="sm" onClick={onReset}>
+        <ArrowLeft aria-hidden="true" size={16} />
+        {actionLabel}
+      </Button>
+    </section>
   );
 }
 
@@ -1698,28 +1747,37 @@ function KeywordMetricCard({
         <strong className={styles.keywordMissing}>{t("notAvailable")}</strong>
       )}
       {metric === null ? null : (
-        <dl className={styles.keywordMetricMeta}>
-          <div>
-            <dt>{t("metricObservedAt")}</dt>
-            <dd>
-              <time dateTime={metric.observedAt}>
-                {formatObservedAt(locale, metric.observedAt)}
-              </time>
-            </dd>
-          </div>
-          <div>
-            <dt>{t("metricObservation")}</dt>
-            <dd>
-              <code title={metric.observationId}>
-                {truncateId(metric.observationId)}
-              </code>
-            </dd>
-          </div>
-          <div>
-            <dt>{t("metricPointer")}</dt>
-            <dd><code>{metric.valuePointer}</code></dd>
-          </div>
-        </dl>
+        <>
+          <p className={styles.keywordMetricObservedAt}>
+            <span>{t("metricObservedAt")}</span>
+            <time dateTime={metric.observedAt}>
+              {formatObservedAt(locale, metric.observedAt)}
+            </time>
+          </p>
+          <details className={styles.traceDisclosure}>
+            <summary>{t("viewMetricSourceDetails")}</summary>
+            <dl className={styles.keywordMetricMeta}>
+              <div>
+                <dt>{t("snapshotId")}</dt>
+                <dd>
+                  <code title={metric.snapshotId}>{metric.snapshotId}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>{t("metricObservation")}</dt>
+                <dd>
+                  <code title={metric.observationId}>
+                    {metric.observationId}
+                  </code>
+                </dd>
+              </div>
+              <div>
+                <dt>{t("metricPointer")}</dt>
+                <dd><code>{metric.valuePointer}</code></dd>
+              </div>
+            </dl>
+          </details>
+        </>
       )}
       {presentation.limitation === null ? null : (
         <p className={styles.keywordMetricLimitation}>
@@ -1782,36 +1840,53 @@ function KeywordSourceOccurrenceCard({
           </dd>
         </div>
       </dl>
-      <dl className={styles.keywordSourceRefs}>
-        <div>
-          <dt>{t("occurrenceId")}</dt>
-          <dd><code title={occurrence.occurrenceId}>{truncateId(occurrence.occurrenceId)}</code></dd>
-        </div>
-        {occurrence.snapshotId === null ? null : (
+      <details className={styles.traceDisclosure}>
+        <summary>{t("viewSourceDetails")}</summary>
+        <dl className={styles.keywordSourceRefs}>
           <div>
-            <dt>{t("snapshotId")}</dt>
-            <dd><code title={occurrence.snapshotId}>{truncateId(occurrence.snapshotId)}</code></dd>
+            <dt>{t("occurrenceId")}</dt>
+            <dd>
+              <code title={occurrence.occurrenceId}>
+                {occurrence.occurrenceId}
+              </code>
+            </dd>
           </div>
-        )}
-        {occurrence.sourceObservationId === null ? null : (
-          <div>
-            <dt>{t("observationId")}</dt>
-            <dd><code title={occurrence.sourceObservationId}>{truncateId(occurrence.sourceObservationId)}</code></dd>
-          </div>
-        )}
-        {occurrence.sourcePointer === null ? null : (
-          <div>
-            <dt>{t("sourcePointer")}</dt>
-            <dd><code>{occurrence.sourcePointer}</code></dd>
-          </div>
-        )}
-        {occurrence.sourceKind === "csv_import" ? (
-          <div>
-            <dt>{t("importPreviewId")}</dt>
-            <dd><code title={occurrence.importPreviewId}>{truncateId(occurrence.importPreviewId)}</code></dd>
-          </div>
-        ) : null}
-      </dl>
+          {occurrence.snapshotId === null ? null : (
+            <div>
+              <dt>{t("snapshotId")}</dt>
+              <dd>
+                <code title={occurrence.snapshotId}>{occurrence.snapshotId}</code>
+              </dd>
+            </div>
+          )}
+          {occurrence.sourceObservationId === null ? null : (
+            <div>
+              <dt>{t("observationId")}</dt>
+              <dd>
+                <code title={occurrence.sourceObservationId}>
+                  {occurrence.sourceObservationId}
+                </code>
+              </dd>
+            </div>
+          )}
+          {occurrence.sourcePointer === null ? null : (
+            <div>
+              <dt>{t("sourcePointer")}</dt>
+              <dd><code>{occurrence.sourcePointer}</code></dd>
+            </div>
+          )}
+          {occurrence.sourceKind === "csv_import" ? (
+            <div>
+              <dt>{t("importPreviewId")}</dt>
+              <dd>
+                <code title={occurrence.importPreviewId}>
+                  {occurrence.importPreviewId}
+                </code>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </details>
       {occurrence.scopeLimitation === null ? null : (
         <p className={styles.keywordSourceNote}>
           <strong>{t("scopeLimitation")}</strong>
@@ -1959,14 +2034,19 @@ function KeywordDetailPanel({
       </section>
 
       <footer className={styles.keywordDetailFooter}>
-        <span>
-          {t("keywordId")}
-          <code title={detail.keywordId}>{truncateId(detail.keywordId)}</code>
-        </span>
-        <span>
-          {t("revision")}
-          <strong>{detail.revision}</strong>
-        </span>
+        <details className={styles.recordDisclosure}>
+          <summary>{t("viewRecordDetails")}</summary>
+          <div className={styles.recordDisclosureBody}>
+            <span>
+              {t("keywordId")}
+              <code title={detail.keywordId}>{detail.keywordId}</code>
+            </span>
+            <span>
+              {t("revision")}
+              <strong>{detail.revision}</strong>
+            </span>
+          </div>
+        </details>
       </footer>
     </aside>
   );
@@ -2058,8 +2138,9 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
   const searchParams = useSearchParams();
   const cursor = searchParams.get("cursor");
   const requestedKeywordId = searchParams.get("selectedKeywordId");
-  const [cursorHistory, setCursorHistory] =
-    useState<readonly (string | null)[]>([]);
+  const [cursorPredecessors, setCursorPredecessors] = useState<
+    ReadonlyMap<string, string | null>
+  >(() => new Map());
   const listQuery = useGrowthMapKeywords(projectId, { cursor, limit: 50 });
   const items = listQuery.data?.data ?? [];
   const selectedKeywordId = resolveVisibleKeywordSelection(
@@ -2071,7 +2152,12 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
     isPending: listQuery.isPending,
     isError: listQuery.isError,
     itemCount: items.length,
+    cursor,
   });
+  const previousCursor = resolveGrowthMapCursorPredecessor(
+    cursorPredecessors,
+    cursor,
+  );
 
   useEffect(() => {
     // As with the URL portfolio, an absent selection deliberately renders the
@@ -2109,7 +2195,9 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
   function goNext(): void {
     const nextCursor = listQuery.data?.meta.nextCursor ?? null;
     if (nextCursor === null) return;
-    setCursorHistory((current) => [...current, cursor]);
+    setCursorPredecessors((current) =>
+      rememberGrowthMapCursorPredecessor(current, cursor, nextCursor),
+    );
     router.replace(
       growthMapLocationHref(pathname, locationSearch, {
         cursor: nextCursor,
@@ -2120,12 +2208,20 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
   }
 
   function goPrevious(): void {
-    const previous = cursorHistory.at(-1);
-    if (previous === undefined) return;
-    setCursorHistory((current) => current.slice(0, -1));
+    if (previousCursor === undefined) return;
     router.replace(
       growthMapLocationHref(pathname, locationSearch, {
-        cursor: previous,
+        cursor: previousCursor,
+        selectedKeywordId: null,
+      }),
+      { scroll: false },
+    );
+  }
+
+  function goFirst(): void {
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, {
+        cursor: null,
         selectedKeywordId: null,
       }),
       { scroll: false },
@@ -2201,17 +2297,27 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
       ) : (
         <div className={styles.keywordWorkspace}>
           <div className={styles.masterColumn}>
-            <KeywordList
-              items={items}
-              selectedKeywordId={selectedKeywordId}
-              onSelect={selectKeyword}
-            />
+            {readState === "cursor_empty" ? (
+              <LibraryCursorPageEmpty
+                icon={<BookOpenText size={28} />}
+                title={t("cursorPageEmptyTitle")}
+                description={t("cursorPageEmptyDescription")}
+                actionLabel={t("firstPage")}
+                onReset={goFirst}
+              />
+            ) : (
+              <KeywordList
+                items={items}
+                selectedKeywordId={selectedKeywordId}
+                onSelect={selectKeyword}
+              />
+            )}
             <nav className={styles.pagination} aria-label={t("paginationLabel")}>
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={cursorHistory.length === 0}
+                disabled={previousCursor === undefined}
                 onClick={goPrevious}
               >
                 <ArrowLeft aria-hidden="true" size={16} />
@@ -2240,26 +2346,844 @@ function KeywordLibraryPane({ projectId }: { readonly projectId: string }) {
   );
 }
 
-function UnavailableLibrary({
-  mode,
+type ProductProfileCompetitorOrigin = Extract<
+  GrowthMapCompetitorOriginOccurrence,
+  { readonly originKind: "product_profile" }
+>;
+
+type ProductProfileOriginEvidence =
+  ProductProfileCompetitorOrigin["evidenceRefs"][number];
+
+const COMPETITOR_STATUS_CLASS = {
+  candidate: styles.competitorStatusCandidate,
+  approved: styles.competitorStatusApproved,
+  excluded: styles.competitorStatusExcluded,
+} as const;
+
+function CompetitorStatusPill({
+  status,
 }: {
-  readonly mode: "competitors";
+  readonly status: GrowthMapCompetitorLibraryItem["reviewStatus"];
+}) {
+  const t = useTranslations("growthMap.competitorLibrary.reviewStatus");
+  return (
+    <span className={cx(styles.competitorStatus, COMPETITOR_STATUS_CLASS[status])}>
+      {t(status)}
+    </span>
+  );
+}
+
+function CompetitorRelationship({
+  relationship,
+}: {
+  readonly relationship: GrowthMapCompetitorLibraryItem["relationship"];
+}) {
+  const t = useTranslations("growthMap.competitorLibrary");
+  return (
+    <span className={relationship === null ? styles.competitorMissing : undefined}>
+      {relationship === null
+        ? t("relationshipPending")
+        : t(`relationship.${relationship}`)}
+    </span>
+  );
+}
+
+function CompetitorRow({
+  item,
+  selected,
+  onSelect,
+}: {
+  readonly item: GrowthMapCompetitorLibraryItem;
+  readonly selected: boolean;
+  readonly onSelect: (competitorId: string) => void;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.competitorLibrary");
+  const originKinds = Array.from(
+    new Set(item.originOccurrences.map((origin) => origin.originKind)),
+  );
+
+  return (
+    <li className={styles.competitorRow}>
+      <button
+        type="button"
+        className={cx(
+          styles.competitorRowButton,
+          selected && styles.competitorRowSelected,
+        )}
+        aria-pressed={selected}
+        onClick={() => onSelect(item.competitorId)}
+      >
+        <span className={styles.competitorIdentityCell}>
+          <strong>{item.name ?? item.domain}</strong>
+          <small>{item.domain}</small>
+        </span>
+        <span
+          className={styles.competitorGovernanceCell}
+          data-column={t("columns.governance")}
+        >
+          <CompetitorStatusPill status={item.reviewStatus} />
+          <CompetitorRelationship relationship={item.relationship} />
+        </span>
+        <span
+          className={styles.competitorScopeCell}
+          data-column={t("columns.analysisScope")}
+        >
+          {item.analysisScope.length === 0 ? (
+            <span className={styles.competitorMissing}>{t("scopePending")}</span>
+          ) : (
+            item.analysisScope.map((scope) => (
+              <small key={scope}>{t(`analysisScope.${scope}`)}</small>
+            ))
+          )}
+        </span>
+        <span
+          className={styles.competitorOriginSummary}
+          data-column={t("columns.origins")}
+        >
+          <span>
+            {originKinds.map((originKind) => (
+              <small key={originKind}>{t(`originKind.${originKind}`)}</small>
+            ))}
+          </span>
+          {item.lastObservedAt === null ? (
+            <time>{t("notObserved")}</time>
+          ) : (
+            <time dateTime={item.lastObservedAt}>
+              {formatObservedAt(locale, item.lastObservedAt)}
+            </time>
+          )}
+          <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function CompetitorList({
+  items,
+  selectedCompetitorId,
+  onSelect,
+}: {
+  readonly items: readonly GrowthMapCompetitorLibraryItem[];
+  readonly selectedCompetitorId: string | null;
+  readonly onSelect: (competitorId: string) => void;
+}) {
+  const t = useTranslations("growthMap.competitorLibrary");
+  return (
+    <div className={styles.competitorLedger}>
+      <div className={styles.competitorLedgerHeader} aria-hidden="true">
+        <span>{t("columns.competitor")}</span>
+        <span>{t("columns.governance")}</span>
+        <span>{t("columns.analysisScope")}</span>
+        <span>{t("columns.origins")}</span>
+      </div>
+      <ul className={styles.competitorList} aria-label={t("listLabel")}>
+        {items.map((item) => (
+          <CompetitorRow
+            key={item.competitorId}
+            item={item}
+            selected={selectedCompetitorId === item.competitorId}
+            onSelect={onSelect}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CompetitorOriginFact({
+  label,
+  value,
+  technical = true,
+}: {
+  readonly label: string;
+  readonly value: string | number;
+  readonly technical?: boolean;
+}) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        {technical ? <code title={String(value)}>{String(value)}</code> : value}
+      </dd>
+    </div>
+  );
+}
+
+function productProfileEvidenceSourceId(
+  evidence: ProductProfileOriginEvidence,
+): string | null {
+  switch (evidence.kind) {
+    case "snapshot":
+      return evidence.snapshotId;
+    case "pageSnapshot":
+      return evidence.pageSnapshotId;
+    case "observation":
+      return evidence.observationId;
+    case "analysisInvocation":
+      return evidence.analysisInvocationId;
+    case "declaredHint":
+    case "userEdit":
+      return null;
+  }
+}
+
+function CompetitorEvidenceList({
+  origin,
+}: {
+  readonly origin: GrowthMapCompetitorOriginOccurrence;
+}) {
+  const t = useTranslations("growthMap.competitorLibrary");
+  if (origin.evidenceRefs.length === 0) {
+    return <p className={styles.competitorEvidenceEmpty}>{t("noEvidenceRefs")}</p>;
+  }
+  return (
+    <ul className={styles.competitorEvidenceList}>
+      {origin.originKind === "product_profile"
+        ? origin.evidenceRefs.map((evidence) => {
+            const sourceId = productProfileEvidenceSourceId(evidence);
+            return (
+              <li key={evidence.evidenceRefId}>
+                <span>
+                  <strong>{t(`evidenceKind.${evidence.kind}`)}</strong>
+                  <code title={evidence.evidenceRefId}>
+                    {evidence.evidenceRefId}
+                  </code>
+                </span>
+                {sourceId === null ? null : (
+                  <code title={sourceId}>{sourceId}</code>
+                )}
+              </li>
+            );
+          })
+        : origin.evidenceRefs.map((evidence) => (
+            <li key={evidence.evidenceId}>
+              <span>
+                <strong>{t("evidenceKind.evidence")}</strong>
+                <code title={evidence.evidenceId}>
+                  {evidence.evidenceId}
+                </code>
+              </span>
+            </li>
+          ))}
+    </ul>
+  );
+}
+
+function CompetitorOriginOccurrenceCard({
+  origin,
+}: {
+  readonly origin: GrowthMapCompetitorOriginOccurrence;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.competitorLibrary");
+  return (
+    <article className={styles.keywordSourceCard}>
+      <header>
+        <div>
+          <Database aria-hidden="true" size={18} />
+          <strong>{t(`originKind.${origin.originKind}`)}</strong>
+        </div>
+        {origin.observedAt === null ? (
+          <span className={styles.competitorObservedState}>{t("notObserved")}</span>
+        ) : (
+          <time dateTime={origin.observedAt}>
+            {formatObservedAt(locale, origin.observedAt)}
+          </time>
+        )}
+      </header>
+      <details className={styles.traceDisclosure}>
+        <summary>{t("viewOriginDetails")}</summary>
+        <dl className={styles.competitorOriginFacts}>
+          <CompetitorOriginFact
+            label={t("occurrenceId")}
+            value={origin.occurrenceId}
+          />
+          {origin.originKind === "product_profile" ? (
+            <>
+              <CompetitorOriginFact
+                label={t("productProfileId")}
+                value={origin.productProfileId}
+              />
+              <CompetitorOriginFact
+                label={t("profileVersion")}
+                value={origin.profileVersion}
+                technical={false}
+              />
+              <CompetitorOriginFact
+                label={t("candidateId")}
+                value={origin.candidateId}
+              />
+              <CompetitorOriginFact
+                label={t("fieldProvenancePath")}
+                value={origin.fieldProvenancePath}
+              />
+            </>
+          ) : origin.originKind === "csv_keyword_gap" ? (
+            <>
+              <CompetitorOriginFact
+                label={t("snapshotId")}
+                value={origin.snapshotId}
+              />
+              <CompetitorOriginFact
+                label={t("observationId")}
+                value={origin.observationId}
+              />
+              <CompetitorOriginFact
+                label={t("sourcePointer")}
+                value={origin.sourcePointer}
+              />
+              <CompetitorOriginFact
+                label={t("importPreviewId")}
+                value={origin.importPreviewId}
+              />
+            </>
+          ) : origin.originKind === "manual" ? (
+            <CompetitorOriginFact
+              label={t("manualEntryId")}
+              value={origin.manualEntryId}
+            />
+          ) : (
+            <>
+              <CompetitorOriginFact
+                label={t("snapshotId")}
+                value={origin.snapshotId}
+              />
+              <CompetitorOriginFact
+                label={t("observationId")}
+                value={origin.observationId}
+              />
+            </>
+          )}
+        </dl>
+        <div className={styles.competitorEvidenceBlock}>
+          <strong>{t("evidenceRefs")}</strong>
+          <CompetitorEvidenceList origin={origin} />
+        </div>
+      </details>
+    </article>
+  );
+}
+
+type CompetitorInsight =
+  | GrowthMapCompetitorSerpOverlap
+  | GrowthMapCompetitorAiCitationInsight;
+
+function CompetitorInsightCard({
+  insightKind,
+  insight,
+}: {
+  readonly insightKind: "serpOverlap" | "aiCitationInsight";
+  readonly insight: CompetitorInsight;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.competitorLibrary");
+  return (
+    <article className={styles.competitorInsightCard}>
+      <header>
+        <strong>{t(`insight.${insightKind}`)}</strong>
+        <span
+          className={cx(
+            styles.competitorInsightAvailability,
+            insight.availability === "available"
+              ? styles.competitorInsightAvailable
+              : styles.competitorInsightUnavailable,
+          )}
+        >
+          {insight.availability === "available"
+            ? t("canonicalObservationAvailable")
+            : t("noCanonicalObservation")}
+        </span>
+      </header>
+      {insight.availability === "unavailable" ? (
+        <p className={styles.competitorInsightLimitation}>
+          <CircleAlert aria-hidden="true" size={15} />
+          <PlatformLimitationText limitation={insight.limitation} />
+        </p>
+      ) : (
+        <>
+          <div className={styles.competitorInsightValue}>
+            {typeof insight.value === "number"
+              ? formatNumber(locale, insight.value)
+              : insight.value}
+          </div>
+          <p className={styles.keywordMetricObservedAt}>
+            <span>{t("observedAt")}</span>
+            <time dateTime={insight.observedAt}>
+              {formatObservedAt(locale, insight.observedAt)}
+            </time>
+          </p>
+          <details className={styles.traceDisclosure}>
+            <summary>{t("viewInsightSourceDetails")}</summary>
+            <dl className={styles.keywordMetricMeta}>
+              <CompetitorOriginFact
+                label={t("snapshotId")}
+                value={insight.snapshotId}
+              />
+              <CompetitorOriginFact
+                label={t("observationId")}
+                value={insight.observationId}
+              />
+              <CompetitorOriginFact
+                label={t("valuePointer")}
+                value={insight.valuePointer}
+              />
+            </dl>
+          </details>
+          {insight.limitation === null ? null : (
+            <p className={styles.competitorInsightLimitation}>
+              <CircleAlert aria-hidden="true" size={15} />
+              <PlatformLimitationText limitation={insight.limitation} />
+            </p>
+          )}
+        </>
+      )}
+    </article>
+  );
+}
+
+function CompetitorDetailPanel({
+  detail,
+}: {
+  readonly detail: GrowthMapCompetitorLibraryItem;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.competitorLibrary");
+  return (
+    <aside
+      className={cx(styles.detailPanel, styles.competitorDetailPanel)}
+      aria-label={t("selectedDetailLabel")}
+    >
+      <header className={styles.competitorDetailHeader}>
+        <div className={styles.detailEyebrow}>
+          <span>{t("selectedCompetitor")}</span>
+          <CoveragePill coverage={detail.coverage} />
+        </div>
+        <h2>{detail.name ?? detail.domain}</h2>
+        <p>{detail.domain}</p>
+        <div className={styles.competitorDetailTags}>
+          <CompetitorStatusPill status={detail.reviewStatus} />
+          <CompetitorRelationship relationship={detail.relationship} />
+        </div>
+      </header>
+
+      <LimitationList limitations={detail.coverage.limitations} />
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("governanceEyebrow")}</span>
+            <h3>{t("governanceTitle")}</h3>
+          </div>
+          <Target aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("governanceDescription")}
+        </p>
+        <dl className={styles.keywordClassificationGrid}>
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("reviewStatusLabel")}</dt>
+            <dd><CompetitorStatusPill status={detail.reviewStatus} /></dd>
+          </div>
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("relationshipLabel")}</dt>
+            <dd><strong><CompetitorRelationship relationship={detail.relationship} /></strong></dd>
+          </div>
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("analysisScopeLabel")}</dt>
+            <dd>
+              {detail.analysisScope.length === 0 ? (
+                <strong className={styles.competitorMissing}>{t("scopePending")}</strong>
+              ) : (
+                <span className={styles.competitorScopeChips}>
+                  {detail.analysisScope.map((scope) => (
+                    <small key={scope}>{t(`analysisScope.${scope}`)}</small>
+                  ))}
+                </span>
+              )}
+            </dd>
+          </div>
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("lastObservedAt")}</dt>
+            <dd>
+              {detail.lastObservedAt === null ? (
+                <strong className={styles.competitorMissing}>{t("notObserved")}</strong>
+              ) : (
+                <time dateTime={detail.lastObservedAt}>
+                  {formatObservedAt(locale, detail.lastObservedAt)}
+                </time>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("insightsEyebrow")}</span>
+            <h3>{t("insightsTitle")}</h3>
+          </div>
+          <BarChart3 aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("insightsDescription")}
+        </p>
+        <div className={styles.competitorInsightGrid}>
+          <CompetitorInsightCard
+            insightKind="serpOverlap"
+            insight={detail.serpOverlap}
+          />
+          <CompetitorInsightCard
+            insightKind="aiCitationInsight"
+            insight={detail.aiCitationInsight}
+          />
+        </div>
+      </section>
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("originsEyebrow")}</span>
+            <h3>{t("originsTitle")}</h3>
+          </div>
+          <ShieldCheck aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("originsDescription")}
+        </p>
+        <div className={styles.keywordSourceList}>
+          {detail.originOccurrences.map((origin) => (
+            <CompetitorOriginOccurrenceCard
+              key={origin.occurrenceId}
+              origin={origin}
+            />
+          ))}
+        </div>
+      </section>
+
+      <footer className={styles.keywordDetailFooter}>
+        <details className={styles.recordDisclosure}>
+          <summary>{t("viewRecordDetails")}</summary>
+          <div className={styles.recordDisclosureBody}>
+            <span>
+              {t("competitorId")}
+              <code title={detail.competitorId}>{detail.competitorId}</code>
+            </span>
+            <span>
+              {t("revision")}
+              <strong>{detail.revision}</strong>
+            </span>
+          </div>
+        </details>
+      </footer>
+    </aside>
+  );
+}
+
+function CompetitorDetailState({
+  projectId,
+  selectedCompetitorId,
+}: {
+  readonly projectId: string;
+  readonly selectedCompetitorId: string | null;
+}) {
+  const t = useTranslations("growthMap.competitorLibrary");
+  const detailQuery = useGrowthMapCompetitorDetail(projectId, selectedCompetitorId);
+  const readState = competitorDetailReadState({
+    selectedCompetitorId,
+    isPending: detailQuery.isPending,
+    isError: detailQuery.isError,
+  });
+
+  if (readState === "unselected") {
+    return (
+      <aside className={styles.detailPlaceholder}>
+        <EmptyState
+          icon={<Target size={28} />}
+          title={t("selectCompetitorTitle")}
+          description={t("selectCompetitorDescription")}
+        />
+      </aside>
+    );
+  }
+  if (readState === "loading") {
+    return (
+      <aside className={styles.detailPlaceholder} role="status">
+        <Spinner label={t("loadingDetail")} size="lg" />
+        <p>{t("loadingDetail")}</p>
+      </aside>
+    );
+  }
+  if (readState === "error") {
+    return (
+      <aside className={styles.detailPlaceholder}>
+        <ProblemState
+          error={detailQuery.error}
+          onRetry={() => void detailQuery.refetch()}
+          message={t("detailError")}
+        />
+      </aside>
+    );
+  }
+  if (detailQuery.data === undefined) {
+    return (
+      <aside className={styles.detailPlaceholder} role="status">
+        <Spinner label={t("loadingDetail")} size="lg" />
+        <p>{t("loadingDetail")}</p>
+      </aside>
+    );
+  }
+  return (
+    <CompetitorDetailPanel
+      key={detailQuery.data.data.competitorId}
+      detail={detailQuery.data.data}
+    />
+  );
+}
+
+function CompetitorLibraryEmpty({
+  projectId,
+}: {
+  readonly projectId: string;
 }) {
   const t = useTranslations("growthMap");
-  const Icon = MODE_ICONS[mode];
+  const tc = useTranslations("growthMap.competitorLibrary");
   return (
     <section className={styles.libraryUnavailable} aria-live="polite">
       <div className={styles.libraryIcon}>
-        <Icon aria-hidden="true" size={31} strokeWidth={1.6} />
+        <Target aria-hidden="true" size={31} strokeWidth={1.6} />
       </div>
       <span className={styles.libraryKicker}>{t("realDataOnly")}</span>
-      <h2>{t(`libraries.${mode}.title`)}</h2>
-      <p>{t(`libraries.${mode}.description`)}</p>
+      <h2>{t("libraries.competitors.title")}</h2>
+      <p>{t("libraries.competitors.description")}</p>
       <div className={styles.libraryBoundary}>
         <CircleAlert aria-hidden="true" size={20} />
-        <p>{t(`libraries.${mode}.boundary`)}</p>
+        <p>{t("libraries.competitors.boundary")}</p>
       </div>
+      <Link className={styles.competitorManageLink} href={`/p/${projectId}/sources`}>
+        <Database aria-hidden="true" size={17} />
+        {tc("manageSources")}
+      </Link>
     </section>
+  );
+}
+
+function CompetitorLibraryPane({ projectId }: { readonly projectId: string }) {
+  const t = useTranslations("growthMap.competitorLibrary");
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const cursor = searchParams.get("cursor");
+  const requestedCompetitorId = searchParams.get("selectedCompetitorId");
+  const [cursorPredecessors, setCursorPredecessors] = useState<
+    ReadonlyMap<string, string | null>
+  >(() => new Map());
+  const listQuery = useGrowthMapCompetitors(projectId, { cursor, limit: 50 });
+  const items = listQuery.data?.data ?? [];
+  const selectedCompetitorId = resolveVisibleCompetitorSelection(
+    requestedCompetitorId,
+    items.map((item) => item.competitorId),
+  );
+  const locationSearch = searchParams.toString();
+  const readState = competitorLibraryReadState({
+    isPending: listQuery.isPending,
+    isError: listQuery.isError,
+    itemCount: items.length,
+    cursor,
+  });
+  const previousCursor = resolveGrowthMapCursorPredecessor(
+    cursorPredecessors,
+    cursor,
+  );
+
+  useEffect(() => {
+    // Do not rewrite the implicit first row. Repair only an explicit stale
+    // cursor-page deep link, so a late list response cannot undo a Tab click.
+    if (
+      !listQuery.isSuccess ||
+      requestedCompetitorId === null ||
+      requestedCompetitorId === selectedCompetitorId
+    ) {
+      return;
+    }
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, { selectedCompetitorId }),
+      { scroll: false },
+    );
+  }, [
+    listQuery.isSuccess,
+    locationSearch,
+    pathname,
+    requestedCompetitorId,
+    router,
+    selectedCompetitorId,
+  ]);
+
+  function selectCompetitor(competitorId: string): void {
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, {
+        selectedCompetitorId: competitorId,
+      }),
+      { scroll: false },
+    );
+  }
+
+  function goNext(): void {
+    const nextCursor = listQuery.data?.meta.nextCursor ?? null;
+    if (nextCursor === null) return;
+    setCursorPredecessors((current) =>
+      rememberGrowthMapCursorPredecessor(current, cursor, nextCursor),
+    );
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, {
+        cursor: nextCursor,
+        selectedCompetitorId: null,
+      }),
+      { scroll: false },
+    );
+  }
+
+  function goPrevious(): void {
+    if (previousCursor === undefined) return;
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, {
+        cursor: previousCursor,
+        selectedCompetitorId: null,
+      }),
+      { scroll: false },
+    );
+  }
+
+  function goFirst(): void {
+    router.replace(
+      growthMapLocationHref(pathname, locationSearch, {
+        cursor: null,
+        selectedCompetitorId: null,
+      }),
+      { scroll: false },
+    );
+  }
+
+  if (readState === "loading") {
+    return (
+      <div className={styles.pageState} role="status">
+        <Spinner label={t("loadingLibrary")} size="lg" />
+        <p>{t("loadingLibrary")}</p>
+      </div>
+    );
+  }
+  if (readState === "error") {
+    return (
+      <ProblemState
+        error={listQuery.error}
+        onRetry={() => void listQuery.refetch()}
+        message={t("libraryError")}
+        className={styles.pageState}
+      />
+    );
+  }
+  if (listQuery.data === undefined) {
+    return (
+      <div className={styles.pageState} role="status">
+        <Spinner label={t("loadingLibrary")} size="lg" />
+        <p>{t("loadingLibrary")}</p>
+      </div>
+    );
+  }
+
+  const response = listQuery.data;
+  const originCount = response.data.reduce(
+    (count, item) => count + item.originOccurrences.length,
+    0,
+  );
+
+  return (
+    <>
+      <section className={styles.provenanceBand} aria-label={t("libraryScopeLabel")}>
+        <div className={styles.provenanceIntro}>
+          <ShieldCheck aria-hidden="true" size={22} />
+          <div>
+            <strong>{t("libraryScopeTitle")}</strong>
+            <p>{t("libraryScopeDescription")}</p>
+            <Link
+              className={styles.competitorInlineSourceLink}
+              href={`/p/${projectId}/sources`}
+            >
+              <Database aria-hidden="true" size={15} />
+              {t("manageSources")}
+            </Link>
+          </div>
+        </div>
+        <dl className={cx(styles.provenanceFacts, styles.keywordPageFacts)}>
+          <div>
+            <dt>{t("loadedOnPage")}</dt>
+            <dd>{response.data.length}</dd>
+          </div>
+          <div>
+            <dt>{t("originOccurrencesOnPage")}</dt>
+            <dd>{originCount}</dd>
+          </div>
+          <div>
+            <dt>{t("coverageLabel")}</dt>
+            <dd><CoveragePill coverage={response.meta.coverage} /></dd>
+          </div>
+        </dl>
+        <LimitationList limitations={response.meta.coverage.limitations} />
+      </section>
+
+      {readState === "empty" ? (
+        <CompetitorLibraryEmpty projectId={projectId} />
+      ) : (
+        <div className={styles.competitorWorkspace}>
+          <div className={styles.masterColumn}>
+            {readState === "cursor_empty" ? (
+              <LibraryCursorPageEmpty
+                icon={<Target size={28} />}
+                title={t("cursorPageEmptyTitle")}
+                description={t("cursorPageEmptyDescription")}
+                actionLabel={t("firstPage")}
+                onReset={goFirst}
+              />
+            ) : (
+              <CompetitorList
+                items={items}
+                selectedCompetitorId={selectedCompetitorId}
+                onSelect={selectCompetitor}
+              />
+            )}
+            <nav className={styles.pagination} aria-label={t("paginationLabel")}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={previousCursor === undefined}
+                onClick={goPrevious}
+              >
+                <ArrowLeft aria-hidden="true" size={16} />
+                {t("previousPage")}
+              </Button>
+              <span>{t("loadedCount", { count: items.length })}</span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!response.meta.hasNext}
+                onClick={goNext}
+              >
+                {t("nextPage")}
+                <ArrowRight aria-hidden="true" size={16} />
+              </Button>
+            </nav>
+          </div>
+          <CompetitorDetailState
+            projectId={projectId}
+            selectedCompetitorId={selectedCompetitorId}
+          />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2328,7 +3252,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
       ) : mode === "keywords" ? (
         <KeywordLibraryPane projectId={projectId} />
       ) : (
-        <UnavailableLibrary mode="competitors" />
+        <CompetitorLibraryPane projectId={projectId} />
       )}
     </div>
   );

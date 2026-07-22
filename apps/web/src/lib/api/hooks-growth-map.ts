@@ -1,10 +1,14 @@
 "use client";
 
 import {
+  GrowthMapCompetitorDetailResponse,
+  GrowthMapCompetitorLibraryResponse,
   GrowthMapKeywordDetailResponse,
   GrowthMapKeywordLibraryResponse,
   GrowthMapUrlDetailResponse,
   GrowthMapUrlPortfolioResponse,
+  type GrowthMapCompetitorDetailResponse as GrowthMapCompetitorDetailResponseDto,
+  type GrowthMapCompetitorLibraryResponse as GrowthMapCompetitorLibraryResponseDto,
   type GrowthMapKeywordDetailResponse as GrowthMapKeywordDetailResponseDto,
   type GrowthMapKeywordLibraryResponse as GrowthMapKeywordLibraryResponseDto,
   type GrowthMapUrlDetailResponse as GrowthMapUrlDetailResponseDto,
@@ -22,6 +26,7 @@ import type { DataEnvelope } from "./types";
 
 export const DEFAULT_GROWTH_MAP_URL_LIMIT = 50;
 export const DEFAULT_GROWTH_MAP_KEYWORD_LIMIT = 50;
+export const DEFAULT_GROWTH_MAP_COMPETITOR_LIMIT = 50;
 export const MAX_GROWTH_MAP_SEARCH_LENGTH = 256;
 
 export interface GrowthMapUrlsQuery {
@@ -42,6 +47,16 @@ export interface GrowthMapKeywordsQuery {
 }
 
 interface NormalizedGrowthMapKeywordsQuery {
+  readonly cursor: string | null;
+  readonly limit: number;
+}
+
+export interface GrowthMapCompetitorsQuery {
+  readonly cursor?: string | null;
+  readonly limit?: number;
+}
+
+interface NormalizedGrowthMapCompetitorsQuery {
   readonly cursor: string | null;
   readonly limit: number;
 }
@@ -74,6 +89,21 @@ function normalizeGrowthMapKeywordsQuery(
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
     throw new RangeError(
       "Growth Map Keyword limit must be an integer from 1 to 100.",
+    );
+  }
+
+  return { cursor, limit };
+}
+
+function normalizeGrowthMapCompetitorsQuery(
+  query: GrowthMapCompetitorsQuery = {},
+): NormalizedGrowthMapCompetitorsQuery {
+  const cursor = query.cursor === "" || query.cursor == null ? null : query.cursor;
+  const limit = query.limit ?? DEFAULT_GROWTH_MAP_COMPETITOR_LIMIT;
+
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new RangeError(
+      "Growth Map Competitor limit must be an integer from 1 to 100.",
     );
   }
 
@@ -136,6 +166,34 @@ export function growthMapKeywordDetailQueryKey(
   ] as const;
 }
 
+export function growthMapCompetitorsQueryKey(
+  projectId: string,
+  uiLocale: string,
+  query: GrowthMapCompetitorsQuery = {},
+) {
+  return [
+    "growth-map",
+    projectId,
+    uiLocale,
+    "competitors",
+    normalizeGrowthMapCompetitorsQuery(query),
+  ] as const;
+}
+
+export function growthMapCompetitorDetailQueryKey(
+  projectId: string,
+  uiLocale: string,
+  competitorId: string | null | undefined,
+) {
+  return [
+    "growth-map",
+    projectId,
+    uiLocale,
+    "competitor",
+    competitorId || null,
+  ] as const;
+}
+
 /**
  * A Finding review changes both the portfolio review count/priority and the
  * selected URL's canonical Finding projection. Refresh the two active reads
@@ -176,6 +234,15 @@ function growthMapKeywordsPath(
   const params = new URLSearchParams({ limit: String(query.limit) });
   if (query.cursor !== null) params.set("cursor", query.cursor);
   return `/projects/${projectId}/audit/keywords?${params.toString()}`;
+}
+
+function growthMapCompetitorsPath(
+  projectId: string,
+  query: NormalizedGrowthMapCompetitorsQuery,
+): string {
+  const params = new URLSearchParams({ limit: String(query.limit) });
+  if (query.cursor !== null) params.set("cursor", query.cursor);
+  return `/projects/${projectId}/audit/competitors?${params.toString()}`;
 }
 
 /** Fetch and re-validate the complete traceable portfolio contract. */
@@ -230,6 +297,34 @@ export async function getGrowthMapKeywordDetail(
   return GrowthMapKeywordDetailResponse.parse(response.data);
 }
 
+/** Fetch and re-validate one bounded page of traceable Competitor entities. */
+export async function getGrowthMapCompetitors(
+  projectId: string,
+  query: GrowthMapCompetitorsQuery = {},
+): Promise<GrowthMapCompetitorLibraryResponseDto> {
+  const normalized = normalizeGrowthMapCompetitorsQuery(query);
+  const response = await apiGet<DataEnvelope<unknown>>(
+    growthMapCompetitorsPath(projectId, normalized),
+  );
+  return GrowthMapCompetitorLibraryResponse.parse(response.data);
+}
+
+/** Fetch and re-validate the exact selected Competitor entity projection. */
+export async function getGrowthMapCompetitorDetail(
+  projectId: string,
+  competitorId: string | null | undefined,
+): Promise<GrowthMapCompetitorDetailResponseDto> {
+  if (!competitorId) {
+    throw new Error(
+      "A competitorId is required to fetch Growth Map Competitor detail.",
+    );
+  }
+  const response = await apiGet<DataEnvelope<unknown>>(
+    `/projects/${projectId}/audit/competitors/${encodeURIComponent(competitorId)}`,
+  );
+  return GrowthMapCompetitorDetailResponse.parse(response.data);
+}
+
 export function buildGrowthMapUrlsQueryOptions(
   projectId: string,
   uiLocale: string,
@@ -280,6 +375,35 @@ export function buildGrowthMapKeywordDetailQueryOptions(
   };
 }
 
+export function buildGrowthMapCompetitorsQueryOptions(
+  projectId: string,
+  uiLocale: string,
+  query: GrowthMapCompetitorsQuery = {},
+): UseQueryOptions<GrowthMapCompetitorLibraryResponseDto, ApiError> {
+  const normalized = normalizeGrowthMapCompetitorsQuery(query);
+  return {
+    queryKey: growthMapCompetitorsQueryKey(projectId, uiLocale, normalized),
+    queryFn: () => getGrowthMapCompetitors(projectId, normalized),
+    enabled: projectId.length > 0,
+  };
+}
+
+export function buildGrowthMapCompetitorDetailQueryOptions(
+  projectId: string,
+  uiLocale: string,
+  competitorId: string | null | undefined,
+): UseQueryOptions<GrowthMapCompetitorDetailResponseDto, ApiError> {
+  return {
+    queryKey: growthMapCompetitorDetailQueryKey(
+      projectId,
+      uiLocale,
+      competitorId,
+    ),
+    queryFn: () => getGrowthMapCompetitorDetail(projectId, competitorId),
+    enabled: projectId.length > 0 && Boolean(competitorId),
+  };
+}
+
 export function useGrowthMapUrls(
   projectId: string,
   query: GrowthMapUrlsQuery = {},
@@ -315,5 +439,29 @@ export function useGrowthMapKeywordDetail(
   const uiLocale = useLocale();
   return useQuery(
     buildGrowthMapKeywordDetailQueryOptions(projectId, uiLocale, keywordId),
+  );
+}
+
+export function useGrowthMapCompetitors(
+  projectId: string,
+  query: GrowthMapCompetitorsQuery = {},
+): UseQueryResult<GrowthMapCompetitorLibraryResponseDto, ApiError> {
+  const uiLocale = useLocale();
+  return useQuery(
+    buildGrowthMapCompetitorsQueryOptions(projectId, uiLocale, query),
+  );
+}
+
+export function useGrowthMapCompetitorDetail(
+  projectId: string,
+  competitorId: string | null | undefined,
+): UseQueryResult<GrowthMapCompetitorDetailResponseDto, ApiError> {
+  const uiLocale = useLocale();
+  return useQuery(
+    buildGrowthMapCompetitorDetailQueryOptions(
+      projectId,
+      uiLocale,
+      competitorId,
+    ),
   );
 }

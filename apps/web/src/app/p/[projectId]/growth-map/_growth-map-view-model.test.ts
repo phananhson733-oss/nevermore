@@ -13,6 +13,11 @@ import {
   findMetricObservation,
   growthMapLocationHref,
   growthMapDetailAllowsFindingReview,
+  competitorDetailReadState,
+  competitorLibraryReadState,
+  growthMapPlatformLimitationKey,
+  rememberGrowthMapCursorPredecessor,
+  resolveGrowthMapCursorPredecessor,
   keywordMetricPresentation,
   keywordDetailReadState,
   keywordLibraryReadState,
@@ -22,6 +27,7 @@ import {
   presentGrowthMapReviewProblem,
   resolveVisibleSitePageSelection,
   resolveVisibleSitePageSelectionForFinding,
+  resolveVisibleCompetitorSelection,
   resolveVisibleKeywordSelection,
   safeExternalPageUrl,
   shouldShowGrowthMapReviewError,
@@ -153,6 +159,42 @@ describe("Growth Map view model", () => {
     );
   });
 
+  it("replaces selectedCompetitorId on every Competitor selection while preserving its cursor", () => {
+    const first = growthMapLocationHref(
+      "/p/project/growth-map",
+      "object=competitors&cursor=opaque&selectedCompetitorId=old",
+      { selectedCompetitorId: "competitor-a" },
+    );
+    const second = growthMapLocationHref(
+      "/p/project/growth-map",
+      first.split("?")[1] ?? "",
+      { selectedCompetitorId: "competitor-b" },
+    );
+
+    expect(first).toBe(
+      "/p/project/growth-map?object=competitors&cursor=opaque&selectedCompetitorId=competitor-a",
+    );
+    expect(second).toBe(
+      "/p/project/growth-map?object=competitors&cursor=opaque&selectedCompetitorId=competitor-b",
+    );
+  });
+
+  it("keeps Competitor detail constrained to the visible cursor page", () => {
+    expect(
+      resolveVisibleCompetitorSelection("competitor-b", [
+        "competitor-a",
+        "competitor-b",
+      ]),
+    ).toBe("competitor-b");
+    expect(
+      resolveVisibleCompetitorSelection("filtered-out", [
+        "competitor-a",
+        "competitor-b",
+      ]),
+    ).toBe("competitor-a");
+    expect(resolveVisibleCompetitorSelection("stale", [])).toBeNull();
+  });
+
   it("keeps Keyword detail constrained to the visible cursor page", () => {
     expect(
       resolveVisibleKeywordSelection("keyword-b", ["keyword-a", "keyword-b"]),
@@ -174,8 +216,21 @@ describe("Growth Map view model", () => {
       keywordLibraryReadState({ isPending: false, isError: true, itemCount: 0 }),
     ).toBe("error");
     expect(
-      keywordLibraryReadState({ isPending: false, isError: false, itemCount: 0 }),
+      keywordLibraryReadState({
+        isPending: false,
+        isError: false,
+        itemCount: 0,
+        cursor: null,
+      }),
     ).toBe("empty");
+    expect(
+      keywordLibraryReadState({
+        isPending: false,
+        isError: false,
+        itemCount: 0,
+        cursor: "next-page",
+      }),
+    ).toBe("cursor_empty");
     expect(
       keywordLibraryReadState({ isPending: false, isError: false, itemCount: 2 }),
     ).toBe("ready");
@@ -212,6 +267,121 @@ describe("Growth Map view model", () => {
     ).toBe("ready");
   });
 
+  it("keeps Competitor Library loading, error, empty, and real rows distinct", () => {
+    expect(
+      competitorLibraryReadState({
+        isPending: true,
+        isError: false,
+        itemCount: 0,
+      }),
+    ).toBe("loading");
+    expect(
+      competitorLibraryReadState({
+        isPending: false,
+        isError: true,
+        itemCount: 0,
+      }),
+    ).toBe("error");
+    expect(
+      competitorLibraryReadState({
+        isPending: false,
+        isError: false,
+        itemCount: 0,
+        cursor: null,
+      }),
+    ).toBe("empty");
+    expect(
+      competitorLibraryReadState({
+        isPending: false,
+        isError: false,
+        itemCount: 0,
+        cursor: "next-page",
+      }),
+    ).toBe("cursor_empty");
+    expect(
+      competitorLibraryReadState({
+        isPending: false,
+        isError: false,
+        itemCount: 2,
+      }),
+    ).toBe("ready");
+  });
+
+  it("does not represent unselected, loading, or failed Competitor detail as data", () => {
+    expect(
+      competitorDetailReadState({
+        selectedCompetitorId: null,
+        isPending: false,
+        isError: false,
+      }),
+    ).toBe("unselected");
+    expect(
+      competitorDetailReadState({
+        selectedCompetitorId: "competitor-a",
+        isPending: true,
+        isError: false,
+      }),
+    ).toBe("loading");
+    expect(
+      competitorDetailReadState({
+        selectedCompetitorId: "competitor-a",
+        isPending: false,
+        isError: true,
+      }),
+    ).toBe("error");
+    expect(
+      competitorDetailReadState({
+        selectedCompetitorId: "competitor-a",
+        isPending: false,
+        isError: false,
+      }),
+    ).toBe("ready");
+  });
+
+  it("recognizes only stable platform limitations for localized chrome", () => {
+    const cases = [
+      [
+        "No canonical Keyword Library entries are available on this cursor page.",
+        "keywordNoEntries",
+      ],
+      [
+        "No canonical Competitor Library entries are available on this cursor page.",
+        "competitorNoEntries",
+      ],
+      [
+        "Only the most recent 100 immutable origin occurrences are included; older canonical origin history remains available in storage.",
+        "competitorOriginHistoryLimited",
+      ],
+      [
+        "SERP overlap is unavailable because Competitor Library v1 has no canonical SERP-overlap writer.",
+        "competitorSerpWriterUnavailable",
+      ],
+      [
+        "AI citation insight is unavailable because Competitor Library v1 has no canonical AI-citation writer.",
+        "competitorAiCitationWriterUnavailable",
+      ],
+      [
+        "This Competitor is still a candidate and has not been approved for analysis.",
+        "competitorCandidate",
+      ],
+      [
+        "This Competitor has been excluded from the approved analysis scope.",
+        "competitorExcluded",
+      ],
+      [
+        "A Product Profile source is approved, but this stable Competitor Library entity is still awaiting its own review.",
+        "competitorSourceApprovedReviewPending",
+      ],
+    ] as const;
+
+    for (const [limitation, key] of cases) {
+      expect(growthMapPlatformLimitationKey(limitation)).toBe(key);
+    }
+    expect(
+      growthMapPlatformLimitationKey("Customer-authored limitation text."),
+    ).toBeNull();
+  });
+
   it("repairs only an explicit stale Keyword deep link after the cursor page loads", () => {
     const source = readFileSync(
       new URL("./_growth-map.tsx", import.meta.url),
@@ -224,6 +394,68 @@ describe("Growth Map view model", () => {
     expect(source).toMatch(
       /growthMapLocationHref\(pathname, locationSearch, \{ selectedKeywordId \}\)/,
     );
+  });
+
+  it("repairs only an explicit stale Competitor deep link after the cursor page loads", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toMatch(
+      /!listQuery\.isSuccess \|\|\s+requestedCompetitorId === null \|\|\s+requestedCompetitorId === selectedCompetitorId/,
+    );
+    expect(source).toMatch(
+      /growthMapLocationHref\(pathname, locationSearch, \{ selectedCompetitorId \}\)/,
+    );
+  });
+
+  it("keys cursor predecessors by the current URL cursor so browser history cannot use a stale stack", () => {
+    let predecessors: ReadonlyMap<string, string | null> = new Map();
+    predecessors = rememberGrowthMapCursorPredecessor(
+      predecessors,
+      null,
+      "page-2",
+    );
+    predecessors = rememberGrowthMapCursorPredecessor(
+      predecessors,
+      "page-2",
+      "page-3",
+    );
+
+    expect(resolveGrowthMapCursorPredecessor(predecessors, "page-3")).toBe(
+      "page-2",
+    );
+    expect(resolveGrowthMapCursorPredecessor(predecessors, "page-2")).toBeNull();
+    expect(
+      resolveGrowthMapCursorPredecessor(predecessors, "external-page"),
+    ).toBeUndefined();
+    expect(resolveGrowthMapCursorPredecessor(predecessors, null)).toBeUndefined();
+  });
+
+  it("routes Competitor Library source management to the canonical project Sources page", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('href={`/p/${projectId}/sources`}');
+    expect(source).not.toContain("function UnavailableLibrary");
+  });
+
+  it("keeps customer-facing source summaries visible and raw library lineage in native disclosures", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('<details className={styles.traceDisclosure}>');
+    expect(source).toContain('<summary>{t("viewSourceDetails")}</summary>');
+    expect(source).toContain('<summary>{t("viewOriginDetails")}</summary>');
+    expect(source).toContain('<summary>{t("viewRecordDetails")}</summary>');
+    expect(source).not.toContain("<details open");
+    expect(source).not.toContain("truncateId(occurrence.occurrenceId)");
+    expect(source).not.toContain("truncateId(evidence.evidenceRefId)");
   });
 
   it("selects the visible URL that owns an exact Finding deep link", () => {
@@ -285,6 +517,32 @@ describe("Growth Map view model", () => {
         { mode: "competitors" },
       ),
     ).toBe("/p/project/growth-map?object=competitors");
+  });
+
+  it("keeps active Competitor state but clears it when switching objects", () => {
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=competitors&cursor=competitor-page&selectedCompetitorId=competitor-a",
+        { mode: "competitors" },
+      ),
+    ).toBe(
+      "/p/project/growth-map?object=competitors&cursor=competitor-page&selectedCompetitorId=competitor-a",
+    );
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=competitors&cursor=competitor-page&selectedCompetitorId=competitor-a",
+        { mode: "keywords" },
+      ),
+    ).toBe("/p/project/growth-map?object=keywords");
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=competitors&cursor=competitor-page&selectedCompetitorId=competitor-a",
+        { mode: "pages" },
+      ),
+    ).toBe("/p/project/growth-map?object=pages");
   });
 
   it("selects a metric only by persisted provider and JSON pointer", () => {
