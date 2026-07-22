@@ -24,7 +24,9 @@ vi.mock("@/env", () => ({
   }),
 }));
 
-const { createCollectionRun } = await import("../collection.ts");
+const { createCollectionRun, dataForSeoCollectionScopeForSite } = await import(
+  "../collection.ts"
+);
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const projectId = "00000000-0000-4000-8000-000000000002";
@@ -124,6 +126,46 @@ beforeEach(() => {
 });
 
 describe("createCollectionRun wire-body idempotency", () => {
+  it.each([
+    ["primary market", { market_codes: [], language_codes: ["en"] }],
+    ["site language", { market_codes: ["US"], language_codes: [] }],
+  ] as const)(
+    "fails closed when the primary Site is missing its explicit %s scope",
+    (missingLabel, scope) => {
+      expect(() =>
+        dataForSeoCollectionScopeForSite({
+          host: "www.example.com",
+          ...scope,
+        }),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "CONTEXT_INCOMPLETE",
+          status: 422,
+          message: expect.stringContaining(missingLabel),
+        }),
+      );
+    },
+  );
+
+  it("keeps an explicitly configured historical US/en Site valid without inventing scope", () => {
+    expect(
+      dataForSeoCollectionScopeForSite({
+        host: "www.example.com",
+        market_codes: ["US"],
+        language_codes: ["en"],
+      }),
+    ).toEqual({
+      schemaVersion: "dataforseo.collection-scope.v1",
+      queryKind: "ranked_keywords",
+      target: "example.com",
+      marketCode: "US",
+      languageTag: "en",
+      providerLanguageCode: "en",
+      location: { kind: "name", name: "United States" },
+      limit: 200,
+    });
+  });
+
   it("fails closed before database access when DataForSEO is disabled", async () => {
     await expect(
       createCollectionRun(

@@ -5,9 +5,13 @@ import type {
 } from "../adapter.ts";
 import { SourceError } from "../adapter.ts";
 import {
+  createDataForSeoCollectionScope,
   createDataForSeoAdapter,
+  dataForSeoParamsFromCollectionScope,
+  dataForSeoSnapshotSummary,
   DATAFORSEO_METHOD_VERSION,
   DATAFORSEO_ROW_CAP_STOP_REASON,
+  parseDataForSeoCollectionScope,
 } from "./adapter.ts";
 import type {
   DataForSeoClient,
@@ -67,6 +71,109 @@ class FixtureClient implements DataForSeoClient {
 }
 
 describe("DataForSEO ranked-keywords adapter", () => {
+  it("fails closed when a collection scope omits its explicit market or language", () => {
+    expect(() =>
+      createDataForSeoCollectionScope({
+        target: "example.com",
+        marketCode: undefined,
+        locationName: "United States",
+        languageTag: "en",
+        limit: 200,
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+    );
+    expect(() =>
+      createDataForSeoCollectionScope({
+        target: "example.com",
+        marketCode: "US",
+        locationName: "United States",
+        languageTag: undefined,
+        limit: 200,
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+    );
+  });
+
+  it("freezes one strict credential-free scope while preserving the full language tag", () => {
+    const scope = createDataForSeoCollectionScope({
+      target: "https://www.Example.COM/pricing",
+      marketCode: "gb",
+      locationName: "United Kingdom",
+      languageTag: "en-gb",
+      limit: 37,
+    });
+
+    expect(scope).toEqual({
+      schemaVersion: "dataforseo.collection-scope.v1",
+      queryKind: "ranked_keywords",
+      target: "example.com",
+      marketCode: "GB",
+      languageTag: "en-GB",
+      providerLanguageCode: "en",
+      location: { kind: "name", name: "United Kingdom" },
+      limit: 37,
+    });
+    expect(dataForSeoParamsFromCollectionScope(scope)).toEqual({
+      target: "example.com",
+      marketCode: "GB",
+      locationName: "United Kingdom",
+      languageCode: "en",
+      limit: 37,
+    });
+    expect(
+      parseDataForSeoCollectionScope({
+        ...scope,
+        location: { name: "United Kingdom", kind: "name" },
+      }),
+    ).toEqual(scope);
+    expect(JSON.stringify(scope)).not.toMatch(
+      /authorization|credential|password|login|rawRequest/i,
+    );
+  });
+
+  it("rejects a frozen scope that carries unknown or secret-bearing fields", () => {
+    const scope = createDataForSeoCollectionScope({
+      target: "example.com",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en",
+      limit: 200,
+    });
+
+    expect(() =>
+      parseDataForSeoCollectionScope({
+        ...scope,
+        password: "must-never-enter-a-manifest",
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+    );
+  });
+
+  it("keeps collection time separate from unknown provider timing and freshness", () => {
+    const scope = createDataForSeoCollectionScope({
+      target: "example.com",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en",
+      limit: 200,
+    });
+
+    expect(
+      dataForSeoSnapshotSummary(scope, "2026-07-22T08:09:10.000Z"),
+    ).toEqual({
+      collectionScope: scope,
+      timing: {
+        collectedAt: "2026-07-22T08:09:10.000Z",
+        dataAsOf: null,
+        observedAt: null,
+        freshness: "unknown",
+      },
+    });
+  });
+
   it("normalizes target and language while preserving the configured market/location", async () => {
     const adapter = createDataForSeoAdapter(
       new FixtureClient(fixtureResponse()),
@@ -192,6 +299,8 @@ describe("DataForSEO ranked-keywords adapter", () => {
       },
     });
     expect(result.limitation).toContain("first 1 of 23");
+    expect(result.limitation).toContain("freshness is unknown");
+    expect(result.limitation).not.toContain("weekly-updated");
     expect(result.raw).toMatchObject({
       schemaVersion: DATAFORSEO_METHOD_VERSION,
       request: {

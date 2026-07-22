@@ -18,11 +18,14 @@ process.env["LOG_LEVEL"] ??= "error";
 
 import { eq } from "drizzle-orm";
 import {
+  AsyncRunsRepository,
   CollectionRunsRepository,
+  contentHash,
   createDbHandle,
   type DbHandle,
 } from "@sf/db";
 import {
+  sites,
   sourceConnections,
   sourceCredentials,
   workspaces,
@@ -150,11 +153,37 @@ describeDb("DataForSEO Web collection integration", () => {
     const collection = await new CollectionRunsRepository(handle.db).findById(
       accepted.run.id,
     );
+    const canonicalRun = await new AsyncRunsRepository(handle.db).findById(
+      { workspaceId, projectId },
+      accepted.run.id,
+    );
+    const collectionScope = {
+      schemaVersion: "dataforseo.collection-scope.v1",
+      queryKind: "ranked_keywords",
+      target: "dfs-auto.example",
+      marketCode: "GB",
+      languageTag: "fr-FR",
+      providerLanguageCode: "fr",
+      location: { kind: "name", name: "United Kingdom" },
+      limit: 37,
+    };
     expect(collection).toMatchObject({
       provider: "dataforseo",
       operation: "keyword_gap_import",
       method_version: "dataforseo.ranked_keywords.v1",
       source_connection_id: dataForSeoConnections[0]!.id,
+      parameters_hash: contentHash({
+        provider: "dataforseo",
+        operation: "keyword_gap_import",
+        siteId: collection!.site_id,
+        collectionScope,
+      }),
+    });
+    expect(canonicalRun?.request_payload).toEqual({
+      provider: "dataforseo",
+      operation: "keyword_gap_import",
+      sourceConnectionId: dataForSeoConnections[0]!.id,
+      collectionScope,
     });
 
     const slots = await listProjectSources({ workspaceId }, projectId);
@@ -249,6 +278,51 @@ describeDb("DataForSEO Web collection integration", () => {
         { provider: "dataforseo", sourceConnectionId: randomUUID() },
       ),
     ).rejects.toMatchObject({ code: "SOURCE_NOT_CONNECTED", status: 422 });
+
+    const connections = await handle.db
+      .select({ provider: sourceConnections.provider })
+      .from(sourceConnections)
+      .where(eq(sourceConnections.project_id, created.project.id));
+    expect(connections.map((connection) => connection.provider)).toEqual([
+      "crawl",
+    ]);
+  });
+
+  it("rolls back without provisioning when the primary Site scope is incomplete", async () => {
+    const created = await createProject(
+      { workspaceId },
+      actorId,
+      randomUUID(),
+      {
+        clientName: "Incomplete DataForSEO client",
+        projectName: "Incomplete DataForSEO project",
+        siteUrl: `https://dfs-incomplete-${randomUUID()}.example`,
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    await handle.db
+      .update(sites)
+      .set({ market_codes: [] })
+      .where(eq(sites.project_id, created.project.id));
+
+    await expect(
+      createCollectionRun(
+        { workspaceId },
+        created.project.id,
+        actorId,
+        randomUUID(),
+        { provider: "dataforseo" },
+      ),
+    ).rejects.toMatchObject({
+      code: "CONTEXT_INCOMPLETE",
+      status: 422,
+      current: {
+        missingField: "primaryMarket",
+      },
+    });
 
     const connections = await handle.db
       .select({ provider: sourceConnections.provider })

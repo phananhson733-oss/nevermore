@@ -23,6 +23,8 @@ import {
   createCrawlAdapter,
   createDefaultCrawlFetcher,
   createDataForSeoAdapter,
+  dataForSeoParamsFromCollectionScope,
+  dataForSeoSnapshotSummary,
   createGa4Adapter,
   createGscAdapter,
   csvAdapter,
@@ -34,6 +36,7 @@ import {
   HttpGa4Client,
   HttpGscClient,
   HttpDataForSeoClient,
+  parseDataForSeoCollectionScope,
   InvalidBlobObjectKeyError,
   isTransient,
   shouldRefreshCredential,
@@ -47,7 +50,7 @@ import {
   type CrawlEngineOptions,
   type CrawlFetcher,
   type CsvColumnMapping,
-  type DataForSeoParams,
+  type DataForSeoCollectionScope,
   type GoogleTokenFetch,
   type NormalizedObservation,
   type NormalizeContext,
@@ -458,6 +461,7 @@ export async function runCollection(
       collectionRun,
       site,
       scope,
+      claimed.request_payload,
       providerMetrics,
     );
     // Crawl reports an aborted engine as a partial raw result so callers can
@@ -696,6 +700,7 @@ async function collectByProvider(
   run: CollectionRunRow,
   site: SiteRow,
   scope: { workspaceId: string; projectId: string },
+  acceptedRequestPayload: Record<string, unknown>,
   providerMetrics: ProviderMetricAccumulator,
 ): Promise<CollectProduct> {
   const adapterCtx = collectionAdapterContext(ctx, run, site, scope);
@@ -840,14 +845,19 @@ async function collectByProvider(
           "DataForSEO collection is disabled on this worker.",
         );
       }
+      const collectionScope = resolveFrozenDataForSeoCollectionScope(
+        run,
+        acceptedRequestPayload,
+        runtime.maxKeywords,
+      );
       if (!runtime.login || !runtime.password) {
         throw new SourceError(
           "AUTH_REQUIRED",
           "DataForSEO worker credentials are not configured.",
         );
       }
-      const connection = await loadDataForSeoConnection(ctx, scope, run);
-      const params = dataForSeoParams(connection.config, site, runtime.maxKeywords);
+      await loadDataForSeoConnection(ctx, scope, run);
+      const params = dataForSeoParamsFromCollectionScope(collectionScope);
       const providerFetch = providerMetrics.wrapGoogleFetch(
         runtime.fetch ?? globalThis.fetch,
       );
@@ -862,7 +872,16 @@ async function collectByProvider(
         adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
         adapterCtx.signal,
       );
-      return { outcome: toOutcome(result), observations };
+      return {
+        outcome: {
+          ...toOutcome(result),
+          summary: dataForSeoSnapshotSummary(
+            collectionScope,
+            result.capturedAt,
+          ),
+        },
+        observations,
+      };
     }
     default:
       throw new SourceError(
@@ -870,6 +889,63 @@ async function collectByProvider(
         `Unsupported collection provider ${run.provider}.`,
       );
   }
+}
+
+/**
+ * Validate the exact command-time DataForSEO scope frozen by Web. The Worker
+ * never consults the mutable Site market/language or connection config to
+ * reconstruct this input; a missing, changed, or newly over-cap manifest fails
+ * closed before provider I/O.
+ */
+export function resolveFrozenDataForSeoCollectionScope(
+  run: Pick<
+    CollectionRunRow,
+    | "provider"
+    | "operation"
+    | "site_id"
+    | "source_connection_id"
+    | "parameters_hash"
+  >,
+  requestPayload: Record<string, unknown>,
+  workerMaxKeywords: number,
+): DataForSeoCollectionScope {
+  if (
+    run.provider !== "dataforseo" ||
+    requestPayload["provider"] !== run.provider ||
+    requestPayload["operation"] !== run.operation ||
+    requestPayload["sourceConnectionId"] !== run.source_connection_id
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO command identity is incomplete or inconsistent.",
+    );
+  }
+  const collectionScope = parseDataForSeoCollectionScope(
+    requestPayload["collectionScope"],
+  );
+  if (
+    !Number.isSafeInteger(workerMaxKeywords) ||
+    workerMaxKeywords < 1 ||
+    collectionScope.limit > workerMaxKeywords
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO keyword limit exceeds the current worker cap.",
+    );
+  }
+  const expectedParametersHash = contentHash({
+    provider: run.provider,
+    operation: run.operation,
+    siteId: run.site_id,
+    collectionScope,
+  });
+  if (run.parameters_hash !== expectedParametersHash) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO scope does not match the accepted command.",
+    );
+  }
+  return collectionScope;
 }
 
 async function loadDataForSeoConnection(
@@ -893,69 +969,6 @@ async function loadDataForSeoConnection(
     );
   }
   return connection;
-}
-
-function dataForSeoParams(
-  config: Record<string, unknown>,
-  site: SiteRow,
-  workerMaxKeywords: number,
-): DataForSeoParams {
-  const target = normalizeDataForSeoTarget(
-    readConfigString(config, "target") ?? site.host,
-  );
-  const marketCode =
-    readConfigString(config, "marketCode") ?? site.market_codes[0] ?? "US";
-  const languageCode =
-    readConfigString(config, "languageCode") ??
-    site.language_codes[0] ??
-    "en";
-  const locationName = readConfigString(config, "locationName");
-  const locationCode = readConfigPositiveInteger(config, "locationCode");
-  const configuredLimit = readConfigPositiveInteger(config, "maxKeywords");
-  const runtimeLimit =
-    Number.isSafeInteger(workerMaxKeywords) && workerMaxKeywords > 0
-      ? workerMaxKeywords
-      : 200;
-  const limit = Math.min(configuredLimit ?? runtimeLimit, runtimeLimit);
-
-  return {
-    target,
-    marketCode,
-    ...(locationName
-      ? { locationName }
-      : locationCode !== null
-        ? { locationCode }
-        : {}),
-    languageCode,
-    limit,
-  };
-}
-
-function normalizeDataForSeoTarget(value: string): string {
-  const trimmed = value.trim();
-  let hostname = trimmed;
-  try {
-    const url = new URL(
-      /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
-    );
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      throw new Error("unsupported target protocol");
-    }
-    hostname = url.hostname;
-  } catch {
-    throw new SourceError(
-      "INVALID_CONFIGURATION",
-      "DataForSEO target must be a valid public hostname.",
-    );
-  }
-  const normalized = hostname.toLowerCase().replace(/^www\./, "");
-  if (!normalized || normalized.includes("..")) {
-    throw new SourceError(
-      "INVALID_CONFIGURATION",
-      "DataForSEO target must be a valid public hostname.",
-    );
-  }
-  return normalized;
 }
 
 interface LoadedGoogleCredential {
@@ -1214,18 +1227,6 @@ function readConfigString(
   if (typeof v !== "string") return null;
   const trimmed = v.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function readConfigPositiveInteger(
-  config: Record<string, unknown>,
-  key: string,
-): number | null {
-  const value = config[key];
-  return typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value > 0
-    ? value
-    : null;
 }
 
 function readConfigStringArray(

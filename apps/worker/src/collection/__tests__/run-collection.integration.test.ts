@@ -53,6 +53,7 @@ import {
   BlobObjectAlreadyExistsError,
   CRAWL_BUDGET,
   CRAWL_METHOD_VERSION,
+  createDataForSeoCollectionScope,
   DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
   InvalidBlobObjectKeyError,
   LocalFsBlobStore,
@@ -688,6 +689,13 @@ describeDb("collection runner (spec §13)", () => {
   it("runs the DataForSEO queue through the real HTTP adapter into an immutable snapshot and canonical observations", async () => {
     const seed = await seedProject(handle);
     const runId = randomUUID();
+    const collectionScope = createDataForSeoCollectionScope({
+      target: "example.com",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en-US",
+      limit: 50,
+    });
     const connection = await new SourceConnectionsRepository(
       handle.db,
     ).insertConnection({
@@ -699,11 +707,11 @@ describeDb("collection runner (spec §13)", () => {
       state: "connected",
       externalRef: "example.com",
       config: {
-        target: "https://www.example.com/catalog?ignored=true",
-        marketCode: "US",
-        locationName: "United States",
-        languageCode: "en-US",
-        maxKeywords: 75,
+        target: "mutated.example",
+        marketCode: "CA",
+        locationName: "Canada",
+        languageCode: "fr",
+        maxKeywords: 12,
       },
       limitation: "DataForSEO configured; no snapshot has been collected yet.",
       connectedAt: true,
@@ -717,8 +725,16 @@ describeDb("collection runner (spec §13)", () => {
       importPreviewId: null,
       requestPayload: {
         provider: "dataforseo",
+        operation: "keyword_gap_import",
         sourceConnectionId: connection.id,
+        collectionScope,
       },
+      parametersHash: contentHash({
+        provider: "dataforseo",
+        operation: "keyword_gap_import",
+        siteId: seed.siteId,
+        collectionScope,
+      }),
     });
 
     const fixtureLogin = "dfs-worker-login-fixture";
@@ -887,6 +903,15 @@ describeDb("collection runner (spec §13)", () => {
       method_version: "dataforseo.ranked_keywords.v1",
       availability: "available",
       row_count: 2,
+      summary: {
+        collectionScope,
+        timing: {
+          collectedAt: expect.any(String),
+          dataAsOf: null,
+          observedAt: null,
+          freshness: "unknown",
+        },
+      },
     });
     expect(snapshot.limitation.trim()).not.toBe("");
     expect(snapshot.raw_object_key).not.toBeNull();

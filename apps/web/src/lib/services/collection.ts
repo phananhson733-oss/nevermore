@@ -19,7 +19,12 @@ import {
   type CreateCollectionRunRequest,
 } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
-import { CRAWL_METHOD_VERSION } from "@sf/sources";
+import {
+  createDataForSeoCollectionScope,
+  CRAWL_METHOD_VERSION,
+  SourceError,
+  type DataForSeoCollectionScope,
+} from "@sf/sources";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
 import { getEnv } from "@/env";
@@ -64,25 +69,90 @@ interface DataForSeoConnectionConfig {
   readonly maxKeywords: number;
 }
 
-function dataForSeoConnectionConfig(site: {
+export function dataForSeoCollectionScopeForSite(site: {
   readonly host: string;
   readonly market_codes: readonly string[];
   readonly language_codes: readonly string[];
-}): DataForSeoConnectionConfig {
+}): DataForSeoCollectionScope {
   const env = getEnv();
-  const target = site.host.replace(/^www\./i, "");
-  const marketCode = site.market_codes[0] ?? "US";
-  const languageTag = site.language_codes[0] ?? "en";
-  const languageCode = languageTag.split("-")[0]?.toLowerCase() ?? "en";
+  const marketCode = site.market_codes[0]?.trim().toUpperCase();
+  if (!marketCode) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "DataForSEO collection requires an explicit primary market on the primary Site.",
+      {
+        current: {
+          missingField: "primaryMarket",
+          recovery: "Set the primary Site market, then retry collection.",
+        },
+      },
+    );
+  }
+  const languageTag = site.language_codes[0]?.trim();
+  if (!languageTag) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "DataForSEO collection requires an explicit site language on the primary Site.",
+      {
+        current: {
+          missingField: "siteLanguage",
+          recovery: "Set the primary Site language, then retry collection.",
+        },
+      },
+    );
+  }
   const locationName =
-    new Intl.DisplayNames(["en"], { type: "region" }).of(marketCode) ??
-    marketCode;
+    new Intl.DisplayNames(["en"], { type: "region" }).of(marketCode);
+  if (!locationName) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "DataForSEO collection cannot resolve the primary Site market to a provider location.",
+      {
+        current: {
+          missingField: "providerLocation",
+          recovery: "Choose a supported primary market, then retry collection.",
+        },
+      },
+    );
+  }
+  try {
+    return createDataForSeoCollectionScope({
+      target: site.host,
+      marketCode,
+      locationName,
+      languageTag,
+      limit: env.DATAFORSEO_MAX_KEYWORDS,
+    });
+  } catch (error) {
+    if (!(error instanceof SourceError)) throw error;
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "The primary Site market or language is invalid for DataForSEO collection.",
+      {
+        current: {
+          missingField: "collectionScope",
+          recovery: "Correct the primary Site market and language, then retry collection.",
+        },
+      },
+    );
+  }
+}
+
+function dataForSeoConnectionConfig(
+  scope: DataForSeoCollectionScope,
+): DataForSeoConnectionConfig {
+  if (scope.location.kind !== "name") {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "DataForSEO collection requires a named provider location.",
+    );
+  }
   return {
-    target,
-    marketCode,
-    locationName,
-    languageCode,
-    maxKeywords: env.DATAFORSEO_MAX_KEYWORDS,
+    target: scope.target,
+    marketCode: scope.marketCode,
+    locationName: scope.location.name,
+    languageCode: scope.providerLanguageCode,
+    maxKeywords: scope.limit,
   };
 }
 
@@ -339,8 +409,14 @@ export async function createCollectionRun(
             projectScope,
             body.provider,
           );
+      const dataForSeoCollectionScope =
+        body.provider === "dataforseo"
+          ? dataForSeoCollectionScopeForSite(currentSite)
+          : null;
       if (!currentConnection && canProvisionDataForSeo) {
-        const connectionConfig = dataForSeoConnectionConfig(currentSite);
+        const connectionConfig = dataForSeoConnectionConfig(
+          dataForSeoCollectionScope as DataForSeoCollectionScope,
+        );
         currentConnection = await txSources.insertConnection({
           workspaceId: scope.workspaceId,
           projectId,
@@ -362,13 +438,21 @@ export async function createCollectionRun(
         );
       }
 
-      const parametersHash = collectionRunParametersHash({
-        provider: body.provider,
-        operation,
-        siteId: currentSite.id,
-        crawlSeedSitePageId,
-        crawlSeedUrl,
-      });
+      const parametersHash =
+        body.provider === "dataforseo"
+          ? contentHash({
+              provider: body.provider,
+              operation,
+              siteId: currentSite.id,
+              collectionScope: dataForSeoCollectionScope,
+            })
+          : collectionRunParametersHash({
+              provider: body.provider,
+              operation,
+              siteId: currentSite.id,
+              crawlSeedSitePageId,
+              crawlSeedUrl,
+            });
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
@@ -381,6 +465,9 @@ export async function createCollectionRun(
           provider: body.provider,
           operation,
           sourceConnectionId: currentConnection.id,
+          ...(dataForSeoCollectionScope
+            ? { collectionScope: dataForSeoCollectionScope }
+            : {}),
         },
       });
       await new CollectionRunsRepository(tx).insertPlaceholder({
