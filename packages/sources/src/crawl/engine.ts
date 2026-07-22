@@ -123,6 +123,56 @@ function originOf(url: string): string | null {
   }
 }
 
+/**
+ * Admit a caller-supplied deep seed at the crawl-param trust boundary.
+ *
+ * The canonical URL pair preserves the meaningful trailing-slash transport
+ * variant while removing tracking/query ordering noise. Credentials and
+ * fragments are rejected rather than silently discarded: neither belongs in
+ * an exact HTTP-fact identity, and credentials must never reach guard,
+ * transport, or persisted evidence.
+ */
+function canonicalSeedForOrigin(
+  seedUrl: CrawlParams["seedUrl"],
+  crawlOrigin: string,
+): ReturnType<typeof canonicalizeUrl> {
+  if (
+    typeof seedUrl !== "string" ||
+    seedUrl.length === 0 ||
+    seedUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars
+  ) {
+    return null;
+  }
+
+  let parsed: URL;
+  try {
+    // Intentionally omit a base: a collection seed is an external trust-boundary
+    // value and must be an independently meaningful absolute URL.
+    parsed = new URL(seedUrl);
+  } catch {
+    return null;
+  }
+  if (
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.hash !== "" ||
+    seedUrl.includes("#")
+  ) {
+    return null;
+  }
+
+  const pair = canonicalizeUrl(seedUrl);
+  if (
+    !pair ||
+    originOf(pair.fetchUrl) !== crawlOrigin ||
+    pair.fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
+    pair.subjectUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars
+  ) {
+    return null;
+  }
+  return pair;
+}
+
 function robotsPath(fetchUrl: string): string {
   try {
     const url = new URL(fetchUrl);
@@ -664,6 +714,7 @@ export async function crawlSite(
   const capturedAt = new Date().toISOString();
   const { origin, host } = params;
   const crawlOrigin = originOf(`${origin}/`) ?? origin;
+  const seedPair = canonicalSeedForOrigin(params.seedUrl, crawlOrigin);
 
   const usage: Usage = {
     urlsFetched: 0,
@@ -881,6 +932,7 @@ export async function crawlSite(
 
   const originPair = canonicalizeUrl(`${origin}/`);
   if (originPair) enqueue(originPair.subjectUrl, originPair.fetchUrl, 0);
+  if (seedPair) enqueue(seedPair.subjectUrl, seedPair.fetchUrl, 0);
   for (const target of boundedSitemapTargets) {
     enqueue(target.subjectUrl, target.fetchUrl, 1);
   }

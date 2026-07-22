@@ -9,7 +9,7 @@ import {
   CRAWL_JOB_WALL_CLOCK_CAP_MS,
   CRAWL_PROJECTION_LIMITS,
 } from "./types.ts";
-import type { CrawlFetcher } from "./types.ts";
+import type { CrawlFetcher, CrawlParams } from "./types.ts";
 
 const PARAMS = { origin: "https://example.com", host: "example.com" } as const;
 const CONFIG = { userAgent: "SignalFrameBot/0.2" } as const;
@@ -406,6 +406,252 @@ describe("crawlSite", () => {
       ]);
     },
   );
+
+  it("seeds root then the exact deep URL before fairly allocated sitemap targets", async () => {
+    const seedUrl = "https://example.com/products/widget/";
+    const sitemapBody = `<urlset>
+      <url><loc>https://example.com/a</loc></url>
+      <url><loc>https://example.com/a/</loc></url>
+      <url><loc>https://example.com/b</loc></url>
+    </urlset>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text(
+          "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+        ),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () =>
+        html("<html><head><title>Home</title></head></html>"),
+      [seedUrl]: () =>
+        html("<html><head><title>Widget</title></head></html>"),
+      "https://example.com/a": () =>
+        html("<html><head><title>A</title></head></html>"),
+      "https://example.com/a/": () =>
+        html("<html><head><title>A slash</title></head></html>"),
+      "https://example.com/b": () =>
+        html("<html><head><title>B</title></head></html>"),
+    });
+    const params = { ...PARAMS, seedUrl } satisfies CrawlParams;
+
+    const raw = await crawlSite(params, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxUrls: 4,
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(calls).toEqual([
+      "https://example.com/robots.txt",
+      "https://example.com/sitemap.xml",
+      "https://example.com/",
+      seedUrl,
+      "https://example.com/a",
+      "https://example.com/b",
+    ]);
+    expect(raw.stopReason).toBe("max_urls");
+    expect(raw.pages).toContainEqual(
+      expect.objectContaining({
+        subjectUrl: "https://example.com/products/widget",
+        depth: 0,
+        projection: expect.objectContaining({
+          fetchUrl: seedUrl,
+          sitemapMember: false,
+        }),
+      }),
+    );
+  });
+
+  it("keeps slash and non-slash seeds as distinct exact fetch identities", async () => {
+    const seedUrl = "https://example.com/pricing/";
+    const sitemapUrl = "https://example.com/pricing";
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text(
+          "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+        ),
+      "https://example.com/sitemap.xml": () =>
+        xml(`<urlset><url><loc>${sitemapUrl}</loc></url></urlset>`),
+      "https://example.com/": () =>
+        html("<html><head><title>Home</title></head></html>"),
+      [seedUrl]: () =>
+        html("<html><head><title>Pricing slash</title></head></html>"),
+      [sitemapUrl]: () =>
+        html("<html><head><title>Pricing</title></head></html>"),
+    });
+
+    const raw = await crawlSite(
+      { ...PARAMS, seedUrl },
+      CONFIG,
+      CTX,
+      fetcher,
+      {
+        guard: GUARD,
+        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+      },
+    );
+
+    expect(calls.slice(2)).toEqual([
+      "https://example.com/",
+      seedUrl,
+      sitemapUrl,
+    ]);
+    expect(
+      raw.pages
+        .filter(
+          (page) =>
+            page.subjectUrl === "https://example.com/pricing",
+        )
+        .map((page) => page.projection.fetchUrl),
+    ).toEqual([sitemapUrl, seedUrl]);
+  });
+
+  it("fetches a deep seed even when no sitemap or root outlink discovers it", async () => {
+    const seedUrl = "https://example.com/products/standalone";
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () =>
+        html("<html><head><title>Home</title></head></html>"),
+      [seedUrl]: () =>
+        html("<html><head><title>Standalone</title></head></html>"),
+    });
+
+    const raw = await crawlSite(
+      { ...PARAMS, seedUrl },
+      CONFIG,
+      CTX,
+      fetcher,
+      {
+        guard: GUARD,
+        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+      },
+    );
+
+    expect(calls).toEqual([
+      "https://example.com/robots.txt",
+      "https://example.com/sitemap.xml",
+      "https://example.com/",
+      seedUrl,
+    ]);
+    expect(raw.pages).toContainEqual(
+      expect.objectContaining({
+        subjectUrl: seedUrl,
+        depth: 0,
+        projection: expect.objectContaining({ fetchUrl: seedUrl }),
+      }),
+    );
+  });
+
+  it("deduplicates a seed whose exact identity is the crawl root", async () => {
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () =>
+        html("<html><head><title>Home</title></head></html>"),
+    });
+
+    const raw = await crawlSite(
+      { ...PARAMS, seedUrl: "https://example.com" },
+      CONFIG,
+      CTX,
+      fetcher,
+      {
+        guard: GUARD,
+        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+      },
+    );
+
+    expect(calls.filter((url) => url === "https://example.com/")).toHaveLength(
+      1,
+    );
+    expect(raw.pages).toHaveLength(1);
+    expect(raw.pages[0]?.depth).toBe(0);
+  });
+
+  it.each([
+    ["cross-origin", "https://outside.example/product"],
+    ["malformed", "not a URL"],
+    ["credentials", "https://user:secret@example.com/product"],
+    ["fragment", "https://example.com/product#details"],
+    [
+      "overlong",
+      `https://example.com/${"x".repeat(
+        CRAWL_PROJECTION_LIMITS.maxUrlChars,
+      )}`,
+    ],
+  ])("ignores an invalid %s seed before guard and transport", async (_case, seedUrl) => {
+    const guardedUrls: string[] = [];
+    const guard = async (url: string) => {
+      guardedUrls.push(url);
+      return GUARD(url);
+    };
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () =>
+        html("<html><head><title>Home</title></head></html>"),
+    });
+
+    const raw = await crawlSite(
+      { ...PARAMS, seedUrl },
+      CONFIG,
+      CTX,
+      fetcher,
+      {
+        guard,
+        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+      },
+    );
+
+    expect(calls).toEqual([
+      "https://example.com/robots.txt",
+      "https://example.com/sitemap.xml",
+      "https://example.com/",
+    ]);
+    expect(guardedUrls).toEqual(calls);
+    expect(raw.pages.map((page) => page.projection.fetchUrl)).toEqual([
+      "https://example.com/",
+    ]);
+  });
+
+  it("applies robots rules to a deep seed before its transport", async () => {
+    const seedUrl = "https://example.com/private/product";
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow: /private/\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () =>
+        html("<html><head><title>Home</title></head></html>"),
+      [seedUrl]: () =>
+        html("<html><head><title>Private</title></head></html>"),
+    });
+
+    const raw = await crawlSite(
+      { ...PARAMS, seedUrl },
+      CONFIG,
+      CTX,
+      fetcher,
+      {
+        guard: GUARD,
+        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+      },
+    );
+
+    expect(calls).not.toContain(seedUrl);
+    expect(raw.providerUsage.urlsDisallowed).toBe(1);
+    expect(raw.pages.map((page) => page.projection.fetchUrl)).toEqual([
+      "https://example.com/",
+    ]);
+  });
 
   it("keeps redirect request and directly fetched terminal identities as separate factual records", async () => {
     const oldUrl = "https://example.com/old";

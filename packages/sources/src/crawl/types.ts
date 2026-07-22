@@ -102,6 +102,12 @@ export interface CrawlConfig {
 export interface CrawlParams {
   readonly origin: string;
   readonly host: string;
+  /**
+   * Optional exact product/page transport seed. The engine admits only an
+   * absolute, credential-free, fragment-free URL on `origin`; invalid values
+   * are ignored before guard or transport.
+   */
+  readonly seedUrl?: string | null;
 }
 
 /**
