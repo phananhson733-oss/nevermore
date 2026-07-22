@@ -74,7 +74,7 @@ export type {
   PriorityResult,
 } from "./priority.ts";
 
-export { buildSummary } from "./summaries.ts";
+export { buildSummary, SUMMARY_ARG_KEYS } from "./summaries.ts";
 export type { SummaryLocale } from "./summaries.ts";
 
 export { runPipeline } from "./pipeline.ts";

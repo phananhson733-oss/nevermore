@@ -144,6 +144,7 @@ describe("runPipeline async rule contract (spec §8.3)", () => {
         "page_set:missing_conversion_path",
         "https://x.test/product",
       ),
+      titleArgs: { affectedCount: 1 },
       target: {
         version: 1,
         relation: "affected_by_page_set",

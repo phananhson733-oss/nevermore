@@ -26,6 +26,10 @@ const BASELINE_UNAVAILABLE = "ga4_baseline_unavailable";
 const GA4_LIMITATION =
   "Conversion rate uses GA4 key events under the project's key-event mapping; pages with unmapped key events are excluded and only pages with at least 500 sessions are evaluated.";
 
+function pct(fraction: number): string {
+  return `${(fraction * 100).toFixed(2)}%`;
+}
+
 function hasAmbiguousBaselineParticipant(ctx: DiagnosticContext): boolean {
   for (const observations of ctx.ga4ObservationGroups.values()) {
     if (observations.length <= 1) continue;
@@ -99,7 +103,7 @@ export const croLandingRule = {
       candidates.push({
         subjectRefs: [url],
         severity,
-        titleArgs: { pageRatePct: Number((pageRate * 100).toFixed(2)), baselinePct: Number((baseline * 100).toFixed(2)) },
+        titleArgs: { pageRate: pct(pageRate), baseline: pct(baseline) },
         metrics: {
           pageRate,
           baseline,

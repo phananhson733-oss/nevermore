@@ -279,8 +279,8 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > CRO-LANDING-0
           "version": 1,
         },
         "titleArgs": {
-          "baselinePct": 7.27,
-          "pageRatePct": 4,
+          "baseline": "7.27%",
+          "pageRate": "4.00%",
         },
       },
     ],
@@ -808,7 +808,8 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > SEARCH-CTR-00
           "version": 1,
         },
         "titleArgs": {
-          "url": "https://example.com/product",
+          "ctr": "1.00%",
+          "position": "3.0",
         },
       },
     ],
@@ -884,7 +885,7 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > SEARCH-DECAY-
           "version": 1,
         },
         "titleArgs": {
-          "url": "https://example.com/product",
+          "delta": "50.0%",
         },
       },
     ],
@@ -937,7 +938,7 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > SEARCH-DECAY-
           "version": 1,
         },
         "titleArgs": {
-          "url": "https://example.com/threshold",
+          "delta": "20.0%",
         },
       },
     ],

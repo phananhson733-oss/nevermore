@@ -74,7 +74,7 @@ function evaluatePage(
   return {
     subjectRefs: [subjectUrl],
     severity,
-    titleArgs: { url: subjectUrl },
+    titleArgs: { delta: pct(Math.abs(delta)) },
     metrics: { currentClicks, previousClicks, delta },
     evidence: [decayEvidence(ctx, subjectUrl, currentClicks, previousClicks, delta)],
     target: findingTarget(

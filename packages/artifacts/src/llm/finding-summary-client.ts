@@ -8,11 +8,17 @@
  */
 
 import { isBcp47LanguageTag } from "@sf/contracts";
-import type {
-  EvidenceDraft,
-  FindingSummaryGenerationInput,
-  RuleId,
+import {
+  SUMMARY_ARG_KEYS,
+  type EvidenceDraft,
+  type FindingSummaryGenerationInput,
+  type RuleId,
 } from "@sf/engine";
+/*
+ * Keep the model allowlist on the same canonical key map used by the
+ * deterministic fallback. A rule cannot silently omit a customer-visible
+ * number in one path while exposing it in the other.
+ */
 import { redactText } from "@sf/observability";
 import { z } from "zod";
 import type { AnalysisInvocationRecord } from "../types.ts";
@@ -37,20 +43,6 @@ const MAX_LIMITATION_CHARS = 250;
 const MAX_FALLBACK_SUMMARY_CHARS = 1_200;
 const MAX_TITLE_ARG_CHARS = 256;
 const MAX_CITED_NUMBERS = 32;
-
-const TITLE_ARG_ALLOWLIST: Readonly<Record<RuleId, readonly string[]>> = {
-  "TECH-HTTP-001": ["count", "status"],
-  "TECH-CANONICAL-002": ["subtype", "count"],
-  "TECH-LINKGRAPH-005": ["affectedCount"],
-  "SEARCH-CTR-004": ["ctr", "position"],
-  "SEARCH-DECAY-002": ["delta"],
-  "CONTENT-COVERAGE-001": ["kind", "target"],
-  "CONTENT-GAP-011": ["clusterKey", "keywordCount"],
-  "CRO-PATH-001": ["affectedCount"],
-  "CRO-LANDING-003": ["pageRate", "baseline"],
-  "GEO-ENTITY-001": ["selectedCount"],
-  "GEO-CRAWLER-002": ["userAgent", "scope"],
-};
 
 const summaryEnvelopeSchema = z
   .object({
@@ -136,7 +128,7 @@ function allowlistedTitleArgs(
   input: FindingSummaryGenerationInput,
 ): Readonly<Record<string, string | number>> {
   const selected: Record<string, string | number> = {};
-  for (const key of TITLE_ARG_ALLOWLIST[input.ruleId]) {
+  for (const key of SUMMARY_ARG_KEYS[input.ruleId]) {
     const value = input.titleArgs[key];
     if (typeof value === "string") {
       selected[key] = safeDataText(value, MAX_TITLE_ARG_CHARS);

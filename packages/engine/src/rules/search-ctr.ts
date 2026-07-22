@@ -101,7 +101,7 @@ function evaluatePage(
   return {
     subjectRefs: [subjectUrl],
     severity,
-    titleArgs: { url: subjectUrl },
+    titleArgs: { ctr: pct(ctr), position: position.toFixed(1) },
     metrics: { ctr, position, impressions, clicks, benchmark },
     evidence: [
       ctrEvidence(ctx, subjectUrl, ctr, position, benchmark, threshold, page.topQueries),

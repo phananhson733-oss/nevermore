@@ -75,6 +75,7 @@ describe("searchDecayRule (SEARCH-DECAY-002)", () => {
       previousClicks: 200,
       delta: -0.5,
     });
+    expect(candidate.titleArgs).toEqual({ delta: "50.0%" });
 
     const evidence = candidate.evidence[0]!;
     expect(evidence.sourceProvider).toBe("gsc");

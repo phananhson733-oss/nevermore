@@ -11,6 +11,33 @@ export type SummaryLocale = "en" | "zh-CN";
 
 type Args = Record<string, string | number>;
 
+export const SUMMARY_ARG_KEYS = {
+  "TECH-HTTP-001": ["count", "status"],
+  "TECH-CANONICAL-002": ["subtype", "count"],
+  "TECH-LINKGRAPH-005": ["affectedCount"],
+  "SEARCH-CTR-004": ["ctr", "position"],
+  "SEARCH-DECAY-002": ["delta"],
+  "CONTENT-COVERAGE-001": ["kind", "target"],
+  "CONTENT-GAP-011": ["clusterKey", "keywordCount"],
+  "CRO-PATH-001": ["affectedCount"],
+  "CRO-LANDING-003": ["pageRate", "baseline"],
+  "GEO-ENTITY-001": ["selectedCount"],
+  "GEO-CRAWLER-002": ["userAgent", "scope"],
+} as const satisfies Readonly<Record<RuleId, readonly string[]>>;
+
+function assertCompleteSummaryArgs(ruleId: RuleId, args: Args): void {
+  for (const key of SUMMARY_ARG_KEYS[ruleId]) {
+    const value = args[key];
+    const valid =
+      typeof value === "number"
+        ? Number.isFinite(value)
+        : typeof value === "string" && value.trim().length > 0;
+    if (!valid) {
+      throw new Error(`Invalid summary argument for ${ruleId}: ${key}`);
+    }
+  }
+}
+
 function n(args: Args, key: string): number {
   const v = args[key];
   return typeof v === "number" ? v : 0;
@@ -73,6 +100,7 @@ export function buildSummary(
   titleArgs: Record<string, string | number>,
   deliveryLocale: string,
 ): { summary: string; summaryLocale: SummaryLocale } {
+  assertCompleteSummaryArgs(ruleId, titleArgs);
   const locale: SummaryLocale =
     deliveryLocale.toLowerCase() === "zh-cn" ? "zh-CN" : "en";
   const summary = TEMPLATES[ruleId][locale](titleArgs);

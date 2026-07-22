@@ -90,6 +90,10 @@ describe("searchCtrRule (SEARCH-CTR-004)", () => {
       clicks: 20,
       benchmark: 0.1,
     });
+    expect(candidate.titleArgs).toEqual({
+      ctr: "1.00%",
+      position: "3.0",
+    });
 
     const evidence = candidate.evidence[0]!;
     expect(evidence.sourceProvider).toBe("gsc");

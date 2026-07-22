@@ -78,6 +78,10 @@ describe("croLandingRule (CRO-LANDING-003)", () => {
     expect(candidate.metrics.baseline).toBeCloseTo(240 / 3300, 12);
     expect(candidate.metrics.sessions).toBe(1000);
     expect(candidate.metrics.keyEvents).toBe(40);
+    expect(candidate.titleArgs).toEqual({
+      pageRate: "4.00%",
+      baseline: "7.27%",
+    });
     const evidence = candidate.evidence[0];
     if (!evidence) throw new Error("missing evidence");
     expect(evidence.sourceProvider).toBe("ga4");
