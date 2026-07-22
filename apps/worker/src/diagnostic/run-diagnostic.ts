@@ -373,8 +373,9 @@ interface ObservationSourceRegistration {
 
 /**
  * The only provider/dataset/method/metric tuples the current source adapters can
- * produce. In particular, CSV and DataForSEO intentionally share the logical
- * keyword-gap metric and dataset while retaining distinct provider provenance.
+ * produce. CSV and DataForSEO intentionally share the logical keyword-gap
+ * Observation metric, while their immutable Snapshot dataset/method identities
+ * and provider provenance remain distinct.
  */
 const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
   string,

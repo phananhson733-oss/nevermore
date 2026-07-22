@@ -27,7 +27,12 @@ import {
   type FindingTargetDraft,
 } from "@sf/engine";
 import type { Logger } from "@sf/observability";
-import { CRAWL_METHOD_VERSION } from "@sf/sources";
+import {
+  CRAWL_METHOD_VERSION,
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  METRIC_CSV_KEYWORD_GAP,
+} from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
   findingTargetInsertsForFinding,
@@ -278,8 +283,8 @@ const SOURCE_FIXTURE_CONFIG = {
   dataforseo: {
     snapshotId: "00000000-0000-4000-8000-000000000018",
     collectionRunId: "00000000-0000-4000-8000-000000000019",
-    datasetKey: "csv.keyword_gap.v1",
-    methodVersion: "dataforseo.ranked_keywords.v1",
+    datasetKey: DATAFORSEO_DATASET_KEY,
+    methodVersion: DATAFORSEO_METHOD_VERSION,
   },
 } as const;
 
@@ -306,7 +311,7 @@ const OBSERVATION_FIXTURES = [
   },
   {
     provider: "dataforseo",
-    metricKey: "csv.keyword_gap.v1",
+    metricKey: METRIC_CSV_KEYWORD_GAP,
     subjectType: "keyword_cluster",
   },
 ] as const;
@@ -1640,6 +1645,73 @@ describe("diagnostic frozen snapshot validation", () => {
       });
     },
   );
+
+  it.each([
+    {
+      mismatch: "legacy CSV dataset with the DataForSEO method",
+      datasetKey: "csv.keyword_gap.v1",
+      methodVersion: DATAFORSEO_METHOD_VERSION,
+    },
+    {
+      mismatch: "DataForSEO dataset with the CSV method",
+      datasetKey: DATAFORSEO_DATASET_KEY,
+      methodVersion: "csv.keyword_gap.v1",
+    },
+  ])(
+    "rejects a self-consistent DataForSEO snapshot using $mismatch before loading its ICP",
+    async ({ datasetKey, methodVersion }) => {
+      const crawl = frozenSource("crawl");
+      const dataforseo = frozenSource("dataforseo", {
+        datasetKey,
+        methodVersion,
+      });
+      const fixture = diagnosticFixture({
+        snapshots: [crawl.manifest, dataforseo.manifest],
+      });
+      const ctx = unitContext();
+      const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+      vi.spyOn(
+        DataSnapshotsRepository.prototype,
+        "findByIds",
+      ).mockResolvedValue([crawl.snapshot, dataforseo.snapshot]);
+      const icp = vi.spyOn(IcpProfilesRepository.prototype, "findById");
+
+      await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+      expect(icp).not.toHaveBeenCalled();
+      expect(terminal).toHaveBeenCalledWith(toRunAttempt(fixture.run), {
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+        lastErrorSummary: "diagnostic failed",
+      });
+    },
+  );
+
+  it("rejects the DataForSEO Snapshot dataset key when it is reused as an Observation metric", async () => {
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      observationRow("dataforseo", {
+        metric_key: DATAFORSEO_DATASET_KEY,
+        subject_type: "keyword_cluster",
+      }),
+    );
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
+    expect(result.terminal).toHaveBeenCalledWith(
+      {
+        runId: "run-1",
+        workspaceId: "workspace-1",
+        projectId: "project-1",
+        attemptCount: 1,
+      },
+      {
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+        lastErrorSummary: "diagnostic failed",
+      },
+    );
+  });
 
   it.each(OBSERVATION_FIXTURES)(
     "rejects $provider observations with a metric outside the $metricKey registry before Context",
