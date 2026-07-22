@@ -28,6 +28,7 @@ import {
 } from "./materialize-crawl-pages.ts";
 import { resolveObservationSitePageLineage } from "./observation-site-page-lineage.ts";
 import { projectCollectionSnapshotKeywords } from "./keyword-library-projection.ts";
+import { projectCollectionSnapshotCompetitors } from "./competitor-library-projection.ts";
 
 /**
  * Adapter-agnostic collection persistence (spec §7.6, §13.3). The raw payload is
@@ -228,6 +229,7 @@ export async function persistCollectionResult(
       );
       if (projectionsMutable) {
         await projectCollectionSnapshotKeywords(tx, scope, snapshot);
+        await projectCollectionSnapshotCompetitors(tx, scope, snapshot);
       }
       await discrepancies.detectForSnapshot(scope, snapshot.id);
 

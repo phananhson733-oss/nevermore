@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AsyncRunsRepository,
   CollectionRunsRepository,
+  CompetitorsRepository,
   DataSnapshotsRepository,
+  ImportPreviewsRepository,
   KeywordOccurrencesRepository,
   ObservationsRepository,
   PageSnapshotsRepository,
@@ -32,6 +34,9 @@ const collectionRun = {
   project_id: attempt.projectId,
   site_id: "site-1",
   source_connection_id: null,
+  import_preview_id: null,
+  crawl_seed_site_page_id: null,
+  crawl_seed_url: null,
   provider: "crawl",
   operation: "site_graph",
   method_version: "crawl.site_graph.v1",
@@ -138,6 +143,9 @@ beforeEach(() => {
   vi.spyOn(DataSnapshotsRepository.prototype, "insert").mockResolvedValue({
     id: "snapshot-1",
   } as never);
+  vi.spyOn(CollectionRunsRepository.prototype, "findById").mockResolvedValue(
+    null,
+  );
   vi.spyOn(
     SitePagesRepository.prototype,
     "upsertNormalizedUrl",
@@ -166,6 +174,10 @@ beforeEach(() => {
     entityId: "keyword-entity-1",
   });
   vi.spyOn(CollectionRunsRepository.prototype, "finalize").mockResolvedValue();
+  vi.spyOn(CompetitorsRepository.prototype, "upsertOrigin").mockResolvedValue({
+    occurrenceId: "competitor-occurrence-1",
+    competitorId: "competitor-1",
+  });
   vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue({
     id: attempt.projectId,
     workspace_id: attempt.workspaceId,
@@ -190,6 +202,7 @@ describe("persistCollectionResult transaction outcomes", () => {
   it("projects canonical persisted CSV Observations into the Keyword Library before terminalizing", async () => {
     const csvRun = {
       ...collectionRun,
+      import_preview_id: "00000000-0000-4000-8000-000000000007",
       provider: "csv",
       operation: "keyword_gap_import",
       method_version: "csv.keyword_gap.v1",
@@ -215,38 +228,68 @@ describe("persistCollectionResult transaction outcomes", () => {
       summary: {},
       created_at: capturedAt,
     });
+    const canonicalObservation = {
+      id: "00000000-0000-4000-8000-000000000004",
+      workspace_id: attempt.workspaceId,
+      project_id: attempt.projectId,
+      snapshot_id: "snapshot-1",
+      site_page_id: null,
+      provider: "csv",
+      metric_key: "csv.keyword_gap.v1",
+      subject_type: "keyword_cluster",
+      subject_ref: "running-shoes",
+      observed_at: capturedAt,
+      availability: "available",
+      value_numeric: null,
+      value_text: null,
+      value_json: {
+        keyword: "Running Shoes",
+        marketCode: "US",
+        languageCode: "en-US",
+        competitorDomain: null,
+      },
+      unit: null,
+      origin: "user_provided",
+      method: "observed",
+      grade: "C",
+      support: "supports",
+      limitation: "fixture",
+    };
     vi.mocked(
       ObservationsRepository.prototype.listBySnapshotIdsPage,
-    ).mockResolvedValueOnce({
-      rows: [
-        {
-          id: "00000000-0000-4000-8000-000000000004",
-          workspace_id: attempt.workspaceId,
-          project_id: attempt.projectId,
-          snapshot_id: "snapshot-1",
-          site_page_id: null,
-          provider: "csv",
-          metric_key: "csv.keyword_gap.v1",
-          subject_type: "keyword_cluster",
-          subject_ref: "running-shoes",
-          observed_at: capturedAt,
-          availability: "available",
-          value_numeric: null,
-          value_text: null,
-          value_json: {
-            keyword: "Running Shoes",
-            marketCode: "US",
-            languageCode: "en-US",
-          },
-          unit: null,
-          origin: "user_provided",
-          method: "observed",
-          grade: "C",
-          support: "supports",
-          limitation: "fixture",
-        },
-      ],
-      nextCursor: null,
+    )
+      .mockResolvedValueOnce({
+        rows: [canonicalObservation],
+        nextCursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [canonicalObservation],
+        nextCursor: null,
+      });
+    vi.mocked(
+      CollectionRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce(csvRun);
+    vi.spyOn(ImportPreviewsRepository.prototype, "findById").mockResolvedValueOnce({
+      id: csvRun.import_preview_id!,
+      workspace_id: attempt.workspaceId,
+      project_id: attempt.projectId,
+      site_id: csvRun.site_id,
+      created_by: "actor-1",
+      token_hash: Buffer.alloc(32),
+      template_id: "keyword_gap_v1",
+      raw_object_key: "raw-import/project/run/object",
+      file_checksum: "checksum",
+      row_count: 1,
+      detected_columns: ["keyword"],
+      suggested_mapping: {},
+      preview_rows: [],
+      validation_errors: [],
+      validation_warnings: [],
+      status: "consumed",
+      expires_at: "2026-07-19T01:00:00.000Z",
+      consumed_at: "2026-07-18T23:59:00.000Z",
+      created_at: "2026-07-18T23:58:00.000Z",
+      updated_at: "2026-07-18T23:59:00.000Z",
     });
     transaction.mockImplementationOnce(
       async (callback: (tx: object) => Promise<unknown>) => callback({}),
@@ -285,6 +328,184 @@ describe("persistCollectionResult transaction outcomes", () => {
       vi.mocked(AsyncRunsRepository.prototype.setTerminal).mock
         .invocationCallOrder[0]!,
     );
+    expect(CompetitorsRepository.prototype.upsertOrigin).not.toHaveBeenCalled();
+  });
+
+  it("projects a canonical CSV competitor origin in the completion transaction before terminalizing", async () => {
+    const previewId = "00000000-0000-4000-8000-000000000007";
+    const csvRun = {
+      ...collectionRun,
+      import_preview_id: previewId,
+      provider: "csv",
+      operation: "keyword_gap_import",
+      method_version: "csv.keyword_gap.v1",
+    } as CollectionRunRow;
+    vi.mocked(DataSnapshotsRepository.prototype.insert).mockResolvedValueOnce({
+      id: "snapshot-1",
+      workspace_id: attempt.workspaceId,
+      project_id: attempt.projectId,
+      site_id: csvRun.site_id,
+      collection_run_id: csvRun.id,
+      source_connection_id: null,
+      provider: "csv",
+      dataset_key: "csv.keyword_gap.v1",
+      schema_version: "0.2.0",
+      method_version: "csv.keyword_gap.v1",
+      captured_at: capturedAt,
+      source_window: sourceWindow,
+      availability: "available",
+      limitation: "fixture",
+      raw_object_key: uploadedKey,
+      row_count: 1,
+      checksum: "sha256",
+      summary: {},
+      created_at: capturedAt,
+    });
+    vi.mocked(CollectionRunsRepository.prototype.findById).mockResolvedValueOnce(
+      csvRun,
+    );
+    vi.spyOn(ImportPreviewsRepository.prototype, "findById").mockResolvedValueOnce({
+      id: previewId,
+      workspace_id: attempt.workspaceId,
+      project_id: attempt.projectId,
+      site_id: csvRun.site_id,
+      created_by: "actor-1",
+      token_hash: Buffer.alloc(32),
+      template_id: "keyword_gap_v1",
+      raw_object_key: "raw-import/project/run/object",
+      file_checksum: "checksum",
+      row_count: 1,
+      detected_columns: ["keyword", "competitor_domain"],
+      suggested_mapping: {},
+      preview_rows: [],
+      validation_errors: [],
+      validation_warnings: [],
+      status: "consumed",
+      expires_at: "2026-07-19T01:00:00.000Z",
+      consumed_at: "2026-07-18T23:59:00.000Z",
+      created_at: "2026-07-18T23:58:00.000Z",
+      updated_at: "2026-07-18T23:59:00.000Z",
+    });
+    vi.mocked(
+      ObservationsRepository.prototype.listBySnapshotIdsPage,
+    ).mockResolvedValue({
+      rows: [
+        {
+          id: "00000000-0000-4000-8000-000000000004",
+          workspace_id: attempt.workspaceId,
+          project_id: attempt.projectId,
+          snapshot_id: "snapshot-1",
+          site_page_id: null,
+          provider: "csv",
+          metric_key: "csv.keyword_gap.v1",
+          subject_type: "keyword_cluster",
+          subject_ref: "running-shoes",
+          observed_at: capturedAt,
+          availability: "available",
+          value_numeric: null,
+          value_text: null,
+          value_json: {
+            keyword: "Running Shoes",
+            marketCode: "US",
+            languageCode: "en-US",
+            competitorDomain: "example-competitor.com",
+          },
+          unit: null,
+          origin: "user_provided",
+          method: "observed",
+          grade: "C",
+          support: "supports",
+          limitation: "fixture",
+        },
+      ],
+      nextCursor: null,
+    });
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({ collectionRun: csvRun, datasetKey: "csv.keyword_gap.v1" }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(CompetitorsRepository.prototype.upsertOrigin).toHaveBeenCalledWith(
+      { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+      {
+        originKind: "csv_keyword_gap",
+        domain: "example-competitor.com",
+        name: null,
+        snapshotId: "snapshot-1",
+        observationId: "00000000-0000-4000-8000-000000000004",
+        importPreviewId: previewId,
+        sourcePointer: "/valueJson/competitorDomain",
+      },
+    );
+    expect(
+      vi.mocked(CompetitorsRepository.prototype.upsertOrigin).mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(CollectionRunsRepository.prototype.finalize).mock
+        .invocationCallOrder[0]!,
+    );
+    expect(
+      vi.mocked(CompetitorsRepository.prototype.upsertOrigin).mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(AsyncRunsRepository.prototype.setTerminal).mock
+        .invocationCallOrder[0]!,
+    );
+  });
+
+  it("freezes both mutable libraries when archival wins the project lock", async () => {
+    const csvRun = {
+      ...collectionRun,
+      import_preview_id: "00000000-0000-4000-8000-000000000007",
+      provider: "csv",
+      operation: "keyword_gap_import",
+      method_version: "csv.keyword_gap.v1",
+    } as CollectionRunRow;
+    vi.mocked(ProjectsRepository.prototype.findByIdForUpdate).mockResolvedValueOnce({
+      id: attempt.projectId,
+      workspace_id: attempt.workspaceId,
+      archived_at: capturedAt,
+    } as never);
+    vi.mocked(DataSnapshotsRepository.prototype.insert).mockResolvedValueOnce({
+      id: "snapshot-1",
+      workspace_id: attempt.workspaceId,
+      project_id: attempt.projectId,
+      site_id: csvRun.site_id,
+      collection_run_id: csvRun.id,
+      source_connection_id: null,
+      provider: "csv",
+      dataset_key: "csv.keyword_gap.v1",
+      schema_version: "0.2.0",
+      method_version: "csv.keyword_gap.v1",
+      captured_at: capturedAt,
+      source_window: sourceWindow,
+      availability: "available",
+      limitation: "fixture",
+      raw_object_key: uploadedKey,
+      row_count: 1,
+      checksum: "sha256",
+      summary: {},
+      created_at: capturedAt,
+    });
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({ collectionRun: csvRun, datasetKey: "csv.keyword_gap.v1" }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(
+      KeywordOccurrencesRepository.prototype.upsertIntoLibrary,
+    ).not.toHaveBeenCalled();
+    expect(CompetitorsRepository.prototype.upsertOrigin).not.toHaveBeenCalled();
+    expect(CollectionRunsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(
+      ProjectsRepository.prototype.setReadyToDiagnoseIfEligible,
+    ).not.toHaveBeenCalled();
   });
 
   it("deletes its upload when the transaction callback explicitly fails", async () => {

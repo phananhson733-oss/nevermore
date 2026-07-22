@@ -32,6 +32,7 @@ import {
   AsyncRunsRepository,
   collectionRunParametersHash,
   CollectionRunsRepository,
+  CompetitorsRepository,
   DataSnapshotsRepository,
   ImportPreviewsRepository,
   KeywordOccurrencesRepository,
@@ -76,6 +77,7 @@ import {
   persistCollectionResult,
   type CollectionOutcome,
 } from "../persist.ts";
+import { projectCollectionSnapshotCompetitors } from "../competitor-library-projection.ts";
 import { runCollection } from "../run-collection.ts";
 
 /**
@@ -651,6 +653,9 @@ describeDb("collection runner (spec §13)", () => {
       validationWarnings: [],
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
+    await expect(
+      new ImportPreviewsRepository(handle.db).consume(seed.scope, preview.id),
+    ).resolves.toBe(true);
 
     await seedCollectionRun(handle, seed, runId, {
       provider: "csv",
@@ -715,6 +720,191 @@ describeDb("collection runner (spec §13)", () => {
       projectId: seed.scope.projectId,
     });
     expect(await snapshotCount(handle, seed.scope)).toBe(1);
+  });
+
+  it("projects exact consumed CSV competitor lineage idempotently and rolls back every fixture", async () => {
+    const rollback = new Error("rollback CSV competitor projection fixture");
+    const actor = randomUUID();
+    let rolledBackWorkspaceId: string | null = null;
+
+    await expect(
+      handle.db.transaction(async (tx) => {
+        const [workspace] = await tx
+          .insert(workspaces)
+          .values({ name: `CSV-competitor-${randomUUID()}` })
+          .returning();
+        rolledBackWorkspaceId = workspace!.id;
+        const project = await new ProjectsRepository(tx).insert({
+          workspaceId: workspace!.id,
+          clientName: "CSV competitor projection",
+          projectName: "CSV competitor projection",
+          defaultDeliveryLocale: "en",
+          createdBy: actor,
+        });
+        const host = `csv-competitor-${randomUUID().slice(0, 8)}.example`;
+        const site = await new SitesRepository(tx).insertPrimary({
+          workspaceId: workspace!.id,
+          projectId: project.id,
+          origin: `https://${host}`,
+          host,
+          marketCodes: ["US"],
+          languageCodes: ["en-US"],
+        });
+        const scope = {
+          workspaceId: workspace!.id,
+          projectId: project.id,
+        };
+        const preview = await new ImportPreviewsRepository(tx).insert({
+          workspaceId: scope.workspaceId,
+          projectId: scope.projectId,
+          siteId: site.id,
+          createdBy: actor,
+          tokenHash: randomBytes(32),
+          templateId: "keyword_gap_v1",
+          rawObjectKey: `raw-import/${project.id}/${randomUUID()}`,
+          fileChecksum: contentHash({ fixture: "CSV competitor projection" }),
+          rowCount: 1,
+          detectedColumns: ["keyword", "competitor_domain"],
+          suggestedMapping: {},
+          previewRows: [],
+          validationErrors: [],
+          validationWarnings: [],
+          expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        });
+        await expect(
+          new ImportPreviewsRepository(tx).consume(scope, preview.id),
+        ).resolves.toBe(true);
+
+        const runId = randomUUID();
+        await tx.insert(asyncRuns).values({
+          id: runId,
+          workspace_id: scope.workspaceId,
+          project_id: scope.projectId,
+          kind: "collection",
+          status: "queued",
+          initiated_by: actor,
+          request_payload: {},
+        });
+        await tx.insert(collectionRuns).values({
+          id: runId,
+          workspace_id: scope.workspaceId,
+          project_id: scope.projectId,
+          site_id: site.id,
+          source_connection_id: null,
+          import_preview_id: preview.id,
+          provider: "csv",
+          operation: "keyword_gap_import",
+          method_version: "csv.keyword_gap.v1",
+          parameters_hash: collectionRunParametersHash({
+            provider: "csv",
+            operation: "keyword_gap_import",
+            siteId: site.id,
+            crawlSeedSitePageId: null,
+            crawlSeedUrl: null,
+          }),
+        });
+        const observedAt = new Date().toISOString();
+        const snapshot = await new DataSnapshotsRepository(tx).insert({
+          workspaceId: scope.workspaceId,
+          projectId: scope.projectId,
+          siteId: site.id,
+          collectionRunId: runId,
+          sourceConnectionId: null,
+          provider: "csv",
+          datasetKey: "csv.keyword_gap.v1",
+          schemaVersion: "0.2.0",
+          methodVersion: "csv.keyword_gap.v1",
+          capturedAt: observedAt,
+          sourceWindow: { start: null, end: null },
+          availability: "available",
+          limitation: "User-provided keyword-gap CSV integration fixture.",
+          rawObjectKey: null,
+          rowCount: 1,
+          checksum: contentHash({ fixture: "CSV competitor snapshot" }),
+        });
+        await new ObservationsRepository(tx).insertMany(
+          scope,
+          snapshot.id,
+          "csv",
+          [
+            {
+              metricKey: "csv.keyword_gap.v1",
+              subjectType: "keyword_cluster",
+              subjectRef: "customer-onboarding",
+              observedAt,
+              availability: "available",
+              valueNumeric: null,
+              valueText: null,
+              valueJson: {
+                keyword: "customer onboarding software",
+                clusterKey: "customer-onboarding",
+                searchVolume: 2_400,
+                currentUrl: null,
+                currentRank: null,
+                competitorDomain: "example-competitor.com",
+                competitorRank: 4,
+                marketCode: "US",
+                languageCode: "en-US",
+              },
+              unit: null,
+              origin: "user_provided",
+              method: "observed",
+              grade: "C",
+              support: "supports",
+              limitation: "User-provided keyword-gap CSV integration fixture.",
+            },
+          ],
+        );
+
+        await expect(
+          projectCollectionSnapshotCompetitors(tx, scope, snapshot),
+        ).resolves.toBe(1);
+        await expect(
+          projectCollectionSnapshotCompetitors(tx, scope, snapshot),
+        ).resolves.toBe(1);
+
+        const competitors = await new CompetitorsRepository(tx).listByProject(
+          scope,
+          { limit: 10, cursor: null },
+        );
+        expect(competitors.rows).toEqual([
+          expect.objectContaining({
+            domain: "example-competitor.com",
+            name: null,
+            review_status: "candidate",
+            relationship: null,
+            analysis_scope: [],
+            origin_count: 1,
+            last_observed_at: observedAt,
+          }),
+        ]);
+        await expect(
+          new CompetitorsRepository(tx).listOrigins(
+            scope,
+            competitors.rows[0]!.id,
+            10,
+          ),
+        ).resolves.toEqual([
+          expect.objectContaining({
+            origin_kind: "csv_keyword_gap",
+            source_name: null,
+            data_snapshot_id: snapshot.id,
+            normalized_observation_id: expect.any(String),
+            import_preview_id: preview.id,
+            source_pointer: "/valueJson/competitorDomain",
+            observed_at: observedAt,
+          }),
+        ]);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+
+    expect(rolledBackWorkspaceId).not.toBeNull();
+    const persisted = await handle.pool.query<{ id: string }>(
+      "select id::text from app.workspaces where id = $1::uuid",
+      [rolledBackWorkspaceId],
+    );
+    expect(persisted.rows).toEqual([]);
   });
 
   it("runs the DataForSEO queue through the real HTTP adapter into an immutable snapshot and canonical observations", async () => {
@@ -3132,6 +3322,14 @@ async function seedCsvCollection(
     validationWarnings: [],
     expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
   });
+  if (
+    !(await new ImportPreviewsRepository(handle.db).consume(
+      seed.scope,
+      preview.id,
+    ))
+  ) {
+    throw new Error("CSV collection fixture ImportPreview was not consumed");
+  }
   await seedCollectionRun(handle, seed, runId, {
     provider: "csv",
     operation: "keyword_gap_import",
