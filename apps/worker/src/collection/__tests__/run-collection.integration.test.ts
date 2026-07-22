@@ -34,6 +34,8 @@ import {
   CollectionRunsRepository,
   DataSnapshotsRepository,
   ImportPreviewsRepository,
+  KeywordOccurrencesRepository,
+  KeywordsRepository,
   ObservationsRepository,
   PageSnapshotsRepository,
   ProjectsRepository,
@@ -675,6 +677,35 @@ describeDb("collection runner (spec §13)", () => {
     );
     expect(afterFirst?.status).toBe("completed");
     expect(await snapshotCount(handle, seed.scope)).toBe(1);
+    const keywords = await new KeywordsRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(keywords.rows).toEqual([
+      expect.objectContaining({
+        display_keyword: "running shoes",
+        normalized_keyword: "running shoes",
+        market: "US",
+        language_tag: "en",
+        query_kind: "search_query",
+      }),
+    ]);
+    await expect(
+      new KeywordOccurrencesRepository(handle.db).listForEntity(
+        seed.scope,
+        keywords.rows[0]!.id,
+        { limit: 10, cursor: null },
+      ),
+    ).resolves.toMatchObject({
+      rows: [
+        expect.objectContaining({
+          source_kind: "csv_import",
+          scope_basis: "user_provided",
+          source_pointer: "/valueJson/keyword",
+          normalized_observation_id: expect.any(String),
+        }),
+      ],
+    });
 
     // Redelivery: the run is terminal, so claim() loses and the runner acks
     // without persisting a second snapshot (spec §13.3).
@@ -962,6 +993,40 @@ describeDb("collection runner (spec §13)", () => {
         }),
       ]),
     );
+    const keywords = await new KeywordsRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(keywords.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          normalized_keyword: "enterprise seo platform",
+          market: "US",
+          language_tag: "en-US",
+        }),
+        expect.objectContaining({
+          normalized_keyword: "seo reporting software",
+          market: "US",
+          language_tag: "en-US",
+        }),
+      ]),
+    );
+    const firstOccurrence = await new KeywordOccurrencesRepository(
+      handle.db,
+    ).listForEntity(seed.scope, keywords.rows[0]!.id, {
+      limit: 10,
+      cursor: null,
+    });
+    expect(firstOccurrence.rows).toEqual([
+      expect.objectContaining({
+        data_snapshot_id: snapshot.id,
+        normalized_observation_id: expect.any(String),
+        source_kind: "dataforseo_ranked",
+        scope_basis: "provider_collection_scope",
+        source_pointer: "/valueJson/keyword",
+        provider_data_as_of: null,
+      }),
+    ]);
     await expect(
       new SourceConnectionsRepository(handle.db).findById(
         seed.scope,

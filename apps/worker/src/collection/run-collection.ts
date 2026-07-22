@@ -9,6 +9,7 @@ import {
   SourceConnectionsRepository,
   SourceCredentialsRepository,
   toRunAttempt,
+  type CollectionRunKeywordLibraryContext,
   type CollectionRunRow,
   type DbTx,
   type ProjectScope,
@@ -747,6 +748,8 @@ async function collectByProvider(
       return { outcome: toOutcome(result), observations };
     }
     case "gsc": {
+      const keywordLibraryContext =
+        resolveFrozenGscKeywordLibraryContext(run, acceptedRequestPayload);
       return collectWithGoogleCredential(ctx, scope, run, providerMetrics, async (
         credential,
         providerFetch,
@@ -772,7 +775,15 @@ async function collectByProvider(
           adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
           adapterCtx.signal,
         );
-        return { outcome: toOutcome(result), observations };
+        return {
+          outcome: keywordLibraryContext
+            ? {
+                ...toOutcome(result),
+                summary: { keywordLibraryContext },
+              }
+            : toOutcome(result),
+          observations,
+        };
       });
     }
     case "ga4": {
@@ -890,6 +901,101 @@ async function collectByProvider(
         `Unsupported collection provider ${run.provider}.`,
       );
   }
+}
+
+function parseKeywordLibraryContext(
+  value: unknown,
+): CollectionRunKeywordLibraryContext {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen GSC Keyword Library context is invalid.",
+    );
+  }
+  const context = value as Record<string, unknown>;
+  const keys = Object.keys(context);
+  if (
+    keys.length !== 3 ||
+    !keys.includes("basis") ||
+    !keys.includes("marketCode") ||
+    !keys.includes("languageTag") ||
+    context["basis"] !== "project_context" ||
+    typeof context["marketCode"] !== "string" ||
+    !/^[A-Z]{2}$/u.test(context["marketCode"]) ||
+    typeof context["languageTag"] !== "string"
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen GSC Keyword Library context is invalid.",
+    );
+  }
+  try {
+    const canonical = Intl.getCanonicalLocales(context["languageTag"])[0];
+    if (!canonical || canonical !== context["languageTag"]) {
+      throw new Error("non-canonical language tag");
+    }
+  } catch {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen GSC Keyword Library context is invalid.",
+    );
+  }
+  return {
+    basis: "project_context",
+    marketCode: context["marketCode"],
+    languageTag: context["languageTag"],
+  };
+}
+
+/**
+ * Resolve only command-time context. Legacy/context-free GSC runs remain
+ * collectable but deliberately produce no Keyword Library projection.
+ */
+export function resolveFrozenGscKeywordLibraryContext(
+  run: Pick<
+    CollectionRunRow,
+    | "provider"
+    | "operation"
+    | "site_id"
+    | "source_connection_id"
+    | "parameters_hash"
+  >,
+  requestPayload: Record<string, unknown>,
+): CollectionRunKeywordLibraryContext | null {
+  const hasContext = Object.hasOwn(
+    requestPayload,
+    "keywordLibraryContext",
+  );
+  const context = hasContext
+    ? parseKeywordLibraryContext(requestPayload["keywordLibraryContext"])
+    : null;
+  if (
+    run.provider !== "gsc" ||
+    (hasContext &&
+      (requestPayload["provider"] !== run.provider ||
+        requestPayload["operation"] !== run.operation ||
+        requestPayload["sourceConnectionId"] !== run.source_connection_id))
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen GSC command identity is incomplete or inconsistent.",
+    );
+  }
+  const expectedParametersHash = collectionRunParametersHash({
+    provider: run.provider,
+    operation: run.operation,
+    siteId: run.site_id,
+    crawlSeedSitePageId: null,
+    crawlSeedUrl: null,
+    keywordLibraryContext: context,
+  });
+  if (run.parameters_hash !== expectedParametersHash) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen GSC Keyword Library context does not match the accepted command.",
+    );
+  }
+  return context;
 }
 
 /**

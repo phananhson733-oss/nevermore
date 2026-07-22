@@ -1124,6 +1124,65 @@ export const keywordEntitySources = app.table(
 );
 
 // ---------------------------------------------------------------------------
+// 40. competitor_entities  (stable project-scoped domain identity)
+// ---------------------------------------------------------------------------
+export const competitorEntities = app.table("competitor_entities", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  domain: text().notNull(),
+  name: text(),
+  review_status: text().notNull().default("candidate"),
+  relationship: text(),
+  analysis_scope: text().array().notNull().default(sql`'{}'::text[]`),
+  revision: integer().notNull().default(0),
+  created_at: tz().notNull().defaultNow(),
+  updated_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 41. competitor_origin_occurrences  (append-only exact source lineage)
+// ---------------------------------------------------------------------------
+export const competitorOriginOccurrences = app.table(
+  "competitor_origin_occurrences",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    competitor_id: uuid()
+      .notNull()
+      .references(() => competitorEntities.id),
+    origin_kind: text().notNull(),
+    source_name: text(),
+    product_profile_id: uuid().references(() => icpProfiles.id),
+    profile_version: integer(),
+    candidate_id: uuid(),
+    field_provenance_path: text(),
+    evidence_refs: jsonb().$type<JsonArray>(),
+    source_review_status: text(),
+    source_relationship: text(),
+    source_analysis_scope: text().array(),
+    data_snapshot_id: uuid().references(() => dataSnapshots.id),
+    normalized_observation_id: uuid().references(
+      () => normalizedObservations.id,
+    ),
+    import_preview_id: uuid().references(() => importPreviews.id),
+    source_pointer: text(),
+    manual_entry_id: uuid(),
+    observed_at: tz(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Aggregate schema (consumed by drizzle(pool, { schema })).
 // ---------------------------------------------------------------------------
 export const schema = {
@@ -1166,4 +1225,6 @@ export const schema = {
   keywordOccurrences,
   keywordEntities,
   keywordEntitySources,
+  competitorEntities,
+  competitorOriginOccurrences,
 } as const;

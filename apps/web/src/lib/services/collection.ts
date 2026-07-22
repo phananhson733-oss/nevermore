@@ -10,6 +10,7 @@ import {
   SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
+  type CollectionRunKeywordLibraryContext,
   type QueueName,
   type WorkspaceScope,
 } from "@sf/db";
@@ -33,6 +34,17 @@ import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
 const IDEMPOTENCY_SCOPE = "createCollectionRun";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * ISO 3166-1 alpha-2 assignments. Keep this semantic allow-list here instead
+ * of accepting any two letters: `Intl.DisplayNames` also recognizes reserved
+ * region identifiers such as ZZ/EU/UN, which are not project market codes.
+ */
+const ISO_3166_ALPHA2_MARKET_CODES = new Set(
+  "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW".split(
+    " ",
+  ),
+);
 
 /** Fixed provider → operation/queue/method wiring (spec §7.5). */
 const PROVIDER_CONFIG = {
@@ -67,6 +79,40 @@ interface DataForSeoConnectionConfig {
   readonly locationName: string;
   readonly languageCode: string;
   readonly maxKeywords: number;
+}
+
+/**
+ * Freeze the Site's current Keyword Library identity only when both dimensions
+ * are complete and canonicalizable. GSC collection itself remains useful when
+ * project context is incomplete; in that case the resulting Snapshot is
+ * deliberately ineligible for Keyword Library projection.
+ */
+export function keywordLibraryContextForSite(site: {
+  readonly market_codes: readonly string[];
+  readonly language_codes: readonly string[];
+}): CollectionRunKeywordLibraryContext | null {
+  // The Site model currently stores target sets, not a separately declared
+  // primary value. Choosing `[0]` from a multi-value set would invent scope.
+  if (site.market_codes.length !== 1 || site.language_codes.length !== 1) {
+    return null;
+  }
+  const marketCode = site.market_codes[0]?.trim().toUpperCase();
+  const language = site.language_codes[0]?.trim();
+  if (
+    !marketCode ||
+    !ISO_3166_ALPHA2_MARKET_CODES.has(marketCode) ||
+    !language
+  ) {
+    return null;
+  }
+  try {
+    const languageTag = Intl.getCanonicalLocales(language)[0];
+    return languageTag
+      ? { basis: "project_context", marketCode, languageTag }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function dataForSeoCollectionScopeForSite(site: {
@@ -413,6 +459,10 @@ export async function createCollectionRun(
         body.provider === "dataforseo"
           ? dataForSeoCollectionScopeForSite(currentSite)
           : null;
+      const keywordLibraryContext =
+        body.provider === "gsc"
+          ? keywordLibraryContextForSite(currentSite)
+          : null;
       if (!currentConnection && canProvisionDataForSeo) {
         const connectionConfig = dataForSeoConnectionConfig(
           dataForSeoCollectionScope as DataForSeoCollectionScope,
@@ -452,6 +502,7 @@ export async function createCollectionRun(
               siteId: currentSite.id,
               crawlSeedSitePageId,
               crawlSeedUrl,
+              keywordLibraryContext,
             });
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
@@ -468,6 +519,7 @@ export async function createCollectionRun(
           ...(dataForSeoCollectionScope
             ? { collectionScope: dataForSeoCollectionScope }
             : {}),
+          ...(keywordLibraryContext ? { keywordLibraryContext } : {}),
         },
       });
       await new CollectionRunsRepository(tx).insertPlaceholder({

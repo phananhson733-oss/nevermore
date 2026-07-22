@@ -34,6 +34,14 @@ export interface CollectionRunParameterIdentity {
   readonly siteId: string;
   readonly crawlSeedSitePageId: string | null;
   readonly crawlSeedUrl: string | null;
+  /** Optional command-time context used only for GSC Keyword Library projection. */
+  readonly keywordLibraryContext?: CollectionRunKeywordLibraryContext | null;
+}
+
+export interface CollectionRunKeywordLibraryContext {
+  readonly basis: "project_context";
+  readonly marketCode: string;
+  readonly languageTag: string;
 }
 
 /**
@@ -52,6 +60,15 @@ export function collectionRunParametersHash(
       ? {
           crawlSeedSitePageId: identity.crawlSeedSitePageId,
           crawlSeedUrl: identity.crawlSeedUrl,
+        }
+      : {}),
+    ...(identity.provider === "gsc" && identity.keywordLibraryContext
+      ? {
+          keywordLibraryContext: {
+            basis: identity.keywordLibraryContext.basis,
+            marketCode: identity.keywordLibraryContext.marketCode,
+            languageTag: identity.keywordLibraryContext.languageTag,
+          },
         }
       : {}),
   });

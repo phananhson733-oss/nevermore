@@ -28,6 +28,8 @@ import {
 import {
   AsyncRunsRepository,
   DataSnapshotsRepository,
+  KeywordOccurrencesRepository,
+  KeywordsRepository,
   ObservationsRepository,
   OAuthIntentsRepository,
   SourceConnectionsRepository,
@@ -204,6 +206,13 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
         end: expectedWindow.endDate,
       },
       row_count: 1,
+      summary: {
+        keywordLibraryContext: {
+          basis: "project_context",
+          marketCode: "US",
+          languageTag: "en",
+        },
+      },
     });
     assertInclusive56Days(snapshot.source_window);
     expect(snapshot.limitation).toMatch(/top rows/i);
@@ -220,6 +229,35 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
       value_json: {
         current28d: { clicks: 7, impressions: 140, position: 2.5 },
       },
+    });
+    const keywords = await new KeywordsRepository(handle.db).listByProject(
+      project.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(keywords.rows).toEqual([
+      expect.objectContaining({
+        display_keyword: "enterprise analytics",
+        normalized_keyword: "enterprise analytics",
+        market: "US",
+        language_tag: "en",
+      }),
+    ]);
+    await expect(
+      new KeywordOccurrencesRepository(handle.db).listForEntity(
+        project.scope,
+        keywords.rows[0]!.id,
+        { limit: 10, cursor: null },
+      ),
+    ).resolves.toMatchObject({
+      rows: [
+        expect.objectContaining({
+          data_snapshot_id: snapshot.id,
+          normalized_observation_id: observations[0]!.id,
+          source_kind: "gsc_top_query",
+          scope_basis: "project_context",
+          source_pointer: "/valueJson/topQueries/0/query",
+        }),
+      ],
     });
     await expectRunAndSourceTerminal(
       project.scope,

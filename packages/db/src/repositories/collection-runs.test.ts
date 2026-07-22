@@ -124,6 +124,40 @@ describe("CollectionRunsRepository frozen Crawl seed", () => {
     expect(exact).not.toBe(otherPage);
   });
 
+  it("addresses an explicitly frozen GSC Keyword Library context without changing legacy context-free identity", () => {
+    const base = {
+      provider: "gsc",
+      operation: "search_analytics",
+      siteId: values.siteId,
+      crawlSeedSitePageId: null,
+      crawlSeedUrl: null,
+    } as const;
+    const legacy = collectionRunParametersHash(base);
+    const us = collectionRunParametersHash({
+      ...base,
+      keywordLibraryContext: {
+        basis: "project_context",
+        marketCode: "US",
+        languageTag: "en-US",
+      },
+    });
+    const gb = collectionRunParametersHash({
+      ...base,
+      keywordLibraryContext: {
+        basis: "project_context",
+        marketCode: "GB",
+        languageTag: "en-GB",
+      },
+    });
+
+    expect(legacy).toBe(collectionRunParametersHash({
+      ...base,
+      keywordLibraryContext: null,
+    }));
+    expect(us).not.toBe(legacy);
+    expect(us).not.toBe(gb);
+  });
+
   it("persists the frozen seed pair on the placeholder and returns it", async () => {
     const fake = fakeExecutor();
     const persisted = row();

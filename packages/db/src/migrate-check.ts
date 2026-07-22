@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 39 app tables plus every named index, trigger, and callable routine
+ * exactly 41 app tables plus every named index, trigger, and callable routine
  * in the frozen SQL contract. Exits non-zero on drift. This is a structural
  * object-presence gate; the byte-for-byte migration/spec gate separately
  * prevents definition drift.
@@ -50,6 +50,8 @@ const EXPECTED_TABLES = [
   "keyword_occurrences",
   "keyword_entities",
   "keyword_entity_sources",
+  "competitor_entities",
+  "competitor_origin_occurrences",
 ] as const;
 
 const REQUIRED_INDEXES = [
@@ -98,6 +100,12 @@ const REQUIRED_INDEXES = [
   "keyword_entities_project_created_idx",
   "keyword_entities_project_review_idx",
   "keyword_entity_sources_project_occurrence_idx",
+  "competitor_entities_project_created_idx",
+  "competitor_entities_project_status_idx",
+  "competitor_origins_profile_identity_idx",
+  "competitor_origins_csv_identity_idx",
+  "competitor_origins_manual_identity_idx",
+  "competitor_origins_entity_observed_idx",
 ] as const;
 
 const REQUIRED_TRIGGERS = [
@@ -162,6 +170,8 @@ const REQUIRED_TRIGGERS = [
   "keyword_entities_no_delete",
   "keyword_entity_sources_lineage_guard",
   "keyword_entity_sources_append_only",
+  "competitor_entities_governance_guard",
+  "competitor_origins_lineage_guard",
 ] as const;
 
 const REQUIRED_ROUTINES = [
@@ -175,6 +185,12 @@ const REQUIRED_ROUTINES = [
   "enforce_keyword_entity_mutation",
   "enforce_keyword_entity_source_lineage",
   "upsert_keyword_library_occurrence",
+  "is_normalized_competitor_domain",
+  "is_competitor_analysis_scope",
+  "is_typed_product_profile_evidence_refs",
+  "enforce_competitor_entity_governance",
+  "enforce_competitor_origin_lineage",
+  "upsert_competitor_origin",
 ] as const;
 
 export interface MigrateCheckResult {

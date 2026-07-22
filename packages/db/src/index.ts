@@ -90,6 +90,7 @@ export {
 } from "./repositories/collection-runs.ts";
 export type {
   CollectionRunParameterIdentity,
+  CollectionRunKeywordLibraryContext,
   CollectionRunRow,
 } from "./repositories/collection-runs.ts";
 export { DataSnapshotsRepository } from "./repositories/data-snapshots.ts";
@@ -214,6 +215,28 @@ export type {
   KeywordReviewMappingInput,
   KeywordStatus,
 } from "./repositories/keywords.ts";
+export {
+  CompetitorsRepository,
+  MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
+  MAX_COMPETITOR_PAGE_SIZE,
+} from "./repositories/competitors.ts";
+export type {
+  CompetitorAnalysisScope,
+  CompetitorEntityRow,
+  CompetitorListOptions,
+  CompetitorListPage,
+  CompetitorOriginInput,
+  CompetitorOriginKind,
+  CompetitorOriginRow,
+  CompetitorOriginUpsertResult,
+  CompetitorRelationship,
+  CompetitorReviewInput,
+  CompetitorReviewStatus,
+  CsvKeywordGapCompetitorOriginInput,
+  ManualCompetitorOriginInput,
+  ProductProfileCompetitorOriginInput,
+  ProductProfileEvidenceRef,
+} from "./repositories/competitors.ts";
 export { FindingReviewEventsRepository } from "./repositories/findings-review.ts";
 export { EvidenceRepository } from "./repositories/evidence.ts";
 export type {

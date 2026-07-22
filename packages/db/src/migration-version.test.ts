@@ -8,6 +8,40 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("adds a truthful competitor library with only canonical current origins", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0019_competitor_library_foundation.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.competitor_entities/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.competitor_origin_occurrences/iu,
+    );
+    expect(migration).toMatch(
+      /origin_kind\s+IN\s*\(\s*'product_profile'\s*,\s*'csv_keyword_gap'\s*,\s*'manual'\s*\)/iu,
+    );
+    expect(migration).not.toMatch(
+      /origin_kind\s+IN\s*\([^)]*(?:dataforseo|serp_overlap|ai_citation)/iu,
+    );
+    expect(migration).toMatch(
+      /collection_run\.import_preview_id\s*=\s*NEW\.import_preview_id[\s\S]*?NEW\.source_pointer\s*=\s*'\/valueJson\/competitorDomain'/iu,
+    );
+    expect(migration).toMatch(
+      /origin_kind\s*=\s*'manual'[\s\S]*?data_snapshot_id\s+IS\s+NULL[\s\S]*?normalized_observation_id\s+IS\s+NULL/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0019_competitor_library_foundation'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
   it("adds a canonical keyword library without copying provider metrics", () => {
     const migration = readFileSync(
       fileURLToPath(

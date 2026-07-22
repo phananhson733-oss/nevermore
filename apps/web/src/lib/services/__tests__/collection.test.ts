@@ -24,9 +24,11 @@ vi.mock("@/env", () => ({
   }),
 }));
 
-const { createCollectionRun, dataForSeoCollectionScopeForSite } = await import(
-  "../collection.ts"
-);
+const {
+  createCollectionRun,
+  dataForSeoCollectionScopeForSite,
+  keywordLibraryContextForSite,
+} = await import("../collection.ts");
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const projectId = "00000000-0000-4000-8000-000000000002";
@@ -126,6 +128,49 @@ beforeEach(() => {
 });
 
 describe("createCollectionRun wire-body idempotency", () => {
+  it("freezes only a complete canonical Site context for GSC Keyword Library projection", () => {
+    expect(
+      keywordLibraryContextForSite({
+        market_codes: ["us"],
+        language_codes: ["en-us"],
+      }),
+    ).toEqual({
+      basis: "project_context",
+      marketCode: "US",
+      languageTag: "en-US",
+    });
+    expect(
+      keywordLibraryContextForSite({
+        market_codes: [],
+        language_codes: ["en-US"],
+      }),
+    ).toBeNull();
+    expect(
+      keywordLibraryContextForSite({
+        market_codes: ["US"],
+        language_codes: ["not_a_language"],
+      }),
+    ).toBeNull();
+    expect(
+      keywordLibraryContextForSite({
+        market_codes: ["US", "GB"],
+        language_codes: ["en-US"],
+      }),
+    ).toBeNull();
+    expect(
+      keywordLibraryContextForSite({
+        market_codes: ["US"],
+        language_codes: ["en-US", "en-GB"],
+      }),
+    ).toBeNull();
+    expect(
+      keywordLibraryContextForSite({
+        market_codes: ["ZZ"],
+        language_codes: ["en-US"],
+      }),
+    ).toBeNull();
+  });
+
   it.each([
     ["primary market", { market_codes: [], language_codes: ["en"] }],
     ["site language", { market_codes: ["US"], language_codes: [] }],

@@ -3,6 +3,7 @@ import {
   AsyncRunsRepository,
   CollectionRunsRepository,
   DataSnapshotsRepository,
+  KeywordOccurrencesRepository,
   ObservationsRepository,
   PageSnapshotsRepository,
   ProjectsRepository,
@@ -153,6 +154,17 @@ beforeEach(() => {
     id: "page-snapshot-1",
   } as never);
   vi.spyOn(ObservationsRepository.prototype, "insertMany").mockResolvedValue(0);
+  vi.spyOn(
+    ObservationsRepository.prototype,
+    "listBySnapshotIdsPage",
+  ).mockResolvedValue({ rows: [], nextCursor: null });
+  vi.spyOn(
+    KeywordOccurrencesRepository.prototype,
+    "upsertIntoLibrary",
+  ).mockResolvedValue({
+    occurrenceId: "keyword-occurrence-1",
+    entityId: "keyword-entity-1",
+  });
   vi.spyOn(CollectionRunsRepository.prototype, "finalize").mockResolvedValue();
   vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue({
     id: attempt.projectId,
@@ -175,6 +187,106 @@ beforeEach(() => {
 });
 
 describe("persistCollectionResult transaction outcomes", () => {
+  it("projects canonical persisted CSV Observations into the Keyword Library before terminalizing", async () => {
+    const csvRun = {
+      ...collectionRun,
+      provider: "csv",
+      operation: "keyword_gap_import",
+      method_version: "csv.keyword_gap.v1",
+    } as CollectionRunRow;
+    vi.mocked(DataSnapshotsRepository.prototype.insert).mockResolvedValueOnce({
+      id: "snapshot-1",
+      workspace_id: attempt.workspaceId,
+      project_id: attempt.projectId,
+      site_id: csvRun.site_id,
+      collection_run_id: csvRun.id,
+      source_connection_id: null,
+      provider: "csv",
+      dataset_key: "csv.keyword_gap.v1",
+      schema_version: "0.2.0",
+      method_version: "csv.keyword_gap.v1",
+      captured_at: capturedAt,
+      source_window: sourceWindow,
+      availability: "available",
+      limitation: "fixture",
+      raw_object_key: uploadedKey,
+      row_count: 1,
+      checksum: "sha256",
+      summary: {},
+      created_at: capturedAt,
+    });
+    vi.mocked(
+      ObservationsRepository.prototype.listBySnapshotIdsPage,
+    ).mockResolvedValueOnce({
+      rows: [
+        {
+          id: "00000000-0000-4000-8000-000000000004",
+          workspace_id: attempt.workspaceId,
+          project_id: attempt.projectId,
+          snapshot_id: "snapshot-1",
+          site_page_id: null,
+          provider: "csv",
+          metric_key: "csv.keyword_gap.v1",
+          subject_type: "keyword_cluster",
+          subject_ref: "running-shoes",
+          observed_at: capturedAt,
+          availability: "available",
+          value_numeric: null,
+          value_text: null,
+          value_json: {
+            keyword: "Running Shoes",
+            marketCode: "US",
+            languageCode: "en-US",
+          },
+          unit: null,
+          origin: "user_provided",
+          method: "observed",
+          grade: "C",
+          support: "supports",
+          limitation: "fixture",
+        },
+      ],
+      nextCursor: null,
+    });
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({
+        collectionRun: csvRun,
+        datasetKey: "csv.keyword_gap.v1",
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(
+      KeywordOccurrencesRepository.prototype.upsertIntoLibrary,
+    ).toHaveBeenCalledWith(
+      {
+        workspaceId: attempt.workspaceId,
+        projectId: attempt.projectId,
+      },
+      expect.objectContaining({
+        dataSnapshotId: "snapshot-1",
+        normalizedObservationId:
+          "00000000-0000-4000-8000-000000000004",
+        displayKeyword: "Running Shoes",
+        normalizedKeyword: "running shoes",
+        sourceKind: "csv_import",
+        scopeBasis: "user_provided",
+        sourcePointer: "/valueJson/keyword",
+      }),
+    );
+    expect(
+      vi.mocked(
+        KeywordOccurrencesRepository.prototype.upsertIntoLibrary,
+      ).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(AsyncRunsRepository.prototype.setTerminal).mock
+        .invocationCallOrder[0]!,
+    );
+  });
+
   it("deletes its upload when the transaction callback explicitly fails", async () => {
     const callbackFailure = Object.assign(new Error("constraint violation"), {
       code: "23514",
