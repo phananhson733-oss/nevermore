@@ -18,12 +18,17 @@ import { eq } from "drizzle-orm";
 import { createDbHandle, type Db, type DbHandle } from "@sf/db/client";
 import {
   ActionsRepository,
+  AnalysisInvocationsRepository,
   CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
+  ExecutionArtifactsRepository,
   FindingsRepository,
+  FlowShadowQaGatesRepository,
+  FlowShadowResearchPacksRepository,
+  FlowShadowRunsRepository,
   SourceConnectionsRepository,
   type ProjectScope,
 } from "@sf/db";
@@ -364,6 +369,135 @@ async function seedShadowFixture(handle: DbHandle): Promise<ShadowFixture> {
   };
 }
 
+/**
+ * Install the draft revision a given shadow run produced, exactly the way the
+ * worker does it: through an `analysis_invocations` row bound to that run, so
+ * the revision carries append-only run lineage.
+ */
+async function seedRunScopedDraft(
+  handle: DbHandle,
+  fixture: ShadowFixture,
+  asyncRunId: string,
+  options: { readonly contentText: string; readonly artifactId?: string },
+): Promise<{ artifactId: string; revision: number }> {
+  const artifacts = new ExecutionArtifactsRepository(handle.db);
+  const artifact = options.artifactId
+    ? await artifacts.findById(fixture.scope, options.artifactId)
+    : await artifacts.insert({
+        workspaceId: fixture.scope.workspaceId,
+        projectId: fixture.scope.projectId,
+        actionId: fixture.actionId,
+        artifactType: "english_blog_draft",
+        generationMode: "structured_llm",
+        outputLocale: "en",
+        latestGenerationRunId: asyncRunId,
+        createdBy: fixture.actorId,
+      });
+  if (!artifact) throw new Error("draft fixture artifact is missing");
+  if (options.artifactId) {
+    await artifacts.startRegenerationIfLive(
+      fixture.scope,
+      artifact.id,
+      asyncRunId,
+      { generationMode: "structured_llm", outputLocale: "en" },
+    );
+  }
+  const invocationId = await new AnalysisInvocationsRepository(
+    handle.db,
+  ).insert({
+    workspaceId: fixture.scope.workspaceId,
+    projectId: fixture.scope.projectId,
+    asyncRunId,
+    task: "content_shadow_draft",
+    provider: "openai",
+    model: "gpt-4o-mini",
+    promptSetVersion: PROMPT_SET_VERSION,
+    inputHash: contentHash({ asyncRunId }),
+    outputHash: contentHash({ asyncRunId, out: true }),
+    status: "succeeded",
+    inputTokens: 1,
+    outputTokens: 1,
+    costUsd: null,
+    latencyMs: 1,
+    errorCode: null,
+  });
+  const revision = artifact.current_revision + 1;
+  await new ExecutionArtifactsRepository(
+    handle.db,
+  ).setGeneratedForGenerationRun(fixture.scope, artifact.id, asyncRunId, {
+    status: "draft",
+    currentRevision: revision,
+    expectedRevision: artifact.current_revision,
+    validationState: "valid",
+    contentHash: contentHash({ text: options.contentText }),
+  });
+  await new ExecutionArtifactsRepository(handle.db).insertRevision({
+    workspaceId: fixture.scope.workspaceId,
+    projectId: fixture.scope.projectId,
+    artifactId: artifact.id,
+    revision,
+    outputLocale: "en",
+    contentFormat: "markdown",
+    contentText: options.contentText,
+    contentJson: null,
+    contentHash: contentHash({ text: options.contentText }),
+    generatedBy: "llm",
+    editorId: null,
+    analysisInvocationId: invocationId,
+    note: null,
+    validationErrors: [],
+  });
+  return { artifactId: artifact.id, revision };
+}
+
+async function seedResearchPack(
+  handle: DbHandle,
+  fixture: ShadowFixture,
+  flowShadowRunId: string,
+): Promise<void> {
+  const shadowRun = await new FlowShadowRunsRepository(handle.db).findById(
+    fixture.scope,
+    flowShadowRunId,
+  );
+  await new FlowShadowResearchPacksRepository(handle.db).insert({
+    workspaceId: fixture.scope.workspaceId,
+    projectId: fixture.scope.projectId,
+    flowShadowRunId,
+    analysisInvocationId: null,
+    contentHash: shadowRun!.content_hash,
+    pack: { sources: [], limitations: [] },
+  });
+}
+
+async function seedQaGate(
+  handle: DbHandle,
+  fixture: ShadowFixture,
+  flowShadowRunId: string,
+  draft: { artifactId: string; revision: number },
+): Promise<void> {
+  await new FlowShadowQaGatesRepository(handle.db).insert({
+    workspaceId: fixture.scope.workspaceId,
+    projectId: fixture.scope.projectId,
+    flowShadowRunId,
+    evaluatedArtifactId: draft.artifactId,
+    evaluatedRevision: draft.revision,
+    analysisInvocationId: null,
+    verdict: "needs_review",
+    claims: [],
+  });
+}
+
+async function setRunStatus(
+  handle: DbHandle,
+  asyncRunId: string,
+  status: string,
+): Promise<void> {
+  await handle.pool.query(
+    "UPDATE app.async_runs SET status = $2, started_at = now(), completed_at = CASE WHEN $2 IN ('completed','failed','cancelled','partial') THEN now() ELSE null END WHERE id = $1",
+    [asyncRunId, status],
+  );
+}
+
 function requestBody(
   fixture: ShadowFixture,
   overrides: Partial<CreateContentShadowRunRequest> = {},
@@ -609,6 +743,91 @@ describeDb("createContentShadowRun", () => {
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR", status: 422 });
   });
 
+  it("refuses a byte-identical rerun once the first run is terminal and points at it", async () => {
+    // Natural operator path: the first run finished (its active key is already
+    // released), and the operator resubmits the same parameters under a fresh
+    // Idempotency-Key. `flow_shadow_runs` is content-addressed, so this is a
+    // request for a run that already exists — it must be a clean conflict that
+    // names it, never an unreadable repository fault.
+    queueFixture.send.mockClear();
+    const fixture = await seedShadowFixture(handle);
+    const first = await createContentShadowRun(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      fixture.actorId,
+      randomUUID(),
+      requestBody(fixture),
+    );
+    await setRunStatus(handle, first.run.id, "completed");
+
+    await expect(
+      createContentShadowRun(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+        fixture.actorId,
+        randomUUID(),
+        requestBody(fixture),
+      ),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT", status: 409 });
+    expect(queueFixture.send).toHaveBeenCalledTimes(1);
+
+    // The refused attempt left nothing behind: no orphan canonical run and no
+    // second shadow row.
+    const rows = await handle.pool.query(
+      "SELECT (SELECT count(*)::int FROM app.async_runs WHERE project_id = $1 AND kind = 'content_shadow') AS runs, (SELECT count(*)::int FROM app.flow_shadow_runs WHERE project_id = $1) AS shadows",
+      [fixture.scope.projectId],
+    );
+    expect(rows.rows[0]).toEqual({ runs: 1, shadows: 1 });
+
+    // The forward path decision D2 approves stays open: vary any frozen input
+    // and the tuple has a different content address.
+    const varied = await createContentShadowRun(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      fixture.actorId,
+      randomUUID(),
+      requestBody(fixture, { generativeQueryEntityIds: [] }),
+    );
+    expect(varied.status).toBe(202);
+    expect(varied.resourceRef.id).not.toBe(first.resourceRef.id);
+  });
+
+  it("refuses a Finding that owns a second live Action (red line B)", async () => {
+    const fixture = await seedShadowFixture(handle);
+    // A second canonical Action for one confirmed Finding would mean a second
+    // confirmation path exists.
+    await new ActionsRepository(handle.db).insert({
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      sourceFindingId: fixture.findingId,
+      sourceDiagnosticRunId: fixture.diagnosticRunId,
+      actionKey: contentHash({ fixtureId: randomUUID() }),
+      templateId: `content_brief.${randomUUID()}`,
+      templateVersion: 1,
+      title: "A competing Action",
+      description: "A second Action for the same confirmed Finding.",
+      contentLocale: "en",
+      priorityBand: "high",
+      roadmapLane: "now",
+      status: "planned",
+      effort: "medium",
+      risk: "low",
+      expectedOutcome: "Never reached.",
+      evidenceRefs: [],
+      createdBy: fixture.actorId,
+    });
+
+    await expect(
+      createContentShadowRun(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+        fixture.actorId,
+        randomUUID(),
+        requestBody(fixture),
+      ),
+    ).rejects.toMatchObject({ code: "FINDING_ACTION_ACTIVE", status: 409 });
+  });
+
   it("rejects a competitor from another project", async () => {
     const fixture = await seedShadowFixture(handle);
     const other = await seedShadowFixture(handle);
@@ -687,6 +906,173 @@ describeDb("getContentShadowRun", () => {
       contentBriefArtifactId: fixture.briefArtifactId,
       contentBriefRevision: 1,
     });
+  });
+
+  /** One accepted run plus a handle on both ids the projection is keyed by. */
+  async function startRun(
+    fixture: ShadowFixture,
+    overrides: Partial<CreateContentShadowRunRequest> = {},
+  ): Promise<{ asyncRunId: string; flowShadowRunId: string }> {
+    const accepted = await createContentShadowRun(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      fixture.actorId,
+      randomUUID(),
+      requestBody(fixture, overrides),
+    );
+    return {
+      asyncRunId: accepted.run.id,
+      flowShadowRunId: accepted.resourceRef.id,
+    };
+  }
+
+  const read = (fixture: ShadowFixture, flowShadowRunId: string) =>
+    getContentShadowRun(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      flowShadowRunId,
+    );
+
+  it("derives phase research once the run's pack exists", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const run = await startRun(fixture);
+    await setRunStatus(handle, run.asyncRunId, "running");
+    await seedResearchPack(handle, fixture, run.flowShadowRunId);
+
+    const projection = await read(fixture, run.flowShadowRunId);
+    expect(projection.phase).toBe("research");
+    expect(projection.research).not.toBeNull();
+    expect(projection.draft).toBeNull();
+  });
+
+  it("derives phase draft once the run installs its own revision", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const run = await startRun(fixture);
+    await setRunStatus(handle, run.asyncRunId, "running");
+    await seedResearchPack(handle, fixture, run.flowShadowRunId);
+    await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+      contentText: "# Draft body",
+    });
+
+    const projection = await read(fixture, run.flowShadowRunId);
+    expect(projection.phase).toBe("draft");
+    expect(projection.draft).toMatchObject({
+      currentRevision: 1,
+      contentText: "# Draft body",
+      status: "draft",
+    });
+    expect(projection.qa).toBeNull();
+  });
+
+  it("derives phase qa while the QA gate exists but the run has not completed", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const run = await startRun(fixture);
+    await setRunStatus(handle, run.asyncRunId, "running");
+    await seedResearchPack(handle, fixture, run.flowShadowRunId);
+    const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+      contentText: "# Draft body",
+    });
+    await seedQaGate(handle, fixture, run.flowShadowRunId, draft);
+
+    const projection = await read(fixture, run.flowShadowRunId);
+    expect(projection.phase).toBe("qa");
+    expect(projection.status).toBe("running");
+  });
+
+  it("derives phase complete only when the canonical run completed", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const run = await startRun(fixture);
+    await seedResearchPack(handle, fixture, run.flowShadowRunId);
+    const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+      contentText: "# Draft body",
+    });
+    await seedQaGate(handle, fixture, run.flowShadowRunId, draft);
+    await setRunStatus(handle, run.asyncRunId, "completed");
+
+    const projection = await read(fixture, run.flowShadowRunId);
+    expect(projection.phase).toBe("complete");
+    expect(projection.qa).toMatchObject({
+      verdict: "needs_review",
+      evaluatedRevision: 1,
+    });
+  });
+
+  it("derives phase failed from the canonical run whatever children exist", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const failedRun = await startRun(fixture);
+    await seedResearchPack(handle, fixture, failedRun.flowShadowRunId);
+    await setRunStatus(handle, failedRun.asyncRunId, "failed");
+    expect((await read(fixture, failedRun.flowShadowRunId)).phase).toBe(
+      "failed",
+    );
+
+    const cancelled = await seedShadowFixture(handle);
+    const cancelledRun = await startRun(cancelled);
+    await setRunStatus(handle, cancelledRun.asyncRunId, "cancelled");
+    expect((await read(cancelled, cancelledRun.flowShadowRunId)).phase).toBe(
+      "failed",
+    );
+  });
+
+  it("keeps a finished run bound to its own draft revision after a later run rewrites the artifact", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const runA = await startRun(fixture);
+    await seedResearchPack(handle, fixture, runA.flowShadowRunId);
+    const draftA = await seedRunScopedDraft(handle, fixture, runA.asyncRunId, {
+      contentText: "# Revision one body",
+    });
+    await seedQaGate(handle, fixture, runA.flowShadowRunId, draftA);
+    await setRunStatus(handle, runA.asyncRunId, "completed");
+
+    // Decision D2 allows a later shadow run for the same Action; it claims the
+    // same artifact row through the canonical regeneration edge and installs
+    // revision 2.
+    const runB = await startRun(fixture, { generativeQueryEntityIds: [] });
+    const draftB = await seedRunScopedDraft(handle, fixture, runB.asyncRunId, {
+      contentText: "# Revision two body",
+      artifactId: draftA.artifactId,
+    });
+    expect(draftB.revision).toBe(2);
+
+    const projectionA = await read(fixture, runA.flowShadowRunId);
+    // The finished run still reports the body its own QA verdict judged.
+    expect(projectionA.draft).toMatchObject({
+      artifactId: draftA.artifactId,
+      currentRevision: 1,
+      contentText: "# Revision one body",
+    });
+    expect(projectionA.qa).toMatchObject({ evaluatedRevision: 1 });
+    expect(projectionA.draft?.currentRevision).toBe(
+      projectionA.qa?.evaluatedRevision,
+    );
+
+    const projectionB = await read(fixture, runB.flowShadowRunId);
+    expect(projectionB.draft).toMatchObject({
+      artifactId: draftA.artifactId,
+      currentRevision: 2,
+      contentText: "# Revision two body",
+    });
+  });
+
+  it("reports a queued run as queued even when the Action already has a live draft", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const runA = await startRun(fixture);
+    await seedResearchPack(handle, fixture, runA.flowShadowRunId);
+    const draftA = await seedRunScopedDraft(handle, fixture, runA.asyncRunId, {
+      contentText: "# Revision one body",
+    });
+    await seedQaGate(handle, fixture, runA.flowShadowRunId, draftA);
+    await setRunStatus(handle, runA.asyncRunId, "completed");
+
+    // A brand new run that the worker has not touched must not inherit the
+    // predecessor's draft and skip straight past the research phase.
+    const runB = await startRun(fixture, { generativeQueryEntityIds: [] });
+    const projectionB = await read(fixture, runB.flowShadowRunId);
+    expect(projectionB.status).toBe("queued");
+    expect(projectionB.phase).toBe("queued");
+    expect(projectionB.draft).toBeNull();
+    expect(projectionB.research).toBeNull();
+    expect(projectionB.qa).toBeNull();
   });
 
   it("reports a run from another workspace as absent, never forbidden", async () => {

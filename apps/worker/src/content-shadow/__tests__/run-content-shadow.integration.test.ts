@@ -10,7 +10,15 @@ process.env["OPENAI_MODEL"] ??= "gpt-4o-mini";
 process.env["DATAFORSEO_ENABLED"] ??= "false";
 process.env["LOG_LEVEL"] ??= "error";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { createDbHandle, type Db, type DbHandle } from "@sf/db/client";
 import {
   ActionsRepository,
@@ -46,6 +54,7 @@ import { LLMError } from "@sf/artifacts";
 import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../../context.ts";
+import { reconcileActiveRuns } from "../../handlers/recovery.ts";
 import { runContentShadow } from "../run-content-shadow.ts";
 
 /**
@@ -70,6 +79,12 @@ vi.mock("@sf/artifacts", async (importOriginal) => {
     createOpenAIClient: () => ({ generateArtifact }),
   };
 });
+
+/** A queue whose job for the run has vanished, which is what recovery is for. */
+const RECOVERY_BOSS = {
+  getJobById: async () => null,
+  findJobs: async () => [],
+};
 
 const NOOP = (): void => undefined;
 const testLogger: Logger = {
@@ -101,7 +116,10 @@ async function seedProject(db: Db): Promise<ProjectSeed> {
   const projectId = randomUUID();
   const siteId = randomUUID();
   const icpProfileId = randomUUID();
-  const icpProfile = { productName: "Shadow fixture", siteLanguageCodes: ["en"] };
+  const icpProfile = {
+    productName: "Shadow fixture",
+    siteLanguageCodes: ["en"],
+  };
   const icpContentHash = contentHash(icpProfile);
 
   await db
@@ -314,10 +332,15 @@ async function linkFindingEvidence(
 
 async function seedShadowChain(
   handle: DbHandle,
-  options: { readonly flowAdapterVersion?: string } = {},
+  options: {
+    readonly flowAdapterVersion?: string;
+    readonly projectionVersion?: string;
+  } = {},
 ): Promise<ShadowFixture> {
   const flowAdapterVersion =
     options.flowAdapterVersion ?? CONTENT_SHADOW_ADAPTER_VERSION;
+  const projectionVersion =
+    options.projectionVersion ?? CONTENT_SHADOW_PROJECTION_VERSION;
   const db = handle.db;
   const base = await seedProject(db);
   const { scope, actorId, siteId } = base;
@@ -431,7 +454,7 @@ async function seedShadowChain(
     generativeQueryEntityIds: [],
     flowAdapterVersion,
     promptSetVersion: PROMPT_SET_VERSION,
-    projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
+    projectionVersion,
     outputLocale: "en",
   });
   const frozenHash = contentHash(manifest as unknown as CanonicalValue);
@@ -447,7 +470,7 @@ async function seedShadowChain(
     flowAdapterVersion,
     frozenInputManifest: manifest as unknown as Record<string, unknown>,
     contentHash: frozenHash,
-    projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
+    projectionVersion,
   });
 
   return {
@@ -517,10 +540,9 @@ describeDb("runContentShadow", () => {
       projectId: fixture.scope.projectId,
     });
 
-    const pack = await new FlowShadowResearchPacksRepository(handle.db).findByRun(
-      fixture.scope,
-      fixture.flowShadowRunId,
-    );
+    const pack = await new FlowShadowResearchPacksRepository(
+      handle.db,
+    ).findByRun(fixture.scope, fixture.flowShadowRunId);
     expect(pack?.content_hash).toBe(fixture.contentHash);
     // Invariant 8: the persisted pack keeps the two observations separate.
     expect(pack?.pack["searchObservation"]).toBeDefined();
@@ -533,11 +555,7 @@ describeDb("runContentShadow", () => {
       "english_blog_draft",
     );
     expect(draft).toMatchObject({ status: "draft", current_revision: 1 });
-    const revision = await artifacts.findRevision(
-      fixture.scope,
-      draft!.id,
-      1,
-    );
+    const revision = await artifacts.findRevision(fixture.scope, draft!.id, 1);
     expect(revision?.content_text).toBe(DRAFT_MARKDOWN);
     expect(revision?.generated_by).toBe("llm");
     expect(revision?.analysis_invocation_id).not.toBeNull();
@@ -711,7 +729,119 @@ describeDb("runContentShadow", () => {
     expect(packs.rows[0].count).toBe(0);
   });
 
-  it("fails a delivery whose scope does not match the canonical run", async () => {
+  it("fails with input drift when the pinned projection version advances past the frozen run", async () => {
+    // The run was frozen and enqueued under the previous projection version.
+    // The replay guard must rebuild the tuple from the CURRENTLY pinned
+    // constant, so an already queued run can never be silently re-rendered by
+    // the newer projection.
+    const fixture = await seedShadowChain(handle, {
+      projectionVersion: "content-shadow.0.2.0",
+    });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
+    });
+    expect(generateArtifact).not.toHaveBeenCalled();
+    const packs = await handle.pool.query(
+      "SELECT count(*)::int AS count FROM app.flow_shadow_research_packs WHERE flow_shadow_run_id = $1",
+      [fixture.flowShadowRunId],
+    );
+    expect(packs.rows[0].count).toBe(0);
+  });
+
+  it("hands back the claimed draft artifact when the run fails permanently", async () => {
+    const fixture = await seedShadowChain(handle);
+    generateArtifact.mockRejectedValueOnce(
+      new LLMError("SAFETY_VIOLATION", "refused"),
+    );
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "SAFETY_VIOLATION",
+    });
+
+    // A terminal run must not leave an artifact generating forever: nothing is
+    // left to finish it, and the read side would report a `generating` draft
+    // under a failed run with no live generation Run at all.
+    const draft = await new ExecutionArtifactsRepository(
+      handle.db,
+    ).findLiveByActionType(
+      fixture.scope,
+      fixture.actionId,
+      "english_blog_draft",
+    );
+    expect(draft).toMatchObject({
+      status: "failed",
+      latest_generation_run_id: fixture.asyncRunId,
+    });
+  });
+
+  it("hands back the claimed draft artifact when queue recovery terminalizes the run", async () => {
+    const fixture = await seedShadowChain(handle);
+    const artifacts = new ExecutionArtifactsRepository(handle.db);
+    // The worker claimed the draft and then the process died: no queue job
+    // survives, so the recovery sweep — not the runner — owns the compensation.
+    const claimed = await artifacts.insert({
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      actionId: fixture.actionId,
+      artifactType: "english_blog_draft",
+      generationMode: "structured_llm",
+      outputLocale: "en",
+      latestGenerationRunId: fixture.asyncRunId,
+      createdBy: fixture.actorId,
+    });
+    expect(claimed.status).toBe("generating");
+    await handle.pool.query(
+      "UPDATE app.async_runs SET status = 'running', started_at = now(), attempt_count = 1 WHERE id = $1",
+      [fixture.asyncRunId],
+    );
+
+    await reconcileActiveRuns(
+      { ...ctx, boss: RECOVERY_BOSS as unknown as WorkerContext["boss"] },
+      { scope: fixture.scope, missingAfterMs: 0 },
+    );
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "QUEUE_JOB_MISSING",
+    });
+    expect(await artifacts.findById(fixture.scope, claimed.id)).toMatchObject({
+      status: "failed",
+    });
+  });
+
+  it("cannot claim a run whose canonical scope does not match the delivery", async () => {
+    // The claim itself is project-scoped, so a foreign-scope delivery updates
+    // nothing and returns before any shadow work. The RUN_SCOPE_MISMATCH branch
+    // inside the runner is unreachable-by-construction defence in depth mirrored
+    // from `runArtifact`; this test pins the reachable behaviour instead of
+    // pretending to cover that branch.
     const fixture = await seedShadowChain(handle);
 
     await runContentShadow(ctx, {
@@ -724,7 +854,6 @@ describeDb("runContentShadow", () => {
       fixture.scope,
       fixture.asyncRunId,
     );
-    // A foreign-scope delivery can never claim the run.
     expect(run?.status).toBe("queued");
     expect(generateArtifact).not.toHaveBeenCalled();
   });

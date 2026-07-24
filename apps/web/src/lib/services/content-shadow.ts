@@ -15,8 +15,10 @@ import {
   IdempotencyRepository,
   KeywordsRepository,
   ProjectsRepository,
+  type ArtifactRow,
   type CanonicalValue,
   type Executor,
+  type FlowShadowQaGateRow,
   type FlowShadowRunRow,
   type ProjectScope,
   type WorkspaceScope,
@@ -64,7 +66,6 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const CAPABILITY_ID = "content-shadow";
 const CAPABILITY_VERSION = "0.3.0";
 const CONTENT_BRIEF_ARTIFACT_TYPE = "content_brief";
-const DRAFT_ARTIFACT_TYPE = "english_blog_draft";
 
 /** The frozen content rules whose Action template mints a `content_brief`. */
 const CONTENT_BRIEF_RULE_IDS: ReadonlySet<string> = new Set([
@@ -360,6 +361,35 @@ function activeConflict(projectId: string, runId: string): ProblemError {
   );
 }
 
+/**
+ * One content address, one shadow run (red line C), enforced by the
+ * `flow_shadow_runs` UNIQUE (project_id, content_hash) index. Re-submitting a
+ * byte-identical frozen tuple is therefore a request for a run that already
+ * exists — including after the first one reached a terminal state and released
+ * its active key — so the operator is pointed at it instead of silently getting
+ * a second, differently drafted run under the same content address.
+ *
+ * The forward path decision D2 approves stays open: everything the tuple names
+ * — the brief revision, the competitor set, cluster membership, the generative
+ * set, the output locale, and the pinned adapter/prompt/projection versions —
+ * changes the address when it changes, so a genuinely different shadow run for
+ * the same Action is accepted.
+ */
+function contentAddressConflict(
+  projectId: string,
+  existing: FlowShadowRunRow,
+): ProblemError {
+  return new ProblemError(
+    "VERSION_CONFLICT",
+    "A Content Shadow run with exactly these frozen inputs already exists. Read it, or vary the frozen inputs (brief revision, competitor set, cluster, generative set or output locale) to run a different shadow.",
+    {
+      headers: {
+        Location: runStatusUrl(projectId, existing.capability_run_id),
+      },
+    },
+  );
+}
+
 function assertProjectShadowable(
   project: { readonly archived_at: string | null } | null,
 ): void {
@@ -461,6 +491,14 @@ export async function createContentShadowRun(
         inputs,
         outputLocale: body.outputLocale,
       });
+      // Checked under the project row lock taken above, so a concurrent
+      // duplicate cannot slip between this read and the insert. It converts what
+      // the unique index would otherwise raise as an unreadable repository fault
+      // into an actionable conflict that names the existing run.
+      const duplicate = await new FlowShadowRunsRepository(
+        tx,
+      ).findByContentHash(projectScope, frozen.contentHash);
+      if (duplicate) throw contentAddressConflict(projectId, duplicate);
       const capabilityManifestHash = contentHash({
         capabilityId: CAPABILITY_ID,
         capabilityVersion: CAPABILITY_VERSION,
@@ -601,16 +639,88 @@ type ContentShadowSources = NonNullable<
 >["sources"];
 
 /** Project the stored pack's sources through the response contract shape. */
-function projectPackSources(pack: Record<string, unknown>): ContentShadowSources {
+function projectPackSources(
+  pack: Record<string, unknown>,
+): ContentShadowSources {
   const sources = pack["sources"];
   if (!Array.isArray(sources)) return [];
   const parsed = ContentShadowAuthoritySource.array().safeParse(sources);
   return parsed.success ? parsed.data : [];
 }
 
+type ContentShadowDraftDto = NonNullable<ContentShadowRunResponse["draft"]>;
+
 /**
- * Phase is DERIVED from which append-only child rows exist (decision R1); the
- * shadow rows own no mutable status column of their own.
+ * Resolve the draft THIS run owns, never the Action's currently live artifact.
+ *
+ * `findLiveByActionType` is deliberately not used here. Decision D2 allows a
+ * later shadow run for the same Action, and that run legitimately installs a
+ * new revision on the same artifact row; answering with it would make a
+ * finished run report a body its own frozen QA verdict never saw, and would
+ * make a still-queued run claim a predecessor's draft. Two run-scoped bindings
+ * are tried in order of durability, and when neither resolves the honest answer
+ * is `null` rather than a plausible-looking fallback:
+ *
+ * 1. this run's QA gate, which pinned (artifact, revision) append-only;
+ * 2. this run's own invocation lineage (revision -> invocation -> run);
+ * 3. the artifact still claimed by this run, which has produced no revision yet
+ *    — reported with revision 0 so the phase cannot read as `draft`.
+ */
+async function resolveRunScopedDraft(
+  artifacts: ExecutionArtifactsRepository,
+  scope: ProjectScope,
+  asyncRunId: string,
+  gate: FlowShadowQaGateRow | null,
+): Promise<ContentShadowDraftDto | null> {
+  const project = (
+    artifact: ArtifactRow,
+    revision: number,
+    contentText: string | null,
+  ): ContentShadowDraftDto => ({
+    artifactId: artifact.id,
+    status: artifact.status as ContentShadowDraftDto["status"],
+    currentRevision: revision,
+    contentText,
+  });
+
+  if (gate) {
+    const artifact = await artifacts.findById(
+      scope,
+      gate.evaluated_artifact_id,
+    );
+    if (artifact) {
+      const revision = await artifacts.findRevision(
+        scope,
+        artifact.id,
+        gate.evaluated_revision,
+      );
+      return project(
+        artifact,
+        gate.evaluated_revision,
+        revision?.content_text ?? null,
+      );
+    }
+  }
+
+  const generated = await artifacts.findRevisionByGenerationRun(
+    scope,
+    asyncRunId,
+  );
+  if (generated) {
+    const artifact = await artifacts.findById(scope, generated.artifact_id);
+    if (artifact) {
+      return project(artifact, generated.revision, generated.content_text);
+    }
+  }
+
+  const claimed = await artifacts.findByGenerationRun(scope, asyncRunId);
+  return claimed ? project(claimed, 0, null) : null;
+}
+
+/**
+ * Phase is DERIVED from which append-only RUN-SCOPED child rows exist (decision
+ * R1); the shadow rows own no mutable status column of their own, and no input
+ * here may come from a row another run could have moved.
  */
 function deriveContentShadowPhase(
   runStatus: string,
@@ -671,20 +781,12 @@ export async function getContentShadowRun(
   );
   const gate = gates[0] ?? null;
 
-  const artifacts = new ExecutionArtifactsRepository(db);
-  const draftArtifact = await artifacts.findLiveByActionType(
+  const draft = await resolveRunScopedDraft(
+    new ExecutionArtifactsRepository(db),
     projectScope,
-    shadowRun.source_action_id,
-    DRAFT_ARTIFACT_TYPE,
+    shadowRun.capability_run_id,
+    gate,
   );
-  const draftRevision =
-    draftArtifact && draftArtifact.current_revision >= 1
-      ? await artifacts.findRevision(
-          projectScope,
-          draftArtifact.id,
-          draftArtifact.current_revision,
-        )
-      : null;
 
   const research: ContentShadowRunResponse["research"] =
     pack === null
@@ -705,7 +807,7 @@ export async function getContentShadowRun(
     phase: deriveContentShadowPhase(
       run.status,
       pack !== null,
-      draftRevision !== null,
+      draft !== null && draft.currentRevision >= 1,
       gate !== null,
     ),
     contentHash: shadowRun.content_hash,
@@ -735,16 +837,7 @@ export async function getContentShadowRun(
       ),
     },
     research,
-    draft: draftArtifact
-      ? {
-          artifactId: draftArtifact.id,
-          status: draftArtifact.status as NonNullable<
-            ContentShadowRunResponse["draft"]
-          >["status"],
-          currentRevision: draftArtifact.current_revision,
-          contentText: draftRevision?.content_text ?? null,
-        }
-      : null,
+    draft,
     qa: gate
       ? {
           gateId: gate.id,

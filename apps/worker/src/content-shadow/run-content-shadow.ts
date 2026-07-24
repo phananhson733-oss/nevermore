@@ -3,6 +3,7 @@ import {
   AnalysisInvocationsRepository,
   AsyncRunsRepository,
   contentHash,
+  CONTENT_SHADOW_PROJECTION_VERSION,
   DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
   FindingsRepository,
@@ -125,7 +126,11 @@ function projectFrozenManifest(
 ): FrozenManifestProjection {
   const manifest = row.frozen_input_manifest;
   const cluster = manifest["searchCluster"];
-  if (typeof cluster !== "object" || cluster === null || Array.isArray(cluster)) {
+  if (
+    typeof cluster !== "object" ||
+    cluster === null ||
+    Array.isArray(cluster)
+  ) {
     throw new ContentShadowPermanentError(
       CONTENT_SHADOW_INPUT_DRIFT,
       "frozen manifest is missing its search cluster",
@@ -268,9 +273,12 @@ async function loadLiveShadowInputs(
       keywordEntityIds: frozen.keywordEntityIds,
     },
     generativeQueryEntityIds: frozen.generativeQueryEntityIds,
+    // All three pinned versions come from the CURRENTLY pinned constants, never
+    // from the row under audit: reading a version back out of the frozen row
+    // would make its drift check tautologically true.
     flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
-    projectionVersion: row.projection_version,
+    projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
     outputLocale: frozen.outputLocale,
   });
   const recomputed = contentHash(manifest as unknown as CanonicalValue);
@@ -284,6 +292,12 @@ async function loadLiveShadowInputs(
     throw new ContentShadowPermanentError(
       CONTENT_SHADOW_INPUT_DRIFT,
       "the pinned Flow adapter version advanced past this frozen run",
+    );
+  }
+  if (row.projection_version !== CONTENT_SHADOW_PROJECTION_VERSION) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "the pinned Content Shadow projection version advanced past this frozen run",
     );
   }
 
@@ -632,11 +646,20 @@ export async function runContentShadow(
     const failed = await ctx.db.transaction(async (tx) => {
       const txRuns = new AsyncRunsRepository(tx);
       if (!(await txRuns.lockAttemptForUpdate(attempt))) return false;
-      return txRuns.setTerminal(attempt, {
+      const terminal = await txRuns.setTerminal(attempt, {
         status: "failed",
         lastErrorCode: code,
         lastErrorSummary: "content shadow run failed",
       });
+      if (!terminal) return false;
+      // Give back any draft artifact this run had already claimed. Without this
+      // the row stays `generating` forever behind a terminal run, which reads to
+      // the client as an artifact generating under no live run at all.
+      await new ExecutionArtifactsRepository(tx).failGeneratingByGenerationRun(
+        scope,
+        runId,
+      );
+      return true;
     });
     if (failed) ctx.logger.error("content_shadow_failed", { runId, code });
   }

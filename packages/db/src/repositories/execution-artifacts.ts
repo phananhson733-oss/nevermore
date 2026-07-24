@@ -1,5 +1,9 @@
 import { and, desc, eq, lt, or, sql } from "drizzle-orm";
-import { artifactRevisions, executionArtifacts } from "../schema.ts";
+import {
+  analysisInvocations,
+  artifactRevisions,
+  executionArtifacts,
+} from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
   decodeTimestampUuidCursor,
@@ -74,9 +78,7 @@ function decodeCursor(
   cursor: string,
 ): { updatedAt: string; id: string } | null {
   const decoded = decodeTimestampUuidCursor(cursor);
-  return decoded
-    ? { updatedAt: decoded.timestamp, id: decoded.id }
-    : null;
+  return decoded ? { updatedAt: decoded.timestamp, id: decoded.id } : null;
 }
 
 export class ExecutionArtifactsRepository extends Repository {
@@ -156,6 +158,28 @@ export class ExecutionArtifactsRepository extends Repository {
           eq(executionArtifacts.action_id, actionId),
           eq(executionArtifacts.artifact_type, artifactType),
           sql`${executionArtifacts.status} <> 'archived'`,
+        ),
+      )
+      .limit(1);
+    return (rows[0] as ArtifactRow | undefined) ?? null;
+  }
+
+  /**
+   * The artifact one exact generation run currently owns. Unlike the
+   * action-scoped lookup this cannot answer with an artifact a different run
+   * claimed, so a run-scoped reader never reports someone else's work.
+   */
+  async findByGenerationRun(
+    scope: ProjectScope,
+    runId: string,
+  ): Promise<ArtifactRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(executionArtifacts)
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          eq(executionArtifacts.latest_generation_run_id, runId),
         ),
       )
       .limit(1);
@@ -389,6 +413,33 @@ export class ExecutionArtifactsRepository extends Repository {
     return rows.length === 1;
   }
 
+  /**
+   * Reclaim every scoped artifact still owned by this exact generation run.
+   *
+   * Some capabilities (Content Shadow) claim their artifact inside the worker
+   * rather than in the accepting command, so the failure path has no artifact id
+   * to compensate with. Keying on `latest_generation_run_id` is exactly as
+   * narrow as `setFailedForGenerationRun`: an artifact a later run already took
+   * over no longer matches, so a superseded run cannot fail someone else's work.
+   */
+  async failGeneratingByGenerationRun(
+    scope: ProjectScope,
+    runId: string,
+  ): Promise<number> {
+    const rows = await this.exec
+      .update(executionArtifacts)
+      .set({ status: "failed", updated_at: sql`now()` })
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          eq(executionArtifacts.latest_generation_run_id, runId),
+          eq(executionArtifacts.status, "generating"),
+        ),
+      )
+      .returning({ id: executionArtifacts.id });
+    return rows.length;
+  }
+
   // --- revisions ----------------------------------------------------------
 
   async insertRevision(values: {
@@ -446,6 +497,54 @@ export class ExecutionArtifactsRepository extends Repository {
       )
       .limit(1);
     return (rows[0] as ArtifactRevisionRow | undefined) ?? null;
+  }
+
+  /**
+   * The artifact revision one exact async Run generated, resolved through the
+   * append-only invocation ledger (revision -> analysis_invocation -> run).
+   *
+   * `execution_artifacts.latest_generation_run_id` is a MUTABLE pointer that a
+   * later regeneration re-aims, so it cannot answer "what did this finished run
+   * produce". This lineage can: both rows it walks are append-only.
+   */
+  async findRevisionByGenerationRun(
+    scope: ProjectScope,
+    asyncRunId: string,
+  ): Promise<ArtifactRevisionRow | null> {
+    const rows = (await this.exec
+      .select({
+        id: artifactRevisions.id,
+        workspace_id: artifactRevisions.workspace_id,
+        project_id: artifactRevisions.project_id,
+        artifact_id: artifactRevisions.artifact_id,
+        revision: artifactRevisions.revision,
+        output_locale: artifactRevisions.output_locale,
+        content_format: artifactRevisions.content_format,
+        content_text: artifactRevisions.content_text,
+        content_json: artifactRevisions.content_json,
+        content_hash: artifactRevisions.content_hash,
+        generated_by: artifactRevisions.generated_by,
+        editor_id: artifactRevisions.editor_id,
+        analysis_invocation_id: artifactRevisions.analysis_invocation_id,
+        note: artifactRevisions.note,
+        validation_errors: artifactRevisions.validation_errors,
+        created_at: artifactRevisions.created_at,
+      })
+      .from(artifactRevisions)
+      .innerJoin(
+        analysisInvocations,
+        eq(analysisInvocations.id, artifactRevisions.analysis_invocation_id),
+      )
+      .where(
+        and(
+          projectPredicate(artifactRevisions, scope),
+          projectPredicate(analysisInvocations, scope),
+          eq(analysisInvocations.async_run_id, asyncRunId),
+        ),
+      )
+      .orderBy(desc(artifactRevisions.revision))
+      .limit(1)) as ArtifactRevisionRow[];
+    return rows[0] ?? null;
   }
 
   async listRevisions(

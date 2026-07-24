@@ -898,9 +898,9 @@ if (fs.existsSync(implementationSchemaSmokePath)) {
 }
 for (const phrase of [
   "expected exactly 44 app tables",
-  "expected all 51 named app indexes",
-  "expected all 63 app triggers",
-  "expected all 16 runtime routines",
+  "expected all 56 named app indexes",
+  "expected all 69 app triggers",
+  "expected all 18 runtime routines",
   "unavailable observation with zero was accepted",
   "generated evidence without invocation was accepted",
   "append-only evidence update was accepted",

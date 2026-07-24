@@ -63,10 +63,15 @@ BEGIN
         'competitor_origins_profile_identity_idx',
         'competitor_origins_csv_identity_idx',
         'competitor_origins_manual_identity_idx',
-        'competitor_origins_entity_observed_idx'
+        'competitor_origins_entity_observed_idx',
+        'flow_shadow_runs_project_created_idx',
+        'flow_shadow_runs_action_idx',
+        'flow_shadow_runs_content_hash_idx',
+        'flow_shadow_research_packs_run_idx',
+        'flow_shadow_qa_gates_run_idx'
       ]::text[])
-  ) <> 51 THEN
-    RAISE EXCEPTION 'expected all 51 named app indexes';
+  ) <> 56 THEN
+    RAISE EXCEPTION 'expected all 56 named app indexes';
   END IF;
   IF (
     SELECT count(*)
@@ -138,10 +143,16 @@ BEGIN
         'keyword_entity_sources_lineage_guard',
         'keyword_entity_sources_append_only',
         'competitor_entities_governance_guard',
-        'competitor_origins_lineage_guard'
+        'competitor_origins_lineage_guard',
+        'flow_shadow_runs_provenance_guard',
+        'flow_shadow_runs_append_only',
+        'flow_shadow_research_packs_provenance_guard',
+        'flow_shadow_research_packs_append_only',
+        'flow_shadow_qa_gates_provenance_guard',
+        'flow_shadow_qa_gates_append_only'
       ]::text[])
-  ) <> 63 THEN
-    RAISE EXCEPTION 'expected all 63 app triggers';
+  ) <> 69 THEN
+    RAISE EXCEPTION 'expected all 69 app triggers';
   END IF;
   IF (
     SELECT count(DISTINCT procedure.proname)
@@ -163,10 +174,12 @@ BEGIN
         'is_typed_product_profile_evidence_refs',
         'enforce_competitor_entity_governance',
         'enforce_competitor_origin_lineage',
-        'upsert_competitor_origin'
+        'upsert_competitor_origin',
+        'enforce_flow_shadow_run_provenance',
+        'enforce_flow_shadow_child_provenance'
       ]::text[])
-  ) <> 16 THEN
-    RAISE EXCEPTION 'expected all 16 runtime routines';
+  ) <> 18 THEN
+    RAISE EXCEPTION 'expected all 18 runtime routines';
   END IF;
 END;
 $$;

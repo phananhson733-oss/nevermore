@@ -1465,7 +1465,7 @@ components:
       enum: [connecting, connected, syncing, available, partial, stale, permission_denied, unavailable, disconnected]
     RunKind:
       type: string
-      enum: [collection, product_profile_synthesis, diagnostic, artifact_generation, export]
+      enum: [collection, product_profile_synthesis, diagnostic, artifact_generation, export, content_shadow]
     RunStatus:
       type: string
       enum: [queued, running, completed, partial, failed, cancelled]
@@ -2711,7 +2711,7 @@ components:
           properties:
             type:
               type: string
-              enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export]
+              enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export, flow_shadow_run]
             id: { $ref: '#/components/schemas/Uuid' }
         queuedAt: { $ref: '#/components/schemas/Timestamp' }
         startedAt:
@@ -2741,7 +2741,7 @@ components:
               properties:
                 type:
                   type: string
-                  enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export]
+                  enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export, audit_run, flow_shadow_run]
                 id: { $ref: '#/components/schemas/Uuid' }
     AsyncRunResponse:
       type: object
@@ -4508,6 +4508,11 @@ components:
         draft:
           type: [object, 'null']
           additionalProperties: false
+          description: |
+            The draft THIS run owns, bound through its QA gate or its own invocation lineage —
+            never the Action's currently live artifact. A later shadow run for the same Action
+            may install a further revision on the same artifact row; that never changes what a
+            finished run reports here. Null until this run claims or produces a draft.
           required: [artifactId, status, currentRevision, contentText]
           properties:
             artifactId: { $ref: '#/components/schemas/Uuid' }
@@ -4515,7 +4520,10 @@ components:
               type: string
               enum: [generating, draft, ready, failed, archived]
               description: The internal shadow draft lifecycle; it never reaches a published state.
-            currentRevision: { type: integer, minimum: 0 }
+            currentRevision:
+              type: integer
+              minimum: 0
+              description: The revision this run installed or evaluated; 0 before it installs one.
             contentText: { type: [string, 'null'] }
         qa:
           type: [object, 'null']

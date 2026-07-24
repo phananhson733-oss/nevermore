@@ -840,7 +840,7 @@ export interface components {
         /** @enum {string} */
         SourceState: "connecting" | "connected" | "syncing" | "available" | "partial" | "stale" | "permission_denied" | "unavailable" | "disconnected";
         /** @enum {string} */
-        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export";
+        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export" | "content_shadow";
         /** @enum {string} */
         RunStatus: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
         /** @enum {string} */
@@ -1450,7 +1450,7 @@ export interface components {
             } | null;
             resultRef: {
                 /** @enum {string} */
-                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export";
+                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "flow_shadow_run";
                 id: components["schemas"]["Uuid"];
             } | null;
             queuedAt: components["schemas"]["Timestamp"];
@@ -1463,7 +1463,7 @@ export interface components {
                 statusUrl: string;
                 resourceRef: {
                     /** @enum {string} */
-                    type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export";
+                    type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "audit_run" | "flow_shadow_run";
                     id: components["schemas"]["Uuid"];
                 } | null;
             };
@@ -2566,6 +2566,12 @@ export interface components {
                 /** Format: date-time */
                 generatedAt: string;
             } | null;
+            /**
+             * @description The draft THIS run owns, bound through its QA gate or its own invocation lineage —
+             *     never the Action's currently live artifact. A later shadow run for the same Action
+             *     may install a further revision on the same artifact row; that never changes what a
+             *     finished run reports here. Null until this run claims or produces a draft.
+             */
             draft: {
                 artifactId: components["schemas"]["Uuid"];
                 /**
@@ -2573,6 +2579,7 @@ export interface components {
                  * @enum {string}
                  */
                 status: "generating" | "draft" | "ready" | "failed" | "archived";
+                /** @description The revision this run installed or evaluated; 0 before it installs one. */
                 currentRevision: number;
                 contentText: string | null;
             } | null;

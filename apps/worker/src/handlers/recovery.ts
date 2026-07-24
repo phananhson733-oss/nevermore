@@ -780,6 +780,17 @@ async function reconcileCanonicalAndProjection(
       );
       throwIfRecoveryAborted(signal);
     }
+    // Content Shadow claims its draft inside the worker, so the request payload
+    // carries no artifact id to compensate with; the generation-run pointer is
+    // the run-scoped key instead. Without this the artifact would outlive its
+    // terminal run stuck in `generating`.
+    if (run.kind === "content_shadow") {
+      await new ExecutionArtifactsRepository(tx).failGeneratingByGenerationRun(
+        scope,
+        run.id,
+      );
+      throwIfRecoveryAborted(signal);
+    }
     const sourceConnectionId = run.request_payload["sourceConnectionId"];
     const collectionProvider = run.request_payload["provider"];
     if (

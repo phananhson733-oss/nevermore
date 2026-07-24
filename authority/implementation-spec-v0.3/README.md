@@ -5,9 +5,9 @@ Authority 版本：**0.3.0**
 合同日期：**2026-07-21**
 当前已实现机器面：**0.3.0**
 
-本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 38 个 operation 与 6 个 async operation，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则；数据库包含可追溯 audit/page projection、Product Profile 冻结输入/调用预算账本、逐 DiagnosticRun Finding target ledger，以及 Keyword/Competitor Library 的稳定实体与不可变来源账本，总数为 41 张。
+本目录是 Nevermore 统一增长机会产品的 repository-owned v0.3 authority。当前 machine surface 已原子激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 47 个 operation 与 9 个 async operation，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则；数据库包含可追溯 audit/page projection、Product Profile 冻结输入/调用预算账本、逐 DiagnosticRun Finding target ledger、Keyword/Competitor Library 的稳定实体与不可变来源账本，以及 SEO/GEO Content Shadow 的冻结输入 run 与 append-only research/QA 子表，总数为 44 张。
 
-这次激活把已经实现的 URL-first Product Profile 读取、草稿编辑、证据化合成、竞品审核/补录与确认操作，以及 versioned Growth Audit / Capability contract、只读 Opportunity/Keyword/Competitor Library projection 与最小 persistence 纳入事实面。Keyword 与 Competitor Library 都只提供有界 cursor page 和稳定 ID 详情；Competitor Library 保留严格 origin discriminator、typed evidence、canonical Observation insight lineage、review state、coverage 与 limitation，不声明过滤、总数、manual/review control 或 mutation。Product Profile 合成只消费冻结的 Crawl Snapshot/PageSnapshot/Observation 引用；provider 调用先写 durable reservation，最多三次，未知结果阻止静默重试。它没有提前声明 Growth Audit create-run route、recheck operation、CMS publishing 或 content lifecycle；后续只有在实现、迁移、OpenAPI、锁文件和 verifier 同一提交更新时，才可以继续扩大 normative surface。
+这次激活把已经实现的 URL-first Product Profile 读取、草稿编辑、证据化合成、竞品审核/补录与确认操作，以及 versioned Growth Audit / Capability contract、只读 Opportunity/Keyword/Competitor Library projection 与最小 persistence 纳入事实面。Keyword 与 Competitor Library 都只提供有界 cursor page 和稳定 ID 详情；Competitor Library 保留严格 origin discriminator、typed evidence、canonical Observation insight lineage、review state、coverage 与 limitation，不声明过滤、总数、manual/review control 或 mutation。Product Profile 合成只消费冻结的 Crawl Snapshot/PageSnapshot/Observation 引用；provider 调用先写 durable reservation，最多三次，未知结果阻止静默重试。Growth Audit create-run route、显式 recheck operation 与 SEO/GEO Content Shadow run 此后已按同一提交原则进入事实面；它仍然没有声明 CMS publishing 或任何外部写入 —— Content Shadow 是 shadow 模式的内部写入，止于一个可评审的 draft revision。后续只有在实现、迁移、OpenAPI、锁文件和 verifier 同一提交更新时，才可以继续扩大 normative surface。
 
 ## 权威顺序
 
@@ -54,7 +54,8 @@ Growth Opportunity 是上述 canonical objects 的客户可读 projection。在 
 - `finding_targets` 逐当前 DiagnosticRun 持久化每个 Finding 的显式目标定义或成员；resolved 行绑定精确 Observation/SitePage（Crawl 还绑定 PageSnapshot），unresolved 行保留 analytics Observation 与 limitation，definition-only 行只保存稳定目标定义。历史 Finding 不回填、不从可变 projection 或 `subject_refs` 推断成员。
 - 浏览器报告与版本化 JSON ZIP 导出；没有外部写入、自动发布或结果归因。
 - English / 简体中文产品 chrome；客户内容语言与 UI 语言彼此独立。
-- 38 个 operation、6 个 async operation、41 张应用表；清单由主规格中的 markers 与机器合同、ordered migrations 精确比对。
+- 3 类内部 shadow 产物：`english_blog_draft` 草稿及其 `flow_shadow_research_packs` / `flow_shadow_qa_gates` append-only 子行；shadow run 由冻结输入 `content_hash` 寻址，止于可评审 revision，零外部写入。
+- 47 个 operation、9 个 async operation、44 张应用表；清单由主规格中的 markers 与机器合同、ordered migrations 精确比对。
 
 ## Reviewed Slice 1 change sequence
 
