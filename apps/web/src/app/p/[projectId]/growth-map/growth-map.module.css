@@ -9,6 +9,9 @@
   flex-direction: column;
   gap: 18px;
   min-width: 0;
+  /* Contain the portfolio ledger's fixed-minimum grid so its columns scroll
+     inside the ledger rather than pushing horizontal overflow onto the page. */
+  overflow-x: clip;
   color: var(--sf-fg);
   font-size: 16px;
 }
