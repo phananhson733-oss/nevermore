@@ -45,7 +45,7 @@ import {
 } from "@sf/db";
 import {
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
-  type RecheckTargetScope,
+  RecheckTargetScope,
 } from "@sf/contracts";
 import {
   LocalFsBlobStore,
@@ -1148,7 +1148,13 @@ export async function runAuditChain(
     diagRunId: audit.run.id,
     httpFindingId: httpFinding.id,
     actionId: review.action.id,
-    targetScope: { kind: root.target_kind, ref: root.target_ref },
+    // Narrow the raw DB `target_kind` (string) to the RecheckTargetKind enum via
+    // the contract schema; this validates the persisted target and yields the
+    // strict CreateActionRecheckRequest["targetScope"] shape the recheck expects.
+    targetScope: RecheckTargetScope.parse({
+      kind: root.target_kind,
+      ref: root.target_ref,
+    }),
   };
 }
 

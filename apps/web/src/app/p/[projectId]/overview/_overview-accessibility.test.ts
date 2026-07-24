@@ -1,12 +1,22 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const SOURCE = readFileSync(new URL("./_overview.tsx", import.meta.url), "utf8");
-const CSS = readFileSync(new URL("./overview.module.css", import.meta.url), "utf8");
+const SOURCE = readFileSync(
+  new URL("./_overview.tsx", import.meta.url),
+  "utf8",
+);
+const CSS = readFileSync(
+  new URL("./overview.module.css", import.meta.url),
+  "utf8",
+);
 
 function cssBlock(selector: string, source = CSS): string {
+  // Anchor the selector at a rule boundary (start, whitespace, `{`, `}`, or
+  // `,`) so a leading selector token is matched as its own rule rather than as
+  // a substring of a compound/descendant selector (e.g. `.primaryLink` must not
+  // resolve to `.contextFooter button.primaryLink`).
   const match = new RegExp(
-    `${selector.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\s*\\{([^}]*)\\}`,
+    `(?<=^|[\\s{},])${selector.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\s*\\{([^}]*)\\}`,
     "u",
   ).exec(source);
   if (!match?.[1]) throw new Error(`Missing CSS selector: ${selector}`);
@@ -22,14 +32,17 @@ function mediaSection(query: string): string {
 
 describe("Overview accessibility regressions", () => {
   it("keeps every Portfolio metric description inside its definition", () => {
-    const portfolio = /<dl className=\{styles\.portfolioMetrics\}>([\s\S]*?)<\/dl>/u.exec(
-      SOURCE,
-    )?.[1];
+    const portfolio =
+      /<dl className=\{styles\.portfolioMetrics\}>([\s\S]*?)<\/dl>/u.exec(
+        SOURCE,
+      )?.[1];
 
     expect(portfolio).toBeDefined();
     expect(portfolio?.match(/<dt>/gu)).toHaveLength(4);
     expect(portfolio?.match(/<dd>/gu)).toHaveLength(4);
-    expect(portfolio?.match(/<dd>[\s\S]*?<small>[\s\S]*?<\/small>\s*<\/dd>/gu)).toHaveLength(4);
+    expect(
+      portfolio?.match(/<dd>[\s\S]*?<small>[\s\S]*?<\/small>\s*<\/dd>/gu),
+    ).toHaveLength(4);
     expect(portfolio).not.toMatch(/<\/dd>\s*<small>/u);
   });
 
