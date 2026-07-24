@@ -1014,6 +1014,104 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /projects/{projectId}/audit:
+    get:
+      tags: [Diagnosis]
+      summary: Read the latest Growth Audit projection
+      description: |
+        Returns the latest Growth Audit for the project as a strictly read-only projection.
+        Status is projected from the canonical async run; every response carries all eight
+        customer-facing audit modules and all three frontstage lenses, including modules and
+        lenses whose honest state is no_data. This surface writes nothing.
+      operationId: getProjectGrowthAudit
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: The latest complete Growth Audit projection.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrowthAuditHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/audit/modules/{moduleId}:
+    get:
+      tags: [Diagnosis]
+      summary: Read one Growth Audit module summary
+      description: |
+        Resolves one audit module's read-only coverage summary from the latest Growth Audit.
+        Empty modules report no_data with an explicit limitation, never a zero score.
+      operationId: getProjectAuditModule
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/AuditModuleId'
+      responses:
+        '200':
+          description: Selected audit module coverage summary.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditModuleHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/opportunities:
+    get:
+      tags: [Diagnosis]
+      summary: List traceable Growth Opportunities
+      description: |
+        Returns one bounded cursor page of traceable Growth Opportunities projected from the
+        latest readable diagnostic run. Read-only: confirmation flows through the existing
+        Finding review mutation, never a confirm endpoint here.
+      operationId: listProjectOpportunities
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Current traceable Growth Opportunity cursor page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectOpportunityListHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/opportunities/{opportunityId}:
+    get:
+      tags: [Diagnosis]
+      summary: Read one traceable Growth Opportunity
+      description: |
+        Resolves one Growth Opportunity keyed by its primary Finding id inside the latest
+        readable diagnostic run. Read-only.
+      operationId: getProjectOpportunity
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/OpportunityId'
+      responses:
+        '200':
+          description: Selected traceable Growth Opportunity projection.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectOpportunityDetailHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
 components:
   securitySchemes:
     supabaseSessionCookie:
@@ -1045,6 +1143,16 @@ components:
       schema: { $ref: '#/components/schemas/Uuid' }
     CompetitorId:
       name: competitorId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    AuditModuleId:
+      name: moduleId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/AuditModuleId' }
+    OpportunityId:
+      name: opportunityId
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Uuid' }
@@ -3062,6 +3170,340 @@ components:
       required: [data]
       properties:
         data: { $ref: '#/components/schemas/GrowthMapUrlDetailResponse' }
+
+    AuditModuleId:
+      type: string
+      description: The eight customer-facing Growth Audit modules (Slice 1).
+      enum:
+        - performance
+        - accessibility
+        - best_practices_security
+        - technical_search
+        - content_intent
+        - ai_geo
+        - links_architecture
+        - compliance_measurement
+
+    FrontstageLensId:
+      type: string
+      description: The three frontstage Growth Audit lenses.
+      enum: [site_health, search_ai_visibility, demand_competition]
+
+    CoverageState:
+      type: string
+      description: Coverage state; no_data is missing coverage, never a zero score.
+      enum: [available, partial, stale, no_data]
+
+    SourceFreshness:
+      type: string
+      enum: [current, stale, unknown]
+
+    AuditModuleSummary:
+      type: object
+      additionalProperties: false
+      description: One audit module's read-only coverage summary.
+      required:
+        - moduleId
+        - coverageState
+        - evidenceCount
+        - findingCount
+        - sourceProviders
+        - latestObservedAt
+        - limitations
+      properties:
+        moduleId: { $ref: '#/components/schemas/AuditModuleId' }
+        coverageState: { $ref: '#/components/schemas/CoverageState' }
+        evidenceCount: { type: integer, minimum: 0 }
+        findingCount: { type: integer, minimum: 0 }
+        sourceProviders:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 500 }
+        latestObservedAt: { type: [string, 'null'], format: date-time }
+        limitations:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 2000 }
+
+    AuditLensSummary:
+      type: object
+      additionalProperties: false
+      description: One frontstage lens rollup derived from the run's Findings.
+      required:
+        - lensId
+        - coverageState
+        - evidenceCount
+        - findingCount
+        - limitations
+      properties:
+        lensId: { $ref: '#/components/schemas/FrontstageLensId' }
+        coverageState: { $ref: '#/components/schemas/CoverageState' }
+        evidenceCount: { type: integer, minimum: 0 }
+        findingCount: { type: integer, minimum: 0 }
+        limitations:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 2000 }
+
+    GrowthAuditResponse:
+      type: object
+      additionalProperties: false
+      description: |
+        Read-only Growth Audit projection. Status is projected from the canonical
+        async run; audit and module rows do not own another lifecycle.
+      required:
+        - auditRunId
+        - projectId
+        - siteId
+        - status
+        - outputLocale
+        - completedAt
+        - modules
+        - lenses
+        - coverageAndLimitations
+      properties:
+        auditRunId: { $ref: '#/components/schemas/Uuid' }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        status:
+          type: string
+          enum: [queued, running, completed, partial, failed, cancelled]
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        completedAt: { type: [string, 'null'], format: date-time }
+        modules:
+          type: array
+          minItems: 8
+          maxItems: 8
+          items: { $ref: '#/components/schemas/AuditModuleSummary' }
+        lenses:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: '#/components/schemas/AuditLensSummary' }
+        coverageAndLimitations:
+          type: array
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 2000 }
+
+    GrowthAuditHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/GrowthAuditResponse' }
+
+    AuditModuleHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/AuditModuleSummary' }
+
+    WorkShape:
+      type: string
+      enum: [fix, improve, create]
+
+    PrimaryOpportunityTarget:
+      type: string
+      enum: [site, template, url, topic, new_asset]
+
+    OpportunityReadiness:
+      type: string
+      enum: [candidate, reviewable, confirmed]
+
+    OpportunityRuleId:
+      type: string
+      enum:
+        - TECH-HTTP-001
+        - TECH-CANONICAL-002
+        - TECH-LINKGRAPH-005
+        - SEARCH-CTR-004
+        - SEARCH-DECAY-002
+        - CONTENT-COVERAGE-001
+        - CONTENT-GAP-011
+        - CRO-PATH-001
+        - CRO-LANDING-003
+        - GEO-ENTITY-001
+        - GEO-CRAWLER-002
+
+    OpportunityRuleReference:
+      type: object
+      additionalProperties: false
+      required: [ruleId, ruleVersion]
+      properties:
+        ruleId: { $ref: '#/components/schemas/OpportunityRuleId' }
+        ruleVersion: { type: integer, enum: [1, 2] }
+
+    OpportunityOwnedAsset:
+      type: object
+      additionalProperties: false
+      required: [sitePageId, snapshotId, url, suitableForIntent]
+      properties:
+        sitePageId: { $ref: '#/components/schemas/Uuid' }
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        url: { type: string, format: uri, maxLength: 2048 }
+        suitableForIntent: { type: boolean }
+
+    OpportunityActionSummary:
+      type: object
+      additionalProperties: false
+      description: A canonical Action projection; the Artifact type is rule-fixed.
+      required: [actionId, findingId, status, artifactType]
+      properties:
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        findingId: { $ref: '#/components/schemas/Uuid' }
+        status: { $ref: '#/components/schemas/ActionStatus' }
+        artifactType: { $ref: '#/components/schemas/ArtifactType' }
+
+    OpportunityEvidenceTrace:
+      type: object
+      additionalProperties: false
+      description: |
+        One canonical provenance trace. `traceKind` discriminates evidence vs
+        observation lineage; source-backed Evidence carries snapshot and
+        collection-run pointers, system Evidence is lineage-free, and LLM
+        Evidence traces only an Analysis Invocation.
+      required:
+        - traceKind
+        - sourceProvider
+        - availability
+        - support
+        - observedAt
+        - freshness
+        - claim
+        - limitation
+      properties:
+        traceKind: { type: string, enum: [evidence, observation] }
+        evidenceId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        snapshotId: { type: [string, 'null'], format: uuid }
+        collectionRunId: { type: [string, 'null'], format: uuid }
+        analysisInvocationId: { type: [string, 'null'], format: uuid }
+        sourceProvider: { type: string, minLength: 1, maxLength: 200 }
+        availability: { type: string, enum: [available, partial] }
+        support: { type: string, enum: [supports, contradicts, context] }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        freshness: { $ref: '#/components/schemas/SourceFreshness' }
+        claim: { type: string, minLength: 1, maxLength: 4000 }
+        limitation: { type: string, minLength: 1, maxLength: 2000 }
+
+    GrowthOpportunity:
+      type: object
+      additionalProperties: false
+      description: |
+        A traceable Growth Opportunity. `readiness` discriminates the variant:
+        candidate has no primary Finding or Action; reviewable carries a primary
+        Finding and rule; confirmed additionally projects the Finding-owned
+        Action. Runtime validation uses the typed Opportunity contract, and
+        confirmation flows only through the Finding review mutation.
+      required:
+        - opportunityKey
+        - title
+        - workShape
+        - primaryTarget
+        - targetRef
+        - evidenceSummary
+        - searchQueries
+        - generativeQueries
+        - competitorRefs
+        - currentOwnedAsset
+        - supportingFindingIds
+        - lenses
+        - coverageAndLimitations
+        - readiness
+      properties:
+        opportunityKey: { type: string, minLength: 1, maxLength: 1000 }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        workShape: { $ref: '#/components/schemas/WorkShape' }
+        primaryTarget: { $ref: '#/components/schemas/PrimaryOpportunityTarget' }
+        targetRef: { type: string, minLength: 1, maxLength: 2048 }
+        evidenceSummary:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: '#/components/schemas/OpportunityEvidenceTrace' }
+        searchQueries:
+          type: array
+          maxItems: 500
+          items: { type: object, additionalProperties: true }
+        generativeQueries:
+          type: array
+          maxItems: 500
+          items: { type: object, additionalProperties: true }
+        competitorRefs:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 500 }
+        currentOwnedAsset:
+          oneOf:
+            - { $ref: '#/components/schemas/OpportunityOwnedAsset' }
+            - { type: 'null' }
+        supportingFindingIds:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/Uuid' }
+        lenses:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items: { $ref: '#/components/schemas/FrontstageLensId' }
+        coverageAndLimitations:
+          type: array
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 2000 }
+        readiness: { $ref: '#/components/schemas/OpportunityReadiness' }
+        primaryFindingId: { $ref: '#/components/schemas/Uuid' }
+        primaryRule: { $ref: '#/components/schemas/OpportunityRuleReference' }
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        action: { $ref: '#/components/schemas/OpportunityActionSummary' }
+
+    ProjectOpportunityListMeta:
+      type: object
+      additionalProperties: false
+      required: [limit, nextCursor, hasNext]
+      properties:
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 1024 }
+        hasNext: { type: boolean }
+
+    ProjectOpportunityListResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, siteId, diagnosticRunId, data, meta]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        data:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GrowthOpportunity' }
+        meta: { $ref: '#/components/schemas/ProjectOpportunityListMeta' }
+
+    ProjectOpportunityDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, siteId, diagnosticRunId, data]
+      properties:
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+        data: { $ref: '#/components/schemas/GrowthOpportunity' }
+
+    ProjectOpportunityListHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ProjectOpportunityListResponse' }
+
+    ProjectOpportunityDetailHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ProjectOpportunityDetailResponse' }
 
     GrowthMapKeywordUnassignedTarget:
       type: object

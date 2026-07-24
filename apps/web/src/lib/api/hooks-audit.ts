@@ -8,8 +8,22 @@
  * as a typed `ApiError` for the screen to translate.
  */
 
-import { useMutation, type UseMutationResult } from "@tanstack/react-query";
-import { apiSend, type ApiError } from "./client";
+import {
+  AuditModuleSummary,
+  GrowthAuditResponse,
+  type AuditModuleId as AuditModuleIdType,
+  type AuditModuleSummary as AuditModuleSummaryDto,
+  type GrowthAuditResponse as GrowthAuditResponseDto,
+} from "@sf/contracts";
+import {
+  useMutation,
+  useQuery,
+  type UseMutationResult,
+  type UseQueryOptions,
+  type UseQueryResult,
+} from "@tanstack/react-query";
+import { useLocale } from "next-intl";
+import { apiGet, apiSend, type ApiError } from "./client";
 import type { DataEnvelope } from "./types";
 import type { AsyncRun, RunResourceRef } from "./hooks-diagnosis";
 
@@ -41,7 +55,11 @@ export interface GrowthAuditRunAccepted {
  */
 export function useCreateGrowthAuditRun(
   projectId: string,
-): UseMutationResult<GrowthAuditRunAccepted, ApiError, CreateGrowthAuditRunRequest> {
+): UseMutationResult<
+  GrowthAuditRunAccepted,
+  ApiError,
+  CreateGrowthAuditRunRequest
+> {
   return useMutation({
     mutationFn: async (body: CreateGrowthAuditRunRequest) => {
       const res = await apiSend<DataEnvelope<GrowthAuditRunAccepted>>(
@@ -52,4 +70,86 @@ export function useCreateGrowthAuditRun(
       return res.data;
     },
   });
+}
+
+/* ----------------------------------------------- read projections (Slice 1) */
+
+export function growthAuditQueryKey(projectId: string, uiLocale: string) {
+  return ["growth-audit", projectId, uiLocale, "audit"] as const;
+}
+
+export function auditModuleQueryKey(
+  projectId: string,
+  uiLocale: string,
+  moduleId: AuditModuleIdType | null | undefined,
+) {
+  return [
+    "growth-audit",
+    projectId,
+    uiLocale,
+    "module",
+    moduleId ?? null,
+  ] as const;
+}
+
+/** Fetch and re-validate the complete Growth Audit projection contract. */
+export async function getProjectGrowthAudit(
+  projectId: string,
+): Promise<GrowthAuditResponseDto> {
+  const response = await apiGet<DataEnvelope<unknown>>(
+    `/projects/${projectId}/audit`,
+  );
+  return GrowthAuditResponse.parse(response.data);
+}
+
+/** Fetch and re-validate one audit module's coverage summary. */
+export async function getProjectAuditModule(
+  projectId: string,
+  moduleId: AuditModuleIdType | null | undefined,
+): Promise<AuditModuleSummaryDto> {
+  if (!moduleId) {
+    throw new Error("A moduleId is required to fetch an audit module.");
+  }
+  const response = await apiGet<DataEnvelope<unknown>>(
+    `/projects/${projectId}/audit/modules/${encodeURIComponent(moduleId)}`,
+  );
+  return AuditModuleSummary.parse(response.data);
+}
+
+export function buildGrowthAuditQueryOptions(
+  projectId: string,
+  uiLocale: string,
+): UseQueryOptions<GrowthAuditResponseDto, ApiError> {
+  return {
+    queryKey: growthAuditQueryKey(projectId, uiLocale),
+    queryFn: () => getProjectGrowthAudit(projectId),
+    enabled: projectId.length > 0,
+  };
+}
+
+export function buildAuditModuleQueryOptions(
+  projectId: string,
+  uiLocale: string,
+  moduleId: AuditModuleIdType | null | undefined,
+): UseQueryOptions<AuditModuleSummaryDto, ApiError> {
+  return {
+    queryKey: auditModuleQueryKey(projectId, uiLocale, moduleId),
+    queryFn: () => getProjectAuditModule(projectId, moduleId),
+    enabled: projectId.length > 0 && Boolean(moduleId),
+  };
+}
+
+export function useProjectGrowthAudit(
+  projectId: string,
+): UseQueryResult<GrowthAuditResponseDto, ApiError> {
+  const uiLocale = useLocale();
+  return useQuery(buildGrowthAuditQueryOptions(projectId, uiLocale));
+}
+
+export function useProjectAuditModule(
+  projectId: string,
+  moduleId: AuditModuleIdType | null | undefined,
+): UseQueryResult<AuditModuleSummaryDto, ApiError> {
+  const uiLocale = useLocale();
+  return useQuery(buildAuditModuleQueryOptions(projectId, uiLocale, moduleId));
 }

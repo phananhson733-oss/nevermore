@@ -7,19 +7,19 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "0e651d26e21d76d6b4d14051977f01a91852156a991c93a1ae73b244c546db3d",
-    "MVP-IMPLEMENTATION-SPEC.md": "2e15cc63b86fda5cc373ff1cd309158121c463626d0d56100f10adef269096dc",
-    "openapi.yaml": "7d558ff03d9b4b7d6c91e669dbb169a67519635b0eba23e83bb1b924c36c633a",
+    "MVP-IMPLEMENTATION-SPEC.md": "3ed751045fef0e51d04927bc7f4782ed1a3dab5b2011b9bf697745d796067387",
+    "openapi.yaml": "8de74bbfa832ddb8f689d03f4ca6945e2b2474b91545f62faa8a2a9cecef4bfa",
     "schema.sql": "48b7972c814bcb3a7044e27ced0b773937ab5ed9e5660249914076c107df7f61",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "scripts/schema-smoke.sql": "a12f4a14558fee7bfaeeb60ac543baaed90f8fa2d947e206957c48d97f73ae64",
-    "scripts/verify-spec.mjs": "ae4f40e5cb185e0cf69221419da18f5577c705f90e66994520008e7541b93648"
+    "scripts/verify-spec.mjs": "80263700a1b8e68eff3e594856e89de9c44625f91e85a2da5ea4e0776c9eca79"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "7d558ff03d9b4b7d6c91e669dbb169a67519635b0eba23e83bb1b924c36c633a",
-    "packages/contracts/src/generated/openapi.ts": "d72b4c33f1010122f1b16d1d97d1b570bda5d53e9b58ffecf1529e64c1ff9221",
+    "openapi/mvp.yaml": "8de74bbfa832ddb8f689d03f4ca6945e2b2474b91545f62faa8a2a9cecef4bfa",
+    "packages/contracts/src/generated/openapi.ts": "393ee1b8879723572b737cd0b720e76e03112f01a23d457b4d1559086ac2fac3",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "packages/db/migrations/schema-smoke.sql": "a12f4a14558fee7bfaeeb60ac543baaed90f8fa2d947e206957c48d97f73ae64",
-    "scripts/verify-implementation.mjs": "bd7e518505ffd9c2454d1963bea7ae53e91b1b8883a4dd3311f70f49c6975c66"
+    "scripts/verify-implementation.mjs": "5aff071ef22e1dcdd0cf31eedbaf1fa9f992d67de1118dc573724f444f2f8e10"
   },
   "apiOperations": [
     "listProjects",
@@ -50,6 +50,10 @@
     "getProjectAuditKeyword",
     "listProjectAuditCompetitors",
     "getProjectAuditCompetitor",
+    "getProjectGrowthAudit",
+    "getProjectAuditModule",
+    "listProjectOpportunities",
+    "getProjectOpportunity",
     "listProjectFindings",
     "reviewProjectFinding",
     "listProjectActions",

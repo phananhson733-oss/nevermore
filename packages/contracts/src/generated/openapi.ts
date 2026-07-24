@@ -638,6 +638,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the latest Growth Audit projection
+         * @description Returns the latest Growth Audit for the project as a strictly read-only projection.
+         *     Status is projected from the canonical async run; every response carries all eight
+         *     customer-facing audit modules and all three frontstage lenses, including modules and
+         *     lenses whose honest state is no_data. This surface writes nothing.
+         */
+        get: operations["getProjectGrowthAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/modules/{moduleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one Growth Audit module summary
+         * @description Resolves one audit module's read-only coverage summary from the latest Growth Audit.
+         *     Empty modules report no_data with an explicit limitation, never a zero score.
+         */
+        get: operations["getProjectAuditModule"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/opportunities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List traceable Growth Opportunities
+         * @description Returns one bounded cursor page of traceable Growth Opportunities projected from the
+         *     latest readable diagnostic run. Read-only: confirmation flows through the existing
+         *     Finding review mutation, never a confirm endpoint here.
+         */
+        get: operations["listProjectOpportunities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/opportunities/{opportunityId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one traceable Growth Opportunity
+         * @description Resolves one Growth Opportunity keyed by its primary Finding id inside the latest
+         *     readable diagnostic run. Read-only.
+         */
+        get: operations["getProjectOpportunity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1654,6 +1741,175 @@ export interface components {
         GrowthMapUrlDetailHttpResponse: {
             data: components["schemas"]["GrowthMapUrlDetailResponse"];
         };
+        /**
+         * @description The eight customer-facing Growth Audit modules (Slice 1).
+         * @enum {string}
+         */
+        AuditModuleId: "performance" | "accessibility" | "best_practices_security" | "technical_search" | "content_intent" | "ai_geo" | "links_architecture" | "compliance_measurement";
+        /**
+         * @description The three frontstage Growth Audit lenses.
+         * @enum {string}
+         */
+        FrontstageLensId: "site_health" | "search_ai_visibility" | "demand_competition";
+        /**
+         * @description Coverage state; no_data is missing coverage, never a zero score.
+         * @enum {string}
+         */
+        CoverageState: "available" | "partial" | "stale" | "no_data";
+        /** @enum {string} */
+        SourceFreshness: "current" | "stale" | "unknown";
+        /** @description One audit module's read-only coverage summary. */
+        AuditModuleSummary: {
+            moduleId: components["schemas"]["AuditModuleId"];
+            coverageState: components["schemas"]["CoverageState"];
+            evidenceCount: number;
+            findingCount: number;
+            sourceProviders: string[];
+            /** Format: date-time */
+            latestObservedAt: string | null;
+            limitations: string[];
+        };
+        /** @description One frontstage lens rollup derived from the run's Findings. */
+        AuditLensSummary: {
+            lensId: components["schemas"]["FrontstageLensId"];
+            coverageState: components["schemas"]["CoverageState"];
+            evidenceCount: number;
+            findingCount: number;
+            limitations: string[];
+        };
+        /**
+         * @description Read-only Growth Audit projection. Status is projected from the canonical
+         *     async run; audit and module rows do not own another lifecycle.
+         */
+        GrowthAuditResponse: {
+            auditRunId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+            outputLocale: components["schemas"]["LocaleCode"];
+            /** Format: date-time */
+            completedAt: string | null;
+            modules: components["schemas"]["AuditModuleSummary"][];
+            lenses: components["schemas"]["AuditLensSummary"][];
+            coverageAndLimitations: string[];
+        };
+        GrowthAuditHttpResponse: {
+            data: components["schemas"]["GrowthAuditResponse"];
+        };
+        AuditModuleHttpResponse: {
+            data: components["schemas"]["AuditModuleSummary"];
+        };
+        /** @enum {string} */
+        WorkShape: "fix" | "improve" | "create";
+        /** @enum {string} */
+        PrimaryOpportunityTarget: "site" | "template" | "url" | "topic" | "new_asset";
+        /** @enum {string} */
+        OpportunityReadiness: "candidate" | "reviewable" | "confirmed";
+        /** @enum {string} */
+        OpportunityRuleId: "TECH-HTTP-001" | "TECH-CANONICAL-002" | "TECH-LINKGRAPH-005" | "SEARCH-CTR-004" | "SEARCH-DECAY-002" | "CONTENT-COVERAGE-001" | "CONTENT-GAP-011" | "CRO-PATH-001" | "CRO-LANDING-003" | "GEO-ENTITY-001" | "GEO-CRAWLER-002";
+        OpportunityRuleReference: {
+            ruleId: components["schemas"]["OpportunityRuleId"];
+            /** @enum {integer} */
+            ruleVersion: 1 | 2;
+        };
+        OpportunityOwnedAsset: {
+            sitePageId: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            /** Format: uri */
+            url: string;
+            suitableForIntent: boolean;
+        };
+        /** @description A canonical Action projection; the Artifact type is rule-fixed. */
+        OpportunityActionSummary: {
+            actionId: components["schemas"]["Uuid"];
+            findingId: components["schemas"]["Uuid"];
+            status: components["schemas"]["ActionStatus"];
+            artifactType: components["schemas"]["ArtifactType"];
+        };
+        /**
+         * @description One canonical provenance trace. `traceKind` discriminates evidence vs
+         *     observation lineage; source-backed Evidence carries snapshot and
+         *     collection-run pointers, system Evidence is lineage-free, and LLM
+         *     Evidence traces only an Analysis Invocation.
+         */
+        OpportunityEvidenceTrace: {
+            /** @enum {string} */
+            traceKind: "evidence" | "observation";
+            evidenceId?: components["schemas"]["Uuid"];
+            observationId?: components["schemas"]["Uuid"];
+            diagnosticRunId?: components["schemas"]["Uuid"];
+            /** Format: uuid */
+            snapshotId?: string | null;
+            /** Format: uuid */
+            collectionRunId?: string | null;
+            /** Format: uuid */
+            analysisInvocationId?: string | null;
+            sourceProvider: string;
+            /** @enum {string} */
+            availability: "available" | "partial";
+            /** @enum {string} */
+            support: "supports" | "contradicts" | "context";
+            observedAt: components["schemas"]["Timestamp"];
+            freshness: components["schemas"]["SourceFreshness"];
+            claim: string;
+            limitation: string;
+        };
+        /**
+         * @description A traceable Growth Opportunity. `readiness` discriminates the variant:
+         *     candidate has no primary Finding or Action; reviewable carries a primary
+         *     Finding and rule; confirmed additionally projects the Finding-owned
+         *     Action. Runtime validation uses the typed Opportunity contract, and
+         *     confirmation flows only through the Finding review mutation.
+         */
+        GrowthOpportunity: {
+            opportunityKey: string;
+            title: string;
+            workShape: components["schemas"]["WorkShape"];
+            primaryTarget: components["schemas"]["PrimaryOpportunityTarget"];
+            targetRef: string;
+            evidenceSummary: components["schemas"]["OpportunityEvidenceTrace"][];
+            searchQueries: {
+                [key: string]: unknown;
+            }[];
+            generativeQueries: {
+                [key: string]: unknown;
+            }[];
+            competitorRefs: string[];
+            currentOwnedAsset: components["schemas"]["OpportunityOwnedAsset"] | null;
+            supportingFindingIds: components["schemas"]["Uuid"][];
+            lenses: components["schemas"]["FrontstageLensId"][];
+            coverageAndLimitations: string[];
+            readiness: components["schemas"]["OpportunityReadiness"];
+            primaryFindingId?: components["schemas"]["Uuid"];
+            primaryRule?: components["schemas"]["OpportunityRuleReference"];
+            actionId?: components["schemas"]["Uuid"];
+            action?: components["schemas"]["OpportunityActionSummary"];
+        };
+        ProjectOpportunityListMeta: {
+            limit: number;
+            nextCursor: string | null;
+            hasNext: boolean;
+        };
+        ProjectOpportunityListResponse: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthOpportunity"][];
+            meta: components["schemas"]["ProjectOpportunityListMeta"];
+        };
+        ProjectOpportunityDetailResponse: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthOpportunity"];
+        };
+        ProjectOpportunityListHttpResponse: {
+            data: components["schemas"]["ProjectOpportunityListResponse"];
+        };
+        ProjectOpportunityDetailHttpResponse: {
+            data: components["schemas"]["ProjectOpportunityDetailResponse"];
+        };
         GrowthMapKeywordUnassignedTarget: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -2589,6 +2845,8 @@ export interface components {
         SitePageId: components["schemas"]["Uuid"];
         KeywordId: components["schemas"]["Uuid"];
         CompetitorId: components["schemas"]["Uuid"];
+        AuditModuleId: components["schemas"]["AuditModuleId"];
+        OpportunityId: components["schemas"]["Uuid"];
         ProductProfileCandidateId: components["schemas"]["Uuid"];
         SourceConnectionId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
@@ -3767,6 +4025,119 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getProjectGrowthAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The latest complete Growth Audit projection. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthAuditHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditModule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                moduleId: components["parameters"]["AuditModuleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selected audit module coverage summary. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditModuleHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    listProjectOpportunities: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque base64url cursor returned by the previous page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current traceable Growth Opportunity cursor page. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOpportunityListHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectOpportunity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                opportunityId: components["parameters"]["OpportunityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selected traceable Growth Opportunity projection. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOpportunityDetailHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
 }

@@ -916,6 +916,10 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `getProjectAuditKeyword` — 按稳定 Keyword ID 读取同一严格只读投影，不暴露 Finding confirmation、Action state 或 mutation。
 - `listProjectAuditCompetitors` — 读取有界 Competitor Library cursor page；保留严格 origin discriminator、typed evidence、review state、canonical Observation insight lineage 与 coverage，不返回伪造总数或过滤状态。
 - `getProjectAuditCompetitor` — 按稳定 Competitor ID 读取同一严格只读投影，不暴露 manual-entry、review control 或 mutation。
+- `getProjectGrowthAudit` — 读取最新 Growth Audit 只读投影：status 从 canonical async run 投影，含全八个 audit module 与三个 frontstage lens（no_data 也在内）。
+- `getProjectAuditModule` — 读取单个 audit module 的只读 coverage summary；空 module 报告 no_data 与 limitation，绝不给零分。
+- `listProjectOpportunities` — 从最新 readable diagnostic run 读取有界 Growth Opportunity cursor page；只读，确认走 Finding review mutation。
+- `getProjectOpportunity` — 按 primary Finding ID 读取单个 traceable Growth Opportunity 只读投影。
 - `listProjectFindings` — 列出 Finding 和 evidence summary。
 - `reviewProjectFinding` — confirm/ignore/needs-more-data。
 - `listProjectActions` — 列出 30/60/90 plan。
