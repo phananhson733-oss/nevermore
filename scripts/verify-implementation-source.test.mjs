@@ -37,7 +37,7 @@ test("freezes the activated v0.3 machine versions without bumping rules or promp
   assert.match(verifier, /const PROMPT_SET_VERSION = "mvp\.prompts\.0\.2\.0";/);
 });
 
-test("freezes the traceability and growth-library persistence tables in the 41-table contract", () => {
+test("freezes the traceability and growth-library persistence tables in the 44-table contract", () => {
   for (const table of [
     "capability_runs",
     "audit_runs",
@@ -61,11 +61,11 @@ test("freezes the traceability and growth-library persistence tables in the 41-t
   assert.ok(expectedTablesBlock);
   assert.equal(
     [...expectedTablesBlock[1].matchAll(/^\s+"[a-z][a-z0-9_]*",$/gm)].length,
-    41,
+    44,
   );
 });
 
-test("freezes the 38 implemented operations and six async commands", () => {
+test("freezes the 45 implemented operations and eight async commands", () => {
   for (const operationId of [
     "getProjectProductProfile",
     "updateProductProfileDraft",

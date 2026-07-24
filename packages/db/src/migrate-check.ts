@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 41 app tables plus every named index, trigger, and callable routine
+ * exactly 44 app tables plus every named index, trigger, and callable routine
  * in the frozen SQL contract. Exits non-zero on drift. This is a structural
  * object-presence gate; the byte-for-byte migration/spec gate separately
  * prevents definition drift.
@@ -52,6 +52,9 @@ const EXPECTED_TABLES = [
   "keyword_entity_sources",
   "competitor_entities",
   "competitor_origin_occurrences",
+  "flow_shadow_runs",
+  "flow_shadow_research_packs",
+  "flow_shadow_qa_gates",
 ] as const;
 
 const REQUIRED_INDEXES = [
@@ -106,6 +109,11 @@ const REQUIRED_INDEXES = [
   "competitor_origins_csv_identity_idx",
   "competitor_origins_manual_identity_idx",
   "competitor_origins_entity_observed_idx",
+  "flow_shadow_runs_project_created_idx",
+  "flow_shadow_runs_action_idx",
+  "flow_shadow_runs_content_hash_idx",
+  "flow_shadow_research_packs_run_idx",
+  "flow_shadow_qa_gates_run_idx",
 ] as const;
 
 const REQUIRED_TRIGGERS = [
@@ -172,6 +180,12 @@ const REQUIRED_TRIGGERS = [
   "keyword_entity_sources_append_only",
   "competitor_entities_governance_guard",
   "competitor_origins_lineage_guard",
+  "flow_shadow_runs_provenance_guard",
+  "flow_shadow_runs_append_only",
+  "flow_shadow_research_packs_provenance_guard",
+  "flow_shadow_research_packs_append_only",
+  "flow_shadow_qa_gates_provenance_guard",
+  "flow_shadow_qa_gates_append_only",
 ] as const;
 
 const REQUIRED_ROUTINES = [
@@ -191,6 +205,8 @@ const REQUIRED_ROUTINES = [
   "enforce_competitor_entity_governance",
   "enforce_competitor_origin_lineage",
   "upsert_competitor_origin",
+  "enforce_flow_shadow_run_provenance",
+  "enforce_flow_shadow_child_provenance",
 ] as const;
 
 export interface MigrateCheckResult {
@@ -198,7 +214,9 @@ export interface MigrateCheckResult {
   problems: string[];
 }
 
-export async function checkMigrations(connectionString: string): Promise<MigrateCheckResult> {
+export async function checkMigrations(
+  connectionString: string,
+): Promise<MigrateCheckResult> {
   const client = new pg.Client({ connectionString });
   await client.connect();
   const problems: string[] = [];
@@ -209,7 +227,9 @@ export async function checkMigrations(connectionString: string): Promise<Migrate
     );
     const found = new Set(tables.rows.map((r) => r.table_name));
     if (found.size !== EXPECTED_TABLES.length) {
-      problems.push(`expected ${EXPECTED_TABLES.length} app tables, found ${found.size}`);
+      problems.push(
+        `expected ${EXPECTED_TABLES.length} app tables, found ${found.size}`,
+      );
     }
     for (const t of EXPECTED_TABLES) {
       if (!found.has(t)) problems.push(`missing table app.${t}`);

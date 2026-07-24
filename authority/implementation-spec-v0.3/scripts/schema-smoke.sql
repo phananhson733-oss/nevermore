@@ -5,8 +5,8 @@ SET search_path = app, public;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 41 THEN
-    RAISE EXCEPTION 'expected exactly 41 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 44 THEN
+    RAISE EXCEPTION 'expected exactly 44 app tables';
   END IF;
   IF (
     SELECT count(*)
@@ -3095,7 +3095,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0019_competitor_library_foundation' THEN
+  ) IS DISTINCT FROM '0020_content_shadow_foundation' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;

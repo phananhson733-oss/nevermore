@@ -312,6 +312,7 @@ async function createAction(
   fixture: ProjectFixture,
   findingId: string,
   sourceDiagnosticRunId: string,
+  status = "planned",
 ): Promise<string> {
   const action = await new ActionsRepository(db).insert({
     workspaceId: fixture.workspaceId,
@@ -326,7 +327,7 @@ async function createAction(
     contentLocale: "en",
     priorityBand: "high",
     roadmapLane: "now",
-    status: "planned",
+    status,
     effort: "medium",
     risk: "low",
     expectedOutcome: "The coverage gap is briefed.",
@@ -414,7 +415,10 @@ interface ShadowChain {
   readonly capabilityRunId: string;
 }
 
-async function createShadowChain(handle: DbHandle): Promise<ShadowChain> {
+async function createShadowChain(
+  handle: DbHandle,
+  opts: { actionStatus?: string } = {},
+): Promise<ShadowChain> {
   const fixture = await createProjectFixture(handle.db);
   const diagnostic = await createDiagnosticRun(handle.db, fixture);
   const findingId = await createFinding(handle.db, fixture, diagnostic, {
@@ -426,6 +430,7 @@ async function createShadowChain(handle: DbHandle): Promise<ShadowChain> {
     fixture,
     findingId,
     diagnostic.runId,
+    opts.actionStatus ?? "planned",
   );
   const brief = await createContentBrief(handle, fixture, actionId, {
     currentRevision: 1,
@@ -676,6 +681,91 @@ describeDb("content shadow database foundation", () => {
           contentBriefRevision: 2,
         }),
       ),
+      "23514",
+    );
+
+    // 6. Finding re-observed in a later diagnostic run moves beyond the Action's frozen diagnosis.
+    const movedChain = await createShadowChain(handle);
+    const laterRun = await createDiagnosticRun(handle.db, movedChain.fixture);
+    await linkFindingObservation(
+      handle.db,
+      movedChain.fixture,
+      movedChain.findingId,
+      laterRun,
+    );
+    await new FindingsRepository(handle.db).touchSeen(movedChain.findingId, {
+      ruleVersion: 1,
+      severity: "high",
+      confidence: "high",
+      titleArgs: { cluster: "onboarding" },
+      summary: "The content finding was observed again.",
+      summaryLocale: "en",
+      subjectRefs: ["keyword_cluster:onboarding"],
+      runId: laterRun.runId,
+      seenAt: new Date().toISOString(),
+      regressed: false,
+    });
+    await expectPgCode(
+      new FlowShadowRunsRepository(handle.db).create(runInsert(movedChain)),
+      "23514",
+    );
+
+    // 7. content_brief artifact belongs to a different Action than source_action_id.
+    const briefMismatch = await createShadowChain(handle);
+    const foreignBriefAction = await createAction(
+      handle.db,
+      briefMismatch.fixture,
+      briefMismatch.findingId,
+      briefMismatch.diagnostic.runId,
+    );
+    const foreignBrief = await createContentBrief(
+      handle,
+      briefMismatch.fixture,
+      foreignBriefAction,
+      { currentRevision: 1, revisionsToInsert: 1 },
+    );
+    await expectPgCode(
+      new FlowShadowRunsRepository(handle.db).create(
+        runInsert(briefMismatch, {
+          contentBriefArtifactId: foreignBrief.artifactId,
+        }),
+      ),
+      "23514",
+    );
+
+    // 8. Frozen artifact is not a content_brief (wrong artifact_type).
+    const typeMismatch = await createShadowChain(handle);
+    const metadataArtifactId = randomUUID();
+    await handle.pool.query(
+      `INSERT INTO app.execution_artifacts (
+         id, workspace_id, project_id, action_id, artifact_type, status,
+         generation_mode, output_locale, current_revision, validation_state,
+         content_hash, created_by
+       ) VALUES ($1,$2,$3,$4,'metadata_rewrite','ready','template','en',1,'valid',$5,$6)`,
+      [
+        metadataArtifactId,
+        typeMismatch.fixture.workspaceId,
+        typeMismatch.fixture.projectId,
+        typeMismatch.actionId,
+        contentHash({ metadataArtifactId }),
+        typeMismatch.fixture.actorId,
+      ],
+    );
+    await expectPgCode(
+      new FlowShadowRunsRepository(handle.db).create(
+        runInsert(typeMismatch, {
+          contentBriefArtifactId: metadataArtifactId,
+        }),
+      ),
+      "23514",
+    );
+
+    // 9. A dismissed Action is not an eligible content-shadow source.
+    const dismissedChain = await createShadowChain(handle, {
+      actionStatus: "dismissed",
+    });
+    await expectPgCode(
+      new FlowShadowRunsRepository(handle.db).create(runInsert(dismissedChain)),
       "23514",
     );
   });

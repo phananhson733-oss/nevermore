@@ -897,7 +897,7 @@ if (fs.existsSync(implementationSchemaSmokePath)) {
   );
 }
 for (const phrase of [
-  "expected exactly 41 app tables",
+  "expected exactly 44 app tables",
   "expected all 51 named app indexes",
   "expected all 63 app triggers",
   "expected all 16 runtime routines",
