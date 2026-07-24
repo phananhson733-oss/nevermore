@@ -29,13 +29,14 @@ import {
   type OverviewView,
 } from "@/lib/api";
 import {
+  GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
+  useCreateGrowthAuditRun,
+} from "@/lib/api/hooks-audit";
+import {
   useGrowthMapUrlDetail,
   useGrowthMapUrls,
 } from "@/lib/api/hooks-growth-map";
-import {
-  useProjectSources,
-  type SourceState,
-} from "@/lib/api/hooks-sources";
+import { useProjectSources, type SourceState } from "@/lib/api/hooks-sources";
 import { ProblemState } from "../_problem-display";
 import {
   buildConfirmedProfileSummary,
@@ -190,7 +191,9 @@ function TopOpportunity({
         <StatusPill tone={PRIORITY_TONE[topFinding.severity]}>
           {t(`priority.levels.${topFinding.severity}`)}
         </StatusPill>
-        <StatusPill tone={topFinding.reviewState === "confirmed" ? "success" : "info"}>
+        <StatusPill
+          tone={topFinding.reviewState === "confirmed" ? "success" : "info"}
+        >
           {tReview(topFinding.reviewState)}
         </StatusPill>
       </div>
@@ -202,7 +205,11 @@ function TopOpportunity({
       </p>
       <div className={styles.opportunityFacts}>
         <span>{topFinding.ruleId}</span>
-        <span>{t("priority.evidenceCount", { count: topFinding.evidenceIds.length })}</span>
+        <span>
+          {t("priority.evidenceCount", {
+            count: topFinding.evidenceIds.length,
+          })}
+        </span>
         <span>{t("priority.oneFinding")}</span>
       </div>
       <Link href={href} className={styles.primaryLink}>
@@ -237,7 +244,9 @@ function ProjectWorkRow({
         )}
       </span>
       <div>
-        <span className={styles.decisionKind}>{tActionStatus(action.status)}</span>
+        <span className={styles.decisionKind}>
+          {tActionStatus(action.status)}
+        </span>
         <strong>{action.title}</strong>
       </div>
       <Link
@@ -335,7 +344,9 @@ function PrioritySection({
           </button>
         </div>
       ) : workRunState === "unavailable" ? (
-        <p className={styles.secondaryEmpty}>{t("priority.queueUnavailable")}</p>
+        <p className={styles.secondaryEmpty}>
+          {t("priority.queueUnavailable")}
+        </p>
       ) : projectWork.length === 0 ? (
         <p className={styles.secondaryEmpty}>{t("priority.queueEmpty")}</p>
       ) : (
@@ -369,7 +380,8 @@ function PrioritySection({
           <p>
             {verifiedResult
               ? t("priority.resultSummary", {
-                  page: pageLabel(resultPage) ?? resultPage?.normalizedUrl ?? "URL",
+                  page:
+                    pageLabel(resultPage) ?? resultPage?.normalizedUrl ?? "URL",
                   summary: verifiedResult.summary,
                 })
               : t("priority.resultUnavailableDescription")}
@@ -475,32 +487,40 @@ function PortfolioSection({
             </div>
           </dl>
           <div className={styles.priorityMix}>
-            {(["critical", "high", "medium", "low"] as const).map((priority) => {
-              const count = priorityCounts?.[priority] ?? 0;
-              const denominator = Math.max(1, summary.loadedUrlCount);
-              return (
-                <div key={priority} className={styles.priorityRow}>
-                  <span>{t(`priority.levels.${priority}`)}</span>
-                  <span className={styles.priorityTrack} aria-hidden="true">
-                    <span
-                      style={{
-                        width: `${count === 0 ? 0 : Math.max(3, (count / denominator) * 100)}%`,
-                      }}
-                    />
-                  </span>
-                  <strong>{count}</strong>
-                </div>
-              );
-            })}
+            {(["critical", "high", "medium", "low"] as const).map(
+              (priority) => {
+                const count = priorityCounts?.[priority] ?? 0;
+                const denominator = Math.max(1, summary.loadedUrlCount);
+                return (
+                  <div key={priority} className={styles.priorityRow}>
+                    <span>{t(`priority.levels.${priority}`)}</span>
+                    <span className={styles.priorityTrack} aria-hidden="true">
+                      <span
+                        style={{
+                          width: `${count === 0 ? 0 : Math.max(3, (count / denominator) * 100)}%`,
+                        }}
+                      />
+                    </span>
+                    <strong>{count}</strong>
+                  </div>
+                );
+              },
+            )}
           </div>
           <div className={styles.auditIdentity}>
             <ShieldCheck aria-hidden="true" size={18} />
             <span>
               {t("portfolio.auditIdentity")}
-              <code title={summary.diagnosticRunId}>{shortId(summary.diagnosticRunId)}</code>
+              <code title={summary.diagnosticRunId}>
+                {shortId(summary.diagnosticRunId)}
+              </code>
             </span>
             <StatusPill
-              tone={summary.coverage.availability === "available" ? "success" : "warning"}
+              tone={
+                summary.coverage.availability === "available"
+                  ? "success"
+                  : "warning"
+              }
             >
               {t(`portfolio.coverage.${summary.coverage.availability}`)}
             </StatusPill>
@@ -518,8 +538,13 @@ function PortfolioSection({
   );
 }
 
-function SourceIcon({ provider }: { readonly provider: OverviewSourceCard["provider"] }) {
-  if (provider === "github") return <GitPullRequest aria-hidden="true" size={22} />;
+function SourceIcon({
+  provider,
+}: {
+  readonly provider: OverviewSourceCard["provider"];
+}) {
+  if (provider === "github")
+    return <GitPullRequest aria-hidden="true" size={22} />;
   if (provider === "gsc") return <Search aria-hidden="true" size={22} />;
   return <BarChart3 aria-hidden="true" size={22} />;
 }
@@ -617,13 +642,18 @@ function ContextSection({
   const locale = useLocale();
   const t = useTranslations("overview.customer");
   const summary = buildConfirmedProfileSummary(profileData?.confirmedProfile);
+  const audit = useCreateGrowthAuditRun(projectId);
 
   return (
     <section className={`${styles.card} ${styles.contextCard}`}>
       <SectionHeading
         eyebrow={t("context.eyebrow")}
         title={t("context.title")}
-        meta={summary ? t("context.confirmedVersion", { version: summary.version }) : undefined}
+        meta={
+          summary
+            ? t("context.confirmedVersion", { version: summary.version })
+            : undefined
+        }
       />
       {pending ? (
         <LoadingBlock label={t("context.loading")} />
@@ -679,7 +709,9 @@ function ContextSection({
                 <Target aria-hidden="true" size={16} />
                 JTBD
               </span>
-              <strong>{summary.jtbd[0] ?? t("context.unavailableValue")}</strong>
+              <strong>
+                {summary.jtbd[0] ?? t("context.unavailableValue")}
+              </strong>
               <p>{summary.pains[0] ?? t("context.unavailableValue")}</p>
             </div>
             <div>
@@ -700,19 +732,28 @@ function ContextSection({
             <dl>
               <div>
                 <dt>{t("context.confirmedAt")}</dt>
-                <dd>{formatDateTime(summary.confirmedAt, locale) ?? t("context.unavailableValue")}</dd>
+                <dd>
+                  {formatDateTime(summary.confirmedAt, locale) ??
+                    t("context.unavailableValue")}
+                </dd>
               </div>
               <div>
                 <dt>Profile ID</dt>
-                <dd><code>{summary.profileId}</code></dd>
+                <dd>
+                  <code>{summary.profileId}</code>
+                </dd>
               </div>
               <div>
                 <dt>Content hash</dt>
-                <dd><code>{summary.contentHash}</code></dd>
+                <dd>
+                  <code>{summary.contentHash}</code>
+                </dd>
               </div>
               <div>
                 <dt>Source Site ID</dt>
-                <dd><code>{summary.sourceSiteId}</code></dd>
+                <dd>
+                  <code>{summary.sourceSiteId}</code>
+                </dd>
               </div>
               <div>
                 <dt>{t("context.sourceSnapshot")}</dt>
@@ -726,10 +767,43 @@ function ContextSection({
               </div>
             </dl>
           </details>
-          <Link className={styles.textLink} href={`/p/${projectId}/context`}>
-            {t("actions.editProfile")}
-            <ArrowRight aria-hidden="true" size={16} />
-          </Link>
+          <div className={styles.contextFooter}>
+            <button
+              type="button"
+              className={styles.primaryLink}
+              onClick={() =>
+                audit.mutate({
+                  siteId: summary.sourceSiteId,
+                  icpProfileId: summary.profileId,
+                  scope: { kind: "site" },
+                  outputLocale: locale,
+                  capabilityContractVersion:
+                    GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
+                })
+              }
+              disabled={audit.isPending || audit.isSuccess}
+            >
+              <Sparkles aria-hidden="true" size={16} />
+              {t("actions.runAudit")}
+            </button>
+            <Link className={styles.textLink} href={`/p/${projectId}/context`}>
+              {t("actions.editProfile")}
+              <ArrowRight aria-hidden="true" size={16} />
+            </Link>
+          </div>
+          {audit.isPending ? (
+            <p className={styles.secondaryEmpty} role="status">
+              {t("context.auditRunning")}
+            </p>
+          ) : audit.isSuccess ? (
+            <p className={styles.secondaryEmpty} role="status">
+              {t("context.auditQueued")}
+            </p>
+          ) : audit.isError ? (
+            <p className={styles.secondaryEmpty} role="alert">
+              {t("context.auditError")}
+            </p>
+          ) : null}
         </>
       )}
     </section>
@@ -753,7 +827,10 @@ export function OverviewClient({
       (item) => item.delta.availability === "available",
     ),
   );
-  const detailQuery = useGrowthMapUrlDetail(projectId, topPage?.sitePageId ?? null);
+  const detailQuery = useGrowthMapUrlDetail(
+    projectId,
+    topPage?.sitePageId ?? null,
+  );
   const detailRunId = detailQuery.data?.diagnosticRunId ?? null;
   const detailRunMismatch =
     portfolioRunId !== null &&
@@ -773,12 +850,14 @@ export function OverviewClient({
   const attemptedDetailPortfolioRunRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!shouldRefreshFrozenRunPair({
-      workspaceRunId,
-      portfolioRunId,
-      workspaceFetching: workspaceQuery.isFetching,
-      attemptedPortfolioRunId: attemptedPortfolioRunRef.current,
-    })) {
+    if (
+      !shouldRefreshFrozenRunPair({
+        workspaceRunId,
+        portfolioRunId,
+        workspaceFetching: workspaceQuery.isFetching,
+        attemptedPortfolioRunId: attemptedPortfolioRunRef.current,
+      })
+    ) {
       return;
     }
     attemptedPortfolioRunRef.current = portfolioRunId;

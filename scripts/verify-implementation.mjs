@@ -67,6 +67,7 @@ const EXPECTED_OPENAPI_OPERATIONS = [
   "listProjectSnapshots",
   "getProjectRun",
   "createDiagnosticRun",
+  "createGrowthAuditRun",
   "listProjectAuditUrls",
   "getProjectAuditUrl",
   "listProjectAuditKeywords",
@@ -91,6 +92,7 @@ const EXPECTED_ASYNC_OPERATIONS = [
   "importProjectSourceFile",
   "createCollectionRun",
   "createDiagnosticRun",
+  "createGrowthAuditRun",
   "createActionArtifact",
   "createProjectExport",
 ];
@@ -111,6 +113,10 @@ const EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS = [
   {
     operationId: "createDiagnosticRun",
     file: "apps/web/src/app/api/mvp/projects/[projectId]/diagnostic-runs/route.ts",
+  },
+  {
+    operationId: "createGrowthAuditRun",
+    file: "apps/web/src/app/api/mvp/projects/[projectId]/audit-runs/route.ts",
   },
   {
     operationId: "createActionArtifact",

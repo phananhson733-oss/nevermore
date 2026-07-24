@@ -575,7 +575,8 @@
         "openResults": "打开效果追踪",
         "manageConnections": "管理数据连接",
         "completeProfile": "完善产品画像",
-        "retryAuditPair": "刷新审计数据"
+        "retryAuditPair": "刷新审计数据",
+        "runAudit": "运行增长审计"
       },
       "priority": {
         "eyebrow": "优先处理",
@@ -663,7 +664,10 @@
         "provenance": "版本与来源",
         "confirmedAt": "确认时间",
         "sourceSnapshot": "来源快照 ID",
-        "declaredOnly": "仅来自用户填写 · 无来源快照"
+        "declaredOnly": "仅来自用户填写 · 无来源快照",
+        "auditRunning": "正在启动增长审计…",
+        "auditQueued": "增长审计已排队 —— 可在诊断页跟踪进度。",
+        "auditError": "无法启动增长审计，请重试。"
       }
     }
   },

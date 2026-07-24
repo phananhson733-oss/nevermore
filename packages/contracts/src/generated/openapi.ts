@@ -317,6 +317,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/audit-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a versioned full Growth Audit over frozen URL/ICP/snapshot inputs */
+        post: operations["createGrowthAuditRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/audit/urls": {
         parameters: {
             query?: never;
@@ -2077,6 +2094,38 @@ export interface components {
             snapshotIds: components["schemas"]["Uuid"][];
             outputLocale: components["schemas"]["LocaleCode"];
         };
+        SiteGrowthAuditScope: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "site";
+        };
+        TemplateGrowthAuditScope: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "template";
+            targetRefs: string[];
+        };
+        UrlGrowthAuditScope: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "url";
+            targetRefs: string[];
+        };
+        GrowthAuditScope: components["schemas"]["SiteGrowthAuditScope"] | components["schemas"]["TemplateGrowthAuditScope"] | components["schemas"]["UrlGrowthAuditScope"];
+        CreateGrowthAuditRunRequest: {
+            siteId: components["schemas"]["Uuid"];
+            icpProfileId: components["schemas"]["Uuid"];
+            scope: components["schemas"]["GrowthAuditScope"];
+            outputLocale: components["schemas"]["LocaleCode"];
+            /** @constant */
+            capabilityContractVersion: "growth-audit.0.3.0";
+        };
         Evidence: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
@@ -3181,6 +3230,33 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             429: components["responses"]["RateLimited"];
+        };
+    };
+    createGrowthAuditRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGrowthAuditRunRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["AsyncAccepted"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     listProjectAuditUrls: {

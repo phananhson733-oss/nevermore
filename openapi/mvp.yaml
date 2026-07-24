@@ -558,6 +558,29 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
+  /projects/{projectId}/audit-runs:
+    post:
+      tags: [Runs, Diagnosis]
+      summary: Queue a versioned full Growth Audit over frozen URL/ICP/snapshot inputs
+      operationId: createGrowthAuditRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGrowthAuditRunRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
   /projects/{projectId}/audit/urls:
     get:
       tags: [Diagnosis]
@@ -3698,6 +3721,62 @@ components:
           items: { $ref: '#/components/schemas/Uuid' }
           description: Must include a current-project crawl snapshot; omitted optional datasets use latest eligible snapshots only when explicitly selected by UI.
         outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+
+    SiteGrowthAuditScope:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, const: site }
+
+    TemplateGrowthAuditScope:
+      type: object
+      additionalProperties: false
+      required: [kind, targetRefs]
+      properties:
+        kind: { type: string, const: template }
+        targetRefs:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+
+    UrlGrowthAuditScope:
+      type: object
+      additionalProperties: false
+      required: [kind, targetRefs]
+      properties:
+        kind: { type: string, const: url }
+        targetRefs:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          uniqueItems: true
+          items: { type: string, format: uri, maxLength: 2048 }
+
+    GrowthAuditScope:
+      oneOf:
+        - $ref: '#/components/schemas/SiteGrowthAuditScope'
+        - $ref: '#/components/schemas/TemplateGrowthAuditScope'
+        - $ref: '#/components/schemas/UrlGrowthAuditScope'
+      discriminator:
+        propertyName: kind
+        mapping:
+          site: '#/components/schemas/SiteGrowthAuditScope'
+          template: '#/components/schemas/TemplateGrowthAuditScope'
+          url: '#/components/schemas/UrlGrowthAuditScope'
+
+    CreateGrowthAuditRunRequest:
+      type: object
+      additionalProperties: false
+      required: [siteId, icpProfileId, scope, outputLocale, capabilityContractVersion]
+      properties:
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        icpProfileId: { $ref: '#/components/schemas/Uuid' }
+        scope: { $ref: '#/components/schemas/GrowthAuditScope' }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        capabilityContractVersion: { type: string, const: 'growth-audit.0.3.0' }
 
     Evidence:
       type: object

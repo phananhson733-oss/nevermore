@@ -97,6 +97,22 @@
   gap: 10px;
 }
 
+.contextFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.contextFooter button.primaryLink {
+  cursor: pointer;
+}
+
+.contextFooter button.primaryLink:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .primaryLink,
 .secondaryLink,
 .textLink {

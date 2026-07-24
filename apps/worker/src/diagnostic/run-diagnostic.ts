@@ -3,6 +3,7 @@ import {
   ActionsRepository,
   AnalysisInvocationsRepository,
   AsyncRunsRepository,
+  AuditRunsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
@@ -85,6 +86,7 @@ import {
   DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED_SUMMARY,
   supportsCurrentDiagnosticExecutor,
 } from "./executor-version.ts";
+import { materializeAuditModules } from "../audit/run-full-audit.ts";
 
 /**
  * Diagnostic job runner (spec §8.2, §8.6). Loads the frozen manifest + its
@@ -133,23 +135,25 @@ async function persistFindingSummaryInvocation(
   invocation: AnalysisInvocationRecord,
 ): Promise<string | null> {
   try {
-    const invocationId = await new AnalysisInvocationsRepository(ctx.db).insert({
-      workspaceId: scope.workspaceId,
-      projectId: scope.projectId,
-      asyncRunId: runId,
-      task: "finding_summary",
-      provider: invocation.provider,
-      model: invocation.model,
-      promptSetVersion: invocation.promptSetVersion,
-      inputHash: invocation.inputHash,
-      outputHash: invocation.outputHash,
-      status: invocation.status,
-      inputTokens: invocation.inputTokens,
-      outputTokens: invocation.outputTokens,
-      costUsd: invocation.costUsd,
-      latencyMs: invocation.latencyMs,
-      errorCode: invocation.errorCode,
-    });
+    const invocationId = await new AnalysisInvocationsRepository(ctx.db).insert(
+      {
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        asyncRunId: runId,
+        task: "finding_summary",
+        provider: invocation.provider,
+        model: invocation.model,
+        promptSetVersion: invocation.promptSetVersion,
+        inputHash: invocation.inputHash,
+        outputHash: invocation.outputHash,
+        status: invocation.status,
+        inputTokens: invocation.inputTokens,
+        outputTokens: invocation.outputTokens,
+        costUsd: invocation.costUsd,
+        latencyMs: invocation.latencyMs,
+        errorCode: invocation.errorCode,
+      },
+    );
     if (!INVOCATION_UUID_RE.test(invocationId)) return null;
     try {
       ctx.logger.info("finding_summary_invocation_recorded", {
@@ -198,105 +202,106 @@ export function createFindingSummaryGenerator(
   let healthFailed = false;
   let fatalHealthError: unknown;
 
-  const generator: FindingSummaryGeneratorStage = Object.assign(async (
-    input: Parameters<FindingSummaryGenerator>[0],
-  ) => {
-    if (ctx.signal?.aborted) return null;
-    if (healthFailed) return null;
-    if (clientCreationFailed) return null;
-    if (!needsGeneratedSummary(input.outputLocale)) return null;
+  const generator: FindingSummaryGeneratorStage = Object.assign(
+    async (input: Parameters<FindingSummaryGenerator>[0]) => {
+      if (ctx.signal?.aborted) return null;
+      if (healthFailed) return null;
+      if (clientCreationFailed) return null;
+      if (!needsGeneratedSummary(input.outputLocale)) return null;
 
-    persistedInvocationCount ??= new AnalysisInvocationsRepository(
-      ctx.db,
-    ).countByAsyncRunTask(scope, runId, "finding_summary");
-    let historicalInvocations: number;
-    try {
-      historicalInvocations = await persistedInvocationCount;
-    } catch (error) {
-      healthFailed = true;
-      fatalHealthError = error;
+      persistedInvocationCount ??= new AnalysisInvocationsRepository(
+        ctx.db,
+      ).countByAsyncRunTask(scope, runId, "finding_summary");
+      let historicalInvocations: number;
       try {
-        ctx.logger.warn("finding_summary_invocation_count_failed", {
-          task: "finding_summary",
-        });
-      } catch {
-        // Optional summaries fail closed even if logging is unavailable.
-      }
-      return null;
-    }
-
-    if (ctx.signal?.aborted) return null;
-    if (
-      historicalInvocations + attemptedInvocations >=
-      MAX_FINDING_SUMMARY_INVOCATIONS_PER_RUN
-    ) {
-      return null;
-    }
-
-    if (client === null) {
-      try {
-        client = createClient({
-          apiKey: ctx.openai.apiKey,
-          model: ctx.openai.model,
-          ...(ctx.openai.baseUrl ? { baseUrl: ctx.openai.baseUrl } : {}),
-          ...(ctx.openai.authScheme
-            ? { authScheme: ctx.openai.authScheme }
-            : {}),
-          timeoutMs: FINDING_SUMMARY_REQUEST_TIMEOUT_MS,
-          ...(ctx.signal ? { signal: ctx.signal } : {}),
-        });
-      } catch {
-        clientCreationFailed = true;
+        historicalInvocations = await persistedInvocationCount;
+      } catch (error) {
+        healthFailed = true;
+        fatalHealthError = error;
+        try {
+          ctx.logger.warn("finding_summary_invocation_count_failed", {
+            task: "finding_summary",
+          });
+        } catch {
+          // Optional summaries fail closed even if logging is unavailable.
+        }
         return null;
       }
-    }
 
-    if (ctx.signal?.aborted) return null;
-    attemptedInvocations += 1;
-    let result: Awaited<ReturnType<FindingSummaryClient["generateSummary"]>>;
-    try {
-      result = await client.generateSummary(input);
-    } catch (error) {
-      if (error instanceof LLMError && error.invocation) {
+      if (ctx.signal?.aborted) return null;
+      if (
+        historicalInvocations + attemptedInvocations >=
+        MAX_FINDING_SUMMARY_INVOCATIONS_PER_RUN
+      ) {
+        return null;
+      }
+
+      if (client === null) {
         try {
-          await persistFindingSummaryInvocation(
-            ctx,
-            scope,
-            runId,
-            error.invocation,
-          );
-        } catch (persistenceError) {
-          healthFailed = true;
-          fatalHealthError = persistenceError;
+          client = createClient({
+            apiKey: ctx.openai.apiKey,
+            model: ctx.openai.model,
+            ...(ctx.openai.baseUrl ? { baseUrl: ctx.openai.baseUrl } : {}),
+            ...(ctx.openai.authScheme
+              ? { authScheme: ctx.openai.authScheme }
+              : {}),
+            timeoutMs: FINDING_SUMMARY_REQUEST_TIMEOUT_MS,
+            ...(ctx.signal ? { signal: ctx.signal } : {}),
+          });
+        } catch {
+          clientCreationFailed = true;
+          return null;
         }
       }
-      return null;
-    }
 
-    let invocationId: string | null;
-    try {
-      invocationId = await persistFindingSummaryInvocation(
-        ctx,
-        scope,
-        runId,
-        result.invocation,
-      );
-    } catch (error) {
-      healthFailed = true;
-      fatalHealthError = error;
-      return null;
-    }
-    if (invocationId === null) return null;
-    return {
-      summary: result.summary,
-      summaryLocale: result.summaryLocale,
-      invocationId,
-    };
-  }, {
-    assertHealthy(): void {
-      if (healthFailed) throw fatalHealthError;
+      if (ctx.signal?.aborted) return null;
+      attemptedInvocations += 1;
+      let result: Awaited<ReturnType<FindingSummaryClient["generateSummary"]>>;
+      try {
+        result = await client.generateSummary(input);
+      } catch (error) {
+        if (error instanceof LLMError && error.invocation) {
+          try {
+            await persistFindingSummaryInvocation(
+              ctx,
+              scope,
+              runId,
+              error.invocation,
+            );
+          } catch (persistenceError) {
+            healthFailed = true;
+            fatalHealthError = persistenceError;
+          }
+        }
+        return null;
+      }
+
+      let invocationId: string | null;
+      try {
+        invocationId = await persistFindingSummaryInvocation(
+          ctx,
+          scope,
+          runId,
+          result.invocation,
+        );
+      } catch (error) {
+        healthFailed = true;
+        fatalHealthError = error;
+        return null;
+      }
+      if (invocationId === null) return null;
+      return {
+        summary: result.summary,
+        summaryLocale: result.summaryLocale,
+        invocationId,
+      };
     },
-  });
+    {
+      assertHealthy(): void {
+        if (healthFailed) throw fatalHealthError;
+      },
+    },
+  );
 
   return generator;
 }
@@ -468,15 +473,11 @@ const crawlPageProjectionSchema = z
     fetchUrl: boundedCrawlUrl,
     status: z.number().int().min(100).max(599).nullable(),
     finalStatus: z.number().int().min(100).max(599).nullable(),
-    redirectChain: z
-      .array(boundedCrawlUrl)
-      .max(CRAWL_BUDGET.maxRedirects),
+    redirectChain: z.array(boundedCrawlUrl).max(CRAWL_BUDGET.maxRedirects),
     canonicalTarget: boundedCrawlUrl.nullable(),
     robotsIndexable: z.boolean(),
     robotsDirectives: z
-      .array(
-        z.string().max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
-      )
+      .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars))
       .max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectives),
     title: nullableBoundedString(CRAWL_PROJECTION_LIMITS.maxTitleChars),
     metaDescription: nullableBoundedString(
@@ -495,9 +496,7 @@ const crawlPageProjectionSchema = z
     jsonLd: z
       .object({
         types: z
-          .array(
-            z.string().max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars),
-          )
+          .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars))
           .max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypes),
         errorCount: nonnegativeInteger.max(
           CRAWL_PROJECTION_LIMITS.maxJsonLdBlocks,
@@ -557,18 +556,14 @@ const crawlRobotsProjectionSchema = z
           .strict(),
       )
       .max(CRAWL_PROJECTION_LIMITS.maxRobotsGroups),
-    sitemaps: z
-      .array(boundedCrawlUrl)
-      .max(CRAWL_PROJECTION_LIMITS.maxSitemaps),
+    sitemaps: z.array(boundedCrawlUrl).max(CRAWL_PROJECTION_LIMITS.maxSitemaps),
   })
   .strict();
 
 const crawlSitemapProjectionSchema = z
   .object({
     fetched: z.boolean(),
-    urlCount: nonnegativeInteger.max(
-      CRAWL_PROJECTION_LIMITS.maxSitemapUrls,
-    ),
+    urlCount: nonnegativeInteger.max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls),
     subjectUrls: z
       .array(boundedCrawlUrl)
       .max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls),
@@ -623,20 +618,17 @@ const ga4LandingProjectionSchema = z
     keyEventUnavailableReason: ga4UnavailableReasonSchema.nullable(),
   })
   .strict()
-  .refine(
-    (value) =>
-      value.engagedSessions === null
-        ? value.engagementRate === null
-        : value.engagedSessions <= value.sessions &&
-          (value.sessions === 0
-            ? value.engagementRate === null
-            : value.engagementRate ===
-              value.engagedSessions / value.sessions),
+  .refine((value) =>
+    value.engagedSessions === null
+      ? value.engagementRate === null
+      : value.engagedSessions <= value.sessions &&
+        (value.sessions === 0
+          ? value.engagementRate === null
+          : value.engagementRate === value.engagedSessions / value.sessions),
   )
   .refine(
     (value) =>
-      (value.keyEvents === null) ===
-      (value.keyEventUnavailableReason !== null),
+      (value.keyEvents === null) === (value.keyEventUnavailableReason !== null),
   );
 
 const absoluteHttpUrlSchema = z.string().refine((value) => {
@@ -657,8 +649,14 @@ const competitorDomainSchema = z
   );
 const keywordGapProjectionSchema = z
   .object({
-    keyword: z.string().min(1).refine((value) => value.trim() === value),
-    clusterKey: z.string().min(1).refine((value) => value.trim() === value),
+    keyword: z
+      .string()
+      .min(1)
+      .refine((value) => value.trim() === value),
+    clusterKey: z
+      .string()
+      .min(1)
+      .refine((value) => value.trim() === value),
     searchVolume: finiteNonnegative.nullable(),
     currentUrl: absoluteHttpUrlSchema.nullable(),
     currentRank: finiteNonnegative.nullable(),
@@ -669,9 +667,7 @@ const keywordGapProjectionSchema = z
   })
   .strict();
 
-const SOURCE_EVIDENCE_PROVIDERS = new Set(
-  OBSERVATION_SOURCE_REGISTRY.keys(),
-);
+const SOURCE_EVIDENCE_PROVIDERS = new Set(OBSERVATION_SOURCE_REGISTRY.keys());
 const SNAPSHOT_AVAILABILITIES = new Set([
   "available",
   "partial",
@@ -716,7 +712,11 @@ function requiredManifestString(
   key: string,
 ): string {
   const value = entry[key];
-  if (typeof value !== "string" || value.length === 0 || value.trim() !== value) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.trim() !== value
+  ) {
     throw new Error("frozen snapshot manifest is malformed");
   }
   return value;
@@ -733,7 +733,9 @@ function requiredManifestObject(
   return value as Record<string, unknown>;
 }
 
-function readManifestSnapshots(manifest: Record<string, unknown>): ManifestSnapshot[] {
+function readManifestSnapshots(
+  manifest: Record<string, unknown>,
+): ManifestSnapshot[] {
   const raw = manifest["snapshots"];
   if (!Array.isArray(raw)) {
     throw new Error("frozen snapshot manifest is malformed");
@@ -785,7 +787,9 @@ function readManifestSnapshots(manifest: Record<string, unknown>): ManifestSnaps
           snapshot.availability === "partial"),
     )
   ) {
-    throw new Error("frozen diagnostic manifest requires a usable crawl snapshot");
+    throw new Error(
+      "frozen diagnostic manifest requires a usable crawl snapshot",
+    );
   }
   return snapshots;
 }
@@ -1019,7 +1023,10 @@ function validateAvailableObservationValue(
       const parsed = keywordGapProjectionSchema.safeParse(
         observation.value_json,
       );
-      if (!parsed.success || parsed.data.clusterKey !== observation.subject_ref) {
+      if (
+        !parsed.success ||
+        parsed.data.clusterKey !== observation.subject_ref
+      ) {
         invalidFrozenObservation();
       }
       const value = parsed.data;
@@ -1074,10 +1081,7 @@ function validateFrozenObservations(
       snapshot.method_version !== sourceRegistration.methodVersion ||
       expectedSubjectType === undefined ||
       observation.subject_type !== expectedSubjectType ||
-      !sameTimestamptzInstant(
-        observation.observed_at,
-        snapshot.captured_at,
-      ) ||
+      !sameTimestamptzInstant(observation.observed_at, snapshot.captured_at) ||
       observation.origin !== sourceRegistration.origin ||
       observation.grade !== sourceRegistration.grade ||
       observation.method !== "observed" ||
@@ -1131,7 +1135,8 @@ function hasDurableUrlIdentity(
 ): boolean {
   return (
     normalizedUrlHash(normalizedUrl) === normalizedUrlHashValue &&
-    canonicalFetchAtOrigin(normalizedUrl, siteOrigin)?.fetchUrl === normalizedUrl
+    canonicalFetchAtOrigin(normalizedUrl, siteOrigin)?.fetchUrl ===
+      normalizedUrl
   );
 }
 
@@ -1209,13 +1214,7 @@ async function loadObservationViews(
   >();
   const pageSnapshotIds = new Set<string>();
   for (const page of frozenPages) {
-    validateFrozenPageIdentity(
-      page,
-      scope,
-      siteId,
-      siteOrigin,
-      crawlSnapshot,
-    );
+    validateFrozenPageIdentity(page, scope, siteId, siteOrigin, crawlSnapshot);
     if (
       pageBySitePageId.has(page.site_page_id) ||
       pageSnapshotIds.has(page.page_snapshot_id)
@@ -1260,19 +1259,14 @@ async function loadObservationViews(
     const expectedIdSet = new Set(expectedIds);
     const loaded = await sitePagesRepository.findByIds(scope, expectedIds);
     for (const page of loaded) {
-      if (
-        !expectedIdSet.has(page.id) ||
-        sitePageById.has(page.id)
-      ) {
+      if (!expectedIdSet.has(page.id) || sitePageById.has(page.id)) {
         invalidObservationLineage();
       }
       validateSitePageIdentity(page, scope, siteId, siteOrigin);
       sitePageById.set(page.id, page);
     }
   }
-  if (
-    orderedSitePageIds.some((sitePageId) => !sitePageById.has(sitePageId))
-  ) {
+  if (orderedSitePageIds.some((sitePageId) => !sitePageById.has(sitePageId))) {
     invalidObservationLineage();
   }
 
@@ -1685,6 +1679,19 @@ async function computeAndPersist(
       diagRun.id,
       pipeline.coverage as unknown as Record<string, unknown>,
     );
+
+    // A Growth Audit reuses this diagnostic run. When the run carries an audit
+    // projection, materialize its eight module summaries in the same terminal
+    // transaction. Losing an immutable audit row is fatal, exactly like the
+    // findings/evidence it is derived from; a pure diagnostic run has no audit
+    // projection and skips this branch.
+    const auditRun = await new AuditRunsRepository(tx).findByDiagnosticRunId(
+      scope,
+      diagRun.id,
+    );
+    if (auditRun) {
+      await materializeAuditModules(tx, auditRun, pipeline, scope);
+    }
 
     const terminalized = await asyncRunsRepo.setTerminal(attempt, {
       status: runStatus,
