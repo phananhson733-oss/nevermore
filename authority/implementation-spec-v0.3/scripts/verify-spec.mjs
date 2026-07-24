@@ -1523,6 +1523,45 @@ if (fs.existsSync(competitorLibraryFoundationMigrationPath)) {
     "Competitor Library foundation must freeze governed stable domains and exact Product Profile/CSV/manual lineage",
   );
 }
+const contentShadowFoundationMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0020_content_shadow_foundation.sql",
+);
+check(
+  fs.existsSync(contentShadowFoundationMigrationPath),
+  "Content Shadow foundation migration is missing",
+);
+if (fs.existsSync(contentShadowFoundationMigrationPath)) {
+  const source = fs.readFileSync(
+    contentShadowFoundationMigrationPath,
+    "utf8",
+  );
+  const contract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: source,
+    migrationVersion: "0020_content_shadow_foundation",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0020 Content Shadow foundation contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(contract);
+  const migration = stripSqlComments(source);
+  check(
+    /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.flow_shadow_runs\b/i.test(
+      migration,
+    ) &&
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.flow_shadow_research_packs\b/i.test(
+        migration,
+      ) &&
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.flow_shadow_qa_gates\b/i.test(
+        migration,
+      ) &&
+      /kind\s+IN\s*\([\s\S]*?'content_shadow'/i.test(migration) &&
+      /artifact_type\s+IN\s*\([\s\S]*?'english_blog_draft'/i.test(migration) &&
+      /CREATE\s+TRIGGER\s+flow_shadow_runs_provenance_guard/i.test(migration) &&
+      /CREATE\s+TRIGGER\s+flow_shadow_runs_append_only/i.test(migration),
+    "Content Shadow foundation must freeze append-only shadow projection tables and content_shadow/english_blog_draft admission",
+  );
+}
 verifyMigrationOwnedDefinitionUniqueness(cumulativeMigrationContracts);
 const authorityExecutableStatements = executableSqlStatements(files.sql);
 const canonicalSitePageFunctionIndex = authorityExecutableStatements.findIndex(
@@ -1597,8 +1636,8 @@ const authorityMigrationVersions = executableSqlStatements(files.sql)
   .filter((version) => version !== undefined);
 check(
   authorityMigrationVersions.length === 1 &&
-    authorityMigrationVersions[0] === "0019_competitor_library_foundation",
-  "authority SQL must define exactly one final 0019 migration-version projection",
+    authorityMigrationVersions[0] === "0020_content_shadow_foundation",
+  "authority SQL must define exactly one final 0020 migration-version projection",
 );
 check(
   /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(sqlWithoutComments),

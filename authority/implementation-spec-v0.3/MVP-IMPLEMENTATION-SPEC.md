@@ -1225,9 +1225,9 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 ### 17.1 合同与基础
 
-- **AC-001** `pnpm verify:authority` 通过；45 operationId、8 async operation、44 table 与当前应用 ordered migrations 完全一致；0012～0019 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0019_competitor_library_foundation`。
+- **AC-001** `pnpm verify:authority` 通过；45 operationId、8 async operation、44 table 与当前应用 ordered migrations 完全一致；0012～0020 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0020_content_shadow_foundation`。
 - **AC-002** Redocly lint 无 error；生成 client/server types 无手工 `any` patch。
-- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；44 表、51 个 named index、63 个 trigger、16 个 runtime routine、Product Profile reservation/provenance routines、frozen Crawl seed constraints、Observation→SitePage lineage guards、Finding target ledger，以及 Keyword/Competitor Library 的来源、审核与 append-only guards 均存在。Rollback-safe schema smoke 覆盖结构计数、Crawl exact fetch、GSC/GA4 canonical/slash variant、歧义拒绝、无伪造 PageSnapshot、逐 Run target ledger 与最终 `0019_competitor_library_foundation` version projection；真实 CSV/DataForSEO/GSC keyword projection 和 Product Profile/CSV competitor provenance 由 replay-safe PostgreSQL integration tests 覆盖。
+- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；44 表、51 个 named index、63 个 trigger、16 个 runtime routine、Product Profile reservation/provenance routines、frozen Crawl seed constraints、Observation→SitePage lineage guards、Finding target ledger，以及 Keyword/Competitor Library 的来源、审核与 append-only guards 均存在。Rollback-safe schema smoke 覆盖结构计数、Crawl exact fetch、GSC/GA4 canonical/slash variant、歧义拒绝、无伪造 PageSnapshot、逐 Run target ledger 与最终 `0020_content_shadow_foundation` version projection；真实 CSV/DataForSEO/GSC keyword projection 和 Product Profile/CSV competitor provenance 由 replay-safe PostgreSQL integration tests 覆盖。
 - **AC-004** pg-boss schema 由库创建且不进入 Drizzle migration。
 - **AC-005** 未认证 API 401；跨 Workspace/project child ID 404；browser 不能直连 app schema。
 - **AC-006** 创建 Run 与 enqueue 任一侧故障均整体 rollback；不存在 queued-without-job 或 job-without-run。

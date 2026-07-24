@@ -6830,6 +6830,7 @@ END;
 $$;
 -- END EXACT EXECUTABLE MIGRATION 0019_competitor_library_foundation
 
+-- BEGIN EXACT EXECUTABLE MIGRATION 0020_content_shadow_foundation
 -- Slice 2 Task 2 (migration 0020_content_shadow_foundation): SEO/GEO Content
 -- Shadow projection. Shadow-but-no-CMS: internal shadow content drafts are
 -- permitted as an internal_write capability; no external CMS/publish write.
@@ -7006,6 +7007,22 @@ DROP TRIGGER IF EXISTS flow_shadow_qa_gates_append_only ON app.flow_shadow_qa_ga
 CREATE TRIGGER flow_shadow_qa_gates_append_only BEFORE UPDATE OR DELETE ON app.flow_shadow_qa_gates
   FOR EACH ROW EXECUTE FUNCTION app.reject_append_only_mutation();
 
+-- The browser must not access these canonical tables directly.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON app.flow_shadow_runs FROM anon';
+    EXECUTE 'REVOKE ALL ON app.flow_shadow_research_packs FROM anon';
+    EXECUTE 'REVOKE ALL ON app.flow_shadow_qa_gates FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON app.flow_shadow_runs FROM authenticated';
+    EXECUTE 'REVOKE ALL ON app.flow_shadow_research_packs FROM authenticated';
+    EXECUTE 'REVOKE ALL ON app.flow_shadow_qa_gates FROM authenticated';
+  END IF;
+END; $$;
+-- END EXACT EXECUTABLE MIGRATION 0020_content_shadow_foundation
+
 -- Mutable projections receive server timestamps.
 DROP TRIGGER IF EXISTS workspaces_set_updated_at ON app.workspaces;
 CREATE TRIGGER workspaces_set_updated_at BEFORE UPDATE ON app.workspaces
@@ -7104,7 +7121,7 @@ CREATE TRIGGER page_snapshots_append_only BEFORE UPDATE OR DELETE ON app.page_sn
 -- Runtime-safe migration identity for technical health signals (spec §15.2).
 -- A view keeps migration identity separate from the frozen table inventory.
 CREATE OR REPLACE VIEW app.schema_migration_version AS
-  SELECT '0019_competitor_library_foundation'::text AS migration_version;
+  SELECT '0020_content_shadow_foundation'::text AS migration_version;
 
 -- The browser must not access canonical tables directly through the Supabase Data API.
 DO $$

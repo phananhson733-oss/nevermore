@@ -7,12 +7,12 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "0e651d26e21d76d6b4d14051977f01a91852156a991c93a1ae73b244c546db3d",
-    "MVP-IMPLEMENTATION-SPEC.md": "20505c921dd4758f3752346d7a5b2f8e8128853ba227d9ecb6b34ca43f57ee97",
+    "MVP-IMPLEMENTATION-SPEC.md": "370f5063498fd72f5facdb821127a85b229e6108385302a9fb4893c4a9263e5a",
     "openapi.yaml": "296d9ef66bd26be73ad0fbda4129f2ad185a0962c5ea5917b8e318425e444770",
-    "schema.sql": "d6a256b8406c15daa3148d93fc7cf6f74fd667ab6b13d7d0deda4da37a9bcb8b",
+    "schema.sql": "2b36879c870f63a167acb1aa041c3331867cfe8addba8364ad5ab534faab6b7a",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "scripts/schema-smoke.sql": "d5b51bfaa74c7d8c9fbf99159f08560d57a086e057c639142c6ea78fabaaefd8",
-    "scripts/verify-spec.mjs": "d7b13ad0a867110a2b9cc1ff5301f88e2c319aabc12519ba5d371ee04ba14ccf"
+    "scripts/verify-spec.mjs": "a59feb436d7dac0319c603061a5a85a48e292836fdf3d6bbbfcb74a2f5b75e51"
   },
   "implementationFiles": {
     "openapi/mvp.yaml": "296d9ef66bd26be73ad0fbda4129f2ad185a0962c5ea5917b8e318425e444770",
