@@ -1674,5 +1674,20 @@
     "exportFailed": "Export failed. Please try again.",
     "emptyTitle": "No report yet",
     "emptyHint": "Run a diagnosis and confirm findings to produce a report."
+  },
+  "execution": {
+    "chainTitle": "Delivery chain",
+    "chainLead": "Each confirmed opportunity produces one canonical action and one template-fixed deliverable.",
+    "emptyTitle": "No confirmed delivery yet",
+    "emptyBody": "Confirm an opportunity to open its canonical action and template-fixed deliverable here.",
+    "actionLabel": "Action",
+    "deliverableLabel": "Deliverable",
+    "artifactPending": "Not generated yet",
+    "revisionLabel": "Revision {revision}",
+    "artifactType": {
+      "technical_ticket": "Technical ticket",
+      "metadata_rewrite": "Metadata rewrite",
+      "content_brief": "Content brief"
+    }
   }
 }

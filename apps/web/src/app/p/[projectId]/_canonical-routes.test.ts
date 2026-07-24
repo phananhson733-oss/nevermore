@@ -5,11 +5,15 @@ const mocks = vi.hoisted(() => ({
     throw new Error(`NEXT_REDIRECT:${destination}`);
   }),
   StudioClient: vi.fn(),
+  ExecutionClient: vi.fn(),
   ReportClient: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("./studio/_studio.tsx", () => ({ StudioClient: mocks.StudioClient }));
+vi.mock("./execution/_execution.tsx", () => ({
+  ExecutionClient: mocks.ExecutionClient,
+}));
 vi.mock("./report/_report.tsx", () => ({ ReportClient: mocks.ReportClient }));
 
 import ExecutionPage from "./execution/page.tsx";
@@ -27,7 +31,7 @@ beforeEach(() => {
 });
 
 describe("canonical project shell routes", () => {
-  it("renders the existing Studio implementation at /execution", async () => {
+  it("renders the Execution single-chain client at /execution", async () => {
     const element = await ExecutionPage({
       params: Promise.resolve({ projectId: PROJECT_ID }),
       searchParams: Promise.resolve({
@@ -36,7 +40,7 @@ describe("canonical project shell routes", () => {
       }),
     });
 
-    expect(element.type).toBe(mocks.StudioClient);
+    expect(element.type).toBe(mocks.ExecutionClient);
     expect(element.props).toEqual({
       projectId: PROJECT_ID,
       initialDeepLink: {
@@ -47,12 +51,13 @@ describe("canonical project shell routes", () => {
     });
   });
 
-  it("passes an invalid bounded selection to Studio instead of dropping it", async () => {
+  it("passes an invalid bounded selection to Execution instead of dropping it", async () => {
     const element = await ExecutionPage({
       params: Promise.resolve({ projectId: PROJECT_ID }),
       searchParams: Promise.resolve({ actionId: "not-a-uuid" }),
     });
 
+    expect(element.type).toBe(mocks.ExecutionClient);
     expect(element.props).toEqual({
       projectId: PROJECT_ID,
       initialDeepLink: { kind: "invalid", invalidKeys: ["actionId"] },

@@ -54,11 +54,19 @@ export class ActionsRepository extends Repository {
     return decodeTimestampUuidCursor(cursor) !== null;
   }
 
-  async findByKey(scope: ProjectScope, actionKey: string): Promise<ActionRow | null> {
+  async findByKey(
+    scope: ProjectScope,
+    actionKey: string,
+  ): Promise<ActionRow | null> {
     const rows = await this.exec
       .select()
       .from(actions)
-      .where(and(projectPredicate(actions, scope), eq(actions.action_key, actionKey)))
+      .where(
+        and(
+          projectPredicate(actions, scope),
+          eq(actions.action_key, actionKey),
+        ),
+      )
       .limit(1);
     return (rows[0] as ActionRow | undefined) ?? null;
   }
@@ -234,23 +242,24 @@ export class ActionsRepository extends Repository {
       .select()
       .from(actions)
       .where(
-        and(
-          projectPredicate(actions, scope),
-          laneFilter,
-          statusFilter,
-          after,
-        ),
+        and(projectPredicate(actions, scope), laneFilter, statusFilter, after),
       )
       .orderBy(desc(actions.updated_at), desc(actions.id))
       .limit(opts.limit + 1)) as ActionRow[];
     const hasNext = rows.length > opts.limit;
     const page = hasNext ? rows.slice(0, opts.limit) : rows;
     const last = page[page.length - 1];
-    return { rows: page, nextCursor: hasNext && last ? encodeCursor(last) : null };
+    return {
+      rows: page,
+      nextCursor: hasNext && last ? encodeCursor(last) : null,
+    };
   }
 
   /** Active (non-dismissed) actions for a source finding (review gate, spec §9.1). */
-  async findActiveByFinding(scope: ProjectScope, findingId: string): Promise<ActionRow | null> {
+  async findActiveByFinding(
+    scope: ProjectScope,
+    findingId: string,
+  ): Promise<ActionRow | null> {
     const rows = await this.exec
       .select()
       .from(actions)
@@ -263,5 +272,29 @@ export class ActionsRepository extends Repository {
       )
       .limit(1);
     return (rows[0] as ActionRow | undefined) ?? null;
+  }
+
+  /**
+   * Count the non-dismissed Actions bound to one source Finding. Mirrors
+   * `findActiveByFinding` but returns a scalar so read-only projections can
+   * assert the canonical "one confirmed Finding -> one Action" cardinality
+   * without materializing rows. Dismissed Actions are excluded (spec §9.1).
+   */
+  async countActionsForFinding(
+    scope: ProjectScope,
+    findingId: string,
+  ): Promise<number> {
+    const rows = (await this.exec
+      .select({ value: sql<number>`count(*)` })
+      .from(actions)
+      .where(
+        and(
+          projectPredicate(actions, scope),
+          eq(actions.source_finding_id, findingId),
+          sql`${actions.status} <> 'dismissed'`,
+        ),
+      )) as { value: number | string }[];
+    const first = rows[0];
+    return first ? Number(first.value) : 0;
   }
 }

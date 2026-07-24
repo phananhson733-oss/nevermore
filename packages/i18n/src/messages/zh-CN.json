@@ -1674,5 +1674,20 @@
     "exportFailed": "导出失败，请重试。",
     "emptyTitle": "尚无报告",
     "emptyHint": "先运行诊断并确认发现，即可生成报告。"
+  },
+  "execution": {
+    "chainTitle": "交付链路",
+    "chainLead": "每个已确认的机会只产出一个规范化 Action 与一个模板固定的交付物。",
+    "emptyTitle": "尚无已确认的交付",
+    "emptyBody": "确认一个机会后，其规范化 Action 与模板固定的交付物会在此显示。",
+    "actionLabel": "Action",
+    "deliverableLabel": "交付物",
+    "artifactPending": "尚未生成",
+    "revisionLabel": "第 {revision} 版",
+    "artifactType": {
+      "technical_ticket": "技术工单",
+      "metadata_rewrite": "元数据改写",
+      "content_brief": "内容简报"
+    }
   }
 }

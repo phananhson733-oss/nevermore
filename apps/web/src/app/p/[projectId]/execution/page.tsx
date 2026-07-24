@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { StudioClient } from "../studio/_studio.tsx";
+import { ExecutionClient } from "./_execution.tsx";
 import { parseExecutionDeepLink } from "./_execution-deep-link.ts";
 
 interface ExecutionPageProps {
@@ -10,13 +10,16 @@ interface ExecutionPageProps {
   }>;
 }
 
-/** Canonical Execution destination backed by the existing Studio client. */
+/**
+ * Canonical Execution destination. The single-chain projection sits above the
+ * reused Studio delivery client (spec §11.3, Task 7).
+ */
 export default async function ExecutionPage({
   params,
   searchParams,
 }: ExecutionPageProps) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  return createElement(StudioClient, {
+  return createElement(ExecutionClient, {
     projectId,
     initialDeepLink: parseExecutionDeepLink(query),
   });
