@@ -241,6 +241,21 @@ export type {
   ProductProfileCompetitorOriginInput,
   ProductProfileEvidenceRef,
 } from "./repositories/competitors.ts";
+export {
+  CONTENT_SHADOW_PROJECTION_VERSION,
+  FlowShadowRunsRepository,
+  FlowShadowResearchPacksRepository,
+  FlowShadowQaGatesRepository,
+} from "./repositories/flow-shadow-runs.ts";
+export type {
+  FlowShadowRunRow,
+  FlowShadowRunListPage,
+  FlowShadowRunCreate,
+  FlowShadowResearchPackRow,
+  FlowShadowResearchPackInsert,
+  FlowShadowQaGateRow,
+  FlowShadowQaGateInsert,
+} from "./repositories/flow-shadow-runs.ts";
 export { FindingReviewEventsRepository } from "./repositories/findings-review.ts";
 export { EvidenceRepository } from "./repositories/evidence.ts";
 export type {

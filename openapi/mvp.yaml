@@ -1430,7 +1430,7 @@ components:
       enum: [candidate, planned, in_progress, blocked, done, dismissed]
     ArtifactType:
       type: string
-      enum: [content_brief, metadata_rewrite, technical_ticket]
+      enum: [content_brief, metadata_rewrite, technical_ticket, english_blog_draft]
     ArtifactStatus:
       type: string
       enum: [generating, draft, ready, failed, archived]

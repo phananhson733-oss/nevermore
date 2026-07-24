@@ -7,19 +7,19 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "0e651d26e21d76d6b4d14051977f01a91852156a991c93a1ae73b244c546db3d",
-    "MVP-IMPLEMENTATION-SPEC.md": "e7b89612d6b0d5f328804ae2133fe07edef11248152f1aab6dfc4b72dc821f50",
-    "openapi.yaml": "49ec0be39710f086ea507c8544167912f8674976666b68731c8c6279ad1c0909",
-    "schema.sql": "48b7972c814bcb3a7044e27ced0b773937ab5ed9e5660249914076c107df7f61",
+    "MVP-IMPLEMENTATION-SPEC.md": "ded1cb833c1e12b6f4e7f0b4fbc149d9f5ba78f45324781768250ced5abc925c",
+    "openapi.yaml": "296d9ef66bd26be73ad0fbda4129f2ad185a0962c5ea5917b8e318425e444770",
+    "schema.sql": "d6a256b8406c15daa3148d93fc7cf6f74fd667ab6b13d7d0deda4da37a9bcb8b",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "scripts/schema-smoke.sql": "a12f4a14558fee7bfaeeb60ac543baaed90f8fa2d947e206957c48d97f73ae64",
-    "scripts/verify-spec.mjs": "c9d6b7c12f9219c5855fcae9011a697bbaf03cb475c40c45dfd7d95b34903e77"
+    "scripts/verify-spec.mjs": "5c9acf4f7f6041da0a2fa9ae2aa6509e5571b81df100b61b3580398a51b768f1"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "49ec0be39710f086ea507c8544167912f8674976666b68731c8c6279ad1c0909",
-    "packages/contracts/src/generated/openapi.ts": "2b712bff360cf476d27209188623bd568eb2af219529bc6568e651b4ed69c29b",
+    "openapi/mvp.yaml": "296d9ef66bd26be73ad0fbda4129f2ad185a0962c5ea5917b8e318425e444770",
+    "packages/contracts/src/generated/openapi.ts": "3fe7093c8f7a0ffcce3fcd0382a94d8bf272eeb4e8717c665e815364dbe490f9",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "packages/db/migrations/schema-smoke.sql": "a12f4a14558fee7bfaeeb60ac543baaed90f8fa2d947e206957c48d97f73ae64",
-    "scripts/verify-implementation.mjs": "9aba5d92c13d1400731e0971aa4d0c3bcbf0daf51ba6c07641958e1894822c44"
+    "scripts/verify-implementation.mjs": "dcf89cf6eddd693866d5a9d0e19997586d377b51850cc5e6c77d869baaa398df"
   },
   "apiOperations": [
     "listProjects",
@@ -119,7 +119,10 @@
     "keyword_entities",
     "keyword_entity_sources",
     "competitor_entities",
-    "competitor_origin_occurrences"
+    "competitor_origin_occurrences",
+    "flow_shadow_runs",
+    "flow_shadow_research_packs",
+    "flow_shadow_qa_gates"
   ],
   "rules": [
     "CONTENT-COVERAGE-001",

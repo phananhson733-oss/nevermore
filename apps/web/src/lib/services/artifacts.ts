@@ -13,7 +13,10 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import { ACTION_TEMPLATES } from "@sf/engine";
-import { CONTRACT_VERSION, type CreateArtifactWireRequest } from "@sf/contracts";
+import {
+  CONTRACT_VERSION,
+  type CreateArtifactWireRequest,
+} from "@sf/contracts";
 import {
   normalizeTemplateArtifactLocale,
   UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE,
@@ -67,13 +70,11 @@ function replayArtifact(
     );
   }
   if (row.status !== "completed" || !row.resource_id) return null;
-  const body = row.response_body as
-    | {
-        run: AsyncRunDto;
-        statusUrl: string;
-        resourceRef?: { id?: string };
-      }
-    | null;
+  const body = row.response_body as {
+    run: AsyncRunDto;
+    statusUrl: string;
+    resourceRef?: { id?: string };
+  } | null;
   if (!body?.run || !body.statusUrl) return null;
   return {
     status: 202,
@@ -87,7 +88,10 @@ function replayArtifact(
   };
 }
 
-function activeArtifactConflict(projectId: string, runId?: string): ProblemError {
+function activeArtifactConflict(
+  projectId: string,
+  runId?: string,
+): ProblemError {
   return new ProblemError(
     "RUN_ALREADY_ACTIVE",
     "This artifact is already generating.",
@@ -148,47 +152,65 @@ export async function createActionArtifact(
       ? normalizeTemplateArtifactLocale(body.outputLocale)
       : body.outputLocale;
   if (!outputLocale) {
-    throw new ProblemError(
-      "VALIDATION_ERROR",
-      "Request failed validation.",
-      {
-        errors: [
-          {
-            pointer: "/outputLocale",
-            code: "unsupported_template_locale",
-            message: UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE,
-          },
-        ],
-      },
-    );
+    throw new ProblemError("VALIDATION_ERROR", "Request failed validation.", {
+      errors: [
+        {
+          pointer: "/outputLocale",
+          code: "unsupported_template_locale",
+          message: UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE,
+        },
+      ],
+    });
   }
 
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
-  if (project.archived_at) throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
+  if (project.archived_at)
+    throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
 
-  const action = await new ActionsRepository(db).findById(projectScope, actionId);
+  const action = await new ActionsRepository(db).findById(
+    projectScope,
+    actionId,
+  );
   if (!action) throw new ProblemError("NOT_FOUND", "Action not found.");
   if (action.status === "dismissed") {
-    throw new ProblemError("ACTION_NOT_EXECUTABLE", "A dismissed action cannot produce an artifact.");
+    throw new ProblemError(
+      "ACTION_NOT_EXECUTABLE",
+      "A dismissed action cannot produce an artifact.",
+    );
   }
   const expectedType = ARTIFACT_TYPE_BY_TEMPLATE[action.template_id];
   if (expectedType && body.artifactType !== expectedType) {
     throw new ProblemError(
       "VALIDATION_ERROR",
       `This action produces a ${expectedType}, not a ${body.artifactType}.`,
-      { errors: [{ pointer: "/artifactType", code: "type_mismatch", message: `Expected ${expectedType}.` }] },
+      {
+        errors: [
+          {
+            pointer: "/artifactType",
+            code: "type_mismatch",
+            message: `Expected ${expectedType}.`,
+          },
+        ],
+      },
     );
   }
 
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
   const artifactsRepo = new ExecutionArtifactsRepository(db);
-  const existing = await artifactsRepo.findLiveByActionType(projectScope, actionId, body.artifactType);
+  const existing = await artifactsRepo.findLiveByActionType(
+    projectScope,
+    actionId,
+    body.artifactType,
+  );
   const artifactId = existing ? existing.id : randomUUID();
   const activeKey = `artifact:${artifactId}`;
 
-  const active = await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
+  const active = await new AsyncRunsRepository(db).findActive(
+    projectScope,
+    activeKey,
+  );
   if (active) {
     // Close the read-then-active race for identical idempotent requests: the
     // winner may have committed between the two reads above.
@@ -232,7 +254,10 @@ export async function createActionArtifact(
         );
       }
 
-      const currentProject = await txProjects.findByIdForUpdate(scope, projectId);
+      const currentProject = await txProjects.findByIdForUpdate(
+        scope,
+        projectId,
+      );
       if (!currentProject) {
         throw new ProblemError("NOT_FOUND", "Project not found.");
       }
@@ -309,7 +334,9 @@ export async function createActionArtifact(
         actionId,
         body.artifactType,
       );
-      const currentArtifactId = currentExisting ? currentExisting.id : randomUUID();
+      const currentArtifactId = currentExisting
+        ? currentExisting.id
+        : randomUUID();
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
@@ -436,6 +463,7 @@ export async function listProjectArtifacts(
       | "content_brief"
       | "metadata_rewrite"
       | "technical_ticket"
+      | "english_blog_draft"
       | null;
     status?: "generating" | "draft" | "ready" | "failed" | "archived" | null;
   },
@@ -454,9 +482,10 @@ export async function listProjectArtifacts(
   const encoder = new TextEncoder();
   let dataBytes = 2; // JSON array brackets.
   for (const a of page.rows) {
-    const current = a.current_revision > 0
-      ? await repo.findRevision(projectScope, a.id, a.current_revision)
-      : null;
+    const current =
+      a.current_revision > 0
+        ? await repo.findRevision(projectScope, a.id, a.current_revision)
+        : null;
     const activeRun = a.latest_generation_run_id
       ? await runs.findById(projectScope, a.latest_generation_run_id)
       : null;
@@ -486,9 +515,10 @@ export async function getProjectArtifact(
   const artifact = await repo.findById(projectScope, artifactId);
   if (!artifact) throw new ProblemError("NOT_FOUND", "Artifact not found.");
   const selectedRevision = requestedRevision ?? artifact.current_revision;
-  const current = selectedRevision > 0
-    ? await repo.findRevision(projectScope, artifactId, selectedRevision)
-    : null;
+  const current =
+    selectedRevision > 0
+      ? await repo.findRevision(projectScope, artifactId, selectedRevision)
+      : null;
   if (requestedRevision != null && !current) {
     throw new ProblemError("NOT_FOUND", "Artifact not found.");
   }
@@ -501,7 +531,10 @@ export async function getProjectArtifact(
     artifactsBudgetExceeded();
   }
   const activeRun = artifact.latest_generation_run_id
-    ? await new AsyncRunsRepository(db).findById(projectScope, artifact.latest_generation_run_id)
+    ? await new AsyncRunsRepository(db).findById(
+        projectScope,
+        artifact.latest_generation_run_id,
+      )
     : null;
   const dto = toArtifactDto(
     artifact,
@@ -514,5 +547,10 @@ export async function getProjectArtifact(
 }
 
 function isTerminal(status: string): boolean {
-  return status === "completed" || status === "partial" || status === "failed" || status === "cancelled";
+  return (
+    status === "completed" ||
+    status === "partial" ||
+    status === "failed" ||
+    status === "cancelled"
+  );
 }

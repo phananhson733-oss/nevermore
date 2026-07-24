@@ -81,8 +81,8 @@ v0.3 明确禁止以下并行或提前建设：
 - `Opportunity table`；Opportunity 继续从 canonical objects 投影；
 - `second Action creation path`；只有 primary Finding Review 可以创建 Action；
 - checkpoint table，包括 `performance_checkpoints`；Slice 1 recheck 比较两个 immutable run；
-- `CMS publishing`，以及 GitHub/Vercel/Cloudflare/客户生产站点写入；
-- `content lifecycle`、完整竞品/查询历史或发布生命周期；
+- 对外 `CMS publishing`，以及 GitHub/Vercel/Cloudflare/客户生产站点写入（Shadow-but-no-CMS：Slice 2 允许内部 shadow 内容草稿 `english_blog_draft` 与 Flow Shadow research/draft/QA 作为 internal-write 影子产物，但绝不做真实 CMS/publish 外部写入，也绝不标记为已发布）；
+- 对外 `content lifecycle`、完整竞品/查询历史或对外发布生命周期；内部 Content Shadow 影子内容生命周期（research → draft → QA → 人工评审）作为 internal-write 能力已在 Slice 2 落地，仍严禁写外部 CMS；
 - 在 Slice 1 stop gate 前加入 RBAC、Billing、客户成员系统、scheduled attribution 或第二套 Run/Finding/Action/Artifact/Results truth。
 
 ## 1. 产品目标、用户与成功标准
@@ -1014,9 +1014,12 @@ Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `met
 - `keyword_entity_sources`
 - `competitor_entities`
 - `competitor_origin_occurrences`
+- `flow_shadow_runs`
+- `flow_shadow_research_packs`
+- `flow_shadow_qa_gates`
 <!-- TABLES_END -->
 
-pg-boss 自己的 schema/table 不计入这 41 张，由固定版本的 pg-boss 自行迁移；不得复制到 Drizzle migrations 或手改。
+pg-boss 自己的 schema/table 不计入这 44 张，由固定版本的 pg-boss 自行迁移；不得复制到 Drizzle migrations 或手改。
 
 新增的 Slice 1 persistence 遵守以下不变量：`capability_runs` 以 canonical `async_runs.id` 为主键；`audit_runs` 只引用同一个 canonical Diagnostic/Capability run 且不拥有 `status`；`audit_module_results` 是不可变模块投影；`page_snapshots` 必须引用同 tenant/site 的 immutable `data_snapshots`；上述四类记录 append-only。`audit_runs_provenance_guard`、`site_pages_provenance_guard` 与 `page_snapshots_provenance_guard` 在数据库边界拒绝跨 workspace/project/site 拼接。`site_pages` 只维护项目内 URL identity，可更新 template identity，但不得承载不可溯源的指标或抽取内容。
 

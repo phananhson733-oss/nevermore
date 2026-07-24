@@ -36,7 +36,13 @@ import {
 } from "../types.ts";
 
 /** Placeholder tokens a model MUST use when a value is not sourced from evidence. */
-export const UNKNOWN_PLACEHOLDERS: readonly string[] = ["unknown", "待确认", "tbd", "n/a", "未知"];
+export const UNKNOWN_PLACEHOLDERS: readonly string[] = [
+  "unknown",
+  "待确认",
+  "tbd",
+  "n/a",
+  "未知",
+];
 
 /** Delimiters isolating third-party evidence text inside the user message. */
 export const UNTRUSTED_OPEN = "<UNTRUSTED_EVIDENCE>";
@@ -55,8 +61,7 @@ const MAX_TARGET_QUERY_CHARS = 500;
 const MAX_EVIDENCE_REF_CHARS = 256;
 const MAX_CITED_NUMBER_FIELD_CHARS = 256;
 const MAX_RATIONALE_CHARS = 8_000;
-const UNTRUSTED_DELIMITER_VARIANT =
-  /<\s*\/?\s*untrusted[\s_-]*evidence\s*>/giu;
+const UNTRUSTED_DELIMITER_VARIANT = /<\s*\/?\s*untrusted[\s_-]*evidence\s*>/giu;
 
 const boundedTrimmedString = (maxChars: number) =>
   z
@@ -73,7 +78,10 @@ function assertCollectionSize(name: string, size: number, max: number): void {
   }
 }
 
-function assertPromptSectionSize(name: string, values: readonly string[]): void {
+function assertPromptSectionSize(
+  name: string,
+  values: readonly string[],
+): void {
   assertCollectionSize(name, values.length, MAX_ARTIFACT_COLLECTION_ITEMS);
 }
 
@@ -217,7 +225,7 @@ export interface CitedNumber {
 }
 
 export interface MarkdownEnvelope {
-  readonly kind: "content_brief" | "technical_ticket";
+  readonly kind: "content_brief" | "technical_ticket" | "english_blog_draft";
   readonly markdown: string;
   readonly evidenceRefs: readonly string[];
   readonly citedNumbers: readonly CitedNumber[];
@@ -249,7 +257,9 @@ function zodIssues(error: z.ZodError): readonly string[] {
   });
 }
 
-function toCitedNumbers(raw: ReadonlyArray<{ value: string; evidenceId: string }>): readonly CitedNumber[] {
+function toCitedNumbers(
+  raw: ReadonlyArray<{ value: string; evidenceId: string }>,
+): readonly CitedNumber[] {
   return raw.map((c) => ({ value: c.value, evidenceId: c.evidenceId }));
 }
 
@@ -258,7 +268,10 @@ function toCitedNumbers(raw: ReadonlyArray<{ value: string; evidenceId: string }
  * keys, cardinality overflow, and shape/length failures are returned as issue strings
  * so the caller can raise a typed error instead of returning unvalidated content.
  */
-export function parseEnvelope(artifactType: ArtifactType, raw: unknown): ParseEnvelopeResult {
+export function parseEnvelope(
+  artifactType: ArtifactType,
+  raw: unknown,
+): ParseEnvelopeResult {
   if (artifactType === "metadata_rewrite") {
     const result = metadataEnvelopeSchema.safeParse(raw);
     if (!result.success) return { ok: false, issues: zodIssues(result.error) };
@@ -304,9 +317,7 @@ export function toArtifactContent(
 ): ArtifactContent {
   if (envelope.kind === "metadata_rewrite") {
     const source =
-      input?.artifactType === "metadata_rewrite"
-        ? input.currentMetadata
-        : null;
+      input?.artifactType === "metadata_rewrite" ? input.currentMetadata : null;
     const persistedValue = (
       field: keyof PromptCurrentMetadata,
       value: string | null,
@@ -351,13 +362,16 @@ function canonicalize(value: unknown): string {
   const t = typeof value;
   if (t === "boolean") return value ? "true" : "false";
   if (t === "number") {
-    if (!Number.isFinite(value)) throw new Error("cannot hash non-finite number");
+    if (!Number.isFinite(value))
+      throw new Error("cannot hash non-finite number");
     return JSON.stringify(value);
   }
   if (t === "string") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
   const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
+  const keys = Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort();
   return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalize(obj[k])}`).join(",")}}`;
 }
 
@@ -373,7 +387,10 @@ export function hashPromptInput(input: ArtifactPromptInput): string {
 
 /** sha256 of the built artifact output — the `outputHash` in the invocation record. */
 export function hashArtifactContent(content: ArtifactContent): string {
-  const body = typeof content.content === "string" ? content.content : canonicalize(content.content);
+  const body =
+    typeof content.content === "string"
+      ? content.content
+      : canonicalize(content.content);
   return sha256Hex(body);
 }
 
@@ -449,7 +466,9 @@ function renderEvidence(evidence: ArtifactPromptInput["evidence"]): string {
  * `ArtifactPromptInput` so nothing outside the allowlist can leak: there is no
  * pass-through of the whole request object, tokens, or cross-project data.
  */
-function buildAllowlistedContext(input: ArtifactPromptInput): Record<string, unknown> {
+function buildAllowlistedContext(
+  input: ArtifactPromptInput,
+): Record<string, unknown> {
   return {
     artifactType: input.artifactType,
     outputLocale: safePromptText(input.outputLocale),
@@ -499,7 +518,10 @@ function buildAllowlistedContext(input: ArtifactPromptInput): Record<string, unk
  * Build the `{system, user}` chat messages. Evidence is rendered in a separate
  * UNTRUSTED block; the rest of the allowlisted context is inline JSON.
  */
-export function buildMessages(input: ArtifactPromptInput): { readonly system: string; readonly user: string } {
+export function buildMessages(input: ArtifactPromptInput): {
+  readonly system: string;
+  readonly user: string;
+} {
   assertPromptInputCardinality(input);
   const context = buildAllowlistedContext(input);
   const operatorRequest =

@@ -311,9 +311,7 @@ export const collectionRuns = app.table("collection_runs", {
     .references(() => sites.id),
   source_connection_id: uuid().references(() => sourceConnections.id),
   import_preview_id: uuid().references(() => importPreviews.id),
-  crawl_seed_site_page_id: uuid().references(
-    (): AnyPgColumn => sitePages.id,
-  ),
+  crawl_seed_site_page_id: uuid().references((): AnyPgColumn => sitePages.id),
   crawl_seed_url: text(),
   provider: text().notNull(),
   operation: text().notNull(),
@@ -449,9 +447,7 @@ export const normalizedObservations = app.table("normalized_observations", {
   snapshot_id: uuid()
     .notNull()
     .references(() => dataSnapshots.id),
-  site_page_id: uuid().references(
-    (): AnyPgColumn => sitePages.id,
-  ),
+  site_page_id: uuid().references((): AnyPgColumn => sitePages.id),
   provider: text().notNull(),
   metric_key: text().notNull(),
   subject_type: text().notNull(),
@@ -1033,7 +1029,9 @@ export const findingTargets = app.table("finding_targets", {
   member_ref: text(),
   limitation: text(),
   // The insert trigger replaces this placeholder with the canonical DB hash.
-  relation_key: text().notNull().default(sql`repeat('0', 64)`),
+  relation_key: text()
+    .notNull()
+    .default(sql`repeat('0', 64)`),
   created_at: tz().notNull().defaultNow(),
 });
 
@@ -1049,9 +1047,7 @@ export const keywordOccurrences = app.table("keyword_occurrences", {
     .notNull()
     .references(() => clientProjects.id),
   data_snapshot_id: uuid().references(() => dataSnapshots.id),
-  normalized_observation_id: uuid().references(
-    () => normalizedObservations.id,
-  ),
+  normalized_observation_id: uuid().references(() => normalizedObservations.id),
   display_keyword: text().notNull(),
   normalized_keyword: text().notNull(),
   market: text().notNull(),
@@ -1138,7 +1134,10 @@ export const competitorEntities = app.table("competitor_entities", {
   name: text(),
   review_status: text().notNull().default("candidate"),
   relationship: text(),
-  analysis_scope: text().array().notNull().default(sql`'{}'::text[]`),
+  analysis_scope: text()
+    .array()
+    .notNull()
+    .default(sql`'{}'::text[]`),
   revision: integer().notNull().default(0),
   created_at: tz().notNull().defaultNow(),
   updated_at: tz().notNull().defaultNow(),
@@ -1181,6 +1180,87 @@ export const competitorOriginOccurrences = app.table(
     created_at: tz().notNull().defaultNow(),
   },
 );
+
+// ---------------------------------------------------------------------------
+// 42. flow_shadow_runs  (append-only Content Shadow projection over a run)
+// ---------------------------------------------------------------------------
+export const flowShadowRuns = app.table("flow_shadow_runs", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  capability_run_id: uuid()
+    .notNull()
+    .references(() => capabilityRuns.async_run_id),
+  source_finding_id: uuid()
+    .notNull()
+    .references(() => findings.id),
+  source_action_id: uuid()
+    .notNull()
+    .references(() => actions.id),
+  content_brief_artifact_id: uuid()
+    .notNull()
+    .references(() => executionArtifacts.id),
+  content_brief_revision: integer().notNull(),
+  flow_adapter_version: text().notNull(),
+  frozen_input_manifest: jsonb().$type<JsonObject>().notNull(),
+  content_hash: text().notNull(),
+  projection_version: text().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 43. flow_shadow_research_packs  (append-only research facts, one per run)
+// ---------------------------------------------------------------------------
+export const flowShadowResearchPacks = app.table("flow_shadow_research_packs", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  flow_shadow_run_id: uuid()
+    .notNull()
+    .references(() => flowShadowRuns.id),
+  analysis_invocation_id: uuid().references(() => analysisInvocations.id),
+  content_hash: text().notNull(),
+  pack: jsonb().$type<JsonObject>().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 44. flow_shadow_qa_gates  (append-only SEO/GEO + factual review verdicts)
+// ---------------------------------------------------------------------------
+export const flowShadowQaGates = app.table("flow_shadow_qa_gates", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  flow_shadow_run_id: uuid()
+    .notNull()
+    .references(() => flowShadowRuns.id),
+  evaluated_artifact_id: uuid()
+    .notNull()
+    .references(() => executionArtifacts.id),
+  evaluated_revision: integer().notNull(),
+  analysis_invocation_id: uuid().references(() => analysisInvocations.id),
+  verdict: text().notNull(),
+  claims: jsonb()
+    .$type<JsonArray>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  created_at: tz().notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // Aggregate schema (consumed by drizzle(pool, { schema })).
@@ -1227,4 +1307,7 @@ export const schema = {
   keywordEntitySources,
   competitorEntities,
   competitorOriginOccurrences,
+  flowShadowRuns,
+  flowShadowResearchPacks,
+  flowShadowQaGates,
 } as const;

@@ -8,7 +8,11 @@ import type { RuleId } from "./rule.ts";
  * Action creation transaction never calls an LLM.
  */
 
-export type ArtifactType = "content_brief" | "metadata_rewrite" | "technical_ticket";
+export type ArtifactType =
+  | "content_brief"
+  | "metadata_rewrite"
+  | "technical_ticket"
+  | "english_blog_draft";
 export type Effort = "small" | "medium" | "large";
 export type Risk = "low" | "medium" | "high";
 export type ContentLocale = "en" | "zh-CN";
@@ -38,13 +42,17 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Fix broken or error HTTP responses",
-        description: "Restore or redirect URLs returning 4xx/5xx so users and crawlers reach live content.",
-        expectedOutcome: "Affected URLs return 2xx or a correct redirect; crawl/index coverage recovers.",
+        description:
+          "Restore or redirect URLs returning 4xx/5xx so users and crawlers reach live content.",
+        expectedOutcome:
+          "Affected URLs return 2xx or a correct redirect; crawl/index coverage recovers.",
       },
       "zh-CN": {
         title: "修复 HTTP 错误响应",
-        description: "对返回 4xx/5xx 的 URL 进行修复或重定向，使用户与爬虫能到达有效内容。",
-        expectedOutcome: "受影响 URL 返回 2xx 或正确重定向；抓取/收录覆盖恢复。",
+        description:
+          "对返回 4xx/5xx 的 URL 进行修复或重定向，使用户与爬虫能到达有效内容。",
+        expectedOutcome:
+          "受影响 URL 返回 2xx 或正确重定向；抓取/收录覆盖恢复。",
       },
     },
   },
@@ -57,13 +65,17 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Normalize conflicting canonical tags",
-        description: "Resolve reciprocal, broken-target, and sitemap-contradicting canonicals to a single authoritative URL.",
-        expectedOutcome: "Each page declares one reachable, self-consistent canonical; duplication signals clear.",
+        description:
+          "Resolve reciprocal, broken-target, and sitemap-contradicting canonicals to a single authoritative URL.",
+        expectedOutcome:
+          "Each page declares one reachable, self-consistent canonical; duplication signals clear.",
       },
       "zh-CN": {
         title: "规范化冲突的 canonical 标签",
-        description: "修正互指、指向失效目标、以及与 sitemap 矛盾的 canonical，统一到单一权威 URL。",
-        expectedOutcome: "每个页面声明唯一可达且自洽的 canonical；重复信号消除。",
+        description:
+          "修正互指、指向失效目标、以及与 sitemap 矛盾的 canonical，统一到单一权威 URL。",
+        expectedOutcome:
+          "每个页面声明唯一可达且自洽的 canonical；重复信号消除。",
       },
     },
   },
@@ -76,12 +88,15 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Strengthen internal links to key pages",
-        description: "Add contextual internal links so commercial/priority pages have at least two internal inlinks.",
-        expectedOutcome: "Priority pages gain internal link equity and are easier to discover.",
+        description:
+          "Add contextual internal links so commercial/priority pages have at least two internal inlinks.",
+        expectedOutcome:
+          "Priority pages gain internal link equity and are easier to discover.",
       },
       "zh-CN": {
         title: "加强指向关键页面的内链",
-        description: "为商业/优先页面补充上下文内链，使其至少获得两个内部入链。",
+        description:
+          "为商业/优先页面补充上下文内链，使其至少获得两个内部入链。",
         expectedOutcome: "优先页面获得内链权重，更易被发现与抓取。",
       },
     },
@@ -95,13 +110,17 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Rewrite title and description for CTR",
-        description: "Rewrite the page title and meta description to better match intent for pages ranking 1–10 with low CTR.",
-        expectedOutcome: "More clicks at the same ranking as the snippet better matches searcher intent.",
+        description:
+          "Rewrite the page title and meta description to better match intent for pages ranking 1–10 with low CTR.",
+        expectedOutcome:
+          "More clicks at the same ranking as the snippet better matches searcher intent.",
       },
       "zh-CN": {
         title: "重写标题与描述以提升点击率",
-        description: "针对排名 1–10 但点击率偏低的页面，重写标题与元描述以更贴合搜索意图。",
-        expectedOutcome: "在排名不变的情况下获得更多点击，摘要更契合搜索者意图。",
+        description:
+          "针对排名 1–10 但点击率偏低的页面，重写标题与元描述以更贴合搜索意图。",
+        expectedOutcome:
+          "在排名不变的情况下获得更多点击，摘要更契合搜索者意图。",
       },
     },
   },
@@ -114,12 +133,15 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Refresh content losing search demand",
-        description: "Refresh and expand pages whose clicks dropped ≥20% to recover lost search demand.",
-        expectedOutcome: "Declining pages regain relevance and recover clicks over the following period.",
+        description:
+          "Refresh and expand pages whose clicks dropped ≥20% to recover lost search demand.",
+        expectedOutcome:
+          "Declining pages regain relevance and recover clicks over the following period.",
       },
       "zh-CN": {
         title: "更新流失搜索需求的内容",
-        description: "对点击量下降 ≥20% 的页面进行更新与扩充，以挽回流失的搜索需求。",
+        description:
+          "对点击量下降 ≥20% 的页面进行更新与扩充，以挽回流失的搜索需求。",
         expectedOutcome: "下滑页面恢复相关性，在随后周期内挽回点击。",
       },
     },
@@ -133,12 +155,15 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Create content for uncovered priority intent",
-        description: "Create a page covering a priority offer or use case that currently has no matching indexable page.",
-        expectedOutcome: "The priority intent gains a dedicated, indexable page that can rank and convert.",
+        description:
+          "Create a page covering a priority offer or use case that currently has no matching indexable page.",
+        expectedOutcome:
+          "The priority intent gains a dedicated, indexable page that can rank and convert.",
       },
       "zh-CN": {
         title: "为未覆盖的优先意图创建内容",
-        description: "为当前没有匹配可收录页面的优先 offer 或用例创建内容页面。",
+        description:
+          "为当前没有匹配可收录页面的优先 offer 或用例创建内容页面。",
         expectedOutcome: "该优先意图获得专属可收录页面，具备排名与转化潜力。",
       },
     },
@@ -152,8 +177,10 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Create content for an uncovered keyword cluster",
-        description: "Create decision-stage content for a high-volume keyword cluster with no matching indexable page.",
-        expectedOutcome: "The cluster gains a targeted page that captures existing demand.",
+        description:
+          "Create decision-stage content for a high-volume keyword cluster with no matching indexable page.",
+        expectedOutcome:
+          "The cluster gains a targeted page that captures existing demand.",
       },
       "zh-CN": {
         title: "为未覆盖的关键词簇创建内容",
@@ -171,8 +198,10 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Connect commercial pages to the conversion path",
-        description: "Add direct internal links from commercial/priority pages to the conversion destination.",
-        expectedOutcome: "Visitors on commercial pages reach the conversion action in one click.",
+        description:
+          "Add direct internal links from commercial/priority pages to the conversion destination.",
+        expectedOutcome:
+          "Visitors on commercial pages reach the conversion action in one click.",
       },
       "zh-CN": {
         title: "打通商业页面到转化路径",
@@ -190,8 +219,10 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Improve underperforming landing conversion",
-        description: "Improve the landing content and CTA for organic pages converting below site baseline.",
-        expectedOutcome: "Landing key-event rate moves toward or above the site baseline.",
+        description:
+          "Improve the landing content and CTA for organic pages converting below site baseline.",
+        expectedOutcome:
+          "Landing key-event rate moves toward or above the site baseline.",
       },
       "zh-CN": {
         title: "改善转化偏低的落地页",
@@ -209,12 +240,15 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Add entity coverage and proof blocks",
-        description: "Add named entities and specific proof (named customers + concrete numbers) to priority pages for AI/GEO citability.",
-        expectedOutcome: "Priority pages carry verifiable entities and proof that AI answers can cite.",
+        description:
+          "Add named entities and specific proof (named customers + concrete numbers) to priority pages for AI/GEO citability.",
+        expectedOutcome:
+          "Priority pages carry verifiable entities and proof that AI answers can cite.",
       },
       "zh-CN": {
         title: "补充实体覆盖与佐证块",
-        description: "为优先页面补充具名实体与具体佐证（具名客户 + 明确数字），提升 AI/GEO 可引用性。",
+        description:
+          "为优先页面补充具名实体与具体佐证（具名客户 + 明确数字），提升 AI/GEO 可引用性。",
         expectedOutcome: "优先页面具备可验证的实体与佐证，便于 AI 回答引用。",
       },
     },
@@ -228,12 +262,15 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     copy: {
       en: {
         title: "Review AI crawler access in robots.txt",
-        description: "Review robots.txt rules that Disallow AI crawlers (OAI-SearchBot, ChatGPT-User, PerplexityBot, ClaudeBot) on commercial paths.",
-        expectedOutcome: "AI crawler access is an intentional, documented decision rather than an accidental block.",
+        description:
+          "Review robots.txt rules that Disallow AI crawlers (OAI-SearchBot, ChatGPT-User, PerplexityBot, ClaudeBot) on commercial paths.",
+        expectedOutcome:
+          "AI crawler access is an intentional, documented decision rather than an accidental block.",
       },
       "zh-CN": {
         title: "审查 robots.txt 中的 AI 爬虫访问",
-        description: "审查在商业路径上 Disallow AI 爬虫（OAI-SearchBot、ChatGPT-User、PerplexityBot、ClaudeBot）的 robots.txt 规则。",
+        description:
+          "审查在商业路径上 Disallow AI 爬虫（OAI-SearchBot、ChatGPT-User、PerplexityBot、ClaudeBot）的 robots.txt 规则。",
         expectedOutcome: "AI 爬虫访问成为有意且有记录的决策，而非意外拦截。",
       },
     },

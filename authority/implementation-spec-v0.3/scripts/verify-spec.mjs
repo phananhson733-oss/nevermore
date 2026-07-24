@@ -14,7 +14,7 @@ const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 const EXPECTED_OPERATION_COUNT = 45;
 const EXPECTED_ASYNC_OPERATION_COUNT = 8;
-const EXPECTED_TABLE_COUNT = 41;
+const EXPECTED_TABLE_COUNT = 44;
 const MIGRATION_VERSION_VIEW_PATTERN =
   /^CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version\s+AS\s+SELECT\s+'([^']+)'::text\s+AS\s+migration_version$/is;
 const SLICE_1_TABLES = [

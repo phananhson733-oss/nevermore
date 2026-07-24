@@ -21,7 +21,9 @@ export {
 } from "./util.ts";
 export type { TemplateArtifactLocale } from "./util.ts";
 
-export function buildTemplateArtifact(input: ArtifactPromptInput): ArtifactContent {
+export function buildTemplateArtifact(
+  input: ArtifactPromptInput,
+): ArtifactContent {
   assertTemplateArtifactLocale(input.outputLocale);
   const contentFormat = ARTIFACT_FORMAT[input.artifactType];
   switch (input.artifactType) {
@@ -31,6 +33,12 @@ export function buildTemplateArtifact(input: ArtifactPromptInput): ArtifactConte
       return { contentFormat, content: buildTechnicalTicket(input) };
     case "metadata_rewrite":
       return { contentFormat, content: buildMetadataRewrite(input) };
+    case "english_blog_draft":
+      // english_blog_draft has no deterministic template: it is minted by the
+      // Content Shadow worker via the markdown LLM envelope, never here.
+      throw new Error(
+        "english_blog_draft is not produced by deterministic template dispatch",
+      );
     default: {
       const _never: never = input.artifactType;
       throw new Error(`unsupported artifactType: ${String(_never)}`);

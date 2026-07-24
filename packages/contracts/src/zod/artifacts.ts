@@ -11,6 +11,7 @@ export const ArtifactType = z.enum([
   "content_brief",
   "metadata_rewrite",
   "technical_ticket",
+  "english_blog_draft",
 ]);
 export type ArtifactType = z.infer<typeof ArtifactType>;
 
@@ -73,8 +74,8 @@ export type CreateArtifactWireRequest = z.infer<
   typeof CreateArtifactWireRequest
 >;
 
-export const CreateArtifactRequest = CreateArtifactWireRequest
-  .superRefine((value, ctx) => {
+export const CreateArtifactRequest = CreateArtifactWireRequest.superRefine(
+  (value, ctx) => {
     if (
       value.generationMode === "template" &&
       !canonicalTemplateLocale(value.outputLocale)
@@ -85,15 +86,15 @@ export const CreateArtifactRequest = CreateArtifactWireRequest
         message: UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE,
       });
     }
-  })
-  .transform((value) =>
-    value.generationMode === "template"
-      ? {
-          ...value,
-          outputLocale: canonicalTemplateLocale(value.outputLocale)!,
-        }
-      : value,
-  );
+  },
+).transform((value) =>
+  value.generationMode === "template"
+    ? {
+        ...value,
+        outputLocale: canonicalTemplateLocale(value.outputLocale)!,
+      }
+    : value,
+);
 export type CreateArtifactRequest = z.infer<typeof CreateArtifactRequest>;
 
 /**
@@ -103,11 +104,9 @@ export type CreateArtifactRequest = z.infer<typeof CreateArtifactRequest>;
  */
 const ArtifactRevisionContent = z.union([
   z.string().max(MAX_ARTIFACT_CONTENT_CHARS),
-  z
-    .record(z.string(), z.unknown())
-    .refine(isArtifactContentWithinBudget, {
-      message: `Serialized artifact content must not exceed ${MAX_ARTIFACT_CONTENT_CHARS} characters.`,
-    }),
+  z.record(z.string(), z.unknown()).refine(isArtifactContentWithinBudget, {
+    message: `Serialized artifact content must not exceed ${MAX_ARTIFACT_CONTENT_CHARS} characters.`,
+  }),
 ]);
 
 const ArtifactRevisionUpdate = z

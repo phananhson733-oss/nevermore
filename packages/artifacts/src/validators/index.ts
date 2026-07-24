@@ -4,7 +4,11 @@
  * means the revision may be saved as draft but MUST NOT be set ready (§10.1).
  */
 
-import type { ArtifactContent, ArtifactType, ArtifactValidationResult } from "../types.ts";
+import type {
+  ArtifactContent,
+  ArtifactType,
+  ArtifactValidationResult,
+} from "../types.ts";
 import { ARTIFACT_FORMAT } from "../types.ts";
 import { validateMarkdownSections, type RequiredSection } from "./markdown.ts";
 import { validateMetadata } from "./metadata.ts";
@@ -52,18 +56,30 @@ export function validateArtifact(
 
   switch (type) {
     case "content_brief":
-      errors.push(...validateMarkdownBody(content, CONTENT_BRIEF_SECTIONS.map(toRequiredSection)));
+      errors.push(
+        ...validateMarkdownBody(
+          content,
+          CONTENT_BRIEF_SECTIONS.map(toRequiredSection),
+        ),
+      );
       break;
     case "technical_ticket": {
       const required = [
         ...TECHNICAL_TICKET_CORE_SECTIONS,
-        ...(opts?.requiresValidationRollback === true ? TECHNICAL_TICKET_VALIDATION_SECTIONS : []),
+        ...(opts?.requiresValidationRollback === true
+          ? TECHNICAL_TICKET_VALIDATION_SECTIONS
+          : []),
       ].map(toRequiredSection);
       errors.push(...validateMarkdownBody(content, required));
       break;
     }
     case "metadata_rewrite":
       errors.push(...validateMetadata(content.content));
+      break;
+    case "english_blog_draft":
+      // A shadow English blog draft is free-form markdown; it carries no fixed
+      // required-section contract at this layer (QA gating is a shadow concern).
+      errors.push(...validateMarkdownBody(content, []));
       break;
     default: {
       const _never: never = type;

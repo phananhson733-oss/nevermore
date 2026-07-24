@@ -190,6 +190,9 @@ const EXPECTED_TABLES = [
   "keyword_entity_sources",
   "competitor_entities",
   "competitor_origin_occurrences",
+  "flow_shadow_runs",
+  "flow_shadow_research_packs",
+  "flow_shadow_qa_gates",
 ];
 
 const EXPECTED_RULES = [

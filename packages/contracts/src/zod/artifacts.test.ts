@@ -1,9 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
+  ArtifactType,
   CreateArtifactRequest,
   MAX_ARTIFACT_CONTENT_CHARS,
   UpdateArtifactRequest,
 } from "./artifacts.ts";
+
+describe("ArtifactType", () => {
+  it.each([
+    "content_brief",
+    "metadata_rewrite",
+    "technical_ticket",
+    "english_blog_draft",
+  ])("accepts the persisted artifact type %s", (value) => {
+    expect(ArtifactType.safeParse(value).success).toBe(true);
+  });
+
+  it("does not admit research_pack as an artifact type (it is a shadow child table)", () => {
+    expect(ArtifactType.safeParse("research_pack").success).toBe(false);
+  });
+});
 
 describe("CreateArtifactRequest delivery locale", () => {
   it.each([

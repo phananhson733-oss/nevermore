@@ -5,7 +5,11 @@
  * raw CSV, unfiltered site text, other projects' content, or logs.
  */
 
-export type ArtifactType = "content_brief" | "metadata_rewrite" | "technical_ticket";
+export type ArtifactType =
+  | "content_brief"
+  | "metadata_rewrite"
+  | "technical_ticket"
+  | "english_blog_draft";
 export type GenerationMode = "template" | "structured_llm";
 export type ContentFormat = "markdown" | "json" | "csv";
 
@@ -14,6 +18,7 @@ export const ARTIFACT_FORMAT: Record<ArtifactType, ContentFormat> = {
   content_brief: "markdown",
   metadata_rewrite: "json",
   technical_ticket: "markdown",
+  english_blog_draft: "markdown",
 };
 
 export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
@@ -24,8 +29,7 @@ export const ANALYSIS_INVOCATION_TASKS = [
   "finding_summary",
   "product_profile_synthesis",
 ] as const;
-export type AnalysisInvocationTask =
-  (typeof ANALYSIS_INVOCATION_TASKS)[number];
+export type AnalysisInvocationTask = (typeof ANALYSIS_INVOCATION_TASKS)[number];
 
 /** Maximum items accepted by any bounded artifact prompt/output collection. */
 export const MAX_ARTIFACT_COLLECTION_ITEMS = 100;
@@ -49,7 +53,11 @@ export interface PromptIcp {
   readonly offers: readonly string[];
   readonly useCases: readonly string[];
   readonly differentiators: readonly string[];
-  readonly primaryConversion: { readonly label: string; readonly type: string; readonly targetUrl: string | null } | null;
+  readonly primaryConversion: {
+    readonly label: string;
+    readonly type: string;
+    readonly targetUrl: string | null;
+  } | null;
   readonly marketCodes: readonly string[];
 }
 

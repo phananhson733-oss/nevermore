@@ -809,7 +809,7 @@ export interface components {
         /** @enum {string} */
         ActionStatus: "candidate" | "planned" | "in_progress" | "blocked" | "done" | "dismissed";
         /** @enum {string} */
-        ArtifactType: "content_brief" | "metadata_rewrite" | "technical_ticket";
+        ArtifactType: "content_brief" | "metadata_rewrite" | "technical_ticket" | "english_blog_draft";
         /** @enum {string} */
         ArtifactStatus: "generating" | "draft" | "ready" | "failed" | "archived";
         /** @enum {string} */
