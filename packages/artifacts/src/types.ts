@@ -28,6 +28,10 @@ export const ANALYSIS_INVOCATION_TASKS = [
   "artifact_generation",
   "finding_summary",
   "product_profile_synthesis",
+  // The Content Shadow English draft call. It uses the same pinned markdown
+  // envelope as artifact generation but belongs to a different, shadow-mode
+  // pipeline, so its invocations stay separately auditable (Slice 2 D4).
+  "content_shadow_draft",
 ] as const;
 export type AnalysisInvocationTask = (typeof ANALYSIS_INVOCATION_TASKS)[number];
 

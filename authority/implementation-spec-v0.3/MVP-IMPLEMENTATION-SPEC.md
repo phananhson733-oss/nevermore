@@ -10,7 +10,7 @@ owner: SignalFrame
 
 # Nevermore Unified Growth Opportunity — v0.3 可执行权威
 
-本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 45 个 operation 与 8 个 async operation，SQL 精确声明 44 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger，以及从最新可读 DiagnosticRun 冻结输入投影的可溯源多 URL Growth Map、Keyword Library 与 Competitor Library 列表/详情。Keyword/Competitor Library 的稳定实体、不可变来源与治理状态均写入 canonical persistence；没有来源证据的 SERP overlap、AI citation 或关键词指标不得被合成。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
+本文件冻结 Nevermore 统一增长机会产品的 v0.3 产品模型、对象边界与 reviewed Slice 1 change sequence。当前 normative machine surface 已激活为 `0.3.0 / 2026-07-21`：OpenAPI 精确声明 47 个 operation 与 9 个 async operation，SQL 精确声明 44 张应用表，确定性规则为 `mvp.rules.0.2.1` 的 11 条规则。当前 surface 还包含 URL-first Product Profile 的读取、append-only 草稿编辑、基于冻结 Crawl 证据的异步合成、竞品审核/补录和显式确认，逐 DiagnosticRun 持久化 Finding 明确目标成员的 append-only ledger，以及从最新可读 DiagnosticRun 冻结输入投影的可溯源多 URL Growth Map、Keyword Library 与 Competitor Library 列表/详情。Keyword/Competitor Library 的稳定实体、不可变来源与治理状态均写入 canonical persistence；没有来源证据的 SERP overlap、AI citation 或关键词指标不得被合成。只有实现、迁移、机器合同、lock、两个 verifier 与测试在同一提交更新后，后续变化才成为新的 normative surface。
 
 规范词“必须 / MUST”“不得 / MUST NOT”是当前机器面或已审核变更边界的发布条件；“应 / SHOULD”是强建议，偏离时必须在代码评审中记录原因；“可 / MAY”是非阻塞增强。凡是标为“reviewed change sequence”“planned”或“stop gate 后”的内容，均不是当前可调用 API、已存在表或已交付产品事实。
 
@@ -933,6 +933,8 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `getProjectReport` — 读取客户报告 projection。
 - `createProjectExport` — 异步生成 bundle。
 - `getProjectExport` — 读取 export metadata/sign URL。
+- `createContentShadowRun` — 冻结已确认 content Finding/Action/content_brief revision + 竞品集 + SearchQuery cluster + 独立 GenerativeQuery 集，排队一次 pinned SEO/GEO Content Shadow run；shadow 模式只做内部写入，绝不写 CMS。
+- `getContentShadowRun` — 读取单个 Content Shadow run 的只读投影：冻结输入、research pack、draft revision 与 QA verdict；phase 由 append-only 子行派生。
 <!-- API_OPERATIONS_END -->
 
 异步 operation 固定如下：
@@ -946,6 +948,7 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `createProductProfileSynthesisRun`
 - `createActionArtifact`
 - `createProjectExport`
+- `createContentShadowRun`
 <!-- ASYNC_OPERATIONS_END -->
 
 `importProjectSourceFile(mode=preview)` 返回 200；其 confirm 分支返回 202。其他列表/详情读取 200，Project 创建 201，Context/Finding/Action/Artifact patch 200，disconnect 204，OAuth callback 303。
@@ -1225,9 +1228,9 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 
 ### 17.1 合同与基础
 
-- **AC-001** `pnpm verify:authority` 通过；45 operationId、8 async operation、44 table 与当前应用 ordered migrations 完全一致；0012～0020 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0020_content_shadow_foundation`。
+- **AC-001** `pnpm verify:authority` 通过；47 operationId、9 async operation、44 table 与当前应用 ordered migrations 完全一致；0012～0021 累积迁移以精确 bounded executable blocks 纳入 authority schema，最终 migration version 为 `0021_content_shadow_invocation_task`。
 - **AC-002** Redocly lint 无 error；生成 client/server types 无手工 `any` patch。
-- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；44 表、51 个 named index、63 个 trigger、16 个 runtime routine、Product Profile reservation/provenance routines、frozen Crawl seed constraints、Observation→SitePage lineage guards、Finding target ledger，以及 Keyword/Competitor Library 的来源、审核与 append-only guards 均存在。Rollback-safe schema smoke 覆盖结构计数、Crawl exact fetch、GSC/GA4 canonical/slash variant、歧义拒绝、无伪造 PageSnapshot、逐 Run target ledger 与最终 `0020_content_shadow_foundation` version projection；真实 CSV/DataForSEO/GSC keyword projection 和 Product Profile/CSV competitor provenance 由 replay-safe PostgreSQL integration tests 覆盖。
+- **AC-003** `schema.sql` 在空 PostgreSQL 15+ 一次成功、第二次幂等成功；44 表、51 个 named index、63 个 trigger、16 个 runtime routine、Product Profile reservation/provenance routines、frozen Crawl seed constraints、Observation→SitePage lineage guards、Finding target ledger，以及 Keyword/Competitor Library 的来源、审核与 append-only guards 均存在。Rollback-safe schema smoke 覆盖结构计数、Crawl exact fetch、GSC/GA4 canonical/slash variant、歧义拒绝、无伪造 PageSnapshot、逐 Run target ledger 与最终 `0021_content_shadow_invocation_task` version projection；真实 CSV/DataForSEO/GSC keyword projection 和 Product Profile/CSV competitor provenance 由 replay-safe PostgreSQL integration tests 覆盖。
 - **AC-004** pg-boss schema 由库创建且不进入 Drizzle migration。
 - **AC-005** 未认证 API 401；跨 Workspace/project child ID 404；browser 不能直连 app schema。
 - **AC-006** 创建 Run 与 enqueue 任一侧故障均整体 rollback；不存在 queued-without-job 或 job-without-run。

@@ -12,8 +12,8 @@ const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
 const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 const RULE_SET_VERSION = "mvp.rules.0.2.1";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
-const EXPECTED_OPERATION_COUNT = 45;
-const EXPECTED_ASYNC_OPERATION_COUNT = 8;
+const EXPECTED_OPERATION_COUNT = 47;
+const EXPECTED_ASYNC_OPERATION_COUNT = 9;
 const EXPECTED_TABLE_COUNT = 44;
 const MIGRATION_VERSION_VIEW_PATTERN =
   /^CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version\s+AS\s+SELECT\s+'([^']+)'::text\s+AS\s+migration_version$/is;
@@ -1562,6 +1562,37 @@ if (fs.existsSync(contentShadowFoundationMigrationPath)) {
     "Content Shadow foundation must freeze append-only shadow projection tables and content_shadow/english_blog_draft admission",
   );
 }
+const contentShadowInvocationTaskMigrationPath = path.join(
+  appRoot,
+  "packages/db/migrations/0021_content_shadow_invocation_task.sql",
+);
+check(
+  fs.existsSync(contentShadowInvocationTaskMigrationPath),
+  "Content Shadow invocation-task migration is missing",
+);
+if (fs.existsSync(contentShadowInvocationTaskMigrationPath)) {
+  const source = fs.readFileSync(
+    contentShadowInvocationTaskMigrationPath,
+    "utf8",
+  );
+  const contract = exactExecutableMigrationCoverage({
+    authoritySource: files.sql,
+    migrationSource: source,
+    migrationVersion: "0021_content_shadow_invocation_task",
+    failureMessage:
+      "authority SQL must embed the exact cumulative 0021 Content Shadow invocation-task contract as one bounded executable block",
+  });
+  cumulativeMigrationContracts.push(contract);
+  const migration = stripSqlComments(source);
+  check(
+    /analysis_invocations_task_check/i.test(migration) &&
+      /task\s+IN\s*\([\s\S]*?'content_shadow_draft'/i.test(migration) &&
+      /task\s+IN\s*\([\s\S]*?'product_profile_synthesis'/i.test(migration) &&
+      /task\s+IN\s*\([\s\S]*?'artifact_generation'/i.test(migration) &&
+      /task\s+IN\s*\([\s\S]*?'finding_summary'/i.test(migration),
+    "Content Shadow invocation task must widen the closed AnalysisInvocation task vocabulary without dropping a historical task",
+  );
+}
 verifyMigrationOwnedDefinitionUniqueness(cumulativeMigrationContracts);
 const authorityExecutableStatements = executableSqlStatements(files.sql);
 const canonicalSitePageFunctionIndex = authorityExecutableStatements.findIndex(
@@ -1636,8 +1667,8 @@ const authorityMigrationVersions = executableSqlStatements(files.sql)
   .filter((version) => version !== undefined);
 check(
   authorityMigrationVersions.length === 1 &&
-    authorityMigrationVersions[0] === "0020_content_shadow_foundation",
-  "authority SQL must define exactly one final 0020 migration-version projection",
+    authorityMigrationVersions[0] === "0021_content_shadow_invocation_task",
+  "authority SQL must define exactly one final 0021 migration-version projection",
 );
 check(
   /CREATE\s+TRIGGER\s+site_pages_set_updated_at\b/i.test(sqlWithoutComments),

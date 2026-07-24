@@ -13,6 +13,7 @@ const mocked = vi.hoisted(() => ({
   registerDiagnoseHandler: vi.fn(),
   registerProfileSynthesizeHandler: vi.fn(),
   registerArtifactHandlers: vi.fn(),
+  registerContentShadowHandler: vi.fn(),
   startWorkerMaintenance: vi.fn(),
   getWorkerMaintenanceFromStartError: vi.fn(),
   startWorkerHealthSnapshotLoop: vi.fn(),
@@ -42,6 +43,9 @@ vi.mock("./handlers/diagnose.ts", () => ({
 }));
 vi.mock("./handlers/profile-synthesize.ts", () => ({
   registerProfileSynthesizeHandler: mocked.registerProfileSynthesizeHandler,
+}));
+vi.mock("./handlers/content-shadow.ts", () => ({
+  registerContentShadowHandler: mocked.registerContentShadowHandler,
 }));
 vi.mock("./handlers/artifact.ts", () => ({
   registerArtifactHandlers: mocked.registerArtifactHandlers,
@@ -139,6 +143,9 @@ function configureSuccessfulBoot(order: string[]) {
   mocked.registerArtifactHandlers.mockImplementation(async () => {
     order.push("artifact");
   });
+  mocked.registerContentShadowHandler.mockImplementation(async () => {
+    order.push("content-shadow");
+  });
   mocked.startWorkerMaintenance.mockImplementation(async () => {
     order.push("maintenance.start");
     return maintenance;
@@ -202,6 +209,7 @@ describe("worker bootstrap lifecycle", () => {
       "diagnose",
       "profile.synthesize",
       "artifact",
+      "content-shadow",
       "maintenance.start",
       "readiness.acquire",
       "health.start",
@@ -522,6 +530,7 @@ describe("worker bootstrap lifecycle", () => {
       expect(mocked.registerDiagnoseHandler).not.toHaveBeenCalled();
       expect(mocked.registerProfileSynthesizeHandler).not.toHaveBeenCalled();
       expect(mocked.registerArtifactHandlers).not.toHaveBeenCalled();
+      expect(mocked.registerContentShadowHandler).not.toHaveBeenCalled();
       expect(mocked.startWorkerMaintenance).not.toHaveBeenCalled();
       expect(mocked.acquireWorkerReadinessLease).not.toHaveBeenCalled();
       expect(resources.boss.stop).toHaveBeenCalledTimes(1);

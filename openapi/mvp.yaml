@@ -581,6 +581,63 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
+  /projects/{projectId}/content-shadow-runs:
+    post:
+      tags: [Runs, Execution]
+      summary: Queue a pinned SEO/GEO Content Shadow run over a confirmed content brief
+      description: |
+        Freezes an already confirmed content Finding, its single canonical Action, the
+        confirmed content_brief revision, an explicit competitor set, one SearchQuery cluster
+        and a separate GenerativeQuery set into an immutable content-addressed tuple, then
+        queues one shadow-mode run. This command confirms nothing a second time: it requires a
+        Finding that the canonical Finding Review transaction already confirmed and refuses
+        otherwise. The brief is consumed as-is and never regenerated. The run performs internal
+        writes only and never writes to a CMS or publishes anything.
+      operationId: createContentShadowRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateContentShadowRunRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/content-shadow-runs/{flowShadowRunId}:
+    get:
+      tags: [Execution]
+      summary: Read one Content Shadow run projection
+      description: |
+        Returns one Content Shadow run as a strictly read-only projection. Run status is
+        projected from the canonical async run and the phase is derived from which append-only
+        child rows exist; the shadow rows own no second lifecycle. A run outside the caller's
+        workspace or project is reported as absent.
+      operationId: getContentShadowRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/FlowShadowRunId'
+      responses:
+        '200':
+          description: The requested Content Shadow run projection.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContentShadowRunHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
   /projects/{projectId}/actions/{actionId}/recheck:
     post:
       tags: [Runs, Diagnosis]
@@ -1237,6 +1294,11 @@ components:
       schema: { $ref: '#/components/schemas/Uuid' }
     ArtifactId:
       name: artifactId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    FlowShadowRunId:
+      name: flowShadowRunId
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Uuid' }
@@ -4273,6 +4335,211 @@ components:
         scope: { $ref: '#/components/schemas/GrowthAuditScope' }
         outputLocale: { $ref: '#/components/schemas/LocaleCode' }
         capabilityContractVersion: { type: string, const: 'growth-audit.0.3.0' }
+
+    ContentShadowSearchCluster:
+      type: object
+      additionalProperties: false
+      required: [clusterKey, keywordEntityIds]
+      description: |
+        The frozen SearchQuery cluster. Search identities stay in their own field and are never
+        merged with generative query identities into a shared set or a shared volume.
+      properties:
+        clusterKey: { type: string, minLength: 1, maxLength: 200 }
+        keywordEntityIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+
+    CreateContentShadowRunRequest:
+      type: object
+      additionalProperties: false
+      required: [actionId, searchCluster, outputLocale, capabilityContractVersion]
+      description: |
+        Immutable input for one Content Shadow run. Confirmation is deliberately absent: the
+        source Finding must already be confirmed through the canonical Finding Review
+        transaction. flowAdapterVersion is server-pinned and may only be echoed.
+      properties:
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        contentBriefRevision:
+          type: integer
+          minimum: 1
+          description: Defaults to the confirmed brief's current revision when omitted.
+        flowAdapterVersion: { type: string, const: 'content-shadow-adapter.0.3.0' }
+        competitorEntityIds:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+        searchCluster: { $ref: '#/components/schemas/ContentShadowSearchCluster' }
+        generativeQueryEntityIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Uuid' }
+          description: Generative answer observation, kept separate from search demand observation.
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        capabilityContractVersion: { type: string, const: 'content-shadow.0.3.0' }
+
+    ContentShadowQaClaim:
+      type: object
+      additionalProperties: false
+      required: [claimId, kind, status, detail]
+      properties:
+        claimId: { type: string, minLength: 1, maxLength: 200 }
+        kind:
+          type: string
+          enum: [red_line, structure, citability, coverage]
+        status:
+          type: string
+          enum: [passed, failed, unevaluated]
+          description: unevaluated is honest missing judgement, never an implicit pass.
+        detail: { type: string, minLength: 1, maxLength: 2000 }
+
+    ContentShadowAuthoritySource:
+      type: object
+      additionalProperties: false
+      required: [kind, ref, authorityTier, limitation]
+      properties:
+        kind:
+          type: string
+          enum: [content_brief, search_query, generative_query, competitor]
+        ref: { type: string, minLength: 1, maxLength: 500 }
+        authorityTier:
+          type: string
+          enum: [A, B, C, D]
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+
+    ContentShadowRunResponse:
+      type: object
+      additionalProperties: false
+      description: |
+        Read-only Content Shadow run projection. Status is projected from the canonical async
+        run and phase is derived from which append-only child rows exist. There is no publish
+        surface: Slice 2 performs zero external writes.
+      required:
+        - flowShadowRunId
+        - projectId
+        - siteId
+        - asyncRunId
+        - status
+        - phase
+        - contentHash
+        - projectionVersion
+        - flowAdapterVersion
+        - outputLocale
+        - createdAt
+        - source
+        - frozenInputs
+        - research
+        - draft
+        - qa
+      properties:
+        flowShadowRunId: { $ref: '#/components/schemas/Uuid' }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        asyncRunId: { $ref: '#/components/schemas/Uuid' }
+        status:
+          type: string
+          enum: [queued, running, completed, partial, failed, cancelled]
+        phase:
+          type: string
+          enum: [queued, research, draft, qa, complete, failed]
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        projectionVersion: { type: string, minLength: 1, maxLength: 200 }
+        flowAdapterVersion: { type: string, minLength: 1, maxLength: 200 }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        createdAt: { type: string, format: date-time }
+        source:
+          type: object
+          additionalProperties: false
+          required: [findingId, actionId, contentBriefArtifactId, contentBriefRevision]
+          properties:
+            findingId: { $ref: '#/components/schemas/Uuid' }
+            actionId: { $ref: '#/components/schemas/Uuid' }
+            contentBriefArtifactId: { $ref: '#/components/schemas/Uuid' }
+            contentBriefRevision: { type: integer, minimum: 1 }
+        frozenInputs:
+          type: object
+          additionalProperties: false
+          required:
+            - primaryFindingId
+            - sourceDiagnosticRunId
+            - competitorEntityIds
+            - searchCluster
+            - generativeQueryEntityIds
+          properties:
+            primaryFindingId: { $ref: '#/components/schemas/Uuid' }
+            sourceDiagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+            competitorEntityIds:
+              type: array
+              maxItems: 50
+              items: { $ref: '#/components/schemas/Uuid' }
+            searchCluster:
+              type: object
+              additionalProperties: false
+              required: [clusterKey, keywordEntityIds]
+              properties:
+                clusterKey: { type: string, minLength: 1, maxLength: 200 }
+                keywordEntityIds:
+                  type: array
+                  maxItems: 500
+                  items: { $ref: '#/components/schemas/Uuid' }
+            generativeQueryEntityIds:
+              type: array
+              maxItems: 500
+              items: { $ref: '#/components/schemas/Uuid' }
+        research:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [packId, sources, limitations, generatedAt]
+          properties:
+            packId: { $ref: '#/components/schemas/Uuid' }
+            sources:
+              type: array
+              maxItems: 1000
+              items: { $ref: '#/components/schemas/ContentShadowAuthoritySource' }
+            limitations:
+              type: array
+              maxItems: 100
+              items: { type: string, minLength: 1, maxLength: 2000 }
+            generatedAt: { type: string, format: date-time }
+        draft:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [artifactId, status, currentRevision, contentText]
+          properties:
+            artifactId: { $ref: '#/components/schemas/Uuid' }
+            status:
+              type: string
+              enum: [generating, draft, ready, failed, archived]
+              description: The internal shadow draft lifecycle; it never reaches a published state.
+            currentRevision: { type: integer, minimum: 0 }
+            contentText: { type: [string, 'null'] }
+        qa:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [gateId, verdict, evaluatedArtifactId, evaluatedRevision, claims, evaluatedAt]
+          properties:
+            gateId: { $ref: '#/components/schemas/Uuid' }
+            verdict:
+              type: string
+              enum: [passed, needs_review, blocked]
+            evaluatedArtifactId: { $ref: '#/components/schemas/Uuid' }
+            evaluatedRevision: { type: integer, minimum: 1 }
+            claims:
+              type: array
+              maxItems: 500
+              items: { $ref: '#/components/schemas/ContentShadowQaClaim' }
+            evaluatedAt: { type: string, format: date-time }
+
+    ContentShadowRunHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ContentShadowRunResponse' }
 
     RecheckTargetScope:
       type: object

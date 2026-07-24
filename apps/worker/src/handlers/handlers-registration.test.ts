@@ -3,6 +3,7 @@ import type { WorkerContext } from "../context.ts";
 import { runCollection } from "../collection/run-collection.ts";
 import { runProductProfileSynthesis } from "../product-profile/run-product-profile-synthesis.ts";
 import { registerArtifactHandlers } from "./artifact.ts";
+import { registerContentShadowHandler } from "./content-shadow.ts";
 import { registerCollectHandlers } from "./collect.ts";
 import { registerDiagnoseHandler } from "./diagnose.ts";
 import { registerProfileSynthesizeHandler } from "./profile-synthesize.ts";
@@ -15,6 +16,9 @@ vi.mock("../collection/run-collection.ts", () => ({ runCollection: vi.fn() }));
 vi.mock("../diagnostic/run-diagnostic.ts", () => ({ runDiagnostic: vi.fn() }));
 vi.mock("../artifact/run-artifact.ts", () => ({ runArtifact: vi.fn() }));
 vi.mock("../export/run-export.ts", () => ({ runExport: vi.fn() }));
+vi.mock("../content-shadow/run-content-shadow.ts", () => ({
+  runContentShadow: vi.fn(),
+}));
 vi.mock("../product-profile/run-product-profile-synthesis.ts", () => ({
   runProductProfileSynthesis: vi.fn(),
 }));
@@ -41,8 +45,9 @@ describe("worker handler registration", () => {
     await registerDiagnoseHandler(ctx);
     await registerProfileSynthesizeHandler(ctx);
     await registerArtifactHandlers(ctx);
+    await registerContentShadowHandler(ctx);
 
-    expect(work).toHaveBeenCalledTimes(9);
+    expect(work).toHaveBeenCalledTimes(10);
     expect(work.mock.calls.map((call) => call[0])).toEqual([
       "collect.crawl",
       "collect.gsc",
@@ -53,6 +58,7 @@ describe("worker handler registration", () => {
       "profile.synthesize",
       "artifact.generate",
       "export.bundle",
+      "content-shadow",
     ]);
     for (const call of work.mock.calls) {
       expect(call[1]).toEqual({ includeMetadata: true });

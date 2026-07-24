@@ -334,6 +334,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/content-shadow-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue a pinned SEO/GEO Content Shadow run over a confirmed content brief
+         * @description Freezes an already confirmed content Finding, its single canonical Action, the
+         *     confirmed content_brief revision, an explicit competitor set, one SearchQuery cluster
+         *     and a separate GenerativeQuery set into an immutable content-addressed tuple, then
+         *     queues one shadow-mode run. This command confirms nothing a second time: it requires a
+         *     Finding that the canonical Finding Review transaction already confirmed and refuses
+         *     otherwise. The brief is consumed as-is and never regenerated. The run performs internal
+         *     writes only and never writes to a CMS or publishes anything.
+         */
+        post: operations["createContentShadowRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/content-shadow-runs/{flowShadowRunId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one Content Shadow run projection
+         * @description Returns one Content Shadow run as a strictly read-only projection. Run status is
+         *     projected from the canonical async run and the phase is derived from which append-only
+         *     child rows exist; the shadow rows own no second lifecycle. A run outside the caller's
+         *     workspace or project is reported as absent.
+         */
+        get: operations["getContentShadowRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/actions/{actionId}/recheck": {
         parameters: {
             query?: never;
@@ -2428,6 +2477,119 @@ export interface components {
             /** @constant */
             capabilityContractVersion: "growth-audit.0.3.0";
         };
+        /**
+         * @description The frozen SearchQuery cluster. Search identities stay in their own field and are never
+         *     merged with generative query identities into a shared set or a shared volume.
+         */
+        ContentShadowSearchCluster: {
+            clusterKey: string;
+            keywordEntityIds: components["schemas"]["Uuid"][];
+        };
+        /**
+         * @description Immutable input for one Content Shadow run. Confirmation is deliberately absent: the
+         *     source Finding must already be confirmed through the canonical Finding Review
+         *     transaction. flowAdapterVersion is server-pinned and may only be echoed.
+         */
+        CreateContentShadowRunRequest: {
+            actionId: components["schemas"]["Uuid"];
+            /** @description Defaults to the confirmed brief's current revision when omitted. */
+            contentBriefRevision?: number;
+            /** @constant */
+            flowAdapterVersion?: "content-shadow-adapter.0.3.0";
+            competitorEntityIds?: components["schemas"]["Uuid"][];
+            searchCluster: components["schemas"]["ContentShadowSearchCluster"];
+            /** @description Generative answer observation, kept separate from search demand observation. */
+            generativeQueryEntityIds?: components["schemas"]["Uuid"][];
+            outputLocale: components["schemas"]["LocaleCode"];
+            /** @constant */
+            capabilityContractVersion: "content-shadow.0.3.0";
+        };
+        ContentShadowQaClaim: {
+            claimId: string;
+            /** @enum {string} */
+            kind: "red_line" | "structure" | "citability" | "coverage";
+            /**
+             * @description unevaluated is honest missing judgement, never an implicit pass.
+             * @enum {string}
+             */
+            status: "passed" | "failed" | "unevaluated";
+            detail: string;
+        };
+        ContentShadowAuthoritySource: {
+            /** @enum {string} */
+            kind: "content_brief" | "search_query" | "generative_query" | "competitor";
+            ref: string;
+            /** @enum {string} */
+            authorityTier: "A" | "B" | "C" | "D";
+            limitation: string | null;
+        };
+        /**
+         * @description Read-only Content Shadow run projection. Status is projected from the canonical async
+         *     run and phase is derived from which append-only child rows exist. There is no publish
+         *     surface: Slice 2 performs zero external writes.
+         */
+        ContentShadowRunResponse: {
+            flowShadowRunId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            asyncRunId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+            /** @enum {string} */
+            phase: "queued" | "research" | "draft" | "qa" | "complete" | "failed";
+            contentHash: string;
+            projectionVersion: string;
+            flowAdapterVersion: string;
+            outputLocale: components["schemas"]["LocaleCode"];
+            /** Format: date-time */
+            createdAt: string;
+            source: {
+                findingId: components["schemas"]["Uuid"];
+                actionId: components["schemas"]["Uuid"];
+                contentBriefArtifactId: components["schemas"]["Uuid"];
+                contentBriefRevision: number;
+            };
+            frozenInputs: {
+                primaryFindingId: components["schemas"]["Uuid"];
+                sourceDiagnosticRunId: components["schemas"]["Uuid"];
+                competitorEntityIds: components["schemas"]["Uuid"][];
+                searchCluster: {
+                    clusterKey: string;
+                    keywordEntityIds: components["schemas"]["Uuid"][];
+                };
+                generativeQueryEntityIds: components["schemas"]["Uuid"][];
+            };
+            research: {
+                packId: components["schemas"]["Uuid"];
+                sources: components["schemas"]["ContentShadowAuthoritySource"][];
+                limitations: string[];
+                /** Format: date-time */
+                generatedAt: string;
+            } | null;
+            draft: {
+                artifactId: components["schemas"]["Uuid"];
+                /**
+                 * @description The internal shadow draft lifecycle; it never reaches a published state.
+                 * @enum {string}
+                 */
+                status: "generating" | "draft" | "ready" | "failed" | "archived";
+                currentRevision: number;
+                contentText: string | null;
+            } | null;
+            qa: {
+                gateId: components["schemas"]["Uuid"];
+                /** @enum {string} */
+                verdict: "passed" | "needs_review" | "blocked";
+                evaluatedArtifactId: components["schemas"]["Uuid"];
+                evaluatedRevision: number;
+                claims: components["schemas"]["ContentShadowQaClaim"][];
+                /** Format: date-time */
+                evaluatedAt: string;
+            } | null;
+        };
+        ContentShadowRunHttpResponse: {
+            data: components["schemas"]["ContentShadowRunResponse"];
+        };
         RecheckTargetScope: {
             /** @enum {string} */
             kind: "url" | "template" | "site" | "page_set" | "http_status" | "canonical_issue" | "keyword_cluster" | "user_agent";
@@ -2941,6 +3103,7 @@ export interface components {
         FindingId: components["schemas"]["Uuid"];
         ActionId: components["schemas"]["Uuid"];
         ArtifactId: components["schemas"]["Uuid"];
+        FlowShadowRunId: components["schemas"]["Uuid"];
         ExportId: components["schemas"]["Uuid"];
         GoogleProvider: "gsc" | "ga4";
         CsvProvider: "csv";
@@ -3602,6 +3765,61 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    createContentShadowRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateContentShadowRunRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["AsyncAccepted"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getContentShadowRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                flowShadowRunId: components["parameters"]["FlowShadowRunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The requested Content Shadow run projection. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentShadowRunHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };

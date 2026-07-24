@@ -24,7 +24,8 @@ export type QueueName =
   | "diagnose"
   | "profile.synthesize"
   | "artifact.generate"
-  | "export.bundle";
+  | "export.bundle"
+  | "content-shadow";
 
 interface QueueConfig {
   /** Job execution timeout (spec §13.1). */
@@ -89,6 +90,15 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
   },
   "export.bundle": {
     expireInSeconds: 300,
+    retryLimit: 2,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
+  // Content Shadow is a multi-stage long-running capability (research → draft →
+  // QA) whose draft step calls a model, so it takes the diagnose-sized window
+  // rather than the short single-shot artifact window.
+  "content-shadow": {
+    expireInSeconds: 600,
     retryLimit: 2,
     retryBackoff: true,
     heartbeatSeconds: 60,

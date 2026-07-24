@@ -18,6 +18,7 @@ export * from "./zod/diagnostics.ts";
 export * from "./zod/artifacts.ts";
 export * from "./zod/audit.ts";
 export * from "./zod/capabilities.ts";
+export * from "./zod/content-shadow.ts";
 export * from "./zod/opportunities.ts";
 export * from "./zod/recheck.ts";
 export * from "./zod/growth-map.ts";

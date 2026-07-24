@@ -7,19 +7,19 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "0e651d26e21d76d6b4d14051977f01a91852156a991c93a1ae73b244c546db3d",
-    "MVP-IMPLEMENTATION-SPEC.md": "370f5063498fd72f5facdb821127a85b229e6108385302a9fb4893c4a9263e5a",
-    "openapi.yaml": "296d9ef66bd26be73ad0fbda4129f2ad185a0962c5ea5917b8e318425e444770",
-    "schema.sql": "2b36879c870f63a167acb1aa041c3331867cfe8addba8364ad5ab534faab6b7a",
+    "MVP-IMPLEMENTATION-SPEC.md": "a2eecaa18169f8f57ee7f3deedd9fdba7b6f69f21cce36091b07d44dd630fb04",
+    "openapi.yaml": "af8822aa925978a6b296700ef44417e3ee58b195ca22395cfa90e34480c4ca40",
+    "schema.sql": "c960089b404dbfe6712f619d32eac62ad1992e632f247c5105a88ddc468cb76b",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
-    "scripts/schema-smoke.sql": "d5b51bfaa74c7d8c9fbf99159f08560d57a086e057c639142c6ea78fabaaefd8",
-    "scripts/verify-spec.mjs": "a59feb436d7dac0319c603061a5a85a48e292836fdf3d6bbbfcb74a2f5b75e51"
+    "scripts/schema-smoke.sql": "b5e76dea9a15f6f9cd1d108ec7b01b4d01532f97ef3f1ed829ae6cd288b04155",
+    "scripts/verify-spec.mjs": "c4a8d438051293bad9ea1e50f8d75ccd43ef57019e24f0adc750fc27f8e42449"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "296d9ef66bd26be73ad0fbda4129f2ad185a0962c5ea5917b8e318425e444770",
-    "packages/contracts/src/generated/openapi.ts": "3fe7093c8f7a0ffcce3fcd0382a94d8bf272eeb4e8717c665e815364dbe490f9",
+    "openapi/mvp.yaml": "af8822aa925978a6b296700ef44417e3ee58b195ca22395cfa90e34480c4ca40",
+    "packages/contracts/src/generated/openapi.ts": "2092f29665bcb6404d3f2e7c3b6b00bf2b5e7450c0ee28bd2c087d03a1dea573",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
-    "packages/db/migrations/schema-smoke.sql": "d5b51bfaa74c7d8c9fbf99159f08560d57a086e057c639142c6ea78fabaaefd8",
-    "scripts/verify-implementation.mjs": "dcf89cf6eddd693866d5a9d0e19997586d377b51850cc5e6c77d869baaa398df"
+    "packages/db/migrations/schema-smoke.sql": "b5e76dea9a15f6f9cd1d108ec7b01b4d01532f97ef3f1ed829ae6cd288b04155",
+    "scripts/verify-implementation.mjs": "2c24a821e45768edd21d9c3d500e6897ec1936294b5ef3d1a1993a60d28728de"
   },
   "apiOperations": [
     "listProjects",
@@ -44,6 +44,8 @@
     "getProjectRun",
     "createDiagnosticRun",
     "createGrowthAuditRun",
+    "createContentShadowRun",
+    "getContentShadowRun",
     "createActionRecheck",
     "listProjectAuditUrls",
     "getProjectAuditUrl",
@@ -74,6 +76,7 @@
     "createCollectionRun",
     "createDiagnosticRun",
     "createGrowthAuditRun",
+    "createContentShadowRun",
     "createActionRecheck",
     "createActionArtifact",
     "createProjectExport"

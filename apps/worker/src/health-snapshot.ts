@@ -18,6 +18,7 @@ const RUN_KINDS = [
   "diagnostic",
   "artifact_generation",
   "export",
+  "content_shadow",
 ] as const satisfies readonly QueueTechnicalMetric["kind"][];
 
 type HealthLogger = Pick<Logger, "info" | "error">;

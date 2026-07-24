@@ -55,17 +55,26 @@ export interface ArtifactJobPayload {
   readonly projectId: string;
 }
 
-interface RunRequest {
-  artifactId: string;
-  actionId: string;
-  artifactType: ArtifactType;
-  generationMode: "template" | "structured_llm";
-  outputLocale: string;
-  operatorInstructions: string | null;
+/**
+ * The allowlisted projection inputs shared by every artifact-shaped prompt.
+ * The Content Shadow worker reuses this exact loader so the shadow English
+ * draft is built from the same frozen Action/Finding/Evidence lineage as a
+ * first-class artifact, with no second, divergent prompt assembly.
+ */
+export interface ArtifactPromptRequest {
+  readonly actionId: string;
+  readonly artifactType: ArtifactType;
+  readonly outputLocale: string;
+  readonly operatorInstructions: string | null;
   /** Absent only on legacy runs queued before source-lineage freezing. */
-  sourceDiagnosticRunId?: string | null;
+  readonly sourceDiagnosticRunId?: string | null;
   /** Absent only on legacy runs; otherwise must match the source diagnosis. */
-  sourceIcpProfileId?: string | null;
+  readonly sourceIcpProfileId?: string | null;
+}
+
+interface RunRequest extends ArtifactPromptRequest {
+  artifactId: string;
+  generationMode: "template" | "structured_llm";
 }
 
 const SUPERSEDED_RUN = {
@@ -111,10 +120,7 @@ function firstCanonicalSubjectUrl(values: readonly unknown[]): string | null {
       continue;
     }
     const url = subjectUrlOf(candidate);
-    if (
-      url !== null &&
-      url.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars
-    ) {
+    if (url !== null && url.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars) {
       return url;
     }
   }
@@ -267,9 +273,9 @@ export function artifactContentHash(
   content: ArtifactContent["content"],
 ): string {
   return contentHash(
-    (typeof content === "string"
-      ? { text: content }
-      : content) as Parameters<typeof contentHash>[0],
+    (typeof content === "string" ? { text: content } : content) as Parameters<
+      typeof contentHash
+    >[0],
   );
 }
 
@@ -320,7 +326,7 @@ export async function runArtifact(
         outputLocale: assertTemplateArtifactLocale(req.outputLocale),
       };
     }
-    const input = await buildPromptInput(ctx, scope, req);
+    const input = await buildArtifactPromptInput(ctx, scope, req);
     let content: ArtifactContent;
     let invocationId: string | null = null;
 
@@ -346,12 +352,7 @@ export async function runArtifact(
         // silently manufacture a template revision for a structured_llm request:
         // the artifact remains failed and the exact stable error code is auditable.
         if (error instanceof LLMError && error.invocation) {
-          await persistAnalysisInvocation(
-            ctx,
-            scope,
-            runId,
-            error.invocation,
-          );
+          await persistAnalysisInvocation(ctx, scope, runId, error.invocation);
         }
         throw error;
       }
@@ -441,9 +442,7 @@ export async function runArtifact(
       );
       if (superseded) return;
       const code =
-        error instanceof LLMError
-          ? error.code
-          : transientFailureCode(error);
+        error instanceof LLMError ? error.code : transientFailureCode(error);
       if (!(await runs.resetToQueued(attempt))) {
         ctx.logger.info("artifact_skip_stale_attempt", { code });
         return;
@@ -505,10 +504,9 @@ async function cancelRunIfGenerationWasSuperseded(
   return ctx.db.transaction(async (tx) => {
     const runs = new AsyncRunsRepository(tx);
     if (!(await runs.lockAttemptForUpdate(attempt))) return true;
-    const artifact = await new ExecutionArtifactsRepository(tx).findByIdForUpdate(
-      scope,
-      artifactId,
-    );
+    const artifact = await new ExecutionArtifactsRepository(
+      tx,
+    ).findByIdForUpdate(scope, artifactId);
     if (ownsGeneration(artifact, runId, expectedRevision)) return false;
     await runs.setTerminal(attempt, SUPERSEDED_RUN);
     return true;
@@ -565,10 +563,10 @@ async function persistAnalysisInvocation(
   return invocationId;
 }
 
-async function buildPromptInput(
+export async function buildArtifactPromptInput(
   ctx: WorkerContext,
   scope: ProjectScope,
-  req: RunRequest,
+  req: ArtifactPromptRequest,
 ): Promise<ArtifactPromptInput> {
   void ARTIFACT_FORMAT;
   void PROMPT_SET_VERSION;
@@ -640,10 +638,7 @@ async function buildPromptInput(
     throw new Error("artifact evidence projection failed its integrity check");
   }
   const evidenceIds = [...new Set(links.map((link) => link.evidence_id))];
-  const evidenceRows = await evidenceRepo.findByIds(
-    scope,
-    evidenceIds,
-  );
+  const evidenceRows = await evidenceRepo.findByIds(scope, evidenceIds);
   const expectedEvidenceIds = new Set(evidenceIds);
   const observedEvidenceIds = new Set<string>();
   for (const row of evidenceRows) {
@@ -652,7 +647,9 @@ async function buildPromptInput(
       observedEvidenceIds.has(row.id) ||
       row.diagnostic_run_id !== sourceDiagnosticRunId
     ) {
-      throw new Error("artifact evidence projection failed its integrity check");
+      throw new Error(
+        "artifact evidence projection failed its integrity check",
+      );
     }
     observedEvidenceIds.add(row.id);
   }

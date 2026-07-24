@@ -199,6 +199,7 @@ describeDb("async run delivery recovery", () => {
     expect(metrics.map(({ kind }) => kind)).toEqual([
       "artifact_generation",
       "collection",
+      "content_shadow",
       "diagnostic",
       "export",
       "product_profile_synthesis",
@@ -291,7 +292,10 @@ describeDb("async run delivery recovery", () => {
 async function seedRun(
   handle: DbHandle,
   scope: ProjectScope,
-  input: { readonly status: "queued" | "running"; readonly attemptCount: number },
+  input: {
+    readonly status: "queued" | "running";
+    readonly attemptCount: number;
+  },
 ): Promise<string> {
   const runId = randomUUID();
   await handle.db.insert(asyncRuns).values({

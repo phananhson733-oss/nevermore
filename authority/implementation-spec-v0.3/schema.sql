@@ -7023,6 +7023,25 @@ BEGIN
 END; $$;
 -- END EXACT EXECUTABLE MIGRATION 0020_content_shadow_foundation
 
+-- BEGIN EXACT EXECUTABLE MIGRATION 0021_content_shadow_invocation_task
+
+-- The Content Shadow draft is minted through the pinned markdown LLM envelope,
+-- so it records an AnalysisInvocation like every other model call. `task` is a
+-- closed vocabulary enforced in the database, so admitting the shadow pipeline's
+-- own task value is DDL, not only a TypeScript union. Every historical task is
+-- preserved; this widens the CHECK and never narrows it.
+ALTER TABLE app.analysis_invocations
+  DROP CONSTRAINT IF EXISTS analysis_invocations_task_check;
+ALTER TABLE app.analysis_invocations
+  ADD CONSTRAINT analysis_invocations_task_check
+  CHECK (task IN (
+    'finding_summary',
+    'artifact_generation',
+    'product_profile_synthesis',
+    'content_shadow_draft'
+  ));
+-- END EXACT EXECUTABLE MIGRATION 0021_content_shadow_invocation_task
+
 -- Mutable projections receive server timestamps.
 DROP TRIGGER IF EXISTS workspaces_set_updated_at ON app.workspaces;
 CREATE TRIGGER workspaces_set_updated_at BEFORE UPDATE ON app.workspaces
@@ -7121,7 +7140,7 @@ CREATE TRIGGER page_snapshots_append_only BEFORE UPDATE OR DELETE ON app.page_sn
 -- Runtime-safe migration identity for technical health signals (spec §15.2).
 -- A view keeps migration identity separate from the frozen table inventory.
 CREATE OR REPLACE VIEW app.schema_migration_version AS
-  SELECT '0020_content_shadow_foundation'::text AS migration_version;
+  SELECT '0021_content_shadow_invocation_task'::text AS migration_version;
 
 -- The browser must not access canonical tables directly through the Supabase Data API.
 DO $$

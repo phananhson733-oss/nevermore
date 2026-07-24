@@ -135,6 +135,8 @@ export function queueForRun(
       return "artifact.generate";
     case "export":
       return "export.bundle";
+    case "content_shadow":
+      return "content-shadow";
     default:
       return null;
   }
@@ -375,8 +377,7 @@ export function startRunRecoveryLoop(
     options.reconcile ??
     ((signal: AbortSignal) =>
       runRecoverySweep(ctx, {
-        missingAfterMs:
-          options.missingAfterMs ?? RUN_RECOVERY_MISSING_AFTER_MS,
+        missingAfterMs: options.missingAfterMs ?? RUN_RECOVERY_MISSING_AFTER_MS,
         signal,
       }));
 

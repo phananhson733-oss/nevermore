@@ -1,0 +1,731 @@
+import { randomUUID } from "node:crypto";
+
+process.env["APP_ORIGIN"] ??= "http://localhost:3000";
+process.env["CREDENTIAL_ENCRYPTION_KEY"] ??=
+  Buffer.alloc(32).toString("base64");
+process.env["GOOGLE_OAUTH_CLIENT_ID"] ??= "id";
+process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ??= "secret";
+process.env["OPENAI_API_KEY"] ??= "sk-test";
+process.env["OPENAI_MODEL"] ??= "gpt-4o-mini";
+process.env["DATAFORSEO_ENABLED"] ??= "false";
+process.env["LOG_LEVEL"] ??= "error";
+
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDbHandle, type Db, type DbHandle } from "@sf/db/client";
+import {
+  ActionsRepository,
+  AsyncRunsRepository,
+  CapabilityRunsRepository,
+  CollectionRunsRepository,
+  contentHash,
+  DataSnapshotsRepository,
+  DiagnosticRunsRepository,
+  EvidenceRepository,
+  ExecutionArtifactsRepository,
+  FindingsRepository,
+  FlowShadowQaGatesRepository,
+  FlowShadowResearchPacksRepository,
+  FlowShadowRunsRepository,
+  CONTENT_SHADOW_PROJECTION_VERSION,
+  SourceConnectionsRepository,
+  type CanonicalValue,
+  type ProjectScope,
+} from "@sf/db";
+import {
+  asyncRuns,
+  clientProjects,
+  icpProfiles,
+  sites,
+  workspaces,
+} from "@sf/db/schema";
+import {
+  buildContentShadowInputManifest,
+  CONTENT_SHADOW_ADAPTER_VERSION,
+} from "@sf/flow-shadow";
+import { LLMError } from "@sf/artifacts";
+import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import type { Logger } from "@sf/observability";
+import type { WorkerContext } from "../../context.ts";
+import { runContentShadow } from "../run-content-shadow.ts";
+
+/**
+ * The Content Shadow pipeline driven end to end against a real local Postgres
+ * with a stubbed model call. Covers what the shadow contract actually promises:
+ * the append-only provenance chain, convergence on crash re-delivery, the
+ * pinned-input replay guard, and the absence of any external/publish write.
+ */
+
+const DATABASE_URL = process.env["DATABASE_URL"];
+const describeDb = DATABASE_URL ? describe : describe.skip;
+const CRAWL_METHOD_VERSION = "crawl.site_graph.v2";
+const CRAWL_DATASET_KEY = "crawl.site_graph.v1";
+const CONTENT_RULE_ID = "CONTENT-COVERAGE-001";
+const DRAFT_MARKDOWN = "# Shadow draft\n\nA deterministic fixture body.";
+
+const generateArtifact = vi.hoisted(() => vi.fn());
+vi.mock("@sf/artifacts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sf/artifacts")>();
+  return {
+    ...actual,
+    createOpenAIClient: () => ({ generateArtifact }),
+  };
+});
+
+const NOOP = (): void => undefined;
+const testLogger: Logger = {
+  context: { service: "worker", environment: "test" },
+  child: () => testLogger,
+  debug: NOOP,
+  info: NOOP,
+  warn: NOOP,
+  error: NOOP,
+};
+
+interface ShadowFixture {
+  readonly base: ProjectSeed;
+  readonly scope: ProjectScope;
+  readonly actorId: string;
+  readonly siteId: string;
+  readonly findingId: string;
+  readonly actionId: string;
+  readonly briefArtifactId: string;
+  readonly diagnosticRunId: string;
+  readonly asyncRunId: string;
+  readonly flowShadowRunId: string;
+  readonly contentHash: string;
+}
+
+async function seedProject(db: Db): Promise<ProjectSeed> {
+  const actorId = randomUUID();
+  const workspaceId = randomUUID();
+  const projectId = randomUUID();
+  const siteId = randomUUID();
+  const icpProfileId = randomUUID();
+  const icpProfile = { productName: "Shadow fixture", siteLanguageCodes: ["en"] };
+  const icpContentHash = contentHash(icpProfile);
+
+  await db
+    .insert(workspaces)
+    .values({ id: workspaceId, name: `Shadow ${workspaceId}` });
+  await db.insert(clientProjects).values({
+    id: projectId,
+    workspace_id: workspaceId,
+    client_name: `Client ${projectId}`,
+    project_name: `Project ${projectId}`,
+    default_delivery_locale: "en",
+    created_by: actorId,
+  });
+  await db.insert(sites).values({
+    id: siteId,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    origin: `https://${projectId}.example.test`,
+    host: `${projectId}.example.test`,
+    market_codes: ["US"],
+    language_codes: ["en"],
+  });
+  const crawlSource = await new SourceConnectionsRepository(
+    db,
+  ).insertDefaultCrawl({ workspaceId, projectId, siteId, createdBy: actorId });
+  await db.insert(icpProfiles).values({
+    id: icpProfileId,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    version: 1,
+    status: "complete",
+    profile: icpProfile,
+    content_hash: icpContentHash,
+    created_by: actorId,
+  });
+
+  return {
+    scope: { workspaceId, projectId },
+    actorId,
+    siteId,
+    icpProfileId,
+    icpContentHash,
+    crawlSourceConnectionId: crawlSource.id,
+  };
+}
+
+interface ProjectSeed {
+  readonly scope: ProjectScope;
+  readonly actorId: string;
+  readonly siteId: string;
+  readonly icpProfileId: string;
+  readonly icpContentHash: string;
+  readonly crawlSourceConnectionId: string;
+}
+
+interface DiagnosticSeed {
+  readonly runId: string;
+  readonly collectionRunId: string;
+  readonly snapshotId: string;
+  readonly capturedAt: string;
+}
+
+/** One complete collection -> snapshot -> diagnostic run lineage. */
+async function seedDiagnosticRun(
+  db: Db,
+  base: ProjectSeed,
+): Promise<DiagnosticSeed> {
+  const { scope, actorId, siteId } = base;
+  const capturedAt = new Date().toISOString();
+  const sourceWindow = { start: null, end: null };
+
+  const collectionRunId = randomUUID();
+  await db.insert(asyncRuns).values({
+    id: collectionRunId,
+    workspace_id: scope.workspaceId,
+    project_id: scope.projectId,
+    kind: "collection",
+    status: "completed",
+    initiated_by: actorId,
+    started_at: capturedAt,
+    completed_at: capturedAt,
+  });
+  const collectionRuns = new CollectionRunsRepository(db);
+  await collectionRuns.insertPlaceholder({
+    runId: collectionRunId,
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    sourceConnectionId: base.crawlSourceConnectionId,
+    provider: "crawl",
+    operation: "site_graph",
+    methodVersion: CRAWL_METHOD_VERSION,
+    parametersHash: contentHash({ collectionRunId }),
+  });
+  const snapshot = await new DataSnapshotsRepository(db).insert({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    collectionRunId,
+    sourceConnectionId: base.crawlSourceConnectionId,
+    provider: "crawl",
+    datasetKey: CRAWL_DATASET_KEY,
+    schemaVersion: "0.2.0",
+    methodVersion: CRAWL_METHOD_VERSION,
+    capturedAt,
+    sourceWindow,
+    availability: "available",
+    limitation: "Content shadow worker fixture.",
+    rawObjectKey: null,
+    rowCount: 1,
+    checksum: contentHash({ collectionRunId, capturedAt }),
+  });
+  await collectionRuns.finalize(collectionRunId, {
+    rowCount: snapshot.row_count,
+    sourceWindow,
+    providerUsage: { urlsFetched: 1, pagesCollected: 1 },
+    stopReason: null,
+  });
+
+  const runId = randomUUID();
+  await db.insert(asyncRuns).values({
+    id: runId,
+    workspace_id: scope.workspaceId,
+    project_id: scope.projectId,
+    kind: "diagnostic",
+    status: "completed",
+    initiated_by: actorId,
+    started_at: capturedAt,
+    completed_at: capturedAt,
+  });
+  const inputManifest = {
+    projectId: scope.projectId,
+    siteId,
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
+    deliveryLocale: "en",
+    icp: {
+      id: base.icpProfileId,
+      version: 1,
+      contentHash: base.icpContentHash,
+    },
+    snapshots: [
+      {
+        snapshotId: snapshot.id,
+        provider: "crawl",
+        datasetKey: snapshot.dataset_key,
+        schemaVersion: snapshot.schema_version,
+        methodVersion: snapshot.method_version,
+        checksum: snapshot.checksum,
+        availability: snapshot.availability,
+        sourceWindow,
+        capturedAt: snapshot.captured_at,
+      },
+    ],
+  };
+  await new DiagnosticRunsRepository(db).insert({
+    runId,
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    icpProfileId: base.icpProfileId,
+    icpProfileVersion: 1,
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
+    outputLocale: "en",
+    inputManifest,
+    inputHash: contentHash(inputManifest),
+  });
+  return {
+    runId,
+    collectionRunId,
+    snapshotId: snapshot.id,
+    capturedAt: snapshot.captured_at,
+  };
+}
+
+/** Attach one primary Evidence row from `diagnostic` to `findingId`. */
+async function linkFindingEvidence(
+  db: Db,
+  base: ProjectSeed,
+  findingId: string,
+  diagnostic: DiagnosticSeed,
+): Promise<void> {
+  const evidenceRepo = new EvidenceRepository(db);
+  const evidenceScope = {
+    workspaceId: base.scope.workspaceId,
+    projectId: base.scope.projectId,
+    diagnosticRunId: diagnostic.runId,
+  };
+  const [evidenceId] = await evidenceRepo.insertMany(evidenceScope, [
+    {
+      sourceProvider: "crawl",
+      origin: "direct_public",
+      method: "observed",
+      grade: "B",
+      availability: "available",
+      support: "supports",
+      subjectRefs: ["https://example.test/blog"],
+      claim: "Observed content coverage gap.",
+      observedAt: diagnostic.capturedAt,
+      limitation: "Disposable worker fixture.",
+      snapshotId: diagnostic.snapshotId,
+      collectionRunId: diagnostic.collectionRunId,
+    },
+  ]);
+  await evidenceRepo.linkObservations(evidenceScope, [
+    { findingId, evidenceId: evidenceId!, role: "primary" },
+  ]);
+}
+
+async function seedShadowChain(
+  handle: DbHandle,
+  options: { readonly flowAdapterVersion?: string } = {},
+): Promise<ShadowFixture> {
+  const flowAdapterVersion =
+    options.flowAdapterVersion ?? CONTENT_SHADOW_ADAPTER_VERSION;
+  const db = handle.db;
+  const base = await seedProject(db);
+  const { scope, actorId, siteId } = base;
+  const diagnostic = await seedDiagnosticRun(db, base);
+  const diagnosticRunId = diagnostic.runId;
+  const capturedAt = diagnostic.capturedAt;
+
+  const finding = await new FindingsRepository(db).insert({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    findingKey: contentHash({ fixtureId: randomUUID() }),
+    ruleId: CONTENT_RULE_ID,
+    ruleVersion: 1,
+    ruleFamily: "content-coverage",
+    intent: "improve_coverage",
+    domain: "content_intent",
+    titleKey: "finding.content_coverage",
+    titleArgs: { cluster: "onboarding" },
+    summary: "A traced content coverage finding.",
+    summaryLocale: "en",
+    subjectRefs: ["keyword_cluster:onboarding"],
+    severity: "high",
+    confidence: "high",
+    reviewState: "confirmed",
+    runId: diagnosticRunId,
+    seenAt: capturedAt,
+  });
+  await linkFindingEvidence(db, base, finding.id, diagnostic);
+
+  const action = await new ActionsRepository(db).insert({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    sourceFindingId: finding.id,
+    sourceDiagnosticRunId: diagnosticRunId,
+    actionKey: contentHash({ fixtureId: randomUUID() }),
+    templateId: `content_brief.${randomUUID()}`,
+    templateVersion: 1,
+    title: "Draft the content brief",
+    description: "Produce a content brief for the confirmed coverage gap.",
+    contentLocale: "en",
+    priorityBand: "high",
+    roadmapLane: "now",
+    status: "planned",
+    effort: "medium",
+    risk: "low",
+    expectedOutcome: "The coverage gap is briefed.",
+    evidenceRefs: [],
+    createdBy: actorId,
+  });
+
+  const briefArtifactId = randomUUID();
+  await handle.pool.query(
+    `INSERT INTO app.execution_artifacts (
+       id, workspace_id, project_id, action_id, artifact_type, status,
+       generation_mode, output_locale, current_revision, validation_state,
+       content_hash, created_by
+     ) VALUES ($1,$2,$3,$4,'content_brief','ready','template','en',1,'valid',$5,$6)`,
+    [
+      briefArtifactId,
+      scope.workspaceId,
+      scope.projectId,
+      action.id,
+      contentHash({ briefArtifactId }),
+      actorId,
+    ],
+  );
+  await handle.pool.query(
+    `INSERT INTO app.artifact_revisions (
+       id, workspace_id, project_id, artifact_id, revision, output_locale,
+       content_format, content_text, content_hash, generated_by
+     ) VALUES ($1,$2,$3,$4,1,'en','markdown',$5,$6,'template')`,
+    [
+      randomUUID(),
+      scope.workspaceId,
+      scope.projectId,
+      briefArtifactId,
+      "# Content brief revision 1",
+      contentHash({ briefArtifactId, revision: 1 }),
+    ],
+  );
+
+  const asyncRunId = randomUUID();
+  await db.insert(asyncRuns).values({
+    id: asyncRunId,
+    workspace_id: scope.workspaceId,
+    project_id: scope.projectId,
+    kind: "content_shadow",
+    status: "queued",
+    active_key: `content_shadow:${action.id}`,
+    initiated_by: actorId,
+  });
+  await new CapabilityRunsRepository(db).create({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    asyncRunId,
+    capabilityId: "content-shadow",
+    capabilityVersion: "0.3.0",
+    inputManifestHash: contentHash({ asyncRunId }),
+    mode: "shadow",
+    sideEffectClass: "internal_write",
+  });
+
+  const manifest = buildContentShadowInputManifest({
+    primaryFindingId: finding.id,
+    sourceActionId: action.id,
+    sourceDiagnosticRunId: diagnosticRunId,
+    contentBriefArtifactId: briefArtifactId,
+    contentBriefRevision: 1,
+    competitorEntityIds: [],
+    searchCluster: { clusterKey: "onboarding", keywordEntityIds: [] },
+    generativeQueryEntityIds: [],
+    flowAdapterVersion,
+    promptSetVersion: PROMPT_SET_VERSION,
+    projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
+    outputLocale: "en",
+  });
+  const frozenHash = contentHash(manifest as unknown as CanonicalValue);
+  const shadowRun = await new FlowShadowRunsRepository(db).create({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    siteId,
+    capabilityRunId: asyncRunId,
+    sourceFindingId: finding.id,
+    sourceActionId: action.id,
+    contentBriefArtifactId: briefArtifactId,
+    contentBriefRevision: 1,
+    flowAdapterVersion,
+    frozenInputManifest: manifest as unknown as Record<string, unknown>,
+    contentHash: frozenHash,
+    projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
+  });
+
+  return {
+    base,
+    scope,
+    actorId,
+    siteId,
+    findingId: finding.id,
+    actionId: action.id,
+    briefArtifactId,
+    diagnosticRunId,
+    asyncRunId,
+    flowShadowRunId: shadowRun.id,
+    contentHash: frozenHash,
+  };
+}
+
+describeDb("runContentShadow", () => {
+  let handle: DbHandle;
+  let ctx: WorkerContext;
+
+  beforeAll(() => {
+    handle = createDbHandle(DATABASE_URL!);
+    ctx = {
+      db: handle.db,
+      boss: {} as WorkerContext["boss"],
+      blobStore: {} as WorkerContext["blobStore"],
+      credentialKey: Buffer.alloc(32),
+      appOrigin: "http://localhost:3000",
+      googleOAuth: { clientId: "id", clientSecret: "secret" },
+      openai: { apiKey: "sk-test", model: "gpt-4o-mini" },
+      findingSummariesEnabled: false,
+      logger: testLogger,
+    };
+  });
+  afterAll(async () => {
+    await handle?.end();
+  });
+
+  beforeEach(() => {
+    generateArtifact.mockReset();
+    generateArtifact.mockResolvedValue({
+      content: { contentFormat: "markdown", content: DRAFT_MARKDOWN },
+      invocation: {
+        task: "artifact_generation",
+        provider: "openai",
+        model: "gpt-4o-mini",
+        promptSetVersion: PROMPT_SET_VERSION,
+        inputHash: contentHash({ prompt: "fixture" }),
+        outputHash: contentHash({ output: "fixture" }),
+        status: "succeeded",
+        inputTokens: 10,
+        outputTokens: 20,
+        costUsd: null,
+        latencyMs: 5,
+        errorCode: null,
+      },
+    });
+  });
+
+  it("appends research, draft and QA children then completes the canonical run", async () => {
+    const fixture = await seedShadowChain(handle);
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const pack = await new FlowShadowResearchPacksRepository(handle.db).findByRun(
+      fixture.scope,
+      fixture.flowShadowRunId,
+    );
+    expect(pack?.content_hash).toBe(fixture.contentHash);
+    // Invariant 8: the persisted pack keeps the two observations separate.
+    expect(pack?.pack["searchObservation"]).toBeDefined();
+    expect(pack?.pack["generativeObservation"]).toBeDefined();
+
+    const artifacts = new ExecutionArtifactsRepository(handle.db);
+    const draft = await artifacts.findLiveByActionType(
+      fixture.scope,
+      fixture.actionId,
+      "english_blog_draft",
+    );
+    expect(draft).toMatchObject({ status: "draft", current_revision: 1 });
+    const revision = await artifacts.findRevision(
+      fixture.scope,
+      draft!.id,
+      1,
+    );
+    expect(revision?.content_text).toBe(DRAFT_MARKDOWN);
+    expect(revision?.generated_by).toBe("llm");
+    expect(revision?.analysis_invocation_id).not.toBeNull();
+
+    // The model call is recorded under the shadow pipeline's own closed task.
+    const invocations = await handle.pool.query(
+      "SELECT task FROM app.analysis_invocations WHERE async_run_id = $1",
+      [fixture.asyncRunId],
+    );
+    expect(invocations.rows).toEqual([{ task: "content_shadow_draft" }]);
+
+    const gates = await new FlowShadowQaGatesRepository(handle.db).findByRun(
+      fixture.scope,
+      fixture.flowShadowRunId,
+    );
+    expect(gates).toHaveLength(1);
+    // Task 4 records an honest needs_review skeleton, never a fake pass.
+    expect(gates[0]).toMatchObject({
+      verdict: "needs_review",
+      evaluated_revision: 1,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "completed",
+      result_type: "flow_shadow_run",
+      result_id: fixture.flowShadowRunId,
+    });
+
+    // Red line B/D: no second confirmation object and no publish state.
+    const actionRows = await handle.pool.query(
+      "SELECT id FROM app.actions WHERE project_id = $1",
+      [fixture.scope.projectId],
+    );
+    expect(actionRows.rows).toHaveLength(1);
+    const findingRow = await new FindingsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.findingId,
+    );
+    expect(findingRow?.review_state).toBe("confirmed");
+    expect(draft!.status).not.toBe("ready");
+  });
+
+  it("converges instead of duplicating when a crashed attempt is re-delivered", async () => {
+    const fixture = await seedShadowChain(handle);
+    const payload = {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    };
+
+    // First attempt crashes after RESEARCH, inside the model call. A transient
+    // failure returns the canonical run to `queued` for the queue retry.
+    const succeeding = generateArtifact.getMockImplementation();
+    generateArtifact.mockRejectedValueOnce(
+      new LLMError("RATE_LIMITED", "rate limited"),
+    );
+    await expect(runContentShadow(ctx, payload)).rejects.toThrow(LLMError);
+
+    const afterCrash = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(afterCrash?.status).toBe("queued");
+    void succeeding;
+
+    // The retry re-runs every step; each child insert converges (decision D2).
+    await runContentShadow(ctx, payload);
+
+    const packs = await handle.pool.query(
+      "SELECT count(*)::int AS count FROM app.flow_shadow_research_packs WHERE flow_shadow_run_id = $1",
+      [fixture.flowShadowRunId],
+    );
+    expect(packs.rows[0].count).toBe(1);
+
+    const gates = await new FlowShadowQaGatesRepository(handle.db).findByRun(
+      fixture.scope,
+      fixture.flowShadowRunId,
+    );
+    expect(gates).toHaveLength(1);
+
+    const drafts = await handle.pool.query(
+      "SELECT count(*)::int AS count, max(current_revision)::int AS revision FROM app.execution_artifacts WHERE action_id = $1 AND artifact_type = 'english_blog_draft'",
+      [fixture.actionId],
+    );
+    expect(drafts.rows[0].count).toBe(1);
+    expect(drafts.rows[0].revision).toBe(1);
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run?.status).toBe("completed");
+  });
+
+  it("fails with input drift when the source Finding moves past its frozen diagnosis", async () => {
+    const fixture = await seedShadowChain(handle);
+    // A later diagnosis re-observes the Finding, so it no longer belongs to the
+    // diagnosis the Action (and this shadow run) froze.
+    const laterRun = await seedDiagnosticRun(handle.db, fixture.base);
+    await linkFindingEvidence(
+      handle.db,
+      fixture.base,
+      fixture.findingId,
+      laterRun,
+    );
+    await new FindingsRepository(handle.db).touchSeen(fixture.findingId, {
+      ruleVersion: 1,
+      severity: "high",
+      confidence: "high",
+      titleArgs: { cluster: "onboarding" },
+      summary: "The content finding was observed again.",
+      summaryLocale: "en",
+      subjectRefs: ["keyword_cluster:onboarding"],
+      runId: laterRun.runId,
+      seenAt: new Date().toISOString(),
+      regressed: false,
+    });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
+    });
+    expect(generateArtifact).not.toHaveBeenCalled();
+    const packs = await handle.pool.query(
+      "SELECT count(*)::int AS count FROM app.flow_shadow_research_packs WHERE flow_shadow_run_id = $1",
+      [fixture.flowShadowRunId],
+    );
+    expect(packs.rows[0].count).toBe(0);
+  });
+
+  it("fails with input drift when the pinned Flow adapter advances past the frozen run", async () => {
+    // The run was frozen under an older adapter; the worker recomputes the
+    // tuple with the currently pinned version, so the hash can no longer agree.
+    const fixture = await seedShadowChain(handle, {
+      flowAdapterVersion: "content-shadow-adapter.0.2.0",
+    });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
+    });
+    expect(generateArtifact).not.toHaveBeenCalled();
+    const packs = await handle.pool.query(
+      "SELECT count(*)::int AS count FROM app.flow_shadow_research_packs WHERE flow_shadow_run_id = $1",
+      [fixture.flowShadowRunId],
+    );
+    expect(packs.rows[0].count).toBe(0);
+  });
+
+  it("fails a delivery whose scope does not match the canonical run", async () => {
+    const fixture = await seedShadowChain(handle);
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: randomUUID(),
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    // A foreign-scope delivery can never claim the run.
+    expect(run?.status).toBe("queued");
+    expect(generateArtifact).not.toHaveBeenCalled();
+  });
+});

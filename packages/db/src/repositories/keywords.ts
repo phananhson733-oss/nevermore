@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { clientProjects, keywordEntities } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
@@ -62,6 +62,8 @@ export interface KeywordReviewMappingInput {
 }
 
 export const MAX_KEYWORD_ENTITY_PAGE_SIZE = 100;
+/** Safety ceiling for one frozen keyword identity set (search + generative). */
+export const MAX_KEYWORD_ENTITY_BATCH = 500;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MARKET = /^[A-Z]{2}$/u;
@@ -98,13 +100,20 @@ function assertOptionalBounded(
     value !== null &&
     (value.length < 1 || value.length > max || value.trim() !== value)
   ) {
-    throw new RangeError(`${label} must be null or 1 to ${max} trimmed characters`);
+    throw new RangeError(
+      `${label} must be null or 1 to ${max} trimmed characters`,
+    );
   }
 }
 
 function assertReviewInput(input: KeywordReviewMappingInput): void {
-  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
-    throw new RangeError("expectedRevision must be a non-negative safe integer");
+  if (
+    !Number.isSafeInteger(input.expectedRevision) ||
+    input.expectedRevision < 0
+  ) {
+    throw new RangeError(
+      "expectedRevision must be a non-negative safe integer",
+    );
   }
   assertOptionalBounded(input.intent, "intent", 100);
   assertOptionalBounded(input.buyerStage, "buyerStage", 100);
@@ -119,7 +128,9 @@ function assertReviewInput(input: KeywordReviewMappingInput): void {
     input.mappingDecision !== "existing_page" &&
     input.mappedSitePageId !== null
   ) {
-    throw new RangeError("mappedSitePageId must be null unless mapping is existing_page");
+    throw new RangeError(
+      "mappedSitePageId must be null unless mapping is existing_page",
+    );
   }
 }
 
@@ -176,11 +187,15 @@ export class KeywordsRepository extends Repository {
         and(
           projectPredicate(keywordEntities, scope),
           activeProjectPredicate(scope),
-          options.status ? eq(keywordEntities.status, options.status) : undefined,
+          options.status
+            ? eq(keywordEntities.status, options.status)
+            : undefined,
           options.queryKind
             ? eq(keywordEntities.query_kind, options.queryKind)
             : undefined,
-          options.market ? eq(keywordEntities.market, options.market) : undefined,
+          options.market
+            ? eq(keywordEntities.market, options.market)
+            : undefined,
           after,
         ),
       )
@@ -221,6 +236,40 @@ export class KeywordsRepository extends Repository {
       )
       .limit(1)) as KeywordEntityRow[];
     return rows[0] ?? null;
+  }
+
+  /**
+   * Bounded batch existence read for a frozen keyword identity set. Callers
+   * that freeze an explicit entity set (Content Shadow) must prove every id
+   * belongs to this live project without issuing one query per id.
+   */
+  async listByIds(
+    scope: ProjectScope,
+    entityIds: readonly string[],
+  ): Promise<KeywordEntityRow[]> {
+    if (entityIds.length === 0) return [];
+    if (entityIds.length > MAX_KEYWORD_ENTITY_BATCH) {
+      throw new RangeError(
+        `entityIds must contain at most ${MAX_KEYWORD_ENTITY_BATCH} ids`,
+      );
+    }
+    return (await this.exec
+      .select(entitySelection)
+      .from(keywordEntities)
+      .innerJoin(
+        clientProjects,
+        and(
+          eq(clientProjects.id, keywordEntities.project_id),
+          eq(clientProjects.workspace_id, keywordEntities.workspace_id),
+        ),
+      )
+      .where(
+        and(
+          projectPredicate(keywordEntities, scope),
+          inArray(keywordEntities.id, [...entityIds]),
+          activeProjectPredicate(scope),
+        ),
+      )) as KeywordEntityRow[];
   }
 
   /** Optimistic review/mapping command. Null means stale, absent or archived. */

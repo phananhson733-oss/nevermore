@@ -1,6 +1,7 @@
 import type pg from "pg";
 
-export const LATEST_APP_MIGRATION = "0020_content_shadow_foundation" as const;
+export const LATEST_APP_MIGRATION =
+  "0021_content_shadow_invocation_task" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 

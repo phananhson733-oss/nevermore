@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import {
   clientProjects,
   competitorEntities,
@@ -59,8 +59,7 @@ interface CompetitorOriginCommon {
   readonly name: string | null;
 }
 
-export interface ProductProfileCompetitorOriginInput
-  extends CompetitorOriginCommon {
+export interface ProductProfileCompetitorOriginInput extends CompetitorOriginCommon {
   readonly originKind: "product_profile";
   readonly name: string;
   readonly productProfileId: string;
@@ -73,8 +72,7 @@ export interface ProductProfileCompetitorOriginInput
   readonly sourceAnalysisScope: readonly CompetitorAnalysisScope[];
 }
 
-export interface CsvKeywordGapCompetitorOriginInput
-  extends CompetitorOriginCommon {
+export interface CsvKeywordGapCompetitorOriginInput extends CompetitorOriginCommon {
   readonly originKind: "csv_keyword_gap";
   readonly name: null;
   readonly snapshotId: string;
@@ -206,6 +204,9 @@ const originCount = sql<number>`(
   where origin.competitor_id = app.competitor_entities.id
 )`;
 
+/** Safety ceiling for one frozen competitor identity set. */
+export const MAX_COMPETITOR_ENTITY_BATCH = 50;
+
 const competitorSelection = {
   id: competitorEntities.id,
   workspace_id: competitorEntities.workspace_id,
@@ -232,21 +233,22 @@ const originSelection = {
   product_profile_id: competitorOriginOccurrences.product_profile_id,
   profile_version: competitorOriginOccurrences.profile_version,
   candidate_id: competitorOriginOccurrences.candidate_id,
-  field_provenance_path:
-    competitorOriginOccurrences.field_provenance_path,
+  field_provenance_path: competitorOriginOccurrences.field_provenance_path,
   evidence_refs: competitorOriginOccurrences.evidence_refs,
   source_review_status: competitorOriginOccurrences.source_review_status,
   source_relationship: competitorOriginOccurrences.source_relationship,
-  source_analysis_scope:
-    competitorOriginOccurrences.source_analysis_scope,
+  source_analysis_scope: competitorOriginOccurrences.source_analysis_scope,
   data_snapshot_id: competitorOriginOccurrences.data_snapshot_id,
   normalized_observation_id:
     competitorOriginOccurrences.normalized_observation_id,
   import_preview_id: competitorOriginOccurrences.import_preview_id,
   source_pointer: competitorOriginOccurrences.source_pointer,
   manual_entry_id: competitorOriginOccurrences.manual_entry_id,
-  observed_at: sql<string | null>`${competitorOriginOccurrences.observed_at}`
-    .mapWith(nullableCanonicalInstant),
+  observed_at: sql<
+    string | null
+  >`${competitorOriginOccurrences.observed_at}`.mapWith(
+    nullableCanonicalInstant,
+  ),
   created_at: competitorOriginOccurrences.created_at,
 } as const;
 
@@ -352,14 +354,19 @@ function assertOriginInput(input: CompetitorOriginInput): void {
     case "product_profile":
       assertUuid(input.productProfileId, "productProfileId");
       assertUuid(input.candidateId, "candidateId");
-      if (!Number.isSafeInteger(input.profileVersion) || input.profileVersion < 1) {
+      if (
+        !Number.isSafeInteger(input.profileVersion) ||
+        input.profileVersion < 1
+      ) {
         throw new RangeError("profileVersion must be a positive safe integer");
       }
       if (
         input.fieldProvenancePath !== "/competitorCandidates" &&
         !PROFILE_PATH.test(input.fieldProvenancePath)
       ) {
-        throw new RangeError("fieldProvenancePath must cover a competitor candidate");
+        throw new RangeError(
+          "fieldProvenancePath must cover a competitor candidate",
+        );
       }
       assertEvidenceRefs(input.evidenceRefs);
       if (!REVIEW_STATUSES.has(input.sourceReviewStatus)) {
@@ -406,8 +413,13 @@ function assertOriginInput(input: CompetitorOriginInput): void {
 }
 
 function assertReviewInput(input: CompetitorReviewInput): void {
-  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
-    throw new RangeError("expectedRevision must be a non-negative safe integer");
+  if (
+    !Number.isSafeInteger(input.expectedRevision) ||
+    input.expectedRevision < 0
+  ) {
+    throw new RangeError(
+      "expectedRevision must be a non-negative safe integer",
+    );
   }
   assertName(input.name);
   if (!REVIEW_STATUSES.has(input.reviewStatus)) {
@@ -436,12 +448,14 @@ function assertReviewInput(input: CompetitorReviewInput): void {
 }
 
 function parseUpsertResult(value: unknown): CompetitorOriginUpsertResult {
-  const rows = (value as {
-    readonly rows?: readonly {
-      readonly occurrence_id?: unknown;
-      readonly competitor_id?: unknown;
-    }[];
-  }).rows;
+  const rows = (
+    value as {
+      readonly rows?: readonly {
+        readonly occurrence_id?: unknown;
+        readonly competitor_id?: unknown;
+      }[];
+    }
+  ).rows;
   const row = rows?.length === 1 ? rows[0] : undefined;
   if (
     !row ||
@@ -617,6 +631,36 @@ export class CompetitorsRepository extends Repository {
       )
       .limit(1)) as CompetitorEntityRow[];
     return rows[0] ?? null;
+  }
+
+  /**
+   * Bounded batch existence read for a frozen competitor identity set. Mirrors
+   * `KeywordsRepository.listByIds`: a frozen explicit set must be proven to
+   * belong to this live project without one query per id.
+   */
+  async listByIds(
+    scope: ProjectScope,
+    competitorIds: readonly string[],
+  ): Promise<CompetitorEntityRow[]> {
+    if (competitorIds.length === 0) return [];
+    if (competitorIds.length > MAX_COMPETITOR_ENTITY_BATCH) {
+      throw new RangeError(
+        `competitorIds must contain at most ${MAX_COMPETITOR_ENTITY_BATCH} ids`,
+      );
+    }
+    for (const competitorId of competitorIds) {
+      assertUuid(competitorId, "competitorId");
+    }
+    return (await this.exec
+      .select(competitorSelection)
+      .from(competitorEntities)
+      .where(
+        and(
+          projectPredicate(competitorEntities, scope),
+          inArray(competitorEntities.id, [...competitorIds]),
+          activeProjectPredicate(scope),
+        ),
+      )) as CompetitorEntityRow[];
   }
 
   async listOrigins(

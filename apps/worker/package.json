@@ -14,6 +14,7 @@
     "@sf/contracts": "workspace:*",
     "@sf/db": "workspace:*",
     "@sf/engine": "workspace:*",
+    "@sf/flow-shadow": "workspace:*",
     "@sf/observability": "workspace:*",
     "@sf/sources": "workspace:*",
     "pg-boss": "catalog:",

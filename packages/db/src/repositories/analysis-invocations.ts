@@ -1,10 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { analysisInvocations } from "../schema.ts";
-import {
-  Repository,
-  projectPredicate,
-  type ProjectScope,
-} from "./base.ts";
+import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
 /**
  * `analysis_invocations` is append-only (spec §10.2). One row per model call with
@@ -16,7 +12,8 @@ import {
 export type AnalysisInvocationTask =
   | "finding_summary"
   | "artifact_generation"
-  | "product_profile_synthesis";
+  | "product_profile_synthesis"
+  | "content_shadow_draft";
 
 export class AnalysisInvocationsRepository extends Repository {
   /**

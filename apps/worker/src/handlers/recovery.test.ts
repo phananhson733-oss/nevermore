@@ -78,6 +78,7 @@ describe("queueForRun", () => {
       "artifact.generate",
     );
     expect(queueForRun(run("export", {}))).toBe("export.bundle");
+    expect(queueForRun(run("content_shadow", {}))).toBe("content-shadow");
   });
 
   it("rejects unknown/missing collection providers", () => {

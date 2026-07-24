@@ -99,6 +99,7 @@ describe("startWorkerHealthSnapshotLoop", () => {
             retryCount24h: 0,
             failureCount24h: 1,
           },
+          zeroMetric("content_shadow"),
         ],
       },
     ]);
@@ -146,10 +147,10 @@ describe("startWorkerHealthSnapshotLoop", () => {
     });
 
     await loop.runNow();
-    expect(logger.error).toHaveBeenCalledWith(
-      "worker_health_snapshot_failed",
-      { code: "WORKER_HEALTH_QUERY_FAILED", type: "dependency" },
-    );
+    expect(logger.error).toHaveBeenCalledWith("worker_health_snapshot_failed", {
+      code: "WORKER_HEALTH_QUERY_FAILED",
+      type: "dependency",
+    });
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain(
       "query-customer-secret",
     );
@@ -184,10 +185,10 @@ describe("startWorkerHealthSnapshotLoop", () => {
     const firstRun = loop.runNow();
     await vi.advanceTimersByTimeAsync(50);
     await firstRun;
-    expect(logger.error).toHaveBeenCalledWith(
-      "worker_health_snapshot_failed",
-      { code: "WORKER_HEALTH_QUERY_FAILED", type: "dependency" },
-    );
+    expect(logger.error).toHaveBeenCalledWith("worker_health_snapshot_failed", {
+      code: "WORKER_HEALTH_QUERY_FAILED",
+      type: "dependency",
+    });
 
     await vi.advanceTimersByTimeAsync(50);
     expect(loadQueueMetrics).toHaveBeenCalledTimes(1);
@@ -278,10 +279,10 @@ describe("startWorkerHealthSnapshotLoop", () => {
     });
 
     await expect(loop.runNow()).resolves.toBeUndefined();
-    expect(logger.error).toHaveBeenCalledWith(
-      "worker_health_snapshot_failed",
-      { code: "WORKER_HEALTH_QUERY_FAILED", type: "dependency" },
-    );
+    expect(logger.error).toHaveBeenCalledWith("worker_health_snapshot_failed", {
+      code: "WORKER_HEALTH_QUERY_FAILED",
+      type: "dependency",
+    });
     await loop.stop();
   });
 

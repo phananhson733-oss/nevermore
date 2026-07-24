@@ -3095,7 +3095,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0020_content_shadow_foundation' THEN
+  ) IS DISTINCT FROM '0021_content_shadow_invocation_task' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
 END;

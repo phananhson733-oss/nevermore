@@ -15,7 +15,8 @@ export type RunKind =
   | "diagnostic"
   | "artifact_generation"
   | "export"
-  | "product_profile_synthesis";
+  | "product_profile_synthesis"
+  | "content_shadow";
 export type RunStatus =
   | "queued"
   | "running"
@@ -113,7 +114,8 @@ export class AsyncRunsRepository extends Repository {
           ('diagnostic'::text),
           ('artifact_generation'::text),
           ('export'::text),
-          ('product_profile_synthesis'::text)
+          ('product_profile_synthesis'::text),
+          ('content_shadow'::text)
       )
       select
         run_kinds.kind,
@@ -157,18 +159,20 @@ export class AsyncRunsRepository extends Repository {
     return result.rows.flatMap((row) => {
       const kind = runKind(row.kind);
       if (kind === null) return [];
-      return [{
-        kind,
-        queuedDepth: nonNegativeMetric(row.queued_depth),
-        runningDepth: nonNegativeMetric(row.running_depth),
-        oldestQueuedAgeMs: nonNegativeMetric(row.oldest_queued_age_ms),
-        averageRunDurationMs24h: nonNegativeMetric(
-          row.average_run_duration_ms_24h,
-        ),
-        maxRunDurationMs24h: nonNegativeMetric(row.max_run_duration_ms_24h),
-        retryCount24h: nonNegativeMetric(row.retry_count_24h),
-        failureCount24h: nonNegativeMetric(row.failure_count_24h),
-      }];
+      return [
+        {
+          kind,
+          queuedDepth: nonNegativeMetric(row.queued_depth),
+          runningDepth: nonNegativeMetric(row.running_depth),
+          oldestQueuedAgeMs: nonNegativeMetric(row.oldest_queued_age_ms),
+          averageRunDurationMs24h: nonNegativeMetric(
+            row.average_run_duration_ms_24h,
+          ),
+          maxRunDurationMs24h: nonNegativeMetric(row.max_run_duration_ms_24h),
+          retryCount24h: nonNegativeMetric(row.retry_count_24h),
+          failureCount24h: nonNegativeMetric(row.failure_count_24h),
+        },
+      ];
     });
   }
 
@@ -255,10 +259,7 @@ export class AsyncRunsRepository extends Repository {
    * this scoped atomic UPDATE won the claim, else null (already
    * running/terminal or outside the delivery scope).
    */
-  async claim(
-    scope: ProjectScope,
-    runId: string,
-  ): Promise<AsyncRunRow | null> {
+  async claim(scope: ProjectScope, runId: string): Promise<AsyncRunRow | null> {
     const rows = await this.exec
       .update(asyncRuns)
       .set({
@@ -283,9 +284,7 @@ export class AsyncRunsRepository extends Repository {
    * same run either happens before this lock (and makes it return null) or waits
    * until the owned completion commits.
    */
-  async lockAttemptForUpdate(
-    attempt: RunAttempt,
-  ): Promise<AsyncRunRow | null> {
+  async lockAttemptForUpdate(attempt: RunAttempt): Promise<AsyncRunRow | null> {
     if (!validAttemptCount(attempt.attemptCount)) return null;
     const rows = await this.exec
       .select()
@@ -441,11 +440,7 @@ export class AsyncRunsRepository extends Repository {
     return (await this.exec
       .select()
       .from(asyncRuns)
-      .where(
-        scope
-          ? and(projectPredicate(asyncRuns, scope), active)
-          : active,
-      )
+      .where(scope ? and(projectPredicate(asyncRuns, scope), active) : active)
       .orderBy(
         asc(sql`coalesce(${asyncRuns.started_at}, ${asyncRuns.queued_at})`),
         asc(asyncRuns.id),
@@ -497,7 +492,8 @@ function runKind(value: unknown): RunKind | null {
     value === "diagnostic" ||
     value === "artifact_generation" ||
     value === "export" ||
-    value === "product_profile_synthesis"
+    value === "product_profile_synthesis" ||
+    value === "content_shadow"
     ? value
     : null;
 }
