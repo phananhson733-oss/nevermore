@@ -3,6 +3,21 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { auditModuleResults, auditRuns } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
+/**
+ * The frozen projection version of a deliberate full Growth Audit. Frontstage
+ * decision surfaces (Overview, Opportunities, Growth Map) read only this
+ * projection so a targeted recheck never hijacks the primary audit.
+ */
+export const GROWTH_AUDIT_PROJECTION_VERSION = "growth-audit.0.3.0";
+
+/**
+ * The frozen projection version of a targeted Action recheck. A recheck creates
+ * its own immutable audit run under this version; it is read only by the Results
+ * comparison surface and is excluded from the primary audit read paths.
+ */
+export const GROWTH_AUDIT_RECHECK_PROJECTION_VERSION =
+  "growth-audit-recheck.0.3.0";
+
 export interface AuditRunRow {
   readonly id: string;
   readonly workspace_id: string;
@@ -76,10 +91,7 @@ export class AuditRunsRepository extends Repository {
     throw new Error("audit run replay conflicts with immutable values");
   }
 
-  async findById(
-    scope: ProjectScope,
-    id: string,
-  ): Promise<AuditRunRow | null> {
+  async findById(scope: ProjectScope, id: string): Promise<AuditRunRow | null> {
     const rows = await this.exec
       .select()
       .from(auditRuns)
@@ -127,6 +139,30 @@ export class AuditRunsRepository extends Repository {
       .select()
       .from(auditRuns)
       .where(projectPredicate(auditRuns, scope))
+      .orderBy(desc(auditRuns.created_at), desc(auditRuns.id))
+      .limit(1);
+    return (rows[0] as AuditRunRow | undefined) ?? null;
+  }
+
+  /**
+   * The latest audit run for one projection version. The primary audit read
+   * paths pass {@link GROWTH_AUDIT_PROJECTION_VERSION} so a targeted recheck
+   * (its own {@link GROWTH_AUDIT_RECHECK_PROJECTION_VERSION} run) never becomes
+   * the "latest audit" and hijacks the Overview or module projections.
+   */
+  async findLatestByProjectionVersion(
+    scope: ProjectScope,
+    projectionVersion: string,
+  ): Promise<AuditRunRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(auditRuns)
+      .where(
+        and(
+          projectPredicate(auditRuns, scope),
+          eq(auditRuns.projection_version, projectionVersion),
+        ),
+      )
       .orderBy(desc(auditRuns.created_at), desc(auditRuns.id))
       .limit(1);
     return (rows[0] as AuditRunRow | undefined) ?? null;

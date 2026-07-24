@@ -60,8 +60,12 @@ export interface GrowthAuditAcceptedResult {
   readonly replayed: boolean;
 }
 
-interface GrowthAuditInputs {
-  readonly icp: { readonly id: string; readonly version: number; readonly contentHash: string };
+export interface GrowthAuditInputs {
+  readonly icp: {
+    readonly id: string;
+    readonly version: number;
+    readonly contentHash: string;
+  };
   readonly siteId: string;
   readonly crawlSnapshot: DataSnapshotRow;
 }
@@ -78,7 +82,7 @@ function deriveScopeKey(scope: GrowthAuditScope, siteId: string): string {
   return contentHash([...scope.targetRefs].sort());
 }
 
-function assertProjectDiagnosable(
+export function assertProjectDiagnosable(
   project: ProjectRow | null,
   icpProfileId: string,
 ): asserts project is ProjectRow {
@@ -101,7 +105,7 @@ function assertProjectDiagnosable(
   }
 }
 
-async function loadGrowthAuditInputs(
+export async function loadGrowthAuditInputs(
   exec: Executor,
   scope: WorkspaceScope,
   projectId: string,
@@ -120,7 +124,10 @@ async function loadGrowthAuditInputs(
     );
   }
 
-  const site = await new SitesRepository(exec).findById(projectScope, body.siteId);
+  const site = await new SitesRepository(exec).findById(
+    projectScope,
+    body.siteId,
+  );
   if (!site) {
     throw new ProblemError(
       "SNAPSHOT_PROJECT_MISMATCH",
@@ -222,7 +229,11 @@ export async function createGrowthAuditRun(
   });
 
   const idem = new IdempotencyRepository(db);
-  const existing = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+  const existing = await idem.find(
+    scope.workspaceId,
+    IDEMPOTENCY_SCOPE,
+    idempotencyKey,
+  );
   if (existing) {
     const replayed = replay(existing, requestHash);
     if (replayed) return replayed;
@@ -237,7 +248,11 @@ export async function createGrowthAuditRun(
     GROWTH_AUDIT_ACTIVE_KEY,
   );
   if (active) {
-    const now = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+    const now = await idem.find(
+      scope.workspaceId,
+      IDEMPOTENCY_SCOPE,
+      idempotencyKey,
+    );
     const replayed = now ? replay(now, requestHash) : null;
     if (replayed) return replayed;
     throw activeConflict(projectId, active.id);
@@ -256,7 +271,11 @@ export async function createGrowthAuditRun(
         expiresAt,
       });
       if (!reserved) {
-        const now = await txIdem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+        const now = await txIdem.find(
+          scope.workspaceId,
+          IDEMPOTENCY_SCOPE,
+          idempotencyKey,
+        );
         const replayed = now ? replay(now, requestHash) : null;
         if (replayed) return replayed;
         throw new ProblemError(
@@ -375,7 +394,11 @@ export async function createGrowthAuditRun(
     });
   } catch (error) {
     if (isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")) {
-      const winnerKey = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+      const winnerKey = await idem.find(
+        scope.workspaceId,
+        IDEMPOTENCY_SCOPE,
+        idempotencyKey,
+      );
       const replayed = winnerKey ? replay(winnerKey, requestHash) : null;
       if (replayed) return replayed;
       const winner = await new AsyncRunsRepository(db).findActive(

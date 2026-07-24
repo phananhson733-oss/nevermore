@@ -30,6 +30,7 @@ import {
   CollectionRunsRepository,
   DataSnapshotsRepository,
   ExportBundlesRepository,
+  FindingTargetsRepository,
   ImportPreviewsRepository,
   ObservationsRepository,
   PageSnapshotsRepository,
@@ -42,6 +43,10 @@ import {
   type PgBoss,
   type ProjectScope,
 } from "@sf/db";
+import {
+  GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
+  type RecheckTargetScope,
+} from "@sf/contracts";
 import {
   LocalFsBlobStore,
   CRAWL_METHOD_VERSION,
@@ -61,6 +66,7 @@ import {
 import type { Logger } from "@sf/observability";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import { createDiagnosticRun } from "@/lib/services/diagnostics";
+import { createGrowthAuditRun } from "@/lib/services/audit-runs";
 import { listProjectFindings } from "@/lib/services/findings-list";
 import { reviewProjectFinding } from "@/lib/services/finding-review";
 import { listProjectActions } from "@/lib/services/actions-service";
@@ -563,7 +569,10 @@ function structuredObservation(input: {
   readonly subjectType: "url" | "keyword_cluster";
   readonly subjectRef: string;
   readonly capturedAt: string;
-  readonly valueJson: GscPageProjection | Ga4LandingProjection | CsvKeywordProjection;
+  readonly valueJson:
+    | GscPageProjection
+    | Ga4LandingProjection
+    | CsvKeywordProjection;
   readonly provider: "gsc" | "ga4" | "csv";
   readonly limitation: string;
 }): ObservationInsert {
@@ -1027,6 +1036,122 @@ export async function runCommonChain(
   };
 }
 
+export interface AuditChainResult {
+  readonly scope: ProjectScope;
+  readonly actor: string;
+  readonly siteId: string;
+  readonly auditRunId: string;
+  readonly diagRunId: string;
+  readonly httpFindingId: string;
+  readonly actionId: string;
+  readonly targetScope: RecheckTargetScope;
+}
+
+/**
+ * The audit variant of the common chain, used by the recheck vertical: it drives
+ * the REAL {@link createGrowthAuditRun} (creating async_run + diagnostic_run +
+ * capability_run + audit_run) then {@link runDiagnostic}, and confirms the golden
+ * TECH-HTTP-001 finding into a canonical Action. The returned `auditRunId` is a
+ * real prior audit run a recheck can reference.
+ */
+export async function runAuditChain(
+  handle: DbHandle,
+  ctx: WorkerContext,
+  label: string,
+): Promise<AuditChainResult> {
+  const actor = randomUUID();
+  const [ws] = await handle.db
+    .insert(workspaces)
+    .values({ name: `WS-${randomUUID()}` })
+    .returning();
+  const workspaceId = ws!.id;
+  const origin = `https://${label}-${randomUUID().slice(0, 8)}.example`;
+  const fixture = VERTICAL_FIXTURES[verticalFor(label)];
+
+  const created = await createProject(
+    { workspaceId },
+    actor,
+    randomUUID(),
+    {
+      clientName: label,
+      projectName: label,
+      siteUrl: origin,
+      marketCodes: ["US"],
+      siteLanguageCodes: ["en"],
+      defaultDeliveryLocale: "en",
+    },
+    safeGuard,
+  );
+  const scope: ProjectScope = { workspaceId, projectId: created.project.id };
+  const siteId = created.project.site.id;
+
+  await seedCompleteIcp(handle, scope, origin, actor, fixture);
+  await seedCrawlSnapshot(handle, scope, siteId, origin, actor, fixture);
+
+  const project = await new ProjectsRepository(handle.db).findById(
+    { workspaceId },
+    scope.projectId,
+  );
+  const confirmedProfileId = project?.confirmed_icp_profile_id;
+  if (!confirmedProfileId)
+    throw new Error("audit fixture ICP was not confirmed");
+
+  const audit = await createGrowthAuditRun(
+    { workspaceId },
+    scope.projectId,
+    actor,
+    randomUUID(),
+    {
+      siteId,
+      icpProfileId: confirmedProfileId,
+      scope: { kind: "site" },
+      outputLocale: "en",
+      capabilityContractVersion: GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
+    },
+  );
+  await runDiagnostic(ctx, {
+    runId: audit.run.id,
+    workspaceId,
+    projectId: scope.projectId,
+  });
+
+  const findings = await listProjectFindings({ workspaceId }, scope.projectId, {
+    limit: 100,
+    cursor: null,
+    activeOnly: false,
+  });
+  const httpFinding = findings.data.find((f) => f.ruleId === "TECH-HTTP-001");
+  if (!httpFinding)
+    throw new Error("golden audit fixture did not trip TECH-HTTP-001");
+  const review = await reviewProjectFinding(
+    { workspaceId },
+    scope.projectId,
+    httpFinding.id,
+    actor,
+    { reviewState: "confirmed", baseRevision: httpFinding.reviewRevision },
+  );
+  if (!review.action) throw new Error("confirm did not create an Action");
+
+  const targets = await new FindingTargetsRepository(handle.db).listForFindings(
+    scope,
+    audit.run.id,
+    [httpFinding.id],
+  );
+  const root = targets[0];
+  if (!root) throw new Error("golden HTTP finding has no root target");
+
+  return {
+    scope,
+    actor,
+    siteId,
+    auditRunId: audit.resourceRef.id,
+    diagRunId: audit.run.id,
+    httpFindingId: httpFinding.id,
+    actionId: review.action.id,
+    targetScope: { kind: root.target_kind, ref: root.target_ref },
+  };
+}
+
 export interface MissingProviderDiagnosticResult {
   readonly scope: ProjectScope;
   readonly actor: string;
@@ -1306,9 +1431,7 @@ export function validateManifest(
   return errors;
 }
 
-export function manifestFilePaths(
-  manifest: Record<string, unknown>,
-): string[] {
+export function manifestFilePaths(manifest: Record<string, unknown>): string[] {
   const files = manifest["files"];
   if (!Array.isArray(files)) return [];
   return files
@@ -1352,6 +1475,7 @@ export {
   listProjectActions,
   listProjectFindings,
   runArtifact,
+  runDiagnostic,
 };
 export { ExecutionArtifactsRepository } from "@sf/db";
 export type { DbHandle, ProjectScope, WorkerContext };

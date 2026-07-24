@@ -1,28 +1,16 @@
 import { createElement } from "react";
-import { ReportClient } from "../report/_report.tsx";
+import { ResultsClient } from "./_results.tsx";
 
 interface ResultsPageProps {
   readonly params: Promise<{ readonly projectId: string }>;
-  readonly searchParams: Promise<{
-    readonly outputLocale?: string | string[];
-  }>;
 }
 
-function firstQueryValue(
-  value: string | string[] | undefined,
-): string | undefined {
-  return Array.isArray(value) ? (value[0] ?? undefined) : value;
-}
-
-/** Canonical Results destination backed by the existing Report client. */
-export default async function ResultsPage({
-  params,
-  searchParams,
-}: ResultsPageProps) {
+/**
+ * Canonical Results destination (Slice 1, Task 8). Renders the read-only
+ * prior-vs-new recheck comparison for one confirmed Action's technical
+ * condition. No impact, lift, or business-outcome claims appear here.
+ */
+export default async function ResultsPage({ params }: ResultsPageProps) {
   const { projectId } = await params;
-  const { outputLocale } = await searchParams;
-  return createElement(ReportClient, {
-    projectId,
-    initialOutputLocale: firstQueryValue(outputLocale),
-  });
+  return createElement(ResultsClient, { projectId });
 }

@@ -32,7 +32,9 @@ function fakeExecutor(): {
     calls,
     enqueue: (...rows) => results.push(...rows),
     lastSql() {
-      const call = calls.findLast((candidate) => candidate.method === "execute");
+      const call = calls.findLast(
+        (candidate) => candidate.method === "execute",
+      );
       if (!call) throw new Error("No execute call was recorded");
       return new PgDialect().sqlToQuery(call.args[0] as never);
     },
@@ -72,15 +74,21 @@ describe("GrowthMapReadRepository", () => {
     expect(query.sql).toContain('inner join "app"."async_runs"');
     expect(query.sql.match(/"workspace_id" = \$/gu)).toHaveLength(2);
     expect(query.sql.match(/"project_id" = \$/gu)).toHaveLength(2);
-    expect(query.sql).toContain('"status" in (\'completed\', \'partial\')');
-    expect(query.sql).toContain('"kind" = \'diagnostic\'');
-    expect(query.sql).toContain('order by "app"."diagnostic_runs"."created_at" desc');
+    expect(query.sql).toContain("\"status\" in ('completed', 'partial')");
+    expect(query.sql).toContain("\"kind\" = 'diagnostic'");
+    // A targeted recheck run must never masquerade as the latest readable audit.
+    expect(query.sql).toContain("not exists");
+    expect(query.sql).toContain('"app"."audit_runs"."projection_version"');
+    expect(query.sql).toContain(
+      'order by "app"."diagnostic_runs"."created_at" desc',
+    );
     expect(query.sql).toContain('"app"."diagnostic_runs"."id" desc');
     expect(query.params).toEqual([
       scope.workspaceId,
       scope.projectId,
       scope.workspaceId,
       scope.projectId,
+      "growth-audit-recheck.0.3.0",
     ]);
   });
 
@@ -119,7 +127,7 @@ describe("GrowthMapReadRepository", () => {
     expect(query.sql).toContain('join "app"."normalized_observations"');
     expect(query.sql).toContain("union");
     expect(query.sql).toContain("provider in ('gsc', 'ga4')");
-    expect(query.sql).toContain('"subject_type" = \'url\'');
+    expect(query.sql).toContain("\"subject_type\" = 'url'");
     expect(query.sql).toContain("gsc.page.v1");
     expect(query.sql).toContain("ga4.landing.v1");
     expect(query.sql).toContain("position(lower($");
@@ -216,9 +224,9 @@ describe("GrowthMapReadRepository", () => {
     };
     db.enqueue([row], []);
 
-    await expect(
-      repo.findCurrentRunUrl(scope, runId, pageId),
-    ).resolves.toBe(row);
+    await expect(repo.findCurrentRunUrl(scope, runId, pageId)).resolves.toBe(
+      row,
+    );
     let query = db.lastSql();
     expect(query.sql).toContain("jsonb_array_elements");
     expect(query.sql).toContain('join "app"."page_snapshots"');
@@ -286,7 +294,7 @@ describe("GrowthMapReadRepository", () => {
     const query = db.lastSql();
     expect(query.sql).toContain('from "app"."finding_targets"');
     expect(query.sql).toContain('"diagnostic_run_id" = $');
-    expect(query.sql).toContain('"resolution_state" = \'resolved\'');
+    expect(query.sql).toContain("\"resolution_state\" = 'resolved'");
     expect(query.sql).toContain('"site_page_id" in');
     expect(query.params.filter((value) => value === runId)).toHaveLength(1);
     expect(query.params.filter((value) => value === pageId)).toHaveLength(1);
@@ -310,14 +318,20 @@ describe("GrowthMapReadRepository", () => {
     );
     expect(db.lastSql().sql).toContain('order by "app"."findings"."id" asc');
 
-    await expect(repo.listActiveActions(scope, [findingId])).resolves.toHaveLength(1);
+    await expect(
+      repo.listActiveActions(scope, [findingId]),
+    ).resolves.toHaveLength(1);
     let query = db.lastSql();
-    expect(query.sql).toContain('"status" <> \'dismissed\'');
-    expect(query.sql).toContain('order by "app"."actions"."source_finding_id" asc');
+    expect(query.sql).toContain("\"status\" <> 'dismissed'");
+    expect(query.sql).toContain(
+      'order by "app"."actions"."source_finding_id" asc',
+    );
 
-    await expect(repo.listArtifacts(scope, [actionId])).resolves.toHaveLength(1);
+    await expect(repo.listArtifacts(scope, [actionId])).resolves.toHaveLength(
+      1,
+    );
     query = db.lastSql();
-    expect(query.sql).toContain('"status" <> \'archived\'');
+    expect(query.sql).toContain("\"status\" <> 'archived'");
     expect(query.sql).toMatch(
       /order by\s+"app"\."execution_artifacts"\."action_id" asc/u,
     );
@@ -328,7 +342,9 @@ describe("GrowthMapReadRepository", () => {
     await expect(
       repo.listObservations(scope, { snapshotIds: [], sitePageIds: [pageId] }),
     ).resolves.toEqual([]);
-    await expect(repo.listResolvedTargets(scope, runId, [])).resolves.toEqual([]);
+    await expect(repo.listResolvedTargets(scope, runId, [])).resolves.toEqual(
+      [],
+    );
     await expect(repo.listFindings(scope, runId, [])).resolves.toEqual([]);
     await expect(repo.listActiveActions(scope, [])).resolves.toEqual([]);
     await expect(repo.listArtifacts(scope, [])).resolves.toEqual([]);

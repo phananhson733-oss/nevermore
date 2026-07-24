@@ -15,6 +15,7 @@ import {
   canonicalUtcTimestamptz,
   DiagnosticRunsRepository,
   FindingsRepository,
+  GROWTH_AUDIT_PROJECTION_VERSION,
   ProjectsRepository,
   type AuditModuleResultRow,
   type AuditRunRow,
@@ -280,7 +281,12 @@ async function projectAudit(
   const project = await new ProjectsRepository(exec).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
 
-  const auditRun = await new AuditRunsRepository(exec).findLatest(projectScope);
+  const auditRun = await new AuditRunsRepository(
+    exec,
+  ).findLatestByProjectionVersion(
+    projectScope,
+    GROWTH_AUDIT_PROJECTION_VERSION,
+  );
   if (!auditRun) {
     throw new ProblemError(
       "NOT_FOUND",
@@ -367,7 +373,12 @@ async function projectAuditModule(
   const project = await new ProjectsRepository(exec).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
 
-  const auditRun = await new AuditRunsRepository(exec).findLatest(projectScope);
+  const auditRun = await new AuditRunsRepository(
+    exec,
+  ).findLatestByProjectionVersion(
+    projectScope,
+    GROWTH_AUDIT_PROJECTION_VERSION,
+  );
   if (!auditRun) {
     throw new ProblemError(
       "NOT_FOUND",

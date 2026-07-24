@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   StudioClient: vi.fn(),
   ExecutionClient: vi.fn(),
   ReportClient: vi.fn(),
+  ResultsClient: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -15,6 +16,9 @@ vi.mock("./execution/_execution.tsx", () => ({
   ExecutionClient: mocks.ExecutionClient,
 }));
 vi.mock("./report/_report.tsx", () => ({ ReportClient: mocks.ReportClient }));
+vi.mock("./results/_results.tsx", () => ({
+  ResultsClient: mocks.ResultsClient,
+}));
 
 import ExecutionPage from "./execution/page.tsx";
 import PlanPage from "./plan/page.tsx";
@@ -64,17 +68,13 @@ describe("canonical project shell routes", () => {
     });
   });
 
-  it("renders the existing Report implementation at /results", async () => {
+  it("renders the recheck Results client at /results", async () => {
     const element = await ResultsPage({
       params: Promise.resolve({ projectId: PROJECT_ID }),
-      searchParams: Promise.resolve({ outputLocale: ["zh-CN", "en"] }),
     });
 
-    expect(element.type).toBe(mocks.ReportClient);
-    expect(element.props).toEqual({
-      projectId: PROJECT_ID,
-      initialOutputLocale: "zh-CN",
-    });
+    expect(element.type).toBe(mocks.ResultsClient);
+    expect(element.props).toEqual({ projectId: PROJECT_ID });
   });
 });
 

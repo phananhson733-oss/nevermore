@@ -334,6 +334,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/actions/{actionId}/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recheck one confirmed Action's technical condition with fresh data
+         * @description Queues a targeted recheck of one confirmed Action. The recheck re-runs the frozen
+         *     diagnostic pipeline over the latest eligible crawl snapshot and creates a brand-new
+         *     immutable audit run under an isolated recheck projection version. The prior run is
+         *     never mutated and no performance checkpoint is written.
+         */
+        post: operations["createActionRecheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/audit/urls": {
         parameters: {
             query?: never;
@@ -717,6 +740,29 @@ export interface paths {
          *     readable diagnostic run. Read-only.
          */
         get: operations["getProjectOpportunity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the latest recheck comparison of two immutable runs
+         * @description Returns the latest recheck's read-only comparison for one confirmed Action. It
+         *     compares the prior and current immutable runs strictly on the technical rule
+         *     condition and reports one of three technical states (verified, observed,
+         *     insufficient_data). It never claims traffic, rank, revenue, or AI-citation movement.
+         */
+        get: operations["getProjectResults"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2382,6 +2428,48 @@ export interface components {
             /** @constant */
             capabilityContractVersion: "growth-audit.0.3.0";
         };
+        RecheckTargetScope: {
+            /** @enum {string} */
+            kind: "url" | "template" | "site" | "page_set" | "http_status" | "canonical_issue" | "keyword_cluster" | "user_agent";
+            ref: string;
+        };
+        CreateActionRecheckRequest: {
+            actionId: components["schemas"]["Uuid"];
+            priorRunId: components["schemas"]["Uuid"];
+            targetScope: components["schemas"]["RecheckTargetScope"];
+            /** @constant */
+            capabilityContractVersion: "growth-audit.0.3.0";
+        };
+        /** @enum {string} */
+        RecheckRuleStatus: "pass" | "candidate" | "skipped" | "inconclusive";
+        ActionRecheckRuleComparison: {
+            ruleId: components["schemas"]["OpportunityRuleId"];
+            /** @enum {integer} */
+            ruleVersion: 1 | 2;
+            priorStatus: components["schemas"]["RecheckRuleStatus"];
+            currentStatus: components["schemas"]["RecheckRuleStatus"];
+            /** @enum {string} */
+            state: "verified" | "observed" | "insufficient_data";
+            /** @enum {string} */
+            disposition: "resolved" | "unchanged" | "unknown";
+            label: string;
+        };
+        /**
+         * @description Read-only recheck comparison of two immutable runs. It reports the confirmed
+         *     Action's technical rule condition only and makes no impact, lift, or business
+         *     outcome claim.
+         */
+        ActionRecheckResultsResponse: {
+            priorRunId: components["schemas"]["Uuid"];
+            currentRunId: components["schemas"]["Uuid"];
+            priorObservedAt: components["schemas"]["Timestamp"];
+            currentObservedAt: components["schemas"]["Timestamp"];
+            rules: components["schemas"]["ActionRecheckRuleComparison"][];
+            limitations: string[];
+        };
+        ActionRecheckResultsHttpResponse: {
+            data: components["schemas"]["ActionRecheckResultsResponse"];
+        };
         Evidence: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
@@ -3517,6 +3605,34 @@ export interface operations {
             503: components["responses"]["DependencyUnavailable"];
         };
     };
+    createActionRecheck: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                actionId: components["parameters"]["ActionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateActionRecheckRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["AsyncAccepted"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
     listProjectAuditUrls: {
         parameters: {
             query?: {
@@ -4137,6 +4253,33 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectResults: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The latest recheck comparison of the prior and current run. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionRecheckResultsHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };

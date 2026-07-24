@@ -581,6 +581,35 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
+  /projects/{projectId}/actions/{actionId}/recheck:
+    post:
+      tags: [Runs, Diagnosis]
+      summary: Recheck one confirmed Action's technical condition with fresh data
+      description: |
+        Queues a targeted recheck of one confirmed Action. The recheck re-runs the frozen
+        diagnostic pipeline over the latest eligible crawl snapshot and creates a brand-new
+        immutable audit run under an isolated recheck projection version. The prior run is
+        never mutated and no performance checkpoint is written.
+      operationId: createActionRecheck
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ActionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateActionRecheckRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
   /projects/{projectId}/audit/urls:
     get:
       tags: [Diagnosis]
@@ -1110,6 +1139,31 @@ paths:
               schema: { $ref: '#/components/schemas/ProjectOpportunityDetailHttpResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/results:
+    get:
+      tags: [Diagnosis]
+      summary: Read the latest recheck comparison of two immutable runs
+      description: |
+        Returns the latest recheck's read-only comparison for one confirmed Action. It
+        compares the prior and current immutable runs strictly on the technical rule
+        condition and reports one of three technical states (verified, observed,
+        insufficient_data). It never claims traffic, rank, revenue, or AI-citation movement.
+      operationId: getProjectResults
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: The latest recheck comparison of the prior and current run.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionRecheckResultsHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
 components:
@@ -4219,6 +4273,82 @@ components:
         scope: { $ref: '#/components/schemas/GrowthAuditScope' }
         outputLocale: { $ref: '#/components/schemas/LocaleCode' }
         capabilityContractVersion: { type: string, const: 'growth-audit.0.3.0' }
+
+    RecheckTargetScope:
+      type: object
+      additionalProperties: false
+      required: [kind, ref]
+      properties:
+        kind:
+          type: string
+          enum: [url, template, site, page_set, http_status, canonical_issue, keyword_cluster, user_agent]
+        ref: { type: string, minLength: 1, maxLength: 2048 }
+
+    CreateActionRecheckRequest:
+      type: object
+      additionalProperties: false
+      required: [actionId, priorRunId, targetScope, capabilityContractVersion]
+      properties:
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        priorRunId: { $ref: '#/components/schemas/Uuid' }
+        targetScope: { $ref: '#/components/schemas/RecheckTargetScope' }
+        capabilityContractVersion: { type: string, const: 'growth-audit.0.3.0' }
+
+    RecheckRuleStatus:
+      type: string
+      enum: [pass, candidate, skipped, inconclusive]
+
+    ActionRecheckRuleComparison:
+      type: object
+      additionalProperties: false
+      required: [ruleId, ruleVersion, priorStatus, currentStatus, state, disposition, label]
+      properties:
+        ruleId: { $ref: '#/components/schemas/OpportunityRuleId' }
+        ruleVersion: { type: integer, enum: [1, 2] }
+        priorStatus: { $ref: '#/components/schemas/RecheckRuleStatus' }
+        currentStatus: { $ref: '#/components/schemas/RecheckRuleStatus' }
+        state:
+          type: string
+          enum: [verified, observed, insufficient_data]
+        disposition:
+          type: string
+          enum: [resolved, unchanged, unknown]
+        label: { type: string, minLength: 1, maxLength: 500 }
+
+    ActionRecheckResultsResponse:
+      type: object
+      additionalProperties: false
+      description: |
+        Read-only recheck comparison of two immutable runs. It reports the confirmed
+        Action's technical rule condition only and makes no impact, lift, or business
+        outcome claim.
+      required:
+        - priorRunId
+        - currentRunId
+        - priorObservedAt
+        - currentObservedAt
+        - rules
+        - limitations
+      properties:
+        priorRunId: { $ref: '#/components/schemas/Uuid' }
+        currentRunId: { $ref: '#/components/schemas/Uuid' }
+        priorObservedAt: { $ref: '#/components/schemas/Timestamp' }
+        currentObservedAt: { $ref: '#/components/schemas/Timestamp' }
+        rules:
+          type: array
+          maxItems: 11
+          items: { $ref: '#/components/schemas/ActionRecheckRuleComparison' }
+        limitations:
+          type: array
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 2000 }
+
+    ActionRecheckResultsHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ActionRecheckResultsResponse' }
 
     Evidence:
       type: object

@@ -1689,5 +1689,29 @@
       "metadata_rewrite": "Metadata rewrite",
       "content_brief": "Content brief"
     }
+  },
+  "results": {
+    "title": "Recheck results",
+    "lead": "Compare the confirmed action's technical condition across the prior run and a fresh recheck. This surface reports technical conditions only.",
+    "emptyTitle": "No recheck yet",
+    "emptyBody": "Run a recheck on a confirmed action to compare its prior and current technical condition here.",
+    "priorLabel": "Prior run observed",
+    "currentLabel": "Recheck observed",
+    "detailLabel": "Comparison detail",
+    "dispositionLabel": "Direction",
+    "limitationsTitle": "Limitations",
+    "noRulesTitle": "No comparable rule",
+    "noRulesBody": "The recheck produced no comparable technical rule for this action.",
+    "ruleStatus": {
+      "pass": "Pass",
+      "candidate": "Candidate",
+      "skipped": "Skipped",
+      "inconclusive": "Inconclusive"
+    },
+    "disposition": {
+      "resolved": "Resolved",
+      "unchanged": "Unchanged",
+      "unknown": "Unknown"
+    }
   }
 }

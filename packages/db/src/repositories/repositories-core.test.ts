@@ -3,6 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { contentHash } from "../hash.ts";
 import { ActionsRepository } from "./actions.ts";
 import { AnalysisInvocationsRepository } from "./analysis-invocations.ts";
+import { AuditRunsRepository } from "./audit-runs.ts";
 import {
   AsyncRunsRepository,
   isTerminalStatus,
@@ -17,7 +18,10 @@ import { FindingsRepository } from "./findings.ts";
 import { FindingReviewEventsRepository } from "./findings-review.ts";
 import { IdempotencyRepository } from "./idempotency.ts";
 import { ImportPreviewsRepository } from "./import-previews.ts";
-import { ObservationsRepository, type ObservationInsert } from "./observations.ts";
+import {
+  ObservationsRepository,
+  type ObservationInsert,
+} from "./observations.ts";
 import { TelemetryRepository } from "./telemetry.ts";
 
 interface RecordedCall {
@@ -120,7 +124,9 @@ class FakeExecutor {
   }
 
   last(method: string): RecordedCall {
-    const call = this.calls.findLast((candidate) => candidate.method === method);
+    const call = this.calls.findLast(
+      (candidate) => candidate.method === method,
+    );
     if (!call) throw new Error(`No ${method} call was recorded`);
     return call;
   }
@@ -128,9 +134,10 @@ class FakeExecutor {
 
 const scope = { workspaceId: "workspace-1", projectId: "project-1" };
 
-function repository<T>(
-  Type: new (executor: never) => T,
-): { readonly repo: T; readonly db: FakeExecutor } {
+function repository<T>(Type: new (executor: never) => T): {
+  readonly repo: T;
+  readonly db: FakeExecutor;
+} {
   const db = new FakeExecutor();
   return { repo: new Type(db as never), db };
 }
@@ -147,9 +154,7 @@ describe("core repositories", () => {
       excludedReviewStates: ["ignored", "needs_more_data"],
     });
 
-    const query = new PgDialect().sqlToQuery(
-      db.last("where").args[0] as never,
-    );
+    const query = new PgDialect().sqlToQuery(db.last("where").args[0] as never);
     expect(query.sql).toContain('"app"."findings"."review_state" not in');
     expect(query.params).toEqual(
       expect.arrayContaining(["ignored", "needs_more_data"]),
@@ -170,9 +175,7 @@ describe("core repositories", () => {
       action,
     );
     expect(db.last("for").args).toEqual(["update"]);
-    await expect(
-      repo.findByIdForUpdate(scope, "missing"),
-    ).resolves.toBeNull();
+    await expect(repo.findByIdForUpdate(scope, "missing")).resolves.toBeNull();
     const actionLockScope = new PgDialect().sqlToQuery(
       db.last("where").args[0] as never,
     );
@@ -278,9 +281,9 @@ describe("core repositories", () => {
     ).resolves.toEqual({ rows: [], nextCursor: null });
 
     db.enqueue([action], []);
-    await expect(
-      repo.findActiveByFinding(scope, "finding-1"),
-    ).resolves.toBe(action);
+    await expect(repo.findActiveByFinding(scope, "finding-1")).resolves.toBe(
+      action,
+    );
     await expect(
       repo.findActiveByFinding(scope, "finding-2"),
     ).resolves.toBeNull();
@@ -419,11 +422,7 @@ describe("core repositories", () => {
       const fixture = repository(AnalysisInvocationsRepository);
       fixture.db.enqueue(invalid);
       await expect(
-        fixture.repo.countByAsyncRunTask(
-          scope,
-          "run-1",
-          "finding_summary",
-        ),
+        fixture.repo.countByAsyncRunTask(scope, "run-1", "finding_summary"),
       ).rejects.toThrow("invalid analysis invocation count");
     }
   });
@@ -539,9 +538,9 @@ describe("core repositories", () => {
     expect(db.last("for").args).toEqual(["update"]);
 
     db.enqueue([claimed]);
-    await expect(
-      repo.lockActiveForRecovery(scope, "run-1"),
-    ).resolves.toBe(claimed);
+    await expect(repo.lockActiveForRecovery(scope, "run-1")).resolves.toBe(
+      claimed,
+    );
     expect(db.last("for").args).toEqual(["update"]);
 
     db.enqueue([{ id: "run-1" }], [{ id: "run-1" }], [{ id: "run-1" }]);
@@ -549,13 +548,15 @@ describe("core repositories", () => {
     await expect(
       repo.setProgress(attempt, { completed: 3, total: 5 }),
     ).resolves.toBe(true);
-    await expect(repo.setTerminal(attempt, {
-      status: "partial",
-      resultType: "diagnostic",
-      resultId: "diagnostic-1",
-      lastErrorCode: "PARTIAL_SOURCE",
-      lastErrorSummary: "One source was stale",
-    })).resolves.toBe(true);
+    await expect(
+      repo.setTerminal(attempt, {
+        status: "partial",
+        resultType: "diagnostic",
+        resultId: "diagnostic-1",
+        lastErrorCode: "PARTIAL_SOURCE",
+        lastErrorSummary: "One source was stale",
+      }),
+    ).resolves.toBe(true);
     expect(db.last("set").args[0]).toMatchObject({
       status: "partial",
       result_type: "diagnostic",
@@ -577,9 +578,7 @@ describe("core repositories", () => {
     await expect(repo.prepareDelivery(scope, "run-1", 0.5)).resolves.toBeNull();
 
     db.enqueue([run], [run]);
-    await expect(repo.listActiveForRecovery(scope, 10)).resolves.toEqual([
-      run,
-    ]);
+    await expect(repo.listActiveForRecovery(scope, 10)).resolves.toEqual([run]);
     await expect(repo.listActiveForRecovery(null, 20)).resolves.toEqual([run]);
     expect(db.last("limit").args[0]).toBe(20);
 
@@ -640,7 +639,9 @@ describe("core repositories", () => {
       methodVersion: "v1",
       parametersHash: "hash",
     });
-    expect(db.last("values").args[0]).toMatchObject({ import_preview_id: null });
+    expect(db.last("values").args[0]).toMatchObject({
+      import_preview_id: null,
+    });
 
     await repo.finalize("run-1", {
       rowCount: 12,
@@ -712,15 +713,13 @@ describe("core repositories", () => {
     await expect(repo.findById(scope, "snapshot-1")).resolves.toBe(snapshot);
     await expect(repo.findById(scope, "missing")).resolves.toBeNull();
     await expect(repo.findByIds(scope, [])).resolves.toEqual([]);
-    await expect(
-      repo.findByIds(scope, ["snapshot-1"]),
-    ).resolves.toEqual([snapshot]);
-    await expect(
-      repo.findLatestByConnection(scope, "source-1"),
-    ).resolves.toBe(snapshot);
-    await expect(
-      repo.findLatestByProvider(scope, "ga4"),
-    ).resolves.toBeNull();
+    await expect(repo.findByIds(scope, ["snapshot-1"])).resolves.toEqual([
+      snapshot,
+    ]);
+    await expect(repo.findLatestByConnection(scope, "source-1")).resolves.toBe(
+      snapshot,
+    );
+    await expect(repo.findLatestByProvider(scope, "ga4")).resolves.toBeNull();
 
     const second = {
       id: "00000000-0000-4000-8000-000000000102",
@@ -801,9 +800,11 @@ describe("core repositories", () => {
     await expect(repo.findById(scope, "missing")).resolves.toBeNull();
     await expect(repo.findLatest(scope)).resolves.toBe(run);
     expect(
-      db.last("orderBy").args.map((expression) =>
-        new PgDialect().sqlToQuery(expression as never).sql,
-      ),
+      db
+        .last("orderBy")
+        .args.map(
+          (expression) => new PgDialect().sqlToQuery(expression as never).sql,
+        ),
     ).toEqual([
       '"app"."diagnostic_runs"."created_at" desc',
       '"app"."diagnostic_runs"."id" asc',
@@ -928,9 +929,11 @@ describe("core repositories", () => {
     await expect(
       repo.listForFindings(scope, ["finding-1"]),
     ).resolves.toHaveLength(1);
-    const linkOrder = db.last("orderBy").args.map((expression) =>
-      new PgDialect().sqlToQuery(expression as never).sql,
-    );
+    const linkOrder = db
+      .last("orderBy")
+      .args.map(
+        (expression) => new PgDialect().sqlToQuery(expression as never).sql,
+      );
     expect(linkOrder).toEqual([
       '"app"."finding_observations"."finding_id" asc',
       '"app"."finding_observations"."evidence_id" asc',
@@ -938,9 +941,9 @@ describe("core repositories", () => {
     ]);
     await expect(repo.findByIds(scope, [])).resolves.toEqual([]);
     db.enqueue([{ id: "evidence-1", snapshot_id: "snapshot-1" }]);
-    await expect(
-      repo.findByIds(scope, ["evidence-1"]),
-    ).resolves.toHaveLength(1);
+    await expect(repo.findByIds(scope, ["evidence-1"])).resolves.toHaveLength(
+      1,
+    );
     expect(
       db.calls.filter(({ method }) => method === "orderBy").length,
     ).toBeGreaterThanOrEqual(2);
@@ -966,7 +969,11 @@ describe("core repositories", () => {
 
     db.enqueue([
       { finding_id: "finding-1", evidence_id: "evidence-1", role: "primary" },
-      { finding_id: "finding-1", evidence_id: "evidence-2", role: "supporting" },
+      {
+        finding_id: "finding-1",
+        evidence_id: "evidence-2",
+        role: "supporting",
+      },
       { finding_id: "finding-1", evidence_id: "evidence-3", role: "context" },
     ]);
     await expect(
@@ -1006,9 +1013,7 @@ describe("core repositories", () => {
       repo.listForFindings(scope, ["finding-1"], { maxRows: 2 }),
     ).resolves.toEqual([]);
     expect(
-      db.calls.some(
-        ({ method, args }) => method === "limit" && args[0] === 2,
-      ),
+      db.calls.some(({ method, args }) => method === "limit" && args[0] === 2),
     ).toBe(true);
 
     await expect(
@@ -1066,13 +1071,9 @@ describe("core repositories", () => {
       nextCursor: "evidence-002",
     });
     expect(
-      db.calls.some(
-        ({ method, args }) => method === "limit" && args[0] === 3,
-      ),
+      db.calls.some(({ method, args }) => method === "limit" && args[0] === 3),
     ).toBe(true);
-    expect(
-      db.calls.some(({ method }) => method === "orderBy"),
-    ).toBe(true);
+    expect(db.calls.some(({ method }) => method === "orderBy")).toBe(true);
     const sizeSelection = db.last("select").args[0] as Record<string, unknown>;
     const sizeSql = new PgDialect().sqlToQuery(
       sizeSelection["estimated_bytes"] as never,
@@ -1106,8 +1107,16 @@ describe("core repositories", () => {
       claim: "claim one",
       observed_at: "2026-07-19T00:00:00.000Z",
     };
-    const exportRow2 = { ...exportRow1, id: "evidence-002", claim: "claim two" };
-    const exportRow3 = { ...exportRow1, id: "evidence-003", claim: "claim three" };
+    const exportRow2 = {
+      ...exportRow1,
+      id: "evidence-002",
+      claim: "claim two",
+    };
+    const exportRow3 = {
+      ...exportRow1,
+      id: "evidence-003",
+      claim: "claim three",
+    };
     db.enqueue([exportRow1, exportRow2, exportRow3]);
     await expect(
       repo.listExportByIdsPage(
@@ -1120,7 +1129,10 @@ describe("core repositories", () => {
       nextCursor: "evidence-002",
     });
     expect(db.last("limit").args).toEqual([3]);
-    const exportSelection = db.last("select").args[0] as Record<string, unknown>;
+    const exportSelection = db.last("select").args[0] as Record<
+      string,
+      unknown
+    >;
     expect(Object.keys(exportSelection)).toEqual([
       "id",
       "source_provider",
@@ -1221,16 +1233,11 @@ describe("core repositories", () => {
     });
 
     await expect(repo.listBySnapshotIds(scope, [])).resolves.toEqual([]);
-    db.enqueue([{ id: "observation-1" }], [
-      { id: "one" },
-      { id: "two" },
-    ]);
+    db.enqueue([{ id: "observation-1" }], [{ id: "one" }, { id: "two" }]);
     await expect(
       repo.listBySnapshotIds(scope, ["snapshot-1"]),
     ).resolves.toEqual([{ id: "observation-1" }]);
-    await expect(
-      repo.countBySnapshot(scope, "snapshot-1"),
-    ).resolves.toBe(2);
+    await expect(repo.countBySnapshot(scope, "snapshot-1")).resolves.toBe(2);
   });
 
   it("targets one project-scoped observation by frozen snapshot, metric, and subject", async () => {
@@ -1243,7 +1250,11 @@ describe("core repositories", () => {
       subject_type: "url",
       subject_ref: "https://example.com/pricing",
     };
-    db.enqueue([observation], [], [observation, { ...observation, id: "observation-2" }]);
+    db.enqueue(
+      [observation],
+      [],
+      [observation, { ...observation, id: "observation-2" }],
+    );
 
     await expect(
       repo.findBySnapshotMetricSubject(scope, {
@@ -1255,9 +1266,7 @@ describe("core repositories", () => {
       }),
     ).resolves.toBe(observation);
     expect(db.last("limit").args).toEqual([2]);
-    const query = new PgDialect().sqlToQuery(
-      db.last("where").args[0] as never,
-    );
+    const query = new PgDialect().sqlToQuery(db.last("where").args[0] as never);
     expect(query.params).toEqual(
       expect.arrayContaining([
         scope.workspaceId,
@@ -1319,9 +1328,7 @@ describe("core repositories", () => {
     const cursorQuery = new PgDialect().sqlToQuery(
       db.last("where").args[0] as never,
     );
-    expect(cursorQuery.sql).toContain(
-      '"app"."normalized_observations"."id" >',
-    );
+    expect(cursorQuery.sql).toContain('"app"."normalized_observations"."id" >');
     expect(cursorQuery.params).toEqual(
       expect.arrayContaining([
         scope.workspaceId,
@@ -1425,20 +1432,19 @@ describe("core repositories", () => {
 
   it("prunes expired idempotency rows in a bounded batch", async () => {
     const { repo, db } = repository(IdempotencyRepository);
-    db.enqueue([{ id: "expired-1" }, { id: "expired-2" }], [
-      { id: "expired-1" },
-    ]);
+    db.enqueue(
+      [{ id: "expired-1" }, { id: "expired-2" }],
+      [{ id: "expired-1" }],
+    );
 
-    await expect(
-      repo.pruneExpired(2),
-    ).resolves.toBe(1);
+    await expect(repo.pruneExpired(2)).resolves.toBe(1);
     expect(db.last("limit").args).toEqual([2]);
-    expect(db.last("returning").args[0]).toMatchObject({ id: expect.anything() });
+    expect(db.last("returning").args[0]).toMatchObject({
+      id: expect.anything(),
+    });
 
     db.enqueue([]);
-    await expect(
-      repo.pruneExpired(2),
-    ).resolves.toBe(0);
+    await expect(repo.pruneExpired(2)).resolves.toBe(0);
   });
 
   it("persists, finds, and consumes CSV import previews", async () => {
@@ -1512,5 +1518,32 @@ describe("core repositories", () => {
       to_state: "confirmed",
       revision: 2,
     });
+  });
+
+  it("filters the latest audit run by projection version so rechecks stay isolated", async () => {
+    const { repo, db } = repository(AuditRunsRepository);
+    const auditRun = {
+      id: "audit-1",
+      projection_version: "growth-audit.0.3.0",
+    };
+    db.enqueue([auditRun]);
+
+    await expect(
+      repo.findLatestByProjectionVersion(scope, "growth-audit.0.3.0"),
+    ).resolves.toBe(auditRun);
+
+    const where = new PgDialect().sqlToQuery(db.last("where").args[0] as never);
+    expect(where.sql).toContain('"projection_version" = $');
+    expect(where.params).toContain("growth-audit.0.3.0");
+    expect(
+      db
+        .last("orderBy")
+        .args.map(
+          (expression) => new PgDialect().sqlToQuery(expression as never).sql,
+        ),
+    ).toEqual([
+      '"app"."audit_runs"."created_at" desc',
+      '"app"."audit_runs"."id" desc',
+    ]);
   });
 });

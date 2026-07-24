@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   actions,
   asyncRuns,
+  auditRuns,
   dataSnapshots,
   diagnosticRuns,
   executionArtifacts,
@@ -12,6 +13,7 @@ import {
   sitePages,
 } from "../schema.ts";
 import type { ActionRow } from "./actions.ts";
+import { GROWTH_AUDIT_RECHECK_PROJECTION_VERSION } from "./audit-runs.ts";
 import { Repository, type ProjectScope } from "./base.ts";
 import {
   decodeTimestampUuidCursor,
@@ -109,7 +111,10 @@ function asIsoTimestamp(value: string | Date): string {
 }
 
 function normalizeReadableRun(row: RawReadableRunRow): GrowthMapReadableRunRow {
-  if (!(row.created_at instanceof Date) && !(row.run_completed_at instanceof Date)) {
+  if (
+    !(row.created_at instanceof Date) &&
+    !(row.run_completed_at instanceof Date)
+  ) {
     return row as GrowthMapReadableRunRow;
   }
   return {
@@ -317,6 +322,12 @@ export class GrowthMapReadRepository extends Repository {
         and ${diagnosticRuns.project_id} = ${scope.projectId}
         and ${asyncRuns.kind} = 'diagnostic'
         and ${asyncRuns.status} in ('completed', 'partial')
+        and not exists (
+          select 1
+          from ${auditRuns}
+          where ${auditRuns.diagnostic_run_id} = ${diagnosticRuns.id}
+            and ${auditRuns.projection_version} = ${GROWTH_AUDIT_RECHECK_PROJECTION_VERSION}
+        )
       order by ${diagnosticRuns.created_at} desc, ${diagnosticRuns.id} desc
       limit 1
     `);

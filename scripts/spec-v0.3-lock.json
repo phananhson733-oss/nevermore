@@ -7,19 +7,19 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "0e651d26e21d76d6b4d14051977f01a91852156a991c93a1ae73b244c546db3d",
-    "MVP-IMPLEMENTATION-SPEC.md": "3ed751045fef0e51d04927bc7f4782ed1a3dab5b2011b9bf697745d796067387",
-    "openapi.yaml": "8de74bbfa832ddb8f689d03f4ca6945e2b2474b91545f62faa8a2a9cecef4bfa",
+    "MVP-IMPLEMENTATION-SPEC.md": "e7b89612d6b0d5f328804ae2133fe07edef11248152f1aab6dfc4b72dc821f50",
+    "openapi.yaml": "49ec0be39710f086ea507c8544167912f8674976666b68731c8c6279ad1c0909",
     "schema.sql": "48b7972c814bcb3a7044e27ced0b773937ab5ed9e5660249914076c107df7f61",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "scripts/schema-smoke.sql": "a12f4a14558fee7bfaeeb60ac543baaed90f8fa2d947e206957c48d97f73ae64",
-    "scripts/verify-spec.mjs": "80263700a1b8e68eff3e594856e89de9c44625f91e85a2da5ea4e0776c9eca79"
+    "scripts/verify-spec.mjs": "c9d6b7c12f9219c5855fcae9011a697bbaf03cb475c40c45dfd7d95b34903e77"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "8de74bbfa832ddb8f689d03f4ca6945e2b2474b91545f62faa8a2a9cecef4bfa",
-    "packages/contracts/src/generated/openapi.ts": "393ee1b8879723572b737cd0b720e76e03112f01a23d457b4d1559086ac2fac3",
+    "openapi/mvp.yaml": "49ec0be39710f086ea507c8544167912f8674976666b68731c8c6279ad1c0909",
+    "packages/contracts/src/generated/openapi.ts": "2b712bff360cf476d27209188623bd568eb2af219529bc6568e651b4ed69c29b",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "packages/db/migrations/schema-smoke.sql": "a12f4a14558fee7bfaeeb60ac543baaed90f8fa2d947e206957c48d97f73ae64",
-    "scripts/verify-implementation.mjs": "5aff071ef22e1dcdd0cf31eedbaf1fa9f992d67de1118dc573724f444f2f8e10"
+    "scripts/verify-implementation.mjs": "9aba5d92c13d1400731e0971aa4d0c3bcbf0daf51ba6c07641958e1894822c44"
   },
   "apiOperations": [
     "listProjects",
@@ -44,6 +44,7 @@
     "getProjectRun",
     "createDiagnosticRun",
     "createGrowthAuditRun",
+    "createActionRecheck",
     "listProjectAuditUrls",
     "getProjectAuditUrl",
     "listProjectAuditKeywords",
@@ -54,6 +55,7 @@
     "getProjectAuditModule",
     "listProjectOpportunities",
     "getProjectOpportunity",
+    "getProjectResults",
     "listProjectFindings",
     "reviewProjectFinding",
     "listProjectActions",
@@ -72,6 +74,7 @@
     "createCollectionRun",
     "createDiagnosticRun",
     "createGrowthAuditRun",
+    "createActionRecheck",
     "createActionArtifact",
     "createProjectExport"
   ],

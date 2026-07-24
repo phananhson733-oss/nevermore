@@ -910,6 +910,7 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `getProjectRun` — 统一读取所有异步 run。
 - `createDiagnosticRun` — 启动诊断。
 - `createGrowthAuditRun` — 冻结 URL/ICP/snapshot 输入，启动版本化 full Growth Audit（复用诊断队列，额外物化八个 audit module）。
+- `createActionRecheck` — 针对一个已确认 Action 用最新 crawl 数据复查技术条件；创建隔离投影版本的新 immutable audit run，不改 prior run，不落 checkpoint。
 - `listProjectAuditUrls` — 从最新 completed/partial DiagnosticRun 的冻结输入读取有界多 URL portfolio；不返回伪造项目总数。
 - `getProjectAuditUrl` — 读取一个 canonical SitePage 的真实 Observation、resolved FindingTarget、Finding 与 canonical Execution ID 关系。
 - `listProjectAuditKeywords` — 读取有界 Keyword Library cursor page；保留精确 source occurrence、canonical metric pointer、mapped target、coverage 与 limitation，不返回伪造总数或过滤状态。
@@ -920,6 +921,7 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `getProjectAuditModule` — 读取单个 audit module 的只读 coverage summary；空 module 报告 no_data 与 limitation，绝不给零分。
 - `listProjectOpportunities` — 从最新 readable diagnostic run 读取有界 Growth Opportunity cursor page；只读，确认走 Finding review mutation。
 - `getProjectOpportunity` — 按 primary Finding ID 读取单个 traceable Growth Opportunity 只读投影。
+- `getProjectResults` — 读取最新 recheck 的两 immutable run 只读技术条件对比（verified/observed/insufficient_data 三态）；不主张流量、排名、营收或 AI 引用变化。
 - `listProjectFindings` — 列出 Finding 和 evidence summary。
 - `reviewProjectFinding` — confirm/ignore/needs-more-data。
 - `listProjectActions` — 列出 30/60/90 plan。
@@ -940,6 +942,7 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `createCollectionRun`
 - `createDiagnosticRun`
 - `createGrowthAuditRun`
+- `createActionRecheck`
 - `createProductProfileSynthesisRun`
 - `createActionArtifact`
 - `createProjectExport`

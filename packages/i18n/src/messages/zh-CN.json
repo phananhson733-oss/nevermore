@@ -1689,5 +1689,29 @@
       "metadata_rewrite": "元数据改写",
       "content_brief": "内容简报"
     }
+  },
+  "results": {
+    "title": "复查结果",
+    "lead": "对比已确认 Action 的技术条件：先前运行与最新复查。本页仅呈现技术条件，不作流量、排名、营收或 AI 引用的判断。",
+    "emptyTitle": "尚未复查",
+    "emptyBody": "对已确认的 Action 运行一次复查，即可在此对比其先前与当前的技术条件。",
+    "priorLabel": "先前运行观测于",
+    "currentLabel": "复查观测于",
+    "detailLabel": "对比详情",
+    "dispositionLabel": "变化方向",
+    "limitationsTitle": "局限",
+    "noRulesTitle": "无可对比的规则",
+    "noRulesBody": "本次复查未产生该 Action 的可对比技术规则。",
+    "ruleStatus": {
+      "pass": "通过",
+      "candidate": "候选",
+      "skipped": "跳过",
+      "inconclusive": "无法判定"
+    },
+    "disposition": {
+      "resolved": "已解决",
+      "unchanged": "未改变",
+      "unknown": "未知"
+    }
   }
 }

@@ -136,7 +136,11 @@ export type {
 } from "./repositories/product-profile-invocation-attempts.ts";
 export { CapabilityRunsRepository } from "./repositories/capability-runs.ts";
 export type { CapabilityRunRow } from "./repositories/capability-runs.ts";
-export { AuditRunsRepository } from "./repositories/audit-runs.ts";
+export {
+  AuditRunsRepository,
+  GROWTH_AUDIT_PROJECTION_VERSION,
+  GROWTH_AUDIT_RECHECK_PROJECTION_VERSION,
+} from "./repositories/audit-runs.ts";
 export type {
   AuditRunRow,
   AuditModuleResultRow,
