@@ -9,6 +9,11 @@ import {
   installGrowthVerticalApi,
   type GrowthVerticalApiState,
 } from "./mock-api.ts";
+import {
+  claimCounts,
+  expectedVerdict,
+  VERTICAL_CLAIMS,
+} from "./content-shadow-claims-fixture.ts";
 
 /**
  * Fixtures for the Slice 2 content vertical E2E (`content-shadow-vertical.mock.spec.ts`).
@@ -68,62 +73,31 @@ const DRAFT_BODY = [
   "- Our own onboarding analytics show the same shape across cohorts.",
 ].join("\n");
 
-interface Claim {
-  readonly claimId: string;
-  readonly kind: "red_line" | "structure" | "citability" | "coverage";
-  readonly severity: "blocking" | "review" | "advisory";
-  readonly status: "passed" | "failed" | "unevaluated";
-  readonly detail: string;
-}
-
-/**
- * A `needs_review` gate, which is what an honest Slice 2 run looks like: no
- * fabricated outside citation to block on, one named reference the gate refuses
- * to guess about, and one committed topic it reports as not visibly covered.
- */
-const CLAIMS: readonly Claim[] = [
-  {
-    claimId: "content-shadow.qa.rl8_unsupported_claim",
-    kind: "red_line",
-    severity: "blocking",
-    status: "passed",
-    detail: "Every research-shaped assertion resolves to a frozen record.",
-  },
-  {
-    claimId: "content-shadow.qa.rl13_banned_jargon",
-    kind: "red_line",
-    severity: "advisory",
-    status: "passed",
-    detail: "No banned jargon was found.",
-  },
-  {
-    claimId: "content-shadow.qa.sc9_sources_section",
-    kind: "structure",
-    severity: "review",
-    status: "passed",
-    detail: "A sources section is present.",
-  },
-  {
-    claimId: "content-shadow.qa.rl12_citation_integrity",
-    kind: "red_line",
-    severity: "blocking",
-    status: "unevaluated",
-    detail:
-      'This name may be a product, a feature or a section title; a reviewer has to decide. "Activation Milestones" carries no second signal in this draft.',
-  },
-  {
-    claimId: "content-shadow.qa.brief-outline",
-    kind: "coverage",
-    severity: "review",
-    status: "failed",
-    detail:
-      'The draft does not visibly cover 1 of the 2 frozen target keyword(s) this cluster committed to: "activation drop-off".',
-  },
-];
-
 interface Recorded {
   readonly method: string;
   readonly url: string;
+}
+
+/** The Action fields the vertical asserts on, as they appear on the wire. */
+export interface ConfirmedAction {
+  readonly id: string;
+  readonly findingId: string;
+  readonly title: string;
+}
+
+/**
+ * The Actions a Finding Review response carried.
+ *
+ * Reads both shapes the contract could take — a single `action` and a plural
+ * `actions` array — so a response that carried two would be COUNTED as two
+ * rather than recorded as one flag.
+ */
+function actionsInResponse(body: unknown): readonly ConfirmedAction[] {
+  const data = (body as { data?: Record<string, unknown> }).data ?? {};
+  const many = data["actions"];
+  if (Array.isArray(many)) return many as ConfirmedAction[];
+  const one = data["action"];
+  return one === undefined || one === null ? [] : [one as ConfirmedAction];
 }
 
 export interface ContentVerticalState {
@@ -132,8 +106,16 @@ export interface ContentVerticalState {
   readonly writes: Recorded[];
   /** Every request URL of any method, used to prove nothing left the origin. */
   readonly origins: string[];
-  /** The Action object each content Finding confirmation returned. */
-  readonly contentActionsCreated: { readonly findingId: string }[];
+  /**
+   * Every Action object the confirmation RESPONSES actually carried.
+   *
+   * Read out of the response body rather than pushed as a constant beside it.
+   * The list used to be `push({ findingId: E2E_CONTENT_FINDING_ID })`, so the
+   * spec's "exactly one Action, bound to the confirmed Finding" assertions
+   * compared the fixture to its own literal: a `reviewProjectFinding` that
+   * created two Actions for one Finding would not have moved either number.
+   */
+  readonly contentActionsCreated: ConfirmedAction[];
   /** `{artifactId, revision}` of each revision-pinned artifact read. */
   readonly revisionReads: {
     readonly artifactId: string;
@@ -316,10 +298,12 @@ function runProjection(state: ContentVerticalState) {
     },
     qa: {
       gateId: GATE_ID,
-      verdict: "needs_review",
+      // Derived, never declared: a verdict the gate could not return for these
+      // claims would prove the surfaces against a state no run can produce.
+      verdict: expectedVerdict(VERTICAL_CLAIMS),
       evaluatedArtifactId: DRAFT_ARTIFACT_ID,
       evaluatedRevision: 1,
-      claims: CLAIMS,
+      claims: VERTICAL_CLAIMS,
       evaluatedAt: NOW,
     },
   };
@@ -382,8 +366,7 @@ export async function installContentVerticalApi(
         body: route.request().postDataJSON(),
       });
       growth.confirmedFindingIds.add(E2E_CONTENT_FINDING_ID);
-      state.contentActionsCreated.push({ findingId: E2E_CONTENT_FINDING_ID });
-      await fulfill(route, {
+      const body = {
         data: {
           finding: {
             id: E2E_CONTENT_FINDING_ID,
@@ -408,7 +391,9 @@ export async function installContentVerticalApi(
           },
           action: contentAction(),
         },
-      });
+      };
+      state.contentActionsCreated.push(...actionsInResponse(body));
+      await fulfill(route, body);
     },
   );
 
@@ -450,8 +435,8 @@ export async function installContentVerticalApi(
           artifactId: DRAFT_ARTIFACT_ID,
           reviewedRevision: state.draftRevision,
           artifactStatus: "ready",
-          verdict: "needs_review",
-          claimCounts: { passed: 3, failed: 1, unevaluated: 1 },
+          verdict: expectedVerdict(VERTICAL_CLAIMS),
+          claimCounts: claimCounts(VERTICAL_CLAIMS),
           contentHash: CONTENT_HASH,
           reviewedAt: "2026-07-25T01:00:00.000Z",
           externalPublishingWrite: "none",

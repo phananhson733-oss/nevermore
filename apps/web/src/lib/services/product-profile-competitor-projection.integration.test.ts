@@ -25,6 +25,7 @@ import {
 } from "@sf/db";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { requireSafeTestDatabaseUrl } from "../../../../../packages/db/src/test-database-safety.ts";
 import {
   buildProductProfileCompetitorOriginInput,
   projectConfirmedProductProfileCompetitors,
@@ -353,9 +354,12 @@ describeDb("product-profile competitor projection integration", () => {
   let handle: DbHandle;
 
   beforeAll(async () => {
-    if (!DATABASE_URL?.includes("signalframe_codex_growth_libraries_20260722_e")) {
-      throw new Error("Unsafe DATABASE_URL for competitor projection integration test");
-    }
+    // This file is DB-backed, so it belongs to the `integration` project, whose
+    // setup already refuses anything but a disposable loopback database. It
+    // used to sit in the `unit` project behind a hardcoded database NAME from
+    // one machine, which meant `pnpm test` went red the moment DATABASE_URL was
+    // exported, and its assertions ran in no gate at all when it was not.
+    requireSafeTestDatabaseUrl(DATABASE_URL!);
     handle = createDbHandle(DATABASE_URL!);
   });
 

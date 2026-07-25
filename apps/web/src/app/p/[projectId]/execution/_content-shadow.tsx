@@ -200,8 +200,11 @@ function BlockerBlock({ claims }: { readonly claims: readonly QaClaimView[] }) {
               <span>
                 {key === null ? t("claimUnnamed") : t(`claimLabels.${key}`)}
               </span>
+              {/* The separator is DOM text, not a CSS `::before`: generated
+                  content is not reliably part of the accessible name, and this
+                  row's meaning depends on both halves being read. */}
               <span className={styles.blockerItemState}>
-                {t(`claimStatus.${claim.status}`)}
+                {` · ${t(`claimStatus.${claim.status}`)}`}
               </span>
             </li>
           );

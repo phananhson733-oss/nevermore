@@ -1583,11 +1583,16 @@ function walkSourceFiles(relativeDirectory) {
   })) {
     const relativePath = `${relativeDirectory}/${entry.name}`;
     if (entry.isDirectory()) {
+      // `.next` was matched by exact name while this repository carries
+      // `.next-mock-3112` and friends; a widened root would have walked tens of
+      // thousands of generated files. Dot-directories are never source.
       if (
         entry.name === "node_modules" ||
-        entry.name === ".next" ||
+        entry.name.startsWith(".") ||
         entry.name === "dist" ||
-        entry.name === "coverage"
+        entry.name === "coverage" ||
+        entry.name === "playwright-report" ||
+        entry.name === "test-results"
       ) {
         continue;
       }
@@ -2210,11 +2215,41 @@ const QA_PURITY_FORBIDDEN = [
   [/\bXMLHttpRequest\b/, "perform network IO"],
 ];
 
+/**
+ * Every root red line D's grep has to cover.
+ *
+ * The blueprint asked for a whole-repository grep and this list was three
+ * directories, so `e2e/`, `scripts/` and everything in `apps/web` outside `src`
+ * (config, instrumentation, `next.config.ts`) were never scanned — and `e2e/`
+ * is precisely where a "just point the fixture at the sibling repo" import
+ * would be written. Widened to the roots that hold executable source.
+ */
 const SIBLING_REPO_SOURCE_ROOTS = [
   "packages",
-  "apps/web/src",
-  "apps/worker/src",
+  "apps/web",
+  "apps/worker",
+  "e2e",
+  "scripts",
 ];
+
+/** This guard's own file, which must state the tokens it forbids. */
+const GUARD_SOURCE = "scripts/verify-implementation.mjs";
+
+function posixDirname(path) {
+  const index = path.lastIndexOf("/");
+  return index === -1 ? "." : path.slice(0, index);
+}
+
+/** Resolve a relative module specifier against a repo-relative directory. */
+function posixJoin(directory, specifier) {
+  const segments = directory === "." ? [] : directory.split("/");
+  for (const part of specifier.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") segments.pop();
+    else segments.push(part);
+  }
+  return segments.join("/");
+}
 
 /**
  * Every file the gate actually executes, not just the ones under `qa/`.
@@ -2353,36 +2388,75 @@ function checkContentShadowQaPurity() {
     ),
   );
 
-  // The role boundary reaches every consumer, not only the gate's own closure.
+  // The role boundary reaches every consumer, not only the gate's own closure —
+  // and it is stated as "the NAME may not appear", not as one export syntax.
   //
-  // Scoped to `packages/flow-shadow/src/**`, this guard protected exactly the
-  // files that already knew the rule, while `qa/index.ts` re-exported
-  // `resolveAttribution` onto the package's public surface — so an
-  // `apps/worker` consumer could import it and reintroduce "did ANYTHING
-  // resolve?" one line outside the guard's range. There is no such caller yet,
-  // which is the only reason widening this is free; the export is gone and the
-  // check now walks the same source roots as red line D.
+  // The previous re-export check was `/^\\s*resolveAttribution,\\s*$/m`, which
+  // matches exactly one shape: an entry on its own line of a multi-line export
+  // list. Measured, all four of these walked straight past it —
+  // `export { resolveAttribution } from "./claims.ts";`,
+  // `export { resolveAttribution, x } from "./claims.ts";`,
+  // `export { resolveAttribution as resolve } from "./claims.ts";` and
+  // `export * from "./claims.ts";` — while the gate printed that every scanned
+  // file was free of re-exports. A guard whose summary claims more than it
+  // checks is the failure this repository keeps finding, so the rule is now the
+  // strongest one that is also simple: outside its owner and the tests, the
+  // identifier may not appear at all. That covers calls, imports, aliases and
+  // every export syntax in one predicate.
   for (const file of [...new Set([...qaFiles, ...sourceFiles])]) {
     if (file === RESOLUTION_OWNER) continue;
-    if (file.endsWith(".test.ts")) continue;
+    if (file === GUARD_SOURCE) continue;
+    if (file.endsWith(".test.ts") || file.endsWith(".test.mjs")) continue;
     const source = stripCodeComments(read(file));
     invariant(
-      !/\bresolveAttribution\s*\(/.test(source),
-      `${file} must not call resolveAttribution directly: it reports whether an attribution names ANYTHING in the pack, including the customer's own site, so a rule reading it decides that a first-party link supports a fabricated claim. Ask resolveAssertionSupport (evidence) or resolveLinkProvenance (is this address ours) instead`,
-    );
-    invariant(
-      !/^\s*resolveAttribution,\s*$/m.test(source),
-      `${file} must not re-export resolveAttribution: putting it on a public surface moves the same mistake one import outside this guard's range`,
+      !/\bresolveAttribution\b/.test(source),
+      `${file} must not name resolveAttribution: it reports whether an attribution matches ANYTHING in the pack, including the customer's own site, so a rule reading it decides that a first-party link supports a fabricated claim. Ask resolveAssertionSupport (evidence) or resolveLinkProvenance (is this address ours) instead. Importing, aliasing or re-exporting it moves the same mistake one line outside this guard's range`,
     );
   }
 
+  // The one syntax an identifier ban cannot see: `export *` republishes a
+  // module's whole surface without naming anything on it. Resolved rather than
+  // pattern-matched, and followed transitively, because a two-hop barrel is the
+  // same hole with an extra file in it.
+  const starExports = new Map();
+  for (const file of [...new Set([...qaFiles, ...sourceFiles])]) {
+    const targets = [];
+    for (const match of stripCodeComments(read(file)).matchAll(
+      /\bexport\s+\*\s*(?:as\s+[A-Za-z_$][\w$]*\s*)?from\s*["']([^"'\n]+)["']/g,
+    )) {
+      const specifier = match[1];
+      if (!specifier.startsWith(".")) continue;
+      targets.push(posixJoin(posixDirname(file), specifier));
+    }
+    if (targets.length > 0) starExports.set(file, targets);
+  }
+  for (const [file, targets] of starExports) {
+    const seen = new Set([file]);
+    const queue = [...targets];
+    while (queue.length > 0) {
+      const target = queue.pop();
+      if (seen.has(target)) continue;
+      seen.add(target);
+      invariant(
+        target !== RESOLUTION_OWNER,
+        `${file} must not \`export *\` from ${RESOLUTION_OWNER}: a star re-export republishes resolveAttribution without naming it, which is the one shape the identifier ban above cannot see`,
+      );
+      queue.push(...(starExports.get(target) ?? []));
+    }
+  }
+
   for (const file of sourceFiles) {
+    // The guard's own file states the forbidden token in order to report it.
+    // Exempting exactly one path, by equality, keeps the rule readable; the
+    // alternative is assembling the string from fragments so the guard can scan
+    // itself, which hides the rule from the person who has to maintain it.
+    if (file === GUARD_SOURCE) continue;
     invariant(
       !/gengrowth-flow-mvp/.test(stripCodeComments(read(file))),
       `${file} must not reference the sibling gengrowth-flow-mvp repository in code`,
     );
   }
-  return `Content Shadow QA purity: ${qaFiles.length} files in the gate's import closure free of non-relative imports (\`from\`, \`import()\` and side-effect \`import\`), require(), process, globalThis, clock, randomness, locale-sensitive APIs and network; ${sourceFiles.length} source files free of sibling-repo references and free of direct resolveAttribution calls or re-exports outside ${RESOLUTION_OWNER}`;
+  return `Content Shadow QA purity: ${qaFiles.length} files in the gate's import closure free of non-relative imports (\`from\`, \`import()\` and side-effect \`import\`), require(), process, globalThis, clock, randomness, locale-sensitive APIs and network; ${sourceFiles.length} source files across ${SIBLING_REPO_SOURCE_ROOTS.join(", ")} free of sibling-repo references, free of the identifier resolveAttribution in any syntax outside ${RESOLUTION_OWNER} and its tests, and free of any \`export *\` chain reaching it (${GUARD_SOURCE}, which must state both forbidden tokens to report them, is the single exemption)`;
 }
 
 const checks = [

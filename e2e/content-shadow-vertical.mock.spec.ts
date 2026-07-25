@@ -157,10 +157,19 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   ]);
 
   // ================= 3. ONE Action ==========================================
-  // The confirmation returned exactly one Action, and it is bound to the
-  // Finding that was confirmed — not to the URL, and not to a theme.
+  // Read out of the confirmation RESPONSE, not out of a flag the fixture set
+  // beside it: `contentActionsCreated` is parsed from the body the route
+  // returned, so a `reviewProjectFinding` that minted two Actions for one
+  // Finding lands here as two.
   expect(api.contentActionsCreated).toHaveLength(1);
-  expect(api.contentActionsCreated[0]?.findingId).toBe(E2E_CONTENT_FINDING_ID);
+  const contentAction = api.contentActionsCreated[0];
+  expect(contentAction?.findingId).toBe(E2E_CONTENT_FINDING_ID);
+  // It is a real Action object, with the identity the next segment consumes —
+  // not a bare marker that a confirmation happened.
+  expect(contentAction?.id).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u,
+  );
+  expect(contentAction?.title).toBe(CONTENT_ACTION_TITLE);
 
   // ================= 4. ONE content_brief ===================================
   await navLink(page, 2).click();
@@ -173,9 +182,11 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   await expect(
     briefGroup.locator(`[data-studio-artifact-id="${BRIEF_ARTIFACT_ID}"]`),
   ).toHaveCount(1);
-  // The single brief belongs to the single Action created above.
+  // The single brief belongs to the single Action created above — asserted
+  // against THAT Action's own title as the response carried it, so the link is
+  // checked rather than two constants being compared to each other.
   await expect(
-    briefGroup.getByText(CONTENT_ACTION_TITLE, { exact: true }),
+    briefGroup.getByText(contentAction!.title, { exact: true }),
   ).toBeVisible();
 
   // ================= 5. Flow Shadow research / draft / QA ===================

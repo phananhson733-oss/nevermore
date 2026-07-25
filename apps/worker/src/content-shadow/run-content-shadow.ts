@@ -7,6 +7,7 @@ import {
   DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
   FindingsRepository,
+  FlowShadowQaGateReplayConflictError,
   FlowShadowQaGatesRepository,
   FlowShadowResearchPacksRepository,
   FlowShadowRunsRepository,
@@ -544,10 +545,30 @@ function isTransientContentShadowError(error: unknown): boolean {
   );
 }
 
+/**
+ * The stable code a permanent failure is recorded under.
+ *
+ * `FlowShadowQaGateReplayConflictError` is listed FIRST and by name because it
+ * is the one error here that exists solely to be identifiable. It means the
+ * same frozen run produced a different judgement on re-delivery — an input that
+ * must be immutable moved, or the gate is not the pure function red line C says
+ * it is. Falling through to `UNAVAILABLE` filed that under the same code as a
+ * dead database, and threw away the field naming WHICH half diverged, so the
+ * one failure worth waking someone for became indistinguishable from the most
+ * routine one.
+ */
 function permanentFailureCode(error: unknown): string {
+  if (error instanceof FlowShadowQaGateReplayConflictError) return error.code;
   if (error instanceof ContentShadowPermanentError) return error.code;
   if (error instanceof LLMError) return error.code;
   return "UNAVAILABLE";
+}
+
+/** `verdict` or `claims` when a gate replay diverged, else `null`. */
+function replayDivergedField(error: unknown): "verdict" | "claims" | null {
+  return error instanceof FlowShadowQaGateReplayConflictError
+    ? error.field
+    : null;
 }
 
 export async function runContentShadow(
@@ -771,13 +792,17 @@ export async function runContentShadow(
       throw error;
     }
     const code = permanentFailureCode(error);
+    const divergedField = replayDivergedField(error);
     const failed = await ctx.db.transaction(async (tx) => {
       const txRuns = new AsyncRunsRepository(tx);
       if (!(await txRuns.lockAttemptForUpdate(attempt))) return false;
       const terminal = await txRuns.setTerminal(attempt, {
         status: "failed",
         lastErrorCode: code,
-        lastErrorSummary: "content shadow run failed",
+        lastErrorSummary:
+          divergedField === null
+            ? "content shadow run failed"
+            : `content shadow qa gate replay produced a different ${divergedField} for the same frozen run`,
       });
       if (!terminal) return false;
       // Give back any draft artifact this run had already claimed. Without this
@@ -789,6 +814,12 @@ export async function runContentShadow(
       );
       return true;
     });
-    if (failed) ctx.logger.error("content_shadow_failed", { runId, code });
+    if (failed) {
+      ctx.logger.error("content_shadow_failed", {
+        runId,
+        code,
+        ...(divergedField === null ? {} : { divergedField }),
+      });
+    }
   }
 }

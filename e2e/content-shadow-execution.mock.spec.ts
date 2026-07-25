@@ -5,6 +5,10 @@ import {
   E2E_SITE_ID,
   installCriticalFlowApi,
 } from "./mock-api.ts";
+import {
+  EXECUTION_CLAIMS,
+  expectedVerdict,
+} from "./content-shadow-claims-fixture.ts";
 
 /**
  * The Execution screen's Content Shadow surface, against fixed fixtures.
@@ -39,70 +43,6 @@ const DRAFT_BODY = [
   "",
   "- Forrester, State of Onboarding 2024",
 ].join("\n");
-
-interface ClaimSpec {
-  readonly id: string;
-  readonly kind: "red_line" | "structure" | "citability" | "coverage";
-  readonly severity: "blocking" | "review" | "advisory";
-  readonly status: "passed" | "failed" | "unevaluated";
-  readonly detail: string;
-}
-
-const CLAIMS: readonly ClaimSpec[] = [
-  {
-    id: "content-shadow.qa.rl8_unsupported_claim",
-    kind: "red_line",
-    severity: "blocking",
-    status: "failed",
-    detail:
-      'The assertion "a 2024 industry study reports a 38% activation gap" names no source this run holds.',
-  },
-  {
-    id: "content-shadow.qa.rl12_citation_integrity",
-    kind: "red_line",
-    severity: "blocking",
-    status: "unevaluated",
-    detail:
-      'This name may be a product, a feature or a section title; a reviewer has to decide. "Forrester" carries no second signal in this draft.',
-  },
-  {
-    id: "content-shadow.qa.rl13_banned_jargon",
-    kind: "red_line",
-    severity: "advisory",
-    status: "passed",
-    detail: "No banned jargon was found.",
-  },
-  {
-    id: "content-shadow.qa.sc5_faq_section",
-    kind: "structure",
-    severity: "advisory",
-    status: "passed",
-    detail: "No questions-and-answers section was found.",
-  },
-  {
-    id: "content-shadow.qa.sc9b_sources_resolve_to_pack",
-    kind: "structure",
-    severity: "blocking",
-    status: "failed",
-    detail:
-      "A listed source resolves to nothing in the frozen research records for this run.",
-  },
-  {
-    id: "content-shadow.qa.citability_geo",
-    kind: "citability",
-    severity: "advisory",
-    status: "passed",
-    detail: "Scored 61 out of 100 on the deterministic citability heuristic.",
-  },
-  {
-    id: "content-shadow.qa.brief-outline",
-    kind: "coverage",
-    severity: "review",
-    status: "unevaluated",
-    detail:
-      'Coverage was NOT judged: this draft is "de-DE" and topic matching is an English-language heuristic — locale not supported by deterministic segmentation.',
-  },
-];
 
 function runProjection() {
   return {
@@ -171,16 +111,12 @@ function runProjection() {
     },
     qa: {
       gateId: "00000000-0000-4000-8000-000000000909",
-      verdict: "blocked",
+      // Derived from the claims, so this fixture cannot pin a verdict the gate
+      // would never return for them.
+      verdict: expectedVerdict(EXECUTION_CLAIMS),
       evaluatedArtifactId: DRAFT_ARTIFACT_ID,
       evaluatedRevision: 1,
-      claims: CLAIMS.map((claim) => ({
-        claimId: claim.id,
-        kind: claim.kind,
-        severity: claim.severity,
-        status: claim.status,
-        detail: claim.detail,
-      })),
+      claims: EXECUTION_CLAIMS,
       evaluatedAt: "2026-07-25T00:02:00.000Z",
     },
   };

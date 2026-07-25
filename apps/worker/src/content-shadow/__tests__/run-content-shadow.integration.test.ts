@@ -31,6 +31,7 @@ import {
   EvidenceRepository,
   ExecutionArtifactsRepository,
   FindingsRepository,
+  FlowShadowQaGateReplayConflictError,
   FlowShadowQaGatesRepository,
   FlowShadowResearchPacksRepository,
   FlowShadowRunsRepository,
@@ -717,6 +718,52 @@ describeDb("runContentShadow", () => {
       fixture.asyncRunId,
     );
     expect(run?.status).toBe("completed");
+  });
+
+  /**
+   * The one failure this pipeline defines its own error code for must survive
+   * to the run record.
+   *
+   * `FLOW_SHADOW_QA_GATE_REPLAY_CONFLICT` means the same frozen run was judged
+   * differently on re-delivery — an input that must be immutable moved, or the
+   * gate is not the pure function red line C claims. `permanentFailureCode`
+   * recognised only `ContentShadowPermanentError` and `LLMError`, so it landed
+   * as `UNAVAILABLE`: the same code a dead database gets, with the field naming
+   * WHICH half diverged thrown away. Recording it is the whole point of having
+   * defined it.
+   *
+   * The divergence itself cannot be staged through SQL — gate rows carry an
+   * append-only trigger — so the repository is made to report it, using the real
+   * error type rather than a stand-in.
+   */
+  it("records a gate replay divergence under its own code, with the field that diverged", async () => {
+    const fixture = await seedShadowChain(handle);
+    const insert = vi
+      .spyOn(FlowShadowQaGatesRepository.prototype, "insert")
+      .mockRejectedValueOnce(new FlowShadowQaGateReplayConflictError("claims"));
+
+    try {
+      await runContentShadow(ctx, {
+        runId: fixture.asyncRunId,
+        workspaceId: fixture.scope.workspaceId,
+        projectId: fixture.scope.projectId,
+      });
+    } finally {
+      insert.mockRestore();
+    }
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "FLOW_SHADOW_QA_GATE_REPLAY_CONFLICT",
+    });
+    // Not "content shadow run failed": the summary names which half diverged,
+    // which is the difference between "something broke" and "the verdict and
+    // the claims disagree with what we already stored".
+    expect(run?.last_error_summary).toContain("claims");
   });
 
   it("fails with input drift when the source Finding moves past its frozen diagnosis", async () => {

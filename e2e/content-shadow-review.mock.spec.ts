@@ -5,6 +5,15 @@ import {
   E2E_SITE_ID,
   installCriticalFlowApi,
 } from "./mock-api.ts";
+import {
+  claimCounts,
+  expectedVerdict,
+  REVIEW_BLOCKING_CLAIMS,
+  REVIEW_COVERAGE_GAP_CLAIMS,
+  REVIEW_PASSING_CLAIMS,
+  type QaClaimFixture,
+  type QaVerdictFixture,
+} from "./content-shadow-claims-fixture.ts";
 
 /**
  * Human review of a Content Shadow revision, and the publishing that does not
@@ -51,57 +60,9 @@ const BRIEF_BODY = [
   "Use only records confirmed inside the project.",
 ].join("\n");
 
-type Verdict = "passed" | "needs_review" | "blocked";
-
-interface Claim {
-  readonly claimId: string;
-  readonly kind: "red_line" | "structure" | "citability" | "coverage";
-  readonly severity: "blocking" | "review" | "advisory";
-  readonly status: "passed" | "failed" | "unevaluated";
-  readonly detail: string;
-}
-
-const PASSING_CLAIMS: readonly Claim[] = [
-  {
-    claimId: "content-shadow.qa.rl13_banned_jargon",
-    kind: "red_line",
-    severity: "advisory",
-    status: "passed",
-    detail: "No banned jargon was found.",
-  },
-  {
-    claimId: "content-shadow.qa.sc9_sources_section",
-    kind: "structure",
-    severity: "review",
-    status: "passed",
-    detail: "A sources section is present.",
-  },
-  {
-    claimId: "content-shadow.qa.brief-outline",
-    kind: "coverage",
-    severity: "review",
-    status: "failed",
-    detail:
-      'The draft does not visibly cover 1 of the 2 frozen target keyword(s) this cluster committed to: "activation drop-off".',
-  },
-];
-
-const BLOCKING_CLAIMS: readonly Claim[] = [
-  {
-    claimId: "content-shadow.qa.rl8_unsupported_claim",
-    kind: "red_line",
-    severity: "blocking",
-    status: "failed",
-    detail:
-      'The assertion "a 2024 industry study reports a 38% activation gap" names no source this run holds.',
-  },
-  ...PASSING_CLAIMS,
-];
-
 interface Scenario {
-  readonly verdict: Verdict;
   readonly evaluatedRevision: number;
-  readonly claims: readonly Claim[];
+  readonly claims: readonly QaClaimFixture[];
   /** The live deliverable, which an edit moves independently of the run. */
   artifactRevision: number;
   artifactStatus: "draft" | "ready";
@@ -229,7 +190,7 @@ function runProjection(scenario: Scenario) {
     },
     qa: {
       gateId: "00000000-0000-4000-8000-000000000909",
-      verdict: scenario.verdict,
+      verdict: verdictOf(scenario),
       evaluatedArtifactId: DRAFT_ARTIFACT_ID,
       evaluatedRevision: scenario.evaluatedRevision,
       claims: scenario.claims,
@@ -289,8 +250,8 @@ async function openExecution(
           artifactId: DRAFT_ARTIFACT_ID,
           reviewedRevision: scenario.artifactRevision,
           artifactStatus: "ready",
-          verdict: scenario.verdict,
-          claimCounts: { passed: 2, failed: 1, unevaluated: 0 },
+          verdict: verdictOf(scenario),
+          claimCounts: claimCounts(scenario.claims),
           contentHash: CONTENT_HASH,
           reviewedAt: "2026-07-25T01:00:00.000Z",
           externalPublishingWrite: "none",
@@ -359,11 +320,22 @@ async function openExecution(
   return { writes };
 }
 
+/**
+ * A scenario states its CLAIMS; the verdict follows from them.
+ *
+ * The default used to declare `passed` beside a `failed` coverage claim, which
+ * `clampVerdictToFailedClaims` makes unreachable — so the one-click pass path,
+ * the receipt and the comparison panel were only ever proven on a state no run
+ * can produce. `verdictOf` removes the choice.
+ */
+function verdictOf(scenario: Scenario): QaVerdictFixture {
+  return expectedVerdict(scenario.claims);
+}
+
 function scenario(overrides: Partial<Scenario> = {}): Scenario {
   return {
-    verdict: "passed",
     evaluatedRevision: 1,
-    claims: PASSING_CLAIMS,
+    claims: REVIEW_PASSING_CLAIMS,
     artifactRevision: 1,
     artifactStatus: "draft",
     ...overrides,
@@ -391,7 +363,7 @@ test("a blocked verdict disables passing and says why, right next to the control
 }) => {
   await openExecution(
     page,
-    scenario({ verdict: "blocked", claims: BLOCKING_CLAIMS }),
+    scenario({ claims: REVIEW_BLOCKING_CLAIMS }),
   );
 
   const pass = page.locator("[data-review-pass]");
@@ -407,6 +379,21 @@ test("a blocked verdict disables passing and says why, right next to the control
   // Natively disabled, so a click cannot reach a handler at all.
   await pass.evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.locator("[data-review-confirm]")).toHaveCount(0);
+
+  // Every row of the blocker list states a STATE, because the labels do not.
+  // `sc9b` is phrased as the property when it is satisfied — "列出的来源与冻结
+  // 记录一致" — so listing it bare under "当前不能通过评审" put a sentence that
+  // reads like a pass among the reasons the draft is held back.
+  const blocker = page.locator("[data-qa-blocker]");
+  await expect(blocker).toContainText("当前不能通过评审");
+  const rows = blocker.locator("[data-qa-blocker-claim]");
+  await expect(rows).toHaveCount(2);
+  for (const row of await rows.all()) {
+    await expect(row).toContainText("未通过");
+  }
+  await expect(
+    blocker.getByText("列出的来源与冻结记录一致 · 未通过"),
+  ).toHaveCount(1);
 });
 
 test("a verdict for an older revision is marked stale and refuses to carry a review", async ({
@@ -423,12 +410,25 @@ test("a verdict for an older revision is marked stale and refuses to carry a rev
   await expect(page.locator("[data-review-reason]")).toContainText(
     "还没有跑过自动检查",
   );
+
+  // The comparison shows the revision this run FROZE, labelled as that
+  // revision. It used to carry the live number over the frozen bytes, so a
+  // reviewer read revision 1 under the heading "Revision 2".
+  await page.locator("[data-view-switch='compare']").click();
+  const draftPane = page.locator("[data-compare-draft]");
+  await expect(draftPane).toContainText("English draft · Revision 1");
+  await expect(draftPane).not.toContainText("English draft · Revision 2");
+  // And it says the deliverable has moved on, rather than leaving the reader to
+  // notice the two numbers disagree.
+  await expect(
+    draftPane.locator("[data-compare-draft-frozen]"),
+  ).toContainText("Revision 2");
 });
 
 test("passing a needs_review verdict requires the reviewer to say they read the findings", async ({
   page,
 }) => {
-  await openExecution(page, scenario({ verdict: "needs_review" }));
+  await openExecution(page, scenario({ claims: REVIEW_COVERAGE_GAP_CLAIMS }));
 
   await page.locator("[data-review-pass]").click();
   const checkbox = page.locator("[data-review-acknowledge]");
@@ -567,7 +567,9 @@ test("an edit invalidates the earlier review: four things move together", async 
 test("side by side reads the frozen brief against the draft, and never tints the draft green", async ({
   page,
 }) => {
-  await openExecution(page, scenario());
+  // A coverage gap is what makes this pane worth reading, and `needs_review` is
+  // the state the gate actually returns for one.
+  await openExecution(page, scenario({ claims: REVIEW_COVERAGE_GAP_CLAIMS }));
 
   await page.locator("[data-view-switch='compare']").click();
   const compare = page.locator("[data-compare]");
@@ -598,6 +600,46 @@ test("side by side reads the frozen brief against the draft, and never tints the
     scrollWidth: document.documentElement.scrollWidth,
   }));
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+});
+
+/**
+ * The whole comparison reachable without a mouse.
+ *
+ * The switch is a `tablist` with roving `tabIndex`, so the unselected tab is
+ * deliberately out of the Tab sequence — and there was no key handler, which
+ * meant the unselected tab was reachable by NO key. The entire brief-versus-
+ * draft feature had no keyboard path into it.
+ */
+test("the view switch is operable from the keyboard, in both directions", async ({
+  page,
+}) => {
+  await openExecution(page, scenario({ claims: REVIEW_COVERAGE_GAP_CLAIMS }));
+
+  const draftTab = page.locator("[data-view-switch='draft']");
+  const compareTab = page.locator("[data-view-switch='compare']");
+  await expect(draftTab).toHaveAttribute("aria-selected", "true");
+  // Roving tabIndex: only the selected tab is in the Tab sequence, which is why
+  // the arrow keys have to work.
+  await expect(compareTab).toHaveAttribute("tabindex", "-1");
+
+  await draftTab.focus();
+  await draftTab.press("ArrowRight");
+  await expect(page.locator("[data-compare]")).toBeVisible();
+  await expect(compareTab).toHaveAttribute("aria-selected", "true");
+  // Focus followed the selection, or the next arrow press starts from the tab
+  // the reader has already left.
+  await expect(compareTab).toBeFocused();
+
+  await compareTab.press("ArrowLeft");
+  await expect(page.locator("[data-shadow-body]")).toBeVisible();
+  await expect(draftTab).toHaveAttribute("aria-selected", "true");
+  await expect(draftTab).toBeFocused();
+
+  // Home/End land on the ends rather than wrapping past them.
+  await draftTab.press("End");
+  await expect(compareTab).toHaveAttribute("aria-selected", "true");
+  await compareTab.press("Home");
+  await expect(draftTab).toHaveAttribute("aria-selected", "true");
 });
 
 test("publishing is present, permanently unavailable, and does nothing at all", async ({

@@ -604,14 +604,8 @@
  * the heading above.
  */
 .blockerItemState {
-  margin-left: 6px;
   font-weight: 750;
-  text-transform: none;
   white-space: nowrap;
-}
-
-.blockerItemState::before {
-  content: "· ";
 }
 
 .blockerNote {
