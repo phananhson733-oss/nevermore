@@ -1783,6 +1783,7 @@
       "switchCompare": "Compare with brief",
       "briefLabel": "Content brief · revision {revision} (frozen)",
       "draftLabel": "English draft · revision {revision}",
+      "draftFrozenNote": "You are reading revision {frozen} — the text this run froze and checked. The deliverable is now on revision {current}, which nothing on this screen has compared against the brief.",
       "committedTopics": "Topics this cluster committed to",
       "noCommittedTopics": "The frozen cluster contributed no target keyword, so there is no committed topic list to compare against.",
       "coverageMiss": "Not covered in draft",

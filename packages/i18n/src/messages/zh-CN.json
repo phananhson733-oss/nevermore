@@ -1783,6 +1783,7 @@
       "switchCompare": "对照 Brief",
       "briefLabel": "内容 Brief · Revision {revision}（冻结版）",
       "draftLabel": "English draft · Revision {revision}",
+      "draftFrozenNote": "你正在阅读 Revision {frozen} —— 本次运行冻结并检查过的那一版。这份交付物现在已经是 Revision {current}，本屏没有拿它和 Brief 做过任何对照。",
       "committedTopics": "本次 cluster 承诺覆盖的主题",
       "noCommittedTopics": "冻结的 cluster 没有贡献任何目标关键词，因此没有可对照的主题清单。",
       "coverageMiss": "草稿未覆盖",

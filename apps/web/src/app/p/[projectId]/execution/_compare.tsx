@@ -33,7 +33,18 @@ export interface ComparePanesProps {
   readonly briefRevision: number;
   readonly briefContent: ArtifactRevision | null;
   readonly briefLoading: boolean;
+  /**
+   * The revision `draftBody` actually IS — the one this run pinned and its gate
+   * judged, not the deliverable's live revision.
+   *
+   * These differ the moment anyone edits the draft, and labelling frozen bytes
+   * with a live number is the specific lie this pane can tell: a reader sees
+   * "revision 4" over the text of revision 3 and compares the brief against
+   * prose that is no longer on the deliverable.
+   */
   readonly draftRevision: number;
+  /** The deliverable's current revision, when it has moved past the frozen one. */
+  readonly liveDraftRevision: number | null;
   readonly draftBody: string | null;
   readonly outputLocale: string;
   readonly coverageClaim: QaClaimView | null;
@@ -50,12 +61,15 @@ export function ComparePanes({
   briefContent,
   briefLoading,
   draftRevision,
+  liveDraftRevision,
   draftBody,
   outputLocale,
   coverageClaim,
 }: ComparePanesProps) {
   const t = useTranslations("studio.compare");
-  const missing = new Set(uncoveredTopics(coverageClaim, outline.targetKeywords));
+  const missing = new Set(
+    uncoveredTopics(coverageClaim, outline.targetKeywords),
+  );
   const verdict = coverageVerdict(coverageClaim);
   const body = briefMarkdown(briefContent);
 
@@ -77,7 +91,8 @@ export function ComparePanes({
         ) : null}
 
         <section className={styles.checklist} aria-label={t("committedTopics")}>
-          <h5>{t("committedTopics")}</h5>
+          {/* h4: the nearest preceding heading is the deliverable title's h3. */}
+          <h4>{t("committedTopics")}</h4>
           {outline.targetKeywords.length === 0 ? (
             <p className={styles.qaNote}>{t("noCommittedTopics")}</p>
           ) : (
@@ -113,7 +128,10 @@ export function ComparePanes({
           <EmptyState title={t("briefUnavailable")} />
         ) : (
           <div className={styles.compareBody}>
-            <MarkdownBlocks markdown={body} tableClassName={styles.tableScroll} />
+            <MarkdownBlocks
+              markdown={body}
+              tableClassName={styles.tableScroll}
+            />
           </div>
         )}
       </section>
@@ -126,6 +144,17 @@ export function ComparePanes({
         <p className={styles.compareLabel}>
           {t("draftLabel", { revision: draftRevision })}
         </p>
+        {/* When the deliverable has moved on, the pane says which revision the
+            reader is looking at AND which one is live, rather than quietly
+            comparing the brief against superseded text. */}
+        {liveDraftRevision !== null && liveDraftRevision !== draftRevision ? (
+          <p className={styles.qaScopeNote} data-compare-draft-frozen="">
+            {t("draftFrozenNote", {
+              frozen: draftRevision,
+              current: liveDraftRevision,
+            })}
+          </p>
+        ) : null}
         {draftBody === null || draftBody.trim().length === 0 ? (
           <EmptyState title={t("draftUnavailable")} />
         ) : (

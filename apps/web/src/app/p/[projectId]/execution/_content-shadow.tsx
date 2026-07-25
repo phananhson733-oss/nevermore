@@ -22,7 +22,11 @@
  * for by name.
  */
 
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import {
@@ -168,6 +172,19 @@ function QaGroupRow({ group }: { readonly group: QaGroup }) {
   );
 }
 
+/**
+ * Why every row here carries a state word.
+ *
+ * A claim label names a PROPERTY, and the properties are mixed in polarity:
+ * `rl8` reads "A statement with no traceable source" (a defect), while `sc9b`
+ * reads "Listed sources match the frozen records" (the property when it is
+ * SATISFIED). Listing the bare labels under "Cannot pass review yet" put a
+ * sentence that reads like a pass in the list of reasons a draft is held back.
+ *
+ * So the state is stated, in the same vocabulary the claim rows above use, and
+ * it is stated structurally rather than by rewording one label — a blocking
+ * rule added later will have whatever polarity its author chose.
+ */
 function BlockerBlock({ claims }: { readonly claims: readonly QaClaimView[] }) {
   const t = useTranslations("studio.qa");
   const shown = claims.slice(0, 3);
@@ -179,8 +196,13 @@ function BlockerBlock({ claims }: { readonly claims: readonly QaClaimView[] }) {
         {shown.map((claim) => {
           const key = claimLabelKey(claim.claimId);
           return (
-            <li key={claim.claimId}>
-              {key === null ? t("claimUnnamed") : t(`claimLabels.${key}`)}
+            <li key={claim.claimId} data-qa-blocker-claim="">
+              <span>
+                {key === null ? t("claimUnnamed") : t(`claimLabels.${key}`)}
+              </span>
+              <span className={styles.blockerItemState}>
+                {t(`claimStatus.${claim.status}`)}
+              </span>
             </li>
           );
         })}
@@ -483,6 +505,13 @@ function DocBody({ run }: { readonly run: ContentShadowRun }) {
 
 type CompareMode = "draft" | "compare";
 
+/** Tab order of the view switch; the keyboard walks exactly this. */
+const VIEW_MODES: readonly CompareMode[] = ["draft", "compare"];
+
+function viewTabId(mode: CompareMode): string {
+  return `sf-shadow-view-${mode}`;
+}
+
 function DocPanel({
   projectId,
   run,
@@ -522,6 +551,39 @@ function DocPanel({
     run.source.contentBriefArtifactId,
     run.source.contentBriefRevision,
   );
+
+  /**
+   * Arrow-key navigation, which a `tablist` with roving `tabIndex` owes its
+   * users and this one did not have.
+   *
+   * Only the selected tab is in the Tab sequence — that is the whole point of
+   * roving tabIndex — so without this handler the unselected tab was reachable
+   * by no key at all, and the entire brief-versus-draft comparison had no
+   * keyboard path into it. Same shape as the Evidence drawer's tablist, which
+   * already got this right.
+   */
+  function onViewKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ): void {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % VIEW_MODES.length;
+    if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + VIEW_MODES.length) % VIEW_MODES.length;
+    }
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = VIEW_MODES.length - 1;
+    if (nextIndex === null) return;
+    const next = VIEW_MODES[nextIndex];
+    if (next === undefined) return;
+    event.preventDefault();
+    onCompareMode(next);
+    // The new tab has to take focus, or the next arrow press starts from the
+    // tab the reader has already left.
+    requestAnimationFrame(() =>
+      document.getElementById(viewTabId(next))?.focus(),
+    );
+  }
 
   return (
     <article className={styles.docPanel} data-shadow-doc="">
@@ -602,17 +664,18 @@ function DocPanel({
         role="tablist"
         aria-label={tCompare("switchLabel")}
       >
-        {(["draft", "compare"] as const).map((mode) => (
+        {VIEW_MODES.map((mode, index) => (
           <button
             key={mode}
             type="button"
             role="tab"
-            id={`sf-shadow-view-${mode}`}
+            id={viewTabId(mode)}
             aria-selected={compareMode === mode}
             aria-controls="sf-shadow-view-panel"
             tabIndex={compareMode === mode ? 0 : -1}
             className={styles.viewSwitchBtn}
             onClick={() => onCompareMode(mode)}
+            onKeyDown={(event) => onViewKeyDown(event, index)}
             data-view-switch={mode}
           >
             {tCompare(mode === "draft" ? "switchDraft" : "switchCompare")}
@@ -623,7 +686,7 @@ function DocPanel({
       <div
         id="sf-shadow-view-panel"
         role="tabpanel"
-        aria-labelledby={`sf-shadow-view-${compareMode}`}
+        aria-labelledby={viewTabId(compareMode)}
         className={styles.docGrid}
       >
         {compareMode === "compare" ? (
@@ -632,7 +695,12 @@ function DocPanel({
             briefRevision={run.source.contentBriefRevision}
             briefContent={briefQuery.data?.current ?? null}
             briefLoading={briefQuery.isPending}
-            draftRevision={currentRevision}
+            /* The revision these BYTES are, not the deliverable's live one:
+               `run.draft.contentText` is the text this run froze and its gate
+               judged. Labelling it with `currentRevision` put an edited
+               deliverable's number over superseded prose. */
+            draftRevision={run.draft?.currentRevision ?? currentRevision}
+            liveDraftRevision={currentRevision === 0 ? null : currentRevision}
             draftBody={run.draft?.contentText ?? null}
             outputLocale={run.outputLocale}
             coverageClaim={coverageClaimOf(claims)}

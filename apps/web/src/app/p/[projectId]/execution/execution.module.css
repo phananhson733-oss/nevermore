@@ -597,6 +597,23 @@
   line-height: 1.55;
 }
 
+/*
+ * The state word beside a blocking claim. Claim labels are mixed in polarity —
+ * one of the three blocking checks is phrased as the property when SATISFIED —
+ * so the row states what happened rather than leaving a reader to infer it from
+ * the heading above.
+ */
+.blockerItemState {
+  margin-left: 6px;
+  font-weight: 750;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.blockerItemState::before {
+  content: "· ";
+}
+
 .blockerNote {
   color: inherit;
   opacity: 0.92;
@@ -722,8 +739,23 @@
   line-height: 1.55;
 }
 
+/*
+ * A stale tally, marked as stale WITHOUT losing contrast.
+ *
+ * This used to be `opacity: 0.62`, which took the three 12px count labels from
+ * 5.82:1 down to 2.70:1 — under WCAG AA's 4.5:1 for small text, and under the
+ * 3:1 floor spec §13.2 sets for anything this project dims. Dimming is the one
+ * expression of "out of date" that costs a reader the ability to read it, and
+ * the numbers stay true about the revision they judged.
+ *
+ * So staleness is expressed by a dashed rule and a muted surface instead: the
+ * mark is visible, the digits keep their own colour, and nothing that carries
+ * meaning is conveyed by contrast alone.
+ */
 .qaCountsStale {
-  opacity: 0.62;
+  background: color-mix(in srgb, var(--sf-amber-soft) 55%, var(--sf-surface));
+  border-color: color-mix(in srgb, var(--sf-amber) 30%, var(--sf-border));
+  border-style: dashed;
 }
 
 /* ------------------------------------------------------- side by side ----- */
@@ -843,7 +875,10 @@
   border-radius: 11px;
 }
 
-.checklist h5 {
+/* `h4`, not `h5`: the nearest preceding heading is the deliverable's `h3`, and
+ * skipping a level makes a screen-reader heading list read as a missing
+ * section. */
+.checklist h4 {
   margin: 0 0 8px;
   font-family: var(--sf-font-display);
   font-size: var(--sf-text-base);
@@ -890,7 +925,14 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgb(10 25 21 / 56%);
+  /*
+   * SignalFrame's own ink, as a token. This was `rgb(10 25 21 / 56%)` — a green
+   * ink from the GenGrowth reference artifact's palette, which ruling gamma and
+   * constraint N-1 both forbid hardcoding: the app's three other scrims are all
+   * derived from `--sf-ink-950`, and a green-tinted overlay on a cobalt product
+   * reads as a different application's dialog.
+   */
+  background: color-mix(in srgb, var(--sf-ink-950) 56%, transparent);
   backdrop-filter: blur(5px);
 }
 
@@ -902,7 +944,10 @@
   background: var(--sf-surface);
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius-card);
-  box-shadow: var(--sf-shadow-lg, var(--sf-shadow-sm));
+  /* `--sf-shadow-lg` does not exist in globals.css, so this silently fell back
+   * to the flat card shadow and both overlays read as level with the page.
+   * `--sf-shadow-md` is the token every other overlay in the app already uses. */
+  box-shadow: var(--sf-shadow-md);
 }
 
 .overlayModal {
