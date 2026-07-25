@@ -20,14 +20,33 @@ import {
   INTEGRITY_PROBES,
   assertSafeGeneratedTargetName,
   buildCanonicalCopySql,
+  buildIntegrityCopySql,
   buildTableCountSql,
   compareInventories,
+  extractSchemaReferences,
   makeTargetDatabaseName,
   parseSourceDatabaseUrl,
   pendingMigrationPaths,
   redactSensitiveText,
   runRestoreDrill,
 } from "./backup-restore-drill.mjs";
+import {
+  buildSchemaCatalog,
+  listMigrationFiles,
+  loadSchemaCatalog,
+  missingSchemaReferences,
+} from "./schema-catalog.mjs";
+
+/**
+ * The drill talks to a stubbed PostgreSQL in these tests, so nothing here can
+ * observe a query failing on the real server. That is exactly how an integrity
+ * probe that ordered `app.capability_runs` by a non-existent `id` column stayed
+ * green in this file while `pnpm restore:drill` failed every single run. The
+ * catalog parsed from the checked-in migration chain closes that gap without a
+ * database: the SQL the drill emits is checked against the schema it will run
+ * on before any stub gets a chance to accept it.
+ */
+const SCHEMA_CATALOG = await loadSchemaCatalog();
 
 const SOURCE_URL =
   "postgres://local_user:super-secret@localhost:5432/signalframe_ci";
@@ -385,6 +404,210 @@ test("inventory covers exactly the 44 app tables and explicit object metadata", 
     ),
     "missing page snapshot integrity probe",
   );
+});
+
+test("the drill inventories every table the migration chain creates", () => {
+  const catalogTables = [...SCHEMA_CATALOG.keys()].sort();
+
+  assert.equal(catalogTables.length, 44);
+  assert.deepEqual(
+    [...APP_TABLES].sort(),
+    catalogTables,
+    "the restore inventory and the migration chain must name the same tables",
+  );
+  for (const table of [
+    "flow_shadow_runs",
+    "flow_shadow_research_packs",
+    "flow_shadow_qa_gates",
+  ]) {
+    assert.ok(
+      APP_TABLES.includes(table),
+      `Content Shadow table ${table} is not inventoried by the restore drill`,
+    );
+  }
+});
+
+test("every statement the drill sends names only real tables and columns", () => {
+  const statements = [
+    buildTableCountSql(),
+    ...APP_TABLES.map((table) => buildCanonicalCopySql(table)),
+    ...INTEGRITY_PROBES.map((probe) => buildIntegrityCopySql(probe)),
+  ];
+
+  assert.equal(statements.length, 1 + APP_TABLES.length + INTEGRITY_PROBES.length);
+  for (const sqlText of statements) {
+    const missing = missingSchemaReferences(
+      SCHEMA_CATALOG,
+      extractSchemaReferences(sqlText),
+    );
+    assert.deepEqual(
+      missing,
+      [],
+      `restore drill SQL names schema objects that do not exist: ${missing.join(", ")}`,
+    );
+  }
+});
+
+test("integrity probes order by the primary key the schema really declares", () => {
+  for (const probe of INTEGRITY_PROBES) {
+    const entry = SCHEMA_CATALOG.get(probe.table);
+    assert.ok(entry, `integrity probe ${probe.id} names an unknown table`);
+    assert.deepEqual(
+      probe.key,
+      entry.primaryKey,
+      `integrity probe ${probe.id} does not order by the primary key of ${probe.table}`,
+    );
+    const expectedOrdering = probe.key
+      .map((column) => `"${column}"::text`)
+      .join(", ");
+    assert.ok(
+      buildIntegrityCopySql(probe).endsWith(
+        `order by ${expectedOrdering}) to stdout`,
+      ),
+      `integrity probe ${probe.id} does not order by its declared key`,
+    );
+  }
+
+  // The table that made this gate necessary: it is keyed by the async run it
+  // extends and has no id column at all.
+  assert.deepEqual(SCHEMA_CATALOG.get("capability_runs").primaryKey, [
+    "async_run_id",
+  ]);
+  assert.equal(SCHEMA_CATALOG.get("capability_runs").columns.has("id"), false);
+});
+
+test("the schema gate rejects probe SQL naming a column the schema lacks", () => {
+  // Replays the exact defect that shipped and stayed red for the life of the
+  // gate: an integrity probe on capability_runs keyed by a non-existent id.
+  // A stubbed PostgreSQL accepts this string happily; the schema catalog does
+  // not, which is the whole point of checking the emitted SQL offline.
+  const brokenColumn = buildIntegrityCopySql({
+    id: "capability_runs.input-manifest-hash",
+    table: "capability_runs",
+    key: ["id"],
+    columns: ["input_manifest_hash"],
+  });
+  assert.deepEqual(
+    missingSchemaReferences(
+      SCHEMA_CATALOG,
+      extractSchemaReferences(brokenColumn),
+    ),
+    ["column app.capability_runs.id"],
+  );
+
+  assert.deepEqual(
+    missingSchemaReferences(
+      SCHEMA_CATALOG,
+      extractSchemaReferences(buildCanonicalCopySql("capability_run")),
+    ),
+    ["table app.capability_run"],
+  );
+});
+
+test("the schema catalog parses the DDL the migration chain actually uses", () => {
+  const catalog = buildSchemaCatalog([
+    {
+      name: "0001_fixture.sql",
+      sql: [
+        "BEGIN;",
+        "-- A comment that says drop column must not trip the guard.",
+        "/* nested /* block */ comment */",
+        "CREATE TABLE IF NOT EXISTS app.widgets (",
+        "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),",
+        "  label text NOT NULL CHECK (label ~ '^[a-z, ]+$'),",
+        "  CONSTRAINT widgets_label_unique UNIQUE (label)",
+        ");",
+        "CREATE TABLE IF NOT EXISTS app.widget_parts (",
+        "  widget_id uuid NOT NULL REFERENCES app.widgets(id),",
+        "  part_id text NOT NULL,",
+        "  PRIMARY KEY (widget_id, part_id)",
+        ");",
+        "COMMIT;",
+      ].join("\n"),
+    },
+    {
+      name: "0002_fixture.sql",
+      sql: [
+        "ALTER TABLE app.widgets ADD COLUMN IF NOT EXISTS locale text;",
+        "CREATE TABLE IF NOT EXISTS app.widgets (",
+        "  id uuid PRIMARY KEY,",
+        "  reissued text",
+        ");",
+        "DO $$ BEGIN",
+        "  ALTER TABLE app.widgets",
+        "    ADD CONSTRAINT widgets_locale_check CHECK (locale <> '');",
+        "END; $$;",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.deepEqual([...catalog.keys()].sort(), ["widget_parts", "widgets"]);
+  assert.deepEqual(catalog.get("widgets").primaryKey, ["id"]);
+  assert.deepEqual(catalog.get("widget_parts").primaryKey, [
+    "widget_id",
+    "part_id",
+  ]);
+  assert.deepEqual([...catalog.get("widgets").columns].sort(), [
+    "id",
+    "label",
+    "locale",
+    "reissued",
+  ]);
+  assert.deepEqual([...catalog.get("widget_parts").columns].sort(), [
+    "part_id",
+    "widget_id",
+  ]);
+});
+
+test("the schema catalog refuses DDL it cannot model instead of going stale", () => {
+  for (const [sql, expected] of [
+    ["ALTER TABLE app.widgets DROP COLUMN label;", /DROP COLUMN/],
+    ["ALTER TABLE app.widgets RENAME COLUMN label TO title;", /RENAME COLUMN/],
+    ["ALTER TABLE app.widgets RENAME TO gadgets;", /ALTER TABLE \.\.\. RENAME/],
+    ["DROP TABLE app.widgets;", /DROP TABLE/],
+    [
+      "CREATE TABLE app.widget_copy AS SELECT * FROM app.widgets;",
+      /CREATE TABLE \.\.\. AS/,
+    ],
+    ["SELECT * INTO app.widget_copy FROM app.widgets;", /SELECT \.\.\. INTO/],
+    [
+      "DO $body$ BEGIN ALTER TABLE app.widgets DROP COLUMN label; END; $body$;",
+      /DROP COLUMN/,
+    ],
+  ]) {
+    assert.throws(
+      () => buildSchemaCatalog([{ name: "0099_fixture.sql", sql }]),
+      expected,
+      `unsupported DDL slipped past the schema catalog: ${sql}`,
+    );
+  }
+});
+
+test("the schema catalog fails loudly on SQL it cannot tokenize", async () => {
+  for (const [sql, expected] of [
+    ["SELECT 'unterminated", /Unterminated SQL string literal/],
+    ["DO $$ BEGIN END;", /Unterminated dollar-quoted SQL body/],
+    ["/* never closed", /Unterminated SQL block comment/],
+    [
+      "CREATE TABLE IF NOT EXISTS app.widgets (id uuid",
+      /Unbalanced parentheses/,
+    ],
+    [
+      "ALTER TABLE app.absent ADD COLUMN label text;",
+      /adds a column to unknown table app\.absent/,
+    ],
+  ]) {
+    assert.throws(
+      () => buildSchemaCatalog([{ name: "0099_fixture.sql", sql }]),
+      expected,
+    );
+  }
+
+  const files = await listMigrationFiles();
+  assert.deepEqual(files, [...files].sort());
+  assert.equal(files[0], "0001_init.sql");
+  assert.equal(files.includes("schema-smoke.sql"), false);
+  assert.ok(files.length >= 21, "migration chain discovery lost files");
 });
 
 test("canonical row hashing does not assume every table has an id column", () => {
