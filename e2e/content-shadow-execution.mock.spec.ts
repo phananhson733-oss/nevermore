@@ -165,6 +165,23 @@ async function openExecution(page: Page): Promise<void> {
   await expect(page.locator("[data-content-shadow]")).toBeVisible();
 }
 
+/**
+ * Resolve a CSS colour expression the way the page itself would, so a token and
+ * a computed style can be compared as the same bytes. Comparing a computed
+ * `rgb(...)` against a raw `#rrggbb` token value can only ever be "not equal",
+ * which would make a colour assertion pass without checking anything.
+ */
+async function resolveColor(page: Page, expression: string): Promise<string> {
+  return page.evaluate((value) => {
+    const probe = document.createElement("span");
+    probe.style.color = value;
+    document.body.append(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    return resolved;
+  }, expression);
+}
+
 test("renders the deliverable body itself, at reading size", async ({
   page,
 }) => {
@@ -220,7 +237,58 @@ test("a blocked verdict reads as a held-back citation, never as a failure", asyn
   expect(text).not.toContain("重试");
   expect(text).not.toContain("请稍后");
 
-  // 4. The deliverable is still listed; a blocked draft is not hidden away.
+  // 4. The block is painted amber, not the product's red.
+  //    Wording alone is not enough: colour is read before text, and coral is
+  //    this palette's danger family. The verdict-level surface, its border and
+  //    its text take the amber family the verdict pill already uses; the
+  //    item-level state word beside a single failed claim keeps the status
+  //    matrix's own coral, because "this one claim failed" is a fact about the
+  //    claim, not the verdict on the deliverable.
+  const surface = await blocker.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      background: style.backgroundColor,
+      text: style.color,
+      border: style.borderTopColor,
+    };
+  });
+  const amberSoft = await resolveColor(page, "var(--sf-amber-soft)");
+  const amberText = await resolveColor(page, "var(--sf-amber-text)");
+  const amberBorder = await resolveColor(
+    page,
+    "color-mix(in srgb, var(--sf-amber) 32%, var(--sf-border))",
+  );
+  const coralSoft = await resolveColor(page, "var(--sf-coral-soft)");
+  const coralText = await resolveColor(page, "var(--sf-coral-text)");
+  const coralBorder = await resolveColor(
+    page,
+    "color-mix(in srgb, var(--sf-coral) 32%, var(--sf-border))",
+  );
+  // Guard the comparison itself: if the two families ever resolved to the same
+  // bytes, every "is not coral" assertion below would pass for free.
+  expect(amberSoft).not.toBe(coralSoft);
+  expect(amberText).not.toBe(coralText);
+  expect(amberBorder).not.toBe(coralBorder);
+  expect(surface.background).toBe(amberSoft);
+  expect(surface.text).toBe(amberText);
+  expect(surface.border).toBe(amberBorder);
+
+  // 5. The failed-claim state word inside it is still coral, and is proven to
+  //    be so rather than assumed: the layered ruling only holds if both halves
+  //    are true at once.
+  const states = await blocker
+    .locator("[data-qa-blocker-claim] span:last-child")
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        text: element.textContent ?? "",
+        color: getComputedStyle(element).color,
+      })),
+    );
+  const failedStates = states.filter((state) => state.text.includes("未通过"));
+  expect(failedStates.length).toBeGreaterThan(0);
+  for (const state of failedStates) expect(state.color).toBe(coralText);
+
+  // 6. The deliverable is still listed; a blocked draft is not hidden away.
   await expect(
     page.locator("[data-content-shadow] [aria-current='true']"),
   ).toBeVisible();

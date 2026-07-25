@@ -203,7 +203,12 @@ function BlockerBlock({ claims }: { readonly claims: readonly QaClaimView[] }) {
               {/* The separator is DOM text, not a CSS `::before`: generated
                   content is not reliably part of the accessible name, and this
                   row's meaning depends on both halves being read. */}
-              <span className={styles.blockerItemState}>
+              {/* Same tone map as `QaClaimRow` above: an item-level state word
+                  keeps the status matrix's colour, while the block around it
+                  stays amber because the block is the verdict. */}
+              <span
+                className={cx(styles.blockerItemState, styles[claim.status])}
+              >
                 {` · ${t(`claimStatus.${claim.status}`)}`}
               </span>
             </li>

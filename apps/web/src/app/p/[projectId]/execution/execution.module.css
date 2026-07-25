@@ -569,13 +569,24 @@
  * back citations it could not check against the frozen records — the product
  * working, not failing. Red would teach a reviewer to read a normal outcome as
  * a fault and to stop reading the reason.
+ *
+ * The block's surface, border and title carry the VERDICT, so they take the
+ * same amber the verdict pill takes and the same shape `.briefLinkBroken` and
+ * `.staleBanner` already use for a held-back state. Item-level state words
+ * inside the list are a different scale of meaning and keep the status matrix's
+ * own colours (see `.blockerItemState`).
+ *
+ * Measured in-browser against the painted `--sf-amber-soft` surface, light /
+ * dark: title (15px) and body (12px) 6.14:1 / 9.28:1; `.blockerNote` composited
+ * at its 0.92 opacity 5.15:1 / 8.07:1; a coral `failed` state word (12px)
+ * 5.89:1 / 7.74:1. Every one is above WCAG AA 4.5:1, 12px labels included.
  */
 .blocker {
   margin-top: 12px;
   padding: 11px 12px;
-  color: var(--sf-coral-text);
-  background: var(--sf-coral-soft);
-  border: 1px solid color-mix(in srgb, var(--sf-coral) 34%, var(--sf-border));
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+  border: 1px solid color-mix(in srgb, var(--sf-amber) 32%, var(--sf-border));
   border-radius: 9px;
 }
 
@@ -602,6 +613,12 @@
  * one of the three blocking checks is phrased as the property when SATISFIED —
  * so the row states what happened rather than leaving a reader to infer it from
  * the heading above.
+ *
+ * This word is ITEM level, not verdict level, so it carries the same colour the
+ * status matrix gives that word everywhere else in the rail: `.failed` is
+ * coral, `.unevaluated` amber, `.passed` mint. Painting the verdict red is what
+ * the Task 7/8 ruling forbids; saying which individual claim failed, in the
+ * vocabulary the claim rows above already use, is what makes the list readable.
  */
 .blockerItemState {
   font-weight: 750;

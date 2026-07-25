@@ -538,9 +538,23 @@ async function generateReadyArtifact(
   } else {
     await markReady.click();
   }
-  await expect(
-    page.getByRole("button", { name: "Back to draft" }),
-  ).toBeVisible();
+  // The anchor for "marking ready took" moved; it was not loosened.
+  //
+  // This used to read the "Back to draft" button, which appeared only on a
+  // `ready` artifact. That control has been removed:
+  // `MANUAL_STATUS_TRANSITIONS.ready` is `["archived"]`
+  // (`apps/web/src/lib/services/artifact-state.ts`), so it could only ever
+  // return `VERSION_CONFLICT` — a control whose one possible outcome is a
+  // refusal. It was never what this step proves; it was only where the proof
+  // happened to be pinned. The proof is now pinned to the state itself, at the
+  // same strength: under strict mode `getByText` must resolve exactly one
+  // element and it must be visible, exactly as `getByRole` did before.
+  const editor = page.locator("[data-studio-editor]");
+  await expect(editor.getByText("Ready", { exact: true })).toBeVisible();
+  // The removed control must stay removed: shipping it back is the defect.
+  await expect(page.getByRole("button", { name: "Back to draft" })).toHaveCount(0);
+  // And `ready` is not a dead end — the editor states the real path back.
+  await expect(editor.locator("[data-studio-ready-path]")).toBeVisible();
 }
 
 async function verifyExportBytes(link: Locator): Promise<void> {

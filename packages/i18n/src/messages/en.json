@@ -1530,7 +1530,7 @@
     "saveBeforeStatusChange": "Save or discard your edits before changing this artifact's status.",
     "markReady": "Mark ready",
     "markReadyHint": "Resolve the validation errors before this artifact can be marked ready.",
-    "backToDraft": "Back to draft",
+    "readyEditPath": "This artifact is ready. To change it, edit the content above and save a revision: that appends a new revision and returns the artifact to draft.",
     "archive": "Archive",
     "validationErrors": "Validation errors",
     "noRevision": "No content yet. Generate this artifact to create the first revision.",

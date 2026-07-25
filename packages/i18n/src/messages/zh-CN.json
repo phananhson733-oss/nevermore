@@ -1530,7 +1530,7 @@
     "saveBeforeStatusChange": "请先保存或丢弃编辑，再更改此执行物的状态。",
     "markReady": "标记为就绪",
     "markReadyHint": "请先解决校验错误，才能将此执行物标记为就绪。",
-    "backToDraft": "退回草稿",
+    "readyEditPath": "此执行物已就绪。如需修改，请在上方编辑内容并保存版本：保存会追加一个新版本，并将此执行物退回草稿。",
     "archive": "归档",
     "validationErrors": "校验错误",
     "noRevision": "尚无内容。生成此执行物以创建第一个版本。",

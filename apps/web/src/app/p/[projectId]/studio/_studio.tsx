@@ -971,16 +971,18 @@ function ArtifactEditor({
             >
               {t("saveRevision")}
             </Button>
-            {artifact.status === "ready" ? (
-              <Button
-                variant="ghost"
-                onClick={() => void onSetStatus("draft")}
-                disabled={busy || dirty}
-                aria-describedby={dirty ? "sf-status-dirty-hint" : undefined}
-              >
-                {t("backToDraft")}
-              </Button>
-            ) : (
+            {/*
+              There is deliberately no "back to draft" control here.
+
+              `MANUAL_STATUS_TRANSITIONS.ready` is `["archived"]`
+              (`apps/web/src/lib/services/artifact-state.ts`), so a
+              `ready -> draft` PATCH can only ever return `VERSION_CONFLICT`.
+              A button whose sole outcome is a refusal is the simulated-control
+              pattern this slice refused to build anywhere else; the real path
+              back is the editor above — saving a revision always returns the
+              deliverable to `draft` — and the hint below says so.
+            */}
+            {artifact.status === "ready" ? null : (
               <Button
                 variant="primary"
                 onClick={() => void onSetStatus("ready")}
@@ -1015,6 +1017,14 @@ function ArtifactEditor({
           {dirty ? (
             <p id="sf-status-dirty-hint" className={styles.readyHint}>
               {t("saveBeforeStatusChange")}
+            </p>
+          ) : artifact.status === "ready" ? (
+            /* `ready` is not a dead end. The forward path exists, it is just
+               not a status button: editing appends a new immutable revision
+               and the service sends the deliverable back to `draft`. Say it,
+               so the absent control does not read as an absent path. */
+            <p data-studio-ready-path="" className={styles.readyHint}>
+              {t("readyEditPath")}
             </p>
           ) : cannotReady ? (
             <p id="sf-ready-hint" className={styles.readyHint}>
