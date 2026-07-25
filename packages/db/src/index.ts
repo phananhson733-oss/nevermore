@@ -244,6 +244,7 @@ export type {
 } from "./repositories/competitors.ts";
 export {
   CONTENT_SHADOW_PROJECTION_VERSION,
+  FlowShadowQaGateReplayConflictError,
   FlowShadowRunsRepository,
   FlowShadowResearchPacksRepository,
   FlowShadowQaGatesRepository,

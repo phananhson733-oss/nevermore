@@ -1,4 +1,5 @@
 import { and, desc, eq, lt, or } from "drizzle-orm";
+import { canonicalize, type CanonicalValue } from "../hash.ts";
 import {
   flowShadowQaGates,
   flowShadowResearchPacks,
@@ -154,7 +155,9 @@ export class FlowShadowRunsRepository extends Repository {
     const rows = await this.exec
       .select()
       .from(flowShadowRuns)
-      .where(and(projectPredicate(flowShadowRuns, scope), eq(flowShadowRuns.id, id)))
+      .where(
+        and(projectPredicate(flowShadowRuns, scope), eq(flowShadowRuns.id, id)),
+      )
       .limit(1);
     return (rows[0] as FlowShadowRunRow | undefined) ?? null;
   }
@@ -294,8 +297,60 @@ export interface FlowShadowQaGateInsert {
   readonly claims: readonly unknown[];
 }
 
+/**
+ * A re-delivered gate insert that disagrees with the row already stored.
+ *
+ * This is a DATA INTEGRITY failure, not a conflict to resolve: the gate row is
+ * append-only, so there is no correct way to reconcile two different judgements
+ * of the same frozen draft revision. Overwriting would rewrite an audit record;
+ * accepting the older row would hide the divergence. The run fails instead.
+ */
+export class FlowShadowQaGateReplayConflictError extends Error {
+  readonly code = "FLOW_SHADOW_QA_GATE_REPLAY_CONFLICT";
+
+  constructor(readonly field: "verdict" | "claims") {
+    super(
+      `flow shadow qa gate replay produced different ${field} for the same run, artifact and revision; the QA judgement is a pure function of frozen inputs, so this means an input that must be immutable changed`,
+    );
+    this.name = "FlowShadowQaGateReplayConflictError";
+  }
+}
+
+/**
+ * Canonical form of one gate's claim list, for replay comparison.
+ *
+ * Two normalizations, each for a different false positive:
+ *
+ * - Object keys are sorted (`canonicalize`, RFC 8785) because jsonb does not
+ *   preserve the key order we inserted with, so a byte comparison against the
+ *   stored row would differ for identical data.
+ * - The claims themselves are sorted by their canonical text, so a pure
+ *   re-ordering of the same claim set is not reported as corruption. Anything
+ *   that changes a claim's CONTENT still changes this string.
+ */
+function canonicalClaims(claims: readonly unknown[]): string {
+  return canonicalize(
+    claims
+      .map((claim) => canonicalize(claim as CanonicalValue))
+      .sort() as CanonicalValue,
+  );
+}
+
 /** Append-only SEO/GEO + factual review verdicts for evaluated draft revisions. */
 export class FlowShadowQaGatesRepository extends Repository {
+  /**
+   * Insert one gate, converging on replay.
+   *
+   * The replay path compares the VERDICT AND THE CLAIMS. Comparing only the
+   * verdict would make the one situation that most needs an alarm — the same
+   * frozen run judged differently on a second delivery — the one situation that
+   * passes in silence, returning the older row as though nothing had changed.
+   * The QA judgement is a pure function of frozen inputs, so a difference here
+   * is not a race to tolerate: it means an input that was supposed to be
+   * immutable moved, or the judgement is not as deterministic as it claims.
+   * Either way the run must fail loudly rather than adopt whichever claims
+   * happened to be written first.
+   */
   async insert(values: FlowShadowQaGateInsert): Promise<FlowShadowQaGateRow> {
     const [inserted] = await this.exec
       .insert(flowShadowQaGates)
@@ -314,7 +369,17 @@ export class FlowShadowQaGatesRepository extends Repository {
     if (inserted) return inserted as FlowShadowQaGateRow;
 
     const existing = await this.findGate(values);
-    if (existing && existing.verdict === values.verdict) return existing;
+    if (existing) {
+      if (
+        existing.verdict === values.verdict &&
+        canonicalClaims(existing.claims) === canonicalClaims(values.claims)
+      ) {
+        return existing;
+      }
+      throw new FlowShadowQaGateReplayConflictError(
+        existing.verdict === values.verdict ? "claims" : "verdict",
+      );
+    }
     throw new Error(
       "flow shadow qa gate replay conflicts with immutable values",
     );
@@ -333,7 +398,10 @@ export class FlowShadowQaGatesRepository extends Repository {
             projectId: values.projectId,
           }),
           eq(flowShadowQaGates.flow_shadow_run_id, values.flowShadowRunId),
-          eq(flowShadowQaGates.evaluated_artifact_id, values.evaluatedArtifactId),
+          eq(
+            flowShadowQaGates.evaluated_artifact_id,
+            values.evaluatedArtifactId,
+          ),
           eq(flowShadowQaGates.evaluated_revision, values.evaluatedRevision),
         ),
       )

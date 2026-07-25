@@ -12,6 +12,7 @@ import { EvidenceRepository } from "../repositories/evidence.ts";
 import { FindingsRepository } from "../repositories/findings.ts";
 import {
   CONTENT_SHADOW_PROJECTION_VERSION,
+  FlowShadowQaGateReplayConflictError,
   FlowShadowQaGatesRepository,
   FlowShadowResearchPacksRepository,
   FlowShadowRunsRepository,
@@ -565,6 +566,107 @@ describeDb("content shadow database foundation", () => {
     await expect(gates.findByRun(scope, created.id)).resolves.toEqual([
       expect.objectContaining({ id: gate.id, verdict: "needs_review" }),
     ]);
+  });
+
+  describe("qa gate replay", () => {
+    async function seedGate(claims: readonly unknown[]) {
+      const chain = await createShadowChain(handle);
+      const scope = {
+        workspaceId: chain.fixture.workspaceId,
+        projectId: chain.fixture.projectId,
+      };
+      const created = await new FlowShadowRunsRepository(handle.db).create(
+        runInsert(chain),
+      );
+      const gates = new FlowShadowQaGatesRepository(handle.db);
+      const values = {
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        flowShadowRunId: created.id,
+        evaluatedArtifactId: chain.artifactId,
+        evaluatedRevision: 1,
+        analysisInvocationId: null,
+        verdict: "blocked" as const,
+        claims,
+      };
+      const inserted = await gates.insert(values);
+      return { gates, values, inserted };
+    }
+
+    const CLAIMS: readonly unknown[] = [
+      {
+        claimId: "content-shadow.qa.rl8_unsupported_claim",
+        kind: "red_line",
+        status: "failed",
+        detail: "line 5 resolves to no source in the frozen research pack",
+      },
+      {
+        claimId: "content-shadow.qa.brief-outline",
+        kind: "coverage",
+        status: "passed",
+        detail: "The draft covers all 2 coverage topic(s).",
+      },
+    ];
+
+    it("converges when the replay produces the same claims", async () => {
+      const { gates, values, inserted } = await seedGate(CLAIMS);
+
+      // Object key order differs from the insert and from jsonb's storage order;
+      // canonicalization is what keeps that from reading as corruption.
+      const reordered = CLAIMS.map((claim) => {
+        const entries = Object.entries(claim as Record<string, unknown>);
+        return Object.fromEntries([...entries].reverse());
+      });
+      await expect(
+        gates.insert({ ...values, claims: reordered }),
+      ).resolves.toMatchObject({ id: inserted.id });
+    });
+
+    /**
+     * The hole this closes: comparing only the verdict made the one situation
+     * that most needs an alarm — the same frozen run judged differently — the
+     * one situation that passed in silence.
+     */
+    it("rejects a replay whose claims differ under an identical verdict", async () => {
+      const { gates, values } = await seedGate(CLAIMS);
+      const tampered = [
+        { ...(CLAIMS[0] as Record<string, unknown>), status: "passed" },
+        CLAIMS[1],
+      ];
+
+      await expect(
+        gates.insert({ ...values, claims: tampered }),
+      ).rejects.toThrow(FlowShadowQaGateReplayConflictError);
+      await expect(
+        gates.insert({ ...values, claims: tampered }),
+      ).rejects.toThrow(/different claims/);
+    });
+
+    it("still rejects a replay whose verdict differs", async () => {
+      const { gates, values } = await seedGate(CLAIMS);
+
+      await expect(
+        gates.insert({ ...values, verdict: "needs_review" }),
+      ).rejects.toThrow(/different verdict/);
+    });
+
+    it("leaves the stored append-only row untouched after a rejected replay", async () => {
+      const { gates, values, inserted } = await seedGate(CLAIMS);
+      await expect(gates.insert({ ...values, claims: [] })).rejects.toThrow(
+        FlowShadowQaGateReplayConflictError,
+      );
+
+      const rows = await gates.findByRun(
+        {
+          workspaceId: values.workspaceId,
+          projectId: values.projectId,
+        },
+        values.flowShadowRunId,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.id).toBe(inserted.id);
+      expect(rows[0]?.claims).toHaveLength(CLAIMS.length);
+    });
   });
 
   it("rejects a child row whose canonical run belongs to another project", async () => {
