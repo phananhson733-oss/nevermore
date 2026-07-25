@@ -3,6 +3,10 @@ import {
   FIRST_PARTY_BARE_URL_DRAFT,
   FIRST_PARTY_SOURCES_DRAFT,
   FIRST_PARTY_SUBDOMAIN_DRAFT,
+  LAUNDERED_CITATION_DRAFT,
+  LAUNDERED_CLAIM_CONTROL_DRAFT,
+  LAUNDERED_CLAIM_DRAFT,
+  LAUNDERED_REFERENCE_LIST_DRAFT,
   LOOKALIKE_HOST_DRAFT,
   OUTSIDE_LINK_DRAFT,
   SCAFFOLD_CTA_DRAFT,
@@ -12,7 +16,12 @@ import {
   fixturePack,
   qaInput,
 } from "./__fixtures__/pack.ts";
-import { buildSourceIndex } from "./claims.ts";
+import {
+  buildSourceIndex,
+  resolveAssertionSupport,
+  resolveAttribution,
+  resolveLinkProvenance,
+} from "./claims.ts";
 import { evaluateDraftQa } from "./evaluate.ts";
 import { claimIdForRule, type QaRuleId } from "./rule-types.ts";
 
@@ -134,13 +143,34 @@ describe("the blocking rules see first-party links too", () => {
     ).toBe("passed");
   });
 
-  it("does not block a Sources entry that names the customer's own site", () => {
+  /**
+   * CORRECTED, and the correction is the point of this rework.
+   *
+   * This assertion used to read `not.toBe("blocked")`, and the rule it pinned
+   * was "a Sources entry resolves if ANYTHING in it resolves". That rule cannot
+   * tell this entry from `- Forrester Digital Experience Report, 2024.
+   * https://signalframe.example/product`, so accepting the honest one accepted
+   * the invented one too — see `LAUNDERED_REFERENCE_LIST_DRAFT`, which was
+   * `passed` with SC9b writing down that both of its entries resolved to the
+   * frozen pack.
+   *
+   * A Sources section claims that outside sources stand behind the draft. This
+   * run retrieved none, so no entry in one can be confirmed here, and that is
+   * true of the honest self-citation as well. What the gate owes the reviewer is
+   * not a pass — it is an accurate reason, so the detail still says the entry is
+   * unverifiable HERE and never that it was invented.
+   */
+  it("blocks a Sources entry naming the customer's own site, without calling it invented", () => {
     const evaluation = evaluateDraftQa(qaInput(FIRST_PARTY_SOURCES_DRAFT));
+    const sc9b = claim(
+      FIRST_PARTY_SOURCES_DRAFT,
+      "sc9b_sources_resolve_to_pack",
+    );
 
-    expect(evaluation.verdict).not.toBe("blocked");
-    expect(
-      claim(FIRST_PARTY_SOURCES_DRAFT, "sc9b_sources_resolve_to_pack")?.status,
-    ).toBe("passed");
+    expect(evaluation.verdict).toBe("blocked");
+    expect(sc9b?.status).toBe("failed");
+    expect(sc9b?.detail).toContain("unverifiable here");
+    expect(sc9b?.detail).not.toMatch(/\bwere invented\b/);
   });
 });
 
@@ -155,6 +185,66 @@ describe("first-party identity is not evidence", () => {
    */
   it("keeps the external citable count at zero", () => {
     expect(buildSourceIndex(fixturePack()).citableCount).toBe(0);
+  });
+
+  /**
+   * THE ASSERTIONS THIS BLOCK IS NAMED AFTER.
+   *
+   * The block carried this title while asserting only the citable count and
+   * some wording — nothing here said a first-party URL may not SATISFY a claim.
+   * That is why three ways of laundering a fabrication behind the customer's own
+   * link passed every gate in the suite.
+   */
+  it("never lets a first-party link support a research assertion (RL8)", () => {
+    expect(evaluateDraftQa(qaInput(LAUNDERED_CLAIM_DRAFT)).verdict).toBe(
+      "blocked",
+    );
+    expect(claim(LAUNDERED_CLAIM_DRAFT, "rl8_unsupported_claim")?.status).toBe(
+      "failed",
+    );
+    // The counterfactual: the link was the only difference, so both must agree.
+    expect(
+      claim(LAUNDERED_CLAIM_CONTROL_DRAFT, "rl8_unsupported_claim")?.status,
+    ).toBe("failed");
+  });
+
+  it("never lets a first-party URL resolve a reference entry (SC9b)", () => {
+    const sc9b = claim(
+      LAUNDERED_REFERENCE_LIST_DRAFT,
+      "sc9b_sources_resolve_to_pack",
+    );
+
+    expect(
+      evaluateDraftQa(qaInput(LAUNDERED_REFERENCE_LIST_DRAFT)).verdict,
+    ).toBe("blocked");
+    expect(sc9b?.status).toBe("failed");
+    expect(sc9b?.detail).toContain("2 of 2 reference entry(ies)");
+  });
+
+  it("never lets a first-party link release a citation shape (RL12)", () => {
+    expect(evaluateDraftQa(qaInput(LAUNDERED_CITATION_DRAFT)).verdict).toBe(
+      "blocked",
+    );
+    expect(
+      claim(LAUNDERED_CITATION_DRAFT, "rl12_citation_integrity")?.status,
+    ).toBe("failed");
+  });
+
+  /**
+   * The role split at the resolution layer, asserted directly rather than only
+   * through the rules: `resolveAssertionSupport` has no first-party inhabitant,
+   * and `resolveLinkProvenance` is the only place one is an answer.
+   */
+  it("separates `is this ours?` from `does this support a claim?`", () => {
+    const index = buildSourceIndex(fixturePack());
+    const own = {
+      kind: "url",
+      value: "https://signalframe.example/demo",
+    } as const;
+
+    expect(resolveAttribution(index, own).role).toBe("first_party_identity");
+    expect(resolveLinkProvenance(index, own)).toBe("first_party");
+    expect(resolveAssertionSupport(index, [own])).toBeNull();
   });
 
   it("still says `unverifiable here`, never `invented`, for an outside link", () => {

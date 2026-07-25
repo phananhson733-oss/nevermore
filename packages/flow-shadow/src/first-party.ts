@@ -25,6 +25,30 @@ export function isFirstPartySourceKind(kind: ResearchSourceKind): boolean {
 }
 
 /**
+ * WHICH first-party identity a source is — the two are not interchangeable.
+ *
+ * `site` is the project's own origin, so its SUBDOMAINS belong to the customer
+ * too: a B2B site routinely serves its blog, docs and app from `blog.`/`docs.`.
+ *
+ * `conversion` is a booking/scheduling destination taken from the ICP profile,
+ * and its host is routinely a THIRD-PARTY SaaS (Calendly, HubSpot, Typeform).
+ * Widening that host to its subdomains would hand every other tenant of that
+ * SaaS the customer's own-property status, so the distinction is carried in the
+ * type rather than left to whoever reads the flag next. The repository's own
+ * fixture already uses a different registrable domain for the two, which is the
+ * expected shape, not an edge case.
+ */
+export type FirstPartyIdentityKind = "site" | "conversion";
+
+export function firstPartyIdentityKind(
+  kind: ResearchSourceKind,
+): FirstPartyIdentityKind | null {
+  if (kind === "first_party_site") return "site";
+  if (kind === "first_party_conversion") return "conversion";
+  return null;
+}
+
+/**
  * Upper bound on a frozen first-party URL. `PrimaryConversion.targetUrl` is
  * already capped at 2048 by its own contract; repeating the bound here keeps a
  * malformed row from widening the frozen tuple.

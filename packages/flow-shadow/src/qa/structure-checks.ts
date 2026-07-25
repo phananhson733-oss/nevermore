@@ -1,5 +1,5 @@
 import type { QaContext } from "./context.ts";
-import { resolveAttribution, type Attribution } from "./claims.ts";
+import { resolveAssertionSupport, type Attribution } from "./claims.ts";
 import { longestCommonNgram } from "./ngram.ts";
 import { fail, pass, unevaluable, type QaRuleResult } from "./rule-types.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
@@ -499,6 +499,14 @@ const SOURCE_NAME_STOP = /\s+[-–—]\s+|:\s+|,\s+(?:19|20)\d{2}\b/;
  * a dangling-reference check. This asks whether it exists in our records at
  * all, which is the difference between catching a formatting slip and catching
  * an invented reference.
+ *
+ * What it asks for is EVIDENCE, so the customer's own web identity never
+ * satisfies it. Accepting one let an entire fabricated bibliography pass by
+ * hanging a link to the customer's own site on the end of every entry:
+ * "Forrester Digital Experience Report, 2024. https://our-site/product"
+ * resolved, and the rule wrote down that all of its entries resolved to the
+ * frozen pack. A first-party URL says where a page is; a reference entry claims
+ * a source stands behind the draft, and those are different assertions.
  */
 export function checkSc9b(context: QaContext): QaRuleResult {
   const entries = referenceEntries(context);
@@ -507,8 +515,8 @@ export function checkSc9b(context: QaContext): QaRuleResult {
       "sc9b_sources_resolve_to_pack",
       "sc9b_no_sources_section",
       context.referenceSections.length === 0
-        ? "No section of this draft is headed as a reference list (sources, references, citations, works cited, bibliography, further/related reading), so this check found no reference entry to resolve. It reports what it scanned, not what the draft contains: an external reference written into the body prose is RL8's and RL12's subject, not this rule's."
-        : `${context.referenceSections.length} reference section(s) are present but carry no entry line, so there was nothing to resolve.`,
+        ? "This check RECOGNISED no section of the draft as a reference list (sources, references, citations, works cited, bibliography, further reading, see also, and their non-English equivalents), so it had no reference entry to resolve. That is what it scanned, and it is not a statement that the draft carries no reference list: a list under a heading this check does not recognise stays in the body, where RL8 and RL12 scan it — RL12 carries a bibliographic-entry shape for exactly that case."
+        : `${context.referenceSections.length} section(s) were recognised as a reference list but carry no entry line, so there was nothing to resolve. This reports what it scanned, not what the draft contains.`,
     );
   }
   const unresolved: Finding[] = [];
@@ -527,11 +535,9 @@ export function checkSc9b(context: QaContext): QaRuleResult {
       .replace(/\s*,\s*(?:19|20)\d{2}\s*$/, "")
       .trim();
     if (name.length > 0) attributions.push({ kind: "name", value: name });
-    const resolved = attributions.some(
-      (attribution) =>
-        resolveAttribution(context.index, attribution).source !== null,
-    );
-    if (!resolved) unresolved.push({ line: entry.line, excerpt: entry.text });
+    if (resolveAssertionSupport(context.index, attributions) === null) {
+      unresolved.push({ line: entry.line, excerpt: entry.text });
+    }
   }
   return unresolved.length > 0
     ? fail(

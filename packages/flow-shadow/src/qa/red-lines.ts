@@ -1,24 +1,27 @@
 import type { QaContext } from "./context.ts";
 import {
-  extractAttributions,
   findUnsupportedClaims,
-  resolveAny,
-  resolveAttribution,
+  locatedAttributions,
+  resolveAssertionSupport,
+  resolveLinkProvenance,
   type Attribution,
 } from "./claims.ts";
 import { jaccard, recall, shingles } from "./ngram.ts";
 import { fail, pass, unevaluable, type QaRuleResult } from "./rule-types.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
 import {
-  extractMarkdownLinks,
-  extractUrls,
+  flattenLine,
   isHeadingLine,
   normalizeHeading,
   paragraphBlocks,
   stripInlineCode,
+  sentenceSpanAt,
+  spansOverlap,
   tokenize,
   truncateExcerpt,
   type DraftLine,
+  type FlatLine,
+  type FlatLink,
 } from "./text.ts";
 
 /**
@@ -128,7 +131,30 @@ const SOFT_JARGON: readonly RegExp[] = [
  * which reports it as unverified rather than as invented.
  */
 const ATTRIBUTIVE_CITATION_CUE =
-  /\b(?:according to|as (?:reported|found|shown|noted|documented) (?:by|in)|cited (?:by|in)|citations?|sources?\s*:|references?\s*:|see\s+(?:also\s+)?(?:the\s+)?(?:study|report|survey|research|analysis|benchmark|whitepaper|paper)\b|per\s+(?:a|an|the)\s|(?:study|studies|report|reports|survey|surveys|research|analysis|analyses|benchmark|whitepaper|poll)\s+(?:by|from)\b)/i;
+  /\b(?:according to|as (?:reported|found|shown|noted|documented) (?:by|in)|cited (?:by|in)|citations?|sources?\s*:|references?\s*:|see\s+(?:also\s+)?(?:the\s+)?(?:study|report|survey|research|analysis|benchmark|whitepaper|paper)\b|per\s+(?:a|an|the)\s|(?:study|studies|report|reports|survey|surveys|research|analysis|analyses|benchmark|whitepaper|poll)\s+(?:by|from)\b)/gi;
+
+/**
+ * The links a sentence really does offer as evidence.
+ *
+ * The cue used to be tested against the WHOLE LINE, and every link on that line
+ * became a citation. So "According to a 2024 Forrester study, 73% … [Book a
+ * demo](our-site)" made the call to action the citation for a study it has
+ * nothing to do with — and once the customer's own site was in the pack, that
+ * link RESOLVED and released the block. A link is a citation here only when it
+ * FOLLOWS the cue inside the cue's own sentence, which is where a reader would
+ * read it as the thing being attributed to.
+ */
+function attributedLinks(flat: FlatLine): readonly FlatLink[] {
+  const cues = [...flat.text.matchAll(ATTRIBUTIVE_CITATION_CUE)];
+  if (cues.length === 0) return [];
+  return flat.links.filter((link) =>
+    cues.some((cue) => {
+      if (cue.index === undefined) return false;
+      if (cue.index + cue[0].length > link.start) return false;
+      return spansOverlap(link, sentenceSpanAt(flat.text, cue.index));
+    }),
+  );
+}
 
 interface Finding {
   readonly line: number;
@@ -360,7 +386,9 @@ export function checkRl8(context: QaContext): QaRuleResult {
     );
   }
   const hits = findUnsupportedClaims(context.index, context.body);
-  const unresolved = hits.filter((hit) => hit.resolution.source === null);
+  // `support === null`, never "nothing resolved". A link to the customer's own
+  // site resolves — it is just not EVIDENCE, and this rule asks for evidence.
+  const unresolved = hits.filter((hit) => hit.resolution.support === null);
   if (unresolved.length === 0) {
     return pass(
       "rl8_unsupported_claim",
@@ -470,65 +498,169 @@ export function checkRl13(context: QaContext): QaRuleResult {
 // RL12 — citation integrity (blocking); RL12b — unresolved links (review)
 // ---------------------------------------------------------------------------
 
+/**
+ * What a marker is being offered AS decides what may satisfy it.
+ *
+ * - `locator` — a bare address in prose. It claims "this page exists at this
+ *   URL", nothing more, so the customer's own site answers it completely.
+ * - `evidence` — a bibliographic reference, a footnote, or a link a sentence
+ *   attributes a claim to. It claims "a source stands behind this", and the
+ *   customer's own web identity is never that source.
+ */
+type MarkerRole = "locator" | "evidence";
+
 interface CitationMarker extends Finding {
+  readonly role: MarkerRole;
   readonly attributions: readonly Attribution[];
 }
+
+/**
+ * A bibliographic entry left in the BODY — the backstop for every reference
+ * heading this gate does not recognise.
+ *
+ * The partition is deliberately conservative: an unrecognised heading keeps its
+ * section in the body so honest prose is never reported as an unresolvable
+ * reference. That bias is only safe if the body is genuinely scanned, and it was
+ * not: no rule could see a bibliography entry, so `## Related links`,
+ * `## Sources:` and a setext `Sources` all returned `passed` with SC9b
+ * persisting the claim that the draft listed no reference at all. This shape is
+ * what makes the bias safe — a miss in heading recognition now costs a
+ * differently-worded block, never a silent pass.
+ *
+ * It is anchored at an ENTRY position (line start, list marker, or the field
+ * separator inside a multi-part entry) and requires a capitalized name phrase
+ * immediately before a comma and a year. "We shipped this in 2024." has no
+ * comma before the year; "Onboarding analytics, 2024 edition" has no
+ * capitalized phrase before it.
+ */
+const REFERENCE_ENTRY_SHAPE =
+  /(?:^|[-*+]\s+|\d+[.)]\s+|,\s+|;\s*|\|\s*|[—–]\s*)((?:[A-Z][A-Za-z0-9&.'’-]+)(?:\s+(?:[A-Z][A-Za-z0-9&.'’-]*|and|of|for|the|de|van|der|&))*),\s*\(?(?:19|20)\d{2}\)?/;
+
+/** A trailing `— Name, 2024` / `— Name (2024)` endnote is an attribution. */
+const ENDNOTE_ATTRIBUTION =
+  /[—–]\s*[A-Z][A-Za-z0-9&.'’-]+(?:\s+[A-Z][A-Za-z0-9&.'’-]*)*,?\s*\(?(?:19|20)\d{2}\)?\s*$/;
 
 const HALLUCINATED_CITATION_SHAPES: readonly RegExp[] = [
   /\bet al\.?/i,
   /\b[A-Z][A-Za-z&.'-]+\s+(?:University|Institute|Laboratory|Labs?)\s+(?:study|research|report|survey)\b/,
   /\b[A-Z][A-Za-z&.'-]+(?:\s+[A-Z][A-Za-z&.'-]+){0,4}\s*\((?:19|20)\d{2}\)/,
+  REFERENCE_ENTRY_SHAPE,
+  ENDNOTE_ATTRIBUTION,
 ];
+
+/** A footnote REFERENCE (`[^1]`) and a footnote DEFINITION (`[^1]: …`). */
+const FOOTNOTE_REFERENCE = /\[\^([^\]\s]+)\]/g;
+const FOOTNOTE_DEFINITION = /^\s{0,3}\[\^([^\]\s]+)\]:\s*(.*)$/;
+
+/** Every footnote definition in the body, by its id. */
+function footnoteDefinitions(
+  lines: readonly DraftLine[],
+): ReadonlyMap<string, string> {
+  const definitions = new Map<string, string>();
+  for (const entry of lines) {
+    const match = FOOTNOTE_DEFINITION.exec(entry.text);
+    const id = match?.[1];
+    if (id !== undefined && !definitions.has(id)) {
+      definitions.set(id, match?.[2] ?? "");
+    }
+  }
+  return definitions;
+}
+
+/** The attributions located to one shape's own sentence. */
+function sentenceAttributions(
+  flat: FlatLine,
+  offset: number,
+): readonly Attribution[] {
+  const sentence = sentenceSpanAt(flat.text, offset);
+  return locatedAttributions(flat)
+    .filter((attribution) => spansOverlap(attribution, sentence))
+    .map(({ kind, value }) => ({ kind, value }));
+}
 
 function citationMarkers(
   lines: readonly DraftLine[],
 ): readonly CitationMarker[] {
   const markers: CitationMarker[] = [];
+  const definitions = footnoteDefinitions(lines);
   for (const entry of lines) {
-    const text = stripInlineCode(entry.text);
+    const flat = flattenLine(entry.text);
+    const text = flat.text;
     if (text.trim().length === 0) continue;
-    const attributions = extractAttributions(text);
-    const links = extractMarkdownLinks(text);
+    const isDefinition = FOOTNOTE_DEFINITION.test(entry.text);
 
     // A bare URL in prose IS a citation: nothing else drops a raw address into
-    // a sentence. A markdown link is navigation unless its line says otherwise.
-    for (const url of extractUrls(text)) {
-      if (links.some((link) => link.target.includes(url))) continue;
+    // a sentence. It is a LOCATOR though — it asserts where a page is, not that
+    // a source stands behind a claim — so the customer's own address answers it.
+    for (const url of flat.urls) {
       markers.push({
         line: entry.line,
-        excerpt: url,
-        attributions: [{ kind: "url", value: url }],
+        excerpt: url.value,
+        role: "locator",
+        attributions: [{ kind: "url", value: url.value }],
       });
     }
-    if (ATTRIBUTIVE_CITATION_CUE.test(text)) {
-      for (const link of links) {
-        markers.push({
-          line: entry.line,
-          excerpt: link.target,
-          attributions: [{ kind: "url", value: link.target }],
-        });
-      }
+    // A markdown link is navigation unless the sentence attributes to it.
+    for (const link of attributedLinks(flat)) {
+      markers.push({
+        line: entry.line,
+        excerpt: link.target,
+        role: "evidence",
+        attributions: [{ kind: "url", value: link.target }],
+      });
     }
     for (const pattern of HALLUCINATED_CITATION_SHAPES) {
       const match = pattern.exec(text);
-      if (!match) continue;
+      if (!match || match.index === undefined) continue;
+      const located = sentenceAttributions(flat, match.index);
       markers.push({
         line: entry.line,
         excerpt: match[0],
+        role: "evidence",
         attributions:
-          attributions.length > 0
-            ? attributions
-            : [{ kind: "name", value: match[0] }],
+          located.length > 0 ? located : [{ kind: "name", value: match[0] }],
       });
+    }
+    // A footnote marker cites its definition. With no definition it cites
+    // nothing at all, which is exactly what the gate has to say about it.
+    if (!isDefinition) {
+      for (const match of text.matchAll(FOOTNOTE_REFERENCE)) {
+        const id = match[1] ?? "";
+        const definition = definitions.get(id) ?? "";
+        markers.push({
+          line: entry.line,
+          excerpt: match[0],
+          role: "evidence",
+          attributions:
+            definition.trim().length > 0
+              ? [
+                  ...locatedAttributions(flattenLine(definition)).map(
+                    ({ kind, value }) => ({ kind, value }),
+                  ),
+                  { kind: "name", value: definition },
+                ]
+              : [{ kind: "name", value: match[0] }],
+        });
+      }
     }
   }
   return markers;
 }
 
+function markerResolves(context: QaContext, marker: CitationMarker): boolean {
+  if (marker.role === "evidence") {
+    return resolveAssertionSupport(context.index, marker.attributions) !== null;
+  }
+  return marker.attributions.some(
+    (attribution) =>
+      resolveLinkProvenance(context.index, attribution) !== "unresolved",
+  );
+}
+
 export function checkRl12(context: QaContext): QaRuleResult {
   const markers = citationMarkers(context.body);
   const unresolved = markers.filter(
-    (marker) => resolveAny(context.index, marker.attributions).source === null,
+    (marker) => !markerResolves(context, marker),
   );
   return unresolved.length > 0
     ? fail(
@@ -563,16 +695,19 @@ function unverifiableNote(context: QaContext): string {
 export function checkRl12b(context: QaContext): QaRuleResult {
   const hits: Finding[] = [];
   for (const entry of context.body) {
-    const text = stripInlineCode(entry.text);
+    const flat = flattenLine(entry.text);
     // A link a sentence attributes a claim to is RL12's business; reporting it
-    // twice would make one defect look like two.
-    if (ATTRIBUTIVE_CITATION_CUE.test(text)) continue;
-    for (const link of extractMarkdownLinks(text)) {
-      const resolution = resolveAttribution(context.index, {
+    // twice would make one defect look like two. Only THAT link is skipped now,
+    // not every link sharing a line with a cue — a call to action next to an
+    // attributed citation is still this rule's subject.
+    const claimed = new Set(attributedLinks(flat).map((link) => link.target));
+    for (const link of flat.links) {
+      if (claimed.has(link.target)) continue;
+      const provenance = resolveLinkProvenance(context.index, {
         kind: "url",
         value: link.target,
       });
-      if (resolution.source === null) {
+      if (provenance === "unresolved") {
         hits.push({ line: entry.line, excerpt: link.target });
       }
     }

@@ -3,11 +3,16 @@ import {
   ADVISORY_ONLY_DRAFT,
   ALL_FENCED_DRAFT,
   ATTRIBUTED_LINK_DRAFT,
+  BODY_RESIDENT_REFERENCE_DRAFT,
   CLEAN_DRAFT,
+  ESCAPED_ATTRIBUTION_DRAFTS,
   FIRST_PARTY_LINK_DRAFT,
+  QUERY_STRING_HARVEST_DRAFT,
   REFERENCE_FORMAT_DRAFTS,
   REFERENCE_HEADING_DRAFTS,
+  THEMATIC_BREAK_FRONTMATTER_DRAFT,
   UNCLOSED_FRONTMATTER_DRAFT,
+  UNRECOGNISED_REFERENCE_DRAFTS,
   FENCED_CLAIM_DRAFT,
   NEGATED_CLAIM_DRAFT,
   PHANTOM_CITATION_DRAFT,
@@ -46,9 +51,9 @@ describe("P1 — an unsupported or fabricated claim is blocked", () => {
     const evaluation = evaluateDraftQa(qaInput(UNSUPPORTED_CLAIM_DRAFT));
 
     expect(evaluation.verdict).toBe("blocked");
-    expect(claim(UNSUPPORTED_CLAIM_DRAFT, "rl8_unsupported_claim")).toMatchObject(
-      { status: "failed" },
-    );
+    expect(
+      claim(UNSUPPORTED_CLAIM_DRAFT, "rl8_unsupported_claim"),
+    ).toMatchObject({ status: "failed" });
   });
 
   /**
@@ -126,9 +131,9 @@ describe("honest exemptions", () => {
     const evaluation = evaluateDraftQa(qaInput(PRODUCT_LINK_DRAFT));
 
     expect(evaluation.verdict).not.toBe("blocked");
-    expect(
-      claim(PRODUCT_LINK_DRAFT, "rl12_citation_integrity")?.status,
-    ).toBe("passed");
+    expect(claim(PRODUCT_LINK_DRAFT, "rl12_citation_integrity")?.status).toBe(
+      "passed",
+    );
   });
 });
 
@@ -148,7 +153,9 @@ describe("P2 — strict determinism", () => {
       (candidate) => candidate.claimId,
     );
 
-    expect(ids).toStrictEqual([...ids].filter((id, index, all) => all.indexOf(id) === index));
+    expect(ids).toStrictEqual(
+      [...ids].filter((id, index, all) => all.indexOf(id) === index),
+    );
     expect(ids[ids.length - 1]).toBe(QA_BRIEF_OUTLINE_CLAIM_ID);
   });
 });
@@ -192,7 +199,9 @@ describe("P6 — fail to human, never fail open", () => {
     const evaluation = evaluateDraftQa(qaInput(""));
 
     expect(evaluation.verdict).toBe("needs_review");
-    expect(evaluation.claims.some((c) => c.status === "unevaluated")).toBe(true);
+    expect(evaluation.claims.some((c) => c.status === "unevaluated")).toBe(
+      true,
+    );
   });
 
   it("reviews a non-English draft with an explicit reason", () => {
@@ -256,9 +265,9 @@ describe("verdict floor", () => {
         ?.status,
     ).toBe("failed");
     expect(evaluation.verdict).toBe("needs_review");
-    expect(
-      clampVerdictToFailedClaims("passed", evaluation.claims),
-    ).toBe("needs_review");
+    expect(clampVerdictToFailedClaims("passed", evaluation.claims)).toBe(
+      "needs_review",
+    );
   });
 });
 
@@ -286,6 +295,84 @@ describe("P1 (regression) — the fabrication paths that returned `passed`", () 
 
       expect(evaluation.verdict, shape).toBe("blocked");
     }
+  });
+
+  /**
+   * Every heading form and markdown shape that carried a fabricated
+   * bibliography past the gate. They differ from a heading the recogniser DID
+   * see by punctuation, a qualifier, a script or the markdown used — never by
+   * meaning — and each returned `passed` with SC9b persisting the sentence that
+   * no section of the draft was headed as a reference list.
+   */
+  it("blocks a fabricated reference list under every heading form", () => {
+    for (const [shape, draft] of UNRECOGNISED_REFERENCE_DRAFTS) {
+      const evaluation = evaluateDraftQa(qaInput(draft));
+
+      expect(evaluation.verdict, shape).toBe("blocked");
+      expect(claim(draft, "sc9b_sources_resolve_to_pack")?.status, shape).toBe(
+        "failed",
+      );
+    }
+  });
+
+  /**
+   * The backstop that makes the partition's conservative bias safe.
+   *
+   * `## Related links` deliberately STAYS in the body — under a B2B post it is
+   * usually the customer's own pages, and claiming it would report every one of
+   * them as an unresolvable reference. That decision is only defensible while
+   * the body is genuinely scanned, and it was not: no rule could see a
+   * bibliographic entry, so an unrecognised heading meant a silent pass.
+   */
+  it("blocks a bibliographic entry left in the body by an unclaimed heading", () => {
+    const evaluation = evaluateDraftQa(qaInput(BODY_RESIDENT_REFERENCE_DRAFT));
+
+    expect(evaluation.verdict).toBe("blocked");
+    expect(
+      claim(BODY_RESIDENT_REFERENCE_DRAFT, "rl12_citation_integrity")?.status,
+    ).toBe("failed");
+    // The reference list stayed in the body, so SC9b correctly has no subject —
+    // and must not claim one.
+    expect(
+      claim(BODY_RESIDENT_REFERENCE_DRAFT, "sc9b_sources_resolve_to_pack")
+        ?.status,
+    ).toBe("passed");
+  });
+
+  /**
+   * The attribution shapes that matched no rule at all. Two were downgraded to
+   * `needs_review` and the footnote escaped to `passed`.
+   */
+  it("blocks the attribution shapes that reached no rule", () => {
+    for (const [shape, draft] of ESCAPED_ATTRIBUTION_DRAFTS) {
+      expect(evaluateDraftQa(qaInput(draft)).verdict, shape).toBe("blocked");
+    }
+  });
+
+  /** A domain laundered out of another url's query string. */
+  it("blocks an assertion whose only resolvable token sits inside another url", () => {
+    const evaluation = evaluateDraftQa(qaInput(QUERY_STRING_HARVEST_DRAFT));
+
+    expect(evaluation.verdict).toBe("blocked");
+    expect(
+      claim(QUERY_STRING_HARVEST_DRAFT, "rl8_unsupported_claim")?.status,
+    ).toBe("failed");
+  });
+
+  /**
+   * The other half of the frontmatter defect: a leading thematic break with a
+   * SECOND one further down masked the whole first content block, and the
+   * all-lines-empty backstop never fired because the tail survived.
+   */
+  it("blocks a fabricated citation hidden between two thematic breaks", () => {
+    const evaluation = evaluateDraftQa(
+      qaInput(THEMATIC_BREAK_FRONTMATTER_DRAFT),
+    );
+
+    expect(evaluation.verdict).toBe("blocked");
+    expect(
+      claim(THEMATIC_BREAK_FRONTMATTER_DRAFT, "rl8_unsupported_claim")?.status,
+    ).toBe("failed");
   });
 
   it("blocks a fabricated citation hidden behind an unclosed `---`", () => {
@@ -320,9 +407,9 @@ describe("B (regression) — honest drafts are not called fabrications", () => {
     const evaluation = evaluateDraftQa(qaInput(FIRST_PARTY_LINK_DRAFT));
 
     expect(evaluation.verdict).not.toBe("blocked");
-    expect(claim(FIRST_PARTY_LINK_DRAFT, "rl12_citation_integrity")?.status).toBe(
-      "passed",
-    );
+    expect(
+      claim(FIRST_PARTY_LINK_DRAFT, "rl12_citation_integrity")?.status,
+    ).toBe("passed");
     expect(claim(FIRST_PARTY_LINK_DRAFT, "rl8_unsupported_claim")?.status).toBe(
       "passed",
     );

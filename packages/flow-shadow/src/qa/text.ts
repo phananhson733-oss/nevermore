@@ -42,27 +42,77 @@ const TABLE_ROW = /^\s{0,3}\|.*\|\s*$/;
 const BLOCKQUOTE = /^\s{0,3}>/;
 
 /**
+ * A frontmatter body line: a `key:` entry, an entry continuation, a YAML list
+ * item, or a blank. Anything else means the block between two `---` fences is
+ * not frontmatter.
+ */
+const FRONTMATTER_ENTRY = /^[A-Za-z_][\w.-]*\s*:(?:\s|$)/;
+const FRONTMATTER_FILLER = /^(?:\s+\S|-\s+\S|\s*$)/;
+
+/**
  * Index of the line that CLOSES a leading frontmatter block, or `-1` when the
  * draft has none.
  *
- * Resolved up front, in its own pass, because the streaming version of this had
- * a hole with teeth: it opened the mask on a first-line `---` and only ever
- * closed it on a matching `---`, so a draft whose first line is a lone
- * horizontal rule was masked to the last byte. Every language rule then ran on
- * an empty document and reported "we found nothing wrong" — the exact
- * fail-open this gate claims it cannot do. `draftMarkdown` is the raw
- * `content_text` an LLM wrote, and a leading thematic break is perfectly
- * ordinary model output, so this is a shape we WILL be handed.
+ * Two shapes have already reached this function, and BOTH of them masked real
+ * content:
  *
- * No closing delimiter now means there was no frontmatter, and the `---` is
- * treated as the body content it is.
+ * 1. A first line of `---` with no closing delimiter at all. The streaming
+ *    version opened the mask and never closed it, so the whole draft was
+ *    blanked and every language rule reported "we found nothing wrong" over an
+ *    empty document.
+ * 2. A first line of `---` used as a thematic break, with a SECOND `---`
+ *    further down used as another thematic break. Taking "the next `---`" as
+ *    the closing delimiter masked the entire first content block, and the two
+ *    fabricated attributions inside it were never scanned.
+ *
+ * Both come from the same mistake: treating the delimiter as sufficient
+ * evidence that the region between the delimiters is metadata. The region has
+ * to LOOK like frontmatter as well, so this refuses to mask anything that is
+ * not a run of `key: value` entries. A leading thematic break is perfectly
+ * ordinary LLM output and `draftMarkdown` is raw model text, so both shapes
+ * WILL be handed to us.
+ *
+ * The bias is the one the gate needs: when this returns `-1` the candidate
+ * block stays in the body, where every rule scans it. Content is never removed
+ * from the judgement on a guess — it is either metadata by shape, or it is
+ * checked.
  */
 function frontmatterEndIndex(lines: readonly string[]): number {
   if (lines[0]?.trim() !== "---") return -1;
+  let entries = 0;
   for (let index = 1; index < lines.length; index += 1) {
-    if (lines[index]?.trim() === "---") return index;
+    const text = lines[index] ?? "";
+    // A run of `key: value` lines closed by `---` is frontmatter; a delimiter
+    // reached with no entry at all is two thematic breaks around body content.
+    if (text.trim() === "---") return entries > 0 ? index : -1;
+    if (FRONTMATTER_ENTRY.test(text)) {
+      entries += 1;
+      continue;
+    }
+    if (FRONTMATTER_FILLER.test(text)) continue;
+    return -1;
   }
   return -1;
+}
+
+/**
+ * A setext underline: `===` (H1) or `---` (H2) directly under a one-line
+ * paragraph. CommonMark renders that paragraph as a heading, and a model
+ * writing `Sources` over `-------` has written `## Sources` — but the ATX-only
+ * reader saw a paragraph, so the fabricated bibliography under it stayed
+ * invisible to the only rule that resolves reference entries.
+ */
+const SETEXT_UNDERLINE = /^\s{0,3}(=+|-+)\s*$/;
+
+/** Can this line be the TITLE of a setext heading? */
+function isSetextTitle(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (HEADING.test(text)) return false;
+  if (LIST_ITEM.test(text)) return false;
+  if (TABLE_ROW.test(text)) return false;
+  if (BLOCKQUOTE.test(text)) return false;
+  return !SETEXT_UNDERLINE.test(text);
 }
 
 /** Parse a draft once: masked prose lines plus the heading spine. */
@@ -88,6 +138,38 @@ export function readDraft(markdown: string): DraftView {
       prose.push({ line: lineNumber, text: "" });
       continue;
     }
+
+    // A setext heading is REWRITTEN into its ATX equivalent in place rather
+    // than recorded only in `headings`: every downstream consumer asks
+    // `isHeadingLine`, and a heading that answers `false` there would be a
+    // section boundary for the partition and ordinary prose for everything
+    // else. The line NUMBER is untouched, so excerpts still point at the draft.
+    const underline = SETEXT_UNDERLINE.exec(text);
+    const title = prose[prose.length - 1];
+    const beforeTitle = prose[prose.length - 2];
+    if (
+      underline &&
+      title !== undefined &&
+      isSetextTitle(title.text) &&
+      // Only a ONE-LINE paragraph. A multi-line paragraph under an underline is
+      // a heading in CommonMark too, but converting it would move a whole
+      // paragraph of prose out of the body, and this reader never trades scanned
+      // content for a guess.
+      (beforeTitle === undefined ||
+        beforeTitle.text.trim().length === 0 ||
+        HEADING.test(beforeTitle.text))
+    ) {
+      const level = underline[1]?.startsWith("=") ? 1 : 2;
+      const titleText = title.text.trim();
+      prose[prose.length - 1] = {
+        line: title.line,
+        text: `${"#".repeat(level)} ${titleText}`,
+      };
+      headings.push({ line: title.line, level, text: titleText });
+      prose.push({ line: lineNumber, text: "" });
+      continue;
+    }
+
     prose.push({ line: lineNumber, text });
     const heading = HEADING.exec(text);
     if (heading) {
@@ -122,10 +204,26 @@ export function isBlockquote(text: string): boolean {
   return BLOCKQUOTE.test(text);
 }
 
+/**
+ * Punctuation a heading carries for typography, never for meaning.
+ *
+ * `## Sources:` and `## Sources：` are the same heading as `## Sources`, and
+ * `## References (external)` is the same heading as `## References external`.
+ * Leaving the punctuation attached made each of those a DIFFERENT title to
+ * every matcher in the gate — which is how a fabricated bibliography under
+ * `## Sources:` was never recognised as a reference list. The class is written
+ * out as explicit code points rather than a Unicode property escape, because
+ * property escapes track the host's Unicode tables and this file may not depend
+ * on the host (purity rule 1).
+ */
+const HEADING_PUNCTUATION =
+  /[.,;:!?()[\]{}<>|"'‘’“”«»…、。「」『』！（），：；？]/g;
+
 /** Heading text normalized for matching a section title. */
 export function normalizeHeading(text: string): string {
   return text
     .replace(/[#*_`]/g, " ")
+    .replace(HEADING_PUNCTUATION, " ")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
@@ -176,7 +274,32 @@ const REFERENCE_TITLE_WORD =
   /^(?:sources?|references?|citations?|bibliography|bibliographies|works|cited|reading|readings|further|related|additional|more|other|external|see|also|list|notes?|footnotes?|endnotes?|links?|and|the|of|our|a|an)$/;
 
 const REFERENCE_TITLE_CORE =
-  /^(?:sources?|references?|citations?|bibliography|bibliographies|cited|reading|readings|footnotes?|endnotes?)$/;
+  /^(?:sources?|references?|citations?|bibliography|bibliographies|cited|reading|readings|footnotes?|endnotes?|see)$/;
+
+/**
+ * Reference-list headings that are not ASCII words.
+ *
+ * `outputLocale` is part of the frozen pack and may be any locale, and the
+ * partition runs for every locale (SC9b carries no English guard — it resolves
+ * identities, not language). A `## 参考文献` list of fabricated references was
+ * therefore invisible for exactly the same reason `## Works Cited` once was.
+ * These count as both vocabulary and core word: each is a whole heading on its
+ * own, not a word that combines.
+ */
+const REFERENCE_TITLE_CORE_NON_ASCII =
+  /^(?:参考文献|參考文獻|参考资料|参考資料|參考資料|资料来源|資料來源|引用文献|引用文獻|延伸阅读|延伸閱讀|参考|參考|出典|出处|出處)$/;
+
+function isReferenceTitleWord(word: string): boolean {
+  return (
+    REFERENCE_TITLE_WORD.test(word) || REFERENCE_TITLE_CORE_NON_ASCII.test(word)
+  );
+}
+
+function isReferenceTitleCore(word: string): boolean {
+  return (
+    REFERENCE_TITLE_CORE.test(word) || REFERENCE_TITLE_CORE_NON_ASCII.test(word)
+  );
+}
 
 /**
  * Does this heading introduce a reference list?
@@ -188,14 +311,41 @@ const REFERENCE_TITLE_CORE =
  * then reported, in a persisted claim, that the draft listed no source entry.
  * A check whose blind spot is stated as a positive finding is worse than no
  * check at all.
+ *
+ * The every-word rule is KEPT rather than relaxed to "contains a core word".
+ * Relaxing it would pull `## Sources of onboarding friction` and `## Related
+ * links` — a B2B post's own pages — out of the body and report each of them as
+ * an unresolvable reference, which is the false-accusation failure the previous
+ * rework had to repair. What makes the conservative bias safe is no longer the
+ * bias itself but the BACKSTOP: a bibliographic entry left in the body by an
+ * unrecognised heading is caught by RL12's reference-entry shape, so a miss
+ * here costs a differently-worded block, not a silent pass.
  */
 export function isReferenceSectionTitle(heading: string): boolean {
   const words = normalizeHeading(heading)
     .split(/\s+/)
     .filter((word) => word.length > 0);
   if (words.length === 0) return false;
-  if (!words.every((word) => REFERENCE_TITLE_WORD.test(word))) return false;
-  return words.some((word) => REFERENCE_TITLE_CORE.test(word));
+  if (!words.every(isReferenceTitleWord)) return false;
+  return words.some(isReferenceTitleCore);
+}
+
+/**
+ * A line that is nothing but bold text: `**Sources**`.
+ *
+ * Models write this instead of a `##` heading often enough that a fabricated
+ * bibliography under one passed the gate with `partitionDraft().reference`
+ * empty. It is recognised ONLY when the bold text is a reference-list title, so
+ * `**Onboarding analytics** is the practice of …` — and every other bold span
+ * SC1 looks for — is untouched.
+ */
+const BOLD_ONLY_LINE = /^\s{0,3}(?:\*\*|__)\s*([^*_\n]+?)\s*(?:\*\*|__)\s*$/;
+
+export function referencePseudoHeading(text: string): string | null {
+  const match = BOLD_ONLY_LINE.exec(text);
+  const title = match?.[1]?.trim();
+  if (title === undefined || title.length === 0) return null;
+  return isReferenceSectionTitle(title) ? title : null;
 }
 
 export interface ReferenceSection {
@@ -226,6 +376,8 @@ export interface DraftPartition {
   readonly reference: readonly ReferenceSection[];
 }
 
+const PSEUDO_HEADING_LEVEL = 7;
+
 export function partitionDraft(view: DraftView): DraftPartition {
   const body: DraftLine[] = [];
   const reference: {
@@ -254,6 +406,21 @@ export function partitionDraft(view: DraftView): DraftPartition {
         reference.push(open);
         continue;
       }
+    }
+    // A bold line standing in for a heading. Level 7 is below every real
+    // heading, so the next `#` of ANY depth closes the section — a pseudo
+    // heading may not swallow the rest of the document.
+    const pseudo =
+      heading === undefined ? referencePseudoHeading(entry.text) : null;
+    if (pseudo !== null) {
+      open = {
+        title: pseudo,
+        headingLine: entry.line,
+        level: PSEUDO_HEADING_LEVEL,
+        lines: [],
+      };
+      reference.push(open);
+      continue;
     }
     if (open !== null) {
       open.lines.push(entry);
@@ -374,9 +541,118 @@ export interface MarkdownLink {
 }
 
 export function extractMarkdownLinks(text: string): readonly MarkdownLink[] {
-  return [
-    ...stripInlineCode(text).matchAll(/\[([^\]\n]*)\]\(([^)\s]+)[^)]*\)/g),
-  ].map((match) => ({ label: match[1] ?? "", target: match[2] ?? "" }));
+  return flattenLine(text).links.map((link) => ({
+    label: link.label,
+    target: link.target,
+  }));
+}
+
+const MARKDOWN_LINK = /\[([^\]\n]*)\]\(([^)\s]+)[^)]*\)/g;
+const INLINE_CODE = /`[^`]*`/g;
+const URL_IN_TEXT = /(?:https?:\/\/|www\.)[^\s<>()[\]"']+/gi;
+
+export interface FlatSpan {
+  readonly start: number;
+  /** Exclusive. */
+  readonly end: number;
+}
+
+export interface FlatLink extends FlatSpan {
+  readonly label: string;
+  readonly target: string;
+}
+
+export interface FlatUrl extends FlatSpan {
+  readonly value: string;
+}
+
+/**
+ * One line, flattened so that WHERE a token sits is answerable.
+ *
+ * Two defects came from asking "what appears anywhere on this line?" instead:
+ *
+ * 1. A bare domain literal was harvested out of ANOTHER url's query string, so
+ *    `https://attacker.test/?u=https://signalframe.example/` handed a sentence
+ *    the customer's own domain as an attribution and the sentence read as
+ *    supported. Here a url occupies a SPAN, and nothing is extracted from
+ *    inside it.
+ * 2. `[Forrester](https://analyst.example/x) reports that 73% …` matched no
+ *    assertion pattern at all, because the name it attributes to was wrapped in
+ *    link syntax. Here a link is replaced by its LABEL, so the sentence reads
+ *    exactly as a reader reads it, and the target stays recoverable through the
+ *    label's span.
+ *
+ * Inline code is blanked first, so a `\`research shows\`` sample is still not a
+ * claim. The result is a NEW string with its own offsets; nothing here reports
+ * a position back into the raw draft, and line numbers are untouched.
+ */
+export interface FlatLine {
+  readonly text: string;
+  /** Spans in `text`, each covering the link's label. */
+  readonly links: readonly FlatLink[];
+  /** Bare urls in `text`. A link's target is never one of these. */
+  readonly urls: readonly FlatUrl[];
+}
+
+export function flattenLine(raw: string): FlatLine {
+  const source = raw.replace(INLINE_CODE, " ");
+  const links: FlatLink[] = [];
+  let text = "";
+  let cursor = 0;
+  for (const match of source.matchAll(MARKDOWN_LINK)) {
+    if (match.index === undefined) continue;
+    text += source.slice(cursor, match.index);
+    const label = match[1] ?? "";
+    links.push({
+      start: text.length,
+      end: text.length + label.length,
+      label,
+      target: match[2] ?? "",
+    });
+    text += label;
+    cursor = match.index + match[0].length;
+  }
+  text += source.slice(cursor);
+
+  const urls: FlatUrl[] = [];
+  for (const match of text.matchAll(URL_IN_TEXT)) {
+    if (match.index === undefined) continue;
+    urls.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      value: match[0],
+    });
+  }
+  return { text, links, urls };
+}
+
+/** Is `inner` wholly inside `outer`? */
+export function spanWithin(inner: FlatSpan, outer: FlatSpan): boolean {
+  return inner.start >= outer.start && inner.end <= outer.end;
+}
+
+/** Do the two spans share at least one character? */
+export function spansOverlap(left: FlatSpan, right: FlatSpan): boolean {
+  return left.start < right.end && right.start < left.end;
+}
+
+/**
+ * The span of the sentence containing `offset`.
+ *
+ * Locality is the weaker half of "an assertion is supported by the source it
+ * attributes to": when an assertion names no attribution at all, the sentence
+ * is the widest region a reader would read as belonging to it. A url two
+ * sentences away is not that assertion's source.
+ */
+export function sentenceSpanAt(text: string, offset: number): FlatSpan {
+  let start = 0;
+  for (const match of text.matchAll(/[.!?]+(?=\s|$)/g)) {
+    if (match.index === undefined) continue;
+    const boundary = match.index + match[0].length;
+    if (boundary <= offset) start = boundary;
+    else return { start, end: boundary };
+  }
+  return { start, end: text.length };
 }
 
 /** Collapse a display name to a comparable form (no locale-sensitive casing). */

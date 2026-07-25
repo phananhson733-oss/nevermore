@@ -1,14 +1,20 @@
-import { isFirstPartySourceKind } from "../first-party.ts";
+import {
+  firstPartyIdentityKind,
+  type FirstPartyIdentityKind,
+} from "../first-party.ts";
 import type { AuthorityTier, ResearchPack } from "../types.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
 import {
   canonicalUrl,
   clauseBefore,
-  extractMarkdownLinks,
-  extractUrls,
+  flattenLine,
   hasDirectNegation,
   normalizeName,
-  stripInlineCode,
+  sentenceSpanAt,
+  spansOverlap,
+  spanWithin,
+  type FlatLine,
+  type FlatSpan,
 } from "./text.ts";
 
 /**
@@ -28,11 +34,29 @@ import {
  * nowhere to resolve to. Shape is used to FIND the attribution; only identity
  * decides whether it holds.
  *
+ * Two properties of this chain are load-bearing, and each was absent once:
+ *
+ * 1. **A resolution has a ROLE, and the role decides what it licenses.** When
+ *    the only question was "is `source` non-null?", one link to the customer's
+ *    own website vouched for any invented external reference sharing its line —
+ *    "According to a 2024 Forrester study, 73% … [Book a demo](our-site)" was
+ *    `passed`, and the same sentence WITHOUT the link was `blocked`. The
+ *    blocking rules call `resolveAssertionSupport`, whose return type has no
+ *    first-party inhabitant, so that mistake is now unspellable rather than
+ *    merely fixed.
+ * 2. **An attribution is LOCATED by construction, not harvested from the
+ *    line.** Scanning a whole line for domain literals pulled the customer's
+ *    own host out of another url's query string
+ *    (`https://attacker.test/?u=https://our-site/`) and let it support the
+ *    sentence. Attributions carry spans, nothing is read out of the inside of a
+ *    url, and an assertion that NAMES who it attributes to can only be
+ *    supported by that name and by the link the name is written as.
+ *
  * Slice 2 consequence, stated plainly: the deterministic pack retrieves nothing
- * external, so every `ref` it emits is an opaque SignalFrame uuid and NO
- * external attribution can resolve. That is not a gap in this chain — it is the
- * true statement that a Slice 2 draft has no external research behind it, so
- * any external citation in one is invented.
+ * external, so every `ref` it emits is an opaque SignalFrame uuid or the
+ * customer's own web identity, and NO external attribution can resolve. That is
+ * not a gap in this chain — it is the true statement that a Slice 2 draft has no
+ * external research behind it, so any external citation in one is invented.
  */
 
 export interface SourceIdentity {
@@ -44,11 +68,12 @@ export interface SourceIdentity {
   /** Longest alphabetic token of `name`, for partial name matching. */
   readonly nameToken: string | null;
   /**
-   * The customer's own web identity (site origin, conversion target). A link
-   * resolving to one of these means "this points at the customer's own
-   * property", never "this claim is supported".
+   * Which half of the customer's own web identity this is, or `null` for an
+   * outside source. A first-party identity answers "does this link point at the
+   * customer's own property?" and NOTHING else — never "this claim is
+   * supported".
    */
-  readonly firstParty: boolean;
+  readonly firstParty: FirstPartyIdentityKind | null;
 }
 
 export interface SourceIndex {
@@ -84,7 +109,7 @@ function longestAlphaToken(name: string): string | null {
 function identityFor(
   ref: string,
   authority: AuthorityTier,
-  firstParty: boolean,
+  firstParty: FirstPartyIdentityKind | null,
 ): SourceIdentity {
   if (UUID.test(ref.trim())) {
     return {
@@ -114,7 +139,7 @@ function identityFor(
   // rejects such a value at the freeze boundary, so reaching here means the row
   // was malformed, and a malformed origin must not become a fuzzy name matcher
   // that confirms references by accident.
-  if (firstParty) {
+  if (firstParty !== null) {
     return {
       ref,
       authority,
@@ -142,12 +167,12 @@ export function buildSourceIndex(pack: ResearchPack): SourceIndex {
     identityFor(
       source.ref,
       source.authorityTier,
-      isFirstPartySourceKind(source.kind),
+      firstPartyIdentityKind(source.kind),
     ),
   );
   const citableCount = identities.filter(
     (identity) =>
-      !identity.firstParty &&
+      identity.firstParty === null &&
       (identity.url !== null || identity.nameToken !== null),
   ).length;
   return { identities, citableCount };
@@ -160,14 +185,41 @@ export interface Attribution {
   readonly value: string;
 }
 
+/** An attribution plus WHERE it sits on the flattened line. */
+export interface LocatedAttribution extends Attribution, FlatSpan {}
+
+/**
+ * What an attribution resolved to, and in what ROLE.
+ *
+ * This is the low-level identity lookup: "does the pack hold anything this
+ * attribution names?" It is deliberately NOT what a rule calls — the two
+ * questions a rule can ask are `resolveAssertionSupport` (may this support a
+ * claim?) and `resolveLinkProvenance` (is this address one of ours?), and
+ * neither can be answered by reading `source !== null`.
+ */
 export interface Resolution {
   /** `null` when nothing in the pack matched. */
   readonly source: SourceIdentity | null;
+  /** `null` when nothing matched; otherwise what the match may be used for. */
+  readonly role: SourceRole | null;
   /** `A`/`B`/`C` copied from the resolved source; `D` when nothing resolved. */
   readonly authority: AuthorityTier;
 }
 
-const UNRESOLVED: Resolution = { source: null, authority: "D" };
+export type SourceRole = "external_evidence" | "first_party_identity";
+
+const UNRESOLVED: Resolution = { source: null, role: null, authority: "D" };
+
+function resolved(identity: SourceIdentity): Resolution {
+  return {
+    source: identity,
+    role:
+      identity.firstParty === null
+        ? "external_evidence"
+        : "first_party_identity",
+    authority: identity.authority,
+  };
+}
 
 /**
  * `D` is deliberately asymmetric with `AuthorityTier` on the pack side (Q1):
@@ -184,29 +236,26 @@ export function resolveAttribution(
     const url = canonicalUrl(attribution.value);
     if (!url) return UNRESOLVED;
     for (const identity of index.identities) {
-      if (identity.url === url.url)
-        return { source: identity, authority: identity.authority };
+      if (identity.url === url.url) return resolved(identity);
     }
     for (const identity of index.identities) {
-      if (identity.domain === url.domain) {
-        return { source: identity, authority: identity.authority };
-      }
+      if (identity.domain === url.domain) return resolved(identity);
     }
-    // Subdomains of the customer's own host, and only of theirs. A B2B site
+    // Subdomains of the customer's own SITE ORIGIN, and only of that. A B2B site
     // routinely serves its blog, docs and app from `blog.`/`docs.`/`app.`, and
     // treating those as unresolvable would put every correct internal link back
     // in front of a human. The suffix test is anchored on a leading dot, so
     // `signalframe.example.attacker.test` does NOT match `signalframe.example`.
     //
-    // It is applied ONLY to first-party identities: widening an external
-    // source's domain to its subdomains would let a draft cite
-    // `fake.forrester.example` on the strength of a pack entry for
-    // `forrester.example`.
+    // It is applied to the `site` identity ALONE. Widening an external source's
+    // domain would let a draft cite `fake.forrester.example` on the strength of
+    // a pack entry for `forrester.example`; widening the ICP CONVERSION target
+    // is worse, because that url's host is routinely a third-party scheduler
+    // (`https://calendly.com/acme/demo`), and widening it would hand every other
+    // tenant of that scheduler the customer's own-property status.
     for (const identity of index.identities) {
-      if (!identity.firstParty || identity.domain === null) continue;
-      if (url.domain.endsWith(`.${identity.domain}`)) {
-        return { source: identity, authority: identity.authority };
-      }
+      if (identity.firstParty !== "site" || identity.domain === null) continue;
+      if (url.domain.endsWith(`.${identity.domain}`)) return resolved(identity);
     }
     return UNRESOLVED;
   }
@@ -215,30 +264,63 @@ export function resolveAttribution(
   if (name.length === 0) return UNRESOLVED;
   for (const identity of index.identities) {
     if (identity.name !== null && identity.name === name) {
-      return { source: identity, authority: identity.authority };
+      return resolved(identity);
     }
   }
   // Partial match, but only on a token long enough to be an identity: "the",
   // "data" and "2024" must never be able to resolve an attribution.
   for (const identity of index.identities) {
     if (identity.nameToken === null) continue;
-    if (name.split(" ").includes(identity.nameToken)) {
-      return { source: identity, authority: identity.authority };
-    }
+    if (name.split(" ").includes(identity.nameToken)) return resolved(identity);
   }
   return UNRESOLVED;
 }
 
-/** First resolution that holds, or `D` when none does. */
-export function resolveAny(
+/**
+ * A source that can SUPPORT an assertion.
+ *
+ * There is no first-party inhabitant of this type, by construction. RL8, RL12
+ * and SC9b ask "is there a source behind this claim?", and the customer's own
+ * site origin is never an answer to that question — it says where a link points,
+ * which is a different fact about a different subject.
+ */
+export interface AssertionSupport {
+  readonly source: SourceIdentity;
+  readonly authority: AuthorityTier;
+}
+
+/** The FIRST attribution that resolves to external evidence, or `null`. */
+export function resolveAssertionSupport(
   index: SourceIndex,
   attributions: readonly Attribution[],
-): Resolution {
+): AssertionSupport | null {
   for (const attribution of attributions) {
     const resolution = resolveAttribution(index, attribution);
-    if (resolution.source !== null) return resolution;
+    if (resolution.role === "external_evidence" && resolution.source !== null) {
+      return { source: resolution.source, authority: resolution.authority };
+    }
   }
-  return UNRESOLVED;
+  return null;
+}
+
+/**
+ * Where an address points, for the one rule that asks that question.
+ *
+ * RL12b reports links the frozen inputs cannot account for. A first-party
+ * identity is a complete answer there — the whole point of freezing the
+ * customer's origin is that their own call to action stops reading as an
+ * unverifiable outside reference — and it is a complete answer NOWHERE else.
+ */
+export type LinkProvenance = "external_evidence" | "first_party" | "unresolved";
+
+export function resolveLinkProvenance(
+  index: SourceIndex,
+  attribution: Attribution,
+): LinkProvenance {
+  const resolution = resolveAttribution(index, attribution);
+  if (resolution.role === "external_evidence") return "external_evidence";
+  if (resolution.role === "first_party_identity") return "first_party";
+  return "unresolved";
 }
 
 const LEADING_NOISE = /^(?:a|an|the|its|their|our|this|that|recent|new)\s+/i;
@@ -263,49 +345,106 @@ function cleanNameCandidate(raw: string): string {
 }
 
 /**
- * Attribution tokens on one line, in priority order (URLs first, then named
- * attributions). Shape only — none of these is an ALLOW by itself.
+ * Every pattern here carries the `d` flag: `groupSpan` reads capture positions
+ * off `match.indices`, and a pattern without `d` silently yields no span, which
+ * would drop the attribution entirely rather than mislocate it.
  */
-export function extractAttributions(line: string): readonly Attribution[] {
-  const text = stripInlineCode(line);
-  const found: Attribution[] = [];
+const NAMED_ATTRIBUTION_PATTERNS: readonly RegExp[] = [
+  /\baccording to\s+([^\n]{2,120})/dgi,
+  /\bper\s+(?:a|an|the)\s+([^\n]{2,120})/dgi,
+  /\bsource\s*:\s*([^\n]{2,120})/dgi,
+  /\b(?:study|studies|report|survey|research|analysis|benchmark|index|data)\s+(?:by|from)\s+([^\n]{2,120})/dgi,
+  /\b(?:by|from)\s+((?:[A-Z][A-Za-z&.'-]+)(?:\s+[A-Z][A-Za-z&.'-]+){0,5})/dg,
+];
+
+/** A bare domain literal used as an attribution ("per Forrester.com"). */
+const BARE_DOMAIN = /\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/gi;
+
+/**
+ * Attribution tokens on one flattened line, WITH their spans.
+ *
+ * Nothing is read out of the inside of a url. That single restriction is what
+ * closes the laundering path where `https://attacker.test/?u=https://our-site/`
+ * yielded `our-site` as a fourth attribution candidate and — because the old
+ * "any attribution that resolves" rule accepted the first one that did — made
+ * the fabricated sentence carrying it read as supported.
+ */
+export function locatedAttributions(
+  flat: FlatLine,
+): readonly LocatedAttribution[] {
+  const found: LocatedAttribution[] = [];
   const seen = new Set<string>();
-  const push = (kind: AttributionKind, value: string): void => {
+  const insideUrl = (span: FlatSpan): boolean =>
+    flat.urls.some((url) => spansOverlap(span, url));
+  const push = (kind: AttributionKind, value: string, span: FlatSpan): void => {
     const cleaned = kind === "name" ? cleanNameCandidate(value) : value.trim();
     if (cleaned.length === 0) return;
     const key = `${kind}|${cleaned.toLowerCase()}`;
     if (seen.has(key)) return;
     seen.add(key);
-    found.push({ kind, value: cleaned });
+    found.push({ kind, value: cleaned, start: span.start, end: span.end });
   };
 
-  for (const link of extractMarkdownLinks(text)) push("url", link.target);
-  for (const url of extractUrls(text)) push("url", url);
+  // A link's ATTRIBUTION is its target, located where the reader sees it: at
+  // the label. That is what makes `[Forrester](url) reports that 73% …`
+  // resolvable against the link the name is written as.
+  for (const link of flat.links) push("url", link.target, link);
+  for (const url of flat.urls) push("url", url.value, url);
 
-  const named = [
-    /\baccording to\s+([^\n]{2,120})/gi,
-    /\bper\s+(?:a|an|the)\s+([^\n]{2,120})/gi,
-    /\bsource\s*:\s*([^\n]{2,120})/gi,
-    /\b(?:study|studies|report|survey|research|analysis|benchmark|index|data)\s+(?:by|from)\s+([^\n]{2,120})/gi,
-    /\b(?:by|from)\s+((?:[A-Z][A-Za-z&.'-]+)(?:\s+[A-Z][A-Za-z&.'-]+){0,5})/g,
-  ];
-  for (const pattern of named) {
-    for (const match of text.matchAll(pattern)) push("name", match[1] ?? "");
+  for (const pattern of NAMED_ATTRIBUTION_PATTERNS) {
+    for (const match of flat.text.matchAll(pattern)) {
+      const span = groupSpan(match, 1);
+      if (span === null || insideUrl(span)) continue;
+      push("name", match[1] ?? "", span);
+    }
   }
-
-  // A bare domain literal used as an attribution ("per Forrester.com").
-  for (const match of text.matchAll(
-    /\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/gi,
-  )) {
-    push("url", match[0]);
+  for (const match of flat.text.matchAll(BARE_DOMAIN)) {
+    if (match.index === undefined) continue;
+    const span = { start: match.index, end: match.index + match[0].length };
+    if (insideUrl(span)) continue;
+    push("url", match[0], span);
   }
   return found;
+}
+
+/**
+ * The span of one capture group, read off the `d`-flag indices.
+ *
+ * Positions come from the regex engine rather than from `indexOf`, because a
+ * name that also appears earlier in the sentence would otherwise be located at
+ * the wrong occurrence — and locating an attribution wrongly is the defect this
+ * whole mechanism exists to remove.
+ */
+function groupSpan(match: RegExpMatchArray, group: number): FlatSpan | null {
+  const indices = match.indices?.[group];
+  const start = indices?.[0];
+  const end = indices?.[1];
+  if (start === undefined || end === undefined) return null;
+  return { start, end };
+}
+
+/**
+ * Attribution tokens on one line, in priority order (URLs first, then named
+ * attributions). Shape only — none of these is an ALLOW by itself.
+ */
+export function extractAttributions(line: string): readonly Attribution[] {
+  return locatedAttributions(flattenLine(line)).map(({ kind, value }) => ({
+    kind,
+    value,
+  }));
+}
+
+export interface ClaimResolution {
+  /** `null` when no source in the pack can support this assertion. */
+  readonly support: AssertionSupport | null;
+  /** `A`/`B`/`C` from the supporting source; `D` when there is none. */
+  readonly authority: AuthorityTier;
 }
 
 export interface ClaimHit {
   readonly line: number;
   readonly excerpt: string;
-  readonly resolution: Resolution;
+  readonly resolution: ClaimResolution;
 }
 
 /**
@@ -326,29 +465,40 @@ const RESEARCH_NOUN =
   "research|researchers|studies|study|surveys?|reports?|analyses|analysis|analysts?|scientists?|experts?|evidence|benchmarks?|whitepapers?|polls?|indices|index";
 
 /**
- * Verbs that turn a research noun into an assertion.
+ * Verbs that turn a subject into an assertion. ONE list, shared by both the
+ * research-noun pattern and the named-entity pattern.
  *
- * `reports?`/`reported` are deliberately NOT in this list even though they are
- * assertion verbs: they are also in `RESEARCH_NOUN`, and a set that overlaps
- * itself matches any line carrying the word twice — "Read our onboarding
- * analytics report at [the product report page](…)" was reported as an
- * unsupported research assertion for exactly that reason. They are readmitted
- * below, but only in their verbal frame (`reports that`, `reported a`).
+ * They used to be two lists, and the entity list was the shorter one, so
+ * "Forrester notes that 73% of teams abandon activation tracking" was no
+ * assertion at all while "Forrester found that 73% …" was blocked. A vocabulary
+ * duplicated in two places drifts on the next edit by construction, so it is
+ * declared once and consumed twice.
  */
 const ASSERTION_VERB =
-  "shows?|showed|suggests?|indicates?|finds?|found|proves?|proven|confirms?|reveals?|says?|said|estimates?|estimated|recommends?|warns?|concludes?|concluded|puts?|pegs?|ranks?|ranked|polled|surveyed|calculates?|calculated|measured";
+  "shows?|showed|suggests?|indicates?|indicated|finds?|found|proves?|proven|confirms?|reveals?|revealed|says?|said|estimates?|estimated|recommends?|warns?|concludes?|concluded|puts?|pegs?|ranks?|ranked|polled|surveys?|surveyed|calculates?|calculated|measures?|measured|observes?|observed|records?|recorded|forecasts?|forecast|projects?|projected|predicts?|predicted";
 
+/**
+ * Verbs that are also research NOUNS. A set that overlaps itself matches any
+ * line carrying the word twice — "Read our onboarding analytics report at [the
+ * product report page](…)" was reported as an unsupported research assertion
+ * for exactly that reason — so these are readmitted only in a verbal frame.
+ */
 const AMBIGUOUS_VERB_FRAME =
-  "\\breports?\\s+(?:that\\b|an?\\b|the\\b|\\d)|\\breported\\s+(?:that\\b|an?\\b|the\\b|\\d)";
+  "\\b(?:reports?|reported|notes?|noted)\\s+(?:that\\b|an?\\b|the\\b|\\d)";
+
+const ASSERTION_VERB_FRAME = `(?:\\b(?:${ASSERTION_VERB})\\b|${AMBIGUOUS_VERB_FRAME})`;
 
 export const RESEARCH_ASSERTION_PATTERNS: readonly RegExp[] = [
   new RegExp(
-    `\\b(?:${RESEARCH_NOUN})\\b[^.!?]{0,60}?(?:\\b(?:${ASSERTION_VERB})\\b|${AMBIGUOUS_VERB_FRAME})`,
-    "gi",
+    `\\b(?:${RESEARCH_NOUN})\\b[^.!?]{0,60}?${ASSERTION_VERB_FRAME}`,
+    "gid",
   ),
-  /\baccording to\s+(?:a|an|the)?\s*(?:(?:19|20)\d{2}\s+)?[^.,;:!?]{0,80}?\b(?:study|studies|report|survey|research|analysis|benchmark|index|whitepaper|poll)\b/gi,
-  /\b(?:19|20)\d{2}\s+[A-Z][^.,;:!?]{0,60}?\b(?:study|report|survey|benchmark|analysis|whitepaper|poll)\b/g,
+  /\baccording to\s+((?:a|an|the)?\s*(?:(?:19|20)\d{2}\s+)?[^.,;:!?]{0,80}?\b(?:study|studies|report|survey|research|analysis|benchmark|index|whitepaper|poll)\b)/dgi,
+  /\b((?:19|20)\d{2}\s+[A-Z][^.,;:!?]{0,60}?\b(?:study|report|survey|benchmark|analysis|whitepaper|poll)\b)/dg,
 ];
+
+/** Which capture group of each pattern names the attributed source, if any. */
+const ATTRIBUTED_GROUP: readonly (number | null)[] = [null, 1, 1];
 
 /**
  * `<Named entity> <assertion verb> <statistic>` — the most common shape a
@@ -360,41 +510,84 @@ export const RESEARCH_ASSERTION_PATTERNS: readonly RegExp[] = [
  * Three constraints keep this from swallowing honest first-party writing:
  *
  * 1. The subject must be a capitalized name, and its head word must not be a
- *    function word — `We found that 40% …` is a first-party statement, not an
- *    attribution to an outside body.
- * 2. The name must not be preceded by a determiner or possessive. That is what
- *    keeps "Our Search Console export indicates clicks fell 34%" out: the
- *    capitalized span there is a common-noun phrase the customer owns, not the
- *    name of an outside authority.
+ *    pronoun or possessive — `We found that 40% …` is a first-party statement,
+ *    not an attribution to an outside body. An ARTICLE head is different: it is
+ *    dropped and the name after it is tried, because "The Gartner panel found
+ *    that 73% …" attributes to Gartner exactly as "Gartner found that 73% …"
+ *    does. Discarding the whole match on an article head is what let the first
+ *    of those two pass while the second was blocked.
+ * 2. The name must not be preceded by a POSSESSIVE. That is what keeps "our
+ *    Search Console export indicates clicks fell 34%" out: the capitalized span
+ *    there is a common-noun phrase the customer owns, not the name of an
+ *    outside authority.
  * 3. A statistic must follow within the same sentence. An assertion with a
  *    number in it is the shape that needs a source; "Teams find the milestone
  *    that matters faster" is prose.
  */
-const ENTITY_ASSERTION =
-  /(?<![\w'’-])((?:[A-Z][A-Za-z0-9&.'’-]*)(?:[ ](?:[A-Z][A-Za-z0-9&.'’-]*|&))*)((?:[ ][a-z][A-Za-z-]*){0,3})[ ](?:found|finds|reported|reports|shows|showed|says|said|estimates|estimated|concludes|concluded|puts|pegs|ranks|ranked|polled|surveyed|calculates|calculated|measured|projects|predicts)\b[^.!?]{0,80}?\d/g;
+const ENTITY_ASSERTION = new RegExp(
+  `(?<![\\w'’-])((?:[A-Z][A-Za-z0-9&.'’-]*)(?:[ ](?:[A-Z][A-Za-z0-9&.'’-]*|&))*)((?:[ ][a-z][A-Za-z-]*){0,3})[ ]${ASSERTION_VERB_FRAME}[^.!?]{0,80}?\\d`,
+  "gd",
+);
 
-/** Heads that are function words, never the name of an outside authority. */
-const NON_NAME_HEAD =
-  /^(?:i|we|our|ours|you|your|they|their|them|he|she|it|its|his|her|this|that|these|those|the|a|an|there|here|then|now|today|and|but|or|if|so|when|while|after|before|because|however|although|though|since|most|many|some|few|all|both|each|every|no|not|another|other|such|both)$/i;
+/** Heads that are a pronoun or a possessive: never an outside authority. */
+const PRONOUN_HEAD =
+  /^(?:i|we|us|our|ours|you|your|yours|they|them|their|theirs|he|him|his|she|her|hers|it|its)$/i;
 
-/** Determiners/possessives that mark the span after them as a common noun. */
-const DETERMINER_BEFORE_NAME =
-  /(?:^|[^\w'’-])(?:our|my|your|their|its|his|her|the|a|an|this|that|these|those|each|every|any|some|another|no)\s+$/i;
+/**
+ * Heads that are function words. These are DROPPED and the name after them
+ * retried, rather than discarding the assertion.
+ */
+const ARTICLE_HEAD =
+  /^(?:this|that|these|those|the|a|an|there|here|then|now|today|and|but|or|if|so|when|while|after|before|because|however|although|though|since|most|many|some|few|all|both|each|every|no|not|another|other|such)$/i;
+
+/** Possessives that mark the span after them as a common noun the customer owns. */
+const POSSESSIVE_BEFORE_NAME =
+  /(?:^|[^\w'’-])(?:our|my|your|their|its|his|her)\s+$/i;
 
 interface AssertionMatch {
   readonly index: number;
   readonly excerpt: string;
+  /**
+   * The span this assertion attributes to, when it names one. `null` means the
+   * assertion named nobody, and support may then come from anywhere in its own
+   * sentence.
+   */
+  readonly attributedTo: FlatSpan | null;
+}
+
+/** Drop leading article tokens; `null` when nothing citable is left. */
+function trimNameSpan(text: string, span: FlatSpan): FlatSpan | null {
+  let start = span.start;
+  for (;;) {
+    const rest = text.slice(start, span.end);
+    const token = /^[^\s&]+/.exec(rest)?.[0];
+    if (token === undefined || token.length === 0) return null;
+    if (PRONOUN_HEAD.test(token)) return null;
+    if (!ARTICLE_HEAD.test(token)) break;
+    const consumed = /^[^\s&]+[\s&]+/.exec(rest)?.[0]?.length;
+    if (consumed === undefined) return null;
+    start += consumed;
+    if (start >= span.end) return null;
+  }
+  return /^[A-Z]/.test(text.slice(start, span.end))
+    ? { start, end: span.end }
+    : null;
 }
 
 function entityAssertions(text: string): readonly AssertionMatch[] {
   const found: AssertionMatch[] = [];
   for (const match of text.matchAll(ENTITY_ASSERTION)) {
     if (match.index === undefined) continue;
-    const name = match[1] ?? "";
-    const head = name.split(/[\s&]+/)[0] ?? "";
-    if (NON_NAME_HEAD.test(head)) continue;
-    if (DETERMINER_BEFORE_NAME.test(text.slice(0, match.index))) continue;
-    found.push({ index: match.index, excerpt: match[0] });
+    const nameSpan = groupSpan(match, 1);
+    if (nameSpan === null) continue;
+    const trimmed = trimNameSpan(text, nameSpan);
+    if (trimmed === null) continue;
+    if (POSSESSIVE_BEFORE_NAME.test(text.slice(0, match.index))) continue;
+    found.push({
+      index: match.index,
+      excerpt: match[0],
+      attributedTo: trimmed,
+    });
   }
   return found;
 }
@@ -402,14 +595,50 @@ function entityAssertions(text: string): readonly AssertionMatch[] {
 /** Every external-research assertion shape on one line, in document order. */
 function researchAssertions(text: string): readonly AssertionMatch[] {
   const found: AssertionMatch[] = [];
-  for (const pattern of RESEARCH_ASSERTION_PATTERNS) {
+  for (const [position, pattern] of RESEARCH_ASSERTION_PATTERNS.entries()) {
+    const group = ATTRIBUTED_GROUP[position] ?? null;
     for (const match of text.matchAll(pattern)) {
       if (match.index === undefined) continue;
-      found.push({ index: match.index, excerpt: match[0] });
+      found.push({
+        index: match.index,
+        excerpt: match[0],
+        attributedTo: group === null ? null : groupSpan(match, group),
+      });
     }
   }
   found.push(...entityAssertions(text));
   return found.sort((left, right) => left.index - right.index);
+}
+
+/**
+ * The attributions that may support ONE assertion.
+ *
+ * When the assertion names who it attributes to, only that name and the link it
+ * is written as can support it. When it names nobody, its own sentence is the
+ * widest region a reader would read as belonging to it. Neither is "anything
+ * that appears on this line", which is how a call-to-action link three
+ * sentences away came to vouch for an invented study.
+ */
+function supportCandidates(
+  flat: FlatLine,
+  assertion: AssertionMatch,
+): readonly Attribution[] {
+  const attributions = locatedAttributions(flat);
+  const span = assertion.attributedTo;
+  if (span === null) {
+    const sentence = sentenceSpanAt(flat.text, assertion.index);
+    return attributions.filter((attribution) =>
+      spansOverlap(attribution, sentence),
+    );
+  }
+  const located = attributions.filter(
+    (attribution) =>
+      spansOverlap(attribution, span) || spanWithin(attribution, span),
+  );
+  const name = cleanNameCandidate(flat.text.slice(span.start, span.end));
+  return name.length > 0
+    ? [...located, { kind: "name", value: name }]
+    : located;
 }
 
 /** Find every external-research assertion and resolve its attribution. */
@@ -420,18 +649,22 @@ export function findUnsupportedClaims(
   const hits: ClaimHit[] = [];
   const seen = new Set<number>();
   for (const entry of lines) {
-    const text = stripInlineCode(entry.text);
-    if (text.trim().length === 0) continue;
-    for (const match of researchAssertions(text)) {
+    const flat = flattenLine(entry.text);
+    if (flat.text.trim().length === 0) continue;
+    for (const match of researchAssertions(flat.text)) {
       // An honest disclaimer ("no study shows that ...") is not an assertion.
       // Only a negator that directly governs the noun exempts it.
-      if (hasDirectNegation(clauseBefore(text, match.index))) continue;
+      if (hasDirectNegation(clauseBefore(flat.text, match.index))) continue;
       if (seen.has(entry.line)) continue;
       seen.add(entry.line);
+      const support = resolveAssertionSupport(
+        index,
+        supportCandidates(flat, match),
+      );
       hits.push({
         line: entry.line,
         excerpt: match.excerpt,
-        resolution: resolveAny(index, extractAttributions(text)),
+        resolution: { support, authority: support?.authority ?? "D" },
       });
     }
   }

@@ -239,36 +239,35 @@ export const REFERENCE_HEADING_DRAFTS: ReadonlyArray<
 ];
 
 /** The same reference, in each markdown shape the list-item filter missed. */
-export const REFERENCE_FORMAT_DRAFTS: ReadonlyArray<
-  readonly [string, string]
-> = [
+export const REFERENCE_FORMAT_DRAFTS: ReadonlyArray<readonly [string, string]> =
   [
-    "paragraph",
-    draftWithReferenceSection("Sources", [
-      "Forrester Digital Experience Report, 2024",
-    ]),
-  ],
-  [
-    "table",
-    draftWithReferenceSection("Sources", [
-      "| Source | Year |",
-      "| --- | --- |",
-      "| Forrester Digital Experience Report | 2024 |",
-    ]),
-  ],
-  [
-    "blockquote",
-    draftWithReferenceSection("Sources", [
-      "> Forrester Digital Experience Report, 2024",
-    ]),
-  ],
-  [
-    "list item",
-    draftWithReferenceSection("Sources", [
-      "- Forrester Digital Experience Report, 2024",
-    ]),
-  ],
-];
+    [
+      "paragraph",
+      draftWithReferenceSection("Sources", [
+        "Forrester Digital Experience Report, 2024",
+      ]),
+    ],
+    [
+      "table",
+      draftWithReferenceSection("Sources", [
+        "| Source | Year |",
+        "| --- | --- |",
+        "| Forrester Digital Experience Report | 2024 |",
+      ]),
+    ],
+    [
+      "blockquote",
+      draftWithReferenceSection("Sources", [
+        "> Forrester Digital Experience Report, 2024",
+      ]),
+    ],
+    [
+      "list item",
+      draftWithReferenceSection("Sources", [
+        "- Forrester Digital Experience Report, 2024",
+      ]),
+    ],
+  ];
 
 /**
  * A first-party product link on a line that happens to contain the word
@@ -310,9 +309,12 @@ export const UNCLOSED_FRONTMATTER_DRAFT = [
 ].join("\n");
 
 /** Nothing but a fenced block: readable bytes, no prose to judge. */
-export const ALL_FENCED_DRAFT = ["```text", "just a transcript", "```", ""].join(
-  "\n",
-);
+export const ALL_FENCED_DRAFT = [
+  "```text",
+  "just a transcript",
+  "```",
+  "",
+].join("\n");
 
 /**
  * The acceptance fixture for Task 6b: a clean draft that follows the drafting
@@ -409,3 +411,253 @@ export const FIRST_PARTY_SOURCES_DRAFT = [
   "- SignalFrame product site, https://signalframe.example/product",
   "",
 ].join("\n");
+
+/**
+ * The laundering corpus.
+ *
+ * Freezing the customer's own web identity put URLs into a pack that had never
+ * held any, and the three blocking rules asked only "did anything resolve?".
+ * So one link to the customer's own site — a call to action, a demo booking,
+ * anything — vouched for whatever invented reference shared its line. Each
+ * draft below returned `passed`, and each carries its own counterfactual: the
+ * identical draft WITHOUT the first-party link was blocked, which is the proof
+ * that the link, not the content, was doing the work.
+ */
+const LAUNDERING_BODY = [
+  "# Onboarding analytics for RevOps teams",
+  "",
+  "## What onboarding analytics covers",
+  "",
+  "**Onboarding analytics** measures time to first value for RevOps teams.",
+  "",
+  "## Audience",
+  "",
+  "RevOps leads evaluating onboarding tooling own this work.",
+  "",
+];
+
+/** RL8: a fabricated research assertion with the CTA link on its line. */
+export const LAUNDERED_CLAIM_DRAFT = [
+  ...LAUNDERING_BODY,
+  "## Why it matters",
+  "",
+  "According to a 2024 Forrester study, 73% of teams abandon activation",
+  "tracking in week one. [Book a demo](https://signalframe.example/demo)",
+  "",
+].join("\n");
+
+/** The counterfactual: the same sentence, no first-party link. */
+export const LAUNDERED_CLAIM_CONTROL_DRAFT = [
+  ...LAUNDERING_BODY,
+  "## Why it matters",
+  "",
+  "According to a 2024 Forrester study, 73% of teams abandon activation",
+  "tracking in week one.",
+  "",
+].join("\n");
+
+/** SC9b: an invented bibliography with a first-party URL on every entry. */
+export const LAUNDERED_REFERENCE_LIST_DRAFT = [
+  ...LAUNDERING_BODY,
+  "## Sources",
+  "",
+  "- Forrester Digital Experience Report, 2024. https://signalframe.example/product",
+  "- Gartner Onboarding Benchmark, 2023. https://signalframe.example/pricing",
+  "",
+].join("\n");
+
+/** RL12: an `et al.` citation with the frozen conversion target on its line. */
+export const LAUNDERED_CITATION_DRAFT = [
+  ...LAUNDERING_BODY,
+  "## Evidence",
+  "",
+  "Smith et al. (2023) measured a 42% lift.",
+  "[Book a demo](https://book.signalframe-demo.example/onboarding)",
+  "",
+].join("\n");
+
+/**
+ * A domain harvested out of ANOTHER url's query string.
+ *
+ * `extractAttributions` scanned the whole line for bare domain literals, so
+ * `https://attacker.test/?u=https://signalframe.example/` yielded
+ * `signalframe.example` as a fourth candidate — and "the first attribution that
+ * resolves wins" then let a link the customer does not control support the
+ * sentence.
+ */
+export const QUERY_STRING_HARVEST_DRAFT = [
+  ...LAUNDERING_BODY,
+  "## Why it matters",
+  "",
+  "According to a 2024 Forrester study, 73% of teams churn. See",
+  "https://attacker.test/?u=https://signalframe.example/ for the chart.",
+  "",
+].join("\n");
+
+/**
+ * Reference lists under headings, and in shapes, the recogniser could not see.
+ *
+ * Every one of these returned `passed` with `partitionDraft().reference` empty
+ * and SC9b persisting the sentence that no section of the draft was headed as a
+ * reference list — a falsifiable claim about a draft whose fabricated
+ * bibliography is right there.
+ */
+export const UNRECOGNISED_REFERENCE_DRAFTS: ReadonlyArray<
+  readonly [string, string]
+> = [
+  [
+    "ASCII colon",
+    [
+      ...LAUNDERING_BODY,
+      "## Sources:",
+      "",
+      "- Forrester Digital Experience Report, 2024",
+      "",
+    ].join("\n"),
+  ],
+  [
+    "full-width colon",
+    [
+      ...LAUNDERING_BODY,
+      "## Sources：",
+      "",
+      "- Forrester Digital Experience Report, 2024",
+      "",
+    ].join("\n"),
+  ],
+  [
+    "parenthesised qualifier",
+    [
+      ...LAUNDERING_BODY,
+      "## References (external)",
+      "",
+      "- Forrester Digital Experience Report, 2024",
+      "",
+    ].join("\n"),
+  ],
+  [
+    "see also",
+    [
+      ...LAUNDERING_BODY,
+      "## See Also",
+      "",
+      "- Forrester Digital Experience Report, 2024",
+      "",
+    ].join("\n"),
+  ],
+  [
+    "non-English heading",
+    [
+      ...LAUNDERING_BODY,
+      "## 参考文献",
+      "",
+      "- Forrester Digital Experience Report, 2024",
+      "",
+    ].join("\n"),
+  ],
+  [
+    "setext heading",
+    [
+      ...LAUNDERING_BODY,
+      "Sources",
+      "-------",
+      "",
+      "- Forrester Digital Experience Report, 2024",
+      "",
+    ].join("\n"),
+  ],
+  [
+    "bold line as heading",
+    [
+      ...LAUNDERING_BODY,
+      "**Sources**",
+      "",
+      "- Forrester Digital Experience Report, 2024",
+      "",
+    ].join("\n"),
+  ],
+];
+
+/**
+ * A reference list under a heading the recogniser deliberately does NOT claim.
+ *
+ * `## Related links` under a B2B post is usually the customer's own pages, and
+ * pulling it out of the body would report every one of them as an unresolvable
+ * reference — so it stays in the body on purpose. That conservative bias is
+ * only safe because the body is genuinely scanned: this draft must still be
+ * caught, by RL12's bibliographic-entry shape rather than by SC9b.
+ */
+export const BODY_RESIDENT_REFERENCE_DRAFT = [
+  ...LAUNDERING_BODY,
+  "## Related links",
+  "",
+  "- Forrester Digital Experience Report, 2024",
+  "- Gartner Onboarding Benchmark, 2023",
+  "",
+].join("\n");
+
+/**
+ * A leading `---` used as a thematic break, with a SECOND `---` further down.
+ *
+ * Taking "the next `---`" as the closing frontmatter delimiter masked the whole
+ * first content block, so both fabricated attributions inside it were never
+ * scanned. The all-lines-empty backstop did not fire, because the tail of the
+ * draft survived.
+ */
+export const THEMATIC_BREAK_FRONTMATTER_DRAFT = [
+  "---",
+  "",
+  "# Onboarding analytics",
+  "",
+  "## Why onboarding analytics matters",
+  "",
+  "According to the 2024 Forrester Digital Experience Report, teams cut",
+  "onboarding time by 40%.",
+  "",
+  "Gartner found that 73% of teams abandon activation tracking in week one.",
+  "",
+  "---",
+  "",
+  "## Audience",
+  "",
+  "RevOps leads evaluating onboarding tooling own this work.",
+  "",
+].join("\n");
+
+/** Attribution shapes that reached no rule at all and scored `passed`. */
+export const ESCAPED_ATTRIBUTION_DRAFTS: ReadonlyArray<
+  readonly [string, string]
+> = [
+  [
+    "link as the attributed name",
+    [
+      ...LAUNDERING_BODY,
+      "## Evidence",
+      "",
+      "[Forrester](https://analyst.example/x) reports that 73% of teams churn.",
+      "",
+    ].join("\n"),
+  ],
+  [
+    "em-dash endnote",
+    [
+      ...LAUNDERING_BODY,
+      "## Evidence",
+      "",
+      "Activation tracking cuts churn by 42% — [Forrester, 2024](https://analyst.example/x)",
+      "",
+    ].join("\n"),
+  ],
+  [
+    "footnote marker",
+    [
+      ...LAUNDERING_BODY,
+      "## Evidence",
+      "",
+      "Activation tracking cuts churn by 42%.[^1]",
+      "",
+      "[^1]: Forrester Digital Experience Report, 2024",
+      "",
+    ].join("\n"),
+  ],
+];

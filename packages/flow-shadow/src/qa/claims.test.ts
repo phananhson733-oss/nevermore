@@ -4,6 +4,7 @@ import {
   extractAttributions,
   findUnsupportedClaims,
   resolveAttribution,
+  resolveLinkProvenance,
 } from "./claims.ts";
 import { fixturePack, packWithCitableSources } from "./__fixtures__/pack.ts";
 import { canonicalUrl } from "./text.ts";
@@ -49,6 +50,37 @@ describe("source index", () => {
     expect(
       resolveAttribution(index, { kind: "name", value: "Gartner" }).source,
     ).not.toBeNull();
+  });
+
+  /**
+   * S2. Subdomain widening belongs to the SITE ORIGIN alone.
+   *
+   * The ICP conversion target's host is routinely a third-party scheduler — the
+   * repository's own fixture uses a different registrable domain for the two —
+   * and widening it handed every other tenant of that scheduler the customer's
+   * own-property status: with `https://calendly.com/acme/demo` frozen, a link
+   * to `https://evil.calendly.com/anything` resolved as first-party.
+   */
+  it("widens the site origin to its subdomains and the conversion target to nothing", () => {
+    const index = buildSourceIndex(
+      fixturePack({
+        firstParty: {
+          siteOrigin: "https://signalframe.example",
+          icpPrimaryConversionUrl: "https://calendly.com/acme/demo",
+        },
+      }),
+    );
+    const provenance = (value: string) =>
+      resolveLinkProvenance(index, { kind: "url", value });
+
+    expect(provenance("https://docs.signalframe.example/onboarding")).toBe(
+      "first_party",
+    );
+    expect(provenance("https://calendly.com/acme/demo")).toBe("first_party");
+    expect(provenance("https://evil.calendly.com/anything")).toBe("unresolved");
+    expect(provenance("https://signalframe.example.attacker.test/x")).toBe(
+      "unresolved",
+    );
   });
 });
 
@@ -217,6 +249,92 @@ describe("claim extraction boundaries", () => {
         findUnsupportedClaims(index, line(sentence)),
         sentence,
       ).toHaveLength(0);
+    }
+  });
+
+  /**
+   * Root cause two, at the extraction layer. The whole line was scanned for
+   * bare domain literals, so a domain sitting INSIDE another url's query string
+   * became a fourth attribution candidate — and "the first attribution that
+   * resolves wins" then let a host the customer does not control support the
+   * sentence carrying it.
+   */
+  it("reads no attribution out of the inside of a url", () => {
+    const attributions = extractAttributions(
+      "According to a 2024 Forrester study, 73% churn. See https://attacker.test/?u=https://signalframe.example/ for the chart.",
+    );
+
+    // The whole address is one attribution; the host buried in its query is not
+    // a second one, and it is the only one that would have resolved.
+    expect(attributions).toStrictEqual([
+      {
+        kind: "url",
+        value: "https://attacker.test/?u=https://signalframe.example/",
+      },
+    ]);
+    expect(
+      findUnsupportedClaims(
+        buildSourceIndex(fixturePack()),
+        line(
+          "According to a 2024 Forrester study, 73% churn. See https://attacker.test/?u=https://signalframe.example/ for the chart.",
+        ),
+      )[0]?.resolution.authority,
+    ).toBe("D");
+  });
+
+  /**
+   * Root cause two, at the resolution layer. Support has to come from the
+   * source the assertion ATTRIBUTES to, not from whatever else shares the line.
+   */
+  it("does not let a resolvable source elsewhere on the line support an assertion", () => {
+    const index = buildSourceIndex(
+      packWithCitableSources(["https://analyst.example/benchmark"]),
+    );
+    const hits = findUnsupportedClaims(
+      index,
+      line(
+        "According to a 2024 Forrester study, 73% of teams churn. Separately, https://analyst.example/benchmark covers pricing.",
+      ),
+    );
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.resolution.authority).toBe("D");
+  });
+
+  it("does let the link an assertion is WRITTEN as support it", () => {
+    const index = buildSourceIndex(
+      packWithCitableSources(["https://analyst.example/x"]),
+    );
+    const hits = findUnsupportedClaims(
+      index,
+      line("[Forrester](https://analyst.example/x) reports that 73% churn."),
+    );
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.resolution.authority).toBe("B");
+  });
+
+  /**
+   * S3. The entity pattern carried its OWN, shorter verb list, so a paraphrase
+   * the research-noun pattern would have caught was no assertion at all; and an
+   * article head discarded the whole match instead of retrying at the name
+   * after it, so `The Gartner panel found …` passed while `Gartner found …`
+   * was blocked.
+   */
+  it("catches an attributed statistic through the whole shared verb list", () => {
+    for (const sentence of [
+      "Forrester notes that 73% of teams abandon activation tracking.",
+      "Gartner forecasts that 73% of teams will abandon activation tracking.",
+      "Forrester revealed that 73% of teams abandon activation tracking.",
+      "Forrester observed that 73% of teams abandon activation tracking.",
+      "Forrester indicates that 73% of teams abandon activation tracking.",
+      "Forrester recorded that 73% of teams abandon activation tracking.",
+      "The Gartner panel found that 73% of teams abandon activation tracking.",
+      "the Gartner panel found that 73% of teams abandon activation tracking.",
+    ]) {
+      const hits = findUnsupportedClaims(index, line(sentence));
+      expect(hits, sentence).toHaveLength(1);
+      expect(hits[0]?.resolution.authority, sentence).toBe("D");
     }
   });
 
