@@ -1,5 +1,10 @@
 import type { QaContext } from "./context.ts";
-import { resolveAssertionSupport, type Attribution } from "./claims.ts";
+import {
+  resolveAssertionSupport,
+  resolveLinkProvenance,
+  type Attribution,
+} from "./claims.ts";
+import { citationEntry } from "./names.ts";
 import { longestCommonNgram } from "./ngram.ts";
 import { fail, pass, unevaluable, type QaRuleResult } from "./rule-types.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
@@ -17,6 +22,7 @@ import {
   truncateExcerpt,
   wordCount,
   type DraftLine,
+  type ReferenceStandard,
 } from "./text.ts";
 
 /**
@@ -433,10 +439,15 @@ const QUOTE_MARKER = /^\s{0,3}>\s?/;
  * because markdown REQUIRES a header row — it is table syntax, not a claim
  * about a source.
  */
-function referenceEntries(
-  context: QaContext,
-): readonly { readonly line: number; readonly text: string }[] {
-  const entries: { line: number; text: string }[] = [];
+interface ReferenceEntry {
+  readonly line: number;
+  readonly text: string;
+  /** What the heading over this entry promises about it. */
+  readonly standard: ReferenceStandard;
+}
+
+function referenceEntries(context: QaContext): readonly ReferenceEntry[] {
+  const entries: ReferenceEntry[] = [];
   for (const section of context.referenceSections) {
     let tableRow = -1;
     for (const block of paragraphBlocks(section.lines)) {
@@ -453,7 +464,13 @@ function referenceEntries(
           .map((cell) => cell.trim())
           .filter((cell) => cell.length > 0)
           .join(" — ");
-        if (cells.length > 0) entries.push({ line: block.line, text: cells });
+        if (cells.length > 0) {
+          entries.push({
+            line: block.line,
+            text: cells,
+            standard: section.standard,
+          });
+        }
         continue;
       }
       tableRow = -1;
@@ -461,7 +478,9 @@ function referenceEntries(
         .replace(LIST_MARKER, "")
         .replace(QUOTE_MARKER, "")
         .trim();
-      if (text.length > 0) entries.push({ line: block.line, text });
+      if (text.length > 0) {
+        entries.push({ line: block.line, text, standard: section.standard });
+      }
     }
   }
   return entries;
@@ -508,6 +527,76 @@ const SOURCE_NAME_STOP = /\s+[-–—]\s+|:\s+|,\s+(?:19|20)\d{2}\b/;
  * frozen pack. A first-party URL says where a page is; a reference entry claims
  * a source stands behind the draft, and those are different assertions.
  */
+/** Every attribution one reference entry offers, in resolution order. */
+function entryAttributions(text: string): readonly Attribution[] {
+  const attributions: Attribution[] = [];
+  for (const link of extractMarkdownLinks(text)) {
+    attributions.push({ kind: "url", value: link.target });
+  }
+  for (const url of extractUrls(text)) {
+    attributions.push({ kind: "url", value: url });
+  }
+  const stop = SOURCE_NAME_STOP.exec(text);
+  const name = (stop?.index !== undefined ? text.slice(0, stop.index) : text)
+    .replace(/\[|\]\([^)]*\)/g, " ")
+    .replace(/\s*,\s*(?:19|20)\d{2}\s*$/, "")
+    .trim();
+  if (name.length > 0) attributions.push({ kind: "name", value: name });
+  return attributions;
+}
+
+type EntryVerdict = "resolved" | "unsupported" | "unverifiable";
+
+/**
+ * What ONE reference entry is being offered as, and whether that holds.
+ *
+ * This is RL12's locator/evidence split, applied where it was missing. SC9b ran
+ * every entry through `resolveAssertionSupport` regardless of what its heading
+ * said, so three navigation sections listing the customer's own pages came back
+ * pass / blocked / blocked — and the blocked ones told the reviewer that a B2B
+ * post's internal links were unresolvable sources at authority D. Same content,
+ * same meaning, three different verdicts, one of them an accusation.
+ *
+ * The heading sets the entry's DEFAULT role and the entry's own shape may
+ * override it upward:
+ *
+ * - Under an EVIDENCE heading (`Sources`, `References`, `Bibliography`, `Works
+ *   Cited`) every entry claims a source stands behind the draft. Only external
+ *   evidence answers that, and the customer's own address never does. Unchanged.
+ * - Under a LOCATOR heading (`Further reading`, `See also`) an entry is an
+ *   ADDRESS — "here is another page" — so the customer's own address is a
+ *   complete answer. An address we cannot place is unverifiable, not
+ *   unsupported: it goes to a human, it is not blocked.
+ * - An entry that is written AS A CITATION — a name phrase carrying a year, a
+ *   quotation or an `et al.` — is evidence wherever it sits. A bibliography does
+ *   not stop being a bibliography because the heading over it says "Further
+ *   reading", so the upward override is what keeps that case blocked.
+ */
+function judgeEntry(context: QaContext, entry: ReferenceEntry): EntryVerdict {
+  const text = stripInlineCode(entry.text);
+  const attributions = entryAttributions(text);
+  const shape = citationEntry(text);
+  const asEvidence =
+    entry.standard === "evidence" || (shape !== null && shape.corroborated);
+  if (asEvidence) {
+    return resolveAssertionSupport(context.index, attributions) === null
+      ? "unsupported"
+      : "resolved";
+  }
+  const placed = attributions.some(
+    (attribution) =>
+      attribution.kind === "url" &&
+      resolveLinkProvenance(context.index, attribution) !== "unresolved",
+  );
+  if (placed) return "resolved";
+  const hasAddress = attributions.some(
+    (attribution) => attribution.kind === "url",
+  );
+  // A navigation entry with no address and no outside-looking name is prose
+  // under a navigation heading ("Read the onboarding guide"). Nothing to check.
+  return hasAddress || shape !== null ? "unverifiable" : "resolved";
+}
+
 export function checkSc9b(context: QaContext): QaRuleResult {
   const entries = referenceEntries(context);
   if (entries.length === 0) {
@@ -515,41 +604,43 @@ export function checkSc9b(context: QaContext): QaRuleResult {
       "sc9b_sources_resolve_to_pack",
       "sc9b_no_sources_section",
       context.referenceSections.length === 0
-        ? "This check RECOGNISED no section of the draft as a reference list (sources, references, citations, works cited, bibliography, further reading, see also, and their non-English equivalents), so it had no reference entry to resolve. That is what it scanned, and it is not a statement that the draft carries no reference list: a list under a heading this check does not recognise stays in the body, where RL8 and RL12 scan it — RL12 carries a bibliographic-entry shape for exactly that case."
+        ? "This check RECOGNISED no section of the draft as a reference list (sources, references, citations, works cited, bibliography, further reading, see also, and their non-English equivalents), so it had no reference entry to resolve. That is what it scanned, and it is not a statement that the draft carries no reference list: a list under a heading this check does not recognise — and a region whose heading says `Sources` but whose content is running prose rather than entries — stays in the body, where RL8 and RL12 scan it."
         : `${context.referenceSections.length} section(s) were recognised as a reference list but carry no entry line, so there was nothing to resolve. This reports what it scanned, not what the draft contains.`,
     );
   }
-  const unresolved: Finding[] = [];
+  const unsupported: Finding[] = [];
+  const unverifiable: Finding[] = [];
   for (const entry of entries) {
-    const text = stripInlineCode(entry.text);
-    const attributions: Attribution[] = [];
-    for (const link of extractMarkdownLinks(text)) {
-      attributions.push({ kind: "url", value: link.target });
-    }
-    for (const url of extractUrls(text)) {
-      attributions.push({ kind: "url", value: url });
-    }
-    const stop = SOURCE_NAME_STOP.exec(text);
-    const name = (stop?.index !== undefined ? text.slice(0, stop.index) : text)
-      .replace(/\[|\]\([^)]*\)/g, " ")
-      .replace(/\s*,\s*(?:19|20)\d{2}\s*$/, "")
-      .trim();
-    if (name.length > 0) attributions.push({ kind: "name", value: name });
-    if (resolveAssertionSupport(context.index, attributions) === null) {
-      unresolved.push({ line: entry.line, excerpt: entry.text });
+    const verdict = judgeEntry(context, entry);
+    if (verdict === "unsupported") {
+      unsupported.push({ line: entry.line, excerpt: entry.text });
+    } else if (verdict === "unverifiable") {
+      unverifiable.push({ line: entry.line, excerpt: entry.text });
     }
   }
-  return unresolved.length > 0
-    ? fail(
-        "sc9b_sources_resolve_to_pack",
-        "sc9b_source_unresolved",
-        `${unresolved.length} of ${entries.length} reference entry(ies) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}. ${context.index.citableCount === 0 ? "This run retrieved no external research at all, so NOTHING external can be confirmed from our records — this is a statement that the reference is unverifiable here, not evidence that it was invented. A human has to check each entry." : "The pack is assembled only from records the customer confirmed, so an entry that does not resolve names a source we do not hold."}`,
-      )
-    : pass(
-        "sc9b_sources_resolve_to_pack",
-        "sc9b_sources_resolve",
-        `All ${entries.length} reference entry(ies) resolve to the frozen research pack.`,
-      );
+  if (unsupported.length > 0) {
+    return fail(
+      "sc9b_sources_resolve_to_pack",
+      "sc9b_source_unresolved",
+      `${unsupported.length} of ${entries.length} reference entry(ies) resolve to no source in the frozen research pack (authority D): ${excerptList(unsupported)}. ${context.index.citableCount === 0 ? "This run retrieved no external research at all, so NOTHING external can be confirmed from our records — this is a statement that the reference is unverifiable here, not evidence that it was invented. A human has to check each entry." : "The pack is assembled only from records the customer confirmed, so an entry that does not resolve names a source we do not hold."}`,
+    );
+  }
+  if (unverifiable.length > 0) {
+    // A navigation heading promises destinations, not evidence. An entry under
+    // one that points somewhere we cannot place is UNCHECKED, and saying so is
+    // the whole truth available: calling it unsupported would repeat the mistake
+    // of reporting a B2B post's own further-reading list as a fabrication.
+    return unevaluable(
+      "sc9b_sources_resolve_to_pack",
+      "sc9b_locator_unverifiable",
+      `${unverifiable.length} of ${entries.length} entry(ies) sit under a navigation heading (further reading, see also) and point somewhere the frozen inputs cannot place: ${excerptList(unverifiable)}. A heading like that offers destinations rather than evidence, so the customer's own pages answer it completely and these do not — but "we cannot place this address" is not "this source does not exist", and this check will not say the second when it only knows the first. A reviewer confirms them by hand.`,
+    );
+  }
+  return pass(
+    "sc9b_sources_resolve_to_pack",
+    "sc9b_sources_resolve",
+    `All ${entries.length} reference entry(ies) resolve: every entry under an evidence heading (sources, references, bibliography, works cited) resolves to the frozen research pack, and every entry under a navigation heading (further reading, see also) points at the customer's own frozen web identity.`,
+  );
 }
 
 export function checkSc10(context: QaContext): QaRuleResult {

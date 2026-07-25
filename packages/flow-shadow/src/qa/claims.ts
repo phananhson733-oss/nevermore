@@ -524,10 +524,49 @@ const ATTRIBUTED_GROUP: readonly (number | null)[] = [null, 1, 1];
  *    number in it is the shape that needs a source; "Teams find the milestone
  *    that matters faster" is prose.
  */
+/**
+ * Two bounds here are load-bearing, and each replaced a defect.
+ *
+ * 1. **The name run is capped at eight tokens** (`cleanNameCandidate` already
+ *    truncates there, so nothing real is lost). Unbounded, the run is a greedy
+ *    star that backtracks one token at a time from every start position, which
+ *    is O(n²) in the length of a run of capitalized words. A single 396,000-
+ *    character line — inside the 400,000-character contract — took 36 seconds
+ *    of pure backtracking; the same text split across lines took 184ms. A cap
+ *    makes the work per start position constant.
+ * 2. **The gap between the name and the verb admits numbers and bracketed
+ *    decorations.** It used to be lowercase words only, so `Forrester's 2024
+ *    data puts churn at 42%` broke at `2024` and was no assertion at all while
+ *    `Forrester's data puts churn at 42%` was blocked — one token of difference
+ *    between a fabrication and a clean pass. The same held for a bracket a
+ *    reader sees in the rendered name (`[Forrester [Inc]](url) reports that
+ *    73% …`). Emphasis is stripped upstream in `flattenLine`, so the `**2024**`
+ *    spelling reaches here as `2024`.
+ */
 const ENTITY_ASSERTION = new RegExp(
-  `(?<![\\w'’-])((?:[A-Z][A-Za-z0-9&.'’-]*)(?:[ ](?:[A-Z][A-Za-z0-9&.'’-]*|&))*)((?:[ ][a-z][A-Za-z-]*){0,3})[ ]${ASSERTION_VERB_FRAME}[^.!?]{0,80}?\\d`,
+  `(?<![\\w'’-])((?:[A-Z][A-Za-z0-9&.'’-]*)(?:[ ](?:[A-Z][A-Za-z0-9&.'’-]*|&)){0,7})((?:[ ](?:[a-z][A-Za-z-]*|\\d[\\w.'’-]*|\\[[^\\]\\n]{0,40}\\])){0,3})[ ]${ASSERTION_VERB_FRAME}[^.!?]{0,80}?\\d`,
   "gd",
 );
+
+/**
+ * `According to <Name>, <statistic>` and `Per <Name>, <statistic>`.
+ *
+ * The frame is an explicit attribution — the writer is telling the reader where
+ * this came from — so it needs no research noun and no assertion verb. Without
+ * this, `According to Forrester Research, 73% …` was blocked purely because the
+ * company's last word happens to be a research noun, while `According to
+ * Forrester, 73% …`, `According to Gartner, onboarding time fell 40%` and `Per
+ * Forrester, churn is 42%` all passed. Three of the four are the same sentence.
+ *
+ * A statistic is still required, and the name still goes through
+ * `trimNameSpan`, so `According to the dashboard, 12 accounts stalled` (no
+ * capitalized name) and `According to our own export, …` (possessive) stay out.
+ */
+// The frame is spelled with an explicit case class rather than carried on the
+// `i` flag: `i` would also fold `[A-Z]` in the name group, and the whole point
+// of that group is that the name is CAPITALIZED.
+const ATTRIBUTION_FRAME_ASSERTION =
+  /\b(?:[Aa]ccording\s+[Tt]o|[Pp]er)\s+((?:[A-Z][A-Za-z0-9&.'’-]*)(?:[ ](?:[A-Z][A-Za-z0-9&.'’-]*|&)){0,7})[^.!?]{0,80}?\d/dg;
 
 /** Heads that are a pronoun or a possessive: never an outside authority. */
 const PRONOUN_HEAD =
@@ -576,18 +615,20 @@ function trimNameSpan(text: string, span: FlatSpan): FlatSpan | null {
 
 function entityAssertions(text: string): readonly AssertionMatch[] {
   const found: AssertionMatch[] = [];
-  for (const match of text.matchAll(ENTITY_ASSERTION)) {
-    if (match.index === undefined) continue;
-    const nameSpan = groupSpan(match, 1);
-    if (nameSpan === null) continue;
-    const trimmed = trimNameSpan(text, nameSpan);
-    if (trimmed === null) continue;
-    if (POSSESSIVE_BEFORE_NAME.test(text.slice(0, match.index))) continue;
-    found.push({
-      index: match.index,
-      excerpt: match[0],
-      attributedTo: trimmed,
-    });
+  for (const pattern of [ENTITY_ASSERTION, ATTRIBUTION_FRAME_ASSERTION]) {
+    for (const match of text.matchAll(pattern)) {
+      if (match.index === undefined) continue;
+      const nameSpan = groupSpan(match, 1);
+      if (nameSpan === null) continue;
+      const trimmed = trimNameSpan(text, nameSpan);
+      if (trimmed === null) continue;
+      if (POSSESSIVE_BEFORE_NAME.test(text.slice(0, nameSpan.start))) continue;
+      found.push({
+        index: match.index,
+        excerpt: match[0],
+        attributedTo: trimmed,
+      });
+    }
   }
   return found;
 }

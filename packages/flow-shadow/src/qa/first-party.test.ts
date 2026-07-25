@@ -256,6 +256,28 @@ describe("first-party identity is not evidence", () => {
     expect(detail).not.toMatch(/fabricat/i);
   });
 
+  /**
+   * The role split has to hold at the PACKAGE BOUNDARY too.
+   *
+   * A purity guard stops the rules from calling `resolveAttribution` — it
+   * answers "does the pack hold anything this names?", and one link to the
+   * customer's own site answers it yes. But the guard walks this package's
+   * import closure only, and `qa/index.ts` re-exported the function, so any
+   * future consumer in `apps/` could import it and reintroduce "did ANYTHING
+   * resolve?" one line outside the guard's range. There is no such caller yet,
+   * which is the only reason removing it was free.
+   */
+  it("keeps the low-level lookup off the package's public surface", async () => {
+    const surface = await import("./index.ts");
+    const packageSurface = await import("../index.ts");
+
+    expect("resolveAttribution" in surface).toBe(false);
+    expect("resolveAttribution" in packageSurface).toBe(false);
+    // The two questions a consumer MAY ask are still exported.
+    expect(typeof surface.resolveAssertionSupport).toBe("function");
+    expect(typeof surface.resolveLinkProvenance).toBe("function");
+  });
+
   it("grades the first-party sources `A`, never `D`", () => {
     const firstParty = fixturePack().sources.filter((source) =>
       source.kind.startsWith("first_party"),

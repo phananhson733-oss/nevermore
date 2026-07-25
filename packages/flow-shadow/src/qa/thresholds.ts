@@ -40,7 +40,24 @@ export const QA_THRESHOLDS = Object.freeze({
   scdupMaxBriefNgram: 40,
   /** Advisory only. Never compared against for gating (decision D-B). */
   citabilityAdvisoryFloor: 50,
-  /** Upper bound on input size: the n-gram DP is O(n·m). */
+  /**
+   * Upper bound on input size.
+   *
+   * The claim this comment used to make — that the deterministic checks are
+   * "guaranteed to terminate within" this bound — was FALSE, and the guarantee
+   * was doing real work: `evaluateDraftQa` prints it to the operator whenever a
+   * draft is rejected for length. A single 396,000-character line, comfortably
+   * inside the bound, took 36 seconds in `ENTITY_ASSERTION`'s backtracking; the
+   * identical text split across 36,000 lines took 184ms, because the cost was
+   * quadratic in the length of ONE line rather than in the draft.
+   *
+   * What is true now, and all that is claimed: every pattern that scans a line
+   * has a bounded repetition count (the name runs cap at eight tokens, the
+   * bracket and tag scans cap their bodies), and the name predicate is a token
+   * scan that cannot backtrack at all. The remaining super-linear cost is the
+   * n-gram DP, which is O(n·m) over TOKENS and is separately capped by
+   * `maxNgramTokens`. This bound exists to keep that product finite.
+   */
   maxDraftChars: 400_000,
   /** Token cap for the n-gram DP, independent of the character bound. */
   maxNgramTokens: 6_000,

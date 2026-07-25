@@ -15,6 +15,8 @@
  *    so every reported line number still refers to the original draft.
  */
 
+import { citationEntry, stripEmphasis } from "./names.ts";
+
 export interface DraftLine {
   /** 1-based, relative to the original draft text. */
   readonly line: number;
@@ -273,8 +275,37 @@ export function sectionBody(
 const REFERENCE_TITLE_WORD =
   /^(?:sources?|references?|citations?|bibliography|bibliographies|works|cited|reading|readings|further|related|additional|more|other|external|see|also|list|notes?|footnotes?|endnotes?|links?|and|the|of|our|a|an)$/;
 
-const REFERENCE_TITLE_CORE =
-  /^(?:sources?|references?|citations?|bibliography|bibliographies|cited|reading|readings|footnotes?|endnotes?|see)$/;
+/**
+ * The two STANDARDS a reference heading can set, split apart.
+ *
+ * They used to be one list, and mixing them is what made three headings that
+ * mean the same thing to a reader behave three different ways. `## Further
+ * reading`, `## See Also` and `## Related links` listing the customer's OWN
+ * pages came back blocked, blocked and passed — and the blocked ones carried
+ * the gate's strongest verdict, with a detail calling a B2B post's internal
+ * navigation an unresolvable source at authority D. That is the
+ * false-accusation failure, arriving through heading recognition instead of
+ * through a citation cue.
+ *
+ * - **evidence** (`sources`, `references`, `citations`, `bibliography`, `works
+ *   cited`, `footnotes`): the heading says outside sources stand behind the
+ *   draft. Its entries must resolve to evidence, and the customer's own web
+ *   identity is never evidence. Unchanged strictness.
+ * - **locator** (`further reading`, `see also`): the heading says "more pages to
+ *   go to". Its entries are ADDRESSES, so the customer's own address is a
+ *   complete answer to one — exactly the locator/evidence split RL12 already
+ *   makes for a bare URL in prose.
+ *
+ * The section standard sets the DEFAULT role of its entries; an entry may still
+ * override it upward on its own shape (a bibliographic citation written under a
+ * navigation heading is still a citation), never downward.
+ */
+export type ReferenceStandard = "evidence" | "locator";
+
+const REFERENCE_TITLE_CORE_EVIDENCE =
+  /^(?:sources?|references?|citations?|bibliography|bibliographies|cited|footnotes?|endnotes?)$/;
+
+const REFERENCE_TITLE_CORE_LOCATOR = /^(?:reading|readings|see)$/;
 
 /**
  * Reference-list headings that are not ASCII words.
@@ -284,21 +315,52 @@ const REFERENCE_TITLE_CORE =
  * identities, not language). A `## 参考文献` list of fabricated references was
  * therefore invisible for exactly the same reason `## Works Cited` once was.
  * These count as both vocabulary and core word: each is a whole heading on its
- * own, not a word that combines.
+ * own, not a word that combines. They carry the same evidence/locator split as
+ * their English counterparts — `延伸阅读` IS `further reading`.
  */
-const REFERENCE_TITLE_CORE_NON_ASCII =
-  /^(?:参考文献|參考文獻|参考资料|参考資料|參考資料|资料来源|資料來源|引用文献|引用文獻|延伸阅读|延伸閱讀|参考|參考|出典|出处|出處)$/;
+const REFERENCE_TITLE_CORE_NON_ASCII_EVIDENCE =
+  /^(?:参考文献|參考文獻|参考资料|参考資料|參考資料|资料来源|資料來源|引用文献|引用文獻|参考|參考|出典|出处|出處)$/;
+
+const REFERENCE_TITLE_CORE_NON_ASCII_LOCATOR = /^(?:延伸阅读|延伸閱讀)$/;
 
 function isReferenceTitleWord(word: string): boolean {
   return (
-    REFERENCE_TITLE_WORD.test(word) || REFERENCE_TITLE_CORE_NON_ASCII.test(word)
+    REFERENCE_TITLE_WORD.test(word) ||
+    REFERENCE_TITLE_CORE_NON_ASCII_EVIDENCE.test(word) ||
+    REFERENCE_TITLE_CORE_NON_ASCII_LOCATOR.test(word)
   );
 }
 
-function isReferenceTitleCore(word: string): boolean {
+function isEvidenceTitleCore(word: string): boolean {
   return (
-    REFERENCE_TITLE_CORE.test(word) || REFERENCE_TITLE_CORE_NON_ASCII.test(word)
+    REFERENCE_TITLE_CORE_EVIDENCE.test(word) ||
+    REFERENCE_TITLE_CORE_NON_ASCII_EVIDENCE.test(word)
   );
+}
+
+function isLocatorTitleCore(word: string): boolean {
+  return (
+    REFERENCE_TITLE_CORE_LOCATOR.test(word) ||
+    REFERENCE_TITLE_CORE_NON_ASCII_LOCATOR.test(word)
+  );
+}
+
+/**
+ * Which standard a heading sets, or `null` when it is not a reference list.
+ *
+ * Evidence wins a tie: `## Sources and further reading` promises sources, and
+ * the weaker word next to it does not withdraw the promise.
+ */
+export function referenceSectionStandard(
+  heading: string,
+): ReferenceStandard | null {
+  const words = normalizeHeading(heading)
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+  if (words.length === 0) return null;
+  if (!words.every(isReferenceTitleWord)) return null;
+  if (words.some(isEvidenceTitleCore)) return "evidence";
+  return words.some(isLocatorTitleCore) ? "locator" : null;
 }
 
 /**
@@ -322,12 +384,7 @@ function isReferenceTitleCore(word: string): boolean {
  * here costs a differently-worded block, not a silent pass.
  */
 export function isReferenceSectionTitle(heading: string): boolean {
-  const words = normalizeHeading(heading)
-    .split(/\s+/)
-    .filter((word) => word.length > 0);
-  if (words.length === 0) return false;
-  if (!words.every(isReferenceTitleWord)) return false;
-  return words.some(isReferenceTitleCore);
+  return referenceSectionStandard(heading) !== null;
 }
 
 /**
@@ -350,6 +407,8 @@ export function referencePseudoHeading(text: string): string | null {
 
 export interface ReferenceSection {
   readonly title: string;
+  /** What the heading promises about its entries. */
+  readonly standard: ReferenceStandard;
   /** Line of the heading that opened the section. */
   readonly headingLine: number;
   /** Every line under the heading, up to the next heading of the same level. */
@@ -378,15 +437,62 @@ export interface DraftPartition {
 
 const PSEUDO_HEADING_LEVEL = 7;
 
+const FOOTNOTE_DEFINITION_LINE = /^\s{0,3}\[\^[^\]\s]+\]:/;
+const HTML_LIST_LINE = /<(?:li|dd|dt|ul|ol|dl)\b/i;
+
+/**
+ * Does the region under a reference heading actually PRESENT as a list of
+ * entries?
+ *
+ * The heading text had a guard; what followed it had none. So a bold pseudo
+ * heading — `**Further reading**`, which models write constantly — claimed the
+ * next two paragraphs of ordinary prose, and SC9b read every non-empty line
+ * under it as a reference entry: two perfectly honest sentences were reported
+ * as unresolvable references at authority D. A heading only names a region; it
+ * cannot make the region be what it says.
+ *
+ * The test is the same one the entry predicate uses, so it does not add a second
+ * vocabulary that can drift from the first: entry FORM (a list item, a table
+ * row, a blockquote, a footnote definition, an HTML list element), an ADDRESS,
+ * or a line that reads as a name rather than as a sentence. A region with none
+ * of those stays in the body, where the red lines scan it — the conservative
+ * direction this reader always fails in.
+ */
+function presentsAsEntryList(lines: readonly DraftLine[]): boolean {
+  for (const entry of lines) {
+    const text = entry.text.trim();
+    if (text.length === 0) continue;
+    if (
+      isListItem(text) ||
+      isTableRow(text) ||
+      isBlockquote(text) ||
+      FOOTNOTE_DEFINITION_LINE.test(entry.text) ||
+      HTML_LIST_LINE.test(text)
+    ) {
+      return true;
+    }
+    if (extractUrls(text).length > 0) return true;
+    if (extractMarkdownLinks(text).length > 0) return true;
+    if (citationEntry(stripInlineCode(text)) !== null) return true;
+  }
+  return false;
+}
+
+interface OpenSection {
+  title: string;
+  standard: ReferenceStandard;
+  headingLine: number;
+  headingText: string;
+  level: number;
+  lines: DraftLine[];
+}
+
 export function partitionDraft(view: DraftView): DraftPartition {
-  const body: DraftLine[] = [];
-  const reference: {
-    title: string;
-    headingLine: number;
-    level: number;
-    lines: DraftLine[];
-  }[] = [];
-  let open: (typeof reference)[number] | null = null;
+  const segments: (
+    | { readonly kind: "body"; readonly line: DraftLine }
+    | { readonly kind: "reference"; readonly section: OpenSection }
+  )[] = [];
+  let open: OpenSection | null = null;
 
   const headingByLine = new Map(
     view.headings.map((heading) => [heading.line, heading]),
@@ -396,47 +502,74 @@ export function partitionDraft(view: DraftView): DraftPartition {
     const heading = headingByLine.get(entry.line);
     if (heading) {
       if (open !== null && heading.level <= open.level) open = null;
-      if (open === null && isReferenceSectionTitle(heading.text)) {
-        open = {
+      const standard =
+        open === null ? referenceSectionStandard(heading.text) : null;
+      if (standard !== null) {
+        const section: OpenSection = {
           title: heading.text,
+          standard,
           headingLine: heading.line,
+          headingText: entry.text,
           level: heading.level,
           lines: [],
         };
-        reference.push(open);
+        open = section;
+        segments.push({ kind: "reference", section });
         continue;
       }
     }
     // A bold line standing in for a heading. Level 7 is below every real
     // heading, so the next `#` of ANY depth closes the section — a pseudo
     // heading may not swallow the rest of the document.
-    const pseudo =
+    const pseudoTitle =
       heading === undefined ? referencePseudoHeading(entry.text) : null;
-    if (pseudo !== null) {
-      open = {
-        title: pseudo,
+    const pseudoStandard =
+      pseudoTitle === null ? null : referenceSectionStandard(pseudoTitle);
+    if (pseudoTitle !== null && pseudoStandard !== null) {
+      const section: OpenSection = {
+        title: pseudoTitle,
+        standard: pseudoStandard,
         headingLine: entry.line,
+        headingText: entry.text,
         level: PSEUDO_HEADING_LEVEL,
         lines: [],
       };
-      reference.push(open);
+      open = section;
+      segments.push({ kind: "reference", section });
       continue;
     }
     if (open !== null) {
       open.lines.push(entry);
       continue;
     }
-    body.push(entry);
+    segments.push({ kind: "body", line: entry });
   }
 
-  return {
-    body,
-    reference: reference.map((section) => ({
+  // Second pass: a heading that named a region which is not a list of entries
+  // never claimed it. Rebuilding from segments rather than deciding inline is
+  // what keeps the partition TOTAL — every prose line lands in exactly one half
+  // whichever way the decision goes.
+  const body: DraftLine[] = [];
+  const reference: ReferenceSection[] = [];
+  for (const segment of segments) {
+    if (segment.kind === "body") {
+      body.push(segment.line);
+      continue;
+    }
+    const section = segment.section;
+    if (!presentsAsEntryList(section.lines)) {
+      body.push({ line: section.headingLine, text: section.headingText });
+      body.push(...section.lines);
+      continue;
+    }
+    reference.push({
       title: section.title,
+      standard: section.standard,
       headingLine: section.headingLine,
       lines: section.lines,
-    })),
-  };
+    });
+  }
+  return { body, reference };
 }
 
 /** ASCII-class tokenizer. Locale-independent by construction (purity rule 1). */
@@ -547,9 +680,98 @@ export function extractMarkdownLinks(text: string): readonly MarkdownLink[] {
   }));
 }
 
-const MARKDOWN_LINK = /\[([^\]\n]*)\]\(([^)\s]+)[^)]*\)/g;
 const INLINE_CODE = /`[^`]*`/g;
 const URL_IN_TEXT = /(?:https?:\/\/|www\.)[^\s<>()[\]"']+/gi;
+
+interface ScannedLink {
+  readonly start: number;
+  /** Exclusive, past the closing `)`. */
+  readonly end: number;
+  readonly label: string;
+  readonly target: string;
+}
+
+/**
+ * CommonMark inline links, SCANNED rather than pattern-matched.
+ *
+ * The regex this replaced was `\[([^\]\n]*)\]\(...\)` — a link label that may
+ * not contain a bracket. CommonMark allows balanced brackets in a label, and
+ * models write them: `[Forrester [Inc]](url)` and `[the 2024 benchmark
+ * [PDF]](url)` render as ordinary links. Failing to parse them did not merely
+ * lose the link; it put the raw URL back into the sentence text, where it was
+ * harvested as a bare URL and classified as a LOCATOR — so the same sentence
+ * that was blocked with the link parsed came back `passed` with one extra pair
+ * of brackets, because a first-party address answers a locator. RL12b could not
+ * see the link at all.
+ *
+ * A scan also cannot backtrack, which is the property the rest of this file
+ * needs (see `names.ts` on the quadratic name-run regex).
+ */
+function scanMarkdownLinks(source: string): readonly ScannedLink[] {
+  const links: ScannedLink[] = [];
+  let index = 0;
+  while (index < source.length) {
+    const char = source[index];
+    if (char === "\\") {
+      index += 2;
+      continue;
+    }
+    if (char !== "[") {
+      index += 1;
+      continue;
+    }
+    let depth = 1;
+    let cursor = index + 1;
+    while (cursor < source.length && depth > 0) {
+      const current = source[cursor];
+      if (current === "\\") {
+        cursor += 2;
+        continue;
+      }
+      if (current === "\n") break;
+      if (current === "[") depth += 1;
+      else if (current === "]") depth -= 1;
+      cursor += 1;
+    }
+    if (depth !== 0 || source[cursor] !== "(") {
+      index += 1;
+      continue;
+    }
+    const labelEnd = cursor - 1;
+    let parens = 1;
+    let close = cursor + 1;
+    while (close < source.length && parens > 0) {
+      const current = source[close];
+      if (current === "\\") {
+        close += 2;
+        continue;
+      }
+      if (current === "\n") break;
+      if (current === "(") parens += 1;
+      else if (current === ")") parens -= 1;
+      if (parens === 0) break;
+      close += 1;
+    }
+    if (parens !== 0) {
+      index += 1;
+      continue;
+    }
+    const destination = source.slice(cursor + 1, close).trim();
+    const target = (destination.split(/\s+/)[0] ?? "").replace(/^<|>$/g, "");
+    if (target.length === 0) {
+      index += 1;
+      continue;
+    }
+    links.push({
+      start: index,
+      end: close + 1,
+      label: source.slice(index + 1, labelEnd),
+      target,
+    });
+    index = close + 1;
+  }
+  return links;
+}
 
 export interface FlatSpan {
   readonly start: number;
@@ -595,22 +817,24 @@ export interface FlatLine {
 }
 
 export function flattenLine(raw: string): FlatLine {
-  const source = raw.replace(INLINE_CODE, " ");
+  // Emphasis is typography, so it is removed before anything reads the line:
+  // `Forrester's **2024** data puts churn at 42%` has to be the same sentence
+  // as `Forrester's 2024 data puts churn at 42%`, and it was not — the second
+  // was blocked and the first passed.
+  const source = stripEmphasis(raw.replace(INLINE_CODE, " "));
   const links: FlatLink[] = [];
   let text = "";
   let cursor = 0;
-  for (const match of source.matchAll(MARKDOWN_LINK)) {
-    if (match.index === undefined) continue;
-    text += source.slice(cursor, match.index);
-    const label = match[1] ?? "";
+  for (const link of scanMarkdownLinks(source)) {
+    text += source.slice(cursor, link.start);
     links.push({
       start: text.length,
-      end: text.length + label.length,
-      label,
-      target: match[2] ?? "",
+      end: text.length + link.label.length,
+      label: link.label,
+      target: link.target,
     });
-    text += label;
-    cursor = match.index + match[0].length;
+    text += link.label;
+    cursor = link.end;
   }
   text += source.slice(cursor);
 
@@ -687,6 +911,15 @@ export interface ParagraphBlock {
   readonly line: number;
   readonly text: string;
   readonly kind: "prose" | "list" | "table" | "quote";
+  /**
+   * How many source lines this block was joined from.
+   *
+   * A reference entry occupies ONE line; a paragraph of prose usually does not.
+   * That is the only thing separating a bare bibliography entry written without
+   * a list marker from the running text around it, so the count is carried
+   * rather than recomputed by whoever needs it.
+   */
+  readonly lines: number;
 }
 
 /** Group masked prose lines into blocks separated by blank lines. */
@@ -705,7 +938,12 @@ export function paragraphBlocks(
         .join(" ")
         .trim();
       if (text.length > 0) {
-        blocks.push({ line: first.line, text, kind: blockKind(first.text) });
+        blocks.push({
+          line: first.line,
+          text,
+          kind: blockKind(first.text),
+          lines: buffer.length,
+        });
       }
     }
     buffer = [];
@@ -716,12 +954,17 @@ export function paragraphBlocks(
       flush();
       continue;
     }
-    if (isListItem(entry.text) || isTableRow(entry.text)) {
+    if (
+      isListItem(entry.text) ||
+      isTableRow(entry.text) ||
+      isMarkupItem(entry.text)
+    ) {
       flush();
       blocks.push({
         line: entry.line,
         text: entry.text.trim(),
         kind: blockKind(entry.text),
+        lines: 1,
       });
       continue;
     }
@@ -729,6 +972,23 @@ export function paragraphBlocks(
   }
   flush();
   return blocks;
+}
+
+/**
+ * A line that is a LIST in a markup a reader sees but `-`/`*` does not cover: a
+ * definition-list term line (`: 2024 analyst report`) and any HTML list markup a
+ * model emits (`<ul>`, `<li>…</li>`).
+ *
+ * They are separated into their own blocks for the same reason list items are:
+ * joined into the surrounding paragraph, an entry stops occupying an entry
+ * position, and the bibliography written in either markup walked past the whole
+ * gate. This is markdown/HTML syntax, not a vocabulary of citation forms.
+ */
+const MARKUP_ITEM =
+  /^\s{0,3}(?::\s+\S|<\/?(?:ul|ol|li|dl|dt|dd|table|tr|td|th|p)\b)/i;
+
+function isMarkupItem(text: string): boolean {
+  return MARKUP_ITEM.test(text);
 }
 
 function blockKind(text: string): ParagraphBlock["kind"] {

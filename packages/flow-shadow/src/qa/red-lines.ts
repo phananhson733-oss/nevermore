@@ -9,6 +9,7 @@ import {
 import { jaccard, recall, shingles } from "./ngram.ts";
 import { fail, pass, unevaluable, type QaRuleResult } from "./rule-types.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
+import { citationEntry, parentheticalCitations } from "./names.ts";
 import {
   flattenLine,
   isHeadingLine,
@@ -394,7 +395,7 @@ export function checkRl8(context: QaContext): QaRuleResult {
       "rl8_unsupported_claim",
       "rl8_all_claims_resolved",
       hits.length === 0
-        ? "No sentence in the scanned body matched an external-research assertion pattern. That is a statement about what this deterministic scan found, not a guarantee that the draft asserts nothing: the patterns catch research nouns, `according to` frames and named-entity claims carrying a statistic, and a claim phrased outside those shapes would not be seen here."
+        ? "No sentence in the scanned body matched an external-research assertion pattern. That is a statement about what this deterministic scan found, not a guarantee that the draft asserts nothing. Exactly four shapes are scanned for: a research noun with an assertion verb near it; `according to`/`per` followed by a research noun; a year in front of a titled study; and a capitalized name followed by an assertion verb or by `according to`/`per`, in a sentence that also carries a number. EVERY named-entity shape requires that number, so an attributed claim with no statistic in it — and any claim phrased outside these four shapes — is not seen here."
         : `All ${hits.length} external-research assertion(s) resolve to a source the frozen research pack carries.`,
     );
   }
@@ -509,8 +510,29 @@ export function checkRl13(context: QaContext): QaRuleResult {
  */
 type MarkerRole = "locator" | "evidence";
 
+/**
+ * How sure this rule is that the marker is a reference AT ALL.
+ *
+ * Recognition and resolution are separate questions, and in Slice 2 only the
+ * first one has any information in it: the frozen pack retrieves nothing
+ * external, so "did it resolve?" is the constant `no` and recognition alone
+ * decides what gets reported. That makes the confidence of a recognition into a
+ * product decision rather than an implementation detail.
+ *
+ * - `high` — the thing is unmistakably offered as a source: an address, a
+ *   footnote, an `et al.`, a name beside a year, a link a sentence attributes a
+ *   claim to. Reporting it as unsupported is a statement we can defend.
+ * - `low` — it READS like a reference (an outside-looking name phrase where an
+ *   entry belongs) but carries no second signal. It could be a product name or
+ *   a section title. `blocked` here would be the gate asserting more than it
+ *   knows, so the honest output is "we could not judge this — a human must",
+ *   which is `unevaluable` and forces `needs_review`.
+ */
+type MarkerConfidence = "high" | "low";
+
 interface CitationMarker extends Finding {
   readonly role: MarkerRole;
+  readonly confidence: MarkerConfidence;
   readonly attributions: readonly Attribution[];
 }
 
@@ -534,11 +556,11 @@ interface CitationMarker extends Finding {
  * capitalized phrase before it.
  */
 const REFERENCE_ENTRY_SHAPE =
-  /(?:^|[-*+]\s+|\d+[.)]\s+|,\s+|;\s*|\|\s*|[—–]\s*)((?:[A-Z][A-Za-z0-9&.'’-]+)(?:\s+(?:[A-Z][A-Za-z0-9&.'’-]*|and|of|for|the|de|van|der|&))*),\s*\(?(?:19|20)\d{2}\)?/;
+  /(?:^|[-*+]\s+|\d+[.)]\s+|,\s+|;\s*|\|\s*|[—–]\s*)((?:[A-Z][A-Za-z0-9&.'’-]+)(?:\s+(?:[A-Z][A-Za-z0-9&.'’-]*|and|of|for|the|de|van|der|&)){0,7}),\s*\(?(?:19|20)\d{2}\)?/;
 
 /** A trailing `— Name, 2024` / `— Name (2024)` endnote is an attribution. */
 const ENDNOTE_ATTRIBUTION =
-  /[—–]\s*[A-Z][A-Za-z0-9&.'’-]+(?:\s+[A-Z][A-Za-z0-9&.'’-]*)*,?\s*\(?(?:19|20)\d{2}\)?\s*$/;
+  /[—–]\s*[A-Z][A-Za-z0-9&.'’-]+(?:\s+[A-Z][A-Za-z0-9&.'’-]*){0,7},?\s*\(?(?:19|20)\d{2}\)?\s*$/;
 
 const HALLUCINATED_CITATION_SHAPES: readonly RegExp[] = [
   /\bet al\.?/i,
@@ -578,6 +600,64 @@ function sentenceAttributions(
     .map(({ kind, value }) => ({ kind, value }));
 }
 
+/**
+ * A position where a draft LISTS something rather than says something.
+ *
+ * A bibliography entry sits in one of these; a sentence does not. This is what
+ * keeps the name predicate below off running prose — `RevOps leads evaluating
+ * onboarding tooling own this work.` is a claim about the world, and no reading
+ * of it is a reference entry.
+ *
+ * A one-line prose block counts because the plain-paragraph bibliography is
+ * real: `Forrester Digital Experience Report, 2024` on its own line, with no
+ * list marker, is the exact shape that used to pass while the hyphenated
+ * version was blocked. A block joined from several lines is a paragraph.
+ */
+function isEntryPosition(block: {
+  readonly kind: "prose" | "list" | "table" | "quote";
+  readonly lines: number;
+}): boolean {
+  return block.kind !== "prose" || block.lines === 1;
+}
+
+/**
+ * The bibliography backstop, asked the other way round.
+ *
+ * It used to ask "does this line match a bibliographic FORM?" and carried a list
+ * of them. Every rework showed the same result: the identical fabricated entry
+ * escaped by dropping the year, reordering it, changing the punctuation, or
+ * moving into a table cell — each one token away from a form that was caught.
+ * The list cannot be finished, because the model is not drawing from it.
+ *
+ * So this asks: at an entry position, is there a capitalized name phrase that
+ * dominates the entry? That question survives all of those mutations, and its
+ * answer carries a confidence (see `MarkerConfidence`) rather than pretending
+ * that "looks like a name" and "is offered as a source" are the same claim.
+ */
+function entryCitationMarkers(
+  lines: readonly DraftLine[],
+): readonly CitationMarker[] {
+  const markers: CitationMarker[] = [];
+  for (const block of paragraphBlocks(lines)) {
+    if (!isEntryPosition(block)) continue;
+    const flat = flattenLine(block.text);
+    const shape = citationEntry(flat.text);
+    if (shape === null) continue;
+    const located = locatedAttributions(flat).map(({ kind, value }) => ({
+      kind,
+      value,
+    }));
+    markers.push({
+      line: block.line,
+      excerpt: block.text,
+      role: "evidence",
+      confidence: shape.corroborated ? "high" : "low",
+      attributions: [...located, { kind: "name", value: shape.name }],
+    });
+  }
+  return markers;
+}
+
 function citationMarkers(
   lines: readonly DraftLine[],
 ): readonly CitationMarker[] {
@@ -597,6 +677,7 @@ function citationMarkers(
         line: entry.line,
         excerpt: url.value,
         role: "locator",
+        confidence: "high",
         attributions: [{ kind: "url", value: url.value }],
       });
     }
@@ -606,6 +687,7 @@ function citationMarkers(
         line: entry.line,
         excerpt: link.target,
         role: "evidence",
+        confidence: "high",
         attributions: [{ kind: "url", value: link.target }],
       });
     }
@@ -617,8 +699,21 @@ function citationMarkers(
         line: entry.line,
         excerpt: match[0],
         role: "evidence",
+        confidence: "high",
         attributions:
           located.length > 0 ? located : [{ kind: "name", value: match[0] }],
+      });
+    }
+    // `(Forrester, 2024)` — an inline academic citation. The bracket is the
+    // citation slot, so what a reader reads inside it is what is checked.
+    for (const parenthetical of parentheticalCitations(text)) {
+      const located = sentenceAttributions(flat, parenthetical.index);
+      markers.push({
+        line: entry.line,
+        excerpt: parenthetical.excerpt,
+        role: "evidence",
+        confidence: "high",
+        attributions: [...located, { kind: "name", value: parenthetical.name }],
       });
     }
     // A footnote marker cites its definition. With no definition it cites
@@ -631,6 +726,7 @@ function citationMarkers(
           line: entry.line,
           excerpt: match[0],
           role: "evidence",
+          confidence: "high",
           attributions:
             definition.trim().length > 0
               ? [
@@ -644,7 +740,17 @@ function citationMarkers(
       }
     }
   }
-  return markers;
+  // The entry predicate and the shape patterns overlap on purpose — the shapes
+  // catch a single name beside a year, the predicate catches a multi-word name
+  // with no year. A line both of them see is ONE defect, so the later, weaker
+  // recognition yields.
+  const claimed = new Set(markers.map((marker) => marker.line));
+  return [
+    ...markers,
+    ...entryCitationMarkers(lines).filter(
+      (marker) => !claimed.has(marker.line),
+    ),
+  ].sort((left, right) => left.line - right.line);
 }
 
 function markerResolves(context: QaContext, marker: CitationMarker): boolean {
@@ -662,19 +768,36 @@ export function checkRl12(context: QaContext): QaRuleResult {
   const unresolved = markers.filter(
     (marker) => !markerResolves(context, marker),
   );
-  return unresolved.length > 0
-    ? fail(
-        "rl12_citation_integrity",
-        "rl12_citation_unresolved",
-        `${unresolved.length} citation-shaped reference(s) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}. ${unverifiableNote(context)}`,
-      )
-    : pass(
-        "rl12_citation_integrity",
-        "rl12_citations_resolve",
-        markers.length === 0
-          ? "No citation-shaped reference matched this rule's patterns in the scanned body (bare URLs, links a sentence attributes a claim to, and hallucinated-citation shapes). That is what was scanned, not a guarantee that the draft cites nothing."
-          : `All ${markers.length} citation-shaped reference(s) resolve to the frozen research pack.`,
-      );
+  const confident = unresolved.filter((marker) => marker.confidence === "high");
+  const tentative = unresolved.filter((marker) => marker.confidence === "low");
+  if (confident.length > 0) {
+    return fail(
+      "rl12_citation_integrity",
+      "rl12_citation_unresolved",
+      `${confident.length} citation-shaped reference(s) resolve to no source in the frozen research pack (authority D): ${excerptList(confident)}. ${unverifiableNote(context)}${tentative.length > 0 ? ` A further ${tentative.length} entry(ies) read as an outside name but carry no year, quotation or address, so this rule does not judge them; they are described under the same claim and also need a human.` : ""}`,
+    );
+  }
+  if (tentative.length > 0) {
+    // Deliberately NOT a failure. These carry an outside-looking name at an
+    // entry position and nothing else — no year, no quoted title, no address.
+    // That is enough to say "this looks like a reference we cannot confirm" and
+    // not enough to say "this is unsupported", and the difference between those
+    // two sentences is the difference between a gate reviewers trust and one
+    // they learn to click through. `unevaluable` forces `needs_review` without
+    // asserting the stronger claim.
+    return unevaluable(
+      "rl12_citation_integrity",
+      "rl12_citation_unjudged",
+      `${tentative.length} entry-shaped line(s) name something that reads as an outside source but carry no year, quotation or address to confirm it by: ${excerptList(tentative)}. This rule reports what it could not judge rather than guessing: the name may be a product, a feature or a section title, so calling these unsupported would assert more than the frozen inputs can show. A reviewer decides. ${unverifiableNote(context)}`,
+    );
+  }
+  return pass(
+    "rl12_citation_integrity",
+    "rl12_citations_resolve",
+    markers.length === 0
+      ? "No citation-shaped reference matched this rule in the scanned body. What it scans is: bare URLs, links a sentence attributes a claim to, footnote markers, `et al.`/`Name (2024)`/`Name, 2024` shapes, `(Author, Year)` brackets, and lines at a list/table/quote/one-line-entry position whose capitalized name phrase outweighs the rest of the line. That is what was scanned, not a guarantee that the draft cites nothing."
+      : `All ${markers.length} citation-shaped reference(s) resolve to the frozen research pack.`,
+  );
 }
 
 /**

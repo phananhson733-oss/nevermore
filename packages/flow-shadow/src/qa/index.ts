@@ -55,13 +55,26 @@ export {
   type CitabilityScore,
 } from "./citability.ts";
 
+/**
+ * `resolveAttribution` is deliberately absent.
+ *
+ * It answers "does the pack hold anything this attribution names?", and one
+ * link to the customer's own site answers it yes — which is how a fabricated
+ * study, a fabricated bibliography and an `et al.` citation each reached
+ * `passed` on the strength of a call-to-action URL. A purity guard keeps the
+ * rules from calling it, but that guard only walks this package's closure, so
+ * re-exporting it here put the same mistake one import away for every future
+ * consumer in `apps/`, outside the guard's reach. The two questions a caller
+ * may ask are `resolveAssertionSupport` (may this support a claim? — its return
+ * type has no first-party inhabitant) and `resolveLinkProvenance` (is this
+ * address ours?).
+ */
 export {
   buildSourceIndex,
   extractAttributions,
   findUnsupportedClaims,
   locatedAttributions,
   resolveAssertionSupport,
-  resolveAttribution,
   resolveLinkProvenance,
   type AssertionSupport,
   type Attribution,

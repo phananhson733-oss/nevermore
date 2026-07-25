@@ -7,7 +7,12 @@ import {
   CLEAN_DRAFT,
   ESCAPED_ATTRIBUTION_DRAFTS,
   FIRST_PARTY_LINK_DRAFT,
+  NAVIGATION_SECTION_DRAFTS,
+  NEAR_MISS_HONEST_DRAFTS,
+  PARENTHETICAL_CITATION_DRAFTS,
+  PSEUDO_HEADING_PROSE_DRAFT,
   QUERY_STRING_HARVEST_DRAFT,
+  REFERENCE_ENTRY_SHAPE_DRAFTS,
   REFERENCE_FORMAT_DRAFTS,
   REFERENCE_HEADING_DRAFTS,
   THEMATIC_BREAK_FRONTMATTER_DRAFT,
@@ -451,6 +456,164 @@ describe("B (regression) — honest drafts are not called fabrications", () => {
     expect(rl8?.detail).not.toContain("The draft makes no external-research");
     expect(sc9b?.detail).toContain("what it scanned");
     expect(sc9b?.detail).not.toContain("The draft lists no source entry");
+  });
+
+  /**
+   * A pass detail may not describe coverage the rule does not have.
+   *
+   * RL8's read "the patterns catch research nouns, `according to` frames and
+   * named-entity claims carrying a statistic" while `According to Forrester,
+   * 73% …` and `According to Gartner, onboarding time fell 40%` both walked
+   * through it — the sentence named two shapes it could not see. The patterns
+   * were widened to cover them, and the detail now states the constraint that
+   * remains (every named-entity shape needs a number) instead of implying
+   * there is none.
+   */
+  it("describes only the coverage RL8 actually has", () => {
+    const detail = claim(CLEAN_DRAFT, "rl8_unsupported_claim")?.detail ?? "";
+
+    expect(detail).toContain("EVERY named-entity shape requires that number");
+    for (const covered of [
+      "According to Forrester, 73% of teams churn.",
+      "According to Gartner, onboarding time fell 40%.",
+      "Per Forrester, churn is 42%.",
+    ]) {
+      const draft = `# Onboarding analytics\n\n## Evidence\n\n${covered}\n`;
+      expect(claim(draft, "rl8_unsupported_claim")?.status, covered).toBe(
+        "failed",
+      );
+    }
+    // And the limitation the detail claims is real: no statistic, not seen.
+    expect(
+      claim(
+        "# Onboarding analytics\n\n## Evidence\n\nAccording to Forrester, teams churn faster.\n",
+        "rl8_unsupported_claim",
+      )?.status,
+    ).toBe("passed");
+  });
+});
+
+describe("P1 (regression) — the entry SHAPE, not the entry form", () => {
+  /**
+   * The rework this suite is the record of.
+   *
+   * The reference detector was a list of bibliographic forms, and the identical
+   * fabricated entry escaped by dropping the year, moving it in front, changing
+   * the punctuation, writing it as `'24`, or moving into a table cell or an
+   * HTML list — nine spellings of one reference, one of them caught. Fixing
+   * them one row at a time is what the previous three reworks did, and the row
+   * next to the one that was fixed escaped every time.
+   *
+   * The assertion is `not passed` rather than `blocked` on purpose. Half of
+   * these carry a name and NOTHING else, and "this reads like an outside
+   * reference, confirm it" is everything the frozen inputs support for those.
+   * Asserting `blocked` would be pinning down an overclaim.
+   */
+  it("never lets one reference reach `passed` by changing its spelling", () => {
+    for (const [shape, draft] of REFERENCE_ENTRY_SHAPE_DRAFTS) {
+      expect(evaluateDraftQa(qaInput(draft)).verdict, shape).not.toBe("passed");
+    }
+  });
+
+  /**
+   * The calibration, asserted rather than described: an entry that names
+   * something and corroborates it is blocked; an entry that only names
+   * something is reported as UNJUDGED. A gate that cannot tell those apart
+   * either misses the first or slanders the second.
+   */
+  it("blocks a corroborated entry and only reviews a bare name", () => {
+    const [, corroborated] =
+      REFERENCE_ENTRY_SHAPE_DRAFTS.find(([shape]) =>
+        shape.startsWith("comma and year with no heading"),
+      ) ?? [];
+    const [, bare] =
+      REFERENCE_ENTRY_SHAPE_DRAFTS.find(([shape]) =>
+        shape.startsWith("no year with no heading"),
+      ) ?? [];
+
+    expect(evaluateDraftQa(qaInput(corroborated ?? "")).verdict).toBe(
+      "blocked",
+    );
+    expect(claim(corroborated ?? "", "rl12_citation_integrity")?.status).toBe(
+      "failed",
+    );
+
+    const tentative = evaluateDraftQa(qaInput(bare ?? ""));
+    expect(tentative.verdict).toBe("needs_review");
+    // Never `failed`: the claim shape carries no confidence, so a reader would
+    // take a `failed` blocking claim as "this draft contains a fabrication".
+    expect(claim(bare ?? "", "rl12_citation_integrity")?.status).toBe(
+      "unevaluated",
+    );
+    expect(claim(bare ?? "", "rl12_citation_integrity")?.detail).toContain(
+      "could not judge",
+    );
+  });
+
+  it("blocks an inline `(Author, Year)` citation", () => {
+    for (const [sentence, draft] of PARENTHETICAL_CITATION_DRAFTS) {
+      expect(evaluateDraftQa(qaInput(draft)).verdict, sentence).toBe("blocked");
+    }
+  });
+});
+
+describe("B (regression) — navigation is not evidence", () => {
+  /**
+   * `## Further reading`, `## See Also` and `## Related links` are one section
+   * to a reader, and they came back blocked / blocked / passed. Two of them
+   * carried the gate's strongest verdict over a B2B post's own internal links,
+   * with a detail calling them unresolvable sources at authority D.
+   *
+   * A navigation heading offers DESTINATIONS. The customer's own address is a
+   * complete answer to one — which is exactly the locator/evidence split RL12
+   * already made for a bare URL in prose, applied where SC9b was missing it.
+   */
+  it("passes a navigation section listing the customer's own pages", () => {
+    for (const [title, draft] of NAVIGATION_SECTION_DRAFTS) {
+      const evaluation = evaluateDraftQa(qaInput(draft));
+
+      expect(evaluation.verdict, title).toBe("passed");
+      expect(claim(draft, "sc9b_sources_resolve_to_pack")?.status, title).toBe(
+        "passed",
+      );
+    }
+  });
+
+  /**
+   * The upward override, which is what keeps the split from being a hole: a
+   * bibliography does not stop being a bibliography because the heading over it
+   * says "Further reading".
+   */
+  it("still blocks a citation written under a navigation heading", () => {
+    for (const [heading, draft] of REFERENCE_HEADING_DRAFTS) {
+      expect(evaluateDraftQa(qaInput(draft)).verdict, heading).toBe("blocked");
+    }
+  });
+
+  /**
+   * The heading text had a guard; what followed it had none. `**Further
+   * reading**` over two ordinary sentences reported both of them as reference
+   * entries resolving to nothing at authority D.
+   */
+  it("does not let a heading turn prose into a reference list", () => {
+    const evaluation = evaluateDraftQa(qaInput(PSEUDO_HEADING_PROSE_DRAFT));
+
+    expect(evaluation.verdict).toBe("passed");
+    expect(
+      claim(PSEUDO_HEADING_PROSE_DRAFT, "sc9b_sources_resolve_to_pack")?.status,
+    ).toBe("passed");
+  });
+
+  /**
+   * The acceptance criterion Task 6b exists for, re-asserted against the shapes
+   * that sit closest to the new predicates. A dated parenthetical is the same
+   * shape as a citation and a metric table is the same shape as a bibliography
+   * table; `passed` has to stay reachable by correct work.
+   */
+  it("keeps `passed` reachable for the honest near misses", () => {
+    for (const [shape, draft] of NEAR_MISS_HONEST_DRAFTS) {
+      expect(evaluateDraftQa(qaInput(draft)).verdict, shape).toBe("passed");
+    }
   });
 });
 

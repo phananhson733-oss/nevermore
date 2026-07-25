@@ -624,6 +624,168 @@ export const THEMATIC_BREAK_FRONTMATTER_DRAFT = [
   "",
 ].join("\n");
 
+/**
+ * The ENTRY-SHAPE escape corpus.
+ *
+ * One fabricated reference, written ten ways. The detector asked "does this
+ * match a bibliographic FORM?", so nine of these ten walked through with a
+ * clean `passed` — each one token away from the tenth, which was blocked. This
+ * is the same failure mode as the heading corpus above, one layer down: a
+ * recognition rule made of forms is a rule made of holes, and the escapes are
+ * enumerated here so a future rework cannot repair them one row at a time.
+ *
+ * The assertion these carry is deliberately weak — NOT `passed` rather than
+ * `blocked`. Four of them carry a year, a quotation or an `et al.` alongside
+ * the name and are blocked; the rest carry a name and nothing else, which is
+ * enough to send a draft to a human and not enough to call it unsupported.
+ */
+export const REFERENCE_ENTRY_SHAPE_DRAFTS: ReadonlyArray<
+  readonly [string, string]
+> = (
+  [
+    ["no year", ["- Forrester Digital Experience Report"]],
+    ["comma inside the name", ["- Forrester, Digital Experience Report"]],
+    [
+      "table row",
+      [
+        "| Source | Year |",
+        "| --- | --- |",
+        "| Forrester Digital Experience Report | 2024 |",
+      ],
+    ],
+    [
+      "definition list",
+      ["Forrester Digital Experience Report", ": 2024 analyst report"],
+    ],
+    [
+      "html list",
+      ["<ul>", "<li>Forrester Digital Experience Report, 2024</li>", "</ul>"],
+    ],
+    ["two-digit year", ["- Forrester Digital Experience Report, '24"]],
+    ["roman numeral year", ["- Forrester Digital Experience Report, MMXXIV"]],
+    ["year first", ["- 2024. Forrester Digital Experience Report"]],
+    ["quoted title", ['- Forrester. "Digital Experience Report." 2024.']],
+    ["comma and year", ["- Forrester Digital Experience Report, 2024"]],
+  ] as const
+).flatMap(([shape, entries]) => [
+  // Under a heading the recogniser does not claim, and with no heading at all.
+  // Both regions are the BODY, which is where the conservative partition sends
+  // everything it is unsure of — so both have to be scanned.
+  [
+    `${shape} under an unrecognised heading`,
+    [...LAUNDERING_BODY, "## Resources", "", ...entries, ""].join("\n"),
+  ] as const,
+  [
+    `${shape} with no heading`,
+    [...LAUNDERING_BODY, ...entries, ""].join("\n"),
+  ] as const,
+]);
+
+/**
+ * A navigation section listing the CUSTOMER'S OWN pages.
+ *
+ * `## Further reading`, `## See Also` and `## Related links` are the same
+ * section to a reader, and they came back blocked, blocked and passed. The two
+ * blocked ones carried the gate's strongest verdict with a detail calling a B2B
+ * post's internal navigation an unresolvable source at authority D — the
+ * false-accusation failure, arriving through heading recognition this time.
+ */
+export const NAVIGATION_SECTION_DRAFTS: ReadonlyArray<
+  readonly [string, string]
+> = ["Further reading", "See Also", "Related links", "Resources"].map(
+  (title) =>
+    [
+      title,
+      [
+        SCAFFOLD_CTA_DRAFT,
+        `## ${title}`,
+        "",
+        "- [Onboarding analytics guide](https://signalframe.example/guides/onboarding)",
+        "- [Activation metrics glossary](https://signalframe.example/glossary/activation)",
+        "",
+      ].join("\n"),
+    ] as const,
+);
+
+/**
+ * A bold pseudo-heading followed by ORDINARY PROSE.
+ *
+ * The heading text had a guard; what followed it had none. So this claimed the
+ * next two sentences as a reference list and reported both of them —
+ * unremarkable B2B prose — as reference entries resolving to nothing at
+ * authority D.
+ */
+export const PSEUDO_HEADING_PROSE_DRAFT = [
+  ...LAUNDERING_BODY,
+  "**Further reading**",
+  "",
+  "Teams that instrument activation once tend to keep the weekly review going.",
+  "The same habit keeps the milestone from drifting quarter over quarter.",
+  "",
+].join("\n");
+
+/** `(Author, Year)` — the commonest inline academic citation there is. */
+export const PARENTHETICAL_CITATION_DRAFTS: ReadonlyArray<
+  readonly [string, string]
+> = [
+  "73% of teams abandon activation tracking (Forrester, 2024).",
+  "73% of teams abandon activation tracking (Forrester 2024).",
+  "73% of teams abandon activation tracking [Forrester 2024].",
+  "Activation tracking cut churn 42% (Smith et al., 2023).",
+].map(
+  (sentence) =>
+    [
+      sentence,
+      [...LAUNDERING_BODY, "## Evidence", "", sentence, ""].join("\n"),
+    ] as const,
+);
+
+/**
+ * Honest drafts whose shapes sit closest to the predicates above.
+ *
+ * A dated parenthetical is the same shape as a citation, and a metric table is
+ * the same shape as a bibliography table. Each of these must still reach
+ * `passed`: the top verdict has to stay reachable by correct work, which is the
+ * acceptance criterion Task 6b exists for.
+ */
+export const NEAR_MISS_HONEST_DRAFTS: ReadonlyArray<readonly [string, string]> =
+  [
+    [
+      "dated parenthetical",
+      [
+        ...LAUNDERING_BODY,
+        "## Timeline",
+        "",
+        "Revenue from activated accounts grew 12% (March 2024).",
+        "",
+      ].join("\n"),
+    ],
+    [
+      "metric table",
+      [
+        ...LAUNDERING_BODY,
+        "## Metrics",
+        "",
+        "| Metric | Definition |",
+        "| --- | --- |",
+        "| Activation Rate | Share of accounts reaching the milestone |",
+        "| Time To Value | Median days to that milestone |",
+        "",
+      ].join("\n"),
+    ],
+    [
+      "first-party bullets",
+      [
+        ...LAUNDERING_BODY,
+        "## What it tracks",
+        "",
+        "- It tracks activation milestones.",
+        "- It separates trial accounts from paid accounts.",
+        "",
+      ].join("\n"),
+    ],
+  ];
+
 /** Attribution shapes that reached no rule at all and scored `passed`. */
 export const ESCAPED_ATTRIBUTION_DRAFTS: ReadonlyArray<
   readonly [string, string]

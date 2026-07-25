@@ -175,7 +175,7 @@ export function evaluateDraftQa(input: QaEvaluationInput): QaEvaluationReport {
   if (input.draftMarkdown.length > QA_THRESHOLDS.maxDraftChars) {
     return unreadableDraft(
       "draft_oversized",
-      `The evaluated draft revision is ${input.draftMarkdown.length} characters, past the ${QA_THRESHOLDS.maxDraftChars}-character bound the deterministic checks are guaranteed to terminate within. Nothing was judged.`,
+      `The evaluated draft revision is ${input.draftMarkdown.length} characters, past the ${QA_THRESHOLDS.maxDraftChars}-character bound this gate accepts. Nothing was judged. The bound keeps the n-gram overlap check's O(n·m) token comparison finite; it is not a claim that any larger draft would be wrong, only that it is not judged here.`,
     );
   }
 

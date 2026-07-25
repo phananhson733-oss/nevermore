@@ -5,6 +5,7 @@ import {
   isReferenceSectionTitle,
   partitionDraft,
   readDraft,
+  referenceSectionStandard,
   sentenceSpanAt,
   truncateExcerpt,
 } from "./text.ts";
@@ -234,7 +235,123 @@ describe("reference-section recognition", () => {
   });
 });
 
+describe("reference-section standard", () => {
+  /**
+   * The split that made three headings meaning the same thing behave the same
+   * way. Before it, `## Further reading` and `## See Also` listing the
+   * customer's own pages were blocked while `## Related links` passed.
+   */
+  it("tells an evidence heading from a navigation one", () => {
+    for (const title of [
+      "Sources",
+      "References",
+      "Citations",
+      "Works Cited",
+      "Bibliography",
+      "Footnotes",
+      "Additional sources",
+      "参考文献",
+    ]) {
+      expect(referenceSectionStandard(title), title).toBe("evidence");
+    }
+    for (const title of [
+      "Further Reading",
+      "Related Reading",
+      "See Also",
+      "延伸阅读",
+    ]) {
+      expect(referenceSectionStandard(title), title).toBe("locator");
+    }
+  });
+
+  /** Evidence wins a tie: the weaker word does not withdraw the promise. */
+  it("keeps a mixed heading on the evidence standard", () => {
+    expect(referenceSectionStandard("Sources and further reading")).toBe(
+      "evidence",
+    );
+    expect(referenceSectionStandard("References and notes")).toBe("evidence");
+  });
+
+  it("still calls an ordinary body heading neither", () => {
+    expect(
+      referenceSectionStandard("Sources of onboarding friction"),
+    ).toBeNull();
+    expect(referenceSectionStandard("Related links")).toBeNull();
+  });
+});
+
 describe("draft partition", () => {
+  /**
+   * A heading NAMES a region; it cannot make the region be what it says.
+   *
+   * The heading text had a guard and what followed it had none, so a bold
+   * `**Further reading**` — which models write constantly — claimed the next
+   * two paragraphs of ordinary prose, and every non-empty line under it was
+   * read as a reference entry. Two honest sentences were reported as references
+   * resolving to nothing at authority D.
+   */
+  it("does not claim a region that is prose rather than entries", () => {
+    const partition = partitionDraft(
+      readDraft(
+        [
+          "**Further reading**",
+          "",
+          "Teams that instrument activation once keep the weekly review going.",
+          "The same habit keeps the milestone from drifting.",
+          "",
+        ].join("\n"),
+      ),
+    );
+
+    expect(partition.reference).toStrictEqual([]);
+    expect(
+      partition.body.some((line) => line.text.includes("weekly review")),
+    ).toBe(true);
+    // Even a `##` heading that says `Sources` does not claim running prose.
+    expect(
+      partitionDraft(
+        readDraft(
+          ["## Sources", "", "We wrote this from our own export.", ""].join(
+            "\n",
+          ),
+        ),
+      ).reference,
+    ).toStrictEqual([]);
+  });
+
+  /** The partition stays TOTAL whichever way that decision goes. */
+  it("keeps every prose line in exactly one half when a heading is refused", () => {
+    const view = readDraft(
+      [
+        "# Title",
+        "",
+        "**Further reading**",
+        "",
+        "Ordinary prose that no heading may turn into a reference entry.",
+        "",
+        "## Sources",
+        "",
+        "- Forrester Digital Experience Report, 2024",
+        "",
+      ].join("\n"),
+    );
+    const partition = partitionDraft(view);
+    const covered = [
+      ...partition.body.map((line) => line.line),
+      ...partition.reference.flatMap((section) => [
+        section.headingLine,
+        ...section.lines.map((line) => line.line),
+      ]),
+    ].sort((left, right) => left - right);
+
+    expect(covered).toStrictEqual(view.prose.map((line) => line.line));
+    expect(new Set(covered).size).toBe(covered.length);
+    expect(partition.reference).toHaveLength(1);
+    expect(partition.reference[0]?.standard).toBe("evidence");
+  });
+});
+
+describe("draft partition (existing shapes)", () => {
   /**
    * The structural invariant that replaced two hand-maintained title lists.
    *
@@ -394,6 +511,59 @@ describe("flattened lines carry positions", () => {
       target: "https://analyst.example/x",
     });
     expect(flat.urls).toStrictEqual([]);
+  });
+
+  /**
+   * CommonMark allows BALANCED brackets in a link label, and the label pattern
+   * did not. The cost was not a lost link: the unparsed URL went back into the
+   * sentence text, where it was harvested as a bare url and classified as a
+   * LOCATOR — and a first-party address answers a locator completely. So
+   * `[Forrester](our-url) reports that 73% …` was blocked and `[Forrester
+   * [Inc]](our-url) reports that 73% …` passed, on one pair of brackets.
+   */
+  it("parses a link label that contains balanced brackets", () => {
+    const flat = flattenLine(
+      "[Forrester [Inc]](https://analyst.example/x) reports that 73% churn.",
+    );
+
+    expect(flat.text).toBe("Forrester [Inc] reports that 73% churn.");
+    expect(flat.links).toStrictEqual([
+      {
+        start: 0,
+        end: "Forrester [Inc]".length,
+        label: "Forrester [Inc]",
+        target: "https://analyst.example/x",
+      },
+    ]);
+    // The url never leaks back into the sentence, which is what let it be read
+    // as a locator instead of as the evidence the sentence attributes to.
+    expect(flat.urls).toStrictEqual([]);
+  });
+
+  it("still refuses the shapes that are not links", () => {
+    for (const line of [
+      "[Forrester(https://analyst.example/x) reports 73%.",
+      "[Forrester](https://analyst.example/x reports 73%.",
+      "[Forrester]() reports 73%.",
+      "Churn fell 42%.[^1]",
+    ]) {
+      expect(flattenLine(line).links, line).toStrictEqual([]);
+    }
+    expect(
+      flattenLine('[Forrester](https://analyst.example/x "title") reports.')
+        .links[0]?.target,
+    ).toBe("https://analyst.example/x");
+  });
+
+  /**
+   * Emphasis is typography, never a token. `Forrester's **2024** data puts
+   * churn at 42%` read as a different sentence from the unemphasised one to
+   * every matcher in the gate, and the emphasised one passed.
+   */
+  it("removes emphasis so a marked-up sentence reads as the plain one", () => {
+    expect(
+      flattenLine("Forrester's **2024** data puts churn at 42%.").text,
+    ).toBe("Forrester's 2024 data puts churn at 42%.");
   });
 
   it("blanks inline code before anything else reads the line", () => {

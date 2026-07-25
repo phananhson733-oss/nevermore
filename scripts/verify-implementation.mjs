@@ -2338,14 +2338,6 @@ function checkContentShadowQaPurity() {
   // and `resolveLinkProvenance`, so the low-level lookup stays inside the
   // module that owns the distinction.
   const RESOLUTION_OWNER = "packages/flow-shadow/src/qa/claims.ts";
-  for (const file of qaFiles) {
-    if (file === RESOLUTION_OWNER) continue;
-    if (file.endsWith(".test.ts")) continue;
-    invariant(
-      !/\bresolveAttribution\s*\(/.test(stripCodeComments(read(file))),
-      `${file} must not call resolveAttribution directly: it reports whether an attribution names ANYTHING in the pack, including the customer's own site, so a rule reading it decides that a first-party link supports a fabricated claim. Ask resolveAssertionSupport (evidence) or resolveLinkProvenance (is this address ours) instead`,
-    );
-  }
 
   // Red line D: the ported Flow tooling is an EXTRACTION, never a runtime
   // dependency. A comment may name the sibling repository; code may not.
@@ -2358,13 +2350,37 @@ function checkContentShadowQaPurity() {
         !file.includes("/node_modules/"),
     ),
   );
+
+  // The role boundary reaches every consumer, not only the gate's own closure.
+  //
+  // Scoped to `packages/flow-shadow/src/**`, this guard protected exactly the
+  // files that already knew the rule, while `qa/index.ts` re-exported
+  // `resolveAttribution` onto the package's public surface — so an
+  // `apps/worker` consumer could import it and reintroduce "did ANYTHING
+  // resolve?" one line outside the guard's range. There is no such caller yet,
+  // which is the only reason widening this is free; the export is gone and the
+  // check now walks the same source roots as red line D.
+  for (const file of [...new Set([...qaFiles, ...sourceFiles])]) {
+    if (file === RESOLUTION_OWNER) continue;
+    if (file.endsWith(".test.ts")) continue;
+    const source = stripCodeComments(read(file));
+    invariant(
+      !/\bresolveAttribution\s*\(/.test(source),
+      `${file} must not call resolveAttribution directly: it reports whether an attribution names ANYTHING in the pack, including the customer's own site, so a rule reading it decides that a first-party link supports a fabricated claim. Ask resolveAssertionSupport (evidence) or resolveLinkProvenance (is this address ours) instead`,
+    );
+    invariant(
+      !/^\s*resolveAttribution,\s*$/m.test(source),
+      `${file} must not re-export resolveAttribution: putting it on a public surface moves the same mistake one import outside this guard's range`,
+    );
+  }
+
   for (const file of sourceFiles) {
     invariant(
       !/gengrowth-flow-mvp/.test(stripCodeComments(read(file))),
       `${file} must not reference the sibling gengrowth-flow-mvp repository in code`,
     );
   }
-  return `Content Shadow QA purity: ${qaFiles.length} files in the gate's import closure free of non-relative imports (\`from\`, \`import()\` and side-effect \`import\`), require(), process, globalThis, clock, randomness, locale-sensitive APIs and network, and free of direct resolveAttribution calls outside ${RESOLUTION_OWNER}; ${sourceFiles.length} source files free of sibling-repo references`;
+  return `Content Shadow QA purity: ${qaFiles.length} files in the gate's import closure free of non-relative imports (\`from\`, \`import()\` and side-effect \`import\`), require(), process, globalThis, clock, randomness, locale-sensitive APIs and network; ${sourceFiles.length} source files free of sibling-repo references and free of direct resolveAttribution calls or re-exports outside ${RESOLUTION_OWNER}`;
 }
 
 const checks = [

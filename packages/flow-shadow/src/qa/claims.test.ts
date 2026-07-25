@@ -338,6 +338,47 @@ describe("claim extraction boundaries", () => {
     }
   });
 
+  /**
+   * S4. The named-entity assertion was brittle exactly at the boundaries it
+   * introduced itself, and every failure below is one token away from a
+   * sentence that WAS blocked. They are written as pairs for that reason: a
+   * suite that only lists the catches passed in all three previous reworks too.
+   */
+  it("catches an attributed statistic across the boundaries it used to break at", () => {
+    for (const sentence of [
+      // A number between the name and the verb broke the match.
+      "Forrester's data puts churn at 42%.",
+      "Forrester's 2024 data puts churn at 42%.",
+      // An explicit attribution frame needs no research noun and no verb. The
+      // first of these was caught only because the company's last word happens
+      // to be a research noun.
+      "According to Forrester Research, 73% of teams churn.",
+      "According to Forrester, 73% of teams churn.",
+      "According to Gartner, onboarding time fell 40%.",
+      "Per Forrester, churn is 42%.",
+      // A bracket a reader sees in the rendered link label.
+      "Forrester [Inc] reports that 73% of teams churn.",
+    ]) {
+      const hits = findUnsupportedClaims(index, line(sentence));
+      expect(hits, sentence).toHaveLength(1);
+      expect(hits[0]?.resolution.authority, sentence).toBe("D");
+    }
+  });
+
+  it("keeps the attribution frame off first-party and unnamed sources", () => {
+    for (const sentence of [
+      "According to our own Search Console export, clicks fell 34%.",
+      "According to the dashboard, 12 accounts stalled.",
+      "According to Our Search Console export, clicks fell 34%.",
+      "The report costs 40 per seat.",
+    ]) {
+      expect(
+        findUnsupportedClaims(index, line(sentence)),
+        sentence,
+      ).toHaveLength(0);
+    }
+  });
+
   it("does not treat first-party data language as an external research claim", () => {
     // SignalFrame drafts are written over first-party evidence the prompt really
     // did supply; flagging every mention of the customer's own numbers would
