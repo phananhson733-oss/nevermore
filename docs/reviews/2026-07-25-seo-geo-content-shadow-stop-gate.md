@@ -482,6 +482,44 @@ re-aimed assertions on a frozen surface, and a re-baselined set of visual
 snapshots. **Nothing in §8 or §9 made this worse, and neither round claims this
 suite green.**
 
+**D9. `pnpm restore:drill` is red, and no round of this slice had ever run it.**
+It is a CI gate (`.github/workflows/ci.yml`, the `database` job's "Run PostgreSQL
+backup and restore recovery drill" step) that §2.5 does not name. Run for the
+first time in §11 against a disposable database: it fails at
+`type=postgres_process code=PG_TOOL_EXIT_NONZERO tool=psql exit_code=1`, before
+the dump is even taken. The cause is in the drill's own inventory query, not in
+the database: the integrity probe `capability_runs.input-manifest-hash`
+(`scripts/backup-restore-drill.mjs`) builds `... jsonb_build_object('id', "id",
+...) ... order by id::text`, and `app.capability_runs` has **no `id` column** —
+its primary key is deliberately `async_run_id`
+(`packages/db/migrations/0010_growth_audit_slice1.sql:6-7`). PostgreSQL rejects
+it at planning time, so the drill fails on every run regardless of data.
+
+**Proven pre-existing, not introduced by this slice.** Both sides are
+byte-identical to the Slice 1 acceptance baseline: `git diff 945be02..HEAD --
+scripts/backup-restore-drill.mjs` and `... -- packages/db/migrations/0010_*.sql`
+are both empty, and the probe was added by `b46999e`, an ancestor of `945be02`.
+
+Two further facts a reader needs. First, the drill's **unit** gate
+(`pnpm restore:drill:test`, also a CI step, also never run by this slice) is
+**green at 29/29** — it stubs the Postgres tools, so it cannot see this. A green
+unit gate over a red real gate is why this went unnoticed. Second, the drill's
+`APP_TABLES` list has **33 entries against 44 live application tables**, so 11
+tables are never inventory-verified by a restore drill at all:
+`competitor_entities`, `competitor_origin_occurrences`, `finding_targets`,
+`keyword_entities`, `keyword_entity_sources`, `keyword_occurrences`,
+`product_profile_invocation_attempts`, `product_profile_runs` (Slice 1), and
+`flow_shadow_runs`, `flow_shadow_research_packs`, `flow_shadow_qa_gates`
+(**Slice 2's own three** — this slice widened the gap by three even though it did
+not cause the red).
+
+**Not fixed here, deliberately.** Repairing it means changing what a
+backup-integrity gate asserts — re-aiming a probe at a different key column and
+widening the verified table set by a third — at the end of a wrap-up round, on a
+gate nobody has ever seen pass. That is the same class of change §8.2 held for a
+ruling on N-2. **It needs an Owner decision and its own task, and it will block
+the merge exactly as D1 does.**
+
 ### E. Product decisions left open for the Owner
 
 - **E1. Brand axis.** SignalFrame (cobalt / Fraunces / Manrope) versus the
@@ -727,13 +765,19 @@ assertion as written and untrue of any run this repository can perform today.
 The re-aimed assertion was therefore mutation-verified on an equivalent harness
 instead; see §9.
 
-**N-1. The Studio "Mark ready" control does not know a draft is blocked.** H1
+**N-1. RESOLVED in §11.** *(Original entry kept verbatim below.)* **The Studio
+"Mark ready" control does not know a draft is blocked.** H1
 closed the write path: the server now refuses. The control itself is not
 blocked-aware, because the artifacts list carries no gate verdict, so an
 operator learns the refusal **after** clicking rather than from a disabled
 control with a reason beside it — the opposite of the pattern Task 8 used on the
 review surface. Closing this needs a verdict on the artifact wire shape, which
 is a contract change and therefore its own task.
+
+*Outcome.* The contract change was made: `Artifact.adoption` carries the
+server's own judgement, produced by the same module both write paths consult, so
+the control refuses before it is used instead of after. No operation was added —
+still 49 / 9 / 44 / 11. See §11.
 
 **N-2. RESOLVED in §9.** *(Original entry kept verbatim.)* **`.blocker` is
 painted coral.** The Task 7/8 ruling says a `blocked`
@@ -1091,12 +1135,19 @@ byte-identity pins green in BOTH states.
 | `pnpm test:integration` | 65 files, 473 tests |
 | E2E `content-shadow-vertical` / `-review` / `-execution` / `audit-technical-vertical` | 19/19 |
 
-`pnpm secrets:scan` is red at 5 findings and was red at 5 findings before this
-round: all five are literal credential-shaped strings in the fixtures of
-`outline.test.ts` and `envelope.test.ts`, added by the two earlier fix commits.
-This round's fixtures assemble their fake token at runtime so the count did not
-move. Recorded here because §2.5 does not name this gate and a reader should not
-have to discover it.
+`pnpm secrets:scan` was red at 5 findings at this round. **RESOLVED in §11**
+(`dbeae89`): the five fixtures now assemble their credential-shaped strings at
+runtime, and the gate exits 0.
+
+**This paragraph originally read "was red at 5 findings before this round",
+which invited the reading that it was pre-existing debt. It was not.** All five
+findings are literal credential-shaped strings in the fixtures of
+`outline.test.ts` and `envelope.test.ts`, and both files were written **by Slice
+2 itself** — `cf6ac6f` (Task 4b) and `05b1282` (Task 6). The gate was green
+before this slice began. "Red before this round" was true of the round; it was
+never true of the slice. Recorded here because §2.5 does not name this gate at
+all, and a reader should not have to discover a CI gate by tripping it (§11.4
+re-derives the full CI step list so this cannot recur).
 
 ### 10.6 What did not change
 
@@ -1105,6 +1156,223 @@ Constraint **N-1** held: this round's diff touches four files, all under
 `sources` at all.
 
 No existing assertion was weakened. No existing test changed. Every gate that
-was green stayed green, and the two gates that were red before this round
-(`§4 D1` branch coverage, `pnpm secrets:scan`) are red by exactly the same
-amount.
+was green stayed green, and the two gates that were red at this round
+(`§4 D1` branch coverage, `pnpm secrets:scan`) were red by exactly the same
+amount. `pnpm secrets:scan` was closed afterwards in §11 and was Slice 2's own
+regression rather than inherited debt — see the correction in §10.5.
+
+---
+
+## 11. Blocked-aware adoption round (2026-07-26)
+
+Two items closed here, and one CI gate discovered red. §8.2 N-1 (the Studio
+"Mark ready" control did not know a draft was blocked) and the `pnpm
+secrets:scan` failure recorded at §10.5. The round changed **no operation, no
+async operation, no table and no rule**: 49 / 9 / 44 / 11 before and after.
+
+### 11.1 What was fixed
+
+**`pnpm secrets:scan` (`dbeae89`).** The gate exits 0. Five fixtures in
+`outline.test.ts` and `envelope.test.ts` carried literal credential-shaped
+strings and now assemble them at runtime, so the fixtures that exist to defend
+the secret boundary stop failing it. The correction to §10.5's framing matters
+more than the fix: this was **Slice 2's own regression** (`cf6ac6f`, `05b1282`),
+not inherited debt.
+
+**N-1 — the control refuses before it is used, not after.** H1 (`158be67`) had
+already made the server correct: the generic artifact status PATCH refuses to
+move a `blocked` `english_blog_draft` from `draft` to `ready`, using the same
+module `/review` consults. What it did not do was tell the control. The
+artifacts list carried no verdict, so the Studio editor rendered an enabled
+"Mark ready" and an operator learned the refusal by being refused — the opposite
+of the pattern Task 8 established one screen up.
+
+The judgement is now **returned as well as thrown**. `content-shadow-adoption.ts`
+gained `readContentShadowAdoption`, and `assertContentShadowAdoptionAllowed` was
+rewritten to call it: the refusal and the read model are not two implementations
+that agree today, they are one function used twice. The result reaches the wire
+as `Artifact.adoption`.
+
+Three properties of the shape, each chosen against a specific failure:
+
+- **`adoption: null` is not `blocked: false`.** A `content_brief` is judged by no
+  Content Shadow gate at all, and reporting "not blocked" for it would invite a
+  reader to render a cleared-by-the-gate affordance for a deliverable no gate
+  ever saw. The OpenAPI description says so, and so does the DTO comment.
+- **`adoption` is a required positional parameter of `toArtifactDto`**, not an
+  optional one. A future producer of this DTO cannot quietly answer "no gate
+  applies" for a deliverable a gate has judged; it has to state an answer.
+- **`blockingClaimIds` carries identifiers, not sentences,** and severity is
+  resolved through `@sf/flow-shadow`'s own table (`qaSeverityForClaimId`). A
+  literal list of "the blocking three" in the reader would be a copy of a
+  backend invariant, and it drifts in the expensive direction: a blocking check
+  believed advisory reads to an operator as safe to adopt. Unreadable claims
+  yield **no** reasons rather than a guessed one — the verdict is a column and
+  stays authoritative on its own.
+
+**The reason is stated in place, in the Execution screen's own words.**
+`AdoptionBlockedHint` renders `studio.qa.blocker.body` / `.next` and the same
+`studio.qa.claimLabels.*` / `claimStatus.*` keys the Execution blocked block
+renders — not a paraphrase, the same strings. So it reads "these references
+cannot be checked against the frozen records", explicitly "this is not a run
+failure", and each cause is named separately (a citation matching none of our
+records, versus a listed source that does not resolve to the pack) with the
+state word beside it, because a claim label names a **property** and the
+properties are mixed in polarity. There is deliberately **no `title`** on the
+disabled button for this reason: the sentence is a sibling element the control
+points at with `aria-describedby`, and duplicating it into a hover would teach a
+reader that hovering is where reasons live. It keeps `.readyHint`'s muted
+colour and touches no danger token — the Task 7/8 ruling (§9.2) that a `blocked`
+verdict is never painted red applies wherever the verdict is stated.
+
+**No second rule was added to the client.** `markReadyBlock` in
+`_artifact-editor-state.ts` chooses a *sentence*; it never decides whether a
+draft is adoptable. It takes `adoptionBlocked` already decided. There is no
+`"blocked"` literal, no verdict enum and no claim-id list anywhere in
+`apps/web/src/app/`. The precedence is the pre-existing one —
+`unsaved_edits` → `validation` → `adoption_blocked` — so every screen state
+asserted before the read model carried a verdict still shows the sentence it
+showed then.
+
+### 11.2 The single source, proven by breaking it
+
+Code review cannot show that two paths share an implementation; deleting the
+implementation can. Every mutation below was applied to the tree, run, and
+reverted.
+
+| Mutation | Result |
+|---|---|
+| `readContentShadowAdoption` forced to never block | **2 red** in `content-shadow.integration.test.ts`: the *pre-existing* write-path test ("refuses a blocked draft identically through the generic artifact status PATCH") **and** the new read-model test, from one edit. This is the single-source proof — one function, both answers. |
+| `markReadyBlock` drops its adoption branch | `_artifact-editor-state.test.ts` red ("expected null to be 'adoption_blocked'"); E2E "both doors into ready refuse…" red at `expect(markReady).toBeDisabled()` — *unexpected value "enabled"*. The companion test "both doors open on a draft the gate did not block" stayed **green**, which is what makes the pair meaningful. |
+| `[data-studio-ready-blocked]` painted `--sf-coral-text` | E2E red at `expect(painted).not.toBe(coralText)`. The assertion resolves both tokens through the page and first asserts they differ, so "is not coral" cannot pass for free. |
+| `aria-describedby` dropped for the adoption reason | E2E red at `expect(await markReady.getAttribute("aria-describedby")).toBe(await reason.getAttribute("id"))`. |
+| the reason also duplicated into `title` | E2E red at `expect(await markReady.getAttribute("title")).toBeNull()`. |
+
+Both new E2E tests assert **the two doors together** rather than each
+separately: separate assertions stay green while the two answers drift apart,
+which is the failure worth catching. The same shape is used in the integration
+test, which compares the read model against both write paths in one expectation
+chain rather than asserting three facts independently.
+
+### 11.3 Contract tax
+
+A field was added to an existing schema. No operation was added, and the four
+counts did not move.
+
+| Sync point | State |
+|---|---|
+| `openapi/mvp.yaml` | `ArtifactAdoption` schema added; `adoption` added to `Artifact.required` and `Artifact.properties` |
+| `authority/implementation-spec-v0.3/openapi.yaml` | byte-identical — `cmp` clean |
+| `packages/contracts/src/generated/openapi.ts` | regenerated; `pnpm contracts:check` reports no diff |
+| `scripts/spec-v0.3-lock.json` | four sha256 refreshed: authority `openapi.yaml`, `MVP-IMPLEMENTATION-SPEC.md`, `openapi/mvp.yaml`, generated `openapi.ts` |
+| `scripts/verify-implementation.mjs` | unchanged; re-run — 49 operations, 9 async, 44 tables, 11 rules, 30 QA-closure files still pure |
+| `authority/…/scripts/verify-spec.mjs` | unchanged; re-run — same four counts |
+| `MVP-IMPLEMENTATION-SPEC.md` §10 | **updated.** Its guard sentence named only the review endpoint (`所有守卫在此端重算…`), which is now less than the code does: it states that the `blocked` judgement is held by one module shared with the generic status PATCH, that `Artifact.adoption` carries it, that `null` is not "adoption is allowed", and that the field adds no operation |
+
+`pnpm verify:spec` — **49 operations / 9 async / 44 tables / 11 rules**, prose
+counts matching the lock, after the spec edit.
+
+### 11.4 Every CI step, against every gate this slice ran
+
+§10.5 recorded `pnpm secrets:scan` as a gate "§2.5 does not name" — discovered by
+tripping it. That is a symptom: **the slice ran a hand-maintained gate list that
+nobody had ever compared to `.github/workflows/ci.yml`.** The comparison is done
+here, step by step. Infrastructure steps (checkout, Node/Corepack pinning, store
+cache, `pnpm install --frozen-lockfile`, `playwright install`, `createdb`/`dropdb`,
+artifact upload) are omitted.
+
+| CI job | CI step | Ran by this slice before? | Result now |
+|---|---|---|---|
+| contracts-and-unit | `pnpm verify:spec` | yes (§2.5) | 49 / 9 / 44 / 11 |
+| contracts-and-unit | `pnpm implementation:check` | yes (§2.5) | pass |
+| contracts-and-unit | `pnpm restore:drill:test` | **no — never** | **pass, 29/29** (94.36% line / 88.53% branch, over its own 80% thresholds) |
+| contracts-and-unit | `pnpm contracts:check` | yes (§2.5) | no diff |
+| contracts-and-unit | `pnpm openapi:lint` | yes (§2.5) | valid |
+| contracts-and-unit | `pnpm secrets:scan` | not until §10.5 | **pass, exit 0** (was 5 findings) |
+| contracts-and-unit | `pnpm audit --audit-level moderate` | yes | **red — §4 D2**, 11 vulnerabilities, upstream drift |
+| contracts-and-unit | `pnpm deploy:check` | **no — never** | **pass** |
+| contracts-and-unit | `pnpm lint` | yes (§2.5) | pass |
+| contracts-and-unit | `pnpm typecheck` | yes (§2.5) | pass |
+| contracts-and-unit | `vitest run --project unit --coverage` | tests yes, **threshold no** | **red — §4 D1**, 78.21% branch against 80%. §2.5 runs `pnpm test`, which has no `--coverage`; the *threshold* is a separate gate |
+| database | `pnpm db:migrate` | yes (§2.5) | 21 files |
+| database | `pnpm db:migrate` again (idempotency replay) | **no — never run as a gate** | **pass, 0 files applied** |
+| database | `pnpm db:migrate:check` | yes (§2.5) | 44 tables / 56 indexes / 69 triggers / 18 routines |
+| database | `pnpm db:smoke` | yes (§2.5) | pass, rolled back |
+| database | `pnpm test:integration` | yes (§2.5) | 65 files, 475 tests |
+| database | `pnpm restore:drill` | **no — never** | **RED — new. See §4 D9.** |
+| database | `pnpm test:e2e:real` | measured red in §9 | **red — §4 D8** |
+| build-and-mock-e2e | `pnpm build` | yes (§2.5) | pass |
+| build-and-mock-e2e | `docker build --file Dockerfile.worker` | **no — never** | **pass**, image built |
+| build-and-mock-e2e | worker image entrypoint smoke | **no — never** | **pass** — nonzero exit and exactly `{"event":"worker_boot_failed","code":"WORKER_BOOT_FAILED","type":"internal"}`, no configuration leaked |
+| build-and-mock-e2e | `pnpm test:e2e:mock` (full suite) | never green | **red — §4 D4**, unchanged |
+
+**Five CI steps had never been run by any round of this slice.** Four are green.
+One is red: `pnpm restore:drill`, recorded in full as **§4 D9** — a backup and
+restore recovery drill that fails before it takes a dump, because one integrity
+probe reads a column `app.capability_runs` does not have. It is proven
+pre-existing (both sides byte-identical to `945be02`), its unit gate is green
+because it stubs Postgres, and it will block the merge.
+
+The reverse direction is smaller and worth stating: two scripts this repository
+has are **not** CI steps — `pnpm verify:authority` (subsumed by `verify:spec`,
+which runs the same authority verifier and reports the same four counts) and
+`pnpm vendor:check`. Both were run here and both pass.
+
+### 11.5 Gates
+
+| Gate | Result |
+|---|---|
+| `pnpm secrets:scan` | **exit 0** |
+| `pnpm verify:spec` | 49 / 9 / 44 / 11 |
+| `pnpm verify:authority` | pass — same four counts |
+| `pnpm implementation:check` | pass — 30 QA-closure files still pure |
+| `pnpm openapi:lint` | valid |
+| `pnpm contracts:check` | no diff |
+| `pnpm lint` | pass |
+| `pnpm typecheck` | pass |
+| `pnpm build` | pass |
+| `git diff --check` | clean |
+| `pnpm deploy:check` | pass |
+| `pnpm vendor:check` | pass |
+| `pnpm restore:drill:test` | pass — 29/29 |
+| `docker build` + worker entrypoint smoke | pass |
+| `pnpm db:migrate` | 21 files; replay applies 0 |
+| `pnpm db:smoke` | pass, rolled back |
+| `pnpm db:migrate:check` | 44 tables / 56 indexes / 69 triggers / 18 routines |
+| `pnpm test` (no `DATABASE_URL`) | 305 files, **3872** tests (was 3863) |
+| `pnpm test` (with `DATABASE_URL`) | 305 files, **3872** tests — identical |
+| `pnpm test:integration` | 65 files, **475** tests (was 473) |
+| E2E `content-shadow-vertical` / `-review` / `-execution` / `audit-technical-vertical` | **21/21** (was 19/19; the two new tests are the additions) |
+| `pnpm restore:drill` | **RED — §4 D9**, never run before, pre-existing |
+| `pnpm audit` | red — §4 D2, unchanged |
+| unit `--coverage` branch threshold | red — §4 D1, unchanged and **not re-measured** |
+
+### 11.6 What did not change
+
+Constraint **N-1** held. `git diff --stat 945be02..HEAD` restricted to
+`apps/web/src/app/p/[projectId]/overview`, `…/growth-map` and `…/sources` is
+**empty**, and so is this round's own diff over the same three paths. `studio` is
+not in the freeze.
+
+No existing assertion was weakened and no existing test was deleted or made
+laxer. Four fixture files gained an `adoption` field because `toArtifactDto` now
+requires one and `ArtifactDto` now carries one; every added value is `null` with
+a comment stating why (no Content Shadow gate judges a `technical_ticket` or a
+`content_brief`), and no assertion in those files moved. Zero migrations.
+
+### 11.7 Still open after this round
+
+- **§4 D9** — `pnpm restore:drill`, newly discovered red. Needs an Owner
+  decision and its own task; it will block the merge.
+- **§4 D1** branch coverage, **D2** `pnpm audit`, **D3** the stale parallel
+  verifier test, **D4** the full mock E2E suite, **D8** `real-vertical-chains`,
+  **D5** five undeclared 503s, **§10.4** the three remaining redaction-to-storage
+  weaknesses — all unchanged.
+- **§8.2 N-3** stands: branch coverage was not re-measured this round either.
+  This round added 9 unit tests and 2 integration tests; the effect on 78.21% is
+  unknown and no improvement is claimed.
+- The Studio hint lists **every** blocking claim, while the Execution blocker
+  block shows three and then "and N more". The wire field is capped at 25 ids.
+  With the blocking set at exactly three (`rl8` / `rl12` / `sc9b`) the two
+  surfaces cannot differ today; if the blocking set grows, the Studio hint gets
+  longer where the Execution block truncates. Recorded, not fixed.
