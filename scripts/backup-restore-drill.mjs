@@ -796,6 +796,71 @@ async function defaultCollectInventory({
   return validateInventory({ tableCounts, tableChecksums, integrityChecksums });
 }
 
+/**
+ * The migration version the restored copy already declares, or null when the
+ * database has never been migrated.
+ *
+ * The application's own runner is forward-only for a reason it states in
+ * `packages/db/src/migrate.ts`: replaying a migration that re-asserts a CHECK
+ * constraint a later migration has since widened (0014 re-narrowing
+ * `async_runs_kind_check` after 0020 admits `content_shadow`) fails against
+ * rows that use the newer value. A restored dump is already at head, so the
+ * drill has to honour the same rule or its replay gate fails on any source
+ * database that holds real data rather than on any real restore defect.
+ */
+async function defaultAppliedMigrationVersion({
+  connection,
+  database,
+  environment,
+  pgBinDir,
+}) {
+  const projection = parseKeyValueRows(
+    await defaultRunQuery({
+      connection,
+      database,
+      environment,
+      pgBinDir,
+      sqlText:
+        "select 'projection' as key, coalesce(to_regclass('app.schema_migration_version')::text, '') as value",
+    }),
+  );
+  if (!projection.projection) return null;
+  const version = parseKeyValueRows(
+    await defaultRunQuery({
+      connection,
+      database,
+      environment,
+      pgBinDir,
+      sqlText:
+        "select 'migration_version' as key, migration_version as value from app.schema_migration_version",
+    }),
+  );
+  const applied = version.migration_version;
+  if (!applied) return null;
+  if (!/^[0-9]{4}_[a-z0-9_]+$/.test(applied)) {
+    throw createFailureError({
+      type: "restore_drill",
+      code: "RESTORE_MIGRATION_VERSION_UNREADABLE",
+    });
+  }
+  return applied;
+}
+
+/**
+ * Forward-only replay selection, byte-for-byte the rule the application runner
+ * applies: a migration whose ordinal-prefixed name is at or below the version
+ * the database already declares has been applied and is not re-executed.
+ */
+export function pendingMigrationPaths(migrationPaths, appliedVersion) {
+  if (appliedVersion === null || appliedVersion === undefined) {
+    return [...migrationPaths];
+  }
+  return migrationPaths.filter(
+    (migrationPath) =>
+      path.basename(migrationPath).replace(/\.sql$/u, "") > appliedVersion,
+  );
+}
+
 async function defaultDatabaseExists({
   connection,
   targetDatabase,
@@ -886,6 +951,7 @@ function markdownReport(report) {
     "## Verification gates",
     "",
     `- Migration replay: ${report.verification.migrationReplay}`,
+    `- Migrations applied to the restored copy: ${report.verification.migrationsApplied} of ${report.verification.migrationsDiscovered} (restored copy already declared ${report.verification.migrationVersionAlreadyApplied ?? "no migration version"})`,
     `- Schema smoke: ${report.verification.schemaSmoke}`,
     `- Application tables: ${report.verification.appTableCount}`,
     `- Row counts match: ${report.verification.rowCountsMatch ? "yes" : "no"}`,
@@ -947,6 +1013,7 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
   const keepBackup = isExplicitKeepBackup(options.keepBackup);
   const collectInventoryOverride = overrides.collectInventory;
   const databaseExistsOverride = overrides.databaseExists;
+  const appliedMigrationVersionOverride = overrides.appliedMigrationVersion;
   const runToolOverride = overrides.runTool;
   const readMigrationDirectory = overrides.readMigrationDirectory ?? readdir;
   const removeDumpDirectory =
@@ -966,6 +1033,7 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
 
   let collectInventory;
   let databaseExists;
+  let appliedMigrationVersion;
   let runTool;
   let dumpDirectory = null;
   let dumpPath = null;
@@ -979,7 +1047,10 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
   let dumpCreated = false;
   let verificationSucceeded = false;
   let migrationReplay = "not_run";
+  let migrationReplayApplied = 0;
+  let migrationReplayAlreadyApplied = null;
   let schemaSmoke = "not_run";
+  let migrationPathCount = 0;
   const cleanupFailures = [];
   const cleanup = {
     targetDatabaseDropped: false,
@@ -993,6 +1064,7 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
 
   try {
     const migrationPaths = await listMigrationPaths(readMigrationDirectory);
+    migrationPathCount = migrationPaths.length;
     dumpDirectory = await mkdtemp(path.join(tmpdir(), DUMP_DIRECTORY_PREFIX));
     await chmod(dumpDirectory, 0o700);
     dumpPath = path.join(dumpDirectory, "backup.dump");
@@ -1024,6 +1096,15 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
         defaultDatabaseExists({
           connection: source,
           targetDatabase: candidate,
+          environment,
+          pgBinDir,
+        }));
+    appliedMigrationVersion =
+      appliedMigrationVersionOverride ??
+      (({ database }) =>
+        defaultAppliedMigrationVersion({
+          connection: source,
+          database,
           environment,
           pgBinDir,
         }));
@@ -1099,7 +1180,14 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
       ],
     });
     migrationReplay = "failed";
-    for (const migrationPath of migrationPaths) {
+    migrationReplayAlreadyApplied = await appliedMigrationVersion({
+      database: targetDatabase,
+    });
+    const pendingPaths = pendingMigrationPaths(
+      migrationPaths,
+      migrationReplayAlreadyApplied,
+    );
+    for (const migrationPath of pendingPaths) {
       await runTool({
         tool: "psql",
         args: [
@@ -1111,6 +1199,7 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
           migrationPath,
         ],
       });
+      migrationReplayApplied += 1;
     }
     migrationReplay = "passed";
     schemaSmoke = "failed";
@@ -1289,6 +1378,9 @@ export async function runRestoreDrill(options = {}, overrides = {}) {
     verification: {
       appTableCount: APP_TABLES.length,
       migrationReplay,
+      migrationsDiscovered: migrationPathCount,
+      migrationsApplied: migrationReplayApplied,
+      migrationVersionAlreadyApplied: migrationReplayAlreadyApplied,
       schemaSmoke,
       rowCountsMatch: verificationSucceeded && rowCountDifferences.length === 0,
       canonicalChecksumsMatch:

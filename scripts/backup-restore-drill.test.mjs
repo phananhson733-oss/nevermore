@@ -24,6 +24,7 @@ import {
   compareInventories,
   makeTargetDatabaseName,
   parseSourceDatabaseUrl,
+  pendingMigrationPaths,
   redactSensitiveText,
   runRestoreDrill,
 } from "./backup-restore-drill.mjs";
@@ -169,6 +170,7 @@ async function fakeHarness({
   failTool,
   toolFailure,
   restoredInventory = emptyInventory(),
+  appliedMigrationVersion = null,
 } = {}) {
   const reportDir = await mkdtemp(
     path.join(tmpdir(), "signalframe-restore-report-test-"),
@@ -188,6 +190,10 @@ async function fakeHarness({
         return structuredClone(
           database === "signalframe_ci" ? sourceInventory : restoredInventory,
         );
+      },
+      appliedMigrationVersion: async ({ database }) => {
+        calls.push({ operation: "applied_migration_version", database });
+        return appliedMigrationVersion;
       },
       databaseExists: async ({ targetDatabase }) => {
         calls.push({ operation: "exists", targetDatabase });
@@ -587,6 +593,82 @@ test("migration replay stops at the first failed ordered migration and still cle
   } finally {
     await rm(reportDir, { recursive: true, force: true });
   }
+});
+
+test("a restored copy is replayed forward only from the version it declares", async () => {
+  const { reportDir, calls, overrides } = await fakeHarness({
+    appliedMigrationVersion: "0009_async_run_contract_version",
+  });
+
+  try {
+    const result = await runRestoreDrill(
+      { sourceUrl: SOURCE_URL, reportDir },
+      overrides,
+    );
+    const report = JSON.parse(await readFile(result.reportPaths.json, "utf8"));
+    const replayedFiles = calls
+      .filter(
+        (call) => call.operation === "psql" && call.args.includes("--file"),
+      )
+      .map((call) =>
+        path.basename(call.args[call.args.indexOf("--file") + 1]),
+      );
+
+    assert.equal(result.status, "passed");
+    // A restored dump is already at head. Re-running an earlier migration over
+    // it is not a stricter check, it is a wrong one: 0014 re-narrows
+    // async_runs_kind_check, which 0020 widened, and the application's own
+    // runner skips already-applied migrations for exactly that reason.
+    assert.equal(
+      replayedFiles.includes("0009_async_run_contract_version.sql"),
+      false,
+    );
+    assert.equal(
+      replayedFiles.includes("0014_product_profile_synthesis.sql"),
+      true,
+    );
+    assert.equal(replayedFiles.at(-1), "schema-smoke.sql");
+    assert.equal(
+      report.verification.migrationVersionAlreadyApplied,
+      "0009_async_run_contract_version",
+    );
+    assert.equal(report.verification.migrationReplay, "passed");
+    assert.equal(report.verification.schemaSmoke, "passed");
+    assert.equal(
+      report.verification.migrationsApplied,
+      replayedFiles.length - 1,
+    );
+    assert.ok(
+      report.verification.migrationsDiscovered >
+        report.verification.migrationsApplied,
+      "the report must state how much of the chain it actually replayed",
+    );
+    assert.match(
+      await readFile(result.reportPaths.markdown, "utf8"),
+      /Migrations applied to the restored copy: \d+ of \d+ \(restored copy already declared 0009_async_run_contract_version\)/,
+    );
+  } finally {
+    await rm(reportDir, { recursive: true, force: true });
+  }
+});
+
+test("forward-only replay selection matches the application migration runner", () => {
+  const paths = [
+    "/migrations/0009_async_run_contract_version.sql",
+    "/migrations/0014_product_profile_synthesis.sql",
+    "/migrations/0021_content_shadow_invocation_task.sql",
+  ];
+
+  assert.deepEqual(pendingMigrationPaths(paths, null), paths);
+  assert.deepEqual(pendingMigrationPaths(paths, undefined), paths);
+  assert.deepEqual(
+    pendingMigrationPaths(paths, "0009_async_run_contract_version"),
+    paths.slice(1),
+  );
+  assert.deepEqual(
+    pendingMigrationPaths(paths, "0021_content_shadow_invocation_task"),
+    [],
+  );
 });
 
 test("migration discovery rejects path traversal before any database tool runs", async () => {
