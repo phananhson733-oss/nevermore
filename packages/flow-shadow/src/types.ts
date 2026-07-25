@@ -16,6 +16,34 @@
  * well-defined, auditable function of frozen inputs plus a pinned adapter and
  * prompt-set version, not that an LLM emits identical bytes.
  */
+/**
+ * The cluster's aggregated existing-page decision. Four values, because one
+ * cluster's keywords can legitimately disagree and `mixed` / `unassigned` are
+ * the honest answers (decision O-3).
+ */
+export type ContentShadowPageAssignment =
+  | "existing_page"
+  | "new_asset"
+  | "mixed"
+  | "unassigned";
+
+/**
+ * The structured extraction of the pinned `content_brief` revision that makes
+ * the draft a CHILD of the brief instead of its sibling (Slice 2 Task 4b).
+ *
+ * Declared here as a pure structural type — this package never imports
+ * `@sf/artifacts` (or anything else at runtime); `@sf/artifacts` owns the
+ * extractor, this package only carries the value through the frozen tuple.
+ *
+ * `briefSections` is a COVERAGE CHECKLIST, not a document structure: the draft's
+ * structure stays the fixed `CONTENT_SHADOW_OUTLINE` scaffold (decision O-6).
+ */
+export interface ContentShadowBriefOutline {
+  readonly briefSections: readonly string[];
+  readonly targetKeywords: readonly string[];
+  readonly pageAssignment: ContentShadowPageAssignment;
+}
+
 export interface ContentShadowFrozenInput {
   readonly primaryFindingId: string;
   readonly sourceActionId: string;
@@ -25,6 +53,13 @@ export interface ContentShadowFrozenInput {
   readonly competitorEntityIds: readonly string[];
   readonly searchCluster: FrozenSearchCluster;
   readonly generativeQueryEntityIds: readonly string[];
+  /**
+   * Frozen because it is what actually shapes the draft: an auditor must be
+   * able to see what the model was told about the brief WITHOUT re-running the
+   * extractor, and a mapping decision that moves between accept and claim is a
+   * real input change that the existing hash guard must catch (decision O-2).
+   */
+  readonly contentBriefOutline: ContentShadowBriefOutline;
   readonly flowAdapterVersion: string;
   readonly promptSetVersion: string;
   readonly projectionVersion: string;
@@ -59,10 +94,22 @@ export interface ContentShadowInputManifest {
     readonly keywordEntityIds: readonly string[];
   };
   readonly generativeQueryEntityIds: readonly string[];
+  readonly contentBriefOutline: ContentShadowBriefOutline;
   readonly flowAdapterVersion: string;
   readonly promptSetVersion: string;
   readonly projectionVersion: string;
   readonly outputLocale: string;
+}
+
+/**
+ * Disclosure counts for the brief-outline projection. Deliberately NOT part of
+ * the frozen manifest: `mapping_review_state` does not shape the draft, so it
+ * must not be able to fail an already queued run — it only has to be visible.
+ */
+export interface BriefOutlineProjectionStats {
+  readonly clusterKeywordCount: number;
+  readonly projectedKeywordCount: number;
+  readonly unconfirmedMappingCount: number;
 }
 
 /**
@@ -114,6 +161,12 @@ export interface ResearchPack {
   };
   /** Deterministic drafting scaffold; the model fills it, the adapter fixes it. */
   readonly outline: readonly string[];
+  /**
+   * The brief-derived COVERAGE CHECKLIST. Distinct from `outline` above, which
+   * is the fixed document scaffold — the two are orthogonal on purpose
+   * (decision O-6) and must never be asserted against each other.
+   */
+  readonly briefOutline: ContentShadowBriefOutline;
   readonly searchObservation: ResearchSearchObservation;
   readonly generativeObservation: ResearchGenerativeObservation;
   readonly competitorEntityIds: readonly string[];

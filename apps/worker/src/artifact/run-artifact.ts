@@ -29,6 +29,7 @@ import {
   type ArtifactContent,
   type ArtifactPromptInput,
   type ArtifactType,
+  type ContentBriefOutline,
   type EvidenceExcerpt,
   type LLMArtifactResult,
   type PromptCurrentMetadata,
@@ -70,6 +71,11 @@ export interface ArtifactPromptRequest {
   readonly sourceDiagnosticRunId?: string | null;
   /** Absent only on legacy runs; otherwise must match the source diagnosis. */
   readonly sourceIcpProfileId?: string | null;
+  /**
+   * Only the Content Shadow draft supplies one (spec §10.2); a first-class
+   * artifact generation leaves it absent and its prompt bytes are unchanged.
+   */
+  readonly contentBriefOutline?: ContentBriefOutline | null;
 }
 
 interface RunRequest extends ArtifactPromptRequest {
@@ -715,5 +721,6 @@ export async function buildArtifactPromptInput(
     evidence,
     requiresValidationRollback:
       req.artifactType === "technical_ticket" && action.risk === "high",
+    contentBriefOutline: req.contentBriefOutline ?? null,
   };
 }

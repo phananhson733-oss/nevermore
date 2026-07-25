@@ -19,11 +19,15 @@ import type {
   AnalysisInvocationRecord,
   ArtifactContent,
   ArtifactPromptInput,
+  ArtifactType,
   LLMArtifactResult,
   LLMClient,
 } from "../types.ts";
 import { MAX_ARTIFACT_CONTENT_CHARS } from "@sf/contracts";
-import { PROMPT_SET_VERSION } from "../types.ts";
+import {
+  CONTENT_SHADOW_PROMPT_SET_VERSION,
+  PROMPT_SET_VERSION,
+} from "../types.ts";
 import {
   buildMessages,
   hashArtifactContent,
@@ -499,8 +503,22 @@ function safetyErrors(envelope: LlmArtifactEnvelope): readonly string[] {
   return [];
 }
 
+/**
+ * The prompt set an invocation belongs to. `english_blog_draft` carries the
+ * extra `contentBriefOutline` field and its own contract paragraph, so it
+ * records its own scoped version; the other three prompt bodies are unchanged
+ * and keep the global one. Recording one shared name for four differently
+ * shaped prompts would make the invocation ledger lie.
+ */
+function promptSetVersionFor(artifactType: ArtifactType): string {
+  return artifactType === "english_blog_draft"
+    ? CONTENT_SHADOW_PROMPT_SET_VERSION
+    : PROMPT_SET_VERSION;
+}
+
 function buildInvocation(params: {
   readonly model: string;
+  readonly promptSetVersion: string;
   readonly inputHash: string;
   readonly outputHash: string | null;
   readonly status: AnalysisInvocationRecord["status"];
@@ -512,7 +530,7 @@ function buildInvocation(params: {
     task: "artifact_generation",
     provider: "openai",
     model: params.model,
-    promptSetVersion: PROMPT_SET_VERSION,
+    promptSetVersion: params.promptSetVersion,
     inputHash: params.inputHash,
     outputHash: params.outputHash,
     status: params.status,
@@ -549,9 +567,15 @@ export class OpenAIClient implements LLMClient {
     input: ArtifactPromptInput,
   ): Promise<LLMArtifactResult> {
     const startedAt = Date.now();
+    const promptSetVersion = promptSetVersionFor(input.artifactType);
     const inputHash = hashPromptInput(input);
 
-    const raw = await this.callApi(input, inputHash, startedAt);
+    const raw = await this.callApi(
+      input,
+      promptSetVersion,
+      inputHash,
+      startedAt,
+    );
     const usage = raw.usage;
 
     const contentText = raw.content;
@@ -559,7 +583,7 @@ export class OpenAIClient implements LLMClient {
       throw this.fail(
         "INVALID_RESPONSE",
         "OpenAI response had no message content.",
-        { inputHash, usage, startedAt },
+        { promptSetVersion, inputHash, usage, startedAt },
       );
     }
 
@@ -568,6 +592,7 @@ export class OpenAIClient implements LLMClient {
       parsedJson = JSON.parse(contentText);
     } catch {
       throw this.reject("SCHEMA_INVALID", "Model output was not valid JSON.", {
+        promptSetVersion,
         inputHash,
         usage,
         startedAt,
@@ -580,6 +605,7 @@ export class OpenAIClient implements LLMClient {
         "SCHEMA_INVALID",
         `Model envelope failed schema validation: ${parsed.issues.join("; ")}`,
         {
+          promptSetVersion,
           inputHash,
           usage,
           startedAt,
@@ -593,6 +619,7 @@ export class OpenAIClient implements LLMClient {
         "REFERENCE_INTEGRITY",
         `Reference-integrity check failed: ${referenceErrors.join("; ")}`,
         {
+          promptSetVersion,
           inputHash,
           usage,
           startedAt,
@@ -606,6 +633,7 @@ export class OpenAIClient implements LLMClient {
         "SAFETY_VIOLATION",
         `Safety/length check failed: ${safety.join("; ")}`,
         {
+          promptSetVersion,
           inputHash,
           usage,
           startedAt,
@@ -616,6 +644,7 @@ export class OpenAIClient implements LLMClient {
     const content: ArtifactContent = toArtifactContent(parsed.envelope, input);
     const invocation = buildInvocation({
       model: this.model,
+      promptSetVersion,
       inputHash,
       outputHash: hashArtifactContent(content),
       status: "succeeded",
@@ -629,6 +658,7 @@ export class OpenAIClient implements LLMClient {
 
   private async callApi(
     input: ArtifactPromptInput,
+    promptSetVersion: string,
     inputHash: string,
     startedAt: number,
   ): Promise<OpenAIChatCompletion> {
@@ -637,12 +667,14 @@ export class OpenAIClient implements LLMClient {
     } catch (error) {
       if (error instanceof OpenAITransportError) {
         throw this.fail(error.code, error.message, {
+          promptSetVersion,
           inputHash,
           usage: NO_USAGE,
           startedAt,
         });
       }
       throw this.fail("NETWORK_ERROR", "OpenAI request failed.", {
+        promptSetVersion,
         inputHash,
         usage: NO_USAGE,
         startedAt,
@@ -655,6 +687,7 @@ export class OpenAIClient implements LLMClient {
     code: LLMErrorCode,
     message: string,
     ctx: {
+      readonly promptSetVersion: string;
       readonly inputHash: string;
       readonly usage: OpenAIUsage;
       readonly startedAt: number;
@@ -665,6 +698,7 @@ export class OpenAIClient implements LLMClient {
       message,
       buildInvocation({
         model: this.model,
+        promptSetVersion: ctx.promptSetVersion,
         inputHash: ctx.inputHash,
         outputHash: null,
         status: "failed",
@@ -680,6 +714,7 @@ export class OpenAIClient implements LLMClient {
     code: LLMErrorCode,
     message: string,
     ctx: {
+      readonly promptSetVersion: string;
       readonly inputHash: string;
       readonly usage: OpenAIUsage;
       readonly startedAt: number;
@@ -690,6 +725,7 @@ export class OpenAIClient implements LLMClient {
       message,
       buildInvocation({
         model: this.model,
+        promptSetVersion: ctx.promptSetVersion,
         inputHash: ctx.inputHash,
         outputHash: null,
         status: "rejected",

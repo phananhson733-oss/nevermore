@@ -945,6 +945,32 @@ describeDb("getContentShadowRun", () => {
     expect(projection.draft).toBeNull();
   });
 
+  it("surfaces a failed brief-outline extraction verbatim in the read projection", async () => {
+    // Decision O-4, third leg: the failure must reach the API, not only the
+    // stored pack. `research.limitations` is the contract field that carries it,
+    // which is why this needed no OpenAPI change.
+    const fixture = await seedShadowFixture(handle);
+    const run = await startRun(fixture);
+    const shadowRun = await new FlowShadowRunsRepository(handle.db).findById(
+      fixture.scope,
+      run.flowShadowRunId,
+    );
+    const failureLimitation =
+      "Content brief outline extraction FAILED: the pinned brief revision carried no machine-readable `## ` section heading, so this draft was NOT guided by the brief. Review the draft against the brief by hand.";
+    await new FlowShadowResearchPacksRepository(handle.db).insert({
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      flowShadowRunId: run.flowShadowRunId,
+      analysisInvocationId: null,
+      contentHash: shadowRun!.content_hash,
+      pack: { sources: [], limitations: [failureLimitation] },
+    });
+
+    const projection = await read(fixture, run.flowShadowRunId);
+
+    expect(projection.research?.limitations).toEqual([failureLimitation]);
+  });
+
   it("derives phase draft once the run installs its own revision", async () => {
     const fixture = await seedShadowFixture(handle);
     const run = await startRun(fixture);

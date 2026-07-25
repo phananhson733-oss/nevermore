@@ -124,7 +124,7 @@ The local production readiness response above is intentionally **not** counted a
 | AC-029 | Passed | Frozen priority ordering fixtures; no weighted-score field. |
 | AC-030 | Passed | Action override reason, revision conflict and old/new audit integrations. |
 | AC-031 | Passed | Three Artifact types share 202/status URL; worker generation/revision integrations. |
-| AC-032 | Passed | LLM envelope/prompt allowlist, collection/size/deadline caps, shared 40,000-character content budget and secret-sentinel tests. |
+| AC-032 | Passed | LLM envelope/prompt allowlist, per-artifactType closed DYNAMIC CONTEXT key set, gated `contentBriefOutline`, collection/size/deadline caps, shared 40,000-character content budget and secret-sentinel tests. |
 | AC-033 | Passed | Evidence/reference/number forgery, active-content/HTML/script/URI, bounded metadata and missing-section validators. |
 | AC-034 | Passed | Artifact stale base revision, identical hash+format no-op, format-sensitive revision, direct-service content-budget defense and ready→draft edit tests. |
 | AC-035 | Passed locally; authority ratification pending | Output locale default/override, same-click export, blank-reset and UI-locale independence tests; runtime/DB/app OpenAPI/manifest validation covers RFC 5646 structure with a 255-character ceiling. The older authority machine-contract representation remains launch gate 1 below. |

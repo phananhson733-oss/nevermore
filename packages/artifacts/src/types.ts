@@ -5,6 +5,8 @@
  * raw CSV, unfiltered site text, other projects' content, or logs.
  */
 
+import type { ContentBriefOutline } from "./brief/outline.ts";
+
 export type ArtifactType =
   | "content_brief"
   | "metadata_rewrite"
@@ -22,6 +24,27 @@ export const ARTIFACT_FORMAT: Record<ArtifactType, ContentFormat> = {
 };
 
 export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
+
+/**
+ * The prompt set for the Content Shadow English draft (Slice 2 Task 4b).
+ *
+ * SCOPED, not global. `PROMPT_SET_VERSION` is pinned by a DB CHECK on
+ * `diagnostic_runs.prompt_set_version`, so bumping it globally would require a
+ * migration, the authority schema, both verifiers and ~40 fixtures — and would
+ * make every queued DIAGNOSTIC run drift, for a change that only touches the
+ * `english_blog_draft` prompt. `analysis_invocations.prompt_set_version` has no
+ * CHECK and the repository already carries a scoped precedent
+ * (`PRODUCT_PROFILE_PROMPT_SET_VERSION`), so the draft prompt gets its own,
+ * semantically precise name and the other three artifact prompts keep theirs —
+ * which stays honest only because `contentBriefOutline` is gated to
+ * `english_blog_draft` and their prompt bytes are unchanged.
+ *
+ * This is the ONE definition the accepting service, the worker replay guard and
+ * the LLM client all read. They used to read two different constants that
+ * merely happened to be equal.
+ */
+export const CONTENT_SHADOW_PROMPT_SET_VERSION =
+  "mvp.prompts.content-shadow.0.3.0";
 
 /** Closed task vocabulary persisted by AnalysisInvocation. */
 export const ANALYSIS_INVOCATION_TASKS = [
@@ -102,6 +125,14 @@ export interface ArtifactPromptInput {
   readonly evidence: readonly EvidenceExcerpt[];
   /** Whether the source action is a high-risk technical change (spec §9.3 step 8). */
   readonly requiresValidationRollback: boolean;
+  /**
+   * Structured extraction of the pinned `content_brief` revision. Only
+   * `english_blog_draft` prompts carry it (spec §10.2); every other artifact
+   * type passes `null` and its prompt bytes are unchanged. `null` means "no
+   * outline was supplied", which is NOT the same value as an outline whose
+   * `briefSections` is empty ("the brief carried no readable outline").
+   */
+  readonly contentBriefOutline: ContentBriefOutline | null;
 }
 
 /** Built artifact content — a markdown/csv string or a metadata JSON object. */

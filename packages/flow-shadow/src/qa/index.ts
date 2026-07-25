@@ -1,4 +1,9 @@
-import type { QaClaim, QaEvaluation, QaEvaluationInput } from "../types.ts";
+import type {
+  QaClaim,
+  QaEvaluation,
+  QaEvaluationInput,
+  QaVerdict,
+} from "../types.ts";
 import { evaluateRedLines } from "./red-lines.ts";
 import { evaluateStructure } from "./structure-checks.ts";
 import { scoreCitability } from "./citability.ts";
@@ -34,15 +39,61 @@ const PENDING_CLAIM: QaClaim = {
     "Red-line, structure and citability judgement is not implemented yet; this draft revision requires human review.",
 };
 
+export const QA_BRIEF_OUTLINE_CLAIM_ID = "content-shadow.qa.brief-outline";
+
+/**
+ * The brief -> draft causal-chain claim (decision O-4).
+ *
+ * `failed` when the pinned brief produced no machine-readable outline: that is
+ * a VERIFIED fact, not an unimplemented check, and it means this draft was not
+ * brief-guided at all. When an outline does exist the claim is `unevaluated`,
+ * because whether the draft actually COVERS those topics is the Task 6
+ * judgement — reporting `passed` here would claim a check that has not run.
+ */
+function briefOutlineClaim(input: QaEvaluationInput): QaClaim {
+  const sections = input.pack.briefOutline.briefSections;
+  return sections.length === 0
+    ? {
+        claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
+        kind: "coverage",
+        status: "failed",
+        detail:
+          "The pinned content brief revision carried no machine-readable outline, so this draft was not guided by the brief. Review it against the brief by hand.",
+      }
+    : {
+        claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
+        kind: "coverage",
+        status: "unevaluated",
+        detail: `The brief contributed ${sections.length} coverage topic(s) to the draft prompt; whether the draft covers them is judged by the Task 6 coverage check.`,
+      };
+}
+
+/**
+ * A verdict may never read as `passed` while a claim is `failed`. Task 4's
+ * skeleton verdict is already `needs_review`, so today this is a no-op — it
+ * exists so the Task 6 judgement cannot regress decision O-4 by returning
+ * `passed` over a broken brief -> draft chain.
+ */
+export function clampVerdictToFailedClaims(
+  verdict: QaVerdict,
+  claims: readonly QaClaim[],
+): QaVerdict {
+  if (verdict !== "passed") return verdict;
+  return claims.some((claim) => claim.status === "failed")
+    ? "needs_review"
+    : verdict;
+}
+
 export function evaluateDraftQa(input: QaEvaluationInput): QaEvaluation {
-  const claims: QaClaim[] = [
+  const checks: QaClaim[] = [
     ...evaluateRedLines(input),
     ...evaluateStructure(input),
   ];
   // Advisory only: a citability score never contributes a gating claim.
   void scoreCitability(input);
-  if (claims.length === 0) claims.push(PENDING_CLAIM);
-  return { verdict: "needs_review", claims };
+  if (checks.length === 0) checks.push(PENDING_CLAIM);
+  const claims = [...checks, briefOutlineClaim(input)];
+  return { verdict: clampVerdictToFailedClaims("needs_review", claims), claims };
 }
 
 /** The claim list as plain JSON for the `claims` jsonb column. */

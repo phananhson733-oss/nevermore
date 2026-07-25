@@ -48,6 +48,7 @@ function makeInput(): ArtifactPromptInput {
       },
     ],
     requiresValidationRollback: false,
+    contentBriefOutline: null,
   };
 }
 

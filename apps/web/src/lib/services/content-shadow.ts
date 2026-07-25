@@ -23,7 +23,11 @@ import {
   type ProjectScope,
   type WorkspaceScope,
 } from "@sf/db";
-import { PROMPT_SET_VERSION } from "@sf/engine";
+import {
+  CONTENT_SHADOW_PROMPT_SET_VERSION,
+  extractContentBriefOutline,
+  type ContentBriefOutline,
+} from "@sf/artifacts";
 import {
   buildContentShadowInputManifest,
   CONTENT_SHADOW_ADAPTER_VERSION,
@@ -122,6 +126,12 @@ export interface ContentShadowInputs {
   readonly clusterKey: string;
   readonly keywordEntityIds: readonly string[];
   readonly generativeQueryEntityIds: readonly string[];
+  /**
+   * Deterministically extracted from the SAME brief revision and keyword rows
+   * this function already read — no extra query. Freezing it is what makes the
+   * draft a child of the brief rather than its sibling (Slice 2 Task 4b).
+   */
+  readonly contentBriefOutline: ContentBriefOutline;
 }
 
 /**
@@ -328,6 +338,19 @@ export async function loadContentShadowInputs(
     }
   }
 
+  // Structured extraction over data already in hand (Slice 2 Task 4b). Only the
+  // brief's STRUCTURE crosses into the prompt allowlist; its prose never does.
+  const { outline } = extractContentBriefOutline({
+    briefMarkdown: briefRevision.content_text,
+    keywords: keywordRows.map((row) => ({
+      id: row.id,
+      displayKeyword: row.display_keyword,
+      normalizedKeyword: row.normalized_keyword,
+      mappingDecision: row.mapping_decision,
+      mappingReviewState: row.mapping_review_state,
+    })),
+  });
+
   return {
     siteId: diagnosticRun.site_id,
     actionId: action.id,
@@ -339,6 +362,7 @@ export async function loadContentShadowInputs(
     clusterKey: body.searchCluster.clusterKey,
     keywordEntityIds,
     generativeQueryEntityIds,
+    contentBriefOutline: outline,
   };
 }
 
@@ -367,8 +391,13 @@ export function buildContentShadowFrozenInput(input: {
       keywordEntityIds: inputs.keywordEntityIds,
     },
     generativeQueryEntityIds: inputs.generativeQueryEntityIds,
+    contentBriefOutline: inputs.contentBriefOutline,
     flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
-    promptSetVersion: PROMPT_SET_VERSION,
+    // One constant, one source. The service used to read `PROMPT_SET_VERSION`
+    // from `@sf/engine` while the worker read a same-valued but INDEPENDENT
+    // constant from `@sf/artifacts`; advancing either alone would have made
+    // every Content Shadow run drift.
+    promptSetVersion: CONTENT_SHADOW_PROMPT_SET_VERSION,
     projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
     outputLocale: input.outputLocale,
   });

@@ -50,7 +50,11 @@ import {
   buildContentShadowInputManifest,
   CONTENT_SHADOW_ADAPTER_VERSION,
 } from "@sf/flow-shadow";
-import { LLMError } from "@sf/artifacts";
+import {
+  CONTENT_SHADOW_PROMPT_SET_VERSION,
+  extractContentBriefOutline,
+  LLMError,
+} from "@sf/artifacts";
 import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../../context.ts";
@@ -70,6 +74,22 @@ const CRAWL_METHOD_VERSION = "crawl.site_graph.v2";
 const CRAWL_DATASET_KEY = "crawl.site_graph.v1";
 const CONTENT_RULE_ID = "CONTENT-COVERAGE-001";
 const DRAFT_MARKDOWN = "# Shadow draft\n\nA deterministic fixture body.";
+const CLUSTER_KEY = "onboarding";
+/** A realistic confirmed brief: the extractor must find its `## ` headings. */
+const BRIEF_MARKDOWN = [
+  "## Objective",
+  "",
+  "Close the onboarding coverage gap.",
+  "",
+  "## Audience",
+  "",
+  "RevOps leads evaluating onboarding tooling.",
+  "",
+  "## Outline",
+  "",
+  "- Intro",
+  "- Core sections",
+].join("\n");
 
 const generateArtifact = vi.hoisted(() => vi.fn());
 vi.mock("@sf/artifacts", async (importOriginal) => {
@@ -108,6 +128,7 @@ interface ShadowFixture {
   readonly asyncRunId: string;
   readonly flowShadowRunId: string;
   readonly contentHash: string;
+  readonly keywordId: string;
 }
 
 async function seedProject(db: Db): Promise<ProjectSeed> {
@@ -335,6 +356,8 @@ async function seedShadowChain(
   options: {
     readonly flowAdapterVersion?: string;
     readonly projectionVersion?: string;
+    readonly promptSetVersion?: string;
+    readonly briefMarkdown?: string;
   } = {},
 ): Promise<ShadowFixture> {
   const flowAdapterVersion =
@@ -417,8 +440,27 @@ async function seedShadowChain(
       scope.workspaceId,
       scope.projectId,
       briefArtifactId,
-      "# Content brief revision 1",
+      options.briefMarkdown ?? BRIEF_MARKDOWN,
       contentHash({ briefArtifactId, revision: 1 }),
+    ],
+  );
+
+  // A real frozen SearchQuery cluster member: the worker re-reads it live and
+  // re-derives the outline from it, so its mapping decision is a drift source.
+  const keywordId = randomUUID();
+  await handle.pool.query(
+    `INSERT INTO app.keyword_entities (
+       id, workspace_id, project_id, display_keyword, normalized_keyword,
+       market, language_tag, query_kind, cluster_key, mapping_decision,
+       mapping_review_state, first_seen_at, last_seen_at
+     ) VALUES ($1,$2,$3,$4,$5,'US','en','search_query',$6,'new_asset','confirmed', now(), now())`,
+    [
+      keywordId,
+      scope.workspaceId,
+      scope.projectId,
+      "onboarding checklist",
+      "onboarding checklist",
+      CLUSTER_KEY,
     ],
   );
 
@@ -450,10 +492,26 @@ async function seedShadowChain(
     contentBriefArtifactId: briefArtifactId,
     contentBriefRevision: 1,
     competitorEntityIds: [],
-    searchCluster: { clusterKey: "onboarding", keywordEntityIds: [] },
+    searchCluster: {
+      clusterKey: CLUSTER_KEY,
+      keywordEntityIds: [keywordId],
+    },
     generativeQueryEntityIds: [],
+    contentBriefOutline: extractContentBriefOutline({
+      briefMarkdown: options.briefMarkdown ?? BRIEF_MARKDOWN,
+      keywords: [
+        {
+          id: keywordId,
+          displayKeyword: "onboarding checklist",
+          normalizedKeyword: "onboarding checklist",
+          mappingDecision: "new_asset",
+          mappingReviewState: "confirmed",
+        },
+      ],
+    }).outline,
     flowAdapterVersion,
-    promptSetVersion: PROMPT_SET_VERSION,
+    promptSetVersion:
+      options.promptSetVersion ?? CONTENT_SHADOW_PROMPT_SET_VERSION,
     projectionVersion,
     outputLocale: "en",
   });
@@ -485,6 +543,7 @@ async function seedShadowChain(
     asyncRunId,
     flowShadowRunId: shadowRun.id,
     contentHash: frozenHash,
+    keywordId,
   };
 }
 
@@ -833,6 +892,150 @@ describeDb("runContentShadow", () => {
     });
     expect(await artifacts.findById(fixture.scope, claimed.id)).toMatchObject({
       status: "failed",
+    });
+  });
+
+  it("carries the brief outline into the prompt and the persisted research pack", async () => {
+    const fixture = await seedShadowChain(handle);
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    // The draft prompt is a FUNCTION of the confirmed brief, not a sibling of
+    // it: this is the Task 4b defect closed end to end.
+    const promptInput = generateArtifact.mock.calls[0]?.[0] as {
+      readonly contentBriefOutline: {
+        readonly briefSections: readonly string[];
+        readonly targetKeywords: readonly string[];
+        readonly pageAssignment: string;
+      } | null;
+    };
+    expect(promptInput.contentBriefOutline).toEqual({
+      briefSections: ["Objective", "Audience", "Outline"],
+      targetKeywords: ["onboarding checklist"],
+      pageAssignment: "new_asset",
+    });
+
+    const pack = await new FlowShadowResearchPacksRepository(
+      handle.db,
+    ).findByRun(fixture.scope, fixture.flowShadowRunId);
+    expect(pack?.pack["briefOutline"]).toEqual({
+      briefSections: ["Objective", "Audience", "Outline"],
+      targetKeywords: ["onboarding checklist"],
+      pageAssignment: "new_asset",
+    });
+  });
+
+  it("degrades loudly when the pinned brief has no machine-readable outline", async () => {
+    const fixture = await seedShadowChain(handle, {
+      briefMarkdown: "# Content brief revision 1",
+    });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    // Decision O-4: the research pack states it, the QA verdict is not a pass,
+    // and the run still completes rather than punishing the operator.
+    const pack = await new FlowShadowResearchPacksRepository(
+      handle.db,
+    ).findByRun(fixture.scope, fixture.flowShadowRunId);
+    expect(JSON.stringify(pack?.pack["limitations"])).toMatch(
+      /outline extraction FAILED/,
+    );
+    const gates = await new FlowShadowQaGatesRepository(handle.db).findByRun(
+      fixture.scope,
+      fixture.flowShadowRunId,
+    );
+    expect(gates[0]?.verdict).not.toBe("passed");
+    expect(
+      (gates[0]?.claims as ReadonlyArray<Record<string, unknown>>).some(
+        (claim) =>
+          claim["claimId"] === "content-shadow.qa.brief-outline" &&
+          claim["status"] === "failed",
+      ),
+    ).toBe(true);
+  });
+
+  it("fails with input drift when a frozen keyword's mapping decision moves", async () => {
+    const fixture = await seedShadowChain(handle);
+    await handle.pool.query(
+      "UPDATE app.keyword_entities SET mapping_decision = 'unassigned', mapped_site_page_id = NULL, mapping_revision = mapping_revision + 1 WHERE id = $1",
+      [fixture.keywordId],
+    );
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
+    });
+    expect(generateArtifact).not.toHaveBeenCalled();
+    const packs = await handle.pool.query(
+      "SELECT count(*)::int AS count FROM app.flow_shadow_research_packs WHERE flow_shadow_run_id = $1",
+      [fixture.flowShadowRunId],
+    );
+    expect(packs.rows[0].count).toBe(0);
+  });
+
+  it("fails with input drift when a frozen keyword leaves the frozen cluster", async () => {
+    const fixture = await seedShadowChain(handle);
+    await handle.pool.query(
+      "UPDATE app.keyword_entities SET cluster_key = 'other-cluster', mapping_revision = mapping_revision + 1 WHERE id = $1",
+      [fixture.keywordId],
+    );
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
+    });
+    expect(generateArtifact).not.toHaveBeenCalled();
+  });
+
+  it("fails with input drift when the pinned Content Shadow prompt set advances", async () => {
+    // Freezing under the previous prompt set and executing under the new one is
+    // a DIFFERENT computation; the run fails loudly instead of silently drafting
+    // from a prompt its content address never named (decision O-1/O-8).
+    const fixture = await seedShadowChain(handle, {
+      promptSetVersion: "mvp.prompts.0.2.0",
+    });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
     });
   });
 

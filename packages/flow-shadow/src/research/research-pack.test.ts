@@ -6,7 +6,10 @@ import {
   researchPackToJson,
 } from "./research-pack.ts";
 import { CONTENT_SHADOW_ADAPTER_VERSION } from "../version.ts";
-import type { ContentShadowFrozenInput } from "../types.ts";
+import type {
+  BriefOutlineProjectionStats,
+  ContentShadowFrozenInput,
+} from "../types.ts";
 
 const KEYWORD_A = "00000000-0000-4000-8000-00000000000a";
 const KEYWORD_B = "00000000-0000-4000-8000-00000000000b";
@@ -25,23 +28,34 @@ const FROZEN: ContentShadowFrozenInput = {
     keywordEntityIds: [KEYWORD_B, KEYWORD_A],
   },
   generativeQueryEntityIds: [GENERATIVE_A],
+  contentBriefOutline: {
+    briefSections: ["Objective", "Audience"],
+    targetKeywords: ["growth analytics"],
+    pageAssignment: "existing_page",
+  },
   flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
-  promptSetVersion: "mvp.prompts.0.2.0",
-  projectionVersion: "content-shadow.0.3.0",
+  promptSetVersion: "mvp.prompts.content-shadow.0.3.0",
+  projectionVersion: "content-shadow.0.3.1",
   outputLocale: "en",
+};
+
+const STATS: BriefOutlineProjectionStats = {
+  clusterKeywordCount: 1,
+  projectedKeywordCount: 1,
+  unconfirmedMappingCount: 0,
 };
 
 const manifest = buildContentShadowInputManifest(FROZEN);
 
 describe("buildResearchPack", () => {
   it("is deterministic: the same manifest yields a byte-identical pack", () => {
-    expect(JSON.stringify(buildResearchPack(manifest))).toBe(
-      JSON.stringify(buildResearchPack(manifest)),
+    expect(JSON.stringify(buildResearchPack(manifest, STATS))).toBe(
+      JSON.stringify(buildResearchPack(manifest, STATS)),
     );
   });
 
   it("keeps search and generative observation in separate shapes", () => {
-    const pack = buildResearchPack(manifest);
+    const pack = buildResearchPack(manifest, STATS);
 
     expect(pack.searchObservation).toEqual({
       clusterKey: "growth-analytics",
@@ -67,7 +81,7 @@ describe("buildResearchPack", () => {
         walk(child);
       }
     };
-    walk(buildResearchPack(manifest));
+    walk(buildResearchPack(manifest, STATS));
 
     for (const key of keys) {
       expect(key).not.toMatch(/volume|impression|click|combined|merged/i);
@@ -79,7 +93,7 @@ describe("buildResearchPack", () => {
   });
 
   it("freezes the confirmed brief revision instead of recasting it", () => {
-    const pack = buildResearchPack(manifest);
+    const pack = buildResearchPack(manifest, STATS);
 
     expect(pack.brief).toEqual({
       artifactId: FROZEN.contentBriefArtifactId,
@@ -89,7 +103,7 @@ describe("buildResearchPack", () => {
   });
 
   it("grades only first-party frozen records and states its gaps", () => {
-    const pack = buildResearchPack(manifest);
+    const pack = buildResearchPack(manifest, STATS);
 
     expect(pack.sources.map((source) => source.kind)).toEqual([
       "content_brief",
@@ -106,9 +120,77 @@ describe("buildResearchPack", () => {
   });
 
   it("serializes to a plain JSON object for the jsonb column", () => {
-    const json = researchPackToJson(buildResearchPack(manifest));
+    const json = researchPackToJson(buildResearchPack(manifest, STATS));
 
     expect(Object.getPrototypeOf(json)).toBe(Object.prototype);
     expect(json["adapterVersion"]).toBe(CONTENT_SHADOW_ADAPTER_VERSION);
+  });
+});
+
+describe("buildResearchPack brief outline projection (Task 4b)", () => {
+  it("projects the brief outline beside — never merged into — the fixed scaffold", () => {
+    const pack = buildResearchPack(manifest, STATS);
+
+    // O-6: the scaffold is the document structure, the brief outline is the
+    // coverage checklist. Two fields, never asserted against each other.
+    expect(pack.outline).toEqual([...CONTENT_SHADOW_OUTLINE]);
+    expect(pack.briefOutline).toEqual({
+      briefSections: ["Objective", "Audience"],
+      targetKeywords: ["growth analytics"],
+      pageAssignment: "existing_page",
+    });
+  });
+
+  it("no longer describes the brief as consumed as-is", () => {
+    const pack = buildResearchPack(manifest, STATS);
+    const briefSource = pack.sources.find(
+      (source) => source.kind === "content_brief",
+    );
+
+    expect(briefSource?.limitation).toMatch(/coverage checklist/i);
+    expect(briefSource?.limitation).not.toMatch(/as-is/i);
+  });
+
+  it("states an extraction failure loudly instead of degrading in silence", () => {
+    const broken = buildContentShadowInputManifest({
+      ...FROZEN,
+      contentBriefOutline: {
+        briefSections: [],
+        targetKeywords: [],
+        pageAssignment: "unassigned",
+      },
+    });
+
+    const limitations = buildResearchPack(broken, {
+      clusterKeywordCount: 0,
+      projectedKeywordCount: 0,
+      unconfirmedMappingCount: 0,
+    }).limitations;
+
+    expect(limitations.join(" ")).toMatch(
+      /outline extraction FAILED[\s\S]*NOT guided by the brief/,
+    );
+  });
+
+  it("discloses projection truncation and unconfirmed mapping review states", () => {
+    const limitations = buildResearchPack(manifest, {
+      clusterKeywordCount: 120,
+      projectedKeywordCount: 50,
+      unconfirmedMappingCount: 7,
+    }).limitations;
+
+    expect(limitations.join(" ")).toContain(
+      "The frozen search cluster holds 120 keywords; only the first 50",
+    );
+    expect(limitations.join(" ")).toContain(
+      "7 of 120 frozen cluster keywords carry an unconfirmed page-mapping review state",
+    );
+  });
+
+  it("says nothing about truncation or review state when neither applies", () => {
+    const limitations = buildResearchPack(manifest, STATS).limitations;
+
+    expect(limitations.join(" ")).not.toContain("only the first");
+    expect(limitations.join(" ")).not.toContain("unconfirmed page-mapping");
   });
 });

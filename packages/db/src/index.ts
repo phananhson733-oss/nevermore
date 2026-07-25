@@ -208,6 +208,7 @@ export type {
 } from "./repositories/keyword-occurrences.ts";
 export {
   KeywordsRepository,
+  MAX_KEYWORD_ENTITY_BATCH,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
 } from "./repositories/keywords.ts";
 export type {

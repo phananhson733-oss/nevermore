@@ -40,8 +40,7 @@ const EVENT_HANDLER_PATTERN = /(?:^|[\s"'`/])on[a-z][a-z0-9_-]*[ \t\r\n]*=/i;
 const JS_URI_PATTERN =
   /j[\t\r\n]*a[\t\r\n]*v[\t\r\n]*a[\t\r\n]*s[\t\r\n]*c[\t\r\n]*r[\t\r\n]*i[\t\r\n]*p[\t\r\n]*t[ \t\r\n]*:/i;
 
-const NUMERIC_CHARACTER_REFERENCE =
-  /&#(?:x([0-9a-f]{1,6})|([0-9]{1,7}));?/gi;
+const NUMERIC_CHARACTER_REFERENCE = /&#(?:x([0-9a-f]{1,6})|([0-9]{1,7}));?/gi;
 const SECURITY_NAMED_REFERENCE = /&(colon|tab|newline);/gi;
 
 /** Decode only character references relevant to active URI/handler scanning. */
@@ -77,7 +76,7 @@ function decodeSecurityCharacterReferences(value: string): string {
     });
 }
 
-interface ParsedSection {
+export interface ParsedSection {
   readonly heading: string;
   readonly body: string;
 }
@@ -85,7 +84,17 @@ interface ParsedSection {
 const LEVEL2_HEADING = /^##(?!#)[ \t]+(.+?)[ \t]*$/;
 const LEVEL1_OR_2_HEADING = /^#{1,2}(?!#)[ \t]+/;
 
-function parseSections(markdown: string): readonly ParsedSection[] {
+/**
+ * Split markdown into its `## ` sections, in document order.
+ *
+ * Exported (behaviour unchanged) so the Content Shadow brief-outline extractor
+ * reads a brief through EXACTLY the same heading grammar the validator uses.
+ * Two implementations of "what is a section" would let a heading the validator
+ * requires disagree with the heading the draft prompt is told about.
+ */
+export function parseMarkdownSections(
+  markdown: string,
+): readonly ParsedSection[] {
   const lines = markdown.split(/\r?\n/);
   const sections: ParsedSection[] = [];
   let heading: string | null = null;
@@ -120,7 +129,8 @@ function parseSections(markdown: string): readonly ParsedSection[] {
   return sections;
 }
 
-function normalizeHeading(value: string): string {
+/** Case/spacing/trailing-colon-insensitive heading key (validator semantics). */
+export function normalizeHeading(value: string): string {
   return value
     .trim()
     .replace(/[:：]\s*$/u, "")
@@ -128,7 +138,8 @@ function normalizeHeading(value: string): string {
     .toLowerCase();
 }
 
-function headingMatches(heading: string, alias: string): boolean {
+/** True when `heading` equals an alias or extends it as a prefix word. */
+export function headingMatches(heading: string, alias: string): boolean {
   const h = normalizeHeading(heading);
   const a = normalizeHeading(alias);
   return h === a || h.startsWith(`${a} `);
@@ -160,9 +171,11 @@ export function validateMarkdownSections(
     }
   }
 
-  const sections = parseSections(markdown);
+  const sections = parseMarkdownSections(markdown);
   for (const req of requiredSections) {
-    const match = sections.find((s) => req.aliases.some((alias) => headingMatches(s.heading, alias)));
+    const match = sections.find((s) =>
+      req.aliases.some((alias) => headingMatches(s.heading, alias)),
+    );
     if (match === undefined) {
       errors.push(`missing required section: ## ${req.label}`);
     } else if (match.body.trim().length === 0) {

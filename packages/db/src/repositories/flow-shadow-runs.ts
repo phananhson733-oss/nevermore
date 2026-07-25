@@ -14,8 +14,15 @@ import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
  * The frozen projection version of a Content Shadow run. Like the Growth Audit
  * projection version it is immutable so a shadow run can be re-rendered
  * deterministically from its frozen inputs and content_hash.
+ *
+ * 0.3.1 (Slice 2 Task 4b): the frozen manifest and the research pack gained the
+ * brief-outline projection. This is the ONLY version position that records
+ * "the extraction algorithm itself changed", which is what lets a future
+ * auditor tell an input change apart from an algorithm change. Advancing it
+ * makes already-queued runs fail with CONTENT_SHADOW_INPUT_DRIFT — that is the
+ * intended red-line-C semantics, not something to paper over.
  */
-export const CONTENT_SHADOW_PROJECTION_VERSION = "content-shadow.0.3.0";
+export const CONTENT_SHADOW_PROJECTION_VERSION = "content-shadow.0.3.1";
 
 export interface FlowShadowRunRow {
   readonly id: string;

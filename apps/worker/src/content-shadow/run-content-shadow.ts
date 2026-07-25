@@ -10,6 +10,8 @@ import {
   FlowShadowQaGatesRepository,
   FlowShadowResearchPacksRepository,
   FlowShadowRunsRepository,
+  KeywordsRepository,
+  MAX_KEYWORD_ENTITY_BATCH,
   toRunAttempt,
   type ArtifactRow,
   type CanonicalValue,
@@ -18,12 +20,14 @@ import {
 } from "@sf/db";
 import {
   ARTIFACT_FORMAT,
+  CONTENT_SHADOW_PROMPT_SET_VERSION,
   createOpenAIClient,
+  extractContentBriefOutline,
   LLMError,
-  PROMPT_SET_VERSION,
   validateArtifact,
   type AnalysisInvocationRecord,
   type ArtifactContent,
+  type ContentBriefOutline,
 } from "@sf/artifacts";
 import {
   buildContentShadowInputManifest,
@@ -32,6 +36,7 @@ import {
   evaluateDraftQa,
   qaClaimsToJson,
   researchPackToJson,
+  type BriefOutlineProjectionStats,
   type ContentShadowInputManifest,
 } from "@sf/flow-shadow";
 import type { WorkerContext } from "../context.ts";
@@ -170,6 +175,9 @@ interface LiveShadowInputs {
   readonly outputLocale: string;
   readonly sourceDiagnosticRunId: string;
   readonly sourceIcpProfileId: string;
+  /** Re-derived here; NEVER read back out of the frozen row (see below). */
+  readonly contentBriefOutline: ContentBriefOutline;
+  readonly briefOutlineStats: BriefOutlineProjectionStats;
 }
 
 /**
@@ -248,6 +256,55 @@ async function loadLiveShadowInputs(
     );
   }
 
+  // The frozen keyword identities are re-read live so the outline can be
+  // RE-DERIVED. Reading `contentBriefOutline` back out of the frozen row would
+  // make its drift check tautologically true, exactly like the three pinned
+  // versions below.
+  if (frozen.keywordEntityIds.length > MAX_KEYWORD_ENTITY_BATCH) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "the frozen search cluster exceeds the keyword identity ceiling",
+    );
+  }
+  const keywordRows =
+    frozen.keywordEntityIds.length === 0
+      ? []
+      : await new KeywordsRepository(ctx.db).listByIds(scope, [
+          ...new Set(frozen.keywordEntityIds),
+        ]);
+  if (keywordRows.length !== new Set(frozen.keywordEntityIds).size) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "a frozen search keyword is missing from this project",
+    );
+  }
+  for (const row of keywordRows) {
+    // Search observation must still be search observation (invariant 8) and a
+    // keyword moved out of the frozen cluster is no longer this run's input.
+    if (row.query_kind !== "search_query") {
+      throw new ContentShadowPermanentError(
+        CONTENT_SHADOW_INPUT_DRIFT,
+        "a frozen search keyword is no longer a SearchQuery entity",
+      );
+    }
+    if (row.cluster_key !== frozen.clusterKey) {
+      throw new ContentShadowPermanentError(
+        CONTENT_SHADOW_INPUT_DRIFT,
+        "a frozen search keyword left the frozen cluster",
+      );
+    }
+  }
+  const extraction = extractContentBriefOutline({
+    briefMarkdown: briefRevision.content_text,
+    keywords: keywordRows.map((row) => ({
+      id: row.id,
+      displayKeyword: row.display_keyword,
+      normalizedKeyword: row.normalized_keyword,
+      mappingDecision: row.mapping_decision,
+      mappingReviewState: row.mapping_review_state,
+    })),
+  });
+
   const diagnosticRun = await new DiagnosticRunsRepository(ctx.db).findById(
     scope,
     action.source_diagnostic_run_id,
@@ -273,11 +330,12 @@ async function loadLiveShadowInputs(
       keywordEntityIds: frozen.keywordEntityIds,
     },
     generativeQueryEntityIds: frozen.generativeQueryEntityIds,
+    contentBriefOutline: extraction.outline,
     // All three pinned versions come from the CURRENTLY pinned constants, never
     // from the row under audit: reading a version back out of the frozen row
     // would make its drift check tautologically true.
     flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
-    promptSetVersion: PROMPT_SET_VERSION,
+    promptSetVersion: CONTENT_SHADOW_PROMPT_SET_VERSION,
     projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
     outputLocale: frozen.outputLocale,
   });
@@ -306,6 +364,12 @@ async function loadLiveShadowInputs(
     outputLocale: frozen.outputLocale,
     sourceDiagnosticRunId: action.source_diagnostic_run_id,
     sourceIcpProfileId: diagnosticRun.icp_profile_id,
+    contentBriefOutline: extraction.outline,
+    briefOutlineStats: {
+      clusterKeywordCount: extraction.clusterKeywordCount,
+      projectedKeywordCount: extraction.projectedKeywordCount,
+      unconfirmedMappingCount: extraction.unconfirmedMappingCount,
+    },
   };
 }
 
@@ -470,7 +534,7 @@ export async function runContentShadow(
     const live = await loadLiveShadowInputs(ctx, scope, shadowRun);
 
     // --- RESEARCH: deterministic, idempotent ------------------------------
-    const pack = buildResearchPack(live.manifest);
+    const pack = buildResearchPack(live.manifest, live.briefOutlineStats);
     await new FlowShadowResearchPacksRepository(ctx.db).insert({
       workspaceId,
       projectId,
@@ -500,6 +564,7 @@ export async function runContentShadow(
         operatorInstructions: null,
         sourceDiagnosticRunId: live.sourceDiagnosticRunId,
         sourceIcpProfileId: live.sourceIcpProfileId,
+        contentBriefOutline: live.contentBriefOutline,
       });
 
       const client = createOpenAIClient({

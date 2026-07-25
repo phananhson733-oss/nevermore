@@ -73,6 +73,15 @@ export function buildContentShadowInputManifest(
       keywordEntityIds: sortedUnique(input.searchCluster.keywordEntityIds),
     },
     generativeQueryEntityIds: sortedUnique(input.generativeQueryEntityIds),
+    // Copied field-by-field, never spread: the manifest is a closed tuple and a
+    // caller-supplied extra key must not be able to ride into the hash.
+    // Order is meaningful here (document order / normalized-keyword order), so
+    // this is the one collection that is NOT sorted or de-duplicated again.
+    contentBriefOutline: {
+      briefSections: [...input.contentBriefOutline.briefSections],
+      targetKeywords: [...input.contentBriefOutline.targetKeywords],
+      pageAssignment: input.contentBriefOutline.pageAssignment,
+    },
     flowAdapterVersion: input.flowAdapterVersion,
     promptSetVersion: input.promptSetVersion,
     projectionVersion: input.projectionVersion,

@@ -797,7 +797,8 @@ Artifact format canonical enum 只有 `markdown | json | csv`；本次不使用 
 ### 10.2 LLM 边界
 
 - 首版 LLM 只用于 `finding_summary`（可关闭）与三类 `artifact_generation`。
-- Prompt 输入采用 allowlist：complete ICP 的必要字段、已确认 Finding、引用 Evidence 的短摘录/数值、Action template、output locale、operator instructions。
+- Prompt 输入采用 allowlist：complete ICP 的必要字段、已确认 Finding、引用 Evidence 的短摘录/数值、Action template、output locale、operator instructions，以及仅用于 `english_blog_draft` 的 `contentBriefOutline`。
+- `contentBriefOutline` 是对已确认 `content_brief` revision 的**结构化提取**，只含三项闭集值：`briefSections`（确定性 `## ` heading 提取；命中 §10.1 段名的归一为英文 canonical 常量，其余经净化；≤12 条、单条 ≤120 字符）、`targetKeywords`（冻结 SearchQuery cluster 的关键词文本，不包含任何 demand 指标；≤50 条、单条 ≤120 字符）、`pageAssignment`（`existing_page|new_asset|mixed|unassigned`）。全部经 Zod `.strict()` 校验；单条净化剔离控制/格式字符与尖括号、折叠空白并截断。brief 的散文正文**永不进入 prompt**。`briefSections` 的语义是**覆盖清单（coverage checklist）**，不是文档结构；文档结构由固定脚手架决定。提取失败（`briefSections` 为空）必须响亮降级：research pack 记 limitation、QA verdict 不得为 `passed`、读接口显式呈现。`english_blog_draft` 使用独立的 `CONTENT_SHADOW_PROMPT_SET_VERSION`，其余三类 prompt 字节不变。
 - 不发送 OAuth token、完整 raw CSV、未筛选整站正文、其他项目内容或日志。
 - 模型必须返回结构化 envelope；服务端先 JSON/schema 校验，再引用完整性校验，再安全/长度校验。
 - 输出中的事实性数字必须引用传入 evidenceId；未知值写 `unknown/待确认`，不得补造。
@@ -1272,7 +1273,7 @@ Retry 只用于 transient error（rate limit、network、5xx）；permission/val
 ### 17.5 Artifact、报告与导出
 
 - **AC-031** 三类 create 均 202/statusUrl；worker 成功产生 revision 1 和 draft。
-- **AC-032** LLM prompt fixture 不含 token、完整 raw CSV、其他项目或未 allowlist 字段。
+- **AC-032** LLM prompt fixture 不含 token、完整 raw CSV、其他项目或未 allowlist 字段；DYNAMIC CONTEXT 的顶层与嵌套键集合按 artifactType 精确匹配闭集；`contentBriefOutline` 只出现在 `english_blog_draft`，且条数/长度/字符集上限被断言。
 - **AC-033** 模型伪造 evidenceId/数字、注入 HTML/script、缺 section 时 validation 阻止 ready。
 - **AC-034** stale baseRevision 409；相同 contentHash 不增 revision；编辑 ready artifact 后回 draft。
 - **AC-035** outputLocale 默认/override 正确，uiLocale 不改变任何已存正文。

@@ -63,6 +63,32 @@ export {
 } from "./templates/index.ts";
 export type { TemplateArtifactLocale } from "./templates/index.ts";
 
+// Content Shadow brief -> draft structured extraction (spec §10.2, Task 4b).
+export {
+  aggregatePageAssignment,
+  extractBriefSectionLabels,
+  extractContentBriefOutline,
+  sanitizeOutlineItem,
+  MAX_BRIEF_OUTLINE_KEYWORDS,
+  MAX_BRIEF_OUTLINE_KEYWORD_CHARS,
+  MAX_BRIEF_OUTLINE_SECTIONS,
+  MAX_BRIEF_OUTLINE_SECTION_CHARS,
+} from "./brief/outline.ts";
+export type {
+  BriefKeywordMappingDecision,
+  BriefKeywordMappingReviewState,
+  BriefOutlineKeyword,
+  BriefPageAssignment,
+  ContentBriefOutline,
+  ContentBriefOutlineExtraction,
+} from "./brief/outline.ts";
+
+// Prompt envelope helpers reused by the Content Shadow worker.
+export {
+  contentBriefOutlineSchema,
+  safePromptContentBriefOutline,
+} from "./llm/envelope.ts";
+
 // Validators (spec §10.1, §14.4).
 export {
   validateArtifact,

@@ -58,6 +58,10 @@ export function makePromptInput(
       },
     ],
     requiresValidationRollback: false,
+    // The single point that keeps template/validator fixtures compiling after
+    // `contentBriefOutline` became a required key: only the Content Shadow
+    // draft ever carries one.
+    contentBriefOutline: null,
   };
 
   return { ...base, ...overrides };

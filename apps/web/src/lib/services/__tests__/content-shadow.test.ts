@@ -13,6 +13,8 @@ import {
   type FindingRow,
 } from "@sf/db";
 import { CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION } from "@sf/contracts";
+import { CONTENT_SHADOW_PROMPT_SET_VERSION } from "@sf/artifacts";
+import { PROMPT_SET_VERSION as ENGINE_PROMPT_SET_VERSION } from "@sf/engine";
 import type { CreateContentShadowRunRequest } from "@sf/contracts";
 
 /**
@@ -66,10 +68,21 @@ const brief = {
   current_revision: 2,
 } as unknown as ArtifactRow;
 
+const BRIEF_MARKDOWN = [
+  "## Objective",
+  "",
+  "Close the gap.",
+  "",
+  "## 受众",
+  "",
+  "RevOps.",
+].join("\n");
+
 const briefRevision = {
   id: "revision-1",
   artifact_id: BRIEF_ID,
   revision: 2,
+  content_text: BRIEF_MARKDOWN,
 } as unknown as ArtifactRevisionRow;
 
 const body: CreateContentShadowRunRequest = {
@@ -111,6 +124,10 @@ beforeEach(() => {
         id,
         query_kind: id === GENERATIVE_ID ? "generative_query" : "search_query",
         cluster_key: id === GENERATIVE_ID ? null : "growth-analytics",
+        display_keyword: `keyword ${id}`,
+        normalized_keyword: `keyword ${id}`,
+        mapping_decision: "existing_page",
+        mapping_review_state: "confirmed",
       })) as never,
   );
 });
@@ -254,6 +271,11 @@ describe("buildContentShadowFrozenInput observation separation", () => {
     clusterKey: "growth-analytics",
     keywordEntityIds: [KEYWORD_ID],
     generativeQueryEntityIds: [GENERATIVE_ID],
+    contentBriefOutline: {
+      briefSections: ["Objective", "Audience"],
+      targetKeywords: [`keyword ${KEYWORD_ID}`],
+      pageAssignment: "existing_page" as const,
+    },
   };
 
   it("changes the content address when the two identity sets are swapped", () => {
@@ -285,5 +307,114 @@ describe("buildContentShadowFrozenInput observation separation", () => {
     ).toBe(
       buildContentShadowFrozenInput({ inputs, outputLocale: "en" }).contentHash,
     );
+  });
+});
+
+describe("brief -> draft structured extraction (Task 4b)", () => {
+  it("freezes the brief's structure, normalized across locales, with zero extra reads", async () => {
+    const listByIds = vi.mocked(KeywordsRepository.prototype.listByIds);
+    const findRevision = vi.mocked(
+      ExecutionArtifactsRepository.prototype.findRevision,
+    );
+
+    const inputs = (await load()) as {
+      readonly contentBriefOutline: {
+        readonly briefSections: readonly string[];
+        readonly targetKeywords: readonly string[];
+        readonly pageAssignment: string;
+      };
+    };
+
+    // `受众` is normalized onto the English canonical label so a zh-CN brief
+    // and an English draft speak one closed vocabulary.
+    expect(inputs.contentBriefOutline).toEqual({
+      briefSections: ["Objective", "Audience"],
+      targetKeywords: [`keyword ${KEYWORD_ID}`],
+      pageAssignment: "existing_page",
+    });
+    // No extra query: the brief revision and the keyword rows were already read
+    // for admission, so extraction is free.
+    expect(findRevision).toHaveBeenCalledTimes(1);
+    expect(listByIds).toHaveBeenCalledTimes(2);
+  });
+
+  it("degrades to an empty outline instead of refusing an unparseable brief", async () => {
+    vi.mocked(
+      ExecutionArtifactsRepository.prototype.findRevision,
+    ).mockResolvedValue({
+      ...briefRevision,
+      content_text: "# Only a title",
+    } as ArtifactRevisionRow);
+
+    const inputs = (await load()) as {
+      readonly contentBriefOutline: { readonly briefSections: readonly string[] };
+    };
+
+    expect(inputs.contentBriefOutline.briefSections).toEqual([]);
+  });
+
+  it("re-addresses the run when a single brief heading is renamed", () => {
+    const base = {
+      siteId: "site-1",
+      actionId: ACTION_ID,
+      findingId: FINDING_ID,
+      sourceDiagnosticRunId: DIAGNOSTIC_ID,
+      contentBriefArtifactId: BRIEF_ID,
+      contentBriefRevision: 2,
+      competitorEntityIds: [],
+      clusterKey: "growth-analytics",
+      keywordEntityIds: [KEYWORD_ID],
+      generativeQueryEntityIds: [GENERATIVE_ID],
+      contentBriefOutline: {
+        briefSections: ["Objective", "Audience"],
+        targetKeywords: ["a"],
+        pageAssignment: "existing_page" as const,
+      },
+    };
+
+    const pinned = buildContentShadowFrozenInput({
+      inputs: base,
+      outputLocale: "en",
+    });
+    const renamed = buildContentShadowFrozenInput({
+      inputs: {
+        ...base,
+        contentBriefOutline: {
+          ...base.contentBriefOutline,
+          briefSections: ["North Star Metric", "Audience"],
+        },
+      },
+      outputLocale: "en",
+    });
+
+    expect(renamed.contentHash).not.toBe(pinned.contentHash);
+  });
+
+  it("pins the scoped Content Shadow prompt set, not the global one", () => {
+    const frozen = buildContentShadowFrozenInput({
+      inputs: {
+        siteId: "site-1",
+        actionId: ACTION_ID,
+        findingId: FINDING_ID,
+        sourceDiagnosticRunId: DIAGNOSTIC_ID,
+        contentBriefArtifactId: BRIEF_ID,
+        contentBriefRevision: 2,
+        competitorEntityIds: [],
+        clusterKey: "growth-analytics",
+        keywordEntityIds: [KEYWORD_ID],
+        generativeQueryEntityIds: [GENERATIVE_ID],
+        contentBriefOutline: {
+          briefSections: [],
+          targetKeywords: [],
+          pageAssignment: "unassigned" as const,
+        },
+      },
+      outputLocale: "en",
+    });
+
+    expect(frozen.manifest.promptSetVersion).toBe(
+      CONTENT_SHADOW_PROMPT_SET_VERSION,
+    );
+    expect(frozen.manifest.promptSetVersion).not.toBe(ENGINE_PROMPT_SET_VERSION);
   });
 });
