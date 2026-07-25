@@ -30,7 +30,7 @@ a schedule note they can skip.
 |---|---|---|
 | 1 | Authority narrative widened from "no content lifecycle / no CMS" to **Shadow-but-no-CMS**: an internal `english_blog_draft` and a Flow Shadow research/draft/QA lifecycle are permitted as internal writes; external CMS/publish writes and any "published" marking stay forbidden (`MVP-IMPLEMENTATION-SPEC.md:84-85`). Both verifiers stayed migration-aware. | folded into `94564a8`, `7b0f951`, `4025577` |
 | 2 | `flow_shadow_runs` + `flow_shadow_research_packs` + `flow_shadow_qa_gates` (append-only children, frozen inputs, `content_hash`); tables 41 → 44; `ArtifactType` extended with `english_blog_draft` only. | `94564a8`, `7b0f951`, `4025577` |
-| 3 | **Not done.** `CandidateOpportunity.supportingFindingIds` is still hardcoded `[]` (`opportunities-projection.ts:292`). See §4 residual E5. | — |
+| 3 | **Done, narrowly.** `supportingFindingIds` is populated for the content cluster only, from a TopicCluster / PageAssignment read model over `keyword_entities.cluster_key` + `mapped_site_page_id`. No new table, no migration, no contract change, no parallel Candidate card. The `candidate` readiness branch is still never emitted. See §4 residual E5. | this commit |
 | 4 | `createContentShadowRun` async operation + pg-boss `content-shadow` queue + worker handler/module + pinned Flow adapter version (extraction, no runtime sibling-repo import). | `151fe73`, `c3d0174` |
 | 4b | Brief → draft causal link: structured `contentBriefOutline` extraction into the frozen manifest, with a sanitised, closed-set injection surface. | `cf6ac6f`, `b327d7a` |
 | 5 | Red line B upstream hardened: confirmed content Finding → **one** Action → **one** `content_brief`, reusing the existing Finding Review transaction. Includes a Slice 1 TOCTOU fix on `confirmFinding`'s `last_seen_run_id`. | `6a3c0b9` |
@@ -610,13 +610,29 @@ independent mutations prove it, including replaying this exact defect.
 - **E3. Renaming `citableCount`.**
 - **E4. How to handle the two red gates D1 and D3** — fix separately, adjust the
   threshold, or accept.
-- **E5. Task 3 was not done.** `CandidateOpportunity.supportingFindingIds` is
-  still hardcoded `[]` and the projection still emits no Candidate branch
-  (`opportunities-projection.ts:292`) — unchanged from Slice 1 simplification #2.
-  TopicCluster / PageAssignment likewise remain a read model with no dedicated
-  table. **What this means now:** an Observation without a measured Finding is
-  invisible in Opportunity Review, and the "supporting Findings" field of the
-  contract is populated for nothing.
+- **E5. Task 3 landed only its narrow half.** `supportingFindingIds` is no
+  longer a hardcoded `[]`: an Opportunity whose primary target is a keyword
+  cluster now lists the other active Findings of the same frozen run that are
+  attached to a page the cluster's keywords are mapped to
+  (`topic-cluster-projection.ts`, `TopicClusterReadRepository`). Decision F's
+  other half is deliberately still not done, and an Owner should read it as a
+  standing limit rather than an oversight:
+  - **The `candidate` readiness branch is still never emitted.** An Observation
+    without a measured Finding remains invisible in Opportunity Review. This is
+    Slice 1 simplification #2 and it is unchanged.
+  - **There is no TopicCluster or PageAssignment table** and none was justified:
+    the cluster is the reviewed `cluster_key` label and the assignment is the
+    operator's `mapped_site_page_id`, both already versioned by
+    `mapping_revision`. A table would only be a second copy that can drift.
+  - **Nothing new renders.** No parallel Candidate card exists; the Finding card
+    stays the single confirmable object. The field is honest on the wire, and
+    the customer-facing surfaces are untouched.
+  - **The derivation is a projection, not a rule result**, and every Opportunity
+    that carries it says so in `coverageAndLimitations`. Where the chain is
+    missing, the Opportunity says which half is missing — an unmapped cluster
+    and a mapped cluster whose pages carry no Finding produce *different*
+    sentences, so an empty list never reads as "we checked and found none".
+    An unconfirmed keyword-to-page mapping is disclosed rather than excluded.
 
 ---
 

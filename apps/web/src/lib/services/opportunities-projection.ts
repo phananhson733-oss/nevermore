@@ -12,6 +12,11 @@ import {
 import { canonicalUtcTimestamptz } from "@sf/db";
 import type { EvidenceDto } from "./diagnostic-mappers";
 import { isStale } from "./source-mappers";
+import {
+  resolveTopicClusterSupport,
+  topicClusterSupportLimitations,
+  type TopicClusterSupportRow,
+} from "./topic-cluster-projection";
 
 /**
  * Growth Opportunity read-model projection (Slice 1). These pure functions
@@ -87,6 +92,8 @@ export interface OpportunityActionInput {
 
 export interface ResolvedPrimaryTarget {
   readonly primaryTarget: PrimaryOpportunityTarget;
+  /** The raw FindingTarget kind, kept so callers do not re-derive it. */
+  readonly targetKind: string;
   readonly targetRef: string;
   readonly ownedAsset: OpportunityOwnedAsset | null;
   readonly hasSuitableOwnedAsset: boolean;
@@ -159,10 +166,25 @@ export function resolvePrimaryTarget(
       : null;
   return {
     primaryTarget,
+    targetKind: chosen.targetKind,
     targetRef: chosen.targetRef,
     ownedAsset,
     hasSuitableOwnedAsset: ownedAsset !== null,
   };
+}
+
+/**
+ * The keyword cluster label this Finding is actually projected onto, or null
+ * when its primary target is not a cluster. Callers batch their TopicCluster
+ * read on exactly this key, so the read and the projection can never disagree
+ * about which cluster an Opportunity belongs to.
+ */
+export function primaryTopicClusterKey(
+  targets: readonly OpportunityTargetInput[],
+): string | null {
+  const primary = resolvePrimaryTarget(targets);
+  if (!primary || primary.targetKind !== "keyword_cluster") return null;
+  return primary.targetRef;
 }
 
 /** Project the Finding-linked canonical Evidence into traceable provenance. */
@@ -231,9 +253,11 @@ function opportunityTitle(finding: OpportunityFindingInput): string {
 
 function uniqueLimitations(
   traces: readonly OpportunityEvidenceTrace[],
+  extra: readonly string[],
 ): string[] {
   const seen = new Set<string>();
   for (const trace of traces) seen.add(trace.limitation);
+  for (const limitation of extra) seen.add(limitation);
   return [...seen].slice(0, 200);
 }
 
@@ -249,6 +273,12 @@ export function buildOpportunity(input: {
   readonly action: OpportunityActionInput | null;
   readonly diagnosticRunId: string;
   readonly now: number;
+  /**
+   * TopicCluster read-model rows keyed by cluster label. Only a Finding whose
+   * primary target IS a keyword cluster can draw supporting Findings from it;
+   * every other rule keeps the empty list decision F asked for.
+   */
+  readonly topicClusterRows?: ReadonlyMap<string, readonly TopicClusterSupportRow[]>;
 }): GrowthOpportunityDto | null {
   if (!isOpportunityRule(input.finding.ruleId)) return null;
   const ruleId = input.finding.ruleId as OpportunityRuleId;
@@ -274,6 +304,13 @@ export function buildOpportunity(input: {
   const workShape = resolveRuleOpportunityWorkShape(ruleId, {
     hasSuitableOwnedAsset: primary.hasSuitableOwnedAsset,
   });
+  const clusterSupport =
+    primary.targetKind === "keyword_cluster"
+      ? resolveTopicClusterSupport(
+          input.topicClusterRows?.get(primary.targetRef) ?? [],
+          input.finding.id,
+        )
+      : null;
   const base = {
     opportunityKey: deriveOpportunityKey({
       primaryTarget: primary.primaryTarget,
@@ -289,9 +326,12 @@ export function buildOpportunity(input: {
     generativeQueries: [],
     competitorRefs: [],
     currentOwnedAsset: primary.ownedAsset,
-    supportingFindingIds: [],
+    supportingFindingIds: clusterSupport ? [...clusterSupport.findingIds] : [],
     lenses: [projection.lens],
-    coverageAndLimitations: uniqueLimitations(evidenceSummary),
+    coverageAndLimitations: uniqueLimitations(
+      evidenceSummary,
+      clusterSupport ? topicClusterSupportLimitations(clusterSupport) : [],
+    ),
   };
 
   const primaryRule = {

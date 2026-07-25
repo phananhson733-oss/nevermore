@@ -6,11 +6,16 @@ import {
   buildEvidenceSummary,
   buildOpportunity,
   deriveOpportunityKey,
+  primaryTopicClusterKey,
   resolvePrimaryTarget,
   resolveReadiness,
   type OpportunityFindingInput,
   type OpportunityTargetInput,
 } from "./opportunities-projection";
+import {
+  groupTopicClusterSupportRows,
+  type TopicClusterSupportRow,
+} from "./topic-cluster-projection";
 
 const ids = {
   finding: "30000000-0000-4000-8000-000000000001",
@@ -308,5 +313,104 @@ describe("buildOpportunity", () => {
       lenses: ["site_health"],
     });
     expect(GrowthOpportunity.parse(opportunity)).toEqual(opportunity);
+  });
+});
+
+describe("supportingFindingIds (decision F: the content cluster only)", () => {
+  const clusterKey = "customer onboarding";
+  const supportA = "30000000-0000-4000-8000-000000000021";
+  const supportB = "30000000-0000-4000-8000-000000000022";
+
+  function clusterTarget(): OpportunityTargetInput {
+    return {
+      relation: "affected_by_keyword_cluster",
+      targetKind: "keyword_cluster",
+      targetRef: clusterKey,
+      resolutionState: "definition_only",
+      sitePageId: null,
+      pageSnapshotId: null,
+    };
+  }
+
+  function clusterRows(
+    rows: readonly TopicClusterSupportRow[],
+  ): ReadonlyMap<string, readonly TopicClusterSupportRow[]> {
+    return groupTopicClusterSupportRows(rows);
+  }
+
+  it("names the cluster key a keyword-cluster Finding is projected onto", () => {
+    expect(primaryTopicClusterKey([clusterTarget()])).toBe(clusterKey);
+    expect(primaryTopicClusterKey([ownedUrlTarget()])).toBeNull();
+    expect(primaryTopicClusterKey([])).toBeNull();
+  });
+
+  it("populates supporting Findings from the TopicCluster read model", () => {
+    const opportunity = buildOpportunity({
+      finding: { ...reviewableFinding, ruleId: "CONTENT-GAP-011" },
+      targets: [clusterTarget()],
+      evidence: [crawlEvidence({ sourceProvider: "dataforseo" })],
+      action: null,
+      diagnosticRunId: ids.run,
+      now: NOW,
+      topicClusterRows: clusterRows([
+        {
+          clusterKey,
+          sitePageId: ids.sitePage,
+          findingId: supportB,
+          mappingConfirmed: true,
+        },
+        {
+          clusterKey,
+          sitePageId: ids.sitePage,
+          findingId: supportA,
+          mappingConfirmed: true,
+        },
+      ]),
+    });
+    expect(opportunity?.supportingFindingIds).toEqual([supportA, supportB]);
+    expect(opportunity?.coverageAndLimitations).toContain(
+      "Supporting Findings are projected from the reviewed keyword cluster label and the operator's keyword-to-page mapping; they are not a separate rule result.",
+    );
+    expect(GrowthOpportunity.parse(opportunity)).toEqual(opportunity);
+  });
+
+  it("says out loud when the cluster has no page assignment", () => {
+    const opportunity = buildOpportunity({
+      finding: { ...reviewableFinding, ruleId: "CONTENT-GAP-011" },
+      targets: [clusterTarget()],
+      evidence: [crawlEvidence({ sourceProvider: "dataforseo" })],
+      action: null,
+      diagnosticRunId: ids.run,
+      now: NOW,
+      topicClusterRows: clusterRows([]),
+    });
+    expect(opportunity?.supportingFindingIds).toEqual([]);
+    expect(opportunity?.coverageAndLimitations).toContain(
+      "This keyword cluster is not mapped to any owned page yet, so no supporting Findings could be derived.",
+    );
+  });
+
+  it("leaves every non-cluster rule with the empty list decision F fixed", () => {
+    const opportunity = buildOpportunity({
+      finding: reviewableFinding,
+      targets: [ownedUrlTarget()],
+      evidence: [crawlEvidence()],
+      action: null,
+      diagnosticRunId: ids.run,
+      now: NOW,
+      // A URL Opportunity is handed the same read model and must ignore it.
+      topicClusterRows: clusterRows([
+        {
+          clusterKey: "https://example.com/customer-onboarding/",
+          sitePageId: ids.sitePage,
+          findingId: supportA,
+          mappingConfirmed: true,
+        },
+      ]),
+    });
+    expect(opportunity?.supportingFindingIds).toEqual([]);
+    expect(opportunity?.coverageAndLimitations).not.toContain(
+      "Supporting Findings are projected from the reviewed keyword cluster label and the operator's keyword-to-page mapping; they are not a separate rule result.",
+    );
   });
 });

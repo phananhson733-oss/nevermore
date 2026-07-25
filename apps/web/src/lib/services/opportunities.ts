@@ -5,12 +5,14 @@ import {
   FindingTargetsRepository,
   GrowthMapReadRepository,
   ProjectsRepository,
+  TopicClusterReadRepository,
   type ActionRow,
   type Executor,
   type FindingRow,
   type FindingTargetRow,
   type GrowthMapReadableRunRow,
   type ProjectScope,
+  type TopicClusterSupportingFindingRow,
   type WorkspaceScope,
 } from "@sf/db";
 import type { UiLocale } from "@sf/i18n";
@@ -21,10 +23,15 @@ import { assertValidTimestampUuidListCursor } from "./list-cursor";
 import {
   buildOpportunity,
   isOpportunityRule,
+  primaryTopicClusterKey,
   type OpportunityActionInput,
   type OpportunityFindingInput,
   type OpportunityTargetInput,
 } from "./opportunities-projection";
+import {
+  groupTopicClusterSupportRows,
+  type TopicClusterSupportRow,
+} from "./topic-cluster-projection";
 
 /**
  * Growth Opportunity read-model service (Slice 1). It projects the latest
@@ -110,6 +117,38 @@ function toActionInput(row: ActionRow): OpportunityActionInput {
   };
 }
 
+function toTopicClusterSupportRow(
+  row: TopicClusterSupportingFindingRow,
+): TopicClusterSupportRow {
+  return {
+    clusterKey: row.cluster_key,
+    sitePageId: row.site_page_id,
+    findingId: row.finding_id,
+    mappingConfirmed: row.mapping_review_state === "confirmed",
+  };
+}
+
+/**
+ * One bounded TopicCluster read for a whole Opportunity page. The cluster keys
+ * come from `primaryTopicClusterKey`, so this never loads a cluster no
+ * Opportunity on the page is actually projected onto, and a page without a
+ * single topic Opportunity issues no query at all.
+ */
+async function loadTopicClusterRows(
+  exec: Executor,
+  scope: ProjectScope,
+  diagnosticRunId: string,
+  clusterKeys: readonly string[],
+): Promise<Map<string, readonly TopicClusterSupportRow[]>> {
+  if (clusterKeys.length === 0) return new Map();
+  const rows = await new TopicClusterReadRepository(exec).listSupportingFindings(
+    scope,
+    diagnosticRunId,
+    clusterKeys,
+  );
+  return groupTopicClusterSupportRows(rows.map(toTopicClusterSupportRow));
+}
+
 function groupTargets(
   targets: readonly FindingTargetRow[],
 ): Map<string, FindingTargetRow[]> {
@@ -185,17 +224,36 @@ async function listOpportunitiesInSnapshot(
   );
   const targetsByFinding = groupTargets(targets);
   const actionByFinding = firstActiveActionByFinding(actionRows);
+  const targetInputsByFinding = new Map<string, OpportunityTargetInput[]>(
+    runFindings.map((finding) => [
+      finding.id,
+      (targetsByFinding.get(finding.id) ?? []).map(toTargetInput),
+    ]),
+  );
+  const topicClusterRows = await loadTopicClusterRows(
+    exec,
+    projectScope,
+    run.id,
+    [
+      ...new Set(
+        [...targetInputsByFinding.values()]
+          .map(primaryTopicClusterKey)
+          .filter((key): key is string => key !== null),
+      ),
+    ],
+  );
 
   const data: GrowthOpportunityDto[] = [];
   for (const finding of runFindings) {
     const action = actionByFinding.get(finding.id);
     const opportunity = buildOpportunity({
       finding: toFindingInput(finding),
-      targets: (targetsByFinding.get(finding.id) ?? []).map(toTargetInput),
+      targets: targetInputsByFinding.get(finding.id) ?? [],
       evidence: evidenceByFinding.get(finding.id) ?? [],
       action: action ? toActionInput(action) : null,
       diagnosticRunId: run.id,
       now,
+      topicClusterRows,
     });
     if (opportunity) data.push(opportunity);
   }
@@ -273,13 +331,23 @@ async function getOpportunityInSnapshot(
     finding.id,
   );
 
+  const targetInputs = targets.map(toTargetInput);
+  const clusterKey = primaryTopicClusterKey(targetInputs);
+  const topicClusterRows = await loadTopicClusterRows(
+    exec,
+    projectScope,
+    run.id,
+    clusterKey === null ? [] : [clusterKey],
+  );
+
   const opportunity = buildOpportunity({
     finding: toFindingInput(finding),
-    targets: targets.map(toTargetInput),
+    targets: targetInputs,
     evidence: evidenceByFinding.get(finding.id) ?? [],
     action: action ? toActionInput(action) : null,
     diagnosticRunId: run.id,
     now,
+    topicClusterRows,
   });
   if (!opportunity) {
     throw new ProblemError(

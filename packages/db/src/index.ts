@@ -207,6 +207,11 @@ export type {
   ManualKeywordOccurrenceInput,
 } from "./repositories/keyword-occurrences.ts";
 export {
+  MAX_TOPIC_CLUSTER_LOOKUP,
+  TopicClusterReadRepository,
+} from "./repositories/topic-clusters.ts";
+export type { TopicClusterSupportingFindingRow } from "./repositories/topic-clusters.ts";
+export {
   KeywordsRepository,
   MAX_KEYWORD_ENTITY_BATCH,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,

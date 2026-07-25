@@ -75,6 +75,25 @@ Task 7 UI 必须如实渲染 `limitations`,**不得**让界面读起来像「已
 
 **D3. `authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs` 是 935 行未接入任何 gate 的过时并行副本**,在 Slice 2 开始前就 4-red(断言 41 表 / 38 op / 6 async,迁移列表止于 0019)。CI 从不运行它,vitest 只收 `.ts`。**需单独 commit 修或删。**
 
+**D3b. 一批 mock spec 断言英文 chrome 却从不设 `sf_ui_locale`。**
+`DEFAULT_LOCALE` 在 `3c2ecc6` 翻成 `zh-CN` 之后,这些 spec 一直红。**已修**:
+`studio-first-paint` / `studio-workspace` / `studio-multi-run` / `mobile-shell` 现在全绿,
+`cursor-pagination` 从 0/8 变 4/8。变异自验:去掉 cookie,这五个文件 16/16 全红。
+**未修、原因已确诊**:`report-workspace` / `report-artifact-convergence` /
+`diagnosis-nonblocking-snapshots` 以及 `cursor-pagination` 剩下的 4 条,走的是已退役的
+`/diagnosis` `/plan` `/report` 路由与 `Studio`/`Plan` 侧栏链接 —— 四入口 shell 不再渲染它们。
+补 cookie 对这些用例不够,属 D-1 残留(内容表面仍在 workspace 之上),需独立任务。
+`sources-readiness.mock.spec.ts` 同类,但按 N-1 冻结未动。
+`critical-flows` / `diagnosis-evidence` / `frontend-error-states` /
+`context-localization-guard` / `dataforseo-source` / `plan-lane-layout` /
+`plan-status-transitions` 是**混合**的(同一文件里既断言中文又断言英文),
+补 cookie 会打断它们的中文断言 —— 需要逐条翻译,不是一行 cookie。
+
+**D3c. `growth-map.mock.spec.ts:124`("reviews only the canonical Opportunity…")红,
+与本轮无关。** 缺的是 `Delivery chain` region。**已用 stash 对照证明**:把本轮 Task 3
+改动全部撤掉后仍然红。与 D8(`real-vertical-chains`)同源 —— Growth Map 的
+audit-and-confirm 走查需要独立重写任务。同文件的 axe/overflow 用例是绿的。
+
 **D4. 完整 `pnpm test:e2e:mock` 大面积红**:24 passed / 84 failed / 108(约 31.5 分钟)。
 根因是 mock config 的 webServer 用 `next dev --webpack` 按需编译,冷启动 + CPU 饱和致首次命中重路由编译超时成片失败;叠加少量真实既有漂移。
 **已用 base 提交对照证明与 Slice 1/2 零关系**。**本地无可信的完整 E2E 基线**(需 CI 隔离/warm 跑)。Slice 2 只跑隔离的内容 vertical spec。

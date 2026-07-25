@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuditModuleId, RULE_OPPORTUNITY_PROJECTION } from "@sf/contracts";
 import {
@@ -208,5 +209,113 @@ describeDb("growth audit + opportunity decision surfaces", () => {
       expect(detail.data.primaryFindingId).toBe(chain.httpFindingId);
     }
     expect(detail.projectId).toBe(chain.scope.projectId);
+  });
+
+  it("projects supporting Findings for the content cluster only", async () => {
+    // Decision F: no TopicCluster table. The cluster is the reviewed
+    // `keyword_entities.cluster_key` label and the page assignment is the
+    // operator's `mapped_site_page_id`; this proves the read model over that
+    // pair with REAL SQL, against a real diagnostic run.
+    const cluster = await handle.pool.query<{
+      finding_id: string;
+      target_ref: string;
+    }>(
+      `SELECT ft.finding_id, ft.target_ref
+         FROM app.finding_targets ft
+         JOIN app.findings f ON f.id = ft.finding_id
+        WHERE ft.project_id = $1
+          AND ft.diagnostic_run_id = $2
+          AND ft.target_kind = 'keyword_cluster'
+          AND f.active AND f.last_seen_run_id = $2
+        ORDER BY ft.finding_id
+        LIMIT 1`,
+      [chain.scope.projectId, chain.diagRunId],
+    );
+    const clusterFinding = cluster.rows[0];
+    if (!clusterFinding) throw new Error("chain produced no keyword-cluster Finding");
+
+    // Any other active Finding of the same run that IS attached to a page.
+    const attached = await handle.pool.query<{
+      site_page_id: string;
+      finding_id: string;
+    }>(
+      `SELECT DISTINCT ft.site_page_id, ft.finding_id
+         FROM app.finding_targets ft
+         JOIN app.findings f ON f.id = ft.finding_id
+        WHERE ft.project_id = $1
+          AND ft.diagnostic_run_id = $2
+          AND ft.resolution_state = 'resolved'
+          AND ft.site_page_id IS NOT NULL
+          AND ft.finding_id <> $3
+          AND f.active AND f.last_seen_run_id = $2
+        ORDER BY ft.finding_id
+        LIMIT 1`,
+      [chain.scope.projectId, chain.diagRunId, clusterFinding.finding_id],
+    );
+    const support = attached.rows[0];
+    if (!support) throw new Error("chain produced no page-attached Finding");
+
+    // Before any keyword is mapped, the cluster says so instead of showing
+    // an empty list as if it had checked.
+    const before = await getProjectOpportunity(
+      READ_SCOPE(chain.scope),
+      chain.scope.projectId,
+      clusterFinding.finding_id,
+      handle.db,
+    );
+    expect(before.data.supportingFindingIds).toEqual([]);
+    expect(before.data.coverageAndLimitations).toContain(
+      "This keyword cluster is not mapped to any owned page yet, so no supporting Findings could be derived.",
+    );
+
+    await handle.pool.query(
+      `INSERT INTO app.keyword_entities (
+         workspace_id, project_id, display_keyword, normalized_keyword,
+         market, language_tag, query_kind, status, cluster_key,
+         mapping_decision, mapped_site_page_id, mapping_review_state,
+         first_seen_at, last_seen_at)
+       VALUES ($1, $2, $3, $3, 'US', 'en', 'search_query', 'approved', $4,
+               'existing_page', $5, 'unreviewed', now(), now())`,
+      [
+        chain.scope.workspaceId,
+        chain.scope.projectId,
+        `cluster support probe ${randomUUID().slice(0, 8)}`,
+        clusterFinding.target_ref,
+        support.site_page_id,
+      ],
+    );
+
+    const detail = await getProjectOpportunity(
+      READ_SCOPE(chain.scope),
+      chain.scope.projectId,
+      clusterFinding.finding_id,
+      handle.db,
+    );
+    expect(detail.data.primaryTarget).toBe("topic");
+    expect(detail.data.supportingFindingIds).toContain(support.finding_id);
+    expect(detail.data.supportingFindingIds).not.toContain(
+      clusterFinding.finding_id,
+    );
+    expect(detail.data.coverageAndLimitations).toContain(
+      "At least one keyword-to-page mapping behind this cluster has not been confirmed by a reviewer.",
+    );
+
+    // Every other rule keeps the empty list decision F fixed, in the same read.
+    const page = await listProjectOpportunities(
+      READ_SCOPE(chain.scope),
+      chain.scope.projectId,
+      { limit: 100, cursor: null },
+      handle.db,
+    );
+    for (const opportunity of page.data) {
+      if (opportunity.primaryTarget === "topic") continue;
+      expect(opportunity.supportingFindingIds).toEqual([]);
+    }
+    const projected = page.data.find(
+      (opportunity) =>
+        "primaryFindingId" in opportunity &&
+        opportunity.primaryFindingId === clusterFinding.finding_id,
+    );
+    expect(projected?.supportingFindingIds).toContain(support.finding_id);
   });
 });
