@@ -138,9 +138,9 @@ describe("brief -> draft causal chain claim (decision O-4)", () => {
         fixturePack({
           outline: {
             ...FIXTURE_OUTLINE,
-            briefSections: [
-              "What onboarding analytics covers",
-              "Procurement approval workflow",
+            targetKeywords: [
+              "onboarding analytics",
+              "procurement approval workflow",
             ],
           },
         }),
@@ -150,8 +150,74 @@ describe("brief -> draft causal chain claim (decision O-4)", () => {
     expect(
       evaluation.claims.find((c) => c.claimId === QA_BRIEF_OUTLINE_CLAIM_ID)
         ?.detail,
-    ).toContain("Procurement approval workflow");
+    ).toContain("procurement approval workflow");
     expect(evaluation.verdict).toBe("needs_review");
+  });
+
+  /**
+   * The correction to O-6.
+   *
+   * Coverage was judged against `briefSections`, but Task 4b's injection
+   * hardening rewrites every heading that matches the §10.1 alias table into
+   * one of nine English canonical constants — and the brief validator REQUIRES
+   * all nine. So for every spec-conformant brief `briefSections` is exactly
+   * that fixed list of document-structure labels, and a blog post about
+   * onboarding analytics contains none of the words `objective`, `outline`,
+   * `acceptance` or `requirements`. The check reported 8 of 9 topics uncovered
+   * on a clean draft and pinned the verdict at `needs_review` forever.
+   *
+   * The keywords come from the frozen search cluster and are real
+   * subject-matter terms, so they are what coverage is judged against now.
+   */
+  it("judges coverage on frozen keywords, not on canonicalised section labels", () => {
+    const evaluation = evaluateDraftQa(
+      qaInput(
+        CLEAN_DRAFT,
+        fixturePack({
+          outline: {
+            briefSections: [
+              "Objective",
+              "Audience",
+              "Search Intent",
+              "Target Topics & Queries",
+              "Outline",
+              "Evidence",
+              "Conversion Path",
+              "Proof & Source Requirements",
+              "Acceptance Checklist",
+            ],
+            targetKeywords: ["onboarding analytics"],
+            pageAssignment: "existing_page",
+          },
+        }),
+        { ...FIXTURE_STATS, briefSectionCount: 9, projectedSectionCount: 9 },
+      ),
+    );
+
+    expect(
+      evaluation.claims.find((c) => c.claimId === QA_BRIEF_OUTLINE_CLAIM_ID)
+        ?.status,
+    ).toBe("passed");
+    expect(evaluation.verdict).toBe("passed");
+  });
+
+  /**
+   * "We did not look" may never be written down as "there is nothing to find".
+   */
+  it("reports coverage as unevaluated, never failed, when no keyword is judgeable", () => {
+    for (const targetKeywords of [[], ["seo", "how to"]]) {
+      const claim = evaluateDraftQa(
+        qaInput(
+          CLEAN_DRAFT,
+          fixturePack({ outline: { ...FIXTURE_OUTLINE, targetKeywords } }),
+        ),
+      ).claims.find(
+        (candidate) => candidate.claimId === QA_BRIEF_OUTLINE_CLAIM_ID,
+      );
+
+      expect(claim?.status, JSON.stringify(targetKeywords)).toBe("unevaluated");
+      expect(claim?.detail).toContain("NOT judged");
+    }
   });
 
   it("clamps a would-be `passed` verdict off `passed` while any claim failed", () => {
@@ -198,7 +264,9 @@ describe("brief -> draft causal chain claim (decision O-4)", () => {
       ),
     );
 
-    expect(failing.claims.some((claim) => claim.status === "failed")).toBe(true);
+    expect(failing.claims.some((claim) => claim.status === "failed")).toBe(
+      true,
+    );
     expect(clampVerdictToFailedClaims("passed", failing.claims)).toBe(
       "needs_review",
     );

@@ -57,7 +57,10 @@ export const RED_LINE_CHECKS: readonly RedLineCheck[] = [
   { id: "rl4_keyword_anchor", title: "Section openers anchor on the keyword" },
   { id: "rl5_keyword_stuffing", title: "Keyword density stays under the cap" },
   { id: "rl7_banned_tokens", title: "No banned brand/author token" },
-  { id: "rl8_unsupported_claim", title: "Research assertions resolve to a source" },
+  {
+    id: "rl8_unsupported_claim",
+    title: "Research assertions resolve to a source",
+  },
   { id: "rl10_chat_residue", title: "No conversational residue" },
   { id: "rl11_weak_verb", title: "No weak definitional verbs" },
   { id: "rl12_citation_integrity", title: "Citations resolve to a source" },
@@ -104,8 +107,28 @@ const SOFT_JARGON: readonly RegExp[] = [
   /\bin today's (?:fast-paced|digital) \w+\b/i,
 ];
 
-const CITATION_CUE =
-  /\b(?:according to|source|sources|cited|citation|reference|references|study|studies|report|survey|research|whitepaper|benchmark)\b/i;
+/**
+ * When does a markdown link on a line count as a CITATION rather than as
+ * navigation?
+ *
+ * Only when the sentence ATTRIBUTES something to it. The previous cue was the
+ * bare presence of any of source / report / research / study / survey /
+ * benchmark / reference anywhere on the line, which are among the most common
+ * nouns in B2B SaaS prose — so
+ *
+ *   "Read our onboarding analytics report at [the product report page](…)"
+ *
+ * was registered as a citation, failed to resolve against a pack that carries
+ * no URLs at all, and was `blocked` with a detail calling the customer's own
+ * link a fabricated source. That is a false statement about an honest draft,
+ * and a gate that makes false statements is a gate operators learn to ignore.
+ *
+ * The frames below are the ones where a link really is being offered as
+ * evidence for a claim. A link with no such frame is still checked by RL12b,
+ * which reports it as unverified rather than as invented.
+ */
+const ATTRIBUTIVE_CITATION_CUE =
+  /\b(?:according to|as (?:reported|found|shown|noted|documented) (?:by|in)|cited (?:by|in)|citations?|sources?\s*:|references?\s*:|see\s+(?:also\s+)?(?:the\s+)?(?:study|report|survey|research|analysis|benchmark|whitepaper|paper)\b|per\s+(?:a|an|the)\s|(?:study|studies|report|reports|survey|surveys|research|analysis|analyses|benchmark|whitepaper|poll)\s+(?:by|from)\b)/i;
 
 interface Finding {
   readonly line: number;
@@ -128,11 +151,12 @@ function excerptList(findings: readonly Finding[]): string {
 // RL4 — keyword anchoring
 // ---------------------------------------------------------------------------
 
+/**
+ * Reference lists are not in `context.body` at all any more (they are their own
+ * half of the draft partition), so only the non-reference exemptions are listed
+ * here.
+ */
 const RL4_SKIP_SECTIONS: ReadonlySet<string> = new Set([
-  "sources",
-  "references",
-  "related reading",
-  "further reading",
   "faq",
   "frequently asked questions",
   "call to action",
@@ -306,7 +330,8 @@ export function checkRl7(context: QaContext): QaRuleResult {
   for (const entry of context.body) {
     for (const token of BANNED_AUTHOR_TOKENS) {
       const pattern = new RegExp(`\\b${token.replace(/\s+/g, "\\s+")}\\b`, "i");
-      if (pattern.test(entry.text)) hits.push({ line: entry.line, excerpt: token });
+      if (pattern.test(entry.text))
+        hits.push({ line: entry.line, excerpt: token });
     }
   }
   return hits.length > 0
@@ -315,7 +340,11 @@ export function checkRl7(context: QaContext): QaRuleResult {
         "rl7_banned_token_present",
         `Advisory (never gates): banned token(s) present — ${excerptList(hits)}.`,
       )
-    : pass("rl7_banned_tokens", "rl7_clean", "No banned author token appears.");
+    : pass(
+        "rl7_banned_tokens",
+        "rl7_clean",
+        "No configured banned author token appears in the scanned body.",
+      );
 }
 
 // ---------------------------------------------------------------------------
@@ -337,14 +366,14 @@ export function checkRl8(context: QaContext): QaRuleResult {
       "rl8_unsupported_claim",
       "rl8_all_claims_resolved",
       hits.length === 0
-        ? "The draft makes no external-research assertion."
+        ? "No sentence in the scanned body matched an external-research assertion pattern. That is a statement about what this deterministic scan found, not a guarantee that the draft asserts nothing: the patterns catch research nouns, `according to` frames and named-entity claims carrying a statistic, and a claim phrased outside those shapes would not be seen here."
         : `All ${hits.length} external-research assertion(s) resolve to a source the frozen research pack carries.`,
     );
   }
   return fail(
     "rl8_unsupported_claim",
     "rl8_claim_unresolved",
-    `${unresolved.length} external-research assertion(s) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}. The pack is assembled only from confirmed SignalFrame records, so an attribution that does not resolve names a source we do not hold.`,
+    `${unresolved.length} external-research assertion(s) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}. ${unverifiableNote(context)}`,
   );
 }
 
@@ -384,7 +413,11 @@ export function checkRl10(context: QaContext): QaRuleResult {
         "rl10_residue_present",
         `The draft reads as a chat transcript in ${hits.length} place(s): ${excerptList(hits)}.`,
       )
-    : pass("rl10_chat_residue", "rl10_clean", "No conversational residue.");
+    : pass(
+        "rl10_chat_residue",
+        "rl10_clean",
+        "No line of the scanned body matched the chat-residue patterns.",
+      );
 }
 
 export function checkRl11(context: QaContext): QaRuleResult {
@@ -402,7 +435,11 @@ export function checkRl11(context: QaContext): QaRuleResult {
         "rl11_weak_verb_present",
         `Advisory (never gates): ${hits.length} weak definitional verb(s) — ${excerptList(hits)}.`,
       )
-    : pass("rl11_weak_verb", "rl11_clean", "No weak definitional verbs.");
+    : pass(
+        "rl11_weak_verb",
+        "rl11_clean",
+        "No line of the scanned body matched the weak-definitional-verb patterns.",
+      );
 }
 
 export function checkRl13(context: QaContext): QaRuleResult {
@@ -422,7 +459,11 @@ export function checkRl13(context: QaContext): QaRuleResult {
         "rl13_jargon_present",
         `Advisory (never gates): ${hard.length} hard and ${soft.length} soft AI-slop term(s) — ${excerptList(hits)}.`,
       )
-    : pass("rl13_banned_jargon", "rl13_clean", "No AI-slop vocabulary.");
+    : pass(
+        "rl13_banned_jargon",
+        "rl13_clean",
+        "No line of the scanned body matched the AI-slop vocabulary list.",
+      );
 }
 
 // ---------------------------------------------------------------------------
@@ -459,7 +500,7 @@ function citationMarkers(
         attributions: [{ kind: "url", value: url }],
       });
     }
-    if (CITATION_CUE.test(text)) {
+    if (ATTRIBUTIVE_CITATION_CUE.test(text)) {
       for (const link of links) {
         markers.push({
           line: entry.line,
@@ -493,24 +534,39 @@ export function checkRl12(context: QaContext): QaRuleResult {
     ? fail(
         "rl12_citation_integrity",
         "rl12_citation_unresolved",
-        `${unresolved.length} citation-shaped reference(s) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}.`,
+        `${unresolved.length} citation-shaped reference(s) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}. ${unverifiableNote(context)}`,
       )
     : pass(
         "rl12_citation_integrity",
         "rl12_citations_resolve",
         markers.length === 0
-          ? "The draft carries no citation-shaped reference."
+          ? "No citation-shaped reference matched this rule's patterns in the scanned body (bare URLs, links a sentence attributes a claim to, and hallucinated-citation shapes). That is what was scanned, not a guarantee that the draft cites nothing."
           : `All ${markers.length} citation-shaped reference(s) resolve to the frozen research pack.`,
       );
+}
+
+/**
+ * What an unresolved reference actually means, stated without overclaiming.
+ *
+ * With an empty pack the gate knows one thing: it cannot confirm the reference
+ * from SignalFrame's own records. It does NOT know the reference is invented,
+ * and saying so would be the gate lying about its own evidence. Once the pack
+ * carries citable sources the stronger sentence becomes true, so both are here
+ * and the pack decides which one is printed.
+ */
+function unverifiableNote(context: QaContext): string {
+  return context.index.citableCount === 0
+    ? "This run retrieved no external research, so the frozen pack holds NOTHING external to resolve against: the correct reading is that these references cannot be verified here, not that they were invented. Every one of them needs a human to confirm it before this draft goes anywhere."
+    : "The pack is assembled only from confirmed SignalFrame records, so an attribution that does not resolve names a source we do not hold.";
 }
 
 export function checkRl12b(context: QaContext): QaRuleResult {
   const hits: Finding[] = [];
   for (const entry of context.body) {
     const text = stripInlineCode(entry.text);
-    // A citation-cued link is RL12's business; reporting it twice would make
-    // one defect look like two.
-    if (CITATION_CUE.test(text)) continue;
+    // A link a sentence attributes a claim to is RL12's business; reporting it
+    // twice would make one defect look like two.
+    if (ATTRIBUTIVE_CITATION_CUE.test(text)) continue;
     for (const link of extractMarkdownLinks(text)) {
       const resolution = resolveAttribution(context.index, {
         kind: "url",
@@ -525,7 +581,7 @@ export function checkRl12b(context: QaContext): QaRuleResult {
     ? fail(
         "rl12b_unresolved_link",
         "rl12b_link_unresolved",
-        `${hits.length} link(s) point outside the frozen research pack and could not be verified: ${excerptList(hits)}. The Slice 2 pack carries no URLs at all, so a reviewer has to confirm these by hand.`,
+        `${hits.length} link(s) could not be checked against the frozen research pack: ${excerptList(hits)}. The Slice 2 pack carries NO urls — not the customer's own site origin either — so this rule cannot yet tell a first-party product link apart from an outside citation, and it is NOT saying these links are wrong or invented. A reviewer confirms them by hand. Until the pack carries a first-party identity, any draft with a link (including the scaffold's own call to action) reaches at most \`needs_review\` for this reason alone.`,
       )
     : pass(
         "rl12b_unresolved_link",
