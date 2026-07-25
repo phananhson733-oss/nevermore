@@ -173,20 +173,24 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
 
   // ================= 4. ONE content_brief ===================================
   await navLink(page, 2).click();
-  const briefGroup = page.getByRole("region", {
-    name: "Content brief",
-    exact: true,
-  });
-  await expect(briefGroup).toHaveCount(1);
-  await expect(briefGroup.locator("[data-studio-artifact-id]")).toHaveCount(1);
+  // Re-aimed for the unified queue, not loosened. The queue is one list ordered
+  // by type rather than a stack of per-type `<section>`s, so the region this
+  // used to scope to is gone. "Exactly one content_brief" is now counted across
+  // the whole queue instead of inside one section of it — strictly stronger,
+  // because a second brief outside that section used to be invisible here.
+  const studioQueue = page.locator("[data-studio-queue]");
+  const briefRows = studioQueue.locator(
+    '[data-studio-artifact-id][data-studio-artifact-type="content_brief"]',
+  );
+  await expect(briefRows).toHaveCount(1);
   await expect(
-    briefGroup.locator(`[data-studio-artifact-id="${BRIEF_ARTIFACT_ID}"]`),
+    studioQueue.locator(`[data-studio-artifact-id="${BRIEF_ARTIFACT_ID}"]`),
   ).toHaveCount(1);
   // The single brief belongs to the single Action created above — asserted
   // against THAT Action's own title as the response carried it, so the link is
   // checked rather than two constants being compared to each other.
   await expect(
-    briefGroup.getByText(contentAction!.title, { exact: true }),
+    briefRows.getByText(contentAction!.title, { exact: true }),
   ).toBeVisible();
 
   // ================= 5. Flow Shadow research / draft / QA ===================
@@ -393,18 +397,22 @@ test("one measured content Finding yields exactly one Action and exactly one con
 
   // Exactly one content_brief exists in the whole queue, and exactly one
   // English draft — the Flow Shadow output, not a second brief.
-  const briefGroup = page.getByRole("region", {
-    name: "Content brief",
-    exact: true,
-  });
-  await expect(briefGroup).toHaveCount(1);
-  await expect(briefGroup.locator("[data-studio-artifact-id]")).toHaveCount(1);
-  const draftGroup = page.getByRole("region", {
-    name: "English blog draft",
-    exact: true,
-  });
-  await expect(draftGroup).toHaveCount(1);
-  await expect(draftGroup.locator("[data-studio-artifact-id]")).toHaveCount(1);
+  // Same re-aim as above: one queue, counted whole, type read off each row.
+  const queue = page.locator("[data-studio-queue]");
+  await expect(
+    queue.locator(
+      '[data-studio-artifact-id][data-studio-artifact-type="content_brief"]',
+    ),
+  ).toHaveCount(1);
+  await expect(
+    queue.locator(
+      '[data-studio-artifact-id][data-studio-artifact-type="english_blog_draft"]',
+    ),
+  ).toHaveCount(1);
+  // Both chips are offered, and the count beside them is read off the queue.
+  await expect(
+    page.locator('[data-studio-filter-bar] [data-studio-filter]'),
+  ).toHaveCount(5);
 
   // And the shadow run consumed THAT brief revision, rather than opening a
   // parallel content lifecycle of its own.

@@ -207,18 +207,27 @@ test("proves the technical opportunity vertical without any lift claim", async (
   //
   // What is under test is unchanged and stays exact — the technical vertical
   // yields EXACTLY ONE Technical ticket deliverable and it is readable on
-  // Execution — so it is asserted where that deliverable actually lives now:
-  // the artifact queue's own per-type region. Both counts stay `toHaveCount(1)`
-  // so a vertical that produced none, or two, still turns this test red.
+  // Execution.
+  //
+  // The scope moved with the surface. The queue is now ONE list, ordered by
+  // type instead of sectioned by it, so the per-type `region` this used to
+  // scope to no longer exists. The count is now taken over the WHOLE queue,
+  // which is strictly stronger: a second Technical ticket filed under some
+  // other section used to be invisible here, and now turns this red. The type
+  // is still asserted, off each row's own `data-studio-artifact-type`.
   await navLink(page, 2).click();
-  const ticketGroup = page.getByRole("region", {
-    name: "Technical ticket",
-    exact: true,
-  });
-  await expect(ticketGroup).toHaveCount(1);
-  await expect(ticketGroup.locator("[data-studio-artifact-id]")).toHaveCount(1);
+  const queue = page.locator("[data-studio-queue]");
+  const ticketRows = queue.locator(
+    '[data-studio-artifact-id][data-studio-artifact-type="technical_ticket"]',
+  );
+  await expect(ticketRows).toHaveCount(1);
+  await expect(queue.locator("[data-studio-artifact-id]")).toHaveCount(1);
   await expect(
-    ticketGroup.getByText("Fix the failing product page", { exact: true }),
+    ticketRows.getByText("Fix the failing product page", { exact: true }),
+  ).toBeVisible();
+  // The type the row claims is the one the chip row can filter it down to.
+  await expect(
+    queue.getByText("Technical ticket", { exact: true }),
   ).toBeVisible();
 
   // ---- Mark work done: promote the existing Artifact to ready ----------------

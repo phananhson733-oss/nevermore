@@ -20,6 +20,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -149,6 +150,16 @@ const ARTIFACT_TYPE_ICON: Record<ArtifactType, LucideIcon> = {
   technical_ticket: ClipboardList,
   english_blog_draft: Newspaper,
 };
+
+/**
+ * The type filter chips, in the queue's own canonical order.
+ *
+ * `all` leads, then `ARTIFACT_TYPE_ORDER` — the same order the queue sorts by,
+ * so a chip and the rows it reveals never disagree about where a type sits.
+ */
+const ARTIFACT_FILTERS = ["all", ...ARTIFACT_TYPE_ORDER] as const;
+
+type ArtifactFilter = (typeof ARTIFACT_FILTERS)[number];
 
 const GENERATION_MODES: readonly GenerationMode[] = [
   "template",
@@ -302,13 +313,38 @@ function parseEditedContent(
   }
 }
 
-/** Group artifacts by type, preserving the canonical type order. */
-function groupByType(
+/**
+ * Order the queue by type without cutting it into per-type sections.
+ *
+ * The queue used to be N headed `<section>`s, one per type. That made the type
+ * a piece of page structure a reader had to re-orient inside, and it meant the
+ * count a reader saw ("3") was a count of one section rather than of the work.
+ * The queue is now ONE list: type moves to the chip row above it and to the
+ * badge already on each row, and this function only decides the order. Sort is
+ * stable, so the server's ordering survives inside each type; an artifact of a
+ * type this build does not know is sorted last rather than dropped, because a
+ * deliverable the queue silently omits is worse than one it lists plainly.
+ */
+function orderByType(artifacts: readonly Artifact[]): readonly Artifact[] {
+  const rank = new Map(
+    ARTIFACT_TYPE_ORDER.map((type, index) => [type, index] as const),
+  );
+  const unknown = ARTIFACT_TYPE_ORDER.length;
+  return [...artifacts].sort(
+    (left, right) =>
+      (rank.get(left.artifactType) ?? unknown) -
+      (rank.get(right.artifactType) ?? unknown),
+  );
+}
+
+/** The rows a given chip reveals. `all` reveals the whole queue. */
+function artifactsForFilter(
   artifacts: readonly Artifact[],
-): readonly (readonly [ArtifactType, readonly Artifact[]])[] {
-  return ARTIFACT_TYPE_ORDER.map(
-    (type) => [type, artifacts.filter((a) => a.artifactType === type)] as const,
-  ).filter(([, list]) => list.length > 0);
+  filter: ArtifactFilter,
+): readonly Artifact[] {
+  return filter === "all"
+    ? artifacts
+    : artifacts.filter((artifact) => artifact.artifactType === filter);
 }
 
 /**
@@ -613,6 +649,7 @@ function ArtifactCard({
       padding="sm"
       className={cx(styles.artCard, selected && styles.artCardSelected)}
       data-studio-artifact-id={artifact.id}
+      data-studio-artifact-type={artifact.artifactType}
     >
       <div className={styles.artHead}>
         <span className={styles.artTypeWrap}>
@@ -1735,6 +1772,8 @@ export function StudioClient({
   const [artifactProjectionSettlements, setArtifactProjectionSettlements] =
     useState<readonly QueuedActionTarget[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<ArtifactFilter>("all");
+  const filterTabsRef = useRef<HTMLDivElement | null>(null);
   const [dirtyArtifactId, setDirtyArtifactId] = useState<string | null>(null);
   const [generateAction, setGenerateAction] = useState<ArtifactAction | null>(
     null,
@@ -1946,7 +1985,8 @@ export function StudioClient({
   const selected = artifacts.find((a) => a.id === selectedId) ?? null;
   const selectedAction =
     selected === null ? undefined : actionById.get(selected.actionId);
-  const groups = groupByType(artifacts);
+  const orderedArtifacts = orderByType(artifacts);
+  const queuedArtifacts = artifactsForFilter(orderedArtifacts, typeFilter);
   const readyCount = artifacts.filter((a) => a.status === "ready").length;
   const draftCount = artifacts.filter((a) => a.status === "draft").length;
   const selectedEditorDirty =
@@ -2482,6 +2522,74 @@ export function StudioClient({
     clearExecutionTarget();
   }
 
+  /**
+   * Apply a type chip, and never leave the editor showing a deliverable the
+   * queue beside it no longer lists.
+   *
+   * Two deliberate narrowings of the reference behaviour:
+   *  - Unsaved edits win. If the open editor is dirty the filter still applies,
+   *    but the selection is left alone: a chip is not a mandate to discard a
+   *    revision the operator has typed and not saved.
+   *  - Nothing selected stays nothing selected. The reference workbench always
+   *    has a document open, so its fallback opens the first row; here a chip
+   *    click that silently opened a deliverable would start network reads the
+   *    operator never asked for.
+   */
+  function applyTypeFilter(next: ArtifactFilter): void {
+    setTypeFilter(next);
+    if (selectedId === null || selectedEditorDirty) return;
+    const visible = artifactsForFilter(orderedArtifacts, next);
+    if (visible.some((artifact) => artifact.id === selectedId)) return;
+    const fallback = visible[0];
+    if (
+      fallback === undefined ||
+      generationFenceKeys.has(
+        artifactGenerationKey(fallback.actionId, fallback.artifactType),
+      )
+    ) {
+      clearExecutionTarget();
+      return;
+    }
+    setGenerateAction(null);
+    setPickerOpen(false);
+    setSelectedId(fallback.id);
+    replaceExecutionTarget(fallback.actionId, fallback.id);
+  }
+
+  /** Roving-tabindex keyboard model for the chip row (one tab stop). */
+  function onFilterKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    const index = ARTIFACT_FILTERS.indexOf(typeFilter);
+    const last = ARTIFACT_FILTERS.length - 1;
+    let nextIndex: number;
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        nextIndex = index === last ? 0 : index + 1;
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        nextIndex = index === 0 ? last : index - 1;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = last;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const next = ARTIFACT_FILTERS[nextIndex];
+    if (next === undefined) return;
+    applyTypeFilter(next);
+    requestAnimationFrame(() => {
+      filterTabsRef.current
+        ?.querySelector<HTMLButtonElement>(`[data-studio-filter="${next}"]`)
+        ?.focus();
+    });
+  }
+
   function openGenerate(action: ArtifactAction): void {
     if (
       queuedActionBlocksGeneration(artifactProjectionSettlements, action.id) ||
@@ -2867,8 +2975,64 @@ export function StudioClient({
         </Panel>
       ))}
 
+      <section className={styles.filterBar} data-studio-filter-bar="">
+        <div
+          ref={filterTabsRef}
+          className={styles.filterTabs}
+          role="tablist"
+          aria-label={t("filterLabel")}
+          onKeyDown={onFilterKeyDown}
+        >
+          {ARTIFACT_FILTERS.map((filter) => {
+            const active = filter === typeFilter;
+            return (
+              <button
+                key={filter}
+                type="button"
+                role="tab"
+                id={`sf-artifact-filter-${filter}`}
+                aria-controls="sf-artifact-workspace"
+                aria-selected={active}
+                tabIndex={active ? 0 : -1}
+                data-studio-filter={filter}
+                className={cx(
+                  styles.filterTab,
+                  active && styles.filterTabActive,
+                )}
+                onClick={() => applyTypeFilter(filter)}
+              >
+                {filter === "all"
+                  ? t("filterAll")
+                  : t(`artifactType.${filter}`)}
+              </button>
+            );
+          })}
+        </div>
+        {/* Both numbers are read off the queue itself. `+` is not decoration:
+            it says a further page exists, so the total is a floor and not a
+            claim. The second number is the deliverables whose next legal move
+            is a human one — `draft` is the only status `MANUAL_STATUS_TRANSITIONS`
+            lets an operator act on, so this counts work actually waiting on a
+            person rather than work that merely looks unfinished. */}
+        <p className={styles.filterCount} data-studio-filter-count="">
+          {artifactsInitialLoading
+            ? tCommon("loading")
+            : draftCount === 0
+              ? t("filterCountNone", {
+                  total: `${artifacts.length}${artifactsQuery.hasNextPage ? "+" : ""}`,
+                })
+              : t("filterCount", {
+                  total: `${artifacts.length}${artifactsQuery.hasNextPage ? "+" : ""}`,
+                  review: draftCount,
+                })}
+        </p>
+      </section>
+
       <div
         className={styles.workspace}
+        id="sf-artifact-workspace"
+        role="tabpanel"
+        aria-labelledby={`sf-artifact-filter-${typeFilter}`}
         data-studio-workspace=""
         aria-label={t("workspaceLabel")}
       >
@@ -2888,7 +3052,7 @@ export function StudioClient({
             <Badge>
               {artifactsInitialLoading
                 ? "—"
-                : `${artifacts.length}${artifactsQuery.hasNextPage ? "+" : ""}`}
+                : `${queuedArtifacts.length}${artifactsQuery.hasNextPage ? "+" : ""}`}
             </Badge>
           </div>
           <div className={styles.queueScroll}>
@@ -2911,60 +3075,45 @@ export function StudioClient({
                   description={t("emptyHint")}
                 />
               </div>
+            ) : queuedArtifacts.length === 0 ? (
+              <div className={styles.queueState}>
+                <EmptyState
+                  title={t("filterEmptyTitle")}
+                  description={t("filterEmptyHint")}
+                />
+              </div>
             ) : (
-              <div className={styles.groups}>
-                {groups.map(([type, list]) => {
-                  const GroupIcon = ARTIFACT_TYPE_ICON[type];
+              <div className={styles.queueList} data-studio-queue-list="">
+                {queuedArtifacts.map((artifact) => {
+                  const action = actionById.get(artifact.actionId);
+                  const generationFenced = generationFenceKeys.has(
+                    artifactGenerationKey(
+                      artifact.actionId,
+                      artifact.artifactType,
+                    ),
+                  );
                   return (
-                    <section
-                      key={type}
-                      className={styles.group}
-                      aria-label={t(`artifactType.${type}`)}
-                    >
-                      <div className={styles.groupHead}>
-                        <span className={styles.groupIcon}>
-                          <GroupIcon aria-hidden="true" size={16} />
-                        </span>
-                        <h3 className={styles.groupTitle}>
-                          {t(`artifactType.${type}`)}
-                        </h3>
-                        <span className={styles.groupCount}>{list.length}</span>
-                      </div>
-                      <div className={styles.cardGrid}>
-                        {list.map((artifact) => {
-                          const action = actionById.get(artifact.actionId);
-                          const generationFenced = generationFenceKeys.has(
-                            artifactGenerationKey(
-                              artifact.actionId,
-                              artifact.artifactType,
-                            ),
-                          );
-                          return (
-                            <ArtifactCard
-                              key={artifact.id}
-                              artifact={artifact}
-                              actionTitle={action?.title}
-                              generationActive={activeKeys.has(
-                                artifactGenerationKey(
-                                  artifact.actionId,
-                                  artifact.artifactType,
-                                ),
-                              )}
-                              selectionBlocked={generationFenced}
-                              selected={selected?.id === artifact.id}
-                              onOpen={() => selectArtifact(artifact.id)}
-                              onRegenerate={
-                                action !== undefined &&
-                                action.status !== "dismissed" &&
-                                !generationFenced
-                                  ? () => openGenerate(action)
-                                  : undefined
-                              }
-                            />
-                          );
-                        })}
-                      </div>
-                    </section>
+                    <ArtifactCard
+                      key={artifact.id}
+                      artifact={artifact}
+                      actionTitle={action?.title}
+                      generationActive={activeKeys.has(
+                        artifactGenerationKey(
+                          artifact.actionId,
+                          artifact.artifactType,
+                        ),
+                      )}
+                      selectionBlocked={generationFenced}
+                      selected={selected?.id === artifact.id}
+                      onOpen={() => selectArtifact(artifact.id)}
+                      onRegenerate={
+                        action !== undefined &&
+                        action.status !== "dismissed" &&
+                        !generationFenced
+                          ? () => openGenerate(action)
+                          : undefined
+                      }
+                    />
                   );
                 })}
               </div>

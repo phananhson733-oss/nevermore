@@ -540,14 +540,17 @@ async function generateReadyArtifact(
     .getByRole("button", { name: "Generate", exact: true })
     .click();
 
-  const artifactGroup = page.getByRole("region", {
-    name: "Technical ticket",
+  // Re-aimed for the unified queue, not loosened. The queue is one list ordered
+  // by type instead of a stack of per-type `<section>`s, so the region this
+  // scoped to is gone; the row is now identified by the type it carries.
+  const artifactRow = page
+    .locator("[data-studio-queue]")
+    .locator('[data-studio-artifact-id][data-studio-artifact-type="technical_ticket"]');
+  await expect(artifactRow).toHaveCount(1, { timeout: 45_000 });
+  await expect(artifactRow.getByText("Draft", { exact: true })).toBeVisible({
+    timeout: 45_000,
   });
-  await expect(artifactGroup).toBeVisible({ timeout: 45_000 });
-  await expect(
-    artifactGroup.getByText("Draft", { exact: true }).first(),
-  ).toBeVisible({ timeout: 45_000 });
-  await artifactGroup.getByRole("button", { name: "Open" }).click();
+  await artifactRow.getByRole("button", { name: "Open" }).click();
   const markReady = page.getByRole("button", { name: "Mark ready" });
   await expect(markReady).toBeEnabled();
   if (keyboard) {
@@ -694,7 +697,10 @@ async function waitForCanonicalScreenReady(
       : screen === "sources"
         ? page.getByRole("region", { name: "Source readiness" })
         : screen === "studio"
-          ? page.getByRole("region", { name: "Technical ticket" }).first()
+          ? page
+              .locator("[data-studio-queue]")
+              .locator('[data-studio-artifact-type="technical_ticket"]')
+              .first()
           : page.locator("[data-report-document]");
   await expect(landmark).toBeVisible();
   // These pages hydrate their canonical read models with client-side queries.

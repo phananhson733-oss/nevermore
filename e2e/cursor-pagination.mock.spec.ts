@@ -308,9 +308,16 @@ test("Studio exposes artifact and action next pages", async ({ page }) => {
   const canvas = page.locator("[data-studio-editor-column]");
   await expect(queue.getByText(firstAction.title, { exact: true })).toBeVisible();
   await queue.getByRole("button", { name: "Load more" }).click();
+  // Re-aimed for the unified queue, not loosened. The next page's artifact used
+  // to be proven present by the per-type section heading that appeared with it;
+  // the queue no longer has per-type sections. The proof now reads the ROW the
+  // second page brought in, by its type — which is what the heading stood in
+  // for, and it fails the same way if the second page never lands.
   await expect(
-    queue.getByRole("heading", { name: "Content brief", exact: true }),
-  ).toBeVisible();
+    queue.locator(
+      '[data-studio-artifact-id][data-studio-artifact-type="content_brief"]',
+    ),
+  ).toHaveCount(1);
 
   await hero.getByRole("button", { name: "Generate artifact" }).click();
   await expect(canvas.getByRole("heading", { name: "Pick an action" })).toBeVisible();

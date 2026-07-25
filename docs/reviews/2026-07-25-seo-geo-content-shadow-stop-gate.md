@@ -239,21 +239,40 @@ recorded here.
 returns **empty** — zero lines changed across the whole slice.
 `git diff --name-only 945be02..HEAD | grep -iE "overview|growth-map|sources"`
 returns only two new files under `execution/`
-(`_connected-sources.ts` and its test). `studio.module.css` is likewise
-unchanged; only `_studio.tsx` moved (74 insertions, 58 deletions), to render the
-new deliverable type in the existing queue.
+(`_connected-sources.ts` and its test). `studio.module.css` was likewise
+unchanged up to §12; **§13 changed it**, and `_studio.tsx` with it, to build the
+type filter bar and unify the queue. Neither file belongs to a frozen module.
+The N-1 check was re-run at the end of §13 over the same three directories and
+is **still empty**.
 
-**D-1. The specification's §4 type-filter bar and §5 queue rewrite were not
-built.** The content surface is rendered through the `afterHero` slot **above**
-the existing Studio workspace, rather than as the unified three-column queue the
-reference artifact uses. `grep -rn "filterBar" apps/web/src` returns nothing.
-*Reason:* rewriting the queue breaks the existing green assertions in
-`e2e/real-vertical-chains.spec.ts`. *What this means now:* Execution has two
-queues on one page — the Content Shadow run rail and the Studio artifact queue —
-which is not the shape either the reference design or the accepted modules use.
-*Cost boundary:* visual and navigational only; no honesty claim and no data path
-depends on it. **Unifying the queue is a task of its own, with its own visual
-regression evidence.**
+**D-1. PARTLY RESOLVED in §13.** The specification's §4 type-filter bar and §5
+queue unification are now built; the deeper merge of the content surface into
+the same document panel is not.
+
+*Built (§13).* `studio.module.css` has `.filterBar` / `.filterTabs` /
+`.filterTab` / `.filterCount`, and the queue is **one list** ordered by type
+instead of a stack of per-type `<section>`s. Type moved to the chip row above the
+queue and to the badge already on each row. The right-hand count reads
+`N deliverables · M awaiting your review`, both numbers derived from the queue
+itself: `N` carries a `+` when a further cursor page exists, so it is a floor and
+not a claim, and `M` counts `draft` — the only status
+`MANUAL_STATUS_TRANSITIONS` lets an operator act on — so it counts work actually
+waiting on a person. Chips are `role="tab"` over the workspace `role="tabpanel"`,
+with roving tabindex and Arrow/Home/End. Colour is `var(--sf-accent)` throughout;
+no GenGrowth hex was copied.
+
+*Two deliberate narrowings of the reference behaviour*, both in
+`applyTypeFilter`: a chip never discards unsaved editor state, and a chip click
+with nothing open leaves nothing open rather than silently opening a deliverable
+and starting reads the operator did not ask for.
+
+*Still open.* The Content Shadow surface is **still rendered through the
+`afterHero` slot above the workspace**, so Execution still shows two queues on
+one page — the Content Shadow run rail and the unified artifact queue. Folding
+the content body, meta strip and quality rail into the workspace's own document
+panel is specification §6-§8 and was not in §13's scope. *Cost boundary:*
+unchanged — visual and navigational only; no honesty claim and no data path
+depends on it.
 
 **D-2. The global `ScenarioNotice` banner was not built.** *Ruling (main
 agent):* the reference artifact's banner says "this whole demo is offline and
@@ -1628,3 +1647,112 @@ mismatch and not a defect in the drill, but the evidence it emits does not say
 so, and diagnosing it costs a manual reproduction. Recorded, not fixed: a
 version preflight would need its own tests and this round is already at the edge
 of its scope.
+
+---
+
+## 13. Queue unification round: the type filter bar, and D8's two named causes
+
+Two pieces of work, committed separately: the D8 spec repair the previous round
+recorded but did not attempt, and the §4/§5 UX deviation **D-1** recorded above.
+
+### 13.1 D8 — what was fixed, and what it uncovered
+
+Both named causes are closed and each is separately proven by mutation; the suite
+is nonetheless **still red**, for causes the D8 entry did not know about. The
+full account, including the one assertion that cannot be re-aimed without being
+weakened, is written into **§4 D8** rather than duplicated here. `real-vertical-chains`
+is **not** claimed green by this round.
+
+### 13.2 D-1 — the type filter bar and the unified queue
+
+Built to specification §4/§5. What landed, the two deliberate narrowings, and
+what is still open is written into **§3 D-1** rather than duplicated here.
+
+**What the reference gives, and what it does not.** The chip row, the
+hover-equals-selected filled chip, the right-hand `N · M` count, and one queue
+carrying type as a per-row badge are all taken from the reference workbench.
+Three things deliberately differ:
+
+- **Four type chips, not seven.** `ArtifactType` has four values. The reference's
+  seven are a property of its mock data; adding types is a contract change.
+- **Chips follow the queue's own canonical order** (`content_brief`,
+  `metadata_rewrite`, `technical_ticket`, `english_blog_draft`), not the
+  reference's listing order, so a chip and the rows it reveals never disagree.
+- **`M` counts `draft`, not `ready`.** The specification's `M` was written for a
+  surface where `ready` means "automated checks done, human next". In this queue
+  `ready` is the state a human has **already** decided; `draft` is the one whose
+  only legal manual moves are `ready` and `archived`. Counting `ready` here would
+  label finished work as pending.
+
+### 13.3 Re-aimed assertions
+
+Four specs asserted the queue's per-type `<section>` regions, which no longer
+exist. Each was re-aimed to count the same thing over the **whole** queue, keyed
+on the new `data-studio-artifact-type` attribute — strictly stronger, because a
+duplicate filed outside the scoped section used to be invisible to these lines.
+No assertion was weakened; every re-aim carries its reasoning in the spec itself.
+
+Mutation evidence, run against the two specs that are green in this environment
+(`audit-technical-vertical`, `content-shadow-vertical`):
+
+| mutation | result |
+|---|---|
+| every queue row rendered twice | 3 tests red at the re-aimed lines — `Expected: 1, Received: 2` |
+| every row hardcoded to `data-studio-artifact-type="content_brief"` | 3 tests red — ticket count `Received: 0`, brief count `Received: 2` |
+| both reverted | 3/3 green again |
+
+`cursor-pagination` and `real-vertical-chains` also carry re-aims. Neither can be
+run green in this environment — the first is D4 locale-red, the second D8-red —
+so their re-aims are typechecked and structurally identical to the proven two,
+and **no green is claimed for them**.
+
+### 13.4 Gate results
+
+| gate | result |
+|---|---|
+| `pnpm lint` / `pnpm typecheck` / `pnpm build` | pass |
+| `git diff --check` | clean |
+| `pnpm verify:spec` | pass — **49 operations / 9 async / 44 tables / 11 rules** |
+| `pnpm verify:authority` / `implementation:check` | pass |
+| `pnpm openapi:lint` / `contracts:check` | pass — no generated diff |
+| `pnpm deploy:check` / `vendor:check` / `secrets:scan` | pass |
+| `pnpm test` (no `DATABASE_URL`) | pass — 305 files / 3872 tests |
+| `pnpm test` **with** `DATABASE_URL` | pass — identical 305 / 3872 |
+| `pnpm db:migrate` / `db:smoke` | pass — 21 files; fixtures rolled back |
+| `pnpm db:migrate:check` | pass — **44 / 56 / 69 / 18** |
+| `pnpm test:integration` | pass — 66 files / 478 tests |
+| `pnpm restore:drill` | pass (with `RESTORE_DRILL_PG_BIN`, §12.6) |
+| `pnpm restore:drill:test` | pass — 38/38, coverage above thresholds |
+| E2E `content-shadow-vertical` / `-review` / `-execution` / `audit-technical-vertical` | **21/21 green** |
+| E2E `real-vertical-chains` | **red — §4 D8**, advanced four steps, not claimed green |
+
+**Zero migrations, zero contract change.** Counts are unchanged at 49/9/44/11.
+
+### 13.5 No new red
+
+The seven studio-adjacent mock specs that touch the queue
+(`cursor-pagination`, `studio-first-paint`, `studio-workspace`,
+`studio-multi-run`, `critical-flows`, `report-artifact-convergence`,
+`mobile-shell`) were run **twice**: once with this round's changes stashed, once
+with them applied. Both runs produced the **same 28 failures and the same 2
+passes**, test for test. Every failure is the §4 D4 locale-cookie defect or
+pre-Slice-1 copy, none is the queue. This round introduced **no new red**.
+
+### 13.6 N-1
+
+`git diff --stat 945be02..HEAD` and the same command against the working tree,
+both over `apps/web/src/app/p/[projectId]/overview`, `.../growth-map` and
+`.../sources`: **both empty**. The Overview assertion in `real-vertical-chains`
+was re-aimed at the surface; the surface was not moved to the assertion.
+
+### 13.7 Still open after this round
+
+- **§4 D8** — open, and now understood: see §4 D8 for the three assertions with
+  no successor surface and the 24 stale two-platform snapshots.
+- **§3 D-1 residual** — the Content Shadow surface still renders above the
+  workspace through `afterHero`; folding it into the workspace's document panel
+  is specification §6-§8.
+- **§3 D-2 / D-3 / D-4**, **§4 D1 / D2 / D3 / D4 / D5**, **§10.4** — all
+  unchanged.
+- **§8.2 N-3** — branch coverage was not re-measured this round either. No
+  improvement is claimed.

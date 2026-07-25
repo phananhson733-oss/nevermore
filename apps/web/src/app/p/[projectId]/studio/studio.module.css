@@ -350,49 +350,72 @@
 }
 
 /* ------------------------------------------------------------- Groups ----- */
-.groups {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  padding: 16px 12px 20px;
-}
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.groupHead {
+/* ------------------------------------------------------------ Type filter --
+   One chip row above one queue. The reference workbench states the type here
+   and on each row rather than cutting the queue into per-type sections, and it
+   deliberately gives hover and the selected chip the SAME filled treatment: a
+   chip under the pointer is meant to read as "this is what you would be
+   looking at", not as a second, weaker kind of selection. */
+.filterBar {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 4px;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+  padding: 10px 13px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-card);
+  box-shadow: var(--sf-shadow-sm);
 }
-.groupIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--sf-cobalt-text);
-}
-.groupTitle {
+.filterTabs {
+  display: flex;
   min-width: 0;
-  flex: 1;
-  overflow: hidden;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.filterTab {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  color: var(--sf-ink-700);
+  font: inherit;
   font-size: var(--sf-text-xs);
-  font-weight: 800;
-  color: var(--sf-muted);
-  text-overflow: ellipsis;
-  text-transform: uppercase;
+  font-weight: 700;
   white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: var(--sf-radius-control);
+  cursor: pointer;
 }
-.groupCount {
-  font-family: var(--sf-font-mono);
-  font-size: var(--sf-text-xs);
+.filterTab:hover,
+.filterTabActive {
+  color: var(--sf-accent-contrast);
+  background: var(--sf-accent);
+}
+.filterCount {
+  flex: 0 0 auto;
+  margin: 0;
   color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
 }
-.cardGrid {
+@media (max-width: 760px) {
+  .filterBar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .filterTabs {
+    width: 100%;
+  }
+}
+
+/* The queue itself: one list, ordered by type, never sectioned by it. */
+.queueList {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  padding: 16px 12px 20px;
 }
 
 /* --------------------------------------------------------- Artifact card -- */
