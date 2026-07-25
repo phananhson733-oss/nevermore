@@ -437,16 +437,23 @@ setting `sf_ui_locale`.
 convention** — only `growth-map`, `keyword` and `competitor` operations are
 forced by the verifier to declare 503 — and Task 5 followed it.
 
-**D6. Two live credential-redaction bypasses (identified, not fixed).**
+**D6. RESOLVED in §10 (`2f715d4`). Two live credential-redaction bypasses.**
 - `finding-summary-client.ts:110` — measured to forward
   `Password<U+200B>=hunter2` verbatim to an external LLM.
 - `product-profile-client.ts:390` — the same, with two entangled defects:
   `safeUrlText:411` leaks through `redactUrl`, and `hasUnsafeRawContent:712`
   uses `redactText(v) !== v` as a detector and inherits the same blind spot.
-The sibling defect in `envelope.ts`'s `safePromptText` **was** fixed
-(`05b1282`). These two remain, and **text crossing them leaves the system
-boundary for a third-party model provider** — a real disclosure, not a duplicate
-of data we already hold.
+Text crossing these left the system boundary for a third-party model provider —
+a real disclosure, not a duplicate of data we already hold — so they were fixed
+rather than carried. The sibling defect in `envelope.ts`'s `safePromptText` had
+been fixed in `05b1282` and `sanitizeOutlineItem`'s in `b327d7a`; all four
+sanitizers now normalize `\p{Cc}`/`\p{Cf}` before redacting and share one
+character class. **Two narrower residuals of the same family survive and are
+named in §10.4** — closing them needs format characters DELETED rather than
+replaced, which would corrupt scripts whose `\p{Cf}` characters carry meaning.
+The three redaction sites that write only to storage we already own
+(`logger.ts`, `telemetry.ts`, `run-export.ts`) share the weakness and remain
+open debt; §10.4 states why they were ranked below the boundary-crossing pair.
 
 **D7. RESOLVED in §8 (L11).** `product-profile-competitor-projection.test.ts`
 sat in the unit project while being DB-backed, behind a hardcoded database name
@@ -569,10 +576,12 @@ against a real PostgreSQL.
 1. **D1 blocks the merge.** CI branch coverage is 78.21% against an 80%
    threshold. It is proven unrelated to Slice 2, and it still has to be decided
    before this branch can land.
-2. **D6 is a live third-party disclosure.** Two credential-redaction bypasses
-   forward zero-width-obfuscated secrets verbatim to an external model provider.
-   They are pre-existing and out of Slice 2's scope, but they are not a
-   cosmetic debt and should not travel further unfixed.
+2. **D6 was a live third-party disclosure. It is now fixed — §10, `2f715d4`.**
+   Two credential-redaction bypasses forwarded zero-width-obfuscated secrets
+   verbatim to an external model provider. They were pre-existing and outside
+   Slice 2's original scope, and they were not cosmetic debt, so they were not
+   allowed to travel further unfixed. Two narrower residuals of the same family
+   survive and are named in §10.4 rather than quietly closed.
 3. **There is no trustworthy full-E2E regression net (D4).** Eighteen specs pass
    in isolation; a suite that is 84-red cannot tell anyone whether something
    else broke. Slice 3 touching publish paths without that net is a materially
@@ -925,3 +934,177 @@ strength. Every other test that was green stayed green.
   locale decision for the real harness and edits to assertions that read the
   frozen `overview` surface.
 - §4 D1, D2, D3, D5, D6 — untouched pre-existing debt.
+
+---
+
+## 10. Credential-redaction fix round (2026-07-26)
+
+One commit, `2f715d4`, closing **§4 D6** — the last live security defect this
+slice registered. No migration, no operation, no contract shape change; the
+machine surface is still **49 / 9 / 44 / 11**.
+
+### 10.1 What was fixed
+
+Both remaining LLM clients ran `redactText` BEFORE normalizing `\p{Cc}`/`\p{Cf}`
+and never took a second pass. `redactText`'s labelled-assignment patterns
+require `\s*` between a key and its `=`/`:`, and U+200B / U+00AD / U+200D /
+U+2060 are not `\s`, so `Password<U+200B>=hunter2` walked through both and
+`hunter2` reached the outgoing request body of an EXTERNAL model provider
+verbatim.
+
+| Defect | Site | Fix |
+|---|---|---|
+| S1 | `finding-summary-client.ts:110` `safeDataText` | normalize + collapse FIRST, then `redactText`, then escape `&`/`<`/`>`, re-collapse, truncate by code point |
+| S2 | `product-profile-client.ts:390` `safeDataText` | same order; `stripUnsafeTextControls` deleted and replaced by the shared `NON_TEXT_CHARACTER` |
+| S2a | `product-profile-client.ts:411` `safeUrlText` | the same normalization now runs BEFORE `redactUrl`, not only inside `safeDataText` after it |
+| S2b | `product-profile-client.ts:712` `hasUnsafeRawContent` | the redaction detector now reads BOTH the raw string and its normalized form |
+
+`stripUnsafeTextControls` was wrong twice over: it ran after the redactor, and
+its hand-written ranges were NARROWER than `\p{Cc}\p{Cf}` — U+200B / U+00AD /
+U+200D / U+2060 were in none of them — so the client also forwarded the
+invisible characters themselves. `NON_TEXT_CHARACTER` (exported from
+`brief/outline.ts` since `05b1282`) is a strict superset of those ranges,
+verified code point by code point. All four sanitizers in the package now read
+ONE character class instead of four.
+
+The escape step stays AFTER redaction in both clients. Escaping first would let
+`&lt;/UNTRUSTED_…&gt;` be absorbed into a credential value's `[^\s,;]+` match and
+carry the escape off into `[redacted]`.
+
+### 10.2 The detector semantics, and why the union
+
+`hasUnsafeRawContent` used `redactText(v) !== v` as its evidence that a model
+response carried something unsafe. That inherited the prompt sanitizer's blind
+spot exactly: a payload that could walk past the redactor walked past the
+RESPONSE gate too, so a model persuaded to echo `Password<U+200B>=hunter2` had
+it stored rather than rejected.
+
+It now asks the question of **both readings** — the raw string AND its
+control/format-normalized form — and rejects if **either** would be redacted.
+The union was chosen over replacing the raw reading with the normalized one, and
+the reason is measurable rather than stylistic: normalization collapses
+whitespace, which can bring a string back under `redactText`'s 4096-BYTE gate,
+so a normalized-ONLY detector would have started ACCEPTING a class of response
+it used to reject. A safety gate must not get more permissive as a side effect
+of a security fix.
+
+The control-character clause deliberately keeps its narrower
+`isUnsafeTextControl` ranges. Widening it to all of `\p{Cc}\p{Cf}` would reject
+legitimate model output: U+200C/U+200D carry meaning in Persian, Arabic and
+Indic scripts and in emoji ZWJ sequences, and `\n` is `\p{Cc}`.
+
+### 10.3 Well-formed inputs keep their bytes — measured, not asserted
+
+Normalization is a no-op on text whose only `\p{Cc}`/`\p{Cf}` characters are
+ordinary whitespace, so this is a SANITIZER defect fix and not a prompt-template
+change. Neither `PROMPT_SET_VERSION` (pinned by the `diagnostic_runs` CHECK at
+`packages/db/migrations/0001_init.sql:436`) nor
+`PRODUCT_PROFILE_PROMPT_SET_VERSION` moves.
+
+Each client's suite now pins the sha256 of its outgoing **user message** for
+well-formed fixtures — 26 for `finding_summary`, 30 for
+`product_profile_synthesis` — captured from the implementation BEFORE the change
+and hardcoded rather than derived, so the assertion cannot re-learn whatever the
+builder started emitting. All 56 pass unchanged. A separate 60-fixture probe
+across both clients (27 well-formed payload shapes: CJK, RTL, Thai, emoji,
+astral-plane, markdown, JSON, URLs with query strings, tab/CR/LF mixtures,
+multi-page inputs) found **58/60 byte-identical**.
+
+**The 2 that moved are one class, and it is named rather than hidden.**
+`redactText` answers the sentinel `[truncated]` for any string above 4096 UTF-8
+BYTES. A field whose RAW bytes exceed that gate while its whitespace-collapsed
+form does not used to reach the model as the literal `[truncated]` and now
+reaches it as real content. The direction is strictly better — the model sees
+the operator's or the crawl's actual text instead of a sentinel — but the bytes
+do change, so both suites carry a test that says so by name instead of a pin
+that would have hidden it. This is the same class `05b1282` reported for
+`safePromptText`.
+
+One more property is recorded rather than discovered: both sanitizers escape
+`&` to `&amp;`, so neither is idempotent on text containing `&`, `<` or `>`.
+That is OLDER than this fix and is left exactly as it was, because changing it
+would change the bytes of every well-formed prompt containing an ampersand. The
+idempotence property tests are scoped to markup-free text and a second test pins
+the entity behaviour.
+
+### 10.4 Every `redactText` / `redactUrl` / `redact` call site, re-counted
+
+The §8-era inventory was re-derived from scratch (excluding `node_modules` and
+the untracked `.next-*` build outputs) rather than trusted:
+
+| Site | Verdict |
+|---|---|
+| `packages/artifacts/src/brief/outline.ts:198` | fixed earlier (`b327d7a`) |
+| `packages/artifacts/src/llm/envelope.ts:193` | fixed earlier (`05b1282`) |
+| `packages/artifacts/src/llm/finding-summary-client.ts:111` | **fixed here** |
+| `packages/artifacts/src/llm/product-profile-client.ts:391` | **fixed here** |
+| `packages/artifacts/src/llm/product-profile-client.ts:411` (`redactUrl`) | **fixed here** |
+| `packages/artifacts/src/llm/product-profile-client.ts:712` (detector) | **fixed here** |
+| `packages/observability/src/logger.ts:49`, `:110` | to our own process log |
+| `packages/db/src/repositories/telemetry.ts:174` | to our own database |
+| `apps/worker/src/export/run-export.ts:811` | to an export bundle we store |
+
+There is no third prompt-boundary site. The last three share the same weakness
+and are **not** fixed here, for one stated reason: they write to storage we
+already own, so an obfuscated credential that reaches them is a duplicate of
+data the operator already gave us, not a disclosure across the system boundary.
+That is a priority argument, not an absolution — they remain open debt.
+
+**Two residuals of the same family survive and are named in the code**, both
+because closing them requires DELETING format characters rather than replacing
+them with a space, which would corrupt scripts whose `\p{Cf}` characters carry
+meaning:
+
+- an invisible character INSIDE a key (`Pass<U+200B>word=…`) still defeats a
+  keyword-driven redactor — normalization turns the key into two words rather
+  than restoring it;
+- a query parameter that only `redactUrl` knows (`key`, and the
+  `?state=`/`?code=` pair whose `redactText` rule has no `\s*`) is still missed
+  when an invisible character sits before its `=`, because substituting a SPACE
+  cannot restore the exact parameter name. The same is true of a
+  percent-ENCODED invisible character, which nothing in this pipeline decodes.
+
+Both are unchanged by this round, not introduced by it.
+
+### 10.5 Gates
+
+Written first as failing tests: 26 red in the finding-summary suite and 32 red
+in the product-profile suite before the fix, all green after, with the
+byte-identity pins green in BOTH states.
+
+| Gate | Result |
+|---|---|
+| `pnpm verify:spec` | 49 / 9 / 44 / 11 |
+| `pnpm verify:authority` | pass |
+| `pnpm implementation:check` | pass — 30 files in the QA gate's import closure still pure |
+| `pnpm openapi:lint` | valid |
+| `pnpm contracts:check` | no diff |
+| `pnpm lint` | pass |
+| `pnpm typecheck` | pass |
+| `pnpm build` | pass |
+| `git diff --check` | clean |
+| `pnpm db:migrate` | 21 files |
+| `pnpm db:smoke` | pass, rolled back |
+| `pnpm db:migrate:check` | 44 tables / 56 indexes / 69 triggers / 18 routines |
+| `pnpm test` (no `DATABASE_URL`) | 305 files, 3863 tests |
+| `pnpm test` (with `DATABASE_URL`) | 305 files, 3863 tests |
+| `pnpm test:integration` | 65 files, 473 tests |
+| E2E `content-shadow-vertical` / `-review` / `-execution` / `audit-technical-vertical` | 19/19 |
+
+`pnpm secrets:scan` is red at 5 findings and was red at 5 findings before this
+round: all five are literal credential-shaped strings in the fixtures of
+`outline.test.ts` and `envelope.test.ts`, added by the two earlier fix commits.
+This round's fixtures assemble their fake token at runtime so the count did not
+move. Recorded here because §2.5 does not name this gate and a reader should not
+have to discover it.
+
+### 10.6 What did not change
+
+Constraint **N-1** held: this round's diff touches four files, all under
+`packages/artifacts/src/llm/`, and no path matching `overview`, `growth-map` or
+`sources` at all.
+
+No existing assertion was weakened. No existing test changed. Every gate that
+was green stayed green, and the two gates that were red before this round
+(`§4 D1` branch coverage, `pnpm secrets:scan`) are red by exactly the same
+amount.
