@@ -116,6 +116,15 @@ function briefOutlineLimitations(
   if (manifest.contentBriefOutline.briefSections.length === 0) {
     limitations.push(BRIEF_OUTLINE_UNAVAILABLE_LIMITATION);
   }
+  // A PARTIAL extraction failure: the topics past the cap broke the same
+  // brief -> draft causal chain, only for part of the brief. Decision O-4 spells
+  // out total failure; its principle ("an honest shortfall beats a silent pass")
+  // is what forbids leaving this one unsaid.
+  if (stats.projectedSectionCount < stats.briefSectionCount) {
+    limitations.push(
+      `The pinned content brief carried ${stats.briefSectionCount} distinct section headings; only the first ${stats.projectedSectionCount} (in document order) reached the draft prompt, so ${stats.briefSectionCount - stats.projectedSectionCount} committed topic(s) did not guide this draft.`,
+    );
+  }
   if (stats.projectedKeywordCount < stats.clusterKeywordCount) {
     limitations.push(
       `The frozen search cluster holds ${stats.clusterKeywordCount} keywords; only the first ${stats.projectedKeywordCount} (ordered by normalized keyword) were projected into the brief outline.`,

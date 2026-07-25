@@ -107,6 +107,15 @@ export interface ContentShadowInputManifest {
  * must not be able to fail an already queued run — it only has to be visible.
  */
 export interface BriefOutlineProjectionStats {
+  /**
+   * DISTINCT `## ` section labels the pinned brief carried, before the outline
+   * cap. Without it the section channel could truncate in silence while the
+   * keyword channel disclosed its own truncation — a partial break of the
+   * brief -> draft causal chain that read as a clean pass.
+   */
+  readonly briefSectionCount: number;
+  /** Section labels that survived the outline cap and reached the prompt. */
+  readonly projectedSectionCount: number;
   readonly clusterKeywordCount: number;
   readonly projectedKeywordCount: number;
   readonly unconfirmedMappingCount: number;
@@ -177,11 +186,7 @@ export interface ResearchPack {
 /** SEO/GEO + factual review verdict for one evaluated draft revision. */
 export type QaVerdict = "passed" | "needs_review" | "blocked";
 
-export type QaClaimKind =
-  | "red_line"
-  | "structure"
-  | "citability"
-  | "coverage";
+export type QaClaimKind = "red_line" | "structure" | "citability" | "coverage";
 
 /**
  * `unevaluated` is an honest third state: the check exists in the contract but
@@ -204,4 +209,11 @@ export interface QaEvaluation {
 export interface QaEvaluationInput {
   readonly draftMarkdown: string;
   readonly pack: ResearchPack;
+  /**
+   * Required, not optional: the QA claim is where a reviewer reads what the
+   * brief contributed, so a caller that cannot supply the projection counts
+   * must fail to compile rather than quietly emit a claim that reports only
+   * the survivors of the cap.
+   */
+  readonly briefOutlineStats: BriefOutlineProjectionStats;
 }

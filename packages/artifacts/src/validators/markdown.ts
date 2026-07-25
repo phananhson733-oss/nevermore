@@ -129,12 +129,21 @@ export function parseMarkdownSections(
   return sections;
 }
 
-/** Case/spacing/trailing-colon-insensitive heading key (validator semantics). */
+/**
+ * Case/spacing/trailing-colon-insensitive heading key (validator semantics).
+ *
+ * Step order is load-bearing. Folding whitespace FIRST and stripping the whole
+ * trailing colon/whitespace run AFTER is what makes `"Growth Loop"`,
+ * `"Growth Loop:"`, `"Growth Loop :"` and `"Growth Loop ::"` one key. Stripping
+ * a single colon first left the space that preceded it behind (`"X :"` -> `"x "`),
+ * so headings that differ only by punctuation keyed differently — and any caller
+ * that de-duplicates or budgets by this key would then treat one topic as many.
+ */
 export function normalizeHeading(value: string): string {
   return value
-    .trim()
-    .replace(/[:：]\s*$/u, "")
     .replace(/\s+/gu, " ")
+    .trim()
+    .replace(/[\s:：]+$/u, "")
     .toLowerCase();
 }
 

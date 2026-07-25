@@ -104,6 +104,32 @@ describe("extractBriefSectionLabels operator edits", () => {
     ).toEqual(["Internal Linking"]);
   });
 
+  it("de-duplicates a heading whose only difference is a SPACED or repeated trailing colon", () => {
+    // The de-duplication key is `normalizeHeading`. While it stripped the
+    // trailing colon before folding whitespace, `"X :"` keyed as `"x "` and
+    // `"X ::"` as `"x :"` — three keys for one topic, which is how a single
+    // heading could manufacture enough "distinct" labels to exhaust the cap.
+    expect(
+      extractBriefSectionLabels(
+        "## Growth Loop\n\na\n\n## Growth Loop :\n\nb\n\n## Growth Loop ::\n\nc\n\n## growth   loop：\n\nd\n",
+      ),
+    ).toEqual(["Growth Loop"]);
+  });
+
+  it("cannot let one topic exhaust the section cap with trailing-colon variants", () => {
+    const markdown = Array.from(
+      { length: MAX_BRIEF_OUTLINE_SECTIONS + 8 },
+      (_unused, index) => `## Growth Loop ${":".repeat(index)}\n\nbody\n`,
+    )
+      .concat("## Distribution Plan\n\nbody\n")
+      .join("\n");
+
+    expect(extractBriefSectionLabels(markdown)).toEqual([
+      "Growth Loop",
+      "Distribution Plan",
+    ]);
+  });
+
   it("truncates to the first MAX_BRIEF_OUTLINE_SECTIONS headings in document order", () => {
     const markdown = Array.from(
       { length: MAX_BRIEF_OUTLINE_SECTIONS + 3 },
@@ -197,6 +223,56 @@ describe("sanitizeOutlineItem injection-surface scrubbing", () => {
     expect(sanitizeOutlineItem(once, MAX_BRIEF_OUTLINE_SECTION_CHARS)).toBe(
       once,
     );
+  });
+
+  it("redacts a credential hidden behind an invisible character on the FIRST pass", () => {
+    // U+200B is not `\s`, so a redactor pattern requiring `\s*` between the key
+    // and its `=` misses it — unless the control/format normalization runs
+    // BEFORE the redactor. Step order is the whole defect.
+    const safe = sanitizeOutlineItem(
+      "Password​=hunter2 rotation policy",
+      MAX_BRIEF_OUTLINE_SECTION_CHARS,
+    );
+
+    expect(safe).toBe("Password =[redacted] rotation policy");
+    expect(safe).not.toContain("hunter2");
+  });
+
+  it("redacts an invisible-character credential in provider keyword text too", () => {
+    const safe = sanitizeOutlineItem(
+      "api_key​: sk_live_ZZZZ",
+      MAX_BRIEF_OUTLINE_KEYWORD_CHARS,
+    );
+
+    expect(safe).toBe("api_key : [redacted]");
+    expect(safe).not.toContain("sk_live_ZZZZ");
+  });
+
+  it("is idempotent for every invisible-character credential smuggling shape", () => {
+    // The property that matters: the bytes frozen by the extractor and the
+    // bytes re-sanitized at the prompt boundary can never diverge.
+    const invisible = ["​", "­", "‍", "⁠", "‌", "᠎", "؜", "⁦", " ", "", " "];
+    const payloads = [
+      (char: string) => `Password${char}=hunter2 rotation policy`,
+      (char: string) => `api_key${char}: sk_live_ZZZZ`,
+      (char: string) => `authorization${char}:${char}Bearer abcdefghijklmno`,
+      (char: string) => `client_secret${char}=${char}GOCSPX-abcdefghijkl`,
+      (char: string) => `Objective${char}<b>${char}token${char}=abc123def456`,
+      (char: string) => `session${char}${char}=  s3cr3t-value`,
+    ];
+
+    for (const char of invisible) {
+      for (const payload of payloads) {
+        const raw = payload(char);
+        const once = sanitizeOutlineItem(raw, MAX_BRIEF_OUTLINE_SECTION_CHARS);
+        const twice = sanitizeOutlineItem(
+          once,
+          MAX_BRIEF_OUTLINE_SECTION_CHARS,
+        );
+
+        expect(twice).toBe(once);
+      }
+    }
   });
 
   it("returns an empty string for a non-string or whitespace-only value", () => {
@@ -388,6 +464,47 @@ describe("extractContentBriefOutline", () => {
       extractContentBriefOutline({ briefMarkdown: null, keywords: [] }).outline
         .briefSections,
     ).toEqual([]);
+  });
+
+  it("reports how many brief sections the cap dropped, not just how many it kept", () => {
+    // The keyword channel already discloses its truncation. A section channel
+    // that truncates in SILENCE is the same defect decision O-4 forbids, only
+    // partial: the draft is missing committed topics and nothing says so.
+    const markdown = Array.from(
+      { length: MAX_BRIEF_OUTLINE_SECTIONS + 8 },
+      (_unused, index) => `## Section ${index}\n\nbody\n`,
+    ).join("\n");
+    const extraction = extractContentBriefOutline({
+      briefMarkdown: markdown,
+      keywords: [],
+    });
+
+    expect(extraction.briefSectionCount).toBe(MAX_BRIEF_OUTLINE_SECTIONS + 8);
+    expect(extraction.projectedSectionCount).toBe(MAX_BRIEF_OUTLINE_SECTIONS);
+    expect(extraction.outline.briefSections).toHaveLength(
+      MAX_BRIEF_OUTLINE_SECTIONS,
+    );
+  });
+
+  it("counts DISTINCT sections, so de-duplication never reads as truncation", () => {
+    const extraction = extractContentBriefOutline({
+      briefMarkdown:
+        "## Objective\n\na\n\n## objective :\n\nb\n\n## Audience\n\nc\n",
+      keywords: [],
+    });
+
+    expect(extraction.briefSectionCount).toBe(2);
+    expect(extraction.projectedSectionCount).toBe(2);
+  });
+
+  it("reports equal section counts when the brief fits under the cap", () => {
+    const extraction = extractContentBriefOutline({
+      briefMarkdown: "## Objective\n\na\n\n## Audience\n\nb\n",
+      keywords: [],
+    });
+
+    expect(extraction.briefSectionCount).toBe(2);
+    expect(extraction.projectedSectionCount).toBe(2);
   });
 
   it("emits a closed three-key shape and nothing else", () => {

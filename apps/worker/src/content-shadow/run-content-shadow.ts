@@ -366,6 +366,8 @@ async function loadLiveShadowInputs(
     sourceIcpProfileId: diagnosticRun.icp_profile_id,
     contentBriefOutline: extraction.outline,
     briefOutlineStats: {
+      briefSectionCount: extraction.briefSectionCount,
+      projectedSectionCount: extraction.projectedSectionCount,
       clusterKeywordCount: extraction.clusterKeywordCount,
       projectedKeywordCount: extraction.projectedKeywordCount,
       unconfirmedMappingCount: extraction.unconfirmedMappingCount,
@@ -668,6 +670,7 @@ export async function runContentShadow(
     const evaluation = evaluateDraftQa({
       draftMarkdown: revision?.content_text ?? "",
       pack,
+      briefOutlineStats: live.briefOutlineStats,
     });
     await new FlowShadowQaGatesRepository(ctx.db).insert({
       workspaceId,

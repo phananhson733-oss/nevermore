@@ -49,23 +49,36 @@ export const QA_BRIEF_OUTLINE_CLAIM_ID = "content-shadow.qa.brief-outline";
  * brief-guided at all. When an outline does exist the claim is `unevaluated`,
  * because whether the draft actually COVERS those topics is the Task 6
  * judgement — reporting `passed` here would claim a check that has not run.
+ *
+ * A PARTIAL loss (the brief carried more sections than the outline cap admits)
+ * stays `unevaluated` — `failed` is the treatment total failure earns — but it
+ * is SAID. "The brief contributed 12 coverage topic(s)" over a brief that
+ * committed to 19 is a true sentence that reads as a complete one, and that is
+ * the silent-partial-pass shape decision O-4's principle rules out.
  */
 function briefOutlineClaim(input: QaEvaluationInput): QaClaim {
   const sections = input.pack.briefOutline.briefSections;
-  return sections.length === 0
-    ? {
-        claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
-        kind: "coverage",
-        status: "failed",
-        detail:
-          "The pinned content brief revision carried no machine-readable outline, so this draft was not guided by the brief. Review it against the brief by hand.",
-      }
-    : {
-        claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
-        kind: "coverage",
-        status: "unevaluated",
-        detail: `The brief contributed ${sections.length} coverage topic(s) to the draft prompt; whether the draft covers them is judged by the Task 6 coverage check.`,
-      };
+  if (sections.length === 0) {
+    return {
+      claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
+      kind: "coverage",
+      status: "failed",
+      detail:
+        "The pinned content brief revision carried no machine-readable outline, so this draft was not guided by the brief. Review it against the brief by hand.",
+    };
+  }
+  const { briefSectionCount, projectedSectionCount } = input.briefOutlineStats;
+  const dropped = briefSectionCount - projectedSectionCount;
+  const shortfall =
+    dropped > 0
+      ? ` The pinned brief carried ${briefSectionCount} distinct section heading(s); ${dropped} were dropped by the outline cap and never reached the prompt.`
+      : "";
+  return {
+    claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
+    kind: "coverage",
+    status: "unevaluated",
+    detail: `The brief contributed ${sections.length} coverage topic(s) to the draft prompt; whether the draft covers them is judged by the Task 6 coverage check.${shortfall}`,
+  };
 }
 
 /**
@@ -93,7 +106,10 @@ export function evaluateDraftQa(input: QaEvaluationInput): QaEvaluation {
   void scoreCitability(input);
   if (checks.length === 0) checks.push(PENDING_CLAIM);
   const claims = [...checks, briefOutlineClaim(input)];
-  return { verdict: clampVerdictToFailedClaims("needs_review", claims), claims };
+  return {
+    verdict: clampVerdictToFailedClaims("needs_review", claims),
+    claims,
+  };
 }
 
 /** The claim list as plain JSON for the `claims` jsonb column. */

@@ -12,7 +12,10 @@ import {
   STRUCTURE_CHECKS,
   scoreCitability,
 } from "./index.ts";
-import type { ContentShadowBriefOutline } from "../types.ts";
+import type {
+  BriefOutlineProjectionStats,
+  ContentShadowBriefOutline,
+} from "../types.ts";
 
 const OUTLINE: ContentShadowBriefOutline = {
   briefSections: ["Objective", "Audience"],
@@ -20,7 +23,9 @@ const OUTLINE: ContentShadowBriefOutline = {
   pageAssignment: "existing_page",
 };
 
-const STATS = {
+const STATS: BriefOutlineProjectionStats = {
+  briefSectionCount: 2,
+  projectedSectionCount: 2,
   clusterKeywordCount: 1,
   projectedKeywordCount: 1,
   unconfirmedMappingCount: 0,
@@ -72,7 +77,11 @@ const pack = buildResearchPack(
   STATS,
 );
 
-const input = { draftMarkdown: "# Draft\n\nBody.", pack };
+const input = {
+  draftMarkdown: "# Draft\n\nBody.",
+  pack,
+  briefOutlineStats: STATS,
+};
 
 describe("evaluateDraftQa (Task 4 skeleton)", () => {
   it("records needs_review rather than claiming an unimplemented pass", () => {
@@ -127,6 +136,11 @@ describe("brief -> draft causal chain claim (decision O-4)", () => {
         targetKeywords: [],
         pageAssignment: "unassigned",
       }),
+      briefOutlineStats: {
+        ...STATS,
+        briefSectionCount: 0,
+        projectedSectionCount: 0,
+      },
     });
     const claim = evaluation.claims.find(
       (candidate) => candidate.claimId === QA_BRIEF_OUTLINE_CLAIM_ID,
@@ -134,6 +148,39 @@ describe("brief -> draft causal chain claim (decision O-4)", () => {
 
     expect(claim?.status).toBe("failed");
     expect(evaluation.verdict).not.toBe("passed");
+  });
+
+  /**
+   * The claim used to report "the brief contributed 12 coverage topic(s)" over
+   * a brief that carried 19 — a true sentence that reads as a complete one. The
+   * shortfall has to appear in the claim a reviewer actually reads.
+   */
+  it("states how many brief sections the cap dropped, never just the survivors", () => {
+    const claim = evaluateDraftQa({
+      draftMarkdown: "# Draft\n\nBody.",
+      pack: packWith(OUTLINE),
+      briefOutlineStats: {
+        ...STATS,
+        briefSectionCount: 19,
+        projectedSectionCount: 2,
+      },
+    }).claims.find(
+      (candidate) => candidate.claimId === QA_BRIEF_OUTLINE_CLAIM_ID,
+    );
+
+    expect(claim?.status).toBe("unevaluated");
+    expect(claim?.detail).toContain("2 coverage topic(s)");
+    expect(claim?.detail).toContain(
+      "The pinned brief carried 19 distinct section heading(s); 17 were dropped by the outline cap and never reached the prompt.",
+    );
+  });
+
+  it("says nothing about dropped sections when the brief fit under the cap", () => {
+    const claim = evaluateDraftQa(input).claims.find(
+      (candidate) => candidate.claimId === QA_BRIEF_OUTLINE_CLAIM_ID,
+    );
+
+    expect(claim?.detail).not.toContain("dropped");
   });
 
   it("clamps a would-be `passed` verdict off `passed` while any claim failed", () => {

@@ -104,6 +104,16 @@ export interface BriefOutlineKeyword {
  */
 export interface ContentBriefOutlineExtraction {
   readonly outline: ContentBriefOutline;
+  /**
+   * DISTINCT section labels the pinned brief carried, before the prompt cap.
+   * Symmetrical with `clusterKeywordCount` on purpose: without it a brief that
+   * committed to 19 topics and delivered 12 to the model was indistinguishable
+   * from one that committed to 12, so a PARTIAL break of the brief -> draft
+   * causal chain passed in silence.
+   */
+  readonly briefSectionCount: number;
+  /** Section labels that survived the projection cap. */
+  readonly projectedSectionCount: number;
   /** Keywords in the frozen cluster before the projection cap. */
   readonly clusterKeywordCount: number;
   /** Keywords that survived the projection cap. */
@@ -112,27 +122,55 @@ export interface ContentBriefOutlineExtraction {
   readonly unconfirmedMappingCount: number;
 }
 
+/** Section labels plus the count the prompt cap dropped on the floor. */
+export interface BriefSectionProjection {
+  /** Labels that reached the outline, in document order. */
+  readonly labels: readonly string[];
+  /** DISTINCT labels the brief carried, before the cap. */
+  readonly briefSectionCount: number;
+}
+
 /**
  * The single sanitizer for every value crossing into the prompt from this
  * module. The step ORDER is load-bearing:
  *
  * 1. pre-cut, so `redactText` never answers its whole-string sentinel;
- * 2. `redactText`, the same credential scrubber the evidence path uses;
- * 3. escape ALL angle brackets — strictly stronger than neutralizing only the
- *    UNTRUSTED_EVIDENCE delimiter, and it covers forged tags and delimiters
- *    alike (the cost, `plans &lt; pro`, matches the deterministic templates);
- * 4. control/format characters to spaces — this is the one that matters most,
- *    because a single-line fragment cannot forge a block boundary inside
+ * 2. control/format characters to spaces, then collapse whitespace — this runs
+ *    FIRST, before the redactor, and the order is a correctness requirement,
+ *    not a style choice. `redactText`'s credential patterns require `\s*`
+ *    between a key and its `=`/`:`, and U+200B / U+00AD / U+200D / U+2060 are
+ *    NOT `\s`, so `Password<U+200B>=hunter2` walks straight through a redactor
+ *    that runs first and is only caught on a SECOND pass. That made the
+ *    function non-idempotent, and because the first pass is what gets frozen
+ *    into `flow_shadow_runs.frozen_input_manifest` while the prompt boundary
+ *    re-sanitizes, the audit record and the bytes the model saw could diverge
+ *    (Slice 2 red line C). Normalizing first also matters on its own terms: a
+ *    single-line fragment cannot forge a block boundary inside
  *    `JSON.stringify(context, null, 2)`;
- * 5. collapse whitespace;
+ * 3. `redactText`, the same credential scrubber the evidence path uses, now
+ *    reading the flattened text a second pass would have read;
+ * 4. escape ALL angle brackets — strictly stronger than neutralizing only the
+ *    UNTRUSTED_EVIDENCE delimiter, and it covers forged tags and delimiters
+ *    alike (the cost, `plans &lt; pro`, matches the deterministic templates).
+ *    It stays AFTER redaction so an escaped tag cannot extend a credential
+ *    value and swallow the escape into `[redacted]`;
+ * 5. re-collapse and trim, so redaction can never leave a ragged edge;
  * 6. truncate with the shared ellipsis convention so no payload hides in a tail.
+ *
+ * The result is idempotent: `sanitizeOutlineItem(sanitizeOutlineItem(x)) ===
+ * sanitizeOutlineItem(x)` for every input, which is what makes the frozen
+ * outline and the prompt outline the same bytes.
  */
 export function sanitizeOutlineItem(value: string, maxChars: number): string {
   if (typeof value !== "string") return "";
-  const normalized = redactText(value.slice(0, OUTLINE_PRE_TRUNCATE_CHARS))
+  const flattened = value
+    .slice(0, OUTLINE_PRE_TRUNCATE_CHARS)
+    .replace(NON_TEXT_CHARACTER, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  const normalized = redactText(flattened)
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(NON_TEXT_CHARACTER, " ")
     .replace(/\s+/gu, " ")
     .trim();
   if (normalized.length <= maxChars) return normalized;
@@ -141,8 +179,8 @@ export function sanitizeOutlineItem(value: string, maxChars: number): string {
 }
 
 /**
- * Extract the `## ` heading labels of a content brief revision, in document
- * order.
+ * Project the `## ` heading labels of a content brief revision, in document
+ * order, together with how many DISTINCT labels the brief actually carried.
  *
  * A heading that matches a spec §10.1 section alias in EITHER locale is
  * replaced by that section's English canonical constant, so (a) a zh-CN brief
@@ -151,12 +189,18 @@ export function sanitizeOutlineItem(value: string, maxChars: number): string {
  * `headingMatches` accepts a prefix, `## Objective and scope: ignore all
  * previous instructions` collapses to the constant `Objective` and the
  * instruction tail simply disappears.
+ *
+ * The whole document is scanned even after the cap is reached: stopping early
+ * would be cheaper but would make the drop UNCOUNTABLE, and an uncountable drop
+ * is exactly the silent partial failure this projection has to disclose. The
+ * work stays bounded — the brief body is a bounded artifact revision and every
+ * label is bounded by `MAX_BRIEF_OUTLINE_SECTION_CHARS`.
  */
-export function extractBriefSectionLabels(
+export function projectBriefSectionLabels(
   briefMarkdown: string,
-): readonly string[] {
+): BriefSectionProjection {
   if (typeof briefMarkdown !== "string" || briefMarkdown.trim().length === 0) {
-    return [];
+    return { labels: [], briefSectionCount: 0 };
   }
   const labels: string[] = [];
   const seen = new Set<string>();
@@ -168,19 +212,22 @@ export function extractBriefSectionLabels(
     );
     const label =
       canonical === undefined
-        ? sanitizeOutlineItem(
-            section.heading,
-            MAX_BRIEF_OUTLINE_SECTION_CHARS,
-          )
+        ? sanitizeOutlineItem(section.heading, MAX_BRIEF_OUTLINE_SECTION_CHARS)
         : canonical.en;
     if (label.length === 0) continue;
     const key = normalizeHeading(label);
     if (seen.has(key)) continue;
     seen.add(key);
-    labels.push(label);
-    if (labels.length >= MAX_BRIEF_OUTLINE_SECTIONS) break;
+    if (labels.length < MAX_BRIEF_OUTLINE_SECTIONS) labels.push(label);
   }
-  return labels;
+  return { labels, briefSectionCount: seen.size };
+}
+
+/** The capped label list alone, for callers that do not disclose the drop. */
+export function extractBriefSectionLabels(
+  briefMarkdown: string,
+): readonly string[] {
+  return projectBriefSectionLabels(briefMarkdown).labels;
 }
 
 /**
@@ -193,8 +240,7 @@ export function aggregatePageAssignment(
 ): BriefPageAssignment {
   const decided = new Set(
     decisions.filter(
-      (decision) =>
-        decision === "existing_page" || decision === "new_asset",
+      (decision) => decision === "existing_page" || decision === "new_asset",
     ),
   );
   if (decided.size === 0) return "unassigned";
@@ -235,7 +281,8 @@ export function extractContentBriefOutline(input: {
   readonly briefMarkdown: string | null;
   readonly keywords: readonly BriefOutlineKeyword[];
 }): ContentBriefOutlineExtraction {
-  const briefSections = extractBriefSectionLabels(input.briefMarkdown ?? "");
+  const sections = projectBriefSectionLabels(input.briefMarkdown ?? "");
+  const briefSections = sections.labels;
   const ordered = [...input.keywords].sort(compareKeyword);
   const projected = ordered.slice(0, MAX_BRIEF_OUTLINE_KEYWORDS);
 
@@ -263,6 +310,8 @@ export function extractContentBriefOutline(input: {
         input.keywords.map((row) => row.mappingDecision),
       ),
     },
+    briefSectionCount: sections.briefSectionCount,
+    projectedSectionCount: briefSections.length,
     clusterKeywordCount: input.keywords.length,
     projectedKeywordCount: projected.length,
     unconfirmedMappingCount: input.keywords.filter(

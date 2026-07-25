@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { validateMarkdownSections, type RequiredSection } from "./markdown.ts";
+import {
+  headingMatches,
+  normalizeHeading,
+  validateMarkdownSections,
+  type RequiredSection,
+} from "./markdown.ts";
 
 const REQUIRED: readonly RequiredSection[] = [
   { label: "Objective", aliases: ["Objective", "目标"] },
@@ -15,13 +20,17 @@ describe("validateMarkdownSections", () => {
   it("reports a missing section", () => {
     const md = "## Objective\n\nGrow CTR.\n";
     const errors = validateMarkdownSections(md, REQUIRED);
-    expect(errors.some((e) => e.includes("missing required section: ## Evidence"))).toBe(true);
+    expect(
+      errors.some((e) => e.includes("missing required section: ## Evidence")),
+    ).toBe(true);
   });
 
   it("reports an empty section", () => {
     const md = "## Objective\n\n## Evidence\n\n- [ev1] claim\n";
     const errors = validateMarkdownSections(md, REQUIRED);
-    expect(errors.some((e) => e.includes("empty required section: ## Objective"))).toBe(true);
+    expect(
+      errors.some((e) => e.includes("empty required section: ## Objective")),
+    ).toBe(true);
   });
 
   it("accepts zh-CN aliases for English-labelled required sections", () => {
@@ -30,7 +39,8 @@ describe("validateMarkdownSections", () => {
   });
 
   it("rejects injected raw <script>", () => {
-    const md = "## Objective\n\n<script>alert(1)</script>\n\n## Evidence\n\n- [ev1] claim\n";
+    const md =
+      "## Objective\n\n<script>alert(1)</script>\n\n## Evidence\n\n- [ev1] claim\n";
     const errors = validateMarkdownSections(md, REQUIRED);
     expect(errors.some((e) => e.includes("raw HTML/script"))).toBe(true);
   });
@@ -72,7 +82,10 @@ describe("validateMarkdownSections", () => {
     ["mixed-case JS URI", "[open](JaVaScRiPt \t:\nalert(1))"],
     ["control whitespace inside JS scheme", "[open](java\nscript:alert(1))"],
     ["numeric-entity JS colon", "[open](javascript&#x3a;alert(1))"],
-    ["entity-obfuscated JS whitespace", "[open](java&#x09;script&colon;alert(1))"],
+    [
+      "entity-obfuscated JS whitespace",
+      "[open](java&#x09;script&colon;alert(1))",
+    ],
   ])("rejects whitespace-obfuscated active content: %s", (_name, payload) => {
     const md = `## Objective\n\n${payload}\n\n## Evidence\n\n- [ev1] claim\n`;
     expect(validateMarkdownSections(md, REQUIRED)).toContain(
@@ -95,11 +108,59 @@ describe("validateMarkdownSections", () => {
   });
 
   it("treats empty input as invalid", () => {
-    expect(validateMarkdownSections("   ", REQUIRED)).toEqual(["markdown content is empty"]);
+    expect(validateMarkdownSections("   ", REQUIRED)).toEqual([
+      "markdown content is empty",
+    ]);
   });
 
   it("does not treat a level-3 heading as a section", () => {
-    const md = "## Objective\n\n### Sub\n\ndetail\n\n## Evidence\n\n- [ev1] claim\n";
+    const md =
+      "## Objective\n\n### Sub\n\ndetail\n\n## Evidence\n\n- [ev1] claim\n";
+    expect(validateMarkdownSections(md, REQUIRED)).toEqual([]);
+  });
+});
+
+describe("normalizeHeading", () => {
+  /**
+   * The key IS the identity of a heading. Stripping the trailing colon BEFORE
+   * folding whitespace left the space that preceded the colon behind (`"X :"` ->
+   * `"x "`), so headings differing only by punctuation produced DIFFERENT keys —
+   * which let a single topic manufacture unlimited "distinct" headings and
+   * exhaust every downstream per-heading budget.
+   */
+  it("folds case, whitespace and trailing colons onto one key", () => {
+    for (const variant of [
+      "Growth Loop",
+      "growth loop",
+      "  Growth   Loop  ",
+      "Growth Loop:",
+      "Growth Loop :",
+      "Growth Loop ::",
+      "Growth Loop：",
+      "Growth Loop ：",
+      "Growth Loop:  ",
+      "Growth Loop : : ",
+    ]) {
+      expect(normalizeHeading(variant)).toBe("growth loop");
+    }
+  });
+
+  it("only strips colons at the END, never inside the heading", () => {
+    expect(normalizeHeading("Growth: Loop")).toBe("growth: loop");
+    expect(normalizeHeading("Growth : Loop")).toBe("growth : loop");
+  });
+
+  it("matches an alias whose heading differs only by a trailing colon", () => {
+    for (const heading of ["Objective :", "Objective ::", "  objective:  "]) {
+      expect(headingMatches(heading, "Objective")).toBe(true);
+    }
+    expect(headingMatches("Objective and scope :", "Objective")).toBe(true);
+    expect(headingMatches("Objectives", "Objective")).toBe(false);
+  });
+
+  it("accepts a required section whose heading carries a spaced trailing colon", () => {
+    const md =
+      "## Objective :\n\nGrow CTR.\n\n## Evidence ：\n\n- [ev1] claim\n";
     expect(validateMarkdownSections(md, REQUIRED)).toEqual([]);
   });
 });

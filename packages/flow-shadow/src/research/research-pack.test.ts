@@ -40,6 +40,8 @@ const FROZEN: ContentShadowFrozenInput = {
 };
 
 const STATS: BriefOutlineProjectionStats = {
+  briefSectionCount: 2,
+  projectedSectionCount: 2,
   clusterKeywordCount: 1,
   projectedKeywordCount: 1,
   unconfirmedMappingCount: 0,
@@ -162,6 +164,8 @@ describe("buildResearchPack brief outline projection (Task 4b)", () => {
     });
 
     const limitations = buildResearchPack(broken, {
+      briefSectionCount: 0,
+      projectedSectionCount: 0,
       clusterKeywordCount: 0,
       projectedKeywordCount: 0,
       unconfirmedMappingCount: 0,
@@ -174,6 +178,8 @@ describe("buildResearchPack brief outline projection (Task 4b)", () => {
 
   it("discloses projection truncation and unconfirmed mapping review states", () => {
     const limitations = buildResearchPack(manifest, {
+      briefSectionCount: 2,
+      projectedSectionCount: 2,
       clusterKeywordCount: 120,
       projectedKeywordCount: 50,
       unconfirmedMappingCount: 7,
@@ -187,10 +193,31 @@ describe("buildResearchPack brief outline projection (Task 4b)", () => {
     );
   });
 
+  /**
+   * A PARTIAL extraction failure is still a failure of the brief -> draft
+   * causal chain for the topics it dropped. Decision O-4 only spelled out total
+   * failure, but its principle ("an honest shortfall beats a silent pass")
+   * covers this: the drop has to be visible, even though it is not `failed`.
+   */
+  it("discloses brief sections the outline cap dropped", () => {
+    const limitations = buildResearchPack(manifest, {
+      briefSectionCount: 19,
+      projectedSectionCount: 12,
+      clusterKeywordCount: 1,
+      projectedKeywordCount: 1,
+      unconfirmedMappingCount: 0,
+    }).limitations;
+
+    expect(limitations.join(" ")).toContain(
+      "The pinned content brief carried 19 distinct section headings; only the first 12 (in document order) reached the draft prompt, so 7 committed topic(s) did not guide this draft.",
+    );
+  });
+
   it("says nothing about truncation or review state when neither applies", () => {
     const limitations = buildResearchPack(manifest, STATS).limitations;
 
     expect(limitations.join(" ")).not.toContain("only the first");
     expect(limitations.join(" ")).not.toContain("unconfirmed page-mapping");
+    expect(limitations.join(" ")).not.toContain("distinct section headings");
   });
 });
