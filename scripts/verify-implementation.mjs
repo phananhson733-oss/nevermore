@@ -27,6 +27,8 @@ import { tmpdir } from "node:os";
 import {
   dirname,
   isAbsolute,
+  join,
+  normalize,
   relative,
   resolve,
   sep,
@@ -2176,15 +2178,32 @@ function checkE2eDatabaseSafety() {
  * prevents is silent: a verdict that simply differs on replay.
  */
 const QA_PURITY_FORBIDDEN = [
-  [/process\s*\.\s*env/, "read process.env"],
-  [/from\s*["']node:/, "import a Node built-in"],
-  [/require\s*\(\s*["']node:/, "require a Node built-in"],
+  // Hidden inputs. The module-specifier rules are stated as an ALLOWLIST —
+  // only relative specifiers — rather than as a list of banned packages,
+  // because the banned-list version let `import("fs")`, `require("fs")` and
+  // `await import("@sf/db")` straight through: it only ever matched the
+  // `node:` prefix and the static `from "@sf/…"` form. A guard whose summary
+  // claims more than it checks is worse than no guard, so the shape that
+  // cannot be worked around is the one used here.
+  [/\brequire\s*\(/, "use require()"],
+  [/process\s*\./, "read anything off `process`"],
+  [/\bglobalThis\b/, "reach through globalThis"],
+  // Clock and randomness.
   [/\bDate\s*\.\s*now\b/, "read the clock"],
   [/\bnew\s+Date\b/, "read the clock"],
+  [/\bperformance\s*\.\s*now\b/, "read a high-resolution clock"],
+  [/\bhrtime\b/, "read a high-resolution clock"],
   [/\bMath\s*\.\s*random\b/, "use randomness"],
   [/\brandomUUID\b/, "use randomness"],
+  // Locale-sensitive APIs: their output tracks the host's ICU version, so the
+  // same frozen draft can score differently on two machines.
   [/\bIntl\s*\./, "use a locale-sensitive Intl API"],
-  [/from\s*["']@sf\//, "import another workspace package at runtime"],
+  [/\bSegmenter\b/, "use a locale-sensitive segmenter"],
+  [/\blocaleCompare\b/, "sort with a locale-sensitive comparison"],
+  [/\btoLocale[A-Z]\w*\s*\(/, "format with a locale-sensitive method"],
+  // Network.
+  [/\bfetch\s*\(/, "perform network IO"],
+  [/\bXMLHttpRequest\b/, "perform network IO"],
 ];
 
 const SIBLING_REPO_SOURCE_ROOTS = [
@@ -2193,16 +2212,95 @@ const SIBLING_REPO_SOURCE_ROOTS = [
   "apps/worker/src",
 ];
 
-function checkContentShadowQaPurity() {
-  const qaFiles = walkSourceFiles("packages/flow-shadow/src/qa").filter((file) =>
+/**
+ * Every file the gate actually executes, not just the ones under `qa/`.
+ *
+ * The guard used to scan the `qa/` directory alone while the gate imports
+ * `../version.ts` and `../types.ts` (and its fixtures reach into `../research/`)
+ * — so a clock or a database read could have been introduced one relative
+ * import away and the guard would have stayed green. Purity is a property of
+ * the reachable graph, so the graph is what gets walked.
+ */
+/**
+ * Every module specifier a file imports, statically or dynamically.
+ *
+ * Anchored on the character BEFORE `from` so a data literal cannot be mistaken
+ * for an import: the QA coverage check carries `"from"` in its stopword list,
+ * and a naive `/\bfrom\s*["\']/` reported it as a forbidden bare-package
+ * import. A guard that cries wolf on a string constant gets deleted.
+ */
+function moduleSpecifiers(source) {
+  const found = [];
+  for (const match of source.matchAll(
+    /(?<![\w"'`])from\s*["']([^"'\n]+)["']/g,
+  )) {
+    found.push(match[1]);
+  }
+  for (const match of source.matchAll(
+    /\bimport\s*\(\s*["']([^"'\n]+)["']/g,
+  )) {
+    found.push(match[1]);
+  }
+  return found.filter((specifier) => !/\s/.test(specifier));
+}
+
+function qaImportClosure() {
+  const seen = new Set();
+  const queue = walkSourceFiles("packages/flow-shadow/src/qa").filter((file) =>
     file.endsWith(".ts"),
   );
+  const files = [];
+  while (queue.length > 0) {
+    const file = queue.shift();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    files.push(file);
+    const source = read(file);
+    for (const specifier of moduleSpecifiers(source)) {
+      if (!specifier.startsWith("./") && !specifier.startsWith("../")) continue;
+      const resolved = normalize(join(dirname(file), specifier))
+        .split(sep)
+        .join("/");
+      if (!resolved.startsWith("packages/flow-shadow/src/")) continue;
+      if (!resolved.endsWith(".ts")) continue;
+      if (!seen.has(resolved)) queue.push(resolved);
+    }
+  }
+  return files.sort();
+}
+
+function checkContentShadowQaPurity() {
+  const qaFiles = qaImportClosure();
   invariant(
     qaFiles.length > 0,
     "the Content Shadow QA gate source must exist for its purity guard to mean anything",
   );
+  invariant(
+    qaFiles.includes("packages/flow-shadow/src/version.ts") &&
+      qaFiles.includes("packages/flow-shadow/src/types.ts"),
+    "the QA purity closure must reach the modules the gate imports from outside `qa/`",
+  );
   for (const file of qaFiles) {
+    // The gate's own tests import `vitest`, and nothing else non-relative. That
+    // one specifier is allowlisted rather than skipping test files wholesale: a
+    // test that reaches for `node:fs` is exactly as good a way to grow an IO
+    // dependency as production code is, and the fixtures are production-shaped
+    // input builders that must stay pure.
     const source = stripCodeComments(read(file));
+    // The gate's own tests import `vitest`, and nothing else non-relative. That
+    // one specifier is allowlisted rather than skipping test files wholesale: a
+    // test reaching for `node:fs` is exactly as good a way to grow an IO
+    // dependency as production code is, and the fixtures are input builders
+    // that have to stay as pure as the rules they feed.
+    const allowed = file.endsWith(".test.ts") ? new Set(["vitest"]) : new Set();
+    for (const specifier of moduleSpecifiers(source)) {
+      invariant(
+        specifier.startsWith("./") ||
+          specifier.startsWith("../") ||
+          allowed.has(specifier),
+        `${file} must not import \`${specifier}\`: the QA gate reads only relative modules, so no Node built-in, workspace package or third-party dependency can smuggle IO, a clock or hidden state into a verdict that has to be a pure function of the frozen run inputs`,
+      );
+    }
     for (const [pattern, description] of QA_PURITY_FORBIDDEN) {
       invariant(
         !pattern.test(source),
@@ -2228,7 +2326,7 @@ function checkContentShadowQaPurity() {
       `${file} must not reference the sibling gengrowth-flow-mvp repository in code`,
     );
   }
-  return `Content Shadow QA purity: ${qaFiles.length} gate source files free of clock/env/IO/Intl, ${sourceFiles.length} source files free of sibling-repo references`;
+  return `Content Shadow QA purity: ${qaFiles.length} files in the gate's import closure free of non-relative imports, require(), process, globalThis, clock, randomness, locale-sensitive APIs and network; ${sourceFiles.length} source files free of sibling-repo references`;
 }
 
 const checks = [

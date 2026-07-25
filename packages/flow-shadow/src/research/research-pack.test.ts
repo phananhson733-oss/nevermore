@@ -121,6 +121,23 @@ describe("buildResearchPack", () => {
     expect(pack.limitations.join(" ")).toMatch(/no external source/i);
   });
 
+  /**
+   * The pack used to state, unconditionally, that the SEO/GEO judgement "is not
+   * implemented yet". The read API returns this list verbatim, so a reviewer
+   * looking at a draft the gate had really BLOCKED was told in the same
+   * response that the block was a placeholder — which cancels out the one
+   * verdict that matters. The remaining limitations have to describe what the
+   * implemented gate does not check, not claim it does not exist.
+   */
+  it("never claims the QA judgement is unimplemented", () => {
+    const limitations = buildResearchPack(manifest, STATS).limitations.join(" ");
+
+    expect(limitations).not.toMatch(/not implemented yet/i);
+    expect(limitations).not.toMatch(/\bpending\b/i);
+    expect(limitations).toMatch(/no plagiarism detection/i);
+    expect(limitations).toMatch(/never that it is false/i);
+  });
+
   it("serializes to a plain JSON object for the jsonb column", () => {
     const json = researchPackToJson(buildResearchPack(manifest, STATS));
 
