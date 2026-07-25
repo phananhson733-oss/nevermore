@@ -482,18 +482,17 @@ re-aimed assertions on a frozen surface, and a re-baselined set of visual
 snapshots. **Nothing in §8 or §9 made this worse, and neither round claims this
 suite green.**
 
-**D9. `pnpm restore:drill` is red, and no round of this slice had ever run it.**
-It is a CI gate (`.github/workflows/ci.yml`, the `database` job's "Run PostgreSQL
-backup and restore recovery drill" step) that §2.5 does not name. Run for the
-first time in §11 against a disposable database: it fails at
-`type=postgres_process code=PG_TOOL_EXIT_NONZERO tool=psql exit_code=1`, before
-the dump is even taken. The cause is in the drill's own inventory query, not in
-the database: the integrity probe `capability_runs.input-manifest-hash`
-(`scripts/backup-restore-drill.mjs`) builds `... jsonb_build_object('id', "id",
+**D9. `pnpm restore:drill` was red on every run, and a green unit gate hid it.
+Resolved in §12.** It is a CI gate (`.github/workflows/ci.yml`, the `database`
+job's "Run PostgreSQL backup and restore recovery drill" step) that §2.5 does
+not name. Run for the first time in §11 against a disposable database, it failed
+before the dump was even taken. The cause was in the drill's own inventory
+query, not in the database: the integrity probe `capability_runs.input-manifest-hash`
+(`scripts/backup-restore-drill.mjs`) built `... jsonb_build_object('id', "id",
 ...) ... order by id::text`, and `app.capability_runs` has **no `id` column** —
 its primary key is deliberately `async_run_id`
-(`packages/db/migrations/0010_growth_audit_slice1.sql:6-7`). PostgreSQL rejects
-it at planning time, so the drill fails on every run regardless of data.
+(`packages/db/migrations/0010_growth_audit_slice1.sql:6-7`). PostgreSQL rejected
+it at planning time, so the drill failed on every run regardless of data.
 
 **Proven pre-existing, not introduced by this slice.** Both sides are
 byte-identical to the Slice 1 acceptance baseline: `git diff 945be02..HEAD --
@@ -501,11 +500,11 @@ scripts/backup-restore-drill.mjs` and `... -- packages/db/migrations/0010_*.sql`
 are both empty, and the probe was added by `b46999e`, an ancestor of `945be02`.
 
 Two further facts a reader needs. First, the drill's **unit** gate
-(`pnpm restore:drill:test`, also a CI step, also never run by this slice) is
-**green at 29/29** — it stubs the Postgres tools, so it cannot see this. A green
-unit gate over a red real gate is why this went unnoticed. Second, the drill's
-`APP_TABLES` list has **33 entries against 44 live application tables**, so 11
-tables are never inventory-verified by a restore drill at all:
+(`pnpm restore:drill:test`, also a CI step, also never run by this slice) was
+**green at 29/29** — it stubs the Postgres tools, so it could not see this. A
+green unit gate over a red real gate is why this went unnoticed. Second, the
+drill's `APP_TABLES` list had **33 entries against 44 live application tables**,
+so 11 tables were never inventory-verified by a restore drill at all:
 `competitor_entities`, `competitor_origin_occurrences`, `finding_targets`,
 `keyword_entities`, `keyword_entity_sources`, `keyword_occurrences`,
 `product_profile_invocation_attempts`, `product_profile_runs` (Slice 1), and
@@ -513,12 +512,20 @@ tables are never inventory-verified by a restore drill at all:
 (**Slice 2's own three** — this slice widened the gap by three even though it did
 not cause the red).
 
-**Not fixed here, deliberately.** Repairing it means changing what a
-backup-integrity gate asserts — re-aiming a probe at a different key column and
-widening the verified table set by a third — at the end of a wrap-up round, on a
-gate nobody has ever seen pass. That is the same class of change §8.2 held for a
-ruling on N-2. **It needs an Owner decision and its own task, and it will block
-the merge exactly as D1 does.**
+**Now fixed, and the pattern behind it is fixed structurally.** §12 records the
+round. The probe orders by the primary key the schema actually declares, and all
+44 tables are inventoried with no exclusions. Behind that first failure was a
+**second, independent** one that only a data-bearing source database shows and
+that CI would therefore have hit every time: the drill replayed all 21
+migrations over a restored copy that is already at head, and 0014 re-narrowed
+`async_runs_kind_check` against the `content_shadow` rows 0020 admits. It is now
+forward-only on the same rule the application's own migration runner documents.
+And — the part that matters beyond either bug — the unit gate can now see schema
+errors at all: it checks the SQL the drill *emits* against a catalog parsed from
+the checked-in migration chain, so a probe naming a table or column PostgreSQL
+does not have fails `pnpm restore:drill:test` **without a database**. Four
+independent mutations prove it, including replaying this exact defect.
+`pnpm restore:drill` exits 0 against a database holding integration-test data.
 
 ### E. Product decisions left open for the Owner
 
@@ -1299,19 +1306,20 @@ artifact upload) are omitted.
 | database | `pnpm db:migrate:check` | yes (§2.5) | 44 tables / 56 indexes / 69 triggers / 18 routines |
 | database | `pnpm db:smoke` | yes (§2.5) | pass, rolled back |
 | database | `pnpm test:integration` | yes (§2.5) | 65 files, 475 tests |
-| database | `pnpm restore:drill` | **no — never** | **RED — new. See §4 D9.** |
+| database | `pnpm restore:drill` | **no — never** | red when first run; **pass, exit 0** after §12. See §4 D9. |
 | database | `pnpm test:e2e:real` | measured red in §9 | **red — §4 D8** |
 | build-and-mock-e2e | `pnpm build` | yes (§2.5) | pass |
 | build-and-mock-e2e | `docker build --file Dockerfile.worker` | **no — never** | **pass**, image built |
 | build-and-mock-e2e | worker image entrypoint smoke | **no — never** | **pass** — nonzero exit and exactly `{"event":"worker_boot_failed","code":"WORKER_BOOT_FAILED","type":"internal"}`, no configuration leaked |
 | build-and-mock-e2e | `pnpm test:e2e:mock` (full suite) | never green | **red — §4 D4**, unchanged |
 
-**Five CI steps had never been run by any round of this slice.** Four are green.
-One is red: `pnpm restore:drill`, recorded in full as **§4 D9** — a backup and
-restore recovery drill that fails before it takes a dump, because one integrity
-probe reads a column `app.capability_runs` does not have. It is proven
-pre-existing (both sides byte-identical to `945be02`), its unit gate is green
-because it stubs Postgres, and it will block the merge.
+**Five CI steps had never been run by any round of this slice.** Four were green
+on first run. One was red: `pnpm restore:drill`, recorded in full as **§4 D9** —
+a backup and restore recovery drill that failed before it took a dump, because
+one integrity probe read a column `app.capability_runs` does not have. It was
+proven pre-existing (both sides byte-identical to `945be02`), and its unit gate
+was green because it stubs Postgres. **§12 fixed it; the drill now exits 0 and
+its unit gate can see schema errors without a database.**
 
 The reverse direction is smaller and worth stating: two scripts this repository
 has are **not** CI steps — `pnpm verify:authority` (subsumed by `verify:spec`,
@@ -1343,7 +1351,7 @@ which runs the same authority verifier and reports the same four counts) and
 | `pnpm test` (with `DATABASE_URL`) | 305 files, **3872** tests — identical |
 | `pnpm test:integration` | 65 files, **475** tests (was 473) |
 | E2E `content-shadow-vertical` / `-review` / `-execution` / `audit-technical-vertical` | **21/21** (was 19/19; the two new tests are the additions) |
-| `pnpm restore:drill` | **RED — §4 D9**, never run before, pre-existing |
+| `pnpm restore:drill` | **RED — §4 D9**, never run before, pre-existing. **Fixed in §12: exit 0.** |
 | `pnpm audit` | red — §4 D2, unchanged |
 | unit `--coverage` branch threshold | red — §4 D1, unchanged and **not re-measured** |
 
@@ -1362,8 +1370,9 @@ a comment stating why (no Content Shadow gate judges a `technical_ticket` or a
 
 ### 11.7 Still open after this round
 
-- **§4 D9** — `pnpm restore:drill`, newly discovered red. Needs an Owner
-  decision and its own task; it will block the merge.
+- **§4 D9** — `pnpm restore:drill`, newly discovered red. **Closed in §12**, in
+  its own round: it exits 0, and the green-unit-gate-over-red-real-gate pattern
+  that hid it is fixed structurally.
 - **§4 D1** branch coverage, **D2** `pnpm audit`, **D3** the stale parallel
   verifier test, **D4** the full mock E2E suite, **D8** `real-vertical-chains`,
   **D5** five undeclared 503s, **§10.4** the three remaining redaction-to-storage
@@ -1376,3 +1385,195 @@ a comment stating why (no Content Shadow gate judges a `technical_ticket` or a
   With the blocking set at exactly three (`rl8` / `rl12` / `sc9b`) the two
   surfaces cannot differ today; if the blocking set grows, the Studio hint gets
   longer where the Execution block truncates. Recorded, not fixed.
+
+---
+
+## 12. D9 fix round: the restore drill, and the gate that could not see it
+
+The drill was red for **two** independent reasons. Only the first was known
+when the round started; the second was behind it, and would have kept CI red.
+Then there is the reason neither was caught, which is the part that outlives
+both.
+
+### 12.1 The probe read a column that does not exist
+
+Every integrity probe now declares `key`, the table's real primary key, and the
+generated statement selects and orders by it. `capability_runs` is keyed by
+`async_run_id`; the nine other probed tables are keyed by `id`. The statement
+the drill now sends for the probe that was broken:
+
+```sql
+copy (select jsonb_build_object('async_run_id', "async_run_id",
+  'input_manifest_hash', "input_manifest_hash")::text
+  from app."capability_runs" order by "async_run_id"::text) to stdout
+```
+
+**Every other probe was audited, not just the one that was hit.** All ten probes
+were checked reference by reference against the schema: ten tables and 23 column
+references, all present. So were the 45 statements the inventory itself sends —
+one 44-table count query and one canonical checksum per table. The audit is not
+a one-time reading: it is the gate described in §12.4, which re-runs on every
+`pnpm restore:drill:test`.
+
+### 12.2 The inventory counted 33 of 44 tables
+
+`APP_TABLES` goes from 33 to **44** and now equals `db:migrate:check`'s table
+set exactly. The eleven that were missing are all added; **none is excluded**,
+so there is no exclusion to justify:
+
+| Added | Migration | Why it was missing |
+|---|---|---|
+| `finding_targets` | 0017 | the list was last updated at 0010 |
+| `product_profile_runs`, `product_profile_invocation_attempts` | 0011 / 0014 | same |
+| `keyword_occurrences`, `keyword_entities`, `keyword_entity_sources` | 0018 | same |
+| `competitor_entities`, `competitor_origin_occurrences` | 0019 | same |
+| `flow_shadow_runs`, `flow_shadow_research_packs`, `flow_shadow_qa_gates` | 0020 | **Slice 2's own three** |
+
+There was no curation to recover: the 33 entries were exactly the tables that
+existed at migration 0010, and nothing added since had ever been appended. Two
+integrity probes were added with them — `flow_shadow_runs.content_hash` and
+`flow_shadow_research_packs.content_hash` — because every other content hash in
+the schema is probed and Slice 2's should not be the exception.
+
+One thing is genuinely out of scope and now says so in the code: `pgboss` owns
+its own schema and is queue state, not tenant data. `pg_dump`/`pg_restore` still
+carry it; its row counts are transient by construction and would make the
+inventory comparison flap, so it is verified by restore succeeding rather than
+by count.
+
+The list is no longer maintained by hand. `pnpm restore:drill:test` asserts it
+equals the table set parsed out of the migration chain, so a future migration
+that adds a table and forgets the drill fails the unit gate.
+
+### 12.3 The second red, which was hiding behind the first
+
+With the probe fixed the drill got past the inventory, took its dump, restored
+it — and failed again, this time only on a source database that holds rows:
+
+```
+psql:packages/db/migrations/0014_product_profile_synthesis.sql:15: ERROR:
+check constraint "async_runs_kind_check" of relation "async_runs"
+is violated by some row
+```
+
+The drill replayed **all 21 migrations** against the restored copy. A restored
+dump is already at head, so 0014 re-narrowed `async_runs_kind_check` to its five
+historical values against rows using `content_shadow`, the sixth value **0020**
+admits. This is not a hypothesis about the code: `packages/db/src/migrate.ts`
+documents this exact hazard in its own header and is forward-only *because* of
+it — "Skipping is required for correctness, not only speed". The drill was doing
+by hand what the application runner refuses to do.
+
+**This matters for the gate as it is actually wired.** `.github/workflows/ci.yml`
+runs `restore:drill` **after** `pnpm test:integration` on the same
+`signalframe_ci` database, so CI always sees a data-bearing source. Fixing only
+the probe would have moved the red one step later, not removed it.
+
+The drill is now forward-only on the same rule as the application: it reads the
+migration version the restored copy declares and replays only what is newer.
+Nothing is skipped that the database has not already recorded as applied. And
+because "Migration replay: passed" now covers a smaller action than it used to,
+the report says exactly how much ran:
+
+```
+- Migration replay: passed
+- Migrations applied to the restored copy: 0 of 21
+  (restored copy already declared 0021_content_shadow_invocation_task)
+```
+
+**Attribution.** Unlike the probe, this one is not purely inherited. Before
+0020 the only migration touching `async_runs_kind_check` was 0014, so replaying
+it was harmless; **Slice 2's own 0020 is what made the replay unsound**, and the
+probe defect kept it invisible.
+
+### 12.4 The green gate that covered a red one
+
+This is the part that outlives both bugs. `pnpm restore:drill:test` was green at
+29/29 while `pnpm restore:drill` failed every run, because the unit gate stubs
+the PostgreSQL client tools: it saw the probe SQL as a string and never as a
+query. A gate that claims to verify something and does not, while staying green,
+is the failure mode this slice produced repeatedly.
+
+The fix is not an assertion about `id`. `scripts/schema-catalog.mjs` parses the
+checked-in migration chain into `{table -> columns, primary key}`, and the unit
+gate pulls the table and column names back out of the SQL the drill **emits**
+and rejects any the schema does not have. Checking the emitted string rather
+than the probe declaration means a typo in either one is caught. It needs no
+database, so it cannot be skipped in any environment.
+
+The parser is deliberately narrow: it models exactly the DDL the chain uses
+(`CREATE TABLE`, `ALTER TABLE ... ADD COLUMN`) and **throws** on anything that
+could invalidate the catalog (`DROP COLUMN`, `RENAME`, `DROP TABLE`,
+`CREATE TABLE ... AS`), including inside `DO $$ ... $$` bodies. A migration that
+needs one of those has to teach the parser first; it can never silently leave a
+stale over-approximation that lets bad SQL through.
+
+Because a static parser is itself something that can quietly drift, it is
+checked against reality too.
+`packages/db/src/__tests__/restore-drill-schema.integration.test.ts` runs under
+`pnpm test:integration` against a real PostgreSQL and asserts three things: the
+parsed catalog equals `information_schema` **exactly** (44 base tables, every
+column), every probe's `key` equals the primary key `pg_constraint` reports, and
+the statements the drill actually sends execute against a live server. The
+offline guard is guarded by a database, and the database gate is guarded by
+something that runs without one.
+
+**Mutation self-verification.** Each mutation was applied alone and reverted;
+each turned `pnpm restore:drill:test` red (exit 1) from 38/38.
+
+| Mutation | Result |
+|---|---|
+| `page_snapshots` probe column `content_hash` → `content_hashh` | **2 failed / 36 passed** — `restore drill SQL names schema objects that do not exist: column app.page_snapshots.content_hashh` |
+| `capability_runs` probe key `async_run_id` → `id` (**replays the defect exactly**) | **2 failed / 36 passed** — `integrity probe capability_runs.input-manifest-hash does not order by the primary key of capability_runs`; `column app.capability_runs.id` |
+| `export_bundles` probe column `checksum` → `checksum_v2` | **1 failed / 37 passed** — `column app.export_bundles.checksum_v2` |
+| `flow_shadow_qa_gates` dropped from `APP_TABLES` | **4 failed / 34 passed** — `the restore inventory and the migration chain must name the same tables` |
+
+The integration half was mutation-checked the same way: the same
+`async_run_id` → `id` mutation turns it red against a real server, and breaking
+the parser itself (dropping its `ALTER TABLE ADD COLUMN` handling, so the
+catalog loses `artifact_revisions.output_locale`) turns **only** the integration
+half red — which is exactly the drift the pairing exists to catch.
+
+### 12.5 Gates run for this round
+
+| Gate | Result |
+|---|---|
+| `pnpm restore:drill` | **pass, exit 0** against a **data-bearing** database (the CI condition): 44 tables, row counts and both checksum families match |
+| `pnpm restore:drill:test` | **38/38** (was 29/29); coverage 94.67 line / 90.48 branch / 98.88 function, up from 93.95 / 88.57 / 97.22 |
+| `pnpm verify:spec` | 49 operations / 9 async / 44 tables / 11 rules |
+| `pnpm verify:authority`, `pnpm implementation:check` | pass, same four counts |
+| `pnpm openapi:lint`, `pnpm contracts:check` | valid; no generated drift |
+| `pnpm secrets:scan` | pass, exit 0 (75 tests) |
+| `pnpm deploy:check` | pass |
+| `pnpm lint`, `pnpm typecheck`, `git diff --check` | pass |
+| `pnpm build` | pass |
+| `docker build -f Dockerfile.worker .` | pass, image built |
+| `pnpm db:migrate` / `db:smoke` / `db:migrate:check` | 21 files; rolled back; **44 / 56 / 69 / 18** |
+| `pnpm test` (no `DATABASE_URL`) | 305 files, **3872** tests |
+| `pnpm test` (with `DATABASE_URL`) | 305 files, **3872** tests — identical |
+| `pnpm test:integration` | **66 files, 478 tests** (was 65 / 475; +1 file, +3 tests) |
+| E2E `content-shadow-vertical` / `-review` / `-execution` / `audit-technical-vertical` | **21/21** |
+
+**Zero migrations, zero contract change.** Constraint **N-1** held: this round
+touches no path under `overview`, `growth-map` or `sources` — its entire diff is
+`scripts/` plus one `packages/db` integration test. **No existing assertion was
+weakened.** The three `restore:drill:test` assertions that changed all tightened:
+`APP_TABLES.length` 33 → 44 and two `appTableCount` 33 → 44. The forward-only
+replay does not relax the replay gate either: it stops re-running statements the
+restored database has already recorded, and the count it now reports makes the
+narrower claim legible instead of implied.
+
+### 12.6 Known residual from this round
+
+`pnpm restore:drill` needs PostgreSQL client tools whose major version matches
+the server. On a machine where `PATH` resolves to client 18 against a server 16,
+`pg_restore` fails with `unrecognized configuration parameter
+"transaction_timeout"`, and the drill reports only
+`code=PG_TOOL_EXIT_NONZERO tool=pg_restore` because it discards child stderr on
+purpose. The pass recorded above used `RESTORE_DRILL_PG_BIN` pointed at matching
+client binaries; CI does not have this problem, because it installs
+`postgresql-client` against a `postgres:16` service. This is an environment
+mismatch and not a defect in the drill, but the evidence it emits does not say
+so, and diagnosing it costs a manual reproduction. Recorded, not fixed: a
+version preflight would need its own tests and this round is already at the edge
+of its scope.
