@@ -21,6 +21,7 @@ import { redactText, redactUrl } from "@sf/observability";
 import { z } from "zod";
 import { truncateChars } from "../text-bounds.ts";
 import type { AnalysisInvocationRecord } from "../types.ts";
+import { NON_TEXT_CHARACTER } from "../brief/outline.ts";
 import { sha256Hex } from "./envelope.ts";
 import {
   LLMError,
@@ -380,16 +381,62 @@ function isUnsafeTextControl(character: string): boolean {
   );
 }
 
-function stripUnsafeTextControls(value: string): string {
-  return [...value]
-    .map((character) => (isUnsafeTextControl(character) ? " " : character))
-    .join("");
-}
-
+/**
+ * The single sanitizer every allowlisted value passes through before it leaves
+ * this process for an EXTERNAL model provider. The step ORDER is load-bearing
+ * and mirrors `sanitizeOutlineItem` (`../brief/outline.ts`) and
+ * `safePromptText` (`./envelope.ts`):
+ *
+ * 1. control/format characters to spaces, then collapse whitespace. This runs
+ *    FIRST, before the redactor, and the order is a correctness requirement,
+ *    not a style choice. `redactText`'s credential patterns require `\s*`
+ *    between a key and its `=`/`:`, and U+200B / U+00AD / U+200D / U+2060 are
+ *    NOT `\s`, so `Password<U+200B>=hunter2` walked straight through a
+ *    redactor that ran first. Every crawled title, meta description, heading,
+ *    paragraph, body excerpt and the operator's business hint crosses here, so
+ *    that ordering shipped credentials verbatim past the system boundary
+ *    rather than merely into our own storage.
+ *
+ *    The class is the SHARED `NON_TEXT_CHARACTER`, not a fourth hand-written
+ *    range list. The local `stripUnsafeTextControls` it replaces was wrong
+ *    twice over: it ran AFTER the redactor, and its ranges were NARROWER than
+ *    `\p{Cc}\p{Cf}` — U+200B / U+00AD / U+200D / U+2060 were in none of them
+ *    — so this client also forwarded the invisible characters themselves along
+ *    with the credential they hid;
+ * 2. `redactText`, now reading the flattened text a second pass would have
+ *    read;
+ * 3. `withoutDurableIds`, so no snapshot or page UUID reaches the model;
+ * 4. escape `&`, `<` and `>`. They stay AFTER redaction because escaping first
+ *    would let `&lt;/UNTRUSTED_PRODUCT_PROFILE_DATA&gt;` be absorbed into a
+ *    credential value's `[^\s,;]+` match and carry the escape off into
+ *    `[redacted]`;
+ * 5. re-collapse and trim, so redaction can never leave a ragged edge;
+ * 6. truncate BY CODE POINT with the shared ellipsis convention, so no payload
+ *    hides in a tail and no cut lands between the two halves of one character.
+ *
+ * Step 1 is a no-op on text whose only `\p{Cc}`/`\p{Cf}` characters are
+ * ordinary whitespace, which is why WELL-FORMED prompts keep their exact bytes
+ * — the suite pins their sha256 to values captured BEFORE this fix — and why
+ * `PRODUCT_PROFILE_PROMPT_SET_VERSION` does not move.
+ *
+ * ONE well-formed class does change, and it is named rather than hidden:
+ * `redactText` answers the sentinel `[truncated]` for any string above 4096
+ * UTF-8 BYTES, so a page field whose RAW bytes exceed that gate while its
+ * collapsed form does not now reaches the model as real content instead of the
+ * literal `[truncated]`. Strictly better, and not a no-op.
+ *
+ * KNOWN LIMIT (shared with `sanitizeOutlineItem` and `safePromptText`):
+ * `redactText` is keyword-driven, so an invisible character placed INSIDE the
+ * key (`Pass<U+200B>word=…`) still defeats it. Only deleting format characters
+ * would close that, and deleting them would corrupt scripts whose `\p{Cf}`
+ * characters carry meaning.
+ */
 function safeDataText(value: string, maximum: number): string {
-  const normalized = stripUnsafeTextControls(
-    withoutDurableIds(redactText(value)),
-  )
+  const flattened = value
+    .replace(NON_TEXT_CHARACTER, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  const normalized = withoutDurableIds(redactText(flattened))
     .replace(/&/gu, "&amp;")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
@@ -407,8 +454,31 @@ function safeOptionalText(
   return safe === "" ? null : safe;
 }
 
+/**
+ * A URL takes the same normalization BEFORE `redactUrl`, not only inside
+ * `safeDataText` afterwards. `redactUrl` recognises a sensitive query parameter
+ * by NAME after collapsing case and `_`/`-`; an invisible character inside the
+ * name survives that collapse, so `?Password<U+200B>=hunter2` was not
+ * recognised and the whole URL came back untouched — and then walked past the
+ * text redactor for the same reason. Flattening first turns it into the
+ * labelled assignment `redactText` does recognise.
+ *
+ * RESIDUAL, stated rather than implied. A parameter that ONLY `redactUrl`
+ * knows — `key`, and the `?state=`/`?code=` pair whose `redactText` rule has no
+ * `\s*` — is still missed when an invisible character sits before its `=`,
+ * because substituting a SPACE cannot restore the exact parameter name.
+ * Deleting format characters would close it and would corrupt scripts whose
+ * `\p{Cf}` characters carry meaning, so the residual is accepted and named. It
+ * is unchanged by this fix, not introduced by it. The same is true of a
+ * percent-ENCODED invisible character, which no reader in this pipeline
+ * decodes.
+ */
 function safeUrlText(value: string, maximum: number): string {
-  return safeDataText(redactUrl(value), maximum);
+  const flattened = value
+    .replace(NON_TEXT_CHARACTER, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return safeDataText(redactUrl(flattened), maximum);
 }
 
 function safeOptionalUrl(
@@ -702,14 +772,39 @@ function buildInvocation(params: {
   };
 }
 
+/**
+ * The RESPONSE-side safety gate. Its redaction clause used to ask only "would
+ * `redactText` change this EXACT string?", which inherited the prompt
+ * sanitizer's blind spot exactly: any payload that could walk past the redactor
+ * walked past the detector too, so a model persuaded to echo
+ * `Password<U+200B>=hunter2` had it stored rather than rejected.
+ *
+ * It now asks the question of BOTH readings — the raw string AND its
+ * control/format-normalized form — and rejects if EITHER would be redacted.
+ * The union is deliberate rather than replacing the raw reading with the
+ * normalized one: normalization collapses whitespace, which can bring a string
+ * back under `redactText`'s 4096-BYTE gate, so a normalized-ONLY detector would
+ * have started ACCEPTING a class of response it used to reject. A safety gate
+ * must not get more permissive as a side effect of a security fix.
+ *
+ * The control-character clause keeps its narrower `isUnsafeTextControl` ranges
+ * on purpose. Widening it to all of `\p{Cc}\p{Cf}` would reject legitimate
+ * model output: U+200C/U+200D carry meaning in Persian, Arabic and Indic
+ * scripts and in emoji ZWJ sequences, and `\n` is `\p{Cc}`.
+ */
 function hasUnsafeRawContent(value: unknown): boolean {
   if (typeof value === "string") {
+    const flattened = value
+      .replace(NON_TEXT_CHARACTER, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
     return (
       value.includes("<") ||
       value.includes(">") ||
       /(?:javascript|data)\s*:/iu.test(value) ||
       UUID_DETECTION_PATTERN.test(value) ||
       redactText(value) !== value ||
+      redactText(flattened) !== flattened ||
       [...value].some(isUnsafeTextControl)
     );
   }

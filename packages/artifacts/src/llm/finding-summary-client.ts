@@ -24,6 +24,7 @@ import { z } from "zod";
 import { truncateChars } from "../text-bounds.ts";
 import type { AnalysisInvocationRecord } from "../types.ts";
 import { PROMPT_SET_VERSION } from "../types.ts";
+import { NON_TEXT_CHARACTER } from "../brief/outline.ts";
 import { sha256Hex } from "./envelope.ts";
 import {
   LLMError,
@@ -107,8 +108,63 @@ const NO_USAGE: OpenAIUsage = {
   outputTokens: null,
 };
 
+/**
+ * The single sanitizer every allowlisted value passes through before it leaves
+ * this process for an EXTERNAL model provider. The step ORDER is load-bearing
+ * and mirrors `sanitizeOutlineItem` (`../brief/outline.ts`) and
+ * `safePromptText` (`./envelope.ts`):
+ *
+ * 1. control/format characters to spaces, then collapse whitespace. This runs
+ *    FIRST, before the redactor, and the order is a correctness requirement,
+ *    not a style choice. `redactText`'s credential patterns require `\s*`
+ *    between a key and its `=`/`:`, and U+200B / U+00AD / U+200D / U+2060 are
+ *    NOT `\s`, so `Password<U+200B>=hunter2` walked straight through a
+ *    redactor that ran first and would only have been caught by a SECOND pass
+ *    this function never took. Every deterministic title argument, every
+ *    subject reference, the operator-visible fallback summary and every
+ *    provider-sourced evidence claim and limitation crosses here, so that
+ *    ordering shipped credentials verbatim past the system boundary rather
+ *    than merely into our own storage. Flattening first also matters on its
+ *    own terms: a single-line fragment cannot forge a block boundary inside
+ *    the serialized `UNTRUSTED_FINDING_DATA` payload, and a bidi override can
+ *    no longer reorder what a reviewer reads;
+ * 2. `redactText`, now reading the flattened text a second pass would have
+ *    read;
+ * 3. escape `&`, `<` and `>`. They stay AFTER redaction because escaping first
+ *    would let `&lt;/UNTRUSTED_FINDING_DATA&gt;` be absorbed into a credential
+ *    value's `[^\s,;]+` match and carry the escape off into `[redacted]`;
+ * 4. re-collapse and trim, so redaction can never leave a ragged edge;
+ * 5. truncate BY CODE POINT with the shared ellipsis convention, so no payload
+ *    hides in a tail and no cut lands between the two halves of one character.
+ *
+ * `NON_TEXT_CHARACTER` is imported rather than restated: three copies of one
+ * security-critical character class is how three sanitizers drift apart.
+ *
+ * Step 1 is a no-op on text whose only `\p{Cc}`/`\p{Cf}` characters are
+ * ordinary whitespace, which is why WELL-FORMED prompts keep their exact bytes
+ * — the suite pins their sha256 to values captured BEFORE this fix. This is a
+ * sanitizer defect fix, not a prompt-template change, so `PROMPT_SET_VERSION`,
+ * pinned by the `diagnostic_runs` CHECK, does not move.
+ *
+ * ONE well-formed class does change, and it is named rather than hidden:
+ * `redactText` answers the sentinel `[truncated]` for any string above 4096
+ * UTF-8 BYTES, so a field whose RAW bytes exceed that gate while its collapsed
+ * form does not now reaches the model as real content instead of the literal
+ * `[truncated]`. Strictly better, and not a no-op.
+ *
+ * KNOWN LIMIT (shared with `sanitizeOutlineItem` and `safePromptText`):
+ * `redactText` is keyword-driven, so an invisible character placed INSIDE the
+ * key (`Pass<U+200B>word=…`) still defeats it — normalization turns the key
+ * into two words rather than restoring it. Nothing short of deleting format
+ * characters closes that, and deleting them would corrupt scripts whose
+ * `\p{Cf}` characters carry meaning.
+ */
 function safeDataText(value: string, maxChars: number): string {
-  const normalized = redactText(value)
+  const flattened = value
+    .replace(NON_TEXT_CHARACTER, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  const normalized = redactText(flattened)
     .replace(/&/gu, "&amp;")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
