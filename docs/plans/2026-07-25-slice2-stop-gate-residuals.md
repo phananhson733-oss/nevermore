@@ -59,7 +59,9 @@ Task 7 UI 必须如实渲染 `limitations`,**不得**让界面读起来像「已
 **C1(Task 5)**:`createContentShadowRun` 里 `countActionsForFinding === 0` 分支**按构造不可达**(准入路径已持有非 dismissed Action),仅 mock 覆盖 —— 属防御性断言。
 **C2(Task 5)**:`brief_archived` 不可达(`findLiveByActionType` 先过滤 archived,archived brief 表现为 `CONTEXT_INCOMPLETE`)。
 **C3(Task 5)**:`brief_not_live` 只有单测无集成测试(构造 failed/generating 的 brief 要与状态转移触发器搏斗)。
-**C4(Task 4b)**:`sanitizeOutlineItem` 在**截断边界恰好落在 `key=` 正后方**时非幂等(420 次探测中 3 例)。docstring 曾声称「对每一个输入幂等」,该声称已被指出过度。
+**C4(Task 4b)**:`sanitizeOutlineItem` 在**截断边界恰好落在 `key=` 正后方**时非幂等(420 次探测中 3 例):第 6 步切进了第 3 步写下的 `[redacted]` 标记,`password=[redact` 仍是凭据形状,下一遍会再脱敏一次。
+
+**2026-07-26 修正(最终修复轮 M3)**:本条此前写「该声称已被指出过度」——被指出过,但代码里那句绝对措辞一直没改。现在 docstring 写清了幂等成立的条件,单测钉住了反例,并且本条从未写出的后果也被写到了它真正发生的地方(`safePromptContentBriefOutline`):**对这一类值,冻结 manifest 里是提取器那一遍的字节,模型看到的是边界那一遍的字节,两者差一个 `[redacted]` 标记的尾巴。** 这个偏差是被接受的(否则就得在唯一每条路径都会跑到的边界上不做净化),红线 C 不受影响 —— 两遍都是同一批冻结字节的确定性函数。
 **C5(Task 6)**:`FlowShadowResearchPacksRepository.insert` 重放仍只比对 `content_hash`(pack 侧未做 Q8 式严格比对)—— **有意为之**:`pack.limitations` 含 `unconfirmedMappingCount`,而 O-3 明确允许它漂移。
 
 ---
@@ -84,7 +86,7 @@ Task 7 UI 必须如实渲染 `limitations`,**不得**让界面读起来像「已
 - `product-profile-client.ts:390` —— 同上;其 `stripUnsafeTextControls` 跑在 `redactText` 之后且覆盖面窄于 `\p{Cc}\p{Cf}`。另有两个纠缠缺陷:`safeUrlText:411` 经 `redactUrl` 泄露、`hasUnsafeRawContent:712` 拿 `redactText(v) !== v` 当检测器继承同一盲点。
 **已修的同类**:`envelope.ts` 的 `safePromptText`(commit `05b1282`)。
 
-**D7. `product-profile-competitor-projection.test.ts` 在 unit project 里却是 DB-backed**,硬编码库名,导出了 `DATABASE_URL` 时会失败。`pnpm test`(门的定义)不受影响。
+**D7. 已在最终修复轮(L11)解决。** `product-profile-competitor-projection.test.ts` 原本在 unit project 里却是 DB-backed,且硬编码了某台机器的库名:导出 `DATABASE_URL` 时 `pnpm test` 变红,不导出时它的五条断言不在任何门里跑。现已改名为 `*.integration.test.ts`,改用共享的 `requireSafeTestDatabaseUrl` 而非机器本地库名,五条测试跑在 `pnpm test:integration` 里;`pnpm test` 导出与不导出 `DATABASE_URL` 均为绿。
 
 ---
 

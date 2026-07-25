@@ -10,8 +10,9 @@ task.
 
 Branch `codex/unified-growth-opportunity-v03`; base `945be02` (Slice 1
 accepted); product `0.3.0`; runtime contract `2026-07-21`; authority
-`authority/implementation-spec-v0.3/`; rule set `mvp.rules.0.2.0` (11 canonical
-rules). Machine surface after Slice 2: **49 API operations / 9 async operations
+`authority/implementation-spec-v0.3/`; rule set `mvp.rules.0.2.1` (11 canonical
+rules — this document said `0.2.0` until the fix round in §8; `registry.ts` has
+always said `0.2.1`). Machine surface after Slice 2: **49 API operations / 9 async operations
 / 44 PostgreSQL application tables / 11 frozen rules** (`pnpm verify:spec`,
 `pnpm verify:authority`, `pnpm implementation:check` all agree).
 
@@ -158,12 +159,15 @@ machine.
 | `pnpm typecheck` | pass (10 workspace projects + `e2e`) |
 | `pnpm build` | pass |
 | `git diff --check` | clean |
-| `pnpm test` (unit, no `DATABASE_URL`) | pass — 304 files, 3732 passed, 2 skipped |
+| `pnpm test` (unit, no `DATABASE_URL`) | pass — 305 files, 3738 passed, 0 skipped |
+| `pnpm test` **with** `DATABASE_URL` exported | pass — identical 305 / 3738 (§8 L11) |
 | `pnpm db:migrate` | pass — 21 migration files applied |
 | `pnpm db:smoke` | pass — fixtures rolled back |
 | `pnpm db:migrate:check` | pass — 44 tables / 56 indexes / 69 triggers / 18 routines |
-| `pnpm test:integration` | pass — 64 files, 465 tests |
-| Content vertical E2E + the three sibling mock specs | pass — 18/18 (`content-shadow-vertical`, `content-shadow-execution`, `content-shadow-review`, `audit-technical-vertical`) |
+| `pnpm test:integration` | pass — 65 files, 473 tests |
+| Content vertical E2E + the three sibling mock specs | pass — 19/19 (`content-shadow-vertical` 2, `content-shadow-review` 10, `content-shadow-execution` 6, `audit-technical-vertical` 1) |
+
+All numbers above are from the final fix round (§8), re-run at its last commit.
 
 The complete `pnpm test:e2e:mock` suite was **not** run green and is **not**
 claimed green. See §4 residual D4.
@@ -360,9 +364,20 @@ constructing a `failed`/`generating` brief means fighting the status-transition
 trigger.
 
 **C4 (Task 4b).** `sanitizeOutlineItem` is **not idempotent when the truncation
-boundary lands immediately after a `key=`** (3 cases in 420 probes). Its
-docstring previously claimed idempotence "for every input"; that claim was
-identified as overstated and corrected.
+boundary lands immediately after a `key=`** (3 cases in 420 probes): step 6 cuts
+inside the `[redacted]` marker step 3 wrote, `password=[redact` is still a
+credential shape, and the next pass redacts the remains.
+
+*Corrected in §8 (M3).* This entry previously said the overstated docstring "was
+identified as overstated and corrected". It had been identified; the code still
+said "for every input". The docstring now states the condition, a test pins the
+counterexample, and the consequence this entry never named is now named at
+`safePromptContentBriefOutline`: **for those items the frozen manifest holds the
+extractor's bytes and the model sees the boundary's second pass, differing by
+the tail of a `[redacted]` marker.** The divergence is accepted — the
+alternative is not re-sanitizing at the only place that runs on every path —
+and red line C is unaffected, because both passes are deterministic functions of
+the same frozen bytes.
 
 **C5 (Task 6).** `FlowShadowResearchPacksRepository.insert` still compares only
 `content_hash` on replay (the pack side does not do the strict Q8-style
@@ -420,9 +435,14 @@ The sibling defect in `envelope.ts`'s `safePromptText` **was** fixed
 boundary for a third-party model provider** — a real disclosure, not a duplicate
 of data we already hold.
 
-**D7. `product-profile-competitor-projection.test.ts` sits in the unit project
-but is DB-backed** with a hardcoded database name; it fails when `DATABASE_URL`
-is exported. `pnpm test` (the gate as defined) is unaffected.
+**D7. RESOLVED in §8 (L11).** `product-profile-competitor-projection.test.ts`
+sat in the unit project while being DB-backed, behind a hardcoded database name
+from one machine: `pnpm test` went red the moment `DATABASE_URL` was exported,
+and when it was not exported its five assertions ran in no gate at all. It is
+now `*.integration.test.ts`, guarded by the shared `requireSafeTestDatabaseUrl`
+rather than a machine-local name, and its five tests run inside
+`pnpm test:integration`. `pnpm test` is now green both with and without
+`DATABASE_URL` (§2.5).
 
 ### E. Product decisions left open for the Owner
 
@@ -460,6 +480,8 @@ accepting, and because this slice's failure mode was consistent enough to name.
 | 6 | **four rounds of verification and four rounds of rework** | 18 → 16 → 16 → converged |
 | 7 / 8 | targeted verification plus the two mock specs | converged |
 | 9 | this document; the content vertical E2E, with two mutation checks | 18/18 mock specs pass |
+| — | **final 45-agent cross-seam verification** | **22 confirmed**, each with a file:line and most reproduced by running the code |
+| — | the fix round for those 22 (§8) | 20 fixed, 1 refused on an existing assertion, 1 out of scope; 19/19 mock specs pass |
 
 **How Task 6 was closed out matters more than the defect counts.** The stopping
 criterion was **not** "no defects found". It was that the *character of the worst
@@ -471,7 +493,11 @@ have. Rounds 2 and 3 both found 16 issues; the count did not improve, and the
 gate was closed anyway, on the change in kind rather than in number.
 
 **The most stable defect source in this slice was "claiming more than is
-actually done"** — at least four separate instances:
+actually done"** — at least four separate instances during the tasks, and the
+final verification round found the same failure mode in six more places (§8:
+H2, M1, M3, L1, L5, L7). It did not decay as the slice went on; it moved from
+the code into the documents and the guards, where nothing was reading. Instances
+from the tasks themselves:
 
 1. a test whose **name** described the right property while its **assertion**
    checked something else;
@@ -589,3 +615,98 @@ Acceptance questions to answer before Slice 3 implementation begins:
   accountable when a cited external source later changes?
 - Does the queue unification deferred in §3 D-1 have to land before Publish adds
   a third surface to the same screen?
+
+---
+
+## 8. Final cross-seam fix round (2026-07-26)
+
+A 45-agent cross-seam verification over the finished slice confirmed **22**
+defects, each with a file and line and most of them reproduced by running the
+code rather than by reading it. This section records what was done with each,
+and — the part that matters more — what was **found and not fixed**.
+
+The round changed no operation, no async operation, no table and no rule:
+**49 / 9 / 44 / 11** before and after. It added one migration-free repository
+method, one service module, one shared E2E fixture module and one gate check.
+
+### 8.1 What was fixed
+
+| # | Defect | Fix, and how it was verified |
+|---|---|---|
+| **H1** | **`blocked` could be bypassed by the generic artifact status PATCH.** The `/review` endpoint refused a `blocked` verdict; `PATCH /artifacts/{id}` performed the identical `draft -> ready` write and never asked. Execution renders the Studio editor directly below the quality rail, so an operator who could not pass review could scroll down and mark the same draft reviewed while the rail still read "references that cannot be verified". | One module (`content-shadow-adoption.ts`) owns the predicate, the reason text and the problem code; both doors import it. An integration test asserts the two refusals are the **same** code, status, message and machine reason, differing only in the field they point at — a comparison, because the failure mode is the two drifting apart. Mutation-checked: removing the new guard turns it red. |
+| **H2** | Spec §10.2 stated a property the code does not have (partial brief-outline loss leaves the verdict `unevaluated`). After the O-6 correction, coverage is judged against `targetKeywords`, so a draft covering them reads `passed` with 17 of 19 sections dropped — and `unevaluated` is a claim status no verdict can take. | The paragraph now describes a measured run, including which cap overrun reaches the claim detail and which only reaches the pack limitation. Two other statements in the same paragraph were re-derived at the same time. |
+| **H3** | The brief↔draft comparison had **no keyboard path at all**: a `tablist` with roving `tabIndex` and no `onKeyDown`, so the unselected tab was in neither the Tab sequence nor any arrow handler. | Arrow/Home/End with focus following selection, same shape as the Evidence drawer's tablist. New E2E test, mutation-checked. |
+| **M1** | The authority narrative said **47 operations in four places** while the lock, both verifiers and the marker registry all said 49 — since the commit that moved the lock to 48 and left the text alone. Nothing read the prose, so the project's own freezing criterion was literally false through a green gate. | Four corrections, plus a `verify:spec` check that reads the counts out of the authority's sentences and compares them to the lock — and fails if it finds nothing to compare. Verified by reintroducing the historical drift: the gate names the file and the sentence. |
+| **M2** | `sanitizeOutlineItem` still cut by UTF-16 code unit, the same defect already fixed in `truncateExcerpt` and `boundedDetail`. Its output goes into `flow_shadow_runs.frozen_input_manifest` (`jsonb`), which rejects the orphaned surrogate. | Fixed behind one primitive in `@sf/artifacts`, applied at all five truncations there, and at the crawl projection bounds in `@sf/sources` (web-sourced strings landing in `observations.value_json`). Vendor manifest hashes and adaptation notes updated for the two vendored crawl files. |
+| **M3** | The docstring still claimed idempotence "for every input" while this document recorded the claim as corrected. | See §4 C4. The condition is stated, a test pins the counterexample, and the consequence — frozen bytes versus prompt bytes — is now named where it happens. |
+| **M4** | The blocker block listed blocking claims by label, and the labels are mixed in polarity: `sc9b` reads "Listed sources match the frozen records", so a sentence that reads like a pass appeared under "Cannot pass review yet". | Every row carries its state word, in the rail's own vocabulary, structurally rather than by rewording one label. E2E asserts the exact composed string. |
+| **M6** | `.qaCountsStale` dimmed three 12px labels to **2.70:1** — under WCAG AA and under the 3:1 floor §13.2 sets for this project's own dimmed controls. | Staleness is a dashed amber surface instead. Measured after: 5.52:1 light / 6.26:1 dark for the labels, 16.6:1 / 14.9:1 for the digits. |
+| **L1** | The purity guard's re-export check matched one export syntax. Four others and `export *` walked past it while the gate printed that every scanned file was clean. | The identifier may not appear at all outside its owner and the tests, and `export *` chains are resolved and followed transitively. All five shapes verified to fail the gate; the printed summary now describes exactly what is checked, including its single self-exemption. |
+| **L2** | Red line D's sibling-repo grep covered three directories where the blueprint asked for the repository. | Widened to `packages`, `apps/web`, `apps/worker`, `e2e`, `scripts` (801 → 857 files). Verified by planting a reference in an `e2e/` fixture. |
+| **L3** | `FLOW_SHADOW_QA_GATE_REPLAY_CONFLICT` — defined so a reproducibility divergence is identifiable — was recorded as `UNAVAILABLE`, the same code a dead database gets, with the field naming which half diverged dropped. | Both preserved. Integration test, mutation-checked. |
+| **L4** | Side by side labelled the **frozen** draft body with the deliverable's **live** revision, so after any edit a reviewer read revision N under the heading "revision N+1". | The pane names the revision its bytes are, and says which revision is live when they differ. E2E asserts both. |
+| **L5** | The review spec's default fixture paired `verdict: passed` with a `failed` coverage claim — a state `clampVerdictToFailedClaims` makes unreachable. The one-click pass path, the receipt and the comparison panel were only ever proven against it. | Claim sets moved to one module; the verdict is **computed** from the claims. Each spec now exercises a distinct reachable state (`passed` / `needs_review` / `blocked`). Every previously-green assertion still passes. |
+| **L6** | `sc9_sources_section` was written `review` in two fixtures while the gate's table says `advisory` — inside the specs that exist to prove wire severity is derived. | Corrected, and a vitest guard (`e2e/content-shadow-claims.vitest.ts`, collected by the unit project) compares **every** fixture claim's severity and kind against `qaSeverityForClaimId` / `qaRuleKind`, and the verdict mirror against `evaluateQaRules` + `clampVerdictToFailedClaims` themselves. |
+| **L7** | The DoD's "→ one Action" segment asserted a fixture constant against itself and repeated a write count asserted twenty lines earlier. A `reviewProjectFinding` creating two Actions for one Finding would not have turned it red. | The recorder parses the Actions out of the confirmation **response body**, reading both the singular and plural wire shapes; the spec asserts the Action's identity and carries that identity into the brief segment. |
+| **L8** | `.overlayScrim` hardcoded `rgb(10 25 21 / 56%)` — a green ink from the GenGrowth reference palette, which ruling γ and N-1 both forbid — making this document's "colour comes from `var(--sf-*)` only" false. | `color-mix(in srgb, var(--sf-ink-950) 56%, transparent)`. |
+| **L9** | `--sf-shadow-lg` does not exist, so the review dialog and the version drawer silently fell back to the flat card shadow. | `--sf-shadow-md`, the token the app's other overlays use. |
+| **L10** | The compare checklist heading skipped h3 → h5. | h4. |
+| **L11** | See §4 D7. |
+
+Two more were folded in while their files were open: the vendor manifest gained
+an honest adaptation note for the crawl code-point change, and this document's
+own rule-set version (`0.2.0`) was corrected to the `0.2.1` the registry has
+always carried.
+
+### 8.2 Found and **not** fixed — read this part
+
+**M5. The Studio editor offers a button that can only fail.** On a `ready`
+artifact the editor renders "Back to draft", which calls the status PATCH with
+`draft`. `MANUAL_STATUS_TRANSITIONS.ready` is `["archived"]`, so the request can
+only ever return `VERSION_CONFLICT`. This is the simulated-control pattern §2.6
+says was refused on principle — and §2.6 states that "shipping two buttons that
+write nothing … so they were not built", which is **false as written**: one such
+button already exists, one screen below the surface that refused to build it.
+
+*Why it was not fixed.* `e2e/real-vertical-chains.spec.ts:540-542` asserts that
+button is visible after marking an artifact ready, and the instruction for this
+round was to stop and report rather than weaken an existing assertion. Removing
+the control turns that assertion red. **The fix is one edit plus re-aiming that
+assertion at the `Ready` status pill, and it needs an owner's go-ahead because
+it touches the real-vertical E2E.**
+
+**N-1. The Studio "Mark ready" control does not know a draft is blocked.** H1
+closed the write path: the server now refuses. The control itself is not
+blocked-aware, because the artifacts list carries no gate verdict, so an
+operator learns the refusal **after** clicking rather than from a disabled
+control with a reason beside it — the opposite of the pattern Task 8 used on the
+review surface. Closing this needs a verdict on the artifact wire shape, which
+is a contract change and therefore its own task.
+
+**N-2. `.blocker` is painted coral.** The Task 7/8 ruling says a `blocked`
+verdict must "never use red or failure wording". The verdict *pill* honours that
+(`verdictTone` returns `warning`), but the blocker block itself uses
+`--sf-coral-text` / `--sf-coral-soft`, which is the product's red family. It was
+left alone deliberately: changing it is a visual decision with E2E colour
+assertions nearby, and it deserves a ruling rather than a drive-by edit.
+
+**N-3. Branch coverage was not re-measured.** §4 D1 records 78.21% against an
+80% threshold, proven unrelated to Slice 2. This round added tests and moved one
+DB-backed file out of the unit project; the effect on that number is unknown and
+is **not** claimed to be an improvement.
+
+**N-4. The full `pnpm test:e2e:mock` suite is still not a trustworthy baseline.**
+§4 D4 is unchanged. The four content/audit specs pass 19/19 in isolation and
+nothing beyond that is claimed.
+
+### 8.3 What did not change
+
+Constraint **N-1** held: `git diff --stat 945be02..HEAD` over `overview`,
+`growth-map` and `sources` is still **empty**, and this round touched none of
+them (`git diff --stat bfd7523..HEAD` over the same three paths is empty too).
+No existing assertion was weakened. Two previously-green tests in
+`scripts/verify-spec-lock.test.mjs` — a file that was already 1-red at `bfd7523`
+and is wired into no gate — went red against the new prose check because their
+fixture authority is a one-line stub; the fixture now states its own counts,
+derived from the fixture lock, and the file is back to exactly its pre-existing
+single failure.
