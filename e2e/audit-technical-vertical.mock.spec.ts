@@ -198,13 +198,27 @@ test("proves the technical opportunity vertical without any lift claim", async (
   expect(api.confirmedFindingIds.has(E2E_CONTENT_FINDING_ID)).toBe(false);
 
   // ---- Execution: one Finding produced one Action + one fixed Artifact type -
+  //
+  // The anchor used to be the "Delivery chain" summary panel. That panel was
+  // DELETED (Slice 2 Task 7), and the guarantee asserted here was not: its
+  // eleven class names had no stylesheet behind them, and its <h2> was emitted
+  // before the page's own <h1>, which is a heading order a screen reader user
+  // pays for. Keeping the anchor would have meant keeping the defect.
+  //
+  // What is under test is unchanged and stays exact — the technical vertical
+  // yields EXACTLY ONE Technical ticket deliverable and it is readable on
+  // Execution — so it is asserted where that deliverable actually lives now:
+  // the artifact queue's own per-type region. Both counts stay `toHaveCount(1)`
+  // so a vertical that produced none, or two, still turns this test red.
   await navLink(page, 2).click();
-  const deliveryChain = page.getByRole("region", { name: "Delivery chain" });
+  const ticketGroup = page.getByRole("region", {
+    name: "Technical ticket",
+    exact: true,
+  });
+  await expect(ticketGroup).toHaveCount(1);
+  await expect(ticketGroup.locator("[data-studio-artifact-id]")).toHaveCount(1);
   await expect(
-    deliveryChain.getByText("Technical ticket", { exact: true }),
-  ).toHaveCount(1);
-  await expect(
-    deliveryChain.getByText("Fix the failing product page", { exact: true }),
+    ticketGroup.getByText("Fix the failing product page", { exact: true }),
   ).toBeVisible();
 
   // ---- Mark work done: promote the existing Artifact to ready ----------------
