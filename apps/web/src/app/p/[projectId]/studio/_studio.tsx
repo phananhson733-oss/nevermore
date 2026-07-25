@@ -20,6 +20,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -1150,11 +1151,18 @@ function EvidenceRail({
           <section className={styles.railSection}>
             <span className={styles.railLabel}>{t("deliveryChecks")}</span>
             <div className={styles.checkList}>
+              {/*
+                These two rows used to print the raw `actionId` and `findingId`
+                UUIDs. A customer cannot do anything with a UUID, and a screen
+                that shows one is telling them the binding exists without
+                letting them check it. The rows now name what the deliverable is
+                bound TO — which is the question the row was always answering.
+              */}
               <div className={styles.checkRow}>
                 <Link2 aria-hidden="true" size={17} />
                 <div>
                   <strong>{t("actionBinding")}</strong>
-                  <code title={artifact.actionId}>{artifact.actionId}</code>
+                  <span>{action?.title ?? t("linkedActionUnavailable")}</span>
                 </div>
               </div>
               {action !== undefined ? (
@@ -1162,7 +1170,7 @@ function EvidenceRail({
                   <ShieldCheck aria-hidden="true" size={17} />
                   <div>
                     <strong>{t("findingBinding")}</strong>
-                    <code title={action.findingId}>{action.findingId}</code>
+                    <span>{t("findingBindingConfirmed")}</span>
                   </div>
                 </div>
               ) : null}
@@ -1566,9 +1574,18 @@ function ActionPicker({
 export function StudioClient({
   projectId,
   initialDeepLink,
+  afterHero,
 }: {
   readonly projectId: string;
   readonly initialDeepLink: ExecutionDeepLink;
+  /**
+   * Rendered between the page heading and the delivery workspace.
+   *
+   * The Execution route puts the deliverable's own body here, so the first
+   * thing after the heading is the work rather than a queue of links to it.
+   * Studio passes nothing and is unchanged.
+   */
+  readonly afterHero?: ReactNode;
 }) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
@@ -2667,6 +2684,8 @@ export function StudioClient({
           </article>
         </section>
       </header>
+
+      {afterHero}
 
       {actionsInitialError ? (
         <ProblemNotice

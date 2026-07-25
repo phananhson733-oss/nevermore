@@ -71,6 +71,10 @@
   --sf-text-xl: 22px;
   --sf-text-2xl: 28px;
   --sf-text-3xl: 38px;
+  /* Long-form reading: a deliverable body is prose a reviewer judges, so it
+   * gets its own size and measure rather than another hard-coded px pair. */
+  --sf-text-read: 17px;
+  --sf-read-measure: 780px;
 
   /* Radius */
   --sf-radius-pill: 999px;

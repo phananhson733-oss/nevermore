@@ -1559,6 +1559,139 @@
       "pending": "Pending",
       "valid": "Valid",
       "invalid": "Invalid"
+    },
+    "findingBindingConfirmed": "Confirmed opportunity",
+    "shadow": {
+      "eyebrow": "Content deliverable",
+      "title": "Read the deliverable itself.",
+      "lead": "The English draft below is rendered in full, with the records it was written against and everything the automated checks could and could not judge. Nothing here is published anywhere.",
+      "queueEyebrow": "Content runs",
+      "queueTitle": "Content deliverables",
+      "untitled": "Untitled deliverable",
+      "noRevision": "No revision yet",
+      "revision": "Revision {revision}",
+      "briefRevision": "From content brief revision {revision}",
+      "deliverableType": "English blog draft",
+      "partial": "Partially completed",
+      "loading": "Loading this deliverable.",
+      "loadError": "This project's content deliverables could not be loaded.",
+      "runFailedBody": "This run produced no draft. The frozen inputs and the research records it did assemble are still readable in the right column.",
+      "frozenHash": "Frozen input fingerprint {hash}…",
+      "phase": {
+        "queued": "Queued",
+        "research": "Assembling research records",
+        "draft": "Writing the draft",
+        "qa": "Running the automated checks",
+        "complete": "Complete",
+        "failed": "This run did not finish"
+      },
+      "briefLinkBroken": {
+        "title": "This draft was not guided by the brief",
+        "body": "No topic list could be read out of the content brief, so the brief's coverage requirements were not used while this draft was written. Compare the two by hand — there is no causal link between them for this run."
+      }
+    },
+    "meta": {
+      "stripLabel": "Delivery governance",
+      "linkedTarget": "Linked target",
+      "sourceOpportunity": "Source opportunity",
+      "generation": "Written by",
+      "automatedChecks": "Automated checks",
+      "notLinked": "Not linked",
+      "notEvaluatedYet": "Not evaluated yet",
+      "mode": {
+        "template": "Template",
+        "structured_llm": "Structured model"
+      }
+    },
+    "qa": {
+      "railLabel": "Automated checks and evidence",
+      "verdictLabel": "Automated conclusion",
+      "verdict": {
+        "passed": "Automated checks passed · awaiting human review",
+        "needs_review": "Needs human review",
+        "blocked": "Unverifiable citations found",
+        "none": "Not evaluated yet"
+      },
+      "verdictStale": "Conclusion is out of date",
+      "verdictRevision": "This conclusion covers revision {revision}.",
+      "kickerBlocked": "Unverifiable citations",
+      "countsTitle": "{count} checks in this run",
+      "countsNotEvaluated": "No checks have run for this deliverable yet.",
+      "countsInline": "{passed} passed / {failed} not passed / {unevaluated} not judged",
+      "counts": {
+        "passed": "Passed",
+        "failed": "Not passed",
+        "unevaluated": "Not judged"
+      },
+      "sectionChecks": "What was checked",
+      "sectionEvidence": "Records and scope",
+      "sectionPublish": "Publishing and results",
+      "group": {
+        "red_line": "Factual red lines",
+        "structure": "Structure and search readiness",
+        "citability": "How quotable this reads",
+        "coverage": "Topic coverage"
+      },
+      "state": {
+        "passed": "Passed",
+        "failed": "Not passed · {count}",
+        "partial": "Passed · {count} not judged",
+        "unevaluated": "Not judged"
+      },
+      "claimStatus": {
+        "passed": "Passed",
+        "failed": "Not passed",
+        "unevaluated": "Not judged"
+      },
+      "advisoryTag": "advisory only",
+      "claimBasis": "Basis:",
+      "claimUnnamed": "Unnamed check",
+      "scopeNote": "{advisory} of the {total} checks in this run are advisory: they are recorded as passed even when they match, and never change the conclusion above. Not checked this run: duplication against outside content, facts beyond this project's own data, and brand tone.",
+      "blocker": {
+        "title": "Cannot pass review yet",
+        "body": "{count} reference(s) in this draft cannot be checked against the research records frozen for this run. This is not a run failure — the run finished, and both the draft and the records were produced and are readable.",
+        "more": "and {count} more, listed under the checks above",
+        "why": "Why: this run's research records are assembled only from data already confirmed inside this project, with no outside retrieval. An outside source cited in the draft therefore has nothing here to be checked against. That is the boundary of this stage, not a defect.",
+        "next": "Next: send the draft back for more evidence, or write a new revision without the references that cannot be checked and run it again."
+      },
+      "facts": {
+        "frozenRecords": "Frozen records",
+        "recordCount": "{count}",
+        "externalCitable": "Citable outside sources",
+        "externalCitableValue": "0 — no outside retrieval this run",
+        "connectedSources": "Connected data sources",
+        "noConnectedSources": "None connected",
+        "frozenHash": "Frozen input fingerprint"
+      },
+      "publishNote": "This stage publishes nothing. Passing review produces a reviewed revision and nothing else: no CMS, Git or third-party publishing target is written. Results only observe whether the technical condition was fixed — never traffic, rank or conversion.",
+      "claimLabels": {
+        "rl4_keyword_anchor": "Link wording repeats the target phrase",
+        "rl5_keyword_stuffing": "The target phrase is repeated too often",
+        "rl7_banned_tokens": "Placeholder or filler wording left in the body",
+        "rl8_unsupported_claim": "A statement with no traceable source",
+        "rl10_chat_residue": "Assistant chatter left in the body",
+        "rl11_weak_verb": "Vague verbs where something specific belongs",
+        "rl12_citation_integrity": "A citation that matches none of our records",
+        "rl12b_unresolved_link": "A link pointing somewhere we cannot confirm",
+        "rl13_banned_jargon": "Jargon a reader outside the team would miss",
+        "sc1_bolded_definition": "The key term is defined up front",
+        "sc2_internal_link_density": "Links to the customer's own pages",
+        "sc3_paragraph_wall": "Paragraphs long enough to lose a reader",
+        "sc3b_paragraph_fragmentation": "Paragraphs broken into fragments",
+        "sc3c_section_scatter": "Sections that wander off their topic",
+        "sc4_link_distribution": "Links bunched into one part of the page",
+        "sc5_faq_section": "A questions-and-answers section",
+        "sc6_h1_value_prop": "The headline says what the reader gets",
+        "sc7_snippet_bullets": "Short answers a search result can lift",
+        "sc8_cta_anchor": "A next step the reader can act on",
+        "sc9_sources_section": "A sources section at the end",
+        "sc9b_sources_resolve_to_pack": "Listed sources match the frozen records",
+        "sc10_table_integrity": "Tables that read correctly",
+        "sc11_banned_headings": "Headings a reader would skip past",
+        "scdup_brief_overlap": "The draft restates the brief instead of writing",
+        "citability_geo": "How quotable this reads to an AI answer",
+        "brief-outline": "Coverage of the topics this cluster committed to"
+      }
     }
   },
   "report": {
@@ -1674,21 +1807,6 @@
     "exportFailed": "Export failed. Please try again.",
     "emptyTitle": "No report yet",
     "emptyHint": "Run a diagnosis and confirm findings to produce a report."
-  },
-  "execution": {
-    "chainTitle": "Delivery chain",
-    "chainLead": "Each confirmed opportunity produces one canonical action and one template-fixed deliverable.",
-    "emptyTitle": "No confirmed delivery yet",
-    "emptyBody": "Confirm an opportunity to open its canonical action and template-fixed deliverable here.",
-    "actionLabel": "Action",
-    "deliverableLabel": "Deliverable",
-    "artifactPending": "Not generated yet",
-    "revisionLabel": "Revision {revision}",
-    "artifactType": {
-      "technical_ticket": "Technical ticket",
-      "metadata_rewrite": "Metadata rewrite",
-      "content_brief": "Content brief"
-    }
   },
   "results": {
     "title": "Recheck results",

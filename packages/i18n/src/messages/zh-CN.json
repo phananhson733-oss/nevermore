@@ -1559,6 +1559,139 @@
       "pending": "待校验",
       "valid": "通过",
       "invalid": "未通过"
+    },
+    "findingBindingConfirmed": "已确认的增长机会",
+    "shadow": {
+      "eyebrow": "内容交付物",
+      "title": "直接查看交付物本身。",
+      "lead": "下面完整呈现 English draft 正文、它所依据的冻结记录，以及自动检查判定了什么、没能判定什么。本阶段不向任何地方发布。",
+      "queueEyebrow": "内容运行",
+      "queueTitle": "内容交付物",
+      "untitled": "未命名交付物",
+      "noRevision": "尚未生成版本",
+      "revision": "Revision {revision}",
+      "briefRevision": "来自内容 Brief 的 Revision {revision}",
+      "deliverableType": "English 博客草稿",
+      "partial": "部分完成",
+      "loading": "正在读取这份交付物。",
+      "loadError": "本项目的内容交付物读取失败。",
+      "runFailedBody": "本次运行没有产出草稿。已冻结的输入与已组装的研究记录仍可在右栏查看。",
+      "frozenHash": "冻结输入指纹 {hash}…",
+      "phase": {
+        "queued": "已排队",
+        "research": "研究记录组装中",
+        "draft": "草稿撰写中",
+        "qa": "自动检查进行中",
+        "complete": "已完成",
+        "failed": "本次运行没有完成"
+      },
+      "briefLinkBroken": {
+        "title": "本次 draft 未受 brief 引导",
+        "body": "未能从内容 Brief 中读出主题清单，因此本次撰写没有使用 Brief 的覆盖要求。本轮两者之间没有因果关系，请逐条人工比对。"
+      }
+    },
+    "meta": {
+      "stripLabel": "交付治理信息",
+      "linkedTarget": "关联目标",
+      "sourceOpportunity": "来源机会",
+      "generation": "生成方式",
+      "automatedChecks": "自动检查",
+      "notLinked": "未绑定",
+      "notEvaluatedYet": "尚未评估",
+      "mode": {
+        "template": "模板",
+        "structured_llm": "结构化模型"
+      }
+    },
+    "qa": {
+      "railLabel": "自动检查与证据",
+      "verdictLabel": "自动检查结论",
+      "verdict": {
+        "passed": "自动检查已通过 · 待人工评审",
+        "needs_review": "需要人工确认",
+        "blocked": "有无法核实的引用",
+        "none": "尚未评估"
+      },
+      "verdictStale": "结论已过期",
+      "verdictRevision": "该结论对应 Revision {revision}。",
+      "kickerBlocked": "有无法核实的引用",
+      "countsTitle": "本轮共 {count} 项检查",
+      "countsNotEvaluated": "这份交付物还没有跑过检查。",
+      "countsInline": "{passed} 通过 / {failed} 未通过 / {unevaluated} 未判定",
+      "counts": {
+        "passed": "已通过",
+        "failed": "未通过",
+        "unevaluated": "未判定"
+      },
+      "sectionChecks": "检查了什么",
+      "sectionEvidence": "记录与范围",
+      "sectionPublish": "发布与结果",
+      "group": {
+        "red_line": "事实红线",
+        "structure": "结构与搜索可读性",
+        "citability": "被引用的容易程度",
+        "coverage": "主题覆盖"
+      },
+      "state": {
+        "passed": "已通过",
+        "failed": "未通过 · {count} 项",
+        "partial": "已通过 · {count} 项未判定",
+        "unevaluated": "未判定"
+      },
+      "claimStatus": {
+        "passed": "已通过",
+        "failed": "未通过",
+        "unevaluated": "未判定"
+      },
+      "advisoryTag": "仅提示",
+      "claimBasis": "判定依据：",
+      "claimUnnamed": "未命名检查项",
+      "scopeNote": "本轮 {total} 项检查里有 {advisory} 项为提示级：它们即使命中也记为通过，不会改变上面的结论。本轮不检查：与外部内容的重复度、超出本项目数据的外部事实、品牌语气。",
+      "blocker": {
+        "title": "当前不能通过评审",
+        "body": "草稿里有 {count} 处引用无法在本轮冻结的研究记录中核实。这不是运行失败 —— 本次运行已完成，草稿与研究记录都已产出并可查阅。",
+        "more": "另有 {count} 处，可在上方检查项中展开查看",
+        "why": "原因：本轮的研究记录只由项目内已确认的数据组装，不做任何外部检索，因此草稿中引用的外部来源在这里没有可比对的对象。这是本阶段的范围边界，不是缺陷。",
+        "next": "下一步：把草稿退回补充证据，或删掉无法核实的引用后写一个新 Revision 重新检查。"
+      },
+      "facts": {
+        "frozenRecords": "冻结记录",
+        "recordCount": "{count} 条",
+        "externalCitable": "外部可引用来源",
+        "externalCitableValue": "0 条 —— 本轮未做外部检索",
+        "connectedSources": "已连接的数据源",
+        "noConnectedSources": "本项目暂无已连接来源",
+        "frozenHash": "冻结输入指纹"
+      },
+      "publishNote": "本阶段不做任何发布。评审通过只产生一个已评审的 Revision，不写入任何内容管理系统、Git 或第三方发布目标。效果只观察技术条件是否被修复，不推断流量、排名或转化。",
+      "claimLabels": {
+        "rl4_keyword_anchor": "链接文字重复目标词",
+        "rl5_keyword_stuffing": "目标词出现过密",
+        "rl7_banned_tokens": "正文残留占位或套话",
+        "rl8_unsupported_claim": "断言缺少可核实出处",
+        "rl10_chat_residue": "正文残留对话痕迹",
+        "rl11_weak_verb": "该具体的地方用了含糊动词",
+        "rl12_citation_integrity": "引用对应不上我们持有的记录",
+        "rl12b_unresolved_link": "链接指向我们无法确认的位置",
+        "rl13_banned_jargon": "圈外读者读不懂的行话",
+        "sc1_bolded_definition": "关键术语在开头有定义",
+        "sc2_internal_link_density": "指向客户自有页面的链接",
+        "sc3_paragraph_wall": "段落长到读者会走神",
+        "sc3b_paragraph_fragmentation": "段落被切得过碎",
+        "sc3c_section_scatter": "小节内容偏离自己的主题",
+        "sc4_link_distribution": "链接堆在页面的一处",
+        "sc5_faq_section": "问答小节",
+        "sc6_h1_value_prop": "大标题说清读者能得到什么",
+        "sc7_snippet_bullets": "可被搜索结果直接摘取的短答案",
+        "sc8_cta_anchor": "读者可以照做的下一步",
+        "sc9_sources_section": "文末的来源小节",
+        "sc9b_sources_resolve_to_pack": "列出的来源与冻结记录一致",
+        "sc10_table_integrity": "表格能被正确读取",
+        "sc11_banned_headings": "读者会跳过的标题",
+        "scdup_brief_overlap": "草稿在复述 Brief 而不是写作",
+        "citability_geo": "对 AI 回答而言的可引用程度",
+        "brief-outline": "是否覆盖了冻结 cluster 的目标关键词"
+      }
     }
   },
   "report": {
@@ -1674,21 +1807,6 @@
     "exportFailed": "导出失败，请重试。",
     "emptyTitle": "尚无报告",
     "emptyHint": "先运行诊断并确认发现，即可生成报告。"
-  },
-  "execution": {
-    "chainTitle": "交付链路",
-    "chainLead": "每个已确认的机会只产出一个规范化 Action 与一个模板固定的交付物。",
-    "emptyTitle": "尚无已确认的交付",
-    "emptyBody": "确认一个机会后，其规范化 Action 与模板固定的交付物会在此显示。",
-    "actionLabel": "Action",
-    "deliverableLabel": "交付物",
-    "artifactPending": "尚未生成",
-    "revisionLabel": "第 {revision} 版",
-    "artifactType": {
-      "technical_ticket": "技术工单",
-      "metadata_rewrite": "元数据改写",
-      "content_brief": "内容简报"
-    }
   },
   "results": {
     "title": "复查结果",

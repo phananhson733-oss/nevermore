@@ -1,0 +1,711 @@
+/*
+ * Content Shadow reading surface (Slice 2 Task 7).
+ *
+ * Colour comes from `var(--sf-*)` only. Nothing here hard-codes a hex: the
+ * brand axis is still undecided, and a semantic token means the whole screen
+ * follows a `:root` rebinding without this file being touched.
+ *
+ * Type sizes deliberately sit above the reference design's: body prose is
+ * `--sf-text-read` (17px) and the smallest label is 12px. The design system
+ * already rejected 6–10px type, and a quality finding a reviewer has to squint
+ * at is a finding they will skip.
+ */
+
+.shadow {
+  margin: 0 0 24px;
+}
+
+.shadowHead {
+  max-width: var(--sf-read-measure);
+  margin-bottom: 16px;
+}
+
+.shadowTitle {
+  margin: 6px 0 0;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-2xl);
+  line-height: 1.12;
+}
+
+.shadowLead {
+  margin: 10px 0 0;
+  color: var(--sf-ink-700);
+  font-size: var(--sf-text-base);
+  line-height: 1.6;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+/* ------------------------------------------------------------ queue rail --- */
+
+.workQueue {
+  overflow: hidden;
+}
+
+.queueHead {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.queueTitle {
+  margin: 2px 0 0;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-lg);
+  line-height: 1.15;
+}
+
+.queueList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+}
+
+.queueItem {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  padding: 11px 10px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.queueItem:hover,
+.queueItem[aria-current="true"] {
+  background: var(--sf-cobalt-soft);
+  border-color: color-mix(in srgb, var(--sf-accent) 30%, var(--sf-border));
+}
+
+.queueMark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: var(--sf-cobalt-text);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 9px;
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.queueText {
+  min-width: 0;
+}
+
+.queueItemTitle {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: var(--sf-text-base);
+  line-height: 1.4;
+}
+
+.queueItemMeta {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- document ------ */
+
+.docPanel {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-card);
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.docHead {
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.docKicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.docRevision {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.docTitle {
+  margin: 0;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-xl);
+  line-height: 1.15;
+}
+
+.metaStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  margin: 18px 24px 0;
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+}
+
+.metaCell {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px 12px;
+  border-left: 1px solid var(--sf-border);
+}
+
+.metaCell:first-child {
+  border-left: 0;
+}
+
+.metaLabel {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.metaValue {
+  overflow: hidden;
+  color: var(--sf-fg);
+  font-size: var(--sf-text-base);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * A broken brief -> draft chain is stated beside the body, not folded into a
+ * collapsed disclosure: it changes what the body means.
+ */
+.briefLinkBroken {
+  display: grid;
+  gap: 4px;
+  margin: 18px 24px 0;
+  padding: 12px 14px;
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+  border: 1px solid color-mix(in srgb, var(--sf-amber) 32%, var(--sf-border));
+  border-radius: 11px;
+}
+
+.briefLinkBroken strong {
+  font-size: var(--sf-text-base);
+}
+
+.briefLinkBroken span {
+  font-size: var(--sf-text-xs);
+  line-height: 1.55;
+}
+
+.docGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(268px, 300px);
+  align-items: start;
+  margin-top: 18px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.docBody {
+  min-width: 0;
+  padding: clamp(24px, 3vw, 40px);
+  border-right: 1px solid var(--sf-border);
+  color: var(--sf-fg);
+  font-size: var(--sf-text-read);
+  line-height: 1.74;
+}
+
+.docLabel {
+  margin: 0 0 18px;
+  color: var(--sf-cobalt-text);
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.docBody h3,
+.docBody h4,
+.docBody h5 {
+  font-family: var(--sf-font-display);
+}
+
+.docBody h3 {
+  max-width: var(--sf-read-measure);
+  margin: 8px 0 18px;
+  font-size: var(--sf-text-2xl);
+  line-height: 1.1;
+}
+
+.docBody h4 {
+  margin: 32px 0 10px;
+  font-size: var(--sf-text-xl);
+  line-height: 1.2;
+}
+
+.docBody h5 {
+  margin: 24px 0 8px;
+  font-size: var(--sf-text-lg);
+}
+
+.docBody p,
+.docBody li {
+  max-width: var(--sf-read-measure);
+}
+
+.docBody p {
+  margin: 0 0 18px;
+}
+
+.docBody ul,
+.docBody ol {
+  padding-left: 22px;
+}
+
+.docBody blockquote {
+  margin: 26px 0;
+  padding: 16px 22px;
+  color: var(--sf-cobalt-text);
+  background: var(--sf-cobalt-soft);
+  border-left: 5px solid var(--sf-accent);
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-xl);
+  line-height: 1.4;
+}
+
+.docBody code {
+  padding: 2px 5px;
+  background: var(--sf-surface-deep);
+  border-radius: var(--sf-radius-chip);
+  font-family: var(--sf-font-mono);
+  font-size: var(--sf-text-base);
+}
+
+.docBody pre {
+  overflow-x: auto;
+  padding: 18px;
+  color: #e8ecf1;
+  background: var(--sf-ink-950);
+  border-radius: 13px;
+}
+
+.docBody pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: var(--sf-text-base);
+  line-height: 1.7;
+}
+
+.docBody hr {
+  margin: 28px 0;
+  border: 0;
+  border-top: 1px solid var(--sf-border);
+}
+
+/* Wide content scrolls in its own box; the page must never scroll sideways. */
+.tableScroll {
+  overflow-x: auto;
+  margin: 0 0 20px;
+}
+
+.tableScroll table {
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: var(--sf-text-base);
+}
+
+.tableScroll th,
+.tableScroll td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.docPending {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-base);
+}
+
+/* ------------------------------------------------------------- QA rail ---- */
+
+.qaRail {
+  padding: 18px;
+  background: var(--sf-surface-deep);
+}
+
+.qaSection {
+  margin-top: 18px;
+}
+
+.qaSection h4 {
+  margin: 0 0 8px;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-base);
+}
+
+.qaVerdict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.qaVerdictLabel {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+}
+
+.qaCountsTitle {
+  margin: 12px 0 6px;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+}
+
+.qaCounts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+}
+
+.qaCountCell {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-left: 1px solid var(--sf-border);
+}
+
+.qaCountCell:first-child {
+  border-left: 0;
+}
+
+.qaCountCell span {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+}
+
+.qaCountCell strong {
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-xl);
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.qaGroup {
+  border-top: 1px solid var(--sf-border);
+}
+
+.qaGroupHead {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 16px;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 0;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.qaGroupIcon {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 50%;
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+}
+
+/* State is carried by the character and the word too; colour is the third
+ * signal, never the only one. */
+.groupPassed {
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+}
+
+.groupFailed {
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+}
+
+.groupPartial {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+}
+
+.groupUnevaluated {
+  color: var(--sf-muted);
+  background: color-mix(in srgb, var(--sf-surface-deep) 78%, var(--sf-border));
+}
+
+.qaGroupName {
+  display: block;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+}
+
+.qaGroupState {
+  display: block;
+  font-size: var(--sf-text-base);
+  font-weight: 650;
+}
+
+.qaGroupReason {
+  display: block;
+  margin-top: 2px;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  line-height: 1.5;
+}
+
+.qaGroupArrow {
+  width: 14px;
+  color: var(--sf-muted);
+  transition: transform 0.18s ease;
+}
+
+.qaGroupHead[aria-expanded="true"] .qaGroupArrow {
+  transform: rotate(90deg);
+}
+
+.qaClaims {
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+}
+
+.qaClaim {
+  display: grid;
+  gap: 4px;
+  padding: 9px 0 9px 33px;
+  border-top: 1px dashed var(--sf-border);
+}
+
+.qaClaimName {
+  font-size: var(--sf-text-base);
+  font-weight: 650;
+}
+
+.qaClaimState {
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+}
+
+.passed {
+  color: var(--sf-mint-text);
+}
+
+.failed {
+  color: var(--sf-coral-text);
+}
+
+.unevaluated {
+  color: var(--sf-amber-text);
+}
+
+.qaClaimDetail {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.qaClaimDetail span {
+  font-weight: 700;
+}
+
+/*
+ * Warm amber, never red, and never an alert icon.
+ *
+ * The run completed and the draft exists. What happened is that the gate held
+ * back citations it could not check against the frozen records — the product
+ * working, not failing. Red would teach a reviewer to read a normal outcome as
+ * a fault and to stop reading the reason.
+ */
+.blocker {
+  margin-top: 12px;
+  padding: 11px 12px;
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+  border: 1px solid color-mix(in srgb, var(--sf-coral) 34%, var(--sf-border));
+  border-radius: 9px;
+}
+
+.blocker strong {
+  display: block;
+  font-size: var(--sf-text-base);
+}
+
+.blocker p {
+  margin: 4px 0 0;
+  font-size: var(--sf-text-xs);
+  line-height: 1.55;
+}
+
+.blocker ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: var(--sf-text-xs);
+  line-height: 1.55;
+}
+
+.blockerNote {
+  color: inherit;
+  opacity: 0.92;
+}
+
+.qaScopeNote {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: var(--sf-muted);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+  font-size: var(--sf-text-xs);
+  line-height: 1.55;
+}
+
+.qaFacts {
+  margin: 0;
+}
+
+.qaFacts > div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--sf-border);
+}
+
+.qaFacts dt {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+}
+
+.qaFacts dd {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.qaFacts code {
+  font-family: var(--sf-font-mono);
+  font-size: var(--sf-text-xs);
+}
+
+.qaNote {
+  margin: 8px 0 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  line-height: 1.55;
+}
+
+/* ---------------------------------------------------------- responsive ---- */
+
+@media (max-width: 1180px) {
+  .docGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .docBody {
+    border-right: 0;
+  }
+
+  .qaRail {
+    border-top: 1px solid var(--sf-border);
+  }
+}
+
+@media (max-width: 1024px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metaStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metaCell:nth-child(3),
+  .metaCell:nth-child(4) {
+    border-top: 1px solid var(--sf-border);
+  }
+
+  .metaCell:nth-child(3) {
+    border-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .metaStrip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metaCell {
+    border-left: 0;
+    border-top: 1px solid var(--sf-border);
+  }
+
+  .metaCell:first-child {
+    border-top: 0;
+  }
+
+  .docBody {
+    padding: 22px 18px 28px;
+  }
+
+  .qaFacts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
