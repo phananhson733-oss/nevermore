@@ -2183,8 +2183,10 @@ const QA_PURITY_FORBIDDEN = [
   // because the banned-list version let `import("fs")`, `require("fs")` and
   // `await import("@sf/db")` straight through: it only ever matched the
   // `node:` prefix and the static `from "@sf/…"` form. A guard whose summary
-  // claims more than it checks is worse than no guard, so the shape that
-  // cannot be worked around is the one used here.
+  // claims more than it checks is worse than no guard. The allowlist is over
+  // the three syntaxes `moduleSpecifiers` reads — `from "…"`, `import("…")` and
+  // the side-effect `import "…"` — and it is exactly that third one that went
+  // unread while the guard was described as syntax-proof.
   [/\brequire\s*\(/, "use require()"],
   [/process\s*\./, "read anything off `process`"],
   [/\bglobalThis\b/, "reach through globalThis"],
@@ -2222,12 +2224,22 @@ const SIBLING_REPO_SOURCE_ROOTS = [
  * the reachable graph, so the graph is what gets walked.
  */
 /**
- * Every module specifier a file imports, statically or dynamically.
+ * Every module specifier a file imports, in every syntax that loads a module.
  *
- * Anchored on the character BEFORE `from` so a data literal cannot be mistaken
- * for an import: the QA coverage check carries `"from"` in its stopword list,
- * and a naive `/\bfrom\s*["\']/` reported it as a forbidden bare-package
- * import. A guard that cries wolf on a string constant gets deleted.
+ * There are three, and the guard used to cover two: `import "fs";` — a
+ * SIDE-EFFECT import, with no binding and no `from` — walked straight through
+ * while the guard's own summary said module specifiers were an allowlist that
+ * "cannot be worked around by choosing a different import syntax". That claim
+ * was false for the shortest syntax there is, which is the same
+ * says-more-than-it-checks failure the guard exists to catch elsewhere. All
+ * three forms are matched here, and each is verified to fail the guard.
+ *
+ * The `from` form is anchored on the character BEFORE it so a data literal
+ * cannot be mistaken for an import: the QA coverage check carries `"from"` in
+ * its stopword list, and a naive `/\bfrom\s*["\']/` reported it as a forbidden
+ * bare-package import. A guard that cries wolf on a string constant gets
+ * deleted. The side-effect form is anchored the same way, and excludes
+ * `import(` so a dynamic import is not counted twice.
  */
 function moduleSpecifiers(source) {
   const found = [];
@@ -2238,6 +2250,11 @@ function moduleSpecifiers(source) {
   }
   for (const match of source.matchAll(
     /\bimport\s*\(\s*["']([^"'\n]+)["']/g,
+  )) {
+    found.push(match[1]);
+  }
+  for (const match of source.matchAll(
+    /(?<![\w"'`.$])import\s+["']([^"'\n]+)["']/g,
   )) {
     found.push(match[1]);
   }
@@ -2309,6 +2326,27 @@ function checkContentShadowQaPurity() {
     }
   }
 
+  // The role boundary, enforced structurally rather than by memory.
+  //
+  // `resolveAttribution` answers "does the pack hold anything this attribution
+  // names?" — and one link to the customer's OWN site answers it yes. While the
+  // rules called it directly and tested `source !== null`, that link vouched
+  // for any invented reference sharing its line: a fabricated study, a
+  // fabricated bibliography and an `et al.` citation each returned `passed` on
+  // the strength of a call-to-action URL. The two questions a rule may ask are
+  // `resolveAssertionSupport` (whose return type has no first-party inhabitant)
+  // and `resolveLinkProvenance`, so the low-level lookup stays inside the
+  // module that owns the distinction.
+  const RESOLUTION_OWNER = "packages/flow-shadow/src/qa/claims.ts";
+  for (const file of qaFiles) {
+    if (file === RESOLUTION_OWNER) continue;
+    if (file.endsWith(".test.ts")) continue;
+    invariant(
+      !/\bresolveAttribution\s*\(/.test(stripCodeComments(read(file))),
+      `${file} must not call resolveAttribution directly: it reports whether an attribution names ANYTHING in the pack, including the customer's own site, so a rule reading it decides that a first-party link supports a fabricated claim. Ask resolveAssertionSupport (evidence) or resolveLinkProvenance (is this address ours) instead`,
+    );
+  }
+
   // Red line D: the ported Flow tooling is an EXTRACTION, never a runtime
   // dependency. A comment may name the sibling repository; code may not.
   const sourceFiles = SIBLING_REPO_SOURCE_ROOTS.flatMap((root) =>
@@ -2326,7 +2364,7 @@ function checkContentShadowQaPurity() {
       `${file} must not reference the sibling gengrowth-flow-mvp repository in code`,
     );
   }
-  return `Content Shadow QA purity: ${qaFiles.length} files in the gate's import closure free of non-relative imports, require(), process, globalThis, clock, randomness, locale-sensitive APIs and network; ${sourceFiles.length} source files free of sibling-repo references`;
+  return `Content Shadow QA purity: ${qaFiles.length} files in the gate's import closure free of non-relative imports (\`from\`, \`import()\` and side-effect \`import\`), require(), process, globalThis, clock, randomness, locale-sensitive APIs and network, and free of direct resolveAttribution calls outside ${RESOLUTION_OWNER}; ${sourceFiles.length} source files free of sibling-repo references`;
 }
 
 const checks = [
