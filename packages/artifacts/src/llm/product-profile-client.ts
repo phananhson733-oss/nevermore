@@ -19,6 +19,7 @@ import {
 } from "@sf/contracts";
 import { redactText, redactUrl } from "@sf/observability";
 import { z } from "zod";
+import { truncateChars } from "../text-bounds.ts";
 import type { AnalysisInvocationRecord } from "../types.ts";
 import { sha256Hex } from "./envelope.ts";
 import {
@@ -394,8 +395,7 @@ function safeDataText(value: string, maximum: number): string {
     .replace(/>/gu, "&gt;")
     .replace(/\s+/gu, " ")
     .trim();
-  if (normalized.length <= maximum) return normalized;
-  return `${normalized.slice(0, maximum - 1).trimEnd()}…`;
+  return truncateChars(normalized, maximum);
 }
 
 function safeOptionalText(

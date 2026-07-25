@@ -301,6 +301,64 @@ for (const rule of rules) {
   );
 }
 
+/**
+ * The counts the authority states IN PROSE, checked against the lock.
+ *
+ * Every machine surface here was already compared four ways — the lock, both
+ * verifiers and the marker registry all agreed on 49 operations. The authority's
+ * own narrative said 47 in four places, and had said so since the commit that
+ * moved the lock from 47 to 48 without touching the text. Nothing read the
+ * prose, so nothing went red: the project's freezing criterion was literally
+ * false while every gate stayed green.
+ *
+ * A number a reader is given is a claim the repository makes. This is the gate
+ * that makes the narrative fail like code when it drifts.
+ *
+ * Each label must match at least once. That is deliberate: if a sentence is
+ * reworded past these patterns the check fails rather than quietly verifying
+ * nothing, which is the same "we did not look" -> "we found nothing"
+ * substitution this repository keeps having to remove.
+ */
+const PROSE_COUNT_CLAIMS = [
+  ["API operations", () => lock.apiOperations.length, [
+    /(\d+)\s*个\s*operation\b/g,
+    /(\d+)\s+operationId\b/g,
+  ]],
+  ["async operations", () => lock.asyncOperations.length, [
+    /(\d+)\s*个\s*async\s+operation\b/g,
+    /(\d+)\s+async\s+operation\b/g,
+  ]],
+  ["application tables", () => lock.tables.length, [
+    /(\d+)\s*张应用表/g,
+    /(\d+)\s+table\b/g,
+  ]],
+  ["diagnostic rules", () => lock.rules.length, [/(\d+)\s*条规则/g]],
+];
+
+function assertProseCountsMatchLock(label, sources) {
+  for (const [claim, expected, patterns] of PROSE_COUNT_CLAIMS) {
+    const found = [];
+    for (const [name, text] of sources) {
+      for (const pattern of patterns) {
+        for (const match of text.matchAll(pattern)) {
+          found.push({ name, value: Number(match[1]), quote: match[0] });
+        }
+      }
+    }
+    assert.ok(
+      found.length > 0,
+      `${label} states no ${claim} count any more; the prose-vs-lock check cannot verify what it cannot find, so update the patterns in verify-spec-lock.mjs deliberately`,
+    );
+    for (const hit of found) {
+      assert.equal(
+        hit.value,
+        expected(),
+        `${hit.name} says "${hit.quote}" but the frozen spec lock declares ${expected()} ${claim}`,
+      );
+    }
+  }
+}
+
 const configuredAuthority =
   options.authorityRoot ??
   lock.authorityRoot ??
@@ -393,7 +451,25 @@ if (authorityAvailable) {
     0,
     "authoritative implementation-spec verifier failed",
   );
-  console.log("Frozen spec source hashes match the reviewed authority snapshot.");
+  assertProseCountsMatchLock("the authority narrative", [
+    [
+      "MVP-IMPLEMENTATION-SPEC.md",
+      readFileSync(
+        safePath(authorityRoot, "MVP-IMPLEMENTATION-SPEC.md", "authority file"),
+        "utf8",
+      ),
+    ],
+    [
+      "README.md",
+      readFileSync(
+        safePath(authorityRoot, "README.md", "authority file"),
+        "utf8",
+      ),
+    ],
+  ]);
+  console.log(
+    "Frozen spec source hashes match the reviewed authority snapshot, and its prose counts match the lock.",
+  );
 } else {
   console.log(
     `Authority checkout absent; verified the clone-local pinned ${lock.productVersion} contract lock.`,

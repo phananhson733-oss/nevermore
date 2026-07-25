@@ -249,8 +249,11 @@ describe("sanitizeOutlineItem injection-surface scrubbing", () => {
   });
 
   it("is idempotent for every invisible-character credential smuggling shape", () => {
-    // The property that matters: the bytes frozen by the extractor and the
-    // bytes re-sanitized at the prompt boundary can never diverge.
+    // Every payload below sanitizes to well under the cap, so step 6 never
+    // runs and the result is a fixed point: the bytes the extractor freezes and
+    // the bytes re-sanitized at the prompt boundary are the same. That is the
+    // scope of the guarantee — see the truncation-boundary test below for the
+    // case where it does NOT hold.
     const invisible = ["​", "­", "‍", "⁠", "‌", "᠎", "؜", "⁦", " ", "", " "];
     const payloads = [
       (char: string) => `Password${char}=hunter2 rotation policy`,
@@ -273,6 +276,52 @@ describe("sanitizeOutlineItem injection-surface scrubbing", () => {
         expect(twice).toBe(once);
       }
     }
+  });
+
+  /**
+   * The truncation boundary cuts between CHARACTERS, not between the two
+   * halves of one.
+   *
+   * A section label ending in an emoji is ordinary operator input. Slicing
+   * UTF-16 code units leaves an orphaned high surrogate, `JSON.stringify` emits
+   * it as `"\ud83d"`, and PostgreSQL's `jsonb` then REFUSES
+   * `flow_shadow_runs.frozen_input_manifest` — so the run dies on the write
+   * that was supposed to freeze it. The gate package fixed the same defect in
+   * `truncateExcerpt` and `boundedDetail`; this is the third site.
+   */
+  it("never cuts a section label through a surrogate pair", () => {
+    const cut = sanitizeOutlineItem(
+      `${"a".repeat(118)}🚀 trailing`,
+      MAX_BRIEF_OUTLINE_SECTION_CHARS,
+    );
+
+    expect(JSON.stringify(cut)).not.toMatch(/\\ud[89ab][0-9a-f]{2}/iu);
+    expect(() => JSON.parse(JSON.stringify(cut))).not.toThrow();
+    // And the bound is counted in code points, so an all-emoji label keeps the
+    // number of characters the cap promises rather than half of them.
+    expect([...sanitizeOutlineItem("🚀".repeat(200), 120)]).toHaveLength(120);
+  });
+
+  /**
+   * The one input class where a second pass is NOT a no-op, pinned so the
+   * docstring and the code cannot drift apart again.
+   *
+   * Step 6 cuts inside the `[redacted]` marker step 3 wrote; `password=[redact`
+   * is still a credential shape, so the next pass redacts the remains. Nothing
+   * leaks — the direction is strictly more redaction — but "idempotent for
+   * every input" was false, and the frozen manifest bytes and the prompt bytes
+   * differ by the marker's tail for exactly these values.
+   */
+  it("is NOT idempotent when the cut lands inside a redaction marker, and says so", () => {
+    const raw = `${"A".repeat(100)} password=hunter2secret tail`;
+    const once = sanitizeOutlineItem(raw, MAX_BRIEF_OUTLINE_SECTION_CHARS);
+    const twice = sanitizeOutlineItem(once, MAX_BRIEF_OUTLINE_SECTION_CHARS);
+
+    expect(once).not.toBe(twice);
+    // The secret is gone from both, which is why this is a documented limit
+    // rather than a defect: the second pass only redacts further.
+    expect(once).not.toContain("hunter2secret");
+    expect(twice).not.toContain("hunter2secret");
   });
 
   it("returns an empty string for a non-string or whitespace-only value", () => {

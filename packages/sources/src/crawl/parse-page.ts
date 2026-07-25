@@ -12,11 +12,15 @@
  */
 
 import { canonicalizeUrl } from "../canonical-url.ts";
-import type { CrawlJsonLdProjection, CrawlLinkProjection } from "../observations.ts";
-import { CRAWL_PROJECTION_LIMITS } from "./types.ts";
+import type {
+  CrawlJsonLdProjection,
+  CrawlLinkProjection,
+} from "../observations.ts";
+import { boundChars, CRAWL_PROJECTION_LIMITS } from "./types.ts";
 
+/** Code-point-safe projection bound; see `boundChars` for why it must be. */
 function truncate(value: string, maxChars: number): string {
-  return value.slice(0, maxChars);
+  return boundChars(value, maxChars);
 }
 
 /**
@@ -56,7 +60,9 @@ export interface ParsedPage {
 
 function attr(tag: string | undefined, name: string): string | null {
   if (!tag) return null;
-  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
+  const match = tag.match(
+    new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"),
+  );
   return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
 }
 
@@ -93,7 +99,10 @@ function decodeHtml(value: string): string {
 function extractNormalisedBody(html: string): string {
   const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body\s*>/i)?.[1] ?? html;
   const withoutNonContent = body
-    .replace(/<\s*(script|style|noscript|template|svg|canvas|iframe|nav|footer|aside)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, " ")
+    .replace(
+      /<\s*(script|style|noscript|template|svg|canvas|iframe|nav|footer|aside)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi,
+      " ",
+    )
     .replace(/<[^>]+>/g, " ");
   return decodeHtml(withoutNonContent)
     .replace(/\u00a0/g, " ")
@@ -110,7 +119,9 @@ function normalisedAttributeText(
 }
 
 function tagText(html: string, name: string, maxChars: number): string | null {
-  const found = html.match(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)<\\/${name}\\s*>`, "i"))?.[1];
+  const found = html.match(
+    new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)<\\/${name}\\s*>`, "i"),
+  )?.[1];
   if (found === undefined) return null;
   const text = extractNormalisedBody(found);
   return text ? truncate(text, maxChars) : null;
@@ -132,10 +143,11 @@ function collectH1(html: string): readonly string[] {
 
 function collectHeadings(html: string): readonly string[] {
   const out: string[] = [];
-  for (const match of html.matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi)) {
+  for (const match of html.matchAll(
+    /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi,
+  )) {
     const text = extractNormalisedBody(match[2] ?? "");
-    if (text)
-      out.push(truncate(text, CRAWL_PROJECTION_LIMITS.maxHeadingChars));
+    if (text) out.push(truncate(text, CRAWL_PROJECTION_LIMITS.maxHeadingChars));
     if (out.length >= CRAWL_PROJECTION_LIMITS.maxHeadings) break;
   }
   return out;
@@ -143,7 +155,9 @@ function collectHeadings(html: string): readonly string[] {
 
 function collectParagraphs(html: string): readonly string[] {
   const out: string[] = [];
-  for (const match of html.matchAll(/<(?:p|li|blockquote)\b[^>]*>([\s\S]*?)<\/(?:p|li|blockquote)\s*>/gi)) {
+  for (const match of html.matchAll(
+    /<(?:p|li|blockquote)\b[^>]*>([\s\S]*?)<\/(?:p|li|blockquote)\s*>/gi,
+  )) {
     const text = extractNormalisedBody(match[1] ?? "");
     if (text)
       out.push(truncate(text, CRAWL_PROJECTION_LIMITS.maxParagraphChars));
@@ -154,7 +168,8 @@ function collectParagraphs(html: string): readonly string[] {
 
 function declaredTypes(value: unknown): readonly string[] {
   if (typeof value === "string") return [value];
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  if (Array.isArray(value))
+    return value.filter((item): item is string => typeof item === "string");
   return [];
 }
 
@@ -213,7 +228,10 @@ function collectJsonLd(html: string): CrawlJsonLdProjection {
   return { types: [...types].sort(), errorCount };
 }
 
-function anchorAccessibleName(openingTag: string, content: string): string | null {
+function anchorAccessibleName(
+  openingTag: string,
+  content: string,
+): string | null {
   const ariaLabel = normalisedAttributeText(
     attr(openingTag, "aria-label"),
     CRAWL_PROJECTION_LIMITS.maxAnchorTextChars,
@@ -221,10 +239,7 @@ function anchorAccessibleName(openingTag: string, content: string): string | nul
   if (ariaLabel) return ariaLabel;
   const visibleText = extractNormalisedBody(content);
   if (visibleText)
-    return truncate(
-      visibleText,
-      CRAWL_PROJECTION_LIMITS.maxAnchorTextChars,
-    );
+    return truncate(visibleText, CRAWL_PROJECTION_LIMITS.maxAnchorTextChars);
   for (const image of content.matchAll(/<img\b[^>]*>/gi)) {
     const alt = normalisedAttributeText(
       attr(image[0], "alt"),
@@ -317,7 +332,9 @@ function collectInternalOutlinks(
 
 /** Robots directives (meta robots or X-Robots-Tag) → indexable boolean. */
 export function directivesIndexable(directives: readonly string[]): boolean {
-  return !directives.some((directive) => directive === "noindex" || directive === "none");
+  return !directives.some(
+    (directive) => directive === "noindex" || directive === "none",
+  );
 }
 
 function parseRobotsDirectives(content: string | null): readonly string[] {
@@ -327,8 +344,7 @@ function parseRobotsDirectives(content: string | null): readonly string[] {
     .map((token) => token.trim().toLowerCase())
     .filter((token) => token.length > 0);
   const critical = tokens.filter(
-    (token) =>
-      token === "noindex" || token === "none" || token === "nofollow",
+    (token) => token === "noindex" || token === "none" || token === "nofollow",
   );
   return [...new Set([...critical, ...tokens])]
     .slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsDirectives)
@@ -354,7 +370,10 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
     pageOrigin = "";
   }
 
-  const canonicalTag = firstTag(html, /<link\b[^>]*\brel\s*=\s*["']canonical["'][^>]*>/i);
+  const canonicalTag = firstTag(
+    html,
+    /<link\b[^>]*\brel\s*=\s*["']canonical["'][^>]*>/i,
+  );
   const canonicalHref = attr(canonicalTag, "href");
   const canonicalPair = canonicalHref
     ? canonicalizeUrl(canonicalHref, pageUrl)
@@ -374,8 +393,12 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
       : null;
 
   const metaTags = [...html.matchAll(/<meta\b[^>]*>/gi)].map((tag) => tag[0]);
-  const descriptionTag = metaTags.find((tag) => attr(tag, "name")?.toLowerCase() === "description");
-  const robotsTag = metaTags.find((tag) => attr(tag, "name")?.toLowerCase() === "robots");
+  const descriptionTag = metaTags.find(
+    (tag) => attr(tag, "name")?.toLowerCase() === "description",
+  );
+  const robotsTag = metaTags.find(
+    (tag) => attr(tag, "name")?.toLowerCase() === "robots",
+  );
   const robotsDirectives = parseRobotsDirectives(attr(robotsTag, "content"));
 
   const description = normalisedAttributeText(

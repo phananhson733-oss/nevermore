@@ -32,7 +32,7 @@ import {
   parseRobots,
 } from "./robots.ts";
 import { collectSitemap } from "./sitemap.ts";
-import { CRAWL_BUDGET, CRAWL_PROJECTION_LIMITS } from "./types.ts";
+import { boundChars, CRAWL_BUDGET, CRAWL_PROJECTION_LIMITS } from "./types.ts";
 import type {
   CrawlConfig,
   CrawlFetcher,
@@ -205,7 +205,7 @@ function mergeRobotsDirectives(
   return [...new Set([...critical, ...all])]
     .slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsDirectives)
     .map((token) =>
-      token.slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
+      boundChars(token, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
     );
 }
 
@@ -213,7 +213,7 @@ function boundedRules(values: readonly string[]): readonly string[] {
   return values
     .slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup)
     .map((value) =>
-      value.slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars),
+      boundChars(value, CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars),
     );
 }
 
@@ -234,8 +234,8 @@ function boundedRobotsProjection(
   const seen = new Set<string>();
   const groups: CrawlRobotsProjection["groups"][number][] = [];
   for (const group of ordered) {
-    const userAgent = group.userAgent.slice(
-      0,
+    const userAgent = boundChars(
+      group.userAgent,
       CRAWL_PROJECTION_LIMITS.maxUserAgentChars,
     );
     const key = userAgent.toLowerCase();

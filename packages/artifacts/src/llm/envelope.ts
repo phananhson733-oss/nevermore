@@ -22,6 +22,7 @@
 import { createHash } from "node:crypto";
 import { redactText } from "@sf/observability";
 import { z } from "zod";
+import { truncateChars } from "../text-bounds.ts";
 import type {
   ArtifactContent,
   ArtifactPromptInput,
@@ -192,9 +193,7 @@ export function safePromptText(
   const normalized = neutralizeUntrustedDelimiter(redactText(flattened))
     .replace(/\s+/gu, " ")
     .trim();
-  if (normalized.length <= maxChars) return normalized;
-  if (maxChars <= 1) return normalized.slice(0, Math.max(0, maxChars));
-  return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
+  return truncateChars(normalized, maxChars);
 }
 
 /** The exact normalized/truncated Evidence claim text exposed to the model. */
@@ -260,8 +259,22 @@ export const contentBriefOutlineSchema = z
  * Re-validate and re-sanitize the outline at the boundary, even though the
  * extractor already did. The envelope must not trust its caller: this module is
  * the last code that runs before operator- and provider-sourced text becomes
- * part of an outgoing request body. `sanitizeOutlineItem` is idempotent, so a
- * correctly extracted outline passes through byte-identical.
+ * part of an outgoing request body.
+ *
+ * A correctly extracted outline passes through byte-identical whenever its
+ * items were NOT truncated — which is every item under the 120-character cap,
+ * including all nine canonical section constants and every ordinary keyword.
+ * It is not byte-identical for the one class `sanitizeOutlineItem` documents:
+ * an item whose truncation boundary fell immediately after a `key=`, where this
+ * second pass re-redacts the cut marker. For those items the frozen manifest
+ * holds the extractor's bytes and the model sees these, differing by the tail
+ * of a `[redacted]` marker.
+ *
+ * That divergence is accepted rather than removed, and the ordering is why:
+ * keeping the two sides equal would mean trusting the caller's bytes and NOT
+ * re-sanitizing here, and here is the only place that runs on every path. A
+ * frozen record whose last few characters differ from the prompt is a smaller
+ * cost than a prompt nobody sanitized.
  */
 export function safePromptContentBriefOutline(
   value: ContentBriefOutline,

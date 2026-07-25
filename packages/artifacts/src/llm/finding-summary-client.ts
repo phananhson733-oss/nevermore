@@ -21,6 +21,7 @@ import {
  */
 import { redactText } from "@sf/observability";
 import { z } from "zod";
+import { truncateChars } from "../text-bounds.ts";
 import type { AnalysisInvocationRecord } from "../types.ts";
 import { PROMPT_SET_VERSION } from "../types.ts";
 import { sha256Hex } from "./envelope.ts";
@@ -113,9 +114,7 @@ function safeDataText(value: string, maxChars: number): string {
     .replace(/>/gu, "&gt;")
     .replace(/\s+/gu, " ")
     .trim();
-  if (normalized.length <= maxChars) return normalized;
-  if (maxChars <= 1) return normalized.slice(0, maxChars);
-  return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
+  return truncateChars(normalized, maxChars);
 }
 
 function safeSubjectRefs(values: readonly string[]): readonly string[] {

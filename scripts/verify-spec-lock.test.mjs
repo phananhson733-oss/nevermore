@@ -128,11 +128,22 @@ function makeFixture(t, options = {}) {
     write(root, `packages/db/migrations/${name}`, sql);
   }
 
-  const authorityReadme = write(root, "authority/README.md", "fixture authority\n");
+  const tables = options.tables ?? ["workspaces", "capability_runs"];
+
+  // The verifier compares the counts the authority states IN PROSE against the
+  // lock, so a fixture authority has to state them the way the real one does.
+  // Derived from this fixture's own lock values rather than written out, so the
+  // stub cannot drift from the lock it is paired with — which is the exact
+  // failure the prose check exists to catch.
+  const authorityReadme = write(
+    root,
+    "authority/README.md",
+    `fixture authority: OpenAPI 精确声明 1 个 operation 与 0 个 async operation，确定性规则为 1 条规则，总数为 ${tables.length} 张应用表。\n`,
+  );
   const authoritySpec = write(
     root,
     "authority/MVP-IMPLEMENTATION-SPEC.md",
-    "# Fixture implementation specification\n",
+    `# Fixture implementation specification\n\n1 operationId、0 async operation、${tables.length} table、1 条规则。\n`,
   );
   const authoritySchema = write(
     root,
@@ -167,7 +178,6 @@ function makeFixture(t, options = {}) {
     readFileSync(implementationSchemaSmoke),
   );
 
-  const tables = options.tables ?? ["workspaces", "capability_runs"];
   const lock = {
     lockFormat: 2,
     productVersion: "0.3.0",

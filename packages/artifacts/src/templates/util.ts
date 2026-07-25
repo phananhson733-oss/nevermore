@@ -4,6 +4,8 @@
  * what makes the generated content hashable and reproducible (spec §10.3).
  */
 
+import { truncateChars } from "../text-bounds.ts";
+
 export type TemplateArtifactLocale = "en" | "zh-CN";
 
 export const UNSUPPORTED_TEMPLATE_LOCALE_MESSAGE =
@@ -74,11 +76,7 @@ export function firstNonEmpty(values: readonly string[], fallback: string): stri
 
 /** Deterministic truncation with an ellipsis marker, for title/description caps. */
 export function truncate(value: string, max: number): string {
-  const v = value.trim();
-  if (v.length <= max) {
-    return v;
-  }
-  return `${v.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+  return truncateChars(value.trim(), max);
 }
 
 /** Dedupe + clean a list, dropping empties, preserving first-seen order. */

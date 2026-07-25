@@ -36,6 +36,24 @@ export const CRAWL_ENGINE_WALL_CLOCK_BUDGET_MS =
   CRAWL_JOB_WALL_CLOCK_CAP_MS - CRAWL_FINALIZATION_HEADROOM_MS;
 
 /**
+ * Bound a projected string by CODE POINT, never by UTF-16 code unit.
+ *
+ * Every string bounded here came off a real web page, so a title or anchor
+ * ending in an emoji is ordinary rather than adversarial. `slice` counts code
+ * units, so a cut at a fixed count can land between the two halves of one
+ * character; `JSON.stringify` then emits the orphaned surrogate as `"\ud83d"`
+ * and PostgreSQL's `jsonb` REFUSES the value, so a completed crawl dies on the
+ * write that stores its projection. Splitting on code points makes every bound
+ * storable by construction.
+ */
+export function boundChars(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  const points = [...value];
+  if (points.length <= maxChars) return value;
+  return points.slice(0, Math.max(0, maxChars)).join("");
+}
+
+/**
  * Fixed persisted-projection bounds. These are deliberately not operator
  * tunable: a hostile but per-response-valid page must not amplify into an
  * unbounded snapshot/observation JSON value.

@@ -33,6 +33,7 @@
  */
 
 import { redactText } from "@sf/observability";
+import { truncateChars } from "../text-bounds.ts";
 import { CONTENT_BRIEF_SECTIONS } from "../validators/sections.ts";
 import {
   headingMatches,
@@ -162,11 +163,30 @@ export interface BriefSectionProjection {
  *    It stays AFTER redaction so an escaped tag cannot extend a credential
  *    value and swallow the escape into `[redacted]`;
  * 5. re-collapse and trim, so redaction can never leave a ragged edge;
- * 6. truncate with the shared ellipsis convention so no payload hides in a tail.
+ * 6. truncate BY CODE POINT with the shared ellipsis convention, so no payload
+ *    hides in a tail and no cut lands between the two halves of one character
+ *    (an orphaned surrogate makes `jsonb` reject the frozen manifest outright —
+ *    see `text-bounds.ts`).
  *
- * The result is idempotent: `sanitizeOutlineItem(sanitizeOutlineItem(x)) ===
- * sanitizeOutlineItem(x)` for every input, which is what makes the frozen
- * outline and the prompt outline the same bytes.
+ * IDEMPOTENCE, AND THE ONE CASE WHERE IT DOES NOT HOLD.
+ *
+ * For every value whose sanitized form fits within `maxChars`,
+ * `sanitizeOutlineItem(sanitizeOutlineItem(x)) === sanitizeOutlineItem(x)`:
+ * steps 1-5 are each fixed points on their own output, so a value that never
+ * reaches step 6 cannot move.
+ *
+ * A value that IS truncated can move, and this is written out because the
+ * docstring used to claim idempotence "for every input" and that claim was
+ * false. Step 6 can cut inside a marker step 3 wrote: `… password=[redacted]`
+ * truncated to `… password=[redacted…` is still a credential SHAPE, so a second
+ * pass redacts it again and yields different bytes. Measured at 3 of 420
+ * probes, every one of them a boundary landing just after a `key=`.
+ *
+ * What that costs is stated at `safePromptContentBriefOutline`, which is the
+ * second pass: for those items the frozen manifest holds this function's first
+ * output and the model sees its second. The property red line C actually needs
+ * — same frozen input, same judgement, on replay — is unaffected, because both
+ * passes are deterministic functions of the same frozen bytes.
  */
 export function sanitizeOutlineItem(value: string, maxChars: number): string {
   if (typeof value !== "string") return "";
@@ -180,9 +200,7 @@ export function sanitizeOutlineItem(value: string, maxChars: number): string {
     .replace(/>/gu, "&gt;")
     .replace(/\s+/gu, " ")
     .trim();
-  if (normalized.length <= maxChars) return normalized;
-  if (maxChars <= 1) return normalized.slice(0, Math.max(0, maxChars));
-  return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
+  return truncateChars(normalized, maxChars);
 }
 
 /**
