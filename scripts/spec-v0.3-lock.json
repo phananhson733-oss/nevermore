@@ -7,7 +7,7 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "9aeefc759c044cdaa669c50d323ca1bb744a947664d7abee7ee590b4679fe0e0",
-    "MVP-IMPLEMENTATION-SPEC.md": "e2539549b49a8dc0621f0a7c839df7f1871f1cbb6d74e62c4e17cc73e7dbc698",
+    "MVP-IMPLEMENTATION-SPEC.md": "6f69d6f4f6272ea86a30cffa95622ed52ff369d8c7796c0bfebfe273d7567ec4",
     "openapi.yaml": "9f0a4c70b2570687d564c6d6fde0d589cd1da4624255d38efd3d68fd21d28a62",
     "schema.sql": "c960089b404dbfe6712f619d32eac62ad1992e632f247c5105a88ddc468cb76b",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",

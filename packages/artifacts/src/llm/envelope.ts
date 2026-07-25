@@ -39,6 +39,7 @@ import {
   MAX_BRIEF_OUTLINE_KEYWORD_CHARS,
   MAX_BRIEF_OUTLINE_SECTIONS,
   MAX_BRIEF_OUTLINE_SECTION_CHARS,
+  NON_TEXT_CHARACTER,
   sanitizeOutlineItem,
   type ContentBriefOutline,
 } from "../brief/outline.ts";
@@ -131,9 +132,9 @@ function assertPromptInputCardinality(input: ArtifactPromptInput): void {
 
 /**
  * Preserve hostile delimiter text as visible data without allowing it to become
- * a real prompt-control boundary. This runs before whitespace normalization and
- * truncation so case/newline/spacing variants cannot be reconstructed at an
- * excerpt boundary.
+ * a real prompt-control boundary. This runs before the final whitespace
+ * collapse and truncation so case/newline/spacing variants cannot be
+ * reconstructed at an excerpt boundary.
  */
 function neutralizeUntrustedDelimiter(value: string): string {
   return value.replace(UNTRUSTED_DELIMITER_VARIANT, (delimiter) =>
@@ -141,15 +142,58 @@ function neutralizeUntrustedDelimiter(value: string): string {
   );
 }
 
-function safePromptText(
+/**
+ * The single sanitizer every allowlisted value passes through before it leaves
+ * this process for a model provider. The step ORDER is load-bearing and mirrors
+ * `sanitizeOutlineItem` (`../brief/outline.ts`):
+ *
+ * 1. control/format characters to spaces, then collapse whitespace. This runs
+ *    FIRST, before the redactor, and the order is a correctness requirement,
+ *    not a style choice. `redactText`'s credential patterns require `\s*`
+ *    between a key and its `=`/`:`, and U+200B / U+00AD / U+200D / U+2060 /
+ *    U+202E are NOT `\s`, so `Password<U+200B>=hunter2` walked straight through
+ *    a redactor that ran first and would only have been caught by a SECOND pass
+ *    this function never took. Every ICP, action, finding and `currentMetadata`
+ *    field, every evidence claim and every operator request of all four
+ *    artifact types crosses here, so that ordering shipped operator- and
+ *    provider-sourced credentials verbatim to an EXTERNAL provider — past the
+ *    system boundary, not merely into our own storage. Flattening first also
+ *    matters on its own terms: a single-line fragment cannot forge a block
+ *    boundary inside `JSON.stringify(context, null, 2)`, and a bidi override
+ *    can no longer reorder what a reviewer reads;
+ * 2. `redactText`, now reading the flattened text a second pass would have read;
+ * 3. `neutralizeUntrustedDelimiter`. It stays AFTER redaction because escaping
+ *    first would let `&lt;/UNTRUSTED_EVIDENCE&gt;` be absorbed into a credential
+ *    value's `[^\s,;]+` match and carry the escape off into `[redacted]`;
+ * 4. re-collapse and trim, so redaction can never leave a ragged edge;
+ * 5. truncate with the shared ellipsis convention so no payload hides in a tail.
+ *
+ * Step 1 is a no-op on text whose only `\p{Cc}`/`\p{Cf}` characters are ordinary
+ * whitespace, which is why WELL-FORMED prompts keep their exact bytes — the
+ * suite pins the sha256 of all four artifact types' prompts to their pre-fix
+ * values. This is a sanitizer defect fix, not a prompt-template change, so
+ * neither `PROMPT_SET_VERSION` nor `CONTENT_SHADOW_PROMPT_SET_VERSION` moves.
+ *
+ * KNOWN LIMIT (shared with `sanitizeOutlineItem`, unchanged by this fix):
+ * `redactText` is keyword-driven, so an invisible character placed INSIDE the
+ * key (`Pass<U+200B>word=…`) still defeats it — normalization turns the key into
+ * two words rather than restoring it. Nothing short of deleting format
+ * characters closes that, and deleting them would corrupt scripts whose
+ * `\p{Cf}` characters carry meaning.
+ */
+export function safePromptText(
   value: string,
   maxChars = MAX_PROMPT_FIELD_CHARS,
 ): string {
-  const normalized = neutralizeUntrustedDelimiter(redactText(value))
-    .replace(/\s+/g, " ")
+  const flattened = value
+    .replace(NON_TEXT_CHARACTER, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  const normalized = neutralizeUntrustedDelimiter(redactText(flattened))
+    .replace(/\s+/gu, " ")
     .trim();
   if (normalized.length <= maxChars) return normalized;
-  if (maxChars <= 1) return normalized.slice(0, maxChars);
+  if (maxChars <= 1) return normalized.slice(0, Math.max(0, maxChars));
   return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
 }
 

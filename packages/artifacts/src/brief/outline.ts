@@ -56,8 +56,15 @@ export const MAX_BRIEF_OUTLINE_KEYWORD_CHARS = 120;
  */
 const OUTLINE_PRE_TRUNCATE_CHARS = 512;
 
-/** Control chars, format chars (bidi overrides, zero width, soft hyphen) and separators. */
-const NON_TEXT_CHARACTER = /[\p{Cc}\p{Cf}\u2028\u2029]/gu;
+/**
+ * Control chars, format chars (bidi overrides, zero width, soft hyphen) and
+ * separators.
+ *
+ * Exported because the prompt envelope's `safePromptText` normalizes the exact
+ * same class for the exact same reason. Two copies of a security-critical
+ * character class is how the two sanitizers drift apart.
+ */
+export const NON_TEXT_CHARACTER = /[\p{Cc}\p{Cf}\u2028\u2029]/gu;
 
 /**
  * The cluster's existing-page-first decision, aggregated. Four values, not two:
