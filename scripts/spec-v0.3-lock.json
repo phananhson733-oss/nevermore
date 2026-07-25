@@ -19,7 +19,7 @@
     "packages/contracts/src/generated/openapi.ts": "d10ff7ec4860899e4aad701f25de4014732c4e59996eeb5dcedfc75426118b64",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "packages/db/migrations/schema-smoke.sql": "17366c8984199b11ef466b9a5db42f4a4362b3a376947781586cf9708ae4c6f5",
-    "scripts/verify-implementation.mjs": "2c24a821e45768edd21d9c3d500e6897ec1936294b5ef3d1a1993a60d28728de"
+    "scripts/verify-implementation.mjs": "ad729d5763cce1e4629432ed61a14015e4098f8f84adce7edab6ecfb39720a0c"
   },
   "apiOperations": [
     "listProjects",

@@ -122,10 +122,21 @@ export interface BriefOutlineProjectionStats {
 }
 
 /**
- * Evidence authority grading. Slice 2 Task 4 emits only `A` — every source in
- * the deterministic pack is a first-party SignalFrame record the customer has
- * already confirmed. External authority grading (`B`/`C`/`D`) arrives with the
- * real QA judgement in Task 6; inventing tiers now would be a fabricated claim.
+ * Authority grading. `A`/`B`/`C` are IDENTICAL to the existing `EvidenceGrade`
+ * (`@sf/db`), which the 0012 triggers pin from provider + origin — reusing them
+ * keeps one authoritative definition of "how good is this source" instead of
+ * two that drift apart under the same letters.
+ *
+ * `D` is ASYMMETRIC and the asymmetry is deliberate (Slice 2 decision Q1):
+ * `A`/`B`/`C` describe where a source came from, while `D` is not a source
+ * property at all — it is the QA gate's OUTPUT for "this reference in the draft
+ * resolves to no source we hold". A research pack must therefore never emit `D`:
+ * it is assembled only from database rows, and a row with no provenance has
+ * nowhere to have come from. If pack assembly ever produces `D`, that is a bug
+ * meaning it invented a source, not a new tier to support.
+ *
+ * Slice 2's deterministic pack emits only `A`: every source in it is a
+ * first-party SignalFrame record the customer already confirmed.
  */
 export type AuthorityTier = "A" | "B" | "C" | "D";
 
@@ -208,6 +219,19 @@ export interface QaEvaluation {
 
 export interface QaEvaluationInput {
   readonly draftMarkdown: string;
+  /**
+   * The pinned content brief revision's body.
+   *
+   * Every QA input is drawn from something frozen or immutable — the evaluated
+   * artifact revision, the hash-verified manifest projection, and this pinned
+   * revision — because the QA gate's replay comparison treats differing claims
+   * for the same run as a data-integrity error. An input that could move
+   * between a run and its re-delivery would turn that guard into a flake.
+   *
+   * The brief body never enters the draft PROMPT (only the extracted coverage
+   * checklist does); it is read here purely to detect a draft that restates it.
+   */
+  readonly briefMarkdown: string;
   readonly pack: ResearchPack;
   /**
    * Required, not optional: the QA claim is where a reviewer reads what the

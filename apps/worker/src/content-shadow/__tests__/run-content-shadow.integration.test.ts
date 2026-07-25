@@ -962,6 +962,79 @@ describeDb("runContentShadow", () => {
     ).toBe(true);
   });
 
+  /**
+   * `blocked` is a judgement about the CONTENT, not about the run. The draft
+   * revision is the evidence a reviewer needs in order to judge the block, so it
+   * is still minted; the run still completes, because re-running a deterministic
+   * gate only ever reproduces the same verdict; and nothing is marked ready,
+   * published or exported.
+   */
+  it("blocks a fabricated citation without failing the run or publishing anything", async () => {
+    const fixture = await seedShadowChain(handle);
+    generateArtifact.mockResolvedValue({
+      content: {
+        contentFormat: "markdown",
+        content:
+          "# Onboarding checklist\n\n## Why it matters\n\nAccording to the 2024 Forrester Digital Experience Report, teams cut onboarding time by 40%.\n",
+      },
+      invocation: {
+        task: "artifact_generation",
+        provider: "openai",
+        model: "gpt-4o-mini",
+        promptSetVersion: PROMPT_SET_VERSION,
+        inputHash: contentHash({ prompt: "fixture" }),
+        outputHash: contentHash({ output: "blocked" }),
+        status: "succeeded",
+        inputTokens: 10,
+        outputTokens: 20,
+        costUsd: null,
+        latencyMs: 5,
+        errorCode: null,
+      },
+    });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const gates = await new FlowShadowQaGatesRepository(handle.db).findByRun(
+      fixture.scope,
+      fixture.flowShadowRunId,
+    );
+    expect(gates).toHaveLength(1);
+    expect(gates[0]?.verdict).toBe("blocked");
+    expect(
+      (gates[0]?.claims as ReadonlyArray<Record<string, unknown>>).some(
+        (claim) =>
+          claim["claimId"] === "content-shadow.qa.rl8_unsupported_claim" &&
+          claim["status"] === "failed",
+      ),
+    ).toBe(true);
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run?.status).toBe("completed");
+
+    const draft = await new ExecutionArtifactsRepository(
+      handle.db,
+    ).findLiveByActionType(
+      fixture.scope,
+      fixture.actionId,
+      "english_blog_draft",
+    );
+    expect(draft).toMatchObject({ status: "draft", current_revision: 1 });
+
+    const exports = await handle.pool.query(
+      "SELECT id FROM app.export_bundles WHERE project_id = $1",
+      [fixture.scope.projectId],
+    );
+    expect(exports.rows).toHaveLength(0);
+  });
+
   it("fails with input drift when a frozen keyword's mapping decision moves", async () => {
     const fixture = await seedShadowChain(handle);
     await handle.pool.query(

@@ -178,6 +178,12 @@ interface LiveShadowInputs {
   /** Re-derived here; NEVER read back out of the frozen row (see below). */
   readonly contentBriefOutline: ContentBriefOutline;
   readonly briefOutlineStats: BriefOutlineProjectionStats;
+  /**
+   * The pinned brief revision's body. It never enters the draft prompt — only
+   * the extracted coverage checklist does — but the QA gate reads it to detect
+   * a draft that merely restates the brief.
+   */
+  readonly briefMarkdown: string;
 }
 
 /**
@@ -365,6 +371,7 @@ async function loadLiveShadowInputs(
     sourceDiagnosticRunId: action.source_diagnostic_run_id,
     sourceIcpProfileId: diagnosticRun.icp_profile_id,
     contentBriefOutline: extraction.outline,
+    briefMarkdown: briefRevision.content_text ?? "",
     briefOutlineStats: {
       briefSectionCount: extraction.briefSectionCount,
       projectedSectionCount: extraction.projectedSectionCount,
@@ -663,12 +670,20 @@ export async function runContentShadow(
       );
     }
 
-    // --- QA: Task 4 records an honest needs_review skeleton ---------------
+    // --- QA: the deterministic SEO/GEO + factual review gate --------------
+    //
+    // Every input here is frozen or immutable: the evaluated artifact revision
+    // and the pinned brief revision are append-only rows, and the pack is a
+    // pure projection of the hash-verified manifest. That is a correctness
+    // requirement, not tidiness — the gate's replay comparison treats differing
+    // claims for the same run as a data-integrity error, so an input that could
+    // move between a run and its re-delivery would turn that guard into a flake.
     const revision = await new ExecutionArtifactsRepository(
       ctx.db,
     ).findRevision(scope, artifact.id, evaluatedRevision);
     const evaluation = evaluateDraftQa({
       draftMarkdown: revision?.content_text ?? "",
+      briefMarkdown: live.briefMarkdown,
       pack,
       briefOutlineStats: live.briefOutlineStats,
     });

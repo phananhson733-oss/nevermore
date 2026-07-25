@@ -2165,8 +2165,75 @@ function checkE2eDatabaseSafety() {
   return "E2E safety: guarded disposable DB, no unknown server reuse, ordered cleanup";
 }
 
+/**
+ * The Content Shadow QA gate is the one place a reproducible run makes a
+ * factual assertion about model output, so its judgement has to be a pure
+ * function of its frozen inputs. Each pattern below corresponds to a way the
+ * same frozen draft could otherwise be judged differently on a second machine
+ * (a clock, randomness, an environment switch, an ICU-version-dependent API) or
+ * to a hidden input the content hash does not cover (a file read, a database
+ * row). This is a source guard rather than a convention because the failure it
+ * prevents is silent: a verdict that simply differs on replay.
+ */
+const QA_PURITY_FORBIDDEN = [
+  [/process\s*\.\s*env/, "read process.env"],
+  [/from\s*["']node:/, "import a Node built-in"],
+  [/require\s*\(\s*["']node:/, "require a Node built-in"],
+  [/\bDate\s*\.\s*now\b/, "read the clock"],
+  [/\bnew\s+Date\b/, "read the clock"],
+  [/\bMath\s*\.\s*random\b/, "use randomness"],
+  [/\brandomUUID\b/, "use randomness"],
+  [/\bIntl\s*\./, "use a locale-sensitive Intl API"],
+  [/from\s*["']@sf\//, "import another workspace package at runtime"],
+];
+
+const SIBLING_REPO_SOURCE_ROOTS = [
+  "packages",
+  "apps/web/src",
+  "apps/worker/src",
+];
+
+function checkContentShadowQaPurity() {
+  const qaFiles = walkSourceFiles("packages/flow-shadow/src/qa").filter((file) =>
+    file.endsWith(".ts"),
+  );
+  invariant(
+    qaFiles.length > 0,
+    "the Content Shadow QA gate source must exist for its purity guard to mean anything",
+  );
+  for (const file of qaFiles) {
+    const source = stripCodeComments(read(file));
+    for (const [pattern, description] of QA_PURITY_FORBIDDEN) {
+      invariant(
+        !pattern.test(source),
+        `${file} must not ${description}: the QA verdict has to be a pure function of the frozen run inputs`,
+      );
+    }
+  }
+
+  // Red line D: the ported Flow tooling is an EXTRACTION, never a runtime
+  // dependency. A comment may name the sibling repository; code may not.
+  const sourceFiles = SIBLING_REPO_SOURCE_ROOTS.flatMap((root) =>
+    walkSourceFiles(root).filter(
+      (file) =>
+        (file.endsWith(".ts") ||
+          file.endsWith(".tsx") ||
+          file.endsWith(".mjs")) &&
+        !file.includes("/node_modules/"),
+    ),
+  );
+  for (const file of sourceFiles) {
+    invariant(
+      !/gengrowth-flow-mvp/.test(stripCodeComments(read(file))),
+      `${file} must not reference the sibling gengrowth-flow-mvp repository in code`,
+    );
+  }
+  return `Content Shadow QA purity: ${qaFiles.length} gate source files free of clock/env/IO/Intl, ${sourceFiles.length} source files free of sibling-repo references`;
+}
+
 const checks = [
   ["OpenAPI contract", checkOpenApi],
+  ["content shadow QA purity", checkContentShadowQaPurity],
   ["async route implementations", checkAsyncRouteImplementations],
   ["run polling implementation", checkRunPollingImplementation],
   ["web proxy implementation", checkWebProxyImplementation],
