@@ -482,6 +482,57 @@ re-aimed assertions on a frozen surface, and a re-baselined set of visual
 snapshots. **Nothing in §8 or §9 made this worse, and neither round claims this
 suite green.**
 
+**§13 update — both named causes are fixed and proven; the suite is still red,
+for causes this entry did not know about.**
+
+*Fixed and separately proven.* (1) `createProjectInBrowser` now sets
+`sf_ui_locale=en`, the same cookie `growth-map.real.spec.ts` already sets.
+Mutation check: deleting the cookie again fails the very next line
+(`getByRole('heading', { name: 'New project' })`). (2) The
+`[data-overview-hero]` assertion is re-aimed at `[data-overview-page] > header p`
+with `toHaveCount(1)` plus `toContainText(projectName)` — an empty match, the
+failure mode that hid here, is now itself an assertion. Mutation check: asserting
+a project name that is not this project's fails and prints the real hero copy,
+so the line genuinely reads the surface. **The Overview implementation was not
+touched.** With both fixes the suite advances four steps, past everything this
+entry named.
+
+*Newly measured, not previously recorded.* It then fails at
+`runDiagnosisAndConfirmFinding`, which drives `/p/{id}/diagnosis`. That route is
+now `redirect(growthMapCompatibilityRoute(...))`, and the whole
+`app/p/[projectId]/diagnosis/_*.tsx` component tree is **orphaned** — nothing
+imports it. Three further things in this suite therefore have no successor
+surface:
+
+- the Diagnosis hero, the `Run diagnosis` button, the
+  `getByRole("article", { name: "HTTP status errors" })` finding, and its
+  `Last run / Completed` and `Unreviewed` states;
+- the evidence-drawer keyboard contract — Enter opens
+  `role="dialog"` *Trace the finding back to its source*, Escape closes it, focus
+  returns to the exact trigger, `aria-expanded` flips. **Growth Map has no modal
+  disclosure at all**; it uses native `<details>`/`<summary>`, which has neither
+  Escape handling nor focus management. Re-aiming this assertion at Growth Map
+  would be **strictly weaker**, so it was not re-aimed. This is the one place
+  where "keep the strength" and "re-aim at the current surface" cannot both hold,
+  and it is reported rather than quietly relaxed;
+- `assertCanonicalVisualRegression` waits on
+  `getByRole("region", { name: "Signal rail" })` for the Overview screen. That
+  region belonged to the pre-Slice-1 `overview.*` message namespace; the customer
+  Overview uses `overview.customer.*` and renders no such region.
+
+*Also stale and not addressed.* All 24 baselines under
+`real-vertical-chains.spec.ts-snapshots/` are dated 2026-07-22, before the Slice 1
+Overview rewrite. They need re-baselining on **two** platforms; only `darwin`
+can be produced on this machine, so re-baselining here would leave CI's `linux`
+set stale and would be a green local run over a still-red CI gate — the exact
+pattern §12 (D9) was opened to stop. **No snapshot was regenerated.**
+
+**Conclusion: D8 stays open.** Its two named causes are closed; what remains is a
+different, larger job — re-authoring a browser-driven audit-and-confirm walk
+against Growth Map, deciding what to do with an a11y contract whose surface was
+deleted, and a two-platform snapshot re-baseline. **This round does not claim
+`real-vertical-chains` green.**
+
 **D9. `pnpm restore:drill` was red on every run, and a green unit gate hid it.
 Resolved in §12.** It is a CI gate (`.github/workflows/ci.yml`, the `database`
 job's "Run PostgreSQL backup and restore recovery drill" step) that §2.5 does

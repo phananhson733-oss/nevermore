@@ -144,6 +144,16 @@ async function createProjectInBrowser(
   page: Page,
   definition: VerticalDefinition,
 ): Promise<string> {
+  // Every assertion in this suite reads English chrome, but the app's
+  // `DEFAULT_LOCALE` is `zh-CN` (`packages/i18n/src/config.ts`). `3c2ecc6`
+  // flipped that default and edited this spec without giving it a cookie, so
+  // the suite has been asserting English against a Chinese UI ever since and
+  // died on the very next line. No assertion is relaxed here: the same English
+  // strings are simply now read in the locale they were written for. This is
+  // the cookie the sibling real spec already sets (`growth-map.real.spec.ts`).
+  await page
+    .context()
+    .addCookies([{ name: "sf_ui_locale", value: "en", url: BASE_URL }]);
   await page.goto("/new-project");
   await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
   await page.getByLabel("Client name").fill(definition.clientName);
@@ -169,11 +179,20 @@ async function createProjectInBrowser(
     /^\/p\/([0-9a-f-]+)\/overview$/,
   );
   if (!match?.[1]) throw new Error("created project id was missing from URL");
-  await expect(
-    page
-      .locator("[data-overview-hero]")
-      .getByText(definition.projectName, { exact: true }),
-  ).toBeVisible();
+  // Re-aimed, not loosened. Slice 1 replaced the Overview surface this line was
+  // written against: `data-overview-hero` no longer exists anywhere in the app,
+  // so the old locator resolved to zero elements and the assertion could only
+  // ever fail. What it guaranteed — the Overview this redirect landed on is
+  // THIS project's, not a stale or sibling project's — is re-pinned to the
+  // element that now carries the name, the customer Overview hero's subtitle.
+  // The Overview implementation is frozen this round, so the spec moves to the
+  // surface and never the other way round. `toHaveCount(1)` is what keeps the
+  // strength: an empty match is the exact failure mode that hid here before, and
+  // a second match would mean the name is no longer being read off the hero.
+  const overviewHeroCopy = page.locator("[data-overview-page] > header p");
+  await expect(overviewHeroCopy).toHaveCount(1);
+  await expect(overviewHeroCopy).toBeVisible();
+  await expect(overviewHeroCopy).toContainText(definition.projectName);
   await expect(
     page.getByRole("combobox", { name: "Switch project" }),
   ).toHaveValue(match[1]);
