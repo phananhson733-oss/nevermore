@@ -18,6 +18,7 @@ import {
   isArtifactContentEditAllowed,
   isManualArtifactStatusTransitionAllowed,
 } from "./artifact-state";
+import { assertContentShadowAdoptionAllowed } from "./content-shadow-adoption";
 
 /**
  * Manual artifact revision + status change (spec §10.3). Each content PATCH
@@ -25,6 +26,12 @@ import {
  * conflicts return 409 STALE_REVISION; identical content returns the current
  * object without a new revision. Editing sends the artifact back to `draft`;
  * `ready` requires an empty validation-error set (else 422).
+ *
+ * `ready` additionally requires that no automated verdict forbids adoption. A
+ * Content Shadow deliverable is reachable from two surfaces — the review
+ * control and the workspace editor below it — and both perform this same
+ * `draft -> ready` write, so both ask `content-shadow-adoption.ts`. See that
+ * module for why a second copy of the rule would be worse than none.
  */
 
 export async function updateProjectArtifact(
@@ -36,14 +43,8 @@ export async function updateProjectArtifact(
 ): Promise<ArtifactDto> {
   // The API route already parses UpdateArtifactRequest. Keep the resource
   // budget here too so a future internal caller cannot bypass the HTTP schema.
-  if (
-    "contentFormat" in body &&
-    !isArtifactContentWithinBudget(body.content)
-  ) {
-    throw new ProblemError(
-      "VALIDATION_ERROR",
-      "Request failed validation.",
-    );
+  if ("contentFormat" in body && !isArtifactContentWithinBudget(body.content)) {
+    throw new ProblemError("VALIDATION_ERROR", "Request failed validation.");
   }
 
   const projectScope = { workspaceId: scope.workspaceId, projectId };
@@ -197,6 +198,18 @@ export async function updateProjectArtifact(
     }
     if (body.status === "ready" && locked.validation_state !== "valid") {
       throw artifactValidationFailed();
+    }
+    // The second door into `ready`. `POST /content-shadow-runs/{id}/review`
+    // refuses a `blocked` verdict; this endpoint performs the identical write,
+    // so it consults the same judgement rather than a copy of it. Recomputed
+    // under the row lock, like every other predicate here.
+    if (body.status === "ready") {
+      await assertContentShadowAdoptionAllowed(
+        tx,
+        projectScope,
+        locked,
+        "/status",
+      );
     }
 
     const updated = await txRepo.setStatusIfRevision(

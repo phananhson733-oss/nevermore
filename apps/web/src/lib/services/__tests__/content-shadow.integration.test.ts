@@ -61,6 +61,7 @@ import {
   listContentShadowRuns,
 } from "@/lib/services/content-shadow";
 import { reviewContentShadowRevision } from "@/lib/services/content-shadow-review";
+import { updateProjectArtifact } from "@/lib/services/artifact-update";
 
 /**
  * `createContentShadowRun` / `getContentShadowRun` against a real local
@@ -1169,109 +1170,112 @@ async function startShadowRun(
   };
 }
 
-describeDb("QA claim severity is reported, never re-derived by the reader", () => {
-  let handle: DbHandle;
+describeDb(
+  "QA claim severity is reported, never re-derived by the reader",
+  () => {
+    let handle: DbHandle;
 
-  beforeAll(() => {
-    handle = createDbHandle(DATABASE_URL!);
-  });
-  afterAll(async () => {
-    await handle?.end();
-  });
-
-  it("reports the gate package's severity for every claim, one by one", async () => {
-    const fixture = await seedShadowFixture(handle);
-    const run = await startShadowRun(fixture);
-    const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
-      contentText: "# Draft body",
+    beforeAll(() => {
+      handle = createDbHandle(DATABASE_URL!);
     });
-    // Every rule the gate can emit, plus the coverage claim that is not a rule.
-    const claims = [
-      ...QA_RULE_ORDER.map((ruleId) => ({
-        claimId: claimIdForRule(ruleId),
-        kind: qaRuleKind(ruleId),
-        status: "passed" as const,
-        detail: `stored detail for ${ruleId}`,
-      })),
-      {
-        claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
-        kind: "coverage" as const,
-        status: "unevaluated" as const,
-        detail: "stored coverage detail",
-      },
-    ];
-    await new FlowShadowQaGatesRepository(handle.db).insert({
-      workspaceId: fixture.scope.workspaceId,
-      projectId: fixture.scope.projectId,
-      flowShadowRunId: run.flowShadowRunId,
-      evaluatedArtifactId: draft.artifactId,
-      evaluatedRevision: draft.revision,
-      analysisInvocationId: null,
-      verdict: "needs_review",
-      claims,
+    afterAll(async () => {
+      await handle?.end();
     });
 
-    const projection = await getContentShadowRun(
-      { workspaceId: fixture.scope.workspaceId },
-      fixture.scope.projectId,
-      run.flowShadowRunId,
-    );
+    it("reports the gate package's severity for every claim, one by one", async () => {
+      const fixture = await seedShadowFixture(handle);
+      const run = await startShadowRun(fixture);
+      const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+        contentText: "# Draft body",
+      });
+      // Every rule the gate can emit, plus the coverage claim that is not a rule.
+      const claims = [
+        ...QA_RULE_ORDER.map((ruleId) => ({
+          claimId: claimIdForRule(ruleId),
+          kind: qaRuleKind(ruleId),
+          status: "passed" as const,
+          detail: `stored detail for ${ruleId}`,
+        })),
+        {
+          claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
+          kind: "coverage" as const,
+          status: "unevaluated" as const,
+          detail: "stored coverage detail",
+        },
+      ];
+      await new FlowShadowQaGatesRepository(handle.db).insert({
+        workspaceId: fixture.scope.workspaceId,
+        projectId: fixture.scope.projectId,
+        flowShadowRunId: run.flowShadowRunId,
+        evaluatedArtifactId: draft.artifactId,
+        evaluatedRevision: draft.revision,
+        analysisInvocationId: null,
+        verdict: "needs_review",
+        claims,
+      });
 
-    const wire = new Map(
-      (projection.qa?.claims ?? []).map((claim) => [
-        claim.claimId,
-        claim.severity,
-      ]),
-    );
-    expect(wire.size).toBe(QA_RULE_ORDER.length + 1);
-    for (const ruleId of QA_RULE_ORDER) {
-      // Rule by rule, against the gate's own table: a copy of this mapping
-      // anywhere downstream drifts, and it drifts towards showing a blocking
-      // check as a style note.
-      expect(wire.get(claimIdForRule(ruleId))).toBe(QA_RULE_SEVERITY[ruleId]);
-    }
-    expect(wire.get(QA_BRIEF_OUTLINE_CLAIM_ID)).toBe("review");
-    expect(
-      [...wire.entries()]
-        .filter(([, severity]) => severity === "blocking")
-        .map(([claimId]) => claimId)
-        .sort(),
-    ).toEqual(
-      [
-        "content-shadow.qa.rl8_unsupported_claim",
-        "content-shadow.qa.rl12_citation_integrity",
-        "content-shadow.qa.sc9b_sources_resolve_to_pack",
-      ].sort(),
-    );
-  });
-
-  it("fails the read rather than reporting no findings when a gate row is unreadable", async () => {
-    const fixture = await seedShadowFixture(handle);
-    const run = await startShadowRun(fixture);
-    const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
-      contentText: "# Draft body",
-    });
-    await new FlowShadowQaGatesRepository(handle.db).insert({
-      workspaceId: fixture.scope.workspaceId,
-      projectId: fixture.scope.projectId,
-      flowShadowRunId: run.flowShadowRunId,
-      evaluatedArtifactId: draft.artifactId,
-      evaluatedRevision: draft.revision,
-      analysisInvocationId: null,
-      verdict: "needs_review",
-      claims: [{ nonsense: true }],
-    });
-
-    // "We could not read the findings" must never render as "there are none".
-    await expect(
-      getContentShadowRun(
+      const projection = await getContentShadowRun(
         { workspaceId: fixture.scope.workspaceId },
         fixture.scope.projectId,
         run.flowShadowRunId,
-      ),
-    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
-  });
-});
+      );
+
+      const wire = new Map(
+        (projection.qa?.claims ?? []).map((claim) => [
+          claim.claimId,
+          claim.severity,
+        ]),
+      );
+      expect(wire.size).toBe(QA_RULE_ORDER.length + 1);
+      for (const ruleId of QA_RULE_ORDER) {
+        // Rule by rule, against the gate's own table: a copy of this mapping
+        // anywhere downstream drifts, and it drifts towards showing a blocking
+        // check as a style note.
+        expect(wire.get(claimIdForRule(ruleId))).toBe(QA_RULE_SEVERITY[ruleId]);
+      }
+      expect(wire.get(QA_BRIEF_OUTLINE_CLAIM_ID)).toBe("review");
+      expect(
+        [...wire.entries()]
+          .filter(([, severity]) => severity === "blocking")
+          .map(([claimId]) => claimId)
+          .sort(),
+      ).toEqual(
+        [
+          "content-shadow.qa.rl8_unsupported_claim",
+          "content-shadow.qa.rl12_citation_integrity",
+          "content-shadow.qa.sc9b_sources_resolve_to_pack",
+        ].sort(),
+      );
+    });
+
+    it("fails the read rather than reporting no findings when a gate row is unreadable", async () => {
+      const fixture = await seedShadowFixture(handle);
+      const run = await startShadowRun(fixture);
+      const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+        contentText: "# Draft body",
+      });
+      await new FlowShadowQaGatesRepository(handle.db).insert({
+        workspaceId: fixture.scope.workspaceId,
+        projectId: fixture.scope.projectId,
+        flowShadowRunId: run.flowShadowRunId,
+        evaluatedArtifactId: draft.artifactId,
+        evaluatedRevision: draft.revision,
+        analysisInvocationId: null,
+        verdict: "needs_review",
+        claims: [{ nonsense: true }],
+      });
+
+      // "We could not read the findings" must never render as "there are none".
+      await expect(
+        getContentShadowRun(
+          { workspaceId: fixture.scope.workspaceId },
+          fixture.scope.projectId,
+          run.flowShadowRunId,
+        ),
+      ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    });
+  },
+);
 
 describeDb("listContentShadowRuns", () => {
   let handle: DbHandle;
@@ -1510,6 +1514,83 @@ describeDb("reviewContentShadowRevision", () => {
       seeded.artifactId,
     );
     expect(artifact?.status).toBe("draft");
+  });
+
+  /**
+   * The same refusal, through the OTHER door into `ready`.
+   *
+   * `blocked` is worth exactly as much as the weakest write that can reach
+   * `ready`, and there are two: this endpoint, and the generic artifact status
+   * PATCH the workspace editor uses — an editor Execution renders on the same
+   * screen, directly below the quality rail that is saying the citations cannot
+   * be verified. A guard on one of them is not a guard.
+   *
+   * The assertion is deliberately a COMPARISON of the two refusals rather than
+   * two independent expectations: the failure this is written against is the
+   * two paths drifting apart, which two separate assertions would not see.
+   */
+  it("refuses a blocked draft identically through the generic artifact status PATCH", async () => {
+    const seeded = await seedReviewableRun(handle, "blocked");
+    const scope = { workspaceId: seeded.fixture.scope.workspaceId };
+
+    const viaReview = await reviewContentShadowRevision(
+      scope,
+      seeded.fixture.scope.projectId,
+      seeded.flowShadowRunId,
+      { baseRevision: seeded.revision, acknowledgeFindings: true },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    const viaPatch = await updateProjectArtifact(
+      scope,
+      seeded.fixture.scope.projectId,
+      seeded.artifactId,
+      seeded.fixture.actorId,
+      { baseRevision: seeded.revision, status: "ready" },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(viaReview).toBeInstanceOf(ProblemError);
+    expect(viaPatch).toBeInstanceOf(ProblemError);
+    const review = viaReview as ProblemError;
+    const patch = viaPatch as ProblemError;
+    expect(patch.code).toBe(review.code);
+    expect(patch.status).toBe(review.status);
+    expect(patch.message).toBe(review.message);
+    expect(patch.fieldErrors?.[0]?.code).toBe("verdict_blocked");
+    expect(review.fieldErrors?.[0]?.code).toBe("verdict_blocked");
+
+    // And neither attempt moved the deliverable.
+    const artifact = await new ExecutionArtifactsRepository(handle.db).findById(
+      seeded.fixture.scope,
+      seeded.artifactId,
+    );
+    expect(artifact?.status).toBe("draft");
+    expect(artifact?.current_revision).toBe(seeded.revision);
+  });
+
+  /**
+   * The guard reads the verdict, not the artifact type.
+   *
+   * A blanket refusal on `english_blog_draft` would pass the test above while
+   * breaking every draft the gate did NOT block — which is the shape of fix
+   * that looks safe in a diff and removes a working path in production.
+   */
+  it("still lets the status PATCH mark a draft the gate did not block", async () => {
+    const seeded = await seedReviewableRun(handle, "needs_review");
+
+    const updated = await updateProjectArtifact(
+      { workspaceId: seeded.fixture.scope.workspaceId },
+      seeded.fixture.scope.projectId,
+      seeded.artifactId,
+      seeded.fixture.actorId,
+      { baseRevision: seeded.revision, status: "ready" },
+    );
+
+    expect(updated.status).toBe("ready");
   });
 
   it("refuses a needs_review verdict without an explicit acknowledgement", async () => {

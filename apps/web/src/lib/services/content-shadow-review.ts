@@ -14,6 +14,10 @@ import {
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { isManualArtifactStatusTransitionAllowed } from "./artifact-state";
+import {
+  contentShadowAdoptionBlocked,
+  verdictForbidsAdoption,
+} from "./content-shadow-adoption";
 
 /**
  * `POST /projects/{projectId}/content-shadow-runs/{flowShadowRunId}/review` —
@@ -32,6 +36,11 @@ import { isManualArtifactStatusTransitionAllowed } from "./artifact-state";
  *    disabled control is recomputed here under the row lock. A reader that got
  *    its arithmetic wrong, or a caller that never rendered anything, still
  *    cannot turn a blocked draft into a reviewed one.
+ *
+ * It is also not the ONLY endpoint that writes `draft -> ready` on this
+ * deliverable: the generic artifact status PATCH does the same thing, so the
+ * `blocked` refusal below is imported from `content-shadow-adoption.ts` and
+ * that module is what both doors consult.
  *
  * The way back from `ready` is not a decision this command can take, and that
  * is not an omission: the frozen manual edges are `generating -> draft -> ready`
@@ -146,12 +155,11 @@ export async function reviewContentShadowRevision(
       },
     );
   }
-  if (gate.verdict === "blocked") {
-    throw rejected(
-      "/baseRevision",
-      "verdict_blocked",
-      "This draft cites sources the frozen research records cannot verify, so it cannot pass review. Revise it and check it again.",
-    );
+  // The same predicate and the same refusal the generic artifact status PATCH
+  // raises. Both endpoints write `draft -> ready`; a second literal comparison
+  // here is how the two doors drift apart.
+  if (verdictForbidsAdoption(gate.verdict)) {
+    throw contentShadowAdoptionBlocked("/baseRevision");
   }
   if (gate.verdict === "needs_review" && !body.acknowledgeFindings) {
     throw rejected(

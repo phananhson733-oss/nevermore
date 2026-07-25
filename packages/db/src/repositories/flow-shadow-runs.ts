@@ -440,4 +440,32 @@ export class FlowShadowQaGatesRepository extends Repository {
         desc(flowShadowQaGates.id),
       )) as FlowShadowQaGateRow[];
   }
+
+  /**
+   * The most recent judgement recorded against one deliverable, across every
+   * run that has evaluated it.
+   *
+   * Keyed on the artifact rather than the run because the question it answers
+   * is asked from the artifact's own side: "may this deliverable be adopted?".
+   * A caller holding only an artifact id has no run to look up, and asking it
+   * per-run would let a second door into `ready` open on a deliverable whose
+   * last verdict was `blocked`.
+   */
+  async findLatestByArtifact(
+    scope: ProjectScope,
+    evaluatedArtifactId: string,
+  ): Promise<FlowShadowQaGateRow | null> {
+    const rows = await this.exec
+      .select()
+      .from(flowShadowQaGates)
+      .where(
+        and(
+          projectPredicate(flowShadowQaGates, scope),
+          eq(flowShadowQaGates.evaluated_artifact_id, evaluatedArtifactId),
+        ),
+      )
+      .orderBy(desc(flowShadowQaGates.created_at), desc(flowShadowQaGates.id))
+      .limit(1);
+    return (rows[0] as FlowShadowQaGateRow | undefined) ?? null;
+  }
 }
