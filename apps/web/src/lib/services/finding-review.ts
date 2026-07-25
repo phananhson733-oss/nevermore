@@ -14,6 +14,7 @@ import {
   ACTION_TEMPLATES,
   derivePriority,
   resolveActionCopy,
+  type ActionTemplate,
 } from "@sf/engine";
 import type { ReviewFindingRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
@@ -39,8 +40,27 @@ export interface ReviewResult {
   readonly action: ActionDto | null;
 }
 
-function ruleId(finding: FindingRow): keyof typeof ACTION_TEMPLATES {
-  return finding.rule_id as keyof typeof ACTION_TEMPLATES;
+/**
+ * Resolve the ONE ActionTemplate a rule mints (spec §9.2).
+ *
+ * `findings.rule_id` is a regex CHECK in the database, not an enum, so a
+ * historical row or a renamed rule can name a template that no longer exists.
+ * That is a server-side registry gap — the caller's findingId is perfectly
+ * valid — so it answers 503 with the offending rule id rather than 4xx, and
+ * never falls back to a stand-in template: a fallback would silently mint an
+ * Action bound to the wrong artifact type.
+ */
+function resolveActionTemplate(finding: FindingRow): ActionTemplate {
+  const template: ActionTemplate | undefined =
+    ACTION_TEMPLATES[finding.rule_id as keyof typeof ACTION_TEMPLATES];
+  if (!template) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "No Action template is registered for this finding's rule.",
+      { current: { ruleId: finding.rule_id } },
+    );
+  }
+  return template;
 }
 
 export async function reviewProjectFinding(
@@ -168,7 +188,7 @@ async function confirmFinding(
   note: string | null,
 ): Promise<ReviewResult> {
   const { db } = getDb();
-  const template = ACTION_TEMPLATES[ruleId(finding)];
+  const template = resolveActionTemplate(finding);
   const actionKey = contentHash({
     projectId: projectScope.projectId,
     findingKey: finding.finding_key,
@@ -231,6 +251,15 @@ async function confirmFinding(
       actorId,
     });
 
+    // The Finding was read BEFORE this transaction, so a diagnostic run that
+    // completed in between may already have advanced `last_seen_run_id`. The
+    // review UPDATE above locked this row, so re-reading it here is the first
+    // moment the value is stable through commit.
+    const currentFinding = await new FindingsRepository(tx).findById(
+      projectScope,
+      finding.id,
+    );
+
     const actionsRepo = new ActionsRepository(tx);
     const existing = await actionsRepo.findByKey(projectScope, actionKey);
     if (existing) {
@@ -240,6 +269,22 @@ async function confirmFinding(
       ];
       await actionsRepo.mergeEvidenceRefs(existing.id, merged);
       return existing;
+    }
+    // Only the INSERT freezes lineage, and `enforce_action_source_lineage`
+    // requires `finding.last_seen_run_id = source_diagnostic_run_id` at that
+    // moment. Without this comparison a drift raised 23514 with no problem+json
+    // at all; a 409 tells the operator to refetch the (now newer) Finding and
+    // confirm the diagnosis they actually reviewed. The re-confirm path above
+    // is deliberately untouched: it writes no lineage, and Slice 1's contract
+    // is that re-confirm never rebinds an Action's source DiagnosticRun.
+    if (
+      !currentFinding ||
+      currentFinding.last_seen_run_id !== finding.last_seen_run_id
+    ) {
+      throw new ProblemError(
+        "VERSION_CONFLICT",
+        "A newer diagnosis observed this finding while it was being confirmed; refetch and retry.",
+      );
     }
     const created = await actionsRepo.insert({
       workspaceId: scope.workspaceId,

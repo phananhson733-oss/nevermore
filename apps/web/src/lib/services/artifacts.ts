@@ -46,6 +46,71 @@ const ARTIFACT_TYPE_BY_TEMPLATE: Record<string, string> = Object.fromEntries(
   Object.values(ACTION_TEMPLATES).map((t) => [t.templateId, t.artifactType]),
 );
 
+/**
+ * Artifact types no operator command may mint (Slice 2 red line B).
+ *
+ * `english_blog_draft` exists only as the output of a shadow-mode Content
+ * Shadow run bound to an already frozen `content_brief` revision; it has no
+ * ActionTemplate and no deterministic template dispatch. Allowing this route to
+ * cast one would create a second, unaudited path to the same artifact type.
+ */
+const OPERATOR_FORBIDDEN_ARTIFACT_TYPES: ReadonlySet<string> = new Set([
+  "english_blog_draft",
+]);
+
+function assertOperatorMintable(artifactType: string): void {
+  if (!OPERATOR_FORBIDDEN_ARTIFACT_TYPES.has(artifactType)) return;
+  throw new ProblemError(
+    "VALIDATION_ERROR",
+    `A ${artifactType} is produced by the Content Shadow capability, not by an artifact command.`,
+    {
+      errors: [
+        {
+          pointer: "/artifactType",
+          code: "type_not_operator_mintable",
+          message: `${artifactType} cannot be requested for an Action.`,
+        },
+      ],
+    },
+  );
+}
+
+/**
+ * An Action may only carry the artifact type its template fixes.
+ *
+ * `actions.template_id` is unconstrained text, so an unknown template used to
+ * make this check vanish entirely — the guard read `if (expectedType && ...)`,
+ * and an unresolvable template made `expectedType` falsy, admitting ANY wire
+ * artifact type for that Action. An Action whose provenance cannot be resolved
+ * is now refused instead of trusted.
+ */
+function assertArtifactTypeMatchesTemplate(
+  action: { readonly template_id: string },
+  artifactType: string,
+): void {
+  const expectedType = ARTIFACT_TYPE_BY_TEMPLATE[action.template_id];
+  if (!expectedType) {
+    throw new ProblemError(
+      "ACTION_NOT_EXECUTABLE",
+      "This action's template is not in the Action template registry, so the artifact it produces cannot be determined.",
+    );
+  }
+  if (artifactType === expectedType) return;
+  throw new ProblemError(
+    "VALIDATION_ERROR",
+    `This action produces a ${expectedType}, not a ${artifactType}.`,
+    {
+      errors: [
+        {
+          pointer: "/artifactType",
+          code: "type_mismatch",
+          message: `Expected ${expectedType}.`,
+        },
+      ],
+    },
+  );
+}
+
 export interface ArtifactAcceptedResult {
   readonly status: 202;
   readonly run: AsyncRunDto;
@@ -163,6 +228,10 @@ export async function createActionArtifact(
     });
   }
 
+  // Body-only refusal: decided before any read, so a forbidden type can never
+  // reach a lookup, a lock, or a queue.
+  assertOperatorMintable(body.artifactType);
+
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
   if (project.archived_at)
@@ -179,22 +248,7 @@ export async function createActionArtifact(
       "A dismissed action cannot produce an artifact.",
     );
   }
-  const expectedType = ARTIFACT_TYPE_BY_TEMPLATE[action.template_id];
-  if (expectedType && body.artifactType !== expectedType) {
-    throw new ProblemError(
-      "VALIDATION_ERROR",
-      `This action produces a ${expectedType}, not a ${body.artifactType}.`,
-      {
-        errors: [
-          {
-            pointer: "/artifactType",
-            code: "type_mismatch",
-            message: `Expected ${expectedType}.`,
-          },
-        ],
-      },
-    );
-  }
+  assertArtifactTypeMatchesTemplate(action, body.artifactType);
 
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
 
@@ -278,23 +332,7 @@ export async function createActionArtifact(
           "A dismissed action cannot produce an artifact.",
         );
       }
-      const currentExpectedType =
-        ARTIFACT_TYPE_BY_TEMPLATE[currentAction.template_id];
-      if (currentExpectedType && body.artifactType !== currentExpectedType) {
-        throw new ProblemError(
-          "VALIDATION_ERROR",
-          `This action produces a ${currentExpectedType}, not a ${body.artifactType}.`,
-          {
-            errors: [
-              {
-                pointer: "/artifactType",
-                code: "type_mismatch",
-                message: `Expected ${currentExpectedType}.`,
-              },
-            ],
-          },
-        );
-      }
+      assertArtifactTypeMatchesTemplate(currentAction, body.artifactType);
 
       // An Artifact belongs to the exact diagnosis that produced its source
       // Finding. The project's confirmed pointer may advance independently,

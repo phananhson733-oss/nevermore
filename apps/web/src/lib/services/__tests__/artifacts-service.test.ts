@@ -655,8 +655,12 @@ describe("createActionArtifact", () => {
     });
   });
 
-  it("allows a legacy action template without a reverse-map entry", async () => {
-    vi.mocked(ActionsRepository.prototype.findById).mockResolvedValueOnce({
+  it("fails closed on an action template with no reverse-map entry", async () => {
+    // `actions.template_id` is unconstrained text, so an unknown template used
+    // to make the whole type check evaporate (`if (expectedType && ...)`) and
+    // let ANY wire artifact type be minted for that Action. Unknown provenance
+    // is now a refusal, not a bypass.
+    vi.mocked(ActionsRepository.prototype.findById).mockResolvedValue({
       ...action,
       template_id: "legacy.template",
     });
@@ -669,7 +673,56 @@ describe("createActionArtifact", () => {
         idempotencyKey,
         body,
       ),
-    ).resolves.toMatchObject({ status: 202 });
+    ).rejects.toMatchObject({ code: "ACTION_NOT_EXECUTABLE", status: 422 });
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+    expect(ExecutionArtifactsRepository.prototype.insert).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the template becomes unknown only at the locked tx re-read", async () => {
+    vi.mocked(ActionsRepository.prototype.findByIdForUpdate).mockResolvedValueOnce({
+      ...action,
+      template_id: "legacy.template",
+    });
+    await expect(
+      createActionArtifact(
+        scope,
+        projectId,
+        actionId,
+        actorId,
+        idempotencyKey,
+        body,
+      ),
+    ).rejects.toMatchObject({ code: "ACTION_NOT_EXECUTABLE", status: 422 });
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+  });
+
+  it("refuses to mint english_blog_draft through the operator route", async () => {
+    // english_blog_draft is minted only by the Content Shadow worker, inside a
+    // shadow-mode run bound to a frozen brief. No ActionTemplate declares it,
+    // so an operator asking for one is asking to bypass that pipeline.
+    await expect(
+      createActionArtifact(
+        scope,
+        projectId,
+        actionId,
+        actorId,
+        idempotencyKey,
+        { ...body, artifactType: "english_blog_draft" },
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+      fieldErrors: [
+        expect.objectContaining({
+          pointer: "/artifactType",
+          code: "type_not_operator_mintable",
+        }),
+      ],
+    });
+    // Refused before any read or write: nothing is looked up, nothing is queued.
+    expect(ProjectsRepository.prototype.findById).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+    expect(ExecutionArtifactsRepository.prototype.insert).not.toHaveBeenCalled();
   });
 
   it("returns the winner's replay when an active run closes the read race", async () => {

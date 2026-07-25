@@ -75,6 +75,29 @@ const CONTENT_BRIEF_RULE_IDS: ReadonlySet<string> = new Set([
   "CRO-LANDING-003",
 ]);
 
+/**
+ * Brief statuses a shadow run may freeze. `archived` and `failed` are operator
+ * or generator outcomes that say "this is not the brief anymore"; `generating`
+ * means a rewrite is in flight and the revision under it is about to be
+ * superseded. The `flow_shadow_runs` provenance trigger deliberately does NOT
+ * look at `status` or `validation_state` — those are human state-machine
+ * concepts, not lineage — so this is the only layer that can refuse them.
+ */
+const FREEZABLE_BRIEF_STATUSES: ReadonlySet<string> = new Set([
+  "draft",
+  "ready",
+]);
+
+/** Verbatim from `createActionArtifact`: one drift, one sentence, everywhere. */
+const FINDING_DRIFT_DETAIL =
+  "Finding changed after this Action was created; review the current opportunity before generating an artifact.";
+
+function briefRejected(code: string, detail: string): ProblemError {
+  return new ProblemError("VALIDATION_ERROR", detail, {
+    errors: [{ pointer: "/actionId", code, message: detail }],
+  });
+}
+
 function contentShadowActiveKey(actionId: string): string {
   return `content_shadow:${actionId}`;
 }
@@ -142,16 +165,13 @@ export async function loadContentShadowInputs(
     );
   }
   if (!CONTENT_BRIEF_RULE_IDS.has(finding.rule_id)) {
-    throw new ProblemError(
-      "VALIDATION_ERROR",
-      "Only a content-brief Finding can start a Content Shadow run.",
+    throw briefRejected(
+      "rule_not_content",
+      `Rule ${finding.rule_id} does not produce a content brief, so it cannot start a Content Shadow run.`,
     );
   }
   if (finding.last_seen_run_id !== action.source_diagnostic_run_id) {
-    throw new ProblemError(
-      "VERSION_CONFLICT",
-      "The source Finding moved beyond the Action's frozen diagnosis.",
-    );
+    throw new ProblemError("VERSION_CONFLICT", FINDING_DRIFT_DETAIL);
   }
 
   // Exactly one canonical Action per confirmed Finding: a second live Action
@@ -160,10 +180,29 @@ export async function loadContentShadowInputs(
     projectScope,
     finding.id,
   );
-  if (actionCount !== 1) {
+  if (actionCount === 0) {
+    // Defence in depth: unreachable from here, because the admission path above
+    // already holds a non-dismissed Action whose `source_finding_id` is this
+    // Finding. The state itself IS reachable — dismissing the only Action of a
+    // confirmed Finding leaves "confirmed with nothing to execute" — and it is
+    // the operator's to fix (restore the Action), so it stays a 422 and matches
+    // the code the dismissed-Action branch already answers.
+    throw new ProblemError(
+      "ACTION_NOT_EXECUTABLE",
+      "The confirmed Finding has no live Action to execute; restore the dismissed Action first.",
+    );
+  }
+  if (actionCount > 1) {
+    // NOT a 5xx, and deliberately so. `UNIQUE (source_finding_id, template_id)`
+    // only makes "one Finding + one template" unique; when a rule set version
+    // maps the same rule_id to a NEW template_id, that Finding can legitimately
+    // acquire a second Action under the new template. So this is a reachable
+    // product state, not data corruption, and 503's "retry later" would be a
+    // lie — retrying never converges. It needs a human to pick which Action is
+    // canonical, which is exactly what 409 means here.
     throw new ProblemError(
       "FINDING_ACTION_ACTIVE",
-      "A confirmed Finding must own exactly one canonical Action.",
+      `The confirmed Finding owns ${actionCount} live Actions; dismiss all but the canonical one before running a Content Shadow.`,
     );
   }
 
@@ -177,6 +216,24 @@ export async function loadContentShadowInputs(
     throw new ProblemError(
       "CONTEXT_INCOMPLETE",
       "A confirmed content brief is required to start a Content Shadow run.",
+    );
+  }
+  if (!FREEZABLE_BRIEF_STATUSES.has(brief.status)) {
+    throw briefRejected(
+      "brief_not_live",
+      `The content brief is ${brief.status}; only a draft or ready brief can be frozen into a Content Shadow run.`,
+    );
+  }
+  if (brief.validation_state === "invalid") {
+    throw briefRejected(
+      "brief_invalid",
+      "The content brief failed its last validation; fix it before freezing it into a Content Shadow run.",
+    );
+  }
+  if (brief.current_revision < 1) {
+    throw briefRejected(
+      "brief_missing_revision",
+      "The content brief has no generated revision to freeze.",
     );
   }
   const requestedRevision = body.contentBriefRevision ?? brief.current_revision;
