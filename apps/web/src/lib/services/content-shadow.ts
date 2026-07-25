@@ -32,6 +32,7 @@ import {
 } from "@sf/artifacts";
 import {
   buildContentShadowInputManifest,
+  qaSeverityForClaimId,
   CONTENT_SHADOW_ADAPTER_VERSION,
   ContentShadowObservationSeparationError,
   type ContentShadowFirstPartyIdentity,
@@ -41,14 +42,17 @@ import { parseIcp } from "@sf/engine";
 import {
   CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
   ContentShadowAuthoritySource,
+  ContentShadowQaClaim,
   CONTRACT_VERSION,
   type ContentShadowRunResponse,
+  type ContentShadowRunSummary,
   type CreateContentShadowRunRequest,
 } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
 import { isPostgresUniqueViolation } from "./db-errors";
+import { assertValidTimestampUuidListCursor } from "./list-cursor";
 import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
 
 /**
@@ -859,6 +863,43 @@ function projectPackSources(
   return parsed.success ? parsed.data : [];
 }
 
+type ContentShadowQaClaimsDto = NonNullable<
+  ContentShadowRunResponse["qa"]
+>["claims"];
+
+/** The claim shape the gate row actually stores — severity is not persisted. */
+const StoredContentShadowQaClaim = ContentShadowQaClaim.omit({
+  severity: true,
+});
+
+/**
+ * Widen the stored claims with the severity the gate package owns.
+ *
+ * The severity is looked up from `@sf/flow-shadow`'s own table rather than
+ * restated here: a second literal list of "which checks block" living in this
+ * mapper would drift from the rules it describes, and the direction that drift
+ * takes is the expensive one — a claim shown as advisory while the gate treats
+ * it as blocking reads to a reviewer as safe to accept.
+ *
+ * An unreadable claim array fails the read instead of degrading to an empty
+ * list. A gate row exists precisely because a judgement was made; answering
+ * "no findings" when the findings cannot be parsed would be the "we did not
+ * look" -> "we found nothing" substitution the gate itself exists to prevent.
+ */
+function projectQaClaims(stored: unknown): ContentShadowQaClaimsDto {
+  const parsed = StoredContentShadowQaClaim.array().safeParse(stored);
+  if (!parsed.success) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The stored Content Shadow quality findings are unreadable.",
+    );
+  }
+  return parsed.data.map((claim) => ({
+    ...claim,
+    severity: qaSeverityForClaimId(claim.claimId),
+  }));
+}
+
 type ContentShadowDraftDto = NonNullable<ContentShadowRunResponse["draft"]>;
 
 /**
@@ -944,6 +985,77 @@ function deriveContentShadowPhase(
   if (hasDraftRevision) return "draft";
   if (hasResearch) return "research";
   return "queued";
+}
+
+/**
+ * `GET /projects/{projectId}/content-shadow-runs` — the run index.
+ *
+ * The index answers exactly one question: which Content Shadow runs does this
+ * project have? Before it existed a run id was handed out once, in the 202 that
+ * created the run, so a page reload left the research pack, the QA verdict and
+ * every honesty disclosure unreachable — what a customer could read depended on
+ * whether they had refreshed.
+ *
+ * Each row is assembled from the run's own immutable record alone: no child row
+ * is read, no async run is joined, and no phase is derived. That is a contract
+ * property, not an optimisation — a list that reported state would have to
+ * guess at it per page, and the detail projection already reads the append-only
+ * rows that own it.
+ */
+export async function listContentShadowRuns(
+  scope: WorkspaceScope,
+  projectId: string,
+  opts: { limit: number; cursor: string | null },
+): Promise<{
+  data: ContentShadowRunSummary[];
+  nextCursor: string | null;
+  limit: number;
+}> {
+  assertValidTimestampUuidListCursor(opts.cursor);
+  const projectScope: ProjectScope = {
+    workspaceId: scope.workspaceId,
+    projectId,
+  };
+  const { db } = getDb();
+
+  // A project in another workspace is reported absent, never forbidden.
+  const project = await new ProjectsRepository(db).findById(scope, projectId);
+  if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
+
+  const page = await new FlowShadowRunsRepository(db).listByProject(
+    projectScope,
+    opts,
+  );
+  return {
+    data: page.rows.map((row) => toContentShadowRunSummary(row)),
+    nextCursor: page.nextCursor,
+    limit: opts.limit,
+  };
+}
+
+function toContentShadowRunSummary(
+  row: FlowShadowRunRow,
+): ContentShadowRunSummary {
+  return {
+    flowShadowRunId: row.id,
+    projectId: row.project_id,
+    siteId: row.site_id,
+    asyncRunId: row.capability_run_id,
+    contentHash: row.content_hash,
+    projectionVersion: row.projection_version,
+    flowAdapterVersion: row.flow_adapter_version,
+    outputLocale: requiredManifestString(
+      row.frozen_input_manifest,
+      "outputLocale",
+    ),
+    createdAt: row.created_at,
+    source: {
+      findingId: row.source_finding_id,
+      actionId: row.source_action_id,
+      contentBriefArtifactId: row.content_brief_artifact_id,
+      contentBriefRevision: row.content_brief_revision,
+    },
+  };
 }
 
 /** `GET /projects/{projectId}/content-shadow-runs/{flowShadowRunId}`. */
@@ -1057,9 +1169,7 @@ export async function getContentShadowRun(
           verdict: gate.verdict,
           evaluatedArtifactId: gate.evaluated_artifact_id,
           evaluatedRevision: gate.evaluated_revision,
-          claims: gate.claims as NonNullable<
-            ContentShadowRunResponse["qa"]
-          >["claims"],
+          claims: projectQaClaims(gate.claims),
           evaluatedAt: gate.created_at,
         }
       : null,

@@ -935,7 +935,8 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `createProjectExport` — 异步生成 bundle。
 - `getProjectExport` — 读取 export metadata/sign URL。
 - `createContentShadowRun` — 冻结已确认 content Finding/Action/content_brief revision + 竞品集 + SearchQuery cluster + 独立 GenerativeQuery 集 + 项目第一方身份（`sites.origin` 与冻结 ICP 的转化目标 URL），排队一次 pinned SEO/GEO Content Shadow run；shadow 模式只做内部写入，绝不写 CMS。第一方身份被冻结而非判定时读取：QA gate 据它区分第一方链接与外部引用，因此 accept→claim 窗口内 origin 变动会改变 content address 并判 input drift。
-- `getContentShadowRun` — 读取单个 Content Shadow run 的只读投影：冻结输入（含第一方身份与 brief 覆盖清单）、research pack、draft revision 与 QA verdict；phase 由 append-only 子行派生。
+- `listContentShadowRuns` — 列出本 Project 的 Content Shadow run 索引（cursor 分页，按 `created_at` 降序）。每行只投影 run 自身不可变记录的列与冻结 manifest 的 output locale，**不读任何子行、不 join async run、不派生 phase**：列表因此不可能报告一个它没有读过的生命周期。run 状态、research pack、draft 与 QA verdict 一律由 `getContentShadowRun` 给出。此索引存在的原因是 run id 原本只在创建它的 202 里出现一次，刷新页面后 research pack、QA verdict 与全部诚实性声明都不可达。
+- `getContentShadowRun` — 读取单个 Content Shadow run 的只读投影：冻结输入（含第一方身份与 brief 覆盖清单）、research pack、draft revision 与 QA verdict；phase 由 append-only 子行派生。QA claim 附带 `severity`（`blocking`/`review`/`advisory`），由 gate 包自身的 severity 表派生，因此读端不必也不得再抄一份「哪些检查会阻断」的清单。
 <!-- API_OPERATIONS_END -->
 
 异步 operation 固定如下：

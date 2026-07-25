@@ -105,10 +105,32 @@ export const ContentShadowQaVerdict = z.enum([
 ]);
 export type ContentShadowQaVerdict = z.infer<typeof ContentShadowQaVerdict>;
 
+/**
+ * What one claim costs, reported so a reader never has to guess it.
+ *
+ * - `blocking` — the draft says something the frozen records cannot support.
+ *   Exactly three checks hold it and the set is closed by product decision.
+ * - `review` — a real quality or SEO defect a person has to look at.
+ * - `advisory` — a style signal that never moves the verdict, not even to
+ *   `needs_review`.
+ *
+ * It is reported rather than left to the reader because the alternative is a
+ * copy of the gate's severity table in every consumer, and such a copy drifts
+ * in the one direction that costs the most: a reader that believes a blocking
+ * check is advisory presents a draft as safe to accept.
+ */
+export const ContentShadowQaSeverity = z.enum([
+  "blocking",
+  "review",
+  "advisory",
+]);
+export type ContentShadowQaSeverity = z.infer<typeof ContentShadowQaSeverity>;
+
 export const ContentShadowQaClaim = z
   .object({
     claimId: z.string().trim().min(1).max(200),
     kind: z.enum(["red_line", "structure", "citability", "coverage"]),
+    severity: ContentShadowQaSeverity,
     /** `unevaluated` is honest missing judgement, never an implicit pass. */
     status: z.enum(["passed", "failed", "unevaluated"]),
     detail: z.string().trim().min(1).max(2000),
@@ -282,3 +304,42 @@ export const ContentShadowRunResponse = z
   })
   .strict();
 export type ContentShadowRunResponse = z.infer<typeof ContentShadowRunResponse>;
+
+/**
+ * One row of the Content Shadow run index.
+ *
+ * The Execution screen can only read a run it can name, and the only place a
+ * run id was ever handed out was the 202 that created it — so a reload lost
+ * the research pack, the QA verdict and every honesty disclosure with it, and
+ * what a customer saw depended on whether they had refreshed the page. This
+ * index is what makes those readable again after a reload and on a second
+ * device.
+ *
+ * It is DELIBERATELY state-free. Everything here is a column of the run's own
+ * immutable row (plus the frozen manifest's locale), so a page of this list can
+ * never report a phase, a verdict or a pack it did not read. Run state, the
+ * research pack, the draft and the QA gate all come from
+ * `getContentShadowRun`, which reads the append-only child rows that own them.
+ */
+export const ContentShadowRunSummary = z
+  .object({
+    flowShadowRunId: Uuid,
+    projectId: Uuid,
+    siteId: Uuid,
+    asyncRunId: Uuid,
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    projectionVersion: z.string().trim().min(1).max(200),
+    flowAdapterVersion: z.string().trim().min(1).max(200),
+    outputLocale: Bcp47Locale,
+    createdAt: IsoDateTime,
+    source: z
+      .object({
+        findingId: Uuid,
+        actionId: Uuid,
+        contentBriefArtifactId: Uuid,
+        contentBriefRevision: z.number().int().min(1),
+      })
+      .strict(),
+  })
+  .strict();
+export type ContentShadowRunSummary = z.infer<typeof ContentShadowRunSummary>;

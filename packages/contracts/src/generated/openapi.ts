@@ -341,7 +341,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List this project's Content Shadow runs as a state-free index
+         * @description Returns the project's Content Shadow runs, newest first, as cursor pages. Each row
+         *     carries only columns of the run's own immutable record plus its frozen output locale,
+         *     so a page can never report a phase, a verdict or a research pack it did not read; run
+         *     state and every child projection come from getContentShadowRun. The index exists
+         *     because a run id was otherwise handed out only once, in the 202 that created it, which
+         *     made the research pack, the QA verdict and the honesty disclosures unreachable after a
+         *     reload. Runs outside the caller's workspace or project are absent, never forbidden.
+         */
+        get: operations["listContentShadowRuns"];
         put?: never;
         /**
          * Queue a pinned SEO/GEO Content Shadow run over a confirmed content brief
@@ -2509,6 +2519,17 @@ export interface components {
             /** @enum {string} */
             kind: "red_line" | "structure" | "citability" | "coverage";
             /**
+             * @description What this claim costs. blocking = the draft says something the frozen records
+             *     cannot support (exactly three checks, a closed set); review = a real defect a
+             *     person must look at; advisory = a style signal that never moves the verdict.
+             *     Reported rather than left to the reader, because the alternative is a copy of the
+             *     gate's severity table in every consumer, and such a copy drifts in the one
+             *     direction that costs the most: a reader that believes a blocking check is
+             *     advisory presents a draft as safe to accept.
+             * @enum {string}
+             */
+            severity: "blocking" | "review" | "advisory";
+            /**
              * @description unevaluated is honest missing judgement, never an implicit pass.
              * @enum {string}
              */
@@ -2626,6 +2647,35 @@ export interface components {
         };
         ContentShadowRunHttpResponse: {
             data: components["schemas"]["ContentShadowRunResponse"];
+        };
+        /**
+         * @description One row of the Content Shadow run index. Deliberately state-free: every field is a
+         *     column of the run's own immutable record plus the frozen manifest's output locale, so
+         *     a page of this list can never report a lifecycle it did not read. Phase, status, the
+         *     research pack, the draft and the QA gate all come from getContentShadowRun, which
+         *     reads the append-only child rows that own them.
+         */
+        ContentShadowRunSummary: {
+            flowShadowRunId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            asyncRunId: components["schemas"]["Uuid"];
+            contentHash: string;
+            projectionVersion: string;
+            flowAdapterVersion: string;
+            outputLocale: components["schemas"]["LocaleCode"];
+            /** Format: date-time */
+            createdAt: string;
+            source: {
+                findingId: components["schemas"]["Uuid"];
+                actionId: components["schemas"]["Uuid"];
+                contentBriefArtifactId: components["schemas"]["Uuid"];
+                contentBriefRevision: number;
+            };
+        };
+        ContentShadowRunListResponse: {
+            data: components["schemas"]["ContentShadowRunSummary"][];
+            meta: components["schemas"]["PageMeta"];
         };
         RecheckTargetScope: {
             /** @enum {string} */
@@ -3802,6 +3852,37 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    listContentShadowRuns: {
+        parameters: {
+            query?: {
+                /** @description Opaque base64url cursor returned by the previous page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Content Shadow run index page. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentShadowRunListResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };

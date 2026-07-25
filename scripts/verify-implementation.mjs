@@ -71,6 +71,7 @@ const EXPECTED_OPENAPI_OPERATIONS = [
   "createDiagnosticRun",
   "createGrowthAuditRun",
   "createContentShadowRun",
+  "listContentShadowRuns",
   "getContentShadowRun",
   "createActionRecheck",
   "listProjectAuditUrls",

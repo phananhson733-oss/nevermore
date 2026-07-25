@@ -32,6 +32,8 @@ export {
   type QaSeverity,
 } from "./rule-types.ts";
 
+export { QA_UNKNOWN_CLAIM_SEVERITY, qaSeverityForClaimId } from "./severity.ts";
+
 export { QA_THRESHOLDS, type QaThresholds } from "./thresholds.ts";
 
 export {

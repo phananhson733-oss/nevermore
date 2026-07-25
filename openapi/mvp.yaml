@@ -611,6 +611,34 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
+    get:
+      tags: [Execution]
+      summary: List this project's Content Shadow runs as a state-free index
+      description: |
+        Returns the project's Content Shadow runs, newest first, as cursor pages. Each row
+        carries only columns of the run's own immutable record plus its frozen output locale,
+        so a page can never report a phase, a verdict or a research pack it did not read; run
+        state and every child projection come from getContentShadowRun. The index exists
+        because a run id was otherwise handed out only once, in the 202 that created it, which
+        made the research pack, the QA verdict and the honesty disclosures unreachable after a
+        reload. Runs outside the caller's workspace or project are absent, never forbidden.
+      operationId: listContentShadowRuns
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Content Shadow run index page.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContentShadowRunListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
   /projects/{projectId}/content-shadow-runs/{flowShadowRunId}:
     get:
@@ -4385,12 +4413,23 @@ components:
     ContentShadowQaClaim:
       type: object
       additionalProperties: false
-      required: [claimId, kind, status, detail]
+      required: [claimId, kind, severity, status, detail]
       properties:
         claimId: { type: string, minLength: 1, maxLength: 200 }
         kind:
           type: string
           enum: [red_line, structure, citability, coverage]
+        severity:
+          type: string
+          enum: [blocking, review, advisory]
+          description: |
+            What this claim costs. blocking = the draft says something the frozen records
+            cannot support (exactly three checks, a closed set); review = a real defect a
+            person must look at; advisory = a style signal that never moves the verdict.
+            Reported rather than left to the reader, because the alternative is a copy of the
+            gate's severity table in every consumer, and such a copy drifts in the one
+            direction that costs the most: a reader that believes a blocking check is
+            advisory presents a draft as safe to accept.
         status:
           type: string
           enum: [passed, failed, unevaluated]
@@ -4601,6 +4640,56 @@ components:
       required: [data]
       properties:
         data: { $ref: '#/components/schemas/ContentShadowRunResponse' }
+
+    ContentShadowRunSummary:
+      type: object
+      additionalProperties: false
+      description: |
+        One row of the Content Shadow run index. Deliberately state-free: every field is a
+        column of the run's own immutable record plus the frozen manifest's output locale, so
+        a page of this list can never report a lifecycle it did not read. Phase, status, the
+        research pack, the draft and the QA gate all come from getContentShadowRun, which
+        reads the append-only child rows that own them.
+      required:
+        - flowShadowRunId
+        - projectId
+        - siteId
+        - asyncRunId
+        - contentHash
+        - projectionVersion
+        - flowAdapterVersion
+        - outputLocale
+        - createdAt
+        - source
+      properties:
+        flowShadowRunId: { $ref: '#/components/schemas/Uuid' }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        asyncRunId: { $ref: '#/components/schemas/Uuid' }
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        projectionVersion: { type: string, minLength: 1, maxLength: 200 }
+        flowAdapterVersion: { type: string, minLength: 1, maxLength: 200 }
+        outputLocale: { $ref: '#/components/schemas/LocaleCode' }
+        createdAt: { type: string, format: date-time }
+        source:
+          type: object
+          additionalProperties: false
+          required: [findingId, actionId, contentBriefArtifactId, contentBriefRevision]
+          properties:
+            findingId: { $ref: '#/components/schemas/Uuid' }
+            actionId: { $ref: '#/components/schemas/Uuid' }
+            contentBriefArtifactId: { $ref: '#/components/schemas/Uuid' }
+            contentBriefRevision: { type: integer, minimum: 1 }
+
+    ContentShadowRunListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ContentShadowRunSummary' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
 
     RecheckTargetScope:
       type: object

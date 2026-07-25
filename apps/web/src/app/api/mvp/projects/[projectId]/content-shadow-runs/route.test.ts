@@ -5,6 +5,7 @@ import { CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION } from "@sf/contracts";
 const mocks = vi.hoisted(() => ({
   assertWorkspaceRateLimit: vi.fn(),
   createContentShadowRun: vi.fn(),
+  listContentShadowRuns: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({
@@ -18,9 +19,10 @@ vi.mock("@/lib/http/rate-limit", () => ({
 }));
 vi.mock("@/lib/services/content-shadow", () => ({
   createContentShadowRun: mocks.createContentShadowRun,
+  listContentShadowRuns: mocks.listContentShadowRuns,
 }));
 
-const { POST } = await import("./route.ts");
+const { GET, POST } = await import("./route.ts");
 
 const projectId = "00000000-0000-4000-8000-000000000003";
 const actionId = "00000000-0000-4000-8000-000000000004";
@@ -171,5 +173,82 @@ describe("POST content shadow async contract", () => {
     expect(response.status).toBe(400);
     expect(mocks.assertWorkspaceRateLimit).not.toHaveBeenCalled();
     expect(mocks.createContentShadowRun).not.toHaveBeenCalled();
+  });
+});
+
+function listRequest(query = "") {
+  return new NextRequest(
+    `http://localhost/api/mvp/projects/${projectId}/content-shadow-runs${query}`,
+    { headers: { "X-Request-Id": "request-content-shadow-list" } },
+  );
+}
+
+describe("GET content shadow run index", () => {
+  it("returns the state-free index inside the shared list envelope", async () => {
+    const summary = {
+      flowShadowRunId,
+      projectId,
+      siteId: "00000000-0000-4000-8000-000000000008",
+      asyncRunId: runId,
+      contentHash: "a".repeat(64),
+      projectionVersion: "content-shadow.0.3.2",
+      flowAdapterVersion: "content-shadow-adapter.0.3.0",
+      outputLocale: "en",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      source: {
+        findingId: "00000000-0000-4000-8000-000000000009",
+        actionId,
+        contentBriefArtifactId: "00000000-0000-4000-8000-00000000000a",
+        contentBriefRevision: 1,
+      },
+    };
+    mocks.listContentShadowRuns.mockResolvedValueOnce({
+      data: [summary],
+      nextCursor: "next-page",
+      limit: 50,
+    });
+
+    const response = await GET(listRequest(), {
+      params: Promise.resolve({ projectId }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      data: [summary],
+      meta: { nextCursor: "next-page", hasNext: true, limit: 50 },
+    });
+    expect(mocks.listContentShadowRuns).toHaveBeenCalledWith(
+      { workspaceId: "00000000-0000-4000-8000-000000000002" },
+      projectId,
+      { limit: 50, cursor: null },
+    );
+  });
+
+  it("never reports run state: no row carries a phase, status or verdict", async () => {
+    mocks.listContentShadowRuns.mockResolvedValueOnce({
+      data: [],
+      nextCursor: null,
+      limit: 50,
+    });
+
+    const response = await GET(listRequest(), {
+      params: Promise.resolve({ projectId }),
+    });
+    const body = (await response.json()) as { readonly data: unknown[] };
+
+    // The contract, asserted rather than trusted: an index that reported a
+    // lifecycle would have to guess at it per page, and a guessed phase is the
+    // kind of thing a reader takes for a reading.
+    expect(body.data).toEqual([]);
+    expect(JSON.stringify(body)).not.toMatch(/phase|verdict|"status"/u);
+  });
+
+  it("refuses a malformed cursor before touching the service", async () => {
+    const response = await GET(listRequest("?cursor=not%20a%20cursor"), {
+      params: Promise.resolve({ projectId }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(mocks.listContentShadowRuns).not.toHaveBeenCalled();
   });
 });

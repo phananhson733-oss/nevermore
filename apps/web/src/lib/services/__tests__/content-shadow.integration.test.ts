@@ -45,12 +45,20 @@ import {
   CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
   type CreateContentShadowRunRequest,
 } from "@sf/contracts";
-import { CONTENT_SHADOW_ADAPTER_VERSION } from "@sf/flow-shadow";
+import {
+  claimIdForRule,
+  qaRuleKind,
+  CONTENT_SHADOW_ADAPTER_VERSION,
+  QA_BRIEF_OUTLINE_CLAIM_ID,
+  QA_RULE_ORDER,
+  QA_RULE_SEVERITY,
+} from "@sf/flow-shadow";
 import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import {
   createContentShadowRun,
   getContentShadowRun,
+  listContentShadowRuns,
 } from "@/lib/services/content-shadow";
 
 /**
@@ -1141,5 +1149,231 @@ describeDb("getContentShadowRun", () => {
         randomUUID(),
       ),
     ).rejects.toBeInstanceOf(ProblemError);
+  });
+});
+
+async function startShadowRun(
+  fixture: ShadowFixture,
+): Promise<{ asyncRunId: string; flowShadowRunId: string }> {
+  const accepted = await createContentShadowRun(
+    { workspaceId: fixture.scope.workspaceId },
+    fixture.scope.projectId,
+    fixture.actorId,
+    randomUUID(),
+    requestBody(fixture),
+  );
+  return {
+    asyncRunId: accepted.run.id,
+    flowShadowRunId: accepted.resourceRef.id,
+  };
+}
+
+describeDb("QA claim severity is reported, never re-derived by the reader", () => {
+  let handle: DbHandle;
+
+  beforeAll(() => {
+    handle = createDbHandle(DATABASE_URL!);
+  });
+  afterAll(async () => {
+    await handle?.end();
+  });
+
+  it("reports the gate package's severity for every claim, one by one", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const run = await startShadowRun(fixture);
+    const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+      contentText: "# Draft body",
+    });
+    // Every rule the gate can emit, plus the coverage claim that is not a rule.
+    const claims = [
+      ...QA_RULE_ORDER.map((ruleId) => ({
+        claimId: claimIdForRule(ruleId),
+        kind: qaRuleKind(ruleId),
+        status: "passed" as const,
+        detail: `stored detail for ${ruleId}`,
+      })),
+      {
+        claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
+        kind: "coverage" as const,
+        status: "unevaluated" as const,
+        detail: "stored coverage detail",
+      },
+    ];
+    await new FlowShadowQaGatesRepository(handle.db).insert({
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      flowShadowRunId: run.flowShadowRunId,
+      evaluatedArtifactId: draft.artifactId,
+      evaluatedRevision: draft.revision,
+      analysisInvocationId: null,
+      verdict: "needs_review",
+      claims,
+    });
+
+    const projection = await getContentShadowRun(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      run.flowShadowRunId,
+    );
+
+    const wire = new Map(
+      (projection.qa?.claims ?? []).map((claim) => [
+        claim.claimId,
+        claim.severity,
+      ]),
+    );
+    expect(wire.size).toBe(QA_RULE_ORDER.length + 1);
+    for (const ruleId of QA_RULE_ORDER) {
+      // Rule by rule, against the gate's own table: a copy of this mapping
+      // anywhere downstream drifts, and it drifts towards showing a blocking
+      // check as a style note.
+      expect(wire.get(claimIdForRule(ruleId))).toBe(QA_RULE_SEVERITY[ruleId]);
+    }
+    expect(wire.get(QA_BRIEF_OUTLINE_CLAIM_ID)).toBe("review");
+    expect(
+      [...wire.entries()]
+        .filter(([, severity]) => severity === "blocking")
+        .map(([claimId]) => claimId)
+        .sort(),
+    ).toEqual(
+      [
+        "content-shadow.qa.rl8_unsupported_claim",
+        "content-shadow.qa.rl12_citation_integrity",
+        "content-shadow.qa.sc9b_sources_resolve_to_pack",
+      ].sort(),
+    );
+  });
+
+  it("fails the read rather than reporting no findings when a gate row is unreadable", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const run = await startShadowRun(fixture);
+    const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+      contentText: "# Draft body",
+    });
+    await new FlowShadowQaGatesRepository(handle.db).insert({
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      flowShadowRunId: run.flowShadowRunId,
+      evaluatedArtifactId: draft.artifactId,
+      evaluatedRevision: draft.revision,
+      analysisInvocationId: null,
+      verdict: "needs_review",
+      claims: [{ nonsense: true }],
+    });
+
+    // "We could not read the findings" must never render as "there are none".
+    await expect(
+      getContentShadowRun(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+        run.flowShadowRunId,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+  });
+});
+
+describeDb("listContentShadowRuns", () => {
+  let handle: DbHandle;
+
+  beforeAll(() => {
+    handle = createDbHandle(DATABASE_URL!);
+  });
+  afterAll(async () => {
+    await handle?.end();
+  });
+
+  it("makes a run reachable by id after the 202 that created it is gone", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const run = await startShadowRun(fixture);
+
+    const page = await listContentShadowRuns(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      { limit: 50, cursor: null },
+    );
+
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]).toMatchObject({
+      flowShadowRunId: run.flowShadowRunId,
+      asyncRunId: run.asyncRunId,
+      projectId: fixture.scope.projectId,
+      outputLocale: "en",
+      source: { actionId: fixture.actionId },
+    });
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("carries no run state at all — phase, verdict and pack stay on the detail read", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const run = await startShadowRun(fixture);
+    await seedResearchPack(handle, fixture, run.flowShadowRunId);
+    const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+      contentText: "# Draft body",
+    });
+    await seedQaGate(handle, fixture, run.flowShadowRunId, draft);
+    await setRunStatus(handle, run.asyncRunId, "completed");
+
+    const page = await listContentShadowRuns(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      { limit: 50, cursor: null },
+    );
+
+    const row = page.data[0] as Record<string, unknown>;
+    for (const absent of ["phase", "status", "qa", "research", "draft"]) {
+      expect(row).not.toHaveProperty(absent);
+    }
+  });
+
+  it("pages newest first through the shared cursor convention", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const first = await startShadowRun(fixture);
+    const second = await seedShadowFixture(handle);
+    const secondRun = await startShadowRun(second);
+
+    const firstPage = await listContentShadowRuns(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      { limit: 1, cursor: null },
+    );
+    expect(firstPage.data.map((row) => row.flowShadowRunId)).toEqual([
+      first.flowShadowRunId,
+    ]);
+    expect(firstPage.nextCursor).toBeNull();
+
+    // A second project's run never leaks into the first project's index.
+    const otherPage = await listContentShadowRuns(
+      { workspaceId: second.scope.workspaceId },
+      second.scope.projectId,
+      { limit: 50, cursor: null },
+    );
+    expect(otherPage.data.map((row) => row.flowShadowRunId)).toEqual([
+      secondRun.flowShadowRunId,
+    ]);
+  });
+
+  it("reports a project in another workspace as absent, never forbidden", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const other = await seedShadowFixture(handle);
+
+    await expect(
+      listContentShadowRuns(
+        { workspaceId: other.scope.workspaceId },
+        fixture.scope.projectId,
+        { limit: 50, cursor: null },
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+  });
+
+  it("refuses a malformed cursor before reading anything", async () => {
+    const fixture = await seedShadowFixture(handle);
+
+    await expect(
+      listContentShadowRuns(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+        { limit: 50, cursor: "not-a-cursor" },
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 });
