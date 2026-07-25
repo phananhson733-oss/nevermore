@@ -1,8 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
 
+async function useEnglishUi(page: Page): Promise<void> {
+  await page
+    .context()
+    .addCookies([
+      { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+    ]);
+}
+
 async function openStudio(page: Page): Promise<void> {
   await installCriticalFlowApi(page);
+  await useEnglishUi(page);
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   await expect(
     page

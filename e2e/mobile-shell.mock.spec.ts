@@ -1,6 +1,16 @@
 import { expect, test } from "@playwright/test";
 import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
 
+/** The mock chrome assertions in this file are written in English; the app's
+ *  default UI locale is zh-CN, so the locale cookie has to be set explicitly. */
+test.beforeEach(async ({ page }) => {
+  await page
+    .context()
+    .addCookies([
+      { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+    ]);
+});
+
 test.beforeEach(async ({ page }) => {
   await installCriticalFlowApi(page);
 });

@@ -1,12 +1,21 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
 
 const API_BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
+
+async function useEnglishUi(page: Page): Promise<void> {
+  await page
+    .context()
+    .addCookies([
+      { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+    ]);
+}
 
 test("Studio renders artifacts before actions and defers project metadata", async ({
   page,
 }) => {
   await installCriticalFlowApi(page);
+  await useEnglishUi(page);
 
   let releaseActions: (() => void) | undefined;
   const actionsReleased = new Promise<void>((resolve) => {

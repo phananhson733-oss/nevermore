@@ -11,6 +11,16 @@ import {
   type MockDataSnapshot,
 } from "./mock-api.ts";
 
+/** The mock chrome assertions in this file are written in English; the app's
+ *  default UI locale is zh-CN, so the locale cookie has to be set explicitly. */
+test.beforeEach(async ({ page }) => {
+  await page
+    .context()
+    .addCookies([
+      { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+    ]);
+});
+
 const API_BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
 const NOW = "2026-07-20T00:00:00.000Z";
 
