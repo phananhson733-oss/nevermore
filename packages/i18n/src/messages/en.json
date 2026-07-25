@@ -1546,7 +1546,8 @@
     "artifactType": {
       "content_brief": "Content brief",
       "metadata_rewrite": "Metadata rewrite",
-      "technical_ticket": "Technical ticket"
+      "technical_ticket": "Technical ticket",
+      "english_blog_draft": "English blog draft"
     },
     "status": {
       "generating": "Generating",
@@ -1588,6 +1589,13 @@
       "briefLinkBroken": {
         "title": "This draft was not guided by the brief",
         "body": "No topic list could be read out of the content brief, so the brief's coverage requirements were not used while this draft was written. Compare the two by hand — there is no causal link between them for this run."
+      },
+      "artifactStatus": {
+        "generating": "Being written",
+        "draft": "Draft",
+        "ready": "Reviewed · not published",
+        "failed": "Generation failed",
+        "archived": "Archived"
       }
     },
     "meta": {
@@ -1612,7 +1620,7 @@
         "blocked": "Unverifiable citations found",
         "none": "Not evaluated yet"
       },
-      "verdictStale": "Conclusion is out of date",
+      "verdictStale": "Verdict is out of date (judged revision {revision})",
       "verdictRevision": "This conclusion covers revision {revision}.",
       "kickerBlocked": "Unverifiable citations",
       "countsTitle": "{count} checks in this run",
@@ -1630,7 +1638,8 @@
         "red_line": "Factual red lines",
         "structure": "Structure and search readiness",
         "citability": "How quotable this reads",
-        "coverage": "Topic coverage"
+        "coverage": "Topic coverage",
+        "human_review": "Human review"
       },
       "state": {
         "passed": "Passed",
@@ -1691,7 +1700,103 @@
         "scdup_brief_overlap": "The draft restates the brief instead of writing",
         "citability_geo": "How quotable this reads to an AI answer",
         "brief-outline": "Coverage of the topics this cluster committed to"
+      },
+      "revisionNumber": "Revision {revision}",
+      "humanState": {
+        "passed": "Reviewed by a person",
+        "awaiting": "Waiting for a person to confirm",
+        "unevaluated": "Nothing to review yet"
       }
+    },
+    "review": {
+      "pass": "Pass review",
+      "passing": "Recording…",
+      "disabled": {
+        "noVerdict": "No automated verdict has been reached for this deliverable yet.",
+        "staleVerdict": "Revision {revision} has not been checked yet.",
+        "blocked": "{count} citation(s) cannot be verified against the frozen records — revise the draft, then check it again.",
+        "unsavedEdits": "Save or discard your edits first.",
+        "alreadyReviewed": "This revision is already marked reviewed. Editing it creates a new revision that needs reviewing again.",
+        "notReviewable": "This deliverable is not in a state a person can review."
+      },
+      "confirm": {
+        "title": "Pass this revision",
+        "subtitle": "You are reviewing revision {revision}.",
+        "checkbox": "I have read all {count} findings that were not cleared automatically, and confirm this revision can pass.",
+        "impact": "Passing marks revision {revision} reviewed and records the time on the deliverable. Nothing is written to any CMS, Git or third-party publishing target — this stage connects to none.",
+        "cancel": "Cancel",
+        "submit": "Pass review"
+      },
+      "stale": {
+        "title": "The earlier review no longer applies",
+        "body": "Revision {revision} changed what a customer would read, so this revision needs its own review. The earlier verdict and review are kept as read-only history and are not overwritten."
+      },
+      "receipt": {
+        "title": "Review recorded",
+        "body": "Revision {revision} is marked reviewed. The review time is recorded on the deliverable. No CMS, Git or third-party publishing write occurred.",
+        "id": "Receipt",
+        "deliverable": "Deliverable",
+        "revision": "Reviewed revision",
+        "hash": "Frozen input fingerprint",
+        "verdict": "Automated verdict",
+        "reviewedAt": "Reviewed at",
+        "externalWrite": "External publishing write",
+        "externalWriteValue": {
+          "none": "None"
+        },
+        "done": "Done"
+      },
+      "blockedReceipt": {
+        "title": "Action refused",
+        "staleBody": "This deliverable already has a newer revision (currently revision {current}). Your review named revision {target}; it was not recorded and nothing changed. Read the new revision and review that instead.",
+        "attempted": "Attempted action",
+        "attemptedValue": "Pass review",
+        "targetRevision": "Revision you reviewed",
+        "currentRevision": "Current revision",
+        "changesMade": "Changes made",
+        "changesNone": "None"
+      },
+      "history": {
+        "button": "Versions this screen holds",
+        "buttonSuperseded": "Versions this screen holds (review superseded)",
+        "title": "Versions this screen holds",
+        "subtitle": "Two points, not a full history: there is no operation that lists every revision of a deliverable.",
+        "currentRow": "Revision {revision} — the text on screen now",
+        "judgedRow": "Revision {revision} — the revision the automated checks judged",
+        "briefRow": "Content brief revision {revision} — frozen into this run",
+        "noRevision": "No revision has been produced yet",
+        "noVerdict": "No automated verdict yet",
+        "badgeCurrent": "Current",
+        "badgeJudged": "Judged",
+        "badgeSuperseded": "Superseded",
+        "badgeBrief": "Frozen brief",
+        "note": "Every revision keeps its own body, frozen input fingerprint and the automated verdict of its time; a revision is never overwritten."
+      }
+    },
+    "publish": {
+      "label": "Publish to CMS · unavailable at this stage",
+      "note": "This stage connects to no CMS, Git or third-party publishing target. Passing review produces a reviewed revision and nothing else."
+    },
+    "compare": {
+      "switchLabel": "Choose what to read",
+      "switchDraft": "Draft only",
+      "switchCompare": "Compare with brief",
+      "briefLabel": "Content brief · revision {revision} (frozen)",
+      "draftLabel": "English draft · revision {revision}",
+      "committedTopics": "Topics this cluster committed to",
+      "noCommittedTopics": "The frozen cluster contributed no target keyword, so there is no committed topic list to compare against.",
+      "coverageMiss": "Not covered in draft",
+      "coverageUnevaluated": "Coverage was not judged this run, so nothing below is marked either way — compare the two panes by hand.",
+      "pageAssignment": "Page mapping:",
+      "pageAssignmentValue": {
+        "existing_page": "Existing page",
+        "new_asset": "New asset",
+        "mixed": "Mixed",
+        "unassigned": "Not decided"
+      },
+      "briefLoading": "Reading the frozen brief revision.",
+      "briefUnavailable": "The frozen brief revision could not be read, so only its committed topics are shown.",
+      "draftUnavailable": "This run has produced no draft body yet."
     }
   },
   "report": {

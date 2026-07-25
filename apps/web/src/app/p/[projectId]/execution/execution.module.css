@@ -651,11 +651,493 @@
   line-height: 1.55;
 }
 
+/* ------------------------------------------------- review + publish ------- */
+
+.docActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-start;
+  margin-top: 14px;
+}
+
+.reviewActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.actionBlock,
+.publishBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+}
+
+/*
+ * The reason a control cannot be used sits beside it, at readable size.
+ * A disabled button with its explanation in a tooltip is, for most readers,
+ * a disabled button with no explanation at all.
+ */
+.actionReason {
+  max-width: 30ch;
+  margin: 0;
+  color: var(--sf-coral-text);
+  font-size: var(--sf-text-xs);
+  line-height: 1.45;
+}
+
+.publishNote {
+  max-width: 32ch;
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  line-height: 1.45;
+}
+
+/*
+ * One of the four things that move together when an edit lands. Warm amber,
+ * never red: nothing failed — the text changed, so the earlier judgement no
+ * longer describes it.
+ */
+.staleBanner {
+  display: grid;
+  gap: 4px;
+  margin: 18px 24px 0;
+  padding: 12px 14px;
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+  border: 1px solid color-mix(in srgb, var(--sf-amber) 32%, var(--sf-border));
+  border-radius: 11px;
+}
+
+.staleBanner strong {
+  font-size: var(--sf-text-base);
+}
+
+.staleBanner span {
+  font-size: var(--sf-text-xs);
+  line-height: 1.55;
+}
+
+.qaCountsStale {
+  opacity: 0.62;
+}
+
+/* ------------------------------------------------------- side by side ----- */
+
+.viewSwitch {
+  display: flex;
+  gap: 6px;
+  padding: 10px 24px;
+  margin-top: 18px;
+  background: color-mix(in srgb, var(--sf-surface-deep) 88%, var(--sf-border));
+  border-top: 1px solid var(--sf-border);
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.viewSwitchBtn {
+  min-height: 40px;
+  padding: 8px 15px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--sf-ink-700);
+  font-family: inherit;
+  font-size: var(--sf-text-base);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.viewSwitchBtn:hover,
+.viewSwitchBtn[aria-selected="true"] {
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  border-right: 1px solid var(--sf-border);
+}
+
+.comparePane {
+  min-width: 0;
+  padding: clamp(20px, 2.4vw, 32px);
+}
+
+/* The reference side is the frozen brief; neutral sunken surface. */
+.compareBrief {
+  background: var(--sf-surface-deep);
+  border-right: 1px solid var(--sf-border);
+}
+
+/*
+ * The draft under review is NEUTRAL, deliberately.
+ *
+ * The reference design tints the proposed side pale green. In this product
+ * green is `passed`, and painting an unreviewed draft green would tell a
+ * reviewer it had already cleared something before they read a word.
+ */
+.compareDraft {
+  background: var(--sf-surface);
+}
+
+.compareLabel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--sf-border);
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Independent scroll: the two documents have unrelated structures, so a shared
+ * scroll position would manufacture alignments that mean nothing. */
+.compareBody {
+  max-height: 70vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--sf-fg);
+  font-size: var(--sf-text-read);
+  line-height: 1.74;
+}
+
+.compareBody p,
+.compareBody li {
+  max-width: none;
+}
+
+.compareBody p {
+  margin: 0 0 16px;
+}
+
+.compareBody ul,
+.compareBody ol {
+  padding-left: 22px;
+}
+
+.compareBody h3,
+.compareBody h4,
+.compareBody h5 {
+  margin: 22px 0 10px;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-lg);
+  line-height: 1.2;
+}
+
+.checklist {
+  margin: 0 0 18px;
+  padding: 14px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 11px;
+}
+
+.checklist h5 {
+  margin: 0 0 8px;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-base);
+}
+
+.checklist ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px dashed var(--sf-border);
+  font-size: var(--sf-text-base);
+}
+
+.checklist li:first-child {
+  border-top: 0;
+}
+
+.coverageMiss {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------- overlay ---- */
+
+.overlayScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(10 25 21 / 56%);
+  backdrop-filter: blur(5px);
+}
+
+.overlayFrame {
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-card);
+  box-shadow: var(--sf-shadow-lg, var(--sf-shadow-sm));
+}
+
+.overlayModal {
+  width: min(640px, 100%);
+}
+
+.overlayDrawer {
+  width: min(690px, 100%);
+  margin-left: auto;
+  max-height: 100vh;
+  height: 100%;
+  border-radius: 20px 0 0 20px;
+}
+
+.overlayHead {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.overlayTitle {
+  margin: 0;
+  font-family: var(--sf-font-display);
+  font-size: var(--sf-text-xl);
+  line-height: 1.2;
+}
+
+.overlaySubtitle {
+  margin: 6px 0 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  line-height: 1.5;
+}
+
+.overlayClose {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--sf-border);
+  border-radius: 9px;
+  background: var(--sf-surface);
+  color: var(--sf-ink-700);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.overlayBody {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px 22px;
+}
+
+.overlayFooter {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 14px 22px;
+  border-top: 1px solid var(--sf-border);
+}
+
+/* Said before the click, in the same panel as the button that commits it. */
+.honestyNote {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  color: var(--sf-ink-700);
+  background: var(--sf-mint-soft);
+  border: 1px solid color-mix(in srgb, var(--sf-mint) 28%, var(--sf-border));
+  border-radius: 11px;
+  font-size: var(--sf-text-base);
+  line-height: 1.6;
+}
+
+.confirmObject {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: 11px;
+}
+
+.confirmObject strong {
+  font-size: var(--sf-text-base);
+}
+
+.confirmObject span {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+}
+
+.checkRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 16px;
+  font-size: var(--sf-text-base);
+  line-height: 1.55;
+}
+
+.checkRow input {
+  margin-top: 4px;
+  flex: 0 0 auto;
+}
+
+/* --------------------------------------------------------------- receipt -- */
+
+.receipt {
+  text-align: center;
+}
+
+.receiptCheck {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 14px;
+  place-items: center;
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+  border-radius: 50%;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+/* A refused action is amber and marked "!" — not a red failure: nothing broke,
+ * the command was declined and nothing was written. */
+.receiptCheckBlocked {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+}
+
+.receiptLead {
+  max-width: 500px;
+  margin: 0 auto;
+  color: var(--sf-ink-700);
+  font-size: var(--sf-text-base);
+  line-height: 1.6;
+}
+
+.receiptFacts {
+  display: grid;
+  gap: 0;
+  margin: 22px 0 0;
+  text-align: left;
+}
+
+.receiptFacts > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 15px;
+  padding: 11px 0;
+  border-top: 1px solid var(--sf-border);
+}
+
+.receiptFacts dt {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+}
+
+.receiptFacts dd {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.historyList {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.historyList li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--sf-border);
+  font-size: var(--sf-text-base);
+}
+
+.historyList li:first-child {
+  border-top: 0;
+}
+
 /* ---------------------------------------------------------- responsive ---- */
+
+/*
+ * Side by side takes the width the queue was holding. This is the queue's own
+ * narrow-window shape, reused rather than a second layout invented for the
+ * mode: two bodies at 250px each would be a comparison nobody can read.
+ */
+.workspace[data-compare-mode="compare"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace[data-compare-mode="compare"] .queueList {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px;
+}
+
+.workspace[data-compare-mode="compare"] .queueItem {
+  flex: 0 0 250px;
+  min-height: 96px;
+}
+
+@media (max-width: 1200px) {
+  .compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compareBrief {
+    border-right: 0;
+    border-bottom: 1px solid var(--sf-border);
+  }
+}
 
 @media (max-width: 1180px) {
   .docGrid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compare {
+    border-right: 0;
   }
 
   .docBody {
@@ -707,5 +1189,33 @@
   .qaFacts > div {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
+  }
+
+  .receiptFacts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  /* Bottom sheet: a centred dialog on a phone leaves nothing to hold onto. */
+  .overlayScrim {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .overlayFrame {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .overlayDrawer {
+    height: auto;
+    margin-left: 0;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .overlayFooter {
+    flex-direction: column-reverse;
+    padding: 12px 18px max(12px, env(safe-area-inset-bottom));
   }
 }

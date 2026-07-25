@@ -321,6 +321,75 @@ export type ContentShadowRunResponse = z.infer<typeof ContentShadowRunResponse>;
  * research pack, the draft and the QA gate all come from
  * `getContentShadowRun`, which reads the append-only child rows that own them.
  */
+/**
+ * Record that a person reviewed one Content Shadow draft revision.
+ *
+ * There is exactly one recordable outcome in this stage, and it is deliberately
+ * not spelled as a `decision` field. The artifact lifecycle's manual edges are
+ * `generating → draft → ready` and `draft | ready → archived`; the only way back
+ * from `ready` is to edit, which appends a revision and returns the deliverable
+ * to `draft` on its own. So "send it back" already has a real mechanism and
+ * needs no command, while a second decision value would have to be stored
+ * somewhere no table exists for — and a control that writes nothing while
+ * looking like it decided something is the failure mode this whole slice is
+ * written against.
+ *
+ * `baseRevision` is what makes a review a review of something: it names the
+ * revision the person actually read. If the deliverable has moved on, the
+ * command is refused rather than re-aimed at the newest text.
+ */
+export const ReviewContentShadowRevisionRequest = z
+  .object({
+    baseRevision: z.number().int().min(1),
+    /**
+     * The reviewer's explicit statement that they read every finding needing
+     * human confirmation. Required to be `true` when the automated verdict is
+     * `needs_review`; a one-click pass would make that verdict decorative.
+     */
+    acknowledgeFindings: z.boolean().default(false),
+  })
+  .strict();
+export type ReviewContentShadowRevisionRequest = z.infer<
+  typeof ReviewContentShadowRevisionRequest
+>;
+
+/**
+ * What the review actually did, as facts that can be checked against the record.
+ *
+ * `externalPublishingWrite` is a constant, and that is the point: the strongest
+ * form of "nothing was published" is a field in the receipt that can only ever
+ * read `none`, rather than a sentence in the interface that a later change
+ * could quietly stop being true.
+ */
+export const ContentShadowReviewReceipt = z
+  .object({
+    flowShadowRunId: Uuid,
+    artifactId: Uuid,
+    reviewedRevision: z.number().int().min(1),
+    artifactStatus: z.enum([
+      "generating",
+      "draft",
+      "ready",
+      "failed",
+      "archived",
+    ]),
+    verdict: ContentShadowQaVerdict,
+    claimCounts: z
+      .object({
+        passed: z.number().int().min(0),
+        failed: z.number().int().min(0),
+        unevaluated: z.number().int().min(0),
+      })
+      .strict(),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    reviewedAt: IsoDateTime,
+    externalPublishingWrite: z.literal("none"),
+  })
+  .strict();
+export type ContentShadowReviewReceipt = z.infer<
+  typeof ContentShadowReviewReceipt
+>;
+
 export const ContentShadowRunSummary = z
   .object({
     flowShadowRunId: Uuid,

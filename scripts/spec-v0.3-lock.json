@@ -7,19 +7,19 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "9aeefc759c044cdaa669c50d323ca1bb744a947664d7abee7ee590b4679fe0e0",
-    "MVP-IMPLEMENTATION-SPEC.md": "83a34c80cbe7c5df642517c6d5a99740b6f144dcd9888a59717716c554e69544",
-    "openapi.yaml": "d4361399695bcc8dd04fd2e2f360fe5c5ad122a7dcdf27bf2b55b68e69a8e78d",
+    "MVP-IMPLEMENTATION-SPEC.md": "1a166dc40dd163784a6a49527fea8bb5500f282b9e7eb6981730701db33dc0d4",
+    "openapi.yaml": "0db424b42b8880112ac99d109046ace072523a613c06385ef2e21076c25d5552",
     "schema.sql": "c960089b404dbfe6712f619d32eac62ad1992e632f247c5105a88ddc468cb76b",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "scripts/schema-smoke.sql": "17366c8984199b11ef466b9a5db42f4a4362b3a376947781586cf9708ae4c6f5",
-    "scripts/verify-spec.mjs": "88cf224d5e5ac27d59892416688229b4a0cbcb85e2bffa72ff4a512cead2a7b0"
+    "scripts/verify-spec.mjs": "843cee90bd0fb15936860fde09ae2a31b64b7e1b4278c10e9d510916cb781813"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "d4361399695bcc8dd04fd2e2f360fe5c5ad122a7dcdf27bf2b55b68e69a8e78d",
-    "packages/contracts/src/generated/openapi.ts": "cb98104be7b4a746e369b28688281c0a541875624ca40d88354dd5da37566c13",
+    "openapi/mvp.yaml": "0db424b42b8880112ac99d109046ace072523a613c06385ef2e21076c25d5552",
+    "packages/contracts/src/generated/openapi.ts": "cff0761642894b6b956a21d357455fbc07e4c73a84f21f30ad57de237e6123a1",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "packages/db/migrations/schema-smoke.sql": "17366c8984199b11ef466b9a5db42f4a4362b3a376947781586cf9708ae4c6f5",
-    "scripts/verify-implementation.mjs": "687f6bd8acfee00487931462c77ce10d138f3dc14bc6a3708099dce4aab82ced"
+    "scripts/verify-implementation.mjs": "69f32176705da5a9afded09d820895f667b080f764cfe758a3c6f32d4473a5d3"
   },
   "apiOperations": [
     "listProjects",
@@ -47,6 +47,7 @@
     "createContentShadowRun",
     "listContentShadowRuns",
     "getContentShadowRun",
+    "reviewContentShadowRevision",
     "createActionRecheck",
     "listProjectAuditUrls",
     "getProjectAuditUrl",

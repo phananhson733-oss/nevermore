@@ -1546,7 +1546,8 @@
     "artifactType": {
       "content_brief": "内容简报",
       "metadata_rewrite": "元数据改写",
-      "technical_ticket": "技术工单"
+      "technical_ticket": "技术工单",
+      "english_blog_draft": "English 博客草稿"
     },
     "status": {
       "generating": "生成中",
@@ -1588,6 +1589,13 @@
       "briefLinkBroken": {
         "title": "本次 draft 未受 brief 引导",
         "body": "未能从内容 Brief 中读出主题清单，因此本次撰写没有使用 Brief 的覆盖要求。本轮两者之间没有因果关系，请逐条人工比对。"
+      },
+      "artifactStatus": {
+        "generating": "撰写中",
+        "draft": "草稿",
+        "ready": "已评审 · 未发布",
+        "failed": "生成失败",
+        "archived": "已归档"
       }
     },
     "meta": {
@@ -1612,7 +1620,7 @@
         "blocked": "有无法核实的引用",
         "none": "尚未评估"
       },
-      "verdictStale": "结论已过期",
+      "verdictStale": "结论已过期（判定的是 Revision {revision}）",
       "verdictRevision": "该结论对应 Revision {revision}。",
       "kickerBlocked": "有无法核实的引用",
       "countsTitle": "本轮共 {count} 项检查",
@@ -1630,7 +1638,8 @@
         "red_line": "事实红线",
         "structure": "结构与搜索可读性",
         "citability": "被引用的容易程度",
-        "coverage": "主题覆盖"
+        "coverage": "主题覆盖",
+        "human_review": "人工审核"
       },
       "state": {
         "passed": "已通过",
@@ -1691,7 +1700,103 @@
         "scdup_brief_overlap": "草稿在复述 Brief 而不是写作",
         "citability_geo": "对 AI 回答而言的可引用程度",
         "brief-outline": "是否覆盖了冻结 cluster 的目标关键词"
+      },
+      "revisionNumber": "Revision {revision}",
+      "humanState": {
+        "passed": "已由人工确认",
+        "awaiting": "等待人工确认",
+        "unevaluated": "尚无可评审的内容"
       }
+    },
+    "review": {
+      "pass": "通过评审",
+      "passing": "记录中…",
+      "disabled": {
+        "noVerdict": "这份交付物还没有自动检查结论。",
+        "staleVerdict": "当前 Revision {revision} 还没有跑过自动检查。",
+        "blocked": "草稿里有 {count} 处引用无法在冻结记录中核实，先改稿再重新检查。",
+        "unsavedEdits": "请先保存或丢弃编辑。",
+        "alreadyReviewed": "这个 Revision 已标记为已评审。再编辑会产生新的 Revision，需要重新评审。",
+        "notReviewable": "这份交付物当前不处于可以人工评审的状态。"
+      },
+      "confirm": {
+        "title": "通过这个 Revision",
+        "subtitle": "你正在评审 Revision {revision}。",
+        "checkbox": "我已逐条查看这 {count} 项没有被自动放行的检查结果，确认这个 Revision 可以通过。",
+        "impact": "通过后 Revision {revision} 会被标记为已评审，评审时间写入交付物记录。不会写入任何内容管理系统、Git 或第三方发布目标 —— 本阶段不连接任何一个。",
+        "cancel": "取消",
+        "submit": "通过评审"
+      },
+      "stale": {
+        "title": "此前的评审已失效",
+        "body": "Revision {revision} 改动了客户会读到的内容，因此这个版本需要重新完成人工评审。此前的自动检查结论与评审记录都保留为只读历史，不会被覆盖。"
+      },
+      "receipt": {
+        "title": "评审已记录",
+        "body": "Revision {revision} 已标记为已评审，评审时间已写入交付物记录。没有发生任何内容管理系统、Git 或第三方发布写入。",
+        "id": "回执编号",
+        "deliverable": "交付物",
+        "revision": "评审版本",
+        "hash": "冻结输入指纹",
+        "verdict": "自动检查结论",
+        "reviewedAt": "评审时间",
+        "externalWrite": "外部发布写入",
+        "externalWriteValue": {
+          "none": "未发生"
+        },
+        "done": "完成"
+      },
+      "blockedReceipt": {
+        "title": "操作已阻断",
+        "staleBody": "这个交付物已经产生了新的 Revision（当前 Revision {current}）。本次评审针对的是 Revision {target}，没有被记录，也没有改变任何状态。请查看新版本后重新评审。",
+        "attempted": "尝试的操作",
+        "attemptedValue": "通过评审",
+        "targetRevision": "评审的版本",
+        "currentRevision": "当前版本",
+        "changesMade": "已发生的变更",
+        "changesNone": "无"
+      },
+      "history": {
+        "button": "本屏持有的版本",
+        "buttonSuperseded": "本屏持有的版本（含已失效评审）",
+        "title": "本屏持有的版本",
+        "subtitle": "只有两个点，不是完整历史：目前没有任何 operation 能列出一份交付物的全部 Revision。",
+        "currentRow": "Revision {revision} —— 当前屏幕上的正文",
+        "judgedRow": "Revision {revision} —— 自动检查判定的版本",
+        "briefRow": "内容 Brief 的 Revision {revision} —— 已冻结进本次运行",
+        "noRevision": "尚未产出任何版本",
+        "noVerdict": "尚无自动检查结论",
+        "badgeCurrent": "当前",
+        "badgeJudged": "已判定",
+        "badgeSuperseded": "评审已失效",
+        "badgeBrief": "冻结的 Brief",
+        "note": "每个 Revision 都保存自己的正文、冻结输入指纹与当时的自动检查结论；任何一版都不会被覆盖。"
+      }
+    },
+    "publish": {
+      "label": "发布到 CMS · 本阶段不可用",
+      "note": "本阶段不连接任何内容管理系统、Git 或第三方发布目标。通过评审只产生一个已评审的 Revision，不做别的事。"
+    },
+    "compare": {
+      "switchLabel": "选择阅读方式",
+      "switchDraft": "草稿正文",
+      "switchCompare": "对照 Brief",
+      "briefLabel": "内容 Brief · Revision {revision}（冻结版）",
+      "draftLabel": "English draft · Revision {revision}",
+      "committedTopics": "本次 cluster 承诺覆盖的主题",
+      "noCommittedTopics": "冻结的 cluster 没有贡献任何目标关键词，因此没有可对照的主题清单。",
+      "coverageMiss": "草稿未覆盖",
+      "coverageUnevaluated": "本轮没有做覆盖判定，因此下面不做任何标注 —— 请逐条人工比对两栏。",
+      "pageAssignment": "页面映射：",
+      "pageAssignmentValue": {
+        "existing_page": "沿用现有页面",
+        "new_asset": "新建内容",
+        "mixed": "两者兼有",
+        "unassigned": "尚未确定"
+      },
+      "briefLoading": "正在读取冻结的 Brief 版本。",
+      "briefUnavailable": "冻结的 Brief 版本读取失败，因此这里只展示它承诺覆盖的主题。",
+      "draftUnavailable": "本次运行还没有产出草稿正文。"
     }
   },
   "report": {

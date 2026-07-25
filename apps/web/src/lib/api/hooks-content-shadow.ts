@@ -14,18 +14,23 @@
 
 import {
   useInfiniteQuery,
+  useMutation,
   useQuery,
+  useQueryClient,
   type InfiniteData,
   type UseInfiniteQueryResult,
+  type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import {
   apiGet,
+  apiSend,
   type ApiError,
   type DataEnvelope,
   type ListEnvelope,
 } from "@/lib/api";
 import { cursorPageUrl, nextCursorPageParam } from "@/lib/api/cursor-pages";
+import type { Artifact } from "@/lib/api/hooks-studio";
 
 export type ContentShadowPhase =
   | "queued"
@@ -208,5 +213,94 @@ export function useContentShadowRun(
       return phase === "complete" || phase === "failed" ? false : 4000;
     },
     refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * One artifact revision, read by number.
+ *
+ * The side-by-side review reads the brief revision this run FROZE, not the
+ * brief's current text: the draft was written against the frozen one, and
+ * comparing against a brief that has since moved would let a reviewer credit or
+ * fault the draft for words it never saw.
+ */
+export function useArtifactRevision(
+  projectId: string,
+  artifactId: string | null,
+  revision: number | null,
+): UseQueryResult<Artifact, ApiError> {
+  return useQuery({
+    queryKey: ["artifact-revision", projectId, artifactId, revision],
+    queryFn: async () => {
+      const res = await apiGet<DataEnvelope<Artifact>>(
+        `/projects/${projectId}/artifacts/${artifactId}?revision=${revision}`,
+      );
+      return res.data;
+    },
+    enabled:
+      projectId.length > 0 &&
+      artifactId !== null &&
+      artifactId.length > 0 &&
+      revision !== null &&
+      revision >= 1,
+  });
+}
+
+export interface ContentShadowReviewRequest {
+  readonly baseRevision: number;
+  readonly acknowledgeFindings?: boolean;
+}
+
+export interface ContentShadowReviewReceipt {
+  readonly flowShadowRunId: string;
+  readonly artifactId: string;
+  readonly reviewedRevision: number;
+  readonly artifactStatus: ContentShadowDraft["status"];
+  readonly verdict: ContentShadowQaVerdict;
+  readonly claimCounts: {
+    readonly passed: number;
+    readonly failed: number;
+    readonly unevaluated: number;
+  };
+  readonly contentHash: string;
+  readonly reviewedAt: string;
+  /** Only ever `"none"`; the negative is a field, not a sentence. */
+  readonly externalPublishingWrite: "none";
+}
+
+/**
+ * Record a human review of the draft revision this run produced.
+ *
+ * `baseRevision` is not optimistic-concurrency plumbing here, it is the point:
+ * it names the revision the reviewer read. A 409 must be surfaced as a refusal
+ * with nothing written — never retried against the newer revision, which would
+ * record a review of text the person never saw.
+ */
+export function useReviewContentShadowRevision(
+  projectId: string,
+  flowShadowRunId: string | null,
+): UseMutationResult<
+  ContentShadowReviewReceipt,
+  ApiError,
+  ContentShadowReviewRequest
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: ContentShadowReviewRequest) => {
+      const res = await apiSend<DataEnvelope<ContentShadowReviewReceipt>>(
+        "POST",
+        `/projects/${projectId}/content-shadow-runs/${flowShadowRunId}/review`,
+        { body },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["content-shadow-run", projectId, flowShadowRunId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["artifacts", projectId],
+      });
+    },
   });
 }

@@ -666,6 +666,51 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
+  /projects/{projectId}/content-shadow-runs/{flowShadowRunId}/review:
+    post:
+      tags: [Execution]
+      summary: Record a human review of one Content Shadow draft revision
+      description: |
+        Records that a person reviewed the draft revision this run produced, and marks that
+        revision reviewed. It performs NO external write of any kind: no CMS, no Git, no
+        third-party publishing target exists in this stage, and the receipt states that as a
+        field rather than as prose.
+
+        The command is bound to one revision. baseRevision names the revision the reviewer
+        actually read; if the deliverable has moved on, the review is refused with 409
+        STALE_REVISION and nothing changes, rather than being re-aimed at text nobody read.
+        The same guard is applied to the automated verdict: a verdict that judged an earlier
+        revision cannot carry a review of the current one.
+
+        Every refusal is recomputed here rather than trusted from the caller. A blocked
+        verdict cannot pass, and a needs_review verdict requires acknowledgeFindings to be
+        true. There is no decision parameter: the artifact lifecycle already owns the way
+        back from reviewed — editing appends a revision and returns the deliverable to draft
+        — so a second decision value would be a control that writes nothing.
+      operationId: reviewContentShadowRevision
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/FlowShadowRunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewContentShadowRevisionRequest' }
+      responses:
+        '200':
+          description: The recorded review, as facts that can be checked against the record.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContentShadowReviewReceiptResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
   /projects/{projectId}/actions/{actionId}/recheck:
     post:
       tags: [Runs, Diagnosis]
@@ -4690,6 +4735,90 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ContentShadowRunSummary' }
         meta: { $ref: '#/components/schemas/PageMeta' }
+
+    ReviewContentShadowRevisionRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        A human review of one Content Shadow draft revision. There is deliberately no
+        decision field: the artifact lifecycle's manual edges are generating -> draft ->
+        ready and draft | ready -> archived, so the way back from reviewed is to edit, which
+        appends a revision and returns the deliverable to draft by itself. A second decision
+        value would have to be recorded somewhere no table exists for, and a control that
+        writes nothing while appearing to decide something is exactly what this stage refuses
+        to build.
+      required: [baseRevision]
+      properties:
+        baseRevision:
+          type: integer
+          minimum: 1
+          description: |
+            The revision the reviewer actually read. If the deliverable has moved on the
+            review is refused (409 STALE_REVISION) rather than re-aimed at newer text.
+        acknowledgeFindings:
+          type: boolean
+          default: false
+          description: |
+            The reviewer's explicit statement that they read every finding needing human
+            confirmation. Must be true when the automated verdict is needs_review; a
+            one-click pass would make that verdict decorative.
+
+    ContentShadowReviewReceipt:
+      type: object
+      additionalProperties: false
+      description: |
+        What the review did, as facts that can be checked against the record rather than as
+        prose. externalPublishingWrite is a constant with one legal value, and that is the
+        point: "nothing was published" as a field can only ever read none, where a sentence in
+        the interface could quietly stop being true.
+      required:
+        - flowShadowRunId
+        - artifactId
+        - reviewedRevision
+        - artifactStatus
+        - verdict
+        - claimCounts
+        - contentHash
+        - reviewedAt
+        - externalPublishingWrite
+      properties:
+        flowShadowRunId: { $ref: '#/components/schemas/Uuid' }
+        artifactId: { $ref: '#/components/schemas/Uuid' }
+        reviewedRevision: { type: integer, minimum: 1 }
+        artifactStatus: { $ref: '#/components/schemas/ArtifactStatus' }
+        verdict:
+          type: string
+          enum: [passed, needs_review, blocked]
+          description: |
+            The automated verdict that applied to the reviewed revision, recorded so the
+            receipt says what the person was looking at. blocked never appears here: a
+            blocked draft cannot be passed.
+        claimCounts:
+          type: object
+          additionalProperties: false
+          required: [passed, failed, unevaluated]
+          description: |
+            The three-way tally of the verdict that applied, carried into the receipt so it
+            records what was known at review time. Never folded into two.
+          properties:
+            passed: { type: integer, minimum: 0 }
+            failed: { type: integer, minimum: 0 }
+            unevaluated: { type: integer, minimum: 0 }
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        reviewedAt: { type: string, format: date-time }
+        externalPublishingWrite:
+          type: string
+          enum: [none]
+          description: |
+            Always none. Slice 2 performs zero external writes; no CMS, Git or third-party
+            publishing target is connected, and no operation in this contract can reach one.
+
+    ContentShadowReviewReceiptResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ContentShadowReviewReceipt' }
 
     RecheckTargetScope:
       type: object

@@ -393,6 +393,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/content-shadow-runs/{flowShadowRunId}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a human review of one Content Shadow draft revision
+         * @description Records that a person reviewed the draft revision this run produced, and marks that
+         *     revision reviewed. It performs NO external write of any kind: no CMS, no Git, no
+         *     third-party publishing target exists in this stage, and the receipt states that as a
+         *     field rather than as prose.
+         *
+         *     The command is bound to one revision. baseRevision names the revision the reviewer
+         *     actually read; if the deliverable has moved on, the review is refused with 409
+         *     STALE_REVISION and nothing changes, rather than being re-aimed at text nobody read.
+         *     The same guard is applied to the automated verdict: a verdict that judged an earlier
+         *     revision cannot carry a review of the current one.
+         *
+         *     Every refusal is recomputed here rather than trusted from the caller. A blocked
+         *     verdict cannot pass, and a needs_review verdict requires acknowledgeFindings to be
+         *     true. There is no decision parameter: the artifact lifecycle already owns the way
+         *     back from reviewed — editing appends a revision and returns the deliverable to draft
+         *     — so a second decision value would be a control that writes nothing.
+         */
+        post: operations["reviewContentShadowRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/actions/{actionId}/recheck": {
         parameters: {
             query?: never;
@@ -2677,6 +2712,69 @@ export interface components {
             data: components["schemas"]["ContentShadowRunSummary"][];
             meta: components["schemas"]["PageMeta"];
         };
+        /**
+         * @description A human review of one Content Shadow draft revision. There is deliberately no
+         *     decision field: the artifact lifecycle's manual edges are generating -> draft ->
+         *     ready and draft | ready -> archived, so the way back from reviewed is to edit, which
+         *     appends a revision and returns the deliverable to draft by itself. A second decision
+         *     value would have to be recorded somewhere no table exists for, and a control that
+         *     writes nothing while appearing to decide something is exactly what this stage refuses
+         *     to build.
+         */
+        ReviewContentShadowRevisionRequest: {
+            /**
+             * @description The revision the reviewer actually read. If the deliverable has moved on the
+             *     review is refused (409 STALE_REVISION) rather than re-aimed at newer text.
+             */
+            baseRevision: number;
+            /**
+             * @description The reviewer's explicit statement that they read every finding needing human
+             *     confirmation. Must be true when the automated verdict is needs_review; a
+             *     one-click pass would make that verdict decorative.
+             * @default false
+             */
+            acknowledgeFindings: boolean;
+        };
+        /**
+         * @description What the review did, as facts that can be checked against the record rather than as
+         *     prose. externalPublishingWrite is a constant with one legal value, and that is the
+         *     point: "nothing was published" as a field can only ever read none, where a sentence in
+         *     the interface could quietly stop being true.
+         */
+        ContentShadowReviewReceipt: {
+            flowShadowRunId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"];
+            reviewedRevision: number;
+            artifactStatus: components["schemas"]["ArtifactStatus"];
+            /**
+             * @description The automated verdict that applied to the reviewed revision, recorded so the
+             *     receipt says what the person was looking at. blocked never appears here: a
+             *     blocked draft cannot be passed.
+             * @enum {string}
+             */
+            verdict: "passed" | "needs_review" | "blocked";
+            /**
+             * @description The three-way tally of the verdict that applied, carried into the receipt so it
+             *     records what was known at review time. Never folded into two.
+             */
+            claimCounts: {
+                passed: number;
+                failed: number;
+                unevaluated: number;
+            };
+            contentHash: string;
+            /** Format: date-time */
+            reviewedAt: string;
+            /**
+             * @description Always none. Slice 2 performs zero external writes; no CMS, Git or third-party
+             *     publishing target is connected, and no operation in this contract can reach one.
+             * @enum {string}
+             */
+            externalPublishingWrite: "none";
+        };
+        ContentShadowReviewReceiptResponse: {
+            data: components["schemas"]["ContentShadowReviewReceipt"];
+        };
         RecheckTargetScope: {
             /** @enum {string} */
             kind: "url" | "template" | "site" | "page_set" | "http_status" | "canonical_issue" | "keyword_cluster" | "user_agent";
@@ -3937,6 +4035,40 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    reviewContentShadowRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                flowShadowRunId: components["parameters"]["FlowShadowRunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewContentShadowRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description The recorded review, as facts that can be checked against the record. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentShadowReviewReceiptResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             503: components["responses"]["DependencyUnavailable"];
         };

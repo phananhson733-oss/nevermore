@@ -36,7 +36,13 @@ import { cursorPageUrl, nextCursorPageParam } from "@/lib/api/cursor-pages";
 export type ArtifactType =
   | "content_brief"
   | "metadata_rewrite"
-  | "technical_ticket";
+  | "technical_ticket"
+  /**
+   * Minted only by the Content Shadow worker, never by an operator command.
+   * It is in this union because the reader has to be able to RENDER one — an
+   * artifact type the screen cannot name is an artifact a customer sees crash.
+   */
+  | "english_blog_draft";
 export type ArtifactStatus =
   | "generating"
   | "draft"

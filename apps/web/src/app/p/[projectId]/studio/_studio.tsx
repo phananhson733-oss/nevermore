@@ -25,10 +25,7 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Bcp47Locale,
-  MAX_ARTIFACT_CONTENT_CHARS,
-} from "@sf/contracts";
+import { Bcp47Locale, MAX_ARTIFACT_CONTENT_CHARS } from "@sf/contracts";
 import {
   Clock3,
   CircleAlert,
@@ -37,6 +34,7 @@ import {
   FileText,
   Languages,
   Link2,
+  Newspaper,
   ShieldCheck,
   Sparkles,
   SquarePen,
@@ -117,10 +115,29 @@ import styles from "./studio.module.css";
 
 // ----------------------------------------------------------- Tone helpers ----
 
+/**
+ * The types an operator may ask for.
+ *
+ * `english_blog_draft` is deliberately absent: it is minted only by the Content
+ * Shadow worker from a frozen brief revision, and offering it in a generate form
+ * would create a second, unfrozen way to produce one.
+ */
 const ARTIFACT_TYPES: readonly ArtifactType[] = [
   "content_brief",
   "metadata_rewrite",
   "technical_ticket",
+];
+
+/**
+ * Every type the queue can DISPLAY, in canonical order.
+ *
+ * Wider than the creatable list on purpose: a deliverable this screen cannot
+ * name is a deliverable a customer meets as a crash, and a Content Shadow draft
+ * is a real deliverable of the project whoever made it.
+ */
+const ARTIFACT_TYPE_ORDER: readonly ArtifactType[] = [
+  ...ARTIFACT_TYPES,
+  "english_blog_draft",
 ];
 
 /** Per-type lucide glyph — a quiet visual anchor on cards and group heads. */
@@ -128,6 +145,7 @@ const ARTIFACT_TYPE_ICON: Record<ArtifactType, LucideIcon> = {
   content_brief: FileText,
   metadata_rewrite: SquarePen,
   technical_ticket: ClipboardList,
+  english_blog_draft: Newspaper,
 };
 
 const GENERATION_MODES: readonly GenerationMode[] = [
@@ -286,7 +304,7 @@ function parseEditedContent(
 function groupByType(
   artifacts: readonly Artifact[],
 ): readonly (readonly [ArtifactType, readonly Artifact[]])[] {
-  return ARTIFACT_TYPES.map(
+  return ARTIFACT_TYPE_ORDER.map(
     (type) => [type, artifacts.filter((a) => a.artifactType === type)] as const,
   ).filter(([, list]) => list.length > 0);
 }
@@ -344,7 +362,8 @@ function useUnsavedArtifactNavigationGuard(
           willLeaveEditor: internalNavigation && !sameDocument,
           button: event.button,
           modified,
-          opensNewContext: target !== null && target !== "" && target !== "_self",
+          opensNewContext:
+            target !== null && target !== "" && target !== "_self",
           download: anchor.hasAttribute("download"),
         })
       ) {
@@ -450,9 +469,8 @@ interface BrowserNavigation extends EventTarget {
 }
 
 function browserNavigation(): BrowserNavigation | undefined {
-  return (
-    window as typeof window & { readonly navigation?: BrowserNavigation }
-  ).navigation;
+  return (window as typeof window & { readonly navigation?: BrowserNavigation })
+    .navigation;
 }
 
 /** Navigation API fallback for entries created before the project shell. */
@@ -1178,14 +1196,18 @@ function EvidenceRail({
                 <CircleCheckBig aria-hidden="true" size={17} />
                 <div>
                   <strong>{t("validation")}</strong>
-                  <span>{t(`validationState.${artifact.validationState}`)}</span>
+                  <span>
+                    {t(`validationState.${artifact.validationState}`)}
+                  </span>
                 </div>
               </div>
               <div className={styles.checkRow}>
                 <Clock3 aria-hidden="true" size={17} />
                 <div>
                   <strong>{t("revision")}</strong>
-                  <span>{t("revisionLabel", { n: artifact.currentRevision })}</span>
+                  <span>
+                    {t("revisionLabel", { n: artifact.currentRevision })}
+                  </span>
                 </div>
               </div>
               <div className={styles.checkRow}>
@@ -1515,8 +1537,7 @@ function ActionPicker({
             const type = expectedArtifactType(action);
             const key =
               type === null ? null : artifactGenerationKey(action.id, type);
-            const hasLive =
-              key !== null && liveKeys.has(key);
+            const hasLive = key !== null && liveKeys.has(key);
             const active = key !== null && activeKeys.has(key);
             return (
               <li key={action.id} className={styles.pickerRow}>
@@ -1700,9 +1721,7 @@ export function StudioClient({
       if (finishedRuns.current.has(run.id)) return;
       finishedRuns.current.add(run.id);
       setTrackedRunIds((current) => current.filter((id) => id !== run.id));
-      setRunQueryFailureIds((current) =>
-        current.filter((id) => id !== run.id),
-      );
+      setRunQueryFailureIds((current) => current.filter((id) => id !== run.id));
       setLocalActiveKeysByRun((current) => {
         if (!(run.id in current)) return current;
         return Object.fromEntries(
@@ -1740,11 +1759,8 @@ export function StudioClient({
         setArtifactProjectionSettlements((current) =>
           current.map(
             (settlement) =>
-              queuedActionTargetAfterRefresh(
-                settlement,
-                run.id,
-                failed,
-              ) ?? settlement,
+              queuedActionTargetAfterRefresh(settlement, run.id, failed) ??
+              settlement,
           ),
         );
       };
@@ -1788,10 +1804,7 @@ export function StudioClient({
   );
   const generationEligibleActions = eligibleActions.filter(
     (action) =>
-      !queuedActionBlocksGeneration(
-        artifactProjectionSettlements,
-        action.id,
-      ) &&
+      !queuedActionBlocksGeneration(artifactProjectionSettlements, action.id) &&
       !activeGenerationRecoveries.some(
         (recovery) => recovery.actionId === action.id,
       ),
@@ -1872,8 +1885,7 @@ export function StudioClient({
   const activeTargetSettlement =
     activeDeepLink.kind !== "target"
       ? null
-      : activeDeepLink.artifactId === null &&
-          activeDeepLink.actionId !== null
+      : activeDeepLink.artifactId === null && activeDeepLink.actionId !== null
         ? (artifactProjectionSettlements.find(
             (settlement) => settlement.actionId === activeDeepLink.actionId,
           ) ?? null)
@@ -1882,14 +1894,12 @@ export function StudioClient({
           : (artifactProjectionSettlements.find(
               (settlement) =>
                 settlement.actionId === activeDeepLinkArtifact.actionId &&
-                settlement.artifactType ===
-                  activeDeepLinkArtifact.artifactType,
+                settlement.artifactType === activeDeepLinkArtifact.artifactType,
             ) ?? null);
   const activeTargetRecovery =
     activeDeepLink.kind !== "target"
       ? null
-      : activeDeepLink.artifactId === null &&
-          activeDeepLink.actionId !== null
+      : activeDeepLink.artifactId === null && activeDeepLink.actionId !== null
         ? (activeGenerationRecoveries.find(
             (recovery) => recovery.actionId === activeDeepLink.actionId,
           ) ?? null)
@@ -1993,8 +2003,7 @@ export function StudioClient({
           initialDeepLink.actionId !== null &&
           (initialDeepLink.actionId === generateAction?.id ||
             artifactProjectionSettlements.some(
-              (settlement) =>
-                settlement.actionId === initialDeepLink.actionId,
+              (settlement) => settlement.actionId === initialDeepLink.actionId,
             ) ||
             activeGenerationRecoveries.some(
               (recovery) => recovery.actionId === initialDeepLink.actionId,
@@ -2420,9 +2429,7 @@ export function StudioClient({
   ): void {
     const key = artifactGenerationKey(actionId, artifactType);
     finishedRuns.current.delete(run.id);
-    setRunQueryFailureIds((current) =>
-      current.filter((id) => id !== run.id),
-    );
+    setRunQueryFailureIds((current) => current.filter((id) => id !== run.id));
     setTerminalRunFailures((current) =>
       current.filter((item) => item.id !== run.id),
     );
@@ -2604,9 +2611,7 @@ export function StudioClient({
       queryKey: ["run", projectId, runId],
       exact: true,
     });
-    setRunQueryFailureIds((current) =>
-      current.filter((id) => id !== runId),
-    );
+    setRunQueryFailureIds((current) => current.filter((id) => id !== runId));
     setTrackedRunIds((current) =>
       current.includes(runId) ? current : [...current, runId],
     );
@@ -2829,13 +2834,12 @@ export function StudioClient({
                       <div className={styles.cardGrid}>
                         {list.map((artifact) => {
                           const action = actionById.get(artifact.actionId);
-                          const generationFenced =
-                            generationFenceKeys.has(
-                              artifactGenerationKey(
-                                artifact.actionId,
-                                artifact.artifactType,
-                              ),
-                            );
+                          const generationFenced = generationFenceKeys.has(
+                            artifactGenerationKey(
+                              artifact.actionId,
+                              artifact.artifactType,
+                            ),
+                          );
                           return (
                             <ArtifactCard
                               key={artifact.id}
@@ -2867,8 +2871,7 @@ export function StudioClient({
               </div>
             )}
           </div>
-          {artifactsQuery.hasNextPage ||
-          artifactsQuery.isFetchNextPageError ? (
+          {artifactsQuery.hasNextPage || artifactsQuery.isFetchNextPageError ? (
             <div className={styles.queueFooter}>
               {artifactsQuery.isFetchNextPageError ? (
                 <p className={styles.paginationError} role="alert">
@@ -2908,12 +2911,7 @@ export function StudioClient({
               projectId={projectId}
               action={generateAction}
               onQueued={(run, artifactId, artifactType) =>
-                onQueued(
-                  run,
-                  artifactId,
-                  generateAction.id,
-                  artifactType,
-                )
+                onQueued(run, artifactId, generateAction.id, artifactType)
               }
               onAlreadyActive={(artifactType) =>
                 recoverAlreadyActive(generateAction.id, artifactType)
@@ -2944,8 +2942,7 @@ export function StudioClient({
             <EditorPlaceholder
               generationUnavailable={generationUnavailable}
               canGenerate={
-                generationEligibleActions.length > 0 ||
-                actionsQuery.hasNextPage
+                generationEligibleActions.length > 0 || actionsQuery.hasNextPage
               }
               onGenerate={openPicker}
             />

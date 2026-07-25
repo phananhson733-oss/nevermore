@@ -60,6 +60,7 @@ import {
   getContentShadowRun,
   listContentShadowRuns,
 } from "@/lib/services/content-shadow";
+import { reviewContentShadowRevision } from "@/lib/services/content-shadow-review";
 
 /**
  * `createContentShadowRun` / `getContentShadowRun` against a real local
@@ -1375,5 +1376,245 @@ describeDb("listContentShadowRuns", () => {
         { limit: 50, cursor: "not-a-cursor" },
       ),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+});
+
+/**
+ * A human review is a review of one revision, and it publishes nothing.
+ *
+ * These assertions are about refusals rather than the happy path, because the
+ * refusals are where a shortcut would be invisible: a review recorded against
+ * text nobody read, or a blocked draft passed because the caller asked nicely,
+ * both leave a perfectly normal-looking `ready` row behind.
+ */
+async function seedReviewableRun(
+  handle: DbHandle,
+  verdict: "passed" | "needs_review" | "blocked",
+): Promise<{
+  fixture: ShadowFixture;
+  flowShadowRunId: string;
+  artifactId: string;
+  revision: number;
+}> {
+  const fixture = await seedShadowFixture(handle);
+  const run = await startShadowRun(fixture);
+  const draft = await seedRunScopedDraft(handle, fixture, run.asyncRunId, {
+    contentText: "# Draft body",
+  });
+  await new FlowShadowQaGatesRepository(handle.db).insert({
+    workspaceId: fixture.scope.workspaceId,
+    projectId: fixture.scope.projectId,
+    flowShadowRunId: run.flowShadowRunId,
+    evaluatedArtifactId: draft.artifactId,
+    evaluatedRevision: draft.revision,
+    analysisInvocationId: null,
+    verdict,
+    claims: [
+      {
+        claimId: "content-shadow.qa.rl13_banned_jargon",
+        kind: "red_line",
+        status: "passed",
+        detail: "No banned jargon was found.",
+      },
+      {
+        claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
+        kind: "coverage",
+        status: "unevaluated",
+        detail: "Coverage was NOT judged.",
+      },
+    ],
+  });
+  return {
+    fixture,
+    flowShadowRunId: run.flowShadowRunId,
+    artifactId: draft.artifactId,
+    revision: draft.revision,
+  };
+}
+
+describeDb("reviewContentShadowRevision", () => {
+  let handle: DbHandle;
+
+  beforeAll(() => {
+    handle = createDbHandle(DATABASE_URL!);
+  });
+  afterAll(async () => {
+    await handle?.end();
+  });
+
+  it("marks the reviewed revision, and reports that nothing was published", async () => {
+    const seeded = await seedReviewableRun(handle, "passed");
+
+    const receipt = await reviewContentShadowRevision(
+      { workspaceId: seeded.fixture.scope.workspaceId },
+      seeded.fixture.scope.projectId,
+      seeded.flowShadowRunId,
+      { baseRevision: seeded.revision, acknowledgeFindings: false },
+    );
+
+    expect(receipt).toMatchObject({
+      artifactId: seeded.artifactId,
+      reviewedRevision: seeded.revision,
+      artifactStatus: "ready",
+      verdict: "passed",
+      // Three-way, never folded into two, and carried into the record.
+      claimCounts: { passed: 1, failed: 0, unevaluated: 1 },
+      externalPublishingWrite: "none",
+    });
+
+    const artifact = await new ExecutionArtifactsRepository(handle.db).findById(
+      seeded.fixture.scope,
+      seeded.artifactId,
+    );
+    expect(artifact?.status).toBe("ready");
+    // The single write. No approval, checkpoint or review-event row is invented,
+    // and no revision is appended: a review is not an edit.
+    expect(artifact?.current_revision).toBe(seeded.revision);
+  });
+
+  it("is a true no-op when the same review is submitted twice", async () => {
+    const seeded = await seedReviewableRun(handle, "passed");
+    const body = { baseRevision: seeded.revision, acknowledgeFindings: false };
+    const scope = { workspaceId: seeded.fixture.scope.workspaceId };
+
+    await reviewContentShadowRevision(
+      scope,
+      seeded.fixture.scope.projectId,
+      seeded.flowShadowRunId,
+      body,
+    );
+    const second = await reviewContentShadowRevision(
+      scope,
+      seeded.fixture.scope.projectId,
+      seeded.flowShadowRunId,
+      body,
+    );
+
+    expect(second.artifactStatus).toBe("ready");
+  });
+
+  it("refuses a blocked draft even when the caller asks for it directly", async () => {
+    const seeded = await seedReviewableRun(handle, "blocked");
+
+    await expect(
+      reviewContentShadowRevision(
+        { workspaceId: seeded.fixture.scope.workspaceId },
+        seeded.fixture.scope.projectId,
+        seeded.flowShadowRunId,
+        { baseRevision: seeded.revision, acknowledgeFindings: true },
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", status: 422 });
+
+    const artifact = await new ExecutionArtifactsRepository(handle.db).findById(
+      seeded.fixture.scope,
+      seeded.artifactId,
+    );
+    expect(artifact?.status).toBe("draft");
+  });
+
+  it("refuses a needs_review verdict without an explicit acknowledgement", async () => {
+    const seeded = await seedReviewableRun(handle, "needs_review");
+    const scope = { workspaceId: seeded.fixture.scope.workspaceId };
+
+    await expect(
+      reviewContentShadowRevision(
+        scope,
+        seeded.fixture.scope.projectId,
+        seeded.flowShadowRunId,
+        { baseRevision: seeded.revision, acknowledgeFindings: false },
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", status: 422 });
+
+    const granted = await reviewContentShadowRevision(
+      scope,
+      seeded.fixture.scope.projectId,
+      seeded.flowShadowRunId,
+      { baseRevision: seeded.revision, acknowledgeFindings: true },
+    );
+    expect(granted.artifactStatus).toBe("ready");
+  });
+
+  it("refuses a review aimed at a revision that is no longer current", async () => {
+    const seeded = await seedReviewableRun(handle, "passed");
+
+    await expect(
+      reviewContentShadowRevision(
+        { workspaceId: seeded.fixture.scope.workspaceId },
+        seeded.fixture.scope.projectId,
+        seeded.flowShadowRunId,
+        { baseRevision: seeded.revision + 1, acknowledgeFindings: false },
+      ),
+    ).rejects.toMatchObject({ code: "STALE_REVISION", status: 409 });
+
+    const artifact = await new ExecutionArtifactsRepository(handle.db).findById(
+      seeded.fixture.scope,
+      seeded.artifactId,
+    );
+    expect(artifact?.status).toBe("draft");
+  });
+
+  it("refuses when the verdict describes an earlier revision than the current one", async () => {
+    const seeded = await seedReviewableRun(handle, "passed");
+    // An edit lands: a new immutable revision, and the deliverable is a draft
+    // again. The verdict still describes the revision before it.
+    const artifacts = new ExecutionArtifactsRepository(handle.db);
+    const next = seeded.revision + 1;
+    await artifacts.setGeneratedIfRevision(
+      seeded.fixture.scope,
+      seeded.artifactId,
+      {
+        status: "draft",
+        currentRevision: next,
+        expectedRevision: seeded.revision,
+        expectedStatus: "draft",
+        validationState: "valid",
+        contentHash: contentHash({ text: "# Edited body" }),
+      },
+    );
+    await artifacts.insertRevision({
+      workspaceId: seeded.fixture.scope.workspaceId,
+      projectId: seeded.fixture.scope.projectId,
+      artifactId: seeded.artifactId,
+      revision: next,
+      outputLocale: "en",
+      contentFormat: "markdown",
+      contentText: "# Edited body",
+      contentJson: null,
+      contentHash: contentHash({ text: "# Edited body" }),
+      generatedBy: "operator",
+      editorId: seeded.fixture.actorId,
+      analysisInvocationId: null,
+      note: null,
+      validationErrors: [],
+    });
+
+    await expect(
+      reviewContentShadowRevision(
+        { workspaceId: seeded.fixture.scope.workspaceId },
+        seeded.fixture.scope.projectId,
+        seeded.flowShadowRunId,
+        { baseRevision: next, acknowledgeFindings: true },
+      ),
+    ).rejects.toMatchObject({ code: "STALE_REVISION", status: 409 });
+
+    const artifact = await artifacts.findById(
+      seeded.fixture.scope,
+      seeded.artifactId,
+    );
+    expect(artifact?.status).toBe("draft");
+  });
+
+  it("reports a run in another workspace as absent, never forbidden", async () => {
+    const seeded = await seedReviewableRun(handle, "passed");
+    const other = await seedShadowFixture(handle);
+
+    await expect(
+      reviewContentShadowRevision(
+        { workspaceId: other.scope.workspaceId },
+        other.scope.projectId,
+        seeded.flowShadowRunId,
+        { baseRevision: seeded.revision, acknowledgeFindings: false },
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
   });
 });

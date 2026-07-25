@@ -37,6 +37,7 @@ import {
 import { uniqueCursorItems } from "@/lib/api/cursor-pages";
 import type { ListEnvelope } from "@/lib/api";
 import {
+  useArtifactRevision,
   useContentShadowRun,
   useContentShadowRuns,
   type ContentShadowRun,
@@ -46,9 +47,13 @@ import { useProjectSources } from "@/lib/api/hooks-sources";
 import {
   useProjectActions,
   useProjectArtifacts,
+  type Artifact,
   type ArtifactAction,
 } from "@/lib/api/hooks-studio";
 import { ProblemNotice, ProblemState } from "../_problem-display";
+import { ComparePanes } from "./_compare.tsx";
+import { coverageClaimOf } from "./_compare-view.ts";
+import { connectedSourceProviders } from "./_connected-sources.ts";
 import { MarkdownBlocks } from "./_markdown-blocks.tsx";
 import {
   advisoryClaimCount,
@@ -62,6 +67,16 @@ import {
   type QaClaimView,
   type QaGroup,
 } from "./_qa-view.ts";
+import {
+  RevisionHistory,
+  ReviewSurface,
+  StaleReviewBanner,
+} from "./_review.tsx";
+import {
+  humanReviewState,
+  type ArtifactLifecycle,
+  type HumanReviewState,
+} from "./_review-view.ts";
 import styles from "./execution.module.css";
 
 const DASH = "—";
@@ -106,7 +121,9 @@ function QaGroupRow({ group }: { readonly group: QaGroup }) {
   const t = useTranslations("studio.qa");
   const [open, setOpen] = useState(groupOpensByDefault(group));
   const reasonKey =
-    group.reasonClaim === null ? null : claimLabelKey(group.reasonClaim.claimId);
+    group.reasonClaim === null
+      ? null
+      : claimLabelKey(group.reasonClaim.claimId);
   const stateText =
     group.state === "failed"
       ? t("state.failed", { count: group.failedCount })
@@ -177,37 +194,96 @@ function BlockerBlock({ claims }: { readonly claims: readonly QaClaimView[] }) {
   );
 }
 
+/**
+ * The human-review row of the quality rail.
+ *
+ * Not a gate claim — the gate never judges this — but it belongs beside them:
+ * "a person has confirmed this" is a state of the deliverable, and a rail that
+ * listed only the machine's four groups would leave a reader to infer it.
+ * It returns to "awaiting" the instant a new revision exists.
+ */
+function HumanReviewRow({ state }: { readonly state: HumanReviewState }) {
+  const t = useTranslations("studio.qa");
+  const mark = state === "passed" ? "✓" : state === "awaiting" ? "!" : DASH;
+  const tone =
+    state === "passed"
+      ? styles.groupPassed
+      : state === "awaiting"
+        ? styles.groupPartial
+        : styles.groupUnevaluated;
+  return (
+    <div className={styles.qaGroup} data-qa-human-review={state}>
+      <div className={styles.qaGroupHead}>
+        <span className={cx(styles.qaGroupIcon, tone)}>{mark}</span>
+        <span>
+          <span className={styles.qaGroupName}>{t("group.human_review")}</span>
+          <span className={styles.qaGroupState}>
+            {t(`humanState.${state}` as "humanState.awaiting")}
+          </span>
+        </span>
+        <span />
+      </div>
+    </div>
+  );
+}
+
 function QaRail({
   run,
-  connectedSourceCount,
+  connectedProviders,
+  currentRevision,
+  artifactStatus,
 }: {
   readonly run: ContentShadowRun;
-  readonly connectedSourceCount: number | null;
+  /** `null` while the project's source list is still being read. */
+  readonly connectedProviders: readonly string[] | null;
+  /**
+   * The deliverable's LIVE revision and status, read from the artifacts list.
+   *
+   * Deliberately not `run.draft.currentRevision`: the run projection pins the
+   * draft to the revision its own gate judged, which is the right answer for
+   * "what did this run produce" and the wrong one for "is that still the text
+   * on screen". Comparing the verdict against the pinned number could only ever
+   * report "current", which would make the staleness check decorative.
+   */
+  readonly currentRevision: number | null;
+  readonly artifactStatus: ArtifactLifecycle | null;
 }) {
   const t = useTranslations("studio.qa");
+  const tProvider = useTranslations("provider");
   const claims = (run.qa?.claims ?? []) as readonly QaClaimView[];
   const counts = qaCounts(claims);
   const groups = qaGroups(claims);
   const blocking = blockingClaims(claims);
   const verdict = run.qa?.verdict ?? null;
-  const stale = verdictIsStale(
-    run.qa?.evaluatedRevision ?? null,
-    run.draft?.currentRevision ?? null,
-  );
+  const evaluatedRevision = run.qa?.evaluatedRevision ?? null;
+  const stale = verdictIsStale(evaluatedRevision, currentRevision);
   const externalLimitation = run.research?.limitations[0] ?? null;
+  const humanState = humanReviewState({
+    verdict,
+    evaluatedRevision,
+    currentRevision,
+    artifactStatus,
+    hasUnsavedEdits: false,
+  });
 
   return (
-    <aside className={styles.qaRail} aria-label={t("railLabel")} data-qa-rail="">
+    <aside
+      className={styles.qaRail}
+      aria-label={t("railLabel")}
+      data-qa-rail=""
+    >
       <div className={styles.qaVerdict}>
         <span className={styles.qaVerdictLabel}>{t("verdictLabel")}</span>
-        <StatusPill tone={verdictTone(verdict) as StatusTone}>
+        <StatusPill
+          tone={(stale ? "neutral" : verdictTone(verdict)) as StatusTone}
+        >
           {stale
-            ? t("verdictStale")
+            ? t("verdictStale", { revision: evaluatedRevision ?? 0 })
             : t(`verdict.${verdict ?? "none"}` as "verdict.none")}
         </StatusPill>
       </div>
       {run.qa !== null ? (
-        <p className={styles.qaNote}>
+        <p className={styles.qaNote} data-qa-verdict-revision="">
           {t("verdictRevision", { revision: run.qa.evaluatedRevision })}
         </p>
       ) : null}
@@ -217,7 +293,9 @@ function QaRail({
           ? t("countsNotEvaluated")
           : t("countsTitle", { count: counts.total })}
       </p>
-      <div className={styles.qaCounts}>
+      {/* A stale tally is still the truth about the revision it judged, so it
+          stays legible and keeps its numbers — it is dimmed, not hidden. */}
+      <div className={cx(styles.qaCounts, stale && styles.qaCountsStale)}>
         <div className={styles.qaCountCell}>
           <span>{t("counts.passed")}</span>
           <strong>{run.qa === null ? DASH : counts.passed}</strong>
@@ -232,14 +310,13 @@ function QaRail({
         </div>
       </div>
 
-      {groups.length > 0 ? (
-        <section className={styles.qaSection}>
-          <h4>{t("sectionChecks")}</h4>
-          {groups.map((group) => (
-            <QaGroupRow key={group.kind} group={group} />
-          ))}
-        </section>
-      ) : null}
+      <section className={styles.qaSection}>
+        <h4>{t("sectionChecks")}</h4>
+        {groups.map((group) => (
+          <QaGroupRow key={group.kind} group={group} />
+        ))}
+        <HumanReviewRow state={humanState} />
+      </section>
 
       {verdict === "blocked" && blocking.length > 0 ? (
         <BlockerBlock claims={blocking} />
@@ -275,12 +352,17 @@ function QaRail({
           </div>
           <div>
             <dt>{t("facts.connectedSources")}</dt>
+            {/* Named, not counted, and read off every live state rather than
+                the single word `connected`: a source that has delivered data
+                has already moved past it. */}
             <dd>
-              {connectedSourceCount === null
+              {connectedProviders === null
                 ? DASH
-                : connectedSourceCount === 0
+                : connectedProviders.length === 0
                   ? t("facts.noConnectedSources")
-                  : t("facts.recordCount", { count: connectedSourceCount })}
+                  : connectedProviders
+                      .map((provider) => tProvider(provider as "crawl"))
+                      .join(" · ")}
             </dd>
           </div>
           <div>
@@ -328,7 +410,9 @@ function MetaStrip({
       </div>
       <div className={styles.metaCell}>
         <span className={styles.metaLabel}>{t("sourceOpportunity")}</span>
-        <span className={styles.metaValue}>{actionTitle ?? t("notLinked")}</span>
+        <span className={styles.metaValue}>
+          {actionTitle ?? t("notLinked")}
+        </span>
       </div>
       <div className={styles.metaCell}>
         <span className={styles.metaLabel}>{t("generation")}</span>
@@ -370,10 +454,7 @@ function DocBody({ run }: { readonly run: ContentShadowRun }) {
         <p className={styles.docLabel}>
           {`English draft · Target market: ${run.outputLocale}`}
         </p>
-        <MarkdownBlocks
-          markdown={body}
-          tableClassName={styles.tableScroll}
-        />
+        <MarkdownBlocks markdown={body} tableClassName={styles.tableScroll} />
       </div>
     );
   }
@@ -400,31 +481,68 @@ function DocBody({ run }: { readonly run: ContentShadowRun }) {
   );
 }
 
+type CompareMode = "draft" | "compare";
+
 function DocPanel({
+  projectId,
   run,
   actionTitle,
   generationMode,
-  connectedSourceCount,
+  connectedProviders,
+  liveArtifact,
+  compareMode,
+  onCompareMode,
 }: {
+  readonly projectId: string;
   readonly run: ContentShadowRun;
   readonly actionTitle: string | null;
   readonly generationMode: string | null;
-  readonly connectedSourceCount: number | null;
+  readonly connectedProviders: readonly string[] | null;
+  readonly liveArtifact: Artifact | null;
+  readonly compareMode: CompareMode;
+  readonly onCompareMode: (mode: CompareMode) => void;
 }) {
   const t = useTranslations("studio.shadow");
   const tQa = useTranslations("studio.qa");
-  const revision = run.draft?.currentRevision ?? 0;
+  const tCompare = useTranslations("studio.compare");
+  const claims = (run.qa?.claims ?? []) as readonly QaClaimView[];
+  const evaluatedRevision = run.qa?.evaluatedRevision ?? null;
+  // The live artifact is the authority on "what revision is on screen"; the run
+  // projection pins its draft to the revision its own gate judged.
+  const currentRevision =
+    liveArtifact?.currentRevision ?? run.draft?.currentRevision ?? 0;
+  const artifactStatus = (liveArtifact?.status ??
+    run.draft?.status ??
+    null) as ArtifactLifecycle | null;
+  const stale = verdictIsStale(evaluatedRevision, currentRevision);
   const briefLinkBroken =
     run.frozenInputs.contentBriefOutline.briefSections.length === 0;
+  const briefQuery = useArtifactRevision(
+    projectId,
+    run.source.contentBriefArtifactId,
+    run.source.contentBriefRevision,
+  );
 
   return (
     <article className={styles.docPanel} data-shadow-doc="">
       <header className={styles.docHead}>
         <div className={styles.docKicker}>
           <Badge>{t("deliverableType")}</Badge>
-          <span className={styles.docRevision}>
-            {revision === 0 ? t("noRevision") : t("revision", { revision })}
+          {/* Revision is stated here permanently: it is what the review below
+              binds to, and a review of an unnamed version is not a review. */}
+          <span className={styles.docRevision} data-shadow-revision="">
+            {currentRevision === 0
+              ? t("noRevision")
+              : t("revision", { revision: currentRevision })}
           </span>
+          {artifactStatus === null ? null : (
+            <StatusPill
+              tone={artifactStatus === "ready" ? "success" : "neutral"}
+              data-shadow-status={artifactStatus}
+            >
+              {t(`artifactStatus.${artifactStatus}` as "artifactStatus.draft")}
+            </StatusPill>
+          )}
           {run.phase !== "complete" ? (
             <StatusPill tone={phaseTone(run.phase)}>
               {t(`phase.${run.phase}`)}
@@ -438,6 +556,27 @@ function DocPanel({
           ) : null}
         </div>
         <h3 className={styles.docTitle}>{actionTitle ?? t("untitled")}</h3>
+        <div className={styles.docActions}>
+          <RevisionHistory
+            currentRevision={currentRevision}
+            evaluatedRevision={evaluatedRevision}
+            briefRevision={run.source.contentBriefRevision}
+            artifactStatus={artifactStatus}
+          />
+          <ReviewSurface
+            projectId={projectId}
+            flowShadowRunId={run.flowShadowRunId}
+            deliverableTitle={actionTitle ?? t("untitled")}
+            contentHash={run.contentHash}
+            verdict={run.qa?.verdict ?? null}
+            evaluatedRevision={evaluatedRevision}
+            currentRevision={currentRevision === 0 ? null : currentRevision}
+            artifactStatus={artifactStatus}
+            blockingCount={blockingClaims(claims).length}
+            briefRevision={run.source.contentBriefRevision}
+            claimCounts={qaCounts(claims)}
+          />
+        </div>
       </header>
 
       <MetaStrip
@@ -446,6 +585,8 @@ function DocPanel({
         generationMode={generationMode}
       />
 
+      {stale ? <StaleReviewBanner revision={currentRevision} /> : null}
+
       {briefLinkBroken ? (
         <div className={styles.briefLinkBroken} data-shadow-brief-broken="">
           <strong>{t("briefLinkBroken.title")}</strong>
@@ -453,9 +594,58 @@ function DocPanel({
         </div>
       ) : null}
 
-      <div className={styles.docGrid}>
-        <DocBody run={run} />
-        <QaRail run={run} connectedSourceCount={connectedSourceCount} />
+      {/* Side by side is a mode, not the default: at any real window width two
+          bodies plus a queue plus a quality rail leave neither body a readable
+          measure, and an unreadable body is not evidence a reviewer can judge. */}
+      <div
+        className={styles.viewSwitch}
+        role="tablist"
+        aria-label={tCompare("switchLabel")}
+      >
+        {(["draft", "compare"] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            role="tab"
+            id={`sf-shadow-view-${mode}`}
+            aria-selected={compareMode === mode}
+            aria-controls="sf-shadow-view-panel"
+            tabIndex={compareMode === mode ? 0 : -1}
+            className={styles.viewSwitchBtn}
+            onClick={() => onCompareMode(mode)}
+            data-view-switch={mode}
+          >
+            {tCompare(mode === "draft" ? "switchDraft" : "switchCompare")}
+          </button>
+        ))}
+      </div>
+
+      <div
+        id="sf-shadow-view-panel"
+        role="tabpanel"
+        aria-labelledby={`sf-shadow-view-${compareMode}`}
+        className={styles.docGrid}
+      >
+        {compareMode === "compare" ? (
+          <ComparePanes
+            outline={run.frozenInputs.contentBriefOutline}
+            briefRevision={run.source.contentBriefRevision}
+            briefContent={briefQuery.data?.current ?? null}
+            briefLoading={briefQuery.isPending}
+            draftRevision={currentRevision}
+            draftBody={run.draft?.contentText ?? null}
+            outputLocale={run.outputLocale}
+            coverageClaim={coverageClaimOf(claims)}
+          />
+        ) : (
+          <DocBody run={run} />
+        )}
+        <QaRail
+          run={run}
+          connectedProviders={connectedProviders}
+          currentRevision={currentRevision === 0 ? null : currentRevision}
+          artifactStatus={artifactStatus}
+        />
       </div>
     </article>
   );
@@ -507,6 +697,7 @@ export function ContentShadowSection({
   const actions = uniqueCursorItems(actionsQuery.data);
   const artifacts = uniqueCursorItems(artifactsQuery.data);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [compareMode, setCompareMode] = useState<CompareMode>("draft");
 
   const actionById = useMemo(
     () => new Map(actions.map((action) => [action.id, action])),
@@ -521,11 +712,25 @@ export function ContentShadowSection({
   );
   const detail = detailQuery.data ?? null;
 
-  const generationMode =
-    detail?.draft === undefined || detail?.draft === null
+  /**
+   * The deliverable as it stands right now.
+   *
+   * The run projection answers "what did this run produce", pinned to the
+   * revision its own gate judged. Whether that is still the current text is a
+   * different question, and only the artifacts list can answer it — which is
+   * exactly what makes an edit visible as an edit here.
+   */
+  const liveArtifact =
+    detail?.draft == null
       ? null
-      : (artifacts.find((artifact) => artifact.id === detail.draft?.artifactId)
-          ?.generationMode ?? null);
+      : (artifacts.find(
+          (artifact) => artifact.id === detail.draft?.artifactId,
+        ) ?? null);
+  const generationMode = liveArtifact?.generationMode ?? null;
+  const connectedProviders =
+    sourcesQuery.data === undefined
+      ? null
+      : connectedSourceProviders(sourcesQuery.data);
 
   if (runsQuery.isError) {
     return (
@@ -555,7 +760,10 @@ export function ContentShadowSection({
         <p className={styles.shadowLead}>{t("lead")}</p>
       </header>
 
-      <div className={styles.workspace}>
+      {/* Side by side needs the width the queue is holding, so the queue
+          becomes a horizontal rail — the same shape it already takes on a
+          narrow window, rather than a second layout invented for this mode. */}
+      <div className={styles.workspace} data-compare-mode={compareMode}>
         <Panel
           padding="none"
           className={styles.workQueue}
@@ -613,18 +821,14 @@ export function ContentShadowSection({
           </Panel>
         ) : (
           <DocPanel
+            projectId={projectId}
             run={detail}
-            actionTitle={
-              actionById.get(detail.source.actionId)?.title ?? null
-            }
+            actionTitle={actionById.get(detail.source.actionId)?.title ?? null}
             generationMode={generationMode}
-            connectedSourceCount={
-              sourcesQuery.data === undefined
-                ? null
-                : sourcesQuery.data.filter(
-                    (source) => source.state === "connected",
-                  ).length
-            }
+            connectedProviders={connectedProviders}
+            liveArtifact={liveArtifact}
+            compareMode={compareMode}
+            onCompareMode={setCompareMode}
           />
         )}
       </div>
