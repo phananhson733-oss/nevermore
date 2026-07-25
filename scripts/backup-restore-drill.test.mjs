@@ -328,15 +328,22 @@ test("URL, entropy, identifier, client path, and retention guards reject unsafe 
   );
 });
 
-test("inventory covers exactly the 33 app tables and explicit object metadata", () => {
-  assert.equal(APP_TABLES.length, 33);
-  assert.equal(new Set(APP_TABLES).size, 33);
+test("inventory covers exactly the 44 app tables and explicit object metadata", () => {
+  assert.equal(APP_TABLES.length, 44);
+  assert.equal(new Set(APP_TABLES).size, 44);
   for (const table of [
     "capability_runs",
     "audit_runs",
     "audit_module_results",
     "site_pages",
     "page_snapshots",
+    "finding_targets",
+    "product_profile_runs",
+    "keyword_entities",
+    "competitor_entities",
+    "flow_shadow_runs",
+    "flow_shadow_research_packs",
+    "flow_shadow_qa_gates",
   ]) {
     assert.ok(APP_TABLES.includes(table), `missing restore inventory table ${table}`);
   }
@@ -497,7 +504,7 @@ test("runRestoreDrill verifies then drops only its generated target and writes s
   assert.equal(jsonReport.cleanup.targetDatabaseDropped, true);
   assert.equal(jsonReport.cleanup.targetDatabaseAbsentAfterCleanup, true);
   assert.equal(jsonReport.cleanup.dumpDirectoryRemoved, true);
-  assert.equal(jsonReport.verification.appTableCount, 33);
+  assert.equal(jsonReport.verification.appTableCount, 44);
   assert.equal(jsonReport.verification.canonicalChecksumAlgorithm, "sha256");
   assert.doesNotMatch(JSON.stringify(jsonReport), /super-secret|postgres:\/\//);
   assert.doesNotMatch(markdownReport, /super-secret|postgres:\/\//);
@@ -636,7 +643,7 @@ test("default PostgreSQL process adapters run through a private fake client tool
     const state = await fake.readState();
 
     assert.equal(result.status, "passed");
-    assert.equal(report.verification.appTableCount, 33);
+    assert.equal(report.verification.appTableCount, 44);
     assert.equal(report.verification.migrationReplay, "passed");
     assert.equal(report.verification.schemaSmoke, "passed");
     assert.equal(report.cleanup.targetDatabaseDropped, true);

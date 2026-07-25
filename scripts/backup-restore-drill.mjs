@@ -49,6 +49,19 @@ const POSTGRES_ENV_ALLOWLIST = [
 const trustedFailures = new WeakMap();
 const failureReportPaths = new WeakMap();
 
+/**
+ * Every table in the `app` schema, which is the whole tenant-visible contract
+ * the restore drill has to prove it can bring back. This list is not curated:
+ * `scripts/backup-restore-drill.test.mjs` asserts it equals the table set
+ * parsed out of the checked-in migration chain, so a new migration that adds a
+ * table and forgets this list fails the unit gate rather than silently
+ * shrinking what the drill counts. There are no intentional exclusions.
+ *
+ * Not listed, and deliberately so: `pgboss` owns its own schema and is queue
+ * state rather than tenant data. `pg_dump`/`pg_restore` still carry it, but its
+ * row counts are transient by construction and would make the inventory
+ * comparison flap, so it is verified by restore success rather than by count.
+ */
 export const APP_TABLES = [
   "workspaces",
   "operator_profiles",
@@ -70,6 +83,7 @@ export const APP_TABLES = [
   "evidence",
   "findings",
   "finding_observations",
+  "finding_targets",
   "finding_review_events",
   "actions",
   "action_override_audit",
@@ -83,48 +97,87 @@ export const APP_TABLES = [
   "audit_module_results",
   "site_pages",
   "page_snapshots",
+  "product_profile_runs",
+  "product_profile_invocation_attempts",
+  "keyword_occurrences",
+  "keyword_entities",
+  "keyword_entity_sources",
+  "competitor_entities",
+  "competitor_origin_occurrences",
+  "flow_shadow_runs",
+  "flow_shadow_research_packs",
+  "flow_shadow_qa_gates",
 ];
 
+/**
+ * Columns whose corruption a row count and a whole-row checksum would both
+ * survive in a partial restore: object-storage keys and content hashes. Each
+ * probe declares `key`, the table's real primary key, because that is both the
+ * identity emitted with the payload and the deterministic ordering the checksum
+ * depends on. `key` is not decorative: the unit gate asserts it matches the
+ * primary key parsed from the migration chain, which is how a probe that
+ * assumed a non-existent `id` column is now impossible to land.
+ */
 export const INTEGRITY_PROBES = [
   {
     id: "icp_profiles.content-hash",
     table: "icp_profiles",
+    key: ["id"],
     columns: ["content_hash"],
   },
   {
     id: "import_previews.raw-object",
     table: "import_previews",
+    key: ["id"],
     columns: ["raw_object_key", "file_checksum"],
   },
   {
     id: "data_snapshots.raw-object",
     table: "data_snapshots",
+    key: ["id"],
     columns: ["raw_object_key", "checksum"],
   },
   {
     id: "capability_runs.input-manifest-hash",
     table: "capability_runs",
+    key: ["async_run_id"],
     columns: ["input_manifest_hash"],
   },
   {
     id: "page_snapshots.content-hash",
     table: "page_snapshots",
+    key: ["id"],
     columns: ["content_hash"],
   },
   {
     id: "execution_artifacts.content-hash",
     table: "execution_artifacts",
+    key: ["id"],
     columns: ["content_hash"],
   },
   {
     id: "artifact_revisions.content-hash",
     table: "artifact_revisions",
+    key: ["id"],
     columns: ["content_hash"],
   },
   {
     id: "export_bundles.object-metadata",
     table: "export_bundles",
+    key: ["id"],
     columns: ["object_key", "checksum"],
+  },
+  {
+    id: "flow_shadow_runs.content-hash",
+    table: "flow_shadow_runs",
+    key: ["id"],
+    columns: ["content_hash"],
+  },
+  {
+    id: "flow_shadow_research_packs.content-hash",
+    table: "flow_shadow_research_packs",
+    key: ["id"],
+    columns: ["content_hash"],
   },
 ];
 
@@ -378,11 +431,34 @@ export function buildCanonicalCopySql(table) {
   return `copy (select to_jsonb(row_data)::text from app.${quotedTable} as row_data order by to_jsonb(row_data)::text) to stdout`;
 }
 
-function buildIntegrityCopySql(probe) {
-  const fields = ["id", ...probe.columns]
+export function buildIntegrityCopySql(probe) {
+  const fields = [...probe.key, ...probe.columns]
     .map((column) => `'${column}', ${quoteIdentifier(column)}`)
     .join(", ");
-  return `copy (select jsonb_build_object(${fields})::text from app.${quoteIdentifier(probe.table)} order by id::text) to stdout`;
+  const ordering = probe.key
+    .map((column) => `${quoteIdentifier(column)}::text`)
+    .join(", ");
+  return `copy (select jsonb_build_object(${fields})::text from app.${quoteIdentifier(probe.table)} order by ${ordering}) to stdout`;
+}
+
+/**
+ * Pull every schema object a generated statement names back out of the SQL.
+ * Table references are always `app."<table>"` and every other quoted identifier
+ * in these single-table statements is a column of that table, so the drill's
+ * own SQL can be checked against the schema without a database. Reading the
+ * emitted string rather than the probe declaration means a typo in either one
+ * is caught.
+ */
+export function extractSchemaReferences(sqlText) {
+  const qualifiedTable = /\bapp\."([a-z_][a-z0-9_]*)"/g;
+  const quotedIdentifier = /"([a-z_][a-z0-9_]*)"/g;
+  const tables = new Set();
+  for (const match of sqlText.matchAll(qualifiedTable)) tables.add(match[1]);
+  const columns = new Set();
+  for (const match of sqlText.replace(qualifiedTable, " ").matchAll(quotedIdentifier)) {
+    columns.add(match[1]);
+  }
+  return { tables: [...tables], columns: [...columns] };
 }
 
 function parseKeyValueRows(stdout) {
