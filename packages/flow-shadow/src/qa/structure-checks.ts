@@ -384,9 +384,15 @@ const VAGUE_ANCHORS: ReadonlySet<string> = new Set([
 
 export function checkSc8(context: QaContext): QaRuleResult {
   // The ported rule also asserted the CTA URL equals the ICP's conversion
-  // target. That half is NOT portable: the conversion URL is not part of the
-  // frozen tuple, and reading it live would make the verdict depend on a
-  // mutable ICP row. What ports cleanly is the anchor-text half.
+  // target. The conversion target IS now part of the frozen tuple (it comes from
+  // the immutable `icp_profiles` version the frozen diagnosis already pinned),
+  // so that half is no longer blocked by a mutable input — but it is still not
+  // enabled here. Asserting destination EQUALITY would fail every draft that
+  // links to a pricing page, a docs page or any other legitimate first-party
+  // destination, and this rule is advisory precisely because it must not
+  // manufacture that kind of defect. What the frozen identity does change is
+  // RL12/RL12b, where a first-party link now resolves instead of being reported
+  // as uncheckable. This rule still judges anchor TEXT only.
   const vague: Finding[] = [];
   for (const entry of context.body) {
     for (const link of extractMarkdownLinks(entry.text)) {
@@ -405,7 +411,7 @@ export function checkSc8(context: QaContext): QaRuleResult {
     : pass(
         "sc8_cta_anchor",
         "sc8_descriptive_anchors",
-        "Every link uses a descriptive anchor. Note that the conversion-target URL is not part of the frozen inputs, so the destination itself is not checked.",
+        "Every link uses a descriptive anchor. This rule judges anchor TEXT only: the frozen inputs do carry the ICP conversion target, but a draft may legitimately link to any first-party destination, so no destination equality is asserted here.",
       );
 }
 
@@ -467,7 +473,7 @@ export function checkSc9(context: QaContext): QaRuleResult {
     return pass(
       "sc9_sources_section",
       "sc9_no_citable_sources",
-      `Advisory (never gates): the frozen research pack carries no citable source (every source in it is an internal SignalFrame record identified by uuid), so a Sources section is not expected. The draft ${present ? "carries one anyway" : "carries none under a heading recognised as a reference list"}.`,
+      `Advisory (never gates): the frozen research pack carries no EXTERNAL citable source — every source in it is a first-party record (SignalFrame uuids plus this project's own site origin and conversion target) — so a Sources section is not expected. The draft ${present ? "carries one anyway" : "carries none under a heading recognised as a reference list"}.`,
     );
   }
   const entries = referenceEntries(context);

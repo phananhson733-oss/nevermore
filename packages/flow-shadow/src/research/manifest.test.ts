@@ -32,6 +32,10 @@ function frozen(
       keywordEntityIds: [KEYWORD_B, KEYWORD_A, KEYWORD_B],
     },
     generativeQueryEntityIds: [GENERATIVE_A],
+    firstParty: {
+      siteOrigin: "https://acme.example",
+      icpPrimaryConversionUrl: "https://acme.example/demo",
+    },
     contentBriefOutline: {
       briefSections: ["Objective", "Audience"],
       targetKeywords: ["growth analytics", "product analytics"],
@@ -49,10 +53,7 @@ describe("buildContentShadowInputManifest", () => {
   it("sorts and de-duplicates every identity collection", () => {
     const manifest = buildContentShadowInputManifest(frozen());
 
-    expect(manifest.competitorEntityIds).toEqual([
-      COMPETITOR_A,
-      COMPETITOR_B,
-    ]);
+    expect(manifest.competitorEntityIds).toEqual([COMPETITOR_A, COMPETITOR_B]);
     expect(manifest.searchCluster.keywordEntityIds).toEqual([
       KEYWORD_A,
       KEYWORD_B,
@@ -79,9 +80,7 @@ describe("buildContentShadowInputManifest", () => {
     const manifest = buildContentShadowInputManifest(frozen());
 
     expect(manifest.flowAdapterVersion).toBe(CONTENT_SHADOW_ADAPTER_VERSION);
-    expect(manifest.promptSetVersion).toBe(
-      "mvp.prompts.content-shadow.0.3.0",
-    );
+    expect(manifest.promptSetVersion).toBe("mvp.prompts.content-shadow.0.3.0");
     expect(manifest.projectionVersion).toBe("content-shadow.0.3.1");
   });
 
@@ -212,6 +211,104 @@ describe("brief outline is part of the frozen address (Task 4b)", () => {
       "briefSections",
       "pageAssignment",
       "targetKeywords",
+    ]);
+  });
+});
+
+describe("first-party identity is part of the frozen address (Task 6b)", () => {
+  it("carries the site origin and the ICP conversion target through", () => {
+    const manifest = buildContentShadowInputManifest(frozen());
+
+    expect(manifest.firstParty).toEqual({
+      siteOrigin: "https://acme.example",
+      icpPrimaryConversionUrl: "https://acme.example/demo",
+    });
+  });
+
+  /**
+   * Red line C, stated as a test. `sites.origin` is a mutable row: freezing it
+   * is what makes an origin that moves between accept and claim a drift failure
+   * instead of a silent re-render against a different first-party identity.
+   */
+  it("changes the frozen tuple when the site origin moves", () => {
+    const pinned = buildContentShadowInputManifest(frozen());
+    const moved = buildContentShadowInputManifest(
+      frozen({
+        firstParty: {
+          siteOrigin: "https://acme-rebrand.example",
+          icpPrimaryConversionUrl: "https://acme.example/demo",
+        },
+      }),
+    );
+
+    expect(JSON.stringify(pinned)).not.toBe(JSON.stringify(moved));
+  });
+
+  it("changes the frozen tuple when the conversion target moves", () => {
+    const pinned = buildContentShadowInputManifest(frozen());
+    const moved = buildContentShadowInputManifest(
+      frozen({
+        firstParty: {
+          siteOrigin: "https://acme.example",
+          icpPrimaryConversionUrl: null,
+        },
+      }),
+    );
+
+    expect(JSON.stringify(pinned)).not.toBe(JSON.stringify(moved));
+  });
+
+  /**
+   * Normalization lives in the builder, not in its two callers: the accepting
+   * service and the worker's replay guard hash this tuple independently, so a
+   * value that normalized differently on the two sides would fail every normal
+   * replay as input drift.
+   */
+  it("normalizes the frozen identity so both sides hash the same bytes", () => {
+    const padded = buildContentShadowInputManifest(
+      frozen({
+        firstParty: {
+          siteOrigin: "  https://acme.example  ",
+          icpPrimaryConversionUrl: "  https://acme.example/demo  ",
+        },
+      }),
+    );
+
+    expect(JSON.stringify(padded)).toBe(
+      JSON.stringify(buildContentShadowInputManifest(frozen())),
+    );
+  });
+
+  it("refuses to freeze a conversion target that is not an absolute URL", () => {
+    const manifest = buildContentShadowInputManifest(
+      frozen({
+        firstParty: {
+          siteOrigin: "https://acme.example",
+          icpPrimaryConversionUrl: "book a demo",
+        },
+      }),
+    );
+
+    // `null`, never the raw token: a non-URL in the pack would be matched by the
+    // NAME half of the resolution chain and could confirm a reference nothing in
+    // our records supports.
+    expect(manifest.firstParty.icpPrimaryConversionUrl).toBeNull();
+  });
+
+  it("does not let a caller smuggle an extra key into the frozen identity", () => {
+    const manifest = buildContentShadowInputManifest(
+      frozen({
+        firstParty: {
+          siteOrigin: "https://acme.example",
+          icpPrimaryConversionUrl: null,
+          smuggled: "payload",
+        } as never,
+      }),
+    );
+
+    expect(Object.keys(manifest.firstParty).sort()).toEqual([
+      "icpPrimaryConversionUrl",
+      "siteOrigin",
     ]);
   });
 });

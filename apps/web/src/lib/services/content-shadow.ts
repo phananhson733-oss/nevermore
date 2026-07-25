@@ -12,9 +12,11 @@ import {
   FlowShadowResearchPacksRepository,
   FlowShadowRunsRepository,
   CONTENT_SHADOW_PROJECTION_VERSION,
+  IcpProfilesRepository,
   IdempotencyRepository,
   KeywordsRepository,
   ProjectsRepository,
+  SitesRepository,
   type ArtifactRow,
   type CanonicalValue,
   type Executor,
@@ -32,8 +34,10 @@ import {
   buildContentShadowInputManifest,
   CONTENT_SHADOW_ADAPTER_VERSION,
   ContentShadowObservationSeparationError,
+  type ContentShadowFirstPartyIdentity,
   type ContentShadowInputManifest,
 } from "@sf/flow-shadow";
+import { parseIcp } from "@sf/engine";
 import {
   CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
   ContentShadowAuthoritySource,
@@ -126,6 +130,13 @@ export interface ContentShadowInputs {
   readonly clusterKey: string;
   readonly keywordEntityIds: readonly string[];
   readonly generativeQueryEntityIds: readonly string[];
+  /**
+   * The project's own web identity, frozen at accept time (Slice 2 Task 6b).
+   * Both halves come from rows this run already pins: the site the frozen
+   * diagnosis ran against, and the immutable `icp_profiles` version that
+   * diagnosis froze.
+   */
+  readonly firstParty: ContentShadowFirstPartyIdentity;
   /**
    * Deterministically extracted from the SAME brief revision and keyword rows
    * this function already read — no extra query. Freezing it is what makes the
@@ -276,6 +287,41 @@ export async function loadContentShadowInputs(
     );
   }
 
+  // The project's own web identity, frozen so the QA gate can tell a first-party
+  // link apart from an outside citation. `sites.origin` is a MUTABLE row, which
+  // is precisely why it is frozen here rather than read at judgement time: an
+  // origin that moves inside the accept -> claim window changes the content
+  // address and fails the run as input drift (red line C). The conversion target
+  // comes from the immutable `icp_profiles` version this diagnosis already
+  // pinned, so it cannot move at all.
+  const site = await new SitesRepository(exec).findById(
+    projectScope,
+    diagnosticRun.site_id,
+  );
+  if (!site) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "The frozen diagnosis' site is unavailable.",
+    );
+  }
+  const icpProfile = await new IcpProfilesRepository(exec).findById(
+    projectScope,
+    diagnosticRun.icp_profile_id,
+  );
+  if (!icpProfile) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "The frozen diagnosis' ICP profile is unavailable.",
+    );
+  }
+  const firstParty: ContentShadowFirstPartyIdentity = {
+    siteOrigin: site.origin,
+    // `parseIcp` is the one shared reader of the profile jsonb, so the worker's
+    // replay guard cannot disagree with this side about what the value is.
+    icpPrimaryConversionUrl:
+      parseIcp(icpProfile.profile).primaryConversion?.targetUrl ?? null,
+  };
+
   // Every frozen identity must belong to this live project (decision R4).
   const competitorEntityIds = [...new Set(body.competitorEntityIds)];
   if (competitorEntityIds.length > 0) {
@@ -362,6 +408,7 @@ export async function loadContentShadowInputs(
     clusterKey: body.searchCluster.clusterKey,
     keywordEntityIds,
     generativeQueryEntityIds,
+    firstParty,
     contentBriefOutline: outline,
   };
 }
@@ -391,6 +438,7 @@ export function buildContentShadowFrozenInput(input: {
       keywordEntityIds: inputs.keywordEntityIds,
     },
     generativeQueryEntityIds: inputs.generativeQueryEntityIds,
+    firstParty: inputs.firstParty,
     contentBriefOutline: inputs.contentBriefOutline,
     flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
     // One constant, one source. The service used to read `PROMPT_SET_VERSION`
@@ -720,6 +768,83 @@ function requiredManifestString(
   return value;
 }
 
+function manifestRecord(
+  source: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> {
+  const value = source[key];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The frozen Content Shadow manifest is unreadable.",
+    );
+  }
+  return value as Record<string, unknown>;
+}
+
+type ContentShadowFrozenInputsDto = ContentShadowRunResponse["frozenInputs"];
+
+/**
+ * The project's frozen web identity, as the read API reports it.
+ *
+ * It is surfaced because the QA gate's link judgement now hinges on it: a
+ * reviewer reading "this link resolves" has to be able to see WHAT it resolved
+ * against, and the research pack that also carries it does not exist until the
+ * run reaches its research phase.
+ */
+function projectFirstParty(
+  manifest: Record<string, unknown>,
+): ContentShadowFrozenInputsDto["firstParty"] {
+  const record = manifestRecord(manifest, "firstParty");
+  const conversion = record["icpPrimaryConversionUrl"];
+  if (typeof conversion !== "string" && conversion !== null) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The frozen Content Shadow manifest is unreadable.",
+    );
+  }
+  return {
+    siteOrigin: requiredManifestString(record, "siteOrigin"),
+    icpPrimaryConversionUrl: conversion,
+  };
+}
+
+const OUTLINE_PAGE_ASSIGNMENTS: ReadonlySet<string> = new Set([
+  "existing_page",
+  "new_asset",
+  "mixed",
+  "unassigned",
+]);
+
+/**
+ * The brief-derived COVERAGE CHECKLIST (Task 4b decision O-6), which Task 4b
+ * deliberately left out of this `.strict()` projection. The side-by-side review
+ * has to render the checklist itself — "which committed topics did this draft
+ * promise to cover?" is the reviewer's first question — so it is added here
+ * rather than leaving the UI to re-derive it from a brief it does not hold.
+ */
+function projectBriefOutline(
+  manifest: Record<string, unknown>,
+): ContentShadowFrozenInputsDto["contentBriefOutline"] {
+  const record = manifestRecord(manifest, "contentBriefOutline");
+  const pageAssignment = record["pageAssignment"];
+  if (
+    typeof pageAssignment !== "string" ||
+    !OUTLINE_PAGE_ASSIGNMENTS.has(pageAssignment)
+  ) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The frozen Content Shadow manifest is unreadable.",
+    );
+  }
+  return {
+    briefSections: frozenStringArray(record["briefSections"]),
+    targetKeywords: frozenStringArray(record["targetKeywords"]),
+    pageAssignment:
+      pageAssignment as ContentShadowFrozenInputsDto["contentBriefOutline"]["pageAssignment"],
+  };
+}
+
 type ContentShadowSources = NonNullable<
   ContentShadowRunResponse["research"]
 >["sources"];
@@ -921,6 +1046,8 @@ export async function getContentShadowRun(
       generativeQueryEntityIds: frozenStringArray(
         manifest["generativeQueryEntityIds"],
       ),
+      firstParty: projectFirstParty(manifest),
+      contentBriefOutline: projectBriefOutline(manifest),
     },
     research,
     draft,

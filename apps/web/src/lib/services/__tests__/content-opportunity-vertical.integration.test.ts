@@ -519,6 +519,10 @@ describeDb("content opportunity vertical single chain", () => {
         clusterKey: "content-vertical",
         keywordEntityIds: [randomUUID()],
         generativeQueryEntityIds: [],
+        firstParty: {
+          siteOrigin: "https://content-vertical.example",
+          icpPrimaryConversionUrl: null,
+        },
         contentBriefOutline: {
           briefSections: [],
           targetKeywords: [],

@@ -10,8 +10,10 @@ import {
   FlowShadowQaGatesRepository,
   FlowShadowResearchPacksRepository,
   FlowShadowRunsRepository,
+  IcpProfilesRepository,
   KeywordsRepository,
   MAX_KEYWORD_ENTITY_BATCH,
+  SitesRepository,
   toRunAttempt,
   type ArtifactRow,
   type CanonicalValue,
@@ -39,6 +41,7 @@ import {
   type BriefOutlineProjectionStats,
   type ContentShadowInputManifest,
 } from "@sf/flow-shadow";
+import { parseIcp } from "@sf/engine";
 import type { WorkerContext } from "../context.ts";
 import {
   buildArtifactPromptInput,
@@ -321,6 +324,41 @@ async function loadLiveShadowInputs(
       "the frozen source diagnosis is missing",
     );
   }
+  if (diagnosticRun.site_id !== row.site_id) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "the frozen source diagnosis no longer names this run's site",
+    );
+  }
+
+  // The first-party identity is RE-DERIVED from the canonical rows the tuple
+  // names, never read back out of `frozen_input_manifest`. Reading it back would
+  // make its drift check tautologically true, exactly like the three pinned
+  // versions below — and `sites.origin` is the one half of this identity that
+  // really can move, so its guard has to be the live comparison, not a copy of
+  // itself. Nothing downstream reads a live row: the pack and the QA gate see
+  // only the rebuilt manifest, which the hash comparison has just proved equal
+  // to the frozen one.
+  const site = await new SitesRepository(ctx.db).findById(
+    scope,
+    diagnosticRun.site_id,
+  );
+  if (!site) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "the frozen site is missing from this project",
+    );
+  }
+  const icpProfile = await new IcpProfilesRepository(ctx.db).findById(
+    scope,
+    diagnosticRun.icp_profile_id,
+  );
+  if (!icpProfile) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "the frozen diagnosis' ICP profile is missing",
+    );
+  }
 
   // Rebuild from live values + currently pinned versions. An advanced adapter,
   // prompt set or projection version changes the hash by construction.
@@ -336,6 +374,13 @@ async function loadLiveShadowInputs(
       keywordEntityIds: frozen.keywordEntityIds,
     },
     generativeQueryEntityIds: frozen.generativeQueryEntityIds,
+    firstParty: {
+      siteOrigin: site.origin,
+      // `parseIcp` is the one shared reader of the profile jsonb, so this side
+      // cannot disagree with the accepting service about what the value is.
+      icpPrimaryConversionUrl:
+        parseIcp(icpProfile.profile).primaryConversion?.targetUrl ?? null,
+    },
     contentBriefOutline: extraction.outline,
     // All three pinned versions come from the CURRENTLY pinned constants, never
     // from the row under audit: reading a version back out of the frozen row

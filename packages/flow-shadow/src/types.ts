@@ -44,6 +44,34 @@ export interface ContentShadowBriefOutline {
   readonly pageAssignment: ContentShadowPageAssignment;
 }
 
+/**
+ * The customer's own identity on the web, frozen at accept time.
+ *
+ * Without it the research pack held no URL at all, so EVERY link in a draft
+ * resolved to nothing — including the drafting scaffold's own call to action.
+ * `passed` was therefore reachable only by a draft that linked nowhere, which
+ * made a correctly written draft score worse than an incomplete one and
+ * collapsed the verdict to two usable values.
+ *
+ * It is frozen rather than read live for the same reason every other input is:
+ * the QA gate's replay comparison treats differing claims for one run as a
+ * data-integrity error, so an origin that could move between a run and its
+ * re-delivery would turn that guard into a flake. An origin that DOES move
+ * inside the accept -> claim window changes the content address and fails the
+ * run as input drift, which is red line C working, not a defect.
+ */
+export interface ContentShadowFirstPartyIdentity {
+  /** `sites.origin` for the run's site, e.g. `https://acme.example`. */
+  readonly siteOrigin: string;
+  /**
+   * `icp.primaryConversion.targetUrl` from the ICP profile the frozen
+   * diagnostic run already pinned. `null` when the profile carries none — never
+   * a placeholder, because a fabricated conversion target would resolve links
+   * that nothing in our records supports.
+   */
+  readonly icpPrimaryConversionUrl: string | null;
+}
+
 export interface ContentShadowFrozenInput {
   readonly primaryFindingId: string;
   readonly sourceActionId: string;
@@ -53,6 +81,12 @@ export interface ContentShadowFrozenInput {
   readonly competitorEntityIds: readonly string[];
   readonly searchCluster: FrozenSearchCluster;
   readonly generativeQueryEntityIds: readonly string[];
+  /**
+   * Frozen because the gate resolves the draft's links against it. Both values
+   * come from rows the run already pins: the site the frozen diagnosis ran
+   * against, and the immutable `icp_profiles` version that diagnosis froze.
+   */
+  readonly firstParty: ContentShadowFirstPartyIdentity;
   /**
    * Frozen because it is what actually shapes the draft: an auditor must be
    * able to see what the model was told about the brief WITHOUT re-running the
@@ -94,6 +128,7 @@ export interface ContentShadowInputManifest {
     readonly keywordEntityIds: readonly string[];
   };
   readonly generativeQueryEntityIds: readonly string[];
+  readonly firstParty: ContentShadowFirstPartyIdentity;
   readonly contentBriefOutline: ContentShadowBriefOutline;
   readonly flowAdapterVersion: string;
   readonly promptSetVersion: string;
@@ -140,11 +175,20 @@ export interface BriefOutlineProjectionStats {
  */
 export type AuthorityTier = "A" | "B" | "C" | "D";
 
+/**
+ * `first_party_site` / `first_party_conversion` are the customer's OWN web
+ * identity, and they are the only pack sources that carry a resolvable URL in
+ * Slice 2. They are first-party records like every other source here, so they
+ * grade `A`; they are deliberately NOT counted as external evidence, because a
+ * draft cannot cite the customer's own site as proof of an outside claim.
+ */
 export type ResearchSourceKind =
   | "content_brief"
   | "search_query"
   | "generative_query"
-  | "competitor";
+  | "competitor"
+  | "first_party_site"
+  | "first_party_conversion";
 
 export interface ResearchSource {
   readonly kind: ResearchSourceKind;

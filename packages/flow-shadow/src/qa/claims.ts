@@ -1,3 +1,4 @@
+import { isFirstPartySourceKind } from "../first-party.ts";
 import type { AuthorityTier, ResearchPack } from "../types.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
 import {
@@ -42,14 +43,28 @@ export interface SourceIdentity {
   readonly name: string | null;
   /** Longest alphabetic token of `name`, for partial name matching. */
   readonly nameToken: string | null;
+  /**
+   * The customer's own web identity (site origin, conversion target). A link
+   * resolving to one of these means "this points at the customer's own
+   * property", never "this claim is supported".
+   */
+  readonly firstParty: boolean;
 }
 
 export interface SourceIndex {
   readonly identities: readonly SourceIdentity[];
   /**
-   * How many sources carry an identity a draft could plausibly cite (a URL, a
-   * domain, or a human-readable name). Zero in Slice 2 — the rules that expect
-   * citations use this to say "not applicable" instead of inventing a verdict.
+   * How many sources carry an identity a draft could plausibly cite AS OUTSIDE
+   * EVIDENCE (a URL, a domain, or a human-readable name).
+   *
+   * First-party identities are deliberately excluded even though they carry
+   * URLs. The rules that read this ask one question — "is there anything
+   * external in the pack to resolve a citation against?" — and the honest Slice
+   * 2 answer is still no. Counting the customer's own site here would flip every
+   * one of those messages from "this run retrieved no external research, so
+   * these references cannot be verified here" to "an attribution that does not
+   * resolve names a source we do not hold", i.e. from an honest limitation to an
+   * accusation the gate cannot support.
    */
   readonly citableCount: number;
 }
@@ -66,7 +81,11 @@ function longestAlphaToken(name: string): string | null {
   return best;
 }
 
-function identityFor(ref: string, authority: AuthorityTier): SourceIdentity {
+function identityFor(
+  ref: string,
+  authority: AuthorityTier,
+  firstParty: boolean,
+): SourceIdentity {
   if (UUID.test(ref.trim())) {
     return {
       ref,
@@ -75,6 +94,7 @@ function identityFor(ref: string, authority: AuthorityTier): SourceIdentity {
       domain: null,
       name: null,
       nameToken: null,
+      firstParty,
     };
   }
   const url = canonicalUrl(ref);
@@ -86,6 +106,23 @@ function identityFor(ref: string, authority: AuthorityTier): SourceIdentity {
       domain: url.domain,
       name: null,
       nameToken: null,
+      firstParty,
+    };
+  }
+  // A first-party identity that is not URL-shaped resolves NOTHING: it is
+  // deliberately not given a name token. `normalizeFirstPartyUrl` already
+  // rejects such a value at the freeze boundary, so reaching here means the row
+  // was malformed, and a malformed origin must not become a fuzzy name matcher
+  // that confirms references by accident.
+  if (firstParty) {
+    return {
+      ref,
+      authority,
+      url: null,
+      domain: null,
+      name: null,
+      nameToken: null,
+      firstParty,
     };
   }
   const name = normalizeName(ref);
@@ -96,15 +133,22 @@ function identityFor(ref: string, authority: AuthorityTier): SourceIdentity {
     domain: null,
     name: name.length > 0 ? name : null,
     nameToken: longestAlphaToken(name),
+    firstParty,
   };
 }
 
 export function buildSourceIndex(pack: ResearchPack): SourceIndex {
   const identities = pack.sources.map((source) =>
-    identityFor(source.ref, source.authorityTier),
+    identityFor(
+      source.ref,
+      source.authorityTier,
+      isFirstPartySourceKind(source.kind),
+    ),
   );
   const citableCount = identities.filter(
-    (identity) => identity.url !== null || identity.nameToken !== null,
+    (identity) =>
+      !identity.firstParty &&
+      (identity.url !== null || identity.nameToken !== null),
   ).length;
   return { identities, citableCount };
 }
@@ -145,6 +189,22 @@ export function resolveAttribution(
     }
     for (const identity of index.identities) {
       if (identity.domain === url.domain) {
+        return { source: identity, authority: identity.authority };
+      }
+    }
+    // Subdomains of the customer's own host, and only of theirs. A B2B site
+    // routinely serves its blog, docs and app from `blog.`/`docs.`/`app.`, and
+    // treating those as unresolvable would put every correct internal link back
+    // in front of a human. The suffix test is anchored on a leading dot, so
+    // `signalframe.example.attacker.test` does NOT match `signalframe.example`.
+    //
+    // It is applied ONLY to first-party identities: widening an external
+    // source's domain to its subdomains would let a draft cite
+    // `fake.forrester.example` on the strength of a pack entry for
+    // `forrester.example`.
+    for (const identity of index.identities) {
+      if (!identity.firstParty || identity.domain === null) continue;
+      if (url.domain.endsWith(`.${identity.domain}`)) {
         return { source: identity, authority: identity.authority };
       }
     }

@@ -116,6 +116,12 @@ export const ContentShadowQaClaim = z
   .strict();
 export type ContentShadowQaClaim = z.infer<typeof ContentShadowQaClaim>;
 
+/**
+ * `first_party_site` / `first_party_conversion` are the customer's OWN web
+ * identity. They are first-party records like every other pack source, so they
+ * grade `A`, but they are never evidence for a claim: they only let the QA gate
+ * tell a link to the customer's property apart from an outside citation.
+ */
 export const ContentShadowAuthoritySource = z
   .object({
     kind: z.enum([
@@ -123,6 +129,8 @@ export const ContentShadowAuthoritySource = z
       "search_query",
       "generative_query",
       "competitor",
+      "first_party_site",
+      "first_party_conversion",
     ]),
     ref: z.string().trim().min(1).max(500),
     authorityTier: z.enum(["A", "B", "C", "D"]),
@@ -131,6 +139,52 @@ export const ContentShadowAuthoritySource = z
   .strict();
 export type ContentShadowAuthoritySource = z.infer<
   typeof ContentShadowAuthoritySource
+>;
+
+const MAX_BRIEF_OUTLINE_SECTIONS = 12;
+const MAX_BRIEF_OUTLINE_KEYWORDS = 50;
+
+/**
+ * The brief-derived COVERAGE CHECKLIST, not a document structure (Slice 2
+ * decision O-6): "these topics must be covered", never "organise the draft
+ * under these headings". The draft's structure stays the fixed drafting
+ * scaffold, and the two are never asserted against each other.
+ */
+export const ContentShadowBriefOutline = z
+  .object({
+    briefSections: z
+      .array(z.string().trim().min(1).max(120))
+      .max(MAX_BRIEF_OUTLINE_SECTIONS),
+    targetKeywords: z
+      .array(z.string().trim().min(1).max(120))
+      .max(MAX_BRIEF_OUTLINE_KEYWORDS),
+    pageAssignment: z.enum([
+      "existing_page",
+      "new_asset",
+      "mixed",
+      "unassigned",
+    ]),
+  })
+  .strict();
+export type ContentShadowBriefOutline = z.infer<
+  typeof ContentShadowBriefOutline
+>;
+
+/**
+ * The project's own web identity, frozen at accept time. It is reported because
+ * the QA gate's link judgement resolves against it: a reviewer told "this link
+ * resolves" has to be able to see what it resolved against, and the research
+ * pack that also carries it does not exist until the run reaches research.
+ */
+export const ContentShadowFirstPartyIdentity = z
+  .object({
+    siteOrigin: z.string().trim().min(1).max(2048),
+    /** `null` when the frozen ICP profile carries no conversion target. */
+    icpPrimaryConversionUrl: z.string().trim().min(1).max(2048).nullable(),
+  })
+  .strict();
+export type ContentShadowFirstPartyIdentity = z.infer<
+  typeof ContentShadowFirstPartyIdentity
 >;
 
 export const ContentShadowFrozenInputs = z
@@ -145,6 +199,8 @@ export const ContentShadowFrozenInputs = z
       })
       .strict(),
     generativeQueryEntityIds: z.array(Uuid).max(MAX_GENERATIVE_QUERIES),
+    firstParty: ContentShadowFirstPartyIdentity,
+    contentBriefOutline: ContentShadowBriefOutline,
   })
   .strict();
 export type ContentShadowFrozenInputs = z.infer<
@@ -225,6 +281,4 @@ export const ContentShadowRunResponse = z
     qa: ContentShadowQaGate.nullable(),
   })
   .strict();
-export type ContentShadowRunResponse = z.infer<
-  typeof ContentShadowRunResponse
->;
+export type ContentShadowRunResponse = z.infer<typeof ContentShadowRunResponse>;

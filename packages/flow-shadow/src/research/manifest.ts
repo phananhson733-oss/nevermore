@@ -1,3 +1,4 @@
+import { normalizeFirstPartyUrl } from "../first-party.ts";
 import type {
   ContentShadowFrozenInput,
   ContentShadowInputManifest,
@@ -73,6 +74,16 @@ export function buildContentShadowInputManifest(
       keywordEntityIds: sortedUnique(input.searchCluster.keywordEntityIds),
     },
     generativeQueryEntityIds: sortedUnique(input.generativeQueryEntityIds),
+    // Normalized HERE, not by the callers. The accepting service and the
+    // worker's replay guard hash this tuple independently, so a normalization
+    // that lived in either of them would have to be written twice and would
+    // fail every replay the moment the two spellings diverged.
+    firstParty: {
+      siteOrigin: input.firstParty.siteOrigin.trim(),
+      icpPrimaryConversionUrl: normalizeFirstPartyUrl(
+        input.firstParty.icpPrimaryConversionUrl,
+      ),
+    },
     // Copied field-by-field, never spread: the manifest is a closed tuple and a
     // caller-supplied extra key must not be able to ride into the hash.
     // Order is meaningful here (document order / normalized-keyword order), so

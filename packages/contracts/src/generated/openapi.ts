@@ -2515,13 +2515,41 @@ export interface components {
             status: "passed" | "failed" | "unevaluated";
             detail: string;
         };
+        /**
+         * @description first_party_site and first_party_conversion are the customer's OWN web identity.
+         *     They are first-party records like every other pack source, so they grade A, but they
+         *     are never evidence for a claim: they only let the QA gate tell a link to the
+         *     customer's property apart from an outside citation.
+         */
         ContentShadowAuthoritySource: {
             /** @enum {string} */
-            kind: "content_brief" | "search_query" | "generative_query" | "competitor";
+            kind: "content_brief" | "search_query" | "generative_query" | "competitor" | "first_party_site" | "first_party_conversion";
             ref: string;
             /** @enum {string} */
             authorityTier: "A" | "B" | "C" | "D";
             limitation: string | null;
+        };
+        /**
+         * @description The project's own web identity, frozen into the content-addressed tuple at accept
+         *     time. The QA gate resolves the draft's links against it, so an origin that moves
+         *     between accept and claim changes the content address and fails the run as input
+         *     drift rather than silently re-judging under a different identity.
+         */
+        ContentShadowFirstPartyIdentity: {
+            siteOrigin: string;
+            /** @description Null when the frozen ICP profile carries no conversion target. */
+            icpPrimaryConversionUrl: string | null;
+        };
+        /**
+         * @description The brief-derived COVERAGE CHECKLIST, not a document structure: these topics must be
+         *     covered, never organise the draft under these headings. The draft's structure stays
+         *     the fixed drafting scaffold, and the two are never asserted against each other.
+         */
+        ContentShadowBriefOutline: {
+            briefSections: string[];
+            targetKeywords: string[];
+            /** @enum {string} */
+            pageAssignment: "existing_page" | "new_asset" | "mixed" | "unassigned";
         };
         /**
          * @description Read-only Content Shadow run projection. Status is projected from the canonical async
@@ -2558,6 +2586,8 @@ export interface components {
                     keywordEntityIds: components["schemas"]["Uuid"][];
                 };
                 generativeQueryEntityIds: components["schemas"]["Uuid"][];
+                firstParty: components["schemas"]["ContentShadowFirstPartyIdentity"];
+                contentBriefOutline: components["schemas"]["ContentShadowBriefOutline"];
             };
             research: {
                 packId: components["schemas"]["Uuid"];

@@ -120,6 +120,15 @@ describe("ContentShadowRunResponse", () => {
       competitorEntityIds: [],
       searchCluster: { clusterKey: "growth", keywordEntityIds: [KEYWORD] },
       generativeQueryEntityIds: [],
+      firstParty: {
+        siteOrigin: "https://acme.example",
+        icpPrimaryConversionUrl: null,
+      },
+      contentBriefOutline: {
+        briefSections: ["Objective"],
+        targetKeywords: ["growth analytics"],
+        pageAssignment: "existing_page" as const,
+      },
     },
     research: null,
     draft: null,

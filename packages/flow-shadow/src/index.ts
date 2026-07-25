@@ -6,6 +6,11 @@
 export * from "./types.ts";
 export { CONTENT_SHADOW_ADAPTER_VERSION } from "./version.ts";
 export {
+  FIRST_PARTY_SOURCE_KINDS,
+  isFirstPartySourceKind,
+  normalizeFirstPartyUrl,
+} from "./first-party.ts";
+export {
   assertObservationSeparation,
   buildContentShadowInputManifest,
   ContentShadowObservationSeparationError,

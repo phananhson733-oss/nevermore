@@ -28,6 +28,10 @@ const FROZEN: ContentShadowFrozenInput = {
     keywordEntityIds: [KEYWORD_B, KEYWORD_A],
   },
   generativeQueryEntityIds: [GENERATIVE_A],
+  firstParty: {
+    siteOrigin: "https://acme.example",
+    icpPrimaryConversionUrl: "https://acme.example/demo",
+  },
   contentBriefOutline: {
     briefSections: ["Objective", "Audience"],
     targetKeywords: ["growth analytics"],
@@ -109,6 +113,8 @@ describe("buildResearchPack", () => {
 
     expect(pack.sources.map((source) => source.kind)).toEqual([
       "content_brief",
+      "first_party_site",
+      "first_party_conversion",
       "search_query",
       "search_query",
       "generative_query",
@@ -130,7 +136,9 @@ describe("buildResearchPack", () => {
    * implemented gate does not check, not claim it does not exist.
    */
   it("never claims the QA judgement is unimplemented", () => {
-    const limitations = buildResearchPack(manifest, STATS).limitations.join(" ");
+    const limitations = buildResearchPack(manifest, STATS).limitations.join(
+      " ",
+    );
 
     expect(limitations).not.toMatch(/not implemented yet/i);
     expect(limitations).not.toMatch(/\bpending\b/i);

@@ -497,6 +497,12 @@ async function seedShadowChain(
       keywordEntityIds: [keywordId],
     },
     generativeQueryEntityIds: [],
+    firstParty: {
+      siteOrigin: `https://${scope.projectId}.example.test`,
+      // The fixture ICP carries no `primaryConversion`, so the frozen tuple
+      // records its absence rather than a placeholder.
+      icpPrimaryConversionUrl: null,
+    },
     contentBriefOutline: extractContentBriefOutline({
       briefMarkdown: options.briefMarkdown ?? BRIEF_MARKDOWN,
       keywords: [
@@ -1143,6 +1149,67 @@ describeDb("runContentShadow", () => {
       last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
     });
     expect(generateArtifact).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Red line C for the first-party identity (Task 6b). `sites.origin` is a
+   * MUTABLE row and the QA gate now resolves the draft's links against it, so an
+   * origin that moves inside the accept -> claim window must fail the run rather
+   * than judge the draft against an identity its content address never named.
+   */
+  it("fails with input drift when the frozen site origin moves", async () => {
+    const fixture = await seedShadowChain(handle);
+    await handle.pool.query(
+      "UPDATE app.sites SET origin = 'https://rebranded.example.test', host = 'rebranded.example.test' WHERE id = $1",
+      [fixture.siteId],
+    );
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
+    });
+    expect(generateArtifact).not.toHaveBeenCalled();
+  });
+
+  it("projects the frozen first-party identity into the persisted research pack", async () => {
+    const fixture = await seedShadowChain(handle);
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const pack = await handle.pool.query(
+      "SELECT pack FROM app.flow_shadow_research_packs WHERE flow_shadow_run_id = $1",
+      [fixture.flowShadowRunId],
+    );
+    const sources = pack.rows[0].pack.sources as readonly {
+      readonly kind: string;
+      readonly ref: string;
+      readonly authorityTier: string;
+    }[];
+    const site = sources.find((source) => source.kind === "first_party_site");
+
+    expect(site).toMatchObject({
+      ref: `https://${fixture.scope.projectId}.example.test`,
+      authorityTier: "A",
+    });
+    // The fixture ICP carries no conversion target, so the pack states its
+    // absence by omitting the source rather than inventing a destination.
+    expect(
+      sources.some((source) => source.kind === "first_party_conversion"),
+    ).toBe(false);
   });
 
   it("fails with input drift when the pinned Content Shadow prompt set advances", async () => {

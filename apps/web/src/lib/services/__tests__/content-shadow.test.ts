@@ -5,7 +5,9 @@ import {
   DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
   FindingsRepository,
+  IcpProfilesRepository,
   KeywordsRepository,
+  SitesRepository,
   type ActionRow,
   type ArtifactRevisionRow,
   type ArtifactRow,
@@ -43,6 +45,9 @@ const DIAGNOSTIC_ID = "00000000-0000-4000-8000-0000000000d1";
 const BRIEF_ID = "00000000-0000-4000-8000-0000000000b1";
 const KEYWORD_ID = "00000000-0000-4000-8000-0000000000e1";
 const GENERATIVE_ID = "00000000-0000-4000-8000-0000000000c1";
+const ICP_ID = "00000000-0000-4000-8000-0000000000c9";
+const SITE_ORIGIN = "https://acme.example";
+const CONVERSION_URL = "https://acme.example/demo";
 
 const action = {
   id: ACTION_ID,
@@ -116,6 +121,21 @@ beforeEach(() => {
   vi.spyOn(DiagnosticRunsRepository.prototype, "findById").mockResolvedValue({
     id: DIAGNOSTIC_ID,
     site_id: "site-1",
+    icp_profile_id: ICP_ID,
+  } as never);
+  vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
+    id: "site-1",
+    origin: SITE_ORIGIN,
+  } as never);
+  vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue({
+    id: ICP_ID,
+    profile: {
+      primaryConversion: {
+        label: "Book a demo",
+        type: "demo",
+        targetUrl: CONVERSION_URL,
+      },
+    },
   } as never);
   vi.spyOn(CompetitorsRepository.prototype, "listByIds").mockResolvedValue([]);
   vi.spyOn(KeywordsRepository.prototype, "listByIds").mockImplementation(
@@ -271,6 +291,10 @@ describe("buildContentShadowFrozenInput observation separation", () => {
     clusterKey: "growth-analytics",
     keywordEntityIds: [KEYWORD_ID],
     generativeQueryEntityIds: [GENERATIVE_ID],
+    firstParty: {
+      siteOrigin: SITE_ORIGIN,
+      icpPrimaryConversionUrl: CONVERSION_URL,
+    },
     contentBriefOutline: {
       briefSections: ["Objective", "Audience"],
       targetKeywords: [`keyword ${KEYWORD_ID}`],
@@ -347,7 +371,9 @@ describe("brief -> draft structured extraction (Task 4b)", () => {
     } as ArtifactRevisionRow);
 
     const inputs = (await load()) as {
-      readonly contentBriefOutline: { readonly briefSections: readonly string[] };
+      readonly contentBriefOutline: {
+        readonly briefSections: readonly string[];
+      };
     };
 
     expect(inputs.contentBriefOutline.briefSections).toEqual([]);
@@ -365,6 +391,10 @@ describe("brief -> draft structured extraction (Task 4b)", () => {
       clusterKey: "growth-analytics",
       keywordEntityIds: [KEYWORD_ID],
       generativeQueryEntityIds: [GENERATIVE_ID],
+      firstParty: {
+        siteOrigin: SITE_ORIGIN,
+        icpPrimaryConversionUrl: CONVERSION_URL,
+      },
       contentBriefOutline: {
         briefSections: ["Objective", "Audience"],
         targetKeywords: ["a"],
@@ -403,6 +433,10 @@ describe("brief -> draft structured extraction (Task 4b)", () => {
         clusterKey: "growth-analytics",
         keywordEntityIds: [KEYWORD_ID],
         generativeQueryEntityIds: [GENERATIVE_ID],
+        firstParty: {
+          siteOrigin: SITE_ORIGIN,
+          icpPrimaryConversionUrl: CONVERSION_URL,
+        },
         contentBriefOutline: {
           briefSections: [],
           targetKeywords: [],
@@ -415,6 +449,89 @@ describe("brief -> draft structured extraction (Task 4b)", () => {
     expect(frozen.manifest.promptSetVersion).toBe(
       CONTENT_SHADOW_PROMPT_SET_VERSION,
     );
-    expect(frozen.manifest.promptSetVersion).not.toBe(ENGINE_PROMPT_SET_VERSION);
+    expect(frozen.manifest.promptSetVersion).not.toBe(
+      ENGINE_PROMPT_SET_VERSION,
+    );
+  });
+});
+
+describe("first-party identity is frozen at accept time (Task 6b)", () => {
+  it("freezes the project's site origin and the frozen ICP conversion target", async () => {
+    await expect(load()).resolves.toMatchObject({
+      firstParty: {
+        siteOrigin: SITE_ORIGIN,
+        icpPrimaryConversionUrl: CONVERSION_URL,
+      },
+    });
+  });
+
+  it("freezes the absence of a conversion target rather than a placeholder", async () => {
+    vi.mocked(IcpProfilesRepository.prototype.findById).mockResolvedValue({
+      id: ICP_ID,
+      profile: { primaryConversion: null },
+    } as never);
+
+    await expect(load()).resolves.toMatchObject({
+      firstParty: { icpPrimaryConversionUrl: null },
+    });
+  });
+
+  it("refuses to freeze a tuple whose site row is unreadable", async () => {
+    vi.mocked(SitesRepository.prototype.findById).mockResolvedValue(null);
+
+    await expect(load()).rejects.toMatchObject({ code: "CONTEXT_INCOMPLETE" });
+  });
+
+  it("refuses to freeze a tuple whose frozen ICP profile is unreadable", async () => {
+    vi.mocked(IcpProfilesRepository.prototype.findById).mockResolvedValue(null);
+
+    await expect(load()).rejects.toMatchObject({ code: "CONTEXT_INCOMPLETE" });
+  });
+
+  /**
+   * Red line C. `sites.origin` is a mutable row, so an origin that moves inside
+   * the accept -> claim window has to change the content address and fail the
+   * run as drift, not silently re-judge the draft's links against a different
+   * identity.
+   */
+  it("re-addresses the run when the site origin moves", () => {
+    const base = {
+      siteId: "site-1",
+      actionId: ACTION_ID,
+      findingId: FINDING_ID,
+      sourceDiagnosticRunId: DIAGNOSTIC_ID,
+      contentBriefArtifactId: BRIEF_ID,
+      contentBriefRevision: 2,
+      competitorEntityIds: [],
+      clusterKey: "growth-analytics",
+      keywordEntityIds: [KEYWORD_ID],
+      generativeQueryEntityIds: [GENERATIVE_ID],
+      firstParty: {
+        siteOrigin: SITE_ORIGIN,
+        icpPrimaryConversionUrl: CONVERSION_URL,
+      },
+      contentBriefOutline: {
+        briefSections: ["Objective"],
+        targetKeywords: ["a"],
+        pageAssignment: "existing_page" as const,
+      },
+    };
+
+    const pinned = buildContentShadowFrozenInput({
+      inputs: base,
+      outputLocale: "en",
+    });
+    const rebranded = buildContentShadowFrozenInput({
+      inputs: {
+        ...base,
+        firstParty: {
+          siteOrigin: "https://acme-rebrand.example",
+          icpPrimaryConversionUrl: CONVERSION_URL,
+        },
+      },
+      outputLocale: "en",
+    });
+
+    expect(rebranded.contentHash).not.toBe(pinned.contentHash);
   });
 });

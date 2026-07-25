@@ -313,3 +313,99 @@ export const UNCLOSED_FRONTMATTER_DRAFT = [
 export const ALL_FENCED_DRAFT = ["```text", "just a transcript", "```", ""].join(
   "\n",
 );
+
+/**
+ * The acceptance fixture for Task 6b: a clean draft that follows the drafting
+ * scaffold, INCLUDING the scaffold's own call to action.
+ *
+ * Before the frozen tuple carried a first-party identity, this draft could not
+ * reach `passed`: the pack held no URL at all, so RL12b (review severity) failed
+ * on the call-to-action link and pinned the verdict at `needs_review`. `passed`
+ * was therefore reachable only by a draft that linked nowhere — a draft written
+ * CORRECTLY scored worse than an incomplete one, and the verdict had two usable
+ * values instead of three.
+ */
+export const SCAFFOLD_CTA_DRAFT = [
+  "# Onboarding analytics for RevOps teams",
+  "",
+  "## Summary",
+  "",
+  "**Onboarding analytics** is the practice of measuring how quickly a new",
+  "account reaches its first successful outcome. RevOps leads use it to decide",
+  "where to invest.",
+  "",
+  "- It tracks activation milestones.",
+  "- It separates trial accounts from paid accounts.",
+  "- It reports on time to first value.",
+  "",
+  "## Problem",
+  "",
+  "Most teams ship an onboarding analytics dashboard that nobody opens. The",
+  "weekly question goes unanswered, so the milestone quietly drifts.",
+  "",
+  "## Approach",
+  "",
+  "Teams start by naming the onboarding analytics milestone that matters. They",
+  "instrument it once and then review it every week.",
+  "",
+  "## FAQ",
+  "",
+  "### What does it measure?",
+  "",
+  "Onboarding analytics measures the time a new account takes to reach its",
+  "first successful outcome.",
+  "",
+  "### Who owns it?",
+  "",
+  "The RevOps lead who owns activation.",
+  "",
+  "### How often should the team review it?",
+  "",
+  "Weekly, in the same meeting that reviews pipeline.",
+  "",
+  "## Call To Action",
+  "",
+  "[Book an onboarding walkthrough](https://signalframe.example/demo)",
+  "",
+].join("\n");
+
+/**
+ * The same draft, linking to a SUBDOMAIN of the frozen site origin. B2B sites
+ * routinely serve their blog, docs and app from `blog.`/`docs.`/`app.`, and
+ * treating those as unverifiable would put every correct internal link back in
+ * front of a human.
+ */
+export const FIRST_PARTY_SUBDOMAIN_DRAFT = SCAFFOLD_CTA_DRAFT.replace(
+  "https://signalframe.example/demo",
+  "https://docs.signalframe.example/onboarding",
+);
+
+/**
+ * A look-alike host that merely ENDS WITH the frozen origin's text. It must not
+ * resolve: `signalframe.example.attacker.test` is not the customer's property.
+ */
+export const LOOKALIKE_HOST_DRAFT = SCAFFOLD_CTA_DRAFT.replace(
+  "https://signalframe.example/demo",
+  "https://signalframe.example.attacker.test/demo",
+);
+
+/** The same draft, linking somewhere the frozen identity does not cover. */
+export const OUTSIDE_LINK_DRAFT = SCAFFOLD_CTA_DRAFT.replace(
+  "https://signalframe.example/demo",
+  "https://analyst.example/onboarding-benchmark",
+);
+
+/** A bare first-party URL in prose: RL12 treats any bare URL as a citation. */
+export const FIRST_PARTY_BARE_URL_DRAFT = SCAFFOLD_CTA_DRAFT.replace(
+  "[Book an onboarding walkthrough](https://signalframe.example/demo)",
+  "Start here: https://signalframe.example/demo",
+);
+
+/** A Sources section that lists only the customer's own site. */
+export const FIRST_PARTY_SOURCES_DRAFT = [
+  SCAFFOLD_CTA_DRAFT,
+  "## Sources",
+  "",
+  "- SignalFrame product site, https://signalframe.example/product",
+  "",
+].join("\n");

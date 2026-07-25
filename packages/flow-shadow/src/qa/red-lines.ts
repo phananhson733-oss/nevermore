@@ -581,12 +581,12 @@ export function checkRl12b(context: QaContext): QaRuleResult {
     ? fail(
         "rl12b_unresolved_link",
         "rl12b_link_unresolved",
-        `${hits.length} link(s) could not be checked against the frozen research pack: ${excerptList(hits)}. The Slice 2 pack carries NO urls — not the customer's own site origin either — so this rule cannot yet tell a first-party product link apart from an outside citation, and it is NOT saying these links are wrong or invented. A reviewer confirms them by hand. Until the pack carries a first-party identity, any draft with a link (including the scaffold's own call to action) reaches at most \`needs_review\` for this reason alone.`,
+        `${hits.length} link(s) point outside the customer's own web identity and could not be checked against the frozen research pack: ${excerptList(hits)}. The pack carries this project's frozen site origin (and its ICP conversion target when the profile has one), so a link to the customer's own site or a subdomain of it resolves here; these do not. This run retrieved nothing external, so the correct reading is that these destinations cannot be verified from our records — NOT that they are wrong or invented. A reviewer confirms them by hand.`,
       )
     : pass(
         "rl12b_unresolved_link",
         "rl12b_links_resolve",
-        "Every body link resolves to the frozen research pack, or the body carries none.",
+        "Every body link resolves to the frozen research pack — the customer's own site origin and conversion target are part of it — or the body carries none.",
       );
 }
 

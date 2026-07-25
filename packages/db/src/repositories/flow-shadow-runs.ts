@@ -22,8 +22,21 @@ import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
  * auditor tell an input change apart from an algorithm change. Advancing it
  * makes already-queued runs fail with CONTENT_SHADOW_INPUT_DRIFT — that is the
  * intended red-line-C semantics, not something to paper over.
+ *
+ * 0.3.2 (Slice 2 Task 6b): the frozen manifest gained the project's first-party
+ * web identity (site origin + the ICP conversion target the frozen diagnosis
+ * already pinned), and the research pack projects it as two sources. Without it
+ * no link in a draft could resolve, so the QA gate's `passed` verdict was
+ * reachable only by a draft that linked nowhere.
+ *
+ * This bump also covers the QA gate's changed judgement, which the adapter
+ * version would normally record: because a run frozen under 0.3.1 now fails the
+ * projection guard outright, no already-frozen run can be re-judged under the
+ * new rules — which is exactly the property pinning the adapter version buys.
+ * Advancing the adapter version instead would additionally break the request
+ * contract's `flowAdapterVersion` literal for every client.
  */
-export const CONTENT_SHADOW_PROJECTION_VERSION = "content-shadow.0.3.1";
+export const CONTENT_SHADOW_PROJECTION_VERSION = "content-shadow.0.3.2";
 
 export interface FlowShadowRunRow {
   readonly id: string;

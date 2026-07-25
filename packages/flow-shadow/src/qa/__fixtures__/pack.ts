@@ -4,6 +4,7 @@ import { CONTENT_SHADOW_ADAPTER_VERSION } from "../../version.ts";
 import type {
   BriefOutlineProjectionStats,
   ContentShadowBriefOutline,
+  ContentShadowFirstPartyIdentity,
   QaEvaluationInput,
   ResearchPack,
   ResearchSource,
@@ -14,6 +15,15 @@ export const FIXTURE_OUTLINE: ContentShadowBriefOutline = {
   briefSections: ["What onboarding analytics covers", "Audience"],
   targetKeywords: ["onboarding analytics"],
   pageAssignment: "existing_page",
+};
+
+/**
+ * The customer's own web identity, matching the host the draft fixtures link
+ * to. Fixtures that need an unknown-origin project override it.
+ */
+export const FIXTURE_FIRST_PARTY: ContentShadowFirstPartyIdentity = {
+  siteOrigin: "https://signalframe.example",
+  icpPrimaryConversionUrl: "https://book.signalframe-demo.example/onboarding",
 };
 
 export const FIXTURE_STATS: BriefOutlineProjectionStats = {
@@ -29,6 +39,7 @@ export function fixturePack(
     readonly outline?: ContentShadowBriefOutline;
     readonly outputLocale?: string;
     readonly stats?: BriefOutlineProjectionStats;
+    readonly firstParty?: ContentShadowFirstPartyIdentity;
   } = {},
 ): ResearchPack {
   const outline = overrides.outline ?? FIXTURE_OUTLINE;
@@ -45,10 +56,11 @@ export function fixturePack(
         keywordEntityIds: ["00000000-0000-4000-8000-00000000000a"],
       },
       generativeQueryEntityIds: [],
+      firstParty: overrides.firstParty ?? FIXTURE_FIRST_PARTY,
       contentBriefOutline: outline,
       flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
       promptSetVersion: "mvp.prompts.content-shadow.0.3.0",
-      projectionVersion: "content-shadow.0.3.1",
+      projectionVersion: "content-shadow.0.3.2",
       outputLocale: overrides.outputLocale ?? "en",
     }),
     overrides.stats ?? FIXTURE_STATS,

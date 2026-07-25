@@ -900,6 +900,21 @@ describeDb("getContentShadowRun", () => {
     expect(projection.frozenInputs.generativeQueryEntityIds).toEqual([
       fixture.generativeKeywordId,
     ]);
+    // Task 6b: the frozen first-party identity is reported because the QA
+    // gate's link judgement resolves against it, and the research pack that
+    // also carries it does not exist until the run reaches its research phase.
+    expect(projection.frozenInputs.firstParty).toEqual({
+      siteOrigin: `https://${fixture.scope.projectId}.example.test`,
+      icpPrimaryConversionUrl: null,
+    });
+    // Task 7's O-4: the brief-derived COVERAGE CHECKLIST, which the
+    // side-by-side review has to render as itself.
+    expect(projection.frozenInputs.contentBriefOutline).toMatchObject({
+      pageAssignment: expect.any(String),
+    });
+    expect(
+      Array.isArray(projection.frozenInputs.contentBriefOutline.briefSections),
+    ).toBe(true);
     expect(projection.source).toMatchObject({
       findingId: fixture.findingId,
       actionId: fixture.actionId,

@@ -934,8 +934,8 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `getProjectReport` — 读取客户报告 projection。
 - `createProjectExport` — 异步生成 bundle。
 - `getProjectExport` — 读取 export metadata/sign URL。
-- `createContentShadowRun` — 冻结已确认 content Finding/Action/content_brief revision + 竞品集 + SearchQuery cluster + 独立 GenerativeQuery 集，排队一次 pinned SEO/GEO Content Shadow run；shadow 模式只做内部写入，绝不写 CMS。
-- `getContentShadowRun` — 读取单个 Content Shadow run 的只读投影：冻结输入、research pack、draft revision 与 QA verdict；phase 由 append-only 子行派生。
+- `createContentShadowRun` — 冻结已确认 content Finding/Action/content_brief revision + 竞品集 + SearchQuery cluster + 独立 GenerativeQuery 集 + 项目第一方身份（`sites.origin` 与冻结 ICP 的转化目标 URL），排队一次 pinned SEO/GEO Content Shadow run；shadow 模式只做内部写入，绝不写 CMS。第一方身份被冻结而非判定时读取：QA gate 据它区分第一方链接与外部引用，因此 accept→claim 窗口内 origin 变动会改变 content address 并判 input drift。
+- `getContentShadowRun` — 读取单个 Content Shadow run 的只读投影：冻结输入（含第一方身份与 brief 覆盖清单）、research pack、draft revision 与 QA verdict；phase 由 append-only 子行派生。
 <!-- API_OPERATIONS_END -->
 
 异步 operation 固定如下：
