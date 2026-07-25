@@ -20,6 +20,7 @@ import {
   type FindingDto,
 } from "./diagnostic-mappers";
 import { toArtifactDto, type ArtifactDto } from "./artifact-mappers";
+import { readContentShadowAdoption } from "./content-shadow-adoption";
 
 /**
  * Client report projection (spec §10.4). A server-side read model — NOT a table.
@@ -232,7 +233,16 @@ async function loadReportSnapshot(
           artifact.current_revision,
         )
       : null;
-    const dto = toArtifactDto(artifact, current, null);
+    // Computed rather than passed as `null`: this snapshot only carries
+    // `ready` artifacts, so the answer is expected to be "not blocked" — and
+    // asserting that without looking is exactly the shortcut the gate exists
+    // to refuse.
+    const dto = toArtifactDto(
+      artifact,
+      current,
+      null,
+      await readContentShadowAdoption(tx, projectScope, artifact),
+    );
     artifactBudget.consume(dto);
     artifacts.push(dto);
   }

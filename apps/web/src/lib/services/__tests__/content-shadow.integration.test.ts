@@ -62,6 +62,7 @@ import {
 } from "@/lib/services/content-shadow";
 import { reviewContentShadowRevision } from "@/lib/services/content-shadow-review";
 import { updateProjectArtifact } from "@/lib/services/artifact-update";
+import { listProjectArtifacts } from "@/lib/services/artifacts";
 
 /**
  * `createContentShadowRun` / `getContentShadowRun` against a real local
@@ -1391,9 +1392,26 @@ describeDb("listContentShadowRuns", () => {
  * text nobody read, or a blocked draft passed because the caller asked nicely,
  * both leave a perfectly normal-looking `ready` row behind.
  */
+/** The gate claims `seedReviewableRun` writes unless a test needs others. */
+const DEFAULT_GATE_CLAIMS: readonly Record<string, unknown>[] = [
+  {
+    claimId: "content-shadow.qa.rl13_banned_jargon",
+    kind: "red_line",
+    status: "passed",
+    detail: "No banned jargon was found.",
+  },
+  {
+    claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
+    kind: "coverage",
+    status: "unevaluated",
+    detail: "Coverage was NOT judged.",
+  },
+];
+
 async function seedReviewableRun(
   handle: DbHandle,
   verdict: "passed" | "needs_review" | "blocked",
+  claims: readonly Record<string, unknown>[] = DEFAULT_GATE_CLAIMS,
 ): Promise<{
   fixture: ShadowFixture;
   flowShadowRunId: string;
@@ -1413,20 +1431,7 @@ async function seedReviewableRun(
     evaluatedRevision: draft.revision,
     analysisInvocationId: null,
     verdict,
-    claims: [
-      {
-        claimId: "content-shadow.qa.rl13_banned_jargon",
-        kind: "red_line",
-        status: "passed",
-        detail: "No banned jargon was found.",
-      },
-      {
-        claimId: QA_BRIEF_OUTLINE_CLAIM_ID,
-        kind: "coverage",
-        status: "unevaluated",
-        detail: "Coverage was NOT judged.",
-      },
-    ],
+    claims,
   });
   return {
     fixture,
@@ -1591,6 +1596,134 @@ describeDb("reviewContentShadowRevision", () => {
     );
 
     expect(updated.status).toBe("ready");
+  });
+
+  /**
+   * The third consumer of the one judgement: the artifacts read model.
+   *
+   * H1 shut the second write path, which made the refusal correct. It did not
+   * make it visible: the Studio "Mark ready" control renders from the artifacts
+   * list, the list carried no verdict, and so an operator learned the refusal
+   * by being refused. The list now carries the answer the write path would
+   * give.
+   *
+   * The assertion COMPARES the read model against both write paths rather than
+   * asserting three facts independently. Three independent expectations pass
+   * happily while the three answers drift apart, and drift between copies of
+   * one rule is the defect this slice produced repeatedly.
+   */
+  it("gives the read model and both write paths the same answer on a blocked draft", async () => {
+    const seeded = await seedReviewableRun(handle, "blocked", [
+      {
+        claimId: "content-shadow.qa.rl12_citation_integrity",
+        kind: "red_line",
+        status: "failed",
+        detail: "A citation resolves to nothing in the frozen pack.",
+      },
+      {
+        // `review` severity, so it is a reason a human looks — never a reason
+        // adoption is refused. It must not appear in the reasons the control
+        // shows, or the screen would attribute the refusal to a check that
+        // cannot cause one.
+        claimId: "content-shadow.qa.rl12b_unresolved_link",
+        kind: "red_line",
+        status: "failed",
+        detail: "A link points somewhere the frozen pack cannot confirm.",
+      },
+      {
+        claimId: "content-shadow.qa.rl8_unsupported_claim",
+        kind: "red_line",
+        status: "failed",
+        detail: "A statement carries no traceable source.",
+      },
+      {
+        claimId: "content-shadow.qa.rl13_banned_jargon",
+        kind: "red_line",
+        status: "passed",
+        detail: "No banned jargon was found.",
+      },
+    ]);
+    const scope = { workspaceId: seeded.fixture.scope.workspaceId };
+
+    const listed = await listProjectArtifacts(
+      scope,
+      seeded.fixture.scope.projectId,
+      { limit: 50, cursor: null },
+    );
+    const draft = listed.data.find((row) => row.id === seeded.artifactId);
+    expect(draft?.adoption).toEqual({
+      blocked: true,
+      blockingClaimIds: [
+        "content-shadow.qa.rl12_citation_integrity",
+        "content-shadow.qa.rl8_unsupported_claim",
+      ],
+    });
+    // The content brief in the same list is judged by no gate at all, which is
+    // not the same statement as "cleared".
+    const brief = listed.data.find((row) => row.id !== seeded.artifactId);
+    expect(brief?.artifactType).not.toBe("english_blog_draft");
+    expect(brief?.adoption).toBeNull();
+
+    const viaPatch = await updateProjectArtifact(
+      scope,
+      seeded.fixture.scope.projectId,
+      seeded.artifactId,
+      seeded.fixture.actorId,
+      { baseRevision: seeded.revision, status: "ready" },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    const viaReview = await reviewContentShadowRevision(
+      scope,
+      seeded.fixture.scope.projectId,
+      seeded.flowShadowRunId,
+      { baseRevision: seeded.revision, acknowledgeFindings: true },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    // One conclusion, three surfaces.
+    expect(draft?.adoption?.blocked).toBe(viaPatch !== null);
+    expect(draft?.adoption?.blocked).toBe(viaReview !== null);
+    expect((viaPatch as ProblemError).fieldErrors?.[0]?.code).toBe(
+      "verdict_blocked",
+    );
+    expect((viaReview as ProblemError).fieldErrors?.[0]?.code).toBe(
+      "verdict_blocked",
+    );
+  });
+
+  /**
+   * The same comparison on the other side of the judgement.
+   *
+   * A read model that reported `blocked` for everything would satisfy the test
+   * above and disable a control the server would have accepted — the failure
+   * that costs an operator a working path rather than a bad record, and the
+   * one a single-sided test never sees.
+   */
+  it("gives the read model and the write path the same answer on a draft the gate cleared", async () => {
+    const seeded = await seedReviewableRun(handle, "needs_review");
+    const scope = { workspaceId: seeded.fixture.scope.workspaceId };
+
+    const listed = await listProjectArtifacts(
+      scope,
+      seeded.fixture.scope.projectId,
+      { limit: 50, cursor: null },
+    );
+    const draft = listed.data.find((row) => row.id === seeded.artifactId);
+    expect(draft?.adoption).toEqual({ blocked: false, blockingClaimIds: [] });
+
+    const updated = await updateProjectArtifact(
+      scope,
+      seeded.fixture.scope.projectId,
+      seeded.artifactId,
+      seeded.fixture.actorId,
+      { baseRevision: seeded.revision, status: "ready" },
+    );
+    expect(updated.status).toBe("ready");
+    expect(draft?.adoption?.blocked).toBe(false);
   });
 
   it("refuses a needs_review verdict without an explicit acknowledgement", async () => {

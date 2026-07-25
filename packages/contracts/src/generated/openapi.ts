@@ -3042,6 +3042,12 @@ export interface components {
             note: string | null;
             createdAt: components["schemas"]["Timestamp"];
         };
+        /** @description Whether the Content Shadow quality gate permits this deliverable to move to ready. Derived server-side from the same judgement PATCH /artifacts/{artifactId} and POST /content-shadow-runs/{flowShadowRunId}/review enforce, so a control can state the refusal before it is attempted instead of after. */
+        ArtifactAdoption: {
+            blocked: boolean;
+            /** @description Claim ids of the blocking checks the latest gate recorded as not passed, in gate order. Empty when the deliverable is not blocked, and empty when the stored claims could not be read - the verdict remains authoritative on its own and no reason is invented. */
+            blockingClaimIds: string[];
+        };
         Artifact: {
             id: components["schemas"]["Uuid"];
             actionId: components["schemas"]["Uuid"];
@@ -3055,6 +3061,8 @@ export interface components {
             validationState: "pending" | "valid" | "invalid";
             current: components["schemas"]["ArtifactRevision"] | null;
             activeRun: components["schemas"]["AsyncRun"] | null;
+            /** @description null when no Content Shadow quality gate judges this artifact type. That is not the same statement as "adoption is allowed", and a reader must not render it as one. */
+            adoption: components["schemas"]["ArtifactAdoption"] | null;
             createdAt: components["schemas"]["Timestamp"];
             updatedAt: components["schemas"]["Timestamp"];
         };

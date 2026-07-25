@@ -28,6 +28,7 @@ import { isPostgresUniqueViolation } from "./db-errors";
 import { assertValidTimestampUuidListCursor } from "./list-cursor";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 import { toArtifactDto, type ArtifactDto } from "./artifact-mappers";
+import { readContentShadowAdoption } from "./content-shadow-adoption";
 
 /**
  * Execution artifact create + read (spec §10.1). Create is ALWAYS async (202),
@@ -531,6 +532,11 @@ export async function listProjectArtifacts(
       a,
       current,
       activeRun && !isTerminal(activeRun.status) ? activeRun : null,
+      // One extra read, and only for the one artifact type a gate ever judges.
+      // The list is what the Studio "Mark ready" control renders from, so
+      // leaving the judgement out is what made that control learn the refusal
+      // by being refused.
+      await readContentShadowAdoption(db, projectScope, a),
     );
     dataBytes +=
       (data.length === 0 ? 0 : 1) +
@@ -561,7 +567,8 @@ export async function getProjectArtifact(
     throw new ProblemError("NOT_FOUND", "Artifact not found.");
   }
   const encoder = new TextEncoder();
-  const baseDto = toArtifactDto(artifact, current, null);
+  const adoption = await readContentShadowAdoption(db, projectScope, artifact);
+  const baseDto = toArtifactDto(artifact, current, null, adoption);
   if (
     encoder.encode(JSON.stringify(baseDto)).byteLength >
     ARTIFACTS_MAX_PAGE_BYTES
@@ -578,6 +585,7 @@ export async function getProjectArtifact(
     artifact,
     current,
     activeRun && !isTerminal(activeRun.status) ? activeRun : null,
+    adoption,
   );
   const dtoBytes = encoder.encode(JSON.stringify(dto)).byteLength;
   if (dtoBytes > ARTIFACTS_MAX_PAGE_BYTES) artifactsBudgetExceeded();

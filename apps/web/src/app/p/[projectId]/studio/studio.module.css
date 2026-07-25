@@ -541,6 +541,27 @@
   color: var(--sf-muted);
 }
 
+/*
+ * The adoption refusal keeps `.readyHint`'s muted colour on purpose.
+ *
+ * The Task 7/8 ruling is that a `blocked` verdict is never painted red or in
+ * any danger family, because the run completed and the gate did its job. The
+ * Execution surface says that in amber on its own amber block, where the
+ * contrast was measured; here the text sits on the editor panel, so it keeps
+ * the already-audited neutral rather than borrowing a colour whose contrast
+ * against this surface nobody has measured.
+ */
+.readyHintLine {
+  margin: 0;
+}
+.readyHintCauses {
+  margin: 4px 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* Model output is untrusted — rendered as plain text in a monospace control,
  * never as HTML. No mono design token exists, so a system monospace stack is
  * used here (the only literal in this file). */

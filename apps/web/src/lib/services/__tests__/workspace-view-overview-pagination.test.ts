@@ -130,6 +130,8 @@ function artifact(id: string, actionId: string): ArtifactDto {
     validationState: "valid",
     current: null,
     activeRun: null,
+    // No Content Shadow gate judges a technical_ticket.
+    adoption: null,
     createdAt: TIME,
     updatedAt: TIME,
   };

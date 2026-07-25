@@ -39,6 +39,18 @@ export function toArtifactRevisionDto(row: ArtifactRevisionRow): ArtifactRevisio
   };
 }
 
+/**
+ * The adoption gate as the wire carries it (OpenAPI `ArtifactAdoption`).
+ *
+ * Structural on purpose: `content-shadow-adoption.ts` owns the judgement and
+ * this file owns the shape, and neither should have to import the other to
+ * agree on it.
+ */
+export interface ArtifactAdoptionDto {
+  blocked: boolean;
+  blockingClaimIds: string[];
+}
+
 export interface ArtifactDto {
   id: string;
   actionId: string;
@@ -50,14 +62,28 @@ export interface ArtifactDto {
   validationState: string;
   current: ArtifactRevisionDto | null;
   activeRun: AsyncRunDto | null;
+  /**
+   * `null` when this artifact type has no Content Shadow adoption gate — not
+   * the same statement as "adoption is allowed".
+   */
+  adoption: ArtifactAdoptionDto | null;
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * `adoption` is a required parameter rather than an optional one so that a new
+ * producer of this DTO cannot quietly answer "no gate applies" for a
+ * deliverable a gate has actually judged.
+ */
 export function toArtifactDto(
   row: ArtifactRow,
   current: ArtifactRevisionRow | null,
   activeRun: AsyncRunRow | null,
+  adoption: {
+    readonly blocked: boolean;
+    readonly blockingClaimIds: readonly string[];
+  } | null,
 ): ArtifactDto {
   return {
     id: row.id,
@@ -70,6 +96,13 @@ export function toArtifactDto(
     validationState: row.validation_state,
     current: current ? toArtifactRevisionDto(current) : null,
     activeRun: activeRun ? toAsyncRunDto(activeRun) : null,
+    adoption:
+      adoption === null
+        ? null
+        : {
+            blocked: adoption.blocked,
+            blockingClaimIds: [...adoption.blockingClaimIds],
+          },
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

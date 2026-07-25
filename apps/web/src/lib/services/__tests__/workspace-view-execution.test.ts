@@ -56,6 +56,8 @@ function artifact(overrides: Partial<ArtifactDto> = {}): ArtifactDto {
     validationState: "valid",
     current: null,
     activeRun: null,
+    // No Content Shadow gate judges a technical_ticket.
+    adoption: null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,

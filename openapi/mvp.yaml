@@ -5167,10 +5167,29 @@ components:
         validationErrors: { type: array, items: { type: string } }
         note: { type: [string, 'null'] }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
+    ArtifactAdoption:
+      type: object
+      additionalProperties: false
+      description: >-
+        Whether the Content Shadow quality gate permits this deliverable to move to ready.
+        Derived server-side from the same judgement PATCH /artifacts/{artifactId} and
+        POST /content-shadow-runs/{flowShadowRunId}/review enforce, so a control can state
+        the refusal before it is attempted instead of after.
+      required: [blocked, blockingClaimIds]
+      properties:
+        blocked: { type: boolean }
+        blockingClaimIds:
+          type: array
+          maxItems: 25
+          items: { type: string, maxLength: 200 }
+          description: >-
+            Claim ids of the blocking checks the latest gate recorded as not passed, in gate order.
+            Empty when the deliverable is not blocked, and empty when the stored claims could not be
+            read - the verdict remains authoritative on its own and no reason is invented.
     Artifact:
       type: object
       additionalProperties: false
-      required: [id, actionId, artifactType, status, generationMode, outputLocale, currentRevision, validationState, current, activeRun, createdAt, updatedAt]
+      required: [id, actionId, artifactType, status, generationMode, outputLocale, currentRevision, validationState, current, activeRun, adoption, createdAt, updatedAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         actionId: { $ref: '#/components/schemas/Uuid' }
@@ -5187,6 +5206,13 @@ components:
         activeRun:
           oneOf:
             - $ref: '#/components/schemas/AsyncRun'
+            - type: 'null'
+        adoption:
+          description: >-
+            null when no Content Shadow quality gate judges this artifact type. That is not the
+            same statement as "adoption is allowed", and a reader must not render it as one.
+          oneOf:
+            - $ref: '#/components/schemas/ArtifactAdoption'
             - type: 'null'
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }

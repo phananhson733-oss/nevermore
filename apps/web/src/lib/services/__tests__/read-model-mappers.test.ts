@@ -271,11 +271,25 @@ describe("artifact and run read-model mappers", () => {
   });
 
   it("maps optional artifact revision and active run projections", () => {
-    expect(toArtifactDto(artifact, textRevision, run)).toMatchObject({
+    // The read model carries the adoption judgement so a control can be
+    // disabled BEFORE it is clicked; `null` means the type has no such gate.
+    expect(
+      toArtifactDto(artifact, textRevision, run, {
+        blocked: true,
+        blockingClaimIds: ["content-shadow.qa.rl12_citation_integrity"],
+      }),
+    ).toMatchObject({
+      adoption: {
+        blocked: true,
+        blockingClaimIds: ["content-shadow.qa.rl12_citation_integrity"],
+      },
+    });
+    expect(toArtifactDto(artifact, textRevision, run, null).adoption).toBeNull();
+    expect(toArtifactDto(artifact, textRevision, run, null)).toMatchObject({
       current: { id: "revision-1" },
       activeRun: { id: "run-1", status: "running" },
     });
-    expect(toArtifactDto(artifact, null, null)).toMatchObject({
+    expect(toArtifactDto(artifact, null, null, null)).toMatchObject({
       current: null,
       activeRun: null,
     });

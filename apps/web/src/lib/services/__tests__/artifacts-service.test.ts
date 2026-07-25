@@ -184,7 +184,10 @@ function revisionForExactDtoBytes(
 ): ArtifactRevisionRow {
   const emptyRevision = { ...revisionRow, content_text: "" };
   const fixedBytes = utf8JsonBytes(
-    toArtifactDto(artifactRow, emptyRevision, null),
+    // Matches production for this fixture's type: no Content Shadow gate
+    // judges it, so the wire carries `"adoption":null` and the byte budget
+    // this helper computes stays exact.
+    toArtifactDto(artifactRow, emptyRevision, null, null),
   );
   const contentBytes = targetBytes - fixedBytes;
   if (contentBytes < 0) {

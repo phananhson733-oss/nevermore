@@ -116,6 +116,19 @@ export interface AsyncRun {
   readonly completedAt: string | null;
 }
 
+/**
+ * The Content Shadow adoption gate as the wire carries it (OpenAPI
+ * `ArtifactAdoption`).
+ *
+ * The server decides this, using the same module the two `draft -> ready` write
+ * paths consult. Nothing in the client may recompute it: a second rule here is
+ * how a control ends up enabled on a draft the server will refuse.
+ */
+export interface ArtifactAdoption {
+  readonly blocked: boolean;
+  readonly blockingClaimIds: readonly string[];
+}
+
 /** An execution artifact with its current revision metadata (OpenAPI `Artifact`). */
 export interface Artifact {
   readonly id: string;
@@ -128,6 +141,8 @@ export interface Artifact {
   readonly validationState: ValidationState;
   readonly current: ArtifactRevision | null;
   readonly activeRun: AsyncRun | null;
+  /** `null` when no Content Shadow gate judges this artifact type. */
+  readonly adoption: ArtifactAdoption | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

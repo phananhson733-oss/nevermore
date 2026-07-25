@@ -3,6 +3,8 @@ import {
   type Executor,
   type ProjectScope,
 } from "@sf/db";
+import { ContentShadowQaClaim } from "@sf/contracts";
+import { qaSeverityForClaimId } from "@sf/flow-shadow";
 import { ProblemError } from "@sf/observability";
 
 /**
@@ -24,6 +26,14 @@ import { ProblemError } from "@sf/observability";
  * else. This slice produced the same defect repeatedly by implementing one rule
  * in two places and letting the copies drift; a second literal `"blocked"`
  * comparison in a service is that defect.
+ *
+ * There is a THIRD consumer, and it does not write: the artifacts read model.
+ * The Studio "Mark ready" control performs the `draft -> ready` PATCH, and
+ * until it could see this judgement an operator learned the refusal by being
+ * refused. Closing the write path was correctness; letting the control say so
+ * first is usability, and it must not be bought by re-deriving the rule in a
+ * reader. `readContentShadowAdoption` is therefore the same code the refusal
+ * runs, returned instead of thrown.
  */
 
 /** The only artifact type a Content Shadow QA gate ever judges. */
@@ -66,6 +76,78 @@ export function contentShadowAdoptionBlocked(pointer: string): ProblemError {
   });
 }
 
+/** The claim shape the gate row stores. Severity is not persisted. */
+const StoredQaClaim = ContentShadowQaClaim.omit({ severity: true });
+
+/**
+ * What a reader may be told about one deliverable's door into `ready`.
+ *
+ * `blockingClaimIds` exists so a disabled control can say WHICH checks held the
+ * draft back rather than only that something did. It carries identifiers, not
+ * sentences: naming them is the reader's job, and it already owns that
+ * vocabulary for the same claims on the Execution surface.
+ */
+export interface ContentShadowAdoption {
+  readonly blocked: boolean;
+  readonly blockingClaimIds: readonly string[];
+}
+
+/**
+ * The blocking checks a gate row records as not passed, in gate order.
+ *
+ * Severity is resolved through `@sf/flow-shadow`'s own table. A literal list of
+ * "the blocking three" here would be a copy of a backend invariant living in
+ * the code that reports it, and the direction such a copy drifts is the
+ * expensive one: a blocking check believed advisory reads to an operator as
+ * safe to adopt.
+ *
+ * Unreadable claims yield no reasons rather than a guessed one. The verdict is
+ * a column and stays authoritative on its own, so the control still refuses;
+ * what is lost is only the itemisation, and inventing an item would be the
+ * "we did not look" -> "we found something" substitution in the reader.
+ */
+export function adoptionBlockingClaimIds(
+  claims: readonly unknown[],
+): readonly string[] {
+  const parsed = StoredQaClaim.array().safeParse(claims);
+  if (!parsed.success) return [];
+  return parsed.data
+    .filter(
+      (claim) =>
+        claim.status === "failed" &&
+        qaSeverityForClaimId(claim.claimId) === "blocking",
+    )
+    .map((claim) => claim.claimId);
+}
+
+/**
+ * The adoption judgement, returned rather than thrown.
+ *
+ * `null` means this artifact type has no Content Shadow gate at all, which is
+ * not the same statement as "it is allowed": a `content_brief` is never judged
+ * by one, and reporting `blocked: false` for it would invite a reader to show a
+ * cleared-by-the-gate affordance for a deliverable no gate ever saw.
+ *
+ * A judged deliverable with no gate row IS `blocked: false`, for the reason
+ * `assertContentShadowAdoptionAllowed` gives below: nothing has judged it.
+ */
+export async function readContentShadowAdoption(
+  exec: Executor,
+  scope: ProjectScope,
+  artifact: { readonly id: string; readonly artifact_type: string },
+): Promise<ContentShadowAdoption | null> {
+  if (artifact.artifact_type !== CONTENT_SHADOW_DRAFT_ARTIFACT_TYPE) return null;
+  const gate = await new FlowShadowQaGatesRepository(exec).findLatestByArtifact(
+    scope,
+    artifact.id,
+  );
+  if (gate === null) return { blocked: false, blockingClaimIds: [] };
+  if (!verdictForbidsAdoption(gate.verdict)) {
+    return { blocked: false, blockingClaimIds: [] };
+  }
+  return { blocked: true, blockingClaimIds: adoptionBlockingClaimIds(gate.claims) };
+}
+
 /**
  * Refuse to move a Content Shadow draft to `ready` while its latest automated
  * verdict is `blocked`.
@@ -86,13 +168,10 @@ export async function assertContentShadowAdoptionAllowed(
   artifact: { readonly id: string; readonly artifact_type: string },
   pointer: string,
 ): Promise<void> {
-  if (artifact.artifact_type !== CONTENT_SHADOW_DRAFT_ARTIFACT_TYPE) return;
-  const gate = await new FlowShadowQaGatesRepository(exec).findLatestByArtifact(
-    scope,
-    artifact.id,
-  );
-  if (gate === null) return;
-  if (verdictForbidsAdoption(gate.verdict)) {
+  // The same call the read model makes, so the control's answer and the
+  // server's answer cannot be produced by different code.
+  const adoption = await readContentShadowAdoption(exec, scope, artifact);
+  if (adoption !== null && adoption.blocked) {
     throw contentShadowAdoptionBlocked(pointer);
   }
 }

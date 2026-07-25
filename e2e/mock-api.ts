@@ -303,6 +303,8 @@ const artifact = {
     createdAt: NOW,
   },
   activeRun: null,
+  // No Content Shadow gate judges a technical_ticket.
+  adoption: null,
   createdAt: NOW,
   updatedAt: NOW,
 };

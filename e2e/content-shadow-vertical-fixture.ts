@@ -12,6 +12,7 @@ import {
 import {
   claimCounts,
   expectedVerdict,
+  expectedAdoption,
   VERTICAL_CLAIMS,
 } from "./content-shadow-claims-fixture.ts";
 
@@ -150,6 +151,8 @@ function briefArtifact() {
       createdAt: NOW,
     },
     activeRun: null,
+    // No Content Shadow gate judges a content_brief; `null` is not "cleared".
+    adoption: null,
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -177,6 +180,8 @@ function draftArtifact(state: ContentVerticalState) {
       createdAt: NOW,
     },
     activeRun: null,
+    // Derived from the run's own claims, exactly as the server derives it.
+    adoption: expectedAdoption(VERTICAL_CLAIMS),
     createdAt: NOW,
     updatedAt: NOW,
   };

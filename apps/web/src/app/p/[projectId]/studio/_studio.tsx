@@ -106,9 +106,11 @@ import {
   type ExecutionDeepLinkResolution,
   type QueuedActionTarget,
 } from "../execution/_execution-deep-link.ts";
+import { claimLabelKey } from "../execution/_qa-view.ts";
 import {
   canDiscardArtifactChanges,
   isArtifactEditorDirty,
+  markReadyBlock,
   shouldConfirmArtifactNavigation,
 } from "./_artifact-editor-state.ts";
 import styles from "./studio.module.css";
@@ -728,8 +730,28 @@ function ArtifactEditor({
   const busy = update.isPending;
   const dirty = isArtifactEditorDirty({ draft, note, savedDraft });
   const validationErrors = current?.validationErrors ?? [];
-  const cannotReady =
-    artifact.validationState === "invalid" || validationErrors.length > 0;
+  /**
+   * Why "Mark ready" cannot be pressed, decided in one place.
+   *
+   * `adoption` is the server's own judgement, produced by the module both
+   * `draft -> ready` write paths consult. Before it reached the wire this
+   * control could only learn the refusal by making the request, which is the
+   * opposite of the pattern the review surface established one screen up.
+   */
+  const readyBlock = markReadyBlock({
+    dirty,
+    validationState: artifact.validationState,
+    validationErrorCount: validationErrors.length,
+    adoptionBlocked: artifact.adoption?.blocked === true,
+  });
+  const readyBlockId =
+    readyBlock === "unsaved_edits"
+      ? "sf-status-dirty-hint"
+      : readyBlock === "validation"
+        ? "sf-ready-hint"
+        : readyBlock === "adoption_blocked"
+          ? "sf-ready-blocked-hint"
+          : undefined;
   const isJson = current?.contentFormat === "json";
 
   const discardLocalChanges = useCallback((): void => {
@@ -986,18 +1008,18 @@ function ArtifactEditor({
               <Button
                 variant="primary"
                 onClick={() => void onSetStatus("ready")}
-                disabled={busy || dirty || cannotReady}
-                aria-describedby={
-                  dirty
-                    ? "sf-status-dirty-hint"
-                    : cannotReady
-                      ? "sf-ready-hint"
-                      : undefined
-                }
+                disabled={busy || readyBlock !== null}
+                aria-describedby={readyBlockId}
                 title={
-                  dirty
+                  /*
+                   * No `title` for the adoption refusal, deliberately. That
+                   * reason is stated in place below, and duplicating it into a
+                   * hover would teach the reader that hovering is where reasons
+                   * live — the habit the review surface refused to build.
+                   */
+                  readyBlock === "unsaved_edits"
                     ? t("saveBeforeStatusChange")
-                    : cannotReady
+                    : readyBlock === "validation"
                       ? t("markReadyHint")
                       : undefined
                 }
@@ -1014,7 +1036,7 @@ function ArtifactEditor({
               {t("archive")}
             </Button>
           </div>
-          {dirty ? (
+          {readyBlock === "unsaved_edits" ? (
             <p id="sf-status-dirty-hint" className={styles.readyHint}>
               {t("saveBeforeStatusChange")}
             </p>
@@ -1026,14 +1048,81 @@ function ArtifactEditor({
             <p data-studio-ready-path="" className={styles.readyHint}>
               {t("readyEditPath")}
             </p>
-          ) : cannotReady ? (
+          ) : readyBlock === "validation" ? (
             <p id="sf-ready-hint" className={styles.readyHint}>
               {t("markReadyHint")}
             </p>
+          ) : readyBlock === "adoption_blocked" ? (
+            <AdoptionBlockedHint
+              claimIds={artifact.adoption?.blockingClaimIds ?? []}
+            />
           ) : null}
         </div>
       )}
     </Panel>
+  );
+}
+
+/**
+ * Why this draft cannot be marked ready, beside the control that cannot be
+ * pressed.
+ *
+ * Every sentence here is a `studio.qa.*` key the Execution screen's blocked
+ * block already renders — not a paraphrase of one. Two surfaces describing the
+ * same verdict in wording that can drift apart is how a reader ends up
+ * believing they are two different problems, and this slice produced that
+ * defect more than once by copying a rule instead of sharing it.
+ *
+ * It reads as "these could not be checked", never as an accusation: the run
+ * finished, the draft exists, and what happened is that the gate held back
+ * references it has nothing to check them against. It is deliberately NOT
+ * painted red or with any danger token — the Task 7/8 ruling that made the
+ * Execution blocker amber applies to the same verdict stated here.
+ */
+function AdoptionBlockedHint({
+  claimIds,
+}: {
+  readonly claimIds: readonly string[];
+}) {
+  const t = useTranslations("studio.qa");
+  return (
+    <div
+      id="sf-ready-blocked-hint"
+      className={styles.readyHint}
+      data-studio-ready-blocked=""
+    >
+      {/* A count is only claimed when the itemised claims were readable. With
+          an unreadable claim array the verdict still stands on its own, and
+          "0 reference(s)" would be a number nobody measured. */}
+      <p className={styles.readyHintLine}>
+        {claimIds.length > 0
+          ? t("blocker.body", { count: claimIds.length })
+          : t("blocker.title")}
+      </p>
+      {claimIds.length > 0 ? (
+        <ul className={styles.readyHintCauses}>
+          {claimIds.map((claimId) => {
+            const key = claimLabelKey(claimId);
+            return (
+              <li key={claimId} data-studio-ready-blocked-cause="">
+                <span>
+                  {key === null ? t("claimUnnamed") : t(`claimLabels.${key}`)}
+                </span>
+                {/* The state word is DOM text beside the label, exactly as in
+                    the Execution blocker block: a claim label names a PROPERTY
+                    and the properties are mixed in polarity, so a bare label
+                    can read like a pass in a list of reasons a draft is held.
+                    Every id here is a blocking check the gate recorded as not
+                    passed — that is what the wire field carries — so the state
+                    is a fact about the field, not a second judgement. */}
+                <span>{` \u00b7 ${t("claimStatus.failed")}`}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      <p className={styles.readyHintLine}>{t("blocker.next")}</p>
+    </div>
   );
 }
 

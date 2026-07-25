@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ProblemError } from "@sf/observability";
 import {
+  adoptionBlockingClaimIds,
   contentShadowAdoptionBlocked,
   verdictForbidsAdoption,
 } from "@/lib/services/content-shadow-adoption";
@@ -48,5 +49,64 @@ describe("content shadow adoption", () => {
     );
     expect(review.fieldErrors?.[0]?.pointer).toBe("/baseRevision");
     expect(patch.fieldErrors?.[0]?.pointer).toBe("/status");
+  });
+});
+
+/**
+ * The reason the read model carries, derived from the same records the refusal
+ * is derived from.
+ *
+ * The Studio "Mark ready" control has to be able to say WHY before it is
+ * clicked, and the only honest source for that sentence is the gate row the
+ * server already consults. What the control must never do is re-derive which
+ * checks block — `@sf/flow-shadow` owns that table, and a second copy in a
+ * reader drifts in the expensive direction: a blocking check believed advisory
+ * reads to an operator as safe to adopt.
+ */
+describe("content shadow adoption reasons", () => {
+  it("names exactly the blocking checks that did not pass, in gate order", () => {
+    expect(
+      adoptionBlockingClaimIds([
+        {
+          claimId: "content-shadow.qa.rl12_citation_integrity",
+          kind: "red_line",
+          status: "failed",
+          detail: "A citation resolves to nothing in the frozen pack.",
+        },
+        // `review` severity in `QA_RULE_SEVERITY`, so it can never be the
+        // reason a verdict is `blocked` — asserted here so a future severity
+        // change is visible rather than silent.
+        {
+          claimId: "content-shadow.qa.rl12b_unresolved_link",
+          kind: "red_line",
+          status: "failed",
+          detail: "A link points somewhere the pack cannot confirm.",
+        },
+        {
+          claimId: "content-shadow.qa.rl8_unsupported_claim",
+          kind: "red_line",
+          status: "failed",
+          detail: "A statement carries no traceable source.",
+        },
+        // Blocking, but it passed.
+        {
+          claimId: "content-shadow.qa.sc9b_sources_resolve_to_pack",
+          kind: "structure",
+          status: "passed",
+          detail: "Every listed source resolves.",
+        },
+      ]),
+    ).toEqual([
+      "content-shadow.qa.rl12_citation_integrity",
+      "content-shadow.qa.rl8_unsupported_claim",
+    ]);
+  });
+
+  it("reports no reason rather than a guessed one when the claims are unreadable", () => {
+    // The verdict is a column and stays authoritative; only the itemised
+    // reasons are lost. Inventing one here would be the substitution the gate
+    // exists to prevent, in the reader instead of the writer.
+    expect(adoptionBlockingClaimIds([{ nonsense: true }])).toEqual([]);
+    expect(adoptionBlockingClaimIds([])).toEqual([]);
   });
 });

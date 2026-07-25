@@ -10,6 +10,7 @@ import {
 } from "../packages/flow-shadow/src/qa/index.ts";
 import {
   EXECUTION_CLAIMS,
+  expectedAdoption,
   expectedVerdict,
   REVIEW_BLOCKING_CLAIMS,
   REVIEW_COVERAGE_GAP_CLAIMS,
@@ -124,6 +125,43 @@ describe("content shadow mock E2E claim fixtures", () => {
   });
 
   /**
+   * The adoption gate the artifacts list carries, checked against the gate
+   * package rather than against the fixture's own declared severity.
+   *
+   * The Studio "Mark ready" control renders from this field, so a fixture that
+   * disagreed with the server would prove the control disables itself in a
+   * state the server never produces — which is worse than not testing it.
+   */
+  it("mirrors the adoption gate the artifacts read model derives", () => {
+    for (const [name, claims] of ALL_SETS) {
+      const adoption = expectedAdoption(claims);
+      // `blocked` is the verdict, never a second opinion about it.
+      expect(adoption.blocked, name).toBe(expectedVerdict(claims) === "blocked");
+      for (const claimId of adoption.blockingClaimIds) {
+        expect(qaSeverityForClaimId(claimId), `${name} / ${claimId}`).toBe(
+          "blocking",
+        );
+        expect(
+          claims.some(
+            (claim) => claim.claimId === claimId && claim.status === "failed",
+          ),
+          `${name} / ${claimId}`,
+        ).toBe(true);
+      }
+      // And nothing blocking-and-failed is left out of the reasons.
+      expect(adoption.blockingClaimIds.length, name).toBe(
+        adoption.blocked
+          ? claims.filter(
+              (claim) =>
+                qaSeverityForClaimId(claim.claimId) === "blocking" &&
+                claim.status === "failed",
+            ).length
+          : 0,
+      );
+    }
+  });
+
+  /**
    * The states each spec relies on, named so a reader of this file can see what
    * the E2Es are actually exercising without opening them.
    */
@@ -133,5 +171,8 @@ describe("content shadow mock E2E claim fixtures", () => {
     expect(expectedVerdict(REVIEW_BLOCKING_CLAIMS)).toBe("blocked");
     expect(expectedVerdict(VERTICAL_CLAIMS)).toBe("needs_review");
     expect(expectedVerdict(EXECUTION_CLAIMS)).toBe("blocked");
+    // The two the Studio control assertions turn on.
+    expect(expectedAdoption(REVIEW_BLOCKING_CLAIMS).blocked).toBe(true);
+    expect(expectedAdoption(REVIEW_PASSING_CLAIMS).blocked).toBe(false);
   });
 });

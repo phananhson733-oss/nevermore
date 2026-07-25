@@ -8,6 +8,7 @@ import {
 import {
   claimCounts,
   expectedVerdict,
+  expectedAdoption,
   REVIEW_BLOCKING_CLAIMS,
   REVIEW_COVERAGE_GAP_CLAIMS,
   REVIEW_PASSING_CLAIMS,
@@ -97,6 +98,9 @@ function draftArtifact(scenario: Scenario) {
       createdAt: NOW,
     },
     activeRun: null,
+    // The server derives this from the same gate the review endpoint reads, so
+    // the fixture derives it from the same claims rather than declaring it.
+    adoption: expectedAdoption(scenario.claims),
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -124,6 +128,9 @@ function briefArtifact() {
       createdAt: NOW,
     },
     activeRun: null,
+    // No Content Shadow gate ever judges a content_brief. `null` says that,
+    // and it is deliberately not the same statement as "adoption is allowed".
+    adoption: null,
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -205,6 +212,23 @@ async function fulfill(route: Route, body: unknown, status = 200) {
     contentType: "application/json",
     body: JSON.stringify(body),
   });
+}
+
+/**
+ * Resolve a CSS colour expression the way the page would, so a design token and
+ * a computed style can be compared as the same bytes. Comparing a computed
+ * `rgb(...)` against a raw token value can only ever be "not equal", which
+ * makes a colour assertion pass without checking anything.
+ */
+async function resolveColor(page: Page, expression: string): Promise<string> {
+  return page.evaluate((value) => {
+    const probe = document.createElement("span");
+    probe.style.color = value;
+    document.body.append(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    return resolved;
+  }, expression);
 }
 
 /** Layer the review fixtures over the shared in-browser API. */
@@ -394,6 +418,115 @@ test("a blocked verdict disables passing and says why, right next to the control
   await expect(
     blocker.getByText("列出的来源与冻结记录一致 · 未通过"),
   ).toHaveCount(1);
+});
+
+/**
+ * The OTHER door into `ready`, and the reason this test exists at all.
+ *
+ * The server already refuses a blocked draft through the generic artifact
+ * status PATCH — that was the correctness fix. What it did not do was tell the
+ * control: the artifacts list carried no verdict, so the Studio editor rendered
+ * an enabled "Mark ready" and an operator discovered the refusal by being
+ * refused. The list now carries the server's own answer, and this test asserts
+ * the two doors reach the SAME conclusion about the same deliverable rather
+ * than asserting each one separately — separate assertions stay green while the
+ * two answers drift apart, which is the failure worth catching.
+ */
+test("both doors into ready refuse the same blocked draft, and both say so before they are used", async ({
+  page,
+}) => {
+  const { writes } = await openExecution(
+    page,
+    scenario({ claims: REVIEW_BLOCKING_CLAIMS }),
+  );
+
+  // Door one: the review control on the reading surface.
+  const pass = page.locator("[data-review-pass]");
+  await expect(pass).toBeDisabled();
+
+  // Door two: the workspace editor's own status control, one screen below.
+  await page
+    .locator(`[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"]`)
+    .getByRole("button", { name: "打开", exact: true })
+    .click();
+  const editor = page.locator("[data-studio-editor]");
+  const markReady = editor.getByRole("button", {
+    name: "标记为就绪",
+    exact: true,
+  });
+  await expect(markReady).toBeDisabled();
+
+  // The reason is a sibling element the control points at — never a tooltip,
+  // and never only in the rail above.
+  const reason = editor.locator("[data-studio-ready-blocked]");
+  await expect(reason).toBeVisible();
+  expect(await markReady.getAttribute("aria-describedby")).toBe(
+    await reason.getAttribute("id"),
+  );
+  expect(await markReady.getAttribute("title")).toBeNull();
+
+  // It is the Execution blocked block's OWN sentence, not a paraphrase of it:
+  // "cannot be verified here", and explicitly not a run failure.
+  await expect(reason).toContainText("无法在本轮冻结的研究记录中核实");
+  await expect(reason).toContainText("这不是运行失败");
+  await expect(reason).toContainText("下一步：");
+  const reasonText = (await reason.innerText()).trim();
+  expect(reasonText).not.toContain("错误");
+  expect(reasonText).not.toContain("重试");
+
+  // Both causes are named, and each carries the state word, because a claim
+  // label names a PROPERTY: `sc9b` reads as the property when SATISFIED, so a
+  // bare label would sit under the refusal reading like a pass.
+  const causes = reason.locator("[data-studio-ready-blocked-cause]");
+  await expect(causes).toHaveCount(2);
+  await expect(causes.filter({ hasText: "断言缺少可核实出处" })).toHaveCount(1);
+  await expect(
+    causes.filter({ hasText: "列出的来源与冻结记录一致 · 未通过" }),
+  ).toHaveCount(1);
+
+  // Never the danger family. A `blocked` verdict is the gate working, and the
+  // Task 7/8 ruling is that it is never painted red wherever it is stated.
+  const coralText = await resolveColor(page, "var(--sf-coral-text)");
+  const mutedText = await resolveColor(page, "var(--sf-muted)");
+  // Guard the comparison: if the two tokens resolved alike, "is not coral"
+  // would pass for free.
+  expect(mutedText).not.toBe(coralText);
+  const painted = await reason.evaluate(
+    (element) => getComputedStyle(element).color,
+  );
+  expect(painted).not.toBe(coralText);
+  expect(painted).toBe(mutedText);
+
+  // Natively disabled: a forced click reaches no handler, so nothing is
+  // written and the operator never learns the refusal from a response.
+  const before = writes.length;
+  await markReady.evaluate((element: HTMLButtonElement) => element.click());
+  await expect(page.locator("[data-review-confirm]")).toHaveCount(0);
+  expect(writes.length).toBe(before);
+});
+
+/**
+ * The other side of the same judgement.
+ *
+ * A control that disabled itself on every draft would satisfy the test above
+ * and take away a path the server would have accepted. Both doors have to open
+ * on a deliverable the gate did not block, and they are asserted together for
+ * the same reason they are asserted together above.
+ */
+test("both doors open on a draft the gate did not block", async ({ page }) => {
+  await openExecution(page, scenario());
+
+  await expect(page.locator("[data-review-pass]")).toBeEnabled();
+
+  await page
+    .locator(`[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"]`)
+    .getByRole("button", { name: "打开", exact: true })
+    .click();
+  const editor = page.locator("[data-studio-editor]");
+  await expect(
+    editor.getByRole("button", { name: "标记为就绪", exact: true }),
+  ).toBeEnabled();
+  await expect(editor.locator("[data-studio-ready-blocked]")).toHaveCount(0);
 });
 
 test("a verdict for an older revision is marked stale and refuses to carry a review", async ({

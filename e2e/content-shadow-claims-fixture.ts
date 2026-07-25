@@ -69,6 +69,32 @@ export function expectedVerdict(
   return needsReview ? "needs_review" : "passed";
 }
 
+/**
+ * The adoption gate the artifacts read model carries for a claim set.
+ *
+ * Mirrors `readContentShadowAdoption`: `blocked` IS the verdict rather than a
+ * second judgement, and the reasons are the blocking claims recorded as not
+ * passed, in gate order. Declaring it per-spec would put a third copy of the
+ * blocking-severity table in the fixtures the second copy already drifted in.
+ */
+export function expectedAdoption(claims: readonly QaClaimFixture[]): {
+  readonly blocked: boolean;
+  readonly blockingClaimIds: readonly string[];
+} {
+  const blocked = expectedVerdict(claims) === "blocked";
+  return {
+    blocked,
+    blockingClaimIds: blocked
+      ? claims
+          .filter(
+            (claim) =>
+              claim.severity === "blocking" && claim.status === "failed",
+          )
+          .map((claim) => claim.claimId)
+      : [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Individual claims, named so a spec reads as the state it is setting up.
 // ---------------------------------------------------------------------------
