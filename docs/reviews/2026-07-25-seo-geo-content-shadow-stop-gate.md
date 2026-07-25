@@ -167,7 +167,8 @@ machine.
 | `pnpm test:integration` | pass — 65 files, 473 tests |
 | Content vertical E2E + the three sibling mock specs | pass — 19/19 (`content-shadow-vertical` 2, `content-shadow-review` 10, `content-shadow-execution` 6, `audit-technical-vertical` 1) |
 
-All numbers above are from the final fix round (§8), re-run at its last commit.
+All numbers above were re-run in full at the §9 follow-up round's commit; they
+were unchanged from the §8 round that first produced them.
 
 The complete `pnpm test:e2e:mock` suite was **not** run green and is **not**
 claimed green. See §4 residual D4.
@@ -188,10 +189,22 @@ new immutable revision and returns the deliverable to `draft` automatically.
 *Ruling (main agent).* Where the UX specification and the frozen authority
 specification conflict, the authority specification wins. Shipping two buttons
 that write nothing is exactly the simulated-control pattern ruling β rejected,
-so they were not built. The blocker block's "Next:" sentence names the real
-path — revise the draft, or send it back for more evidence, then check it
-again — instead of offering a control that would look like a decision and
-record none.
+so this slice built neither of them.
+
+*Correction (§9).* The previous version of this paragraph ended "so they were
+not built", which was **false as written**: the Studio editor already carried
+one control of exactly that kind — "Back to draft" on a `ready` artifact, whose
+only possible outcome was `VERSION_CONFLICT` — one screen below the surface that
+refused to build a second. That control has now been removed (`ac38918`; §8.2 M5,
+resolved in §9), and the statement above is narrowed to what this slice did:
+**no control of this kind was built here, and the one that pre-existed is gone.**
+
+The blocker block's "Next:" sentence names the real path — revise the draft, or
+send it back for more evidence, then check it again — instead of offering a
+control that would look like a decision and record none. In the Studio editor
+the same path is now stated in words where the removed button used to sit
+(`studio.readyEditPath`): editing a `ready` deliverable appends a new revision
+and the service returns it to `draft`, so `ready` is not a dead end.
 
 *What this costs.* A reviewer who wants to reject a draft has to use the editor
 below rather than a control beside the verdict. Nothing is lost from the record;
@@ -444,6 +457,24 @@ rather than a machine-local name, and its five tests run inside
 `pnpm test:integration`. `pnpm test` is now green both with and without
 `DATABASE_URL` (§2.5).
 
+**D8. `e2e/real-vertical-chains.spec.ts` — the real (database-backed) E2E suite
+— is red at HEAD, and was already red before this slice began.** Measured in §9
+at an unmodified tree: it fails on its fourth step,
+`expect(page.getByRole("heading", { name: "New project" }))`, because the app's
+`DEFAULT_LOCALE` is `zh-CN` (`packages/i18n/src/config.ts`) and this spec asserts
+English chrome without setting `sf_ui_locale` — the same defect §4 D4 already
+records for `studio-first-paint` and `studio-workspace`. It was introduced by
+`3c2ecc6`, which flipped the default **and** edited this spec without giving it a
+cookie; `3c2ecc6` is an ancestor of the Slice 2 baseline `945be02`, and the spec
+file is untouched since. Given an `sf_ui_locale=en` context the run gets further
+and then fails again on `[data-overview-hero]` not containing the project name as
+exact text — the Slice 1 customer Overview rewrite; that assertion is stale too,
+and the surface it reads is inside the `overview` freeze this slice is under. So
+the suite needs **its own** task: a locale decision for the real harness, several
+re-aimed assertions on a frozen surface, and a re-baselined set of visual
+snapshots. **Nothing in §8 or §9 made this worse, and neither round claims this
+suite green.**
+
 ### E. Product decisions left open for the Owner
 
 - **E1. Brand axis.** SignalFrame (cobalt / Fraunces / Manrope) versus the
@@ -660,7 +691,9 @@ always carried.
 
 ### 8.2 Found and **not** fixed — read this part
 
-**M5. The Studio editor offers a button that can only fail.** On a `ready`
+**M5. RESOLVED in §9.** *(Original entry kept verbatim below; the reason it was
+held is part of the record.)* **The Studio editor offers a button that can only
+fail.** On a `ready`
 artifact the editor renders "Back to draft", which calls the status PATCH with
 `draft`. `MANUAL_STATUS_TRANSITIONS.ready` is `["archived"]`, so the request can
 only ever return `VERSION_CONFLICT`. This is the simulated-control pattern §2.6
@@ -675,6 +708,16 @@ the control turns that assertion red. **The fix is one edit plus re-aiming that
 assertion at the `Ready` status pill, and it needs an owner's go-ahead because
 it touches the real-vertical E2E.**
 
+*What the ruling was, and what §9 found while carrying it out.* The Owner ruled:
+remove the button, re-aim the assertion at the `Ready` status pill, keep its
+strength, and say in the test why the anchor moved. That was done. While doing
+it, §9 also established that `real-vertical-chains.spec.ts` **does not currently
+reach line 540 at all** — it is red at its fourth line for a pre-existing reason
+(§4 D8), so "removing the control turns that assertion red" was true of the
+assertion as written and untrue of any run this repository can perform today.
+The re-aimed assertion was therefore mutation-verified on an equivalent harness
+instead; see §9.
+
 **N-1. The Studio "Mark ready" control does not know a draft is blocked.** H1
 closed the write path: the server now refuses. The control itself is not
 blocked-aware, because the artifacts list carries no gate verdict, so an
@@ -683,12 +726,18 @@ control with a reason beside it — the opposite of the pattern Task 8 used on t
 review surface. Closing this needs a verdict on the artifact wire shape, which
 is a contract change and therefore its own task.
 
-**N-2. `.blocker` is painted coral.** The Task 7/8 ruling says a `blocked`
+**N-2. RESOLVED in §9.** *(Original entry kept verbatim.)* **`.blocker` is
+painted coral.** The Task 7/8 ruling says a `blocked`
 verdict must "never use red or failure wording". The verdict *pill* honours that
 (`verdictTone` returns `warning`), but the blocker block itself uses
 `--sf-coral-text` / `--sf-coral-soft`, which is the product's red family. It was
 left alone deliberately: changing it is a visual decision with E2E colour
 assertions nearby, and it deserves a ruling rather than a drive-by edit.
+
+*Ruling and outcome.* Layered: the block's **surface, border and title** are the
+verdict and are now amber; the **state word beside one failed claim inside it**
+is item level and keeps the status matrix's coral. Both halves are asserted and
+measured — see §9.
 
 **N-3. Branch coverage was not re-measured.** §4 D1 records 78.21% against an
 80% threshold, proven unrelated to Slice 2. This round added tests and moved one
@@ -710,3 +759,169 @@ and is wired into no gate — went red against the new prose check because their
 fixture authority is a one-line stub; the fixture now states its own counts,
 derived from the fixture lock, and the file is back to exactly its pre-existing
 single failure.
+
+---
+
+## 9. Ruling follow-up round (2026-07-26)
+
+§8.2 stopped on two items rather than deciding them alone. The Owner ruled on
+both. This section records what the rulings were, how they were carried out, and
+what carrying them out uncovered.
+
+The round changed no operation, no async operation, no table and no rule:
+**49 / 9 / 44 / 11** before and after. No migration, no contract change.
+
+Code commit: `ac38918`.
+
+### 9.1 M5 — the control that could only fail was removed
+
+*Ruling.* Remove the button. Re-aim `e2e/real-vertical-chains.spec.ts:540-542`
+at the `Ready` status pill. Do not weaken the assertion, say in the test why the
+anchor moved, mutation-check the result, and make sure `ready` is not left as a
+state with no forward path.
+
+*What was done.*
+
+- `apps/web/src/app/p/[projectId]/studio/_studio.tsx` no longer renders "Back to
+  draft". The `ready` branch renders no status control at all, and the comment in
+  its place states the reason with the file that decides it
+  (`MANUAL_STATUS_TRANSITIONS.ready === ["archived"]`).
+- `ready` is **not** a dead end and the screen now says so. Where the button
+  stood, the editor states the real path: edit the content above and save a
+  revision — `artifact-update.ts` marks that write `status: "draft"`
+  unconditionally ("editing always returns to draft"). New message key
+  `studio.readyEditPath` in both locales; `studio.backToDraft` deleted from both.
+  Locale key parity is enforced by `packages/i18n/src/__tests__/parity.test.ts`.
+- The E2E assertion now reads `[data-studio-editor]`'s own `Ready` pill. Strength
+  is unchanged: `getByText(..., { exact: true })` under Playwright strict mode
+  must resolve **exactly one** element and it must be visible, which is precisely
+  what the previous `getByRole("button", ...)` required. Two assertions were
+  **added**, not removed: the withdrawn control must have count 0 anywhere on the
+  page, and the stated path back must be visible.
+
+*Mutation self-verification.* `real-vertical-chains.spec.ts` cannot execute today
+(§4 D8), so the re-aimed trio was copied verbatim into a throwaway spec driven by
+the same mock API that the committed Studio specs use, and run three ways:
+
+| Condition | Result |
+|---|---|
+| artifact `ready` (the change took) | **passes** |
+| artifact stays `draft` — "mark ready" failed / status did not move | **fails**: `locator('[data-studio-editor]').getByText('Ready', { exact: true })` — *element(s) not found* |
+| the removed control re-added to the component | **fails**: `getByRole('button', { name: 'Back to draft' })` — *Expected: 0, Received: 1* |
+
+The probe spec was deleted after measuring; it is not in the commit. The first
+row is the guarantee the original assertion carried, the second is proof it still
+discriminates, the third is proof the removal is now guarded rather than assumed.
+
+### 9.2 N-2 — the blocker block is amber; the failed claim inside it is still coral
+
+*Ruling.* Layered. The block's surface, border and title carry the **verdict**,
+so they take the amber the verdict pill already takes. The state word beside a
+single failed claim inside the list is **item level** — `claim failed` is coral
+everywhere else in the rail — and keeps its colour.
+
+*What was done.* `.blocker` moved from `--sf-coral-*` to `--sf-amber-*`, using
+the exact shape `.briefLinkBroken` and `.staleBanner` already use for a held-back
+state (`color-mix(in srgb, var(--sf-amber) 32%, var(--sf-border))`). No hex was
+introduced; every value is a `var(--sf-*)` token or a `color-mix` of tokens
+(ruling γ). `.blockerItemState` now takes the same per-status tone class
+`QaClaimRow` uses, so a `failed` word is coral, `unevaluated` amber, `passed`
+mint — stated structurally rather than by hard-coding one state.
+
+*Contrast, measured in the browser* on the painted surface (`--sf-amber-soft`),
+both themes, via `getComputedStyle` with the `opacity` composited in:
+
+| Element | Size | Light | Dark |
+|---|---|---|---|
+| title (`.blocker strong`) | 15px | **6.14:1** | **9.28:1** |
+| body / list rows (`.blocker p`, `li`) | 12px | **6.14:1** | **9.28:1** |
+| `.blockerNote` (at its 0.92 opacity) | 12px | **5.15:1** | **8.07:1** |
+| failed state word (coral, item level) | 12px | **5.89:1** | **7.74:1** |
+
+Every value clears WCAG AA 4.5:1, the 12px labels included, in light and dark.
+The 0.92 opacity was kept rather than replaced (unlike M6's `.qaCountsStale`,
+which measured 2.70:1) because measurement says it passes.
+
+*Test.* `e2e/content-shadow-execution.mock.spec.ts`'s "a blocked verdict reads as
+a held-back citation, never as a failure" now also asserts the colour, not just
+the wording: the block's `backgroundColor`, `color` and border **equal** the
+amber family and therefore cannot be the coral family, and every `failed` state
+word inside it **equals** `--sf-coral-text`. Tokens are resolved through a probe
+element so both sides are compared as the same `rgb()` bytes — comparing a
+computed `rgb()` against a raw `#rrggbb` token can only ever be "not equal",
+which would let a colour assertion pass without checking anything. The comparison
+itself is guarded: the amber and coral values are asserted to differ first.
+
+*Mutation-checked.* Restoring `.blocker` to coral turns that test red:
+`Expected: "rgb(255, 241, 216)"` / `Received: "rgb(255, 240, 236)"`.
+
+### 9.3 The stop gate was corrected where this round made it false
+
+- **§2.6(a)** said "shipping two buttons that write nothing … so they were not
+  built". §8.2 M5 had already recorded that as false. It now states the fact:
+  this slice built no such control, and the one that pre-existed has been removed.
+  It also names the replacement wording that keeps `ready` from reading as a dead
+  end.
+- **§8.2 M5 and N-2** are marked `RESOLVED in §9`, with their original entries
+  kept verbatim — the reason each was held is part of the record.
+- **§2.5**'s provenance line now says the gate numbers were re-run at this round's
+  commit, because they were.
+- **§4 D8** is new: the real E2E suite is red at HEAD for reasons that predate the
+  slice. It was found by running the suite before touching anything.
+
+Re-read of the neighbouring claims: §3's UX deviation list, §2.6(b), §8.3 and
+§4 D1–D7 are unaffected by this round and were left alone.
+
+### 9.4 Gates
+
+Every gate below was run at this round's tree, in this worktree, on this machine.
+
+| Gate | Result |
+|---|---|
+| `pnpm verify:spec` | pass — 49 operations, 9 async, 44 tables, 11 rules; prose counts match the lock |
+| `pnpm verify:authority` | pass — same four counts |
+| `pnpm implementation:check` | pass — 49 operations, 9 async envelopes, 44 tables, 11 rules |
+| `pnpm openapi:lint` | pass |
+| `pnpm contracts:check` | pass — no diff |
+| `pnpm lint` | pass (10 workspace projects + `e2e`) |
+| `pnpm typecheck` | pass (10 workspace projects + `e2e`) |
+| `pnpm build` | pass |
+| `git diff --check` | clean |
+| `pnpm test` (unit, no `DATABASE_URL`) | pass — 305 files, 3738 tests |
+| `pnpm test` **with** `DATABASE_URL` exported | pass — identical 305 / 3738 |
+| `pnpm db:migrate` | pass — 21 migration files |
+| `pnpm db:smoke` | pass — fixtures rolled back |
+| `pnpm db:migrate:check` | pass — 44 tables / 56 indexes / 69 triggers / 18 routines |
+| `pnpm test:integration` | pass — 65 files, 473 tests |
+| `content-shadow-vertical` / `-review` / `-execution` / `audit-technical-vertical` | pass — 19/19 |
+| `real-vertical-chains` | **fail — and it failed identically before this round's first edit.** §4 D8 |
+
+`real-vertical-chains` was run first, at an unmodified tree, precisely so that
+its failure could be attributed. It fails at `createProjectInBrowser`, four steps
+before the assertion this round re-aimed.
+
+### 9.5 What did not change
+
+Constraint **N-1** held. `git diff --stat 945be02..HEAD` over
+`apps/web/src/app/p/[projectId]/overview`, `.../growth-map` and `.../sources` is
+still **empty**, and this round touched none of the three. `studio.module.css`
+and `execution.module.css`'s non-`.blocker` rules are untouched apart from the
+two colour lines and their comments.
+
+No existing assertion was weakened. Exactly one assertion changed anchor — the
+one the Owner authorised — and it gained two neighbours rather than losing
+strength. Every other test that was green stayed green.
+
+### 9.6 Still open after this round
+
+- **§8.2 N-1** (Studio "Mark ready" is not blocked-aware) — unchanged; closing it
+  needs a contract change and is its own task.
+- **§8.2 N-3** (branch coverage not re-measured) — unchanged. This round added
+  E2E assertions only; the number is still not claimed.
+- **§8.2 N-4** / **§4 D4** (no trustworthy full `test:e2e:mock` baseline) —
+  unchanged.
+- **§4 D8** (the real E2E suite is red) — recorded here for the first time, not
+  fixed, and out of this round's scope in two directions at once: it needs a
+  locale decision for the real harness and edits to assertions that read the
+  frozen `overview` surface.
+- §4 D1, D2, D3, D5, D6 — untouched pre-existing debt.
