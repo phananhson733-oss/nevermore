@@ -164,3 +164,152 @@ export const ADVISORY_ONLY_DRAFT = [
   "RevOps leads evaluating onboarding tooling own this work.",
   "",
 ].join("\n");
+
+/**
+ * The load-bearing regression corpus for the reference-list blind spots.
+ *
+ * Every one of these carried a fabricated bibliography and returned `passed`,
+ * with three blocking claims persisted asserting the draft made no external
+ * assertion, carried no citation and listed no source entry. They differ from
+ * each other only in the heading word or the markdown the model chose.
+ */
+const FABRICATED_REFERENCE_BODY = [
+  "# Onboarding analytics for RevOps teams",
+  "",
+  "## What onboarding analytics covers",
+  "",
+  "**Onboarding analytics** measures time to first value for RevOps teams.",
+  "",
+  "## Audience",
+  "",
+  "RevOps leads evaluating onboarding tooling own this work.",
+  "",
+];
+
+function draftWithReferenceSection(
+  title: string,
+  entries: readonly string[],
+): string {
+  return [...FABRICATED_REFERENCE_BODY, `## ${title}`, "", ...entries, ""].join(
+    "\n",
+  );
+}
+
+/** A reference list under each heading the exact-title set could not see. */
+export const REFERENCE_HEADING_DRAFTS: ReadonlyArray<
+  readonly [string, string]
+> = [
+  [
+    "Further Reading",
+    draftWithReferenceSection("Further Reading", [
+      "- Forrester Digital Experience Report, 2024",
+      "- Gartner Onboarding Benchmark, 2023",
+    ]),
+  ],
+  [
+    "Related Reading",
+    draftWithReferenceSection("Related Reading", [
+      "- McKinsey Activation Study, 2024",
+    ]),
+  ],
+  [
+    "Works Cited",
+    draftWithReferenceSection("Works Cited", [
+      "- Forrester Digital Experience Report, 2024",
+    ]),
+  ],
+  [
+    "Bibliography",
+    draftWithReferenceSection("Bibliography", [
+      "- Gartner Onboarding Benchmark, 2023",
+    ]),
+  ],
+  [
+    "Citations",
+    draftWithReferenceSection("Citations", [
+      "- Nielsen Norman Group, Onboarding Usability, 2022",
+    ]),
+  ],
+  [
+    "Sources and further reading",
+    draftWithReferenceSection("Sources and further reading", [
+      "- Forrester Digital Experience Report, 2024",
+    ]),
+  ],
+];
+
+/** The same reference, in each markdown shape the list-item filter missed. */
+export const REFERENCE_FORMAT_DRAFTS: ReadonlyArray<
+  readonly [string, string]
+> = [
+  [
+    "paragraph",
+    draftWithReferenceSection("Sources", [
+      "Forrester Digital Experience Report, 2024",
+    ]),
+  ],
+  [
+    "table",
+    draftWithReferenceSection("Sources", [
+      "| Source | Year |",
+      "| --- | --- |",
+      "| Forrester Digital Experience Report | 2024 |",
+    ]),
+  ],
+  [
+    "blockquote",
+    draftWithReferenceSection("Sources", [
+      "> Forrester Digital Experience Report, 2024",
+    ]),
+  ],
+  [
+    "list item",
+    draftWithReferenceSection("Sources", [
+      "- Forrester Digital Experience Report, 2024",
+    ]),
+  ],
+];
+
+/**
+ * A first-party product link on a line that happens to contain the word
+ * `report`. This was `blocked`, with the detail calling the customer's own URL
+ * a fabricated source at authority D.
+ */
+export const FIRST_PARTY_LINK_DRAFT = [
+  ...FABRICATED_REFERENCE_BODY,
+  "## Next step",
+  "",
+  "Read our onboarding analytics report at [the product report page](https://signalframe.example/reports/onboarding).",
+  "",
+].join("\n");
+
+/** A genuinely attributed external link: still a citation, still blocked. */
+export const ATTRIBUTED_LINK_DRAFT = [
+  ...FABRICATED_REFERENCE_BODY,
+  "## Evidence",
+  "",
+  "According to [the 2024 analyst benchmark](https://analyst.example/benchmark), activation tracking cuts churn.",
+  "",
+].join("\n");
+
+/**
+ * A draft whose first line is a lone `---`. This masked the entire document as
+ * unterminated frontmatter, and the fabricated citation inside it was judged
+ * clean by rules that had read nothing.
+ */
+export const UNCLOSED_FRONTMATTER_DRAFT = [
+  "---",
+  "",
+  "# Onboarding analytics",
+  "",
+  "## Why onboarding analytics matters",
+  "",
+  "According to the 2024 Forrester Digital Experience Report, teams cut",
+  "onboarding time by 40%.",
+  "",
+].join("\n");
+
+/** Nothing but a fenced block: readable bytes, no prose to judge. */
+export const ALL_FENCED_DRAFT = ["```text", "just a transcript", "```", ""].join(
+  "\n",
+);

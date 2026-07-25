@@ -41,19 +41,41 @@ const LIST_ITEM = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
 const TABLE_ROW = /^\s{0,3}\|.*\|\s*$/;
 const BLOCKQUOTE = /^\s{0,3}>/;
 
+/**
+ * Index of the line that CLOSES a leading frontmatter block, or `-1` when the
+ * draft has none.
+ *
+ * Resolved up front, in its own pass, because the streaming version of this had
+ * a hole with teeth: it opened the mask on a first-line `---` and only ever
+ * closed it on a matching `---`, so a draft whose first line is a lone
+ * horizontal rule was masked to the last byte. Every language rule then ran on
+ * an empty document and reported "we found nothing wrong" — the exact
+ * fail-open this gate claims it cannot do. `draftMarkdown` is the raw
+ * `content_text` an LLM wrote, and a leading thematic break is perfectly
+ * ordinary model output, so this is a shape we WILL be handed.
+ *
+ * No closing delimiter now means there was no frontmatter, and the `---` is
+ * treated as the body content it is.
+ */
+function frontmatterEndIndex(lines: readonly string[]): number {
+  if (lines[0]?.trim() !== "---") return -1;
+  for (let index = 1; index < lines.length; index += 1) {
+    if (lines[index]?.trim() === "---") return index;
+  }
+  return -1;
+}
+
 /** Parse a draft once: masked prose lines plus the heading spine. */
 export function readDraft(markdown: string): DraftView {
   const lines = markdown.split("\n");
   const prose: DraftLine[] = [];
   const headings: DraftHeading[] = [];
   let inFence = false;
-  let frontmatterState: "none" | "open" | "closed" =
-    lines[0]?.trim() === "---" ? "open" : "none";
+  const frontmatterEnd = frontmatterEndIndex(lines);
 
   for (const [index, text] of lines.entries()) {
     const lineNumber = index + 1;
-    if (frontmatterState === "open") {
-      if (index > 0 && text.trim() === "---") frontmatterState = "closed";
+    if (index <= frontmatterEnd) {
       prose.push({ line: lineNumber, text: "" });
       continue;
     }
@@ -126,7 +148,9 @@ export function sectionBody(
   const body: DraftLine[] = [];
   for (const entry of view.prose) {
     if (entry.line <= heading.line) continue;
-    const next = view.headings.find((candidate) => candidate.line === entry.line);
+    const next = view.headings.find(
+      (candidate) => candidate.line === entry.line,
+    );
     if (next && next.level <= heading.level) break;
     body.push(entry);
   }
@@ -134,33 +158,119 @@ export function sectionBody(
 }
 
 /**
- * Prose lines that come before the first tail section (`Sources`, `References`,
- * `Related Reading`). A reference list is not prose, and scanning it for
- * unsupported assertions would double-report every citation.
+ * Vocabulary a reference-list heading is built from.
+ *
+ * A heading counts as a reference list only when EVERY one of its words comes
+ * from this set and at least one is a core reference word. The two-list shape
+ * is what keeps `## Sources of onboarding friction` in the body (`onboarding`
+ * is not reference vocabulary) while `## Sources and further reading` is
+ * recognised as the reference list it is.
+ *
+ * The bias is deliberate and one-directional: when in doubt a section stays in
+ * the BODY, where the red lines scan it. Mistaking a body section for a
+ * reference list would let honest prose be reported as unresolvable
+ * references; mistaking a reference list for body prose is the milder error,
+ * because the body is the more heavily scanned half.
  */
-export function bodyBefore(
-  view: DraftView,
-  titles: readonly string[],
-): readonly DraftLine[] {
-  const wanted = new Set(titles.map((title) => title.toLowerCase()));
-  const cut = view.headings.find((candidate) =>
-    wanted.has(normalizeHeading(candidate.text)),
-  );
-  const limit = cut ? cut.line : Number.POSITIVE_INFINITY;
-  return view.prose.filter((entry) => entry.line < limit);
+const REFERENCE_TITLE_WORD =
+  /^(?:sources?|references?|citations?|bibliography|bibliographies|works|cited|reading|readings|further|related|additional|more|other|external|see|also|list|notes?|footnotes?|endnotes?|links?|and|the|of|our|a|an)$/;
+
+const REFERENCE_TITLE_CORE =
+  /^(?:sources?|references?|citations?|bibliography|bibliographies|cited|reading|readings|footnotes?|endnotes?)$/;
+
+/**
+ * Does this heading introduce a reference list?
+ *
+ * Recognition is SEMANTIC rather than an exact-title set. The exact-set version
+ * matched `Sources` and `References` and nothing else, so `## Works Cited`,
+ * `## Bibliography`, `## Citations` and `## Sources and further reading` were
+ * invisible to the only rule that resolves reference entries — and that rule
+ * then reported, in a persisted claim, that the draft listed no source entry.
+ * A check whose blind spot is stated as a positive finding is worse than no
+ * check at all.
+ */
+export function isReferenceSectionTitle(heading: string): boolean {
+  const words = normalizeHeading(heading)
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+  if (words.length === 0) return false;
+  if (!words.every((word) => REFERENCE_TITLE_WORD.test(word))) return false;
+  return words.some((word) => REFERENCE_TITLE_CORE.test(word));
 }
 
-export const TAIL_SECTION_TITLES: readonly string[] = [
-  "sources",
-  "references",
-  "related reading",
-  "further reading",
-];
+export interface ReferenceSection {
+  readonly title: string;
+  /** Line of the heading that opened the section. */
+  readonly headingLine: number;
+  /** Every line under the heading, up to the next heading of the same level. */
+  readonly lines: readonly DraftLine[];
+}
 
-export const SOURCES_SECTION_TITLES: readonly string[] = [
-  "sources",
-  "references",
-];
+/**
+ * The draft split into body prose and reference lists.
+ *
+ * This is ONE source of truth on purpose. It replaced a pair of independent
+ * title lists — one that decided where the body was cut, a shorter one that
+ * decided which sections a reference rule re-scanned — whose difference was a
+ * region NO rule read: a fabricated bibliography under `## Further Reading`
+ * was cut out of the body by the first list and skipped by the second, and the
+ * draft passed with three blocking claims asserting it carried no external
+ * reference at all.
+ *
+ * The partition is total: every line of `view.prose` appears exactly once as a
+ * body line, a reference-section heading, or a reference-section line. A
+ * structural test pins that, so the two halves cannot drift apart again.
+ */
+export interface DraftPartition {
+  readonly body: readonly DraftLine[];
+  readonly reference: readonly ReferenceSection[];
+}
+
+export function partitionDraft(view: DraftView): DraftPartition {
+  const body: DraftLine[] = [];
+  const reference: {
+    title: string;
+    headingLine: number;
+    level: number;
+    lines: DraftLine[];
+  }[] = [];
+  let open: (typeof reference)[number] | null = null;
+
+  const headingByLine = new Map(
+    view.headings.map((heading) => [heading.line, heading]),
+  );
+
+  for (const entry of view.prose) {
+    const heading = headingByLine.get(entry.line);
+    if (heading) {
+      if (open !== null && heading.level <= open.level) open = null;
+      if (open === null && isReferenceSectionTitle(heading.text)) {
+        open = {
+          title: heading.text,
+          headingLine: heading.line,
+          level: heading.level,
+          lines: [],
+        };
+        reference.push(open);
+        continue;
+      }
+    }
+    if (open !== null) {
+      open.lines.push(entry);
+      continue;
+    }
+    body.push(entry);
+  }
+
+  return {
+    body,
+    reference: reference.map((section) => ({
+      title: section.title,
+      headingLine: section.headingLine,
+      lines: section.lines,
+    })),
+  };
+}
 
 /** ASCII-class tokenizer. Locale-independent by construction (purity rule 1). */
 export function tokenize(text: string): readonly string[] {
@@ -191,11 +301,34 @@ export function clauseBefore(text: string, offset: number): string {
   return last?.index === undefined ? head : head.slice(last.index + 1);
 }
 
-const NEGATION =
-  /\b(no|not|never|without|lacks?|lacking|absent|neither|nor|n't|little|few)\b/i;
+/**
+ * A negator that DIRECTLY governs the word it precedes: `no study shows`,
+ * `not a single report finds`.
+ *
+ * The previous rule exempted an assertion whenever ANY of
+ * no/not/never/without/lacks/absent/neither/nor/n't/little/few appeared
+ * anywhere in the preceding clause. That is a false-negative machine, because
+ * those words open a large share of ordinary English sentences and their
+ * presence says nothing about whether the assertion that follows needs a
+ * source. Two sentences that walked straight through it:
+ *
+ *   "There is no doubt that research shows onboarding analytics doubles
+ *    activation rates by 40%."
+ *   "Few operators know that a study by Gartner found a 30 percent lift."
+ *
+ * Both are fabrications wearing a rhetorical hat. The exemption that remains
+ * is the narrow one it was written for — the negator has to be the last thing
+ * before the research noun, modulo determiners — so an honest disclaimer
+ * ("**No study shows** that switching CMS platforms helps") is still exempt
+ * while a negation that merely shares the clause is not.
+ */
+const DIRECT_NEGATION =
+  /\b(?:no|not|never|neither|nor)\s+(?:(?:an?|the|any|one|single|other|such|credible|published|independent|peer[\s-]reviewed|reliable|external|serious)\s+)*$/i;
 
-export function hasNegationCue(text: string): boolean {
-  return NEGATION.test(text);
+export function hasDirectNegation(text: string): boolean {
+  return DIRECT_NEGATION.test(
+    text.replace(/[*_`~]+/g, " ").replace(/\s+/g, " "),
+  );
 }
 
 export interface CanonicalUrl {
@@ -254,10 +387,24 @@ export function normalizeName(text: string): string {
     .trim();
 }
 
+/**
+ * Truncate by CODE POINT, never by UTF-16 code unit.
+ *
+ * `String.prototype.slice` cuts between the two halves of a surrogate pair, and
+ * an excerpt cut in the middle of an emoji leaves a lone surrogate in the
+ * claim detail. `JSON.stringify` happily emits that as `\ud83d`, and Postgres
+ * then REJECTS the value: `jsonb` refuses unpaired surrogates, so the gate
+ * insert throws and a run that produced a perfectly good verdict dies on the
+ * write. Splitting on code points makes the excerpt storable by construction.
+ */
 export function truncateExcerpt(text: string, maxChars: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
-  if (flat.length <= maxChars) return flat;
-  return `${flat.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+  const points = [...flat];
+  if (points.length <= maxChars) return flat;
+  return `${points
+    .slice(0, Math.max(0, maxChars - 1))
+    .join("")
+    .trimEnd()}…`;
 }
 
 export interface ParagraphBlock {
@@ -277,7 +424,10 @@ export function paragraphBlocks(
     if (buffer.length === 0) return;
     const first = buffer[0];
     if (first) {
-      const text = buffer.map((entry) => entry.text).join(" ").trim();
+      const text = buffer
+        .map((entry) => entry.text)
+        .join(" ")
+        .trim();
       if (text.length > 0) {
         blocks.push({ line: first.line, text, kind: blockKind(first.text) });
       }

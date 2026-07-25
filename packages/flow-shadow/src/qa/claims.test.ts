@@ -42,7 +42,9 @@ describe("source index", () => {
     const index = buildSourceIndex(packWithCitableSources(["Gartner"]));
 
     for (const value of ["the", "data", "2024", "a"]) {
-      expect(resolveAttribution(index, { kind: "name", value }).source).toBeNull();
+      expect(
+        resolveAttribution(index, { kind: "name", value }).source,
+      ).toBeNull();
     }
     expect(
       resolveAttribution(index, { kind: "name", value: "Gartner" }).source,
@@ -104,7 +106,10 @@ describe("claim extraction boundaries", () => {
 
   it("exempts a negation in the same clause", () => {
     expect(
-      findUnsupportedClaims(index, line("No study shows that CMS choice matters.")),
+      findUnsupportedClaims(
+        index,
+        line("No study shows that CMS choice matters."),
+      ),
     ).toHaveLength(0);
   });
 
@@ -123,7 +128,10 @@ describe("claim extraction boundaries", () => {
 
   it("ignores an assertion inside an inline code span", () => {
     expect(
-      findUnsupportedClaims(index, line("We rejected `research shows X` as a prompt.")),
+      findUnsupportedClaims(
+        index,
+        line("We rejected `research shows X` as a prompt."),
+      ),
     ).toHaveLength(0);
   });
 
@@ -134,6 +142,82 @@ describe("claim extraction boundaries", () => {
     ]);
 
     expect(hits.map((hit) => hit.line)).toStrictEqual([3, 9]);
+  });
+
+  /**
+   * The negation exemption used to fire on ANY of
+   * no/not/never/without/lacks/absent/neither/nor/n't/little/few anywhere in
+   * the preceding clause, which is a false-negative machine: those words open a
+   * large share of English sentences and say nothing about whether the
+   * assertion that follows needs a source. Both sentences below are
+   * fabrications that returned a clean `passed`.
+   */
+  it("does not let a rhetorical negation launder a fabricated assertion", () => {
+    for (const sentence of [
+      "There is no doubt that research shows onboarding analytics doubles activation rates by 40%.",
+      "Few operators know that a study by Gartner found a 30 percent lift.",
+      "Not one team we spoke to disputes that a 2024 Forrester report found a 30% lift.",
+    ]) {
+      const hits = findUnsupportedClaims(index, line(sentence));
+      expect(hits, sentence).toHaveLength(1);
+      expect(hits[0]?.resolution.authority).toBe("D");
+    }
+  });
+
+  /**
+   * `<Named entity> <verb> <statistic>` is the shape a hallucinated citation
+   * most often takes, and none of the ported patterns reached it: it names no
+   * research noun, says nothing "according to", and carries no year. The
+   * paraphrase corpus is the point of this test — a word list that is only
+   * spot-checked on the two sentences that motivated it grows the same holes
+   * again on the next rewrite.
+   */
+  it("catches the paraphrases of an attributed statistic", () => {
+    const sentences = [
+      "Forrester found that 73% of B2B onboarding analytics teams abandon activation tracking in week one.",
+      "A recent McKinsey analysis found a 30 percent lift.",
+      "Nielsen Norman Group usability testing puts the lift at 30%.",
+      "Gartner estimates that 62% of trials never reach activation.",
+      "Bain reports that activation tracking cuts churn by 12%.",
+      "The 2024 Forrester benchmark reports a 30% lift.",
+      "A Deloitte survey found onboarding time fell 18%.",
+      "Research from Basis Advisory shows a 40% improvement.",
+      "According to a 2023 Gartner whitepaper, activation drives 25% of expansion.",
+      "An IDC poll found that 55% of RevOps teams lack instrumentation.",
+      "Analysts estimate onboarding rework costs 9% of ARR.",
+      "SiriusDecisions pegs the median activation window at 21 days.",
+      "Studies suggest activation instrumentation returns 3x within a year.",
+      "G2 data puts buyer research time at 17 hours.",
+      "The Meridian Advisory index ranks onboarding second among 12 priorities.",
+      "Experts warn that untracked onboarding costs teams 30% of expansion revenue.",
+    ];
+
+    for (const sentence of sentences) {
+      const hits = findUnsupportedClaims(index, line(sentence));
+      expect(hits, sentence).toHaveLength(1);
+      expect(hits[0]?.resolution.authority, sentence).toBe("D");
+    }
+  });
+
+  /**
+   * The same widening must not swallow honest writing. A capitalized common
+   * noun after a determiner is not the name of an outside authority, and a
+   * sentence with a number in it is not automatically a citation.
+   */
+  it("leaves first-party and ordinary sentences alone", () => {
+    for (const sentence of [
+      "Our Search Console export indicates clicks fell 34%.",
+      "Teams that treat it as a habit find the milestone faster than teams that treat it as a report.",
+      "Read our onboarding analytics report at [the product report page](https://signalframe.example/reports/onboarding).",
+      "We found that 40% of our own accounts activate in week one.",
+      "The dashboard shows 12 accounts stalled at the second milestone.",
+      "RevOps leads own this work.",
+    ]) {
+      expect(
+        findUnsupportedClaims(index, line(sentence)),
+        sentence,
+      ).toHaveLength(0);
+    }
   });
 
   it("does not treat first-party data language as an external research claim", () => {

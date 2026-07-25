@@ -1035,6 +1035,63 @@ describeDb("runContentShadow", () => {
     expect(exports.rows).toHaveLength(0);
   });
 
+  /**
+   * `jsonb` REJECTS an unpaired surrogate. The excerpt truncation sliced UTF-16
+   * code units, so a draft whose emoji happened to straddle the excerpt bound
+   * produced a claim detail containing a lone `\ud83d`, and this insert threw —
+   * killing a run whose verdict had been computed correctly. Only a real
+   * Postgres write proves the fix, because a pure-function assertion cannot see
+   * what the column will accept.
+   */
+  it("stores a claim whose excerpt is cut mid-emoji", async () => {
+    const fixture = await seedShadowChain(handle);
+    const entry = `${"Forrester Digital Experience Report on onboarding activation ".padEnd(118, "x")}\u{1F680} trailing text after the cut`;
+    generateArtifact.mockResolvedValue({
+      content: {
+        contentFormat: "markdown",
+        content: `# Onboarding checklist\n\n## Why it matters\n\n**Activation** is the first milestone.\n\n## Sources\n\n- ${entry}\n`,
+      },
+      invocation: {
+        task: "artifact_generation",
+        provider: "openai",
+        model: "gpt-4o-mini",
+        promptSetVersion: PROMPT_SET_VERSION,
+        inputHash: contentHash({ prompt: "fixture" }),
+        outputHash: contentHash({ output: "emoji" }),
+        status: "succeeded",
+        inputTokens: 10,
+        outputTokens: 20,
+        costUsd: null,
+        latencyMs: 5,
+        errorCode: null,
+      },
+    });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run?.status).toBe("completed");
+
+    const gates = await new FlowShadowQaGatesRepository(handle.db).findByRun(
+      fixture.scope,
+      fixture.flowShadowRunId,
+    );
+    expect(gates).toHaveLength(1);
+    expect(gates[0]?.verdict).toBe("blocked");
+    const serialized = JSON.stringify(gates[0]?.claims);
+    for (const unit of serialized) {
+      const code = unit.codePointAt(0) ?? 0;
+      expect(code < 0xd800 || code > 0xdfff).toBe(true);
+    }
+  });
+
   it("fails with input drift when a frozen keyword's mapping decision moves", async () => {
     const fixture = await seedShadowChain(handle);
     await handle.pool.query(

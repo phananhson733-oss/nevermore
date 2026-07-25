@@ -5,7 +5,7 @@ import {
   clauseBefore,
   extractMarkdownLinks,
   extractUrls,
-  hasNegationCue,
+  hasDirectNegation,
   normalizeName,
   stripInlineCode,
 } from "./text.ts";
@@ -257,11 +257,100 @@ export interface ClaimHit {
  * mention of the customer's own numbers as an unsupported claim would block
  * honest drafts while teaching reviewers to ignore the block.
  */
+/**
+ * Nouns that name a piece of external research. `analysis`/`analyses` are
+ * spelled out because `analysts?` does NOT match them, which is how "A recent
+ * McKinsey analysis found a 30 percent lift" scored as no assertion at all.
+ */
+const RESEARCH_NOUN =
+  "research|researchers|studies|study|surveys?|reports?|analyses|analysis|analysts?|scientists?|experts?|evidence|benchmarks?|whitepapers?|polls?|indices|index";
+
+/**
+ * Verbs that turn a research noun into an assertion.
+ *
+ * `reports?`/`reported` are deliberately NOT in this list even though they are
+ * assertion verbs: they are also in `RESEARCH_NOUN`, and a set that overlaps
+ * itself matches any line carrying the word twice — "Read our onboarding
+ * analytics report at [the product report page](…)" was reported as an
+ * unsupported research assertion for exactly that reason. They are readmitted
+ * below, but only in their verbal frame (`reports that`, `reported a`).
+ */
+const ASSERTION_VERB =
+  "shows?|showed|suggests?|indicates?|finds?|found|proves?|proven|confirms?|reveals?|says?|said|estimates?|estimated|recommends?|warns?|concludes?|concluded|puts?|pegs?|ranks?|ranked|polled|surveyed|calculates?|calculated|measured";
+
+const AMBIGUOUS_VERB_FRAME =
+  "\\breports?\\s+(?:that\\b|an?\\b|the\\b|\\d)|\\breported\\s+(?:that\\b|an?\\b|the\\b|\\d)";
+
 export const RESEARCH_ASSERTION_PATTERNS: readonly RegExp[] = [
-  /\b(?:research|researchers|studies|study|surveys?|reports?|analysts?|scientists?|experts?|evidence)\b[^.!?]{0,60}?\b(?:shows?|showed|suggests?|indicates?|finds?|found|proves?|proven|confirms?|reveals?|says?|reports?|estimates?|recommends?|warns?)\b/gi,
-  /\baccording to\s+(?:a|an|the)?\s*(?:(?:19|20)\d{2}\s+)?[^.,;:!?]{0,80}?\b(?:study|studies|report|survey|research|analysis|benchmark|index|whitepaper)\b/gi,
-  /\b(?:19|20)\d{2}\s+[A-Z][^.,;:!?]{0,60}?\b(?:study|report|survey|benchmark)\b/g,
+  new RegExp(
+    `\\b(?:${RESEARCH_NOUN})\\b[^.!?]{0,60}?(?:\\b(?:${ASSERTION_VERB})\\b|${AMBIGUOUS_VERB_FRAME})`,
+    "gi",
+  ),
+  /\baccording to\s+(?:a|an|the)?\s*(?:(?:19|20)\d{2}\s+)?[^.,;:!?]{0,80}?\b(?:study|studies|report|survey|research|analysis|benchmark|index|whitepaper|poll)\b/gi,
+  /\b(?:19|20)\d{2}\s+[A-Z][^.,;:!?]{0,60}?\b(?:study|report|survey|benchmark|analysis|whitepaper|poll)\b/g,
 ];
+
+/**
+ * `<Named entity> <assertion verb> <statistic>` — the most common shape a
+ * hallucinated citation actually takes, and the one none of the patterns above
+ * reached. "Forrester found that 73% of B2B onboarding analytics teams abandon
+ * activation tracking in week one" names no research noun, says nothing
+ * "according to", and carries no year, so it scored as no assertion.
+ *
+ * Three constraints keep this from swallowing honest first-party writing:
+ *
+ * 1. The subject must be a capitalized name, and its head word must not be a
+ *    function word — `We found that 40% …` is a first-party statement, not an
+ *    attribution to an outside body.
+ * 2. The name must not be preceded by a determiner or possessive. That is what
+ *    keeps "Our Search Console export indicates clicks fell 34%" out: the
+ *    capitalized span there is a common-noun phrase the customer owns, not the
+ *    name of an outside authority.
+ * 3. A statistic must follow within the same sentence. An assertion with a
+ *    number in it is the shape that needs a source; "Teams find the milestone
+ *    that matters faster" is prose.
+ */
+const ENTITY_ASSERTION =
+  /(?<![\w'’-])((?:[A-Z][A-Za-z0-9&.'’-]*)(?:[ ](?:[A-Z][A-Za-z0-9&.'’-]*|&))*)((?:[ ][a-z][A-Za-z-]*){0,3})[ ](?:found|finds|reported|reports|shows|showed|says|said|estimates|estimated|concludes|concluded|puts|pegs|ranks|ranked|polled|surveyed|calculates|calculated|measured|projects|predicts)\b[^.!?]{0,80}?\d/g;
+
+/** Heads that are function words, never the name of an outside authority. */
+const NON_NAME_HEAD =
+  /^(?:i|we|our|ours|you|your|they|their|them|he|she|it|its|his|her|this|that|these|those|the|a|an|there|here|then|now|today|and|but|or|if|so|when|while|after|before|because|however|although|though|since|most|many|some|few|all|both|each|every|no|not|another|other|such|both)$/i;
+
+/** Determiners/possessives that mark the span after them as a common noun. */
+const DETERMINER_BEFORE_NAME =
+  /(?:^|[^\w'’-])(?:our|my|your|their|its|his|her|the|a|an|this|that|these|those|each|every|any|some|another|no)\s+$/i;
+
+interface AssertionMatch {
+  readonly index: number;
+  readonly excerpt: string;
+}
+
+function entityAssertions(text: string): readonly AssertionMatch[] {
+  const found: AssertionMatch[] = [];
+  for (const match of text.matchAll(ENTITY_ASSERTION)) {
+    if (match.index === undefined) continue;
+    const name = match[1] ?? "";
+    const head = name.split(/[\s&]+/)[0] ?? "";
+    if (NON_NAME_HEAD.test(head)) continue;
+    if (DETERMINER_BEFORE_NAME.test(text.slice(0, match.index))) continue;
+    found.push({ index: match.index, excerpt: match[0] });
+  }
+  return found;
+}
+
+/** Every external-research assertion shape on one line, in document order. */
+function researchAssertions(text: string): readonly AssertionMatch[] {
+  const found: AssertionMatch[] = [];
+  for (const pattern of RESEARCH_ASSERTION_PATTERNS) {
+    for (const match of text.matchAll(pattern)) {
+      if (match.index === undefined) continue;
+      found.push({ index: match.index, excerpt: match[0] });
+    }
+  }
+  found.push(...entityAssertions(text));
+  return found.sort((left, right) => left.index - right.index);
+}
 
 /** Find every external-research assertion and resolve its attribution. */
 export function findUnsupportedClaims(
@@ -273,19 +362,17 @@ export function findUnsupportedClaims(
   for (const entry of lines) {
     const text = stripInlineCode(entry.text);
     if (text.trim().length === 0) continue;
-    for (const pattern of RESEARCH_ASSERTION_PATTERNS) {
-      for (const match of text.matchAll(pattern)) {
-        if (match.index === undefined) continue;
-        // An honest disclaimer ("no study shows that ...") is not an assertion.
-        if (hasNegationCue(clauseBefore(text, match.index))) continue;
-        if (seen.has(entry.line)) continue;
-        seen.add(entry.line);
-        hits.push({
-          line: entry.line,
-          excerpt: match[0],
-          resolution: resolveAny(index, extractAttributions(text)),
-        });
-      }
+    for (const match of researchAssertions(text)) {
+      // An honest disclaimer ("no study shows that ...") is not an assertion.
+      // Only a negator that directly governs the noun exempts it.
+      if (hasDirectNegation(clauseBefore(text, match.index))) continue;
+      if (seen.has(entry.line)) continue;
+      seen.add(entry.line);
+      hits.push({
+        line: entry.line,
+        excerpt: match.excerpt,
+        resolution: resolveAny(index, extractAttributions(text)),
+      });
     }
   }
   return hits.sort((a, b) => a.line - b.line);

@@ -75,11 +75,20 @@ const EMPTY_CITABILITY: CitabilityScore = Object.freeze({
 
 const MAX_DETAIL_CHARS = 2_000;
 
+/**
+ * Bound the detail by CODE POINT. Slicing UTF-16 code units splits a surrogate
+ * pair, and `jsonb` rejects the unpaired surrogate `JSON.stringify` then emits,
+ * so a claim cut mid-emoji made the gate insert throw. See `truncateExcerpt`.
+ */
 function boundedDetail(detail: string): string {
   const trimmed = detail.trim();
   if (trimmed.length === 0) return "No detail was recorded for this check.";
-  if (trimmed.length <= MAX_DETAIL_CHARS) return trimmed;
-  return `${trimmed.slice(0, MAX_DETAIL_CHARS - 1).trimEnd()}…`;
+  const points = [...trimmed];
+  if (points.length <= MAX_DETAIL_CHARS) return trimmed;
+  return `${points
+    .slice(0, MAX_DETAIL_CHARS - 1)
+    .join("")
+    .trimEnd()}…`;
 }
 
 function claimStatus(rule: QaRuleResult): QaClaimStatus {
@@ -171,6 +180,17 @@ export function evaluateDraftQa(input: QaEvaluationInput): QaEvaluationReport {
   }
 
   const context = buildQaContext(input);
+  // The backstop for property 2. Masking (frontmatter, fenced code) can empty a
+  // draft that arrived with bytes in it, and every language rule would then run
+  // over nothing and report "we found no violation" — which is "we did not
+  // look" wearing a pass. Whatever the reason the reader produced no prose, the
+  // honest answer is that nothing was judged.
+  if (context.view.prose.every((entry) => entry.text.trim().length === 0)) {
+    return unreadableDraft(
+      "draft_unreadable",
+      "The draft revision carries bytes, but nothing survived reading it as prose: every line was masked as frontmatter or fenced code. No rule ran over any content, so nothing was judged — this is reported as unevaluated, never as a pass. Review the revision by hand.",
+    );
+  }
   const citability = scoreCitability(context);
   const byId = new Map<QaRuleId, QaRuleResult>();
   for (const rule of [

@@ -12,7 +12,6 @@ import {
   paragraphBlocks,
   sectionBody,
   sentenceCount,
-  SOURCES_SECTION_TITLES,
   stripInlineCode,
   tokenize,
   truncateExcerpt,
@@ -410,29 +409,68 @@ export function checkSc8(context: QaContext): QaRuleResult {
       );
 }
 
-function sourcesEntries(
+const TABLE_DELIMITER_ROW = /^\s{0,3}\|[\s:|-]+\|\s*$/;
+const LIST_MARKER = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
+const QUOTE_MARKER = /^\s{0,3}>\s?/;
+
+/**
+ * Every reference entry the draft lists, in every reference section.
+ *
+ * An entry is ANY non-empty line under a reference heading, not only a
+ * markdown list item. The list-item-only version made the whole
+ * anti-fabrication guarantee depend on whether the model happened to type a
+ * hyphen: the identical bibliography was blocked when written as `- Forrester,
+ * 2024` and passed when written as a plain paragraph, a table or a blockquote.
+ * A reference the model chose to format differently is still a reference.
+ *
+ * The one line that is skipped is a markdown table's header and delimiter row,
+ * because markdown REQUIRES a header row — it is table syntax, not a claim
+ * about a source.
+ */
+function referenceEntries(
   context: QaContext,
 ): readonly { readonly line: number; readonly text: string }[] {
-  const body = sectionBody(context.view, SOURCES_SECTION_TITLES);
-  if (body === null) return [];
-  return body
-    .filter((entry) => isListItem(entry.text))
-    .map((entry) => ({
-      line: entry.line,
-      text: entry.text.replace(/^\s{0,3}(?:[-*+]|\d+[.)])\s+/, "").trim(),
-    }));
+  const entries: { line: number; text: string }[] = [];
+  for (const section of context.referenceSections) {
+    let tableRow = -1;
+    for (const block of paragraphBlocks(section.lines)) {
+      if (isHeadingLine(block.text)) {
+        tableRow = -1;
+        continue;
+      }
+      if (block.kind === "table") {
+        tableRow += 1;
+        if (TABLE_DELIMITER_ROW.test(block.text)) continue;
+        if (tableRow === 0) continue;
+        const cells = block.text
+          .split("|")
+          .map((cell) => cell.trim())
+          .filter((cell) => cell.length > 0)
+          .join(" — ");
+        if (cells.length > 0) entries.push({ line: block.line, text: cells });
+        continue;
+      }
+      tableRow = -1;
+      const text = block.text
+        .replace(LIST_MARKER, "")
+        .replace(QUOTE_MARKER, "")
+        .trim();
+      if (text.length > 0) entries.push({ line: block.line, text });
+    }
+  }
+  return entries;
 }
 
 export function checkSc9(context: QaContext): QaRuleResult {
-  const present = sectionBody(context.view, SOURCES_SECTION_TITLES) !== null;
+  const present = context.referenceSections.length > 0;
   if (context.index.citableCount === 0) {
     return pass(
       "sc9_sources_section",
       "sc9_no_citable_sources",
-      `Advisory (never gates): the frozen research pack carries no citable source (every source in it is an internal SignalFrame record identified by uuid), so a Sources section is not expected. The draft ${present ? "carries one anyway" : "carries none"}.`,
+      `Advisory (never gates): the frozen research pack carries no citable source (every source in it is an internal SignalFrame record identified by uuid), so a Sources section is not expected. The draft ${present ? "carries one anyway" : "carries none under a heading recognised as a reference list"}.`,
     );
   }
-  const entries = sourcesEntries(context);
+  const entries = referenceEntries(context);
   return entries.length < QA_THRESHOLDS.sc9MinSourceEntries
     ? fail(
         "sc9_sources_section",
@@ -457,12 +495,14 @@ const SOURCE_NAME_STOP = /\s+[-–—]\s+|:\s+|,\s+(?:19|20)\d{2}\b/;
  * an invented reference.
  */
 export function checkSc9b(context: QaContext): QaRuleResult {
-  const entries = sourcesEntries(context);
+  const entries = referenceEntries(context);
   if (entries.length === 0) {
     return pass(
       "sc9b_sources_resolve_to_pack",
       "sc9b_no_sources_section",
-      "The draft lists no source entry, so there is no reference to resolve.",
+      context.referenceSections.length === 0
+        ? "No section of this draft is headed as a reference list (sources, references, citations, works cited, bibliography, further/related reading), so this check found no reference entry to resolve. It reports what it scanned, not what the draft contains: an external reference written into the body prose is RL8's and RL12's subject, not this rule's."
+        : `${context.referenceSections.length} reference section(s) are present but carry no entry line, so there was nothing to resolve.`,
     );
   }
   const unresolved: Finding[] = [];
@@ -491,12 +531,12 @@ export function checkSc9b(context: QaContext): QaRuleResult {
     ? fail(
         "sc9b_sources_resolve_to_pack",
         "sc9b_source_unresolved",
-        `${unresolved.length} of ${entries.length} Sources entry(ies) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}. A reference we do not hold was not consulted.`,
+        `${unresolved.length} of ${entries.length} reference entry(ies) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}. ${context.index.citableCount === 0 ? "This run retrieved no external research at all, so NOTHING external can be confirmed from our records — this is a statement that the reference is unverifiable here, not evidence that it was invented. A human has to check each entry." : "The pack is assembled only from records the customer confirmed, so an entry that does not resolve names a source we do not hold."}`,
       )
     : pass(
         "sc9b_sources_resolve_to_pack",
         "sc9b_sources_resolve",
-        `All ${entries.length} Sources entry(ies) resolve to the frozen research pack.`,
+        `All ${entries.length} reference entry(ies) resolve to the frozen research pack.`,
       );
 }
 
@@ -508,7 +548,7 @@ export function checkSc10(context: QaContext): QaRuleResult {
     return pass(
       "sc10_table_integrity",
       "sc10_no_table",
-      "Advisory (never gates): the draft carries no table, and none is required.",
+      "Advisory (never gates): the scanned body carries no table row, and no table is required.",
     );
   }
   const dataRows = rows.filter(
@@ -566,7 +606,7 @@ export function checkSc11(context: QaContext): QaRuleResult {
     : pass(
         "sc11_banned_headings",
         "sc11_headings_clean",
-        "No template-shaped headings.",
+        "No heading matched the template shapes this rule scans for.",
       );
 }
 

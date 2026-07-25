@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   ADVISORY_ONLY_DRAFT,
+  ALL_FENCED_DRAFT,
+  ATTRIBUTED_LINK_DRAFT,
   CLEAN_DRAFT,
+  FIRST_PARTY_LINK_DRAFT,
+  REFERENCE_FORMAT_DRAFTS,
+  REFERENCE_HEADING_DRAFTS,
+  UNCLOSED_FRONTMATTER_DRAFT,
   FENCED_CLAIM_DRAFT,
   NEGATED_CLAIM_DRAFT,
   PHANTOM_CITATION_DRAFT,
@@ -253,5 +259,138 @@ describe("verdict floor", () => {
     expect(
       clampVerdictToFailedClaims("passed", evaluation.claims),
     ).toBe("needs_review");
+  });
+});
+
+describe("P1 (regression) — the fabrication paths that returned `passed`", () => {
+  it("blocks a fabricated reference list under every reference heading", () => {
+    for (const [heading, draft] of REFERENCE_HEADING_DRAFTS) {
+      const evaluation = evaluateDraftQa(qaInput(draft));
+
+      expect(evaluation.verdict, heading).toBe("blocked");
+      expect(
+        claim(draft, "sc9b_sources_resolve_to_pack")?.status,
+        heading,
+      ).toBe("failed");
+    }
+  });
+
+  /**
+   * The whole anti-fabrication guarantee used to depend on whether the model
+   * typed a hyphen: the identical bibliography was blocked as `- Forrester,
+   * 2024` and passed as a plain paragraph, a table or a blockquote.
+   */
+  it("blocks the same reference in every markdown shape", () => {
+    for (const [shape, draft] of REFERENCE_FORMAT_DRAFTS) {
+      const evaluation = evaluateDraftQa(qaInput(draft));
+
+      expect(evaluation.verdict, shape).toBe("blocked");
+    }
+  });
+
+  it("blocks a fabricated citation hidden behind an unclosed `---`", () => {
+    const evaluation = evaluateDraftQa(qaInput(UNCLOSED_FRONTMATTER_DRAFT));
+
+    expect(evaluation.verdict).toBe("blocked");
+    expect(
+      claim(UNCLOSED_FRONTMATTER_DRAFT, "rl8_unsupported_claim")?.status,
+    ).toBe("failed");
+  });
+
+  /**
+   * The backstop for "never fails open": whatever empties the prose, no rule
+   * may report a pass over content it never read.
+   */
+  it("reports a draft with no readable prose as unevaluated, never as a pass", () => {
+    const evaluation = evaluateDraftQa(qaInput(ALL_FENCED_DRAFT));
+
+    expect(evaluation.verdict).toBe("needs_review");
+    expect(evaluation.rules.every((rule) => !rule.evaluable)).toBe(true);
+    expect(evaluation.rules[0]?.detail).toContain("nothing was judged");
+  });
+});
+
+describe("B (regression) — honest drafts are not called fabrications", () => {
+  /**
+   * `report` / `source` / `research` are among the most common nouns in B2B
+   * SaaS prose. Treating any of them as a citation cue blocked the customer's
+   * own product link and told the reviewer it was an invented source.
+   */
+  it("does not block a first-party link on a line containing `report`", () => {
+    const evaluation = evaluateDraftQa(qaInput(FIRST_PARTY_LINK_DRAFT));
+
+    expect(evaluation.verdict).not.toBe("blocked");
+    expect(claim(FIRST_PARTY_LINK_DRAFT, "rl12_citation_integrity")?.status).toBe(
+      "passed",
+    );
+    expect(claim(FIRST_PARTY_LINK_DRAFT, "rl8_unsupported_claim")?.status).toBe(
+      "passed",
+    );
+  });
+
+  it("still blocks a link a sentence actually attributes a claim to", () => {
+    expect(evaluateDraftQa(qaInput(ATTRIBUTED_LINK_DRAFT)).verdict).toBe(
+      "blocked",
+    );
+  });
+
+  /**
+   * With an empty pack the gate knows one thing: it cannot confirm the
+   * reference from our own records. Calling that "fabricated" is the gate
+   * lying about its own evidence, and it is what trains operators to ignore
+   * `blocked`.
+   */
+  it("says `unverifiable here`, not `invented`, while the pack is empty", () => {
+    const detail =
+      claim(ATTRIBUTED_LINK_DRAFT, "rl12_citation_integrity")?.detail ?? "";
+
+    expect(detail).toContain("cannot be verified");
+    expect(detail).toContain("not that they were invented");
+  });
+
+  /** A rule that did not look must never write down that there is nothing. */
+  it("never states absence where it only states a scan", () => {
+    const evaluation = evaluateDraftQa(qaInput(CLEAN_DRAFT));
+    const rl8 = evaluation.claims.find(
+      (candidate) =>
+        candidate.claimId === claimIdForRule("rl8_unsupported_claim"),
+    );
+    const sc9b = evaluation.claims.find(
+      (candidate) =>
+        candidate.claimId === claimIdForRule("sc9b_sources_resolve_to_pack"),
+    );
+
+    expect(rl8?.detail).toContain("matched");
+    expect(rl8?.detail).not.toContain("The draft makes no external-research");
+    expect(sc9b?.detail).toContain("what it scanned");
+    expect(sc9b?.detail).not.toContain("The draft lists no source entry");
+  });
+});
+
+describe("D1 — a claim detail is always storable as jsonb", () => {
+  /**
+   * `truncateExcerpt` sliced UTF-16 code units, so an emoji straddling the
+   * excerpt bound left a lone surrogate. `JSON.stringify` emits it as `\ud83d`
+   * and Postgres `jsonb` REJECTS the value, so the gate insert threw on a run
+   * whose verdict was perfectly good.
+   */
+  it("emits no unpaired surrogate when an emoji straddles the cut", () => {
+    const draft = [
+      "# Onboarding analytics",
+      "",
+      "## Sources",
+      "",
+      `- ${"Forrester Digital Experience Report on onboarding activation ".padEnd(118, "x")}🚀 trailing text after the cut`,
+      "",
+    ].join("\n");
+    const serialized = JSON.stringify(
+      qaClaimsToJson(evaluateDraftQa(qaInput(draft)).claims),
+    );
+
+    expect(serialized).not.toMatch(/\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f])/i);
+    for (const unit of serialized) {
+      const code = unit.codePointAt(0) ?? 0;
+      expect(code < 0xd800 || code > 0xdfff).toBe(true);
+    }
   });
 });
