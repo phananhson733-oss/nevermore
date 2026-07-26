@@ -3262,41 +3262,47 @@ exists.
 
 ---
 
-## 20. Mutation testing against `next dev` needs two runs
+## 20. A mutation is invisible until the branch it lives in has mounted
 
 This round used mutation testing as its acceptance criterion throughout, and
-twice drew a wrong conclusion from a mutation that appeared to survive. Both
-times the cause was the same and it is specific to this harness.
+drew a wrong conclusion from an apparently-surviving mutation **three times**,
+each time with a different explanation. The first two explanations are wrong and
+are recorded in §17.6b. This is the third and it is the one the evidence
+supports.
 
-**The mechanism.** The mock and real Playwright configs both start
-`pnpm --filter @sf/web dev --webpack`. Editing a `.tsx` and starting a run
-immediately races that server's recompilation: the run can be served the
-previous bundle, the mutation is not in the page, and the test passes. A
-**surviving mutation is therefore not evidence of anything until it has
-survived twice.** A mutation that reddens a test is trustworthy on the first
-run — a stale bundle cannot manufacture a failure.
+**The mechanism.** `_overview.tsx` renders a loading branch, an error branch and
+a ready branch, and only the ready branch carries `data-overview-page`. A
+mutation applied to the ready branch is simply **not in the DOM** until the
+workspace query resolves. An assertion made immediately after `page.goto` sees
+only the shell's `<main>` and passes — the mutation is real, compiled and
+served, and the test cannot see it yet.
 
-**Measured, on the same mutation, in the same file, minutes apart:**
+Measured with the mutation applied, twice, identical both times:
 
-| run | `document.querySelectorAll("main")` | `getByRole("main")` | `toBeVisible()` |
-|---|---|---|---|
-| immediate | 1 | 1 | passed |
-| after recompilation | 2 | 2 | threw strict-mode violation |
-
-Every "survived" mutation in this round has since been re-run under that rule:
-
-| mutation | first read | verdict under two runs |
+| moment | `document.querySelectorAll("main")` | `[data-overview-page]` present |
 |---|---|---|
-| widened scan loop, duplicate `<main>` restored | survived | **stale bundle** — it would have caught it (§17.6b) |
-| `toBeVisible()` with two `<main>` elements | passed | **stale bundle** — it throws (§17.6b) |
-| `<main aria-hidden="true" />` added to the shell | survived | **genuine** — `aria-hidden` removes the element from the accessibility tree, so no second landmark was ever created, and `19f01ca`'s explanation stands |
-| `popstate` handler disabled, Product Profile guard | survived | **genuine** — Chromium answers on the Navigation API; independently confirmed by the fallback test built for it, which does redden under the same mutation |
+| immediately after `goto` | 1 | **no** — loading branch |
+| after 2.5s | 2 | yes — ready branch |
 
-Two of the four negative results were artefacts. Both had already been written
-into this document as conclusions before being caught, which is why the
-corrections in §17.6b are stacked rather than rewritten.
+**Running the mutation twice does not help.** Both runs produce exactly the
+table above; an earlier draft of this section claimed the cause was a
+`next dev` recompilation race and prescribed a second run, and that is wrong on
+both counts — the Playwright configs set `reuseExistingServer: false`, so every
+run starts a fresh server and compiles current source. What distinguishes a
+useful mutation check from a useless one is **where the assertion sits**, not
+how many times it is run.
 
-**The rule this leaves:** a mutation that survives gets re-run before it is
-believed, and a mutation that survives *for a reason* gets that reason tested
-too — `aria-hidden` and `popstate` above are both cases where the reason turned
-out to be real, and neither would have been trustworthy stated on one run.
+Re-read under this mechanism, the four surviving mutations of this round are:
+
+| mutation | why it survived |
+|---|---|
+| widened scan loop, duplicate `<main>` restored | its landmark line ran immediately after `goto`, on the loading branch — **the original §17.6b diagnosis, now evidenced** |
+| `toBeVisible()` with two `<main>` elements | same: measured before the ready branch mounted. With a wait, it throws a strict-mode violation, so it **is** a landmark check |
+| `<main aria-hidden="true" />` in the shell | genuine — `aria-hidden` removes the element from the accessibility tree, so `getByRole` never saw a second landmark. `19f01ca`'s explanation stands |
+| `popstate` handler disabled | genuine — Chromium answers on the Navigation API; independently confirmed by the fallback test built for it, which does redden under the same mutation |
+
+**The rule this leaves:** place the assertion after the screen it is about has
+actually rendered, and prove the placement by mutating and watching it fail.
+Every landmark assertion added in §17.6b sits after its spec's own content wait
+for this reason. A mutation that survives is a question, not an answer — and the
+first thing to ask is whether the test could see it at all.
