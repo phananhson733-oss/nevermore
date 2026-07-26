@@ -3020,3 +3020,62 @@ If the diagnosis gap is ever worth closing, the design-respecting shape is a
 new *enumerated* classification — a preflight comparing client and server
 versions that fails as, say, `PG_CLIENT_SERVER_SKEW` — never raw text. That is
 recorded as an option, not a recommendation; the gate is not red in CI.
+
+---
+
+## 19. Two reports that could not see what they were for
+
+Both found by the same question — *what would this check fail to notice?* — and
+both are the shape §12 (D9) opened: a green surface over an unmeasured one.
+
+### 19.1 `coverage:unit-gaps` was blind to files no unit test imports
+
+The script's own header says the merged branch gate "hides 'this file has no
+unit test at all'" and that the files it lists "are that hidden fact". They were
+not. Vitest 4 reports only the files a run loads unless `coverage.include`
+declares the universe, so a module **no unit test imports** was absent from the
+report's input rather than present at 0%. The one case the report exists to
+surface was the one case it structurally could not.
+
+Measured before and after declaring the universe (`6e8bf7b`):
+
+| | before | after |
+|---|---|---|
+| files at or below 30% unit branch coverage | 17 | **36** |
+| of those, never reached by any unit test | 2 | **21** |
+
+Newly visible and worth naming: `apps/worker/src/content-shadow/run-content-shadow.ts`
+at **0/151** — Slice 2's own worker entry point — `source-connect.ts` at 0/125,
+and `opportunities.ts` at 0/49. Integration and e2e reach several of these; the
+report's question is narrower and now answerable.
+
+`**/*.tsx` is deliberately out of the universe: Playwright covers client
+components by design, and listing each at 0% would bury the modules where a
+missing unit test is a real gap. **The gate is untouched** — only the flags of
+the separate non-blocking run changed, so `test:coverage` measures what it did
+before.
+
+Two traps here, one of which caught this round first: a CLI `--coverage.exclude`
+**replaces** the config array rather than merging, so the first attempt admitted
+`__tests__` helper modules — test code counted as untested product code. And the
+printed list is capped at 30 rows with the cap **stated**, because a truncated
+list that reads as complete is a smaller version of the same defect.
+
+### 19.2 `_compatibility-route.ts` had no test of any kind (`ea23797`)
+
+The four compatibility routes — `/plan`, `/studio`, `/diagnosis`, `/report` —
+do nothing but call this module and `redirect()`. It appeared in no `*.test.ts`
+in the repository, and its failure mode is silent: a dropped query parameter or
+an untranslated legacy vocabulary value still redirects to a real screen, just
+not the one the link named. Nobody sees an error; the operator arrives somewhere
+else.
+
+Sixteen cases now cover the three exported functions, including the rule its
+docstring states outright — the canonical key wins when a client supplied both
+spellings, and the legacy one does not survive alongside it. Mutation-checked
+three ways, each reddening exactly one case.
+
+**This is also why §17.5's SCREENS correction mattered beyond naming**: coverage
+of Growth Map, Execution and Results ran *through* these redirects, so a silent
+break here would have moved the a11y scans to the wrong screens without a single
+test going red.
