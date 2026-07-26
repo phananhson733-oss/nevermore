@@ -87,6 +87,11 @@ import { ProblemNotice, ProblemState } from "../_problem-display";
 import { studioRunQueryOutcome } from "../_frontend-error-state.ts";
 import { useUnsavedNavigationGuard } from "../_unsaved-navigation-guard.ts";
 import {
+  readActiveGenerationFence,
+  writeActiveGenerationFence,
+  type ActiveGenerationRecovery,
+} from "./_active-generation-fence.ts";
+import {
   activeGenerationRecoveryReleased,
   executionLocationUrl,
   executionTargetAfterQueue,
@@ -214,13 +219,6 @@ function executionQueryValue(
   const values = searchParams.getAll(key);
   if (values.length === 0) return undefined;
   return values.length === 1 ? values[0] : values;
-}
-
-interface ActiveGenerationRecovery {
-  readonly key: string;
-  readonly actionId: string;
-  readonly artifactType: ArtifactType;
-  readonly refreshing: boolean;
 }
 
 function artifactStatusTone(status: ArtifactStatus): StatusTone {
@@ -1628,9 +1626,17 @@ export function StudioClient({
   >({});
   // RUN_ALREADY_ACTIVE does not put the winning run id in the problem body.
   // Keep a conservative fence until a refreshed artifact projection reveals it.
+  //
+  // Seeded from, and written back to, a module-scoped store: this state used to
+  // die with the page, so a shell round trip re-enabled Generate while the
+  // winning run was still live and the projection still could not prove it
+  // (stop gate §16.7). The store is project-scoped and a reload clears it.
   const [activeGenerationRecoveries, setActiveGenerationRecoveries] = useState<
     readonly ActiveGenerationRecovery[]
-  >([]);
+  >(() => readActiveGenerationFence(projectId));
+  useEffect(() => {
+    writeActiveGenerationFence(projectId, activeGenerationRecoveries);
+  }, [activeGenerationRecoveries, projectId]);
   const autoSelectedArtifact = useRef<boolean>(false);
   const lastServerDeepLinkKey = useRef<string>(
     executionDeepLinkKey(initialDeepLink),

@@ -949,3 +949,116 @@ test("OAuth callback guidance is allowlisted and raw query text is discarded", a
   await expect(page.getByRole("main")).not.toContainText(attackerText);
   await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/sources`);
 });
+
+/**
+ * Reproduction for §16.7: the 409 recovery fence is component state, so a route
+ * change unmounts it. The window that matters is the one the fence exists for —
+ * the canonical artifact projection has NOT caught up — so the projection is
+ * held deliberately incomplete here (`hasNext: true` with the follow-up page
+ * never answered), which is exactly the condition under which §16 requires the
+ * fence to stay. A settled projection would prove nothing: `c4c92a3` correctly
+ * RELEASES the fence in that case.
+ *
+ * The second POST this exposes is refused by the server anyway
+ * (`artifacts.ts:263` active key, `:466` unique-index handling,
+ * `0001_init.sql:318`), so this is a UX defect, not a correctness one. The test
+ * asserts the fence, not the absence of a duplicate run.
+ */
+test("Studio keeps the 409 fence across a route change while the projection is incomplete", async ({
+  page,
+}) => {
+  const now = "2026-07-20T12:00:00.000Z";
+  const actionId = "00000000-0000-4000-8000-000000000301";
+  const artifactId = "00000000-0000-4000-8000-000000000401";
+  const artifact = {
+    id: artifactId,
+    actionId,
+    artifactType: "technical_ticket",
+    status: "draft",
+    generationMode: "template",
+    outputLocale: "en",
+    currentRevision: 2,
+    validationState: "valid",
+    current: {
+      id: "00000000-0000-4000-8000-000000000402",
+      revision: 2,
+      contentFormat: "markdown",
+      content: "Artifact whose winning run the projection has not caught up to.",
+      contentHash: "sha256:route-change-fence",
+      validationErrors: [],
+      note: null,
+      createdAt: now,
+    },
+    activeRun: null,
+  };
+
+  let createAttempts = 0;
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      // Page 2 is never answered, so `hasNextPage` stays true and the
+      // projection never completes — the exact state the fence guards.
+      if (new URL(route.request().url()).searchParams.get("cursor")) {
+        await new Promise(() => {});
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: [artifact],
+          meta: { nextCursor: "cursor-page-2", hasNext: true, limit: 100 },
+        }),
+      });
+    },
+  );
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/actions/${actionId}/artifacts`,
+    async (route) => {
+      createAttempts += 1;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/problem+json",
+        body: JSON.stringify(
+          problem("RUN_ALREADY_ACTIVE", "A run for this artifact is live.", 409),
+        ),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/execution`);
+  const card = page.locator(`[data-studio-artifact-id="${artifactId}"]`);
+  await card.getByRole("button", { name: "Regenerate" }).click();
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect.poll(() => createAttempts).toBe(1);
+
+  // Fenced on this mount, proven the way §16.4 proves it.
+  await expect(card.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
+  await expect(
+    card.getByRole("button", { name: "Open", exact: true }),
+  ).toBeDisabled();
+
+  const navLinks = page
+    .getByRole("navigation", { name: "Project sections" })
+    .getByRole("link");
+  await navLinks.nth(0).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${E2E_PROJECT_ID}/overview(\\?|$)`));
+  await navLinks.nth(2).click();
+  // Studio writes the selected deliverable into the query once it mounts, so
+  // the destination is asserted by path. Anchoring on the end of the URL made
+  // this pass alone and fail in the full suite, which is a race in the
+  // assertion rather than anything about the fence.
+  await expect(page).toHaveURL(new RegExp(`/p/${E2E_PROJECT_ID}/execution(\\?|$)`));
+
+  // The run is still live and the projection still cannot prove otherwise, so
+  // the fence has to survive the round trip.
+  await expect(card.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
+  await expect(
+    card.getByRole("button", { name: "Open", exact: true }),
+  ).toBeDisabled();
+  expect(createAttempts).toBe(1);
+});
