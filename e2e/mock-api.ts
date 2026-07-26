@@ -51,9 +51,43 @@ export interface CriticalFlowApiState {
   readonly artifactCreateRequests: unknown[];
   readonly artifactPatchRequests: unknown[];
   readonly exportRequests: unknown[];
+  /** One entry per export-detail GET: the exportId that was read. */
+  readonly exportDetailReads: string[];
   sourceReads: number;
   collectionRunPolls: number;
   diagnosticRunPolls: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * R3 blueprint D8: the export mock is programmable. The create route  *
+ * can answer 202 (with or without a resourceRef) or 409 (with or      *
+ * without a body `current` pointer), and the detail route serves a    *
+ * per-read run-state sequence whose last step repeats — so specs can  *
+ * drive queued -> running -> 503 -> (Retry) -> running -> completed   *
+ * against the closed client state machine. Defaults preserve the      *
+ * original behavior: 202 + first detail read already completed.       *
+ * ------------------------------------------------------------------ */
+
+/** UUID pair for the 409 takeover pointer: the client adopts only zod-valid
+ *  UUIDs, so the non-UUID "export-bundle" id cannot be used here. */
+export const E2E_ACTIVE_EXPORT_RUN_ID = "00000000-0000-4000-8000-000000000860";
+export const E2E_ACTIVE_EXPORT_BUNDLE_ID =
+  "00000000-0000-4000-8000-000000000861";
+
+export type MockExportDetailStep =
+  | "queued"
+  | "running"
+  | "unavailable"
+  | "completed";
+
+export interface CriticalFlowApiOptions {
+  readonly exportCreate?:
+    | "accepted"
+    | "acceptedMissingResourceRef"
+    | "conflictWithCurrent"
+    | "conflictWithoutCurrent";
+  /** Consumed one step per detail GET (per exportId); last step repeats. */
+  readonly exportDetailSequence?: readonly MockExportDetailStep[];
 }
 
 const NOW = "2026-07-18T12:00:00.000Z";
@@ -367,6 +401,7 @@ function problem(code: string, detail: string, status: number) {
  */
 export async function installCriticalFlowApi(
   page: Page,
+  options: CriticalFlowApiOptions = {},
 ): Promise<CriticalFlowApiState> {
   const state: CriticalFlowApiState = {
     collectionRequests: [],
@@ -375,6 +410,7 @@ export async function installCriticalFlowApi(
     artifactCreateRequests: [],
     artifactPatchRequests: [],
     exportRequests: [],
+    exportDetailReads: [],
     sourceReads: 0,
     collectionRunPolls: 0,
     diagnosticRunPolls: 0,
@@ -612,6 +648,33 @@ export async function installCriticalFlowApi(
 
     if (method === "POST" && path === `${BASE}/exports`) {
       state.exportRequests.push(request.postDataJSON());
+      const createMode = options.exportCreate ?? "accepted";
+      if (
+        createMode === "conflictWithCurrent" ||
+        createMode === "conflictWithoutCurrent"
+      ) {
+        await json(
+          route,
+          {
+            ...problem(
+              "RUN_ALREADY_ACTIVE",
+              "An export of this kind is already running.",
+              409,
+            ),
+            ...(createMode === "conflictWithCurrent"
+              ? {
+                  current: {
+                    runId: E2E_ACTIVE_EXPORT_RUN_ID,
+                    exportId: E2E_ACTIVE_EXPORT_BUNDLE_ID,
+                    kind: "client_bundle",
+                  },
+                }
+              : {}),
+          },
+          409,
+        );
+        return;
+      }
       const run = asyncRun("export-run", "export", "queued");
       await json(
         route,
@@ -619,7 +682,10 @@ export async function installCriticalFlowApi(
           data: {
             run,
             statusUrl: `${BASE}/runs/${run.id}`,
-            resourceRef: { type: "export", id: "export-bundle" },
+            resourceRef:
+              createMode === "acceptedMissingResourceRef"
+                ? null
+                : { type: "export", id: "export-bundle" },
           },
         },
         202,
@@ -627,21 +693,49 @@ export async function installCriticalFlowApi(
       return;
     }
 
-    if (method === "GET" && path === `${BASE}/exports/export-bundle`) {
+    const exportDetailMatch =
+      method === "GET" &&
+      (path === `${BASE}/exports/export-bundle`
+        ? "export-bundle"
+        : path === `${BASE}/exports/${E2E_ACTIVE_EXPORT_BUNDLE_ID}`
+          ? E2E_ACTIVE_EXPORT_BUNDLE_ID
+          : null);
+    if (typeof exportDetailMatch === "string") {
+      state.exportDetailReads.push(exportDetailMatch);
+      const sequence = options.exportDetailSequence ?? ["completed"];
+      const readsOfThisExport = state.exportDetailReads.filter(
+        (id) => id === exportDetailMatch,
+      ).length;
+      const step =
+        sequence[Math.min(readsOfThisExport - 1, sequence.length - 1)] ??
+        "completed";
+      if (step === "unavailable") {
+        await json(
+          route,
+          problem(
+            "DEPENDENCY_UNAVAILABLE",
+            "raw object-storage endpoint detail",
+            503,
+          ),
+          503,
+        );
+        return;
+      }
       const latestExportRequest = state.exportRequests.at(-1) as
         | { readonly outputLocale?: string }
         | undefined;
+      const completed = step === "completed";
       await json(route, {
         data: {
-          id: "export-bundle",
+          id: exportDetailMatch,
           kind: "client_bundle",
           schemaVersion: "1.0.0",
           outputLocale: latestExportRequest?.outputLocale ?? "en",
-          run: asyncRun("export-run", "export", "completed"),
-          checksum: "sha256:e2e-export",
+          run: asyncRun("export-run", "export", step),
+          checksum: completed ? "sha256:e2e-export" : null,
           itemCounts: { findings: 1, actions: 1, artifacts: 1 },
-          downloadUrl: "/mock-download/client.zip",
-          downloadExpiresAt: "2026-07-18T12:15:00.000Z",
+          downloadUrl: completed ? "/mock-download/client.zip" : null,
+          downloadExpiresAt: completed ? "2026-07-18T12:15:00.000Z" : null,
           createdAt: NOW,
         },
       });
