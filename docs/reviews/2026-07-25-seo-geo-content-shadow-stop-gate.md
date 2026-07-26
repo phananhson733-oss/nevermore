@@ -2926,9 +2926,24 @@ the Overview case. Probing what each destination renders under
 | context | "Loading Product Profile" | loading skeleton |
 | results | none | not the screen |
 
-Four of the six would have scanned a spinner while reading as "this destination
-is accessible" — the defect this entire section is about, avoided only because
-the mutation ran before the commit.
+**Correction, 2026-07-27, after measuring rather than inferring.** The table
+above was read at page load and is a mid-load snapshot, not what the screens
+settle to. Waited out, Overview under the base installer renders its full
+scaffold — `h1` plus all four section headings — and only the panels fed by the
+501 endpoints show error states. `critical-flows.mock.spec.ts` and
+`mobile-shell.mock.spec.ts` both assert against that scaffold today and are
+sound.
+
+So "four of six scan a spinner" was wrong. **The real reason the loop protected
+nothing is the assertion it used**: `await expect(page.getByRole("main")).toBeVisible()`.
+Measured directly with a second `<main>` present, that assertion **passes** — it
+is a readiness wait, not a landmark check, and it was never going to catch a
+duplicate on `execution` either, the one destination the loop had always
+covered. Only `toHaveCount(1)` fails, which is what every placement below uses.
+
+The revert therefore still stands, for a better reason than the one first
+recorded: widening a loop whose landmark line cannot fail would have added five
+tests that read as landmark coverage and were not.
 
 The assertion therefore goes where a real fixture already exists: Overview
 (`fde119d`, via `openOverview(page, readyScenario())`) and Growth Map
