@@ -1520,8 +1520,40 @@ its unit gate can see schema errors without a database.**
 
 The reverse direction is smaller and worth stating: two scripts this repository
 has are **not** CI steps — `pnpm verify:authority` (subsumed by `verify:spec`,
-which runs the same authority verifier and reports the same four counts) and
-`pnpm vendor:check`. Both were run here and both pass.
+which spawns the same authority verifier at `verify-spec-lock.mjs:444` and
+reports the same four counts) and `pnpm vendor:check`. Both were run here and
+both pass.
+
+**§11.4b. `vendor:check` cannot become a CI step, and AC-048 is therefore
+enforced on one machine only.** This was swept for on 2026-07-26 rather than
+assumed. `scripts/check-vendor-baseline.mjs` resolves the repository it guards
+from `docs/vendor/old-repo-baseline.json`, whose `oldRepoPath` is the absolute
+local path `/Users/wzb/Code/signalframe`. A GitHub runner has no such path.
+Measured, not read: pointing the baseline at a non-existent directory makes the
+script exit 1 with `Cannot read old repo at …`, so it is fail-closed and cannot
+silently pass — but that also means adding it to `ci.yml` would turn CI
+permanently red.
+
+The consequence is worth stating plainly, because `CLAUDE.md` calls it a gate
+(「`pnpm vendor:check` 门禁,AC-048」) and this document has listed it among
+passing gates five times: **the red line "never modify the old SignalFrame
+repo" has no enforcement outside this workstation.** A contributor on another
+machine could modify that repository and no automated check anywhere would
+notice. The honest classification is a local pre-flight, not a gate, and the
+tables below now say so.
+
+**The rest of the sweep came back clean**, which is the reason to trust the one
+finding above. Every test-shaped file in the repository was enumerated and
+matched against what each gate actually collects: **404 files, zero orphans** —
+311 collected by `vitest --project unit`, 66 by `--project integration`, 23 by
+the two Playwright configs (`testMatch: "**/*.mock.spec.ts"` and its exact
+complement `testIgnore: ["**/*.mock.spec.ts"]`, which partition `e2e/` with no
+gap), and 4 by the two `node --test` gates. Of the 28 package scripts, the five
+others CI does not invoke are convenience wrappers or are subsumed
+(`test` and `test:integration` by `test:coverage`, `test:e2e` by the two
+configs CI runs separately, plus `test:watch` and `contracts:generate`). D3d
+found three orphaned verifier suites because it was pointed at two; this sweep
+confirms there is no fourth.
 
 ### 11.5 Gates
 
@@ -1538,7 +1570,7 @@ which runs the same authority verifier and reports the same four counts) and
 | `pnpm build` | pass |
 | `git diff --check` | clean |
 | `pnpm deploy:check` | pass |
-| `pnpm vendor:check` | pass |
+| `pnpm vendor:check` | pass — **local pre-flight, not a CI step; see §11.4b** |
 | `pnpm restore:drill:test` | pass — 29/29 |
 | `docker build` + worker entrypoint smoke | pass |
 | `pnpm db:migrate` | 21 files; replay applies 0 |
@@ -1842,7 +1874,9 @@ and **no green is claimed for them**.
 | `pnpm verify:spec` | pass — **49 operations / 9 async / 44 tables / 11 rules** |
 | `pnpm verify:authority` / `implementation:check` | pass |
 | `pnpm openapi:lint` / `contracts:check` | pass — no generated diff |
-| `pnpm deploy:check` / `vendor:check` / `secrets:scan` | pass |
+| `pnpm deploy:check` / `vendor:check`<sup>†</sup> / `secrets:scan` | pass |
+
+<sup>†</sup> `vendor:check` is a local pre-flight, not a CI step, and structurally cannot be one — see §11.4b.
 | `pnpm test` (no `DATABASE_URL`) | pass — 305 files / 3872 tests |
 | `pnpm test` **with** `DATABASE_URL` | pass — identical 305 / 3872 |
 | `pnpm db:migrate` / `db:smoke` | pass — 21 files; fixtures rolled back |
@@ -2226,7 +2260,7 @@ assertion. `sources-readiness.mock.spec.ts` was not touched.
 | `pnpm verify:spec` | pass — **49 operations / 9 async / 44 tables / 11 rules** |
 | `pnpm verify:authority` / `implementation:check` | pass |
 | `pnpm openapi:lint` / `contracts:check` | pass — no generated diff |
-| `pnpm deploy:check` / `vendor:check` / `secrets:scan` | pass |
+| `pnpm deploy:check` / `vendor:check`<sup>†</sup> / `secrets:scan` | pass |
 | `pnpm db:migrate` / `db:smoke` | pass |
 | `pnpm db:migrate:check` | pass — **44 / 56 / 69 / 18** |
 | `pnpm test:integration` | pass — 66 files / 482 tests |
@@ -2404,7 +2438,7 @@ nothing else.
 | `pnpm verify:authority` / `implementation:check` | pass |
 | `pnpm openapi:lint` | pass — description valid |
 | `pnpm contracts:check` | pass — no generated diff |
-| `pnpm deploy:check` / `vendor:check` | pass |
+| `pnpm deploy:check` / `vendor:check`<sup>†</sup> | pass |
 | `pnpm secrets:scan` | pass — 4 files / 75 tests |
 | `pnpm db:migrate` | pass — 21 migrations applied to a disposable loopback database |
 | `pnpm db:smoke` | pass — fixtures rolled back |
@@ -2560,7 +2594,7 @@ visual baseline snapshot was regenerated. Zero migrations, zero contract change.
 | `pnpm verify:authority` / `implementation:check` | pass |
 | `pnpm openapi:lint` | pass — description valid |
 | `pnpm contracts:check` | pass — no generated diff |
-| `pnpm deploy:check` / `vendor:check` | pass |
+| `pnpm deploy:check` / `vendor:check`<sup>†</sup> | pass |
 | `pnpm secrets:scan` | pass — 4 files / 75 tests |
 | `pnpm db:migrate` | pass — 21 migrations on a disposable local database |
 | `pnpm db:smoke` | pass — fixtures rolled back |
