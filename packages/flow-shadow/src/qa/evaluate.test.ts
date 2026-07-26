@@ -11,6 +11,9 @@ import {
   NEAR_MISS_HONEST_DRAFTS,
   PARENTHETICAL_CITATION_DRAFTS,
   PSEUDO_HEADING_PROSE_DRAFT,
+  SAME_LINE_MIXED_CITATION_DRAFT,
+  SAME_LINE_MIXED_CLAIM_DRAFT,
+  SAME_LINE_SUPPORTED_CLAIMS_DRAFT,
   QUERY_STRING_HARVEST_DRAFT,
   REFERENCE_ENTRY_SHAPE_DRAFTS,
   REFERENCE_FORMAT_DRAFTS,
@@ -641,6 +644,96 @@ describe("D1 — a claim detail is always storable as jsonb", () => {
     for (const unit of serialized) {
       const code = unit.codePointAt(0) ?? 0;
       expect(code < 0xd800 || code > 0xdfff).toBe(true);
+    }
+  });
+});
+
+/**
+ * F1 (regression) — a fabrication sharing a line with a resolvable attribution.
+ *
+ * `findUnsupportedClaims` recorded ONE assertion per line, so RL8 saw only the
+ * claim that resolved and reported that all of this draft's assertions resolve.
+ * The identical fabricated sentence on its own line was blocked, which is the
+ * proof that the line break, not the content, was doing the work.
+ */
+describe("P1 (regression) — a line carries more than one claim", () => {
+  const packWithSource = () => packWithCitableSources(["Analyst Insights"]);
+
+  it("blocks an invented attribution beside a resolvable one on the same line", () => {
+    const pack = packWithSource();
+    const evaluation = evaluateDraftQa(qaInput(SAME_LINE_MIXED_CLAIM_DRAFT, pack));
+
+    expect(evaluation.verdict).toBe("blocked");
+    expect(
+      claim(SAME_LINE_MIXED_CLAIM_DRAFT, "rl8_unsupported_claim", pack)?.status,
+    ).toBe("failed");
+  });
+
+  /** The control: the same shape, both attributions held by the pack. */
+  it("does not block a line whose claims all resolve", () => {
+    const pack = packWithSource();
+    const evaluation = evaluateDraftQa(
+      qaInput(SAME_LINE_SUPPORTED_CLAIMS_DRAFT, pack),
+    );
+
+    expect(evaluation.verdict).not.toBe("blocked");
+    expect(
+      claim(
+        SAME_LINE_SUPPORTED_CLAIMS_DRAFT,
+        "rl8_unsupported_claim",
+        pack,
+      )?.status,
+    ).toBe("passed");
+  });
+
+  /**
+   * RL12's half. A named attribution's SPAN was the raw 120-character capture,
+   * so one resolvable name covered every later sentence on its line and a
+   * citation two sentences downstream read as attributed to it.
+   */
+  it("blocks a citation two sentences away from the name that resolved", () => {
+    const pack = packWithSource();
+    const evaluation = evaluateDraftQa(
+      qaInput(SAME_LINE_MIXED_CITATION_DRAFT, pack),
+    );
+
+    expect(evaluation.verdict).toBe("blocked");
+    expect(
+      claim(
+        SAME_LINE_MIXED_CITATION_DRAFT,
+        "rl12_citation_integrity",
+        pack,
+      )?.status,
+    ).toBe("failed");
+  });
+});
+
+/**
+ * P2, re-proved over the drafts whose claim ARRAY the two fixes changed.
+ *
+ * `FlowShadowQaGatesRepository.insert` compares a replayed gate row against the
+ * stored one, so a claim list that reordered or re-worded itself between two
+ * runs of the same frozen input would turn replay into a spurious conflict.
+ * Extracting every claim on a line changes what that array contains, so the
+ * byte-for-byte guarantee is re-established here rather than assumed.
+ */
+describe("P2 — the changed claim arrays are byte-stable across replays", () => {
+  it("serializes identically on 100 consecutive evaluations", () => {
+    const pack = packWithCitableSources(["Analyst Insights"]);
+    for (const [name, draft, source] of [
+      ["same-line mixed claim", SAME_LINE_MIXED_CLAIM_DRAFT, pack],
+      ["same-line supported", SAME_LINE_SUPPORTED_CLAIMS_DRAFT, pack],
+      ["same-line mixed citation", SAME_LINE_MIXED_CITATION_DRAFT, pack],
+    ] as const) {
+      const first = evaluateDraftQa(qaInput(draft, source ?? fixturePack()));
+      const baseline = JSON.stringify(qaClaimsToJson(first.claims));
+      for (let run = 0; run < 100; run += 1) {
+        const replay = evaluateDraftQa(qaInput(draft, source ?? fixturePack()));
+        expect(replay.verdict, name).toBe(first.verdict);
+        expect(JSON.stringify(qaClaimsToJson(replay.claims)), name).toBe(
+          baseline,
+        );
+      }
     }
   });
 });

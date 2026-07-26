@@ -3,11 +3,12 @@ import {
   buildSourceIndex,
   extractAttributions,
   findUnsupportedClaims,
+  locatedAttributions,
   resolveAttribution,
   resolveLinkProvenance,
 } from "./claims.ts";
 import { fixturePack, packWithCitableSources } from "./__fixtures__/pack.ts";
-import { canonicalUrl } from "./text.ts";
+import { canonicalUrl, flattenLine } from "./text.ts";
 import type { ResearchPack } from "../types.ts";
 
 const line = (text: string, at = 1) => [{ line: at, text }];
@@ -682,5 +683,113 @@ describe("what the chain does resolve", () => {
     expect(provenance("https://dõcs.signalframe.example/onboarding")).toBe(
       "unresolved",
     );
+  });
+});
+
+/**
+ * F1. A line was allowed ONE claim, so a fabrication that shared a line with a
+ * resolvable attribution was invisible to the two rules that block on it.
+ */
+describe("every assertion on a line is resolved on its own evidence", () => {
+  const index = buildSourceIndex(packWithCitableSources(["Analyst Insights"]));
+
+  it("reports the invented attribution beside a resolvable one", () => {
+    const hits = findUnsupportedClaims(
+      index,
+      line(
+        "According to Analyst Insights, activation rose 30%. According to Forrester, 73% of teams abandon activation tracking.",
+      ),
+    );
+
+    expect(hits).toHaveLength(2);
+    expect(hits.map((hit) => hit.resolution.authority)).toStrictEqual([
+      "B",
+      "D",
+    ]);
+    expect(hits[1]?.excerpt).toContain("Forrester");
+  });
+
+  /**
+   * The order the sentences are written in is not a fact about whether either
+   * citation is real, so the same line reversed must judge the same way.
+   */
+  it("judges the same line the same way whichever sentence comes first", () => {
+    const hits = findUnsupportedClaims(
+      index,
+      line(
+        "According to Forrester, 73% of teams abandon activation tracking. According to Analyst Insights, activation rose 30%.",
+      ),
+    );
+
+    expect(
+      hits.filter((hit) => hit.resolution.support === null),
+    ).toHaveLength(1);
+    expect(hits).toHaveLength(2);
+  });
+
+  /** The control: extracting every claim must not manufacture a defect. */
+  it("leaves a line whose claims all resolve fully supported", () => {
+    const hits = findUnsupportedClaims(
+      index,
+      line(
+        "According to Analyst Insights, activation rose 30%. According to Analyst Insights, 73% of teams abandon activation tracking.",
+      ),
+    );
+
+    expect(hits.every((hit) => hit.resolution.support !== null)).toBe(true);
+    expect(hits.map((hit) => hit.resolution.authority)).not.toContain("D");
+  });
+
+  /**
+   * The mechanism, isolated. `according to\s+([^\n]{2,120})` captures up to 120
+   * characters; the VALUE was cut at the comma and the SPAN was not, so one
+   * resolvable name sat on top of every later sentence on the line.
+   */
+  it("locates a named attribution at its name, not across the rest of the line", () => {
+    const flat = flattenLine(
+      "According to Analyst Insights, activation rose 30%. According to Forrester, 73% of teams abandon activation tracking.",
+    );
+    const named = locatedAttributions(flat).filter(
+      (attribution) => attribution.kind === "name",
+    );
+
+    expect(named.length).toBeGreaterThan(0);
+    for (const attribution of named) {
+      expect(flat.text.slice(attribution.start, attribution.end)).toBe(
+        attribution.value,
+      );
+    }
+  });
+
+  /**
+   * Several patterns recognise one assertion (`The Analyst Insights report
+   * found that activation improves 30%` is both a research noun beside a verb
+   * and a capitalized name beside a verb). That is one defect, and only the
+   * reading that NAMES a source knows who the sentence attributes to — so the
+   * unnamed reading yields rather than reporting a second, unsupported claim.
+   */
+  it("does not report one assertion twice because two shapes matched it", () => {
+    const hits = findUnsupportedClaims(
+      index,
+      line("The Analyst Insights report found that activation improves 30%."),
+    );
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.resolution.authority).toBe("B");
+  });
+
+  /**
+   * Same sentence, two different names. Collapsing these is the "one
+   * resolution licenses everything near it" mistake the role split removed.
+   */
+  it("keeps two differently-attributed claims apart inside one sentence", () => {
+    const hits = findUnsupportedClaims(
+      index,
+      line(
+        "According to Analyst Insights, Forrester found that 73% of teams churn.",
+      ),
+    );
+
+    expect(hits.some((hit) => hit.resolution.support === null)).toBe(true);
   });
 });

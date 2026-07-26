@@ -823,3 +823,67 @@ export const ESCAPED_ATTRIBUTION_DRAFTS: ReadonlyArray<
     ].join("\n"),
   ],
 ];
+
+/**
+ * The same-line corpus.
+ *
+ * `findUnsupportedClaims` reported ONE assertion per line, so a line's verdict
+ * depended on the order its sentences were written in: a resolvable attribution
+ * in the first sentence was the only claim recorded, and RL8 then wrote down
+ * that all of this draft's assertions resolved. The invented citation beside it
+ * was invisible to both blocking rules — and moving that same fabrication onto
+ * its own line blocked the draft. One sentence of distance is not a fact about
+ * whether a citation is real.
+ *
+ * Every draft here needs `packWithCitableSources(["Analyst Insights"])`: the
+ * hole only opens when something on the line genuinely DOES resolve.
+ */
+const SAME_LINE_BODY = [
+  "# Onboarding analytics for RevOps teams",
+  "",
+  "## What onboarding analytics covers",
+  "",
+  "**Onboarding analytics** measures time to first value for RevOps teams.",
+  "",
+  "## Audience",
+  "",
+  "RevOps leads evaluating onboarding tooling own this work.",
+  "",
+];
+
+/** RL8: one attribution the pack holds, one it does not, on one line. */
+export const SAME_LINE_MIXED_CLAIM_DRAFT = [
+  ...SAME_LINE_BODY,
+  "## Why it matters",
+  "",
+  "According to Analyst Insights, activation rose 30%. According to Forrester, 73% of teams abandon activation tracking.",
+  "",
+].join("\n");
+
+/**
+ * The control the fix must not break: the SAME shape with both attributions
+ * held by the pack. Extracting every claim on a line is only correct if it
+ * still passes a line whose claims all resolve.
+ */
+export const SAME_LINE_SUPPORTED_CLAIMS_DRAFT = [
+  ...SAME_LINE_BODY,
+  "## Why it matters",
+  "",
+  "According to Analyst Insights, activation rose 30%. According to Analyst Insights, 73% of teams abandon activation tracking.",
+  "",
+].join("\n");
+
+/**
+ * RL12's half of the same hole. A named attribution's SPAN was the raw
+ * 120-character capture rather than the name that survived cleaning, so
+ * `According to <source we hold>` covered every later sentence on the line and
+ * `Forrester (2024)` two sentences downstream drew that resolvable name into
+ * its own support candidates.
+ */
+export const SAME_LINE_MIXED_CITATION_DRAFT = [
+  ...SAME_LINE_BODY,
+  "## Evidence",
+  "",
+  "According to Analyst Insights, activation rose 30%. Forrester (2024) found a 73% lift.",
+  "",
+].join("\n");

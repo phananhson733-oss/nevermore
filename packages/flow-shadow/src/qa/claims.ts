@@ -331,17 +331,51 @@ const LEADING_YEAR = /^(?:19|20)\d{2}\s+/;
 const NAME_STOP =
   /[,.;:!?)]|\s+(?:which|that|who|whose|and|but|found|shows?|showed|suggests?|reported|says?|said|estimates?|indicates?)\b/i;
 
-function cleanNameCandidate(raw: string): string {
-  let value = raw.trim();
-  const stop = NAME_STOP.exec(value);
-  if (stop?.index !== undefined && stop.index > 0)
-    value = value.slice(0, stop.index);
-  let previous = "";
-  while (previous !== value) {
-    previous = value;
-    value = value.replace(LEADING_NOISE, "").replace(LEADING_YEAR, "");
+/** A cleaned attribution name together with WHERE that name actually sits. */
+interface CleanName {
+  readonly value: string;
+  readonly span: FlatSpan;
+}
+
+/**
+ * Clean a name candidate, and narrow its span to the name that survives.
+ *
+ * The span is not cosmetic. `according to\s+([^\n]{2,120})` captures up to 120
+ * characters, which on a line with two attributions is the whole rest of the
+ * line — so the FIRST `According to <source we hold>` carried a span covering
+ * every later sentence, and `According to Forrester, 73% …` two sentences
+ * downstream drew that resolvable name into its own support candidates and read
+ * as attributed. The value was always cut at the comma; only the span was not,
+ * and locality is half of "an assertion is supported by the source it attributes
+ * to". Cutting both in one place is what keeps them from drifting apart again.
+ */
+function cleanNameAt(text: string, span: FlatSpan): CleanName | null {
+  let start = span.start;
+  let end = span.end;
+  const isSpace = (at: number): boolean => /\s/.test(text.charAt(at));
+  while (start < end && isSpace(start)) start += 1;
+  while (end > start && isSpace(end - 1)) end -= 1;
+  const stop = NAME_STOP.exec(text.slice(start, end));
+  if (stop?.index !== undefined && stop.index > 0) end = start + stop.index;
+  for (;;) {
+    const rest = text.slice(start, end);
+    const noise = LEADING_NOISE.exec(rest) ?? LEADING_YEAR.exec(rest);
+    if (noise === null) break;
+    start += noise[0].length;
   }
-  return value.trim().split(/\s+/).slice(0, 8).join(" ");
+  while (end > start && isSpace(end - 1)) end -= 1;
+  // The eight-token cap is `cleanNameCandidate`'s, kept here so the value and
+  // the span are truncated at the same place by construction.
+  const tokens = [...text.slice(start, end).matchAll(/\S+/g)];
+  const eighth = tokens[8];
+  if (eighth?.index !== undefined) end = start + eighth.index;
+  while (end > start && isSpace(end - 1)) end -= 1;
+  const value = text.slice(start, end).trim().split(/\s+/).join(" ");
+  return value.length === 0 ? null : { value, span: { start, end } };
+}
+
+function cleanNameCandidate(raw: string): string {
+  return cleanNameAt(raw, { start: 0, end: raw.length })?.value ?? "";
 }
 
 /**
@@ -394,8 +428,14 @@ export function locatedAttributions(
   for (const pattern of NAMED_ATTRIBUTION_PATTERNS) {
     for (const match of flat.text.matchAll(pattern)) {
       const span = groupSpan(match, 1);
+      // The url guard is applied to the CAPTURED span, never to the narrowed
+      // one: narrowing decides where a name sits, and it must not readmit a
+      // candidate the "nothing is read out of the inside of a url" rule already
+      // excluded.
       if (span === null || insideUrl(span)) continue;
-      push("name", match[1] ?? "", span);
+      const name = cleanNameAt(flat.text, span);
+      if (name === null) continue;
+      push("name", name.value, name.span);
     }
   }
   for (const match of flat.text.matchAll(BARE_DOMAIN)) {
@@ -662,9 +702,9 @@ function researchAssertions(text: string): readonly AssertionMatch[] {
  */
 function supportCandidates(
   flat: FlatLine,
+  attributions: readonly LocatedAttribution[],
   assertion: AssertionMatch,
 ): readonly Attribution[] {
-  const attributions = locatedAttributions(flat);
   const span = assertion.attributedTo;
   if (span === null) {
     const sentence = sentenceSpanAt(flat.text, assertion.index);
@@ -682,26 +722,85 @@ function supportCandidates(
     : located;
 }
 
-/** Find every external-research assertion and resolve its attribution. */
+/** The textual extent of one assertion match on the flattened line. */
+function assertionSpan(assertion: AssertionMatch): FlatSpan {
+  return {
+    start: assertion.index,
+    end: assertion.index + assertion.excerpt.length,
+  };
+}
+
+/**
+ * Is this the WEAKER reading of an assertion another pattern already named?
+ *
+ * The shapes overlap on purpose: `The Analyst Insights report found that
+ * activation improves 30%` is seen both as "research noun beside an assertion
+ * verb" (which names nobody, so its whole sentence may support it) and as
+ * "capitalized name beside an assertion verb" (which names Analyst Insights and
+ * may be supported by that alone). Those are one defect, not two, and only the
+ * second reading knows who the sentence attributes to — so the unnamed reading
+ * yields to a named one it overlaps.
+ *
+ * The subsumption is one-directional. Two NAMED readings that overlap are kept
+ * apart, because they can name different sources: `According to Analyst
+ * Insights, Forrester found that 73% of teams churn` is a supported attribution
+ * and an invented one sharing a sentence, and collapsing them is exactly the
+ * "one resolution licenses the whole line" mistake the role split removed.
+ */
+function subsumedByNamedAssertion(
+  assertion: AssertionMatch,
+  named: readonly AssertionMatch[],
+): boolean {
+  if (assertion.attributedTo !== null) return false;
+  const span = assertionSpan(assertion);
+  return named.some((other) => spansOverlap(span, assertionSpan(other)));
+}
+
+/**
+ * Find every external-research assertion and resolve its attribution.
+ *
+ * EVERY assertion on a line is extracted and resolved on its own evidence. It
+ * used to be the first one per line, which made a line's verdict depend on the
+ * order its sentences were written in: `According to Analyst Insights,
+ * activation rose 30%. According to Forrester, 73% of teams abandon activation
+ * tracking.` reported one claim — the resolvable one — and RL8 wrote down that
+ * all of its assertions resolved, so the invented Forrester citation beside it
+ * was invisible to both blocking rules. Moving that same fabrication onto its
+ * own line blocked the draft. One sentence of distance is not a fact about
+ * whether a citation is real.
+ *
+ * Two claims are the SAME claim when they sit in one sentence and resolve to
+ * one source (including "to nothing"): that is several patterns recognising one
+ * assertion, and reporting it three times would make one defect read as three.
+ * Two that resolve differently are two claims even inside one sentence, which
+ * is what keeps a resolvable neighbour from licensing an invented one.
+ */
 export function findUnsupportedClaims(
   index: SourceIndex,
   lines: readonly { readonly line: number; readonly text: string }[],
 ): readonly ClaimHit[] {
   const hits: ClaimHit[] = [];
-  const seen = new Set<number>();
   for (const entry of lines) {
     const flat = flattenLine(entry.text);
     if (flat.text.trim().length === 0) continue;
-    for (const match of researchAssertions(flat.text)) {
-      // An honest disclaimer ("no study shows that ...") is not an assertion.
-      // Only a negator that directly governs the noun exempts it.
-      if (hasDirectNegation(clauseBefore(flat.text, match.index))) continue;
-      if (seen.has(entry.line)) continue;
-      seen.add(entry.line);
+    const attributions = locatedAttributions(flat);
+    // An honest disclaimer ("no study shows that ...") is not an assertion.
+    // Only a negator that directly governs the noun exempts it.
+    const matches = researchAssertions(flat.text).filter(
+      (match) => !hasDirectNegation(clauseBefore(flat.text, match.index)),
+    );
+    const named = matches.filter((match) => match.attributedTo !== null);
+    const seen = new Set<string>();
+    for (const match of matches) {
+      if (subsumedByNamedAssertion(match, named)) continue;
       const support = resolveAssertionSupport(
         index,
-        supportCandidates(flat, match),
+        supportCandidates(flat, attributions, match),
       );
+      const sentence = sentenceSpanAt(flat.text, match.index);
+      const key = `${sentence.start}|${support === null ? "" : support.source.ref}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       hits.push({
         line: entry.line,
         excerpt: match.excerpt,
