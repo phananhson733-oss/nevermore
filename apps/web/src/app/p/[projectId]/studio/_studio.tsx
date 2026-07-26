@@ -1568,13 +1568,19 @@ export function StudioClient({
   readonly projectId: string;
   readonly initialDeepLink: ExecutionDeepLink;
   /**
-   * Rendered between the page heading and the delivery workspace.
+   * Rendered between the page heading and the delivery workspace: the
+   * deliverable's own body, so the first thing after the heading is the work
+   * rather than a queue of links to it.
    *
-   * The Execution route puts the deliverable's own body here, so the first
-   * thing after the heading is the work rather than a queue of links to it.
-   * Studio passes nothing and is unchanged.
+   * Required, and the docstring said otherwise until 2026-07-26 — "Studio
+   * passes nothing and is unchanged" described `/p/{id}/studio`, which has been
+   * a `redirect()` to `/execution` since Slice 1. `execution/_execution.tsx:29`
+   * is the only caller this component has, and it always passes a body, so the
+   * optional branch had no caller and no design. Making it required means a
+   * future route cannot quietly render the queue-only variant that nothing
+   * specifies; it has to decide what goes here.
    */
-  readonly afterHero?: ReactNode;
+  readonly afterHero: ReactNode;
 }) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
