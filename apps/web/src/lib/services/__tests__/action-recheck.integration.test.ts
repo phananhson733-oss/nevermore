@@ -113,6 +113,79 @@ describeDb("createActionRecheck → runDiagnostic → getProjectResults", () => 
     );
     expect(priorRun?.projection_version).toBe("growth-audit.0.3.0");
   });
+
+  /**
+   * The one tenant boundary on the prior rule ledger, exercised.
+   *
+   * `getProjectResults` reads `priorRunId` back out of
+   * `async_runs.request_payload` -- jsonb, no foreign key, no shape constraint
+   * -- and then hands the prior run's `diagnostic_run_id` to
+   * `DiagnosticRunsRepository.listRuleResults`, whose signature takes NO scope
+   * (`diagnostic-runs.ts:141`). The `AuditRunsRepository.findById(projectScope,
+   * ...)` above it is the only thing standing between a repointed payload and
+   * another workspace's rule ledger, and it had no test at all.
+   *
+   * SPEC:878 puts the cross-project and cross-workspace cases inside 404
+   * `NOT_FOUND`. This used to answer 503, which is a different sentence: it
+   * says the id resolves somewhere, just not here.
+   */
+  it("refuses a repointed prior run as absent, and reads no other tenant's ledger", async () => {
+    const victim = await runAuditChain(handle, ctx, "b2b-recheck");
+    const attacker = await runAuditChain(handle, ctx, "b2b-recheck");
+
+    const accepted = await createActionRecheck(
+      { workspaceId: attacker.scope.workspaceId },
+      attacker.scope.projectId,
+      attacker.actor,
+      randomUUID(),
+      {
+        actionId: attacker.actionId,
+        priorRunId: attacker.auditRunId,
+        targetScope: attacker.targetScope,
+        capabilityContractVersion: "growth-audit.0.3.0",
+      },
+    );
+    await runDiagnostic(ctx, {
+      runId: accepted.run.id,
+      workspaceId: attacker.scope.workspaceId,
+      projectId: attacker.scope.projectId,
+    });
+
+    // Sanity: the projection resolves before the payload is repointed, so a
+    // 404 below cannot be blamed on the fixture failing to build.
+    await expect(
+      getProjectResults(
+        { workspaceId: attacker.scope.workspaceId, uiLocale: "en" },
+        attacker.scope.projectId,
+      ),
+    ).resolves.toMatchObject({ priorRunId: attacker.auditRunId });
+
+    // Repoint the frozen pointer at the victim's audit run in another
+    // workspace. Nothing in the schema forbids this value.
+    await handle.pool.query(
+      "UPDATE app.async_runs SET request_payload = jsonb_set(request_payload, '{priorRunId}', to_jsonb($2::text)) WHERE id = $1",
+      [accepted.run.id, victim.auditRunId],
+    );
+
+    const rejection = await getProjectResults(
+      { workspaceId: attacker.scope.workspaceId, uiLocale: "en" },
+      attacker.scope.projectId,
+    ).then(
+      (value) => ({ ok: true as const, value }),
+      (error: { code?: string; status?: number }) => ({
+        ok: false as const,
+        error,
+      }),
+    );
+
+    expect(rejection.ok).toBe(false);
+    if (!rejection.ok) {
+      // 404, not 503: a distinguishable status here answers "does this id
+      // exist somewhere else?" for anyone who can reach the endpoint.
+      expect(rejection.error.code).toBe("NOT_FOUND");
+      expect(rejection.error.status).toBe(404);
+    }
+  });
 });
 
 afterAll(async () => {
