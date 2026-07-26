@@ -1969,6 +1969,7 @@
     "emptyHint": "Run a diagnosis and confirm findings to produce a report."
   },
   "results": {
+    "pageTitle": "Results",
     "title": "Recheck results",
     "lead": "Compare the confirmed action's technical condition across the prior run and a fresh recheck. This surface reports technical conditions only.",
     "emptyTitle": "No recheck yet",

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   E2E_PROJECT_ID,
   installCriticalFlowApi,
+  recheckResultsFixture,
   type CriticalFlowApiState,
 } from "./mock-api.ts";
 
@@ -27,7 +28,10 @@ test("project navigation exposes live destinations and localizes stage chrome", 
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
 
   await expect(
-    page.getByRole("heading", { name: "Where growth should move next", level: 1 }),
+    page.getByRole("heading", {
+      name: "Where growth should move next",
+      level: 1,
+    }),
   ).toBeVisible();
 
   // Re-aimed, not loosened. This used to read two Overview call-to-action
@@ -78,12 +82,17 @@ test("Sources chrome localizes to zh-CN while server-supplied provider content r
   await page.getByRole("button", { name: "简体中文" }).click();
 
   await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
-  await expect(page.getByText("最近采集", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("最近采集", { exact: true }).first(),
+  ).toBeVisible();
   await expect(page.getByText("可用性", { exact: true }).first()).toBeVisible();
   await expect(
-    page.getByText("Static HTML only; JavaScript-rendered content may be absent.", {
-      exact: true,
-    }),
+    page.getByText(
+      "Static HTML only; JavaScript-rendered content may be absent.",
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
 });
 
@@ -154,7 +163,9 @@ test("Studio chrome localizes to zh-CN without translating action content", asyn
   ).toBeVisible();
 
   await hero.getByRole("button", { name: "生成执行物" }).click();
-  await expect(canvas.getByRole("heading", { name: "选择一个行动" })).toBeVisible();
+  await expect(
+    canvas.getByRole("heading", { name: "选择一个行动" }),
+  ).toBeVisible();
   await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
@@ -195,9 +206,7 @@ test("Studio requires structured LLM for template-unsupported output locales", a
   await expect(generate).toBeDisabled();
   expect(api.artifactCreateRequests).toHaveLength(0);
 
-  await page
-    .getByLabel("Generation mode")
-    .selectOption("structured_llm");
+  await page.getByLabel("Generation mode").selectOption("structured_llm");
   await expect(generate).toBeEnabled();
   await generate.click();
 
@@ -220,3 +229,113 @@ test("Studio requires structured LLM for template-unsupported output locales", a
 // imported only by that dead file. The Results screen that replaced the route
 // (results/_results.tsx) is a read-only recheck comparison with no locale,
 // export or manifest affordance, so there is no successor to re-aim at.
+
+/**
+ * R3 blueprint D3: the Results heading tree is fixed and asserted by
+ * role/name, not by counting h1 elements. The screen owns the only h1; the
+ * recheck block and the report document projectName are h2 siblings; the
+ * numbered report sections are h3 under the document; action cards are h4.
+ */
+test("Results owns one h1 and the report document nests under it (D3)", async ({
+  page,
+}) => {
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/results`,
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: recheckResultsFixture() }),
+      });
+    },
+  );
+  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
+
+  const main = page.getByRole("main");
+  await expect(
+    main.getByRole("heading", { name: "Results", level: 1 }),
+  ).toBeVisible();
+  await expect(page.locator("h1")).toHaveCount(1);
+  await expect(page.locator("[data-report-page]")).toHaveCount(1);
+  await expect(
+    main.getByRole("heading", { name: "Recheck results", level: 2 }),
+  ).toBeVisible();
+  const document = page.locator("[data-report-document]");
+  await expect(
+    document.getByRole("heading", { name: "E2E Critical Flow", level: 2 }),
+  ).toBeVisible();
+  await expect(
+    document.getByRole("heading", { name: "Findings", level: 3 }),
+  ).toBeVisible();
+  await expect(
+    document.getByRole("heading", {
+      name: "Fix the failing product page",
+      level: 4,
+    }),
+  ).toBeVisible();
+  await expect(
+    main.getByRole("heading", { name: "Export", level: 2 }),
+  ).toBeVisible();
+});
+
+/**
+ * R3 blueprint D6: print keeps only the client report document. The screen
+ * header, the recheck comparison, the export rail, and every interactive
+ * control are screen chrome; the shell sidebar/topbar are hidden globally.
+ * The page is loaded and settled in screen media first, so each hidden
+ * assertion below observes a real element being removed by print CSS rather
+ * than one that never rendered.
+ */
+test("print media keeps the report document and hides the Results screen chrome (D6)", async ({
+  page,
+}) => {
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/results`,
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: recheckResultsFixture() }),
+      });
+    },
+  );
+  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
+
+  const screenHeading = page.getByRole("heading", {
+    name: "Results",
+    level: 1,
+  });
+  const recheckHeading = page.getByText("Recheck results", { exact: true });
+  const observedLabel = page.getByText("Prior run observed", { exact: true });
+  const rail = page.locator("[data-report-manifest-rail]");
+  await expect(screenHeading).toBeVisible();
+  await expect(recheckHeading).toBeVisible();
+  await expect(observedLabel).toBeVisible();
+  await expect(rail).toBeVisible();
+
+  await page.emulateMedia({ media: "print" });
+
+  await expect(page.locator("[data-app-shell-sidebar]")).toBeHidden();
+  await expect(page.locator("[data-app-shell-topbar]")).toBeHidden();
+  await expect(page.locator("h1")).toBeHidden();
+  await expect(recheckHeading).toBeHidden();
+  await expect(observedLabel).toBeHidden();
+  await expect(rail).toBeHidden();
+  await expect(page.locator("button:visible")).toHaveCount(0);
+  await expect(page.locator("input:visible")).toHaveCount(0);
+
+  const document = page.locator("[data-report-document]");
+  await expect(document).toBeVisible();
+  await expect(
+    document.getByRole("heading", { name: "E2E Critical Flow" }),
+  ).toBeVisible();
+  await expect(
+    document.getByRole("heading", { name: "Findings" }),
+  ).toBeVisible();
+  await expect(
+    document.getByRole("heading", { name: "30 / 60 / 90 plan" }),
+  ).toBeVisible();
+  await expect(
+    document.getByRole("heading", { name: "Methodology" }),
+  ).toBeVisible();
+});

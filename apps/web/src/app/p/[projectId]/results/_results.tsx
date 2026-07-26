@@ -1,11 +1,14 @@
 "use client";
 
 /**
- * Recheck Results view (Slice 1, Task 8). A read-only comparison of two
- * immutable runs for one confirmed Action: the prior run and the fresh recheck.
- * It reports the technical rule condition only ("Technical condition verified")
- * and never claims traffic, rank, revenue, or AI-citation movement. The prior
- * run is untouched; the honest empty state is shown when no recheck has run.
+ * Canonical Results screen (R3 blueprint D1/D2): screen header, the read-only
+ * recheck comparison block, then the client report block with its export rail.
+ * The two data blocks are independent query boundaries — a recheck 404 never
+ * swallows the report and a report failure never swallows the recheck. The
+ * recheck block reports the technical rule condition only ("Technical
+ * condition verified") and never claims traffic, rank, revenue, or AI-citation
+ * movement. The screen header and recheck block are screen chrome: `@media
+ * print` keeps only the report document (D6).
  */
 
 import { useTranslations } from "next-intl";
@@ -15,6 +18,7 @@ import {
   Panel,
   Spinner,
   StatusPill,
+  cx,
   type StatusTone,
 } from "@/components/ui";
 import {
@@ -26,6 +30,8 @@ import type {
   ActionRecheckRuleComparison,
   RecheckComparisonState,
 } from "@sf/contracts";
+import { ReportSection } from "./_report-section.tsx";
+import styles from "./results.module.css";
 
 const STATE_TONE: Readonly<Record<RecheckComparisonState, StatusTone>> = {
   verified: "success",
@@ -44,7 +50,7 @@ function ObservedWindow({
 }) {
   const t = useTranslations("results");
   return (
-    <dl className="sf-results__window">
+    <dl className={styles.window}>
       <div>
         <dt>{t("priorLabel")}</dt>
         <dd>{results.priorObservedAt}</dd>
@@ -64,17 +70,17 @@ function RuleComparisonRow({
 }) {
   const t = useTranslations("results");
   return (
-    <li className="sf-results__rule">
-      <div className="sf-results__rule-head">
-        <span className="sf-results__rule-id">{rule.ruleId}</span>
+    <li className={styles.rule}>
+      <div className={styles.ruleHead}>
+        <span className={styles.ruleId}>{rule.ruleId}</span>
         <StatusPill tone={STATE_TONE[rule.state]}>{rule.label}</StatusPill>
       </div>
-      <div className="sf-results__rule-transition">
+      <div className={styles.ruleTransition}>
         <Badge>{t(`ruleStatus.${rule.priorStatus}`)}</Badge>
         <span aria-hidden="true">→</span>
         <Badge>{t(`ruleStatus.${rule.currentStatus}`)}</Badge>
       </div>
-      <details className="sf-results__rule-detail">
+      <details className={styles.ruleDetail}>
         <summary>{t("detailLabel")}</summary>
         <dl>
           <div>
@@ -94,19 +100,19 @@ function ResultsComparison({
 }) {
   const t = useTranslations("results");
   return (
-    <div className="sf-results__comparison">
+    <div className={styles.comparison}>
       <ObservedWindow results={results} />
       {results.rules.length === 0 ? (
         <EmptyState title={t("noRulesTitle")} description={t("noRulesBody")} />
       ) : (
-        <ul className="sf-results__rules">
+        <ul className={styles.rules}>
           {results.rules.map((rule) => (
             <RuleComparisonRow key={rule.ruleId} rule={rule} />
           ))}
         </ul>
       )}
       {results.limitations.length > 0 && (
-        <section className="sf-results__limitations">
+        <section className={styles.limitations}>
           <h3>{t("limitationsTitle")}</h3>
           <ul>
             {results.limitations.map((limitation) => (
@@ -119,24 +125,56 @@ function ResultsComparison({
   );
 }
 
-/** Read-only prior-vs-new recheck comparison for the canonical Results screen. */
-export function ResultsClient({ projectId }: { readonly projectId: string }) {
+/**
+ * The recheck block: sole owner of the `useProjectResults` query. Loading,
+ * error (the honest empty state), and ready are handled entirely inside this
+ * block (D2). `data-results-recheck-settled` marks the two terminal UIs so the
+ * visual harness can wait for a settled block instead of a spinner (D7).
+ */
+function RecheckResultsSection({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("results");
   const query = useProjectResults(projectId);
 
   return (
-    <div className="sf-results">
-      <Panel aria-label={t("title")} className="sf-results__panel">
-        <h2 className="sf-results__heading">{t("title")}</h2>
-        <p className="sf-results__lead">{t("lead")}</p>
-        {query.isPending ? (
-          <Spinner />
-        ) : query.isError ? (
-          <EmptyState title={t("emptyTitle")} description={t("emptyBody")} />
-        ) : (
-          <ResultsComparison results={query.data} />
-        )}
-      </Panel>
+    <Panel
+      aria-label={t("title")}
+      className={cx(styles.recheckPanel, styles.screenOnly)}
+      data-results-recheck-settled={query.isPending ? undefined : ""}
+    >
+      <h2 className={styles.recheckHeading}>{t("title")}</h2>
+      <p className={styles.recheckLead}>{t("lead")}</p>
+      {query.isPending ? (
+        <Spinner />
+      ) : query.isError ? (
+        <EmptyState title={t("emptyTitle")} description={t("emptyBody")} />
+      ) : (
+        <ResultsComparison results={query.data} />
+      )}
+    </Panel>
+  );
+}
+
+/**
+ * Results screen client entry: screen h1, recheck comparison, client report.
+ */
+export function ResultsClient({
+  projectId,
+  initialOutputLocale,
+}: {
+  readonly projectId: string;
+  readonly initialOutputLocale?: string | undefined;
+}) {
+  const t = useTranslations("results");
+  return (
+    <div className={styles.page} data-results-page="">
+      <header className={cx(styles.hero, styles.screenOnly)}>
+        <h1 className={styles.heroTitle}>{t("pageTitle")}</h1>
+      </header>
+      <RecheckResultsSection projectId={projectId} />
+      <ReportSection
+        projectId={projectId}
+        initialOutputLocale={initialOutputLocale}
+      />
     </div>
   );
 }

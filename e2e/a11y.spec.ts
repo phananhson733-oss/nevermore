@@ -56,6 +56,14 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
       document.title.trim().length > 0 &&
       document.documentElement.lang.trim().length > 0,
   );
+  // Results hydrates two client query blocks. Scan the ready surface, not a
+  // spinner: wait for the report document, the settled recheck block, and
+  // quiesced query traffic before any axe/print assertion (R3 blueprint D8).
+  if (screen === "results") {
+    await expect(page.locator("[data-report-document]")).toBeVisible();
+    await expect(page.locator("[data-results-recheck-settled]")).toHaveCount(1);
+    await page.waitForLoadState("networkidle");
+  }
 }
 
 /** Is this axe node inside the project sidebar? (DOM check, not selector text.) */
@@ -225,14 +233,36 @@ test("prefers-reduced-motion is honoured by the render context", async ({
   expect(hasInfiniteAnimation).toBe(false);
 });
 
-test("report print media hides only the application shell chrome", async ({
+/**
+ * R3 blueprint D6: print keeps only the client report document. The Results
+ * screen chrome (h1, recheck block, export rail, every control) and the app
+ * shell are all hidden; the report document and its headings survive. The
+ * screen is settled in screen media first so each hidden assertion observes a
+ * real element being removed by print CSS.
+ */
+test("results print media keeps only the client report document", async ({
   page,
 }) => {
+  await gotoScreen(page, "results");
+  const screenHeading = page.getByRole("heading", {
+    name: /Results|结果/,
+    level: 1,
+  });
+  const rail = page.locator("[data-report-manifest-rail]");
+  await expect(screenHeading).toBeVisible();
+  await expect(rail).toBeVisible();
+
   await page.emulateMedia({ media: "print" });
-  await gotoScreen(page, "report");
 
   await expect(page.locator("[data-app-shell-sidebar]")).toBeHidden();
   await expect(page.locator("[data-app-shell-topbar]")).toBeHidden();
-  await expect(page.locator("[data-report-page]")).toBeVisible();
-  await expect(page.locator("[data-report-page] h1")).toBeVisible();
+  await expect(page.locator("h1")).toBeHidden();
+  await expect(page.locator("[data-results-recheck-settled]")).toBeHidden();
+  await expect(rail).toBeHidden();
+  await expect(page.locator("button:visible")).toHaveCount(0);
+  await expect(page.locator("input:visible")).toHaveCount(0);
+  await expect(page.locator("[data-report-document]")).toBeVisible();
+  await expect(
+    page.locator("[data-report-document]").getByRole("heading", { level: 2 }),
+  ).toBeVisible();
 });

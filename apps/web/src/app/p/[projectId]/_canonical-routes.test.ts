@@ -66,13 +66,43 @@ describe("canonical project shell routes", () => {
     });
   });
 
-  it("renders the recheck Results client at /results", async () => {
+  it("renders the Results client at /results with no locale when the query is empty", async () => {
     const element = await ResultsPage({
       params: Promise.resolve({ projectId: PROJECT_ID }),
+      searchParams: Promise.resolve({}),
     });
 
     expect(element.type).toBe(mocks.ResultsClient);
-    expect(element.props).toEqual({ projectId: PROJECT_ID });
+    expect(element.props).toEqual({
+      projectId: PROJECT_ID,
+      initialOutputLocale: undefined,
+    });
+  });
+
+  it("hands a requested outputLocale deep link to the Results client verbatim", async () => {
+    const element = await ResultsPage({
+      params: Promise.resolve({ projectId: PROJECT_ID }),
+      searchParams: Promise.resolve({ outputLocale: "fr-FR" }),
+    });
+
+    expect(element.type).toBe(mocks.ResultsClient);
+    expect(element.props).toEqual({
+      projectId: PROJECT_ID,
+      initialOutputLocale: "fr-FR",
+    });
+  });
+
+  it("takes the first outputLocale when the deep link repeats the param", async () => {
+    const element = await ResultsPage({
+      params: Promise.resolve({ projectId: PROJECT_ID }),
+      searchParams: Promise.resolve({ outputLocale: ["zh-CN", "en"] }),
+    });
+
+    expect(element.type).toBe(mocks.ResultsClient);
+    expect(element.props).toEqual({
+      projectId: PROJECT_ID,
+      initialOutputLocale: "zh-CN",
+    });
   });
 });
 

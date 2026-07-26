@@ -138,7 +138,9 @@ function ReportHeader({ report }: { readonly report: Report }) {
     <header className={styles.header} data-report-cover="">
       <div className={styles.headerText}>
         <span className="sf-eyebrow">{project.clientName}</span>
-        <h1 className={styles.title}>{project.projectName}</h1>
+        {/* h2: the Results screen owns the page h1; the report document is a
+            block under it (R3 blueprint D3). */}
+        <h2 className={styles.title}>{project.projectName}</h2>
         <p className={styles.host}>{project.site.host}</p>
         <p className={styles.subtitle}>{t("subtitle")}</p>
         <p className={styles.reportDate} data-testid="report-dynamic-value">
@@ -171,9 +173,10 @@ function ReportSectionTitle({
       >
         {number}
       </span>
-      <h2 id={id} className={styles.panelTitle}>
+      {/* h3: numbered report sections sit under the document's h2 (D3). */}
+      <h3 id={id} className={styles.panelTitle}>
         {children}
-      </h2>
+      </h3>
     </div>
   );
 }
@@ -213,7 +216,9 @@ function ExecutiveSummarySection({ report }: { readonly report: Report }) {
         </article>
         <article className={styles.decisionCard}>
           <span>{t("deliveryState")}</span>
-          <strong>{t("deliveryStateValue", { count: readyDeliverables })}</strong>
+          <strong>
+            {t("deliveryStateValue", { count: readyDeliverables })}
+          </strong>
         </article>
       </div>
     </Panel>
@@ -285,7 +290,9 @@ function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
         <ReportSectionTitle number="03" id="sf-coverage-title">
           {t("dataCoverage")}
         </ReportSectionTitle>
-        <StatusPill tone={overall.tone}>{tCoverage(overall.labelKey)}</StatusPill>
+        <StatusPill tone={overall.tone}>
+          {tCoverage(overall.labelKey)}
+        </StatusPill>
       </div>
       <p className={styles.panelNote}>{t("dataCoverageNote")}</p>
       <ul className={styles.domainList} data-report-coverage-grid="">
@@ -294,7 +301,9 @@ function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
           return (
             <li key={key} className={styles.domainRow}>
               <span className={styles.domainName}>{tDomain(key)}</span>
-              <StatusPill tone={meta.tone}>{tCoverage(meta.labelKey)}</StatusPill>
+              <StatusPill tone={meta.tone}>
+                {tCoverage(meta.labelKey)}
+              </StatusPill>
             </li>
           );
         })}
@@ -430,7 +439,8 @@ function ActionCard({ action }: { readonly action: Action }) {
   return (
     <article className={styles.actionCard} data-report-action-id={action.id}>
       <div className={styles.cardHead}>
-        <h3 className={styles.actionTitle}>{action.title}</h3>
+        {/* h4: action cards nest under their h3 section title (D3). */}
+        <h4 className={styles.actionTitle}>{action.title}</h4>
         <StatusPill tone={bandTone(action.priorityBand)}>
           {tPriority(action.priorityBand)}
         </StatusPill>
@@ -478,7 +488,9 @@ function PlanSection({ actions }: { readonly actions: readonly Action[] }) {
             className={styles.roadmapLegendItem}
             data-report-roadmap-legend-item={lane}
           >
-            <span>{String(ROADMAP_LANES.indexOf(lane) + 1).padStart(2, "0")}</span>
+            <span>
+              {String(ROADMAP_LANES.indexOf(lane) + 1).padStart(2, "0")}
+            </span>
             <strong>{tLane(lane)}</strong>
             <small>{t(`laneCaption.${lane}`)}</small>
           </div>
@@ -501,7 +513,9 @@ function PlanSection({ actions }: { readonly actions: readonly Action[] }) {
             )}`}
           >
             <div className={styles.laneHead}>
-              <span className={styles.laneTitle}>{tLane(action.roadmapLane)}</span>
+              <span className={styles.laneTitle}>
+                {tLane(action.roadmapLane)}
+              </span>
               <span className={styles.laneCaption}>
                 {t(`laneCaption.${action.roadmapLane}`)}
               </span>
@@ -602,7 +616,10 @@ function MethodologySection({ report }: { readonly report: Report }) {
         </ReportSectionTitle>
       </div>
       {paragraphs.map((text, index) => (
-        <p key={`${index}:${text.slice(0, 24)}`} className={styles.methodologyText}>
+        <p
+          key={`${index}:${text.slice(0, 24)}`}
+          className={styles.methodologyText}
+        >
           {text}
         </p>
       ))}
@@ -667,7 +684,9 @@ export function ReportDocument({ report }: { readonly report: Report }) {
               <span className={styles.summaryMetric}>
                 {report.findings.length}
               </span>
-              <span className={styles.summaryLabel}>{t("summaryFindings")}</span>
+              <span className={styles.summaryLabel}>
+                {t("summaryFindings")}
+              </span>
             </span>
           </div>
           <div className={styles.summaryCard}>
