@@ -82,8 +82,14 @@ jobs:
       - name: Typecheck workspaces
         run: pnpm typecheck
 
-      - name: Run unit tests with 80% coverage thresholds
-        run: pnpm exec vitest run --project unit --coverage
+      # The 80% coverage gate moved to the `database` job, where it can be
+      # measured over unit AND integration together (see vitest.config.ts).
+      # This job still runs the unit project, and still reports — without any
+      # threshold — which files no unit test reaches at all, so the merged
+      # gate cannot quietly bury that fact. A failing unit test still fails
+      # this step; a low coverage number does not.
+      - name: Run unit tests and report files no unit test reaches
+        run: pnpm coverage:unit-gaps
 
   database:
     name: PostgreSQL 16 contract and integration tests
@@ -153,8 +159,12 @@ jobs:
       - name: Run transactional schema smoke test
         run: pnpm db:smoke
 
-      - name: Run PostgreSQL integration tests
-        run: pnpm test:integration
+      # Both projects in one process, so coverage is reported over the union.
+      # This job already has Postgres and already ran the integration project,
+      # so the marginal cost is the unit project (~17s) plus instrumentation.
+      # The 80% thresholds in vitest.config.ts gate here.
+      - name: Run unit and PostgreSQL integration tests with 80% coverage thresholds
+        run: pnpm test:coverage
 
       - name: Run PostgreSQL backup and restore recovery drill
         env:

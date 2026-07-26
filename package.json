@@ -22,6 +22,8 @@
     "test": "vitest run --project unit",
     "test:watch": "vitest",
     "test:integration": "vitest run --project integration",
+    "test:coverage": "vitest run --coverage",
+    "coverage:unit-gaps": "node scripts/report-unit-coverage-gaps.mjs",
     "test:e2e": "pnpm test:e2e:real && pnpm test:e2e:mock",
     "test:e2e:real": "playwright test --config=playwright.config.ts",
     "test:e2e:mock": "playwright test --config=playwright.mock.config.ts",

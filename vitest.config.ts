@@ -22,10 +22,44 @@ export default defineConfig({
   test: {
     passWithNoTests: true,
     coverage: {
-      // Drizzle's table/index callback declarations are exercised by the
-      // migration/schema smoke and Postgres integration gates. Unit coverage
-      // measures repository/runtime behavior rather than those declarations.
-      exclude: ["packages/db/src/schema.ts"],
+      /**
+       * The gate runs over BOTH projects at once (`vitest run --coverage`, no
+       * `--project`), so it is measured on the `database` CI job that already
+       * has Postgres and already runs the integration project.
+       *
+       * Why both: the question a coverage gate asks is "is this code tested?".
+       * Measuring only `unit` answered a different question, because the tests
+       * that verify the highest-risk behavior CANNOT be unit tests here. The
+       * repository unit suite drives a `FakeExecutor` that only records what
+       * `.where()` received, so a unit test for keyset pagination can assert
+       * "we passed some drizzle expression object" and nothing more — the shape
+       * of the implementation, never "paging loses and repeats no row". A gate
+       * that only a non-assertable test can satisfy measures the wrong thing.
+       *
+       * The threshold stays at 80%. If this merge is ever reverted, the correct
+       * response is to lower the threshold or narrow `include` AND record the
+       * reason in an ADR — never to write mock-shaped assertions to clear it.
+       *
+       * Merging hides "this file has no unit test at all", so
+       * `scripts/report-unit-coverage-gaps.mjs` prints that list as a
+       * non-blocking CI step. Do not let the caliber fix become a fig leaf.
+       */
+      exclude: [
+        // Drizzle's table/index callback declarations are exercised by the
+        // migration/schema smoke and Postgres integration gates. Coverage here
+        // measures repository/runtime behavior rather than those declarations.
+        "packages/db/src/schema.ts",
+        // Test harnesses and fixtures are test code, not product code. Only
+        // three files match: `__tests__/{full-chain-harness,
+        // current-diagnostic-fixture,project-archive-race}.ts`, which are
+        // helper modules (not `*.test.ts`) and so were counted as product.
+        "**/__tests__/**",
+        // Repo tooling, not shipped product. `backup-restore-drill.mjs` alone
+        // is 289 branches and already carries its own independent 80% branch
+        // gate (`restore:drill:test` via `node --test-coverage-branches=80`),
+        // so counting it here is double-scoring against a different suite.
+        "scripts/**",
+      ],
       thresholds: {
         statements: 80,
         branches: 80,
