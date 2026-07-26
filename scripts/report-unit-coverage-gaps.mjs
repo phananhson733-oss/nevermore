@@ -44,6 +44,26 @@ try {
       "--coverage",
       "--coverage.reporter=json-summary",
       `--coverage.reportsDirectory=${reportsDirectory}`,
+      // Without an explicit universe, Vitest 4 reports only the files the run
+      // actually loaded — so a module NO unit test imports is absent from the
+      // input rather than present at 0%, and this report could not see the one
+      // thing it exists to show. Measured on 2026-07-26: 17 files listed became
+      // 93 once the universe was declared. `.tsx` is deliberately left out;
+      // client components are covered by Playwright by design, and listing
+      // every one of them at 0% would bury the modules where a missing unit
+      // test is a real gap. Build output is excluded because `.next-*` type
+      // shims are not product code.
+      "--coverage.include=apps/**/*.ts",
+      "--coverage.include=packages/**/*.ts",
+      "--coverage.exclude=**/.next*/**",
+      "--coverage.exclude=**/*.d.ts",
+      // A CLI `--coverage.exclude` REPLACES the array in vitest.config.ts, it
+      // does not merge with it, so the gate's three exclusions have to be
+      // restated here. Leaving them off let `__tests__` helper modules into the
+      // report — test code counted as untested product code.
+      "--coverage.exclude=packages/db/src/schema.ts",
+      "--coverage.exclude=**/__tests__/**",
+      "--coverage.exclude=scripts/**",
       // Zeroed on purpose: this command reports, it does not gate. The gate
       // lives in the `database` job, over unit + integration together.
       "--coverage.thresholds.statements=0",
@@ -87,6 +107,12 @@ try {
   rows.sort((a, b) => b.total - a.total || a.file.localeCompare(b.file));
 
   const unreached = rows.filter((row) => row.unreached).length;
+  // Printed rows are capped so the report stays readable, but the cap is stated
+  // rather than silent: a truncated list that looks complete is worse than a
+  // long one.
+  const PRINT_LIMIT = 30;
+  const printed = rows.slice(0, PRINT_LIMIT);
+  const omitted = rows.length - printed.length;
 
   console.log("");
   console.log(
@@ -107,11 +133,17 @@ try {
     console.log(`No file sits at or below ${LOW_WATER_PCT}% unit branch coverage.`);
   } else {
     console.log("  unit branches           file");
-    for (const row of rows) {
+    for (const row of printed) {
       const fraction = `${row.covered}/${row.total}`.padStart(9);
       const pct = `${row.pct.toFixed(1)}%`.padStart(7);
       const mark = row.unreached ? "  <- no unit test reaches this file" : "";
       console.log(`  ${fraction} ${pct}   ${row.file}${mark}`);
+    }
+    console.log("");
+    if (omitted > 0) {
+      console.log(
+        `  … ${omitted} more file(s) at or below ${LOW_WATER_PCT}%, ordered by branch count.`,
+      );
     }
     console.log("");
     console.log(
