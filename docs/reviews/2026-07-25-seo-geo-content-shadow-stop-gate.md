@@ -2874,3 +2874,60 @@ screen's print output. Only one was a test problem, and it is fixed.
 
 **No product file was changed in this section's work, and no assertion was
 weakened.**
+
+---
+
+## 18. `restore:drill` is red on this workstation, and the reason is not the code
+
+The final gate sweep on 2026-07-26 had `pnpm restore:drill` fail with
+`type=postgres_process code=PG_TOOL_EXIT_NONZERO tool=pg_restore exit_code=1`
+and nothing else. It is **not** a regression from anything in this branch, and
+the diagnosis is recorded here so the next person does not repeat it.
+
+**Cause: client/server version skew.** Reproduced by hand outside the script —
+`pg_dump --format=custom` then `pg_restore --exit-on-error` — which prints what
+the drill does not:
+
+```
+pg_restore: error: could not execute query: ERROR:  unrecognized configuration
+parameter "transaction_timeout"
+Command was: SET transaction_timeout = 0;
+```
+
+`transaction_timeout` arrived in PostgreSQL 17. This machine resolves
+`pg_dump`/`pg_restore` from `/opt/homebrew/opt/libpq/bin` at **18.3**, while the
+server is **16.12**, so the dump carries a `SET` the server cannot parse.
+Nothing in the repository is involved.
+
+**Confirmed by fixing only the environment**: re-running with
+`/opt/homebrew/opt/postgresql@16/bin` ahead on `PATH` gives `Restore drill
+passed`. The script also already supports pinning the client directly —
+`RESTORE_DRILL_PG_BIN` takes an absolute bin directory (`:581`). CI is unaffected:
+its `database` job pairs the `postgres:16` service with the client its own step
+installs.
+
+### 18.1 A fix was written for the silence, and the script's own tests were right to reject it
+
+The obvious complaint is that the gate failed without saying why. That was
+acted on — stderr captured, bounded, redacted, surfaced in both the evidence
+file and the console — and `pnpm restore:drill:test` immediately went red on
+`scripts/backup-restore-drill.test.mjs:1220`, "CLI failure output contains only
+fixed process classification", whose sentinel is literally
+`CLI_RAW_STDERR_MUST_NOT_ESCAPE`.
+
+**The change was reverted in full rather than the test adjusted.** Discarding
+raw tool stderr is not an oversight in this script, it is a deliberate hardening
+with four sentinels guarding it, and `:992` shows what against — that test feeds
+in `# hostile markdown` and ANSI escapes alongside its sentinel. The drill's
+evidence is Markdown and JSON **uploaded as a CI artifact**; letting an external
+tool's stderr through would let it forge headings and inject control characters
+into that artifact. The fixed classification vocabulary is the point.
+
+The generalisable lesson, and the reason this subsection exists: **before
+treating silence as a defect, check whether the silence is guarded.** Four tests
+said it was, in under a minute, and they were correct.
+
+If the diagnosis gap is ever worth closing, the design-respecting shape is a
+new *enumerated* classification — a preflight comparing client and server
+versions that fails as, say, `PG_CLIENT_SERVER_SKEW` — never raw text. That is
+recorded as an option, not a recommendation; the gate is not red in CI.
