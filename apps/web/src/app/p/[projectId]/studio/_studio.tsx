@@ -85,10 +85,7 @@ import type {
 } from "@/lib/api/hooks-studio";
 import { ProblemNotice, ProblemState } from "../_problem-display";
 import { studioRunQueryOutcome } from "../_frontend-error-state.ts";
-import {
-  projectHistoryPosition,
-  projectHistoryTraversalDelta,
-} from "../_project-history-position.ts";
+import { useUnsavedNavigationGuard } from "../_unsaved-navigation-guard.ts";
 import {
   activeGenerationRecoveryReleased,
   executionLocationUrl,
@@ -353,171 +350,6 @@ function artifactsForFilter(
  * owns unsaved state. This is intentionally local to Studio and independent of
  * the Context editor's browser-local navigation bridge.
  */
-function useUnsavedArtifactNavigationGuard(
-  dirty: boolean,
-  confirmationMessage: string,
-  discardChanges: () => void,
-): void {
-  useLayoutEffect(() => {
-    if (!dirty) return;
-    const guardedUrl = window.location.href;
-    const guardedState: unknown = window.history.state;
-    const guardedPosition = projectHistoryPosition(window.history.state);
-    const guardedNavigationIndex = browserNavigationIndex();
-    let restoringTraversal = false;
-    let guardActive = true;
-
-    function beforeUnload(event: BeforeUnloadEvent): void {
-      if (!guardActive) return;
-      event.preventDefault();
-      event.returnValue = "";
-    }
-
-    function documentClick(event: MouseEvent): void {
-      if (
-        !guardActive ||
-        event.defaultPrevented ||
-        !(event.target instanceof Element)
-      ) {
-        return;
-      }
-      const anchor = event.target.closest<HTMLAnchorElement>("a[href]");
-      if (anchor === null) return;
-
-      const current = new URL(window.location.href);
-      const destination = new URL(anchor.href, current);
-      const sameDocument =
-        destination.origin === current.origin &&
-        destination.pathname === current.pathname &&
-        destination.search === current.search;
-      const internalNavigation = destination.origin === current.origin;
-      const target = anchor.getAttribute("target");
-      const modified =
-        event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
-
-      if (
-        !shouldConfirmArtifactNavigation({
-          dirty,
-          willLeaveEditor: internalNavigation && !sameDocument,
-          button: event.button,
-          modified,
-          opensNewContext:
-            target !== null && target !== "" && target !== "_self",
-          download: anchor.hasAttribute("download"),
-        })
-      ) {
-        return;
-      }
-      if (window.confirm(confirmationMessage)) {
-        guardActive = false;
-        discardChanges();
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    }
-
-    function popState(event: PopStateEvent): void {
-      if (!guardActive) return;
-      if (restoringTraversal) {
-        restoringTraversal = false;
-        return;
-      }
-      const delta = projectHistoryTraversalDelta(
-        guardedPosition,
-        event.state,
-        guardedNavigationIndex,
-        browserNavigationIndex(),
-      );
-      if (delta === 0) {
-        return;
-      }
-      if (delta === null) {
-        // Older browsers may expose neither Navigation API indices nor a stamp
-        // on the entry that predates the project shell. Never interpret that
-        // uncertainty as permission to discard edits. If the operator cancels,
-        // suppress downstream router listeners and recreate the guarded entry
-        // from its exact Next history state without reloading the document.
-        if (window.confirm(confirmationMessage)) {
-          guardActive = false;
-          discardChanges();
-          return;
-        }
-        event.stopImmediatePropagation();
-        window.history.pushState(guardedState, "", guardedUrl);
-        return;
-      }
-      if (window.confirm(confirmationMessage)) {
-        guardActive = false;
-        discardChanges();
-        return;
-      }
-
-      // popstate itself is not cancelable. Stop Next's restore handler, then
-      // traverse the exact inverse delta. The restoration event is allowed
-      // through so router state and URL settle back on the guarded entry.
-      event.stopImmediatePropagation();
-      restoringTraversal = true;
-      window.history.go(-delta);
-    }
-
-    function navigate(event: Event): void {
-      if (!guardActive) return;
-      const navigationEvent = event as BrowserNavigateEvent;
-      if (
-        navigationEvent.navigationType !== "traverse" ||
-        !navigationEvent.destination.sameDocument
-      ) {
-        return;
-      }
-      if (window.confirm(confirmationMessage)) {
-        guardActive = false;
-        discardChanges();
-        return;
-      }
-      if (event.cancelable) event.preventDefault();
-    }
-
-    const navigation = browserNavigation();
-    window.addEventListener("beforeunload", beforeUnload);
-    window.addEventListener("popstate", popState, true);
-    navigation?.addEventListener("navigate", navigate);
-    document.addEventListener("click", documentClick, true);
-    return () => {
-      window.removeEventListener("beforeunload", beforeUnload);
-      window.removeEventListener("popstate", popState, true);
-      navigation?.removeEventListener("navigate", navigate);
-      document.removeEventListener("click", documentClick, true);
-    };
-  }, [confirmationMessage, dirty, discardChanges]);
-}
-
-interface BrowserNavigateEvent extends Event {
-  readonly navigationType: string;
-  readonly destination: {
-    readonly sameDocument: boolean;
-  };
-}
-
-interface BrowserNavigation extends EventTarget {
-  readonly currentEntry?: {
-    readonly index: number;
-  };
-}
-
-function browserNavigation(): BrowserNavigation | undefined {
-  return (window as typeof window & { readonly navigation?: BrowserNavigation })
-    .navigation;
-}
-
-/** Navigation API fallback for entries created before the project shell. */
-function browserNavigationIndex(): number | null {
-  const navigation = browserNavigation();
-  const index = navigation?.currentEntry?.index;
-  return typeof index === "number" && index >= 0 ? index : null;
-}
 
 // ------------------------------------------------------------- Select --------
 
@@ -801,11 +633,12 @@ function ArtifactEditor({
     onDirtyChange(artifact.id, false);
   }, [artifact.id, onDirtyChange, savedDraft]);
 
-  useUnsavedArtifactNavigationGuard(
+  useUnsavedNavigationGuard({
     dirty,
-    t("unsavedLeaveWarning"),
-    discardLocalChanges,
-  );
+    confirmationMessage: t("unsavedLeaveWarning"),
+    discardChanges: discardLocalChanges,
+    confirmLinkClick: shouldConfirmArtifactNavigation,
+  });
 
   useEffect(() => {
     onDirtyChange(artifact.id, dirty);

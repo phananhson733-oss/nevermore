@@ -276,7 +276,8 @@
       "unsaved": "Unsaved changes",
       "noChanges": "No changes",
       "discardTitle": "Discard these edits?",
-      "discardDescription": "Your Product Profile changes have not been saved as a new version."
+      "discardDescription": "Your Product Profile changes have not been saved as a new version.",
+      "unsavedLeaveWarning": "Your Product Profile edits have not been saved. Leave this page and discard them?"
     },
     "feedback": {
       "saved": "Product Profile saved",

@@ -276,7 +276,8 @@
       "unsaved": "有未保存的更改",
       "noChanges": "没有更改",
       "discardTitle": "放弃本次编辑？",
-      "discardDescription": "这些 Product Profile 更改尚未保存为新版本。"
+      "discardDescription": "这些 Product Profile 更改尚未保存为新版本。",
+      "unsavedLeaveWarning": "Product Profile 的编辑尚未保存。要离开本页并丢弃这些更改吗？"
     },
     "feedback": {
       "saved": "Product Profile 已保存",

@@ -602,6 +602,129 @@ test("only a dirty open Product Profile editor fences the browser unload", async
   expect(await unloadIsFenced(page)).toBe(false);
 });
 
+/**
+ * The other half of the same guard, and the hole the `beforeunload` fence never
+ * covered: a client-side history pop. `inert` does not disable the back button,
+ * the modal registered no `popstate` handler, and `beforeunload` does not fire
+ * on a same-document traversal — so Back discarded a dirty editor with no
+ * prompt at all (stop gate §14.8, R4).
+ *
+ * `history.pushState` supplies the second same-document entry a shell
+ * navigation would otherwise have created, so Back is a pop rather than a
+ * document unload. `history.back()` is dispatched from the page instead of
+ * through `page.goBack()` because a refused traversal is undone by the guard,
+ * which leaves Playwright's own navigation wait with nothing to settle on.
+ *
+ * Which half of the guard answers is browser-dependent, and this project runs
+ * Chromium: the Navigation API `navigate` handler cancels the traversal before
+ * `popstate` can fire, so THIS test never reaches the `popstate` branch. That
+ * branch is what Firefox and Safari get, and it is covered separately below.
+ */
+test("browser Back asks before discarding a dirty Product Profile editor", async ({
+  page,
+}) => {
+  await installProductProfileApi(page);
+  await gotoProductProfile(page);
+  await page.evaluate(() => {
+    window.history.pushState({}, "", window.location.href);
+  });
+
+  await page.getByRole("button", { name: "编辑 Product Profile" }).click();
+  const editor = page.getByRole("dialog", {
+    name: "编辑 Product Profile 与 Primary ICP",
+  });
+  await expect(editor).toBeVisible();
+  const productName = editor.getByLabel("产品名称");
+  await productName.fill("RelayOps Global");
+  await expect(editor.getByText("有未保存的更改", { exact: true })).toBeVisible();
+
+  const prompts: string[] = [];
+  let answer = false;
+  page.on("dialog", (dialog) => {
+    prompts.push(dialog.message());
+    void (answer ? dialog.accept() : dialog.dismiss());
+  });
+
+  // Refused: the traversal is undone, and both the editor and the edit survive.
+  await page.evaluate(() => {
+    window.history.back();
+  });
+  await expect(editor).toBeVisible();
+  await expect(productName).toHaveValue("RelayOps Global");
+  expect(prompts).toEqual([
+    "Product Profile 的编辑尚未保存。要离开本页并丢弃这些更改吗？",
+  ]);
+
+  // Confirmed: the operator was asked first, which is the whole contract here.
+  answer = true;
+  await page.evaluate(() => {
+    window.history.back();
+  });
+  await expect(editor).toBeHidden();
+  expect(prompts).toHaveLength(2);
+});
+
+/**
+ * The same contract without the Navigation API, which is what Firefox and
+ * Safari run today. With `window.navigation` absent the guard registers no
+ * `navigate` listener and no traversal index is available, so the decision
+ * falls to `popstate` with an unknown delta — the branch that must never read
+ * its own uncertainty as permission to discard, and that recreates the guarded
+ * entry rather than reloading the document.
+ *
+ * Until this test existed, nothing in the repository exercised that branch:
+ * the Studio editor ships the same guard and is only ever tested in Chromium.
+ */
+test("browser Back still asks when the Navigation API is unavailable", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "navigation", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await installProductProfileApi(page);
+  await gotoProductProfile(page);
+  // `navigation` is not in TypeScript's DOM lib; assert on it through a
+  // local shape so the precondition is still checked rather than assumed.
+  const navigationApiPresent = await page.evaluate(
+    () => (window as { navigation?: unknown }).navigation !== undefined,
+  );
+  expect(navigationApiPresent).toBe(false);
+  const guardedUrl = page.url();
+  await page.evaluate(() => {
+    window.history.pushState({}, "", window.location.href);
+  });
+
+  await page.getByRole("button", { name: "编辑 Product Profile" }).click();
+  const editor = page.getByRole("dialog", {
+    name: "编辑 Product Profile 与 Primary ICP",
+  });
+  await expect(editor).toBeVisible();
+  const productName = editor.getByLabel("产品名称");
+  await productName.fill("RelayOps Global");
+  await expect(editor.getByText("有未保存的更改", { exact: true })).toBeVisible();
+
+  const prompts: string[] = [];
+  page.on("dialog", (dialog) => {
+    prompts.push(dialog.message());
+    void dialog.dismiss();
+  });
+  await page.evaluate(() => {
+    window.history.back();
+  });
+
+  await expect(editor).toBeVisible();
+  await expect(productName).toHaveValue("RelayOps Global");
+  expect(prompts).toEqual([
+    "Product Profile 的编辑尚未保存。要离开本页并丢弃这些更改吗？",
+  ]);
+  // The guarded entry is restored in place: same URL, same document, and the
+  // editor was never remounted (the field above still holds the unsaved edit).
+  expect(page.url()).toBe(guardedUrl);
+});
+
 test("does not substitute a client fixture when the canonical API is unavailable", async ({
   page,
 }) => {

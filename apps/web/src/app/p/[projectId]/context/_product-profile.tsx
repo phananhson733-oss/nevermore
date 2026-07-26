@@ -55,6 +55,7 @@ import {
 } from "@/lib/api/hooks-sources";
 import { useQueryClient } from "@tanstack/react-query";
 import { setUnsavedContextChanges } from "../_context-navigation-guard";
+import { useUnsavedNavigationGuard } from "../_unsaved-navigation-guard.ts";
 import {
   buildProductProfileViewModel,
   getFieldFactState,
@@ -310,16 +311,24 @@ function ProfileEditor({
   }, [open, profile]);
   useEffect(() => {
     setUnsavedContextChanges(open && dirty);
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!open || !dirty) return;
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", beforeUnload);
-    return () => {
-      window.removeEventListener("beforeunload", beforeUnload);
-      setUnsavedContextChanges(false);
-    };
+    return () => setUnsavedContextChanges(false);
   }, [dirty, open]);
+
+  const discardAndLeave = useCallback(() => {
+    setDiscardOpen(false);
+    onClose();
+  }, [onClose]);
+  // Owns `beforeunload` as well as the history traversals. Browser Back used to
+  // discard a dirty editor with no prompt at all: `inert` does not disable the
+  // back button, this modal registers no `popstate` handler of its own, and
+  // `beforeunload` never fires on a client-side history pop (stop gate §14.8,
+  // R4). No link-click predicate is passed — the shell is `inert` for as long
+  // as the modal is open, so such a listener could never run.
+  useUnsavedNavigationGuard({
+    dirty: open && dirty,
+    confirmationMessage: t("editor.unsavedLeaveWarning"),
+    discardChanges: discardAndLeave,
+  });
 
   const requestClose = useCallback(() => {
     if (dirty) setDiscardOpen(true);
