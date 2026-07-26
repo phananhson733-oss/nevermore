@@ -19,6 +19,12 @@ async function openStudio(page: Page): Promise<void> {
       .getByRole("heading", { name: "Turn actions into client-ready work." }),
   ).toBeVisible();
   await expect(page.locator("[data-studio-editor]" )).toBeVisible();
+  // Exactly one `main` landmark — the shell's (`layout.tsx:187`). No axe scan
+  // here can report a duplicate: the scans select WCAG tags and keep only
+  // critical/serious, while `landmark-no-duplicate-main` is best-practice at
+  // moderate (measured — stop gate §17.6c). Asserted in this spec because it
+  // is one of the few with a fixture that renders the screen for real.
+  await expect(page.getByRole("main")).toHaveCount(1);
 }
 
 async function expectNoPageOverflow(page: Page): Promise<void> {

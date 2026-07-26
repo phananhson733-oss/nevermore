@@ -228,6 +228,12 @@ test("Sources readiness exposes no blocking axe violations in its definition lis
   await expect(
     page.getByRole("region", { name: "Source readiness" }),
   ).toContainText("2 / 4");
+  // Exactly one `main` landmark — the shell's (`layout.tsx:187`). No axe scan
+  // here can report a duplicate: the scans select WCAG tags and keep only
+  // critical/serious, while `landmark-no-duplicate-main` is best-practice at
+  // moderate (measured — stop gate §17.6c). Asserted in this spec because it
+  // is one of the few with a fixture that renders the screen for real.
+  await expect(page.getByRole("main")).toHaveCount(1);
 
   const results = await new AxeBuilder({ page })
     .include('[aria-label="Source readiness"]')
