@@ -437,8 +437,14 @@ Slice 2 started (it asserts 41 tables / 38 operations / 6 async and its migratio
 list stops at 0019). CI never runs it; Vitest only collects `.ts`. **It needs its
 own commit to fix or delete.**
 
-**D4. The complete `pnpm test:e2e:mock` suite is broadly red**: 24 passed / 84
-failed of 108, about 31.5 minutes. The root cause is that the mock config's
+**D4. UPDATED by §14 (2026-07-26). The suite now has a measured, reproducible
+baseline and is 4 failed / 75 passed of 79 in 2.6 minutes**, down from 74 failed
+/ 55 passed of 129 in 28.5 minutes at `2f2bd78`. Zero new red. The three
+remaining causes and the one genuine defect found on the way are in §14.6-§14.8.
+The paragraph below is this entry as it stood before that round.**
+
+**D4 (original entry). The complete `pnpm test:e2e:mock` suite is broadly red**:
+24 passed / 84 failed of 108, about 31.5 minutes. The root cause is that the mock config's
 webServer runs `next dev --webpack` and compiles on demand, so a cold start plus
 CPU saturation makes the first hit on each heavy route time out in blocks; a
 small amount of genuine drift is layered on top. Proven unrelated to Slice 1 and
@@ -1772,3 +1778,252 @@ was re-aimed at the surface; the surface was not moved to the assertion.
   unchanged.
 - **§8.2 N-3** — branch coverage was not re-measured this round either. No
   improvement is claimed.
+
+## 14. E2E health round: the retired-screen and default-locale specs (2026-07-26)
+
+D4 has never had a measured full-suite baseline in this worktree. This round
+took one, diagnosed every failure in it, and repaired the two families it turned
+out to be made of. Nothing outside `e2e/` was modified: **not one line of
+product code changed in this round.**
+
+### 14.1 The measured baseline
+
+`pnpm test:e2e:mock` at `2f2bd78`, cold, one worker: **74 failed / 55 passed of
+129, 28.5 minutes.** The failure list is reproduced in §14.6.
+
+It is not one defect. It is two, plus four residuals:
+
+| cause | failures |
+|---|---|
+| the spec's subject is a screen the product retired | 42 |
+| the spec reads English chrome without selecting a locale | 24 |
+| stale anchors on surfaces that moved (nav href, queue affordance, page `<h1>`) | 4 |
+| the Growth Map walkthrough rewrite (out of scope, §4 D8's family) | 2 |
+| the N-1 frozen `sources-readiness` spec | 2 |
+
+### 14.2 Family one — assertions with no surface left
+
+Slice 1 collapsed the shell onto four destinations (`_nav-model.ts:25`).
+`/diagnosis`, `/plan`, `/studio` and `/report` survive only as redirects, and of
+the four clients behind them **exactly one is still mounted**: `StudioClient`,
+which `/execution` renders (`execution/_execution.tsx:29`). Studio assertions
+are therefore live and were left alone — that is why the Studio half of
+`cursor-pagination` and `frontend-error-states` needed nothing but a locale.
+
+`DiagnosisClient` (`diagnosis/_diagnosis.tsx:722`), `PlanClient`
+(`plan/_plan.tsx:1042`), `ReportClient` (`report/_report.tsx:1244`) and
+`ContextForm` (`context/_context-form.tsx:596`) are **imported by nothing**.
+`/context` renders `ProductProfilePage` instead (`context/page.tsx:8`).
+
+**Capabilities the product lost with them, and did not replace.** This is the
+part that matters more than the test count:
+
+- **Re-running a diagnosis.** `useCreateDiagnosticRun` is referenced only by
+  `_diagnosis.tsx:730`. There is no "Re-run diagnosis" control anywhere in the
+  shipped shell, and Growth Map has no run trigger.
+- **Overriding an Action's status, priority or lane.** `useUpdateAction` is
+  referenced only by `_plan.tsx:206`, and `allowedActionStatusTargets`
+  (`plan/_action-status-transitions.ts:16`, the frozen MVP status graph) only by
+  `_plan.tsx:67`. The server-side transition guard in `actions-service.ts:16`
+  is still live and still integration-tested; nothing in the UI can reach it.
+- **The client report and its export.** `hooks-report.ts` — the report read, the
+  `outputLocale` deep link, `useCreateExport`, the manifest and the download
+  link — is imported only by `_report.tsx`. `/results` replaced the route with a
+  read-only recheck comparison (`results/_results.tsx`) that has no locale,
+  export or manifest affordance.
+
+Those three are recorded as a product finding, not as a test problem. The specs
+that guarded them are deleted because a permanently red test guards nothing;
+the capability gap is what needs an owner decision.
+
+**Deleted in full** (only subject is a retired screen): `diagnosis-evidence`
+(11), `diagnosis-nonblocking-snapshots` (3), `plan-lane-layout` (5),
+`plan-status-transitions` (4), `report-workspace` (4),
+`report-artifact-convergence` (5), `context-localization-guard` (9).
+
+**Deleted individually**, each with its reason left in the file where the test
+stood: `cursor-pagination` (2 Diagnosis pagination, 1 Plan pagination),
+`critical-flows` (Diagnosis review, 2 Report export/locale),
+`frontend-error-states` (zh-CN Diagnosis review, 2 Report export).
+
+**Where a deleted assertion's guarantee still lives, that is written into the
+file next to the deletion**: findings-page merge and snapshot selection in
+`lib/api/hooks-diagnosis-pagination.test.ts:95/:123/:166`; finding confirmation
+on Growth Map in `growth-map.mock.spec.ts:181`; export error mapping in
+`p/[projectId]/frontend-error-states.test.ts:105`; action cursor pagination in
+`cursor-pagination`'s own surviving Execution test.
+
+**Ported, not dropped.** The Context editor's unsaved-work fence still exists —
+`setUnsavedContextChanges` has one writer left, `_product-profile.tsx:312` — so
+its `beforeunload` half moved to `product-profile.mock.spec.ts` against the
+surface that owns it now. The **nav-link half was not ported and was not
+asserted away**: it cannot fire. The editor is a modal that marks every
+background element `inert` while open (`_product-profile.tsx:207`), and the flag
+is only ever true while that modal is open, so the confirm in `_nav.tsx:97` is
+unreachable from the product. Second finding, same character as the three above.
+
+### 14.3 Family two — specs that never chose a locale
+
+`DEFAULT_LOCALE` is `zh-CN` (`packages/i18n/src/config.ts:6`). Five specs
+asserted English chrome without setting `sf_ui_locale`, so each died at its
+first English locator. They now set the cookie in `beforeEach`, the same
+mechanism `studio-first-paint`, `studio-workspace`, `studio-multi-run`,
+`mobile-shell`, `growth-map` and `audit-technical-vertical` already use.
+
+The bilingual halves were **not** collapsed to one language. Every test that
+asserts Chinese chrome already clicks the in-app locale switch, whose button
+labels are locale-independent `aria-label`s (`components/ui/LocaleSwitch.tsx:9`),
+so it still works from an English page. After this round no assertion in these
+files depends on the default: `critical-flows`, `dataforseo-source` and
+`frontend-error-states` still prove both languages, each selected on purpose.
+
+`sources-layout` was not on the reported list and is the same defect; it is
+fixed. `sources-readiness` has the identical defect and is **deliberately left
+red** — it is inside the N-1 freeze this round was told not to touch. The fix
+is the same six lines whenever the freeze lifts.
+
+### 14.4 Re-aimed, at equal or greater strength
+
+| spec | what moved | how it is read now |
+|---|---|---|
+| `critical-flows` "project navigation exposes live destinations" | the Overview rewrite deleted its "Preview report" and "Review diagnosis" links (`overview.previewReport` / `overview.reviewDiagnosis` are now referenced by no component) and moved the stage pill to the topbar | all four shell destinations, their exact hrefs, **and that there are exactly four**; stage localization on the topbar pill. Strictly more than the two links it read |
+| `cursor-pagination` "Studio protects unsaved content and notes" | Plan/Studio/Report are no longer sidebar links; Execution round-trips editor state through `?actionId=&artifactId=` | same fence, same count of link navigations and browser traversals, retargeted Plan→Results, Studio→Execution, Report→Overview; URL assertions compare the pathname exactly and stay silent about the screen's own query |
+| `frontend-error-states` 409 recovery fence | the unified queue withholds a fenced row's regenerate handler instead of disabling it (`_studio.tsx:3089`, `:711`, `:705`) | the control's **absence** plus a disabled Open — two observables where there was one |
+| `frontend-error-states` axe loop | `plan` and `studio` both redirect to `/execution`, so it scanned one page twice under two retired names | it names that page |
+| `sources-layout` diagnosis CTA | the href moved to `/growth-map?object=pages` | still an exact href |
+| `csp-development` | anchored on `overview.heroTitle`, which no component renders; and the Overview's three new reads are answered by the fixture's 501 tripwire, which Chromium logs as console errors — so `browserErrors` was reading the fixture, not the runtime | runs on Sources, a canonical screen the same fixture serves completely. **No assertion changed** |
+
+### 14.5 Mutation evidence
+
+Every repaired spec was proven by breaking the product guarantee it guards and
+watching it go red. All seven mutations were reverted; `git status` over
+`apps/` and `packages/` is clean.
+
+| mutation | file | spec | result |
+|---|---|---|---|
+| `shouldConfirmArtifactNavigation` always false | `studio/_artifact-editor-state.ts:29` | `cursor-pagination` | **red** — "Studio protects unsaved content and notes" (1 failed / 4 passed) |
+| Results nav item points at `report` | `_nav-model.ts:44` | `critical-flows` | **red** — "project navigation exposes live destinations" (1 / 5) |
+| problem display drops `requestId` | `_problem-display.tsx:25` | `frontend-error-states` | **red** — 3 tests (Sources query errors, Studio generation errors, the 409 fence) (3 / 9) |
+| enabled DataForSEO slot renders no controls | `sources/_sources.tsx:1392` | `dataforseo-source` | **red** — "enabled DataForSEO slot collects…" (1 / 1) |
+| development `style-src` gains a nonce | `apps/web/security-headers.ts:22` | `csp-development` | **red** (1 / 0) |
+| editor `beforeunload` never fences | `context/_product-profile.tsx:313` | `product-profile` | **red** — the ported "only a dirty open Product Profile editor fences the browser unload" (1 / 7) |
+| diagnosis CTA href → `object=keywords` | `sources/_sources.tsx:1793` | `sources-layout` | **red** — "Sources exposes the diagnosis CTA…" (1 / 1) |
+
+The locale family needs no separate mutation: **the §14.1 baseline is that
+mutation.** Without the cookie every one of those tests is red at its first
+English locator, which is exactly what the pre-change run records.
+
+### 14.6 Before / after, and the proof of zero new red
+
+`pnpm test:e2e:mock`, full suite, cold, one worker, both runs in this worktree:
+
+| | tests | passed | failed | wall |
+|---|---|---|---|---|
+| before (`2f2bd78`) | 129 | 55 | **74** | 28.5m |
+| after (`54cab8d`) | 79 | 75 | **4** | 2.6m |
+
+**The after-failure set is a strict subset of the before-failure set. New red: 0.**
+
+Every one of the 74 baseline failures is accounted for: 70 no longer fail, 4
+still do. Nothing that passed before fails now.
+
+| still red | why | in scope? |
+|---|---|---|
+| `frontend-error-states:615` "Studio releases a 409 recovery fence when the canonical run has already settled" | **genuine disagreement — see §14.7.** Not masked | in scope, deliberately left red |
+| `growth-map.mock.spec.ts:124` "reviews only the canonical Opportunity…" | the Growth Map walkthrough rewrite | out of scope by instruction |
+| `sources-readiness.mock.spec.ts:105` and `:163` | the same default-locale defect as §14.3 | out of scope: N-1 freeze |
+
+One baseline failure was neither of the two families:
+`audit-technical-vertical` "proves the technical opportunity vertical without
+any lift claim" failed the cold 28.5-minute baseline waiting for
+`[data-growth-map-page]` and **passes in the 2.6-minute after run, unchanged**.
+That is the §4 D4 cold-compile-under-saturation cause, now visible for what it
+is: the suite that used to take 28.5 minutes takes 2.6, because the specs that
+timed out in 45-second blocks were the ones asserting screens that no longer
+render anything they were waiting for.
+
+### 14.7 The one genuine defect this round found and did not fix
+
+`frontend-error-states:615` asserts that a `RUN_ALREADY_ACTIVE` (409) recovery
+fence **releases automatically** once the canonical artifact projection shows
+the conflicting run has settled. It does not. Measured behaviour at HEAD:
+the recovery entry stays in `activeGenerationRecoveries`, the row keeps no
+regenerate control, `Open` stays disabled, and the
+`[data-studio-conflict-recovery]` banner stays on screen with an enabled
+"Retry generation status" button. The operator must click it.
+
+That is deliberate, not accidental. `resolveActiveGenerationRecovery`
+(`execution/_execution-deep-link.ts:236`) is documented fail-closed — "Other
+action/type matches are stale candidates, not evidence that the unknown winner
+settled" — because a 409 does not name the winning run
+(`_studio.tsx:1795`). When the refetch finds no live run it takes the
+`leaveRecoveryPending` branch (`_studio.tsx:2716`), which clears `refreshing`
+but keeps the fence.
+
+So the spec and the implementation encode two different contracts, and both are
+defensible: release-on-settled is more usable, hold-until-proven is safer
+against a duplicate generation. **This needs an owner decision, not a test
+edit**, so the test was left red rather than rewritten to whichever contract is
+cheaper to assert. Its first half was re-aimed (§14.4) precisely so that it now
+fails at the disagreement itself instead of at a stale locator.
+
+### 14.8 Product findings, ranked
+
+None of these is a test problem. All four are capability gaps found by asking
+what each red test was guarding.
+
+1. **No UI can run a diagnosis.** `useCreateDiagnosticRun` is referenced only by
+   the unmounted `_diagnosis.tsx:730`.
+2. **No UI can override an Action's status, priority or lane.** `useUpdateAction`
+   and the frozen status graph are referenced only by the unmounted `_plan.tsx`.
+   The server guard (`actions-service.ts:16`) is unreachable from the product.
+3. **No UI produces the client report or its export.** All of `hooks-report.ts`
+   is referenced only by the unmounted `_report.tsx`. `/results` is a read-only
+   recheck comparison.
+4. **The Context navigation confirm is unreachable.** `_nav.tsx:97` only fires
+   while `hasUnsavedContextChanges()` is true, and its only writer sets it true
+   only while a modal that marks the nav `inert` is open.
+
+### 14.9 N-1
+
+`git diff 2f2bd78..HEAD` over `apps/web/src/app/p/[projectId]/overview`,
+`.../growth-map` and `.../sources`: **empty**. This round changed no product
+code at all — the whole diff is `e2e/` plus this document. Every drifted
+assertion was moved to the shipped surface; no surface was moved to an
+assertion. `sources-readiness.mock.spec.ts` was not touched.
+
+### 14.10 Gate results
+
+| gate | result |
+|---|---|
+| `pnpm test:e2e:mock` (full suite) | **4 failed / 75 passed of 79**, from 74/55 of 129. Zero new red |
+| `pnpm lint` / `typecheck` / `build` | pass |
+| `git diff --check` | clean |
+| `pnpm verify:spec` | pass — **49 operations / 9 async / 44 tables / 11 rules** |
+| `pnpm verify:authority` / `implementation:check` | pass |
+| `pnpm openapi:lint` / `contracts:check` | pass — no generated diff |
+| `pnpm deploy:check` / `vendor:check` / `secrets:scan` | pass |
+| `pnpm db:migrate` / `db:smoke` | pass |
+| `pnpm db:migrate:check` | pass — **44 / 56 / 69 / 18** |
+| `pnpm test:integration` | pass — 66 files / 482 tests |
+| unit + integration `--coverage` | pass — 377 files / 4480 tests; **91.02 stmts / 84.81 branch / 94.71 funcs / 92.64 lines**, branch unchanged at 84.8% |
+| `pnpm restore:drill` / `restore:drill:test` | pass (with `RESTORE_DRILL_PG_BIN`) — 38/38, coverage above thresholds |
+
+**Zero migrations, zero contract change, zero product-code change.**
+
+### 14.11 Still open after this round
+
+- **§4 D4 is no longer "no trustworthy baseline"** — there is one, it is in
+  §14.6, and it is reproducible in under three minutes. What remains is the
+  four failures named there.
+- **§14.7** — the 409 recovery-fence contract needs an owner ruling.
+- **§14.8** — four capability gaps, unrelated to tests.
+- **`sources-readiness`** — two failures, one six-line fix, blocked only by the
+  N-1 freeze.
+- **§4 D8 / `growth-map.mock.spec.ts:124`** — unchanged; the Growth Map
+  walkthrough rewrite is still its own task. The walkthrough coverage deleted in
+  §14.2 (evidence provenance and the focus-restoring drawer, qualitative
+  coverage states, domain/severity filter intersection, the not-run coverage
+  band, and the three-viewport a11y sweep) was written against the retired
+  Diagnosis screen; if Growth Map is meant to carry those guarantees, that task
+  is where they belong, and this list is its checklist.
