@@ -2933,10 +2933,24 @@ the mutation ran before the commit.
 The assertion therefore goes where a real fixture already exists: Overview
 (`fde119d`, via `openOverview(page, readyScenario())`) and Growth Map
 (`23138ef`, which renders in full under the shared fixture and is
-mutation-verified by turning its page root into a `<main>`). **The remaining
-four need per-screen fixtures before a per-PR landmark check means anything**,
-and that is recorded rather than faked; `a11y.spec.ts:39` covers all six today
-in the database-backed suite, using the same strict locator.
+mutation-verified by turning its page root into a `<main>`). All six shipped destinations now carry the check in the suite a pull request
+runs: Overview (`fde119d`), Growth Map (`23138ef`), Sources, Context and
+Execution (`19f01ca`, each placed after its own fixture has rendered rather than
+after the `goto`, because the defect lives in the ready state), and Results
+(`9a15daf`).
+
+Results took one more correction. It was recorded as having no mock fixture;
+in fact `recheckResultsFixture()` is complete, but its route lives in
+`installGrowthVerticalApi`, layered over the critical-flow installer on purpose
+(`mock-api.ts:1060`). A spec on the base installer gets **501** for that
+endpoint and renders an error state — which is exactly what the probe saw.
+Reading that as "no fixture exists" would have led to duplicating a route the
+layering deliberately keeps in one place; the assertion went to
+`audit-technical-vertical.mock.spec.ts` instead, which installs the vertical and
+walks to the comparison.
+
+`a11y.spec.ts:39` continues to cover all six in the database-backed suite with
+the same strict locator.
 
 ### 17.6c Measured: no axe scan here could ever have caught the duplicate landmark
 
