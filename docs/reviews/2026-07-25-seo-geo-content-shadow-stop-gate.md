@@ -2650,12 +2650,30 @@ visual baseline snapshot was regenerated. Zero migrations, zero contract change.
 
 ### 16.7 Known residuals from this round
 
-- **The fence still does not survive a route change.** §16.4 measured this and
-  §16 does not fix it. While a conflicting run is genuinely live, an operator who
-  navigates away and back can start a duplicate generation. Making it survive
-  means lifting the recovery list above the page — the same shape of change as
-  persisting it in the URL or a shared store — and it is a larger decision than
-  this round was scoped for.
+- **The fence still does not survive a route change** — but the consequence was
+  overstated, and is corrected here (2026-07-26). The original wording said an
+  operator "can start a duplicate generation". They cannot. `activeGenerationRecoveries`
+  is component state and is lost on remount, so during the new mount's projection
+  refetch the control is briefly live again — but the request that follows is
+  refused by the server: `artifacts.ts:263` scopes the run to
+  `activeKey = artifact:${artifactId}`, `:466` handles the
+  `async_runs_one_active_key_idx` violation, `:488` resolves the winner and `:162`
+  raises `RUN_ALREADY_ACTIVE`, with the unique index itself declared at
+  `0001_init.sql:318`. **The integrity boundary is the database and the service,
+  not the fence.**
+
+  So the real behaviour is: one doomed POST inside the remount window, answered
+  409, which re-arms the fence. The operator sees a transient error instead of a
+  suppressed control. That is a UX defect, not a correctness one, and it does not
+  produce a second run.
+
+  The fix is still the same shape — lift the recovery list above the page, or use
+  a module-scoped store as `_context-navigation-guard.ts` already does for the
+  Context dirty flag, which is a smaller change than "architectural" implied.
+  **It is deliberately not being done blind:** the reproduction has to drive the
+  narrow window in which the projection has not yet completed, and a test that
+  arms the fence against a *settled* projection would prove nothing, because
+  §16 correctly releases the fence in that case.
 - **Nothing re-resolves the fence on its own after an incomplete projection.**
   When the cursor set is incomplete the fence correctly stays, the auto-pagination
   effect fetches more pages, and no code re-runs `recoverAlreadyActive` when they
