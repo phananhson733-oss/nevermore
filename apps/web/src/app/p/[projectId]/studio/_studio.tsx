@@ -117,6 +117,7 @@ import {
   markReadyBlock,
   shouldConfirmArtifactNavigation,
 } from "./_artifact-editor-state.ts";
+import { ActionOverride } from "./_action-override";
 import styles from "./studio.module.css";
 
 // ----------------------------------------------------------- Tone helpers ----
@@ -1085,15 +1086,18 @@ function ExecutionTargetState({
 }
 
 function EvidenceRail({
+  projectId,
   artifact,
   action,
 }: {
+  readonly projectId: string;
   readonly artifact: Artifact | null;
   readonly action: ArtifactAction | undefined;
 }) {
   const t = useTranslations("studio");
   const tLane = useTranslations("lane");
   const tBand = useTranslations("priorityBand");
+  const tStatus = useTranslations("actionStatus");
 
   return (
     <Panel
@@ -1129,7 +1133,15 @@ function EvidenceRail({
                 <div className={styles.railBadges}>
                   <Badge tone="accent">{tLane(action.roadmapLane)}</Badge>
                   <Badge>{tBand(action.priorityBand)}</Badge>
+                  <Badge data-action-status-badge="">
+                    {tStatus(action.status)}
+                  </Badge>
                 </div>
+                <ActionOverride
+                  key={action.id}
+                  projectId={projectId}
+                  action={action}
+                />
               </>
             ) : null}
           </section>
@@ -3066,7 +3078,11 @@ export function StudioClient({
           )}
         </section>
 
-        <EvidenceRail artifact={selected} action={selectedAction} />
+        <EvidenceRail
+          projectId={projectId}
+          artifact={selected}
+          action={selectedAction}
+        />
       </div>
     </div>
   );

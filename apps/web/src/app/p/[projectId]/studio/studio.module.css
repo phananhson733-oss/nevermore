@@ -879,3 +879,211 @@
   font-size: var(--sf-text-base);
   color: var(--sf-muted);
 }
+
+/* ------------------------------------------------- Action override -------- */
+/* Rail trigger + modal dialog (R2 blueprint D1/D2). The form symbols are the
+   Plan override set (plan.module.css) re-homed for the dialog, with the grid
+   deliberately single-column: the 238px rail only ever hosts the trigger. */
+.overrideTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 7px 12px;
+  color: var(--sf-cobalt-text);
+  font-size: var(--sf-studio-readable-sm);
+  font-weight: 700;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: var(--sf-radius-control);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.overrideTrigger:hover {
+  border-color: var(--sf-fg);
+}
+.overrideBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(17, 25, 35, 0.57);
+  backdrop-filter: blur(4px);
+}
+.overrideDialog {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 18px;
+  box-shadow: var(--sf-shadow-md);
+}
+.overrideConfirmBox {
+  width: min(440px, 100%);
+  overflow: auto;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 18px;
+  box-shadow: var(--sf-shadow-md);
+}
+.overrideForm {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 22px;
+}
+.overrideHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 14px;
+  align-items: start;
+}
+.overrideHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sectionKicker {
+  color: var(--sf-fg);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+.overrideTitle {
+  margin: 4px 0 0;
+  color: var(--sf-fg);
+  font-family: var(--sf-font-display);
+  font-size: 24px;
+  font-weight: 680;
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+}
+.overrideDesc {
+  margin: 6px 0 0;
+  color: var(--sf-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.overrideClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  color: var(--sf-muted);
+  background: transparent;
+  border: 1px solid var(--sf-border);
+  border-radius: 50%;
+}
+.overrideClose:hover {
+  color: var(--sf-fg);
+  border-color: var(--sf-fg);
+}
+.overrideGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.overrideKept {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--sf-fg);
+  font-size: 12px;
+  line-height: 1.45;
+  background: var(--sf-cobalt-soft);
+  border-radius: 9px;
+}
+.overrideKept svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--sf-cobalt-text);
+}
+.overrideError {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--sf-fg);
+  font-size: 14px;
+  font-weight: 650;
+  background: var(--sf-coral-soft);
+  border: 1px solid var(--sf-coral);
+  border-radius: 9px;
+}
+.overrideActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.selectInvalid {
+  border-color: var(--sf-coral);
+}
+.overrideConfirm {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 30px;
+}
+.overrideConfirm > svg {
+  color: var(--sf-coral-text);
+}
+.overrideConfirm h2 {
+  margin: 0;
+  font-family: var(--sf-font-display);
+  font-size: 24px;
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+}
+.overrideConfirm p {
+  margin: 0 0 8px;
+  color: var(--sf-muted);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.overrideConfirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: 8px;
+}
+.overrideDanger {
+  background: var(--sf-coral);
+  border-color: var(--sf-coral);
+}
+
+@media (max-width: 560px) {
+  .overrideBackdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .overrideDialog,
+  .overrideConfirmBox {
+    width: 100%;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+  }
+  .overrideDialog {
+    max-height: 92dvh;
+  }
+  .overrideForm {
+    padding: 18px 14px 26px;
+  }
+  .overrideActions > button,
+  .overrideConfirmActions > button {
+    flex: 1;
+  }
+}

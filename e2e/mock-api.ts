@@ -1263,3 +1263,232 @@ export async function installGrowthVerticalApi(
 
   return state;
 }
+
+/* ------------------------------------------------------------------ *
+ * R2 Action override mock (Execution rail dialog). Blueprint D7: the  *
+ * action store is MUTABLE - a successful PATCH applies the change and *
+ * advances the revision, and every later GET /actions observes it, so *
+ * specs assert UI state and the next request's baseRevision instead   *
+ * of only counting requests. The stale-409 toggle bumps the action    *
+ * (status -> blocked, revision + 1) BEFORE refusing, modelling a      *
+ * concurrent operator; the illegal-409 toggle refuses with the        *
+ * revision unmoved, modelling the transition-guard branch that shares *
+ * VERSION_CONFLICT on the server (actions-service.ts).                *
+ * ------------------------------------------------------------------ */
+
+export type MockOverrideAction = typeof action;
+
+export function overrideActionFixture(
+  n: number,
+  overrides: Partial<MockOverrideAction> = {},
+): MockOverrideAction {
+  return {
+    ...action,
+    id: `00000000-0000-4000-8000-0000000009${String(n).padStart(2, "0")}`,
+    title: `Override action ${n}`,
+    ...overrides,
+  };
+}
+
+export function overrideArtifactFixture(n: number, actionId: string) {
+  return {
+    ...artifact,
+    id: `00000000-0000-4000-8000-0000000008${String(n).padStart(2, "0")}`,
+    actionId,
+    current: {
+      ...artifact.current,
+      id: `00000000-0000-4000-8000-0000000007${String(n).padStart(2, "0")}`,
+    },
+  };
+}
+
+export interface ActionOverrideApiState {
+  readonly critical: CriticalFlowApiState;
+  readonly actionPatchRequests: {
+    readonly actionId: string;
+    readonly body: unknown;
+  }[];
+  /** Mutable current truth behind GET /actions and PATCH /actions/{id}. */
+  readonly currentActions: MockOverrideAction[];
+  conflictMode: "none" | "stale" | "illegal";
+  /**
+   * While true, every first-page GET /actions read 500s. Persistent rather
+   * than one-shot: the app's QueryClient retries a failed query once, so a
+   * single injected failure would be absorbed by the retry.
+   */
+  failActionsGet: boolean;
+  /** While true, every cursor-bearing GET /actions read 500s. */
+  failActionsPage: boolean;
+  actionsGetCount: number;
+}
+
+export async function installActionOverrideApi(
+  page: Page,
+  options: {
+    readonly actions: readonly MockOverrideAction[];
+    readonly artifacts?: readonly ReturnType<typeof overrideArtifactFixture>[];
+    /** Split GET /actions into cursor pages of this size (default: one page). */
+    readonly actionsPageSize?: number;
+  },
+): Promise<ActionOverrideApiState> {
+  const critical = await installCriticalFlowApi(page);
+  const state: ActionOverrideApiState = {
+    critical,
+    actionPatchRequests: [],
+    currentActions: options.actions.map((item) => ({ ...item })),
+    conflictMode: "none",
+    failActionsGet: false,
+    failActionsPage: false,
+    actionsGetCount: 0,
+  };
+  const artifacts = options.artifacts ?? [];
+  const pageSize = options.actionsPageSize ?? Number.MAX_SAFE_INTEGER;
+
+  // Trailing ** so the limit/cursor query still matches; anything that is not
+  // the artifact list read (e.g. PATCH /artifacts/{id}) falls through to the
+  // broad critical-flow handler.
+  await page.route(`**${BASE}/artifacts**`, async (route) => {
+    const listUrl = new URL(route.request().url());
+    if (
+      route.request().method() !== "GET" ||
+      listUrl.pathname !== `${BASE}/artifacts`
+    ) {
+      await route.fallback();
+      return;
+    }
+    await json(route, listEnvelope(artifacts));
+  });
+
+  // The Execution workspace also reads Content Shadow runs; keep the surface
+  // clean (no injected 501 alert) with an honest empty list.
+  await page.route(`**${BASE}/content-shadow-runs**`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await json(route, listEnvelope([]));
+  });
+
+  await page.route(`**${BASE}/actions**`, async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const url = new URL(request.url());
+    const path = url.pathname;
+
+    if (method === "GET" && path === `${BASE}/actions`) {
+      state.actionsGetCount += 1;
+      const cursor = url.searchParams.get("cursor");
+      if (cursor === null && state.failActionsGet) {
+        await json(
+          route,
+          problem("INTERNAL", "Injected actions read failure.", 500),
+          500,
+        );
+        return;
+      }
+      if (cursor !== null && state.failActionsPage) {
+        await json(
+          route,
+          problem("INTERNAL", "Injected actions page failure.", 500),
+          500,
+        );
+        return;
+      }
+      const pageIndex =
+        cursor === null
+          ? 0
+          : Number.parseInt(cursor.replace("actions-page-", ""), 10);
+      const start = pageIndex * pageSize;
+      const slice = state.currentActions
+        .slice(start, start + pageSize)
+        .map((item) => ({ ...item }));
+      const hasNext = start + pageSize < state.currentActions.length;
+      await json(route, {
+        data: slice,
+        meta: {
+          nextCursor: hasNext ? `actions-page-${pageIndex + 1}` : null,
+          hasNext,
+          limit: 100,
+        },
+      });
+      return;
+    }
+
+    const patchPrefix = `${BASE}/actions/`;
+    if (method === "PATCH" && path.startsWith(patchPrefix)) {
+      const actionId = path.slice(patchPrefix.length);
+      if (!actionId.includes("/")) {
+        const body = request.postDataJSON() as {
+          readonly baseRevision?: number;
+          readonly status?: string;
+          readonly priorityBand?: string;
+          readonly roadmapLane?: string;
+        };
+        state.actionPatchRequests.push({ actionId, body });
+        const current = state.currentActions.find(
+          (item) => item.id === actionId,
+        );
+        if (current === undefined) {
+          await json(
+            route,
+            problem("NOT_FOUND", "Action not found.", 404),
+            404,
+          );
+          return;
+        }
+        if (state.conflictMode === "stale") {
+          current.status = "blocked";
+          current.revision += 1;
+          await json(
+            route,
+            problem(
+              "VERSION_CONFLICT",
+              "Action was modified; refetch and retry.",
+              409,
+            ),
+            409,
+          );
+          return;
+        }
+        if (state.conflictMode === "illegal") {
+          await json(
+            route,
+            problem(
+              "VERSION_CONFLICT",
+              "Requested action status transition is not allowed.",
+              409,
+            ),
+            409,
+          );
+          return;
+        }
+        if (body.baseRevision !== current.revision) {
+          await json(
+            route,
+            problem(
+              "VERSION_CONFLICT",
+              "Action was modified; refetch and retry.",
+              409,
+            ),
+            409,
+          );
+          return;
+        }
+        if (typeof body.status === "string") current.status = body.status;
+        if (typeof body.priorityBand === "string") {
+          current.priorityBand = body.priorityBand;
+        }
+        if (typeof body.roadmapLane === "string") {
+          current.roadmapLane = body.roadmapLane;
+        }
+        current.revision += 1;
+        await json(route, { data: { ...current } });
+        return;
+      }
+    }
+
+    await route.fallback();
+  });
+
+  return state;
+}

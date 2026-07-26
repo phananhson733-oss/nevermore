@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adoptActionIntoPages,
   INITIAL_OVERRIDE_STATE,
   OVERRIDE_NOTE_MAX,
   OVERRIDE_REASON_MAX,
@@ -413,5 +414,42 @@ describe("reduceOverride", () => {
     const resubmitted = reduceOverride(stale, { type: "submit" });
     expect(resubmitted.phase).toBe("submitting");
     expect(resubmitted.notice).toBeNull();
+  });
+});
+
+// ------------------------------------------------- success cache adoption --
+
+describe("adoptActionIntoPages", () => {
+  const item = (id: string, revision: number) => ({ id, revision });
+  const cache = {
+    pages: [
+      { data: [item("a", 1), item("b", 1)], meta: { nextCursor: "p1" } },
+      { data: [item("c", 3)], meta: { nextCursor: null } },
+    ],
+    pageParams: [null, "p1"],
+  };
+
+  it("replaces a staler cached row immutably and keeps untouched pages by reference", () => {
+    const updated = item("b", 2);
+    const next = adoptActionIntoPages(cache, updated);
+    expect(next).not.toBe(cache);
+    expect(next?.pages[0]?.data[1]).toBe(updated);
+    expect(next?.pages[0]?.data[0]).toBe(cache.pages[0]!.data[0]);
+    expect(next?.pages[1]).toBe(cache.pages[1]);
+    // The original cache was never mutated.
+    expect(cache.pages[0]!.data[1]).toEqual(item("b", 1));
+  });
+
+  it("is a reference no-op when the cache already holds an equal or newer revision", () => {
+    expect(adoptActionIntoPages(cache, item("c", 3))).toBe(cache);
+    expect(adoptActionIntoPages(cache, item("c", 2))).toBe(cache);
+  });
+
+  it("is a reference no-op for an id outside the loaded window", () => {
+    expect(adoptActionIntoPages(cache, item("zz", 9))).toBe(cache);
+  });
+
+  it("passes undefined through so setQueryData leaves an empty cache alone", () => {
+    expect(adoptActionIntoPages(undefined, item("a", 2))).toBeUndefined();
   });
 });

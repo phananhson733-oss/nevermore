@@ -1,3 +1,4 @@
+import type { InfiniteData } from "@tanstack/react-query";
 import type {
   ActionStatus,
   PriorityBand,
@@ -313,4 +314,39 @@ export function overrideControlsLocked(state: OverrideState): boolean {
 /** Retry-refresh is the single exit from a failed conflict refresh. */
 export function overrideRetryAvailable(state: OverrideState): boolean {
   return state.phase === "conflictRefreshError";
+}
+
+// ------------------------------------------------- success cache adoption --
+
+/**
+ * Guarded, immutable success-path cache write (D5). The mutation hook has
+ * already invalidated and awaited a refetch by the time the caller runs, so
+ * this only takes effect when that refetch failed or raced: a cached row is
+ * replaced ONLY while it is staler than the successful PATCH response, and
+ * every untouched page keeps its reference so no unrelated render is forced.
+ */
+export function adoptActionIntoPages<
+  T extends { readonly id: string; readonly revision: number },
+  P extends { readonly data: readonly T[] },
+>(
+  data: InfiniteData<P, string | null> | undefined,
+  updated: T,
+): InfiniteData<P, string | null> | undefined {
+  if (data === undefined) return undefined;
+  let changed = false;
+  const pages = data.pages.map((page) => {
+    let pageChanged = false;
+    const items = page.data.map((item) => {
+      if (item.id !== updated.id || item.revision >= updated.revision) {
+        return item;
+      }
+      pageChanged = true;
+      return updated;
+    });
+    if (!pageChanged) return page;
+    changed = true;
+    // Only `data` is replaced; the page keeps its meta and remains page-shaped.
+    return { ...page, data: items } as P;
+  });
+  return changed ? { ...data, pages } : data;
 }
