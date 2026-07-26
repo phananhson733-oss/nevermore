@@ -118,6 +118,10 @@ import {
   shouldConfirmArtifactNavigation,
 } from "./_artifact-editor-state.ts";
 import { ActionOverride } from "./_action-override";
+import {
+  linkedActionRailState,
+  type LinkedActionRailState,
+} from "./_action-override-view-model";
 import styles from "./studio.module.css";
 
 // ----------------------------------------------------------- Tone helpers ----
@@ -1089,12 +1093,17 @@ function EvidenceRail({
   projectId,
   artifact,
   action,
+  linkedActionState,
+  onLinkedActionRetry,
 }: {
   readonly projectId: string;
   readonly artifact: Artifact | null;
   readonly action: ArtifactAction | undefined;
+  readonly linkedActionState: LinkedActionRailState;
+  readonly onLinkedActionRetry: () => void;
 }) {
   const t = useTranslations("studio");
+  const tCommon = useTranslations("common");
   const tLane = useTranslations("lane");
   const tBand = useTranslations("priorityBand");
   const tStatus = useTranslations("actionStatus");
@@ -1123,7 +1132,10 @@ function EvidenceRail({
           <section className={styles.railSection}>
             <span className={styles.railLabel}>{t("linkedAction")}</span>
             <h3 className={styles.linkedActionTitle}>
-              {action?.title ?? t("linkedActionUnavailable")}
+              {action?.title ??
+                (linkedActionState === "exhausted"
+                  ? t("linkedActionOutsideLoaded")
+                  : t("linkedActionUnavailable"))}
             </h3>
             {action !== undefined ? (
               <>
@@ -1142,6 +1154,32 @@ function EvidenceRail({
                   projectId={projectId}
                   action={action}
                 />
+              </>
+            ) : linkedActionState === "loading" ? (
+              <p
+                className={styles.linkedActionDescription}
+                role="status"
+                data-linked-action-loading=""
+              >
+                {tCommon("loadingMore")}
+              </p>
+            ) : linkedActionState === "error" ? (
+              <>
+                <p
+                  className={styles.linkedActionDescription}
+                  role="alert"
+                  data-linked-action-error=""
+                >
+                  {tCommon("loadMoreError")}
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={onLinkedActionRetry}
+                  data-linked-action-retry=""
+                >
+                  {tCommon("retry")}
+                </Button>
               </>
             ) : null}
           </section>
@@ -1662,6 +1700,7 @@ export function StudioClient({
   const lastServerExecutionLocation = useRef<string>(currentExecutionLocation);
   const acceptedExecutionLocation = useRef<string>(currentExecutionLocation);
   const deepLinkAutoFetchRequestKey = useRef<string | null>(null);
+  const linkedActionAutoFetchKey = useRef<string | null>(null);
   const recoveryAttemptSequence = useRef<number>(0);
   const recoveryAttemptByKey = useRef<Map<string, number>>(new Map());
   const recoveryProjectRef = useRef<string | null>(null);
@@ -1849,6 +1888,17 @@ export function StudioClient({
   const draftCount = artifacts.filter((a) => a.status === "draft").length;
   const selectedEditorDirty =
     selectedId !== null && dirtyArtifactId === selectedId;
+  const linkedActionState = linkedActionRailState({
+    artifactSelected: selected !== null,
+    actionLoaded: selectedAction !== undefined,
+    listLoaded: actionsQuery.data !== undefined,
+    fetching: actionsQuery.isFetching,
+    fetchNextError: actionsQuery.isFetchNextPageError,
+    initialError: actionsInitialError,
+    hasNextPage: actionsQuery.hasNextPage === true,
+    pagesLoaded: actionsQuery.data?.pages.length ?? 0,
+    maxPages: COMPLETE_CURSOR_MAX_PAGES,
+  });
   const generationUnavailable =
     artifactsInitialLoading ||
     artifactsInitialError ||
@@ -2131,6 +2181,43 @@ export function StudioClient({
     recoveryPaginationKey,
   ]);
 
+  // D8: a selected artifact's Action may live on a cursor page that is not
+  // loaded yet. Walk the bounded pagination automatically until the Action is
+  // found, the pages run out, or the cap is reached; a failed page read stops
+  // the walk behind the rail's explicit retry.
+  useEffect(() => {
+    if (selected === null || selectedAction !== undefined) return;
+    if (
+      actionsQuery.data === undefined ||
+      actionsQuery.hasNextPage !== true ||
+      actionsQuery.isFetching ||
+      actionsQuery.isFetchNextPageError ||
+      actionsQuery.data.pages.length >= COMPLETE_CURSOR_MAX_PAGES
+    ) {
+      return;
+    }
+    const pages = actionsQuery.data.pages;
+    const requestKey = JSON.stringify([
+      "linked-action",
+      selected.actionId,
+      pages.length,
+      pages.at(-1)?.meta.nextCursor ?? "",
+      actionsQuery.dataUpdatedAt,
+    ]);
+    if (linkedActionAutoFetchKey.current === requestKey) return;
+    linkedActionAutoFetchKey.current = requestKey;
+    void actionsQuery.fetchNextPage();
+  }, [
+    actionsQuery.data,
+    actionsQuery.dataUpdatedAt,
+    actionsQuery.fetchNextPage,
+    actionsQuery.hasNextPage,
+    actionsQuery.isFetchNextPageError,
+    actionsQuery.isFetching,
+    selected,
+    selectedAction,
+  ]);
+
   useEffect(() => {
     if (artifactSettlementProofs.length === 0) return;
     const provenRunIds = new Set(
@@ -2349,6 +2436,14 @@ export function StudioClient({
     } else if (actionsQuery.isFetchNextPageError) {
       void actionsQuery.fetchNextPage();
     }
+  }
+
+  function retryLinkedAction(): void {
+    if (actionsQuery.data === undefined) {
+      void actionsQuery.refetch();
+      return;
+    }
+    void actionsQuery.fetchNextPage();
   }
 
   function confirmEditorDiscard(): boolean {
@@ -3082,6 +3177,8 @@ export function StudioClient({
           projectId={projectId}
           artifact={selected}
           action={selectedAction}
+          linkedActionState={linkedActionState}
+          onLinkedActionRetry={retryLinkedAction}
         />
       </div>
     </div>

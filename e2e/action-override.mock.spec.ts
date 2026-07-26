@@ -606,3 +606,206 @@ test("a failed conflict refresh locks the form behind retry, and retry recovers"
   await expect(applyButton(dialog)).toBeEnabled();
   await expect(reasonBox(dialog)).toHaveValue("refresh will fail");
 });
+
+// ------------------------------------------- cross-page reachability (D8) --
+
+test("a linked action on a later cursor page is auto-paginated into reach", async ({
+  page,
+}) => {
+  // Three single-status actions across two pages (pageSize 2); the only
+  // artifact points at the page-2 action.
+  const actions = [1, 2, 3].map((n) =>
+    overrideActionFixture(n, { title: `Cross page action ${n}` }),
+  );
+  const artifacts = [overrideArtifactFixture(1, actions[2]!.id)];
+  const state = await installActionOverrideApi(page, {
+    actions,
+    artifacts,
+    actionsPageSize: 2,
+  });
+  await openExecution(page);
+
+  // The single artifact auto-selects; its action arrives via auto-pagination
+  // without any operator gesture.
+  await expect(page.locator("[data-studio-adjust-action]")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Cross page action 3" }),
+  ).toBeVisible();
+  expect(state.actionsGetCount).toBeGreaterThanOrEqual(2);
+
+  // The dialog is fully armed against the cross-page action.
+  const dialog = await openOverrideDialog(page);
+  await expect(statusSelect(dialog).locator('option[value=""]')).toHaveText(
+    "Keep current — Planned",
+  );
+  await statusSelect(dialog).selectOption("blocked");
+  await reasonBox(dialog).fill("cross page override");
+  await applyButton(dialog).click();
+  await expectPatchCount(state, 1);
+  expect(state.actionPatchRequests[0]).toEqual({
+    actionId: actions[2]!.id,
+    body: { baseRevision: 1, reason: "cross page override", status: "blocked" },
+  });
+});
+
+test("a failed linked-action page read shows retry, and retry recovers the entry", async ({
+  page,
+}) => {
+  const actions = [1, 2, 3].map((n) =>
+    overrideActionFixture(n, { title: `Cross page action ${n}` }),
+  );
+  const artifacts = [overrideArtifactFixture(1, actions[2]!.id)];
+  const state = await installActionOverrideApi(page, {
+    actions,
+    artifacts,
+    actionsPageSize: 2,
+  });
+  state.failActionsPage = true;
+  await openExecution(page);
+
+  const rail = page.locator("[data-studio-evidence-rail]");
+  await expect(rail.locator("[data-linked-action-error]")).toBeVisible();
+  await expect(rail.locator("[data-linked-action-error]")).toHaveText(
+    "We couldn't load the next page. Items already loaded are still shown.",
+  );
+  await expect(page.locator("[data-studio-adjust-action]")).not.toBeVisible();
+
+  state.failActionsPage = false;
+  await rail.locator("[data-linked-action-retry]").click();
+  await expect(page.locator("[data-studio-adjust-action]")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Cross page action 3" }),
+  ).toBeVisible();
+});
+
+// -------------------------------------------------- coverage honesty (D9) --
+
+test("an action without an artifact has no Execution entry; a dismissed one also leaves the picker", async ({
+  page,
+}) => {
+  const withArtifact = overrideActionFixture(1, {
+    title: "Editable with artifact",
+  });
+  const noArtifact = overrideActionFixture(2, {
+    title: "Planned without artifact",
+  });
+  const dismissedNoArtifact = overrideActionFixture(3, {
+    status: "dismissed",
+    title: "Dismissed without artifact",
+  });
+  const artifacts = [overrideArtifactFixture(1, withArtifact.id)];
+  await installActionOverrideApi(page, {
+    actions: [withArtifact, noArtifact, dismissedNoArtifact],
+    artifacts,
+  });
+  await openExecution(page);
+
+  // Only the artifact-backed action is reachable through the queue + rail.
+  await expect(
+    page.locator("[data-studio-queue] [data-studio-artifact-id]"),
+  ).toHaveCount(1);
+  await expect(page.locator("[data-studio-adjust-action]")).toBeVisible();
+
+  // The artifact-less action is visible in the picker (generate first), the
+  // dismissed artifact-less one is not visible anywhere on Execution.
+  await page.getByRole("button", { name: "Generate artifact" }).click();
+  await expect(page.getByText("Planned without artifact")).toBeVisible();
+  await expect(page.getByText("Dismissed without artifact")).toHaveCount(0);
+});
+
+// -------------------------------------- viewports, axe, evidence (D10) -----
+
+const OVERRIDE_VIEWPORTS = [
+  { label: "desktop", width: 1440, height: 900, evidence: true },
+  { label: "rail-breakpoint", width: 1280, height: 800, evidence: false },
+  { label: "mobile", width: 390, height: 844, evidence: true },
+] as const;
+
+async function expectNoDocumentOverflow(page: Page): Promise<void> {
+  const overflow = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+}
+
+async function expectNoComponentAxeViolations(
+  page: Page,
+  include: string,
+): Promise<void> {
+  const AxeBuilder = (await import("@axe-core/playwright")).default;
+  const results = await new AxeBuilder({ page })
+    .include(include)
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const blocking = results.violations
+    .filter((v) => v.impact === "critical" || v.impact === "serious")
+    .map((v) => `${v.id} (${v.impact})`);
+  expect(blocking, `axe violations inside ${include}`).toEqual([]);
+}
+
+for (const viewport of OVERRIDE_VIEWPORTS) {
+  test(`the override dialog is fully operable at ${viewport.width}px`, async ({
+    page,
+  }, testInfo) => {
+    const { actions, artifacts } = sixStatusFixture();
+    const state = await installActionOverrideApi(page, { actions, artifacts });
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    await openExecution(page);
+    await selectArtifact(page, artifacts[1]!.id);
+
+    // Idle rail state: trigger present, no horizontal overflow, axe-clean.
+    await expect(overrideTrigger(page)).toBeVisible();
+    await expectNoDocumentOverflow(page);
+    await expectNoComponentAxeViolations(page, "[data-studio-evidence-rail]");
+    if (viewport.evidence) {
+      await testInfo.attach(`override-rail-idle-${viewport.label}`, {
+        body: await page.screenshot({ fullPage: false }),
+        contentType: "image/png",
+      });
+    }
+
+    // Dialog open: every control visible and focusable.
+    const dialog = await openOverrideDialog(page);
+    const controls = [
+      statusSelect(dialog),
+      prioritySelect(dialog),
+      laneSelect(dialog),
+      reasonBox(dialog),
+      noteBox(dialog),
+    ];
+    for (const control of controls) {
+      await control.scrollIntoViewIfNeeded();
+      await expect(control).toBeVisible();
+      await control.focus();
+      await expect(control).toBeFocused();
+    }
+    await expect(applyButton(dialog)).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Close" })).toBeVisible();
+    await expectNoDocumentOverflow(page);
+    await expectNoComponentAxeViolations(
+      page,
+      "[data-action-override-backdrop]",
+    );
+    if (viewport.evidence) {
+      await testInfo.attach(`override-dialog-open-${viewport.label}`, {
+        body: await page.screenshot({ fullPage: false }),
+        contentType: "image/png",
+      });
+    }
+
+    // And submittable: a real change round-trips at this viewport.
+    await statusSelect(dialog).selectOption("blocked");
+    await reasonBox(dialog).fill(`viewport ${viewport.label}`);
+    await applyButton(dialog).click();
+    await expectPatchCount(state, 1);
+    await expect(dialog).not.toBeVisible();
+    await expect(page.locator("[data-action-status-badge]")).toHaveText(
+      "Blocked",
+    );
+  });
+}

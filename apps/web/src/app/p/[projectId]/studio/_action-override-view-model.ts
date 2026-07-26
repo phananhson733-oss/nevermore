@@ -350,3 +350,35 @@ export function adoptActionIntoPages<
   });
   return changed ? { ...data, pages } : data;
 }
+
+// ------------------------------------------------ linked-action rail (D8) --
+
+export type LinkedActionRailState =
+  | "loaded"
+  | "loading"
+  | "error"
+  | "exhausted";
+
+/**
+ * What the rail says about a selected artifact whose Action may live on a
+ * cursor page that is not loaded yet (D8). "loading" while the bounded
+ * auto-pagination can still make progress, "error" when the read needs an
+ * operator retry, "exhausted" once every reachable page was searched.
+ */
+export function linkedActionRailState(input: {
+  readonly artifactSelected: boolean;
+  readonly actionLoaded: boolean;
+  readonly listLoaded: boolean;
+  readonly fetching: boolean;
+  readonly fetchNextError: boolean;
+  readonly initialError: boolean;
+  readonly hasNextPage: boolean;
+  readonly pagesLoaded: number;
+  readonly maxPages: number;
+}): LinkedActionRailState {
+  if (!input.artifactSelected || input.actionLoaded) return "loaded";
+  if (input.fetchNextError || input.initialError) return "error";
+  if (!input.listLoaded || input.fetching) return "loading";
+  if (input.hasNextPage && input.pagesLoaded < input.maxPages) return "loading";
+  return "exhausted";
+}

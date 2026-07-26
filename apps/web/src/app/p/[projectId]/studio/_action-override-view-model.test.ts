@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   adoptActionIntoPages,
+  linkedActionRailState,
   INITIAL_OVERRIDE_STATE,
   OVERRIDE_NOTE_MAX,
   OVERRIDE_REASON_MAX,
@@ -451,5 +452,59 @@ describe("adoptActionIntoPages", () => {
 
   it("passes undefined through so setQueryData leaves an empty cache alone", () => {
     expect(adoptActionIntoPages(undefined, item("a", 2))).toBeUndefined();
+  });
+});
+
+// ------------------------------------------------ linked-action rail (D8) --
+
+describe("linkedActionRailState", () => {
+  const base = {
+    artifactSelected: true,
+    actionLoaded: false,
+    listLoaded: true,
+    fetching: false,
+    fetchNextError: false,
+    initialError: false,
+    hasNextPage: true,
+    pagesLoaded: 1,
+    maxPages: 100,
+  };
+
+  it("is loaded with no artifact selected or once the action is in the window", () => {
+    expect(linkedActionRailState({ ...base, artifactSelected: false })).toBe(
+      "loaded",
+    );
+    expect(linkedActionRailState({ ...base, actionLoaded: true })).toBe(
+      "loaded",
+    );
+  });
+
+  it("reports loading while pages remain and pagination is healthy", () => {
+    expect(linkedActionRailState(base)).toBe("loading");
+    expect(linkedActionRailState({ ...base, listLoaded: false })).toBe(
+      "loading",
+    );
+    expect(linkedActionRailState({ ...base, fetching: true })).toBe("loading");
+  });
+
+  it("reports error on a failed page fetch or a failed initial read", () => {
+    expect(linkedActionRailState({ ...base, fetchNextError: true })).toBe(
+      "error",
+    );
+    expect(
+      linkedActionRailState({ ...base, listLoaded: false, initialError: true }),
+    ).toBe("error");
+  });
+
+  it("is exhausted when pages ran out without finding the action", () => {
+    expect(linkedActionRailState({ ...base, hasNextPage: false })).toBe(
+      "exhausted",
+    );
+  });
+
+  it("is exhausted at the bounded page cap even with pages remaining", () => {
+    expect(
+      linkedActionRailState({ ...base, pagesLoaded: 100, maxPages: 100 }),
+    ).toBe("exhausted");
   });
 });

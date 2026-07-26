@@ -1497,6 +1497,7 @@
     "evidenceRailEmpty": "打开一个执行物，即可查看它关联的行动、发现、校验状态与语言。",
     "linkedAction": "关联行动",
     "linkedActionUnavailable": "关联行动仍在加载",
+    "linkedActionOutsideLoaded": "关联行动不在已加载的计划分页中",
     "deliveryChecks": "交付检查",
     "actionBinding": "行动关联",
     "findingBinding": "发现关联",

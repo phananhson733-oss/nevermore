@@ -1497,6 +1497,7 @@
     "evidenceRailEmpty": "Open an artifact to inspect its action, finding, validation, and language bindings.",
     "linkedAction": "Linked action",
     "linkedActionUnavailable": "Linked action is still loading",
+    "linkedActionOutsideLoaded": "Linked action is outside the loaded plan pages",
     "deliveryChecks": "Delivery checks",
     "actionBinding": "Action binding",
     "findingBinding": "Finding binding",
