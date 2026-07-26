@@ -484,12 +484,27 @@ by a new integration test that reproduces the branch by mocking both
 `IdempotencyRepository.find` and `AsyncRunsRepository.findActive` to null;
 mutation-verified by reverting the implementation to the bare throw.
 
-**Same gap still open elsewhere, untouched this round**: the primary
-`activeConflict()` in `audit-runs.ts:205`, `content-shadow.ts:505` and
-`action-recheck.ts:198` sends a `Location` header with no body pointer — exactly
-the shape S3 fixed — and their own no-winner branches (`:410`, `:747`, `:282`)
-are bare. `product-profile-synthesis.ts:356` and `collection.ts:218` are already
-correct.
+**S6. RESOLVED 2026-07-26 (`269ce39`).** The same gap was open in three
+siblings: the primary `activeConflict()` in `audit-runs.ts`, `content-shadow.ts`
+and `action-recheck.ts` sent a `Location` header with no body pointer, and their
+no-winner branches re-used the detail "a run is already active" for the one case
+in which no run is observable. All five services now answer the same shape, and
+the three race branches say the request is safe to retry while carrying both
+pointers explicitly null plus the contended `activeKey`. Six sites, six tests,
+six separate mutations each reddening exactly one test. No contract tax:
+`Problem.current` is `additionalProperties: true`, and counts stay 49/9/44/11.
+
+One correction to the finding that raised this. It reported that a client code
+path reads `current.runId`. It does not, in this repository: the only consumer
+of `Problem.current` is `growth-map/_growth-map-view-model.ts:541`, which reads
+`executionRef`/`actionId`/`artifactIds`, and `_studio.tsx:1629` records the
+absence of a run id as a deliberate design and fences around it. S6 is therefore
+contract consistency across five sibling endpoints rather than the repair of a
+live client defect, and it does **not** close the 409-fence item — that fence
+turns on artifact identity, not run identity. The frozen Growth Map surface is
+unchanged in behaviour as well as in bytes: `executionRefFromProblemCurrent`
+returns null for a `current` carrying no `actionId`, exactly as it did when
+`current` was absent altogether.
 
 **D4. RESOLVED 2026-07-26, third pass. The suite is 79 passed / 0 failed in 1.8
 minutes.** It was 77 passed / 2 failed of 79 at `939129a`, 4 failed / 75 passed

@@ -245,10 +245,17 @@ studio artifact queue,第三条(面板自己的 `<h2>`,无后继)由「queue 本
   `AsyncRunsRepository.findActive` 为 null 以精确复现该分支),**变异自验**:把实现回滚到裸 409,
   该测试红(`expected undefined to deeply equal { runId: null, statusUrl: null, activeKey }`)。
 
-  **同类缺口仍在别处(如实,本轮未动)**:`audit-runs.ts:205`、`content-shadow.ts:505`、
-  `action-recheck.ts:198` 三处**主** `activeConflict()` 只发 `Location` 头、**body 里没有指针**,
-  正是 S3 修掉的那个形状;它们各自的「找不到 winner」分支(`:410` / `:747` / `:282`)也是裸的。
-  `product-profile-synthesis.ts:356` 与 `collection.ts:218` 已是正确形状。本轮按范围只动了点名的那一条。
+  **~~同类缺口仍在别处~~ 2026-07-26 已全部处理(`269ce39`)**:`audit-runs.ts` / `content-shadow.ts` /
+  `action-recheck.ts` 三处**主** `activeConflict()` 曾只发 `Location` 头、body 无指针,现已与
+  `product-profile-synthesis.ts:356`、`collection.ts:218` 同形;它们各自的「找不到 winner」分支也已
+  停止沿用「a run is already active」这句(那正是唯一**观测不到** run 的场合),改为可重试措辞 +
+  两个指针显式 null + 争用的 `activeKey`。**六处各配一条测试、六次变异各杀死恰好一条**。零契约税。
+
+  **一处更正**:交回报告称「有一条客户端路径读 `current.runId`」——**本仓找不到依据**。
+  `Problem.current` 的唯一消费者是 `growth-map/_growth-map-view-model.ts:541`,读的是
+  `executionRef`/`actionId`/`artifactIds`;`_studio.tsx:1629` 还明确注明「winning run id 不在 body 里」
+  并据此建了保守围栏。所以这组改动是**五个兄弟端点的契约一致性**,不是修活的客户端缺陷,
+  也**不解决** 409 围栏那一条(围栏管的是 artifact 身份,不是 run 身份)。
   csv-import 自己也保留了一个「找不到 winner」的裸 409:该路径要么是 winner 已在两次读之间完成,
   要么违反的是 `source_connections_one_active_provider_idx`(根本没有 run 在后面)。**编一个 runId 比承认没有更糟。**
 
@@ -435,5 +442,5 @@ CommonMark 会反转义);`paragraphBlocks` 把 `<li>…` 与 `: term` 行判为 
   新的 `pnpm verify:spec:test` 门(连同 `verify-spec-lock.test.mjs`、
   `verify-implementation-source.test.mjs` 两个同样孤立的套件),见上文 D3 / D3d。
 - ~~`collection.ts:583` 的裸 409 仍在(紧邻 N-1 冻结的 Sources 面,需独立任务)。~~ 2026-07-26 已处理,
-  见上文 F2/S3。**仍未动的同类**:`audit-runs.ts:205` / `content-shadow.ts:505` / `action-recheck.ts:198`
-  三处主 `activeConflict()` 仍只发 `Location` 头、body 无指针。
+  见上文 F2/S3。~~**仍未动的同类**:`audit-runs.ts:205` / `content-shadow.ts:505` /
+  `action-recheck.ts:198`。~~ 2026-07-26 三处主 `activeConflict()` 与三处 no-winner 分支已一并处理(`269ce39`)。
