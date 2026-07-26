@@ -33,10 +33,10 @@ import { allowedActionStatusTargets } from "../_action-status-transitions";
 import { ProblemNotice } from "../_problem-display";
 import { useUnsavedNavigationGuard } from "../_unsaved-navigation-guard.ts";
 import {
-  INITIAL_OVERRIDE_STATE,
   OVERRIDE_NOTE_MAX,
   OVERRIDE_REASON_MAX,
   adoptActionIntoPages,
+  initialOverrideState,
   isOverrideFormDirty,
   overrideControlsLocked,
   overrideRetryAvailable,
@@ -226,14 +226,32 @@ function OverrideDialog({
   const tLane = useTranslations("lane");
   const queryClient = useQueryClient();
   const update = useUpdateAction(projectId);
-  const [state, dispatch] = useReducer(reduceOverride, INITIAL_OVERRIDE_STATE);
+  // The third-argument initializer freezes the baseline at open. Later prop
+  // updates (background list refetches) never re-run it, so an in-progress
+  // edit keeps measuring against the revision the operator actually saw;
+  // only the reducer's own `refreshResolved` may advance the baseline.
+  const [state, dispatch] = useReducer(
+    reduceOverride,
+    action,
+    (opened: ArtifactAction) =>
+      initialOverrideState({
+        id: opened.id,
+        title: opened.title,
+        status: opened.status,
+        priorityBand: opened.priorityBand,
+        roadmapLane: opened.roadmapLane,
+        revision: opened.revision,
+      }),
+  );
   const [discardOpen, setDiscardOpen] = useState(false);
   // Synchronous single-flight fence (R1 precedent): the reducer's machine
   // fence cannot reject a second click inside the same tick, this ref can.
   const submitInFlight = useRef(false);
 
+  const baseline = state.baseline;
   const dirty = isOverrideFormDirty(state.form);
   const locked = overrideControlsLocked(state);
+  const submitting = state.phase === "submitting";
   const retryAvailable = overrideRetryAvailable(state);
   const titleId = "sf-action-override-title";
   const descId = "sf-action-override-desc";
@@ -245,23 +263,28 @@ function OverrideDialog({
 
   // Browser back/refresh guard for a dirty dialog. No `confirmLinkClick`:
   // the shell is inert while the modal is open, so a link-click listener
-  // could never run (see _unsaved-navigation-guard.ts on R4).
+  // could never run (see _unsaved-navigation-guard.ts on R4). While the
+  // PATCH is in flight the guard stays armed even for a nominally clean
+  // form: the browser-level prompt is the only fence left on an unload.
   useUnsavedNavigationGuard({
-    dirty,
+    dirty: dirty || submitting,
     confirmationMessage: t("unsavedLeaveWarning"),
     discardChanges: discardAndClose,
   });
 
   const requestClose = useCallback(() => {
+    // No exit while the PATCH is in flight: a "Discard" offered here would
+    // promise to drop changes that the already-sent request may still apply.
+    if (submitting) return;
     if (dirty) {
       setDiscardOpen(true);
       return;
     }
     onClose();
-  }, [dirty, onClose]);
+  }, [dirty, onClose, submitting]);
 
   const statusOptions: readonly SelectOption[] = allowedActionStatusTargets(
-    action.status,
+    baseline.status,
   ).map((value) => ({ value, label: tStatus(value) }));
   const priorityOptions: readonly SelectOption[] = PRIORITY_OPTIONS.map(
     (value) => ({ value, label: tPriority(value) }),
@@ -284,8 +307,8 @@ function OverrideDialog({
         (item) => item.id === action.id,
       );
       dispatch({ type: "refreshResolved", refreshed });
-    } catch {
-      dispatch({ type: "refreshFailed" });
+    } catch (caught) {
+      dispatch({ type: "refreshFailed", problem: caught });
     }
   }
 
@@ -293,7 +316,7 @@ function OverrideDialog({
     event.preventDefault();
     if (submitInFlight.current) return;
     if (locked) return;
-    const plan = planOverrideSubmit(action, state.form);
+    const plan = planOverrideSubmit(baseline, state.form);
     if (plan.kind !== "submit") {
       dispatch({ type: "reject", notice: plan.kind });
       return;
@@ -379,6 +402,7 @@ function OverrideDialog({
               type="button"
               className={styles.overrideClose}
               onClick={requestClose}
+              disabled={submitting}
               aria-label={tCommon("close")}
             >
               <X aria-hidden="true" size={21} />
@@ -393,7 +417,7 @@ function OverrideDialog({
                   dispatch({ type: "edit", patch: { statusSel: value } })
                 }
                 options={statusOptions}
-                keepLabel={`${t("keepUnchanged")} — ${tStatus(action.status)}`}
+                keepLabel={`${t("keepUnchanged")} — ${tStatus(baseline.status)}`}
                 disabled={locked}
               />
             </Field>
@@ -404,7 +428,7 @@ function OverrideDialog({
                   dispatch({ type: "edit", patch: { prioritySel: value } })
                 }
                 options={priorityOptions}
-                keepLabel={`${t("keepUnchanged")} — ${tPriority(action.priorityBand)}`}
+                keepLabel={`${t("keepUnchanged")} — ${tPriority(baseline.priorityBand)}`}
                 disabled={locked}
               />
             </Field>
@@ -415,7 +439,7 @@ function OverrideDialog({
                   dispatch({ type: "edit", patch: { laneSel: value } })
                 }
                 options={laneOptions}
-                keepLabel={`${t("keepUnchanged")} — ${tLane(action.roadmapLane)}`}
+                keepLabel={`${t("keepUnchanged")} — ${tLane(baseline.roadmapLane)}`}
                 disabled={locked}
               />
             </Field>
@@ -522,17 +546,26 @@ function OverrideDialog({
 /**
  * Rail-mounted trigger + dialog owner. Mount with `key={action.id}` so the
  * open flag itself cannot survive an Action switch.
+ *
+ * `editorDirty` disables the trigger while the artifact editor holds an
+ * unsaved draft. Two independently dirty editors would each arm the shared
+ * navigation guard, and a browser Back would then chain two confirms — the
+ * first of which discards silently once the second is refused. Excluding the
+ * second dirty editor at its entry point removes that state entirely.
  */
 export function ActionOverride({
   projectId,
   action,
+  editorDirty,
 }: {
   readonly projectId: string;
   readonly action: ArtifactAction;
+  readonly editorDirty: boolean;
 }) {
   const t = useTranslations("studio.override");
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const blockedHintId = "sf-action-override-editor-hint";
 
   const close = useCallback(() => {
     setOpen(false);
@@ -549,12 +582,19 @@ export function ActionOverride({
         className={styles.overrideTrigger}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-describedby={editorDirty ? blockedHintId : undefined}
+        disabled={editorDirty}
         data-studio-adjust-action=""
         onClick={() => setOpen(true)}
       >
         <SlidersHorizontal aria-hidden="true" size={15} />
         {t("override")}
       </button>
+      {editorDirty ? (
+        <p id={blockedHintId} className={styles.overrideTriggerHint}>
+          {t("blockedByEditor")}
+        </p>
+      ) : null}
       {open ? (
         <OverrideDialog
           key={action.id}

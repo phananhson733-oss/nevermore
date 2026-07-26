@@ -901,8 +901,19 @@
     border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
-.overrideTrigger:hover {
+.overrideTrigger:hover:not(:disabled) {
   border-color: var(--sf-fg);
+}
+.overrideTrigger:disabled {
+  color: var(--sf-muted);
+  border-color: var(--sf-border);
+  cursor: not-allowed;
+}
+.overrideTriggerHint {
+  margin: 6px 0 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  line-height: 1.45;
 }
 .overrideBackdrop {
   position: fixed;
@@ -912,7 +923,9 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(17, 25, 35, 0.57);
+  /* SignalFrame ink as a token, following the execution overlayScrim
+     precedent: every scrim derives from --sf-ink-950, never a raw rgba. */
+  background: color-mix(in srgb, var(--sf-ink-950) 57%, transparent);
   backdrop-filter: blur(4px);
 }
 .overrideDialog {

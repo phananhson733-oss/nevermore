@@ -29,6 +29,8 @@ export const OVERRIDE_NOTE_MAX = 4000;
 
 /** The subset of an Action the override machine reasons about. */
 export interface OverrideActionSnapshot {
+  readonly id: string;
+  readonly title: string;
   readonly status: ActionStatus;
   readonly priorityBand: PriorityBand;
   readonly roadmapLane: RoadmapLane;
@@ -145,6 +147,16 @@ export type OverrideNotice =
 
 export interface OverrideState {
   readonly phase: OverridePhase;
+  /**
+   * The Action the whole edit is measured against, frozen when the dialog
+   * opens. Options, keep-current labels and the submitted `baseRevision` all
+   * read THIS snapshot, never the live prop: a background list refetch that
+   * advances the prop must not silently rebase an in-progress edit, or the
+   * PATCH would carry the newer revision and step over the concurrent change
+   * the CAS check exists to surface. Only `refreshResolved` — the machine's
+   * own 409-disambiguation step — may move the baseline.
+   */
+  readonly baseline: OverrideActionSnapshot;
   readonly form: OverrideFormState;
   readonly notice: OverrideNotice | null;
   /** The caught error behind the notice, for ProblemNotice provenance. */
@@ -153,13 +165,18 @@ export interface OverrideState {
   readonly conflictRevision: number | null;
 }
 
-export const INITIAL_OVERRIDE_STATE: OverrideState = {
-  phase: "idle",
-  form: initialOverrideForm(),
-  notice: null,
-  problem: null,
-  conflictRevision: null,
-};
+export function initialOverrideState(
+  baseline: OverrideActionSnapshot,
+): OverrideState {
+  return {
+    phase: "idle",
+    baseline,
+    form: initialOverrideForm(),
+    notice: null,
+    problem: null,
+    conflictRevision: null,
+  };
+}
 
 export type OverrideEvent =
   | { readonly type: "edit"; readonly patch: Partial<OverrideFormState> }
@@ -182,7 +199,7 @@ export type OverrideEvent =
       readonly type: "refreshResolved";
       readonly refreshed: OverrideActionSnapshot | undefined;
     }
-  | { readonly type: "refreshFailed" }
+  | { readonly type: "refreshFailed"; readonly problem: unknown }
   | { readonly type: "retryRefresh" };
 
 /** Phases whose only legal exits are machine events, never operator input. */
@@ -255,8 +272,10 @@ export function reduceOverride(
         };
       }
       if (refreshed.revision !== state.conflictRevision) {
-        // Stale base: adopt the refreshed current, keep the operator's text,
-        // drop selections the refreshed current makes illegal or redundant.
+        // Stale base: adopt the refreshed current AS the new baseline in the
+        // same event (options, keep labels and the next baseRevision move
+        // together, atomically), keep the operator's text, drop selections
+        // the refreshed current makes illegal or redundant.
         const statusStillLegal = allowedActionStatusTargets(
           refreshed.status,
         ).includes(state.form.statusSel as ActionStatus);
@@ -264,6 +283,7 @@ export function reduceOverride(
           ...state,
           phase: "staleConflict",
           notice: "conflictStale",
+          baseline: refreshed,
           conflictRevision: null,
           form: {
             ...state.form,
@@ -280,21 +300,28 @@ export function reduceOverride(
         };
       }
       // Same revision: the server refused the transition itself. Clearing the
-      // status choice forces a re-pick, which closes the 409 loop.
+      // status choice forces a re-pick, which closes the 409 loop. Adopting
+      // `refreshed` is revision-neutral here but keeps the baseline the
+      // refresh's own truth rather than the open-time copy.
       return {
         ...state,
         phase: "transitionConflict",
         notice: "conflictTransition",
+        baseline: refreshed,
         conflictRevision: null,
         form: { ...state.form, statusSel: "" },
       };
     }
     case "refreshFailed": {
       if (state.phase !== "conflictRefreshing") return state;
+      // The GET's own failure replaces the 409 as the displayed problem: the
+      // notice tells the operator the REFRESH failed, so the code/requestId
+      // shown beside it must come from that failed read, not the stale PATCH.
       return {
         ...state,
         phase: "conflictRefreshError",
         notice: "conflictRefreshFailed",
+        problem: event.problem,
       };
     }
     case "retryRefresh": {
@@ -357,13 +384,18 @@ export type LinkedActionRailState =
   | "loaded"
   | "loading"
   | "error"
-  | "exhausted";
+  | "notFoundAfterExhaustion"
+  | "searchLimitReached";
 
 /**
  * What the rail says about a selected artifact whose Action may live on a
  * cursor page that is not loaded yet (D8). "loading" while the bounded
  * auto-pagination can still make progress, "error" when the read needs an
- * operator retry, "exhausted" once every reachable page was searched.
+ * operator retry. The two terminal outcomes are distinct on purpose:
+ * "notFoundAfterExhaustion" means every page was read and the action is
+ * genuinely absent, "searchLimitReached" means the bounded walk stopped at
+ * its page cap while the server still had pages — one is a fact about the
+ * data, the other about this screen's search budget.
  */
 export function linkedActionRailState(input: {
   readonly artifactSelected: boolean;
@@ -379,6 +411,30 @@ export function linkedActionRailState(input: {
   if (!input.artifactSelected || input.actionLoaded) return "loaded";
   if (input.fetchNextError || input.initialError) return "error";
   if (!input.listLoaded || input.fetching) return "loading";
-  if (input.hasNextPage && input.pagesLoaded < input.maxPages) return "loading";
-  return "exhausted";
+  if (!input.hasNextPage) return "notFoundAfterExhaustion";
+  if (input.pagesLoaded < input.maxPages) return "loading";
+  return "searchLimitReached";
+}
+
+/**
+ * Whether the bounded linked-action walk (D8) should request the next cursor
+ * page right now. Pure so the stop conditions — action already found, pages
+ * exhausted, a failed page read awaiting an operator retry, a fetch already
+ * in flight, and the page cap — are each provable with small values instead
+ * of a 100-page fixture.
+ */
+export function shouldAutoFetchLinkedAction(input: {
+  readonly artifactSelected: boolean;
+  readonly actionLoaded: boolean;
+  readonly listLoaded: boolean;
+  readonly fetching: boolean;
+  readonly fetchNextError: boolean;
+  readonly hasNextPage: boolean;
+  readonly pagesLoaded: number;
+  readonly maxPages: number;
+}): boolean {
+  if (!input.artifactSelected || input.actionLoaded) return false;
+  if (!input.listLoaded || !input.hasNextPage) return false;
+  if (input.fetching || input.fetchNextError) return false;
+  return input.pagesLoaded < input.maxPages;
 }

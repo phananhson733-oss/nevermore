@@ -120,6 +120,7 @@ import {
 import { ActionOverride } from "./_action-override";
 import {
   linkedActionRailState,
+  shouldAutoFetchLinkedAction,
   type LinkedActionRailState,
 } from "./_action-override-view-model";
 import styles from "./studio.module.css";
@@ -1094,12 +1095,14 @@ function EvidenceRail({
   artifact,
   action,
   linkedActionState,
+  editorDirty,
   onLinkedActionRetry,
 }: {
   readonly projectId: string;
   readonly artifact: Artifact | null;
   readonly action: ArtifactAction | undefined;
   readonly linkedActionState: LinkedActionRailState;
+  readonly editorDirty: boolean;
   readonly onLinkedActionRetry: () => void;
 }) {
   const t = useTranslations("studio");
@@ -1107,6 +1110,18 @@ function EvidenceRail({
   const tLane = useTranslations("lane");
   const tBand = useTranslations("priorityBand");
   const tStatus = useTranslations("actionStatus");
+
+  // One label per missing-action cause, shared by the rail heading and the
+  // delivery-check binding row so the two can never contradict each other
+  // (an error or exhausted search must not read as "still loading").
+  const linkedActionFallback =
+    linkedActionState === "error"
+      ? t("linkedActionLoadFailed")
+      : linkedActionState === "notFoundAfterExhaustion"
+        ? t("linkedActionNotFound")
+        : linkedActionState === "searchLimitReached"
+          ? t("linkedActionSearchLimit")
+          : t("linkedActionUnavailable");
 
   return (
     <Panel
@@ -1132,10 +1147,7 @@ function EvidenceRail({
           <section className={styles.railSection}>
             <span className={styles.railLabel}>{t("linkedAction")}</span>
             <h3 className={styles.linkedActionTitle}>
-              {action?.title ??
-                (linkedActionState === "exhausted"
-                  ? t("linkedActionOutsideLoaded")
-                  : t("linkedActionUnavailable"))}
+              {action?.title ?? linkedActionFallback}
             </h3>
             {action !== undefined ? (
               <>
@@ -1153,6 +1165,7 @@ function EvidenceRail({
                   key={action.id}
                   projectId={projectId}
                   action={action}
+                  editorDirty={editorDirty}
                 />
               </>
             ) : linkedActionState === "loading" ? (
@@ -1181,6 +1194,13 @@ function EvidenceRail({
                   {tCommon("retry")}
                 </Button>
               </>
+            ) : linkedActionState === "searchLimitReached" ? (
+              <p
+                className={styles.linkedActionDescription}
+                data-linked-action-search-limit=""
+              >
+                {t("linkedActionSearchLimitHint")}
+              </p>
             ) : null}
           </section>
 
@@ -1198,7 +1218,7 @@ function EvidenceRail({
                 <Link2 aria-hidden="true" size={17} />
                 <div>
                   <strong>{t("actionBinding")}</strong>
-                  <span>{action?.title ?? t("linkedActionUnavailable")}</span>
+                  <span>{action?.title ?? linkedActionFallback}</span>
                 </div>
               </div>
               {action !== undefined ? (
@@ -2184,15 +2204,22 @@ export function StudioClient({
   // D8: a selected artifact's Action may live on a cursor page that is not
   // loaded yet. Walk the bounded pagination automatically until the Action is
   // found, the pages run out, or the cap is reached; a failed page read stops
-  // the walk behind the rail's explicit retry.
+  // the walk behind the rail's explicit retry. The stop conditions live in
+  // `shouldAutoFetchLinkedAction` so each branch (including the page cap) is
+  // unit-provable with small values.
   useEffect(() => {
-    if (selected === null || selectedAction !== undefined) return;
+    if (selected === null || actionsQuery.data === undefined) return;
     if (
-      actionsQuery.data === undefined ||
-      actionsQuery.hasNextPage !== true ||
-      actionsQuery.isFetching ||
-      actionsQuery.isFetchNextPageError ||
-      actionsQuery.data.pages.length >= COMPLETE_CURSOR_MAX_PAGES
+      !shouldAutoFetchLinkedAction({
+        artifactSelected: true,
+        actionLoaded: selectedAction !== undefined,
+        listLoaded: true,
+        fetching: actionsQuery.isFetching,
+        fetchNextError: actionsQuery.isFetchNextPageError,
+        hasNextPage: actionsQuery.hasNextPage === true,
+        pagesLoaded: actionsQuery.data.pages.length,
+        maxPages: COMPLETE_CURSOR_MAX_PAGES,
+      })
     ) {
       return;
     }
@@ -3178,6 +3205,7 @@ export function StudioClient({
           artifact={selected}
           action={selectedAction}
           linkedActionState={linkedActionState}
+          editorDirty={selectedEditorDirty}
           onLinkedActionRetry={retryLinkedAction}
         />
       </div>

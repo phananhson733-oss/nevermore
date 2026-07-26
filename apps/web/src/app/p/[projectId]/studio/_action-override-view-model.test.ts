@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   adoptActionIntoPages,
   linkedActionRailState,
-  INITIAL_OVERRIDE_STATE,
+  shouldAutoFetchLinkedAction,
   OVERRIDE_NOTE_MAX,
   OVERRIDE_REASON_MAX,
   OVERRIDE_REASON_MIN,
   initialOverrideForm,
+  initialOverrideState,
   isOverrideFormDirty,
   overrideControlsLocked,
   overrideRetryAvailable,
@@ -18,11 +19,15 @@ import {
 } from "./_action-override-view-model";
 
 const ACTION: OverrideActionSnapshot = {
+  id: "00000000-0000-4000-8000-000000000901",
+  title: "Override action 1",
   status: "planned",
   priorityBand: "high",
   roadmapLane: "now",
   revision: 4,
 };
+
+const IDLE: OverrideState = initialOverrideState(ACTION);
 
 function form(overrides: Partial<ReturnType<typeof initialOverrideForm>> = {}) {
   return { ...initialOverrideForm(), ...overrides };
@@ -30,7 +35,7 @@ function form(overrides: Partial<ReturnType<typeof initialOverrideForm>> = {}) {
 
 function reduceAll(
   events: readonly OverrideEvent[],
-  from: OverrideState = INITIAL_OVERRIDE_STATE,
+  from: OverrideState = IDLE,
 ): OverrideState {
   return events.reduce(reduceOverride, from);
 }
@@ -204,15 +209,16 @@ describe("isOverrideFormDirty", () => {
 // ------------------------------------------------------------ the machine --
 
 describe("reduceOverride", () => {
-  it("starts idle with a pristine form and no notice", () => {
-    expect(INITIAL_OVERRIDE_STATE.phase).toBe("idle");
-    expect(INITIAL_OVERRIDE_STATE.form).toEqual(initialOverrideForm());
-    expect(INITIAL_OVERRIDE_STATE.notice).toBeNull();
-    expect(INITIAL_OVERRIDE_STATE.problem).toBeNull();
+  it("starts idle with a pristine form, no notice, and the opened baseline", () => {
+    expect(IDLE.phase).toBe("idle");
+    expect(IDLE.form).toEqual(initialOverrideForm());
+    expect(IDLE.notice).toBeNull();
+    expect(IDLE.problem).toBeNull();
+    expect(IDLE.baseline).toBe(ACTION);
   });
 
   it("edit merges immutably and never mutates the previous state", () => {
-    const before = INITIAL_OVERRIDE_STATE;
+    const before = IDLE;
     const after = reduceOverride(before, {
       type: "edit",
       patch: { reason: "because" },
@@ -223,13 +229,30 @@ describe("reduceOverride", () => {
   });
 
   it("reject surfaces a local validation notice and stays unlocked", () => {
-    const state = reduceOverride(INITIAL_OVERRIDE_STATE, {
+    const state = reduceOverride(IDLE, {
       type: "reject",
       notice: "noChange",
     });
     expect(state.phase).toBe("idle");
     expect(state.notice).toBe("noChange");
     expect(overrideControlsLocked(state)).toBe(false);
+  });
+
+  it("ordinary events never move the frozen baseline (only refreshResolved may)", () => {
+    // Every event a background prop update could race with: the baseline
+    // keeps the exact open-time snapshot by reference.
+    const afterEdit = reduceAll([
+      { type: "edit", patch: { statusSel: "blocked", reason: "why not" } },
+      { type: "reject", notice: "noChange" },
+      { type: "submit" },
+      { type: "requestFailed", problem: new Error("500") },
+      { type: "submit" },
+      { type: "conflict", submittedRevision: 4, problem: new Error("409") },
+      { type: "refreshFailed", problem: new Error("get failed") },
+      { type: "retryRefresh" },
+    ]);
+    expect(afterEdit.baseline).toBe(ACTION);
+    expect(afterEdit.baseline.revision).toBe(4);
   });
 
   it("submit locks the machine and clears prior notices", () => {
@@ -252,7 +275,10 @@ describe("reduceOverride", () => {
     const refreshing = conflictState();
     expect(refreshing.phase).toBe("conflictRefreshing");
     expect(reduceOverride(refreshing, { type: "submit" })).toBe(refreshing);
-    const failed = reduceOverride(refreshing, { type: "refreshFailed" });
+    const failed = reduceOverride(refreshing, {
+      type: "refreshFailed",
+      problem: new Error("get failed"),
+    });
     expect(reduceOverride(failed, { type: "submit" })).toBe(failed);
   });
 
@@ -280,20 +306,17 @@ describe("reduceOverride", () => {
   // -------- D5 refresh resolution branches --------
 
   it("staleConflict: new revision adopted, reason kept, illegal status cleared", () => {
+    const refreshed: OverrideActionSnapshot = {
+      ...ACTION,
+      // Refreshed current is blocked: "blocked" is no longer a legal
+      // target from itself, so the selection must clear.
+      status: "blocked",
+      priorityBand: "medium",
+      roadmapLane: "later",
+      revision: 5,
+    };
     const state = reduceAll(
-      [
-        {
-          type: "refreshResolved",
-          refreshed: {
-            // Refreshed current is blocked: "blocked" is no longer a legal
-            // target from itself, so the selection must clear.
-            status: "blocked",
-            priorityBand: "high",
-            roadmapLane: "now",
-            revision: 5,
-          },
-        },
-      ],
+      [{ type: "refreshResolved", refreshed }],
       conflictState(),
     );
     expect(state.phase).toBe("staleConflict");
@@ -301,6 +324,22 @@ describe("reduceOverride", () => {
     expect(state.form.statusSel).toBe("");
     expect(state.form.reason).toBe("why not");
     expect(overrideControlsLocked(state)).toBe(false);
+    // The baseline moved WITH the same event: the next submission's
+    // baseRevision and all three keep-current labels read the refreshed
+    // action, atomically (P1 fix — a prop update cannot do this).
+    expect(state.baseline).toBe(refreshed);
+    expect(state.baseline.revision).toBe(5);
+    expect(state.baseline.status).toBe("blocked");
+    expect(state.baseline.priorityBand).toBe("medium");
+    expect(state.baseline.roadmapLane).toBe("later");
+    const resubmission = planOverrideSubmit(
+      state.baseline,
+      form({ statusSel: "in_progress", reason: "why not" }),
+    );
+    expect(resubmission).toEqual({
+      kind: "submit",
+      body: { baseRevision: 5, reason: "why not", status: "in_progress" },
+    });
   });
 
   it("staleConflict keeps a status choice that is still legal for the new current", () => {
@@ -309,6 +348,7 @@ describe("reduceOverride", () => {
         {
           type: "refreshResolved",
           refreshed: {
+            ...ACTION,
             // planned -> blocked is still allowed, so the choice survives.
             status: "planned",
             priorityBand: "low",
@@ -335,6 +375,7 @@ describe("reduceOverride", () => {
     const state = reduceOverride(start, {
       type: "refreshResolved",
       refreshed: {
+        ...ACTION,
         status: "planned",
         priorityBand: "low",
         roadmapLane: "later",
@@ -356,6 +397,7 @@ describe("reduceOverride", () => {
     expect(state.notice).toBe("conflictTransition");
     expect(state.form.statusSel).toBe("");
     expect(state.form.reason).toBe("why not");
+    expect(state.baseline.revision).toBe(4);
     expect(overrideControlsLocked(state)).toBe(false);
   });
 
@@ -370,15 +412,25 @@ describe("reduceOverride", () => {
     expect(overrideRetryAvailable(state)).toBe(true);
   });
 
-  it("refreshFailed locks with retry as the only exit", () => {
-    const state = reduceOverride(conflictState(), { type: "refreshFailed" });
+  it("refreshFailed locks with retry as the only exit and shows the GET's own error", () => {
+    const getFailure = new Error("actions read failed");
+    const state = reduceOverride(conflictState(), {
+      type: "refreshFailed",
+      problem: getFailure,
+    });
     expect(state.phase).toBe("conflictRefreshError");
     expect(state.notice).toBe("conflictRefreshFailed");
     expect(overrideRetryAvailable(state)).toBe(true);
+    // Provenance: the notice reads "refreshing failed", so the problem it
+    // renders must be the refresh's failure, not the PATCH 409 it replaced.
+    expect(state.problem).toBe(getFailure);
   });
 
   it("retryRefresh re-enters conflictRefreshing keeping the remembered revision", () => {
-    const failed = reduceOverride(conflictState(), { type: "refreshFailed" });
+    const failed = reduceOverride(conflictState(), {
+      type: "refreshFailed",
+      problem: new Error("get failed"),
+    });
     const retried = reduceOverride(failed, { type: "retryRefresh" });
     expect(retried.phase).toBe("conflictRefreshing");
     expect(retried.conflictRevision).toBe(4);
@@ -390,21 +442,22 @@ describe("reduceOverride", () => {
   });
 
   it("retryRefresh outside conflictRefreshError is ignored", () => {
-    expect(
-      reduceOverride(INITIAL_OVERRIDE_STATE, { type: "retryRefresh" }),
-    ).toBe(INITIAL_OVERRIDE_STATE);
+    expect(reduceOverride(IDLE, { type: "retryRefresh" })).toBe(IDLE);
   });
 
   it("refresh events outside conflictRefreshing are ignored", () => {
     expect(
-      reduceOverride(INITIAL_OVERRIDE_STATE, {
+      reduceOverride(IDLE, {
         type: "refreshResolved",
         refreshed: { ...ACTION, revision: 9 },
       }),
-    ).toBe(INITIAL_OVERRIDE_STATE);
+    ).toBe(IDLE);
     expect(
-      reduceOverride(INITIAL_OVERRIDE_STATE, { type: "refreshFailed" }),
-    ).toBe(INITIAL_OVERRIDE_STATE);
+      reduceOverride(IDLE, {
+        type: "refreshFailed",
+        problem: new Error("late"),
+      }),
+    ).toBe(IDLE);
   });
 
   it("a resubmission after staleConflict locks again (no permanent 409 loop)", () => {
@@ -496,15 +549,97 @@ describe("linkedActionRailState", () => {
     ).toBe("error");
   });
 
-  it("is exhausted when pages ran out without finding the action", () => {
+  it("distinguishes pages-ran-out from the search cap (both non-loading)", () => {
+    // Every page was read: the action is genuinely absent from the plan.
     expect(linkedActionRailState({ ...base, hasNextPage: false })).toBe(
-      "exhausted",
+      "notFoundAfterExhaustion",
+    );
+    // The cap stopped the walk while the server still had pages: nothing is
+    // proven about the action, only about this screen's search budget.
+    expect(
+      linkedActionRailState({ ...base, pagesLoaded: 100, maxPages: 100 }),
+    ).toBe("searchLimitReached");
+    expect(
+      linkedActionRailState({ ...base, pagesLoaded: 2, maxPages: 2 }),
+    ).toBe("searchLimitReached");
+  });
+
+  it("error outranks both terminal outcomes", () => {
+    expect(
+      linkedActionRailState({
+        ...base,
+        fetchNextError: true,
+        hasNextPage: false,
+      }),
+    ).toBe("error");
+    expect(
+      linkedActionRailState({
+        ...base,
+        fetchNextError: true,
+        pagesLoaded: 100,
+        maxPages: 100,
+      }),
+    ).toBe("error");
+  });
+});
+
+// ------------------------------------------- auto-fetch decision (D8) ------
+
+describe("shouldAutoFetchLinkedAction", () => {
+  const base = {
+    artifactSelected: true,
+    actionLoaded: false,
+    listLoaded: true,
+    fetching: false,
+    fetchNextError: false,
+    hasNextPage: true,
+    pagesLoaded: 1,
+    maxPages: 100,
+  };
+
+  it("fetches while the action is missing and pages remain under the cap", () => {
+    expect(shouldAutoFetchLinkedAction(base)).toBe(true);
+    expect(shouldAutoFetchLinkedAction({ ...base, maxPages: 2 })).toBe(true);
+  });
+
+  it("stops once the action is found or nothing is selected", () => {
+    expect(shouldAutoFetchLinkedAction({ ...base, actionLoaded: true })).toBe(
+      false,
+    );
+    expect(
+      shouldAutoFetchLinkedAction({ ...base, artifactSelected: false }),
+    ).toBe(false);
+  });
+
+  it("stops without a loaded list or a next page", () => {
+    expect(shouldAutoFetchLinkedAction({ ...base, listLoaded: false })).toBe(
+      false,
+    );
+    expect(shouldAutoFetchLinkedAction({ ...base, hasNextPage: false })).toBe(
+      false,
     );
   });
 
-  it("is exhausted at the bounded page cap even with pages remaining", () => {
+  it("stops while a fetch is in flight or a page read failed", () => {
+    expect(shouldAutoFetchLinkedAction({ ...base, fetching: true })).toBe(
+      false,
+    );
+    expect(shouldAutoFetchLinkedAction({ ...base, fetchNextError: true })).toBe(
+      false,
+    );
+  });
+
+  it("the cap branch stops the walk, provable at cap=2", () => {
+    // One page below a two-page cap: still walking.
     expect(
-      linkedActionRailState({ ...base, pagesLoaded: 100, maxPages: 100 }),
-    ).toBe("exhausted");
+      shouldAutoFetchLinkedAction({ ...base, pagesLoaded: 1, maxPages: 2 }),
+    ).toBe(true);
+    // At the cap with pages remaining on the server: stop.
+    expect(
+      shouldAutoFetchLinkedAction({ ...base, pagesLoaded: 2, maxPages: 2 }),
+    ).toBe(false);
+    expect(
+      shouldAutoFetchLinkedAction({ ...base, pagesLoaded: 3, maxPages: 2 }),
+    ).toBe(false);
   });
 });
