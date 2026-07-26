@@ -3259,3 +3259,44 @@ id is treated as not-found (no existence leak)". That one is now asserted *with
 its reason*, so it is not later "fixed" into a 422 that would hand an
 unauthenticated prober the difference between a bad id shape and a project that
 exists.
+
+---
+
+## 20. Mutation testing against `next dev` needs two runs
+
+This round used mutation testing as its acceptance criterion throughout, and
+twice drew a wrong conclusion from a mutation that appeared to survive. Both
+times the cause was the same and it is specific to this harness.
+
+**The mechanism.** The mock and real Playwright configs both start
+`pnpm --filter @sf/web dev --webpack`. Editing a `.tsx` and starting a run
+immediately races that server's recompilation: the run can be served the
+previous bundle, the mutation is not in the page, and the test passes. A
+**surviving mutation is therefore not evidence of anything until it has
+survived twice.** A mutation that reddens a test is trustworthy on the first
+run — a stale bundle cannot manufacture a failure.
+
+**Measured, on the same mutation, in the same file, minutes apart:**
+
+| run | `document.querySelectorAll("main")` | `getByRole("main")` | `toBeVisible()` |
+|---|---|---|---|
+| immediate | 1 | 1 | passed |
+| after recompilation | 2 | 2 | threw strict-mode violation |
+
+Every "survived" mutation in this round has since been re-run under that rule:
+
+| mutation | first read | verdict under two runs |
+|---|---|---|
+| widened scan loop, duplicate `<main>` restored | survived | **stale bundle** — it would have caught it (§17.6b) |
+| `toBeVisible()` with two `<main>` elements | passed | **stale bundle** — it throws (§17.6b) |
+| `<main aria-hidden="true" />` added to the shell | survived | **genuine** — `aria-hidden` removes the element from the accessibility tree, so no second landmark was ever created, and `19f01ca`'s explanation stands |
+| `popstate` handler disabled, Product Profile guard | survived | **genuine** — Chromium answers on the Navigation API; independently confirmed by the fallback test built for it, which does redden under the same mutation |
+
+Two of the four negative results were artefacts. Both had already been written
+into this document as conclusions before being caught, which is why the
+corrections in §17.6b are stacked rather than rewritten.
+
+**The rule this leaves:** a mutation that survives gets re-run before it is
+believed, and a mutation that survives *for a reason* gets that reason tested
+too — `aria-hidden` and `popstate` above are both cases where the reason turned
+out to be real, and neither would have been trustworthy stated on one run.
