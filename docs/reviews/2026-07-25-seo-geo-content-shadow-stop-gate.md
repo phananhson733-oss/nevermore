@@ -2810,6 +2810,18 @@ CSS keyed to them.
 `/api/mvp/projects/{id}/report` request, neither of which a recheck comparison
 produces.
 
+**The printing half is fixed (`776b24c`); the R3 half is not, and the two were
+separable.** Removing the `body:has([data-report-page])` gate makes the rule
+unconditional, which restores its own stated intent rather than choosing a new
+screen to privilege — nothing wants navigation chrome in a printout whichever
+way R3 goes, and `overview.module.css:1342` already ships a print stylesheet the
+gate was quietly defeating. Measured afterwards: the `a11y.spec.ts` print test
+now clears **both** shell assertions and fails only on `[data-report-page]`
+being visible, which is the Owner decision itself. A mock-suite regression net
+covers the fixed half without needing a database, and asserts the page heading
+survives print media as well — a rule that hid everything would satisfy the two
+shell assertions and be worse than the defect.
+
 ### 17.5 The one test-side cause — fixed in `dbdf826`
 
 `project-isolation` asserted English chrome under a `zh-CN` default, and used
