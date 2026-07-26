@@ -181,5 +181,5 @@ test("Sources exposes the diagnosis CTA only when every enabled family is usable
   ).toBeVisible();
   await expect(
     footline.getByRole("link", { name: "Review diagnostic coverage" }),
-  ).toHaveAttribute("href", `/p/${E2E_PROJECT_ID}/diagnosis`);
+  ).toHaveAttribute("href", `/p/${E2E_PROJECT_ID}/growth-map?object=pages`);
 });

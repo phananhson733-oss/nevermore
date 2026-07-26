@@ -31,13 +31,10 @@ test("Next development runtime renders without browser or CSP errors", async ({
   });
   await installCriticalFlowApi(page);
 
-  const response = await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  const response = await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
   expect(response?.status()).toBe(200);
   await expect(
-    page.getByRole("heading", {
-      name: "Where growth should move next",
-      level: 1,
-    }),
+    page.getByRole("heading", { name: "Sources", level: 1 }),
   ).toBeVisible();
   await page.evaluate(
     () =>

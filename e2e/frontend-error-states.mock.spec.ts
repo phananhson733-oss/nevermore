@@ -700,8 +700,17 @@ test("Studio releases a 409 recovery fence when the canonical run has already se
 
   await expect.poll(() => createAttempts).toBe(1);
   await expect.poll(() => artifactReads).toBe(2);
+  // Re-aimed for the unified queue, not loosened. The fence used to show as a
+  // disabled "Generating…" button on the card. In the unified queue a fenced
+  // row is not given a regenerate handler at all and its Open control is
+  // disabled (studio/_studio.tsx:3089 `generationFenced`, :711 `onRegenerate`,
+  // :705 `disabled={selectionBlocked}`), so the same fence is now proven by
+  // the ABSENCE of the control plus a blocked selection. Both halves are
+  // required: a fence that silently dropped would restore the button, and a
+  // fence that stopped blocking selection would enable Open.
+  await expect(card.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
   await expect(
-    card.getByRole("button", { name: "Generating…" }),
+    card.getByRole("button", { name: "Open", exact: true }),
   ).toBeDisabled();
   expect(createAttempts).toBe(1);
 

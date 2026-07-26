@@ -120,6 +120,20 @@ function snapshotFixture(
   };
 }
 
+/**
+ * Assert which screen we are on without asserting the screen's own query
+ * state. The canonical Execution route round-trips the open action and
+ * artifact through `?actionId=&artifactId=`
+ * (execution/page.tsx:24 + _execution-deep-link.ts); the retired /studio route
+ * it replaced had no query, so the exact-string form these navigation
+ * assertions used would now be asserting that deep linking is switched OFF.
+ * The pathname is still compared exactly: a wrong route, or a typo in one,
+ * fails exactly as before.
+ */
+function onProjectScreen(segment: string) {
+  return (url: URL) => url.pathname === `/p/${E2E_PROJECT_ID}/${segment}`;
+}
+
 test.beforeEach(async ({ page }) => {
   await installCriticalFlowApi(page);
 });
@@ -292,7 +306,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
 
   await page.goto(`/p/${E2E_PROJECT_ID}/results`);
   await page.getByRole("link", { name: "Execution", exact: true }).click();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  await expect(page).toHaveURL(onProjectScreen("execution"));
 
   const firstOpen = page
     .getByText(firstAction.title, { exact: true })
@@ -357,7 +371,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   dialog = await dialogPromise;
   await dialog.dismiss();
   await transitionPromise;
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  await expect(page).toHaveURL(onProjectScreen("execution"));
   await expect(content).toHaveValue("Dirty before link navigation");
 
   dialogPromise = page.waitForEvent("dialog");
@@ -365,23 +379,23 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   dialog = await dialogPromise;
   await dialog.accept();
   await transitionPromise;
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results`);
+  await expect(page).toHaveURL(onProjectScreen("results"));
 
   await page.getByRole("link", { name: "Execution", exact: true }).click();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  await expect(page).toHaveURL(onProjectScreen("execution"));
   const executionPosition = await page.evaluate(
     () => history.state?.__sfProjectHistoryPosition as unknown,
   );
   expect(typeof executionPosition).toBe("number");
   await page.goBack();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results`);
+  await expect(page).toHaveURL(onProjectScreen("results"));
   const resultsPosition = await page.evaluate(
     () => history.state?.__sfProjectHistoryPosition as unknown,
   );
   expect(typeof resultsPosition).toBe("number");
   expect(resultsPosition as number).toBeLessThan(executionPosition as number);
   await page.goForward();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  await expect(page).toHaveURL(onProjectScreen("execution"));
   await firstOpen.click();
   await content.fill("Dirty before browser back");
   await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
@@ -389,23 +403,23 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await page.evaluate(() => window.setTimeout(() => history.back(), 0));
   dialog = await dialogPromise;
   await dialog.dismiss();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  await expect(page).toHaveURL(onProjectScreen("execution"));
   await expect(content).toHaveValue("Dirty before browser back");
 
   dialogPromise = page.waitForEvent("dialog");
   await page.evaluate(() => window.setTimeout(() => history.back(), 0));
   dialog = await dialogPromise;
   await dialog.accept();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results`);
+  await expect(page).toHaveURL(onProjectScreen("results"));
 
   await page.goForward();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  await expect(page).toHaveURL(onProjectScreen("execution"));
   await firstOpen.click();
   await expect(content).toHaveValue("Artifact page 1");
   await page.getByRole("link", { name: "Overview" }).click();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/overview`);
+  await expect(page).toHaveURL(onProjectScreen("overview"));
   await page.goBack();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  await expect(page).toHaveURL(onProjectScreen("execution"));
   await firstOpen.click();
 
   await content.fill("Dirty before browser forward");
@@ -414,7 +428,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await page.evaluate(() => window.setTimeout(() => history.forward(), 0));
   dialog = await dialogPromise;
   await dialog.dismiss();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  await expect(page).toHaveURL(onProjectScreen("execution"));
   await expect(content).toHaveValue("Dirty before browser forward");
 });
 
