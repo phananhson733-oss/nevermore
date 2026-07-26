@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   }),
   StudioClient: vi.fn(),
   ExecutionClient: vi.fn(),
-  ReportClient: vi.fn(),
   ResultsClient: vi.fn(),
 }));
 
@@ -15,7 +14,6 @@ vi.mock("./studio/_studio.tsx", () => ({ StudioClient: mocks.StudioClient }));
 vi.mock("./execution/_execution.tsx", () => ({
   ExecutionClient: mocks.ExecutionClient,
 }));
-vi.mock("./report/_report.tsx", () => ({ ReportClient: mocks.ReportClient }));
 vi.mock("./results/_results.tsx", () => ({
   ResultsClient: mocks.ResultsClient,
 }));
