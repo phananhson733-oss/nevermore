@@ -5,6 +5,19 @@ import {
   sourceSlot,
 } from "./mock-api.ts";
 
+/** This spec asserts BOTH locales. The default UI locale is zh-CN
+ *  (`packages/i18n/src/config.ts:6`), so its English assertions would otherwise
+ *  be reading a Chinese page. The base locale is selected explicitly here; the
+ *  tests that assert Chinese chrome still click the in-app locale switch, so
+ *  neither half rides on the default. */
+test.beforeEach(async ({ page }) => {
+  await page
+    .context()
+    .addCookies([
+      { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+    ]);
+});
+
 async function json(route: Route, body: unknown): Promise<void> {
   await route.fulfill({
     status: 200,

@@ -1,6 +1,16 @@
 import { expect, test } from "@playwright/test";
 import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
 
+/** The English anchor below needs an explicit locale: the app's default UI
+ *  locale is zh-CN (`packages/i18n/src/config.ts:6`). */
+test.beforeEach(async ({ page }) => {
+  await page
+    .context()
+    .addCookies([
+      { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+    ]);
+});
+
 test("Next development runtime renders without browser or CSP errors", async ({
   page,
 }) => {
