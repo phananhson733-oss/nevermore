@@ -247,3 +247,55 @@ test("has no page overflow or blocking axe findings on desktop and 390px", async
   );
   expect(await blockingAxeViolations(page, "#main-content")).toEqual([]);
 });
+
+/**
+ * The retired Diagnosis screen owned a keyboard contract for reaching a
+ * Finding's evidence: Enter opens a named dialog, the dialog takes focus,
+ * Escape closes it, focus returns to the exact trigger, and the trigger's
+ * aria-expanded tracks the open state. Growth Map replaced that screen, so the
+ * same contract has to hold here or a keyboard-only reviewer cannot open and
+ * leave the evidence disclosure.
+ */
+test("evidence disclosure opens on Enter, closes on Escape, and returns focus", async ({
+  page,
+}) => {
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
+  );
+  await expect(page.locator(auditEvidencePanel)).toBeVisible();
+
+  const card = page.locator(
+    `[data-finding-card="${E2E_CANONICAL_FINDING_ID}"]`,
+  );
+  await expect(card).toBeVisible();
+  const trigger = card.locator("summary");
+  await expect(trigger).toHaveCount(1);
+  const dialog = card.getByRole("dialog", { name: "Inspect Evidence IDs" });
+
+  // Closed: no dialog, and the trigger advertises the collapsed state.
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+  // Enter opens a named dialog and hands it focus.
+  await trigger.focus();
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(dialog.getByText("Evidence ID", { exact: false })).toBeVisible();
+
+  // Escape closes it and gives focus back to the exact trigger that opened it.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+  // The restored contract is repeatable, not a one-shot.
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+});

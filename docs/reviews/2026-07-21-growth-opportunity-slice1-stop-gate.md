@@ -160,6 +160,54 @@ an accurate baseline. None of them weakens the seven decisions above.
    promotion against the same endpoints the app hooks call, since no user-visible
    control exists yet.
 
+### Post-acceptance regression register
+
+Defects found after this gate was accepted, recorded here because each one
+changes what a reviewer can actually do with a surface this gate accepted.
+
+**R1 — [fixed 2026-07-26] Growth Map lost the Diagnosis evidence keyboard
+contract.**
+
+Slice 1 replaced the Diagnosis screen with Growth Map and pointed
+`/p/{projectId}/diagnosis` at it, but the evidence disclosure was rebuilt as a
+bare `<details>/<summary>`: no Escape handling, no focus management, no
+`aria-expanded`. The contract the retired screen owned — asserted for Diagnosis
+by `e2e/real-vertical-chains.spec.ts` — was that Enter opens a `role="dialog"`,
+Escape closes it, focus returns to the exact trigger, and `aria-expanded` flips.
+A keyboard-only reviewer could open the Growth Map disclosure but had no
+equivalent way to leave it, and assistive technology was never told the
+trigger's state. The whole `diagnosis/_*.tsx` tree is now orphaned, so nothing
+else carried the contract.
+
+- **Fix.**
+  `apps/web/src/app/p/[projectId]/growth-map/_evidence-refs-disclosure.tsx`
+  keeps the `<details>/<summary>` rendering and adds behavior and ARIA only:
+  `aria-expanded` on the trigger, a `role="dialog"` region labelled by the
+  trigger, focus moved into the dialog on open, Escape to close, and focus
+  returned to the exact trigger element that opened it.
+- **Guard.** `e2e/growth-map.mock.spec.ts` — "evidence disclosure opens on
+  Enter, closes on Escape, and returns focus". Mutation-tested on darwin:
+  removing the Escape handling, removing the focus return, and pinning
+  `aria-expanded` each turn the guard red, so none of the three clauses is
+  uncovered.
+- **Visual parity (structural).** The diff contains no `*.css` or
+  `*.module.css` file, no added / removed / changed `className`, and no inline
+  `style`. Every changed line is behavior or ARIA.
+- **Visual parity (measured, darwin only).** Pre-change and post-change
+  screenshots of the Finding card, the Audit Evidence panel, and the full Growth
+  Map page at 1440x900 and 390x844 are identical at `threshold: 0,
+  maxDiffPixels: 0` in both the closed and the pointer-opened state.
+- **Not verified on linux.** That pixel comparison was produced on darwin only;
+  this machine cannot produce a linux baseline, and no linux baseline was
+  regenerated or overwritten. The linux rendering of this change is
+  **unverified** and has to be confirmed by CI.
+- **Residual (accepted).** Opening the disclosure with the keyboard now paints
+  the application's standard `:focus-visible` ring (`globals.css`) on the
+  evidence region instead of on the trigger, because focus moves into the
+  dialog. Measured as a 2996-pixel difference (0.03 of the card) in the
+  keyboard-opened state only; layout is byte-identical. This is the required
+  visible focus indicator following focus — no style rule was added or changed.
+
 ---
 
 ## Slice 2 re-entry brief (non-normative)

@@ -67,6 +67,7 @@ import {
   useGrowthMapUrls,
 } from "@/lib/api/hooks-growth-map";
 import { ProblemState } from "../_problem-display.tsx";
+import { EvidenceRefsDisclosure } from "./_evidence-refs-disclosure.tsx";
 import { executionHrefForRef } from "../execution/_execution-deep-link.ts";
 import {
   GROWTH_MAP_OBJECT_MODES,
@@ -831,8 +832,10 @@ function FindingCard({
           </dd>
         </div>
       </dl>
-      <details className={styles.evidenceRefs}>
-        <summary>{t("inspectEvidenceIds")}</summary>
+      <EvidenceRefsDisclosure
+        findingId={finding.findingId}
+        label={t("inspectEvidenceIds")}
+      >
         <ul>
           {finding.evidenceIds.map((evidenceId) => (
             <li key={evidenceId}>
@@ -842,7 +845,7 @@ function FindingCard({
             </li>
           ))}
         </ul>
-      </details>
+      </EvidenceRefsDisclosure>
       {!reviewEnabled ? (
         <p className={styles.reviewUnavailable}>{t("evidenceReadOnly")}</p>
       ) : reviewable ? (
