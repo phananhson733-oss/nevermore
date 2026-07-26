@@ -2941,6 +2941,11 @@
   gap: 10px;
 }
 
+/* Styling seam on the feature's own Button node; populated per breakpoint. */
+.runDiagnosisButton {
+  flex-shrink: 0;
+}
+
 .runDiagnosisStatus {
   display: inline-flex;
   min-height: 24px;
@@ -2981,7 +2986,32 @@
 }
 
 @media (max-width: 560px) {
+  /* Narrow screens keep the idle hero at its pre-R1 height: the source link
+     and the run control share one row (a taller hero re-renders the page
+     decoration behind every later section). Expanded and error states wrap
+     onto following lines inside this feature's own nodes. */
+  .heroActions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 12px;
+  }
+  .runDiagnosis {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .runDiagnosis .runDiagnosisButton {
+    padding: 0 12px;
+  }
   .runDiagnosisControl {
     flex-wrap: wrap;
+  }
+  /* While the pill slot is empty it must not spend row width (its 10px flex
+     gap would push the idle row past 390px and wrap it, growing the hero).
+     Out of flow it stays in the DOM and the accessibility tree, so the named
+     live region persists; the first pill returns it to flow. */
+  .runDiagnosisControl .runDiagnosisStatus:empty {
+    position: absolute;
   }
 }

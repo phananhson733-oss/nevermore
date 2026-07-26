@@ -108,7 +108,7 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
   const canRun =
     snapshotReadState === "ready" &&
     crawlReady &&
-    !state.contextGate &&
+    state.serverGate === null &&
     !locked &&
     !createRun.isPending;
 
@@ -144,43 +144,75 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
     }
   }
 
+  // The crawl gate releases only after a fresh, successful snapshot read: the
+  // recheck itself never POSTs, and a failed refetch keeps the gate shut.
+  async function onRecheckCrawl(): Promise<void> {
+    const refreshed = await snapshots.refetch();
+    if (refreshed.isSuccess) {
+      dispatch({ type: "recheckGate", gate: "crawl" });
+    }
+  }
+
   const pollErrorVisible = showRunStatusReadError(state, runQuery.isError);
-  const showSpinner = state.phase === "submitting" || state.phase === "tracking";
+  const showSpinner =
+    state.phase === "submitting" || state.phase === "tracking";
   const pillStatus = runDiagnosisStatusPill(state, polledStatus);
   const labelKey = runDiagnosisButtonLabelKey(state);
 
   const noteId = "sf-growth-map-run-note";
-  const note = state.contextGate ? (
-    <>
-      {t("runNeedsContext")}{" "}
-      <Link href={`/p/${projectId}/context`} className={styles.runDiagnosisLink}>
-        {tNav("context")}
-      </Link>
-    </>
-  ) : snapshotReadState === "loading" ? (
-    <>{`${tNav("sources")}: ${tCommon("loading")}`}</>
-  ) : snapshotReadState === "error" ? (
-    <>{`${tNav("sources")}: ${tCommon("error")}`}</>
-  ) : !crawlReady ? (
-    <>
-      {t("runNeedsCrawl")}{" "}
-      <Link href={`/p/${projectId}/sources`} className={styles.runDiagnosisLink}>
-        {tNav("sources")}
-      </Link>
-    </>
-  ) : null;
+  const note =
+    state.serverGate === "context" ? (
+      <>
+        {t("runNeedsContext")}{" "}
+        <Link
+          href={`/p/${projectId}/context`}
+          className={styles.runDiagnosisLink}
+        >
+          {tNav("context")}
+        </Link>
+      </>
+    ) : state.serverGate === "crawl" ? (
+      <>
+        {t("runNeedsCrawl")}{" "}
+        <Link
+          href={`/p/${projectId}/sources`}
+          className={styles.runDiagnosisLink}
+        >
+          {tNav("sources")}
+        </Link>
+      </>
+    ) : snapshotReadState === "loading" ? (
+      <>{`${tNav("sources")}: ${tCommon("loading")}`}</>
+    ) : snapshotReadState === "error" ? (
+      <>{`${tNav("sources")}: ${tCommon("error")}`}</>
+    ) : !crawlReady ? (
+      <>
+        {t("runNeedsCrawl")}{" "}
+        <Link
+          href={`/p/${projectId}/sources`}
+          className={styles.runDiagnosisLink}
+        >
+          {tNav("sources")}
+        </Link>
+      </>
+    ) : null;
 
   return (
     <div className={styles.runDiagnosis} data-run-diagnosis="">
       <div className={styles.runDiagnosisControl}>
         <Button
           variant="primary"
+          className={styles.runDiagnosisButton}
           onClick={() => void onRun()}
           disabled={!canRun}
           aria-describedby={note === null ? undefined : noteId}
         >
           {showSpinner || createRun.isPending ? (
-            <Spinner size="sm" label={t("runInProgress")} />
+            // Decorative here: the button's visible label already announces
+            // the busy state, and the named status region below is the single
+            // live region this control owns. role comes after Spinner's own
+            // default, so it wins; aria-hidden drops the node from the tree.
+            <Spinner size="sm" aria-hidden="true" role="presentation" />
           ) : null}
           {t(labelKey)}
         </Button>
@@ -204,16 +236,26 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
           {note}
         </p>
       )}
-      {state.contextGate ? (
+      {state.serverGate === "context" ? (
         <Button
           size="sm"
           variant="secondary"
-          onClick={() => dispatch({ type: "recheckContext" })}
+          onClick={() => dispatch({ type: "recheckGate", gate: "context" })}
         >
           {t("runRecheckContext")}
         </Button>
       ) : null}
-      {snapshotReadState === "error" ? (
+      {state.serverGate === "crawl" ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void onRecheckCrawl()}
+          disabled={snapshots.isFetching}
+        >
+          {t("runRecheckContext")}
+        </Button>
+      ) : null}
+      {snapshotReadState === "error" && state.serverGate === null ? (
         <Button
           size="sm"
           variant="secondary"
@@ -239,17 +281,21 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
       ) : null}
       {state.submitNotice === null ? null : (
         <p
-          className={cx(styles.runDiagnosisNotice, styles.runDiagnosisNoticeError)}
+          className={cx(
+            styles.runDiagnosisNotice,
+            styles.runDiagnosisNoticeError,
+          )}
           data-run-diagnosis-notice=""
         >
-          {state.submitNotice === "needsCrawl"
-            ? t("runNeedsCrawl")
-            : tCommon("error")}
+          {tCommon("error")}
         </p>
       )}
       {state.terminal?.status === "failed" ? (
         <p
-          className={cx(styles.runDiagnosisNotice, styles.runDiagnosisNoticeError)}
+          className={cx(
+            styles.runDiagnosisNotice,
+            styles.runDiagnosisNoticeError,
+          )}
           data-run-diagnosis-notice=""
         >
           {t("runError")}
@@ -258,7 +304,10 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
       {pollErrorVisible ? (
         <>
           <p
-            className={cx(styles.runDiagnosisNotice, styles.runDiagnosisNoticeError)}
+            className={cx(
+              styles.runDiagnosisNotice,
+              styles.runDiagnosisNoticeError,
+            )}
             data-run-diagnosis-notice=""
           >
             {t("runStatusReadError")}

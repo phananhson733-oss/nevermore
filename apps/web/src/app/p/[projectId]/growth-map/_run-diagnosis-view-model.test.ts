@@ -32,7 +32,9 @@ function apiError(
   });
 }
 
-function tracking(overrides: Partial<RunDiagnosisState> = {}): RunDiagnosisState {
+function tracking(
+  overrides: Partial<RunDiagnosisState> = {},
+): RunDiagnosisState {
   return {
     ...reduceRunDiagnosis(
       reduceRunDiagnosis(INITIAL_RUN_DIAGNOSIS_STATE, { type: "submit" }),
@@ -71,15 +73,18 @@ describe("reduceRunDiagnosis submit fence", () => {
     expect(reduceRunDiagnosis(unknown, { type: "submit" })).toBe(unknown);
   });
 
-  it("refuses submit while the sticky context gate is set", () => {
-    const gated = reduceRunDiagnosis(
-      reduceRunDiagnosis(INITIAL_RUN_DIAGNOSIS_STATE, { type: "submit" }),
-      { type: "serverGate", gate: "context" },
-    );
-    expect(gated.phase).toBe("idle");
-    expect(gated.contextGate).toBe(true);
-    expect(reduceRunDiagnosis(gated, { type: "submit" })).toBe(gated);
-  });
+  it.each(["context", "crawl"] as const)(
+    "refuses submit while the sticky %s gate is set",
+    (gate) => {
+      const gated = reduceRunDiagnosis(
+        reduceRunDiagnosis(INITIAL_RUN_DIAGNOSIS_STATE, { type: "submit" }),
+        { type: "serverGate", gate },
+      );
+      expect(gated.phase).toBe("idle");
+      expect(gated.serverGate).toBe(gate);
+      expect(reduceRunDiagnosis(gated, { type: "submit" })).toBe(gated);
+    },
+  );
 });
 
 describe("reduceRunDiagnosis submission outcomes", () => {
@@ -116,7 +121,7 @@ describe("reduceRunDiagnosis submission outcomes", () => {
     expect(state.trackedRunId).toBeNull();
   });
 
-  it("maps the crawl server gate to the needsCrawl notice and unlocks", () => {
+  it("maps the crawl server gate to a sticky gate, not a transient notice", () => {
     const submitting = reduceRunDiagnosis(INITIAL_RUN_DIAGNOSIS_STATE, {
       type: "submit",
     });
@@ -125,8 +130,8 @@ describe("reduceRunDiagnosis submission outcomes", () => {
       gate: "crawl",
     });
     expect(state.phase).toBe("idle");
-    expect(state.submitNotice).toBe("needsCrawl");
-    expect(state.contextGate).toBe(false);
+    expect(state.serverGate).toBe("crawl");
+    expect(state.submitNotice).toBeNull();
   });
 
   it("maps an unmapped submit failure to the generic notice and unlocks", () => {
@@ -255,14 +260,34 @@ describe("reduceRunDiagnosis terminal handling", () => {
 });
 
 describe("reduceRunDiagnosis explicit recoveries", () => {
-  it("releases the sticky context gate only through recheckContext", () => {
-    const gated = reduceRunDiagnosis(
+  it.each(["context", "crawl"] as const)(
+    "releases the sticky %s gate only through its own recheck",
+    (gate) => {
+      const gated = reduceRunDiagnosis(
+        reduceRunDiagnosis(INITIAL_RUN_DIAGNOSIS_STATE, { type: "submit" }),
+        { type: "serverGate", gate },
+      );
+      const released = reduceRunDiagnosis(gated, { type: "recheckGate", gate });
+      expect(released.serverGate).toBeNull();
+      expect(released.phase).toBe("idle");
+    },
+  );
+
+  it("ignores a recheck that names the other gate", () => {
+    const crawlGated = reduceRunDiagnosis(
+      reduceRunDiagnosis(INITIAL_RUN_DIAGNOSIS_STATE, { type: "submit" }),
+      { type: "serverGate", gate: "crawl" },
+    );
+    expect(
+      reduceRunDiagnosis(crawlGated, { type: "recheckGate", gate: "context" }),
+    ).toBe(crawlGated);
+    const contextGated = reduceRunDiagnosis(
       reduceRunDiagnosis(INITIAL_RUN_DIAGNOSIS_STATE, { type: "submit" }),
       { type: "serverGate", gate: "context" },
     );
-    const released = reduceRunDiagnosis(gated, { type: "recheckContext" });
-    expect(released.contextGate).toBe(false);
-    expect(released.phase).toBe("idle");
+    expect(
+      reduceRunDiagnosis(contextGated, { type: "recheckGate", gate: "crawl" }),
+    ).toBe(contextGated);
   });
 
   it("returns to idle from conflictUnknown only through conflictRecovery", () => {
@@ -365,8 +390,9 @@ describe("runDiagnosisEventFromError", () => {
   ] as const)(
     "maps RUN_ALREADY_ACTIVE with a %s pointer to conflictUnknown",
     (_label, current) => {
-      expect(runDiagnosisEventFromError(apiError("RUN_ALREADY_ACTIVE", current)))
-        .toEqual({ type: "conflict", pointer: null });
+      expect(
+        runDiagnosisEventFromError(apiError("RUN_ALREADY_ACTIVE", current)),
+      ).toEqual({ type: "conflict", pointer: null });
     },
   );
 

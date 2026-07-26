@@ -22,6 +22,9 @@ export interface RunDiagnosisTerminal {
   readonly status: RunStatus;
 }
 
+/** Which server-side 422 precondition is holding the control shut. */
+export type RunDiagnosisServerGate = "context" | "crawl";
+
 export interface RunDiagnosisState {
   readonly phase: RunDiagnosisPhase;
   /** Kept after terminal on purpose: it is the pill's data source (D4). */
@@ -30,9 +33,13 @@ export interface RunDiagnosisState {
   readonly terminal: RunDiagnosisTerminal | null;
   /** A 409 takeover (or unknown conflict) is being surfaced to the operator. */
   readonly runActiveNotice: boolean;
-  /** Sticky 422 CONTEXT_INCOMPLETE gate; released only by recheckContext. */
-  readonly contextGate: boolean;
-  readonly submitNotice: "needsCrawl" | "genericError" | null;
+  /**
+   * Sticky 422 gate (CONTEXT_INCOMPLETE or CRAWL_SNAPSHOT_REQUIRED); released
+   * only by the matching explicit recheck, never by another click. Both gates
+   * share one shape so neither can silently re-POST into the rate limit.
+   */
+  readonly serverGate: RunDiagnosisServerGate | null;
+  readonly submitNotice: "genericError" | null;
   /** Success terminals already refreshed, exactly once per runId (D5). */
   readonly invalidatedRunIds: readonly string[];
   /** Session-scoped Run vs Re-run label input (D8). */
@@ -44,7 +51,7 @@ export const INITIAL_RUN_DIAGNOSIS_STATE: RunDiagnosisState = {
   trackedRunId: null,
   terminal: null,
   runActiveNotice: false,
-  contextGate: false,
+  serverGate: null,
   submitNotice: null,
   invalidatedRunIds: [],
   sessionHasTerminal: false,
@@ -58,14 +65,14 @@ export type RunDiagnosisEvent =
   | { readonly type: "submit" }
   | { readonly type: "accepted"; readonly runId: string }
   | { readonly type: "conflict"; readonly pointer: DiagnosticRunPointer | null }
-  | { readonly type: "serverGate"; readonly gate: "context" | "crawl" }
+  | { readonly type: "serverGate"; readonly gate: RunDiagnosisServerGate }
   | { readonly type: "submitFailed" }
   | {
       readonly type: "runTerminal";
       readonly runId: string;
       readonly status: RunStatus;
     }
-  | { readonly type: "recheckContext" }
+  | { readonly type: "recheckGate"; readonly gate: RunDiagnosisServerGate }
   | { readonly type: "conflictRecovery" };
 
 function isSuccessTerminal(status: RunStatus): boolean {
@@ -79,8 +86,8 @@ export function reduceRunDiagnosis(
   switch (event.type) {
     case "submit": {
       // Machine-level single-flight fence: one logical submission at a time,
-      // and never while the sticky context gate is unresolved (D1, D2).
-      if (state.phase !== "idle" || state.contextGate) return state;
+      // and never while a sticky server gate is unresolved (D1, D2).
+      if (state.phase !== "idle" || state.serverGate !== null) return state;
       return {
         ...state,
         phase: "submitting",
@@ -111,11 +118,11 @@ export function reduceRunDiagnosis(
       };
     }
     case "serverGate": {
+      // Both 422 preconditions are sticky: the control stays shut until the
+      // matching explicit recheck, so a click can never re-POST into the
+      // 20/15min rate limit while the server keeps refusing.
       if (state.phase !== "submitting") return state;
-      if (event.gate === "context") {
-        return { ...state, phase: "idle", contextGate: true };
-      }
-      return { ...state, phase: "idle", submitNotice: "needsCrawl" };
+      return { ...state, phase: "idle", serverGate: event.gate };
     }
     case "submitFailed": {
       if (state.phase !== "submitting") return state;
@@ -139,9 +146,12 @@ export function reduceRunDiagnosis(
         sessionHasTerminal: true,
       };
     }
-    case "recheckContext": {
-      if (!state.contextGate) return state;
-      return { ...state, contextGate: false };
+    case "recheckGate": {
+      // Releases only the gate it names: a context recheck can never unlock a
+      // crawl gate (and vice versa). The crawl recheck is dispatched by the
+      // component strictly after a successful snapshots.refetch().
+      if (state.serverGate !== event.gate) return state;
+      return { ...state, serverGate: null };
     }
     case "conflictRecovery": {
       if (state.phase !== "conflictUnknown") return state;
