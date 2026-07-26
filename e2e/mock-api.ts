@@ -1319,7 +1319,20 @@ export interface ActionOverrideApiState {
   failActionsGet: boolean;
   /** While true, every cursor-bearing GET /actions read 500s. */
   failActionsPage: boolean;
-  actionsGetCount: number;
+  /**
+   * Every GET /actions list read in arrival order, by cursor. Specs assert
+   * the exact cursor sequence (each page fetched exactly once) rather than a
+   * bare request count, which would accept a pathological refetch loop.
+   */
+  readonly actionGetRequests: { readonly cursor: string | null }[];
+  /**
+   * While true, PATCH /actions/{id} records the request and then parks until
+   * released, modelling an in-flight request the UI must not offer to
+   * "discard" its way out of. Flip back to false and call every parked
+   * release to let the held responses complete.
+   */
+  holdPatch: boolean;
+  readonly heldPatchReleases: (() => void)[];
 }
 
 export async function installActionOverrideApi(
@@ -1339,7 +1352,9 @@ export async function installActionOverrideApi(
     conflictMode: "none",
     failActionsGet: false,
     failActionsPage: false,
-    actionsGetCount: 0,
+    actionGetRequests: [],
+    holdPatch: false,
+    heldPatchReleases: [],
   };
   const artifacts = options.artifacts ?? [];
   const pageSize = options.actionsPageSize ?? Number.MAX_SAFE_INTEGER;
@@ -1376,8 +1391,8 @@ export async function installActionOverrideApi(
     const path = url.pathname;
 
     if (method === "GET" && path === `${BASE}/actions`) {
-      state.actionsGetCount += 1;
       const cursor = url.searchParams.get("cursor");
+      state.actionGetRequests.push({ cursor });
       if (cursor === null && state.failActionsGet) {
         await json(
           route,
@@ -1425,6 +1440,13 @@ export async function installActionOverrideApi(
           readonly roadmapLane?: string;
         };
         state.actionPatchRequests.push({ actionId, body });
+        if (state.holdPatch) {
+          // Park the response until the spec releases it; the request itself
+          // was already recorded above, so the spec can see it in flight.
+          await new Promise<void>((resolve) => {
+            state.heldPatchReleases.push(resolve);
+          });
+        }
         const current = state.currentActions.find(
           (item) => item.id === actionId,
         );

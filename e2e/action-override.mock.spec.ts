@@ -137,6 +137,16 @@ async function expectNoNewPatch(
   expect(state.actionPatchRequests.length).toBe(countBefore);
 }
 
+/** Let every PATCH parked behind `holdPatch` complete. */
+function releaseHeldPatches(state: ActionOverrideApiState): void {
+  state.holdPatch = false;
+  for (const release of state.heldPatchReleases.splice(0)) release();
+}
+
+function evidenceRail(page: Page): Locator {
+  return page.locator("[data-studio-evidence-rail]");
+}
+
 // --------------------------------------------------------------- entry -----
 
 test("the rail exposes a status badge and a dialog trigger for the linked action", async ({
@@ -173,6 +183,38 @@ test("the rail exposes a status badge and a dialog trigger for the linked action
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await expect(trigger).toBeFocused();
+});
+
+test("a dirty artifact draft disables the adjust trigger until the draft is resolved", async ({
+  page,
+}) => {
+  const { actions, artifacts } = sixStatusFixture();
+  await installActionOverrideApi(page, { actions, artifacts });
+  await openExecution(page);
+  await selectArtifact(page, artifacts[1]!.id);
+  const trigger = overrideTrigger(page);
+  await expect(trigger).toBeEnabled();
+
+  // An unsaved artifact draft closes the second editing entry point: two
+  // independently dirty editors would chain two Back confirms, and the first
+  // confirm would discard silently when the second is refused.
+  const note = page.getByRole("textbox", { name: "Revision note" });
+  await note.fill("unsaved draft note");
+  await expect(trigger).toBeDisabled();
+  await expect(trigger).toHaveAttribute(
+    "aria-describedby",
+    "sf-action-override-editor-hint",
+  );
+  await expect(page.locator("#sf-action-override-editor-hint")).toHaveText(
+    "Save or discard the draft edits before adjusting the action.",
+  );
+
+  // Resolving the draft restores the trigger, and it opens.
+  await note.fill("");
+  await expect(trigger).toBeEnabled();
+  await expect(page.locator("#sf-action-override-editor-hint")).toHaveCount(0);
+  const dialog = await openOverrideDialog(page);
+  await expect(dialog).toBeVisible();
 });
 
 test("every action status offers exactly the allowed transitions plus the keep sentinel", async ({
@@ -364,6 +406,46 @@ test("a double-click on apply sends exactly one PATCH", async ({ page }) => {
   await expectNoNewPatch(page, state, 1);
 });
 
+test("no exit is offered while the PATCH is in flight", async ({ page }) => {
+  const { actions, artifacts } = sixStatusFixture();
+  const state = await installActionOverrideApi(page, { actions, artifacts });
+  await openExecution(page);
+  await selectArtifact(page, artifacts[1]!.id);
+  const dialog = await openOverrideDialog(page);
+
+  await statusSelect(dialog).selectOption("blocked");
+  await reasonBox(dialog).fill("request in flight");
+  state.holdPatch = true;
+  await applyButton(dialog).click();
+  await expectPatchCount(state, 1);
+  await expect(applyButton(dialog)).toHaveText("Applying…");
+  await expect(applyButton(dialog)).toBeDisabled();
+
+  // Escape must not put up a discard confirm: the request already left, so
+  // "Discard" would promise something the server may contradict.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  await expect(page.locator("[data-action-override-discard]")).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+
+  // The X is disabled outright, and a backdrop click is ignored.
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeDisabled();
+  await page
+    .locator("[data-action-override-backdrop]")
+    .click({ position: { x: 8, y: 8 } });
+  await page.waitForTimeout(200);
+  await expect(page.locator("[data-action-override-discard]")).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+
+  // Releasing the parked response resumes the normal success path.
+  releaseHeldPatches(state);
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator("[data-action-status-badge]")).toHaveText(
+    "Blocked",
+  );
+  await expectNoNewPatch(page, state, 1);
+});
+
 // ----------------------------------------------------------------- success --
 
 test("success closes the dialog, updates the badge, and advances baseRevision", async ({
@@ -475,7 +557,187 @@ test("a dirty dialog demands a discard confirmation and never leaks values acros
   });
 });
 
+// -------------------------------------------------- navigation guard (D3) --
+
+test("browser Back asks before discarding a dirty override dialog", async ({
+  page,
+}) => {
+  const { actions, artifacts } = sixStatusFixture();
+  const state = await installActionOverrideApi(page, { actions, artifacts });
+  await openExecution(page);
+  // A second same-document history entry, standing in for the shell
+  // navigation that would normally precede Execution (product-profile
+  // guard-test precedent: `page.goBack()` cannot be used because a refused
+  // traversal is undone by the guard and leaves Playwright nothing to wait
+  // on).
+  await page.evaluate(() => {
+    window.history.pushState({}, "", window.location.href);
+  });
+  await selectArtifact(page, artifacts[1]!.id);
+  const dialog = await openOverrideDialog(page);
+  await statusSelect(dialog).selectOption("blocked");
+  await reasonBox(dialog).fill("guard me");
+
+  const prompts: string[] = [];
+  let answer = false;
+  page.on("dialog", (browserDialog) => {
+    prompts.push(browserDialog.message());
+    void (answer ? browserDialog.accept() : browserDialog.dismiss());
+  });
+
+  // Refused: the traversal is undone, the dialog and every field survive.
+  await page.evaluate(() => {
+    window.history.back();
+  });
+  await expect(dialog).toBeVisible();
+  await expect(reasonBox(dialog)).toHaveValue("guard me");
+  await expect(statusSelect(dialog)).toHaveValue("blocked");
+  expect(prompts).toEqual([
+    "You have unsaved action adjustments. Leave and discard them?",
+  ]);
+  await expectNoNewPatch(page, state, 0);
+
+  // Confirmed: the dialog closes and the traversal completes.
+  answer = true;
+  await page.evaluate(() => {
+    window.history.back();
+  });
+  await expect(dialog).not.toBeVisible();
+  expect(prompts).toHaveLength(2);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("artifactId"))
+    .toBe(null);
+});
+
+test("a clean dialog neither prompts nor blocks a history traversal, and leaks no state after it", async ({
+  page,
+}) => {
+  const { actions, artifacts } = sixStatusFixture();
+  await installActionOverrideApi(page, { actions, artifacts });
+  await openExecution(page);
+  await page.evaluate(() => {
+    window.history.pushState({}, "", window.location.href);
+  });
+  await selectArtifact(page, artifacts[1]!.id);
+  const dialog = await openOverrideDialog(page);
+
+  const prompts: string[] = [];
+  page.on("dialog", (browserDialog) => {
+    prompts.push(browserDialog.message());
+    void browserDialog.dismiss();
+  });
+
+  // A clean dialog holds no work, so the guard is unarmed: the traversal
+  // completes at the browser level and no confirm is raised.
+  //
+  // KNOWN LIMIT (pre-R2, verified without any dialog mounted): the Next
+  // popstate restore does not reliably re-render Execution with the traversed
+  // URL in dev, so the SELECTION cannot be asserted to follow the traversal
+  // here. The cross-Action pristineness the review asked for is asserted
+  // below through the dialog identity contract instead.
+  await page.evaluate(() => {
+    window.history.back();
+  });
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("artifactId"))
+    .toBe(null);
+  await page.waitForTimeout(300);
+  expect(prompts).toEqual([]);
+
+  // Whatever the racy restore did to the page, a clean dialog must close on
+  // Escape without a prompt, and the next dialog must start from ITS action
+  // with a pristine form — no state may have crossed the traversal.
+  if (await overrideDialog(page).isVisible()) {
+    await page.keyboard.press("Escape");
+  }
+  await expect(dialog).not.toBeVisible();
+  expect(prompts).toEqual([]);
+  await selectArtifact(page, artifacts[4]!.id);
+  const dialogB = await openOverrideDialog(page);
+  await expect(reasonBox(dialogB)).toHaveValue("");
+  await expect(statusSelect(dialogB)).toHaveValue("");
+  await expect(statusSelect(dialogB).locator('option[value=""]')).toHaveText(
+    "Keep current — Done",
+  );
+});
+
 // ------------------------------------------------------------- 409 space ---
+
+test("a background refetch while editing cannot silently rebase the submission", async ({
+  page,
+}) => {
+  const { actions, artifacts } = sixStatusFixture();
+  const state = await installActionOverrideApi(page, { actions, artifacts });
+  // Fake clock so the actions query can be pushed past the QueryClient's
+  // 30s staleTime without waiting it out: reconnect refetches skip fresh
+  // queries.
+  await page.clock.install();
+  await openExecution(page);
+  await selectArtifact(page, artifacts[1]!.id);
+  const dialog = await openOverrideDialog(page);
+  await statusSelect(dialog).selectOption("blocked");
+  await reasonBox(dialog).fill("frozen baseline");
+
+  // A concurrent operator moves the action to R2 while the dialog is open...
+  const current = state.currentActions.find(
+    (item) => item.id === actions[1]!.id,
+  )!;
+  current.status = "in_progress";
+  current.revision += 1;
+  // ...and a reconnect-style background refetch brings R2 into the list
+  // cache (refetchOnReconnect is the QueryClient default).
+  const getsBefore = state.actionGetRequests.length;
+  await page.clock.fastForward(31_000);
+  await page.evaluate(async () => {
+    window.dispatchEvent(new Event("offline"));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    window.dispatchEvent(new Event("online"));
+  });
+  await expect
+    .poll(() => state.actionGetRequests.length, { timeout: 10_000 })
+    .toBeGreaterThan(getsBefore);
+  // The refreshed list reached the UI (the rail badge behind the modal now
+  // shows the external change)...
+  await expect(page.locator("[data-action-status-badge]")).toHaveText(
+    "In progress",
+  );
+  // ...but the dialog still measures against the frozen open-time baseline.
+  await expect(statusSelect(dialog).locator('option[value=""]')).toHaveText(
+    "Keep current — Planned",
+  );
+
+  // The submission carries the OLD baseRevision and takes the honest 409,
+  // instead of adopting R2 and stepping over the concurrent change.
+  await applyButton(dialog).click();
+  await expectPatchCount(state, 1);
+  expect(state.actionPatchRequests[0]).toEqual({
+    actionId: actions[1]!.id,
+    body: { baseRevision: 1, reason: "frozen baseline", status: "blocked" },
+  });
+  await expect(
+    dialog.getByText(
+      "This action was changed elsewhere. The queue has been refreshed — review the current values and try again.",
+    ),
+  ).toBeVisible();
+  // Only NOW does the baseline advance: keep label on the refreshed current,
+  // the now-illegal "blocked" pick cleared, the reason kept.
+  await expect(statusSelect(dialog).locator('option[value=""]')).toHaveText(
+    "Keep current — In progress",
+  );
+  await expect(statusSelect(dialog)).toHaveValue("");
+  await expect(reasonBox(dialog)).toHaveValue("frozen baseline");
+
+  // Recovery resubmits against the adopted revision.
+  await statusSelect(dialog).selectOption("done");
+  await applyButton(dialog).click();
+  await expectPatchCount(state, 2);
+  expect(state.actionPatchRequests[1]).toEqual({
+    actionId: actions[1]!.id,
+    body: { baseRevision: 2, reason: "frozen baseline", status: "done" },
+  });
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator("[data-action-status-badge]")).toHaveText("Done");
+});
 
 test("a stale 409 refreshes the queue, keeps the reason, and clears now-illegal picks", async ({
   page,
@@ -593,6 +855,12 @@ test("a failed conflict refresh locks the form behind retry, and retry recovers"
   ).toBeVisible();
   await expect(applyButton(dialog)).toBeDisabled();
 
+  // Provenance: the notice says the REFRESH failed, so the code beside it
+  // must come from the failed GET (500 INTERNAL), not the earlier PATCH 409.
+  const failureNotice = dialog.getByRole("alert");
+  await expect(failureNotice).toContainText("INTERNAL");
+  await expect(failureNotice).not.toContainText("VERSION_CONFLICT");
+
   // Clear the injected failure; Retry now succeeds and lands on
   // staleConflict against the bumped revision.
   state.conflictMode = "none";
@@ -631,7 +899,12 @@ test("a linked action on a later cursor page is auto-paginated into reach", asyn
   await expect(
     page.getByRole("heading", { name: "Cross page action 3" }),
   ).toBeVisible();
-  expect(state.actionsGetCount).toBeGreaterThanOrEqual(2);
+  // Each cursor exactly once: the initial page, then the one follow-up page
+  // the walk needed. A loop or a duplicate fetch fails this exact sequence.
+  expect(state.actionGetRequests.map((request) => request.cursor)).toEqual([
+    null,
+    "actions-page-1",
+  ]);
 
   // The dialog is fully armed against the cross-page action.
   const dialog = await openOverrideDialog(page);
@@ -663,12 +936,30 @@ test("a failed linked-action page read shows retry, and retry recovers the entry
   state.failActionsPage = true;
   await openExecution(page);
 
-  const rail = page.locator("[data-studio-evidence-rail]");
+  const rail = evidenceRail(page);
   await expect(rail.locator("[data-linked-action-error]")).toBeVisible();
   await expect(rail.locator("[data-linked-action-error]")).toHaveText(
     "We couldn't load the next page. Items already loaded are still shown.",
   );
+  // The heading names the failure — it must not claim to be "still loading"
+  // while the walk is actually parked behind the retry.
+  await expect(
+    rail.getByRole("heading", { name: "Linked action could not be loaded" }),
+  ).toBeVisible();
+  await expect(rail.getByText("Linked action is still loading")).toHaveCount(0);
   await expect(page.locator("[data-studio-adjust-action]")).not.toBeVisible();
+
+  // The failed page read is retried exactly once by the QueryClient and then
+  // parks: the walk must not keep re-requesting the failed cursor on its own.
+  await expect
+    .poll(() => state.actionGetRequests.length, { timeout: 10_000 })
+    .toBe(3);
+  await page.waitForTimeout(700);
+  expect(state.actionGetRequests.map((request) => request.cursor)).toEqual([
+    null,
+    "actions-page-1",
+    "actions-page-1",
+  ]);
 
   state.failActionsPage = false;
   await rail.locator("[data-linked-action-retry]").click();
@@ -676,6 +967,82 @@ test("a failed linked-action page read shows retry, and retry recovers the entry
   await expect(
     page.getByRole("heading", { name: "Cross page action 3" }),
   ).toBeVisible();
+  expect(state.actionGetRequests.map((request) => request.cursor)).toEqual([
+    null,
+    "actions-page-1",
+    "actions-page-1",
+    "actions-page-1",
+  ]);
+});
+
+test("pages exhausted without the action reads as not-found, not loading", async ({
+  page,
+}) => {
+  // One loaded page, no further pages, and an artifact whose action is
+  // genuinely absent from the list.
+  const actions = [overrideActionFixture(1)];
+  const artifacts = [
+    overrideArtifactFixture(1, "00000000-0000-4000-8000-000000000999"),
+  ];
+  await installActionOverrideApi(page, { actions, artifacts });
+  await openExecution(page);
+
+  const rail = evidenceRail(page);
+  await expect(
+    rail.getByRole("heading", {
+      name: "Linked action was not found in the plan",
+    }),
+  ).toBeVisible();
+  // The delivery-check binding row shares the same source of truth.
+  await expect(
+    rail.getByText("Linked action was not found in the plan"),
+  ).toHaveCount(2);
+  await expect(rail.getByText("Linked action is still loading")).toHaveCount(0);
+  await expect(page.locator("[data-studio-adjust-action]")).toHaveCount(0);
+});
+
+test("the bounded page cap surfaces the search-limit state, not loading", async ({
+  page,
+}) => {
+  // 101 single-action pages: the walk stops at the 100-page cap with pages
+  // still remaining on the server, which is a statement about this screen's
+  // search budget — not about the action's existence.
+  test.setTimeout(120_000);
+  const actions = Array.from({ length: 101 }, (_, index) =>
+    overrideActionFixture(1, {
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      title: `Sweep action ${index + 1}`,
+    }),
+  );
+  const artifacts = [overrideArtifactFixture(1, actions[100]!.id)];
+  const state = await installActionOverrideApi(page, {
+    actions,
+    artifacts,
+    actionsPageSize: 1,
+  });
+  await openExecution(page);
+
+  const rail = evidenceRail(page);
+  await expect(
+    rail.getByRole("heading", {
+      name: "Linked action search stopped at the page limit",
+    }),
+  ).toBeVisible({ timeout: 90_000 });
+  await expect(rail.locator("[data-linked-action-search-limit]")).toHaveText(
+    "The plan list is longer than the pages this screen can load. Open the Plan screen to locate this action.",
+  );
+  await expect(rail.getByText("Linked action is still loading")).toHaveCount(0);
+  await expect(page.locator("[data-studio-adjust-action]")).toHaveCount(0);
+
+  // Exactly the capped walk: the initial page plus 99 cursors, each once,
+  // and no further fetch after the cap.
+  const cursors = state.actionGetRequests.map((request) => request.cursor);
+  expect(cursors).toEqual([
+    null,
+    ...Array.from({ length: 99 }, (_, index) => `actions-page-${index + 1}`),
+  ]);
+  await page.waitForTimeout(700);
+  expect(state.actionGetRequests.length).toBe(cursors.length);
 });
 
 // -------------------------------------------------- coverage honesty (D9) --
