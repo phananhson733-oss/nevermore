@@ -6,7 +6,7 @@ packages:
 # Resolved to latest compatible patch at WP0 init and frozen by pnpm-lock.yaml.
 catalog:
   # Web framework (Next 16.2 stable branch only; 16.3 preview is forbidden by spec §3.2)
-  next: 16.2.10
+  next: 16.2.11
   react: 19.2.7
   react-dom: 19.2.7
   '@types/react': 19.2.17
@@ -38,7 +38,7 @@ catalog:
   '@types/node': 24.13.3
   typescript: 5.9.3
   eslint: 9.39.5
-  eslint-config-next: 16.2.10
+  eslint-config-next: 16.2.11
   '@eslint/js': 9.39.5
   typescript-eslint: 8.39.0
   vitest: 4.1.10

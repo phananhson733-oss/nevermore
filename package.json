@@ -10,7 +10,8 @@
   },
   "pnpm": {
     "overrides": {
-      "postcss@<8.5.10": "8.5.19"
+      "postcss@<8.5.10": "8.5.19",
+      "js-yaml@<4.3.0": "4.3.0"
     }
   },
   "scripts": {
