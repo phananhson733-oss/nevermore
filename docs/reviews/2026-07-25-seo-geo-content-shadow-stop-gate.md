@@ -3079,3 +3079,32 @@ three ways, each reddening exactly one case.
 of Growth Map, Execution and Results ran *through* these redirects, so a silent
 break here would have moved the a11y scans to the wrong screens without a single
 test going red.
+
+### 19.3 The first thing §19.1 made visible was a query that had never run (`f8d860a`)
+
+`TopicClusterReadRepository` came out of Task 3 with **no caller anywhere in the
+product** — `packages/db/src/index.ts` re-exports it, nothing imports it — and
+no test of any kind. It appeared at 0/13 branches, never reached, only once the
+report could see files no unit test imports.
+
+`listSupportingFindings` is a hand-written statement with three left joins, a
+`distinct` and five predicates. **SQL does not typecheck.** A wrong column or a
+renamed table would have been caught by nothing until someone wired it up in a
+later slice, and the package exports it either way.
+
+It now runs. The first case executes it against the migrated schema and needs no
+seeded rows — Postgres resolves every identifier while parsing and planning, so
+an empty result is the proof. The rest are the bounds the repository declares
+before reaching the executor. Mutation-checked three ways; renaming one selected
+column, the exact defect nothing else could see, reddens the cases that reach
+the database.
+
+This does not make the repository live. Whether Task 3's read model is finished
+or removed is still open — see the Task 3 entry. What changed is that the code
+shipping from `@sf/db` today has at least been executed once.
+
+**Two of the other 21 never-reached files are in the same category and are not
+closed here**: `lib/api/hooks-studio.ts` and `lib/api/hooks-audit.ts` have no
+test of any kind either. They are TanStack Query hook modules exercised through
+the UI by Playwright, which is a materially different situation from raw SQL
+that had never been parsed, so they are recorded rather than acted on.
