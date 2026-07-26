@@ -895,22 +895,22 @@ export function OverviewClient({
 
   if (workspaceQuery.isPending) {
     return (
-      <main className={styles.pageState} role="status">
+      <div className={styles.pageState} role="status">
         <Spinner label={t("loading")} size="lg" />
         <p>{t("loading")}</p>
-      </main>
+      </div>
     );
   }
 
   if (workspaceQuery.isError) {
     return (
-      <main className={styles.pageState}>
+      <div className={styles.pageState}>
         <ProblemState
           error={workspaceQuery.error}
           onRetry={() => void workspaceQuery.refetch()}
           message={t("error")}
         />
-      </main>
+      </div>
     );
   }
 
@@ -930,7 +930,7 @@ export function OverviewClient({
           : "mismatch"
         : "ready";
   return (
-    <main className={styles.page} data-overview-page="">
+    <div className={styles.page} data-overview-page="">
       <header className={styles.hero}>
         <div>
           <span className={styles.heroEyebrow}>{t("eyebrow")}</span>
@@ -1008,6 +1008,6 @@ export function OverviewClient({
           onRetry={() => void profileQuery.refetch()}
         />
       </div>
-    </main>
+    </div>
   );
 }
