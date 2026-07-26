@@ -272,7 +272,10 @@ async function importCsvThroughRealWorker(
       mapping: KEYWORD_GAP_MAPPING,
     },
   });
-  expect(confirmResponse.status()).toBe(202);
+  expect(
+    confirmResponse.status(),
+    `CSV confirm failed: ${await confirmResponse.text()}`,
+  ).toBe(202);
   const accepted = await responseJson<DataEnvelope<AcceptedRun>>(
     confirmResponse,
     "CSV confirm",

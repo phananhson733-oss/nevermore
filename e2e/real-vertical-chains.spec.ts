@@ -352,7 +352,10 @@ async function enrichCanonicalDeliveryFixture(
         },
       },
     );
-    expect(response.status()).toBe(202);
+    expect(
+      response.status(),
+      `collection enqueue failed: ${await response.text()}`,
+    ).toBe(202);
     const accepted = await responseJson<DataEnvelope<AcceptedRun>>(
       response,
       `generate artifact for action ${action.id}`,
@@ -425,7 +428,10 @@ async function importCsvThroughRealWorker(
       mapping: KEYWORD_GAP_MAPPING,
     },
   });
-  expect(confirmResponse.status()).toBe(202);
+  expect(
+    confirmResponse.status(),
+    `CSV confirm failed: ${await confirmResponse.text()}`,
+  ).toBe(202);
   const accepted = await responseJson<DataEnvelope<AcceptedRun>>(
     confirmResponse,
     "CSV confirm",
@@ -496,7 +502,11 @@ async function runDiagnosisAndConfirmFinding(
   } else {
     await confirm.click();
   }
-  expect((await reviewResponse).status()).toBe(200);
+  const settledReview = await reviewResponse;
+  expect(
+    settledReview.status(),
+    `Finding review failed: ${await settledReview.text()}`,
+  ).toBe(200);
   await expect(finding.getByText("Confirmed", { exact: true })).toBeVisible();
   await expect(finding.getByText(/Action created:/)).toBeVisible();
 }
