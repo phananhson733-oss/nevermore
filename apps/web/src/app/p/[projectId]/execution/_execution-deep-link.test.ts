@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeGenerationRecoveryReleased,
   executionLocationUrl,
   executionHrefForRef,
   executionTargetAfterQueue,
@@ -340,6 +341,104 @@ describe("Execution selection URLs", () => {
         true,
       ),
     ).toEqual({ kind: "pending" });
+  });
+
+  it("releases the fence only when a complete projection names no live run", () => {
+    const settledProjection = [
+      {
+        id: ARTIFACT_A,
+        actionId: ACTION_A,
+        artifactType: "technical_ticket",
+        artifactLive: true,
+        liveRunId: null,
+      },
+      {
+        id: "00000000-0000-4000-8000-0000000000e5",
+        actionId: ACTION_B,
+        artifactType: "technical_ticket",
+        artifactLive: true,
+        liveRunId: "run-foreign",
+      },
+    ];
+
+    // Complete cursor set, no live run for this action/type: the conflicting
+    // run demonstrably ended, so the fence has nothing left to protect.
+    expect(
+      activeGenerationRecoveryReleased(
+        ACTION_A,
+        "technical_ticket",
+        settledProjection,
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      activeGenerationRecoveryReleased(ACTION_A, "technical_ticket", [], true),
+    ).toBe(true);
+    // Another type on the same action is a different run, not this fence's.
+    expect(
+      activeGenerationRecoveryReleased(
+        ACTION_A,
+        "content_brief",
+        [
+          {
+            id: ARTIFACT_B,
+            actionId: ACTION_A,
+            artifactType: "technical_ticket",
+            artifactLive: true,
+            liveRunId: "run-b",
+          },
+        ],
+        true,
+      ),
+    ).toBe(true);
+
+    // Fail-closed survives exactly where the resolver's docstring aims it: an
+    // unfinished cursor set proves nothing, whatever the loaded pages show.
+    expect(
+      activeGenerationRecoveryReleased(
+        ACTION_A,
+        "technical_ticket",
+        settledProjection,
+        false,
+      ),
+    ).toBe(false);
+    expect(
+      activeGenerationRecoveryReleased(ACTION_A, "technical_ticket", [], false),
+    ).toBe(false);
+    // A live run still named for this action/type keeps the fence closed,
+    // whether the artifact carrying it is live or already archived.
+    expect(
+      activeGenerationRecoveryReleased(
+        ACTION_A,
+        "technical_ticket",
+        [
+          {
+            id: ARTIFACT_B,
+            actionId: ACTION_A,
+            artifactType: "technical_ticket",
+            artifactLive: true,
+            liveRunId: "run-b",
+          },
+        ],
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      activeGenerationRecoveryReleased(
+        ACTION_A,
+        "technical_ticket",
+        [
+          {
+            id: ARTIFACT_B,
+            actionId: ACTION_A,
+            artifactType: "technical_ticket",
+            artifactLive: false,
+            liveRunId: "run-archived",
+          },
+        ],
+        true,
+      ),
+    ).toBe(false);
   });
 
   it("rejects ambiguous active-run bindings and adopts only one exact binding", () => {

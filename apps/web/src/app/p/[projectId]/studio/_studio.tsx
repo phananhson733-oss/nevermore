@@ -90,6 +90,7 @@ import {
   projectHistoryTraversalDelta,
 } from "../_project-history-position.ts";
 import {
+  activeGenerationRecoveryReleased,
   executionLocationUrl,
   executionTargetAfterQueue,
   executionUrlWithTarget,
@@ -2720,6 +2721,16 @@ export function StudioClient({
         ),
       );
     };
+    // The conflicting run is proven finished, so the fence is dropped outright.
+    // Nothing else can drop it: the fenced row is rendered without a regenerate
+    // handler, so `onQueued` is unreachable from here.
+    const releaseRecoveryFence = (): void => {
+      if (!attemptIsCurrent()) return;
+      recoveryAttemptByKey.current.delete(recovery.key);
+      setActiveGenerationRecoveries((current) =>
+        current.filter((item) => item.key !== recovery.key),
+      );
+    };
     setActiveGenerationRecoveries((current) => {
       const withoutKey = current.filter((item) => item.key !== recovery.key);
       return [...withoutKey, recovery];
@@ -2738,23 +2749,36 @@ export function StudioClient({
       return;
     }
     const refreshedArtifacts = uniqueCursorItems(refreshed.data);
+    const projectionIdentities = refreshedArtifacts.map((artifact) => ({
+      id: artifact.id,
+      actionId: artifact.actionId,
+      artifactType: artifact.artifactType,
+      artifactLive: artifact.status !== "archived",
+      liveRunId:
+        artifact.activeRun !== null && !isTerminalRun(artifact.activeRun.status)
+          ? artifact.activeRun.id
+          : null,
+    }));
+    const projectionComplete =
+      refreshed.data.pages.at(-1)?.meta.nextCursor === null;
     const resolution = resolveActiveGenerationRecovery(
       actionId,
       artifactType,
-      refreshedArtifacts.map((artifact) => ({
-        id: artifact.id,
-        actionId: artifact.actionId,
-        artifactType: artifact.artifactType,
-        artifactLive: artifact.status !== "archived",
-        liveRunId:
-          artifact.activeRun !== null &&
-          !isTerminalRun(artifact.activeRun.status)
-            ? artifact.activeRun.id
-            : null,
-      })),
-      refreshed.data.pages.at(-1)?.meta.nextCursor === null,
+      projectionIdentities,
+      projectionComplete,
     );
     if (resolution.kind !== "active") {
+      if (
+        activeGenerationRecoveryReleased(
+          actionId,
+          artifactType,
+          projectionIdentities,
+          projectionComplete,
+        )
+      ) {
+        releaseRecoveryFence();
+        return;
+      }
       leaveRecoveryPending();
       return;
     }

@@ -1953,10 +1953,12 @@ render anything they were waiting for.
 
 ### 14.7 The one genuine defect this round found and did not fix
 
-> **Superseded in part by §15, same day.** The manual "Retry generation status"
-> control this section points at was measured afterwards: it fires, but it never
-> releases the fence. The disagreement described below is real. The assumption
-> underneath it — that the operator can get themselves out — is not.
+> **Fixed in §16, same day.** Read this section as history. §15 measured that the
+> manual "Retry generation status" control fires but never releases the fence,
+> which turned the "disagreement" below into a defect; §16 repairs it. The fence
+> now releases when a complete artifact projection names no live run for the
+> action/type, and stays closed on everything less than that. The spec named
+> below was never edited and now passes as written.
 
 `frontend-error-states:615` asserts that a `RUN_ALREADY_ACTIVE` (409) recovery
 fence **releases automatically** once the canonical artifact projection shows
@@ -1981,6 +1983,12 @@ against a duplicate generation. **This needs an owner decision, not a test
 edit**, so the test was left red rather than rewritten to whichever contract is
 cheaper to assert. Its first half was re-aimed (§14.4) precisely so that it now
 fails at the disagreement itself instead of at a stale locator.
+
+**How it was settled.** The framing above — two defensible contracts — did not
+survive §15's measurement. Fail-closed is only a safety position while there is
+something unproven; a complete projection showing no live run proves the
+conflicting run ended, so holding past that point protects nothing and traps the
+operator. §16 releases exactly there and keeps the fence everywhere else.
 
 ### 14.8 Four product regressions the red suite was hiding
 
@@ -2139,7 +2147,8 @@ assertion. `sources-readiness.mock.spec.ts` was not touched.
   selected the UI locale in `sources-readiness.mock.spec.ts`, which the N-1
   freeze does not cover, and the suite now stands at 77 passed / 2 failed of 79
   (§4 D4, updated entry).
-- **§14.7** — the 409 recovery-fence contract needs an owner ruling.
+- **§14.7** — **closed by §16.** Measured as a defect in §15, repaired in §16;
+  `frontend-error-states.mock.spec.ts:615` passes without ever being edited.
 - **§14.8** — four product regressions, unrelated to tests: no UI can run a
   diagnosis (R1), override an Action's status/priority/lane (R2), or produce the
   client report and its export (R3); both unsaved-work navigation confirms are
@@ -2154,6 +2163,13 @@ assertion. `sources-readiness.mock.spec.ts` was not touched.
   is where they belong, and this list is its checklist.
 
 ## 15. The 409 fence has no working escape hatch (2026-07-26)
+
+> **Fixed in §16, same day.** Everything measured below stood at `9f55e8d` and
+> is accurate for that commit. Repair (1) of the two put in front of the owner in
+> §15.3 was taken. One correction to §15.1's third reading, measured in §16.4: a
+> full page reload is not the only exit — an in-app client-side navigation away
+> and back clears the fence too, because it remounts the component. The product
+> tells the operator about neither.
 
 §14.7 left `frontend-error-states.mock.spec.ts:615` red and asked for an owner
 ruling. The ruling came back: **keep the fail-closed implementation and rewrite
@@ -2303,3 +2319,178 @@ nothing else.
 
 **Zero migrations, zero contract change, zero product-code change, zero spec
 change.** No visual baseline snapshot was regenerated.
+## 16. The 409 fence releases when the projection proves the run ended (2026-07-26)
+
+§15 measured that the fence's only affordance cannot release it, which turned
+the §14.7 "contract disagreement" into a defect: an operator who hits
+`RUN_ALREADY_ACTIVE` after the conflicting run has already settled cannot
+regenerate that artifact from the page they are on. **Repair (1) of §15.3 was
+taken.** The fence now releases when a complete artifact projection names no
+live run for the fenced action/type, and stays closed on everything less.
+
+### 16.1 The repair
+
+One new pure predicate, one branch at the single call site.
+
+`activeGenerationRecoveryReleased` (`execution/_execution-deep-link.ts`) answers
+one question — *does the projection positively prove there is no live run for
+this action/type?* — and answers it `false` unless the cursor set is complete:
+
+```ts
+if (!projectionComplete) return false;
+return !artifacts.some(
+  (candidate) =>
+    candidate.actionId === actionId &&
+    candidate.artifactType === artifactType &&
+    candidate.liveRunId !== null,
+);
+```
+
+`recoverAlreadyActive` (`studio/_studio.tsx`) consults it only on the branch
+that used to be unconditional. When `resolveActiveGenerationRecovery` does not
+answer `active` **and** the predicate proves the run ended, the recovery key is
+dropped outright (`releaseRecoveryFence`); otherwise the pre-existing
+`leaveRecoveryPending` runs exactly as before. Both the 409 handler and the
+banner's "Retry generation status" button enter through this function, so the
+manual control §15 measured as a no-op now works for the same reason the
+automatic path does.
+
+**Why this is not a weakening of fail-closed.** The resolver's docstring justifies
+holding the fence on the ground that a partial projection is *absence of
+evidence*. A complete bounded cursor set with no live run is not absence of
+evidence — it is evidence of absence, from the same canonical projection the
+fence was waiting for. The three states that keep the fence closed are unchanged:
+an incomplete cursor set, a failed refetch (`!refreshed.isSuccess`, untouched),
+and any live run still named for the action/type — including one carried by an
+**archived** artifact, which `resolveActiveGenerationRecovery` deliberately
+refuses to adopt and which the predicate deliberately refuses to release.
+
+`resolveActiveGenerationRecovery` itself was **not modified**. It still answers
+`pending` for the settled case, and its existing unit assertions (`…test.ts:296`,
+`:345`) pass untouched. The release decision is a separate predicate rather than
+a fourth resolution kind precisely so that no existing assertion had to move.
+
+### 16.2 What is pinned, and the mutations that prove it
+
+New unit test: *"releases the fence only when a complete projection names no live
+run"* (`_execution-deep-link.test.ts`). It pins release for three shapes (a
+complete projection whose only matches have no live run, an empty complete
+projection, a different artifact type on the same action) and fail-closed for
+four (incomplete projection with the settled shape, incomplete and empty, a live
+run on a live artifact, a live run on an archived artifact).
+
+| mutation | expected | measured |
+|---|---|---|
+| release ignores `projectionComplete` (`void projectionComplete`) | new test red | **red** — `…test.ts:404`, `expected true to be false`, on the incomplete-projection case |
+| release ignores the live-run match (`return true` once complete) | new test red | **red** — `…test.ts:425`, `expected true to be false`, on the live-run-on-a-live-artifact case |
+| release branch deleted from `recoverAlreadyActive` | `frontend-error-states:615` red | **red** — `…:719 expect(regenerate).toBeEnabled()`, *element(s) not found*, i.e. the withheld control, exactly the §15 symptom |
+
+Each mutation was reverted immediately and the file restored byte-for-byte.
+
+### 16.3 `frontend-error-states.mock.spec.ts:615` passes as written
+
+The spec was **not edited**: `git diff -- e2e` is empty for this round, and the
+file has not changed since `54cab8d` re-aimed its first half. It now passes:
+
+```
+✓ 1 [chromium-mock] › e2e/frontend-error-states.mock.spec.ts:615:1 ›
+    Studio releases a 409 recovery fence when the canonical run has already settled (6.2s)
+```
+
+Its second half is the part that was unreachable before — after
+`releaseSettledProjection()`, `Regenerate` becomes enabled, the
+`[data-studio-conflict-recovery]` banner drops to zero, and a second generate
+attempt goes through (`createAttempts` 1 → 2). Its first half is unchanged and
+still proves the fence holds while the projection is in flight.
+
+### 16.4 The measurement §15 owed: client-side navigation also clears the fence
+
+§15 tested a full page reload and inferred nothing about in-app navigation. It
+was measured this round, at `9f55e8d` — **before** the fix, so it describes the
+trap as §15 left it. A window marker set before leaving and read after returning
+proves each round trip was a soft navigation, not a document load:
+
+```
+NAVPROBE fenced                 reads=2 panels=1 regenerateButtons=0
+NAVPROBE afterNavLinkRoundTrip  softNav=true reads=2 panels=0 regenerateButtons=1
+NAVPROBE refenced               createAttempts=2 panels=1 regenerateButtons=0
+NAVPROBE afterBackRoundTrip     softNav=true reads=3 panels=0 regenerateButtons=1
+```
+
+Both round trips — Execution → Overview → Execution through the nav links, and
+Execution → Overview → browser Back — clear the fence, with no document load.
+`activeGenerationRecoveries` is component state, and a route change unmounts
+`StudioClient`.
+
+Two consequences, and they point in opposite directions:
+
+1. **The trap was narrower than §15 implied.** Two exits existed, not one. It
+   remains a trap in the sense that mattered: the product names neither, the
+   banner offers only the control that cannot work, and an operator who stays on
+   the page — the expected behaviour when a banner says "retry" — is stuck.
+2. **The fence was already weaker than it looked, and this was not a decision.**
+   Any nav round trip dropped it, including while a conflicting run was genuinely
+   still live, letting a duplicate generation through. The `refenced` line above
+   is that path being exercised: after the fence cleared, a second `POST` was
+   accepted. So "fail-closed" was never enforced across navigation, only within a
+   mount. §16 does not change this and does not claim to (§16.7).
+
+### 16.5 Scope and N-1
+
+Three files, all in the fenced-generation path.
+
+- `apps/web/src/app/p/[projectId]/execution/_execution-deep-link.ts` — +24, −0
+- `apps/web/src/app/p/[projectId]/studio/_studio.tsx` — +36, −12 (12 are the
+  refactor that hoists the projection identities so both callees share them)
+- `apps/web/src/app/p/[projectId]/execution/_execution-deep-link.test.ts` — +99, −0
+
+N-1, per path, `git diff` against `9f55e8d`:
+
+- `apps/web/src/app/p/[projectId]/overview` — **0 files changed**
+- `apps/web/src/app/p/[projectId]/sources` — **0 files changed**
+- `apps/web/src/app/p/[projectId]/growth-map` — **0 files changed**
+
+`growth-map.mock.spec.ts` was not touched, `e2e/` has no diff at all, and no
+visual baseline snapshot was regenerated. Zero migrations, zero contract change.
+
+### 16.6 Gate results
+
+| gate | result |
+|---|---|
+| `pnpm test:e2e:mock` (full suite) | **before 77 passed / 2 failed of 79 (2.1m); after 78 passed / 1 failed of 79 (1.9m)**. The failure that cleared is `frontend-error-states.mock.spec.ts:615`. The one that remains is `growth-map.mock.spec.ts:124` (§4 D8), unchanged and untouched. **No test moved from green to red.** |
+| `pnpm lint` / `typecheck` / `build` | pass |
+| `git diff --check` | clean |
+| `pnpm verify:spec` | pass — **49 operations / 9 async / 44 tables / 11 rules** |
+| `pnpm verify:authority` / `implementation:check` | pass |
+| `pnpm openapi:lint` | pass — description valid |
+| `pnpm contracts:check` | pass — no generated diff |
+| `pnpm deploy:check` / `vendor:check` | pass |
+| `pnpm secrets:scan` | pass — 4 files / 75 tests |
+| `pnpm db:migrate` | pass — 21 migrations on a disposable local database |
+| `pnpm db:smoke` | pass — fixtures rolled back |
+| `pnpm db:migrate:check` | pass — **44 tables / 56 indexes / 69 triggers / 18 routines** |
+| `pnpm test:integration` | pass — 66 files / 482 tests |
+| unit + integration `--coverage` | pass — **91.02 stmts / 84.82 branch / 94.71 funcs / 92.64 lines** (branch 84.8 → 84.82) |
+| `pnpm restore:drill` / `restore:drill:test` | pass — 38 tests / 38 passed, coverage above thresholds |
+
+### 16.7 Known residuals from this round
+
+- **The fence still does not survive a route change.** §16.4 measured this and
+  §16 does not fix it. While a conflicting run is genuinely live, an operator who
+  navigates away and back can start a duplicate generation. Making it survive
+  means lifting the recovery list above the page — the same shape of change as
+  persisting it in the URL or a shared store — and it is a larger decision than
+  this round was scoped for.
+- **Nothing re-resolves the fence on its own after an incomplete projection.**
+  When the cursor set is incomplete the fence correctly stays, the auto-pagination
+  effect fetches more pages, and no code re-runs `recoverAlreadyActive` when they
+  land. The operator has to click "Retry generation status" — which, after this
+  round, does work. Pre-existing; unchanged.
+- **The banner copy is still `runStatusUnavailable`.** It says the run status is
+  unavailable, which is accurate while the fence is held but tells the operator
+  nothing about what they are waiting for or that retrying is the way through.
+  No copy was changed in this round, in either locale.
+- **The incomplete-projection half of fail-closed is pinned at unit level only.**
+  §16.2's mutations kill it there. There is no `.mock.spec.ts` that drives the
+  studio with a deliberately incomplete cursor set behind a 409; the e2e level
+  covers the live-run half (the test above `:615`) and the release half (`:615`).

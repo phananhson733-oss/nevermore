@@ -264,6 +264,30 @@ export function resolveActiveGenerationRecovery(
   };
 }
 
+/**
+ * The fence exists because a 409 withholds the winning run id, not because the
+ * conflict is permanent. A complete bounded projection that names no live run
+ * for this action/type is positive evidence that the conflicting run already
+ * ended, so the fence has nothing left to protect and holding it traps the
+ * operator. Anything short of that keeps it closed: an incomplete projection,
+ * or any live run still named for this action/type by a live or archived
+ * artifact.
+ */
+export function activeGenerationRecoveryReleased(
+  actionId: string,
+  artifactType: string,
+  artifacts: readonly ActiveGenerationProjectionIdentity[],
+  projectionComplete: boolean,
+): boolean {
+  if (!projectionComplete) return false;
+  return !artifacts.some(
+    (candidate) =>
+      candidate.actionId === actionId &&
+      candidate.artifactType === artifactType &&
+      candidate.liveRunId !== null,
+  );
+}
+
 /** A recovery may canonicalize the URL only while its action-only intent owns it. */
 export function recoveryOwnsExecutionTarget(
   actionId: string,
