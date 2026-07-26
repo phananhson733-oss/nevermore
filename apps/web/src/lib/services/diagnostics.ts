@@ -168,6 +168,21 @@ function replay(
   return null;
 }
 
+function activeConflict(projectId: string, runId: string): ProblemError {
+  const statusUrl = runStatusUrl(projectId, runId);
+  return new ProblemError(
+    "RUN_ALREADY_ACTIVE",
+    "A diagnostic run is already active.",
+    {
+      headers: { Location: statusUrl },
+      // Same pointer in the body as in the header, because a client that only
+      // reads the response body would otherwise get a conflict it cannot
+      // locate. `audit-runs.ts` already answers this shape; this file did not.
+      current: { runId, statusUrl },
+    },
+  );
+}
+
 export async function createDiagnosticRun(
   scope: WorkspaceScope,
   projectId: string,
@@ -279,13 +294,7 @@ export async function createDiagnosticRun(
     );
     const replayed = now ? replay(now, requestHash) : null;
     if (replayed) return replayed;
-    throw new ProblemError(
-      "RUN_ALREADY_ACTIVE",
-      "A diagnostic run is already active.",
-      {
-        headers: { Location: runStatusUrl(projectId, active.id) },
-      },
-    );
+    throw activeConflict(projectId, active.id);
   }
 
   const boss = await getBoss();
@@ -466,14 +475,10 @@ export async function createDiagnosticRun(
         projectScope,
         DIAGNOSTIC_ACTIVE_KEY,
       );
+      if (winner) throw activeConflict(projectId, winner.id);
       throw new ProblemError(
         "RUN_ALREADY_ACTIVE",
         "A diagnostic run is already active.",
-        {
-          ...(winner
-            ? { headers: { Location: runStatusUrl(projectId, winner.id) } }
-            : {}),
-        },
       );
     }
     throw error;

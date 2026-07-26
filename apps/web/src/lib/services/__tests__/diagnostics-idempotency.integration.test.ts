@@ -15,6 +15,7 @@ process.env["LOG_LEVEL"] ??= "error";
 import { and, eq, sql } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import {
+  AsyncRunsRepository,
   CollectionRunsRepository,
   canonicalUtcTimestamptz,
   contentHash,
@@ -518,5 +519,82 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
         body,
       ),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED", status: 409 });
+  });
+
+  it("answers a pre-checked active conflict with the current run pointer in the body", async () => {
+    queueFixture.send.mockClear();
+    const fixture = await createDiagnosticFixture(handle, workspaceId, randomUUID());
+    const body = {
+      snapshotIds: [fixture.snapshot.id],
+      outputLocale: "en" as const,
+    };
+    const first = await createDiagnosticRun(
+      { workspaceId },
+      fixture.scope.projectId,
+      actor,
+      randomUUID(),
+      body,
+    );
+
+    // A different key while the first run is still queued takes the sequential
+    // pre-check branch. A client reading only the body must receive the same
+    // pointer the Location header carries (blueprint D6).
+    await expect(
+      createDiagnosticRun(
+        { workspaceId },
+        fixture.scope.projectId,
+        actor,
+        randomUUID(),
+        body,
+      ),
+    ).rejects.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      status: 409,
+      current: { runId: first.run.id, statusUrl: first.statusUrl },
+      extraHeaders: { Location: first.statusUrl },
+    });
+    expect(queueFixture.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers the unique-index conflict with the winning run pointer in the body", async () => {
+    queueFixture.send.mockClear();
+    const fixture = await createDiagnosticFixture(handle, workspaceId, randomUUID());
+    const body = {
+      snapshotIds: [fixture.snapshot.id],
+      outputLocale: "en" as const,
+    };
+    const first = await createDiagnosticRun(
+      { workspaceId },
+      fixture.scope.projectId,
+      actor,
+      randomUUID(),
+      body,
+    );
+
+    // Blind the sequential pre-check once so the attempt reaches the insert and
+    // loses to the partial unique index; the recovery read then locates the
+    // winner and must expose it in the body, not only in the header.
+    const blindPrecheck = vi
+      .spyOn(AsyncRunsRepository.prototype, "findActive")
+      .mockResolvedValueOnce(null);
+    try {
+      await expect(
+        createDiagnosticRun(
+          { workspaceId },
+          fixture.scope.projectId,
+          actor,
+          randomUUID(),
+          body,
+        ),
+      ).rejects.toMatchObject({
+        code: "RUN_ALREADY_ACTIVE",
+        status: 409,
+        current: { runId: first.run.id, statusUrl: first.statusUrl },
+        extraHeaders: { Location: first.statusUrl },
+      });
+    } finally {
+      blindPrecheck.mockRestore();
+    }
+    expect(queueFixture.send).toHaveBeenCalledTimes(1);
   });
 });
