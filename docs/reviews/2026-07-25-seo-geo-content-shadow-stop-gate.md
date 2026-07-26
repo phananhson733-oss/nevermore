@@ -2789,12 +2789,47 @@ produces.
 §14 requires — locale selected by cookie, assertion followed to where the
 identity actually lives — and mutation-checked. The spec still fails, on §17.4.
 
-### 17.6 Flake — `growth-map.real.spec.ts:917`
+### 17.6 Not a flake — the suite exhausts its own rate-limit budget
 
-Passed in run 1, failed in run 2, unchanged in between. The suite is
-`fullyParallel: false, workers: 1` against one shared Postgres that every spec
-mutates, so ordering and residue are plausible causes. **Not diagnosed** — it is
-recorded rather than explained, and it is the reason the two run totals differ.
+Recorded first as an undiagnosed flake: passed in run 1, failed in run 2,
+unchanged in between. **It is deterministic.** Diagnosed 2026-07-26 (`59aa41e`).
+
+`csv_import_confirm` allows **10 attempts per 15 minutes per workspace**
+(`import/route.ts:61`, `maxAttempts: 10` — not the 20 the neighbouring scopes
+use), and the real suite runs against a **single shared dev-auth workspace**,
+which `playwright.config.ts` states in its own comment. Each full-suite run
+spends two of those attempts — `growth-map.real` and `real-vertical-chains`
+AC-044 — so around the fifth run inside one window the CSV confirm answers 429
+and this test fails. The assertion printed `Expected: 202 / Received: 429` and
+nothing more, which is why four earlier hypotheses were entertained.
+
+The chain was measured at every step:
+
+| step | result |
+|---|---|
+| five isolated runs, fresh database | 5/5 pass — rules out an intra-test race |
+| `a11y` then `growth-map.real`, same run | pass — rules out that spec's residue |
+| full suite on an accumulated database | pass — rules out generic DB residue |
+| `getByRole("main")` in this spec or its fixtures | absent — rules out §17.1 |
+| repeat runs under CPU saturation | **fails** |
+| repeat run with no load, budget already spent | **also fails** |
+| `app.idempotency_keys`, `rate_limit:csv_import_confirm`, in window | **exactly 10** |
+| delete only those rows, change nothing else, re-run | **passes (33.4s)** |
+
+**An earlier reading of this attributing it to CPU contention was wrong and is
+retracted**: the no-load control fails identically, and the load run only
+appeared decisive because the budget was already gone by then.
+
+Nothing about the rate limit is a defect — 10 confirms per quarter hour is a
+sensible policy for an expensive import. What was wrong is that the harness had
+no way to say so. Four bare status assertions across the two specs now carry the
+response body, so the same failure reads `CSV confirm failed:
+{"code":"RATE_LIMITED",...}`. The assertions themselves are unchanged.
+
+**This is sharper in CI than locally.** The real job sets `retries: 1`, so a
+retry lands inside the same 15-minute window as the attempt that spent the
+budget. A test failing for any reason can fail its retry for this one instead,
+and report a cause unrelated to the original defect.
 
 ### 17.7 Where the suite stands after this round
 
