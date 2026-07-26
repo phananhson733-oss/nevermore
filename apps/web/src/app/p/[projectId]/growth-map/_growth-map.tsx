@@ -68,6 +68,7 @@ import {
 } from "@/lib/api/hooks-growth-map";
 import { ProblemState } from "../_problem-display.tsx";
 import { EvidenceRefsDisclosure } from "./_evidence-refs-disclosure.tsx";
+import { RunDiagnosis } from "./_run-diagnosis.tsx";
 import { executionHrefForRef } from "../execution/_execution-deep-link.ts";
 import {
   GROWTH_MAP_OBJECT_MODES,
@@ -3331,10 +3332,13 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
           <h1>{t("title")}</h1>
           <p>{t("subtitle")}</p>
         </div>
-        <Link className={styles.sourceLink} href={`/p/${projectId}/sources`}>
-          <Database aria-hidden="true" size={18} />
-          {t("manageSources")}
-        </Link>
+        <div className={styles.heroActions}>
+          <Link className={styles.sourceLink} href={`/p/${projectId}/sources`}>
+            <Database aria-hidden="true" size={18} />
+            {t("manageSources")}
+          </Link>
+          <RunDiagnosis projectId={projectId} />
+        </div>
       </header>
 
       <nav

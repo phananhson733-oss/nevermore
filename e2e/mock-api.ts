@@ -1062,6 +1062,13 @@ export interface GrowthVerticalApiState {
   }[];
   readonly artifactStatusPatches: unknown[];
   readonly confirmedFindingIds: Set<string>;
+  /**
+   * First-diagnosis seam (R1): while false, the audit projection answers with
+   * the server's real-shape 404 NOT_FOUND problem ("no completed audit").
+   * Defaults to true, so existing specs keep their behavior; a spec flips it
+   * to model the portfolio becoming readable after a diagnostic run.
+   */
+  auditProjectionAvailable: boolean;
 }
 
 /**
@@ -1071,6 +1078,7 @@ export interface GrowthVerticalApiState {
  */
 export async function installGrowthVerticalApi(
   page: Page,
+  options: { readonly auditProjectionAvailable?: boolean } = {},
 ): Promise<GrowthVerticalApiState> {
   const critical = await installCriticalFlowApi(page);
   const confirmedProfile = confirmedProfileFixture();
@@ -1081,11 +1089,30 @@ export async function installGrowthVerticalApi(
     recheckRequests: [],
     artifactStatusPatches: [],
     confirmedFindingIds: new Set<string>(),
+    auditProjectionAvailable: options.auditProjectionAvailable ?? true,
   };
 
   // Growth Audit projection: URL portfolio (list) and selected URL detail.
   await page.route(`**${BASE}/audit/urls**`, async (route) => {
     const url = new URL(route.request().url());
+    if (!state.auditProjectionAvailable) {
+      // The exact shape `getGrowthMapUrlPortfolio` answers before any readable
+      // run exists (`lib/services/growth-map.ts` loadReadContext).
+      await json(
+        route,
+        {
+          type: "about:blank",
+          title: "Not found",
+          status: 404,
+          code: "NOT_FOUND",
+          detail:
+            "No completed Growth Map audit is available for this project.",
+          requestId: "e2e-request",
+        },
+        404,
+      );
+      return;
+    }
     if (route.request().method() !== "GET") {
       await json(route, growthAuditPortfolioFixture(state.confirmedFindingIds));
       return;

@@ -919,6 +919,16 @@
     "title": "从每一个真实页面，找到下一步增长机会。",
     "subtitle": "把最新一次可读取审计中的 URL、观测指标、Finding 与执行物按同一条证据链呈现。每次选择一个 URL，右侧只显示它自己的真实信息。",
     "manageSources": "管理数据来源",
+    "runDiagnosis": "运行诊断",
+    "rerunDiagnosis": "重新运行诊断",
+    "runInProgress": "诊断进行中…",
+    "runNeedsCrawl": "诊断前需要一次已完成的站点抓取。请先在“数据源”中采集抓取快照。",
+    "runNeedsContext": "诊断前需要完整的 ICP 上下文。请先完善项目上下文。",
+    "runRecheckContext": "重新检查",
+    "runActive": "该项目已有一次诊断正在进行中。",
+    "runError": "诊断运行未能完成。请查看运行状态后重试。",
+    "runStatusReadError": "运行状态暂时不可用。在确认其状态前，本次运行将保持锁定。",
+    "runStatusLabel": "诊断运行状态",
     "objectNavLabel": "增长地图对象",
     "modes": {
       "pages": {

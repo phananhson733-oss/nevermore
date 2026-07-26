@@ -919,6 +919,16 @@
     "title": "Find the next growth opportunity, page by real page.",
     "subtitle": "URLs, observed metrics, Findings, and execution references from the latest readable audit stay on one evidence chain. Selecting a URL shows only facts linked to that exact page.",
     "manageSources": "Manage data sources",
+    "runDiagnosis": "Run diagnosis",
+    "rerunDiagnosis": "Re-run diagnosis",
+    "runInProgress": "Diagnosis running…",
+    "runNeedsCrawl": "A completed site crawl is required before diagnosis. Collect a crawl snapshot in Sources first.",
+    "runNeedsContext": "A complete ICP context is required before diagnosis. Finish the project context first.",
+    "runRecheckContext": "Check again",
+    "runActive": "A diagnostic run is already in progress for this project.",
+    "runError": "The diagnostic run did not finish. Review the run status and try again.",
+    "runStatusReadError": "Run status is temporarily unavailable. This run stays locked until its status can be checked.",
+    "runStatusLabel": "Diagnostic run status",
     "objectNavLabel": "Growth Map objects",
     "modes": {
       "pages": {
