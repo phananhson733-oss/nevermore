@@ -2734,9 +2734,10 @@ locator, so this takes out the Overview axe scan, the sidebar contrast check,
 the keyboard-focus check and the reduced-motion check. `responsive.spec.ts:47`
 has the same line, which takes out Overview at all four viewports.
 
-This is a product defect, not test drift: two `main` landmarks is an axe
-`landmark-one-main` violation, and a screen-reader user gets two "main" regions
-with an ambiguous skip-to-content target.
+This is a product defect, not test drift: a screen-reader user gets two "main"
+regions and an ambiguous skip-to-content target. What made the suite red was the
+**strict `getByRole("main")` locator**, not axe — see the measurement in §17.6c,
+which corrects an earlier claim in this document that axe reports it.
 
 **RESOLVED in `c73b621`, under an N-1 exception the Owner granted for this
 defect.** Six tags, `<main>` -> `<div>`, keeping `role="status"` on the loading
@@ -2887,12 +2888,8 @@ source data exists. That is the same shape as the finding — they survived a
 slice because nothing looked.
 
 - **Overview** now asserts exactly one `main` landmark, at desktop and at 390px.
-  It is asserted directly rather than through that spec's existing
-  `blockingAxeViolations`, which **structurally cannot see it**: the scan is
-  `.include("#main-content")`, so it evaluates what is inside the shell's
-  landmark and never the document's landmark structure. That scoping is why a
-  duplicate `main` survived a whole slice of mock coverage, and it is worth
-  knowing before trusting that helper for anything landmark-shaped.
+  It is asserted directly rather than through any axe scan, for the reason
+  measured in §17.6c: **no axe scan in this repository can report it.**
 - **Sources** gains an axe scan of the readiness region — `sources-readiness.mock.spec.ts`
   had none at all — scoped to `[aria-label="Source readiness"]`.
 
@@ -2900,6 +2897,36 @@ Both were mutation-checked against the real pre-fix code, not a stand-in:
 restoring the nested `<main>` fails the count with `Received: 2`, and checking
 `_sources.tsx` out at `a538fe3^` reproduces
 `definition-list (serious) @ .sources_readinessMetrics__…`.
+
+### 17.6c Measured: no axe scan here could ever have caught the duplicate landmark
+
+An earlier draft of §17.1 called the duplicate `main` "an axe `landmark-one-main`
+violation", and §17.6b blamed the miss on the Overview scan being
+`.include("#main-content")`-scoped. Both were checked against a real run and both
+were wrong — the second one understates the problem badly.
+
+With the defect restored and axe run **unscoped** on Overview:
+
+| tag set | violations reported |
+|---|---|
+| `wcag2a, wcag2aa, wcag21a, wcag21aa` — what every scan here uses | `color-contrast:serious` only. **No landmark rule at all.** |
+| the same plus `best-practice` | `landmark-no-duplicate-main:moderate`, `landmark-unique:moderate`, `landmark-main-is-top-level:moderate` |
+
+So the rule is `landmark-no-duplicate-main`, not `landmark-one-main`, and **two
+independent filters each exclude it**: this repository's scans select WCAG tags,
+which the rule does not carry, and then keep only `critical`/`serious`, which it
+is not. Re-scoping any of the six scans would change nothing; adding more axe
+would change nothing.
+
+**The only thing that catches a duplicate landmark here is a strict
+`getByRole("main")` locator** — which is what made `test:e2e:real` red
+(`a11y.spec.ts:39` resolving to 2 elements) and what `fde119d` asserts. That is
+worth knowing before anyone reaches for axe the next time a landmark question
+comes up.
+
+(The `color-contrast:serious` in the WCAG column is the known sidebar
+false-positive `a11y.spec.ts` documents and filters — axe cannot composite a
+background through the sticky dark sidebar. It is not new and not related.)
 
 ### 17.7 Where the suite stands after this round
 
