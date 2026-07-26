@@ -2926,24 +2926,38 @@ the Overview case. Probing what each destination renders under
 | context | "Loading Product Profile" | loading skeleton |
 | results | none | not the screen |
 
-**Correction, 2026-07-27, after measuring rather than inferring.** The table
-above was read at page load and is a mid-load snapshot, not what the screens
-settle to. Waited out, Overview under the base installer renders its full
-scaffold — `h1` plus all four section headings — and only the panels fed by the
-501 endpoints show error states. `critical-flows.mock.spec.ts` and
-`mobile-shell.mock.spec.ts` both assert against that scaffold today and are
-sound.
+**Two corrections, 2026-07-27. The first paragraph of this subsection was
+wrong, and so was my first attempt at correcting it. Both are left here rather
+than quietly rewritten, because the way they were wrong is the point.**
 
-So "four of six scan a spinner" was wrong. **The real reason the loop protected
-nothing is the assertion it used**: `await expect(page.getByRole("main")).toBeVisible()`.
-Measured directly with a second `<main>` present, that assertion **passes** — it
-is a readiness wait, not a landmark check, and it was never going to catch a
-duplicate on `execution` either, the one destination the loop had always
-covered. Only `toHaveCount(1)` fails, which is what every placement below uses.
+*First error — "four of six scan a spinner".* That table was read at page load.
+It is a mid-load snapshot, not what the screens settle to. Waited out, Overview
+under the base installer renders its full scaffold — `h1` plus all four section
+headings — and only the panels fed by the 501 endpoints show error states.
+`critical-flows.mock.spec.ts` and `mobile-shell.mock.spec.ts` assert against
+that scaffold today and are sound.
 
-The revert therefore still stands, for a better reason than the one first
-recorded: widening a loop whose landmark line cannot fail would have added five
-tests that read as landmark coverage and were not.
+*Second error — "`toBeVisible()` passes with two `<main>` elements, so it is a
+readiness wait, not a landmark check".* Measured again under the rule this
+round had just written down and then failed to apply to itself: **after editing
+a `.tsx`, a run started immediately races `next dev --webpack`'s recompilation,
+so a surviving mutation may be a stale bundle rather than a real result.** Run
+twice, the answer is the opposite and stable — `raw=2 byRole=2
+toBeVisible=threw STRICT`. `toBeVisible()` **does** throw on a duplicate
+landmark. `a11y.spec.ts:39` is a genuine landmark check, which is exactly how
+§17.1 caught the defect in the first place.
+
+Which means the mutation that "survived" the widened loop was itself a stale
+bundle, and **the loop would have protected those destinations after all**. The
+revert was not necessary on the grounds given.
+
+**It is still not being re-applied, for a reason that survives all of this:**
+the loop's other half runs a full-page axe scan under the base installer, where
+five of the six destinations show error panels. Scanning an error state and
+reporting it as the destination's accessibility is the same over-claim in a
+different place. The landmark half is now covered per destination, in each
+spec's own fixture, by `toHaveCount(1)` — stronger than `toBeVisible()` because
+it states the number rather than relying on strict-mode as a side effect.
 
 The assertion therefore goes where a real fixture already exists: Overview
 (`fde119d`, via `openOverview(page, readyScenario())`) and Growth Map
