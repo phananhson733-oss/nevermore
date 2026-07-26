@@ -437,11 +437,20 @@ Slice 2 started (it asserts 41 tables / 38 operations / 6 async and its migratio
 list stops at 0019). CI never runs it; Vitest only collects `.ts`. **It needs its
 own commit to fix or delete.**
 
-**D4. UPDATED by §14 (2026-07-26). The suite now has a measured, reproducible
-baseline and is 4 failed / 75 passed of 79 in 2.6 minutes**, down from 74 failed
-/ 55 passed of 129 in 28.5 minutes at `2f2bd78`. Zero new red. The three
-remaining causes and the one genuine defect found on the way are in §14.6-§14.8.
-The paragraph below is this entry as it stood before that round.**
+**D4. UPDATED 2026-07-26, second pass. The suite is 77 passed / 2 failed of 79
+in 2.3 minutes**, measured at `939129a`. It was 4 failed / 75 passed of 79 at
+`54cab8d`, and 74 failed / 55 passed of 129 in 28.5 minutes at `2f2bd78`. Zero
+new red at any step; each failure set is a strict subset of the one before it.
+The two `sources-readiness.mock.spec.ts` failures named in §14.6 are gone —
+`939129a` selected the UI locale there, which the N-1 freeze does not cover. Two
+remain:
+
+| still red | why | what it needs |
+|---|---|---|
+| `frontend-error-states.mock.spec.ts:615` "Studio releases a 409 recovery fence when the canonical run has already settled" | the spec asserts the `RUN_ALREADY_ACTIVE` fence releases itself once the artifact projection shows the run settled; `resolveActiveGenerationRecovery` (`execution/_execution-deep-link.ts:236`) is deliberately fail-closed and holds it. Two contracts, both defensible — §14.7 | an Owner ruling on which contract is the product's, then one edit to whichever side loses. It cannot be closed by editing the test alone: see §14.7 for why holding the fence was judged safe, and what that judgement assumed |
+| `growth-map.mock.spec.ts:124` "reviews only the canonical Opportunity and delivers one technical ticket" | the `Delivery chain` region never renders. Proven unrelated to this branch's work by stash comparison (§4 D3c); same family as §4 D8 | the Growth Map audit-and-confirm walkthrough rewrite, which is its own task. §14.11 carries the checklist that task inherits |
+
+The paragraph below is this entry as it stood before any of these rounds.
 
 **D4 (original entry). The complete `pnpm test:e2e:mock` suite is broadly red**:
 24 passed / 84 failed of 108, about 31.5 minutes. The root cause is that the mock config's
@@ -1967,22 +1976,127 @@ edit**, so the test was left red rather than rewritten to whichever contract is
 cheaper to assert. Its first half was re-aimed (§14.4) precisely so that it now
 fails at the disagreement itself instead of at a stale locator.
 
-### 14.8 Product findings, ranked
+### 14.8 Four product regressions the red suite was hiding
 
-None of these is a test problem. All four are capability gaps found by asking
-what each red test was guarding.
+None of these is a test problem, and none is fixed here — this round was told to
+record them, not repair them. Each entry names the product change that removed
+the capability, what an operator can no longer do, and whether the server-side
+capability is still there.
 
-1. **No UI can run a diagnosis.** `useCreateDiagnosticRun` is referenced only by
-   the unmounted `_diagnosis.tsx:730`.
-2. **No UI can override an Action's status, priority or lane.** `useUpdateAction`
-   and the frozen status graph are referenced only by the unmounted `_plan.tsx`.
-   The server guard (`actions-service.ts:16`) is unreachable from the product.
-3. **No UI produces the client report or its export.** All of `hooks-report.ts`
-   is referenced only by the unmounted `_report.tsx`. `/results` is a read-only
-   recheck comparison.
-4. **The Context navigation confirm is unreachable.** `_nav.tsx:97` only fires
-   while `hasUnsavedContextChanges()` is true, and its only writer sets it true
-   only while a modal that marks the nav `inert` is open.
+**Attribution is identical for all four: the removal is Slice 1's, the discovery
+is Slice 2's.** Slice 1 collapsed the project shell onto four destinations and
+turned the old ones into redirects (`3c2ecc6 feat(workspace): ship traceable
+customer growth map`, `_nav-model.ts:25`), and replaced the Context editor with a
+modal (`235a2fd feat(profile): ship traceable product profile workflow`,
+`context/page.tsx:8`). Neither commit removed the server side of anything. Slice
+2 found all four, and only because §14.1 was the first measured full-suite run
+this worktree has ever had.
+
+**Why they stayed hidden for a whole slice.** Every one of these capabilities had
+E2E coverage, and every one of those specs was **already red, for an unrelated
+reason, at the moment the capability was removed**. Two causes had the suite
+pinned: `DEFAULT_LOCALE` flipped to `zh-CN` in `3c2ecc6`, so specs asserting
+English chrome died at their first locator (§14.3), and the routes those specs
+navigated to became redirects (§14.2). **A test that is already red cannot go red
+again.** The full suite stood at 74 failed of 129 in 28.5 minutes with no
+baseline anyone trusted (§4 D4, original entry), so the signal these four
+regressions would have raised was indistinguishable from the noise the suite
+produced anyway. That is the mechanism, and it is why the measured baseline in
+§14.1 had to come before any repair.
+
+#### R1 — nothing in the shipped product can run a diagnosis
+
+- **Removed by:** `3c2ecc6`. `/p/[projectId]/diagnosis` is now a redirect into
+  the Growth Map (`diagnosis/page.tsx:19`), and `DiagnosisClient`
+  (`diagnosis/_diagnosis.tsx:722`) is imported by no file in `apps/web/src`.
+- **What the operator lost:** the ability to ask for a diagnostic run at all.
+  `useCreateDiagnosticRun` (`lib/api/hooks-diagnosis.ts:457`) has exactly one
+  caller in the repository — `_diagnosis.tsx:730`, inside the unmounted client.
+  Growth Map renders the output of a run and carries no trigger. When a project's
+  inputs change, the shipped UI offers no way to re-diagnose.
+- **Server side: live.** `POST /api/mvp/projects/{projectId}/diagnostic-runs`
+  (`diagnostic-runs/route.ts:13`) still routes and still runs. The gap is
+  entirely in the UI.
+
+#### R2 — nothing in the shipped product can override an Action's status, priority or lane
+
+- **Removed by:** `3c2ecc6`. `/p/[projectId]/plan` is now a redirect to
+  `/execution` (`plan/page.tsx:16`), and `PlanClient` (`plan/_plan.tsx:1042`) is
+  imported by no file in `apps/web/src`.
+- **What the operator lost:** moving an Action through the MVP status graph,
+  changing its priority, moving it between the 30/60/90 lanes, and recording the
+  reason each override requires. `useUpdateAction` (`lib/api/hooks-plan.ts:109`)
+  has one caller, `_plan.tsx:206`; `allowedActionStatusTargets`
+  (`plan/_action-status-transitions.ts:16`) has one caller, `_plan.tsx:67`. The
+  unified Execution queue that took over the route generates and opens
+  deliverables; it does not edit Action state.
+- **Server side: live, fully tested, and unreachable.** `PATCH
+  /api/mvp/projects/{projectId}/actions/{actionId}`
+  (`actions/[actionId]/route.ts:12`) still routes; `ACTION_STATUS_TRANSITIONS`
+  and `isAllowedActionStatusTransition` (`lib/services/actions-service.ts:16`
+  and `:28`) still enforce the frozen graph; `baseRevision` still answers 409
+  `VERSION_CONFLICT`; overrides are still appended to `action_override_audit`.
+  `lib/services/__tests__/actions-service.test.ts` and
+  `lib/services/__tests__/action-override.integration.test.ts` are green.
+  **That guard is being tested against a caller that no longer exists.** The
+  green test proves the rule is correct, not that anyone can invoke it.
+
+#### R3 — nothing in the shipped product produces the client report or its export
+
+- **Removed by:** `3c2ecc6`. `/p/[projectId]/report` is now a redirect to
+  `/results` (`report/page.tsx:16`), and `ReportClient`
+  (`report/_report.tsx:1244`) is imported by no file in `apps/web/src`.
+- **What the operator lost:** the client-facing report, its `outputLocale` deep
+  link, export creation, the export manifest, and the download link. Every symbol
+  in `lib/api/hooks-report.ts` — `useCreateExport` (`:267`) included — has
+  exactly one importer, `_report.tsx:50`. The destination that took over the
+  route, `/results` (`results/_results.tsx`), is a read-only prior-vs-new recheck
+  comparison: that file contains no occurrence of `useCreateExport`,
+  `outputLocale`, `manifest` or `download`. There is no path through the shipped
+  UI to a deliverable an operator could hand to a client.
+- **Server side: live.** `GET /api/mvp/projects/{projectId}/report`
+  (`report/route.ts:13`), `POST /api/mvp/projects/{projectId}/exports`
+  (`exports/route.ts:12`) and `GET .../exports/{exportId}`
+  (`exports/[exportId]/route.ts:10`) all still route, and
+  `lib/services/__tests__/report-projection.integration.test.ts` still covers the
+  projection.
+
+#### R4 — both unsaved-work navigation confirms are unreachable
+
+Smaller than R1-R3, and recorded at its real size rather than inflated to match
+them.
+
+- **Removed by:** `235a2fd`. `/p/[projectId]/context` renders
+  `ProductProfilePage` (`context/page.tsx:8`), and `ContextForm`
+  (`context/_context-form.tsx:596`) — which set the dirty flag from a full page —
+  is imported by no file in `apps/web/src`.
+- **What is now dead:** the one surviving writer, `_product-profile.tsx:312`,
+  sets the flag to `open && dirty`, true only while the editor modal is open. On
+  open, that modal sets `aria-hidden` and `inert` on every `document.body` child
+  except its own backdrop (`_product-profile.tsx:166-179`), so no shell link can
+  be clicked during the only window in which the flag can be true. Both readers
+  are therefore unreachable from the product: `_nav.tsx:93` (the four shell
+  destinations) and `_project-switcher.tsx:87` (the project switcher). §14.2
+  named only the first; the second has the same defect and is recorded here.
+- **What the operator actually lost:** in the ordinary case, nothing. The modal
+  runs its own discard confirmation on close (`_product-profile.tsx:324`) and
+  keeps the `beforeunload` fence (`:313`, asserted in
+  `product-profile.mock.spec.ts`). One real hole is left: **browser Back with a
+  dirty editor open discards the edits with no prompt.** `inert` does not disable
+  the back button, the modal registers no `popstate` handler, and `beforeunload`
+  does not fire on a client-side history pop.
+- **Server side:** not applicable; this guard is client-only.
+- **Why it is on this list anyway:** two code paths read as though they protect
+  unsaved work and cannot. If the Product Profile editor ever stops being a
+  modal, they will still be there, still wired, and still silent.
+
+**What each of these needs.** R1-R3 are Owner decisions, not engineering
+estimates: either the capability returns on one of the four shipped
+destinations, or the API surface, its hooks and its tests are deleted along with
+the screens. Leaving them as they stand keeps three tested server capabilities
+that no user of the product can reach. R4 is an engineering task once R1-R3 are
+settled: delete the two dead readers, or give the editor a `popstate` guard and
+keep them.
 
 ### 14.9 N-1
 
@@ -2015,11 +2129,16 @@ assertion. `sources-readiness.mock.spec.ts` was not touched.
 
 - **§4 D4 is no longer "no trustworthy baseline"** — there is one, it is in
   §14.6, and it is reproducible in under three minutes. What remains is the
-  four failures named there.
+  four failures named there. **Two of the four are since closed**: `939129a`
+  selected the UI locale in `sources-readiness.mock.spec.ts`, which the N-1
+  freeze does not cover, and the suite now stands at 77 passed / 2 failed of 79
+  (§4 D4, updated entry).
 - **§14.7** — the 409 recovery-fence contract needs an owner ruling.
-- **§14.8** — four capability gaps, unrelated to tests.
-- **`sources-readiness`** — two failures, one six-line fix, blocked only by the
-  N-1 freeze.
+- **§14.8** — four product regressions, unrelated to tests: no UI can run a
+  diagnosis (R1), override an Action's status/priority/lane (R2), or produce the
+  client report and its export (R3); both unsaved-work navigation confirms are
+  unreachable (R4). Removal is Slice 1's, discovery is Slice 2's, and each entry
+  records whether the server-side capability is still live.
 - **§4 D8 / `growth-map.mock.spec.ts:124`** — unchanged; the Growth Map
   walkthrough rewrite is still its own task. The walkthrough coverage deleted in
   §14.2 (evidence provenance and the focus-restoring drawer, qualitative
