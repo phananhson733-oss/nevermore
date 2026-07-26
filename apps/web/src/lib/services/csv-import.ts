@@ -268,6 +268,28 @@ export async function previewImport(
   }
 }
 
+/**
+ * The 409 an active-key conflict owes its caller.
+ *
+ * SPEC:1100 (§13.4) says the conflict "body provides the existing runId /
+ * statusUrl", and AC-019 (SPEC:1258) names it as an acceptance criterion for a
+ * concurrent second request on the same provider activeKey. A `Location` header
+ * alone did not satisfy that: a client reading the problem+json body found no
+ * way to reach the run that beat it. `current` is the same shape
+ * `collection.ts`'s `activeConflict` already returns for this code.
+ */
+function activeImportConflict(projectId: string, runId: string): ProblemError {
+  const statusUrl = runStatusUrl(projectId, runId);
+  return new ProblemError(
+    "RUN_ALREADY_ACTIVE",
+    "A CSV import is already running.",
+    {
+      headers: { Location: statusUrl },
+      current: { runId, statusUrl },
+    },
+  );
+}
+
 function replayConfirm(
   row: {
     request_hash: string;
@@ -400,13 +422,7 @@ export async function confirmImport(
     );
     const replay = now ? replayConfirm(now, requestHash) : null;
     if (replay) return replay;
-    throw new ProblemError(
-      "RUN_ALREADY_ACTIVE",
-      "A CSV import is already running.",
-      {
-        headers: { Location: runStatusUrl(projectId, active.id) },
-      },
-    );
+    throw activeImportConflict(projectId, active.id);
   }
 
   const boss = await getBoss();
@@ -586,14 +602,15 @@ export async function confirmImport(
         projectScope,
         CSV_ACTIVE_KEY,
       );
+      if (winner) throw activeImportConflict(projectId, winner.id);
+      // No active run to point at. Reachable two ways: the winner finished
+      // between the unique violation and this read, or the violation came from
+      // `source_connections_one_active_provider_idx`, which is a connection
+      // conflict with no run behind it at all. Inventing a runId here would be
+      // worse than saying we have none.
       throw new ProblemError(
         "RUN_ALREADY_ACTIVE",
         "A CSV import is already running.",
-        {
-          ...(winner
-            ? { headers: { Location: runStatusUrl(projectId, winner.id) } }
-            : {}),
-        },
       );
     }
     throw error;
