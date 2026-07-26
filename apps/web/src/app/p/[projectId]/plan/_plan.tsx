@@ -64,7 +64,7 @@ import {
 } from "@/lib/api/hooks-plan";
 import { ProblemNotice, ProblemState } from "../_problem-display";
 import { growthMapFindingRoute } from "../_compatibility-route";
-import { allowedActionStatusTargets } from "./_action-status-transitions";
+import { allowedActionStatusTargets } from "../_action-status-transitions";
 import { evidenceProviderLabel } from "./_provider-label";
 import styles from "./plan.module.css";
 
