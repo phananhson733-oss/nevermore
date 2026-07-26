@@ -580,7 +580,27 @@ export async function createCollectionRun(
       if (replay) return replay;
       const existing = await new AsyncRunsRepository(db).findActive(projectScope, activeKey);
       if (existing) throw activeConflict(existing.id, projectId);
-      throw new ProblemError("RUN_ALREADY_ACTIVE", "A collection run is already active.");
+      // No run to point at, so no `Location` and no runId. `async_runs_one_
+      // active_key_idx` only aborts an insert when a run WAS active, and
+      // `findActive` only sees `queued`/`running`: reaching here means the
+      // winner left both states between the abort and this read, and our own
+      // reservation rolled back with the transaction. `csv-import.ts:612`
+      // keeps the same bare case for the same reason -- inventing a runId
+      // would be worse than admitting we have none.
+      //
+      // What the body can carry, and now does, is `activeConflict`'s own shape
+      // with both pointers EXPLICITLY null, so a client reads `current.runId`
+      // down one code path instead of finding the key absent; plus the
+      // contended `activeKey`, which is the one locatable fact that survives.
+      // `Problem.current` is `additionalProperties: true` (openapi/mvp.yaml
+      // components.schemas.Problem), so none of this changes the contract.
+      // The detail stops claiming a run is active, because at this point none
+      // is observable and the request is safe to retry.
+      throw new ProblemError(
+        "RUN_ALREADY_ACTIVE",
+        "A collection run held this provider and operation and is no longer active; retry the request.",
+        { current: { runId: null, statusUrl: null, activeKey } },
+      );
     }
     throw error;
   }

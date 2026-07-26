@@ -431,24 +431,83 @@ merge and needs an Owner decision.**
 from `next` (GHSA-955p-x3mx-jcvp requires `>= 16.2.11`), plus `js-yaml` and
 `sharp`. Upstream advisory drift, unrelated to this slice.
 
-**D3. `authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs` is a
-935-line stale parallel copy wired into no gate.** It was already 4-red before
-Slice 2 started (it asserts 41 tables / 38 operations / 6 async and its migration
-list stops at 0019). CI never runs it; Vitest only collects `.ts`. **It needs its
-own commit to fix or delete.**
+**D3. RESOLVED 2026-07-26 — fixed and gated, not deleted.**
+`authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs` was a 935-line
+file wired into no gate and 4-red since before Slice 2 (41 tables / 38 operations
+/ 6 async, migration list stopping at 0019).
 
-**D4. UPDATED 2026-07-26, second pass. The suite is 77 passed / 2 failed of 79
-in 2.3 minutes**, measured at `939129a`. It was 4 failed / 75 passed of 79 at
-`54cab8d`, and 74 failed / 55 passed of 129 in 28.5 minutes at `2f2bd78`. Zero
-new red at any step; each failure set is a strict subset of the one before it.
-The two `sources-readiness.mock.spec.ts` failures named in §14.6 are gone —
-`939129a` selected the UI locale there, which the N-1 freeze does not cover. Two
-remain:
+Fourteen of its 29 tests really were a parallel copy of authority text the lock
+already freezes by sha256. The other fifteen were not: they mutate fixture
+migration sets to prove `verify-spec.mjs` rejects drift, and that verifier runs
+in CI — `verify:spec` hash-pins it via `REQUIRED_AUTHORITY_FILES` and then
+executes it. Nothing else in the repo proves it is not a no-op, so deleting them
+would have been a net loss of guarding. Kept.
 
-| still red | why | what it needs |
-|---|---|---|
-| `frontend-error-states.mock.spec.ts:615` "Studio releases a 409 recovery fence when the canonical run has already settled" | the spec asserts the `RUN_ALREADY_ACTIVE` fence releases itself once the artifact projection shows the run settled; `resolveActiveGenerationRecovery` (`execution/_execution-deep-link.ts:236`) is deliberately fail-closed and holds it. Two contracts, both defensible — §14.7 | an Owner ruling on which contract is the product's, then one edit to whichever side loses. It cannot be closed by editing the test alone: see §14.7 for why holding the fence was judged safe, and what that judgement assumed |
-| `growth-map.mock.spec.ts:124` "reviews only the canonical Opportunity and delivers one technical ticket" | the `Delivery chain` region never renders. Proven unrelated to this branch's work by stash comparison (§4 D3c); same family as §4 D8 | the Growth Map audit-and-confirm walkthrough rewrite, which is its own task. §14.11 carries the checklist that task inherits |
+All four reds were stale snapshots: 41→44 tables, 38→49 operations, 6→9 async;
+smoke markers 51→56 indexes, 63→69 triggers, 16→18 routines, terminal migration
+0019→0021; and the fixture's `completeMigrations` stopped at 0019. That last one
+mattered: with 0020/0021 absent the verifier failed unconditionally, so the
+`status != 0` half of all fourteen negative tests was passing vacuously and only
+the stderr regex half still did work. Fixed, plus two new drift tests for
+0020/0021. 29 → 31 tests, green.
+
+Gated by a new `pnpm verify:spec:test` running in CI next to `pnpm verify:spec`.
+It also adopts `scripts/verify-spec-lock.test.mjs` (1-red, 45/8 against a 49/9
+lock — fixed) and `scripts/verify-implementation-source.test.mjs` (green but
+equally ungated). 66 tests. `deploy:check` now asserts CI contains the step, and
+its existing `verify:spec` assertion gained an end-of-line anchor — unanchored,
+`verify:spec:test` alone satisfied it, so the real gate could have been dropped
+without turning anything red. Both assertions mutation-verified.
+
+**D3e. RESOLVED 2026-07-26. `collection.ts:583`'s bare 409**, recorded after the
+S3 fix as "still weaker than csv-import was before its fix, and next to the
+N-1-frozen Sources surface". Both halves of that were wrong. The N-1 freeze
+covers `apps/web/src/app/p/[projectId]/sources`, a UI surface, not
+`lib/services/collection.ts`. And the right comparison is not pre-fix csv-import
+but the bare 409 csv-import deliberately KEPT (`csv-import.ts:612`): the same
+"the winner is no longer observable" branch.
+
+That branch genuinely has no runId. `async_runs_one_active_key_idx` only aborts
+an insert when a run was active, `findActive` only sees `queued`/`running`, and
+our own reservation rolled back with the transaction — so reaching here means the
+winner left both states in between. Inventing a runId would be worse than
+admitting we have none, so there is still no `Location`. What changed is the
+body: it now returns `activeConflict`'s shape with both pointers EXPLICITLY null,
+so a client reads `current.runId` down one code path instead of distinguishing
+"key absent" from "value null", plus the contended `activeKey` — the one
+locatable fact that survives. The detail stops claiming a run is active, because
+none is.
+
+**No contract tax.** `Problem.current` is `type: [object,'null']` with
+`additionalProperties: true`, so none of the seven contract sites move. Covered
+by a new integration test that reproduces the branch by mocking both
+`IdempotencyRepository.find` and `AsyncRunsRepository.findActive` to null;
+mutation-verified by reverting the implementation to the bare throw.
+
+**Same gap still open elsewhere, untouched this round**: the primary
+`activeConflict()` in `audit-runs.ts:205`, `content-shadow.ts:505` and
+`action-recheck.ts:198` sends a `Location` header with no body pointer — exactly
+the shape S3 fixed — and their own no-winner branches (`:410`, `:747`, `:282`)
+are bare. `product-profile-synthesis.ts:356` and `collection.ts:218` are already
+correct.
+
+**D4. RESOLVED 2026-07-26, third pass. The suite is 79 passed / 0 failed in 1.8
+minutes.** It was 77 passed / 2 failed of 79 at `939129a`, 4 failed / 75 passed
+of 79 at `54cab8d`, and 74 failed / 55 passed of 129 in 28.5 minutes at
+`2f2bd78`. Zero new red at any step; each failure set is a strict subset of the
+one before it.
+
+Read the count honestly: the suite went from 129 tests to 79 partly because
+`bb659e9` deleted cases asserting screens the product no longer has. That is
+less claimed, not more fixed. What was fixed is the rest, one by one:
+
+| was red | closed by |
+|---|---|
+| `frontend-error-states.mock.spec.ts:615` "Studio releases a 409 recovery fence when the canonical run has already settled" | `c4c92a3` — the fence now releases once the projection proves the run ended, which was the ruling §14.7 asked for |
+| `growth-map.mock.spec.ts:124` "reviews only the canonical Opportunity and delivers one technical ticket" | the anchor moved to the studio artifact queue, where the deliverable now lives after Task 7 deleted the `Delivery chain` panel to an a11y spec. Both counts stay exact and one of them gets stronger; verified by three mutations (0 artifacts, 2 tickets, 1 ticket + 1 brief) — §4 D3c. **The earlier read that this belonged with D8 and needed a two-platform visual baseline was wrong**: this spec contains zero `toHaveScreenshot` calls |
+
+**Still not covered**: `test:e2e:real`. D8 (`real-vertical-chains`, 24 snapshots)
+needs a two-platform baseline and this machine produces darwin only.
 
 The paragraph below is this entry as it stood before any of these rounds.
 

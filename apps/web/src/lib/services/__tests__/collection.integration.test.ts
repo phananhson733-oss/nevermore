@@ -15,6 +15,7 @@ process.env["LOG_LEVEL"] ??= "error";
 import { eq, sql } from "drizzle-orm";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import {
+  AsyncRunsRepository,
   collectionRunParametersHash,
   CollectionRunsRepository,
   contentHash,
@@ -340,6 +341,71 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
       expect((rejected[0]!.reason as ProblemError).extraHeaders).toEqual({
         Location: winningStatusUrl,
       });
+    }
+  });
+
+  it("names the contended key when the active-key winner is gone before the loser reads it", async () => {
+    const [lostWorkspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `WS-lost-winner-${randomUUID()}` })
+      .returning();
+    const lostProject = await createProject(
+      { workspaceId: lostWorkspace!.id },
+      actor,
+      randomUUID(),
+      {
+        clientName: "Lost winner",
+        projectName: "Lost winner",
+        siteUrl: `https://collection-lost-winner-${randomUUID()}.example`,
+        marketCodes: ["US"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
+      safeGuard,
+    );
+    const lostScope = { workspaceId: lostWorkspace!.id };
+    await createCollectionRun(lostScope, lostProject.project.id, actor, randomUUID(), {
+      provider: "crawl",
+    });
+
+    // Reproduce collection.ts's one remaining bare-409 branch exactly. The
+    // active-key index still aborts the insert, but by the time the loser looks
+    // the winner has left queued/running and there is no idempotency winner
+    // either, so there is genuinely no runId to hand back.
+    const blindIdempotency = vi
+      .spyOn(IdempotencyRepository.prototype, "find")
+      .mockResolvedValue(null);
+    const blindActiveRun = vi
+      .spyOn(AsyncRunsRepository.prototype, "findActive")
+      .mockResolvedValue(null);
+    try {
+      const rejection = await createCollectionRun(
+        lostScope,
+        lostProject.project.id,
+        actor,
+        randomUUID(),
+        { provider: "crawl" },
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+      expect(rejection).toBeInstanceOf(ProblemError);
+      expect(rejection).toMatchObject({ code: "RUN_ALREADY_ACTIVE", status: 409 });
+      // No Location: there is no run to point at, and inventing one would be
+      // worse than admitting we have none.
+      expect((rejection as ProblemError).extraHeaders).toBeUndefined();
+      // The body is no longer empty. Both pointers are explicitly null, so one
+      // client code path reads current.runId in either case, and the contended
+      // key names which command lost.
+      expect(Reflect.get(rejection as object, "current")).toEqual({
+        runId: null,
+        statusUrl: null,
+        activeKey: "collect:crawl:site_graph",
+      });
+    } finally {
+      blindActiveRun.mockRestore();
+      blindIdempotency.mockRestore();
     }
   });
 

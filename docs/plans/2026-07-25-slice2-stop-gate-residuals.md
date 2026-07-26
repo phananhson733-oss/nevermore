@@ -227,9 +227,28 @@ studio artifact queue,第三条(面板自己的 `<h2>`,无后继)由「queue 本
   SPEC:1100 §13.4 要求「body 提供现有 runId/statusUrl」,AC-019(SPEC:1258)把它列为具名验收标准;
   此前 `csv-import.ts` 的预检只给 header,竞态败者路径连 header 都是可选的。
   现在两处共用 `activeImportConflict()`,形状与 `collection.ts` 的 `activeConflict` 一致(`headers.Location` + `current:{runId,statusUrl}`)。
-  **仍存在、未改的同类缺口**:`collection.ts:583` 在既找不到 idempotency winner 又找不到 active run 时,
-  抛的 409 **既无 Location 也无 body 指针**。它比修好前的 csv-import 更弱,但 `collection.ts` 紧邻按 N-1 冻结的 Sources 面,
-  本轮未动 —— **需要一个独立任务**。
+  ~~**仍存在、未改的同类缺口**:`collection.ts:583` 在既找不到 idempotency winner 又找不到 active run 时,
+  抛的 409 **既无 Location 也无 body 指针**。~~ **2026-07-26 已处理,并且当时的定性是错的**:
+  N-1 冻结的是 `apps/web/src/app/p/[projectId]/sources` 这个 **UI 表面**,不是 `lib/services/collection.ts`;
+  而拿它跟「修好前的 csv-import」比也比错了对象 —— 它对应的是 csv-import **修好后仍保留**的那一条
+  (`csv-import.ts:612`),两者是同一个「winner 已经不可观测」的分支。
+  该分支**确实拿不到 runId**:`async_runs_one_active_key_idx` 只在真有 active run 时才中止插入,
+  而 `findActive` 只看得见 `queued`/`running`,走到这里意味着 winner 在中止与这次读之间离开了这两个状态,
+  我们自己的 reservation 也随事务回滚了。**编一个 runId 比承认没有更糟,所以仍然没有 `Location`。**
+  改的是 body:现在返回 `activeConflict` 的同一形状但两个指针**显式为 null**
+  (调用方一条代码路径读 `current.runId`,不必区分「键不存在」与「值为 null`」),
+  外加争用的 `activeKey` —— 这是该分支唯一还站得住的可定位事实;
+  detail 也不再声称「有一个 run 正在跑」(此刻并没有),改为说明可以重试。
+  **契约税为零**:`Problem.current` 在 `openapi/mvp.yaml` 里是 `type: [object,'null'] + additionalProperties: true`,
+  新增成员不改 schema,7 处契约同步一处都不需要走。
+  **已加集成测试**(`collection.integration.test.ts`,同时 mock `IdempotencyRepository.find` 与
+  `AsyncRunsRepository.findActive` 为 null 以精确复现该分支),**变异自验**:把实现回滚到裸 409,
+  该测试红(`expected undefined to deeply equal { runId: null, statusUrl: null, activeKey }`)。
+
+  **同类缺口仍在别处(如实,本轮未动)**:`audit-runs.ts:205`、`content-shadow.ts:505`、
+  `action-recheck.ts:198` 三处**主** `activeConflict()` 只发 `Location` 头、**body 里没有指针**,
+  正是 S3 修掉的那个形状;它们各自的「找不到 winner」分支(`:410` / `:747` / `:282`)也是裸的。
+  `product-profile-synthesis.ts:356` 与 `collection.ts:218` 已是正确形状。本轮按范围只动了点名的那一条。
   csv-import 自己也保留了一个「找不到 winner」的裸 409:该路径要么是 winner 已在两次读之间完成,
   要么违反的是 `source_connections_one_active_provider_idx`(根本没有 run 在后面)。**编一个 runId 比承认没有更糟。**
 
@@ -415,4 +434,6 @@ CommonMark 会反转义);`paragraphBlocks` 把 `<li>…` 与 `: term` 行判为 
 - ~~**D3** `authority/.../verify-spec.test.mjs` 过时并行副本仍待决。~~ 2026-07-26 已修并接进
   新的 `pnpm verify:spec:test` 门(连同 `verify-spec-lock.test.mjs`、
   `verify-implementation-source.test.mjs` 两个同样孤立的套件),见上文 D3 / D3d。
-- `collection.ts:583` 的裸 409 仍在(紧邻 N-1 冻结的 Sources 面,需独立任务)。
+- ~~`collection.ts:583` 的裸 409 仍在(紧邻 N-1 冻结的 Sources 面,需独立任务)。~~ 2026-07-26 已处理,
+  见上文 F2/S3。**仍未动的同类**:`audit-runs.ts:205` / `content-shadow.ts:505` / `action-recheck.ts:198`
+  三处主 `activeConflict()` 仍只发 `Location` 头、body 无指针。
