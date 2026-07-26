@@ -887,3 +887,38 @@ export const SAME_LINE_MIXED_CITATION_DRAFT = [
   "According to Analyst Insights, activation rose 30%. Forrester (2024) found a 73% lift.",
   "",
 ].join("\n");
+
+/**
+ * The emphasis-versus-address corpus.
+ *
+ * `flattenLine` ran `stripEmphasis` over the whole line, which deletes `~`
+ * everywhere and `_` at token boundaries. Inside an address those are
+ * characters, not typography, so the same url on the same line reached the
+ * resolver with two different values depending on which extractor read it —
+ * and deletion can FORGE a host.
+ */
+
+/** A legitimate first-party address carrying `~` and `_`. Must not be blocked. */
+export const FIRST_PARTY_EMPHASIS_CHAR_DRAFT = SCAFFOLD_CTA_DRAFT.replace(
+  "https://signalframe.example/demo",
+  "https://signalframe.example/~guides/deep_dive_2024",
+);
+
+/**
+ * A host that is NOT the customer's and that stripping turned into one:
+ * `signal~frame.example` flattened to `signalframe.example` and resolved as the
+ * customer's own property.
+ */
+export const EMPHASIS_FORGED_HOST_DRAFT = SCAFFOLD_CTA_DRAFT.replace(
+  "https://signalframe.example/demo",
+  "https://signal~frame.example/demo",
+);
+
+/** An invented outside reference whose address carries `_`. Still blocked. */
+export const FABRICATED_UNDERSCORE_SOURCE_DRAFT = [
+  ...SAME_LINE_BODY,
+  "## Sources",
+  "",
+  "- Forrester Digital Experience Report, 2024. https://forrester-insights.example/_reports/2024_state",
+  "",
+].join("\n");

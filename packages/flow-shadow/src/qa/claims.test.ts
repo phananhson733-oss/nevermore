@@ -793,3 +793,42 @@ describe("every assertion on a line is resolved on its own evidence", () => {
     expect(hits.some((hit) => hit.resolution.support === null)).toBe(true);
   });
 });
+
+/**
+ * F2. `flattenLine` stripped emphasis over the whole line, so `_` and `~`
+ * vanished from ADDRESSES too — and deletion can forge a host.
+ */
+describe("an address survives flattening byte for byte", () => {
+  it("resolves a first-party address carrying `~` and `_`", () => {
+    const index = buildSourceIndex(fixturePack());
+    const value = "https://signalframe.example/~guides/deep_dive_2024";
+
+    expect(resolveLinkProvenance(index, { kind: "url", value })).toBe(
+      "first_party",
+    );
+    expect(flattenLine(`See ${value} for detail.`).urls[0]?.value).toBe(value);
+  });
+
+  it("refuses a host that only becomes ours once `~` is deleted", () => {
+    const index = buildSourceIndex(fixturePack());
+    const value = "https://signal~frame.example/onboarding";
+
+    expect(
+      flattenLine(`[Book a demo](${value})`).links[0]?.target,
+    ).toBe(value);
+    expect(resolveLinkProvenance(index, { kind: "url", value })).toBe(
+      "unresolved",
+    );
+  });
+
+  it("still refuses an outside address carrying `_`", () => {
+    const index = buildSourceIndex(fixturePack());
+
+    expect(
+      resolveLinkProvenance(index, {
+        kind: "url",
+        value: "https://forrester-insights.example/_reports/2024_state",
+      }),
+    ).toBe("unresolved");
+  });
+});

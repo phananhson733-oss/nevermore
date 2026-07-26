@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractMarkdownLinks,
+  extractUrls,
   flattenLine,
   hasDirectNegation,
   isReferenceSectionTitle,
@@ -866,5 +868,75 @@ describe("excerpt truncation", () => {
   it("counts the bound in code points, not code units", () => {
     expect(truncateExcerpt("🚀".repeat(10), 10)).toBe("🚀".repeat(10));
     expect([...truncateExcerpt("🚀".repeat(20), 10)]).toHaveLength(10);
+  });
+});
+
+/**
+ * F2. Emphasis stripping ran over the whole line, and `stripEmphasis` deletes
+ * `~` everywhere and `_` at token boundaries. Inside an address those are
+ * characters, so the same url on the same line reached the resolver with two
+ * different values depending on which extractor read it.
+ */
+describe("emphasis stripping stops at the edge of an address", () => {
+  const ADDRESSES = [
+    "https://signalframe.example/~guides/deep_dive_2024",
+    "https://signalframe.example/_next/report",
+    "https://analyst.example/q1_2024~notes",
+    "https://signal~frame.example/onboarding",
+  ] as const;
+
+  it("gives both extractors the same bytes for one address on one line", () => {
+    for (const address of ADDRESSES) {
+      const raw = `See ${address} for the walkthrough.`;
+
+      expect(flattenLine(raw).urls.map((url) => url.value), address).toStrictEqual(
+        [...extractUrls(raw)],
+      );
+      expect(flattenLine(raw).urls[0]?.value, address).toBe(address);
+    }
+  });
+
+  it("keeps a link destination identical to what the draft wrote", () => {
+    for (const address of ADDRESSES) {
+      const raw = `[the deep dive](${address}) explains it.`;
+
+      expect(extractMarkdownLinks(raw).map((link) => link.target), address).toStrictEqual(
+        [address],
+      );
+      expect(flattenLine(raw).links[0]?.target, address).toBe(address);
+    }
+  });
+
+  /**
+   * Deletion does not merely lose bytes, it can FORGE a host: this one is not
+   * the customer's domain and used to flatten into it.
+   */
+  it("does not delete a character that turns one host into another", () => {
+    expect(flattenLine("See https://signal~frame.example/x here.").text).toBe(
+      "See https://signal~frame.example/x here.",
+    );
+  });
+
+  /** Emphasis that merely WRAPS an address is still markup, not address. */
+  it("still removes emphasis wrapped around an address", () => {
+    expect(
+      flattenLine("See **https://signalframe.example/demo** here.").urls[0]
+        ?.value,
+    ).toBe("https://signalframe.example/demo");
+    expect(
+      flattenLine("See ~~https://signalframe.example/demo~~ here.").urls[0]
+        ?.value,
+    ).toBe("https://signalframe.example/demo");
+  });
+
+  /** And prose emphasis is untouched by the carve-out. */
+  it("still removes emphasis from prose beside an address", () => {
+    expect(
+      flattenLine(
+        "Forrester's **2024** data at https://signalframe.example/_next puts churn at 42%.",
+      ).text,
+    ).toBe(
+      "Forrester's 2024 data at https://signalframe.example/_next puts churn at 42%.",
+    );
   });
 });

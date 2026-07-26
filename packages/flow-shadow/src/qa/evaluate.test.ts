@@ -5,7 +5,10 @@ import {
   ATTRIBUTED_LINK_DRAFT,
   BODY_RESIDENT_REFERENCE_DRAFT,
   CLEAN_DRAFT,
+  EMPHASIS_FORGED_HOST_DRAFT,
   ESCAPED_ATTRIBUTION_DRAFTS,
+  FABRICATED_UNDERSCORE_SOURCE_DRAFT,
+  FIRST_PARTY_EMPHASIS_CHAR_DRAFT,
   FIRST_PARTY_LINK_DRAFT,
   NAVIGATION_SECTION_DRAFTS,
   NEAR_MISS_HONEST_DRAFTS,
@@ -709,6 +712,47 @@ describe("P1 (regression) — a line carries more than one claim", () => {
 });
 
 /**
+ * F2 (regression) — emphasis stripping rewrote addresses.
+ *
+ * `_` and `~` are typography in prose and characters in an address, and
+ * deleting them from an address both made two extractors disagree about the
+ * same url and let a host that is NOT the customer's flatten into one that is.
+ */
+describe("B (regression) — an address is not typography", () => {
+  it("does not report a first-party address carrying `~` and `_`", () => {
+    const evaluation = evaluateDraftQa(
+      qaInput(FIRST_PARTY_EMPHASIS_CHAR_DRAFT),
+    );
+
+    expect(evaluation.verdict).not.toBe("blocked");
+    expect(
+      claim(FIRST_PARTY_EMPHASIS_CHAR_DRAFT, "rl12b_unresolved_link")?.status,
+    ).toBe("passed");
+    expect(
+      claim(FIRST_PARTY_EMPHASIS_CHAR_DRAFT, "rl12_citation_integrity")?.status,
+    ).toBe("passed");
+  });
+
+  it("reports a host that only becomes the customer's once `~` is deleted", () => {
+    expect(
+      claim(EMPHASIS_FORGED_HOST_DRAFT, "rl12b_unresolved_link")?.status,
+    ).toBe("failed");
+  });
+
+  it("still blocks an invented outside reference whose address carries `_`", () => {
+    const evaluation = evaluateDraftQa(
+      qaInput(FABRICATED_UNDERSCORE_SOURCE_DRAFT),
+    );
+
+    expect(evaluation.verdict).toBe("blocked");
+    expect(
+      claim(FABRICATED_UNDERSCORE_SOURCE_DRAFT, "sc9b_sources_resolve_to_pack")
+        ?.status,
+    ).toBe("failed");
+  });
+});
+
+/**
  * P2, re-proved over the drafts whose claim ARRAY the two fixes changed.
  *
  * `FlowShadowQaGatesRepository.insert` compares a replayed gate row against the
@@ -724,6 +768,9 @@ describe("P2 — the changed claim arrays are byte-stable across replays", () =>
       ["same-line mixed claim", SAME_LINE_MIXED_CLAIM_DRAFT, pack],
       ["same-line supported", SAME_LINE_SUPPORTED_CLAIMS_DRAFT, pack],
       ["same-line mixed citation", SAME_LINE_MIXED_CITATION_DRAFT, pack],
+      ["first-party `~`/`_` address", FIRST_PARTY_EMPHASIS_CHAR_DRAFT, undefined],
+      ["forged host", EMPHASIS_FORGED_HOST_DRAFT, undefined],
+      ["fabricated `_` source", FABRICATED_UNDERSCORE_SOURCE_DRAFT, undefined],
     ] as const) {
       const first = evaluateDraftQa(qaInput(draft, source ?? fixturePack()));
       const baseline = JSON.stringify(qaClaimsToJson(first.claims));

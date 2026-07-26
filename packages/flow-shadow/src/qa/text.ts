@@ -816,12 +816,63 @@ export interface FlatLine {
   readonly urls: readonly FlatUrl[];
 }
 
+/** A trailing run of emphasis closers, which is markup even against a url. */
+const EMPHASIS_TAIL = /[*~_]+$/;
+
+/**
+ * The url spans that emphasis stripping must not touch.
+ *
+ * A CLOSING run at the very end is excluded, so `**https://example.com/a**` and
+ * `~~https://example.com/a~~` still flatten to the address a reader sees. The
+ * interior is protected: everything else on the line is prose, and only inside
+ * an address are `_` and `~` characters rather than typography.
+ */
+function protectedUrlSpans(source: string): readonly FlatSpan[] {
+  const spans: FlatSpan[] = [];
+  for (const match of source.matchAll(URL_IN_TEXT)) {
+    if (match.index === undefined) continue;
+    const address = match[0].replace(EMPHASIS_TAIL, "");
+    if (address.length === 0) continue;
+    spans.push({ start: match.index, end: match.index + address.length });
+  }
+  return spans;
+}
+
+/**
+ * Strip emphasis from the prose of a line and from NOTHING inside a url.
+ *
+ * `stripEmphasis` removes `~` everywhere and `_` at token boundaries, which is
+ * correct for prose and wrong for an address: `https://signalframe.example/
+ * ~guides/a` reached the resolver as `.../guides/a`, so the same url on the
+ * same line had two different values depending on which extractor read it —
+ * `extractUrls` reads the raw line, `flattenLine` read the emphasis-stripped
+ * one. Two extractors disagreeing about one address is enough on its own; the
+ * sharp edge is that deletion can FORGE a host, and `https://signal~frame.
+ * example/x` — a domain that is not the customer's — flattened to
+ * `signalframe.example` and resolved as the customer's own property.
+ *
+ * This does not widen what is read out of a url: `locatedAttributions` still
+ * extracts nothing from the inside of one. It only stops the flattener from
+ * rewriting the address it then hands to the resolver.
+ */
+function stripEmphasisOutsideUrls(source: string): string {
+  let flattened = "";
+  let cursor = 0;
+  for (const span of protectedUrlSpans(source)) {
+    flattened += stripEmphasis(source.slice(cursor, span.start));
+    flattened += source.slice(span.start, span.end);
+    cursor = span.end;
+  }
+  return flattened + stripEmphasis(source.slice(cursor));
+}
+
 export function flattenLine(raw: string): FlatLine {
   // Emphasis is typography, so it is removed before anything reads the line:
   // `Forrester's **2024** data puts churn at 42%` has to be the same sentence
   // as `Forrester's 2024 data puts churn at 42%`, and it was not — the second
-  // was blocked and the first passed.
-  const source = stripEmphasis(raw.replace(INLINE_CODE, " "));
+  // was blocked and the first passed. Inside a url it is not typography, so
+  // `stripEmphasisOutsideUrls` leaves addresses byte-identical to the raw line.
+  const source = stripEmphasisOutsideUrls(raw.replace(INLINE_CODE, " "));
   const links: FlatLink[] = [];
   let text = "";
   let cursor = 0;
