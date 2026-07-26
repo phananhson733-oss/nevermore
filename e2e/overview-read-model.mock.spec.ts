@@ -1075,3 +1075,33 @@ for (const viewport of [
     });
   });
 }
+
+/**
+ * Regression net for stop gate §17.4. The shell-hiding print rule
+ * (`globals.css`) was gated on `[data-report-page]`, an attribute that survives
+ * only inside the client no file imports, so printing any screen carried the
+ * sidebar and the sticky toolbar into the output. Overview is asserted here
+ * because it already ships a print stylesheet of its own
+ * (`overview.module.css:1342`) — it is a screen someone deliberately made
+ * printable, and the gate was defeating that.
+ */
+test("printing Overview leaves the shell chrome out of the output", async ({
+  page,
+}) => {
+  await openOverview(page, readyScenario());
+  const sidebar = page.locator("[data-app-shell-sidebar]");
+  const topbar = page.locator("[data-app-shell-topbar]");
+  await expect(sidebar).toBeVisible();
+
+  await page.emulateMedia({ media: "print" });
+  await expect(sidebar).toBeHidden();
+  await expect(topbar).toBeHidden();
+  // The page itself must still be there — a rule that hid everything would
+  // satisfy the two assertions above and be worse than the defect.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Where growth should move next" }),
+  ).toBeVisible();
+
+  await page.emulateMedia({ media: "screen" });
+  await expect(sidebar).toBeVisible();
+});

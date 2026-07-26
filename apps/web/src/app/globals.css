@@ -192,12 +192,22 @@ a {
   border-radius: 4px;
 }
 
-/* A printed report contains the report itself, but not the persistent project
- * navigation or sticky application toolbar. Stable data attributes keep this
- * global rule narrowly scoped without relying on CSS Module class names. */
+/* A printed page contains the page, not the persistent project navigation or
+ * the sticky application toolbar. Stable data attributes keep this global rule
+ * off CSS Module class names.
+ *
+ * This was scoped `body:has([data-report-page])` until 2026-07-26, back when the
+ * client report was the only screen meant to print. That screen became a
+ * redirect (`report/page.tsx`), and the attribute now exists only inside
+ * `_report.tsx`, which no file imports — so the rule stopped matching anything
+ * and every screen began printing with the sidebar and toolbar in the output
+ * (stop gate §17.4). Removing the gate restores the stated intent rather than
+ * choosing a new one: nothing wants navigation chrome in a printout, and
+ * `overview.module.css:1342` already carries a print stylesheet of its own that
+ * this gate was quietly defeating. */
 @media print {
-  body:has([data-report-page]) [data-app-shell-sidebar],
-  body:has([data-report-page]) [data-app-shell-topbar] {
+  [data-app-shell-sidebar],
+  [data-app-shell-topbar] {
     display: none !important;
   }
 }
