@@ -2938,18 +2938,21 @@ headings — and only the panels fed by the 501 endpoints show error states.
 that scaffold today and are sound.
 
 *Second error — "`toBeVisible()` passes with two `<main>` elements, so it is a
-readiness wait, not a landmark check".* Measured again under the rule this
-round had just written down and then failed to apply to itself: **after editing
-a `.tsx`, a run started immediately races `next dev --webpack`'s recompilation,
-so a surviving mutation may be a stale bundle rather than a real result.** Run
-twice, the answer is the opposite and stable — `raw=2 byRole=2
-toBeVisible=threw STRICT`. `toBeVisible()` **does** throw on a duplicate
-landmark. `a11y.spec.ts:39` is a genuine landmark check, which is exactly how
-§17.1 caught the defect in the first place.
+readiness wait, not a landmark check".* It does throw; the measurement that
+said otherwise had been taken before the ready branch mounted. `a11y.spec.ts:39`
+is a genuine landmark check, which is how §17.1 caught the defect.
 
-Which means the mutation that "survived" the widened loop was itself a stale
-bundle, and **the loop would have protected those destinations after all**. The
-revert was not necessary on the grounds given.
+*Third error — "the cause is a `next dev` recompilation race, so run every
+mutation twice".* Also wrong, and §20 now carries the evidenced mechanism: both
+Playwright configs set `reuseExistingServer: false`, every run compiles current
+source, and two runs produce identical results. The mutated element lives in
+Overview's **ready branch**, which is not in the DOM until the workspace query
+resolves — so an assertion made straight after `goto` cannot see it however many
+times it is run.
+
+**That vindicates the original diagnosis of the widened loop**: its landmark
+line ran immediately after `goto`, on the loading branch. The revert was right
+for the reason first given, discarded twice, and now evidenced.
 
 **It is still not being re-applied, for a reason that survives all of this:**
 the loop's other half runs a full-page axe scan under the base installer, where
