@@ -445,14 +445,18 @@ async function runDiagnosisAndConfirmFinding(
   projectId: string,
   keyboard: boolean,
 ): Promise<void> {
-  await page.goto(`/p/${projectId}/diagnosis`);
+  // R1: the Diagnosis screen is retired; the trigger lives on the Growth Map
+  // hero and the review flow is the Growth Map detail's Opportunity Review.
+  await page.goto(`/p/${projectId}/growth-map`);
   await expect(
     page.getByRole("heading", {
-      name: "Every finding should stand up to scrutiny.",
+      name: "Find the next growth opportunity, page by real page.",
     }),
   ).toBeVisible();
   await expectNoDocumentOverflow(page);
-  const run = page.getByRole("button", { name: "Run diagnosis" });
+  const run = page
+    .locator("[data-run-diagnosis]")
+    .getByRole("button", { name: "Run diagnosis" });
   await expect(run).toBeEnabled();
   if (keyboard) {
     await run.focus();
@@ -462,29 +466,56 @@ async function runDiagnosisAndConfirmFinding(
     await run.click();
   }
 
-  const finding = page.getByRole("article", { name: "HTTP status errors" });
-  await expect(finding).toBeVisible({ timeout: 45_000 });
+  // The named live status region carries the run to its terminal state.
   await expect(
     page
-      .getByText("Last run", { exact: true })
-      .locator("..")
+      .getByRole("status", { name: "Diagnostic run status" })
       .getByText("Completed", { exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 45_000 });
+
+  // Before the first diagnostic the portfolio read is a real 404; the
+  // completion refresh must resolve it into the readable portfolio.
+  await expect(
+    page.getByLabel("Audit provenance for this page"),
+  ).toBeVisible({ timeout: 15_000 });
+
+  // Select the URL that carries the TECH-HTTP-001 Finding (the /gone page).
+  await page
+    .getByRole("button")
+    .filter({ hasText: "/gone" })
+    .first()
+    .click();
+  await expect(page.locator('[data-detail-panel="audit-evidence"]')).toBeVisible();
+
+  // Confirm renders only in Opportunity Review; the default panel is the
+  // read-only Audit Evidence state.
+  await page.locator('[data-detail-state="opportunity-review"]').click();
+  const review = page.locator('[data-detail-panel="opportunity-review"]');
+  await expect(review).toBeVisible();
+  const finding = review
+    .locator("[data-finding-card]")
+    .filter({ hasText: "return HTTP 404" });
+  await expect(finding).toBeVisible();
   await expect(finding.getByText("Unreviewed", { exact: true })).toBeVisible();
 
-  // Exercise the real disclosure keyboard behavior: Enter opens, Escape closes,
-  // and focus returns to the exact trigger rather than becoming lost in the DOM.
-  const evidence = finding.getByRole("button", { name: /View evidence/ });
-  await evidence.focus();
+  // The keyboard contract of the real evidence disclosure: Enter opens the
+  // named dialog and hands it focus, Escape closes it and returns focus to
+  // the exact <summary> trigger, whose aria-expanded tracks the open state.
+  const trigger = finding.locator("summary");
+  await expect(trigger).toHaveCount(1);
+  const dialog = finding.getByRole("dialog", { name: "Inspect Evidence IDs" });
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.focus();
+  await expect(trigger).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("dialog", {
-      name: "Trace the finding back to its source",
-    }),
-  ).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
-  await expect(evidence).toBeFocused();
-  await expect(evidence).toHaveAttribute("aria-expanded", "false");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
 
   const confirm = finding.getByRole("button", { name: "Confirm" });
   await expect(confirm).toBeEnabled();
@@ -508,7 +539,10 @@ async function runDiagnosisAndConfirmFinding(
     `Finding review failed: ${await settledReview.text()}`,
   ).toBe(200);
   await expect(finding.getByText("Confirmed", { exact: true })).toBeVisible();
-  await expect(finding.getByText(/Action created:/)).toBeVisible();
+  // The confirmation created the canonical Action: the card now carries a
+  // real execution reference. (The retired Diagnosis DOM's "Action created:"
+  // banner no longer exists anywhere.)
+  await expect(finding.getByText("Open Execution")).toBeVisible();
 }
 
 async function generateReadyArtifact(
