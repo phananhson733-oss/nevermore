@@ -257,6 +257,14 @@ test("has no page overflow or blocking axe findings on desktop and 390px", async
     `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
   );
   await expect(page.locator(auditEvidencePanel)).toBeVisible();
+  // The document must expose exactly one `main` — the shell's
+  // (`layout.tsx:187`). `blockingAxeViolations` below cannot check this: it is
+  // `.include`-scoped, and even unscoped it would not report a duplicate,
+  // because this repository's scans select WCAG tags and keep only
+  // critical/serious while `landmark-no-duplicate-main` is best-practice at
+  // moderate (measured — stop gate §17.6c). Overview shipped with two `main`
+  // elements for an entire slice and every axe scan stayed green.
+  await expect(page.getByRole("main")).toHaveCount(1);
   expect(await hasPageOverflow(page), await overflowDiagnostics(page)).toBe(
     false,
   );
