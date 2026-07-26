@@ -274,6 +274,18 @@ test("proves the technical opportunity vertical without any lift claim", async (
   await expect(results.getByText("Recheck observed")).toBeVisible();
   await expect(results.getByText("Technical condition verified")).toBeVisible();
 
+  // Results is the last shipped destination without a per-PR landmark check,
+  // and this is the only mock spec that renders it for real: the `/results`
+  // route lives in `installGrowthVerticalApi`, layered over the critical-flow
+  // installer on purpose (`mock-api.ts:1060`), so specs on the base installer
+  // get a 501 and an error state instead of the comparison.
+  //
+  // Exactly one `main` — the shell's (`layout.tsx:187`). No axe scan here can
+  // report a duplicate: the scans select WCAG tags and keep only
+  // critical/serious, while `landmark-no-duplicate-main` is best-practice at
+  // moderate (measured — stop gate §17.6c).
+  await expect(page.getByRole("main")).toHaveCount(1);
+
   // The recheck compared two immutable runs and preserved the prior run id.
   const resultsText = (await results.innerText()).toLowerCase();
   expect(resultsText).toContain("technical");
