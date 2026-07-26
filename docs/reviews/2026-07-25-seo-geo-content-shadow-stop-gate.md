@@ -2750,8 +2750,16 @@ layout, and no such change exists here:
   term/definition association a screen reader uses.
 
 Either route needs a CSS change (a few lines: give `<dd>` the same column flex
-and gap, then nest the bar inside it). **That is a separate, small decision for
-the Owner, not something to slip in under a no-CSS exception.**
+and gap, then nest the bar inside it). That was put to the Owner as a separate
+decision rather than slipped in under a no-CSS exception.
+
+**RESOLVED in `a538fe3` with that approval.** The bar moved inside the `<dd>`
+whose value it visualises, and `.readinessMetric dd` gained exactly three
+declarations reproducing the column it had as a sibling. `.readinessMetric
+progress` and its `:nth-child` colour variants are descendant selectors and keep
+matching through the new nesting. Zero visual change was again proven by
+**sha256 equality** of full-page screenshots at four viewports — the standard
+the no-CSS rule was a proxy for, met directly.
 
 ### 17.3 R1 — 1 failure and the 1 skip
 
@@ -2788,7 +2796,19 @@ Passed in run 1, failed in run 2, unchanged in between. The suite is
 mutates, so ordering and residue are plausible causes. **Not diagnosed** — it is
 recorded rather than explained, and it is the reason the two run totals differ.
 
-### 17.7 What this changes for the Owner
+### 17.7 Where the suite stands after this round
+
+| | first measured | after §17.1 and §17.2 |
+|---|---|---|
+| passed | 30 | **39** |
+| failed | 12 | **3** |
+| did not run | 1 | 1 |
+
+The three that remain are `a11y` print media and `project-isolation` (both R3)
+and `real-vertical-chains` (R1). **Every failure that engineering could close is
+closed; what is left is exactly the two open Owner decisions.**
+
+### 17.8 What this changes for the Owner
 
 Two of the five causes (§17.1, §17.2) are accessibility defects on **Overview
 and Sources — the two surfaces N-1 freezes as the accepted house standard**.
