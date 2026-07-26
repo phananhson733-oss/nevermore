@@ -109,7 +109,20 @@ unit 分支覆盖 ≤30% 的文件清单(最终实测 17 个,其中 `capability-
 **明确写下的反向约定**:若将来推翻这次合并,正确做法是**下调阈值或收窄 `coverage.include` 并写进 ADR**,
 **不是**为过门写 mock 断言。这条同样写在 `vitest.config.ts` 的注释里。
 
-**D2. `pnpm audit` 红**:11 个漏洞(5 moderate / 6 high),主要来自 `next`(GHSA-955p-x3mx-jcvp 要求 >=16.2.11),另有 js-yaml、sharp。上游 advisory 漂移,与本 Slice 无关。
+**D2. `pnpm audit` 仍红,但已收窄 14 → 4**(2026-07-26,`ce6f8d1`)。动工时已从 11 漂到 14(5 moderate / 9 high)。
+关掉 10 条:`next` 16.2.10 → **16.2.11**(钉住的 minor 内补丁位,九条 next advisory 全清)+ 作用域 override
+`js-yaml@<4.3.0 → 4.3.0`(沿用 `package.json` 里既有的 `postcss@<8.5.10` 先例,同 major,且只在 codegen 链上)。
+**框架升级必须自证**,已重跑全门:81/81 e2e、4001 单测、484 集成、branch 84.90%、build 与全部验证器。
+
+剩下 2 条 advisory(4 处)**都不是机械修得掉的**:
+- **`brace-expansion`** 三条路径全在 eslint / typescript-eslint 下。advisory 写 `patched: >=5.0.8` 且**无回填** ——
+  v1/v2 最新分别只到 1.1.16 / 2.1.2,都在线下;而其中两条路径跑的正是这两个 major。强推 override 等于把
+  eslint 的 `minimatch` 跨四个 major 换掉,而该包 API 变过。**仅 dev,不进任何发布产物。**
+- **`sharp` 0.34.5**(需 >=0.35.0)。`next@16.2.11` 自己声明 `optionalDependencies.sharp: "^0.34.5"`,override 与框架自身范围相抵触。
+  且**实际暴露为零**:`next/image` 在 `apps/web/src` 只出现一次,是 proxy matcher 的排除字符串(`proxy.ts:104`),
+  **没有任何模块引用该组件**,这条 advisory 针对的图片优化 API 根本走不到。
+
+**Owner 待决(性质未变)**:按记录接受 / 等上游 / 承担强推的兼容性风险。
 
 **D3. ~~`authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs` 是 935 行未接入任何 gate 的过时并行副本~~ —— 2026-07-26 已解决(判定为**修**,不是删)。**
 

@@ -427,9 +427,31 @@ touched leaves 77.96%, with the shortfall concentrated in Slice 1's
 `diagnostics.ts`, `csv-import.ts`, `collection.ts`. **This gate will block the
 merge and needs an Owner decision.**
 
-**D2. `pnpm audit` is red**: 11 vulnerabilities (5 moderate / 6 high), chiefly
-from `next` (GHSA-955p-x3mx-jcvp requires `>= 16.2.11`), plus `js-yaml` and
-`sharp`. Upstream advisory drift, unrelated to this slice.
+**D2. `pnpm audit` is STILL RED, but narrowed 2026-07-26 (`ce6f8d1`): 14 -> 4.**
+It had drifted from 11 to 14 (5 moderate / 9 high) by the time it was worked.
+Ten are closed: `next` 16.2.10 -> 16.2.11, a patch bump inside the pinned minor
+that clears all nine next advisories, and a scoped `js-yaml@<4.3.0 -> 4.3.0`
+override following the `postcss@<8.5.10` precedent already in `package.json`.
+The full gate set was re-run after the bump — 81/81 e2e, 4001 unit, 484
+integration, branches 84.90%, build and every verifier — because a framework
+upgrade has to prove itself.
+
+Four findings (two advisories) remain, and neither is a mechanical fix:
+
+- **`brace-expansion`**, three paths, all under eslint / typescript-eslint. The
+  advisory is `patched: >=5.0.8` with no backport — the newest v1 and v2 are
+  1.1.16 and 2.1.2, both below the line — and two of the three paths run those
+  majors. An override would push eslint's `minimatch` across four majors of a
+  package whose API changed. Dev-only; it reaches no shipped bundle.
+- **`sharp` 0.34.5**, patched at `>=0.35.0`. `next@16.2.11` declares
+  `optionalDependencies.sharp: "^0.34.5"`, so an override contradicts the
+  framework's own range. Actual exposure is nil: `next/image` occurs once in
+  `apps/web/src`, as an exclusion string in the proxy matcher (`proxy.ts:104`),
+  and no module imports the component, so the Image Optimization API this
+  advisory concerns is never reached.
+
+**Owner decision, unchanged in kind:** accept these two as recorded, wait for
+upstream, or take the compatibility risk of forcing them.
 
 **D3. RESOLVED 2026-07-26 — fixed and gated, not deleted.**
 `authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs` was a 935-line
@@ -1471,7 +1493,7 @@ artifact upload) are omitted.
 | contracts-and-unit | `pnpm contracts:check` | yes (§2.5) | no diff |
 | contracts-and-unit | `pnpm openapi:lint` | yes (§2.5) | valid |
 | contracts-and-unit | `pnpm secrets:scan` | not until §10.5 | **pass, exit 0** (was 5 findings) |
-| contracts-and-unit | `pnpm audit --audit-level moderate` | yes | **red — §4 D2**, 11 vulnerabilities, upstream drift |
+| contracts-and-unit | `pnpm audit --audit-level moderate` | yes | **red — §4 D2**, narrowed 14 -> 4; the two left are upstream-blocked |
 | contracts-and-unit | `pnpm deploy:check` | **no — never** | **pass** |
 | contracts-and-unit | `pnpm lint` | yes (§2.5) | pass |
 | contracts-and-unit | `pnpm typecheck` | yes (§2.5) | pass |
@@ -1527,7 +1549,7 @@ which runs the same authority verifier and reports the same four counts) and
 | `pnpm test:integration` | 65 files, **475** tests (was 473) |
 | E2E `content-shadow-vertical` / `-review` / `-execution` / `audit-technical-vertical` | **21/21** (was 19/19; the two new tests are the additions) |
 | `pnpm restore:drill` | **RED — §4 D9**, never run before, pre-existing. **Fixed in §12: exit 0.** |
-| `pnpm audit` | red — §4 D2, unchanged |
+| `pnpm audit` | red — §4 D2, narrowed 14 -> 4 (`ce6f8d1`) |
 | unit `--coverage` branch threshold | red — §4 D1, unchanged and **not re-measured** |
 
 ### 11.6 What did not change
