@@ -3103,8 +3103,44 @@ This does not make the repository live. Whether Task 3's read model is finished
 or removed is still open — see the Task 3 entry. What changed is that the code
 shipping from `@sf/db` today has at least been executed once.
 
-**Two of the other 21 never-reached files are in the same category and are not
-closed here**: `lib/api/hooks-studio.ts` and `lib/api/hooks-audit.ts` have no
-test of any kind either. They are TanStack Query hook modules exercised through
-the UI by Playwright, which is a materially different situation from raw SQL
-that had never been parsed, so they are recorded rather than acted on.
+**The rest of the list was triaged, and `topic-clusters` was the only one of its
+kind.** Every other never-reached file has a caller and a test of some sort —
+`run-content-shadow.ts` has an integration suite, `source-connect.ts`,
+`opportunities.ts` and `content-shadow-review.ts` have route or integration
+tests, and `hooks-studio.ts`, `hooks-audit.ts` and `hooks-content-shadow.ts` are
+TanStack Query modules with real importers, exercised through the UI by
+Playwright. That is a materially different situation from raw SQL that had never
+been parsed, so they are recorded rather than acted on. **Checked, not
+assumed**: an earlier draft of this paragraph asserted the hooks were
+UI-exercised before their importers had been looked up.
+
+### 19.4 The triage turned up one more capability nobody can reach
+
+`GET /api/mvp/projects/{projectId}/workspace` accepts
+`view ∈ {overview, plan, studio, report}` — both in its own allowlist
+(`workspace/route.ts:11`) and in `openapi/mvp.yaml:312`. Three of those four are
+**the removed screens**: `plan`, `studio` and `report` have been `redirect()`
+pages since Slice 1. The aggregate read model still advertises, and still
+serves, views for screens the product deleted. That is §14.8's R2/R3 pattern one
+layer down, at the contract rather than the UI.
+
+Underneath it the union has drifted the other way. `WorkspaceViewName`
+(`workspace-view.ts:45`) carries **five** values — the four above plus
+`execution` — and the service has a `case "execution"` branch at `:666`. The
+route's allowlist is typed `readonly WorkspaceViewName[]`, which does not
+require exhaustiveness, so nothing flagged the omission: **the `execution`
+branch cannot be reached through HTTP at all**, because the allowlist rejects
+the value before the service sees it and the OpenAPI enum never offered it.
+
+**Not a live defect, and that was verified rather than assumed.** The only
+client is `buildWorkspaceViewQueryOptions` (`hooks.ts:110`), whose parameter is
+typed `view: "overview" = "overview"` — it cannot ask for anything else, so no
+request 400s in production today.
+
+Left as a finding rather than acted on, because both directions are decisions
+rather than repairs: adding `execution` to the allowlist and the enum is
+contract tax **and** makes a new surface reachable, while deleting the branch
+throws away work that was presumably meant to back the Execution screen. It
+belongs with R2/R3 — same question, same answer needed. `workspace/route.ts` is
+also one of the twenty API routes with no colocated `route.test.ts` (27 of 47
+have one), so nothing pins the allowlist either way.
