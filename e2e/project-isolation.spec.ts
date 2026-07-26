@@ -27,6 +27,15 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
     }),
   ]);
 
+  /** Every anchor below is English chrome, and the app's default UI locale is
+   *  zh-CN (`packages/i18n/src/config.ts:6`), so the locale has to be selected
+   *  rather than inherited — the same `sf_ui_locale` cookie the mock specs set
+   *  after `939129a`. Test-side only: no surface is touched, and the cookie is
+   *  set on the shared context so both tabs agree. */
+  await context.addCookies([
+    { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+  ]);
+
   const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
   const requestsA = projectApiRequests(pageA);
   const requestsB = projectApiRequests(pageB);
@@ -74,15 +83,24 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   );
 
   // The artifact-aligned Overview uses an editorial action statement as its
-  // H1. Project identity remains explicit in the hero kicker; scope the
-  // isolation assertion there because the switcher intentionally lists every
-  // project available to the operator.
-  const heroA = pageA.locator("[data-overview-hero]");
-  const heroB = pageB.locator("[data-overview-hero]");
-  await expect(heroA.getByText("Isolation Project A", { exact: true })).toBeVisible();
-  await expect(heroB.getByText("Isolation Project B", { exact: true })).toBeVisible();
-  await expect(heroA.getByText("Isolation Project B", { exact: true })).toHaveCount(0);
-  await expect(heroB.getByText("Isolation Project A", { exact: true })).toHaveCount(0);
+  // H1. Project identity remains explicit in the hero; scope the isolation
+  // assertion there because the switcher intentionally lists every project
+  // available to the operator.
+  //
+  // The `[data-overview-hero]` anchor was deleted with Slice 1's Overview
+  // rewrite; the identity it guarded did not move off the surface, it moved
+  // into the hero subtitle (`_overview.tsx:938`, `overview.customer.subtitle`
+  // = "… {project} …"). The assertion follows it to the shipped surface rather
+  // than the surface being trimmed to the assertion. `toContainText` replaces
+  // an exact `getByText` because the name is now inside a sentence — for the
+  // two negative assertions that is a STRICTLY STRONGER claim (no substring
+  // anywhere in the hero, not merely no element whose whole text matches).
+  const heroA = pageA.locator("[data-overview-page] > header");
+  const heroB = pageB.locator("[data-overview-page] > header");
+  await expect(heroA).toContainText("Isolation Project A");
+  await expect(heroB).toContainText("Isolation Project B");
+  await expect(heroA).not.toContainText("Isolation Project B");
+  await expect(heroB).not.toContainText("Isolation Project A");
 
   await Promise.all([
     pageA.goto(`/p/${projectA.projectId}/sources`),
