@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   E2E_PROJECT_ID,
@@ -207,4 +208,36 @@ test("Sources never fabricates provenance when every enabled source lacks a snap
     name: "Snapshot provenance policy",
   });
   await expect(footline).toContainText("0 immutable snapshots");
+});
+
+/**
+ * The readiness block is a `<dl>`, and until `a538fe3` each of its `<div>`
+ * wrappers held a `<progress>` alongside the `<dt>`/`<dd>` pair — an axe
+ * `definition-list` violation at serious impact.
+ *
+ * Nothing in the mock suite looked: this spec had no axe scan at all, and the
+ * block only renders once source data exists, so the defect needed the full
+ * serial `test:e2e:real` run to surface (stop gate §17.2). The scan is scoped
+ * to the region so it fails for this block's own structure and not for
+ * unrelated drift elsewhere on Sources.
+ */
+test("Sources readiness exposes no blocking axe violations in its definition list", async ({
+  page,
+}) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+  await expect(
+    page.getByRole("region", { name: "Source readiness" }),
+  ).toContainText("2 / 4");
+
+  const results = await new AxeBuilder({ page })
+    .include('[aria-label="Source readiness"]')
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const blocking = results.violations
+    .filter((v) => v.impact === "critical" || v.impact === "serious")
+    .map(
+      (v) =>
+        `${v.id} (${v.impact}) @ ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`,
+    );
+  expect(blocking).toEqual([]);
 });

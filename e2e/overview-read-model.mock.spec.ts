@@ -609,6 +609,23 @@ async function waitForOverviewAnimations(page: Page): Promise<void> {
   });
 }
 
+/**
+ * The document must expose exactly one `main` landmark — the shell's
+ * (`layout.tsx:187`). Overview nested a second one inside it until `c73b621`,
+ * which is an axe `landmark-one-main` violation and gives a screen reader two
+ * "main" regions with an ambiguous skip-to-content target.
+ *
+ * This is asserted directly rather than left to `blockingAxeViolations`, which
+ * structurally cannot see it: that scan is `.include("#main-content")`, so it
+ * evaluates what is INSIDE the shell's landmark and never the document's
+ * landmark structure. That scoping is why the defect survived a whole slice of
+ * mock coverage and was only caught the first time `test:e2e:real` was run
+ * (stop gate §17.1).
+ */
+async function expectExactlyOneMainLandmark(page: Page): Promise<void> {
+  await expect(page.getByRole("main")).toHaveCount(1);
+}
+
 async function blockingAxeViolations(page: Page): Promise<string[]> {
   const results = await new AxeBuilder({ page })
     .include("#main-content")
@@ -879,6 +896,7 @@ test("ready four-module Overview keeps desktop and mobile WCAG AA semantics", as
     .getByText("Version and provenance", { exact: true })
     .click();
   expect(await blockingAxeViolations(page)).toEqual([]);
+  await expectExactlyOneMainLandmark(page);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
@@ -886,6 +904,7 @@ test("ready four-module Overview keeps desktop and mobile WCAG AA semantics", as
   ).toBeVisible();
   await expectNoHorizontalOverflow(page);
   expect(await blockingAxeViolations(page)).toEqual([]);
+  await expectExactlyOneMainLandmark(page);
 });
 
 test("Overview chrome localizes to zh-CN while canonical customer data stays intact", async ({
