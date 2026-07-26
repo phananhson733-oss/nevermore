@@ -3141,6 +3141,22 @@ Left as a finding rather than acted on, because both directions are decisions
 rather than repairs: adding `execution` to the allowlist and the enum is
 contract tax **and** makes a new surface reachable, while deleting the branch
 throws away work that was presumably meant to back the Execution screen. It
-belongs with R2/R3 — same question, same answer needed. `workspace/route.ts` is
-also one of the twenty API routes with no colocated `route.test.ts` (27 of 47
-have one), so nothing pins the allowlist either way.
+belongs with R2/R3 — same question, same answer needed.
+
+**What was done about it: the allowlist is pinned (`3e9d2b4`).** `workspace/route.ts`
+was one of **nineteen** `route.ts` files with no colocated test — the earlier
+"twenty" in this paragraph was an estimate, the counted figure is 19 of 47 — so
+nothing recorded what it accepts. Ten cases now do, and they take no position on
+the decision: adding `execution` to the allowlist reddens the case documenting
+its unreachability, removing `plan` reddens the case documenting that it is
+still served. Whichever way this resolves, it arrives as a failing test rather
+than as a silent change of API surface.
+
+Writing them corrected two assumptions about this codebase's conventions, which
+is most of the argument for having written them at all: `VALIDATION_ERROR` is
+**422**, not the conventional 400, and a malformed project id answers **404**
+rather than a validation error — deliberate, per `validate.ts:408`, "an invalid
+id is treated as not-found (no existence leak)". That one is now asserted *with
+its reason*, so it is not later "fixed" into a 422 that would hand an
+unauthenticated prober the difference between a bad id shape and a project that
+exists.
