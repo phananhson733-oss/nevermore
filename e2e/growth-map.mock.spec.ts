@@ -210,16 +210,38 @@ test("reviews only the canonical Opportunity and delivers one technical ticket",
   ).toBeVisible();
 
   // Execution surfaces exactly one canonical Action with one technical ticket.
+  //
+  // The anchor used to be the "Delivery chain" summary panel and its own <h2>.
+  // That panel was DELETED (Slice 2 Task 7) to an a11y spec, not weakened away:
+  // its eleven class names had no stylesheet behind them, and its <h2> was
+  // emitted BEFORE the page's own <h1>, a heading order a screen reader user
+  // pays for. Keeping the anchor would have meant keeping the defect. The same
+  // move was already made for `audit-technical-vertical.mock.spec.ts` (66ce9ce).
+  //
+  // What is under test is unchanged and stays exact — this walkthrough yields
+  // EXACTLY ONE Technical ticket deliverable, readable on Execution — so it is
+  // asserted where that deliverable now lives: the studio artifact queue. The
+  // deleted panel's own heading has no successor to assert, so its role (proof
+  // that a deliverable surface rendered at all) passes to the queue itself.
+  //
+  // The counts get STRONGER, not weaker. The old count was scoped to one panel,
+  // so a second ticket rendered anywhere else on Execution stayed invisible to
+  // it; the new one is taken over the WHOLE queue. The type is read off each
+  // row's own `data-studio-artifact-type` rather than off a text label.
   await navLink(page, 2).click();
-  const deliveryChain = page.getByRole("region", { name: "Delivery chain" });
+  const queue = page.locator("[data-studio-queue]");
+  await expect(queue).toBeVisible();
+  const ticketRows = queue.locator(
+    '[data-studio-artifact-id][data-studio-artifact-type="technical_ticket"]',
+  );
+  await expect(ticketRows).toHaveCount(1);
+  await expect(queue.locator("[data-studio-artifact-id]")).toHaveCount(1);
   await expect(
-    deliveryChain.getByRole("heading", { name: "Delivery chain" }),
+    ticketRows.getByText("Fix the failing product page", { exact: true }),
   ).toBeVisible();
+  // The type the row claims is the one the queue reads out to a human.
   await expect(
-    deliveryChain.getByText("Technical ticket", { exact: true }),
-  ).toHaveCount(1);
-  await expect(
-    deliveryChain.getByText("Fix the failing product page", { exact: true }),
+    queue.getByText("Technical ticket", { exact: true }),
   ).toBeVisible();
 
   // The confirmation reused the existing Finding Review transaction only: no

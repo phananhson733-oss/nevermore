@@ -127,14 +127,26 @@ unit 分支覆盖 ≤30% 的文件清单(最终实测 17 个,其中 `capability-
 `plan-status-transitions` 是**混合**的(同一文件里既断言中文又断言英文),
 补 cookie 会打断它们的中文断言 —— 需要逐条翻译,不是一行 cookie。
 
-**D3c. `growth-map.mock.spec.ts:124`("reviews only the canonical Opportunity…")红,
-与本轮无关。** 缺的是 `Delivery chain` region。**已用 stash 对照证明**:把本轮 Task 3
-改动全部撤掉后仍然红。与 D8(`real-vertical-chains`)同源 —— Growth Map 的
-audit-and-confirm 走查需要独立重写任务。同文件的 axe/overflow 用例是绿的。
+**D3c. ~~`growth-map.mock.spec.ts:124`("reviews only the canonical Opportunity…")红~~
+—— 2026-07-26 已解决(移锚点,不是削断言)。**
+缺的是 Task 7 按 a11y 规格删掉的 `Delivery chain` region 及其 `<h2>`
+(十一个无样式表的类名 + `<h2>` 排在页面自己的 `<h1>` 之前)。
+与 `audit-technical-vertical`(`66ce9ce`)同一处理:三条断言里两条原样搬到交付物现在所在的
+studio artifact queue,第三条(面板自己的 `<h2>`,无后继)由「queue 本身可见」承接。
+**计数反而更强**:旧计数只作用于那一个面板,别处多出的 ticket 看不见;新计数覆盖整个 queue,
+类型改从每行自己的 `data-studio-artifact-type` 读。**三向变异自验**(仅针对本条测试):
+0 个 artifact → 红(expected 1, received 0);2 个 technical ticket → 红(expected 1, received 2);
+1 ticket + 1 content brief → 红(整 queue 计数 expected 1, received 2 —— 旧的面板内计数抓不到这一种)。
+**注**:此前判它「与 D8 同源、需双平台基线」是误判 —— 本 spec 内 `toHaveScreenshot` 数量为 0,
+是纯行为测试。D8(`real-vertical-chains`,24 张快照)才是那一类。
 
-**D4. 完整 `pnpm test:e2e:mock` 大面积红**:24 passed / 84 failed / 108(约 31.5 分钟)。
-根因是 mock config 的 webServer 用 `next dev --webpack` 按需编译,冷启动 + CPU 饱和致首次命中重路由编译超时成片失败;叠加少量真实既有漂移。
-**已用 base 提交对照证明与 Slice 1/2 零关系**。**本地无可信的完整 E2E 基线**(需 CI 隔离/warm 跑)。Slice 2 只跑隔离的内容 vertical spec。
+**D4. ~~完整 `pnpm test:e2e:mock` 大面积红~~ —— 2026-07-26 已解决:79 passed / 0 failed(1.8 分钟)。**
+旧记录 24 passed / 84 failed / 108(约 31.5 分钟)。两件事同时变了:
+(a) `bb659e9` 删掉了断言产品已不存在的屏的用例、`939129a`/`7bf70d8` 补齐了 `sf_ui_locale`(见 D3b),
+用例总数从 108 降到 79 —— **这是减少了声称,不是修好了失败**;
+(b) 余下的真实红逐条修完,最后一条是 D3c。**本地已有可信的完整 mock E2E 基线**,
+`next dev --webpack` 冷启动超时的成片失败未再复现。仍**不覆盖** `test:e2e:real`
+(D8 `real-vertical-chains` 需双平台视觉基线,本机只产 darwin)。
 
 **D5. 5 个既有 operation 抛出未在 openapi 声明的 503**:`createActionArtifact` / `listProjectFindings` / `listProjectArtifacts` / `getProjectReport` / `createProjectExport`。**这是本仓既有惯例**(只有 growth-map / keyword / competitor 三个 op 被 verifier 强制声明 503),Task 5 沿用了它。
 
