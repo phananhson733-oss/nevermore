@@ -1964,6 +1964,8 @@
     "exportAlreadyActive": "An export is already being prepared for this project. Wait for it to finish, then refresh the export status.",
     "exportDependencyUnavailable": "The export service is temporarily unavailable. Try again later.",
     "retryExportStatus": "Retry status check",
+    "retryCreateExport": "Retry export",
+    "exportProtocolError": "The export was accepted but no trackable export id was returned. Start the export again.",
     "exportFailed": "Export failed. Please try again.",
     "emptyTitle": "No report yet",
     "emptyHint": "Run a diagnosis and confirm findings to produce a report."

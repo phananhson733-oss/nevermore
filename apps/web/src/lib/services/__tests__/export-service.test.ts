@@ -34,9 +34,8 @@ vi.mock("@/lib/storage", () => ({
   }),
 }));
 
-const { createProjectExport, getProjectExport } = await import(
-  "../export-service.ts"
-);
+const { createProjectExport, getProjectExport } =
+  await import("../export-service.ts");
 
 const scope = { workspaceId: "workspace-1" };
 const projectId = "project-1";
@@ -124,7 +123,9 @@ beforeEach(() => {
   mocks.transaction.mockReset();
   mocks.enqueueRunInTx.mockReset().mockResolvedValue("job-1");
   mocks.getBoss.mockReset().mockResolvedValue({});
-  mocks.signDownloadUrl.mockReset().mockResolvedValue("https://signed.example/export");
+  mocks.signDownloadUrl
+    .mockReset()
+    .mockResolvedValue("https://signed.example/export");
   mocks.transaction.mockImplementation(
     async (callback: (tx: object) => Promise<unknown>) => callback({}),
   );
@@ -138,8 +139,17 @@ beforeEach(() => {
     project,
   );
   vi.spyOn(AsyncRunsRepository.prototype, "findActive").mockResolvedValue(null);
-  vi.spyOn(AsyncRunsRepository.prototype, "insertQueued").mockResolvedValue(run);
-  vi.spyOn(ExportBundlesRepository.prototype, "insert").mockResolvedValue(bundle);
+  vi.spyOn(AsyncRunsRepository.prototype, "insertQueued").mockResolvedValue(
+    run,
+  );
+  vi.spyOn(ExportBundlesRepository.prototype, "insert").mockResolvedValue(
+    bundle,
+  );
+  // Conflict answers look the winner's bundle up for the D5 body pointer; the
+  // default is "not observable" so pointer-free branches stay exercised.
+  vi.spyOn(ExportBundlesRepository.prototype, "findByRun").mockResolvedValue(
+    null,
+  );
   vi.spyOn(
     StorageObjectReferencesRepository.prototype,
     "databaseNow",
@@ -186,7 +196,10 @@ describe("createProjectExport", () => {
     );
     expect(IdempotencyRepository.prototype.complete).toHaveBeenCalledWith(
       reservation.id,
-      expect.objectContaining({ resourceType: "export", resourceId: bundle.id }),
+      expect.objectContaining({
+        resourceType: "export",
+        resourceId: bundle.id,
+      }),
     );
   });
 
@@ -194,7 +207,9 @@ describe("createProjectExport", () => {
     vi.mocked(IdempotencyRepository.prototype.find).mockResolvedValueOnce(
       replayKey(),
     );
-    vi.mocked(ProjectsRepository.prototype.findById).mockResolvedValueOnce(null);
+    vi.mocked(ProjectsRepository.prototype.findById).mockResolvedValueOnce(
+      null,
+    );
     await expect(
       createProjectExport(scope, projectId, actorId, key, body),
     ).resolves.toMatchObject({ resourceRef: { id: bundle.id } });
@@ -238,7 +253,9 @@ describe("createProjectExport", () => {
   });
 
   it("rejects missing and archived projects", async () => {
-    vi.mocked(ProjectsRepository.prototype.findById).mockResolvedValueOnce(null);
+    vi.mocked(ProjectsRepository.prototype.findById).mockResolvedValueOnce(
+      null,
+    );
     await expect(
       createProjectExport(scope, projectId, actorId, key, body),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -252,7 +269,9 @@ describe("createProjectExport", () => {
   });
 
   it("replays an active command that won the read race", async () => {
-    vi.mocked(AsyncRunsRepository.prototype.findActive).mockResolvedValueOnce(run);
+    vi.mocked(AsyncRunsRepository.prototype.findActive).mockResolvedValueOnce(
+      run,
+    );
     vi.mocked(IdempotencyRepository.prototype.find)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(replayKey());
@@ -262,7 +281,9 @@ describe("createProjectExport", () => {
   });
 
   it("returns the active run location when the winner used another key", async () => {
-    vi.mocked(AsyncRunsRepository.prototype.findActive).mockResolvedValueOnce(run);
+    vi.mocked(AsyncRunsRepository.prototype.findActive).mockResolvedValueOnce(
+      run,
+    );
     await expect(
       createProjectExport(scope, projectId, actorId, key, body),
     ).rejects.toMatchObject({
@@ -273,8 +294,85 @@ describe("createProjectExport", () => {
     });
   });
 
+  /**
+   * R3 blueprint D5 (same shape as diagnostics.ts, 66b9632): the fetch wrapper
+   * drops the Location header of a non-2xx response, so a client that only
+   * reads the 409 body had a conflict it could not locate. Both conflict
+   * branches must name the active export in the body via `current`
+   * (`Problem.current` is additionalProperties — zero contract tax).
+   */
+  it("answers a pre-checked active conflict with the current export pointer in the body", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.findActive).mockResolvedValueOnce(
+      run,
+    );
+    vi.spyOn(ExportBundlesRepository.prototype, "findByRun").mockResolvedValue(
+      bundle,
+    );
+    await expect(
+      createProjectExport(scope, projectId, actorId, key, body),
+    ).rejects.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      extraHeaders: {
+        Location: `/api/mvp/projects/${projectId}/runs/${run.id}`,
+      },
+      current: { runId: run.id, exportId: bundle.id, kind: bundle.kind },
+    });
+    expect(ExportBundlesRepository.prototype.findByRun).toHaveBeenCalledWith(
+      { workspaceId: scope.workspaceId, projectId },
+      run.id,
+    );
+  });
+
+  it("answers the unique-index conflict with the winner's export pointer in the body", async () => {
+    mocks.transaction.mockRejectedValueOnce({
+      code: "23505",
+      constraint: "async_runs_one_active_key_idx",
+    });
+    vi.mocked(IdempotencyRepository.prototype.find).mockResolvedValue(null);
+    vi.mocked(AsyncRunsRepository.prototype.findActive)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(run);
+    vi.spyOn(ExportBundlesRepository.prototype, "findByRun").mockResolvedValue(
+      bundle,
+    );
+    await expect(
+      createProjectExport(scope, projectId, actorId, key, body),
+    ).rejects.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      extraHeaders: {
+        Location: `/api/mvp/projects/${projectId}/runs/${run.id}`,
+      },
+      current: { runId: run.id, exportId: bundle.id, kind: bundle.kind },
+    });
+  });
+
+  it("keeps a pointer-free conflict when the winner's bundle row is not observable", async () => {
+    vi.mocked(AsyncRunsRepository.prototype.findActive).mockResolvedValueOnce(
+      run,
+    );
+    vi.spyOn(ExportBundlesRepository.prototype, "findByRun").mockResolvedValue(
+      null,
+    );
+    const error: unknown = await createProjectExport(
+      scope,
+      projectId,
+      actorId,
+      key,
+      body,
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ProblemError);
+    const problem = error as ProblemError;
+    expect(problem.code).toBe("RUN_ALREADY_ACTIVE");
+    expect(problem.extraHeaders).toMatchObject({
+      Location: `/api/mvp/projects/${projectId}/runs/${run.id}`,
+    });
+    expect(problem.current).toBeUndefined();
+  });
+
   it("replays a winner that reserved the idempotency key first", async () => {
-    vi.mocked(IdempotencyRepository.prototype.begin).mockResolvedValueOnce(null);
+    vi.mocked(IdempotencyRepository.prototype.begin).mockResolvedValueOnce(
+      null,
+    );
     vi.mocked(IdempotencyRepository.prototype.find)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(replayKey());
@@ -284,7 +382,9 @@ describe("createProjectExport", () => {
   });
 
   it("rejects a reservation that is still being processed", async () => {
-    vi.mocked(IdempotencyRepository.prototype.begin).mockResolvedValueOnce(null);
+    vi.mocked(IdempotencyRepository.prototype.begin).mockResolvedValueOnce(
+      null,
+    );
     vi.mocked(IdempotencyRepository.prototype.find)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(reservation);
@@ -473,18 +573,13 @@ describe("getProjectExport", () => {
   it("re-signs a completed object before its 30-day retention boundary", async () => {
     const ageDays = 29;
     const completedAt = new Date(bundle.created_at);
-    const now = new Date(
-      completedAt.getTime() + ageDays * 24 * 60 * 60 * 1000,
-    );
+    const now = new Date(completedAt.getTime() + ageDays * 24 * 60 * 60 * 1000);
     vi.useFakeTimers();
     vi.setSystemTime(now);
     vi.mocked(
       StorageObjectReferencesRepository.prototype.databaseNow,
     ).mockResolvedValue(now);
-    vi.spyOn(
-      ExportBundlesRepository.prototype,
-      "findById",
-    ).mockResolvedValue({
+    vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValue({
       ...bundle,
       object_key: "export/project-1/run-1/archive.zip",
     });
@@ -522,10 +617,7 @@ describe("getProjectExport", () => {
     vi.mocked(
       StorageObjectReferencesRepository.prototype.databaseNow,
     ).mockResolvedValue(databaseNow);
-    vi.spyOn(
-      ExportBundlesRepository.prototype,
-      "findById",
-    ).mockResolvedValue({
+    vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValue({
       ...bundle,
       object_key: "export/project-1/run-1/archive.zip",
     });
@@ -556,13 +648,12 @@ describe("getProjectExport", () => {
       vi.mocked(
         StorageObjectReferencesRepository.prototype.databaseNow,
       ).mockResolvedValue(databaseNow);
-      vi.spyOn(
-        ExportBundlesRepository.prototype,
-        "findById",
-      ).mockResolvedValue({
-        ...bundle,
-        object_key: "export/project-1/run-1/archive.zip",
-      });
+      vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValue(
+        {
+          ...bundle,
+          object_key: "export/project-1/run-1/archive.zip",
+        },
+      );
       vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue({
         ...run,
         status: "completed",
@@ -604,9 +695,10 @@ describe("getProjectExport", () => {
   });
 
   it("returns non-enumerating 404s for a missing bundle or run", async () => {
-    vi.spyOn(ExportBundlesRepository.prototype, "findById").mockResolvedValueOnce(
-      null,
-    );
+    vi.spyOn(
+      ExportBundlesRepository.prototype,
+      "findById",
+    ).mockResolvedValueOnce(null);
     await expect(
       getProjectExport(scope, projectId, "missing"),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });

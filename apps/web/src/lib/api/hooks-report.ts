@@ -33,7 +33,11 @@ export type RunStatus =
   | "partial"
   | "failed"
   | "cancelled";
-export type RunKind = "collection" | "diagnostic" | "artifact_generation" | "export";
+export type RunKind =
+  | "collection"
+  | "diagnostic"
+  | "artifact_generation"
+  | "export";
 export type Severity = "critical" | "high" | "medium" | "low";
 export type Confidence = "high" | "medium" | "low" | "inconclusive";
 export type PriorityBand = "critical" | "high" | "medium" | "low";
@@ -45,8 +49,16 @@ export type ActionStatus =
   | "blocked"
   | "done"
   | "dismissed";
-export type ArtifactType = "content_brief" | "metadata_rewrite" | "technical_ticket";
-export type ArtifactStatus = "generating" | "draft" | "ready" | "failed" | "archived";
+export type ArtifactType =
+  | "content_brief"
+  | "metadata_rewrite"
+  | "technical_ticket";
+export type ArtifactStatus =
+  | "generating"
+  | "draft"
+  | "ready"
+  | "failed"
+  | "archived";
 export type FindingReviewState =
   | "unreviewed"
   | "confirmed"
@@ -211,6 +223,41 @@ export function isTerminalRun(status: RunStatus): boolean {
 const POLL_BACKOFF_MS = [1000, 2000, 4000] as const;
 const POLL_STEADY_MS = 5000;
 
+/**
+ * The polled export query state {@link exportPollInterval} reads. Declared
+ * structurally (mirroring `RunPollState` in hooks-diagnosis.ts) so the pure
+ * helper is testable without TanStack internals.
+ */
+export interface ExportPollState {
+  readonly status: "pending" | "error" | "success";
+  readonly data: ExportBundle | undefined;
+  readonly dataUpdateCount: number;
+}
+
+/**
+ * How long to wait before polling one export bundle again, or `false` to stop.
+ *
+ * 1. **An errored status query stops the poll** — otherwise `dataUpdateCount`
+ *    stays 0 and the 1s interval loops forever against a 401/404/5xx (spec
+ *    §11.1). Recovery is the operator's explicit Retry (refetch), which
+ *    restarts the schedule.
+ * 2. **A terminal run stops the poll**, per {@link isTerminalRun}.
+ *
+ * Otherwise the cadence escalates 1s → 2s → 4s → 5s and holds. The state is
+ * per queryKey (projectId + exportId), so tracking a different export resets
+ * the backoff by construction.
+ */
+export function exportPollInterval(state: ExportPollState): number | false {
+  if (state.status === "error") return false;
+  const bundle = state.data;
+  if (bundle === undefined || isTerminalRun(bundle.run.status)) return false;
+  const idx = Math.min(
+    Math.max(state.dataUpdateCount - 1, 0),
+    POLL_BACKOFF_MS.length,
+  );
+  return POLL_BACKOFF_MS[idx] ?? POLL_STEADY_MS;
+}
+
 // ------------------------------------------------------------------ Hooks ---
 
 /** Trim and validate an optional delivery locale against the shared BCP-47 contract. */
@@ -229,9 +276,7 @@ export function buildProjectReportPath(
   outputLocale?: string | null,
 ): string {
   const locale = normalizeOutputLocale(outputLocale);
-  const suffix = locale
-    ? `?outputLocale=${encodeURIComponent(locale)}`
-    : "";
+  const suffix = locale ? `?outputLocale=${encodeURIComponent(locale)}` : "";
   return `/projects/${projectId}/report${suffix}`;
 }
 
@@ -299,15 +344,7 @@ export function useProjectExport(
       return res.data;
     },
     enabled: projectId.length > 0 && exportId.length > 0,
-    refetchInterval: (query) => {
-      // Stop polling if the status query itself errors (401/404/5xx) — otherwise
-      // dataUpdateCount stays 0 and the 1s poll would loop forever (spec §11.1).
-      if (query.state.status === "error") return false;
-      const bundle = query.state.data;
-      if (bundle !== undefined && isTerminalRun(bundle.run.status)) return false;
-      const idx = Math.max(0, query.state.dataUpdateCount - 1);
-      return POLL_BACKOFF_MS[idx] ?? POLL_STEADY_MS;
-    },
+    refetchInterval: (query) => exportPollInterval(query.state),
     refetchIntervalInBackground: false,
   });
 }

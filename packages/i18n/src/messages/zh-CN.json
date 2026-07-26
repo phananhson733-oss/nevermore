@@ -1964,6 +1964,8 @@
     "exportAlreadyActive": "该项目已有导出任务正在准备。请等待任务完成后刷新导出状态。",
     "exportDependencyUnavailable": "导出服务暂时不可用，请稍后重试。",
     "retryExportStatus": "重试状态检查",
+    "retryCreateExport": "重试导出",
+    "exportProtocolError": "导出请求已受理，但未返回可跟踪的导出编号。请重新发起导出。",
     "exportFailed": "导出失败，请重试。",
     "emptyTitle": "尚无报告",
     "emptyHint": "先运行诊断并确认发现，即可生成报告。"

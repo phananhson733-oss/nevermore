@@ -8,17 +8,12 @@
  * §10.4).
  */
 
-import { useState } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import {
-  Badge,
-  Button,
-  Panel,
-  Spinner,
-  TextInput,
-  cx,
-} from "@/components/ui";
+import type { UseQueryResult } from "@tanstack/react-query";
+import { Badge, Button, Panel, Spinner, TextInput, cx } from "@/components/ui";
+import type { ApiError } from "@/lib/api";
 import {
   isTerminalRun,
   useCreateExport,
@@ -28,6 +23,12 @@ import {
 } from "@/lib/api/hooks-report";
 import { ProblemNotice } from "../_problem-display";
 import { exportErrorMessageKey } from "../_frontend-error-state.ts";
+import {
+  INITIAL_EXPORT_RAIL_STATE,
+  exportCreateLocked,
+  exportRailEventFromError,
+  reduceExportRail,
+} from "./_export-state.ts";
 import styles from "./report.module.css";
 
 const MANIFEST_ITEM_ORDER = [
@@ -147,7 +148,9 @@ function ExportManifest({
           <h3 id={titleId} className={styles.manifestTitle}>
             {t("manifestTitle")}
           </h3>
-          <p className={styles.manifestDescription}>{t("manifestDescription")}</p>
+          <p className={styles.manifestDescription}>
+            {t("manifestDescription")}
+          </p>
         </div>
         <Badge tone="neutral">{t(`kind.${bundle.kind}`)}</Badge>
       </div>
@@ -206,16 +209,13 @@ function ExportManifest({
 }
 
 function ExportStatus({
-  projectId,
-  exportId,
+  query,
 }: {
-  readonly projectId: string;
-  readonly exportId: string;
+  readonly query: UseQueryResult<ExportBundle, ApiError>;
 }) {
   const t = useTranslations("report");
   const tRun = useTranslations("runState");
   const uiLocale = useLocale();
-  const query = useProjectExport(projectId, exportId);
   const bundle = query.data;
 
   if (query.error !== null) {
@@ -271,17 +271,13 @@ function ExportStatus({
         </a>
         {bundle.downloadExpiresAt !== null ? (
           <span className={styles.expiresAt} data-testid="report-dynamic-value">
-            {t("expiresAt")}: {formatDateTime(bundle.downloadExpiresAt, uiLocale)}
+            {t("expiresAt")}:{" "}
+            {formatDateTime(bundle.downloadExpiresAt, uiLocale)}
           </span>
         ) : null}
       </div>
     </div>
   );
-}
-
-interface ActiveExport {
-  readonly id: string;
-  readonly kind: ExportKind;
 }
 
 export function ExportSection({
@@ -305,21 +301,65 @@ export function ExportSection({
 }) {
   const t = useTranslations("report");
   const createExport = useCreateExport(projectId);
-  const [active, setActive] = useState<ActiveExport | null>(null);
+  const [state, dispatch] = useReducer(
+    reduceExportRail,
+    INITIAL_EXPORT_RAIL_STATE,
+  );
+  // Synchronous single-flight fence (D5, run-diagnosis precedent): the hook
+  // mints a fresh Idempotency-Key per attempt, so two racing handler entries
+  // would be two server commands. The machine fence and the disabled buttons
+  // are only per-render views of the same rule.
+  const submitInFlight = useRef(false);
 
-  function start(kind: ExportKind): void {
-    setActive(null);
-    createExport.mutate(
-      { kind, outputLocale: exportOutputLocale },
-      {
-        onSuccess: (data) => {
-          if (data.resourceRef !== null) {
-            setActive({ id: data.resourceRef.id, kind });
-          }
-        },
-      },
-    );
+  // One tracked export at a time; the query stays mounted after terminal so
+  // the manifest/download (or the terminal failure) keeps its data source.
+  const exportQuery = useProjectExport(projectId, state.active?.exportId ?? "");
+
+  const polledId = exportQuery.data?.id;
+  const polledStatus = exportQuery.data?.run.status;
+  useEffect(() => {
+    if (state.phase !== "tracking") return;
+    if (polledId === undefined || polledStatus === undefined) return;
+    if (polledId !== state.active?.exportId) return;
+    if (!isTerminalRun(polledStatus)) return;
+    dispatch({
+      type: "exportTerminal",
+      exportId: polledId,
+      status: polledStatus,
+    });
+  }, [state, polledId, polledStatus]);
+
+  const locked = exportCreateLocked(state);
+
+  async function start(kind: ExportKind): Promise<void> {
+    if (submitInFlight.current) return;
+    if (locked) return;
+    submitInFlight.current = true;
+    dispatch({ type: "submit", kind });
+    try {
+      const accepted = await createExport.mutateAsync({
+        kind,
+        outputLocale: exportOutputLocale,
+      });
+      const exportId = accepted.resourceRef?.id;
+      if (exportId === undefined || exportId.length === 0) {
+        dispatch({ type: "acceptedInvalid" });
+      } else {
+        dispatch({ type: "accepted", exportId });
+      }
+    } catch (error) {
+      dispatch(exportRailEventFromError(error));
+    } finally {
+      submitInFlight.current = false;
+    }
   }
+
+  const retryCreate =
+    state.requestedKind === null
+      ? undefined
+      : () => {
+          if (state.requestedKind !== null) void start(state.requestedKind);
+        };
 
   return (
     <Panel
@@ -348,38 +388,56 @@ export function ExportSection({
       <div className={styles.exportButtons}>
         <Button
           variant="primary"
-          onClick={() => start("service_bundle")}
-          disabled={createExport.isPending}
+          onClick={() => void start("service_bundle")}
+          disabled={locked || createExport.isPending}
         >
           {t("exportServiceBundle")}
         </Button>
         <Button
           variant="secondary"
-          onClick={() => start("client_bundle")}
-          disabled={createExport.isPending}
+          onClick={() => void start("client_bundle")}
+          disabled={locked || createExport.isPending}
         >
           {t("exportClientBundle")}
         </Button>
       </div>
       <p className={styles.clientBundleNote}>{t("clientBundleNote")}</p>
       <div className={styles.exportStatus} aria-live="polite">
-        {createExport.isError ? (
+        {state.phase === "conflictUnknown" ? (
+          <ProblemNotice
+            className={styles.exportError}
+            error={createExport.error}
+            message={t("exportAlreadyActive")}
+            onRetry={retryCreate}
+            retryLabel={t("retryCreateExport")}
+            compact
+          />
+        ) : null}
+        {state.phase === "createFailed" ? (
           <ProblemNotice
             className={styles.exportError}
             error={createExport.error}
             message={t(exportErrorMessageKey(createExport.error))}
+            onRetry={retryCreate}
+            retryLabel={t("retryCreateExport")}
             compact
           />
         ) : null}
-        {createExport.isPending && active === null ? (
+        {state.phase === "protocolError" ? (
+          <p className={styles.exportError} role="alert">
+            {t("exportProtocolError")}
+          </p>
+        ) : null}
+        {state.phase === "creating" ? (
           <span className={styles.exportBusy}>
             <Spinner size="sm" label={t("preparing")} />
             <span>{t("preparing")}</span>
           </span>
         ) : null}
-        {active !== null ? (
-          <ExportStatus projectId={projectId} exportId={active.id} />
+        {state.adopted && state.phase === "tracking" ? (
+          <p className={styles.mutedNote}>{t("exportAlreadyActive")}</p>
         ) : null}
+        {state.active !== null ? <ExportStatus query={exportQuery} /> : null}
       </div>
     </Panel>
   );

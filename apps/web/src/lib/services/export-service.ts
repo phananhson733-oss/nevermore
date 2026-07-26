@@ -61,13 +61,11 @@ function replayExport(
     );
   }
   if (row.status !== "completed" || !row.resource_id) return null;
-  const body = row.response_body as
-    | {
-        run: AsyncRunDto;
-        statusUrl: string;
-        resourceRef?: { id?: string };
-      }
-    | null;
+  const body = row.response_body as {
+    run: AsyncRunDto;
+    statusUrl: string;
+    resourceRef?: { id?: string };
+  } | null;
   if (!body?.run || !body.statusUrl) return null;
   return {
     status: 202,
@@ -81,13 +79,30 @@ function replayExport(
   };
 }
 
-function activeExportConflict(projectId: string, runId?: string): ProblemError {
+/**
+ * A 409 whose body names the active export (R3 blueprint D5, same shape as
+ * diagnostics.ts): the client fetch wrapper drops the Location header of a
+ * non-2xx response, so a body-only reader would otherwise get a conflict it
+ * cannot locate. `Problem.current` is additionalProperties — zero contract
+ * tax. When the winner's bundle row is not observable the pointer is omitted
+ * rather than fabricated.
+ */
+async function activeExportConflict(
+  db: ConstructorParameters<typeof ExportBundlesRepository>[0],
+  projectScope: { workspaceId: string; projectId: string },
+  runId: string,
+): Promise<ProblemError> {
+  const bundle = await new ExportBundlesRepository(db).findByRun(
+    projectScope,
+    runId,
+  );
   return new ProblemError(
     "RUN_ALREADY_ACTIVE",
     "An export of this kind is already running.",
     {
-      ...(runId
-        ? { headers: { Location: runStatusUrl(projectId, runId) } }
+      headers: { Location: runStatusUrl(projectScope.projectId, runId) },
+      ...(bundle
+        ? { current: { runId, exportId: bundle.id, kind: bundle.kind } }
         : {}),
     },
   );
@@ -172,7 +187,7 @@ export async function createProjectExport(
     );
     const replay = now ? replayExport(now, requestHash) : null;
     if (replay) return replay;
-    throw activeExportConflict(projectId, active.id);
+    throw await activeExportConflict(db, projectScope, active.id);
   }
 
   const boss = await getBoss();
@@ -201,7 +216,10 @@ export async function createProjectExport(
         );
       }
 
-      const currentProject = await txProjects.findByIdForUpdate(scope, projectId);
+      const currentProject = await txProjects.findByIdForUpdate(
+        scope,
+        projectId,
+      );
       if (!currentProject) {
         throw new ProblemError("NOT_FOUND", "Project not found.");
       }
@@ -256,9 +274,7 @@ export async function createProjectExport(
       return result;
     });
   } catch (error) {
-    if (
-      isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")
-    ) {
+    if (isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")) {
       const winnerKey = await idem.find(
         scope.workspaceId,
         IDEMPOTENCY_SCOPE,
@@ -270,7 +286,11 @@ export async function createProjectExport(
         projectScope,
         activeKey,
       );
-      throw activeExportConflict(projectId, winner?.id);
+      if (winner) throw await activeExportConflict(db, projectScope, winner.id);
+      throw new ProblemError(
+        "RUN_ALREADY_ACTIVE",
+        "An export of this kind is already running.",
+      );
     }
     throw error;
   }
