@@ -246,6 +246,47 @@ const DIAGNOSTIC_PROVIDER_ORDER: readonly Provider[] = [
   "dataforseo",
 ];
 
+/**
+ * The polled query state {@link runPollInterval} reads. Declared structurally
+ * rather than as TanStack's `QueryState` so the schedule can be exercised
+ * without mounting a React tree: this repository's unit project runs in `node`
+ * with no DOM, so a rule that only exists inside a hook body is a rule no test
+ * can reach.
+ */
+export interface RunPollState {
+  readonly status: "pending" | "error" | "success";
+  readonly data: AsyncRun | undefined;
+  readonly dataUpdateCount: number;
+}
+
+/**
+ * How long to wait before polling one run again, or `false` to stop.
+ *
+ * Two of these answers are load-bearing:
+ *
+ * 1. **An errored status query stops the poll.** Otherwise `dataUpdateCount`
+ *    stays 0 and the 1s interval loops forever against a 401/404/5xx (spec
+ *    §11.1).
+ * 2. **A terminal run stops the poll**, per {@link isRunTerminal}, whose set is
+ *    the same one migration `0002_async_run_terminal_invariant.sql` makes
+ *    irreversible in the database.
+ *
+ * Otherwise the cadence escalates 1s -> 2s -> 4s -> 5s and holds at the last
+ * step (spec §9.1). `dataUpdateCount` is 1 after the first successful poll, so
+ * the step index is that count minus one, floored at 0 for the not-yet-loaded
+ * case and capped at the end of the schedule.
+ */
+export function runPollInterval(state: RunPollState): number | false {
+  if (state.status === "error") return false;
+  const run = state.data;
+  if (run === undefined || isRunTerminal(run.status)) return false;
+  const step = Math.min(
+    Math.max(state.dataUpdateCount - 1, 0),
+    POLL_SCHEDULE.length - 1,
+  );
+  return POLL_SCHEDULE[step] ?? 5000;
+}
+
 /** A run is terminal once it can no longer transition (no more polling needed). */
 export function isRunTerminal(status: RunStatus): boolean {
   return (
@@ -470,19 +511,6 @@ export function useProjectRun(
       return res.data;
     },
     enabled: projectId.length > 0 && runId !== null && runId.length > 0,
-    refetchInterval: (query) => {
-      // Stop polling if the status query itself errors (401/404/5xx) — otherwise
-      // dataUpdateCount stays 0 and the 1s poll would loop forever (spec §11.1).
-      if (query.state.status === "error") return false;
-      const run = query.state.data;
-      if (run === undefined || isRunTerminal(run.status)) return false;
-      // dataUpdateCount is 1 after the first successful poll; step through the
-      // schedule and hold at the last (longest) interval thereafter.
-      const step = Math.min(
-        Math.max(query.state.dataUpdateCount - 1, 0),
-        POLL_SCHEDULE.length - 1,
-      );
-      return POLL_SCHEDULE[step] ?? 5000;
-    },
+    refetchInterval: (query) => runPollInterval(query.state),
   });
 }

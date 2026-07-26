@@ -161,9 +161,11 @@ audit-and-confirm 走查需要独立重写任务。同文件的 axe/overflow 用
 分页因此不收敛),而**HEAD 上的旧用例对同一处破坏是绿的**;再把 `.limit(opts.limit + 1)` 改成 `.limit(opts.limit)`
 (`hasNext` 永假)→ 新用例红(`expected 1 to be 2`)。
 
-**F1a. 仍未覆盖、如实写下**:seek 谓词里 `and(eq(created_at), lt(id))` 那一臂只有两行 `created_at` 相同时才触发。
-`flow_shadow_runs` 带 BEFORE UPDATE OR DELETE 的 append-only 触发器(`0020:181-183`),
-测试无法在不停掉生产守卫的前提下把两个时间戳压平。**用一个分支去换削弱它要保护的东西,不划算,所以没做。**
+**F1a.(已覆盖,见 §G 附带项 2)** 原文写的是:`and(eq(created_at), lt(id))` 那一臂只有两行 `created_at` 相同时才触发,
+而 `flow_shadow_runs` 的 append-only 触发器(`0020:181-183`)不允许事后压平时间戳,所以「不划算,没做」。
+**触发器那半句仍然成立,但结论错了**:不需要事后改,`created_at` 默认 `now()`,而 PostgreSQL 的 `now()` 是**事务时间戳** ——
+在**一个事务里**用普通仓储路径写三行,它们的 `created_at` 按构造相同。两个触发器全程armed、零 UPDATE、零手写时间戳。
+2026-07-26 已补测试并做双向变异自验。
 
 **F2. 规格 ↔ 实现分歧,按规格改了实现(三条)。**
 
@@ -213,7 +215,7 @@ audit-and-confirm 走查需要独立重写任务。同文件的 axe/overflow 用
 「零引用」说的是**没有任何测试引用过这条消息**(这是 §3 #4 列的测试缺口),不是没有调用方。删掉它会开一个跨租户写入口。
 **它至今仍无测试,这一条留作待办。**
 
-**F4b. 本轮新发现的缺陷(未修,已定位到行)——`flattenLine` 会改写 URL。**
+**F4b.(已修,见 §G F2)本轮新发现的缺陷 —— `flattenLine` 会改写 URL。**
 `text.ts` 的 `flattenLine` 在扫描链接**之前**先对整行跑 `stripEmphasis`(`names.ts:63-67`),
 而那条正则会删掉**两侧不是字母数字**的 `_` 与 `~`。实测:
 - `[Home](https://example.com/~alice/report)` → target 变成 `https://example.com/alice/report`
@@ -224,10 +226,9 @@ audit-and-confirm 走查需要独立重写任务。同文件的 axe/overflow 用
 随后 `canonicalUrl` 把被改写的那个规范化,pack / ownDomains 的解析链(蓝图 §4.3 第 3、5 步)就找不到它,
 一条**合法的第一方或供应商链接**因此拿到 authority D 并被 **blocked**。
 这与 `text.ts:803-805` 自己承诺的「target 始终可还原」直接矛盾,**且不属于 §A 已承认的能力边界**。
-本轮**没有修**(它在 QA 判定链的中段,改动面超出覆盖率轮的范围),也**没有写测试把错误形态钉死** ——
-新增的链接测试刻意只用不含 `_`/`~` 的 URL。**需要一个独立修复任务。**
+~~本轮没有修~~ —— **2026-07-26 已修,见 §G F2**。修法与实测后果(含一处比上文更严重、方向相反的真实危害)写在 §G。
 
-**F4d. 本轮新发现的第二个缺陷(未修,已复现)—— RL8 每行只抽一条 claim,是 fail-open。**
+**F4d.(已修,见 §G F1)本轮新发现的第二个缺陷 —— RL8 每行只抽一条 claim,是 fail-open。**
 `claims.ts:691,699-700` 的 `findUnsupportedClaims` 每行**至多产出一条**命中。
 蓝图 §6.2 明文要求相反:「同一行多个 claim(**必须全部抽出,不能只抽第一个** —— 兄弟仓库 `RL8_SCI_CLAIM_REGEX_G`
 就是为修这个 bug 才加的 global 变体)」。
@@ -242,7 +243,7 @@ audit-and-confirm 走查需要独立重写任务。同文件的 axe/overflow 用
 这与整个 gate 的「never fail open」约定(`evaluate.ts:43-44`)直接冲突,
 也与 A5.2 所说的边界不同 —— A5.2 说的是「无外部事实核查」,这里是**我们本可以看见却没看**。
 (注:同一行两条**都**无法解析时 RL8 仍会 fail;缺口专属于「先解析成功、后解析失败」这个次序。)
-本轮**没有修**,也**没有写测试把当前行为冻死**。**需要一个独立修复任务。**
+~~本轮没有修~~ —— **2026-07-26 已修,见 §G F1**。
 
 **F4e. 另两处无规格依据、同样未冻结**:`flattenLine` 从不反转义(label 保留 `\]`,destination 保留 `\(`,
 CommonMark 会反转义);`paragraphBlocks` 把 `<li>…` 与 `: term` 行判为 `kind:"prose"`,
@@ -271,3 +272,105 @@ CommonMark 会反转义);`paragraphBlocks` 把 `<li>…` 与 `: term` 行判为 
   **代价边界**:目前所有 fixture 段数都 <10,`checkSc3b` 永远走早退 advisory,所以**这条规则本体从未真正执行过**,
   两种口径当下都不影响任何已知输出。**本轮刻意没有给 SC3b 写测试** —— 先写测试就等于替 Owner 把口径定死了。
   **需要 Owner 裁决后再补测试。**
+
+---
+
+## G. 2026-07-26 fail-open 修复轮:两条反编造门的绕过路径已关闭
+
+上一轮把 F4b / F4d 定位到行但**没有修、也没有冻死**。本轮修了两条,各自独立 commit,各自带两组变异证据
+(一组证明修复真的生效,一组证明没有误伤 / 没有放水)。**前四轮的守卫一条未动、一条未红。**
+
+### G-F1. `findUnsupportedClaims` 每行只抽一条 claim(fail-open,已修)
+
+**原状**:`claims.ts` 的 `findUnsupportedClaims` 用 `Set<number>` 按**行号**去重,一行至多产出一条命中。
+一行里前一条断言能解析、后一条不能时,后一条**直接消失**,RL8 写下「All 1 … resolve」。
+
+**根因不止一处**。补全抽取之后缺口仍然存在,因为 `locatedAttributions` 给具名归属记的**跨度是原始捕获组**:
+`according to\s+([^\n]{2,120})` 一次吃掉 120 个字符,`value` 在逗号处被截断而 `span` 没有。
+于是一行里**第一条**「According to <我们持有的来源>」的跨度盖住了该行**后面每一句**,
+两句之外的 `According to Forrester, 73% …` 把那个能解析的名字拉进了自己的支撑候选集。
+**「一条断言只能由它所归属的那个来源支撑」这条第三轮结论,是被跨度而不是被取值破坏的。**
+
+**修法**(蓝图 §6.2「必须全部抽出」):
+1. 抽全每行所有断言,**逐条各自解析**;
+2. `cleanNameAt` 同时裁剪取值与跨度(取代只裁值的 `cleanNameCandidate`,后者现在是它的薄封装),
+   让归属**落在它自己的名字上**;
+3. 去重口径:**同一句 + 同一解析结果** = 同一条 claim(多个 pattern 认出同一个断言时不重复上报);
+   **同一句里解析结果不同 = 两条 claim**,所以「同行/同句任一 claim 解析成功即整行通过」不成立;
+4. 未具名的断言若与具名断言**跨度重叠**,让位给具名的那条(只有具名读法知道这句归属给谁),
+   方向是 fail-closed:未具名读法的候选集是整句,比具名读法更宽松。
+
+**变异证据(4 条,全部端到端过 `evaluateDraftQa`)**
+- 生效 A:`According to Analyst Insights, activation rose 30%. According to Forrester, 73% …`(pack 持有 Analyst Insights)
+  → 修前 `passed`(RL8 「All 1 … resolve」),修后 **`blocked`**,`rl8_unsupported_claim` = `failed`。
+- 生效 B(RL12 那一半,由跨度收窄带来):同一行换成 `… activation rose 30%. Forrester (2024) found a 73% lift.`
+  → 修前 `passed`,修后 **`blocked`**,`rl12_citation_integrity` = `failed`。
+- 不误伤 A:同一形状、两条归属**都**被 pack 持有 → 仍 **不 blocked**,`rl8` claim = `passed`。
+- 不误伤 B:`The Analyst Insights report found that activation improves 30%.`(一个断言被两种 pattern 同时认出)
+  → 仍是 **1 条** claim、authority `B`,没有因为「抽全」而多报一条无支撑。
+
+**仍然没有变的**:同一句里两条归属**都**无法解析时仍合并为一条 claim(仍然 `blocked`,只是不报两次)。
+
+### G-F2. `flattenLine` 会改写 URL(已修)
+
+**原状**:`flattenLine` 对整行跑 `stripEmphasis`,而它删掉 `~`(无条件)与两侧非字母数字的 `_`。
+于是同一行同一 URL,`extractUrls`(读原文)与 `flattenLine().urls`(读剥离后)得到**两个不同的值**。
+
+**F4b 原文推断的后果(第一方链接因此被 blocked)——实测不可达,如实更正。**
+`resolveAttribution` 的 URL 路径在精确 URL 之后**还有一级 domain 兜底**,而 `_`/`~`/`*` 都不在
+`canonicalUrl` 允许的 host 字符类 `[a-z0-9.-]` 里,所以剥离**只可能改路径、不可能改一个合法 host**;
+路径被改而 domain 不变时解析照样命中。**穷举第一方 URL 的 `_`/`~` 变体,没有一个被 blocked。**
+
+**真实危害是反方向的,而且更重:删除可以伪造 host。**
+`https://signal~frame.example/onboarding` —— 一个**不是**客户的域名 —— 被剥离成 `signalframe.example`,
+于是 RL12b 判定它是「客户自有属性」并 `passed`;SC9b 在导航类标题下也会把它算作 resolved。
+**这是把一个陌生域名洗成第一方,不是把第一方误判成陌生域名。**
+
+**修法**:`stripEmphasisOutsideUrls` —— 先在(遮蔽内联代码后的)原文里定位 URL 跨度,只在跨度之外剥离强调,
+跨度之内**逐字节保留**。跨度末尾的 `[*~_]+` 连续段仍算 markup(`**url**` / `~~url~~` 照旧剥离)。
+**第三轮的「不从 URL 内部提取」没有被打开**:`locatedAttributions` 的 `insideUrl` 守卫原样保留,
+名字候选的 URL 守卫仍作用于**原始捕获跨度**而不是收窄后的跨度。
+
+**变异证据(4 条)**
+- 生效:`[Book a demo](https://signal~frame.example/demo)` → 修前 `rl12b_unresolved_link` = `passed`(被洗成第一方),
+  修后 **`failed`**;`resolveLinkProvenance` 修前 `first_party` → 修后 `unresolved`。
+- 不误伤:合法第一方 `https://signalframe.example/~guides/deep_dive_2024`(同时含 `~` 与 `_`)
+  → 修后 **不 blocked**,`rl12b` 与 `rl12` 两条 claim 均 `passed`。
+- 不放水:外部编造 URL `https://forrester-insights.example/_reports/2024_state` 挂在 `## Sources` 下
+  → 修前修后**都** `blocked`(`sc9b_sources_resolve_to_pack` = `failed`)。
+- 一致性:四个含 `_`/`~` 的地址,`flattenLine().urls` ≡ `extractUrls()` ≡ 原文,markdown link 的 destination 亦逐字节相同。
+
+### G-确定性(Q8 前提)
+
+抽全 claim 会改变 `claims` 数组,而 `FlowShadowQaGatesRepository.insert` 的重放比对依赖它逐字节稳定。
+新增 P2 用例:上述 6 份草稿各连跑 **100 次**,`verdict` 与 `JSON.stringify(qaClaimsToJson(claims))` 与首次**完全相同**。
+排序仍确定(断言按 `index` 升序产生、`hits` 按行号稳定排序),`qa/**` 仍零 IO / 零时钟 / 零随机。
+
+### G-附带项 1. `hooks-diagnosis.ts`(D4 名单内,部分完成)
+
+那 20 个未覆盖分支里,**四个是 TanStack 声明式包装**(`useProjectFindings` / `useProjectSnapshots` /
+`useCreateDiagnosticRun` / `useReviewFinding`):它们的可断言内容就是传给 `useQuery`/`useMutation` 的字面量,
+写出来是同义反复;要真的执行它们需要 `@testing-library/react` + jsdom,
+而本仓 unit project 是 `environment: "node"` 且 `apps/web` 没有任何测试期依赖 ——
+**加依赖 + 加 DOM 环境不在本任务范围**,如实记在这里。
+
+**有真逻辑的那一份已经补了**:`useProjectRun` 的 `refetchInterval` 抽成纯函数 `runPollInterval(state)`
+(行为零变化),测了 1s→2s→4s→5s 的升档与保持、status query 报错即停(否则 `dataUpdateCount` 永远 0、
+对 401/404/5xx 每秒重试一次)、以及终止态即停(与 `0002_async_run_terminal_invariant` 的不可逆集合逐个对齐)。
+**`hooks-diagnosis.ts` 分支覆盖 56.52% → 80.43%**,剩余未覆盖行 417-514 即上述四个 hook 体。
+
+### G-附带项 2. keyset seek 的 `and(eq(created_at), lt(id))` 一臂(已覆盖)
+
+见上文对 §F F1a 的更正。测试在**一个事务**里用普通仓储路径写三行(`now()` = 事务时间戳 ⇒ `created_at` 相同),
+再用 `limit:2` 走 cursor 翻页,断言与整页读**逐位相同、无重复、无遗漏**且 id 降序。
+**双向变异自验**:把 seek 改成只有 `lt(created_at)` → 红(第二页 0 行,整条 tie 被跳过);
+把 `lt(id)` 改成 `lte(id)` → 红(走出 4 行,边界行被重复发一次)。
+两个 append-only 触发器全程未动。
+
+### G-本轮仍未做的(如实)
+
+- **F4a**「audit module result canonical scope mismatch」仍无测试(它不是死代码,是 DB 挡不住的跨租户写入关卡)。
+- **F4e** `flattenLine` 不反转义、`paragraphBlocks` 把 `<li>` / `: term` 判为 prose —— 未动。
+- **E5** SC3b 叙事段口径仍待 Owner 裁决,仍刻意无测试。
+- **D3** `authority/.../verify-spec.test.mjs` 过时并行副本仍待决。
+- `collection.ts:583` 的裸 409 仍在(紧邻 N-1 冻结的 Sources 面,需独立任务)。

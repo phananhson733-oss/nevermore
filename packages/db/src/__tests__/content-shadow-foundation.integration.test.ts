@@ -568,6 +568,79 @@ describeDb("content shadow database foundation", () => {
     ]);
   });
 
+  /**
+   * The tie-break arm of the keyset seek, `and(eq(created_at), lt(id))`.
+   *
+   * It only fires when two rows share a `created_at`, and the previous round
+   * recorded it as uncoverable: `flow_shadow_runs` carries a BEFORE UPDATE OR
+   * DELETE append-only trigger (`0020:181-183`), so no test may flatten two
+   * timestamps after the fact. That is still true — and it was the wrong way
+   * in. `created_at` defaults to `now()`, which in PostgreSQL is the
+   * TRANSACTION timestamp, so three rows written through the ordinary
+   * repository path inside ONE transaction share it by construction. Both
+   * triggers stay armed, nothing is updated, and no timestamp is hand-set.
+   *
+   * What the arm has to buy is the whole reason a keyset cursor is used at all:
+   * with a tie on the sort key, an `lt(created_at)`-only seek would skip every
+   * row sharing the page boundary's timestamp, and an `lte` would repeat them
+   * forever. The assertions below are exactly those two failures.
+   */
+  it("pages a created_at tie by id, repeating and losing no row", async () => {
+    const chain = await createShadowChain(handle);
+    const scope = {
+      workspaceId: chain.fixture.workspaceId,
+      projectId: chain.fixture.projectId,
+    };
+    const capabilityRunIds = [
+      chain.capabilityRunId,
+      await createContentShadowCapability(handle, chain.fixture),
+      await createContentShadowCapability(handle, chain.fixture),
+    ];
+
+    const created = await handle.db.transaction(async (tx) => {
+      const scoped = new FlowShadowRunsRepository(tx);
+      const rows = [];
+      for (const capabilityRunId of capabilityRunIds) {
+        rows.push(await scoped.create(runInsert(chain, { capabilityRunId })));
+      }
+      return rows;
+    });
+    expect(
+      new Set(created.map((row) => String(row.created_at))).size,
+      "one transaction, one now()",
+    ).toBe(1);
+
+    const runs = new FlowShadowRunsRepository(handle.db);
+    // Ground truth: one unpaged read of the same index.
+    const whole = await runs.listByProject(scope, { limit: 10, cursor: null });
+    const expected = whole.rows.map((row) => row.id);
+    expect(whole.nextCursor).toBeNull();
+    expect(expected).toHaveLength(3);
+    expect(expected).toStrictEqual([...expected].sort().reverse());
+    expect([...expected].sort()).toStrictEqual(
+      [...created.map((row) => row.id)].sort(),
+    );
+
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page: Awaited<ReturnType<typeof runs.listByProject>> =
+        await runs.listByProject(scope, { limit: 2, cursor });
+      pages += 1;
+      // A seek that never advances past the tie would loop forever.
+      expect(pages).toBeLessThanOrEqual(3);
+      expect(page.rows.length).toBeGreaterThan(0);
+      walked.push(...page.rows.map((row) => row.id));
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(pages).toBe(2);
+    // Nothing skipped across the tied boundary, nothing served twice.
+    expect(walked).toStrictEqual(expected);
+    expect(new Set(walked).size).toBe(walked.length);
+  });
+
   describe("qa gate replay", () => {
     async function seedGate(claims: readonly unknown[]) {
       const chain = await createShadowChain(handle);
