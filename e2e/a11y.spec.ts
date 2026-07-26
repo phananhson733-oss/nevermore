@@ -11,14 +11,25 @@ import { seedProject, type SeededProject } from "./fixtures.ts";
  */
 
 // A representative cross-section of the app: shell + data-heavy + delivery views.
+/**
+ * The destinations the product actually ships, named as themselves.
+ *
+ * This list read `diagnosis, plan, studio, report` until 2026-07-26, and all
+ * four of those are `redirect()` pages (`plan` and `studio` both to
+ * `execution`, `diagnosis` to `growth-map`, `report` to `results`). Coverage
+ * was therefore accidental and the test names were false — "diagnosis has no
+ * critical/serious axe violations" was scanning Growth Map — while `execution`
+ * was scanned twice under two names and no name in the list matched a route
+ * that renders. Same six screens are covered, one scan fewer, and a screen can
+ * no longer be lost silently by a redirect being deleted.
+ */
 const SCREENS = [
   "overview",
   "context",
   "sources",
-  "diagnosis",
-  "plan",
-  "studio",
-  "report",
+  "growth-map",
+  "execution",
+  "results",
 ] as const;
 
 let project: SeededProject;
