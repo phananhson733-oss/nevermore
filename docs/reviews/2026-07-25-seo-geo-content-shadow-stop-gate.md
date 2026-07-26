@@ -2669,3 +2669,98 @@ visual baseline snapshot was regenerated. Zero migrations, zero contract change.
   §16.2's mutations kill it there. There is no `.mock.spec.ts` that drives the
   studio with a deliberately incomplete cursor set behind a 409; the e2e level
   covers the live-run half (the test above `:615`) and the release half (`:615`).
+
+---
+
+## 17. `test:e2e:real` has a measured baseline for the first time
+
+§14.1 did this for the mock suite and it is what made §14.8 possible. The real,
+database-backed suite — a CI step in the `database` job — had never been run in
+this worktree; §11.4 and §14.6 both say so. It was run on 2026-07-26 against a
+local disposable Postgres, using the config's own `next dev` server, and the
+database was dropped afterwards. **43 tests, one worker, serial.**
+
+| run | passed | failed | did not run |
+|---|---|---|---|
+| 1 | 30 | 12 | 1 |
+| 2 | 29 | 13 | 1 |
+
+The two runs differ in exactly one test, recorded below as a flake. The single
+"did not run" is `real-vertical-chains`' second fixture, which the serial
+ordering skips once the first fails.
+
+**Twelve failures reduce to five causes, and only one of them was a test
+problem.**
+
+### 17.1 Overview renders a second `<main>` inside the shell's — 8 failures
+
+`layout.tsx:187` renders the project shell's `<main id="main-content">`.
+`_overview.tsx:933` renders another `<main className={styles.page}
+data-overview-page="">` inside it — and so do the loading and error states at
+`:898` and `:907`, so every Overview render has two nested `main` landmarks.
+No other destination does this; `<main>` appears in only three other files, all
+of them page roots outside the project shell.
+
+Everything in `a11y.spec.ts` funnels through a helper whose first line is
+`await expect(page.getByRole("main")).toBeVisible()` (`:39`), which is a strict
+locator, so this takes out the Overview axe scan, the sidebar contrast check,
+the keyboard-focus check and the reduced-motion check. `responsive.spec.ts:47`
+has the same line, which takes out Overview at all four viewports.
+
+This is a product defect, not test drift: two `main` landmarks is an axe
+`landmark-one-main` violation, and a screen-reader user gets two "main" regions
+with an ambiguous skip-to-content target. **It sits on an N-1 frozen surface,
+so nothing was changed.** The fix is one element name.
+
+### 17.2 Sources has a `definition-list (serious)` axe violation — 1 failure
+
+`axe` reports `definition-list (serious)` on Sources: a `<dl>` whose children
+are not the permitted set. Also a product defect, also on an N-1 frozen
+surface, also untouched here.
+
+### 17.3 R1 — 1 failure and the 1 skip
+
+`real-vertical-chains` at `:447`, covered in full in the D8 addendum in §4. The
+suite's serial ordering means the B2C fixture never runs at all.
+
+### 17.4 R3 — 2 failures, one of which is a live product defect
+
+The `report print media` test fails because `globals.css:199` scopes the print
+rule with `body:has([data-report-page])`, and that attribute now exists only at
+`_report.tsx:1141` — inside the client no file imports. `/p/{id}/report`
+redirects to `/results`, which does not carry it. **So the print stylesheet can
+no longer fire on any screen, and printing carries the sidebar and the sticky
+toolbar into the output.** That is a user-visible consequence of R3 that §14.8
+did not name, because §14.8 was reasoning about screens rather than about the
+CSS keyed to them.
+
+`project-isolation`'s tail fails for the same reason: it correctly expects the
+`/results` redirect and then requires `[data-report-page]` and a
+`/api/mvp/projects/{id}/report` request, neither of which a recheck comparison
+produces.
+
+### 17.5 The one test-side cause — fixed in `dbdf826`
+
+`project-isolation` asserted English chrome under a `zh-CN` default, and used
+`[data-overview-hero]`, an anchor Slice 1 deleted. Both were repaired the way
+§14 requires — locale selected by cookie, assertion followed to where the
+identity actually lives — and mutation-checked. The spec still fails, on §17.4.
+
+### 17.6 Flake — `growth-map.real.spec.ts:917`
+
+Passed in run 1, failed in run 2, unchanged in between. The suite is
+`fullyParallel: false, workers: 1` against one shared Postgres that every spec
+mutates, so ordering and residue are plausible causes. **Not diagnosed** — it is
+recorded rather than explained, and it is the reason the two run totals differ.
+
+### 17.7 What this changes for the Owner
+
+Two of the five causes (§17.1, §17.2) are accessibility defects on **Overview
+and Sources — the two surfaces N-1 freezes as the accepted house standard**.
+They were invisible because the suite that catches them had never been run. Two
+more (§17.3, §17.4) are R1 and R3, which were already open but were understood
+as missing capabilities; §17.4 shows R3 also left a live defect on every
+screen's print output. Only one was a test problem, and it is fixed.
+
+**No product file was changed in this section's work, and no assertion was
+weakened.**
