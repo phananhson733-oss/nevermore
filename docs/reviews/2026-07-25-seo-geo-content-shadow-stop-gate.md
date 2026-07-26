@@ -2709,14 +2709,49 @@ has the same line, which takes out Overview at all four viewports.
 
 This is a product defect, not test drift: two `main` landmarks is an axe
 `landmark-one-main` violation, and a screen-reader user gets two "main" regions
-with an ambiguous skip-to-content target. **It sits on an N-1 frozen surface,
-so nothing was changed.** The fix is one element name.
+with an ambiguous skip-to-content target.
+
+**RESOLVED in `c73b621`, under an N-1 exception the Owner granted for this
+defect.** Six tags, `<main>` -> `<div>`, keeping `role="status"` on the loading
+state and `data-overview-page` on the ready one. Zero visual change was proven
+by **byte equality**, not by a pixel threshold: full-page screenshots at 390 /
+768 / 1024 / 1440 against the deterministic mock fixture are sha256-identical
+before and after. That was the expected outcome — `overview.module.css` has no
+element selectors at all and `globals.css` has no `main` selector, so the tag
+name was never load-bearing for style.
+
+The a11y effect was **predicted before the change and measured after**:
+`a11y.spec.ts` and `responsive.spec.ts` together went 10 failures -> 2, and the
+two survivors are exactly the two this section attributed elsewhere (§17.2 and
+§17.4).
 
 ### 17.2 Sources has a `definition-list (serious)` axe violation — 1 failure
 
-`axe` reports `definition-list (serious)` on Sources: a `<dl>` whose children
-are not the permitted set. Also a product defect, also on an N-1 frozen
-surface, also untouched here.
+`axe` reports `definition-list (serious)` on Sources, and the node is
+`.readinessMetrics` — a **third** `<dl>` in `_sources.tsx` (`:1668`), not either
+of the two an initial reading found. Each of its `<div className=readinessMetric>`
+wrappers holds `<dt>`, `<dd>` **and a `<progress>`**, and axe requires a `<div>`
+inside a `<dl>` to hold only `<dt>`/`<dd>`.
+
+It is state-dependent, which is why it hides: run `a11y.spec.ts` alone against a
+fresh project and Sources **passes**; the readiness block only renders once
+source data exists, so only the full serial suite reaches it.
+
+**Not fixed, and — unlike §17.1 — it cannot be fixed under the same terms.**
+The Owner's exception was granted for changes that touch no CSS, copy or
+layout, and no such change exists here:
+
+- `.readinessMetric` is `display: flex; flex-direction: column; gap: 7px`, so
+  `<dt>`, `<dd>` and `<progress>` are three flex items in a column. Moving
+  `<progress>` inside `<dd>` makes it an inline child of a block instead of its
+  own flex item — the 7px gap disappears and the bar reflows next to the number.
+- Replacing `<dl>`/`<dt>`/`<dd>` with generic elements breaks the two element
+  selectors `.readinessMetric dt` and `.readinessMetric dd`, and loses the
+  term/definition association a screen reader uses.
+
+Either route needs a CSS change (a few lines: give `<dd>` the same column flex
+and gap, then nest the bar inside it). **That is a separate, small decision for
+the Owner, not something to slip in under a no-CSS exception.**
 
 ### 17.3 R1 — 1 failure and the 1 skip
 
