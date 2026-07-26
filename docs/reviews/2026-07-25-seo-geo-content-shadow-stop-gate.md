@@ -2910,6 +2910,34 @@ restoring the nested `<main>` fails the count with `Received: 2`, and checking
 `_sources.tsx` out at `a538fe3^` reproduces
 `definition-list (serious) @ .sources_readinessMetrics__…`.
 
+**A cheaper version of this was tried, and reverted, because it would have been
+a lie (`23138ef`).** Widening the scan loop in `frontend-error-states.mock.spec.ts`
+from `["execution"]` to all six shipped destinations made all six pass — and
+then a mutation survived: restoring Overview's nested `<main>` did not redden
+the Overview case. Probing what each destination renders under
+`installCriticalFlowApi` explains it:
+
+| destination | h1 | renders |
+|---|---|---|
+| growth-map | "Find the next growth opportunity…" | the screen |
+| execution | "Turn actions into client-ready work." | hero, body still loading |
+| overview | none | loading skeleton |
+| sources | none | loading skeleton |
+| context | "Loading Product Profile" | loading skeleton |
+| results | none | not the screen |
+
+Four of the six would have scanned a spinner while reading as "this destination
+is accessible" — the defect this entire section is about, avoided only because
+the mutation ran before the commit.
+
+The assertion therefore goes where a real fixture already exists: Overview
+(`fde119d`, via `openOverview(page, readyScenario())`) and Growth Map
+(`23138ef`, which renders in full under the shared fixture and is
+mutation-verified by turning its page root into a `<main>`). **The remaining
+four need per-screen fixtures before a per-PR landmark check means anything**,
+and that is recorded rather than faked; `a11y.spec.ts:39` covers all six today
+in the database-backed suite, using the same strict locator.
+
 ### 17.6c Measured: no axe scan here could ever have caught the duplicate landmark
 
 An earlier draft of §17.1 called the duplicate `main` "an axe `landmark-one-main`
