@@ -3,9 +3,11 @@ import {
   flattenLine,
   hasDirectNegation,
   isReferenceSectionTitle,
+  paragraphBlocks,
   partitionDraft,
   readDraft,
   referenceSectionStandard,
+  sentenceCount,
   sentenceSpanAt,
   truncateExcerpt,
 } from "./text.ts";
@@ -169,6 +171,45 @@ describe("setext headings", () => {
     );
 
     expect(view.headings).toStrictEqual([]);
+  });
+
+  /**
+   * `---` under an ATX heading is a thematic break: the line above it is
+   * already a heading, so there is no paragraph for an underline to promote.
+   * Read as a setext title it rewrote `# Onboarding analytics` into
+   * `## # Onboarding analytics` AND pushed a second entry onto the heading
+   * spine for the same line — and `partitionDraft` keys its sections by line,
+   * so the duplicate would quietly replace the real H1 with a level-2 heading
+   * whose text still carries a `#`.
+   */
+  it("does not read an underline under an ATX heading as a heading", () => {
+    const view = readDraft(
+      ["# Onboarding analytics", "---", "", "Body."].join("\n"),
+    );
+
+    expect(view.headings).toStrictEqual([
+      { line: 1, level: 1, text: "Onboarding analytics" },
+    ]);
+    expect(view.prose[0]?.text).toBe("# Onboarding analytics");
+  });
+
+  /**
+   * An underline promotes a one-line PARAGRAPH. A table row and a blockquote
+   * are neither, and promoting one invents a section boundary in the middle of
+   * a table — or makes a quoted line the section title every reference matcher
+   * reads, which is how a body region ends up cut out of the half the red lines
+   * scan.
+   */
+  it("refuses an underline over a line that is not a paragraph", () => {
+    for (const title of [
+      "| Source | Year |",
+      "> Forrester puts churn at 42%.",
+    ]) {
+      const view = readDraft([title, "---", "", "Body."].join("\n"));
+
+      expect(view.headings, title).toStrictEqual([]);
+      expect(view.prose[0]?.text, title).toBe(title);
+    }
   });
 });
 
@@ -348,6 +389,92 @@ describe("draft partition", () => {
     expect(new Set(covered).size).toBe(covered.length);
     expect(partition.reference).toHaveLength(1);
     expect(partition.reference[0]?.standard).toBe("evidence");
+  });
+
+  /**
+   * A reference section runs to the next heading of the SAME OR HIGHER level,
+   * so a deeper heading inside it is one of its lines rather than a new
+   * section. That is what stops a nested `### Further reading` from re-opening
+   * the region under the weaker LOCATOR standard: an entry may override its
+   * section's standard upward on its own shape, never downward, and a locator
+   * entry is answered completely by the customer's own address. Re-opening
+   * here would also leave `## Sources` holding no line at all, so the heading
+   * that made the evidence promise would be handed back to the body.
+   */
+  it("keeps a deeper reference heading inside the section it opened", () => {
+    const view = readDraft(
+      [
+        "## Sources",
+        "",
+        "### Further reading",
+        "",
+        "- Forrester Digital Experience Report, 2024",
+        "",
+      ].join("\n"),
+    );
+    const partition = partitionDraft(view);
+
+    expect(partition.reference).toHaveLength(1);
+    expect(partition.reference[0]?.title).toBe("Sources");
+    expect(partition.reference[0]?.standard).toBe("evidence");
+    expect(
+      partition.reference[0]?.lines.map((line) => line.text),
+    ).toStrictEqual([
+      "",
+      "### Further reading",
+      "",
+      "- Forrester Digital Experience Report, 2024",
+      "",
+    ]);
+    expect(partition.body).toStrictEqual([]);
+  });
+
+  /**
+   * An ADDRESS is one of the entry forms the region predicate accepts. A
+   * bibliography a model wrote as bare URLs carries no list marker and no name
+   * phrase, so without that arm the whole section is handed back to the body —
+   * and the only rule that resolves reference entries then reports, in a
+   * persisted claim, that the draft lists no source entry at all.
+   */
+  it("claims a reference region whose entries are bare addresses", () => {
+    const partition = partitionDraft(
+      readDraft(
+        [
+          "## Sources",
+          "",
+          "https://analyst.example/2024-benchmark",
+          "https://vendor.example/churn-report",
+          "",
+        ].join("\n"),
+      ),
+    );
+
+    expect(partition.reference).toHaveLength(1);
+    expect(partition.reference[0]?.standard).toBe("evidence");
+    expect(partition.body).toStrictEqual([]);
+  });
+
+  /**
+   * The same clause one step further out. A site-relative link carries no
+   * `http`/`www`, so it is an address only the markdown-link reader can see; a
+   * sources list written entirely as relative links would otherwise fall back
+   * into the body for want of a single scheme.
+   */
+  it("claims a reference region whose entries are relative links", () => {
+    const partition = partitionDraft(
+      readDraft(
+        [
+          "## Sources",
+          "",
+          "[Forrester Digital Experience Report, 2024](/library/forrester-2024.pdf)",
+          "",
+        ].join("\n"),
+      ),
+    );
+
+    expect(partition.reference).toHaveLength(1);
+    expect(partition.reference[0]?.standard).toBe("evidence");
+    expect(partition.body).toStrictEqual([]);
   });
 });
 
@@ -540,6 +667,64 @@ describe("flattened lines carry positions", () => {
     expect(flat.urls).toStrictEqual([]);
   });
 
+  /**
+   * The destination half of the same scan. CommonMark allows BALANCED
+   * parentheses in a link destination and encyclopedia-style URLs use them, so
+   * stopping at the first `)` truncates the target. A truncated target is not a
+   * lost link — it is a DIFFERENT address, which resolves against no source the
+   * pack holds, so the sentence comes back attributed to nothing at authority D
+   * while its link was perfectly good.
+   */
+  it("parses a link destination that contains balanced parentheses", () => {
+    const flat = flattenLine(
+      "[Churn benchmark](https://analyst.example/wiki/Churn-rate-(SaaS)) reports 73% churn.",
+    );
+
+    expect(flat.text).toBe("Churn benchmark reports 73% churn.");
+    expect(flat.links).toHaveLength(1);
+    expect(flat.links[0]?.target).toBe(
+      "https://analyst.example/wiki/Churn-rate-(SaaS)",
+    );
+    expect(flat.urls).toStrictEqual([]);
+  });
+
+  /**
+   * An escaped bracket does not open link syntax, so a reader sees the literal
+   * `[label](url)` — address and all. The flattened line has to read the way
+   * the reader reads it: no link to credit the sentence with, and the address
+   * still standing in the text where a bare-url rule can see it.
+   */
+  it("does not read an escaped bracket as the start of a link", () => {
+    const flat = flattenLine(
+      "\\[Forrester](https://analyst.example/x) reports 73% churn.",
+    );
+
+    expect(flat.links).toStrictEqual([]);
+    expect(flat.urls.map((url) => url.value)).toStrictEqual([
+      "https://analyst.example/x",
+    ]);
+  });
+
+  /**
+   * The mirror image, and the same failure the balanced-bracket case above
+   * carries: an escaped `]` inside a label must not close it. Closing there
+   * finds no `(` after the label, so the link is not parsed at all, the raw URL
+   * goes back into the sentence text, and it is harvested as a bare url — a
+   * LOCATOR, which a first-party address answers completely. The sentence would
+   * pass on one backslash.
+   */
+  it("does not let an escaped bracket close a link label", () => {
+    const flat = flattenLine(
+      "[Forrester \\] Inc](https://analyst.example/x) reports 73% churn.",
+    );
+
+    expect(flat.links).toHaveLength(1);
+    expect(flat.links[0]?.target).toBe("https://analyst.example/x");
+    expect(flat.links[0]?.start).toBe(0);
+    expect(flat.urls).toStrictEqual([]);
+    expect(flat.text.endsWith(" reports 73% churn.")).toBe(true);
+  });
+
   it("still refuses the shapes that are not links", () => {
     for (const line of [
       "[Forrester(https://analyst.example/x) reports 73%.",
@@ -600,6 +785,65 @@ describe("direct negation", () => {
     ]) {
       expect(hasDirectNegation(clause), clause).toBe(false);
     }
+  });
+});
+
+describe("sentence counting", () => {
+  /**
+   * Sentence terminators, with a floor of 1 for ANY NON-EMPTY text — both
+   * halves of that sentence do work. SC3 reads the count off every block to
+   * find a wall, and SC3b takes the median across the narrative paragraphs, so
+   * a paragraph a model wrote without a terminator has to count as the one
+   * sentence a reader reads, while text with nothing in it has to count as
+   * none rather than as a phantom sentence the floor invented.
+   */
+  it("floors non-empty text at one sentence and empty text at none", () => {
+    expect(sentenceCount("Churn fell 42% last quarter")).toBe(1);
+    expect(sentenceCount("Alpha claim. Beta claim.")).toBe(2);
+    expect(sentenceCount("")).toBe(0);
+    expect(sentenceCount("   \t ")).toBe(0);
+  });
+});
+
+describe("paragraph blocks", () => {
+  /**
+   * `block.lines` is the only thing separating a bibliography entry written
+   * without a list marker from the running text around it: a prose block is an
+   * entry position exactly when it was joined from ONE source line. So
+   * consecutive prose lines have to join and carry the count, while a line that
+   * is a list in a markup `-`/`*` does not cover — an HTML list element, a
+   * definition-list term — has to stand alone. Joined into the surrounding
+   * paragraph, such an entry stops occupying an entry position, and the
+   * bibliography written in either markup walks past the whole gate.
+   *
+   * A heading is a boundary and never a block of its own, which is the property
+   * the per-section checks rely on when they group a section's own paragraphs.
+   */
+  it("joins prose lines and gives a markup list line its own block", () => {
+    const blocks = paragraphBlocks(
+      readDraft(
+        [
+          "First line of the paragraph",
+          "second line of the same paragraph.",
+          "",
+          "<li>Forrester Digital Experience Report, 2024</li>",
+          ": Gartner Market Guide, 2024",
+          "",
+          "## Sources",
+          "Tail paragraph.",
+          "",
+        ].join("\n"),
+      ).prose,
+    );
+
+    expect(
+      blocks.map((block) => [block.line, block.lines, block.text]),
+    ).toStrictEqual([
+      [1, 2, "First line of the paragraph second line of the same paragraph."],
+      [4, 1, "<li>Forrester Digital Experience Report, 2024</li>"],
+      [5, 1, ": Gartner Market Guide, 2024"],
+      [8, 1, "Tail paragraph."],
+    ]);
   });
 });
 
