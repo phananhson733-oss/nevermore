@@ -2840,6 +2840,17 @@ keep. That is exactly how it was hit here — and, being invisible in CI, it is
 precisely the kind of thing that would have gone on wasting time indefinitely
 had the assertion not been made to name it.
 
+**One fix was considered and deliberately not made.** A `globalSetup` could
+delete the `rate_limit:*` rows before each local run and the trap would be gone
+entirely — the database is disposable and the config already refuses any name
+outside `signalframe_(codex|e2e|ci)`. It was rejected: a harness that wipes the
+limiter's ledger before every run is a harness that can never observe rate
+limiting, so the day someone writes an E2E assertion about it, the assertion
+passes for the wrong reason. That is the same shape as D9, where a unit gate
+stubbed Postgres and stayed green over a red drill. The message fix is the
+right size — it tells the truth and hides nothing — and this paragraph exists so
+the convenience is not added later by someone who only sees the annoyance.
+
 ### 17.7 Where the suite stands after this round
 
 | | first measured | after §17.1 and §17.2 |
