@@ -97,7 +97,17 @@ async function installSourcesProjection(page: Page): Promise<void> {
   );
 }
 
+/** Every anchor below is English chrome, and the app's default UI locale is
+ *  zh-CN (`packages/i18n/src/config.ts:6`), so the locale has to be selected
+ *  rather than inherited — the same `sf_ui_locale` cookie `studio-first-paint`,
+ *  `growth-map`, `audit-technical-vertical` and `sources-layout` already set.
+ *  This is a test-side change only: the Sources surface is untouched. */
 test.beforeEach(async ({ page }) => {
+  await page
+    .context()
+    .addCookies([
+      { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+    ]);
   await installCriticalFlowApi(page);
   await installSourcesProjection(page);
 });
