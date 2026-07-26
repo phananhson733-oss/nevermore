@@ -2952,6 +2952,34 @@ walks to the comparison.
 `a11y.spec.ts:39` continues to cover all six in the database-backed suite with
 the same strict locator.
 
+### 17.6d Which mock installer actually renders which destination
+
+The Results correction above is an instance of something worth stating once, in
+a form the next person can use, because it is what made the reverted loop scan
+error states rather than screens. Measured by listening for `/api/mvp/**`
+responses at or above 400 on a bare page load of each destination:
+
+| destination | `installCriticalFlowApi` alone | with `installGrowthVerticalApi` |
+|---|---|---|
+| sources | clean | clean |
+| overview | **501** `audit/urls`, `product-profile` | clean |
+| growth-map | **501** `audit/urls` | clean |
+| results | **501** `results` | clean |
+| context | **501** `product-profile` | clean |
+| execution | **501** `content-shadow-runs` | not served here either |
+
+Both columns are measured. The `execution` row's remedy is **located, not
+measured**: `content-shadow-runs` appears in no `mock-api.ts` route — it is
+registered by `e2e/content-shadow-vertical-fixture.ts`.
+
+So the base installer alone renders exactly one of the six destinations without
+a failed request. That is by design — `mock-api.ts:1060` documents the vertical
+installer as layering "the specific audit/opportunity/results routes" over it —
+but it means **a spec that installs only the critical-flow API and then visits
+one of the other five is asserting against an error or empty state**, however
+its name reads. Per-destination coverage has to pick the installer that serves
+that destination, which is what §17.6b's placements do.
+
 ### 17.6c Measured: no axe scan here could ever have caught the duplicate landmark
 
 An earlier draft of §17.1 called the duplicate `main` "an axe `landmark-one-main`
