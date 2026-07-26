@@ -232,7 +232,14 @@
   text-transform: uppercase;
 }
 .readinessMetric dd {
+  /* The progress bar moved inside its <dd> so the <dl>'s <div> wrappers hold
+   * only <dt>/<dd> (axe `definition-list`). These three declarations reproduce
+   * the column and gap it had as a sibling flex item of .readinessMetric, so
+   * the rendering is unchanged -- verified byte-identical at four viewports. */
+  display: flex;
   min-width: 0;
+  flex-direction: column;
+  gap: 7px;
   margin: 0;
   color: var(--sf-fg);
   font-family: var(--sf-font-display);

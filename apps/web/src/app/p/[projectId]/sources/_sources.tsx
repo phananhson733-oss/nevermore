@@ -1670,32 +1670,34 @@ function ReadinessSummary({
           <dt>{copy.connected}</dt>
           <dd data-testid="source-readiness-dynamic">
             {readiness.connectedCount}
+            <progress
+              value={readiness.connectedCount}
+              max={Math.max(readiness.enabledCount, 1)}
+              aria-label={copy.connected}
+            />
           </dd>
-          <progress
-            value={readiness.connectedCount}
-            max={Math.max(readiness.enabledCount, 1)}
-            aria-label={copy.connected}
-          />
         </div>
         <div className={styles.readinessMetric}>
           <dt>{copy.usable}</dt>
-          <dd data-testid="source-readiness-dynamic">{readiness.usableCount}</dd>
-          <progress
-            value={readiness.usableCount}
-            max={Math.max(readiness.enabledCount, 1)}
-            aria-label={copy.usable}
-          />
+          <dd data-testid="source-readiness-dynamic">
+            {readiness.usableCount}
+            <progress
+              value={readiness.usableCount}
+              max={Math.max(readiness.enabledCount, 1)}
+              aria-label={copy.usable}
+            />
+          </dd>
         </div>
         <div className={styles.readinessMetric}>
           <dt>{copy.partial}</dt>
           <dd data-testid="source-readiness-dynamic">
             {readiness.partialCount}
+            <progress
+              value={readiness.partialCount}
+              max={Math.max(readiness.enabledCount, 1)}
+              aria-label={copy.partial}
+            />
           </dd>
-          <progress
-            value={readiness.partialCount}
-            max={Math.max(readiness.enabledCount, 1)}
-            aria-label={copy.partial}
-          />
         </div>
       </dl>
 
