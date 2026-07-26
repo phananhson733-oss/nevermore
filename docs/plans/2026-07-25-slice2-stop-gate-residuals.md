@@ -111,7 +111,35 @@ unit 分支覆盖 ≤30% 的文件清单(最终实测 17 个,其中 `capability-
 
 **D2. `pnpm audit` 红**:11 个漏洞(5 moderate / 6 high),主要来自 `next`(GHSA-955p-x3mx-jcvp 要求 >=16.2.11),另有 js-yaml、sharp。上游 advisory 漂移,与本 Slice 无关。
 
-**D3. `authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs` 是 935 行未接入任何 gate 的过时并行副本**,在 Slice 2 开始前就 4-red(断言 41 表 / 38 op / 6 async,迁移列表止于 0019)。CI 从不运行它,vitest 只收 `.ts`。**需单独 commit 修或删。**
+**D3. ~~`authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs` 是 935 行未接入任何 gate 的过时并行副本~~ —— 2026-07-26 已解决(判定为**修**,不是删)。**
+
+**为什么不删。** 29 条里有 14 条确实是并行副本(把 hash 已冻结的 authority 文本再抄一遍),
+但另外 15 条不是:它们构造 fixture 迁移集去**变异**输入,证明 `verify-spec.mjs` 真的会拒
+(14 条否定用例 + 1 条完整正向用例)。
+而 `verify-spec.mjs` 本身**在 CI 里跑** —— `verify:spec` 先按 lock 校验它的 sha256
+再执行它(`REQUIRED_AUTHORITY_FILES` 含 `scripts/verify-spec.mjs`)。
+全仓没有第二个门证明这个 verifier 不是空转。删掉这 14 条 = 净减守护。
+
+**修了什么。** 4 条红全部是过期快照,不是行为漂移:表 41→44、op 38→49、async 6→9;
+schema smoke 标记 51→56 索引、63→69 触发器、16→18 例程、终态迁移版本 0019→0021;
+fixture 的 `completeMigrations` 补上 0020/0021 与三张 `flow_shadow_*` 表
+(缺它们时 verifier 恒报 "Content Shadow foundation migration is missing",
+14 条变异测试的 `status != 0` 那一半因此是**空转的** —— 只有 stderr 正则那一半还在起作用)。
+**顺带补强**:新增 0020/0021 两条迁移漂移变异测试,与 0018/0019 同形。29 → 31 条,全绿。
+
+**接进了哪个门。** 新增 `pnpm verify:spec:test`,并在 CI 的 `contracts-and-unit` job 里
+紧挨 `pnpm verify:spec` 之后跑。它一并收编另外两个同样孤立的 `node --test` 套件:
+`scripts/verify-spec-lock.test.mjs`(见 D3d)与 `scripts/verify-implementation-source.test.mjs`
+(当时是绿的,但同样不在任何门里 —— 只修有红的两个、留下第三个孤儿,就是本条要根治的模式本身)。
+合计 66 条。为防这一步日后被悄悄拿掉,`deploy:check` 现在断言 CI 里存在该步;
+同时把它原有的 `/run:\s*pnpm verify:spec/` **加了行尾锚**
+—— 不加锚的话 `verify:spec:test` 自己就能满足它,真正的门被删掉也不会红。
+两条断言均已变异自验(逐条删掉对应 CI 步骤 → `deploy:check` 红)。
+
+**D3d. `scripts/verify-spec-lock.test.mjs` 单条红 —— 2026-07-26 已解决。**
+`:240` 冻结的是 45 op / 8 async / 44 表,真实 lock 是 49/9/44。同样是过期快照:
+改为 49/9/44,并把四个 Content Shadow operation、`createContentShadowRun`(async)、
+三张 `flow_shadow_*` 表加进逐项抽查名单。26 条全绿,随 D3 一起接进 `verify:spec:test`。
 
 **D3b. 一批 mock spec 断言英文 chrome 却从不设 `sf_ui_locale`。**
 `DEFAULT_LOCALE` 在 `3c2ecc6` 翻成 `zh-CN` 之后,这些 spec 一直红。**已修**:
@@ -384,5 +412,7 @@ CommonMark 会反转义);`paragraphBlocks` 把 `<li>…` 与 `: term` 行判为 
 - **F4a**「audit module result canonical scope mismatch」仍无测试(它不是死代码,是 DB 挡不住的跨租户写入关卡)。
 - **F4e** `flattenLine` 不反转义、`paragraphBlocks` 把 `<li>` / `: term` 判为 prose —— 未动。
 - **E5** SC3b 叙事段口径仍待 Owner 裁决,仍刻意无测试。
-- **D3** `authority/.../verify-spec.test.mjs` 过时并行副本仍待决。
+- ~~**D3** `authority/.../verify-spec.test.mjs` 过时并行副本仍待决。~~ 2026-07-26 已修并接进
+  新的 `pnpm verify:spec:test` 门(连同 `verify-spec-lock.test.mjs`、
+  `verify-implementation-source.test.mjs` 两个同样孤立的套件),见上文 D3 / D3d。
 - `collection.ts:583` 的裸 409 仍在(紧邻 N-1 冻结的 Sources 面,需独立任务)。

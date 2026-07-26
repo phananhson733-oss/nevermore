@@ -29,6 +29,7 @@
     "test:e2e:mock": "playwright test --config=playwright.mock.config.ts",
     "verify:authority": "node authority/implementation-spec-v0.3/scripts/verify-spec.mjs",
     "verify:spec": "node scripts/verify-spec-lock.mjs",
+    "verify:spec:test": "node --test scripts/verify-spec-lock.test.mjs scripts/verify-implementation-source.test.mjs authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs",
     "openapi:lint": "redocly lint openapi/mvp.yaml --config openapi/redocly.yaml",
     "contracts:generate": "pnpm --filter @sf/contracts generate",
     "contracts:check": "pnpm --filter @sf/contracts check",

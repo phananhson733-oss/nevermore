@@ -237,9 +237,9 @@ function runVerifier(fixture, extraArguments = []) {
   );
 }
 
-test("freezes the activated traceable audit surface at 45 operations, eight async commands, and 44 tables", () => {
-  assert.equal(activatedLock.apiOperations.length, 45);
-  assert.equal(activatedLock.asyncOperations.length, 8);
+test("freezes the activated traceable audit surface at 49 operations, nine async commands, and 44 tables", () => {
+  assert.equal(activatedLock.apiOperations.length, 49);
+  assert.equal(activatedLock.asyncOperations.length, 9);
   assert.equal(activatedLock.tables.length, 44);
 
   for (const operationId of [
@@ -255,6 +255,10 @@ test("freezes the activated traceable audit surface at 45 operations, eight asyn
     "getProjectAuditKeyword",
     "listProjectAuditCompetitors",
     "getProjectAuditCompetitor",
+    "createContentShadowRun",
+    "listContentShadowRuns",
+    "getContentShadowRun",
+    "reviewContentShadowRevision",
   ]) {
     assert.ok(
       activatedLock.apiOperations.includes(operationId),
@@ -265,10 +269,14 @@ test("freezes the activated traceable audit surface at 45 operations, eight asyn
   assert.ok(
     activatedLock.asyncOperations.includes("createProductProfileSynthesisRun"),
   );
+  assert.ok(activatedLock.asyncOperations.includes("createContentShadowRun"));
   for (const table of [
     "product_profile_runs",
     "product_profile_invocation_attempts",
     "finding_targets",
+    "flow_shadow_runs",
+    "flow_shadow_research_packs",
+    "flow_shadow_qa_gates",
   ]) {
     assert.ok(
       activatedLock.tables.includes(table),

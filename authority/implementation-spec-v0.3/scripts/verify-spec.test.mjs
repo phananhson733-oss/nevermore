@@ -95,19 +95,33 @@ const competitorLibraryFoundationMigration = readFileSync(
   ),
   "utf8",
 );
+const contentShadowFoundationMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0020_content_shadow_foundation.sql",
+  ),
+  "utf8",
+);
+const contentShadowInvocationTaskMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "packages/db/migrations/0021_content_shadow_invocation_task.sql",
+  ),
+  "utf8",
+);
 const authorityTables = [
   ...authoritySql.matchAll(
     /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?app\.([a-z][a-z0-9_]*)\s*\(/gi,
   ),
 ].map((match) => match[1]);
 
-test("declares the activated v0.3 machine surface and exactly 41 application tables", () => {
+test("declares the activated v0.3 machine surface and exactly 44 application tables", () => {
   assert.match(authorityReadme, /状态：\*\*activated\*\*/);
   assert.match(authorityReadme, /当前已实现机器面：\*\*0\.3\.0\*\*/);
   assert.match(authoritySpec, /status: activated/);
   assert.match(authoritySpec, /implemented_surface_version: 0\.3\.0/);
   assert.match(authorityOpenApi, /^\s+version: 0\.3\.0$/m);
-  assert.equal(authorityTables.length, 41);
+  assert.equal(authorityTables.length, 44);
   for (const table of [
     "capability_runs",
     "audit_runs",
@@ -122,12 +136,15 @@ test("declares the activated v0.3 machine surface and exactly 41 application tab
     "keyword_entity_sources",
     "competitor_entities",
     "competitor_origin_occurrences",
+    "flow_shadow_runs",
+    "flow_shadow_research_packs",
+    "flow_shadow_qa_gates",
   ]) {
     assert.ok(authorityTables.includes(table), `${table} is missing`);
   }
 });
 
-test("declares all 38 implemented operations and six real async commands", () => {
+test("declares all 49 implemented operations and nine real async commands", () => {
   const operationBlock = authoritySpec.slice(
     authoritySpec.indexOf("<!-- API_OPERATIONS_START -->"),
     authoritySpec.indexOf("<!-- API_OPERATIONS_END -->"),
@@ -135,7 +152,7 @@ test("declares all 38 implemented operations and six real async commands", () =>
   const declaredOperations = [
     ...operationBlock.matchAll(/^- `([a-z][A-Za-z0-9]+)`/gm),
   ].map((match) => match[1]);
-  assert.equal(declaredOperations.length, 38);
+  assert.equal(declaredOperations.length, 49);
   for (const operationId of [
     "getProjectProductProfile",
     "updateProductProfileDraft",
@@ -147,6 +164,10 @@ test("declares all 38 implemented operations and six real async commands", () =>
     "getProjectAuditKeyword",
     "listProjectAuditCompetitors",
     "getProjectAuditCompetitor",
+    "createContentShadowRun",
+    "listContentShadowRuns",
+    "getContentShadowRun",
+    "reviewContentShadowRevision",
   ]) {
     assert.ok(declaredOperations.includes(operationId), `${operationId} is missing`);
   }
@@ -158,10 +179,11 @@ test("declares all 38 implemented operations and six real async commands", () =>
   const declaredAsyncOperations = [
     ...asyncBlock.matchAll(/^- `([a-z][A-Za-z0-9]+)`/gm),
   ].map((match) => match[1]);
-  assert.equal(declaredAsyncOperations.length, 6);
+  assert.equal(declaredAsyncOperations.length, 9);
   assert.ok(
     declaredAsyncOperations.includes("createProductProfileSynthesisRun"),
   );
+  assert.ok(declaredAsyncOperations.includes("createContentShadowRun"));
 });
 
 test("gates exact read-only Keyword and Competitor Library authority contracts", () => {
@@ -446,10 +468,10 @@ test("bounds every cumulative executable migration through the Competitor Librar
 test("schema smoke exercises Product Profile, page lineage, Finding targets, and growth libraries", () => {
   assert.equal(authoritySchemaSmoke, implementationSchemaSmoke);
   for (const marker of [
-    "expected exactly 41 app tables",
-    "expected all 51 named app indexes",
-    "expected all 63 app triggers",
-    "expected all 16 runtime routines",
+    "expected exactly 44 app tables",
+    "expected all 56 named app indexes",
+    "expected all 69 app triggers",
+    "expected all 18 runtime routines",
     "product profile invocation reservation was not persisted",
     "a fourth product profile invocation reservation was accepted",
     "unresolved product profile invocation allowed another provider call",
@@ -468,7 +490,7 @@ test("schema smoke exercises Product Profile, page lineage, Finding targets, and
     "Finding target ledger indexes are incomplete",
     "Finding target lineage and append-only guards are incomplete",
     "Finding target runtime routines are incomplete",
-    "0019_competitor_library_foundation",
+    "0021_content_shadow_invocation_task",
   ]) {
     assert.match(authoritySchemaSmoke, new RegExp(marker));
   }
@@ -560,6 +582,9 @@ const cumulativeMigrationOwnedTables = new Set([
   "keyword_entity_sources",
   "competitor_entities",
   "competitor_origin_occurrences",
+  "flow_shadow_runs",
+  "flow_shadow_research_packs",
+  "flow_shadow_qa_gates",
 ]);
 
 function tableSql(tables) {
@@ -590,6 +615,9 @@ function fixture(t, migrations) {
     "0017_finding_target_ledger.sql": findingTargetLedgerMigration,
     "0018_keyword_library_foundation.sql": keywordLibraryFoundationMigration,
     "0019_competitor_library_foundation.sql": competitorLibraryFoundationMigration,
+    "0020_content_shadow_foundation.sql": contentShadowFoundationMigration,
+    "0021_content_shadow_invocation_task.sql":
+      contentShadowInvocationTaskMigration,
     ...migrations,
   };
   for (const [name, sql] of Object.entries(completeMigrations)) {
@@ -901,6 +929,50 @@ test("rejects Competitor Library foundation migration drift", (t) => {
   assert.match(
     result.stderr,
     /exact cumulative 0019 Competitor Library foundation/i,
+  );
+});
+
+test("rejects Content Shadow foundation migration drift", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = contentShadowFoundationMigration.replace(
+    "flow_shadow_runs_content_hash_idx",
+    "flow_shadow_runs_content_hash_drift_idx",
+  );
+  assert.notEqual(mutatedMigration, contentShadowFoundationMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0020_content_shadow_foundation.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /exact cumulative 0020 Content Shadow foundation/i,
+  );
+});
+
+test("rejects Content Shadow invocation-task migration drift", (t) => {
+  const midpoint = Math.ceil(authorityTables.length / 2);
+  const mutatedMigration = contentShadowInvocationTaskMigration.replace(
+    "analysis_invocations_task_check",
+    "analysis_invocations_task_drift_check",
+  );
+  assert.notEqual(mutatedMigration, contentShadowInvocationTaskMigration);
+  const appRoot = fixture(t, {
+    "0001_init.sql": tableSql(authorityTables.slice(0, midpoint)),
+    "0010_growth_slice.sql": tableSql(authorityTables.slice(midpoint)),
+    "0021_content_shadow_invocation_task.sql": mutatedMigration,
+  });
+
+  const result = run(appRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /exact cumulative 0021 Content Shadow invocation-task/i,
   );
 });
 

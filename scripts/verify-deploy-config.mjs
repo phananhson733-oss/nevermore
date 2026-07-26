@@ -93,10 +93,18 @@ const nextConfig = read("apps/web/next.config.ts");
 assert.match(nextConfig, /outputFileTracingRoot:\s*monorepoRoot/);
 
 const ciWorkflow = read(".github/workflows/ci.yml");
+// Anchored to end-of-line: `pnpm verify:spec:test` also matches an unanchored
+// `pnpm verify:spec`, so without the anchor the gate itself could be dropped
+// from CI while its test suite alone kept this assertion green.
 assert.match(
   ciWorkflow,
-  /run:\s*pnpm verify:spec/,
+  /run:\s*pnpm verify:spec$/m,
   "CI must enforce the pinned frozen-spec contract",
+);
+assert.match(
+  ciWorkflow,
+  /run:\s*pnpm verify:spec:test$/m,
+  "CI must run the node:test suites for the verifiers behind verify:spec; nothing else collects them",
 );
 assert.match(ciWorkflow, /run:\s*pnpm test:e2e:real/);
 assert.match(ciWorkflow, /run:\s*pnpm test:e2e:mock/);

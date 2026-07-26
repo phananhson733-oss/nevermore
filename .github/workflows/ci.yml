@@ -55,6 +55,14 @@ jobs:
       - name: Verify the pinned frozen specification contract
         run: pnpm verify:spec
 
+      # The three verifiers behind `verify:spec` have their own `node --test`
+      # suites, which vitest cannot collect (it takes `.ts` only) and which
+      # nothing ran until now. Two of them had drifted red and stayed red for a
+      # whole slice, unnoticed, while still looking like a guard. A gate nobody
+      # runs is worse than no gate, so they run here, next to the gate they test.
+      - name: Test the specification gate's own verifiers
+        run: pnpm verify:spec:test
+
       - name: Verify implementation constants and provenance
         run: pnpm implementation:check
 
