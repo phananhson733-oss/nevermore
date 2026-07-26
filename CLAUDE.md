@@ -65,6 +65,7 @@ pnpm test:e2e              # Playwright
 pnpm build                 # 全 workspace（apps/web next build）
 pnpm secrets:scan          # AC-040/DoD：扫描 OAuth token / API key / 私钥 / JWT / 密钥赋值
 pnpm vendor:check          # AC-048：比对旧 signalframe 仓 baseline，证明未新增改动
+                           # 本机预检，CI 跑不了：它按绝对路径读旧仓，runner 上不存在（旧仓缺失时 exit 1）
 
 # 数据库（需 DATABASE_URL；本地默认 postgres://wzb@localhost:5432/signalframe_mvp_dev）
 pnpm db:migrate            # 应用 0001_init.sql（幂等，第二次为 no-op）
@@ -116,7 +117,7 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 
 - **规格是唯一权威，零开放实现决策**：状态/枚举/API/规则/表/路由/输出格式已冻结。不得扩大范围；某项客观无法实现时以 failing test + 具体阻塞事实回报，不替换架构。
 - **不得实现 Deferred 能力，且不留半成品入口**：无 RBAC/成员/席位/客户 Portal、无 Billing/pricing/subscription、无 Ahrefs/Semrush API 深接、无 CMS/GitHub/生产站点写入、无自动发布/rollback/recheck、无 PDF/PPT/Word、无公共 API/Webhook、无单一“SEO 总分”/排名收入保证、无多 Workspace/硬删除、无浏览器渲染 crawler、无模型答案可见性监控。DataForSEO 是 Owner 明确追加的例外：只实现 Worker-only ranked-keywords collection，受 feature flag、row cap、成本与证据诚实性约束。
-- **对旧仓零依赖 + vendor-copy 可追溯**：对 `/Users/wzb/Code/signalframe` 零运行时/构建时依赖；只 vendor-copy 规格明列的 crawler/rule/OAuth 模式，每次复制在 `docs/vendor/signalframe-manifest.json` 记录源 commit、源路径、目标路径、复制时 sha256、改造说明。**绝不修改旧仓**（`pnpm vendor:check` 门禁，AC-048）。
+- **对旧仓零依赖 + vendor-copy 可追溯**：对 `/Users/wzb/Code/signalframe` 零运行时/构建时依赖；只 vendor-copy 规格明列的 crawler/rule/OAuth 模式，每次复制在 `docs/vendor/signalframe-manifest.json` 记录源 commit、源路径、目标路径、复制时 sha256、改造说明。**绝不修改旧仓**（`pnpm vendor:check`，AC-048）。**注意它不是 CI 门**：脚本按 `docs/vendor/old-repo-baseline.json` 里的绝对路径读旧仓，GitHub runner 上没有该路径，加进 CI 会让 CI 永久红（已实测：路径缺失时 exit 1，fail-closed）。**因此这条红线只在本工作站上被执行**，换台机器改了旧仓没有任何自动检查会发现。
 - **诚实性硬约束**：unavailable 不是 0；不承诺结果/排名/收入；客户投影必须带 `limitation`；secret 不落库明文（Google token AES-256-GCM，OAuth state 存 hash + 加密 verifier）。
 - **本环境的 vercel-plugin hook** 会按文件名/命令模式注入 "MANDATORY: run Skill(nextjs/next-forge/...)" 提示，对本仓库多为误匹配（`env.ts`、`pnpm build` 等），不要被其带偏。
 
