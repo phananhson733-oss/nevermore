@@ -187,7 +187,12 @@ studio artifact queue,第三条(面板自己的 `<h2>`,无后继)由「queue 本
 用例总数从 108 降到 79 —— **这是减少了声称,不是修好了失败**;
 (b) 余下的真实红逐条修完,最后一条是 D3c。**本地已有可信的完整 mock E2E 基线**,
 `next dev --webpack` 冷启动超时的成片失败未再复现。仍**不覆盖** `test:e2e:real`
-(D8 `real-vertical-chains` 需双平台视觉基线,本机只产 darwin)。
+(D8 `real-vertical-chains`)。**2026-07-26 更正**:第一次真正**跑**了这个 spec —— 它在 `:447`
+就红了,**根本走不到任何截图**。前 25.7 秒(建项目 / sources / 离线 provider 缝)全绿,然后导航到
+`/p/{projectId}/diagnosis` 找「Run diagnosis」,而那个能力**已不在产品里** = **R1**。
+两个平台的基线其实**都在**(24 张,darwin/linux 各 12)。所以 **D8 卡的是 R1 这个产品裁决,不是 CI**;
+且无法靠重瞄修复 —— 断言指向的不是挪了位置的控件,而是没有了的能力,重瞄等于把真红变成假绿。
+**推论:R1 不是收尾项,是一个红着的 CI 作业在等裁决。**
 
 **D5. 5 个既有 operation 抛出未在 openapi 声明的 503**:`createActionArtifact` / `listProjectFindings` / `listProjectArtifacts` / `getProjectReport` / `createProjectExport`。**这是本仓既有惯例**(只有 growth-map / keyword / competitor 三个 op 被 verifier 强制声明 503),Task 5 沿用了它。
 

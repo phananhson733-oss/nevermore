@@ -663,6 +663,51 @@ against Growth Map, deciding what to do with an a11y contract whose surface was
 deleted, and a two-platform snapshot re-baseline. **This round does not claim
 `real-vertical-chains` green.**
 
+**D8 addendum, 2026-07-26 — the suite was finally RUN, and the reading above is
+wrong about what blocks it.** Every prior entry on D8, this one included,
+reasoned from the snapshot inventory without executing the spec. It was executed
+on 2026-07-26 against a local disposable Postgres (`E2E_DATABASE_URL`, the
+config's own `next dev` server):
+
+```
+✘ AC-044 B2B fixture … (25.7s)
+  Error: expect(locator).toBeVisible() failed
+  Locator: getByRole('heading', { name: 'Every finding should stand up to scrutiny.' })
+  at runDiagnosisAndConfirmFinding (real-vertical-chains.spec.ts:447)
+```
+
+It fails at line 447, **before any `toHaveScreenshot` executes**. Everything
+earlier in the chain — project creation, sources, the offline provider seam —
+passes; 25.7 seconds of the walk is green. The spec then navigates to
+`/p/{projectId}/diagnosis` (line 442) and asks for the diagnosis hero and its
+`Run diagnosis` button, and **neither exists in the shipped product**. The
+second test never ran, because the suite is serial.
+
+That is **R1** (§14.8), verified here rather than inferred: `diagnosis/page.tsx`
+is a bare `redirect(growthMapCompatibilityRoute(...))`, the `runDiagnosis`
+message key has exactly one consumer in the repository — `_diagnosis.tsx:159`,
+inside the client no file imports — and the `heroTitle` string lives in the same
+orphaned namespace.
+
+Three things follow, and they change the shape of the Owner's decision:
+
+1. **D8 is not, today, a visual-baseline problem.** Both platforms' baselines
+   are present (24 files, 12 `darwin` and 12 `linux`); the run never reaches
+   them. The two-platform re-baseline is real but it is the *second* obstacle,
+   not the first.
+2. **D8 is blocked on R1, not on CI.** No re-aiming can fix it: the assertion
+   is not pointed at a moved control, it is pointed at a capability the product
+   no longer has. Re-aiming it anyway would be moving a surface to an
+   assertion, which §14.9 exists to forbid, and would convert a true red into a
+   false green.
+3. **R1 is therefore not a tidy-up.** A CI job is red *because* that decision is
+   open. Whichever way it goes — the trigger returns to a shipped destination,
+   or the capability, its hooks and its specs are removed together — this suite
+   cannot go green until it is made.
+
+**No assertion was weakened and no snapshot was regenerated.** The disposable
+database was dropped.
+
 **D9. `pnpm restore:drill` was red on every run, and a green unit gate hid it.
 Resolved in §12.** It is a CI gate (`.github/workflows/ci.yml`, the `database`
 job's "Run PostgreSQL backup and restore recovery drill" step) that §2.5 does
