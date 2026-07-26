@@ -1331,7 +1331,105 @@ describeDb("listContentShadowRuns", () => {
     }
   });
 
+  /**
+   * Seed `count` distinct shadow runs inside ONE project, newest last.
+   *
+   * Each run needs its own frozen search cluster so the content-addressed
+   * tuple hashes differently (otherwise `findByContentHash` returns the first
+   * run again), and each must reach a terminal status before the next starts
+   * because the activeKey is per Action.
+   */
+  async function seedRunSequence(
+    fixture: ShadowFixture,
+    count: number,
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const keywordId =
+        index === 0
+          ? fixture.keywordId
+          : await insertKeyword(handle, fixture.scope, {
+              queryKind: "search_query",
+              clusterKey: CLUSTER_KEY,
+            });
+      const accepted = await createContentShadowRun(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+        fixture.actorId,
+        randomUUID(),
+        requestBody(fixture, {
+          searchCluster: {
+            clusterKey: CLUSTER_KEY,
+            keywordEntityIds: [keywordId],
+          },
+        }),
+      );
+      ids.push(accepted.resourceRef.id);
+      await setRunStatus(handle, accepted.run.id, "completed");
+    }
+    return ids;
+  }
+
+  /**
+   * The point of this test is that the cursor is actually spent: the previous
+   * version of it built two runs in two DIFFERENT projects, read one row with
+   * `limit: 1`, asserted `nextCursor` was null, and never passed a cursor back.
+   * The whole keyset predicate — `hasNext`, `encodeCursor`, `decodeCursor`, the
+   * `or(lt, and(eq, lt))` seek — ran zero times under a name that claimed it
+   * paged. Three rows and a limit below the total is the smallest shape that
+   * forces a second read through the cursor.
+   *
+   * Still uncovered, stated rather than faked: the `and(eq(created_at),
+   * lt(id))` arm of the seek, which only fires when two rows share a
+   * `created_at`. Rows here get their timestamp from the service's own
+   * transaction, and `flow_shadow_runs` carries a BEFORE UPDATE OR DELETE
+   * append-only trigger (`0020:181-183`), so a test cannot collapse the two
+   * timestamps without disabling a production guard. Doing that would buy one
+   * branch by weakening the thing the branch protects.
+   */
   it("pages newest first through the shared cursor convention", async () => {
+    const fixture = await seedShadowFixture(handle);
+    const created = await seedRunSequence(fixture, 3);
+
+    // Ground truth: one unpaged read of the same index.
+    const whole = await listContentShadowRuns(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      { limit: 50, cursor: null },
+    );
+    const expected = whole.data.map((row) => row.flowShadowRunId);
+    expect(whole.nextCursor).toBeNull();
+    expect(expected).toEqual([...created].reverse());
+    const stamps = whole.data.map((row) => Date.parse(row.createdAt));
+    expect(stamps).toEqual([...stamps].sort((left, right) => right - left));
+
+    // Walk the same index two at a time, feeding `nextCursor` back in.
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page: Awaited<ReturnType<typeof listContentShadowRuns>> =
+        await listContentShadowRuns(
+          { workspaceId: fixture.scope.workspaceId },
+          fixture.scope.projectId,
+          { limit: 2, cursor },
+        );
+      pages += 1;
+      // A cursor that never advances would loop forever; fail instead.
+      expect(pages).toBeLessThanOrEqual(3);
+      expect(page.data.length).toBeGreaterThan(0);
+      expect(page.data.length).toBeLessThanOrEqual(2);
+      walked.push(...page.data.map((row) => row.flowShadowRunId));
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(pages).toBe(2);
+    // Same rows, same order, each exactly once: nothing repeated, nothing lost.
+    expect(walked).toEqual(expected);
+    expect(new Set(walked).size).toBe(walked.length);
+  });
+
+  it("keeps another project's runs out of this project's index", async () => {
     const fixture = await seedShadowFixture(handle);
     const first = await startShadowRun(fixture);
     const second = await seedShadowFixture(handle);
@@ -1340,14 +1438,12 @@ describeDb("listContentShadowRuns", () => {
     const firstPage = await listContentShadowRuns(
       { workspaceId: fixture.scope.workspaceId },
       fixture.scope.projectId,
-      { limit: 1, cursor: null },
+      { limit: 50, cursor: null },
     );
     expect(firstPage.data.map((row) => row.flowShadowRunId)).toEqual([
       first.flowShadowRunId,
     ]);
-    expect(firstPage.nextCursor).toBeNull();
 
-    // A second project's run never leaks into the first project's index.
     const otherPage = await listContentShadowRuns(
       { workspaceId: second.scope.workspaceId },
       second.scope.projectId,
