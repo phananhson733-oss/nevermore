@@ -107,8 +107,7 @@ function runDto(id: string, status: string) {
       messageKey: "worker.collection.raw_key",
     },
     lastError: null,
-    resultRef:
-      status === "completed" ? { type: "diagnostic_run", id } : null,
+    resultRef: status === "completed" ? { type: "diagnostic_run", id } : null,
     queuedAt: "2026-07-18T12:00:00.000Z",
     startedAt: status === "queued" ? null : "2026-07-18T12:00:00.000Z",
     completedAt: status === "completed" ? "2026-07-18T12:00:00.000Z" : null,
@@ -142,16 +141,28 @@ async function routeDiagnosticPost(
   });
 }
 
-/** Serves GET /runs/{runId} from a scripted status sequence (last repeats). */
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "partial",
+  "failed",
+  "cancelled",
+]);
+
+/**
+ * Serves GET /runs/{runId} from a scripted status sequence (last repeats).
+ * `onTerminal` fires once, immediately before the first terminal status is
+ * fulfilled: fixture switches hang off the run actually finishing, never off
+ * the POST acknowledgment (a 202 proves nothing about audit rows existing).
+ */
 async function routeRunPoll(
   page: Page,
   runId: string,
   statuses: readonly (string | { readonly failRead: true })[],
+  onTerminal?: () => void,
 ): Promise<{ readonly calls: string[] }> {
-  const state = { calls: [] as string[] };
+  const state = { calls: [] as string[], terminalNotified: false };
   await page.route(`**${BASE}/runs/${runId}`, async (route) => {
-    const step =
-      statuses[Math.min(state.calls.length, statuses.length - 1)]!;
+    const step = statuses[Math.min(state.calls.length, statuses.length - 1)]!;
     state.calls.push(typeof step === "string" ? step : "failRead");
     if (typeof step !== "string") {
       await fulfillJson(
@@ -160,6 +171,10 @@ async function routeRunPoll(
         503,
       );
       return;
+    }
+    if (TERMINAL_STATUSES.has(step) && !state.terminalNotified) {
+      state.terminalNotified = true;
+      onTerminal?.();
     }
     await fulfillJson(route, { data: runDto(runId, step) });
   });
@@ -188,7 +203,10 @@ async function useUi(page: Page, locale: "en" | "zh-CN"): Promise<void> {
     ]);
 }
 
-function runButton(page: Page, name = "Run diagnosis"): ReturnType<Page["getByRole"]> {
+function runButton(
+  page: Page,
+  name = "Run diagnosis",
+): ReturnType<Page["getByRole"]> {
   return page.locator("[data-run-diagnosis]").getByRole("button", { name });
 }
 
@@ -308,7 +326,9 @@ test.describe("growth map diagnosis trigger", () => {
       }
       await fulfillJson(
         route,
-        snapshotPage([snapshotDto({ id: CRAWL_SNAPSHOT_ID, provider: "crawl" })]),
+        snapshotPage([
+          snapshotDto({ id: CRAWL_SNAPSHOT_ID, provider: "crawl" }),
+        ]),
       );
     });
 
@@ -361,11 +381,19 @@ test.describe("growth map diagnosis trigger", () => {
     const api = await installGrowthVerticalApi(page, {
       auditProjectionAvailable: false,
     });
+    const reads = trackReads(page);
     const posts: RecordedPost[] = [];
-    await routeDiagnosticPost(page, posts, RUN_ID, () => {
-      api.auditProjectionAvailable = true;
-    });
-    await routeRunPoll(page, RUN_ID, ["running", "completed"]);
+    await routeDiagnosticPost(page, posts);
+    // The projection becomes readable only when the run reaches its terminal
+    // poll: nothing about the POST acknowledgment may unlock the fixture.
+    await routeRunPoll(
+      page,
+      RUN_ID,
+      ["running", "running", "completed"],
+      () => {
+        api.auditProjectionAvailable = true;
+      },
+    );
 
     await page.goto(GROWTH_MAP_URL);
     // The portfolio read is the server's real 404 error state, not an empty
@@ -373,10 +401,26 @@ test.describe("growth map diagnosis trigger", () => {
     await expect(
       page.getByText("The URL portfolio could not be read. Try again."),
     ).toBeVisible();
+    await expect(page.getByLabel("Audit provenance for this page")).toHaveCount(
+      0,
+    );
+    // The settled 404 costs exactly two list reads: the initial fetch plus
+    // the QueryClient's single global retry.
+    expect(reads.auditListReads).toHaveLength(2);
     const run = runButton(page);
     await expect(run).toBeEnabled();
     await run.click();
     await expect.poll(() => posts.length).toBe(1);
+
+    // While the run is merely running, nothing refreshes: the 404 error
+    // state stays on screen and no additional portfolio read is issued.
+    await expect(
+      statusRegion(page).getByText("Running", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("The URL portfolio could not be read. Try again."),
+    ).toBeVisible();
+    expect(reads.auditListReads).toHaveLength(2);
 
     await expect(
       statusRegion(page).getByText("Completed", { exact: true }),
@@ -389,6 +433,10 @@ test.describe("growth map diagnosis trigger", () => {
     await expect(
       page.getByText("The URL portfolio could not be read. Try again."),
     ).toHaveCount(0);
+    // Exactly one terminal refresh read, and it does not repeat.
+    await expect.poll(() => reads.auditListReads.length).toBe(3);
+    await page.waitForTimeout(500);
+    expect(reads.auditListReads).toHaveLength(3);
     // Pill retained, control unlocked, session label flipped to re-run.
     await expect(
       statusRegion(page).getByText("Completed", { exact: true }),
@@ -424,9 +472,7 @@ test.describe("growth map diagnosis trigger", () => {
     await expect(
       statusRegion(page).getByText("Running", { exact: true }),
     ).toBeVisible();
-    await expect(
-      runButton(page, "Diagnosis running…"),
-    ).toBeDisabled();
+    await expect(runButton(page, "Diagnosis running…")).toBeDisabled();
 
     await expect(
       statusRegion(page).getByText("Completed", { exact: true }),
@@ -608,9 +654,7 @@ test.describe("growth map diagnosis trigger", () => {
     await expect(runButton(page, "Re-run diagnosis")).toBeEnabled();
     // Only the adopted pointer was ever polled, and the refresh happened.
     expect(
-      reads.runReads.every(
-        (path) => path === `${BASE}/runs/${ACTIVE_RUN_ID}`,
-      ),
+      reads.runReads.every((path) => path === `${BASE}/runs/${ACTIVE_RUN_ID}`),
     ).toBe(true);
     await expect.poll(() => reads.auditListReads.length).toBe(2);
   });
@@ -717,6 +761,159 @@ test.describe("growth map diagnosis trigger", () => {
     await recheck.click();
     await expect(run).toBeEnabled();
     expect(posts).toHaveLength(1);
+  });
+
+  test("422 CRAWL_SNAPSHOT_REQUIRED sets a sticky gate; recheck re-reads snapshots", async ({
+    page,
+  }) => {
+    await useUi(page, "en");
+    await installGrowthVerticalApi(page);
+    const posts: RecordedPost[] = [];
+    const snapshotReads: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() !== "GET") return;
+      const url = new URL(request.url());
+      if (url.pathname === `${BASE}/snapshots`) snapshotReads.push(url.href);
+    });
+    await page.route(`**${BASE}/diagnostic-runs`, async (route) => {
+      posts.push({
+        body: route.request().postDataJSON() as RecordedPost["body"],
+        idempotencyKey: route.request().headers()["idempotency-key"],
+      });
+      await fulfillJson(
+        route,
+        problemBody(
+          "CRAWL_SNAPSHOT_REQUIRED",
+          422,
+          "A completed crawl snapshot is required to diagnose.",
+        ),
+        422,
+      );
+    });
+
+    await page.goto(GROWTH_MAP_URL);
+    const run = runButton(page);
+    // The local snapshot chain does contain a crawl snapshot: only the
+    // server's 422 verdict gates this control.
+    await expect(run).toBeEnabled();
+    await run.click();
+    await expect.poll(() => posts.length).toBe(1);
+
+    // Sticky: disabled with the crawl explanation and the Sources pointer.
+    await expect(run).toBeDisabled();
+    await expect(run).toHaveAttribute(
+      "aria-describedby",
+      "sf-growth-map-run-note",
+    );
+    const note = page.locator("#sf-growth-map-run-note");
+    await expect(note).toContainText("A completed site crawl is required");
+    await expect(note.getByRole("link", { name: "Sources" })).toHaveAttribute(
+      "href",
+      `/p/${E2E_PROJECT_ID}/sources`,
+    );
+    // Raw DOM clicks past the disabled attribute must not re-POST into the
+    // 20/15min rate limit: every attempt would mint a fresh Idempotency-Key,
+    // so only the machine-level sticky gate can stop the command.
+    await page.evaluate(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        "[data-run-diagnosis] button",
+      );
+      if (!button) throw new Error("run button not found");
+      button.disabled = false;
+      button.click();
+      button.click();
+    });
+    await page.waitForTimeout(400);
+    expect(posts).toHaveLength(1);
+
+    // The explicit recheck re-reads the snapshot chain (never a POST) and
+    // releases the gate only after that read succeeds.
+    const snapshotReadsBefore = snapshotReads.length;
+    const recheck = page
+      .locator("[data-run-diagnosis]")
+      .getByRole("button", { name: "Check again" });
+    await expect(recheck).toBeVisible();
+    await recheck.click();
+    await expect.poll(() => snapshotReads.length).toBe(snapshotReadsBefore + 1);
+    await expect(run).toBeEnabled();
+    expect(posts).toHaveLength(1);
+
+    // The released gate permits a genuinely new attempt, which the server
+    // may gate again.
+    await run.click();
+    await expect.poll(() => posts.length).toBe(2);
+    await expect(run).toBeDisabled();
+  });
+
+  test("the control owns exactly one status live region in every phase", async ({
+    page,
+  }) => {
+    await useUi(page, "en");
+    await installGrowthVerticalApi(page);
+    const posts: RecordedPost[] = [];
+    await routeDiagnosticPost(page, posts);
+    await routeRunPoll(page, RUN_ID, ["running", "running", "completed"]);
+
+    await page.goto(GROWTH_MAP_URL);
+    const regions = page.locator("[data-run-diagnosis]").getByRole("status");
+    const run = runButton(page);
+    await expect(run).toBeEnabled();
+    // Idle: the stable named container is the only status region.
+    await expect(regions).toHaveCount(1);
+
+    await run.click();
+    // Running: the button spinner is decorative. Were it a live region too,
+    // two polite announcements would race for the same state change. The
+    // count is taken WITHOUT retry while the running phase is pinned (the
+    // spinner is mounted exactly while the in-progress button shows): a
+    // retrying count would wait out the running phase and pass once the
+    // spinner unmounts at terminal.
+    await expect(
+      statusRegion(page).getByText("Running", { exact: true }),
+    ).toBeVisible();
+    await expect(runButton(page, "Diagnosis running…")).toBeDisabled();
+    expect(await regions.count()).toBe(1);
+
+    // Terminal.
+    await expect(
+      statusRegion(page).getByText("Completed", { exact: true }),
+    ).toBeVisible();
+    await expect(regions).toHaveCount(1);
+  });
+
+  test("partial keeps its pill, unlocks re-run, and refreshes exactly once", async ({
+    page,
+  }) => {
+    await useUi(page, "en");
+    await installGrowthVerticalApi(page);
+    const reads = trackReads(page);
+    const posts: RecordedPost[] = [];
+    await routeDiagnosticPost(page, posts);
+    await routeRunPoll(page, RUN_ID, ["running", "partial"]);
+
+    await page.goto(GROWTH_MAP_URL);
+    const run = runButton(page);
+    await expect(run).toBeEnabled();
+    expect(reads.auditListReads).toHaveLength(1);
+    await run.click();
+
+    // Partial is a success terminal: named pill in the status region and an
+    // unlocked Re-run control.
+    await expect(
+      statusRegion(page).getByText("Partial", { exact: true }),
+    ).toBeVisible();
+    await expect(runButton(page, "Re-run diagnosis")).toBeEnabled();
+    // Exactly one success refresh, which then never repeats.
+    await expect.poll(() => reads.auditListReads.length).toBe(2);
+    await page.waitForTimeout(500);
+    expect(reads.auditListReads).toHaveLength(2);
+    // No notice of any kind: partial is not a takeover, not an error.
+    await expect(
+      page.locator("[data-run-diagnosis] [data-run-diagnosis-notice]"),
+    ).toHaveCount(0);
+    await expect(
+      statusRegion(page).getByText("Partial", { exact: true }),
+    ).toBeVisible();
   });
 
   test("390px: terminal and error copy fit without overflow or axe blockers", async ({

@@ -51,7 +51,11 @@ interface FixtureFinding {
   readonly id: string;
   readonly ruleId: string;
   readonly summary: string;
-  readonly reviewState: "unreviewed" | "confirmed" | "ignored" | "needs_more_data";
+  readonly reviewState:
+    | "unreviewed"
+    | "confirmed"
+    | "ignored"
+    | "needs_more_data";
   readonly reviewRevision: number;
 }
 
@@ -155,7 +159,9 @@ async function createProjectInBrowser(
     .context()
     .addCookies([{ name: "sf_ui_locale", value: "en", url: BASE_URL }]);
   await page.goto("/new-project");
-  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "New project" }),
+  ).toBeVisible();
   await page.getByLabel("Client name").fill(definition.clientName);
   await page.getByLabel("Project name").fill(definition.projectName);
   await page.getByLabel("Site URL").fill(definition.siteUrl);
@@ -297,8 +303,12 @@ async function enrichCanonicalDeliveryFixture(
       left.templateId.localeCompare(right.templateId),
   );
   const leadTemplateId = "improve_landing_conversion.v1";
-  if (!deterministicActions.some((action) => action.templateId === leadTemplateId)) {
-    throw new Error(`Canonical lead action ${leadTemplateId} was not generated`);
+  if (
+    !deterministicActions.some((action) => action.templateId === leadTemplateId)
+  ) {
+    throw new Error(
+      `Canonical lead action ${leadTemplateId} was not generated`,
+    );
   }
   // The repository intentionally returns recency order. Apply one real,
   // audited human override to every canonical Action in reverse presentation
@@ -332,13 +342,17 @@ async function enrichCanonicalDeliveryFixture(
     existingResponse,
     "list artifacts for canonical fixture",
   );
-  const coveredActions = new Set(existing.data.map((artifact) => artifact.actionId));
+  const coveredActions = new Set(
+    existing.data.map((artifact) => artifact.actionId),
+  );
 
   for (const action of deterministicActions) {
     if (coveredActions.has(action.id)) continue;
     const artifactType = ARTIFACT_TYPE_BY_TEMPLATE.get(action.templateId);
     if (!artifactType) {
-      throw new Error(`No artifact type for canonical action template ${action.templateId}`);
+      throw new Error(
+        `No artifact type for canonical action template ${action.templateId}`,
+      );
     }
     const response = await request.post(
       `/api/mvp/projects/${projectId}/actions/${action.id}/artifacts`,
@@ -366,12 +380,12 @@ async function enrichCanonicalDeliveryFixture(
   const generatedResponse = await request.get(
     `/api/mvp/projects/${projectId}/artifacts?limit=100`,
   );
-  const generated = await responseJson<DataEnvelope<readonly FixtureArtifact[]>>(
-    generatedResponse,
-    "list generated canonical artifacts",
-  );
+  const generated = await responseJson<
+    DataEnvelope<readonly FixtureArtifact[]>
+  >(generatedResponse, "list generated canonical artifacts");
   for (const artifact of generated.data) {
-    if (artifact.status !== "draft" || artifact.validationState !== "valid") continue;
+    if (artifact.status !== "draft" || artifact.validationState !== "valid")
+      continue;
     const response = await request.patch(
       `/api/mvp/projects/${projectId}/artifacts/${artifact.id}`,
       {
@@ -454,6 +468,17 @@ async function runDiagnosisAndConfirmFinding(
     }),
   ).toBeVisible();
   await expectNoDocumentOverflow(page);
+
+  // Before the first diagnostic the portfolio read is the server's real 404
+  // error state (not an empty list), and no provenance band exists yet. Pin
+  // both so the post-terminal recovery below is proven to be a transition.
+  await expect(
+    page.getByText("The URL portfolio could not be read. Try again."),
+  ).toBeVisible();
+  await expect(page.getByLabel("Audit provenance for this page")).toHaveCount(
+    0,
+  );
+
   const run = page
     .locator("[data-run-diagnosis]")
     .getByRole("button", { name: "Run diagnosis" });
@@ -473,19 +498,20 @@ async function runDiagnosisAndConfirmFinding(
       .getByText("Completed", { exact: true }),
   ).toBeVisible({ timeout: 45_000 });
 
-  // Before the first diagnostic the portfolio read is a real 404; the
-  // completion refresh must resolve it into the readable portfolio.
+  // The pre-diagnosis 404 pinned above must now resolve into the readable
+  // portfolio, with the error state gone entirely.
+  await expect(page.getByLabel("Audit provenance for this page")).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(
-    page.getByLabel("Audit provenance for this page"),
-  ).toBeVisible({ timeout: 15_000 });
+    page.getByText("The URL portfolio could not be read. Try again."),
+  ).toHaveCount(0);
 
   // Select the URL that carries the TECH-HTTP-001 Finding (the /gone page).
-  await page
-    .getByRole("button")
-    .filter({ hasText: "/gone" })
-    .first()
-    .click();
-  await expect(page.locator('[data-detail-panel="audit-evidence"]')).toBeVisible();
+  await page.getByRole("button").filter({ hasText: "/gone" }).first().click();
+  await expect(
+    page.locator('[data-detail-panel="audit-evidence"]'),
+  ).toBeVisible();
 
   // Confirm renders only in Opportunity Review; the default panel is the
   // read-only Audit Evidence state.
@@ -538,11 +564,26 @@ async function runDiagnosisAndConfirmFinding(
     settledReview.status(),
     `Finding review failed: ${await settledReview.text()}`,
   ).toBe(200);
+  const reviewEnvelope = (await settledReview.json()) as DataEnvelope<{
+    readonly action: { readonly id: string } | null;
+  }>;
+  const confirmedActionId = reviewEnvelope.data.action?.id;
+  expect(
+    confirmedActionId,
+    "Confirm must return the same-transaction Action",
+  ).toBeTruthy();
   await expect(finding.getByText("Confirmed", { exact: true })).toBeVisible();
   // The confirmation created the canonical Action: the card now carries a
-  // real execution reference. (The retired Diagnosis DOM's "Action created:"
-  // banner no longer exists anywhere.)
-  await expect(finding.getByText("Open Execution")).toBeVisible();
+  // real execution deep link whose target is that exact Action on this
+  // project's Execution surface. (The retired Diagnosis DOM's
+  // "Action created:" banner no longer exists anywhere.)
+  const executionLink = finding.getByRole("link", { name: /Open Execution/ });
+  await expect(executionLink).toBeVisible();
+  const executionHref = await executionLink.getAttribute("href");
+  expect(executionHref, "Open Execution must be a real link").not.toBeNull();
+  const executionUrl = new URL(executionHref!, BASE_URL);
+  expect(executionUrl.pathname).toBe(`/p/${projectId}/execution`);
+  expect(executionUrl.searchParams.get("actionId")).toBe(confirmedActionId);
 }
 
 async function generateReadyArtifact(
@@ -589,7 +630,9 @@ async function generateReadyArtifact(
   // scoped to is gone; the row is now identified by the type it carries.
   const artifactRow = page
     .locator("[data-studio-queue]")
-    .locator('[data-studio-artifact-id][data-studio-artifact-type="technical_ticket"]');
+    .locator(
+      '[data-studio-artifact-id][data-studio-artifact-type="technical_ticket"]',
+    );
   await expect(artifactRow).toHaveCount(1, { timeout: 45_000 });
   await expect(artifactRow.getByText("Draft", { exact: true })).toBeVisible({
     timeout: 45_000,
@@ -618,7 +661,9 @@ async function generateReadyArtifact(
   const editor = page.locator("[data-studio-editor]");
   await expect(editor.getByText("Ready", { exact: true })).toBeVisible();
   // The removed control must stay removed: shipping it back is the defect.
-  await expect(page.getByRole("button", { name: "Back to draft" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back to draft" })).toHaveCount(
+    0,
+  );
   // And `ready` is not a dead end — the editor states the real path back.
   await expect(editor.locator("[data-studio-ready-path]")).toBeVisible();
 }
@@ -647,9 +692,13 @@ async function verifyReportAndExport(
   } else {
     await reportLink.click();
   }
-  await expect(page.getByRole("heading", { name: definition.projectName })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: definition.projectName }),
+  ).toBeVisible();
   const findings = page.getByRole("region", { name: "Findings" });
-  await expect(findings.getByRole("heading", { name: "Findings" })).toBeVisible();
+  await expect(
+    findings.getByRole("heading", { name: "Findings" }),
+  ).toBeVisible();
   await expect(findings.getByText(/return HTTP 404/)).toBeVisible();
   const deliverables = page.getByRole("region", { name: "Deliverables" });
   await expect(
@@ -673,7 +722,9 @@ async function verifyReportAndExport(
     name: `Download ${kind} bundle`,
   });
   await expect(download).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByRole("heading", { name: "Export manifest" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Export manifest" }),
+  ).toBeVisible();
   await verifyExportBytes(download);
 }
 
@@ -687,7 +738,10 @@ async function exerciseVertical(input: {
   readonly mobile: boolean;
   readonly keyboard: boolean;
   readonly exportKind: "service" | "client";
-}): Promise<{ readonly projectId: string; readonly definition: VerticalDefinition }> {
+}): Promise<{
+  readonly projectId: string;
+  readonly definition: VerticalDefinition;
+}> {
   const suffix = input.suffix ?? randomUUID().slice(0, 8);
   const definition = verticalDefinition(input.vertical, suffix);
   if (input.mobile) {
@@ -765,7 +819,10 @@ async function assertCanonicalVisualRegression(
 ): Promise<void> {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const viewport of CANONICAL_VISUAL_VIEWPORTS) {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
     for (const screen of CANONICAL_VISUAL_SCREENS) {
       await page.goto(`/p/${projectId}/${screen}`);
       await waitForCanonicalScreenReady(page, screen);
@@ -788,73 +845,71 @@ async function assertCanonicalVisualRegression(
   }
 }
 
-test.describe.serial(
-  "real local app chain with an explicit offline Crawl/Google seam",
-  () => {
-    // This suite intentionally mutates one guarded disposable database and
-    // proves the queue started empty. Retrying only the failed test would reuse
-    // pg-boss history from the first attempt and could never be a valid retry.
-    test.describe.configure({ retries: 0 });
+test.describe
+  .serial("real local app chain with an explicit offline Crawl/Google seam", () => {
+  // This suite intentionally mutates one guarded disposable database and
+  // proves the queue started empty. Retrying only the failed test would reuse
+  // pg-boss history from the first attempt and could never be a valid retry.
+  test.describe.configure({ retries: 0 });
 
-    let db: DbHandle | undefined;
-    let worker: WorkerRuntime | undefined;
+  let db: DbHandle | undefined;
+  let worker: WorkerRuntime | undefined;
 
-    test.beforeAll(async () => {
-      configureWorkerEnvironment();
-      db = createDbHandle(DATABASE_URL!, 4);
-      await requireFreshQueueDatabase(db);
-      const workerModule = await import("../apps/worker/src/index.ts");
-      worker = await workerModule.start({
-        installSignalHandlers: false,
-        shutdownStageTimeoutMs: 10_000,
-      });
+  test.beforeAll(async () => {
+    configureWorkerEnvironment();
+    db = createDbHandle(DATABASE_URL!, 4);
+    await requireFreshQueueDatabase(db);
+    const workerModule = await import("../apps/worker/src/index.ts");
+    worker = await workerModule.start({
+      installSignalHandlers: false,
+      shutdownStageTimeoutMs: 10_000,
     });
+  });
 
-    test.afterAll(async () => {
-      let shutdownResult: WorkerShutdownResult | undefined;
-      try {
-        shutdownResult = await worker?.stop();
-      } finally {
-        await db?.end();
-      }
-      if (shutdownResult) expect(shutdownResult.ok).toBe(true);
-    });
+  test.afterAll(async () => {
+    let shutdownResult: WorkerShutdownResult | undefined;
+    try {
+      shutdownResult = await worker?.stop();
+    } finally {
+      await db?.end();
+    }
+    if (shutdownResult) expect(shutdownResult.ok).toBe(true);
+  });
 
-    test("AC-044 B2B fixture: browser/app/CSV worker -> offline provider seam -> service export", async ({
+  test("AC-044 B2B fixture: browser/app/CSV worker -> offline provider seam -> service export", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    if (!db) throw new Error("real E2E fixture database did not start");
+    const fixture = await exerciseVertical({
       page,
       request,
-    }) => {
-      test.setTimeout(240_000);
-      if (!db) throw new Error("real E2E fixture database did not start");
-      const fixture = await exerciseVertical({
-        page,
-        request,
-        db,
-        vertical: "b2b",
-        suffix: "c0ffee00",
-        enrichVisualFixture: true,
-        mobile: false,
-        keyboard: true,
-        exportKind: "service",
-      });
-      await assertCanonicalVisualRegression(page, fixture.projectId);
+      db,
+      vertical: "b2b",
+      suffix: "c0ffee00",
+      enrichVisualFixture: true,
+      mobile: false,
+      keyboard: true,
+      exportKind: "service",
     });
+    await assertCanonicalVisualRegression(page, fixture.projectId);
+  });
 
-    test("AC-045 B2C fixture: 390px app chain with offline provider seam -> client report/export", async ({
+  test("AC-045 B2C fixture: 390px app chain with offline provider seam -> client report/export", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    if (!db) throw new Error("real E2E fixture database did not start");
+    await exerciseVertical({
       page,
       request,
-    }) => {
-      test.setTimeout(120_000);
-      if (!db) throw new Error("real E2E fixture database did not start");
-      await exerciseVertical({
-        page,
-        request,
-        db,
-        vertical: "b2c",
-        mobile: true,
-        keyboard: false,
-        exportKind: "client",
-      });
+      db,
+      vertical: "b2c",
+      mobile: true,
+      keyboard: false,
+      exportKind: "client",
     });
-  },
-);
+  });
+});
