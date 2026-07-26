@@ -2878,6 +2878,29 @@ stubbed Postgres and stayed green over a red drill. The message fix is the
 right size — it tells the truth and hides nothing — and this paragraph exists so
 the convenience is not added later by someone who only sees the annoyance.
 
+### 17.6b Both fixes are now guarded by the cheap suite (`fde119d`)
+
+Fixing the two defects did not stop them recurring: the only thing that could
+see either was `test:e2e:real`, which needs a database, and the Sources one
+additionally needs the **full serial** run, since its block renders only once
+source data exists. That is the same shape as the finding — they survived a
+slice because nothing looked.
+
+- **Overview** now asserts exactly one `main` landmark, at desktop and at 390px.
+  It is asserted directly rather than through that spec's existing
+  `blockingAxeViolations`, which **structurally cannot see it**: the scan is
+  `.include("#main-content")`, so it evaluates what is inside the shell's
+  landmark and never the document's landmark structure. That scoping is why a
+  duplicate `main` survived a whole slice of mock coverage, and it is worth
+  knowing before trusting that helper for anything landmark-shaped.
+- **Sources** gains an axe scan of the readiness region — `sources-readiness.mock.spec.ts`
+  had none at all — scoped to `[aria-label="Source readiness"]`.
+
+Both were mutation-checked against the real pre-fix code, not a stand-in:
+restoring the nested `<main>` fails the count with `Received: 2`, and checking
+`_sources.tsx` out at `a538fe3^` reproduces
+`definition-list (serious) @ .sources_readinessMetrics__…`.
+
 ### 17.7 Where the suite stands after this round
 
 | | first measured | after §17.1 and §17.2 |
