@@ -1953,13 +1953,19 @@ render anything they were waiting for.
 
 ### 14.7 The one genuine defect this round found and did not fix
 
+> **Superseded in part by §15, same day.** The manual "Retry generation status"
+> control this section points at was measured afterwards: it fires, but it never
+> releases the fence. The disagreement described below is real. The assumption
+> underneath it — that the operator can get themselves out — is not.
+
 `frontend-error-states:615` asserts that a `RUN_ALREADY_ACTIVE` (409) recovery
 fence **releases automatically** once the canonical artifact projection shows
 the conflicting run has settled. It does not. Measured behaviour at HEAD:
 the recovery entry stays in `activeGenerationRecoveries`, the row keeps no
 regenerate control, `Open` stays disabled, and the
 `[data-studio-conflict-recovery]` banner stays on screen with an enabled
-"Retry generation status" button. The operator must click it.
+"Retry generation status" button. The operator must click it — and §15
+measures what happens when they do.
 
 That is deliberate, not accidental. `resolveActiveGenerationRecovery`
 (`execution/_execution-deep-link.ts:236`) is documented fail-closed — "Other
@@ -2146,3 +2152,154 @@ assertion. `sources-readiness.mock.spec.ts` was not touched.
   band, and the three-viewport a11y sweep) was written against the retired
   Diagnosis screen; if Growth Map is meant to carry those guarantees, that task
   is where they belong, and this list is its checklist.
+
+## 15. The 409 fence has no working escape hatch (2026-07-26)
+
+§14.7 left `frontend-error-states.mock.spec.ts:615` red and asked for an owner
+ruling. The ruling came back: **keep the fail-closed implementation and rewrite
+the spec to the real contract** — a lagging projection is a bad reason to let a
+second generation through, and the product already gives the operator a manual
+way out, so nobody gets stuck. The rewrite was required to assert that way out,
+not just the fence: the control exists, it is interactive, and **clicking it
+releases the fence**.
+
+**The third assertion cannot be written, because it is not true. The manual
+control does not release the fence.** The premise the ruling rested on is false,
+so the spec was left exactly as it is and this section reports instead.
+
+### 15.1 What was measured
+
+A throwaway Playwright spec reproduced §14.7's scenario — a 409
+`RUN_ALREADY_ACTIVE` on generate, then an artifacts projection showing
+`status: "ready"` with `activeRun: null`, i.e. the conflicting run has
+demonstrably settled — then clicked the banner's "Retry generation status"
+button three times and finally reloaded the page. Counters are the mock's
+artifact-read count, the number of `[data-studio-conflict-recovery]` banners,
+and the number of `Regenerate` controls on the fenced row:
+
+```
+PROBE reads before retry: 2
+PROBE attempt=1 reads=3 panels=1 regenerateButtons=0
+PROBE attempt=2 reads=4 panels=1 regenerateButtons=0
+PROBE attempt=3 reads=5 panels=1 regenerateButtons=0
+PROBE afterReload panels=0 regenerateButtons=1
+```
+
+Three readings, in order of how much they matter:
+
+1. **The control is real and it does fire.** It is present, it is enabled once
+   the first refetch returns, and every click issues a fresh artifacts read
+   (2 → 3 → 4 → 5). This is not a dead button or a disabled one.
+2. **It never releases the fence.** After three clicks the banner is still on
+   screen and the row still has no `Regenerate` control. Nothing about the
+   operator's situation changes, and nothing tells them that.
+3. **Only a full page reload clears it** — `activeGenerationRecoveries` is
+   component state (`_studio.tsx:1797`), so it does not survive a remount. The
+   product never suggests reloading, and the banner it does show says the run
+   status is unavailable and offers the retry that cannot help.
+
+### 15.2 Why it cannot release, by construction
+
+The retry button calls `recoverAlreadyActive` (`_studio.tsx:2694`) — the same
+function the 409 handler calls. It refetches, then asks
+`resolveActiveGenerationRecovery` (`execution/_execution-deep-link.ts:236`) what
+the projection proves. That resolver returns `active` only when it finds exactly
+one non-archived artifact for the action/type **whose `activeRun` is live**
+(`liveRunId !== null`). In the settled case there is by definition no live run,
+so it returns `pending`, and the caller takes the `leaveRecoveryPending` branch
+(`_studio.tsx:2715`), which clears `refreshing` and keeps the recovery entry.
+
+A recovery key leaves `activeGenerationRecoveries` on exactly two paths: the
+`kind === "active"` success path (`_studio.tsx:2795`), and `onQueued`
+(`_studio.tsx:2650`). `onQueued` is unreachable from this state — `openGenerate`
+(`_studio.tsx:2593`) returns early while a recovery names the action, and the
+fenced row is rendered without a regenerate handler (`_studio.tsx:3089`, `:711`).
+
+So the only affordance the banner offers can succeed **only while the
+conflicting run is still running**. In the exact state the banner exists to
+handle — a run that has already settled — clicking it can never work. The button
+is not broken; it is wired to a resolver that is structurally incapable of
+answering yes for this case.
+
+This also corrects §14.7's last sentence on the point. "The operator must click
+it" reads as though clicking is the way out. It is not; there is no way out from
+inside the page.
+
+### 15.3 What this changes for the ruling
+
+The ruling was conditioned on the operator not being trapped. Measured, the
+operator is trapped: the affordance shown to them is a no-op for their state, it
+reports nothing about that, and the only exit is a browser reload nothing tells
+them to perform. That makes this a defect rather than a contract disagreement,
+so the open question is no longer "which contract should the spec assert" but
+"which repair lands":
+
+1. **Release when the projection is complete and shows no live run.**
+   `resolveActiveGenerationRecovery` already takes `projectionComplete`. A
+   complete cursor set with no live match is positive evidence that the
+   conflicting run settled, not absence of evidence, and the fence has nothing
+   left to protect. This makes `frontend-error-states.mock.spec.ts:615` pass as
+   written, and it keeps fail-closed behaviour for the incomplete-projection
+   case the resolver's docstring is actually about.
+2. **Keep fail-closed and make the manual control genuinely escape.** The button
+   would have to drop the recovery entry outright instead of re-running the
+   resolver, and the banner copy would have to say what the operator is choosing
+   — to proceed without proof the other run finished, accepting a possible
+   duplicate generation.
+
+(1) is the smaller change and restores the guarantee the spec was written for.
+(2) preserves the safety argument but needs new copy in both locales and makes
+duplicate generation an operator decision. **Either is an owner call.** What is
+not available is leaving the behaviour as it stands and calling the test wrong:
+that would be writing down a working escape hatch that was measured not to work.
+
+### 15.4 Reproduction
+
+The probe was deleted after measuring; `git status` over `apps/`, `packages/`
+and `e2e/` is clean. To rebuild it: copy the body of
+`frontend-error-states.mock.spec.ts:615` and drop the `settledProjectionGate`
+promise so the artifacts route answers immediately; after
+`expect.poll(() => createAttempts).toBe(1)`, locate
+`[data-studio-conflict-recovery]`, assert its button is enabled, click it in a
+loop, and log the banner and `Regenerate` counts each pass. It runs in about ten
+seconds under `pnpm test:e2e:mock -g`.
+
+### 15.5 Scope of this round
+
+Two commits, both documentation. **Zero product code, zero spec code.**
+
+- `git diff 939129a..HEAD -- apps packages e2e` is empty.
+- N-1 per path — `git diff 939129a..HEAD` over
+  `apps/web/src/app/p/[projectId]/overview`, `.../sources` and `.../growth-map`:
+  empty, all three.
+- `frontend-error-states.mock.spec.ts` is byte-for-byte unchanged. The test that
+  this round was sent to rewrite is still red, still failing at the
+  disagreement, and is now backed by a measurement instead of a reading.
+- No visual baseline snapshot was regenerated.
+
+### 15.6 Gate results
+
+Both commits in this round are documentation. The gates were run anyway, on the
+principle that a round which claims a measurement should also prove it changed
+nothing else.
+
+| gate | result |
+|---|---|
+| `pnpm test:e2e:mock` (full suite) | **77 passed / 2 failed of 79, 2.3m** — before and after are the same run set, because this round changed no spec. Failures: `frontend-error-states.mock.spec.ts:615` (§15) and `growth-map.mock.spec.ts:124` (§4 D8). Down from 4 failed at `54cab8d` |
+| `pnpm lint` / `typecheck` / `build` | pass |
+| `git diff --check` | clean |
+| `pnpm verify:spec` | pass — **49 operations / 9 async / 44 tables / 11 rules** |
+| `pnpm verify:authority` / `implementation:check` | pass |
+| `pnpm openapi:lint` | pass — description valid |
+| `pnpm contracts:check` | pass — no generated diff |
+| `pnpm deploy:check` / `vendor:check` | pass |
+| `pnpm secrets:scan` | pass — 4 files / 75 tests |
+| `pnpm db:migrate` | pass — 21 migrations applied to a disposable loopback database |
+| `pnpm db:smoke` | pass — fixtures rolled back |
+| `pnpm db:migrate:check` | pass — **44 tables / 56 indexes / 69 triggers / 18 routines** |
+| `pnpm test:integration` | pass — 66 files / 482 tests |
+| unit + integration `--coverage` | pass — **91.02 stmts / 84.8 branch / 94.71 funcs / 92.64 lines**, unchanged from `54cab8d` |
+| `pnpm restore:drill` / `restore:drill:test` | pass — 38 tests / 38 passed, coverage above thresholds |
+
+**Zero migrations, zero contract change, zero product-code change, zero spec
+change.** No visual baseline snapshot was regenerated.
