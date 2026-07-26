@@ -117,33 +117,6 @@ export class AuditRunsRepository extends Repository {
     return (rows[0] as AuditRunRow | undefined) ?? null;
   }
 
-  async findByCapabilityRunId(
-    scope: ProjectScope,
-    capabilityRunId: string,
-  ): Promise<AuditRunRow | null> {
-    const rows = await this.exec
-      .select()
-      .from(auditRuns)
-      .where(
-        and(
-          projectPredicate(auditRuns, scope),
-          eq(auditRuns.capability_run_id, capabilityRunId),
-        ),
-      )
-      .limit(1);
-    return (rows[0] as AuditRunRow | undefined) ?? null;
-  }
-
-  async findLatest(scope: ProjectScope): Promise<AuditRunRow | null> {
-    const rows = await this.exec
-      .select()
-      .from(auditRuns)
-      .where(projectPredicate(auditRuns, scope))
-      .orderBy(desc(auditRuns.created_at), desc(auditRuns.id))
-      .limit(1);
-    return (rows[0] as AuditRunRow | undefined) ?? null;
-  }
-
   /**
    * The latest audit run for one projection version. The primary audit read
    * paths pass {@link GROWTH_AUDIT_PROJECTION_VERSION} so a targeted recheck

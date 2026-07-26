@@ -34,7 +34,6 @@ import {
   buildContentShadowInputManifest,
   qaSeverityForClaimId,
   CONTENT_SHADOW_ADAPTER_VERSION,
-  ContentShadowObservationSeparationError,
   type ContentShadowFirstPartyIdentity,
   type ContentShadowInputManifest,
 } from "@sf/flow-shadow";
@@ -67,10 +66,22 @@ import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
  * a Finding the canonical Finding Review transaction already confirmed and
  * refuses otherwise. It writes no Action, approval, checkpoint or opportunity
  * row, never touches a Finding's review state, and never recasts the brief — it
- * only freezes and consumes the revision that already exists. Every read-only
- * assertion below is deliberately redundant with the `flow_shadow_runs`
+ * only freezes and consumes the revision that already exists. The lineage
+ * assertions below are deliberately redundant with the `flow_shadow_runs`
  * provenance trigger: the service returns an actionable 4xx, the trigger is the
  * last-resort 23514 backstop.
+ *
+ * Not every assertion has a trigger behind it, and this docstring used to imply
+ * otherwise. The `query_kind` checks on the two identity sets are the clearest
+ * case: `keyword_entities.query_kind` is a row-level CHECK (`0018:242-244`), so
+ * one entity row is a SearchQuery or a GenerativeQuery and never both. Once
+ * this function has required `search_query` of every id in the search cluster
+ * and `generative_query` of every id in the generative set, the two sets cannot
+ * intersect, which makes `assertObservationSeparation`'s overlap error
+ * unreachable from here. The catch that translated it was removed rather than
+ * left to read as a live guard; if either `query_kind` check above is ever
+ * relaxed, restore a translation for
+ * `ContentShadowObservationSeparationError` with it.
  */
 
 const IDEMPOTENCY_SCOPE = "createContentShadowRun";
@@ -719,12 +730,6 @@ export async function createContentShadowRun(
       };
     });
   } catch (error) {
-    if (error instanceof ContentShadowObservationSeparationError) {
-      throw new ProblemError(
-        "VALIDATION_ERROR",
-        "Search and generative observation must stay separate.",
-      );
-    }
     if (isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")) {
       const winnerKey = await idem.find(
         scope.workspaceId,
