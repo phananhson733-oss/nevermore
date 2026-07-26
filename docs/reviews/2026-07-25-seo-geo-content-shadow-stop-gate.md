@@ -2826,10 +2826,19 @@ no way to say so. Four bare status assertions across the two specs now carry the
 response body, so the same failure reads `CSV confirm failed:
 {"code":"RATE_LIMITED",...}`. The assertions themselves are unchanged.
 
-**This is sharper in CI than locally.** The real job sets `retries: 1`, so a
-retry lands inside the same 15-minute window as the attempt that spent the
-budget. A test failing for any reason can fail its retry for this one instead,
-and report a cause unrelated to the original defect.
+**Correction, checked rather than assumed: CI is the safe side, not the sharp
+one.** The first version of this entry said the hazard was worse in CI because
+the real job sets `retries: 1`. That is backwards. The `database` job starts a
+fresh `postgres:16` service container and runs `createdb signalframe_e2e_ci`
+before the suite (`ci.yml`), so the rate-limit ledger is empty at the start of
+every run; a whole job spends two attempts, four if both specs retry, against a
+budget of ten. **CI cannot reach the limit.**
+
+The exposure is entirely local, and it is the ordinary way this suite gets
+used: iterating on it, re-running it a few times in a row against a database you
+keep. That is exactly how it was hit here — and, being invisible in CI, it is
+precisely the kind of thing that would have gone on wasting time indefinitely
+had the assertion not been made to name it.
 
 ### 17.7 Where the suite stands after this round
 
