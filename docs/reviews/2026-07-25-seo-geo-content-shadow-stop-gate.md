@@ -2667,13 +2667,22 @@ visual baseline snapshot was regenerated. Zero migrations, zero contract change.
   suppressed control. That is a UX defect, not a correctness one, and it does not
   produce a second run.
 
-  The fix is still the same shape — lift the recovery list above the page, or use
-  a module-scoped store as `_context-navigation-guard.ts` already does for the
-  Context dirty flag, which is a smaller change than "architectural" implied.
-  **It is deliberately not being done blind:** the reproduction has to drive the
-  narrow window in which the projection has not yet completed, and a test that
-  arms the fence against a *settled* projection would prove nothing, because
-  §16 correctly releases the fence in that case.
+  **RESOLVED in `119cbf9`.** The reproduction came first and is the part that
+  needed care: it pins `artifactsQuery.hasNextPage === true` by holding the
+  second artifact page open forever, so `projectionComplete` stays false — the
+  one state in which the fence must hold — and then walks the shell Execution →
+  Overview → Execution through the real nav links. A test built on a settled
+  projection would have proven nothing, since §16 releases the fence there by
+  design.
+
+  The fix is the mechanism `_context-navigation-guard.ts` already uses for the
+  Context dirty flag: a module-scoped store (`studio/_active-generation-fence.ts`),
+  seeded into `useState` and written back from an effect, scoped by project, and
+  cleared by a reload. The three existing fence tests are untouched and green —
+  including `:615`, the one that would go red if this had turned the fence into
+  something that never releases, which is the failure mode worth fearing and the
+  one §16 already had to repair once. Two mutations, each reddening the new test
+  alone out of thirteen: seeding from `[]`, and disabling the write-back.
 - **Nothing re-resolves the fence on its own after an incomplete projection.**
   When the cursor set is incomplete the fence correctly stays, the auto-pagination
   effect fetches more pages, and no code re-runs `recoverAlreadyActive` when they
