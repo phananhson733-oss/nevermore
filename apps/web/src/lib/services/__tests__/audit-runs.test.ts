@@ -368,7 +368,55 @@ describe("createGrowthAuditRun contract", () => {
         idempotencyKey,
         body,
       ),
-    ).rejects.toMatchObject({ code: "RUN_ALREADY_ACTIVE", status: 409 });
+    ).rejects.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      status: 409,
+      // The winner is observable, so the body locates it too. A client that
+      // reads only the response body would otherwise get a conflict it has no
+      // way to follow, because `Location` is a header.
+      current: {
+        runId,
+        statusUrl: expect.stringContaining(`/runs/${runId}`),
+      },
+    });
     expect(mocks.db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("does not claim an active run when the unique race leaves no winner", async () => {
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValue(null);
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue(
+      project(),
+    );
+    mockHappyPathInputs();
+    // Blind to the winner on both reads: the index aborts only when a run WAS
+    // active, and `findActive` sees only `queued`/`running`, so this is the
+    // real race where the winner left both states in between.
+    vi.spyOn(AsyncRunsRepository.prototype, "findActive").mockResolvedValue(
+      null,
+    );
+    mocks.db.transaction.mockRejectedValueOnce({
+      code: "23505",
+      constraint: "async_runs_one_active_key_idx",
+    });
+
+    const error = await createGrowthAuditRun(
+      { workspaceId },
+      projectId,
+      actorId,
+      idempotencyKey,
+      body,
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      status: 409,
+      // Both pointers present and explicitly null, so a client distinguishes
+      // "we have no pointer" from "the field is missing"; and no invented
+      // `Location`, because there is no run to point a header at either.
+      current: { runId: null, statusUrl: null, activeKey: "growth_audit" },
+      extraHeaders: undefined,
+    });
+    // The detail must not assert an active run it cannot observe.
+    expect((error as Error).message).not.toContain("is already active");
   });
 });

@@ -329,7 +329,57 @@ describe("createActionRecheck transaction", () => {
     } as never);
     await expect(
       createActionRecheck({ workspaceId }, projectId, actorId, idempotencyKey, body),
-    ).rejects.toMatchObject({ code: "RUN_ALREADY_ACTIVE", status: 409 });
+    ).rejects.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      status: 409,
+      // Body and header locate the same winning run, so a client that reads
+      // only the body is not left with an unfollowable conflict.
+      current: {
+        runId,
+        statusUrl: expect.stringContaining(`/runs/${runId}`),
+      },
+    });
     expect(mocks.db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("does not claim an active recheck when the unique race leaves no winner", async () => {
+    mockContext();
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValue(null);
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue(
+      project(),
+    );
+    // Blind on both reads: the index aborts only when a run WAS active and
+    // `findActive` sees only `queued`/`running`, so this is the real race in
+    // which the winner left both states in between.
+    vi.spyOn(AsyncRunsRepository.prototype, "findActive").mockResolvedValue(
+      null,
+    );
+    mocks.db.transaction.mockRejectedValueOnce({
+      code: "23505",
+      constraint: "async_runs_one_active_key_idx",
+    });
+
+    const error = await createActionRecheck(
+      { workspaceId },
+      projectId,
+      actorId,
+      idempotencyKey,
+      body,
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      status: 409,
+      // Explicitly null rather than absent, and no invented `Location`. The
+      // key still names the contended Action, which is the one locatable fact
+      // that survives the race.
+      current: {
+        runId: null,
+        statusUrl: null,
+        activeKey: expect.stringContaining(body.actionId),
+      },
+      extraHeaders: undefined,
+    });
+    expect((error as Error).message).not.toContain("is already active");
   });
 });

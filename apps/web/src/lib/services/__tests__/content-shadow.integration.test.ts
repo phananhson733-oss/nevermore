@@ -19,6 +19,7 @@ import { createDbHandle, type Db, type DbHandle } from "@sf/db/client";
 import {
   ActionsRepository,
   AnalysisInvocationsRepository,
+  AsyncRunsRepository,
   CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
@@ -648,7 +649,7 @@ describeDb("createContentShadowRun", () => {
   it("conflicts when a Content Shadow run is already active for the Action", async () => {
     queueFixture.send.mockClear();
     const fixture = await seedShadowFixture(handle);
-    await createContentShadowRun(
+    const first = await createContentShadowRun(
       { workspaceId: fixture.scope.workspaceId },
       fixture.scope.projectId,
       fixture.actorId,
@@ -664,7 +665,66 @@ describeDb("createContentShadowRun", () => {
         randomUUID(),
         requestBody(fixture),
       ),
-    ).rejects.toMatchObject({ code: "RUN_ALREADY_ACTIVE", status: 409 });
+    ).rejects.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      status: 409,
+      // Read out of the FIRST call's response, so this asserts that the
+      // conflict points at the run that actually won -- not merely that some
+      // identifier is present. `Location` is a header; a body-only client
+      // would otherwise have nothing to follow.
+      current: {
+        runId: first.run.id,
+        statusUrl: expect.stringContaining(first.run.id),
+      },
+    });
+    expect(queueFixture.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not claim an active run when the unique race leaves no winner", async () => {
+    queueFixture.send.mockClear();
+    const fixture = await seedShadowFixture(handle);
+    await createContentShadowRun(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      fixture.actorId,
+      randomUUID(),
+      requestBody(fixture),
+    );
+
+    // A real run IS active, so the real unique index aborts the second insert.
+    // Blinding `findActive` on both reads reproduces the race the branch is
+    // for: the index fires only when a run WAS active, and `findActive` sees
+    // only `queued`/`running`, so the winner can leave both states in between.
+    const blinded = vi
+      .spyOn(AsyncRunsRepository.prototype, "findActive")
+      .mockResolvedValue(null);
+    try {
+      // A different output locale is a different content address, which red
+      // line C explicitly permits, so the request gets past the dedup guard
+      // and reaches the per-Action active-key index that the live run holds.
+      const body = requestBody(fixture, { outputLocale: "zh-CN" });
+      const error = await createContentShadowRun(
+        { workspaceId: fixture.scope.workspaceId },
+        fixture.scope.projectId,
+        fixture.actorId,
+        randomUUID(),
+        body,
+      ).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({
+        code: "RUN_ALREADY_ACTIVE",
+        status: 409,
+        current: {
+          runId: null,
+          statusUrl: null,
+          activeKey: expect.stringContaining(body.actionId),
+        },
+        extraHeaders: undefined,
+      });
+      expect((error as Error).message).not.toContain("is already active");
+    } finally {
+      blinded.mockRestore();
+    }
     expect(queueFixture.send).toHaveBeenCalledTimes(1);
   });
 

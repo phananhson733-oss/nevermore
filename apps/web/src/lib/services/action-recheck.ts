@@ -196,10 +196,18 @@ function replay(
 }
 
 function activeConflict(projectId: string, runId: string): ProblemError {
+  const statusUrl = runStatusUrl(projectId, runId);
   return new ProblemError(
     "RUN_ALREADY_ACTIVE",
     "A recheck for this Action is already active.",
-    { headers: { Location: runStatusUrl(projectId, runId) } },
+    {
+      headers: { Location: statusUrl },
+      // Same pointer in the body as in the header, because a client that
+      // only reads the response body would otherwise get a conflict it
+      // cannot locate. `collection.ts` and `product-profile-synthesis.ts`
+      // already answer this shape; these three did not.
+      current: { runId, statusUrl },
+    },
   );
 }
 
@@ -278,9 +286,18 @@ export async function createActionRecheck(
         activeKey,
       );
       if (winner) throw activeConflict(projectId, winner.id);
+      // No winner to point at. The unique index only aborts when a run
+      // WAS active and `findActive` only sees `queued`/`running`, so the
+      // winner left both states between the abort and this read. Neither
+      // a `Location` nor a runId can be invented, and the detail must
+      // stop asserting an active run it cannot observe. `activeKey` is
+      // the one locatable fact that survives; `Problem.current` is
+      // `additionalProperties: true`, so this costs no contract change.
+      // Same disposition as `collection.ts` for the same reason.
       throw new ProblemError(
         "RUN_ALREADY_ACTIVE",
-        "A recheck for this Action is already active.",
+        "A recheck held this Action and is no longer active; retry the request.",
+        { current: { runId: null, statusUrl: null, activeKey } },
       );
     }
     throw error;
