@@ -557,6 +557,51 @@ async function hasPageOverflow(page: Page): Promise<boolean> {
   );
 }
 
+/**
+ * Ported from the deleted `context-localization-guard.mock.spec.ts`, whose
+ * surface (ContextForm) no longer renders anywhere. This is the half of that
+ * spec's navigation guard that still exists: the editor arms a `beforeunload`
+ * fence exactly while it is open AND dirty (_product-profile.tsx:312).
+ *
+ * Chromium does not expose a constructible BeforeUnloadEvent. Dispatching a
+ * cancelable Event exercises the registered listener and gives us its
+ * observable contract (`preventDefault`) deterministically — the same
+ * technique the deleted spec used.
+ */
+async function unloadIsFenced(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+}
+
+test("only a dirty open Product Profile editor fences the browser unload", async ({
+  page,
+}) => {
+  await installProductProfileApi(page);
+  await gotoProductProfile(page);
+  expect(await unloadIsFenced(page)).toBe(false);
+
+  await page.getByRole("button", { name: "编辑 Product Profile" }).click();
+  const editor = page.getByRole("dialog", {
+    name: "编辑 Product Profile 与 Primary ICP",
+  });
+  await expect(editor).toBeVisible();
+  await expect(editor.getByText("没有更改", { exact: true })).toBeVisible();
+  expect(await unloadIsFenced(page)).toBe(false);
+
+  await editor.getByLabel("产品名称").fill("RelayOps Global");
+  await expect(editor.getByText("有未保存的更改", { exact: true })).toBeVisible();
+  expect(await unloadIsFenced(page)).toBe(true);
+
+  // Discarding disarms the fence; nothing is left holding the browser.
+  await editor.getByRole("button", { name: "关闭" }).click();
+  await page.getByRole("button", { name: "放弃更改" }).click();
+  await expect(editor).toBeHidden();
+  expect(await unloadIsFenced(page)).toBe(false);
+});
+
 test("does not substitute a client fixture when the canonical API is unavailable", async ({
   page,
 }) => {

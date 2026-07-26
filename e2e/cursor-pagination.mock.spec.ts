@@ -1,13 +1,9 @@
 import { expect, test, type Route } from "@playwright/test";
 import {
   E2E_PROJECT_ID,
-  E2E_SECONDARY_SITE_ID,
   E2E_SITE_ID,
   E2E_SNAPSHOT_PROVENANCE,
-  diagnosisFindingFixture,
-  diagnosisFindingsEnvelopeFixture,
   installCriticalFlowApi,
-  type CriticalFlowApiState,
   type MockDataSnapshot,
 } from "./mock-api.ts";
 
@@ -124,168 +120,34 @@ function snapshotFixture(
   };
 }
 
-let api: CriticalFlowApiState;
-
 test.beforeEach(async ({ page }) => {
-  api = await installCriticalFlowApi(page);
+  await installCriticalFlowApi(page);
 });
 
-test("Diagnosis keeps the first sidecar canonical and retries a de-duplicated next page", async ({
-  page,
-}) => {
-  const first = diagnosisFindingFixture({ summary: "First page finding" });
-  const second = diagnosisFindingFixture({
-    id: "00000000-0000-4000-8000-000000000222",
-    ruleId: "CONTENT-COVERAGE-001",
-    domain: "content_intent",
-    summary: "Second page finding",
-  });
-  const canonical = diagnosisFindingsEnvelopeFixture([first]);
-  let nextPageAttempts = 0;
+// REMOVED: "Diagnosis keeps the first sidecar canonical and retries a
+// de-duplicated next page" and "Diagnosis exhausts pages, ignores legacy crawl,
+// and freezes only same-site providers".
+//
+// Both drove the Diagnosis screen. /diagnosis is now a redirect to /growth-map
+// (apps/web/src/app/p/[projectId]/diagnosis/page.tsx:19) and DiagnosisClient
+// (diagnosis/_diagnosis.tsx:722) is imported by nothing, so the findings list,
+// its coverage sidecar and the "Re-run diagnosis" trigger are unreachable and
+// have no successor control on Growth Map. Deleted rather than re-aimed because
+// there is nothing to re-aim at.
+//
+// The domain guarantees they carried keep their own coverage over the same
+// functions in apps/web/src/lib/api/hooks-diagnosis-pagination.test.ts:
+// "de-duplicates findings but preserves the first page sidecar" (:95),
+// "anchors the selection to the latest usable current crawl and never mixes
+// sites" (:123) and "ignores a newer unavailable current crawl when choosing
+// the diagnostic site" (:166).
 
-  await page.route(`**${API_BASE}/findings**`, async (route) => {
-    const url = new URL(route.request().url());
-    expect(url.searchParams.get("limit")).toBe("100");
-    if (url.searchParams.get("cursor") === null) {
-      await json(route, {
-        ...canonical,
-        meta: {
-          ...canonical.meta,
-          nextCursor: "diagnosis-page-2",
-          hasNext: true,
-          coverage: {
-            ...canonical.meta.coverage,
-            limitations: ["Canonical page-one coverage"],
-          },
-        },
-      });
-      return;
-    }
-
-    nextPageAttempts += 1;
-    // QueryClient retries one failed read automatically. Fail both transport
-    // attempts so the inline operator retry state becomes observable.
-    if (nextPageAttempts <= 2) {
-      await json(
-        route,
-        {
-          type: "about:blank",
-          title: "Service unavailable",
-          status: 503,
-          code: "DEPENDENCY_UNAVAILABLE",
-          detail: "Temporary pagination failure.",
-          requestId: "pagination-e2e",
-        },
-        503,
-      );
-      return;
-    }
-    await json(route, {
-      ...diagnosisFindingsEnvelopeFixture([first, second]),
-      meta: {
-        ...canonical.meta,
-        coverage: {
-          ...canonical.meta.coverage,
-          limitations: ["Later-page sidecar must not replace page one"],
-        },
-      },
-    });
-  });
-
-  await page.goto(`/p/${E2E_PROJECT_ID}/diagnosis`);
-  await expect(page.getByText("First page finding", { exact: true })).toBeVisible();
-  await expect(page.getByText("Canonical page-one coverage", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Load more" }).click();
-
-  await expect(
-    page.getByText(
-      "We couldn't load the next page. Items already loaded are still shown.",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(page.getByText("First page finding", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Retry" }).click();
-
-  await expect(page.getByText("Second page finding", { exact: true })).toBeVisible();
-  await expect(page.getByText("First page finding", { exact: true })).toHaveCount(1);
-  await expect(page.getByText("Canonical page-one coverage", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Later-page sidecar must not replace page one", { exact: true }),
-  ).toHaveCount(0);
-  expect(nextPageAttempts).toBe(3);
-});
-
-test("Diagnosis exhausts pages, ignores legacy crawl, and freezes only same-site providers", async ({
-  page,
-}) => {
-  const persistedLaterButCapturedOlder = snapshotFixture(1, "crawl", {
-    id: "00000000-0000-4000-8000-000000000911",
-    capturedAt: "2026-07-18T00:00:00.000Z",
-  });
-  const capturedLatestCrawl = snapshotFixture(2, "crawl", {
-    id: "00000000-0000-4000-8000-000000000912",
-    capturedAt: "2026-07-20T00:00:00.000Z",
-  });
-  const capturedLatestGa4 = snapshotFixture(3, "ga4", {
-    id: "00000000-0000-4000-8000-000000000913",
-    capturedAt: "2026-07-19T00:00:00.000Z",
-  });
-  const newerLegacyCrawl = snapshotFixture(4, "crawl", {
-    id: "00000000-0000-4000-8000-000000000914",
-    methodVersion: "crawl.site_graph.v1",
-    capturedAt: "2026-07-22T00:00:00.000Z",
-  });
-  const newerWrongSiteGa4 = snapshotFixture(5, "ga4", {
-    id: "00000000-0000-4000-8000-000000000915",
-    siteId: E2E_SECONDARY_SITE_ID,
-    capturedAt: "2026-07-21T00:00:00.000Z",
-  });
-
-  await page.route(`**${API_BASE}/snapshots**`, async (route) => {
-    const url = new URL(route.request().url());
-    expect(url.searchParams.get("limit")).toBe("100");
-    await json(
-      route,
-      url.searchParams.get("cursor") === null
-        ? listEnvelope(
-            [persistedLaterButCapturedOlder, newerLegacyCrawl],
-            "diagnosis-snapshots-2",
-          )
-        : listEnvelope(
-            [capturedLatestCrawl, capturedLatestGa4, newerWrongSiteGa4],
-            null,
-          ),
-    );
-  });
-
-  await page.goto(`/p/${E2E_PROJECT_ID}/diagnosis`);
-  await page.getByRole("button", { name: "Re-run diagnosis" }).click();
-  await expect.poll(() => api.diagnosticRequests.length).toBe(1);
-  expect(api.diagnosticRequests[0]).toMatchObject({
-    snapshotIds: [capturedLatestCrawl.id, capturedLatestGa4.id],
-  });
-});
-
-test("Plan exposes actions on the next cursor page", async ({ page }) => {
-  const first = actionFixture(1, "First page plan action");
-  const second = actionFixture(2, "Second page plan action");
-  await page.route(`**${API_BASE}/actions**`, async (route) => {
-    const cursor = new URL(route.request().url()).searchParams.get("cursor");
-    await json(
-      route,
-      cursor === null
-        ? listEnvelope([first], "plan-page-2")
-        : listEnvelope([second], null),
-    );
-  });
-
-  await page.goto(`/p/${E2E_PROJECT_ID}/plan`);
-  await expect(page.getByText(first.title, { exact: true })).toBeVisible();
-  await expect(page.getByText(second.title, { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Load more" }).click();
-  await expect(page.getByText(second.title, { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
-});
+// REMOVED: "Plan exposes actions on the next cursor page". /plan is now a
+// redirect to /execution (plan/page.tsx:16) and PlanClient (plan/_plan.tsx:1042)
+// is imported by nothing, so the Plan action list it paged through is gone.
+// Action cursor pagination itself is still proven on the canonical Execution
+// surface by "Studio exposes artifact and action next pages" below, which pages
+// the action picker and asserts the second page's action becomes selectable.
 
 test("Studio exposes artifact and action next pages", async ({ page }) => {
   const firstAction = actionFixture(1, "First page studio action");
@@ -428,9 +290,9 @@ test("Studio protects unsaved content and notes from editor transitions", async 
     json(route, listEnvelope([firstArtifact, secondArtifact], null)),
   );
 
-  await page.goto(`/p/${E2E_PROJECT_ID}/plan`);
-  await page.getByRole("link", { name: "Studio", exact: true }).click();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
+  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
+  await page.getByRole("link", { name: "Execution", exact: true }).click();
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
 
   const firstOpen = page
     .getByText(firstAction.title, { exact: true })
@@ -491,35 +353,35 @@ test("Studio protects unsaved content and notes from editor transitions", async 
 
   await content.fill("Dirty before link navigation");
   dialogPromise = page.waitForEvent("dialog");
-  transitionPromise = page.getByRole("link", { name: "Plan" }).click();
+  transitionPromise = page.getByRole("link", { name: "Results" }).click();
   dialog = await dialogPromise;
   await dialog.dismiss();
   await transitionPromise;
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
   await expect(content).toHaveValue("Dirty before link navigation");
 
   dialogPromise = page.waitForEvent("dialog");
-  transitionPromise = page.getByRole("link", { name: "Plan" }).click();
+  transitionPromise = page.getByRole("link", { name: "Results" }).click();
   dialog = await dialogPromise;
   await dialog.accept();
   await transitionPromise;
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/plan`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results`);
 
-  await page.getByRole("link", { name: "Studio", exact: true }).click();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
-  const studioPosition = await page.evaluate(
+  await page.getByRole("link", { name: "Execution", exact: true }).click();
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
+  const executionPosition = await page.evaluate(
     () => history.state?.__sfProjectHistoryPosition as unknown,
   );
-  expect(typeof studioPosition).toBe("number");
+  expect(typeof executionPosition).toBe("number");
   await page.goBack();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/plan`);
-  const planPosition = await page.evaluate(
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results`);
+  const resultsPosition = await page.evaluate(
     () => history.state?.__sfProjectHistoryPosition as unknown,
   );
-  expect(typeof planPosition).toBe("number");
-  expect(planPosition as number).toBeLessThan(studioPosition as number);
+  expect(typeof resultsPosition).toBe("number");
+  expect(resultsPosition as number).toBeLessThan(executionPosition as number);
   await page.goForward();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
   await firstOpen.click();
   await content.fill("Dirty before browser back");
   await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
@@ -527,23 +389,23 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await page.evaluate(() => window.setTimeout(() => history.back(), 0));
   dialog = await dialogPromise;
   await dialog.dismiss();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
   await expect(content).toHaveValue("Dirty before browser back");
 
   dialogPromise = page.waitForEvent("dialog");
   await page.evaluate(() => window.setTimeout(() => history.back(), 0));
   dialog = await dialogPromise;
   await dialog.accept();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/plan`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results`);
 
   await page.goForward();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
   await firstOpen.click();
   await expect(content).toHaveValue("Artifact page 1");
-  await page.getByRole("link", { name: "Report" }).click();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/report`);
+  await page.getByRole("link", { name: "Overview" }).click();
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/overview`);
   await page.goBack();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
   await firstOpen.click();
 
   await content.fill("Dirty before browser forward");
@@ -552,7 +414,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await page.evaluate(() => window.setTimeout(() => history.forward(), 0));
   dialog = await dialogPromise;
   await dialog.dismiss();
-  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/studio`);
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/execution`);
   await expect(content).toHaveValue("Dirty before browser forward");
 });
 

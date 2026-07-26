@@ -866,41 +866,17 @@ test("zh-CN Studio keeps server validation detail out of localized feedback", as
   await expect(page.getByRole("main")).not.toContainText(rawMessage);
 });
 
-test("zh-CN Diagnosis keeps server validation detail out of localized review feedback", async ({
-  page,
-}) => {
-  const rawMessage = "Server-only English finding review validation detail.";
-  await page.route(
-    `**/api/mvp/projects/${E2E_PROJECT_ID}/findings/00000000-0000-4000-8000-000000000202`,
-    async (route) => {
-      if (route.request().method() !== "PATCH") {
-        await route.fallback();
-        return;
-      }
-      await route.fulfill({
-        status: 422,
-        contentType: "application/problem+json",
-        body: JSON.stringify(validationProblem(rawMessage)),
-      });
-    },
-  );
+// REMOVED: "zh-CN Diagnosis keeps server validation detail out of localized
+// review feedback". It filled the finding card's inline review form, which
+// lives in diagnosis/_finding-card.tsx — a file only DiagnosisClient
+// (_diagnosis.tsx:722) mounts, and nothing mounts DiagnosisClient since
+// /diagnosis became a redirect (diagnosis/page.tsx:19). Growth Map reviews a
+// Finding from its own detail rail (growth-map/_growth-map.tsx:552): a
+// different control with different copy, so this is a deletion rather than a
+// re-aim. The zh-CN sibling for the Studio editor, directly above, still
+// proves that server validation detail never reaches localized feedback.
 
-  await page.goto(`/p/${E2E_PROJECT_ID}/diagnosis`);
-  await page.getByRole("button", { name: "简体中文" }).click();
-  const finding = page
-    .getByRole("article")
-    .filter({ hasText: "A product page returned a server error." });
-  await finding.getByRole("button", { name: "忽略", exact: true }).click();
-  await finding.getByLabel("原因").fill("已有替代方案");
-  await finding.getByRole("button", { name: "提交", exact: true }).click();
-
-  await expect(
-    finding.getByText("无法保存你的审核，请重试。", { exact: true }),
-  ).toBeVisible();
-  await expect(finding).not.toContainText(rawMessage);
-});
-
-for (const screen of ["plan", "studio"] as const) {
+for (const screen of ["execution"] as const) {
   test(`${screen} mock shell has no critical/serious axe violations`, async ({
     page,
   }) => {
@@ -928,87 +904,18 @@ for (const screen of ["plan", "studio"] as const) {
   });
 }
 
-test("Report distinguishes an existing export from a temporarily unavailable service", async ({
-  page,
-}) => {
-  let code = "RUN_ALREADY_ACTIVE";
-  await page.route(
-    `**/api/mvp/projects/${E2E_PROJECT_ID}/exports`,
-    async (route) => {
-      const status = code === "RUN_ALREADY_ACTIVE" ? 409 : 503;
-      await route.fulfill({
-        status,
-        contentType: "application/problem+json",
-        body: JSON.stringify(
-          problem(code, "raw export-provider detail", status),
-        ),
-      });
-    },
-  );
-
-  await page.goto(`/p/${E2E_PROJECT_ID}/report`);
-  await page.getByRole("button", { name: "Service bundle" }).click();
-  await expect(
-    page.getByText("An export is already being prepared", { exact: false }),
-  ).toBeVisible();
-
-  code = "DEPENDENCY_UNAVAILABLE";
-  await page.getByRole("button", { name: "Client bundle" }).click();
-  await expect(
-    page.getByText("The export service is temporarily unavailable", {
-      exact: false,
-    }),
-  ).toBeVisible();
-  await expect(page.getByText("Error code", { exact: true })).toBeVisible();
-  await expect(page.getByText("DEPENDENCY_UNAVAILABLE", { exact: true })).toBeVisible();
-  await expect(page.getByText("Request ID", { exact: true })).toBeVisible();
-  await expect(page.getByText("frontend-error-e2e", { exact: true })).toBeVisible();
-  await expect(page.getByRole("main")).not.toContainText(
-    "raw export-provider detail",
-  );
-});
-
-test("Report maps bundle-read dependency errors and exposes a retry", async ({
-  page,
-}) => {
-  let bundleReads = 0;
-  await page.route(
-    `**/api/mvp/projects/${E2E_PROJECT_ID}/exports/export-bundle`,
-    async (route) => {
-      bundleReads += 1;
-      await route.fulfill({
-        status: 503,
-        contentType: "application/problem+json",
-        body: JSON.stringify(
-          problem(
-            "DEPENDENCY_UNAVAILABLE",
-            "raw object-storage endpoint detail",
-            503,
-          ),
-        ),
-      });
-    },
-  );
-
-  await page.goto(`/p/${E2E_PROJECT_ID}/report`);
-  await page.getByRole("button", { name: "Client bundle" }).click();
-  await expect(
-    page.getByText("The export service is temporarily unavailable", {
-      exact: false,
-    }),
-  ).toBeVisible();
-  await expect(page.getByText("Error code", { exact: true })).toBeVisible();
-  await expect(page.getByText("DEPENDENCY_UNAVAILABLE", { exact: true })).toBeVisible();
-  await expect(page.getByText("Request ID", { exact: true })).toBeVisible();
-  await expect(page.getByText("frontend-error-e2e", { exact: true })).toBeVisible();
-  const retry = page.getByRole("button", { name: "Retry status check" });
-  await expect(retry).toBeVisible();
-  await expect(page.getByRole("main")).not.toContainText("raw object-storage");
-  await expect.poll(() => bundleReads).toBe(2);
-
-  await retry.click();
-  await expect.poll(() => bundleReads).toBe(4);
-});
+// REMOVED: "Report distinguishes an existing export from a temporarily
+// unavailable service" and "Report maps bundle-read dependency errors and
+// exposes a retry".
+//
+// Both clicked the export controls ("Service bundle" / "Client bundle") that
+// belonged to ReportClient (report/_report.tsx:1244), which is imported by
+// nothing since /report became a redirect to /results (report/page.tsx:16).
+// The Results screen has no export affordance, so there is no successor
+// surface. The code side of both mappings keeps its own coverage:
+// `exportErrorMessageKey` maps RUN_ALREADY_ACTIVE, DEPENDENCY_UNAVAILABLE and
+// an unknown code to the same three message keys in
+// apps/web/src/app/p/[projectId]/frontend-error-states.test.ts:105.
 
 test("OAuth callback guidance is allowlisted and raw query text is discarded", async ({
   page,

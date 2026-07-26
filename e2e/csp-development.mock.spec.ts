@@ -35,7 +35,8 @@ test("Next development runtime renders without browser or CSP errors", async ({
   expect(response?.status()).toBe(200);
   await expect(
     page.getByRole("heading", {
-      name: "Turn evidence into the next 90 days of action.",
+      name: "Where growth should move next",
+      level: 1,
     }),
   ).toBeVisible();
   await page.evaluate(
