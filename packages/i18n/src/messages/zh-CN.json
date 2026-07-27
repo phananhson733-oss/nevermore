@@ -1822,7 +1822,6 @@
     },
     "override": {
       "override": "调整行动",
-      "hideAdjustment": "收起调整",
       "blockedByEditor": "请先保存或丢弃当前草稿修改，再调整行动。",
       "overrideKicker": "人工覆盖",
       "overrideTitle": "人工调整",

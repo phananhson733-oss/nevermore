@@ -1822,7 +1822,6 @@
     },
     "override": {
       "override": "Adjust action",
-      "hideAdjustment": "Hide adjustment",
       "blockedByEditor": "Save or discard the draft edits before adjusting the action.",
       "overrideKicker": "Human override",
       "overrideTitle": "Manual override",
