@@ -377,7 +377,10 @@ function FindingCard({
         <span className={styles.contentLocale}>
           {t("summaryContentLocale", { locale: finding.summaryLocale })}
         </span>
-        <p className={styles.cardSummary}>{finding.summary}</p>
+        {/* The card's title in the D3 heading tree: h4 under the section h3,
+            exactly like action cards. `.cardSummary` pins weight/margins so
+            the heading renders identically to the former paragraph. */}
+        <h4 className={styles.cardSummary}>{finding.summary}</h4>
         {scope !== undefined ? (
           <p className={styles.scope}>
             {t("scope")}: <span className={styles.mono}>{scope.value}</span>

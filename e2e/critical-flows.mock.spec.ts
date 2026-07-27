@@ -248,6 +248,16 @@ test("report output locale deep-links on first load, survives refresh, and drive
     page.getByText("Deliverable language: en", { exact: true }),
   ).toBeVisible();
 
+  // D4: the very first report read already carries the deep-linked locale,
+  // and no queryless read happened during first load — a default-language
+  // report never flashed underneath the fr-FR one.
+  expect(api.reportReads[0]).toBe(
+    `/api/mvp/projects/${E2E_PROJECT_ID}/report?outputLocale=fr-FR`,
+  );
+  expect(
+    api.reportReads.filter((read) => !read.includes("outputLocale=")),
+  ).toEqual([]);
+
   await page.reload();
   await expect(page.getByLabel("Requested methodology locale")).toHaveValue(
     "fr-FR",
@@ -370,6 +380,65 @@ test("clearing report locale restores the project default for the same-click exp
 });
 
 /**
+ * D4 (adversarial P2): an initially malformed outputLocale self-heals — the
+ * URL drops only the bad parameter (unrelated params survive), the locale
+ * input falls back to the project default, the report is read in the default
+ * language from the very first request, and the heal is a single replace, not
+ * a loop.
+ */
+test("Results self-heals a malformed outputLocale deep link without dropping unrelated params", async ({
+  page,
+}) => {
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/results?outputLocale=not_a_locale&focus=campaign`,
+  );
+
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results?focus=campaign`);
+  await expect(page.locator("[data-report-document]")).toBeVisible();
+  await expect(page.getByLabel("Requested methodology locale")).toHaveValue(
+    "en",
+  );
+
+  // The malformed locale never reached the API: the first (and only) report
+  // read is queryless, i.e. the server's default-language report.
+  await expect.poll(() => api.reportReads.length).toBeGreaterThanOrEqual(1);
+  expect(api.reportReads[0]).toBe(`/api/mvp/projects/${E2E_PROJECT_ID}/report`);
+  expect(
+    api.reportReads.filter((read) => read.includes("outputLocale")),
+  ).toEqual([]);
+
+  // A replace loop would keep re-reading the report and churning the URL.
+  await page.waitForLoadState("networkidle");
+  await expect(page).toHaveURL(`/p/${E2E_PROJECT_ID}/results?focus=campaign`);
+  expect(api.reportReads).toHaveLength(1);
+});
+
+/**
+ * D4 (adversarial P2): repeated outputLocale params take the FIRST value —
+ * asserted at the browser level so the whole page.tsx -> client controller ->
+ * query chain is covered, not just the unit-tested helper.
+ */
+test("Results uses the first repeated outputLocale query for the first report read", async ({
+  page,
+}) => {
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/results?outputLocale=zh-CN&outputLocale=en`,
+  );
+
+  await expect(page.getByLabel("Requested methodology locale")).toHaveValue(
+    "zh-CN",
+  );
+  await expect.poll(() => api.reportReads.length).toBeGreaterThanOrEqual(1);
+  expect(api.reportReads[0]).toBe(
+    `/api/mvp/projects/${E2E_PROJECT_ID}/report?outputLocale=zh-CN`,
+  );
+  // Both params are valid, so nothing is healed away.
+  await expect(page).toHaveURL(
+    `/p/${E2E_PROJECT_ID}/results?outputLocale=zh-CN&outputLocale=en`,
+  );
+});
+
+/**
  * R3 blueprint D3: the Results heading tree is fixed and asserted by
  * role/name, not by counting h1 elements. The screen owns the only h1; the
  * recheck block and the report document projectName are h2 siblings; the
@@ -394,17 +463,34 @@ test("Results owns one h1 and the report document nests under it (D3)", async ({
   await expect(
     main.getByRole("heading", { name: "Results", level: 1 }),
   ).toBeVisible();
-  await expect(page.locator("h1")).toHaveCount(1);
   await expect(page.locator("[data-report-page]")).toHaveCount(1);
+  const document = page.locator("[data-report-document]");
+  // The uniqueness counts below are only meaningful once every block that
+  // could contribute a heading has mounted — count too early and a second
+  // h1 inside the still-loading report block would slip through.
+  await expect(document).toBeVisible();
+  // h1 uniqueness is asserted on the accessibility tree (role=heading,
+  // aria-level 1), so an ARIA-only second heading fails too; the native
+  // element count stays as a cheap additional tripwire.
+  const levelOneHeadings = main.getByRole("heading", { level: 1 });
+  await expect(levelOneHeadings).toHaveCount(1);
+  await expect(levelOneHeadings).toHaveText("Results");
+  await expect(page.locator("h1")).toHaveCount(1);
   await expect(
     main.getByRole("heading", { name: "Recheck results", level: 2 }),
   ).toBeVisible();
-  const document = page.locator("[data-report-document]");
   await expect(
     document.getByRole("heading", { name: "E2E Critical Flow", level: 2 }),
   ).toBeVisible();
   await expect(
     document.getByRole("heading", { name: "Findings", level: 3 }),
+  ).toBeVisible();
+  // Finding cards title with an h4, exactly like action cards (D3).
+  await expect(
+    document.getByRole("heading", {
+      name: "A product page returned a server error.",
+      level: 4,
+    }),
   ).toBeVisible();
   await expect(
     document.getByRole("heading", {

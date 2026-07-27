@@ -503,6 +503,9 @@
 .cardSummary {
   margin: 0;
   font-size: var(--sf-text-base);
+  /* Shared by the finding h4 and the action-description p: the explicit
+     weight keeps the heading pixel-identical to the paragraph it replaced. */
+  font-weight: 400;
   color: var(--sf-fg);
   line-height: 1.48;
 }

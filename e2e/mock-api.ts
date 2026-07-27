@@ -53,6 +53,8 @@ export interface CriticalFlowApiState {
   readonly exportRequests: unknown[];
   /** One entry per export-detail GET: the exportId that was read. */
   readonly exportDetailReads: string[];
+  /** One entry per report GET: the request's pathname + search (D4). */
+  readonly reportReads: string[];
   sourceReads: number;
   collectionRunPolls: number;
   diagnosticRunPolls: number;
@@ -442,6 +444,7 @@ export async function installCriticalFlowApi(
     artifactPatchRequests: [],
     exportRequests: [],
     exportDetailReads: [],
+    reportReads: [],
     sourceReads: 0,
     collectionRunPolls: 0,
     diagnosticRunPolls: 0,
@@ -660,6 +663,7 @@ export async function installCriticalFlowApi(
     }
 
     if (method === "GET" && path === `${BASE}/report`) {
+      state.reportReads.push(`${path}${url.search}`);
       await json(route, {
         data: {
           project,
