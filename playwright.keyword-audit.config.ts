@@ -4,7 +4,9 @@ const PORT = 4175;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 /**
- * Browser contract for the repository-owned Nevermore keyword audit Artifact.
+ * Browser contract for the repository-owned Nevermore SEO/GEO growth workspace
+ * Artifact. The historical file/config names are retained to avoid creating a
+ * second parallel product Artifact.
  *
  * The harness always owns a dedicated server process. Reusing an arbitrary
  * process could validate a stale generated file from another checkout.

@@ -28,7 +28,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 assertRepositoryOwnedPath({
   repositoryRoot,
   candidatePath: artifactFile,
-  label: "Keyword audit Artifact",
+  label: "Keyword growth workspace Artifact",
   mustExist: true,
   kind: "file",
 });
@@ -112,6 +112,6 @@ process.once("SIGTERM", shutdown);
 
 server.listen(port, "127.0.0.1", () => {
   console.log(
-    `Serving Nevermore keyword audit Artifact at http://127.0.0.1:${port}/`,
+    `Serving Nevermore SEO/GEO growth workspace Artifact at http://127.0.0.1:${port}/`,
   );
 });

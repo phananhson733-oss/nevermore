@@ -87,7 +87,11 @@ const protectInlineStyle = (source) =>
   source.replace(/<\/style/giu, "<\\/style");
 
 const html = `<!doctype html>
-<html lang="zh-CN" data-keyword-audit-build="1.0-static">
+<html
+  lang="zh-CN"
+  data-keyword-audit-build="2.0-static"
+  data-primary-experience="growth-workspace"
+>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -97,11 +101,11 @@ const html = `<!doctype html>
     />
     <meta
       name="description"
-      content="Nevermore 关键词库与 SEO/GEO 能力需求审计：当前事实、审核决定、阶段边界与正式上线验收证据。"
+      content="Nevermore SEO/GEO 增长工作台：在概览、增长地图、执行中心和效果追踪中统一管理页面、关键词、竞品、技术证据与客户交付。"
     />
     <meta name="theme-color" content="#f4eee3" />
-    <meta name="nevermore-keyword-audit-build" content="1.0-static" />
-    <title>Nevermore · 关键词增长治理需求审计</title>
+    <meta name="nevermore-keyword-growth-build" content="2.0-static" />
+    <title>Nevermore · SEO/GEO 增长工作台</title>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23173832'/%3E%3Cpath d='M17 46V18h8l14 18V18h8v28h-8L25 28v18z' fill='%23f4eee3'/%3E%3C/svg%3E"
@@ -111,13 +115,13 @@ ${protectInlineStyle(styles)}
     </style>
   </head>
   <body>
-    <a class="skip-link" href="#audit-content">跳到审计正文</a>
+    <a class="skip-link" href="#product-content">跳到工作台正文</a>
     <div id="app"></div>
     <noscript>
       <main class="boot-error">
         <h1>需要启用 JavaScript</h1>
-        <p>这是一份完全离线的交互式需求审计 Artifact；请启用 JavaScript 后重新打开。</p>
-        <p>审核通过不等于已上线，正式完成仍需通过数据、契约、服务、界面、写入、测试和数据来源验收。</p>
+        <p>这是一份完全离线的 Nevermore SEO/GEO 增长工作台 Artifact；请启用 JavaScript 后重新打开。</p>
+        <p>客户主体验由概览、增长地图、执行中心和效果追踪组成；需求审核仅作为辅助证据。</p>
       </main>
     </noscript>
     <script>
@@ -161,6 +165,15 @@ const forbiddenContent = [
     "credential",
     /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|postgres(?:ql)?:\/\/[^/\s:@]+:[^@\s/]+@|https?:\/\/[^/\s:@]+:[^@\s/]+@|github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|sk-(?:proj-)?[A-Za-z0-9_-]{20,})/,
   ],
+  [
+    "generic toast action",
+    /\b(?:showToast|createToast|toast\s*\()/i,
+  ],
+  ["legacy RelayOps scenario", /\bRelayOps\b/i],
+  [
+    "legacy mock business metric",
+    /(?:\bDEMO DATA\b|场景数据\s*[·•|]\s*\d{4}|2,486\s+keywords|126\s+URLs|28\s+domains|1,240\s+(?:clicks|点击)|1,842\s+words|\b37\s+total\b|\b92%|产品画像\s*100%|data-evidence-status\s*=\s*["'](?:mock|scenario)["'])/i,
+  ],
 ];
 
 const violations = forbiddenContent
@@ -176,5 +189,5 @@ await mkdir(path.dirname(outputFile), { recursive: true });
 await writeFile(outputFile, html, "utf8");
 
 console.log(
-  `Built standalone Nevermore keyword audit Artifact: ${outputFile} (${Buffer.byteLength(html).toLocaleString("en-US")} bytes)`,
+  `Built standalone Nevermore SEO/GEO growth workspace Artifact: ${outputFile} (${Buffer.byteLength(html).toLocaleString("en-US")} bytes)`,
 );

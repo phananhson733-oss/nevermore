@@ -1,47 +1,64 @@
-(function startNevermoreKeywordAudit(global) {
+(function startNevermoreIntegratedProduct(global) {
   "use strict";
 
-  const VIEW_IDS = ["requirements", "modules", "stages", "acceptance"];
-  const VIEW_LABELS = {
-    requirements: "需求审核",
-    modules: "模块影响",
-    stages: "分阶段落地",
-    acceptance: "验收证据",
+  const PRODUCT_VIEW_IDS = ["overview", "growth-map", "execution", "results"];
+  const VIEW_ICONS = {
+    overview: "总",
+    "growth-map": "图",
+    execution: "执",
+    results: "效",
   };
-  const DECISION_IDS = ["all", "adopt", "rewrite", "defer"];
-  const DECISION_LABELS = {
-    all: "全部结论",
-    adopt: "直接纳入",
-    rewrite: "改写后纳入",
-    defer: "后置",
+  const VIEW_SUBTITLES = {
+    overview: "今天先做什么",
+    "growth-map": "页面 · Topic · Keyword · Competitor",
+    execution: "审核并处理交付物",
+    results: "改前 / 改后与证据",
   };
   const TRUTH_LABELS = {
-    current: "当前已存在",
+    current: "当前可用",
+    next: "尚未启用",
+    "provider-dependent": "需接入数据源",
     partial: "部分存在",
+    planned: "已规划 · 待落地",
+    unavailable: "当前不可用",
     "not-implemented": "尚未实现",
     "external-dependent": "依赖外部接入",
   };
-  const FLAG_STATUS_LABELS = {
-    complete: "已完成",
-    completed: "已完成",
-    pending: "计划中 · 未完成",
-    planned: "计划中 · 未完成",
-    "not-started": "计划中 · 未完成",
-    incomplete: "计划中 · 未完成",
-  };
-  const FLAG_CONTEXT_LABELS = {
-    rank_history_complete: "排名历史",
-    receipt_backed_results_complete: "回执支持的结果 / 效果追踪",
+  const CONNECTION_ORDER = ["gsc", "ga4", "github"];
+  const DELIVERABLE_IDS = [
+    "english-blog",
+    "content-brief",
+    "metadata",
+    "technical-ticket-code-patch",
+  ];
+  const NATIVE_ENTRY_IDS = {
+    "topic-governance": "topic-review",
+    "keyword-relation-governance": "keyword-relationship-review",
+    "voc-source-governance": "source-readiness",
+    "artifact-source-provenance": "deliverable-sources",
+    "action-blocker": "blocked-task",
+    "action-business-progress": "task-progress",
+    "opportunity-decision-sla": "pending-opportunity",
+    "internal-link-graph": "internal-link-opportunity",
+    "keyword-rank-history": "keyword-observation",
+    "content-decay-monitor": "content-health-alert",
+    "backlink-evidence": "backlink-readiness",
+    "geo-citation-observation": "geo-evidence",
+    "competitor-delta-monitor": "competitor-change",
   };
   const DEFAULT_STATE = {
-    view: "requirements",
-    requirementId: 1,
-    decision: "all",
-    module: "all",
-    stage: "all",
+    view: "overview",
+    surface: "",
+    entryId: "",
+    capabilityId: "",
+    deliverable: DELIVERABLE_IDS[0],
+    target: "",
+    drawer: "",
+    auditRequirementId: 0,
   };
 
   let audit;
+  let product;
   let app;
   let state = { ...DEFAULT_STATE };
   let dialogInvoker = null;
@@ -70,124 +87,425 @@
     return [value];
   }
 
-  function itemText(item) {
+  function itemLabel(item) {
     if (typeof item === "string" || typeof item === "number") {
-      return text(item);
+      const canonicalObject = list(product?.canonicalObjects).find(
+        (object) => object.id === String(item),
+      );
+      return text(canonicalObject?.name ?? item);
     }
     if (item && typeof item === "object") {
       return text(
         item.label ??
           item.name ??
           item.title ??
+          item.trigger ??
+          item.surface ??
           item.description ??
-          item.deliverable ??
-          item.evidenceNeeded,
+          item.purpose ??
+          item.carries,
       );
     }
     return "未提供";
   }
 
-  function renderList(items, className = "review-list") {
+  function renderList(items, className = "condition-list") {
     const normalized = list(items);
     if (normalized.length === 0) {
       return '<p data-reading-text>当前没有额外条目。</p>';
     }
     return `<ul class="${escapeHtml(className)}">${normalized
-      .map((item) => `<li data-reading-text>${escapeHtml(itemText(item))}</li>`)
+      .map((item) => `<li data-reading-text>${escapeHtml(itemLabel(item))}</li>`)
       .join("")}</ul>`;
   }
 
-  function getModule(moduleId) {
-    return audit.modules.find((module) => module.id === moduleId) ?? null;
+  function moduleById(moduleId) {
+    return product.modules.find((module) => module.id === moduleId) ?? null;
   }
 
-  function getStage(stageId) {
-    return audit.stages.find((stage) => stage.id === stageId) ?? null;
+  function sectionById(module, sectionId) {
+    return (
+      list(module?.mainSections).find((section) => section.id === sectionId) ??
+      null
+    );
   }
 
-  function getRequirement(requirementId) {
+  function capabilityById(capabilityId) {
+    return (
+      product.capabilities.find(
+        (capability) => capability.id === String(capabilityId),
+      ) ?? null
+    );
+  }
+
+  function nativeEntryId(capability) {
+    return (
+      NATIVE_ENTRY_IDS[capability?.id] ??
+      `workspace-item-${capability?.requirementId ?? "unknown"}`
+    );
+  }
+
+  function capabilityByEntryId(entryId) {
+    return (
+      product.capabilities.find(
+        (capability) => nativeEntryId(capability) === String(entryId),
+      ) ?? null
+    );
+  }
+
+  function requirementById(requirementId) {
     return (
       audit.requirements.find(
         (requirement) => requirement.id === Number(requirementId),
-      ) ?? audit.requirements[0]
+      ) ?? null
     );
   }
 
-  function requirementMatches(requirement, candidateState) {
+  function capabilityForRequirement(requirementId) {
     return (
-      (candidateState.decision === "all" ||
-        requirement.decision === candidateState.decision) &&
-      (candidateState.module === "all" ||
-        list(requirement.modules).includes(candidateState.module)) &&
-      (candidateState.stage === "all" ||
-        list(requirement.stage).includes(candidateState.stage))
+      product.capabilities.find(
+        (capability) =>
+          capability.requirementId === Number(requirementId),
+      ) ?? null
     );
   }
 
-  function filteredRequirements(candidateState = state) {
-    return audit.requirements.filter((requirement) =>
-      requirementMatches(requirement, candidateState),
+  function capabilityIdsForSection(module, section) {
+    const sectionIds = list(section?.capabilityIds).map(String);
+    if (sectionIds.length > 0) {
+      return sectionIds;
+    }
+    return list(module?.capabilityIds).map(String);
+  }
+
+  function capabilitiesForSection(module, section) {
+    const ids = new Set(capabilityIdsForSection(module, section));
+    return product.capabilities.filter((capability) => ids.has(capability.id));
+  }
+
+  function capabilitiesForModule(module) {
+    const primaryCapabilities = product.capabilities.filter(
+      (capability) => capability.primaryModule === module?.id,
     );
+    if (primaryCapabilities.length > 0) {
+      return primaryCapabilities;
+    }
+    const ids = new Set(list(module?.capabilityIds).map(String));
+    return product.capabilities.filter((capability) => ids.has(capability.id));
+  }
+
+  function firstSection(module) {
+    return list(module?.mainSections)[0] ?? null;
+  }
+
+  function firstCapability(module, section) {
+    return (
+      capabilitiesForSection(module, section)[0] ??
+      capabilitiesForModule(module)[0] ??
+      null
+    );
+  }
+
+  function truthLabel(status) {
+    return TRUTH_LABELS[status] ?? text(status);
+  }
+
+  function truthDescription(status) {
+    const productState = product.truthStates?.[status];
+    if (typeof productState === "string") {
+      return productState;
+    }
+    if (productState && typeof productState === "object") {
+      return text(
+        productState.description ?? productState.label ?? productState.name,
+        truthLabel(status),
+      );
+    }
+    return truthLabel(status);
+  }
+
+  function truthBadge(status) {
+    return `<span class="truth-badge truth-badge--${escapeHtml(
+      status,
+    )}">${escapeHtml(truthLabel(status))}</span>`;
+  }
+
+  function deliveryStageLabel(stage) {
+    const normalized = text(stage, "");
+    const labels = {
+      "stage-1": "已纳入本期范围",
+      "stage-2": "进入后续迭代",
+      "stage-3": "依赖外部条件",
+    };
+    return labels[normalized] ?? normalized;
+  }
+
+  function normalizeConnectionId(value) {
+    return String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .replaceAll("google search console", "gsc")
+      .replaceAll("google analytics 4", "ga4");
+  }
+
+  function connections() {
+    const policy = product.connectorPolicy ?? audit.connectorPolicy ?? {};
+    const candidates = Array.isArray(policy)
+      ? policy
+      : list(
+          policy.connections ??
+            policy.customerVisibleConnections ??
+            policy.connectors ??
+            policy.items,
+        );
+
+    const normalized = candidates
+      .map((connection) => {
+        if (typeof connection === "string") {
+          const id = normalizeConnectionId(connection);
+          return {
+            id,
+            name: connection,
+            purpose: "客户可见数据连接",
+            readiness: "next",
+            unavailableText: "连接状态需由项目实际授权确认。",
+          };
+        }
+        const id = normalizeConnectionId(
+          connection.id ?? connection.name ?? connection.label,
+        );
+        return {
+          ...connection,
+          id,
+          name: text(
+            connection.name ?? connection.label,
+            id.toUpperCase(),
+          ),
+          purpose: text(
+            connection.purpose,
+            "客户可见数据连接",
+          ),
+          truthStatus: text(
+            connection.truthStatus ?? connection.status,
+            "next",
+          ),
+          readiness: text(
+            connection.readiness,
+            "需要完成项目级授权与 Scope 校验。",
+          ),
+          unavailableText: text(
+            connection.unavailableText,
+            "尚未具备可验证的连接状态。",
+          ),
+        };
+      })
+      .filter((connection) => CONNECTION_ORDER.includes(connection.id));
+
+    return CONNECTION_ORDER.map((id) =>
+      normalized.find((connection) => connection.id === id),
+    ).filter(Boolean);
+  }
+
+  function lifecycleSteps() {
+    return list(product.lifecycle).map((step, index) => {
+      if (typeof step === "string") {
+        return { id: `lifecycle-${index + 1}`, label: step };
+      }
+      return {
+        id: text(step.id, `lifecycle-${index + 1}`),
+        label: text(
+          step.label ?? step.name ?? step.title,
+          `阶段 ${index + 1}`,
+        ),
+      };
+    });
+  }
+
+  function encodeDestination(destination) {
+    if (!destination) {
+      return "";
+    }
+    const kind = text(destination.kind, "view");
+    const target = text(destination.target, "current");
+    return `${kind}:${target}`;
+  }
+
+  function primaryAction(record) {
+    const action = record?.primaryAction;
+    if (!action || !action.destination) {
+      return null;
+    }
+    return {
+      id: text(action.id),
+      label: text(action.label),
+      destination: action.destination,
+      encodedDestination: encodeDestination(action.destination),
+    };
+  }
+
+  function findDestinationRoute(destination) {
+    const target = text(destination?.target, "");
+    const kind = text(destination?.kind, "");
+
+    if (
+      ["audit", "audit-evidence", "evidence", "secondary-evidence"].includes(
+        kind,
+      )
+    ) {
+      return { drawer: "audit" };
+    }
+    if (["connections", "connection"].includes(kind)) {
+      return { drawer: "connections" };
+    }
+
+    const directModule = moduleById(target);
+    if (directModule) {
+      return {
+        view: directModule.id,
+        surface: firstSection(directModule)?.id ?? "",
+      };
+    }
+
+    for (const module of product.modules) {
+      const directSection = sectionById(module, target);
+      if (directSection) {
+        return { view: module.id, surface: directSection.id };
+      }
+    }
+
+    const tokens = target.split(/[/:#]/).filter(Boolean);
+    const routedModule = tokens.map(moduleById).find(Boolean);
+    if (routedModule) {
+      const routedSection =
+        tokens.map((token) => sectionById(routedModule, token)).find(Boolean) ??
+        firstSection(routedModule);
+      return {
+        view: routedModule.id,
+        surface: routedSection?.id ?? "",
+      };
+    }
+
+    for (const module of product.modules) {
+      const routedSection = tokens
+        .map((token) => sectionById(module, token))
+        .find(Boolean);
+      if (routedSection) {
+        return { view: module.id, surface: routedSection.id };
+      }
+    }
+
+    return {};
   }
 
   function normalizeState(candidate) {
-    const moduleIds = new Set(audit.modules.map((module) => module.id));
-    const stageIds = new Set(audit.stages.map((stage) => stage.id));
-    const normalized = {
-      view: VIEW_IDS.includes(candidate.view)
-        ? candidate.view
-        : DEFAULT_STATE.view,
-      requirementId: audit.requirements.some(
-        (requirement) => requirement.id === Number(candidate.requirementId),
+    const view = PRODUCT_VIEW_IDS.includes(candidate.view)
+      ? candidate.view
+      : "overview";
+    const module = moduleById(view) ?? product.modules[0];
+    const requestedSurface =
+      view === "growth-map" && candidate.object
+        ? candidate.object
+        : candidate.surface;
+    const section =
+      sectionById(module, requestedSurface) ?? firstSection(module);
+    const moduleCapabilities = capabilitiesForModule(module);
+    const sectionCapabilities = capabilitiesForSection(module, section);
+    const requestedCapability =
+      capabilityByEntryId(candidate.entryId) ??
+      capabilityById(candidate.capabilityId);
+    const selectedCapability =
+      requestedCapability &&
+      sectionCapabilities.some(
+        (capability) => capability.id === requestedCapability.id,
       )
-        ? Number(candidate.requirementId)
-        : audit.requirements[0].id,
-      decision: DECISION_IDS.includes(candidate.decision)
-        ? candidate.decision
-        : "all",
-      module:
-        candidate.module === "all" || moduleIds.has(candidate.module)
-          ? candidate.module
-          : "all",
-      stage:
-        candidate.stage === "all" || stageIds.has(candidate.stage)
-          ? candidate.stage
-          : "all",
-    };
+        ? requestedCapability
+        : sectionCapabilities[0] ??
+          moduleCapabilities[0] ??
+          capabilityById(list(module.capabilityIds)[0]) ??
+          product.capabilities[0];
 
-    const visible = filteredRequirements(normalized);
-    if (
-      visible.length > 0 &&
-      !visible.some(
-        (requirement) => requirement.id === normalized.requirementId,
-      )
-    ) {
-      normalized.requirementId = visible[0].id;
-    }
-    return normalized;
+    return {
+      view: module.id,
+      surface: section?.id ?? "",
+      entryId: selectedCapability ? nativeEntryId(selectedCapability) : "",
+      capabilityId: selectedCapability?.id ?? "",
+      deliverable: DELIVERABLE_IDS.includes(candidate.deliverable)
+        ? candidate.deliverable
+        : DELIVERABLE_IDS[0],
+      target: text(candidate.target, ""),
+      drawer: ["audit", "connections"].includes(candidate.drawer)
+        ? candidate.drawer
+        : "",
+      auditRequirementId: requirementById(candidate.auditRequirementId)
+        ? Number(candidate.auditRequirementId)
+        : selectedCapability?.requirementId ?? audit.requirements[0].id,
+    };
   }
 
   function parseHash() {
     const rawHash = global.location.hash.replace(/^#\/?/, "");
     const [rawView = "", rawQuery = ""] = rawHash.split("?");
     const params = new URLSearchParams(rawQuery);
+
+    if (["requirements", "modules", "stages", "acceptance"].includes(rawView)) {
+      const requirementId = Number(
+        params.get("item") ?? audit.requirements[0].id,
+      );
+      const capability =
+        capabilityForRequirement(requirementId) ?? product.capabilities[0];
+      const module =
+        moduleById(capability.primaryModule) ?? product.modules[0];
+      const section =
+        list(module.mainSections).find((item) =>
+          list(item.capabilityIds).includes(capability.id),
+        ) ?? firstSection(module);
+      return normalizeState({
+        view: module.id,
+        surface: section?.id,
+        entryId: nativeEntryId(capability),
+        target: "",
+        drawer: rawView === "requirements" ? "audit" : "",
+        auditRequirementId: requirementId,
+      });
+    }
+
     return normalizeState({
-      view: rawView || DEFAULT_STATE.view,
-      requirementId: Number(params.get("item") ?? DEFAULT_STATE.requirementId),
-      decision: params.get("decision") ?? "all",
-      module: params.get("module") ?? "all",
-      stage: params.get("stage") ?? "all",
+      view: rawView || "overview",
+      surface: params.get("surface") ?? "",
+      object: params.get("object") ?? "",
+      entryId: params.get("entry") ?? "",
+      deliverable: params.get("deliverable") ?? DELIVERABLE_IDS[0],
+      target: params.get("target") ?? "",
+      drawer: params.get("drawer") ?? "",
+      auditRequirementId: Number(params.get("audit") ?? 0),
     });
   }
 
-  function stateHash(candidateState) {
-    const params = new URLSearchParams({
-      item: String(candidateState.requirementId),
-      decision: candidateState.decision,
-      module: candidateState.module,
-      stage: candidateState.stage,
-    });
-    return `#/${candidateState.view}?${params.toString()}`;
+  function stateHash(candidate) {
+    const params = new URLSearchParams();
+    params.set("surface", candidate.surface);
+    if (candidate.view === "growth-map") {
+      params.set("object", candidate.surface);
+    }
+    if (candidate.entryId) {
+      params.set("entry", String(candidate.entryId));
+    }
+    if (
+      candidate.view === "execution" &&
+      DELIVERABLE_IDS.includes(candidate.deliverable)
+    ) {
+      params.set("deliverable", candidate.deliverable);
+    }
+    if (candidate.target) {
+      params.set("target", candidate.target);
+    }
+    if (candidate.drawer) {
+      params.set("drawer", candidate.drawer);
+    }
+    if (candidate.drawer === "audit" && candidate.auditRequirementId) {
+      params.set("audit", String(candidate.auditRequirementId));
+    }
+    return `#/${candidate.view}?${params.toString()}`;
   }
 
   function commitState(patch, options = {}) {
@@ -199,975 +517,1101 @@
       render();
       return;
     }
-
     if (options.replace) {
       global.history.replaceState(null, "", nextHash);
       render();
       return;
     }
-
     global.location.hash = nextHash;
+    render();
   }
 
-  function decisionStamp(decision) {
-    return `<span class="stamp stamp--${escapeHtml(decision)}">${escapeHtml(
-      audit.decisionLabels?.[decision] ?? DECISION_LABELS[decision] ?? decision,
-    )}</span>`;
-  }
-
-  function truthStamp(truth) {
-    return `<span class="stamp stamp--truth-${escapeHtml(truth)}">${escapeHtml(
-      audit.truthLabels?.[truth] ?? TRUTH_LABELS[truth] ?? truth,
-    )}</span>`;
-  }
-
-  function buildShell() {
-    const decisionCounts = {
-      adopt: audit.requirements.filter((item) => item.decision === "adopt")
-        .length,
-      rewrite: audit.requirements.filter((item) => item.decision === "rewrite")
-        .length,
-      defer: audit.requirements.filter((item) => item.decision === "defer")
-        .length,
-    };
-
-    document.title = "Nevermore · 关键词增长治理需求审计";
+  function renderShell() {
+    document.title = "Nevermore · SEO/GEO 增长工作台";
     document.documentElement.lang = "zh-CN";
-
     app.innerHTML = `
-      <div class="audit-shell">
-        <header class="audit-header" aria-labelledby="audit-title">
-          <div class="masthead">
-            <div class="masthead__identity">
-              <p class="eyebrow">Nevermore · Formal product audit</p>
-              <h1 id="audit-title">${escapeHtml(audit.title)}</h1>
-              <p class="masthead__subtitle" data-reading-text>${escapeHtml(
-                audit.subtitle,
-              )}</p>
-            </div>
-            <div class="audit-seal" aria-label="正式需求审核，版本 ${escapeHtml(
-              audit.version,
-            )}">
-              <strong>正式审核</strong>
-              <span>VERSION ${escapeHtml(audit.version)}</span>
-            </div>
+      <div class="product-shell">
+        <aside class="product-sidebar" aria-label="Nevermore 产品导航">
+          <div class="brand">
+            <span class="brand__mark" aria-hidden="true">G</span>
+            <span>
+              <span class="brand__name">GenGrowth</span>
+              <span class="brand__tagline">海外增长工作台</span>
+            </span>
           </div>
-          <div class="scope-declaration">
-            <div class="scope-declaration__copy" data-reading-text>
-              <strong>范围声明：</strong>${escapeHtml(audit.productionNotice)}
-              <br>${escapeHtml(audit.scopeNotice)}
-            </div>
-            <div class="scope-declaration__meta">
-              <span>审核日期</span>
-              <b>${escapeHtml(audit.reviewedAt)}</b>
-              <span>客户可见连接：${escapeHtml(
-                audit.customerVisibleConnectors.join(" · "),
-              )}</span>
-            </div>
+          <div class="project-identity">
+            <span class="project-identity__eyebrow">Nevermore</span>
+            <strong>统一 SEO/GEO 增长工作台</strong>
+            <p>从 URL、关键词和技术证据，到交付物、发布回执与效果追踪。</p>
           </div>
-          <div class="decision-register" aria-label="审核结论">
-            ${["adopt", "rewrite", "defer"]
+          <nav class="workspace-nav" aria-label="客户工作区" tabindex="0">
+            <p class="workspace-nav__label">客户工作区</p>
+            ${product.modules
               .map(
-                (decision, index) => `
+                (module) => `
                   <button
-                    class="decision-register__item"
                     type="button"
-                    data-action="set-decision"
-                    data-value="${decision}"
-                    aria-pressed="false"
+                    data-action="set-product-view"
+                    data-product-view="${escapeHtml(module.id)}"
+                    aria-label="${escapeHtml(module.name)}"
                   >
-                    <span class="decision-register__mark" aria-hidden="true">0${
-                      index + 1
-                    }</span>
-                    <span>
-                      <span class="decision-register__label">${escapeHtml(
-                        audit.decisionLabels?.[decision] ??
-                          DECISION_LABELS[decision],
-                      )}</span>
-                      <span class="decision-register__hint">${
-                        decision === "adopt"
-                          ? "可沿现有产品链路建设"
-                          : decision === "rewrite"
-                            ? "方向成立，需修正边界"
-                            : "保留契约，退出近期范围"
-                      }</span>
+                    <span class="workspace-nav__icon" aria-hidden="true">${escapeHtml(
+                      VIEW_ICONS[module.id] ?? "·",
+                    )}</span>
+                    <span class="workspace-nav__copy">
+                      <strong>${escapeHtml(module.name)}</strong>
                     </span>
-                    <span class="decision-register__count">${decisionCounts[decision]}</span>
                   </button>
                 `,
               )
               .join("")}
+          </nav>
+          <div class="sidebar-evidence">
+            <span class="sidebar-evidence__label">审核证据</span>
+            <p>查看原始需求审核、事实依据与验收边界。</p>
+            <button
+              type="button"
+              data-product-action="open-audit-evidence"
+              data-action="open-audit-evidence"
+              data-governed-destination="evidence:requirements"
+            >查看需求审核证据</button>
           </div>
-        </header>
+        </aside>
 
-        <nav class="view-tabs" aria-label="审计视图">
-          ${VIEW_IDS.map(
-            (view, index) => `
+        <div class="product-stage">
+          <header class="product-topbar">
+            <div class="breadcrumb">
+              <span>Nevermore</span>
+              <span class="breadcrumb__slash" aria-hidden="true">/</span>
+              <strong data-breadcrumb-current>概览</strong>
+            </div>
+            <div class="connection-readiness" aria-label="数据连接就绪度">
+              ${connections()
+                .map(
+                  (connection) => `
+                    <button
+                      class="connection-chip"
+                      type="button"
+                      data-action="open-connections"
+                      data-governed-destination="connections:${escapeHtml(
+                        connection.id,
+                      )}"
+                      data-connection-id="${escapeHtml(connection.id)}"
+                      data-customer-connector="${escapeHtml(connection.name)}"
+                      data-readiness="${escapeHtml(connection.truthStatus)}"
+                    >
+                      ${escapeHtml(connection.name)}
+                      <span>${escapeHtml(
+                        truthLabel(connection.truthStatus),
+                      )}</span>
+                    </button>
+                  `,
+                )
+                .join("")}
               <button
+                class="connection-more"
                 type="button"
-                data-action="set-view"
-                data-view="${view}"
-              >
-                <span class="view-tabs__index" aria-hidden="true">0${
-                  index + 1
-                }</span>${VIEW_LABELS[view]}
-              </button>
-            `,
-          ).join("")}
-        </nav>
-
-        <main id="audit-content" class="audit-workspace">
-          <aside
-            id="requirement-register"
-            class="audit-panel register-panel"
-            aria-label="需求清单"
-            tabindex="0"
-          ></aside>
-          <article
-            id="review-detail"
-            class="audit-panel review-sheet"
-            aria-live="polite"
-          ></article>
-          <aside
-            id="impact-rail"
-            class="audit-panel impact-panel"
-            aria-label="影响与证据"
-            tabindex="0"
-          ></aside>
-        </main>
-
-        <footer class="audit-footer">
-          <p data-reading-text>
-            <strong>真相边界：</strong>本审计 Artifact 证明 13 条需求已经完成产品审核和实施分层，
-            不替代数据库、Contract、Service、Mutation、UI、测试与真实 Provider 的生产证据。
-          </p>
-          <span class="audit-footer__version">Nevermore Audit · ${escapeHtml(
-            audit.version,
-          )}</span>
-        </footer>
+                data-action="open-connections"
+                data-product-action="open-connections"
+                data-governed-destination="connections:readiness"
+                aria-label="查看数据连接说明"
+              >···</button>
+            </div>
+          </header>
+          <main id="product-content" data-product-surface="overview"></main>
+        </div>
       </div>
 
       <dialog
-        class="evidence-dialog"
-        data-evidence-dialog
+        class="product-dialog"
+        data-connections-dialog
         aria-modal="true"
-        aria-labelledby="evidence-dialog-title"
+        aria-labelledby="connections-dialog-title"
       >
         <div class="dialog-head">
           <div>
-            <p class="eyebrow">Evidence ledger</p>
-            <h2 id="evidence-dialog-title">结构化验收证据</h2>
+            <p class="dialog-head__eyebrow">Data readiness</p>
+            <h2 id="connections-dialog-title">客户可见数据连接</h2>
           </div>
           <button
             class="dialog-close"
             type="button"
             data-action="close-dialog"
-            aria-label="关闭证据抽屉"
+            aria-label="关闭数据连接说明"
           >×</button>
         </div>
         <div
           class="dialog-body"
-          data-dialog-body
+          data-connections-body
           role="region"
-          aria-label="结构化验收证据内容"
+          aria-label="连接就绪度详情"
           tabindex="0"
         ></div>
         <div class="dialog-foot">
+          <button class="product-button" type="button" data-action="close-dialog">
+            返回工作区
+          </button>
+        </div>
+      </dialog>
+
+      <dialog
+        class="product-dialog"
+        data-audit-evidence-dialog
+        data-secondary-evidence
+        aria-modal="true"
+        aria-labelledby="audit-dialog-title"
+      >
+        <div class="dialog-head">
+          <div>
+            <p class="dialog-head__eyebrow">Secondary evidence</p>
+            <h2 id="audit-dialog-title">需求审核证据</h2>
+          </div>
           <button
-            class="button button--secondary"
+            class="dialog-close"
             type="button"
-            data-action="go-to-acceptance"
-          >查看对应验收层</button>
-          <button class="button" type="button" data-action="close-dialog">
-            返回审核
+            data-action="close-dialog"
+            aria-label="关闭需求审核证据"
+          >×</button>
+        </div>
+        <div
+          class="dialog-body"
+          data-audit-dialog-body
+          role="region"
+          aria-label="13 项需求审核证据"
+          tabindex="0"
+        ></div>
+        <div class="dialog-foot">
+          <button class="product-button" type="button" data-action="close-dialog">
+            返回工作台
           </button>
         </div>
       </dialog>
     `;
 
-    const dialog = getDialog();
-    dialog.addEventListener("cancel", (event) => {
-      event.preventDefault();
-      closeDialog();
+    document.querySelectorAll("dialog").forEach((dialog) => {
+      dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        commitState({ drawer: "" }, { replace: true });
+      });
     });
   }
 
-  function renderFilters() {
-    return `
-      <div class="filter-stack" aria-label="需求筛选">
-        <div class="filter-field">
-          <label for="decision-filter">结论</label>
-          <select
-            id="decision-filter"
-            data-filter="decision"
-            data-decision-filter
-          >
-            ${DECISION_IDS.map(
-              (decision) => `
-                <option value="${decision}" ${
-                  state.decision === decision ? "selected" : ""
-                }>${escapeHtml(
-                  audit.decisionLabels?.[decision] ??
-                    DECISION_LABELS[decision],
-                )}</option>
-              `,
-            ).join("")}
-          </select>
-        </div>
-        <div class="filter-field">
-          <label for="module-filter">模块</label>
-          <select id="module-filter" data-filter="module" data-module-filter>
-            <option value="all" ${state.module === "all" ? "selected" : ""}>
-              全部模块
-            </option>
-            ${audit.modules
-              .map(
-                (module) => `
-                  <option value="${escapeHtml(module.id)}" ${
-                    state.module === module.id ? "selected" : ""
-                  }>${escapeHtml(module.name)}</option>
-                `,
-              )
-              .join("")}
-          </select>
-        </div>
-        <div class="filter-field">
-          <label for="stage-filter">阶段</label>
-          <select id="stage-filter" data-filter="stage" data-stage-filter>
-            <option value="all" ${state.stage === "all" ? "selected" : ""}>
-              全部阶段
-            </option>
-            ${audit.stages
-              .map(
-                (stage) => `
-                  <option value="${escapeHtml(stage.id)}" ${
-                    state.stage === stage.id ? "selected" : ""
-                  }>${escapeHtml(stage.name)}</option>
-                `,
-              )
-              .join("")}
-          </select>
-        </div>
-        <button class="filter-clear" type="button" data-action="clear-filters">
-          清除筛选
-        </button>
-      </div>
-    `;
-  }
-
-  function renderRequirementRows(requirements) {
-    if (requirements.length === 0) {
-      return `
-        <div class="empty-register">
-          <p data-reading-text>当前组合没有匹配需求。请清除一个筛选条件。</p>
-          <button class="button button--secondary" type="button" data-action="clear-filters">
-            恢复全部需求
-          </button>
-        </div>
-      `;
+  function renderLifecycle() {
+    const steps = lifecycleSteps();
+    if (steps.length === 0) {
+      return "";
     }
-
     return `
-      <ol class="requirement-list">
-        ${requirements
+      <div class="lifecycle-strip" aria-label="统一增长生命周期">
+        ${steps
           .map(
-            (requirement) => `
-              <li>
-                <button
-                  class="requirement-row"
-                  type="button"
-                  data-action="select-requirement"
-                  data-requirement-id="${requirement.id}"
-                  data-decision="${escapeHtml(requirement.decision)}"
-                  data-modules="${escapeHtml(list(requirement.modules).join(" "))}"
-                  data-stages="${escapeHtml(list(requirement.stage).join(" "))}"
-                  aria-current="${
-                    state.requirementId === requirement.id ? "true" : "false"
-                  }"
-                >
-                  <span class="requirement-row__number">${String(
-                    requirement.id,
-                  ).padStart(2, "0")}</span>
-                  <span>
-                    <span class="requirement-row__title">${escapeHtml(
-                      requirement.title,
-                    )}</span>
-                    <span class="requirement-row__meta">
-                      <span>${escapeHtml(
-                        audit.decisionLabels?.[requirement.decision] ??
-                          DECISION_LABELS[requirement.decision],
-                      )}</span>
-                      <span>${escapeHtml(
-                        requirement.auditedPriority ?? requirement.sourcePriority,
-                      )}</span>
-                    </span>
-                  </span>
-                </button>
-              </li>
+            (step, index) => `
+              <div class="lifecycle-step">
+                <span class="lifecycle-step__index" aria-hidden="true">${String(
+                  index + 1,
+                ).padStart(2, "0")}</span>
+                <span>${escapeHtml(step.label)}</span>
+              </div>
             `,
           )
           .join("")}
-      </ol>
-    `;
-  }
-
-  function renderRegister() {
-    const requirements = filteredRequirements();
-    const register = document.getElementById("requirement-register");
-    register.innerHTML = `
-      <div class="panel-heading">
-        <p class="eyebrow">Demand register</p>
-        <h2>需求清单</h2>
-        <p>${requirements.length} / ${audit.requirements.length} 条符合当前筛选</p>
       </div>
-      ${renderFilters()}
-      ${renderRequirementRows(requirements)}
     `;
   }
 
-  function renderCompletionFlags(requirement) {
-    const flags = list(requirement.completionFlags);
-    if (flags.length === 0) {
-      return "";
-    }
-
+  function renderSurfaceTabs(module, activeSection) {
+    const isGrowthMap = module.id === "growth-map";
     return `
-      <div class="completion-flags">
-        ${flags
-          .map((flag) => {
-            const status = text(flag.status, "pending").toLowerCase();
-            const statusLabel =
-              FLAG_STATUS_LABELS[status] ?? `${status} · 未完成`;
-            return `
-              <div
-                class="completion-flag"
-                data-completion-flag="${escapeHtml(flag.id)}"
-                data-status="${escapeHtml(status)}"
-              >
-                <span class="completion-flag__mark" aria-hidden="true">${
-                  status === "complete" || status === "completed" ? "✓" : "!"
-                }</span>
-                <div>
-                  <strong>
-                    ${
-                      FLAG_CONTEXT_LABELS[flag.id]
-                        ? `<span>${escapeHtml(
-                            FLAG_CONTEXT_LABELS[flag.id],
-                          )} · </span>`
-                        : ""
-                    }${escapeHtml(flag.label)}
-                  </strong>
-                  <span class="completion-flag__id">${escapeHtml(
-                    flag.id,
-                  )}</span>
-                  <p data-reading-text>${escapeHtml(statusLabel)} · ${escapeHtml(
-                    flag.evidenceNeeded,
-                  )}</p>
-                </div>
-              </div>
-            `;
-          })
+      <div
+        class="surface-tabs"
+        role="tablist"
+        aria-label="${escapeHtml(module.name)}页面结构"
+      >
+        ${list(module.mainSections)
+          .map(
+            (section) => `
+              <button
+                type="button"
+                role="tab"
+                data-action="set-surface"
+                data-section-id="${escapeHtml(section.id)}"
+                ${isGrowthMap ? `data-growth-object="${escapeHtml(section.id)}"` : ""}
+                aria-selected="${section.id === activeSection.id ? "true" : "false"}"
+                aria-controls="surface-panel-${escapeHtml(section.id)}"
+                id="surface-tab-${escapeHtml(section.id)}"
+              >${escapeHtml(section.title)}</button>
+            `,
+          )
           .join("")}
       </div>
     `;
   }
 
-  function renderRequirementDetail() {
-    const requirement = getRequirement(state.requirementId);
-    const article = document.getElementById("review-detail");
-    article.className = "audit-panel review-sheet";
-    article.setAttribute("data-requirement-detail", "");
-    article.innerHTML = `
-      <div class="review-sheet__inner">
-        <div class="review-sheet__topline">
-          <span class="review-sheet__id">REVIEW ${String(
-            requirement.id,
-          ).padStart(2, "0")} / 13 · ${escapeHtml(
-            requirement.auditedPriority ?? requirement.sourcePriority,
-          )}</span>
-          <div class="relation-chips">
-            ${decisionStamp(requirement.decision)}
-            ${truthStamp(requirement.currentTruth)}
-          </div>
+  function renderSectionPrimaryAction(section) {
+    const action = primaryAction(section);
+    if (!action) {
+      return "";
+    }
+    return `
+      <button
+        class="product-button product-button--secondary"
+        type="button"
+        data-action="run-product-action"
+        data-product-action="${escapeHtml(action.id)}"
+        data-governed-destination="${escapeHtml(action.encodedDestination)}"
+      >${escapeHtml(action.label)} →</button>
+    `;
+  }
+
+  function renderNativeSectionActions(module, activeSection = null) {
+    return `
+      <div class="section-action-bar" aria-label="${escapeHtml(
+        module.name,
+      )}全部入口">
+        ${list(module.mainSections)
+          .map(
+            (section) => `
+              <div class="${
+                section.id === activeSection?.id ? "is-active" : ""
+              }">
+                <span>${escapeHtml(section.title)}</span>
+                ${renderSectionPrimaryAction(section)}
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  function renderNativeEntryList(module, selectedCapability, section) {
+    const entries = capabilitiesForSection(module, section);
+    return `
+      <aside class="product-panel native-entry-panel" aria-label="${escapeHtml(
+        module.name,
+      )}工作入口">
+        <div class="panel-head">
+          <span class="panel-head__eyebrow">WORKSPACE</span>
+          <h2>当前可以处理</h2>
+          <p>选择一项，查看证据状态和下一步。</p>
         </div>
+        <div class="native-entry-list">
+          ${entries
+            .map(
+              (item) => `
+                <button
+                  class="capability-entry"
+                  type="button"
+                  data-action="select-native-entry"
+                  data-native-entry
+                  data-entry-id="${escapeHtml(nativeEntryId(item))}"
+                  aria-current="${
+                    item.id === selectedCapability.id ? "true" : "false"
+                  }"
+                >
+                  <span class="native-entry-dot native-entry-dot--${escapeHtml(
+                    item.truthStatus,
+                  )}" aria-hidden="true"></span>
+                  <span>
+                    <span class="capability-entry__title">${escapeHtml(
+                      item.title,
+                    )}</span>
+                    <span class="capability-entry__meta">${escapeHtml(
+                      truthLabel(item.truthStatus),
+                    )}</span>
+                  </span>
+                </button>
+              `,
+            )
+            .join("")}
+        </div>
+      </aside>
+    `;
+  }
 
-        <h2 id="detail-title">${escapeHtml(requirement.title)}</h2>
-        <p class="review-sheet__lede" data-reading-text>${escapeHtml(
-          requirement.targetTruth,
+  function nativeReadinessCopy(capability) {
+    const copy = {
+      "topic-governance":
+        "需要先确认产品画像并完成关键词入库。系统生成 Topic 草案后，由客户确认主题、页面归属和需要拆分或合并的关系。",
+      "keyword-relation-governance":
+        "需要有明确来源的关键词与目标页面。重复词、近义词和潜在蚕食只作为待审核建议，不会自动覆盖客户决定。",
+      "voc-source-governance":
+        "需要先确认允许使用的评论、访谈或社区来源及采集范围。未接入来源时只显示准备条件。",
+      "artifact-source-provenance":
+        "每份交付物需要关联可打开的参考来源、采集时间与适用限制；缺少来源时会保持待补充状态。",
+      "action-blocker":
+        "任务需要明确卡点、负责人、发现时间和解除方式。当前没有这些信息时，不会猜测阻断原因。",
+      "action-business-progress":
+        "任务只显示真实业务阶段和下一步；只有项目配置了正式步骤时，才会展示完成步数。",
+      "opportunity-decision-sla":
+        "需要先为项目确认决策时限和负责人。达到时限的机会可推进、拒绝、延后或暂缓。",
+      "internal-link-graph":
+        "需要完成页面与链接采集并确认覆盖范围。数据完整后才会识别 Hub、Spoke、单向和孤岛页面。",
+      "keyword-rank-history":
+        "需要连续的同市场、同设备排名观测。缺失日期不会补零，没有变更回执时也不会标记优化事件。",
+      "content-decay-monitor":
+        "需要足够长且口径一致的观测窗口，并通过样本量、季节性和缺数检查后才会产生提醒。",
+      "backlink-evidence":
+        "需要受治理文件导入或外部服务授权，并确认指标口径、采集频率和成本。未满足时保持不可用。",
+      "geo-citation-observation":
+        "需要外部服务提供 Query、回答快照、引用位置和采集时间。没有完整证据时不展示引用结论。",
+      "competitor-delta-monitor":
+        "需要客户确认竞品池，并建立可重复采集的前后快照。未授权来源不会生成模拟变化。",
+    };
+    return (
+      copy[capability.id] ??
+      "需要项目数据、客户确认和可复查证据齐备后，才会进入下一步。"
+    );
+  }
+
+  function customerTruthCopy(status) {
+    const copy = {
+      current:
+        "此模块已具备客户可用界面；具体项目内容仍以真实连接、采集结果和审核记录为准。",
+      next: "此项当前尚未启用；页面会说明所需条件和下一步，在形成真实记录前不会显示为已完成。",
+      "provider-dependent":
+        "此项需要外部数据服务或受治理导入；未授权时只显示原因和接入入口。",
+    };
+    return copy[status] ?? "当前状态以项目证据为准。";
+  }
+
+  function renderNativeDetail(capability) {
+    const action = primaryAction(capability);
+    const targetAttribute = state.target
+      ? ` data-governed-target="${escapeHtml(state.target)}"`
+      : "";
+    return `
+      <section
+        class="capability-detail native-detail"
+        data-native-detail
+        data-entry-id="${escapeHtml(nativeEntryId(capability))}"
+        data-truth-status="${escapeHtml(capability.truthStatus)}"
+        ${targetAttribute}
+      >
+        <div class="capability-detail__topline">
+          <span class="capability-detail__id">当前工作项</span>
+          ${truthBadge(capability.truthStatus)}
+        </div>
+        <h3>${escapeHtml(capability.title)}</h3>
+        <p class="capability-detail__outcome" data-reading-text>${escapeHtml(
+          capability.customerOutcome,
         )}</p>
-
-        <section class="review-section" aria-labelledby="source-statement-label">
-          <h3 class="review-section__label" id="source-statement-label">原始诉求</h3>
-          <div class="review-section__body">
-            <p data-reading-text>${escapeHtml(requirement.sourceStatement)}</p>
-            <div class="relation-chips">
-              <span class="relation-chip">${escapeHtml(
-                requirement.sourceLocation,
-              )}</span>
-              <span class="relation-chip">原优先级 ${escapeHtml(
-                requirement.sourcePriority,
-              )}</span>
-              <span class="relation-chip">审核优先级 ${escapeHtml(
-                requirement.auditedPriority,
-              )}</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="review-section" aria-labelledby="current-truth-label">
-          <h3 class="review-section__label" id="current-truth-label">当前事实</h3>
-          <div class="review-section__body">
-            ${renderList(requirement.currentEvidence)}
-          </div>
-        </section>
-
-        <section class="review-section" aria-labelledby="decision-label">
-          <h3 class="review-section__label" id="decision-label">审核判断</h3>
-          <div class="review-section__body">
-            <div class="review-note">
-              <strong>${escapeHtml(
-                audit.decisionLabels?.[requirement.decision] ??
-                  DECISION_LABELS[requirement.decision],
-              )}</strong>
-              <span data-reading-text>${escapeHtml(requirement.rationale)}</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="review-section" aria-labelledby="acceptance-label">
-          <h3 class="review-section__label" id="acceptance-label">改写后验收</h3>
-          <div class="review-section__body">
-            ${renderList(requirement.rewrittenAcceptance)}
-          </div>
-        </section>
-
+        <div class="detail-grid">
+          <section class="detail-block">
+            <h4>当前状态</h4>
+            <p data-reading-text>${escapeHtml(
+              customerTruthCopy(capability.truthStatus),
+            )}</p>
+          </section>
+          <section class="detail-block">
+            <h4>开始前需要什么</h4>
+            <p data-reading-text>${escapeHtml(nativeReadinessCopy(capability))}</p>
+          </section>
+          <section class="detail-block">
+            <h4>下一步</h4>
+            <p data-reading-text>${escapeHtml(
+              action?.label ?? "返回当前工作区继续审核",
+            )}</p>
+          </section>
+        </div>
         ${
-          list(requirement.completionFlags).length > 0
+          state.target
             ? `
-              <section class="review-section" aria-labelledby="completion-label">
-                <h3 class="review-section__label" id="completion-label">独立完成标记</h3>
-                <div class="review-section__body">
-                  ${renderCompletionFlags(requirement)}
-                </div>
-              </section>
+              <div class="unavailable-note" data-reading-text>
+                下一步已定位到对应工作区。系统会保留当前对象和证据状态，不会用成功提示替代真实处理结果。
+              </div>
             `
             : ""
         }
-
-        <section class="review-section" aria-labelledby="boundary-label">
-          <h3 class="review-section__label" id="boundary-label">明确不包含</h3>
-          <div class="review-section__body">
-            ${renderList(requirement.notIncluded)}
-          </div>
-        </section>
-
-        <div class="sheet-actions">
-          <button
-            class="button"
-            type="button"
-            data-action="open-evidence"
-            data-evidence-requirement="${requirement.id}"
-          >查看结构化验收证据</button>
-          <button
-            class="button button--secondary"
-            type="button"
-            data-action="select-stage"
-            data-stage-id="${escapeHtml(list(requirement.stage)[0])}"
-          >查看落地阶段</button>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderModulesView() {
-    const selectedModule =
-      state.module === "all" ? null : getModule(state.module);
-    const article = document.getElementById("review-detail");
-    article.className = "audit-panel module-detail";
-    article.removeAttribute("data-requirement-detail");
-    article.innerHTML = `
-      <div class="editorial-title">
-        <p class="eyebrow">Module impact</p>
-        <h2>四个客户模块，共用一条增长证据链</h2>
-        <p data-reading-text>
-          需求不会形成独立 SEO 工具。选择模块可查看客户界面变化、受影响需求和需要补齐的生产证据。
-        </p>
-      </div>
-      <div class="module-index">
-        ${audit.modules
-          .map(
-            (module) => `
-              <button
-                class="module-card"
-                type="button"
-                data-action="select-module"
-                data-module-id="${escapeHtml(module.id)}"
-                aria-pressed="${state.module === module.id ? "true" : "false"}"
-              >
-                <span class="module-card__head">
-                  <span>
-                    <span class="eyebrow">${escapeHtml(
-                      module.enName ?? module.id,
-                    )}</span>
-                    <h3>${escapeHtml(module.name)}</h3>
-                  </span>
-                  <span class="module-card__count">${list(
-                    module.requirementIds,
-                  ).length} 条需求</span>
-                </span>
-                <p class="module-copy" data-reading-text>${escapeHtml(
-                  module.purpose,
-                )}</p>
-              </button>
-            `,
-          )
-          .join("")}
-      </div>
-      ${
-        selectedModule
-          ? `
-            <div class="editorial-body">
-              <section class="editorial-section">
-                <h3>${escapeHtml(selectedModule.name)}的客户界面变化</h3>
-                ${renderList(selectedModule.customerChange)}
-              </section>
-              <section class="editorial-section">
-                <h3>关联需求</h3>
-                ${renderLinkedRequirements(selectedModule.requirementIds)}
-              </section>
-            </div>
-          `
-          : ""
-      }
-    `;
-  }
-
-  function renderStagesView() {
-    const selectedStage = getStage(state.stage) ?? audit.stages[0];
-    const article = document.getElementById("review-detail");
-    article.className = "audit-panel stage-detail";
-    article.removeAttribute("data-requirement-detail");
-    article.innerHTML = `
-      <div class="editorial-title">
-        <p class="eyebrow">Delivery sequence</p>
-        <h2>先建权威，再建地图，最后接外部证据</h2>
-        <p data-reading-text>
-          三个 Stage 各自拥有明确范围、依赖、退出门槛和不包含项；任何静态界面都不能代替阶段验收。
-        </p>
-      </div>
-      <div class="stage-index">
-        ${audit.stages
-          .map(
-            (stage, index) => `
-              <button
-                class="stage-card"
-                type="button"
-                data-action="select-stage"
-                data-stage-id="${escapeHtml(stage.id)}"
-                aria-pressed="${
-                  selectedStage.id === stage.id ? "true" : "false"
-                }"
-              >
-                <span class="stage-card__head">
-                  <span>
-                    <span class="eyebrow">Stage 0${index + 1}</span>
-                    <h3>${escapeHtml(stage.name)}</h3>
-                  </span>
-                  <span class="stage-card__count">${list(
-                    stage.requirementIds,
-                  ).length} 条需求</span>
-                </span>
-                <p class="stage-copy" data-reading-text>${escapeHtml(
-                  stage.goal,
-                )}</p>
-              </button>
-            `,
-          )
-          .join("")}
-      </div>
-      <div class="editorial-body">
-        <div class="scope-grid">
-          <section class="scope-block">
-            <h3>范围 Scope</h3>
-            ${renderList(selectedStage.scope)}
-          </section>
-          <section class="scope-block">
-            <h3>依赖 Dependencies</h3>
-            ${renderList(selectedStage.dependencies)}
-          </section>
-          <section class="scope-block scope-block--excluded">
-            <h3>不包含 Exclusions</h3>
-            ${renderList(selectedStage.exclusions)}
-          </section>
-          <section class="scope-block">
-            <h3>关联需求</h3>
-            ${renderLinkedRequirements(selectedStage.requirementIds)}
-          </section>
-        </div>
-        <section class="editorial-section">
-          <div class="gate">
-            <h3>退出门槛 Exit Gate</h3>
-            ${renderList(selectedStage.exitGate)}
-          </div>
-        </section>
-      </div>
-    `;
-  }
-
-  function renderAcceptanceView() {
-    const focusedRequirement = getRequirement(state.requirementId);
-    const focusedFlags = list(focusedRequirement.completionFlags);
-    const article = document.getElementById("review-detail");
-    article.className = "audit-panel acceptance-detail";
-    article.removeAttribute("data-requirement-detail");
-    article.innerHTML = `
-      <div class="editorial-title">
-        <p class="eyebrow">Acceptance evidence</p>
-        <h2>七层证据全部成立，能力才算上线</h2>
-        <p data-reading-text>
-          每条需求需要覆盖适用的数据、Contract/API、Service、UI、Mutation/Audit、
-          测试和真实 Provider 证据；不可用状态必须诚实呈现。
-        </p>
-      </div>
-      <section
-        class="acceptance-focus"
-        data-acceptance-focus
-        data-focused-requirement="${focusedRequirement.id}"
-        aria-labelledby="acceptance-focus-title"
-      >
-        <div class="acceptance-focus__heading">
-          <div>
-            <p class="eyebrow">当前需求验收焦点 · REVIEW ${String(
-              focusedRequirement.id,
-            ).padStart(2, "0")}</p>
-            <h3 id="acceptance-focus-title">${escapeHtml(
-              focusedRequirement.title,
-            )}</h3>
-          </div>
-          ${decisionStamp(focusedRequirement.decision)}
-        </div>
-        <p data-reading-text>${escapeHtml(
-          focusedRequirement.targetTruth,
-        )}</p>
-        ${
-          focusedFlags.length > 0
-            ? `
-              <div class="acceptance-focus__flags">
-                <h4>必须分别验收的完成门槛</h4>
-                ${renderCompletionFlags(focusedRequirement)}
-              </div>
-            `
-            : `
-              <div class="acceptance-focus__flags">
-                <h4>上线所需证据</h4>
-                ${renderList(focusedRequirement.completionEvidence)}
-              </div>
-            `
-        }
-        <button
-          class="button button--secondary"
-          type="button"
-          data-action="select-linked-requirement"
-          data-target-requirement-id="${focusedRequirement.id}"
-        >返回该需求完整审核</button>
-      </section>
-      <div class="acceptance-index">
-        ${audit.acceptanceLayers
-          .map(
-            (layer, index) => `
-              <section
-                class="acceptance-layer"
-                data-acceptance-layer="${escapeHtml(layer.id)}"
-              >
-                <div class="acceptance-layer__head">
-                  <span>
-                    <span class="eyebrow">Evidence 0${index + 1}</span>
-                    <h3>${escapeHtml(layer.name)}</h3>
-                  </span>
-                </div>
-                <p class="acceptance-copy" data-reading-text>${escapeHtml(
-                  layer.description,
-                )}</p>
-              </section>
-            `,
-          )
-          .join("")}
-      </div>
-      <div class="editorial-body">
-        <section class="editorial-section">
-          <h3>需求验收台账</h3>
-          <div
-            class="acceptance-ledger"
-            role="region"
-            aria-label="需求验收证据矩阵"
-            tabindex="0"
-          >
-            <table class="acceptance-matrix">
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  <th scope="col">需求</th>
-                  <th scope="col">阶段</th>
-                  <th scope="col">证据条目</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${audit.requirements
-                  .map(
-                    (requirement) => `
-                      <tr>
-                        <th scope="row">${String(requirement.id).padStart(
-                          2,
-                          "0",
-                        )}</th>
-                        <td>
-                          <button
-                            type="button"
-                            data-action="open-evidence"
-                            data-evidence-requirement="${requirement.id}"
-                          >${escapeHtml(requirement.title)}</button>
-                        </td>
-                        <td>${escapeHtml(
-                          list(requirement.stage)
-                            .map(
-                              (stageId) =>
-                                getStage(stageId)?.name ?? stageId,
-                            )
-                            .join(" · "),
-                        )}</td>
-                        <td>
-                          <span class="evidence-marker">${list(
-                            requirement.completionEvidence,
-                          ).length} 项</span>
-                        </td>
-                      </tr>
-                    `,
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    `;
-  }
-
-  function renderLinkedRequirements(requirementIds) {
-    const idSet = new Set(list(requirementIds).map(Number));
-    const requirements = audit.requirements.filter((requirement) =>
-      idSet.has(requirement.id),
-    );
-    if (requirements.length === 0) {
-      return '<p data-reading-text>当前没有关联需求。</p>';
-    }
-    return `
-      <div class="impact-requirements">
-        ${requirements
-          .map(
-            (requirement) => `
-              <button
-                class="impact-requirement"
-                type="button"
-                data-action="select-linked-requirement"
-                data-target-requirement-id="${requirement.id}"
-              >
-                <span class="impact-requirement__number">${String(
-                  requirement.id,
-                ).padStart(2, "0")}</span>
-                <span class="impact-requirement__title">${escapeHtml(
-                  requirement.title,
-                )}</span>
-                <span class="impact-requirement__arrow" aria-hidden="true">→</span>
-              </button>
-            `,
-          )
-          .join("")}
-      </div>
-    `;
-  }
-
-  function renderRequirementRail() {
-    const requirement = getRequirement(state.requirementId);
-    const modules = list(requirement.modules)
-      .map(getModule)
-      .filter(Boolean);
-    const stages = list(requirement.stage).map(getStage).filter(Boolean);
-    return `
-      <div class="panel-heading">
-        <p class="eyebrow">Impact & evidence</p>
-        <h2>影响与证据</h2>
-        <p>审核对象 ${String(requirement.id).padStart(2, "0")}</p>
-      </div>
-      <div class="impact-panel__body">
-        <section class="rail-section">
-          <h3>治理定位</h3>
-          <dl class="rail-facts">
-            <div><dt>当前状态</dt><dd>${escapeHtml(
-              audit.truthLabels?.[requirement.currentTruth] ??
-                TRUTH_LABELS[requirement.currentTruth],
-            )}</dd></div>
-            <div><dt>审核结论</dt><dd>${escapeHtml(
-              audit.decisionLabels?.[requirement.decision] ??
-                DECISION_LABELS[requirement.decision],
-            )}</dd></div>
-            <div><dt>优先级</dt><dd>${escapeHtml(
-              requirement.auditedPriority,
-            )}</dd></div>
-            <div><dt>验收证据</dt><dd>${list(
-              requirement.completionEvidence,
-            ).length} 项</dd></div>
-          </dl>
-        </section>
-        <section class="rail-section">
-          <h3>影响模块</h3>
-          <ul class="rail-list">
-            ${modules
-              .map(
-                (module) => `
-                  <li>
-                    <button
-                      type="button"
-                      data-action="select-module"
-                      data-target-module-id="${escapeHtml(module.id)}"
-                    >
-                      <span class="rail-list__index" aria-hidden="true">↳</span>
-                      <span>${escapeHtml(module.name)}<br><small>${escapeHtml(
-                        module.purpose,
-                      )}</small></span>
-                    </button>
-                  </li>
-                `,
-              )
-              .join("")}
-          </ul>
-        </section>
-        <section class="rail-section">
-          <h3>落地阶段</h3>
-          <div class="rail-callout">
-            <p data-reading-text>${escapeHtml(
-              stages.map((stage) => stage.name).join(" → "),
-            )}</p>
-          </div>
-          <div class="sheet-actions">
-            <button
-              class="button button--secondary"
-              type="button"
-              data-action="open-evidence"
-              data-evidence-requirement="${requirement.id}"
-            >打开证据台账</button>
-          </div>
-        </section>
-      </div>
-    `;
-  }
-
-  function renderContextRail() {
-    const selectedModule = getModule(state.module);
-    const selectedStage = getStage(state.stage);
-    const visible = filteredRequirements();
-    return `
-      <div class="panel-heading">
-        <p class="eyebrow">Audit context</p>
-        <h2>${
-          state.view === "modules"
-            ? "模块影响摘要"
-            : state.view === "stages"
-              ? "阶段验收摘要"
-              : "证据使用规则"
-        }</h2>
-      </div>
-      <div class="impact-panel__body">
-        <section class="rail-section">
-          <h3>当前焦点</h3>
-          <p data-reading-text>${escapeHtml(
-            selectedModule?.purpose ??
-              selectedStage?.goal ??
-              "七层验收矩阵用于证明生产能力，不用界面存在代替真实写入、测试与 Provider 证据。",
-          )}</p>
-        </section>
-        <section class="rail-section">
-          <h3>关联需求</h3>
-          <p data-reading-text>当前筛选关联 ${visible.length} / ${
-            audit.requirements.length
-          } 条需求。</p>
+        <div class="capability-actions">
           ${
-            visible[0]
+            action
               ? `
-                <div class="sheet-actions">
-                  <button
-                    class="button button--secondary"
-                    type="button"
-                    data-action="select-linked-requirement"
-                    data-target-requirement-id="${visible[0].id}"
-                  >查看第一条关联审核</button>
-                </div>
+                <button
+                  class="product-button ${
+                    capability.truthStatus === "provider-dependent"
+                      ? "product-button--unavailable"
+                      : ""
+                  }"
+                  type="button"
+                  data-action="run-product-action"
+                  data-native-next
+                  data-product-action="${escapeHtml(action.id)}"
+                  data-entry-id="${escapeHtml(nativeEntryId(capability))}"
+                  data-governed-destination="${escapeHtml(
+                    action.encodedDestination,
+                  )}"
+                >${escapeHtml(action.label)} →</button>
               `
               : ""
           }
-        </section>
-        <section class="rail-section">
-          <h3>客户连接边界</h3>
-          <p data-reading-text>${escapeHtml(
-            audit.customerVisibleConnectors.join(" · "),
-          )}。内部证据 Provider 只在证据旁披露，不伪装成客户连接卡。</p>
-        </section>
-      </div>
+        </div>
+      </section>
     `;
   }
 
-  function renderRail() {
-    const rail = document.getElementById("impact-rail");
-    rail.innerHTML =
-      state.view === "requirements"
-        ? renderRequirementRail()
-        : renderContextRail();
+  function renderNativeOverview(module, activeSection, selectedCapability) {
+    const copy = {
+      "priority-queue": {
+        label: "优先事项",
+        title: "等待第一批可验证机会",
+        body: "完成站点采集并接入可用数据后，这里会按证据完整度、影响范围与可执行性排序。没有证据时不会生成虚假优先级。",
+      },
+      "product-context": {
+        label: "产品与 ICP",
+        title: "先确认 URL 与核心业务信息",
+        body: "系统会从产品 URL 建立产品类别、商业模式、目标客户、目标市场与 Conversion Goal 草案，客户只需审核和修正。",
+      },
+      "decision-reminders": {
+        label: "待决策机会",
+        title: "当前没有可核验的超时决策",
+        body: "只有拥有稳定机会身份、Owner、SLA 和决策记录的项目，才会在这里显示推进、拒绝、延后或 Snooze。",
+      },
+      "health-alerts": {
+        label: "健康提醒",
+        title: "监控窗口尚未建立",
+        body: "内容衰减与竞品变化必须基于真实前后窗口、样本和新鲜度；当前不会用示例百分比代替项目数据。",
+      },
+    };
+    return `
+      <section
+        class="overview-grid"
+        aria-label="项目概览"
+        id="surface-panel-${escapeHtml(activeSection.id)}"
+        role="tabpanel"
+        aria-labelledby="surface-tab-${escapeHtml(activeSection.id)}"
+        data-overview-workspace
+      >
+        ${list(module.mainSections)
+          .map((section) => {
+            const card = copy[section.id];
+            return `
+              <article class="overview-card ${
+                section.id === activeSection.id ? "is-active" : ""
+              }">
+                <div class="overview-card__topline">
+                  <span>${escapeHtml(card.label)}</span>
+                  ${truthBadge(section.truthStatus)}
+                </div>
+                <h2>${escapeHtml(card.title)}</h2>
+                <p data-reading-text>${escapeHtml(card.body)}</p>
+                ${
+                  section.id === "product-context"
+                    ? `
+                      <dl class="profile-summary">
+                        <div><dt>产品 URL</dt><dd>待客户确认</dd></div>
+                        <div><dt>产品类别</dt><dd>由 URL 建模后生成</dd></div>
+                        <div><dt>ICP 与市场</dt><dd>审核后生效</dd></div>
+                      </dl>
+                      <div class="connector-summary">
+                        ${connections()
+                          .map(
+                            (connection) => `
+                              <span>
+                                ${escapeHtml(connection.name)}
+                                <b>${escapeHtml(
+                                  truthLabel(connection.truthStatus),
+                                )}</b>
+                              </span>
+                            `,
+                          )
+                          .join("")}
+                      </div>
+                    `
+                    : `
+                      <div
+                        class="honest-empty"
+                        data-honest-empty-state
+                        data-evidence-status="unavailable"
+                      >尚无该项目的可验证记录</div>
+                    `
+                }
+                ${renderSectionPrimaryAction(section)}
+              </article>
+            `;
+          })
+          .join("")}
+        <div class="native-function-workspace overview-grid__workflow">
+          ${renderNativeEntryList(module, selectedCapability, activeSection)}
+          ${renderNativeDetail(selectedCapability)}
+        </div>
+      </section>
+    `;
   }
 
-  function render() {
-    app.dataset.activeView = state.view;
-    document
-      .querySelectorAll('[data-action="set-view"][data-view]')
-      .forEach((button) => {
-        if (button.dataset.view === state.view) {
-          button.setAttribute("aria-current", "page");
-        } else {
-          button.removeAttribute("aria-current");
-        }
-      });
-    document
-      .querySelectorAll('[data-action="set-decision"]')
-      .forEach((button) =>
-        button.setAttribute(
-          "aria-pressed",
-          String(button.dataset.value === state.decision),
-        ),
-      );
+  function growthViewCopy(sectionId) {
+    const views = {
+      "page-portfolio": {
+        eyebrow: "URL INVENTORY",
+        title: "页面、问题与机会",
+        columns: ["URL / 页面", "页面类型", "证据状态", "当前动作"],
+        reason:
+          "项目尚未产生站点快照。接入主站 URL 后，这里会逐页展示技术、内容、SEO 与 GEO 信号，并允许在多个 URL 之间切换详情。",
+      },
+      "keyword-library": {
+        eyebrow: "KEYWORD LIBRARY",
+        title: "关键词身份、来源与页面映射",
+        columns: ["Keyword", "来源", "Intent / Topic", "目标页面"],
+        reason:
+          "当前没有入库关键词。关键词可来自已授权 GSC、竞品与 SERP 研究、内容差距、用户手动输入或受治理 CSV；每条都会保留来源和采集时间。",
+      },
+      "topic-governance": {
+        eyebrow: "TOPIC GOVERNANCE",
+        title: "Topic、页面归属与关系审核",
+        columns: ["Topic", "待审核关键词", "页面归属", "关系决策"],
+        reason:
+          "Topic 草案尚未生成。系统需要先有产品画像与关键词语料，再由客户审核 Topic、页面归属、重复词和潜在蚕食关系。",
+      },
+      "competitor-corpus": {
+        eyebrow: "COMPETITOR CORPUS",
+        title: "直接竞品、间接竞品与证据来源",
+        columns: ["竞品", "关系类型", "入库来源", "最近观测"],
+        reason:
+          "竞品池尚未建立。系统会从产品 URL、类别、目标市场和 SERP 候选生成初始池，客户也可以手动补充、排除或确认。",
+      },
+      "internal-link-graph": {
+        eyebrow: "INTERNAL LINK GRAPH",
+        title: "Hub、Spoke、单向与孤岛页面",
+        columns: ["来源页面", "目标页面", "链接方向", "建议状态"],
+        reason:
+          "尚无完整页面与链接快照，无法生成可靠图谱。完成站点采集和覆盖率校验后才会显示结构与修复建议。",
+      },
+      "keyword-history": {
+        eyebrow: "RANK HISTORY",
+        title: "关键词趋势与变更事件",
+        columns: ["Keyword", "市场 / 设备", "观测窗口", "变更回执"],
+        reason:
+          "当前没有连续排名观测。系统不会用零值补齐缺失日期，也不会在没有发布或变更回执时标注“优化后”。",
+      },
+      "external-evidence": {
+        eyebrow: "EXTERNAL EVIDENCE",
+        title: "VOC、GEO Citation 与 Backlink",
+        columns: ["证据类型", "数据来源", "授权状态", "可用范围"],
+        reason:
+          "外部证据服务尚未授权。这里只显示接入范围、成本、指标口径与失败状态；未接入前不会展示模拟引用或外链数据。",
+      },
+    };
+    return views[sectionId] ?? views["page-portfolio"];
+  }
 
-    renderRegister();
+  function renderNativeGrowth(module, section, selectedCapability) {
+    const copy = growthViewCopy(section.id);
+    return `
+      <section
+        class="product-panel object-workspace"
+        id="surface-panel-${escapeHtml(section.id)}"
+        role="tabpanel"
+        aria-labelledby="surface-tab-${escapeHtml(section.id)}"
+        data-growth-workspace="${escapeHtml(section.id)}"
+      >
+        <header class="object-workspace__head">
+          <div>
+            <p class="panel-head__eyebrow">${escapeHtml(copy.eyebrow)}</p>
+            <h2>${escapeHtml(copy.title)}</h2>
+            <p data-reading-text>${escapeHtml(section.purpose)}</p>
+          </div>
+          ${truthBadge(section.truthStatus)}
+        </header>
+        <div class="object-table" data-native-object-list="${escapeHtml(
+          section.id,
+        )}">
+          <div class="object-table__head">
+            ${copy.columns
+              .map((column) => `<span>${escapeHtml(column)}</span>`)
+              .join("")}
+          </div>
+          <div
+            class="honest-empty honest-empty--large"
+            data-honest-empty-state
+            data-evidence-status="unavailable"
+          >
+            <strong>等待真实项目数据</strong>
+            <p data-reading-text>${escapeHtml(copy.reason)}</p>
+            ${renderSectionPrimaryAction(section)}
+          </div>
+        </div>
+        <div class="native-function-workspace object-workspace__workflow">
+          ${renderNativeEntryList(module, selectedCapability, section)}
+          ${renderNativeDetail(selectedCapability)}
+        </div>
+      </section>
+      ${renderNativeSectionActions(module, section).replace(
+        renderSectionPrimaryAction(section),
+        "",
+      )}
+    `;
+  }
 
-    if (state.view === "requirements") {
-      renderRequirementDetail();
-    } else if (state.view === "modules") {
-      renderModulesView();
-    } else if (state.view === "stages") {
-      renderStagesView();
-    } else {
-      renderAcceptanceView();
+  function renderDeliveryChecks() {
+    return `
+      <aside class="delivery-governance delivery-governance--inline" aria-label="交付审核状态">
+        <div class="panel-head">
+          <span class="panel-head__eyebrow">REVIEW</span>
+          <h2>来源、QA 与回执</h2>
+        </div>
+        <div class="delivery-check" data-delivery-check="sources" data-evidence-status="pending">
+          <strong>参考来源</strong>
+          <span>待补充项目级来源</span>
+          <p data-reading-text>正文结构已形成，但 URL 证据、竞品页面与外部引用仍需在客户项目中确认。</p>
+        </div>
+        <div class="delivery-check" data-delivery-check="qa" data-evidence-status="pending">
+          <strong>质量检查</strong>
+          <span>待审核</span>
+          <p data-reading-text>需完成事实、搜索意图、ICP、内链、Metadata 与结构化数据检查。</p>
+        </div>
+        <div class="delivery-check" data-delivery-check="approval" data-evidence-status="pending">
+          <strong>客户审批</strong>
+          <span>尚未批准</span>
+          <p data-reading-text>正文可以审阅，但没有任何发布授权或批准记录。</p>
+        </div>
+        <div class="delivery-check" data-delivery-check="publication-receipt" data-evidence-status="unavailable">
+          <strong>发布 / 变更回执</strong>
+          <span>不可用</span>
+          <p data-reading-text>没有发布动作、GitHub PR 或变更回执，因此不会进入效果归因。</p>
+        </div>
+      </aside>
+    `;
+  }
+
+  function renderDeliverableBody(deliverableId) {
+    const bodies = {
+      "english-blog": `
+        <article
+          class="deliverable-document deliverable-document--article"
+          data-deliverable-body
+          data-deliverable-type="english-blog"
+          data-deliverable-status="pending-review"
+          lang="en"
+        >
+          <div class="deliverable-document__status">英文 Blog · 待审核</div>
+          <h2>How a Unified SEO and GEO Workflow Turns Website Evidence Into Accountable Growth Actions</h2>
+          <p class="deliverable-lede" data-reading-text>
+            Growth teams rarely lack ideas. They lack a reliable path from website evidence to an approved change, a publication receipt, and a measurement window.
+          </p>
+          <h3>Start with one governed view of the website</h3>
+          <p data-reading-text>
+            A useful growth map connects every URL with its role, target topic, search demand, technical findings, competitive context, and current action. This prevents a keyword list from becoming a detached spreadsheet and keeps every recommendation tied to a page or a deliberate new-page decision.
+          </p>
+          <h3>Turn evidence into decisions before generating content</h3>
+          <p data-reading-text>
+            Topic clusters, keyword relationships, internal links, and competitor observations should be reviewed as evidence. Once ownership and intent are confirmed, the system can create a brief, an English draft, metadata, or a technical ticket without losing the original rationale.
+          </p>
+          <h3>Keep approval, change, and measurement in the same chain</h3>
+          <p data-reading-text>
+            A draft is not a result, and a publish click is not proof of impact. The workflow should record approval, preserve a change receipt, and open a fixed observation window before presenting before-and-after evidence.
+          </p>
+          <div class="draft-cta" data-reading-text>
+            CTA draft: Review your website, keyword universe, and execution queue in one accountable growth workspace.
+          </div>
+        </article>
+      `,
+      "content-brief": `
+        <article
+          class="deliverable-document"
+          data-deliverable-body
+          data-deliverable-type="content-brief"
+          data-deliverable-status="pending-review"
+        >
+          <div class="deliverable-document__status">Content Brief · 待审核</div>
+          <h2>Unified SEO and GEO workflow: editorial brief</h2>
+          <dl class="brief-grid">
+            <div><dt>Primary reader</dt><dd>B2B growth leaders coordinating content, SEO, product marketing, and engineering.</dd></div>
+            <div><dt>Search intent</dt><dd>Commercial investigation: how to operationalize SEO and GEO work from audit through measurement.</dd></div>
+            <div><dt>Core promise</dt><dd>Show how governed evidence becomes a reviewable artifact, a recorded change, and an honest result window.</dd></div>
+            <div><dt>Required sections</dt><dd>Website inventory; keyword and topic governance; competitor evidence; deliverable review; publication receipt; before/after boundaries.</dd></div>
+            <div><dt>Proof required</dt><dd>Project-specific URL evidence, approved keyword sources, named references, technical recheck, and fixed GSC/GA4 windows.</dd></div>
+            <div><dt>Do not claim</dt><dd>No traffic lift, ranking gain, AI citation, backlink, or publication status without corresponding evidence.</dd></div>
+          </dl>
+        </article>
+      `,
+      metadata: `
+        <article
+          class="deliverable-document"
+          data-deliverable-body
+          data-deliverable-type="metadata"
+          data-deliverable-status="pending-review"
+        >
+          <div class="deliverable-document__status">Metadata · 待审核</div>
+          <h2>搜索与分享信息草案</h2>
+          <dl class="metadata-grid">
+            <div><dt>SEO title</dt><dd>Unified SEO &amp; GEO Workflow: From Audit to Measurable Action</dd></div>
+            <div><dt>Meta description</dt><dd>Connect website audits, keyword and competitor research, English content, technical fixes, approvals, receipts, and honest result windows.</dd></div>
+            <div><dt>Suggested slug</dt><dd>/blog/unified-seo-geo-workflow/</dd></div>
+            <div><dt>Open Graph title</dt><dd>Turn SEO and GEO evidence into accountable growth work</dd></div>
+            <div><dt>Structured data</dt><dd>Article and BreadcrumbList candidates; validate authorship, dates, and page hierarchy before release.</dd></div>
+            <div><dt>Review note</dt><dd>Final title, canonical URL, author, publication date, and schema values remain pending.</dd></div>
+          </dl>
+        </article>
+      `,
+      "technical-ticket-code-patch": `
+        <article
+          class="deliverable-document"
+          data-deliverable-body
+          data-deliverable-type="technical-ticket-code-patch"
+          data-deliverable-status="pending-action"
+        >
+          <div class="deliverable-document__status">Technical Ticket / Code Patch · 待处理</div>
+          <h2>Preserve source evidence from opportunity to publication receipt</h2>
+          <section class="ticket-section">
+            <h3>Problem</h3>
+            <p data-reading-text>Content and technical artifacts can be reviewed without a durable link to the URL, finding, keyword decision, and source reference that justified the work.</p>
+          </section>
+          <section class="ticket-section">
+            <h3>Proposed change</h3>
+            <pre><code>Action → Artifact → Approval
+       → Publication / Change Receipt
+       → Measurement Window
+
+Every transition keeps the originating URL,
+keyword, topic, finding, and source reference.</code></pre>
+          </section>
+          <section class="ticket-section">
+            <h3>Acceptance checks</h3>
+            <ul>
+              <li data-reading-text>Opening a task from Growth Map retains its page and evidence context.</li>
+              <li data-reading-text>Approval cannot imply publication; publication requires an independent receipt.</li>
+              <li data-reading-text>Results remain unavailable until the receipt and fixed observation window exist.</li>
+              <li data-reading-text>GitHub automation remains disabled until repository scope and approval policy are confirmed.</li>
+            </ul>
+          </section>
+        </article>
+      `,
+    };
+    return (bodies[deliverableId] ?? bodies["english-blog"]).replace(
+      "</article>",
+      `${renderDeliveryChecks()}</article>`,
+    );
+  }
+
+  function renderNativeExecution(module, section, selectedCapability) {
+    const activeAction = renderSectionPrimaryAction(section);
+    return `
+      <section
+        class="execution-workspace"
+        data-execution-workspace
+        id="surface-panel-${escapeHtml(section.id)}"
+        role="tabpanel"
+        aria-labelledby="surface-tab-${escapeHtml(section.id)}"
+      >
+        <aside class="product-panel work-queue">
+          <div class="panel-head">
+            <span class="panel-head__eyebrow">WORK QUEUE</span>
+            <h2>当前交付物</h2>
+            <p>这里展示正文与真实业务状态，不把草稿、待审核或待处理内容误写成正式上线结果。</p>
+          </div>
+          ${
+            activeAction
+              ? `<div class="workspace-inline-action">${activeAction}</div>`
+              : ""
+          }
+          <div class="deliverable-tabs" role="tablist" aria-label="交付物类型">
+            ${[
+              ["english-blog", "English Blog"],
+              ["content-brief", "Content Brief"],
+              ["metadata", "Metadata"],
+              ["technical-ticket-code-patch", "Technical Ticket / Code Patch"],
+            ]
+              .map(
+                ([id, label]) => `
+                  <button
+                    type="button"
+                    role="tab"
+                    data-action="select-deliverable"
+                    data-deliverable-select="${id}"
+                    aria-selected="${state.deliverable === id ? "true" : "false"}"
+                    aria-controls="deliverable-canvas"
+                  >
+                    <span>${escapeHtml(label)}</span>
+                    <small>${
+                      id === "technical-ticket-code-patch"
+                        ? "待处理"
+                        : "待审核"
+                    }</small>
+                  </button>
+                `,
+              )
+              .join("")}
+          </div>
+        </aside>
+        <section class="product-panel deliverable-canvas" id="deliverable-canvas">
+          ${renderDeliverableBody(state.deliverable)}
+        </section>
+        <div class="native-function-workspace execution-workspace__workflow">
+          ${renderNativeEntryList(module, selectedCapability, section)}
+          ${renderNativeDetail(selectedCapability)}
+        </div>
+      </section>
+      ${renderNativeSectionActions(module, section).replace(activeAction, "")}
+    `;
+  }
+
+  function resultViewCopy(sectionId) {
+    const views = {
+      "technical-recheck": {
+        title: "技术复查等待执行",
+        reason:
+          "尚未选择带变更回执的页面。执行 canonical、Schema、Metadata 或 Code Patch 后，系统会以独立抓取结果对照变更前状态。",
+        before: "需要：变更前页面快照与检查结果",
+        after: "需要：变更后独立抓取与验证时间",
+      },
+      "gsc-ga4-windows": {
+        title: "GSC / GA4 观测窗口尚未建立",
+        reason:
+          "需要先确认数据授权、时区、Conversion 定义、发布回执和固定窗口。缺数时显示缺数原因，不补零。",
+        before: "需要：基线窗口、来源、样本与新鲜度",
+        after: "需要：同口径观察窗口与完整性说明",
+      },
+      "keyword-outcomes": {
+        title: "目标词还没有可比较的连续观测",
+        reason:
+          "排名历史必须保留市场、设备、Provider 与采集时间。只有关联真实变更回执时，才会标出改动点。",
+        before: "需要：目标词原始 Rank Series",
+        after: "需要：同口径 Rank Series 与变更回执",
+      },
+      "change-timeline": {
+        title: "变更与结果时间线为空",
+        reason:
+          "审核、发布、技术变更、复查与观测需要独立记录；审批不等于发布，发布也不等于效果。",
+        before: "需要：批准的交付物与变更前证据",
+        after: "需要：不可变回执、复查和观测记录",
+      },
+      "geo-observations": {
+        title: "GEO Citation 证据当前不可用",
+        reason:
+          "只有外部服务授权、Query、回答快照、引用位置与失败状态齐备时才显示引用观测；结构差异仅用于分析，不声称因果。",
+        before: "需要：平台、Query 与基线回答快照",
+        after: "需要：同条件回答快照与引用位置",
+      },
+    };
+    return views[sectionId] ?? views["technical-recheck"];
+  }
+
+  function renderNativeResults(module, section, selectedCapability) {
+    const copy = resultViewCopy(section.id);
+    const activeAction = renderSectionPrimaryAction(section);
+    return `
+      <section
+        class="results-workspace"
+        id="surface-panel-${escapeHtml(section.id)}"
+        role="tabpanel"
+        aria-labelledby="surface-tab-${escapeHtml(section.id)}"
+        data-results-workspace
+      >
+        <header class="object-workspace__head">
+          <div>
+            <p class="panel-head__eyebrow">BEFORE / AFTER</p>
+            <h2>${escapeHtml(section.title)}</h2>
+            <p data-reading-text>${escapeHtml(section.purpose)}</p>
+          </div>
+          ${truthBadge(section.truthStatus)}
+        </header>
+        <div class="comparison-skeleton">
+          <article data-before>
+            <span>改前证据</span>
+            <strong>${escapeHtml(copy.before)}</strong>
+          </article>
+          <span class="comparison-arrow" aria-hidden="true">→</span>
+          <article data-after>
+            <span>改后证据</span>
+            <strong>${escapeHtml(copy.after)}</strong>
+          </article>
+        </div>
+        <div
+          class="honest-empty honest-empty--large"
+          data-honest-empty-state
+          data-evidence-status="unavailable"
+        >
+          <strong>${escapeHtml(copy.title)}</strong>
+          <p data-reading-text>${escapeHtml(copy.reason)}</p>
+          ${activeAction}
+        </div>
+        <div class="native-function-workspace results-workspace__workflow">
+          ${renderNativeEntryList(module, selectedCapability, section)}
+          ${renderNativeDetail(selectedCapability)}
+        </div>
+      </section>
+      ${renderNativeSectionActions(module, section).replace(activeAction, "")}
+    `;
+  }
+
+  function renderNativeModule(module, section, selectedCapability) {
+    if (module.id === "overview") {
+      return renderNativeOverview(module, section, selectedCapability);
     }
-
-    renderRail();
-    app.dataset.ready = "true";
+    if (module.id === "growth-map") {
+      return renderNativeGrowth(module, section, selectedCapability);
+    }
+    if (module.id === "execution") {
+      return renderNativeExecution(module, section, selectedCapability);
+    }
+    return renderNativeResults(module, section, selectedCapability);
   }
 
-  function getDialog() {
-    return document.querySelector("dialog[data-evidence-dialog]");
+  function renderProductView() {
+    const module = moduleById(state.view) ?? product.modules[0];
+    const section = sectionById(module, state.surface) ?? firstSection(module);
+    const selectedCapability =
+      capabilityByEntryId(state.entryId) ?? firstCapability(module, section);
+    const main = document.getElementById("product-content");
+    const targetAttribute = state.target
+      ? ` data-governed-target="${escapeHtml(state.target)}"`
+      : "";
+    const headings = {
+      overview: "今天先推进什么",
+      "growth-map": "从全站证据找到增长机会",
+      execution: "直接审核和处理交付物",
+      results: "用证据窗口看改前与改后",
+    };
+
+    main.setAttribute("data-product-surface", module.id);
+    main.innerHTML = `
+      <div class="product-workspace"${targetAttribute}>
+        <header class="product-heading">
+          <div>
+            <p class="product-heading__eyebrow">${escapeHtml(
+              module.enName ?? module.id,
+            )} · ${escapeHtml(module.name)}</p>
+            <h1>${escapeHtml(headings[module.id])}</h1>
+            <p class="product-heading__promise" data-reading-text>${escapeHtml(
+              module.customerGoal,
+            )}</p>
+          </div>
+          <aside class="truth-card">
+            <span class="truth-card__label">${escapeHtml(
+              truthLabel(module.truthStatus),
+            )}</span>
+            <p data-reading-text>${escapeHtml(
+              customerTruthCopy(module.truthStatus),
+            )}</p>
+          </aside>
+        </header>
+        ${renderSurfaceTabs(module, section)}
+        <div class="native-module-workspace">
+          ${renderNativeModule(module, section, selectedCapability)}
+        </div>
+        <footer class="product-footer" data-reading-text>
+          当前页面只呈现客户可以操作或验证的内容；缺少项目数据、授权、回执或固定观测窗口时，会明确显示不可用原因。
+          原始需求审核位于左侧“审核证据”，不会干扰日常工作。
+        </footer>
+      </div>
+    `;
+
+    document.querySelector("[data-breadcrumb-current]").textContent =
+      module.name;
   }
 
-  function isDialogOpen(dialog = getDialog()) {
+  function renderConnectionsDialog() {
+    const dialog = document.querySelector("[data-connections-dialog]");
+    const body = dialog.querySelector("[data-connections-body]");
+    body.innerHTML = `
+      <section class="dialog-section">
+        <h3>仅显示真实客户连接</h3>
+        <p data-reading-text>
+          Nevermore 当前客户可见连接只保留 GSC、GA4 与 GitHub。
+          关键词 Provider、评论、GEO Citation 和 Backlink 属于内部证据能力，不伪装成客户连接卡。
+        </p>
+      </section>
+      <section class="dialog-section">
+        <div class="connection-ledger">
+          ${connections()
+            .map(
+              (connection) => `
+                <div
+                  class="connection-row"
+                  data-connection-id="${escapeHtml(connection.id)}"
+                  data-customer-connector="${escapeHtml(connection.name)}"
+                  data-readiness="${escapeHtml(connection.truthStatus)}"
+                >
+                  <strong>${escapeHtml(connection.name)}</strong>
+                  <p data-reading-text>${escapeHtml(connection.purpose)}</p>
+                  ${truthBadge(connection.truthStatus)}
+                  <p data-reading-text>${escapeHtml(connection.readiness)}</p>
+                  ${
+                    connection.truthStatus !== "current"
+                      ? `<p class="unavailable-note" data-reading-text>${escapeHtml(
+                          connection.unavailableText,
+                        )}</p>`
+                      : ""
+                  }
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderAuditDialog() {
+    const dialog = document.querySelector("[data-audit-evidence-dialog]");
+    const body = dialog.querySelector("[data-audit-dialog-body]");
+    const selected =
+      requirementById(state.auditRequirementId) ?? audit.requirements[0];
+    body.innerHTML = `
+      <section class="dialog-section">
+        <h3>原始需求审计与审核证据</h3>
+        <p data-reading-text>
+          这里保留的是原始需求审计与审核证据。主工作区展示融合后的正式产品；如需追溯设计原因，可在这里查看原始诉求、当前事实、改写后验收与未包含边界。
+        </p>
+        <div class="audit-index">
+          ${audit.requirements
+            .map(
+              (requirement) => `
+                <button
+                  type="button"
+                  data-action="select-audit-requirement"
+                  data-audit-requirement-id="${requirement.id}"
+                  aria-current="${
+                    selected.id === requirement.id ? "true" : "false"
+                  }"
+                >
+                  <span class="audit-index__number">${String(
+                    requirement.id,
+                  ).padStart(2, "0")}</span>
+                  <span class="audit-index__title">${escapeHtml(
+                    requirement.title,
+                  )}</span>
+                  <span class="audit-index__state">${escapeHtml(
+                    audit.decisionLabels?.[requirement.decision] ??
+                      requirement.decision,
+                  )}</span>
+                </button>
+              `,
+            )
+            .join("")}
+        </div>
+      </section>
+      <section class="dialog-section audit-evidence-detail">
+        <p class="dialog-head__eyebrow">审核证据 ${String(
+          selected.id,
+        ).padStart(2, "0")}</p>
+        <h3>${escapeHtml(selected.title)}</h3>
+        <p data-reading-text>${escapeHtml(selected.rationale)}</p>
+      </section>
+      <section class="dialog-section">
+        <h3>当前事实</h3>
+        ${renderList(selected.currentEvidence, "audit-evidence-list")}
+      </section>
+      <section class="dialog-section">
+        <h3>改写后验收</h3>
+        ${renderList(selected.rewrittenAcceptance, "audit-evidence-list")}
+      </section>
+      <section class="dialog-section">
+        <h3>实施条件与依赖</h3>
+        ${renderList(selected.dependencies, "audit-evidence-list")}
+      </section>
+      <section class="dialog-section">
+        <h3>明确不包含</h3>
+        ${renderList(selected.notIncluded, "audit-evidence-list")}
+      </section>
+    `;
+  }
+
+  function dialogIsOpen(dialog) {
     return Boolean(dialog?.open || dialog?.hasAttribute("open"));
   }
 
-  function dialogFocusable(dialog = getDialog()) {
+  function focusableIn(dialog) {
     return Array.from(
       dialog.querySelectorAll(
         'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -1175,50 +1619,16 @@
     );
   }
 
-  function openEvidence(requirementId, invoker) {
-    const requirement = getRequirement(requirementId);
-    const dialog = getDialog();
-    const body = dialog.querySelector("[data-dialog-body]");
-    dialogInvoker = invoker ?? document.activeElement;
-    dialog.dataset.requirementId = String(requirement.id);
-    dialog.querySelector("#evidence-dialog-title").textContent =
-      `${String(requirement.id).padStart(2, "0")} · ${requirement.title}`;
-    body.innerHTML = `
-      <section class="dialog-section">
-        <h3>当前 canonical 证据</h3>
-        ${renderList(requirement.currentEvidence)}
-      </section>
-      <section class="dialog-section">
-        <h3>上线所需证据</h3>
-        ${renderList(requirement.completionEvidence)}
-      </section>
-      <section class="dialog-section">
-        <h3>依赖</h3>
-        ${renderList(requirement.dependencies)}
-      </section>
-      <section class="dialog-section">
-        <h3>不包含边界</h3>
-        ${renderList(requirement.notIncluded)}
-      </section>
-      ${
-        list(requirement.completionFlags).length > 0
-          ? `
-            <section class="dialog-section">
-              <h3>独立完成标记</h3>
-              ${renderCompletionFlags(requirement)}
-            </section>
-          `
-          : ""
-      }
-    `;
-
+  function openDialog(dialog) {
+    if (!dialog || dialogIsOpen(dialog)) {
+      return;
+    }
     if (typeof dialog.showModal === "function") {
       dialog.showModal();
     } else {
       dialog.setAttribute("open", "");
     }
-
-    const focusFirst = () => dialogFocusable(dialog)[0]?.focus();
+    const focusFirst = () => focusableIn(dialog)[0]?.focus();
     if (typeof global.requestAnimationFrame === "function") {
       global.requestAnimationFrame(focusFirst);
     } else {
@@ -1226,9 +1636,8 @@
     }
   }
 
-  function closeDialog(options = {}) {
-    const dialog = getDialog();
-    if (!dialog || !isDialogOpen(dialog)) {
+  function closeDialogElement(dialog, restoreFocus = false) {
+    if (!dialog || !dialogIsOpen(dialog)) {
       return;
     }
     if (typeof dialog.close === "function") {
@@ -1236,19 +1645,120 @@
     } else {
       dialog.removeAttribute("open");
     }
-    dialog.querySelector("[data-dialog-body]")?.replaceChildren();
-    delete dialog.dataset.requirementId;
-    const invoker = dialogInvoker;
-    dialogInvoker = null;
-    if (options.restoreFocus !== false && invoker?.focus) {
-      invoker.focus();
+    if (restoreFocus && dialogInvoker?.focus) {
+      dialogInvoker.focus();
+      dialogInvoker = null;
     }
   }
 
+  function syncDialogs() {
+    const connectionsDialog = document.querySelector(
+      "[data-connections-dialog]",
+    );
+    const auditDialog = document.querySelector(
+      "[data-audit-evidence-dialog]",
+    );
+
+    if (state.drawer === "connections") {
+      closeDialogElement(auditDialog);
+      renderConnectionsDialog();
+      openDialog(connectionsDialog);
+      return;
+    }
+    if (state.drawer === "audit") {
+      closeDialogElement(connectionsDialog);
+      renderAuditDialog();
+      openDialog(auditDialog);
+      return;
+    }
+
+    const hadOpenDialog =
+      dialogIsOpen(connectionsDialog) || dialogIsOpen(auditDialog);
+    closeDialogElement(connectionsDialog);
+    closeDialogElement(auditDialog);
+    if (hadOpenDialog && dialogInvoker?.focus) {
+      dialogInvoker.focus();
+      dialogInvoker = null;
+    }
+  }
+
+  function render() {
+    app.dataset.activeView = state.view;
+    if (state.target) {
+      app.dataset.activeDestination = state.target;
+    } else {
+      delete app.dataset.activeDestination;
+    }
+    document
+      .querySelectorAll("[data-product-view]")
+      .forEach((button) => {
+        if (button.dataset.productView === state.view) {
+          button.setAttribute("aria-current", "page");
+        } else {
+          button.removeAttribute("aria-current");
+        }
+      });
+    renderProductView();
+    syncDialogs();
+    app.dataset.ready = "true";
+  }
+
+  function handleProductAction(target) {
+    const encodedDestination = text(
+      target.dataset.governedDestination,
+      "",
+    );
+    const [kind = "", ...targetParts] = encodedDestination.split(":");
+    const destinationTarget = targetParts.join(":");
+    const destination = { kind, target: destinationTarget };
+    const route = findDestinationRoute(destination);
+    const entryId = text(target.dataset.entryId ?? state.entryId, "");
+    const capability = capabilityByEntryId(entryId);
+
+    if (route.drawer === "audit") {
+      dialogInvoker = target;
+      commitState({
+        drawer: "audit",
+        auditRequirementId:
+          Number(target.dataset.auditRequirement) ||
+          capability?.requirementId ||
+          state.auditRequirementId,
+        target: encodedDestination,
+      });
+      return;
+    }
+    if (route.drawer === "connections") {
+      dialogInvoker = target;
+      commitState({ drawer: "connections", target: encodedDestination });
+      return;
+    }
+
+    const patch = {
+      ...route,
+      entryId,
+      target: encodedDestination,
+      drawer: "",
+    };
+    if (route.view && route.surface) {
+      const routedModule = moduleById(route.view);
+      const routedSection = sectionById(routedModule, route.surface);
+      const matchingCapability = capabilitiesForSection(
+        routedModule,
+        routedSection,
+      ).find(
+        (item) => item.requirementId === capability?.requirementId,
+      );
+      patch.entryId = matchingCapability
+        ? nativeEntryId(matchingCapability)
+        : nativeEntryId(firstCapability(routedModule, routedSection));
+    }
+    commitState(patch);
+  }
+
   function handleClick(event) {
-    const dialog = getDialog();
-    if (event.target === dialog) {
-      closeDialog();
+    const dialog = event.target.closest("dialog");
+    if (dialog && event.target === dialog) {
+      commitState({ drawer: "" }, { replace: true });
       return;
     }
 
@@ -1258,123 +1768,159 @@
     }
 
     const action = target.dataset.action;
-    if (action === "set-view") {
-      commitState({ view: target.dataset.view });
-      return;
-    }
-    if (action === "set-decision") {
-      const decision =
-        state.decision === target.dataset.value ? "all" : target.dataset.value;
-      commitState({ view: "requirements", decision });
-      return;
-    }
-    if (action === "clear-filters") {
-      commitState({ decision: "all", module: "all", stage: "all" });
-      return;
-    }
-    if (action === "select-requirement") {
+    if (action === "set-product-view") {
+      const module = moduleById(target.dataset.productView);
+      const section = firstSection(module);
       commitState({
-        view: "requirements",
-        requirementId: Number(target.dataset.requirementId),
+        view: module.id,
+        surface: section?.id ?? "",
+        entryId: nativeEntryId(firstCapability(module, section)),
+        target: "",
+        drawer: "",
       });
       return;
     }
-    if (action === "select-linked-requirement") {
-      const requirementId = Number(target.dataset.targetRequirementId);
-      const requirement = getRequirement(requirementId);
+    if (action === "set-surface") {
+      const module = moduleById(state.view);
+      const section = sectionById(module, target.dataset.sectionId);
       commitState({
-        view: "requirements",
-        requirementId,
-        decision: "all",
-        module: "all",
-        stage: "all",
-      });
-      if (requirement && global.innerWidth <= 860) {
-        document
-          .getElementById("review-detail")
-          ?.scrollIntoView({ block: "start" });
-      }
-      return;
-    }
-    if (action === "select-module") {
-      const moduleId =
-        target.dataset.moduleId ?? target.dataset.targetModuleId;
-      commitState({ view: "modules", module: moduleId, stage: "all" });
-      return;
-    }
-    if (action === "select-stage") {
-      commitState({
-        view: "stages",
-        stage: target.dataset.stageId,
-        module: "all",
+        surface: section.id,
+        entryId: nativeEntryId(firstCapability(module, section)),
+        target: "",
+        drawer: "",
       });
       return;
     }
-    if (action === "open-evidence") {
-      openEvidence(
-        Number(
-          target.dataset.evidenceRequirement ?? state.requirementId,
-        ),
-        target,
-      );
+    if (action === "select-native-entry") {
+      commitState({
+        entryId: text(target.dataset.entryId, ""),
+        target: "",
+        drawer: "",
+      });
+      return;
+    }
+    if (action === "select-deliverable") {
+      commitState({
+        deliverable: text(target.dataset.deliverableSelect, DELIVERABLE_IDS[0]),
+        target: "",
+        drawer: "",
+      });
+      return;
+    }
+    if (action === "run-product-action") {
+      handleProductAction(target);
+      return;
+    }
+    if (action === "open-connections") {
+      dialogInvoker = target;
+      commitState({
+        drawer: "connections",
+        target: target.dataset.governedDestination,
+      });
+      return;
+    }
+    if (action === "open-audit-evidence") {
+      const capability = capabilityByEntryId(state.entryId);
+      dialogInvoker = target;
+      commitState({
+        drawer: "audit",
+        auditRequirementId:
+          Number(target.dataset.auditRequirement) ||
+          capability?.requirementId ||
+          state.auditRequirementId,
+        target: target.dataset.governedDestination,
+      });
+      return;
+    }
+    if (action === "select-audit-requirement") {
+      commitState({
+        drawer: "audit",
+        auditRequirementId: Number(target.dataset.auditRequirementId),
+      });
       return;
     }
     if (action === "close-dialog") {
-      closeDialog();
-      return;
+      commitState({ drawer: "" }, { replace: true });
     }
-    if (action === "go-to-acceptance") {
-      const requirementId = Number(
-        getDialog()?.dataset.requirementId ?? state.requirementId,
-      );
-      closeDialog({ restoreFocus: false });
-      commitState({
-        view: "acceptance",
-        requirementId,
-        decision: "all",
-        module: "all",
-        stage: "all",
-      });
-    }
-  }
-
-  function handleChange(event) {
-    const control = event.target.closest("select[data-filter]");
-    if (!control || !app.contains(control)) {
-      return;
-    }
-    const filter = control.dataset.filter;
-    if (!["decision", "module", "stage"].includes(filter)) {
-      return;
-    }
-    commitState({ [filter]: control.value });
   }
 
   function handleKeydown(event) {
-    const dialog = getDialog();
-    if (!dialog || !isDialogOpen(dialog)) {
+    const surfaceTab = event.target.closest?.(
+      '[role="tab"][data-section-id]',
+    );
+    if (
+      surfaceTab &&
+      ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+    ) {
+      const tabs = Array.from(
+        surfaceTab
+          .closest('[role="tablist"]')
+          ?.querySelectorAll('[role="tab"][data-section-id]') ?? [],
+      );
+      const currentIndex = tabs.indexOf(surfaceTab);
+      if (currentIndex >= 0 && tabs.length > 0) {
+        event.preventDefault();
+        let nextIndex = currentIndex;
+        if (event.key === "ArrowRight") {
+          nextIndex = (currentIndex + 1) % tabs.length;
+        } else if (event.key === "ArrowLeft") {
+          nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+        } else if (event.key === "Home") {
+          nextIndex = 0;
+        } else if (event.key === "End") {
+          nextIndex = tabs.length - 1;
+        }
+        const nextSectionId = tabs[nextIndex].dataset.sectionId;
+        const module = moduleById(state.view);
+        const nextSection = sectionById(module, nextSectionId);
+        commitState({
+          surface: nextSectionId,
+          entryId: nativeEntryId(firstCapability(module, nextSection)),
+          target: "",
+          drawer: "",
+        });
+        global.requestAnimationFrame?.(() => {
+          document
+            .querySelector(
+              `[role="tab"][data-section-id="${nextSectionId}"]`,
+            )
+            ?.focus();
+        });
+        return;
+      }
+    }
+
+    const openDialogElement = Array.from(
+      document.querySelectorAll("dialog"),
+    ).find(dialogIsOpen);
+    if (!openDialogElement) {
       return;
     }
     if (event.key === "Escape") {
       event.preventDefault();
-      closeDialog();
+      commitState({ drawer: "" }, { replace: true });
       return;
     }
     if (event.key !== "Tab") {
       return;
     }
-
-    const focusable = dialogFocusable(dialog);
+    const focusable = focusableIn(openDialogElement);
     if (focusable.length === 0) {
       event.preventDefault();
       return;
     }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    if (
+      event.shiftKey &&
+      (document.activeElement === first || event.target === first)
+    ) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (
+      !event.shiftKey &&
+      (document.activeElement === last || event.target === last)
+    ) {
       event.preventDefault();
       first.focus();
     }
@@ -1383,28 +1929,38 @@
   function boot() {
     app = document.getElementById("app");
     audit = global.NevermoreKeywordAudit;
+    product = audit?.integratedProduct;
 
-    if (!app || !audit || !Array.isArray(audit.requirements)) {
+    if (
+      !app ||
+      !audit ||
+      !product ||
+      !Array.isArray(product.modules) ||
+      product.modules.length !== 4 ||
+      !Array.isArray(product.capabilities)
+    ) {
       if (app) {
         app.innerHTML = `
           <main class="boot-error" role="alert">
-            <h1>审计数据不可用</h1>
-            <p>无法读取 Nevermore 关键词需求审计数据，请重新生成正式 Artifact。</p>
+            <h1>产品数据不可用</h1>
+            <p data-reading-text>
+              无法读取 Nevermore 工作台数据。请重新生成正式 Artifact，
+              或检查当前项目的数据文件是否完整。
+            </p>
           </main>
         `;
       }
       return;
     }
 
-    buildShell();
+    renderShell();
     state = parseHash();
     const canonicalHash = stateHash(state);
     if (global.location.hash !== canonicalHash) {
       global.history.replaceState(null, "", canonicalHash);
     }
     app.addEventListener("click", handleClick);
-    app.addEventListener("change", handleChange);
-    document.addEventListener("keydown", handleKeydown);
+    document.addEventListener("keydown", handleKeydown, true);
     global.addEventListener("hashchange", () => {
       state = parseHash();
       render();

@@ -23,81 +23,137 @@ const SOURCE_FILES = [
   "styles.css",
   "audit-app.js",
 ] as const;
-const VIEW_IDS = ["requirements", "modules", "stages", "acceptance"] as const;
-const VIEW_LABELS = {
-  requirements: "需求审核",
-  modules: "模块影响",
-  stages: "分阶段落地",
-  acceptance: "验收证据",
-} as const;
-const VIEW_EXPECTED_COPY = {
-  requirements: /需求|审核/,
-  modules: /概览|增长地图|执行中心|效果追踪/,
-  stages: /Canonical|结构与持续监控|外部证据/,
-  acceptance: /数据|契约|服务|界面|测试|Provider/,
-} as const;
+const PRODUCT_VIEWS = [
+  { id: "overview", label: "概览" },
+  { id: "growth-map", label: "增长地图" },
+  { id: "execution", label: "执行中心" },
+  { id: "results", label: "效果追踪" },
+] as const;
+const GROWTH_OBJECT_IDS = [
+  "page-portfolio",
+  "keyword-library",
+  "topic-governance",
+  "competitor-corpus",
+  "internal-link-graph",
+  "keyword-history",
+  "external-evidence",
+] as const;
+const DELIVERABLE_TYPES = [
+  { id: "english-blog", minimumCharacters: 500 },
+  { id: "content-brief", minimumCharacters: 300 },
+  { id: "metadata", minimumCharacters: 120 },
+  { id: "technical-ticket-code-patch", minimumCharacters: 300 },
+] as const;
 
-type ViewId = (typeof VIEW_IDS)[number];
+type ProductView = (typeof PRODUCT_VIEWS)[number]["id"];
+type Destination = {
+  kind: string;
+  target: string;
+};
+type Capability = {
+  id: string;
+  requirementId: number;
+  primaryModule: ProductView;
+  primaryAction: {
+    id: string;
+    label: string;
+    destination: Destination;
+  };
+};
+type ProductContract = {
+  requirementsEvidenceRole: string;
+  modules: Array<{
+    id: ProductView;
+    name: string;
+    mainSections: Array<{
+      id: string;
+      capabilityIds: string[];
+    }>;
+  }>;
+  capabilities: Capability[];
+  connectorPolicy: {
+    customerVisible: string[];
+    mockBoundary: string;
+    unavailableRule: string;
+  };
+};
 
-function viewButton(page: Page, view: ViewId): Locator {
+function productNav(page: Page): Locator {
   return page.locator(
-    `[data-action="set-view"][data-view="${view}"]`,
+    'nav[aria-label="客户工作区"] [data-product-view]',
   );
 }
 
-function requirementButton(page: Page, requirementId: number): Locator {
+function productViewButton(page: Page, view: ProductView): Locator {
   return page.locator(
-    `[data-action="select-requirement"][data-requirement-id="${requirementId}"]`,
+    `nav[aria-label="客户工作区"] [data-product-view="${view}"]`,
   );
 }
 
-function visibleRequirementButtons(page: Page): Locator {
-  return page.locator(
-    '[data-action="select-requirement"][data-requirement-id]:visible',
-  );
+function auditEvidenceTrigger(page: Page): Locator {
+  return page
+    .locator('[data-product-action="open-audit-evidence"]')
+    .first();
 }
 
-async function gotoAudit(
+function connectionsTrigger(page: Page): Locator {
+  return page.locator('[data-product-action="open-connections"]').first();
+}
+
+function hashParameter(page: Page, parameter: string): string | null {
+  const [, query = ""] = new URL(page.url()).hash.split("?");
+  return new URLSearchParams(query).get(parameter);
+}
+
+function destinationKey(destination: Destination): string {
+  return `${destination.kind}:${destination.target}`;
+}
+
+async function readProductContract(page: Page): Promise<ProductContract> {
+  return page.evaluate(() => {
+    const audit = (
+      window as typeof window & {
+        NevermoreKeywordAudit?: {
+          integratedProduct?: ProductContract;
+        };
+      }
+    ).NevermoreKeywordAudit;
+    if (!audit?.integratedProduct) {
+      throw new Error("integratedProduct contract is missing");
+    }
+    return audit.integratedProduct;
+  });
+}
+
+async function gotoWorkspace(
   page: Page,
-  hash = "#/requirements?item=1&decision=all&module=all&stage=all",
+  view?: ProductView,
+  query = "",
 ): Promise<void> {
+  const hash = view ? `#/${view}${query}` : "";
   await page.goto(`${ARTIFACT_PATH}${hash}`);
   await expect(page.locator("#app")).toHaveAttribute("data-ready", "true");
   await expect(page.getByRole("main")).toBeVisible();
-  await expect(
-    page.getByRole("heading", {
-      name: "关键词库与 SEO/GEO 能力需求审计",
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expect(page).toHaveTitle("Nevermore · SEO/GEO 增长工作台");
 }
 
-async function expectCurrentView(page: Page, view: ViewId): Promise<void> {
-  await expect(page.locator("#app")).toHaveAttribute("data-active-view", view);
-  await expect(viewButton(page, view)).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(
-    new RegExp(
-      `#/${view}(?:\\?|$)`,
-    ),
-  );
-  await expect(page.getByRole("main")).toContainText(VIEW_EXPECTED_COPY[view]);
-}
-
-async function selectFilter(
+async function expectCurrentProductView(
   page: Page,
-  filter: "decision" | "module" | "stage",
-  value: string,
+  view: ProductView,
 ): Promise<void> {
-  const control = page.locator(`select[data-filter="${filter}"]`);
-  await expect(control).toBeVisible();
-  await control.selectOption(value);
-  await expect(control).toHaveValue(value);
-  await expect
-    .poll(() => {
-      const [, query = ""] = new URL(page.url()).hash.split("?");
-      return new URLSearchParams(query).get(filter);
-    })
-    .toBe(value);
+  await expect(page.locator("#app")).toHaveAttribute(
+    "data-active-view",
+    view,
+  );
+  await expect(page.getByRole("main")).toHaveAttribute(
+    "data-product-surface",
+    view,
+  );
+  await expect(productViewButton(page, view)).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page).toHaveURL(new RegExp(`#/${view}(?:\\?|$)`));
 }
 
 async function expectNoHorizontalOverflow(page: Page): Promise<void> {
@@ -109,6 +165,116 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
       ) - window.innerWidth,
   );
   expect(overflow, `root overflow at ${page.url()}`).toBeLessThanOrEqual(1);
+}
+
+async function expectNativePrimarySurface(page: Page): Promise<void> {
+  const main = page.getByRole("main");
+  await expect(
+    main.locator(
+      [
+        "[data-capability-entry]",
+        "[data-capability-detail]",
+        "[data-capability-next]",
+        "[data-capability-id]",
+        "[data-audit-requirement-id]",
+        "[data-audit-requirement]",
+        "[data-requirement-id]",
+        "[data-product-node-id]",
+      ].join(", "),
+    ),
+  ).toHaveCount(0);
+  expect(await main.innerText()).not.toMatch(
+    /最终客户页面结构|实施条件|Canonical 对象|Capability entry|方案证据来源/i,
+  );
+  expect(hashParameter(page, "capability")).toBeNull();
+}
+
+async function openNativeEntryForAction(
+  page: Page,
+  actionId: string,
+): Promise<{ action: Locator; detail: Locator; entryId: string }> {
+  const main = page.getByRole("main");
+  const entries = main.locator(
+    "[data-native-entry][data-entry-id]:visible",
+  );
+  const entryCount = await entries.count();
+  expect(
+    entryCount,
+    `Native product action ${actionId} needs at least one customer entry`,
+  ).toBeGreaterThan(0);
+
+  for (let index = 0; index < entryCount; index += 1) {
+    const entry = entries.nth(index);
+    const entryId = await entry.getAttribute("data-entry-id");
+    expect(
+      entryId,
+      "Every native entry needs a stable customer object id",
+    ).toBeTruthy();
+    await entry.click();
+    await expect.poll(() => hashParameter(page, "entry")).toBe(entryId);
+
+    const detail = main.locator(
+      `[data-native-detail][data-entry-id="${entryId}"]:visible`,
+    );
+    await expect(detail).toBeVisible();
+    const action = detail.locator(
+      `[data-product-action="${actionId}"]:visible`,
+    );
+    if ((await action.count()) === 1) {
+      return { action, detail, entryId: entryId ?? "" };
+    }
+  }
+
+  throw new Error(
+    `No native customer entry exposes governed product action ${actionId}`,
+  );
+}
+
+async function expectNativeEntryOrHonestEmpty(
+  page: Page,
+  panel: Locator,
+): Promise<void> {
+  const entries = panel.locator(
+    "[data-native-entry][data-entry-id]:visible",
+  );
+  const emptyState = panel.locator("[data-honest-empty-state]:visible");
+  expect(
+    (await entries.count()) + (await emptyState.count()),
+    "A customer surface needs a native object entry or an honest empty state",
+  ).toBeGreaterThan(0);
+
+  if ((await entries.count()) > 0) {
+    const entry = entries.first();
+    const entryId = await entry.getAttribute("data-entry-id");
+    expect(entryId).toBeTruthy();
+    await entry.click();
+    await expect.poll(() => hashParameter(page, "entry")).toBe(entryId);
+    const detail = panel.locator(
+      `[data-native-detail][data-entry-id="${entryId}"]:visible`,
+    );
+    await expect(detail).toBeVisible();
+    await expect(
+      detail.locator(
+        "[data-product-action][data-governed-destination]:visible",
+      ),
+    ).not.toHaveCount(0);
+    return;
+  }
+
+  await expect(emptyState.first()).toHaveAttribute(
+    "data-evidence-status",
+    "unavailable",
+  );
+  expect((await emptyState.first().innerText()).trim().length).toBeGreaterThan(
+    24,
+  );
+  await expect(
+    emptyState
+      .first()
+      .locator(
+        "[data-product-action][data-governed-destination]:visible",
+      ),
+  ).toBeVisible();
 }
 
 async function getBlockingAxeViolations(page: Page): Promise<string[]> {
@@ -129,7 +295,39 @@ async function getBlockingAxeViolations(page: Page): Promise<string[]> {
     );
 }
 
-test("the audit source and generated output are regular repository-owned files", async () => {
+async function expectDialogFocusTrapAndEscape(
+  page: Page,
+  trigger: Locator,
+  dialog: Locator,
+): Promise<void> {
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("aria-modal", "true");
+  expect(
+    await page.evaluate(() => {
+      const active = document.activeElement;
+      return Boolean(active?.closest("dialog[open], [role='dialog']"));
+    }),
+  ).toBe(true);
+
+  const focusable = dialog.locator(
+    "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]",
+  );
+  expect(await focusable.count()).toBeGreaterThanOrEqual(2);
+  await focusable.last().focus();
+  await page.keyboard.press("Tab");
+  await expect(focusable.first()).toBeFocused();
+  await focusable.first().focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(focusable.last()).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+}
+
+test("the integrated Artifact source and generated output are regular repository-owned files", async () => {
   const repositoryRealPath = await realpath(REPOSITORY_ROOT);
   const expectedFiles = [
     ...SOURCE_FILES.map((fileName) => path.join(SOURCE_DIRECTORY, fileName)),
@@ -147,7 +345,7 @@ test("the audit source and generated output are regular repository-owned files",
 
   expect(
     missing,
-    "The audit must be generated from repository-owned source and committed as a standalone output",
+    "The product Artifact must build from repository-owned source and output",
   ).toEqual([]);
 
   for (const file of expectedFiles) {
@@ -171,12 +369,12 @@ test("the audit source and generated output are regular repository-owned files",
   const [readme, auditData, styles, application, html] = (await Promise.all(
     expectedFiles.map((file) => readFile(file, "utf8")),
   )) as [string, string, string, string, string];
-  expect(readme).toMatch(/需求来源|provenance|来源/i);
-  expect(readme).toMatch(/不等于.*上线|不是.*完成证据/);
-  expect(auditData).toContain("NevermoreKeywordAudit");
+  expect(readme).toMatch(/产品工作区|四(?:个)?模块|统一增长/i);
+  expect(auditData).toContain("integratedProduct");
   expect(styles.trim().length).toBeGreaterThan(1_000);
   expect(application).toContain("addEventListener");
-  expect(html).toMatch(/data-keyword-audit-build="1\.0-static"/);
+  expect(html).toMatch(/data-keyword-audit-build="2\.0-static"/);
+  expect(html).toMatch(/data-primary-experience="growth-workspace"/);
 
   const executableSource = [auditData, styles, application, html].join("\n");
   expect(executableSource).not.toMatch(
@@ -184,7 +382,45 @@ test("the audit source and generated output are regular repository-owned files",
   );
 });
 
-test("the standalone audit is Chinese-first, self-contained, and makes no remote request", async ({
+test("the default screen is the four-module product workspace, not the audit register", async ({
+  page,
+}) => {
+  await gotoWorkspace(page);
+  await expectCurrentProductView(page, "overview");
+
+  const nav = productNav(page);
+  await expect(nav).toHaveCount(4);
+  expect(
+    await nav.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-product-view")),
+    ),
+  ).toEqual(PRODUCT_VIEWS.map(({ id }) => id));
+  for (const { id, label } of PRODUCT_VIEWS) {
+    await expect(productViewButton(page, id)).toHaveAccessibleName(label);
+  }
+  expect((await nav.allTextContents()).join("\n")).not.toMatch(
+    /需求审核|模块影响|分阶段落地|验收证据/,
+  );
+
+  const contract = await readProductContract(page);
+  expect(contract.requirementsEvidenceRole).toBe("secondary-evidence");
+  expect(contract.modules.map(({ id }) => id)).toEqual(
+    PRODUCT_VIEWS.map(({ id }) => id),
+  );
+  await expect(
+    page.getByRole("main").locator("[data-audit-requirement-id]"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("main").locator("[data-audit-register]"),
+  ).toHaveCount(0);
+  await expectNativePrimarySurface(page);
+  await expect(
+    page.getByRole("main").locator("[data-overview-workspace]"),
+  ).toBeVisible();
+  await expect(auditEvidenceTrigger(page)).toBeVisible();
+});
+
+test("the standalone product workspace is Chinese-first, offline, and free of workstation leakage", async ({
   page,
   baseURL,
 }) => {
@@ -197,16 +433,13 @@ test("the standalone audit is Chinese-first, self-contained, and makes no remote
     }
   });
 
-  await gotoAudit(page);
-  const [html, visibleText, renderedHtml] = await Promise.all([
+  await gotoWorkspace(page);
+  const [html, renderedHtml] = await Promise.all([
     readFile(ARTIFACT_FILE, "utf8"),
-    page.locator("body").innerText(),
     page.content(),
   ]);
 
   expect(await page.locator("html").getAttribute("lang")).toBe("zh-CN");
-  await expect(page.getByText("审核通过不等于已上线", { exact: false })).toBeVisible();
-  expect(visibleText).toMatch(/中文|需求审计|审核/);
   expect(html).not.toMatch(
     /(?:\/Users\/|\/home\/[^/]+\/|\.codex\/visualizations|\/tmp\/|signalframe-mvp-app|@sf\/)/i,
   );
@@ -230,332 +463,570 @@ test("the standalone audit is Chinese-first, self-contained, and makes no remote
         .filter((value) => /^https?:\/\//i.test(value)),
     );
   expect(remoteDomAssets).toEqual([]);
+
+  for (const { id } of PRODUCT_VIEWS) {
+    await productViewButton(page, id).click();
+    await expectCurrentProductView(page, id);
+  }
   expect([...remoteRequests]).toEqual([]);
 });
 
-test("all 13 audited requirements render once with stable identities", async ({
+test("all four product modules can be switched repeatedly and restore through browser history", async ({
   page,
 }) => {
-  await gotoAudit(page);
-  const requirements = visibleRequirementButtons(page);
+  await gotoWorkspace(page);
+
+  for (const view of [
+    "growth-map",
+    "execution",
+    "results",
+    "overview",
+    "growth-map",
+    "overview",
+  ] as const) {
+    await productViewButton(page, view).click();
+    await expectCurrentProductView(page, view);
+  }
+
+  await productViewButton(page, "growth-map").click();
+  const growthMapUrl = page.url();
+  await productViewButton(page, "execution").click();
+  const executionUrl = page.url();
+  await productViewButton(page, "results").click();
+  const resultsUrl = page.url();
+  expect(new Set([growthMapUrl, executionUrl, resultsUrl]).size).toBe(3);
+
+  await page.goBack();
+  await expectCurrentProductView(page, "execution");
+  expect(page.url()).toBe(executionUrl);
+  await page.goBack();
+  await expectCurrentProductView(page, "growth-map");
+  expect(page.url()).toBe(growthMapUrl);
+  await page.goForward();
+  await expectCurrentProductView(page, "execution");
+  await page.goForward();
+  await expectCurrentProductView(page, "results");
+  expect(page.url()).toBe(resultsUrl);
+
+  await page.reload();
+  await expectCurrentProductView(page, "results");
+  expect(page.url()).toBe(resultsUrl);
+});
+
+test("Growth Map exposes all seven governed object views and switches them repeatedly", async ({
+  page,
+}) => {
+  await gotoWorkspace(page, "growth-map");
+  await expectCurrentProductView(page, "growth-map");
+
+  const contract = await readProductContract(page);
+  const growthMapModule = contract.modules.find(
+    (module) => module.id === "growth-map",
+  );
+  expect(growthMapModule, "Growth Map product contract is required").toBeTruthy();
+  expect(growthMapModule?.mainSections.map(({ id }) => id)).toEqual(
+    GROWTH_OBJECT_IDS,
+  );
+  const objects = page.locator("[data-growth-object]");
+  await expect(objects).toHaveCount(7);
+  expect(
+    await objects.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-growth-object")),
+    ),
+  ).toEqual(GROWTH_OBJECT_IDS);
+
+  for (const objectId of [
+    ...GROWTH_OBJECT_IDS,
+    "keyword-library",
+    "topic-governance",
+    "page-portfolio",
+  ] as const) {
+    const object = page.locator(
+      `[data-growth-object="${objectId}"]`,
+    );
+    await object.click();
+    await expect(object).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => hashParameter(page, "object")).toBe(objectId);
+    const controlledPanel = await object.getAttribute("aria-controls");
+    expect(controlledPanel, `${objectId} must control a real panel`).toBeTruthy();
+    const panel = page.locator(`#${controlledPanel}`);
+    await expect(panel).toBeVisible();
+    await expectNativePrimarySurface(page);
+    await expectNativeEntryOrHonestEmpty(page, panel);
+
+    const section = growthMapModule?.mainSections.find(
+      ({ id }) => id === objectId,
+    );
+    const expectedActionIds = contract.capabilities
+      .filter(({ id }) => section?.capabilityIds.includes(id))
+      .map(({ primaryAction }) => primaryAction.id);
+    expect(
+      expectedActionIds,
+      `${objectId} must map to at least one governed workflow`,
+    ).not.toHaveLength(0);
+    const visibleActionId = await panel
+      .locator(
+        "[data-native-detail]:visible [data-product-action][data-governed-destination]:visible",
+      )
+      .getAttribute("data-product-action");
+    expect(
+      expectedActionIds,
+      `${objectId} must open a work item owned by the active Growth Map object`,
+    ).toContain(visibleActionId);
+  }
+
+  const pagePortfolio = page.locator(
+    '[data-growth-object="page-portfolio"]',
+  );
+  const keywordLibrary = page.locator(
+    '[data-growth-object="keyword-library"]',
+  );
+  await pagePortfolio.click();
+  const pagePortfolioUrl = page.url();
+  await keywordLibrary.click();
+  const keywordLibraryUrl = page.url();
+  await page.goBack();
+  await expect(pagePortfolio).toHaveAttribute("aria-selected", "true");
+  expect(page.url()).toBe(pagePortfolioUrl);
+  await page.goForward();
+  await expect(keywordLibrary).toHaveAttribute("aria-selected", "true");
+  expect(page.url()).toBe(keywordLibraryUrl);
+});
+
+test("Overview is a native customer decision workspace, not a product blueprint", async ({
+  page,
+}) => {
+  await gotoWorkspace(page, "overview");
+  await expectCurrentProductView(page, "overview");
+  await expectNativePrimarySurface(page);
+  const workspace = page
+    .getByRole("main")
+    .locator("[data-overview-workspace]");
+  await expect(workspace).toBeVisible();
+
+  const contract = await readProductContract(page);
+  const overview = contract.modules.find((module) => module.id === "overview");
+  expect(overview).toBeTruthy();
+  for (const section of overview?.mainSections ?? []) {
+    const control = page.locator(`[data-section-id="${section.id}"]`);
+    await control.click();
+    await expect(control).toHaveAttribute("aria-selected", "true");
+    const panelId = await control.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+    const panel = page.locator(`#${panelId}`);
+    await expect(panel).toBeVisible();
+    await expectNativeEntryOrHonestEmpty(page, panel);
+    await expectNativePrimarySurface(page);
+  }
+});
+
+test("Execution switches among four substantive pending deliverables", async ({
+  page,
+}) => {
+  await gotoWorkspace(page, "execution");
+  await expectCurrentProductView(page, "execution");
+  await expectNativePrimarySurface(page);
+  await expect(
+    page.getByRole("main").locator("[data-execution-workspace]"),
+  ).toBeVisible();
+  const artifactBodySection = page.locator(
+    '[data-section-id="artifact-body"]',
+  );
+  await expect(artifactBodySection).toBeVisible();
+  await artifactBodySection.click();
+  await expect(artifactBodySection).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  const controls = page.locator("[data-deliverable-select]");
+  await expect(controls).toHaveCount(DELIVERABLE_TYPES.length);
+  expect(
+    await controls.evaluateAll((elements) =>
+      elements.map((element) =>
+        element.getAttribute("data-deliverable-select"),
+      ),
+    ),
+  ).toEqual(DELIVERABLE_TYPES.map(({ id }) => id));
+
+  for (const deliverable of DELIVERABLE_TYPES) {
+    const control = page.locator(
+      `[data-deliverable-select="${deliverable.id}"]`,
+    );
+    await control.click();
+    await expect(control).toHaveAttribute("aria-selected", "true");
+    const body = page.locator(
+      `[data-deliverable-body][data-deliverable-type="${deliverable.id}"]:visible`,
+    );
+    await expect(body).toBeVisible();
+    await expect(body).toHaveAttribute(
+      "data-deliverable-status",
+      /^(?:pending-review|pending-action)$/,
+    );
+    expect(
+      (await body.innerText()).trim().length,
+      `${deliverable.id} must render substantive customer-reviewable content`,
+    ).toBeGreaterThanOrEqual(deliverable.minimumCharacters);
+    if (deliverable.id === "english-blog") {
+      await expect(body).toHaveAttribute("lang", /^en(?:-|$)/);
+    }
+
+    const checks = page.locator(
+      "[data-delivery-check][data-evidence-status]:visible",
+    );
+    expect(
+      await checks.count(),
+      `${deliverable.id} must disclose source, QA, approval, and receipt truth`,
+    ).toBeGreaterThanOrEqual(4);
+    expect(
+      new Set(
+        await checks.evaluateAll((elements) =>
+          elements.map((element) =>
+            element.getAttribute("data-delivery-check"),
+          ),
+        ),
+      ),
+    ).toEqual(
+      new Set(["sources", "qa", "approval", "publication-receipt"]),
+    );
+    for (let index = 0; index < (await checks.count()); index += 1) {
+      await expect(checks.nth(index)).toHaveAttribute(
+        "data-evidence-status",
+        /^(?:pending|unavailable)$/,
+      );
+    }
+  }
+
+  await expect(
+    page
+      .getByRole("main")
+      .locator(
+        '[data-deliverable-status="published"], [data-deliverable-status="completed"]',
+      ),
+  ).toHaveCount(0);
+  expect(await page.getByRole("main").innerText()).not.toMatch(
+    /已产生客户结果|发布成功/,
+  );
+});
+
+test("Results shows evidence-backed before/after or an honest unavailable state for every view", async ({
+  page,
+}) => {
+  await gotoWorkspace(page, "results");
+  await expectCurrentProductView(page, "results");
+  await expectNativePrimarySurface(page);
+  await expect(
+    page.getByRole("main").locator("[data-results-workspace]"),
+  ).toBeVisible();
+
+  const contract = await readProductContract(page);
+  const results = contract.modules.find((module) => module.id === "results");
+  expect(results).toBeTruthy();
+
+  for (const section of results?.mainSections ?? []) {
+    const control = page.locator(`[data-section-id="${section.id}"]`);
+    await control.click();
+    await expect(control).toHaveAttribute("aria-selected", "true");
+    const panelId = await control.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+    const panel = page.locator(`#${panelId}`);
+    await expect(panel).toBeVisible();
+
+    const comparison = panel.locator("[data-results-comparison]:visible");
+    const emptyState = panel.locator("[data-honest-empty-state]:visible");
+    expect(
+      (await comparison.count()) + (await emptyState.count()),
+      `${section.id} must expose exactly one truthful results state`,
+    ).toBe(1);
+
+    if ((await comparison.count()) === 1) {
+      await expect(comparison).toHaveAttribute(
+        "data-evidence-status",
+        /^(?:verified|observation)$/,
+      );
+      await expect(comparison).toHaveAttribute("data-evidence-source", /.+/);
+      await expect(comparison.locator("[data-before]")).toBeVisible();
+      await expect(comparison.locator("[data-after]")).toBeVisible();
+    } else {
+      await expect(emptyState).toHaveAttribute(
+        "data-evidence-status",
+        "unavailable",
+      );
+      expect((await emptyState.innerText()).trim().length).toBeGreaterThan(24);
+      await expect(
+        emptyState.locator(
+          "[data-product-action][data-governed-destination]:visible",
+        ),
+      ).toBeVisible();
+    }
+    await expectNativePrimarySurface(page);
+  }
+});
+
+test("all 13 reviewed needs emerge through native customer entries and governed actions", async ({
+  page,
+}) => {
+  test.slow();
+  await gotoWorkspace(page);
+  const contract = await readProductContract(page);
+  expect(contract.capabilities).toHaveLength(13);
+  expect(
+    contract.capabilities.map(({ requirementId }) => requirementId),
+  ).toEqual(Array.from({ length: 13 }, (_, index) => index + 1));
+
+  const coveredRequirementIds: number[] = [];
+  for (const capability of contract.capabilities) {
+    const primaryModule = contract.modules.find(
+      (module) => module.id === capability.primaryModule,
+    );
+    const capabilitySection = primaryModule?.mainSections.find((section) =>
+      section.capabilityIds.includes(capability.id),
+    );
+    expect(
+      capabilitySection,
+      `Capability ${capability.requirementId} needs a governed section in ${capability.primaryModule}`,
+    ).toBeTruthy();
+
+    await productViewButton(page, capability.primaryModule).click();
+    await expectCurrentProductView(page, capability.primaryModule);
+    const sectionControl = page.locator(
+      `[data-section-id="${capabilitySection?.id}"]`,
+    );
+    await expect(sectionControl).toBeVisible();
+    await sectionControl.click();
+    await expect(sectionControl).toHaveAttribute("aria-selected", "true");
+    await expectNativePrimarySurface(page);
+
+    const { action, detail, entryId } = await openNativeEntryForAction(
+      page,
+      capability.primaryAction.id,
+    );
+    await expect(detail).toBeVisible();
+    await expect(detail).toHaveAttribute("data-entry-id", entryId);
+    await expect(action).toBeVisible();
+    await expect(action).toHaveAttribute(
+      "data-product-action",
+      capability.primaryAction.id,
+    );
+    const governedDestination = await action.getAttribute(
+      "data-governed-destination",
+    );
+    expect(governedDestination).toBe(
+      destinationKey(capability.primaryAction.destination),
+    );
+    await action.click();
+
+    expect(hashParameter(page, "capability")).toBeNull();
+    await expect.poll(() => hashParameter(page, "target")).toBe(
+      governedDestination,
+    );
+    await expect
+      .poll(async () =>
+        page
+          .locator("[data-governed-target]:visible")
+          .evaluateAll((elements, expected) =>
+            elements.some(
+              (element) =>
+                element.getAttribute("data-governed-target") === expected,
+            ),
+            governedDestination,
+          ),
+      )
+      .toBe(true);
+    await expect(page.locator(".toast, [data-toast]")).toHaveCount(0);
+    const governedDialog = page.locator(
+      `dialog[data-governed-target="${governedDestination}"][open]`,
+    );
+    if ((await governedDialog.count()) > 0) {
+      await page.keyboard.press("Escape");
+      await expect(governedDialog).toBeHidden();
+    }
+    await expectNativePrimarySurface(page);
+    coveredRequirementIds.push(capability.requirementId);
+  }
+
+  expect(coveredRequirementIds).toEqual(
+    Array.from({ length: 13 }, (_, index) => index + 1),
+  );
+});
+
+test("audit conclusions exist only as secondary evidence and preserve all 13 decisions", async ({
+  page,
+}) => {
+  await gotoWorkspace(page);
+  const trigger = auditEvidenceTrigger(page);
+  await expect(trigger).toHaveAttribute(
+    "data-governed-destination",
+    /.+/,
+  );
+  await trigger.click();
+
+  const dialog = page.locator("dialog[data-audit-evidence-dialog]");
+  await expect(dialog).toBeVisible();
+  expect(await dialog.getAttribute("data-secondary-evidence")).not.toBeNull();
+  await expect(dialog).toContainText(/需求审计|审核结论/);
+  const requirements = dialog.locator("[data-audit-requirement-id]");
   await expect(requirements).toHaveCount(13);
   expect(
     await requirements.evaluateAll((elements) =>
       elements.map((element) =>
-        Number(element.getAttribute("data-requirement-id")),
+        Number(element.getAttribute("data-audit-requirement-id")),
       ),
     ),
   ).toEqual(Array.from({ length: 13 }, (_, index) => index + 1));
-
-  await expect(requirementButton(page, 2)).toContainText(
-    "同意图词的重复与蚕食治理",
-  );
-  await expect(requirementButton(page, 9)).toContainText(
-    "90 天关键词排名趋势与变更事件",
-  );
-});
-
-test("views, filters, and requirement details can be switched repeatedly", async ({
-  page,
-}) => {
-  await gotoAudit(page);
-
-  for (const view of [
-    "modules",
-    "stages",
-    "acceptance",
-    "requirements",
-    "modules",
-    "requirements",
-  ] as const) {
-    await viewButton(page, view).click();
-    await expectCurrentView(page, view);
-  }
-
-  await selectFilter(page, "decision", "rewrite");
-  await expect(requirementButton(page, 2)).toBeVisible();
-  await expect(requirementButton(page, 4)).toBeHidden();
-  expect(await visibleRequirementButtons(page).count()).toBeGreaterThan(0);
-
-  await selectFilter(page, "decision", "adopt");
-  await expect(requirementButton(page, 4)).toBeVisible();
-  await expect(requirementButton(page, 2)).toBeHidden();
-
-  await selectFilter(page, "decision", "defer");
-  await expect(requirementButton(page, 11)).toBeVisible();
-  await expect(requirementButton(page, 4)).toBeHidden();
-
-  await selectFilter(page, "decision", "all");
-  await expect(visibleRequirementButtons(page)).toHaveCount(13);
-
-  await selectFilter(page, "module", "growth-map");
-  const growthMapRows = visibleRequirementButtons(page);
-  expect(await growthMapRows.count()).toBeGreaterThan(0);
-  expect(
-    await growthMapRows.evaluateAll((elements) =>
-      elements.every((element) =>
-        (element.getAttribute("data-modules") ?? "")
-          .split(/\s*,\s*|\s+/)
-          .includes("growth-map"),
-      ),
-    ),
-  ).toBe(true);
-
-  await selectFilter(page, "module", "execution");
-  const executionRows = visibleRequirementButtons(page);
-  expect(await executionRows.count()).toBeGreaterThan(0);
-  expect(
-    await executionRows.evaluateAll((elements) =>
-      elements.every((element) =>
-        (element.getAttribute("data-modules") ?? "")
-          .split(/\s*,\s*|\s+/)
-          .includes("execution"),
-      ),
-    ),
-  ).toBe(true);
-
-  await selectFilter(page, "module", "all");
-  await selectFilter(page, "stage", "stage-1");
-  const stageOneRows = visibleRequirementButtons(page);
-  expect(await stageOneRows.count()).toBeGreaterThan(0);
-  expect(
-    await stageOneRows.evaluateAll((elements) =>
-      elements.every((element) =>
-        (element.getAttribute("data-stages") ?? "")
-          .split(/\s*,\s*|\s+/)
-          .includes("stage-1"),
-      ),
-    ),
-  ).toBe(true);
-
-  await selectFilter(page, "stage", "stage-3");
-  await expect(requirementButton(page, 11)).toBeVisible();
-  await selectFilter(page, "stage", "all");
-  await expect(visibleRequirementButtons(page)).toHaveCount(13);
-
-  await requirementButton(page, 2).click();
-  await expect(page.locator("#detail-title")).toHaveText(
-    "同意图词的重复与蚕食治理",
-  );
-  await expect(page.locator("[data-requirement-detail]")).toContainText(
-    /主词|支持词|保持独立|暂缓/,
-  );
-
-  await requirementButton(page, 9).click();
-  await expect(page.locator("#detail-title")).toHaveText(
-    "90 天关键词排名趋势与变更事件",
-  );
-  const completionFlags = page.locator("[data-completion-flag]");
-  await expect(completionFlags).toHaveCount(2);
-  expect(
-    await completionFlags.evaluateAll((elements) =>
-      elements.map((element) =>
-        element.getAttribute("data-completion-flag"),
-      ),
-    ),
-  ).toEqual([
-    "rank_history_complete",
-    "receipt_backed_results_complete",
-  ]);
-  await expect(completionFlags.nth(0)).toContainText(/计划中|未完成/);
-  await expect(completionFlags.nth(1)).toContainText(/计划中|未完成/);
-});
-
-test("direct hashes, reload, back, and forward restore the complete audit state", async ({
-  page,
-}) => {
-  await gotoAudit(
-    page,
-    "#/requirements?item=2&decision=rewrite&module=growth-map&stage=stage-1",
-  );
-  await expect(page.locator("#detail-title")).toHaveText(
-    "同意图词的重复与蚕食治理",
-  );
-  await expect(page.locator('select[data-filter="decision"]')).toHaveValue(
-    "rewrite",
-  );
-  await expect(page.locator('select[data-filter="module"]')).toHaveValue(
-    "growth-map",
-  );
-  await expect(page.locator('select[data-filter="stage"]')).toHaveValue(
-    "stage-1",
-  );
-
-  const restoredUrl = page.url();
-  await page.reload();
-  await expect(page.locator("#detail-title")).toHaveText(
-    "同意图词的重复与蚕食治理",
-  );
-  expect(page.url()).toBe(restoredUrl);
-
-  await selectFilter(page, "decision", "all");
-  await selectFilter(page, "module", "all");
-  await selectFilter(page, "stage", "all");
-  await requirementButton(page, 1).click();
-  const itemOneUrl = page.url();
-  await requirementButton(page, 2).click();
-  const itemTwoUrl = page.url();
-  await requirementButton(page, 9).click();
-  const itemNineUrl = page.url();
-
-  expect(new Set([itemOneUrl, itemTwoUrl, itemNineUrl]).size).toBe(3);
-  await page.goBack();
-  await expect(page.locator("#detail-title")).toHaveText(
-    "同意图词的重复与蚕食治理",
-  );
-  expect(page.url()).toBe(itemTwoUrl);
-
-  await page.goBack();
-  expect(page.url()).toBe(itemOneUrl);
-  await page.goForward();
-  await expect(page.locator("#detail-title")).toHaveText(
-    "同意图词的重复与蚕食治理",
-  );
-  expect(page.url()).toBe(itemTwoUrl);
-  await page.goForward();
-  await expect(page.locator("#detail-title")).toHaveText(
-    "90 天关键词排名趋势与变更事件",
-  );
-  expect(page.url()).toBe(itemNineUrl);
-});
-
-test("navigation and requirement selection work from the keyboard", async ({
-  page,
-}) => {
-  await gotoAudit(page);
-
-  await viewButton(page, "modules").focus();
-  await page.keyboard.press("Enter");
-  await expectCurrentView(page, "modules");
-
-  await viewButton(page, "requirements").focus();
-  await page.keyboard.press("Space");
-  await expectCurrentView(page, "requirements");
-
-  const requirementTwo = requirementButton(page, 2);
-  await requirementTwo.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#detail-title")).toHaveText(
-    "同意图词的重复与蚕食治理",
-  );
-});
-
-test("visible module, stage, and evidence actions reach their governed destinations", async ({
-  page,
-}) => {
-  await gotoAudit(page);
-
-  await viewButton(page, "modules").click();
-  const growthMapModule = page.locator(
-    '[data-action="select-module"][data-module-id="growth-map"]',
-  );
-  await expect(growthMapModule).toBeVisible();
-  await growthMapModule.click();
-  await expectCurrentView(page, "modules");
-  await expect(growthMapModule).toHaveAttribute("aria-pressed", "true");
-  await expect
-    .poll(() => {
-      const [, query = ""] = new URL(page.url()).hash.split("?");
-      return new URLSearchParams(query).get("module");
-    })
-    .toBe("growth-map");
-  await expect(page.locator("#review-detail")).toContainText(
-    /增长地图.*客户界面变化|客户界面变化.*增长地图/s,
-  );
-
-  await viewButton(page, "stages").click();
-  const stageTwo = page.locator(
-    '[data-action="select-stage"][data-stage-id="stage-2"]',
-  );
-  await expect(stageTwo).toBeVisible();
-  await stageTwo.click();
-  await expectCurrentView(page, "stages");
-  await expect(stageTwo).toHaveAttribute("aria-pressed", "true");
-  await expect
-    .poll(() => {
-      const [, query = ""] = new URL(page.url()).hash.split("?");
-      return new URLSearchParams(query).get("stage");
-    })
-    .toBe("stage-2");
-  await expect(page.locator("#review-detail")).toContainText(
-    /结构与持续监控/,
-  );
-
-  await viewButton(page, "requirements").click();
-  await requirementButton(page, 9).click();
-  const evidenceTrigger = page.locator('[data-action="open-evidence"]').first();
-  await evidenceTrigger.click();
-  const dialog = page.locator("dialog[data-evidence-dialog]");
-  await expect(dialog).toBeVisible();
-  const goToAcceptance = dialog.locator(
-    '[data-action="go-to-acceptance"]',
-  );
-  await expect(goToAcceptance).toBeVisible();
-  await goToAcceptance.click();
-  await expect(dialog).toBeHidden();
-  await expectCurrentView(page, "acceptance");
-  await expect
-    .poll(() => {
-      const [, query = ""] = new URL(page.url()).hash.split("?");
-      return new URLSearchParams(query).get("item");
-    })
-    .toBe("9");
-  const acceptanceFlags = page.locator("[data-completion-flag]");
-  await expect(acceptanceFlags).toHaveCount(2);
-  expect(
-    await acceptanceFlags.evaluateAll((elements) =>
-      elements.map((element) =>
-        element.getAttribute("data-completion-flag"),
-      ),
-    ),
-  ).toEqual([
-    "rank_history_complete",
-    "receipt_backed_results_complete",
-  ]);
-  await expect(acceptanceFlags.nth(0)).toContainText(/计划中|未完成/);
-  await expect(acceptanceFlags.nth(1)).toContainText(/计划中|未完成/);
-});
-
-test("the evidence dialog traps focus, closes with Escape, and restores its invoker", async ({
-  page,
-}) => {
-  await gotoAudit(page);
-  const trigger = page.locator('[data-action="open-evidence"]').first();
-  await expect(trigger).toBeVisible();
-  await trigger.focus();
-  await page.keyboard.press("Enter");
-
-  const dialog = page.locator("dialog[data-evidence-dialog]");
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveAttribute("aria-modal", "true");
-  expect(
-    await page.evaluate(() => {
-      const active = document.activeElement;
-      return Boolean(active?.closest("dialog[data-evidence-dialog]"));
-    }),
-  ).toBe(true);
-
-  const focusable = dialog.locator(
-    "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]",
-  );
-  expect(await focusable.count()).toBeGreaterThanOrEqual(2);
-  await focusable.last().focus();
-  await page.keyboard.press("Tab");
-  await expect(focusable.first()).toBeFocused();
-  await focusable.first().focus();
-  await page.keyboard.press("Shift+Tab");
-  await expect(focusable.last()).toBeFocused();
+  await expect(dialog).toContainText(/直接纳入/);
+  await expect(dialog).toContainText(/改写后纳入/);
+  await expect(dialog).toContainText(/后置/);
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  await expect(trigger).toBeFocused();
+  await expect(
+    page.getByRole("main").locator("[data-audit-requirement-id]"),
+  ).toHaveCount(0);
 });
 
-test("prefers-reduced-motion disables visible interface motion", async ({
+test("customer-visible connections are exactly GSC, GA4, and GitHub", async ({
+  page,
+}) => {
+  await gotoWorkspace(page);
+  const contract = await readProductContract(page);
+  expect(contract.connectorPolicy.customerVisible).toEqual([
+    "GSC",
+    "GA4",
+    "GitHub",
+  ]);
+
+  const trigger = connectionsTrigger(page);
+  await trigger.click();
+  const dialog = page.locator("dialog[data-connections-dialog]");
+  await expect(dialog).toBeVisible();
+  const connections = dialog.locator(
+    "[data-connection-id][data-customer-connector]",
+  );
+  await expect(connections).toHaveCount(3);
+  expect(
+    await connections.evaluateAll((elements) =>
+      elements.map((element) =>
+        element.getAttribute("data-customer-connector"),
+      ),
+    ),
+  ).toEqual(["GSC", "GA4", "GitHub"]);
+  const connectionText = (await connections.allTextContents())
+    .join("\n")
+    .replace(/Google Search Console/g, "GSC")
+    .replace(/Google Analytics 4/g, "GA4");
+  expect(connectionText).toMatch(/\bGSC\b/);
+  expect(connectionText).toMatch(/\bGA4\b/);
+  expect(connectionText).toMatch(/\bGitHub\b/);
+  expect(connectionText).not.toMatch(
+    /DataForSEO|Ahrefs|Moz|G2|Capterra|App Store|SERP|AI Citation/i,
+  );
+});
+
+test("no customer action resolves to mock metrics, remote work, or a generic toast", async ({
+  page,
+}) => {
+  await gotoWorkspace(page);
+  const contract = await readProductContract(page);
+  expect(contract.connectorPolicy.mockBoundary).toMatch(
+    /不使用|不得|禁止|不展示|unavailable/i,
+  );
+  expect(contract.connectorPolicy.unavailableRule).toMatch(
+    /unavailable|不可用|缺少|未接入/i,
+  );
+
+  for (const { id } of PRODUCT_VIEWS) {
+    await productViewButton(page, id).click();
+    await expectNativePrimarySurface(page);
+    const visibleMetrics = page.locator("[data-business-metric]:visible");
+    for (let index = 0; index < (await visibleMetrics.count()); index += 1) {
+      const metric = visibleMetrics.nth(index);
+      await expect(metric).toHaveAttribute(
+        "data-evidence-status",
+        /^(?:verified|observation|unavailable)$/,
+      );
+      await expect(metric).toHaveAttribute("data-evidence-source", /.+/);
+      expect(
+        await metric.getAttribute("data-evidence-status"),
+      ).not.toMatch(/mock|scenario/i);
+    }
+
+    const actions = page.locator("[data-product-action]:visible");
+    for (let index = 0; index < (await actions.count()); index += 1) {
+      await expect(actions.nth(index)).toHaveAttribute(
+        "data-governed-destination",
+        /.+/,
+      );
+    }
+    await expect(page.locator(".toast, [data-toast]")).toHaveCount(0);
+  }
+
+  const [html, visibleText] = await Promise.all([
+    readFile(ARTIFACT_FILE, "utf8"),
+    page.locator("body").innerText(),
+  ]);
+  expect(html).not.toMatch(/\b(?:showToast|createToast|toast\s*\()/i);
+  expect(visibleText).not.toMatch(
+    /DEMO DATA|场景数据\s*[·•]|模拟指标|RelayOps|1,240\s+clicks|Position\s+12\.8/i,
+  );
+});
+
+test("product navigation and Growth Map objects work from the keyboard", async ({
+  page,
+}) => {
+  await gotoWorkspace(page);
+  await productViewButton(page, "growth-map").focus();
+  await page.keyboard.press("Enter");
+  await expectCurrentProductView(page, "growth-map");
+
+  const objects = page.locator("[data-growth-object]");
+  await objects.first().focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(objects.nth(1)).toHaveAttribute("aria-selected", "true");
+  const secondObjectId = await objects.nth(1).getAttribute(
+    "data-growth-object",
+  );
+  await expect.poll(() => hashParameter(page, "object")).toBe(secondObjectId);
+
+  await productViewButton(page, "execution").focus();
+  await page.keyboard.press("Space");
+  await expectCurrentProductView(page, "execution");
+  const entry = page
+    .locator("[data-native-entry][data-entry-id]:visible")
+    .first();
+  const entryId = await entry.getAttribute("data-entry-id");
+  expect(entryId).toBeTruthy();
+  await entry.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => hashParameter(page, "entry")).toBe(entryId);
+  await expect(
+    page.locator(
+      `[data-native-detail][data-entry-id="${entryId}"]:visible`,
+    ),
+  ).toBeVisible();
+});
+
+test("secondary audit and connection dialogs trap focus, close with Escape, and restore their invokers", async ({
+  page,
+}) => {
+  await gotoWorkspace(page);
+  await expectDialogFocusTrapAndEscape(
+    page,
+    auditEvidenceTrigger(page),
+    page.locator("dialog[data-audit-evidence-dialog]"),
+  );
+  await expectDialogFocusTrapAndEscape(
+    page,
+    connectionsTrigger(page),
+    page.locator("dialog[data-connections-dialog]"),
+  );
+});
+
+test("prefers-reduced-motion disables visible workspace motion", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await gotoAudit(page);
+  await gotoWorkspace(page);
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -607,33 +1078,43 @@ test("prefers-reduced-motion disables visible interface motion", async ({
   );
 });
 
-for (const view of VIEW_IDS) {
-  test(`${VIEW_LABELS[view]} has no serious or critical Axe violation`, async ({
+for (const { id, label } of PRODUCT_VIEWS) {
+  test(`${label} has no serious or critical Axe violation`, async ({
     page,
   }) => {
-    await gotoAudit(
-      page,
-      `#/${view}?item=1&decision=all&module=all&stage=all`,
-    );
-    await expectCurrentView(page, view);
+    await gotoWorkspace(page, id);
+    await expectCurrentProductView(page, id);
     expect(
       await getBlockingAxeViolations(page),
-      `blocking accessibility violations in ${VIEW_LABELS[view]}`,
+      `blocking accessibility violations in ${label}`,
     ).toEqual([]);
   });
 }
 
-test("the open evidence dialog has no serious or critical Axe violation", async ({
-  page,
-}) => {
-  await gotoAudit(page);
-  await page.locator('[data-action="open-evidence"]').first().click();
-  await expect(page.locator("dialog[data-evidence-dialog]")).toBeVisible();
-  expect(await getBlockingAxeViolations(page)).toEqual([]);
-});
+for (const dialogContract of [
+  {
+    label: "审计证据",
+    trigger: '[data-product-action="open-audit-evidence"]',
+    dialog: "dialog[data-audit-evidence-dialog]",
+  },
+  {
+    label: "数据连接",
+    trigger: '[data-product-action="open-connections"]',
+    dialog: "dialog[data-connections-dialog]",
+  },
+] as const) {
+  test(`${dialogContract.label} Dialog has no serious or critical Axe violation`, async ({
+    page,
+  }) => {
+    await gotoWorkspace(page);
+    await page.locator(dialogContract.trigger).first().click();
+    await expect(page.locator(dialogContract.dialog)).toBeVisible();
+    expect(await getBlockingAxeViolations(page)).toEqual([]);
+  });
+}
 
 for (const viewport of [
-  { name: "desktop", width: 1440, height: 1_000 },
+  { name: "desktop", width: 1_440, height: 1_000 },
   { name: "tablet", width: 1_024, height: 768 },
   { name: "mobile", width: 390, height: 844 },
 ] as const) {
@@ -643,18 +1124,15 @@ for (const viewport of [
     test.slow();
     await page.setViewportSize(viewport);
 
-    for (const view of VIEW_IDS) {
-      await gotoAudit(
-        page,
-        `#/${view}?item=1&decision=all&module=all&stage=all`,
-      );
-      await expectCurrentView(page, view);
+    for (const { id, label } of PRODUCT_VIEWS) {
+      await gotoWorkspace(page, id);
+      await expectCurrentProductView(page, id);
       await expectNoHorizontalOverflow(page);
 
       const readingText = page.locator("[data-reading-text]:visible");
       expect(
         await readingText.count(),
-        `${VIEW_LABELS[view]} must expose primary reading text`,
+        `${label} must expose primary reading text`,
       ).toBeGreaterThan(0);
       const undersized = await readingText.evaluateAll((elements) =>
         elements
@@ -671,7 +1149,7 @@ for (const viewport of [
       );
       expect(
         undersized,
-        `${VIEW_LABELS[view]} has main reading text below 16px at ${viewport.width}px`,
+        `${label} has main reading text below 16px at ${viewport.width}px`,
       ).toEqual([]);
     }
   });

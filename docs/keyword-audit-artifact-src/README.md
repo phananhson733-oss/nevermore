@@ -1,6 +1,6 @@
 # Nevermore 关键词增长融合方案 Artifact 数据源
 
-本目录保存 Nevermore 四模块完整增长方案及其需求审计 Evidence 的 repository-owned source。Artifact 的主体验回答“Overview、Growth Map、Execution、Results 如何形成统一客户闭环”；13 条原始需求及审核结论退居二级 Evidence，用于解释方案依据。它不是客户工作台中的第五个模块，也不用场景数据代替生产能力。
+本目录保存 Nevermore 四个模块的产品工作区 Artifact 数据源，以及与之配套的需求审计 Evidence。Artifact 的主体验回答“Overview、Growth Map、Execution、Results 如何形成统一客户闭环”；13 条原始需求及审核结论退居二级 Evidence，用于解释方案依据。它不是客户工作台中的第五个模块，也不用场景数据代替生产能力。
 
 ## Authority 与来源
 
