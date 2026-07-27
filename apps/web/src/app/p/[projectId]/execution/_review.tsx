@@ -430,26 +430,37 @@ export function ReviewSurface(props: ReviewSurfaceProps) {
 export interface RevisionHistoryProps {
   readonly currentRevision: number | null;
   readonly evaluatedRevision: number | null;
-  readonly briefRevision: number;
-  readonly artifactStatus: ArtifactLifecycle | null;
+  readonly revisions: readonly RevisionHistoryEntry[];
+}
+
+export interface RevisionHistoryEntry {
+  readonly revision: number;
+  readonly hash: string | null;
+  readonly createdAt: string | null;
+  readonly generatedBy: string;
+  readonly note: string | null;
+  readonly validationErrorCount: number;
+  readonly isCurrent: boolean;
+  readonly isJudged: boolean;
 }
 
 /**
- * The two revisions this screen can actually name.
+ * A revision-history drawer must list the actual revisions the payload carries.
  *
- * There is no operation that lists an artifact's revisions, so this is titled
- * as the two points it holds rather than as "history": a panel headed
- * "revision history" promises a complete list, and quietly showing two entries
- * of an unknown number is the kind of small lie that costs trust in everything
- * around it.
+ * The older three-row version stated "what this screen holds", which was true
+ * only because the screen did not have access to a fuller list. Once the live
+ * artifact exposes revision records, continuing to flatten them into
+ * current/judged/brief would hide state a reviewer can act on: when each
+ * revision was created, what status it reached, which frozen hash names it, and
+ * whether a decision was ever recorded for it.
  */
 export function RevisionHistory({
   currentRevision,
   evaluatedRevision,
-  briefRevision,
-  artifactStatus,
+  revisions,
 }: RevisionHistoryProps) {
   const t = useTranslations("studio.review.history");
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const superseded =
@@ -477,32 +488,69 @@ export function RevisionHistory({
         returnFocusRef={buttonRef}
         testId="review-history-overlay"
       >
-        <ul className={styles.historyList}>
-          <li>
-            <StatusPill tone={artifactStatus === "ready" ? "success" : "info"}>
-              {t("badgeCurrent")}
-            </StatusPill>
-            <span>
-              {currentRevision === null
-                ? t("noRevision")
-                : t("currentRow", { revision: currentRevision })}
-            </span>
-          </li>
-          <li>
-            <StatusPill tone={superseded ? "warning" : "neutral"}>
-              {superseded ? t("badgeSuperseded") : t("badgeJudged")}
-            </StatusPill>
-            <span>
-              {evaluatedRevision === null
-                ? t("noVerdict")
-                : t("judgedRow", { revision: evaluatedRevision })}
-            </span>
-          </li>
-          <li>
-            <StatusPill tone="neutral">{t("badgeBrief")}</StatusPill>
-            <span>{t("briefRow", { revision: briefRevision })}</span>
-          </li>
-        </ul>
+        {revisions.length === 0 ? (
+          <p className={styles.honestyNote}>{t("empty")}</p>
+        ) : (
+          <ul className={styles.historyList} data-review-history-list="">
+            {revisions.map((entry) => {
+              const createdAt =
+                entry.createdAt === null
+                  ? t("fieldUnavailable")
+                  : (formatTimestamp(entry.createdAt, locale) ??
+                    t("fieldUnavailable"));
+              const hashValue =
+                entry.hash === null
+                  ? t("fieldUnavailable")
+                  : `${entry.hash.slice(0, RECEIPT_HASH_CHARS)}…`;
+              const isCurrent =
+                entry.isCurrent || currentRevision === entry.revision;
+              const isJudged = entry.isJudged || evaluatedRevision === entry.revision;
+              return (
+                <li key={entry.revision} data-review-history-item="">
+                  <div className={styles.historyHeader}>
+                    <div className={styles.historyBadges}>
+                      {isCurrent ? (
+                        <StatusPill tone="success">
+                          {t("badgeCurrent")}
+                        </StatusPill>
+                      ) : null}
+                      {isJudged ? (
+                        <StatusPill tone={superseded ? "warning" : "neutral"}>
+                          {superseded ? t("badgeSuperseded") : t("badgeJudged")}
+                        </StatusPill>
+                      ) : null}
+                    </div>
+                    <strong>{t("revisionRow", { revision: entry.revision })}</strong>
+                  </div>
+                  <dl className={styles.historyFacts}>
+                    <div>
+                      <dt>{t("fields.generatedBy")}</dt>
+                      <dd>{entry.generatedBy}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("fields.hash")}</dt>
+                      <dd>{hashValue}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("fields.createdAt")}</dt>
+                      <dd>{createdAt}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("fields.validation")}</dt>
+                      <dd>
+                        {t("validation", { count: entry.validationErrorCount })}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("fields.note")}</dt>
+                      <dd>{entry.note ?? t("fieldUnavailable")}</dd>
+                    </div>
+                  </dl>
+                </li>
+              );
+            })}
+          </ul>
+        )}
         <p className={styles.honestyNote}>{t("note")}</p>
       </Overlay>
     </>

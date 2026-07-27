@@ -634,10 +634,42 @@ export function hasDirectNegation(text: string): boolean {
 export interface CanonicalUrl {
   /** scheme-less, lowercase host + path, no trailing slash, no fragment. */
   readonly url: string;
+  /** Citation lookup domain; a leading `www.` is deliberately folded. */
   readonly domain: string;
 }
 
 const URL_LIKE = /^(?:https?:\/\/)?([a-z0-9.-]+\.[a-z]{2,})(\/[^\s]*)?$/i;
+
+interface ParsedAsciiUrlLike {
+  readonly hostname: string;
+  readonly path: string;
+}
+
+function parseAsciiUrlLike(raw: string): ParsedAsciiUrlLike | null {
+  const trimmed = raw
+    .trim()
+    .replace(/^[<([]+/, "")
+    .replace(/[>)\].,;:!?'"]+$/, "");
+  const withoutFragment = trimmed.split("#")[0] ?? "";
+  const match = URL_LIKE.exec(withoutFragment);
+  if (!match) return null;
+  const hostname = (match[1] ?? "").toLowerCase();
+  if (hostname.length === 0) return null;
+  return {
+    hostname,
+    path: (match[2] ?? "").replace(/\/+$/, ""),
+  };
+}
+
+/**
+ * Lowercase ASCII hostname with every DNS label preserved, including `www`.
+ *
+ * Ownership checks use this value; citation lookup may fold `www.` for human
+ * convenience, but that equivalence must never become an ownership grant.
+ */
+export function canonicalHostname(raw: string): string | null {
+  return parseAsciiUrlLike(raw)?.hostname ?? null;
+}
 
 /**
  * Normalize a URL without `new URL()`.
@@ -648,16 +680,10 @@ const URL_LIKE = /^(?:https?:\/\/)?([a-z0-9.-]+\.[a-z]{2,})(\/[^\s]*)?$/i;
  * which fails towards a human rather than towards a silent match.
  */
 export function canonicalUrl(raw: string): CanonicalUrl | null {
-  const trimmed = raw
-    .trim()
-    .replace(/^[<([]+/, "")
-    .replace(/[>)\].,;:!?'"]+$/, "");
-  const withoutFragment = trimmed.split("#")[0] ?? "";
-  const match = URL_LIKE.exec(withoutFragment);
-  if (!match) return null;
-  const host = (match[1] ?? "").toLowerCase().replace(/^www\./, "");
-  if (host.length === 0) return null;
-  const path = (match[2] ?? "").replace(/\/+$/, "");
+  const parsed = parseAsciiUrlLike(raw);
+  if (parsed === null) return null;
+  const host = parsed.hostname.replace(/^www\./, "");
+  const { path } = parsed;
   return { url: path.length > 0 ? `${host}${path}` : host, domain: host };
 }
 

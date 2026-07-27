@@ -102,9 +102,32 @@ export interface ContentShadowAuthoritySource {
     | "generative_query"
     | "competitor"
     | "first_party_site"
-    | "first_party_conversion";
+    | "first_party_conversion"
+    | "first_party_page"
+    | "external_page";
   readonly ref: string;
-  readonly authorityTier: "A" | "B" | "C" | "D";
+  readonly label: string;
+  readonly url: string | null;
+  readonly availability: "available" | "partial" | "unavailable";
+  readonly authorityTier: "A" | "B" | "C";
+  readonly capturedAt: string | null;
+  readonly contentHash: string | null;
+  readonly contentHashMethod:
+    | "sha256_canonical_extract"
+    | "sha256_normalized_text"
+    | null;
+  readonly contentTruncated: boolean;
+  readonly excerpt: string | null;
+  readonly excerptTruncated: boolean;
+  readonly metrics: {
+    readonly status: number | null;
+    readonly contentType: string | null;
+    readonly bodyBytes: number | null;
+    readonly wordCount: number | null;
+    readonly responseMs: number | null;
+    readonly redirectChain: readonly string[];
+  } | null;
+  readonly evidenceRefs: readonly string[];
   readonly limitation: string | null;
 }
 
@@ -120,6 +143,15 @@ export interface ContentShadowDraft {
   readonly status: "generating" | "draft" | "ready" | "failed" | "archived";
   readonly currentRevision: number;
   readonly contentText: string | null;
+  readonly revisionHistory: readonly {
+    readonly revision: number;
+    readonly contentHash: string;
+    readonly generatedBy: string;
+    readonly editorId: string | null;
+    readonly note: string | null;
+    readonly validationErrorCount: number;
+    readonly createdAt: string;
+  }[];
 }
 
 export interface ContentShadowBriefOutline {
@@ -130,6 +162,74 @@ export interface ContentShadowBriefOutline {
     | "new_asset"
     | "mixed"
     | "unassigned";
+}
+
+export interface ContentShadowFirstPartyPageSnapshotIdentity {
+  readonly pageSnapshotId: string;
+  readonly dataSnapshotId: string;
+  readonly url: string;
+  readonly urlHash: string;
+  readonly contentHash: string;
+  readonly capturedAt: string;
+}
+
+export interface ContentShadowKeywordFact {
+  readonly id: string;
+  readonly display: string;
+  readonly market: string;
+  readonly language: string;
+  readonly intent: string | null;
+  readonly buyerStage: string | null;
+  readonly cluster: string | null;
+  readonly mapping: {
+    readonly decision: "unassigned" | "existing_page" | "new_asset";
+    readonly mappedSitePageId: string | null;
+    readonly reviewState: "unreviewed" | "confirmed";
+    readonly revision: number;
+  };
+  readonly lastSeen: string;
+  readonly evidenceRefs: readonly string[];
+}
+
+export interface ContentShadowCompetitorFact {
+  readonly id: string;
+  readonly domain: string;
+  readonly name: string | null;
+  readonly status: "candidate" | "approved" | "excluded";
+  readonly relationship:
+    | "direct"
+    | "indirect"
+    | "status_quo"
+    | "benchmark"
+    | "publisher"
+    | null;
+  readonly scopes: readonly (
+    | "positioning"
+    | "product_capability"
+    | "keyword_gap"
+    | "content"
+    | "serp_visibility"
+  )[];
+  readonly revision: number;
+}
+
+export interface ContentShadowResearchContext {
+  readonly firstPartyPageSnapshots: readonly ContentShadowFirstPartyPageSnapshotIdentity[];
+  readonly searchKeywordFacts: readonly ContentShadowKeywordFact[];
+  readonly generativeKeywordFacts: readonly ContentShadowKeywordFact[];
+  readonly competitorFacts: readonly ContentShadowCompetitorFact[];
+  readonly externalTargets: readonly {
+    readonly ref: string;
+    readonly kind: string;
+    readonly url: string;
+    readonly label: string;
+  }[];
+  readonly contentPolicy: {
+    readonly brandConstraints: readonly string[];
+    readonly complianceConstraints: readonly string[];
+    readonly prohibitedTerms: readonly string[];
+    readonly claimRestrictions: readonly string[];
+  };
 }
 
 export interface ContentShadowFrozenInputs {
@@ -146,6 +246,7 @@ export interface ContentShadowFrozenInputs {
     readonly icpPrimaryConversionUrl: string | null;
   };
   readonly contentBriefOutline: ContentShadowBriefOutline;
+  readonly researchContext: ContentShadowResearchContext;
 }
 
 export interface ContentShadowRun {

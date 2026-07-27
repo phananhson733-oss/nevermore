@@ -56,7 +56,9 @@ vi.mock("@sf/engine", async () => {
   return { ...actual, parseIcp: mocks.parseIcp };
 });
 
-const { runArtifact } = await import("./run-artifact.ts");
+const { buildArtifactPromptInput, runArtifact } = await import(
+  "./run-artifact.ts"
+);
 
 const scope = { workspaceId: "workspace-1", projectId: "project-1" };
 const frozenSnapshotId = "00000000-0000-4000-8000-000000000201";
@@ -407,6 +409,8 @@ describe("runArtifact", () => {
             subjectRefs: ["https://example.com/pricing"],
           }),
         ],
+        contentBriefOutline: null,
+        researchContext: null,
         currentMetadata: {
           url: null,
           currentTitle: null,
@@ -929,6 +933,55 @@ describe("runArtifact", () => {
       "artifact_done",
       expect.anything(),
     );
+  });
+
+  it("passes governed research only to english_blog_draft prompts", async () => {
+    const researchContext = {
+      sources: [
+        {
+          sourceRef: "page-snapshot:1",
+          kind: "first_party_page",
+          label: "Pricing page",
+          url: "https://example.com/pricing",
+          availability: "available",
+          authorityTier: "B",
+          capturedAt: "2026-07-18T11:00:00.000Z",
+          contentHash: "c".repeat(64),
+          excerpt: "A bounded first-party page excerpt.",
+          evidenceRefs: ["page-snapshot:1"],
+          limitation: "First-party snapshot.",
+        },
+      ],
+      policy: {
+        brandConstraints: ["Use customer language."],
+        complianceConstraints: ["No guarantees."],
+        prohibitedTerms: ["best-in-class"],
+        claimRestrictions: ["No unsupported quantified claims."],
+      },
+    } as const;
+
+    const blog = await buildArtifactPromptInput(ctx, scope, {
+      actionId: action.id,
+      artifactType: "english_blog_draft",
+      outputLocale: "en",
+      operatorInstructions: null,
+      sourceDiagnosticRunId: "diagnostic-1",
+      sourceIcpProfileId: "icp-1",
+      contentBriefOutline: null,
+      researchContext,
+    });
+    expect(blog.researchContext).toEqual(researchContext);
+
+    const ticket = await buildArtifactPromptInput(ctx, scope, {
+      actionId: action.id,
+      artifactType: "technical_ticket",
+      outputLocale: "en",
+      operatorInstructions: null,
+      sourceDiagnosticRunId: "diagnostic-1",
+      sourceIcpProfileId: "icp-1",
+      researchContext,
+    });
+    expect(ticket.researchContext).toBeNull();
   });
 
   it("discards a successful stale generation and only cancels its own run", async () => {

@@ -49,6 +49,13 @@ export {
   type StructureCheck,
 } from "./structure-checks.ts";
 
+export { checkSourceOverlap } from "./source-overlap.ts";
+
+export {
+  checkBrandVoice,
+  checkClaimRestrictions,
+} from "./policy-rules.ts";
+
 export {
   CITABILITY_BASIS,
   CITABILITY_CAVEAT,
@@ -77,6 +84,7 @@ export {
   findUnsupportedClaims,
   locatedAttributions,
   resolveAssertionSupport,
+  resolveFirstPartyAssertionSupport,
   resolveLinkProvenance,
   type AssertionSupport,
   type Attribution,

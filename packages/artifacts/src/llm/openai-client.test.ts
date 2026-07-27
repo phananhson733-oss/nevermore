@@ -65,6 +65,7 @@ function makeInput(
     ],
     requiresValidationRollback: false,
     contentBriefOutline: null,
+    researchContext: null,
     ...overrides,
   };
 }

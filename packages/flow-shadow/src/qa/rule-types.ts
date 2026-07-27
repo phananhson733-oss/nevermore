@@ -30,6 +30,8 @@ export type QaRuleId =
   | "rl12_citation_integrity"
   | "rl12b_unresolved_link"
   | "rl13_banned_jargon"
+  | "rl14_brand_voice"
+  | "rl15_claim_restrictions"
   // Structure checks.
   | "sc1_bolded_definition"
   | "sc2_internal_link_density"
@@ -46,6 +48,7 @@ export type QaRuleId =
   | "sc10_table_integrity"
   | "sc11_banned_headings"
   | "scdup_brief_overlap"
+  | "scdup_source_overlap"
   // GEO citability, advisory by construction.
   | "citability_geo";
 
@@ -79,6 +82,8 @@ export const QA_RULE_ORDER: readonly QaRuleId[] = [
   "rl12_citation_integrity",
   "rl12b_unresolved_link",
   "rl13_banned_jargon",
+  "rl14_brand_voice",
+  "rl15_claim_restrictions",
   "sc1_bolded_definition",
   "sc2_internal_link_density",
   "sc3_paragraph_wall",
@@ -94,6 +99,7 @@ export const QA_RULE_ORDER: readonly QaRuleId[] = [
   "sc10_table_integrity",
   "sc11_banned_headings",
   "scdup_brief_overlap",
+  "scdup_source_overlap",
   "citability_geo",
 ];
 
@@ -108,6 +114,8 @@ export const QA_RULE_SEVERITY: Readonly<Record<QaRuleId, QaSeverity>> =
     rl12_citation_integrity: "blocking",
     rl12b_unresolved_link: "review",
     rl13_banned_jargon: "advisory",
+    rl14_brand_voice: "review",
+    rl15_claim_restrictions: "review",
     sc1_bolded_definition: "review",
     sc2_internal_link_density: "advisory",
     sc3_paragraph_wall: "review",
@@ -123,6 +131,7 @@ export const QA_RULE_SEVERITY: Readonly<Record<QaRuleId, QaSeverity>> =
     sc10_table_integrity: "advisory",
     sc11_banned_headings: "review",
     scdup_brief_overlap: "advisory",
+    scdup_source_overlap: "review",
     citability_geo: "advisory",
   } as const satisfies Record<QaRuleId, QaSeverity>);
 
@@ -146,6 +155,8 @@ const RULE_KIND: Readonly<Record<QaRuleId, QaClaimKind>> = Object.freeze({
   rl12_citation_integrity: "red_line",
   rl12b_unresolved_link: "red_line",
   rl13_banned_jargon: "red_line",
+  rl14_brand_voice: "red_line",
+  rl15_claim_restrictions: "red_line",
   sc1_bolded_definition: "structure",
   sc2_internal_link_density: "structure",
   sc3_paragraph_wall: "structure",
@@ -161,6 +172,7 @@ const RULE_KIND: Readonly<Record<QaRuleId, QaClaimKind>> = Object.freeze({
   sc10_table_integrity: "structure",
   sc11_banned_headings: "structure",
   scdup_brief_overlap: "structure",
+  scdup_source_overlap: "structure",
   citability_geo: "citability",
 } as const satisfies Record<QaRuleId, QaClaimKind>);
 

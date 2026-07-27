@@ -467,35 +467,28 @@ describe("B (regression) — honest drafts are not called fabrications", () => {
   /**
    * A pass detail may not describe coverage the rule does not have.
    *
-   * RL8's read "the patterns catch research nouns, `according to` frames and
-   * named-entity claims carrying a statistic" while `According to Forrester,
-   * 73% …` and `According to Gartner, onboarding time fell 40%` both walked
-   * through it — the sentence named two shapes it could not see. The patterns
-   * were widened to cover them, and the detail now states the constraint that
-   * remains (every named-entity shape needs a number) instead of implying
-   * there is none.
+   * RL8 now recognizes attributed and research statements without requiring a
+   * number, plus bounded high-signal quantified/comparison/guarantee/
+   * superlative shapes. It must still say that a lexical heuristic is not a
+   * semantic fact-check.
    */
   it("describes only the coverage RL8 actually has", () => {
     const detail = claim(CLEAN_DRAFT, "rl8_unsupported_claim")?.detail ?? "";
 
-    expect(detail).toContain("EVERY named-entity shape requires that number");
+    expect(detail).toContain("including those without numbers");
+    expect(detail).toContain("not a full semantic fact-check");
     for (const covered of [
       "According to Forrester, 73% of teams churn.",
       "According to Gartner, onboarding time fell 40%.",
       "Per Forrester, churn is 42%.",
+      "According to Forrester, structured milestones improve activation.",
+      "Industry research suggests structured milestones reduce rework.",
     ]) {
       const draft = `# Onboarding analytics\n\n## Evidence\n\n${covered}\n`;
       expect(claim(draft, "rl8_unsupported_claim")?.status, covered).toBe(
         "failed",
       );
     }
-    // And the limitation the detail claims is real: no statistic, not seen.
-    expect(
-      claim(
-        "# Onboarding analytics\n\n## Evidence\n\nAccording to Forrester, teams churn faster.\n",
-        "rl8_unsupported_claim",
-      )?.status,
-    ).toBe("passed");
   });
 });
 

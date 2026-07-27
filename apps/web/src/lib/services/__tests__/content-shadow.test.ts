@@ -7,6 +7,7 @@ import {
   FindingsRepository,
   IcpProfilesRepository,
   KeywordsRepository,
+  PageSnapshotsRepository,
   SitesRepository,
   type ActionRow,
   type ArtifactRevisionRow,
@@ -32,8 +33,13 @@ import type { CreateContentShadowRunRequest } from "@sf/contracts";
 vi.mock("@/lib/db", () => ({ getDb: () => ({ db: {} }) }));
 vi.mock("@/lib/boss", () => ({ getBoss: async () => ({}) }));
 
-const { buildContentShadowFrozenInput, loadContentShadowInputs } =
-  await import("../content-shadow.ts");
+const {
+  buildContentShadowFrozenInput,
+  loadContentShadowInputs,
+  projectContentShadowFrozenInputs,
+  projectContentShadowPackSources,
+  projectContentShadowRevisionHistory,
+} = await import("../content-shadow.ts");
 
 const scope = { workspaceId: "workspace-1" };
 const projectId = "project-1";
@@ -45,7 +51,10 @@ const DIAGNOSTIC_ID = "00000000-0000-4000-8000-0000000000d1";
 const BRIEF_ID = "00000000-0000-4000-8000-0000000000b1";
 const KEYWORD_ID = "00000000-0000-4000-8000-0000000000e1";
 const GENERATIVE_ID = "00000000-0000-4000-8000-0000000000c1";
+const COMPETITOR_ID = "00000000-0000-4000-8000-0000000000c2";
 const ICP_ID = "00000000-0000-4000-8000-0000000000c9";
+const CRAWL_SNAPSHOT_ID = "00000000-0000-4000-8000-0000000000ca";
+const PAGE_SNAPSHOT_ID = "00000000-0000-4000-8000-0000000000cb";
 const SITE_ORIGIN = "https://acme.example";
 const CONVERSION_URL = "https://acme.example/demo";
 
@@ -81,6 +90,8 @@ const BRIEF_MARKDOWN = [
   "## 受众",
   "",
   "RevOps.",
+  "",
+  "[Industry benchmark](https://authority.example/benchmark)",
 ].join("\n");
 
 const briefRevision = {
@@ -102,6 +113,48 @@ const body: CreateContentShadowRunRequest = {
   capabilityContractVersion: CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
 };
 
+function frozenResearchContext(
+  searchId = KEYWORD_ID,
+  generativeId = GENERATIVE_ID,
+) {
+  const fact = (id: string, cluster: string | null) => ({
+    id,
+    display: `keyword ${id}`,
+    market: "US",
+    language: "en",
+    intent: "commercial",
+    buyerStage: "consideration",
+    cluster,
+    mapping: {
+      decision: "existing_page" as const,
+      mappedSitePageId: "00000000-0000-4000-8000-0000000000cc",
+      reviewState: "confirmed" as const,
+      revision: 2,
+    },
+    lastSeen: "2026-07-25T00:00:00.000Z",
+    evidenceRefs: [],
+  });
+  return {
+    firstPartyPageSnapshots: [],
+    searchKeywordFacts: [fact(searchId, "growth-analytics")],
+    generativeKeywordFacts: [fact(generativeId, null)],
+    competitorFacts: [],
+    externalTargets: [],
+    contentPolicy: {
+      brandConstraints: [],
+      complianceConstraints: [],
+      prohibitedTerms: [],
+      claimRestrictions: [...DEFAULT_TEST_CLAIM_RESTRICTIONS],
+    },
+  };
+}
+
+const DEFAULT_TEST_CLAIM_RESTRICTIONS = [
+  "no_guarantees",
+  "no_unsupported_quantified_claims",
+  "no_unverified_superlatives",
+] as const;
+
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(ActionsRepository.prototype, "findById").mockResolvedValue(action);
@@ -122,6 +175,14 @@ beforeEach(() => {
     id: DIAGNOSTIC_ID,
     site_id: "site-1",
     icp_profile_id: ICP_ID,
+    input_manifest: {
+      snapshots: [
+        {
+          snapshotId: CRAWL_SNAPSHOT_ID,
+          provider: "crawl",
+        },
+      ],
+    },
   } as never);
   vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
     id: "site-1",
@@ -135,8 +196,24 @@ beforeEach(() => {
         type: "demo",
         targetUrl: CONVERSION_URL,
       },
+      brandConstraints: ["Use a calm, practical voice."],
+      complianceConstraints: ["Qualify forward-looking statements."],
     },
   } as never);
+  vi.spyOn(
+    PageSnapshotsRepository.prototype,
+    "listByDataSnapshotWithSitePageIdentity",
+  ).mockResolvedValue([
+    {
+      page_snapshot_id: PAGE_SNAPSHOT_ID,
+      data_snapshot_id: CRAWL_SNAPSHOT_ID,
+      normalized_url: `${SITE_ORIGIN}/growth`,
+      normalized_url_hash: "a".repeat(64),
+      content_hash: "b".repeat(64),
+      captured_at: "2026-07-25T00:00:00.000Z",
+      site_id: "site-1",
+    },
+  ] as never);
   vi.spyOn(CompetitorsRepository.prototype, "listByIds").mockResolvedValue([]);
   vi.spyOn(KeywordsRepository.prototype, "listByIds").mockImplementation(
     async (_scope, ids) =>
@@ -146,8 +223,15 @@ beforeEach(() => {
         cluster_key: id === GENERATIVE_ID ? null : "growth-analytics",
         display_keyword: `keyword ${id}`,
         normalized_keyword: `keyword ${id}`,
+        market: "US",
+        language_tag: "en",
+        intent: "commercial",
+        buyer_stage: "consideration",
         mapping_decision: "existing_page",
+        mapped_site_page_id: "00000000-0000-4000-8000-0000000000cc",
         mapping_review_state: "confirmed",
+        mapping_revision: 2,
+        last_seen_at: "2026-07-25T00:00:00.000Z",
       })) as never,
   );
 });
@@ -300,6 +384,7 @@ describe("buildContentShadowFrozenInput observation separation", () => {
       targetKeywords: [`keyword ${KEYWORD_ID}`],
       pageAssignment: "existing_page" as const,
     },
+    researchContext: frozenResearchContext(),
   };
 
   it("changes the content address when the two identity sets are swapped", () => {
@@ -315,6 +400,7 @@ describe("buildContentShadowFrozenInput observation separation", () => {
         ...inputs,
         keywordEntityIds: [GENERATIVE_ID],
         generativeQueryEntityIds: [KEYWORD_ID],
+        researchContext: frozenResearchContext(GENERATIVE_ID, KEYWORD_ID),
       },
       outputLocale: "en",
     });
@@ -400,6 +486,7 @@ describe("brief -> draft structured extraction (Task 4b)", () => {
         targetKeywords: ["a"],
         pageAssignment: "existing_page" as const,
       },
+      researchContext: frozenResearchContext(),
     };
 
     const pinned = buildContentShadowFrozenInput({
@@ -442,6 +529,7 @@ describe("brief -> draft structured extraction (Task 4b)", () => {
           targetKeywords: [],
           pageAssignment: "unassigned" as const,
         },
+        researchContext: frozenResearchContext(),
       },
       outputLocale: "en",
     });
@@ -515,6 +603,7 @@ describe("first-party identity is frozen at accept time (Task 6b)", () => {
         targetKeywords: ["a"],
         pageAssignment: "existing_page" as const,
       },
+      researchContext: frozenResearchContext(),
     };
 
     const pinned = buildContentShadowFrozenInput({
@@ -533,5 +622,547 @@ describe("first-party identity is frozen at accept time (Task 6b)", () => {
     });
 
     expect(rebranded.contentHash).not.toBe(pinned.contentHash);
+  });
+});
+
+describe("Task 6 governed research context", () => {
+  it("freezes canonical first-party pages, search/generative facts, external targets and ICP policy", async () => {
+    const inputs = (await load()) as {
+      readonly researchContext: {
+        readonly firstPartyPageSnapshots: readonly unknown[];
+        readonly searchKeywordFacts: readonly Record<string, unknown>[];
+        readonly generativeKeywordFacts: readonly Record<string, unknown>[];
+        readonly externalTargets: readonly Record<string, unknown>[];
+        readonly contentPolicy: Record<string, unknown>;
+      };
+    };
+
+    expect(inputs.researchContext).toMatchObject({
+      firstPartyPageSnapshots: [
+        {
+          pageSnapshotId: PAGE_SNAPSHOT_ID,
+          dataSnapshotId: CRAWL_SNAPSHOT_ID,
+          url: `${SITE_ORIGIN}/growth`,
+          urlHash: "a".repeat(64),
+          contentHash: "b".repeat(64),
+          capturedAt: "2026-07-25T00:00:00.000Z",
+        },
+      ],
+      searchKeywordFacts: [
+        expect.objectContaining({
+          id: KEYWORD_ID,
+          display: `keyword ${KEYWORD_ID}`,
+          market: "US",
+          language: "en",
+          mapping: {
+            decision: "existing_page",
+            mappedSitePageId: "00000000-0000-4000-8000-0000000000cc",
+            reviewState: "confirmed",
+            revision: 2,
+          },
+        }),
+      ],
+      generativeKeywordFacts: [
+        expect.objectContaining({ id: GENERATIVE_ID }),
+      ],
+      externalTargets: [
+        expect.objectContaining({
+          ref: "content-brief-link:https://authority.example/benchmark",
+          url: "https://authority.example/benchmark",
+        }),
+      ],
+      contentPolicy: {
+        brandConstraints: ["Use a calm, practical voice."],
+        complianceConstraints: ["Qualify forward-looking statements."],
+        prohibitedTerms: [],
+        claimRestrictions: [
+          "no_guarantees",
+          "no_unsupported_quantified_claims",
+          "no_unverified_superlatives",
+        ],
+      },
+    });
+    expect(
+      PageSnapshotsRepository.prototype
+        .listByDataSnapshotWithSitePageIdentity,
+    ).toHaveBeenCalledWith(
+      { workspaceId: scope.workspaceId, projectId },
+      CRAWL_SNAPSHOT_ID,
+    );
+  });
+
+  it("re-addresses the run when a canonical keyword mapping changes", async () => {
+    const before = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      body,
+    );
+    const initial = buildContentShadowFrozenInput({
+      inputs: before,
+      outputLocale: "en",
+    });
+    vi.mocked(KeywordsRepository.prototype.listByIds).mockImplementation(
+      async (_scope, ids) =>
+        ids.map((id) => ({
+          id,
+          query_kind:
+            id === GENERATIVE_ID ? "generative_query" : "search_query",
+          cluster_key: id === GENERATIVE_ID ? null : "growth-analytics",
+          display_keyword: `keyword ${id}`,
+          normalized_keyword: `keyword ${id}`,
+          market: "US",
+          language_tag: "en",
+          intent: "commercial",
+          buyer_stage: "consideration",
+          mapping_decision: "existing_page",
+          mapped_site_page_id: "00000000-0000-4000-8000-0000000000cc",
+          mapping_review_state: "confirmed",
+          mapping_revision: 3,
+          last_seen_at: "2026-07-25T00:00:00.000Z",
+        })) as never,
+    );
+
+    const after = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      body,
+    );
+    const replay = buildContentShadowFrozenInput({
+      inputs: after,
+      outputLocale: "en",
+    });
+
+    expect(replay.contentHash).not.toBe(initial.contentHash);
+    expect(replay.manifest.researchContext.searchKeywordFacts[0]?.mapping)
+      .toMatchObject({ revision: 3 });
+  });
+
+  it("re-reads and re-addresses canonical generative facts instead of copying the prior manifest", async () => {
+    const first = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      body,
+    );
+    const initial = buildContentShadowFrozenInput({
+      inputs: first,
+      outputLocale: "en",
+    });
+    vi.mocked(KeywordsRepository.prototype.listByIds).mockImplementation(
+      async (_scope, ids) =>
+        ids.map((id) => ({
+          id,
+          query_kind:
+            id === GENERATIVE_ID ? "generative_query" : "search_query",
+          cluster_key: id === GENERATIVE_ID ? null : "growth-analytics",
+          display_keyword:
+            id === GENERATIVE_ID
+              ? "updated generative prompt"
+              : `keyword ${id}`,
+          normalized_keyword: `keyword ${id}`,
+          market: "US",
+          language_tag: "en",
+          intent: "commercial",
+          buyer_stage: "consideration",
+          mapping_decision: "existing_page",
+          mapped_site_page_id: "00000000-0000-4000-8000-0000000000cc",
+          mapping_review_state: "confirmed",
+          mapping_revision: 2,
+          last_seen_at: "2026-07-25T00:00:00.000Z",
+        })) as never,
+    );
+
+    const reread = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      body,
+    );
+    const replay = buildContentShadowFrozenInput({
+      inputs: reread,
+      outputLocale: "en",
+    });
+
+    expect(replay.contentHash).not.toBe(initial.contentHash);
+    expect(
+      replay.manifest.researchContext.generativeKeywordFacts[0]?.display,
+    ).toBe("updated generative prompt");
+  });
+
+  it("freezes canonical competitor facts and re-addresses a later competitor review revision", async () => {
+    const competitor = {
+      id: COMPETITOR_ID,
+      domain: "competitor.example",
+      name: "Competitor",
+      review_status: "approved",
+      relationship: "direct",
+      analysis_scope: ["content", "keyword_gap"],
+      revision: 1,
+    };
+    vi.mocked(
+      CompetitorsRepository.prototype.listByIds,
+    ).mockResolvedValue([competitor] as never);
+    const withCompetitor = {
+      ...body,
+      competitorEntityIds: [COMPETITOR_ID],
+    };
+    const first = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      withCompetitor,
+    );
+    const initial = buildContentShadowFrozenInput({
+      inputs: first,
+      outputLocale: "en",
+    });
+    expect(initial.manifest.researchContext).toMatchObject({
+      competitorFacts: [
+        {
+          id: COMPETITOR_ID,
+          domain: "competitor.example",
+          status: "approved",
+          revision: 1,
+        },
+      ],
+      externalTargets: expect.arrayContaining([
+        {
+          ref: `competitor-root:${COMPETITOR_ID}`,
+          kind: "competitor_root",
+          url: "https://competitor.example/",
+          label: "Competitor",
+        },
+      ]),
+    });
+
+    vi.mocked(
+      CompetitorsRepository.prototype.listByIds,
+    ).mockResolvedValue([{ ...competitor, revision: 2 }] as never);
+    const reread = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      withCompetitor,
+    );
+    const replay = buildContentShadowFrozenInput({
+      inputs: reread,
+      outputLocale: "en",
+    });
+
+    expect(replay.contentHash).not.toBe(initial.contentHash);
+    expect(replay.manifest.researchContext.competitorFacts[0]?.revision).toBe(2);
+  });
+
+  it("sorts candidate external targets before the eight-target cap", async () => {
+    const competitorIds = Array.from(
+      { length: 10 },
+      (_, index) =>
+        `00000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, "0")}`,
+    );
+    const competitors = competitorIds.map((id, index) => ({
+      id,
+      domain: `competitor-${String(index).padStart(2, "0")}.example`,
+      name: `Competitor ${index}`,
+      review_status: "approved",
+      relationship: "direct",
+      analysis_scope: ["content"],
+      revision: 1,
+    }));
+    const withCompetitors = {
+      ...body,
+      competitorEntityIds: competitorIds,
+    };
+    vi.mocked(
+      CompetitorsRepository.prototype.listByIds,
+    ).mockResolvedValue([...competitors].reverse() as never);
+    const reversed = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      withCompetitors,
+    );
+
+    vi.mocked(
+      CompetitorsRepository.prototype.listByIds,
+    ).mockResolvedValue(competitors as never);
+    const forward = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      withCompetitors,
+    );
+
+    expect(reversed.researchContext.externalTargets).toEqual(
+      forward.researchContext.externalTargets,
+    );
+    expect(reversed.researchContext.externalTargets).toHaveLength(8);
+    expect(reversed.researchContext.externalTargets[0]?.ref).toBe(
+      "content-brief-link:https://authority.example/benchmark",
+    );
+    expect(
+      buildContentShadowFrozenInput({
+        inputs: reversed,
+        outputLocale: "en",
+      }).contentHash,
+    ).toBe(
+      buildContentShadowFrozenInput({
+        inputs: forward,
+        outputLocale: "en",
+      }).contentHash,
+    );
+  });
+
+  it("fails closed when a pinned crawl page resolves to another site in the project", async () => {
+    vi.mocked(
+      PageSnapshotsRepository.prototype
+        .listByDataSnapshotWithSitePageIdentity,
+    ).mockResolvedValue([
+      {
+        page_snapshot_id: PAGE_SNAPSHOT_ID,
+        data_snapshot_id: CRAWL_SNAPSHOT_ID,
+        normalized_url: "https://other-site.example/page",
+        normalized_url_hash: "a".repeat(64),
+        content_hash: "b".repeat(64),
+        captured_at: "2026-07-25T00:00:00.000Z",
+        site_id: "site-2",
+      },
+    ] as never);
+
+    await expect(load()).rejects.toMatchObject({
+      code: "CONTEXT_INCOMPLETE",
+    });
+  });
+
+  it("keeps upstream truncation visible in a closed body-free customer summary", () => {
+    const projected = projectContentShadowPackSources({
+      sources: [
+        {
+          kind: "external_page",
+          ref: "target:one",
+          authorityTier: "B",
+          label: "Authority",
+          url: "https://authority.example/report",
+          availability: "partial",
+          capturedAt: "2026-07-25T00:00:00.000Z",
+          urlHash: "a".repeat(64),
+          contentHash: "b".repeat(64),
+          contentHashMethod: "sha256_normalized_text",
+          contentText: "the complete retrieved body must stay server-side",
+          contentTruncated: true,
+          excerpt: "Bounded excerpt.",
+          excerptTruncated: true,
+          metrics: {
+            status: 200,
+            contentType: "text/html",
+            bodyBytes: 1024,
+            wordCount: 140,
+            responseMs: 40,
+            redirectChain: ["https://authority.example/report"],
+          },
+          evidenceRefs: ["target:one"],
+          limitation: null,
+        },
+      ],
+    });
+
+    expect(projected).toEqual([
+      {
+        kind: "external_page",
+        ref: "target:one",
+        label: "Authority",
+        url: "https://authority.example/report",
+        availability: "partial",
+        authorityTier: "B",
+        capturedAt: "2026-07-25T00:00:00.000Z",
+        contentHash: "b".repeat(64),
+        contentHashMethod: "sha256_normalized_text",
+        contentTruncated: true,
+        excerpt: "Bounded excerpt.",
+        excerptTruncated: true,
+        metrics: {
+          status: 200,
+          contentType: "text/html",
+          bodyBytes: 1024,
+          wordCount: 140,
+          responseMs: 40,
+          redirectChain: ["https://authority.example/report"],
+        },
+        evidenceRefs: ["target:one"],
+        limitation: null,
+      },
+    ]);
+    expect(projected[0]).not.toHaveProperty("contentText");
+    expect(projected[0]).not.toHaveProperty("urlHash");
+  });
+
+  it("fails closed instead of presenting an unreadable source pack as empty", () => {
+    expect(() =>
+      projectContentShadowPackSources({
+        sources: [{ kind: "external_page", contentText: "body only" }],
+      }),
+    ).toThrow(/research sources are unreadable/i);
+  });
+
+  it("projects the repository's complete newest-first revision ledger", () => {
+    const rows = [
+      {
+        revision: 3,
+        content_hash: "c".repeat(64),
+        generated_by: "human",
+        editor_id: "00000000-0000-4000-8000-0000000000ce",
+        note: "Final proof edit.",
+        validation_errors: [],
+        created_at: "2026-07-25T03:00:00.000Z",
+      },
+      {
+        revision: 2,
+        content_hash: "b".repeat(64),
+        generated_by: "human",
+        editor_id: "00000000-0000-4000-8000-0000000000cd",
+        note: null,
+        validation_errors: [{ code: "warning" }],
+        created_at: "2026-07-25T02:00:00.000Z",
+      },
+      {
+        revision: 1,
+        content_hash: "a".repeat(64),
+        generated_by: "llm",
+        editor_id: null,
+        note: null,
+        validation_errors: [],
+        created_at: "2026-07-25T01:00:00.000Z",
+      },
+    ];
+
+    expect(projectContentShadowRevisionHistory(rows as never)).toEqual([
+      expect.objectContaining({ revision: 3, validationErrorCount: 0 }),
+      expect.objectContaining({ revision: 2, validationErrorCount: 1 }),
+      expect.objectContaining({ revision: 1, validationErrorCount: 0 }),
+    ]);
+    expect(() =>
+      projectContentShadowRevisionHistory([...rows].reverse() as never),
+    ).toThrow(/newest-first/i);
+    expect(() =>
+      projectContentShadowRevisionHistory([rows[0], rows[2]] as never),
+    ).toThrow(/complete/i);
+    expect(() =>
+      projectContentShadowRevisionHistory([rows[0], rows[1]] as never),
+    ).toThrow(/incomplete/i);
+  });
+});
+
+describe("Task 6 frozen manifest read integrity", () => {
+  const manifest = () => ({
+    sourceDiagnosticRunId: DIAGNOSTIC_ID,
+    competitorEntityIds: [],
+    searchCluster: {
+      clusterKey: "growth-analytics",
+      keywordEntityIds: [KEYWORD_ID],
+    },
+    generativeQueryEntityIds: [GENERATIVE_ID],
+    firstParty: {
+      siteOrigin: SITE_ORIGIN,
+      icpPrimaryConversionUrl: CONVERSION_URL,
+    },
+    contentBriefOutline: {
+      briefSections: ["Objective"],
+      targetKeywords: [`keyword ${KEYWORD_ID}`],
+      pageAssignment: "existing_page",
+    },
+    researchContext: frozenResearchContext(),
+  });
+
+  it("projects an intact frozen manifest through the strict contract", () => {
+    expect(
+      projectContentShadowFrozenInputs(manifest(), FINDING_ID),
+    ).toMatchObject({
+      primaryFindingId: FINDING_ID,
+      searchCluster: { keywordEntityIds: [KEYWORD_ID] },
+      generativeQueryEntityIds: [GENERATIVE_ID],
+    });
+  });
+
+  it.each([
+    {
+      label: "non-array competitor identities",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        (value as Record<string, unknown>)["competitorEntityIds"] =
+          "not-an-array";
+      },
+    },
+    {
+      label: "mixed search identity members",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        value.searchCluster.keywordEntityIds = [KEYWORD_ID, 42] as never;
+      },
+    },
+    {
+      label: "mixed generative identity members",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        value.generativeQueryEntityIds = [GENERATIVE_ID, 42] as never;
+      },
+    },
+    {
+      label: "duplicate search identities",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        value.searchCluster.keywordEntityIds = [KEYWORD_ID, KEYWORD_ID];
+      },
+    },
+    {
+      label: "empty search identities",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        value.searchCluster.keywordEntityIds = [];
+        value.researchContext.searchKeywordFacts = [];
+      },
+    },
+    {
+      label: "duplicate competitor identities",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        value.competitorEntityIds = [
+          COMPETITOR_ID,
+          COMPETITOR_ID,
+        ] as never;
+        value.researchContext.competitorFacts = [
+          {
+            id: COMPETITOR_ID,
+            domain: "competitor.example",
+            name: "Competitor",
+            status: "approved",
+            relationship: "direct",
+            scopes: ["content"],
+            revision: 1,
+          },
+        ] as never;
+      },
+    },
+    {
+      label: "duplicate research fact identities",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        value.researchContext.searchKeywordFacts = [
+          ...value.researchContext.searchKeywordFacts,
+          ...value.researchContext.searchKeywordFacts,
+        ];
+      },
+    },
+    {
+      label: "mixed brief sections",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        value.contentBriefOutline.briefSections = ["Objective", 42] as never;
+      },
+    },
+    {
+      label: "mixed target keywords",
+      mutate: (value: ReturnType<typeof manifest>) => {
+        value.contentBriefOutline.targetKeywords = ["growth", 42] as never;
+      },
+    },
+  ])("fails closed for $label", ({ mutate }) => {
+    const corrupted = manifest();
+    mutate(corrupted);
+    expect(() =>
+      projectContentShadowFrozenInputs(corrupted, FINDING_ID),
+    ).toThrow(/frozen Content Shadow (?:manifest|research context) is unreadable/i);
   });
 });

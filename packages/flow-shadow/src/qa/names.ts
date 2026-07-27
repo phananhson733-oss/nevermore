@@ -12,10 +12,10 @@
  * token away from a shape that was caught, so each fix bought exactly one row of
  * the escape table and the next rework found the neighbouring row.
  *
- * The reason a form list cannot work here is specific to Slice 2: the frozen
- * pack retrieves NOTHING external, so "did this resolve?" is the constant `no`.
- * Recognition alone therefore decides which drafts are reported, and a
- * recognition rule made of forms is a rule made of holes.
+ * A frozen pack may or may not carry external page captures, so recognition and
+ * resolution remain separate: first find every plausible reference, then ask
+ * whether its identity exists in eligible frozen evidence. A recognition rule
+ * made only of bibliographic forms is still a rule made of holes.
  *
  * So the question is inverted. Instead of "which bibliographic form is this?"
  * this file answers:

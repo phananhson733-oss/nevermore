@@ -116,7 +116,7 @@ describe("structure checks", () => {
     const sc4 = rule(CLEAN_DRAFT, "sc4_link_distribution");
 
     expect(sc2?.evaluable).toBe(false);
-    expect(sc2?.detail).toContain("no own-domain");
+    expect(sc2?.detail).toContain("Internal-link density was not judged");
     expect(sc4?.evaluable).toBe(false);
   });
 

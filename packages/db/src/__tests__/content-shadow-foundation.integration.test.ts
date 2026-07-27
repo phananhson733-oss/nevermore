@@ -33,7 +33,7 @@ const CRAWL_DATASET_KEY = "crawl.site_graph.v1";
 const RULE_SET_VERSION = "mvp.rules.0.2.0";
 const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 const CONTENT_RULE_ID = "CONTENT-COVERAGE-001";
-const FLOW_ADAPTER_VERSION = "content-shadow-adapter.0.3.0";
+const FLOW_ADAPTER_VERSION = "content-shadow-adapter.0.4.0";
 
 function pgCode(error: unknown): string | undefined {
   let candidate = error;
@@ -540,17 +540,38 @@ describeDb("content shadow database foundation", () => {
     ).rejects.toThrow("flow shadow run replay conflicts");
 
     const packs = new FlowShadowResearchPacksRepository(handle.db);
+    const frozenPack = { sources: [] };
     const pack = await packs.insert({
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
       flowShadowRunId: created.id,
       analysisInvocationId: null,
-      contentHash: contentHash({ pack: created.id }),
-      pack: { sources: [] },
+      contentHash: contentHash(frozenPack),
+      pack: frozenPack,
     });
     await expect(packs.findByRun(scope, created.id)).resolves.toMatchObject({
       id: pack.id,
     });
+    await expect(
+      packs.insert({
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        flowShadowRunId: created.id,
+        analysisInvocationId: null,
+        contentHash: contentHash(frozenPack),
+        pack: frozenPack,
+      }),
+    ).resolves.toEqual(pack);
+    await expect(
+      packs.insert({
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        flowShadowRunId: created.id,
+        analysisInvocationId: null,
+        contentHash: contentHash(frozenPack),
+        pack: { sources: [{ ref: "drift" }] },
+      }),
+    ).rejects.toThrow("content hash does not match canonical pack");
 
     const gates = new FlowShadowQaGatesRepository(handle.db);
     const gate = await gates.insert({
@@ -958,7 +979,7 @@ describeDb("content shadow database foundation", () => {
       projectId: scope.projectId,
       flowShadowRunId: created.id,
       analysisInvocationId: null,
-      contentHash: contentHash({ pack: created.id }),
+      contentHash: contentHash({}),
       pack: {},
     });
     const gate = await new FlowShadowQaGatesRepository(handle.db).insert({

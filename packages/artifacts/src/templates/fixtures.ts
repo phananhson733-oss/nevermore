@@ -62,6 +62,9 @@ export function makePromptInput(
     // `contentBriefOutline` became a required key: only the Content Shadow
     // draft ever carries one.
     contentBriefOutline: null,
+    // Governed research excerpts are likewise limited to the Content Shadow
+    // English Blog draft.
+    researchContext: null,
   };
 
   return { ...base, ...overrides };

@@ -49,6 +49,110 @@ const DRAFT_BODY = [
   "- Forrester, State of Onboarding 2024",
 ].join("\n");
 
+function researchSourcesFixture() {
+  return [
+    {
+      kind: "content_brief",
+      ref: BRIEF_ARTIFACT_ID,
+      label: "Q3 onboarding brief",
+      url: "https://example.test/briefs/onboarding",
+      availability: "available",
+      authorityTier: "A",
+      capturedAt: "2026-07-24T23:40:00.000Z",
+      contentHash: "briefevidence00001111222233334444",
+      contentHashMethod: "sha256_canonical_extract",
+      contentTruncated: false,
+      excerpt:
+        "Defines the audience, target keyword cluster, and the evidence the draft is allowed to reuse.",
+      excerptTruncated: false,
+      metrics: null,
+      evidenceRefs: [
+        "brief-revision:3",
+        "outline:objective",
+      ],
+      limitation:
+        "The brief states what the draft should cover, but it does not verify outside claims on its own.",
+    },
+    {
+      kind: "first_party_page",
+      ref: "page-snapshot:signup",
+      label: "Signup analytics page",
+      url: "https://example.test/signup",
+      availability: "available",
+      authorityTier: "A",
+      capturedAt: "2026-07-25T00:00:30.000Z",
+      contentHash: "siteevidence55556666777788889999",
+      contentHashMethod: "sha256_canonical_extract",
+      contentTruncated: false,
+      excerpt:
+        "Shows the product signup path and the activation step where explanation drops away.",
+      excerptTruncated: false,
+      metrics: null,
+      evidenceRefs: [
+        "page-snapshot:signup",
+        "data-snapshot:signup",
+      ],
+      limitation:
+        "The page confirms the customer's own funnel language, but it does not validate outside benchmark numbers.",
+    },
+    {
+      kind: "external_page",
+      ref: "external-target:forrester-activation",
+      label: "Forrester onboarding benchmark",
+      url: "https://research.example/forrester-onboarding-2024",
+      availability: "available",
+      authorityTier: "B",
+      capturedAt: "2026-07-24T18:15:00.000Z",
+      contentHash: "externalbenchmark11112222333344445555",
+      contentHashMethod: "sha256_normalized_text",
+      contentTruncated: true,
+      excerpt:
+        "Reports an activation benchmark the draft cites as outside market context.",
+      excerptTruncated: true,
+      metrics: {
+        status: 200,
+        contentType: "text/html",
+        bodyBytes: 18324,
+        wordCount: 1102,
+        responseMs: 542,
+        redirectChain: [],
+      },
+      evidenceRefs: ["retrieval:external-forrester"],
+      limitation:
+        "Benchmark context is usable only for the statements actually frozen into this run.",
+    },
+  ] as const;
+}
+
+function unavailableResearchProjection() {
+  const projection = runProjection();
+  return {
+    ...projection,
+    research: {
+      ...projection.research,
+      sources: [
+        {
+          kind: "first_party_page",
+          ref: "pricing-page-snapshot",
+          label: "Pricing page",
+          url: null,
+          availability: "partial",
+          authorityTier: "A",
+          capturedAt: null,
+          contentHash: null,
+          contentHashMethod: null,
+          contentTruncated: false,
+          excerpt: null,
+          excerptTruncated: false,
+          metrics: null,
+          evidenceRefs: [],
+          limitation: null,
+        },
+      ],
+    },
+  };
+}
+
 function runProjection() {
   return {
     flowShadowRunId: RUN_ID,
@@ -89,20 +193,7 @@ function runProjection() {
     },
     research: {
       packId: "00000000-0000-4000-8000-000000000908",
-      sources: [
-        {
-          kind: "content_brief",
-          ref: BRIEF_ARTIFACT_ID,
-          authorityTier: "A",
-          limitation: "The confirmed content brief revision.",
-        },
-        {
-          kind: "first_party_site",
-          ref: "https://example.test",
-          authorityTier: "A",
-          limitation: "First-party identity only.",
-        },
-      ],
+      sources: researchSourcesFixture(),
       limitations: [...RESEARCH_LIMITATIONS],
       generatedAt: "2026-07-25T00:01:00.000Z",
     },
@@ -111,6 +202,17 @@ function runProjection() {
       status: "draft",
       currentRevision: 1,
       contentText: DRAFT_BODY,
+      revisionHistory: [
+        {
+          revision: 1,
+          contentHash: CONTENT_HASH,
+          generatedBy: "structured_llm",
+          editorId: null,
+          note: null,
+          validationErrorCount: 0,
+          createdAt: "2026-07-25T00:00:00.000Z",
+        },
+      ],
     },
     qa: {
       gateId: "00000000-0000-4000-8000-000000000909",
@@ -126,7 +228,12 @@ function runProjection() {
 }
 
 /** Layer the Content Shadow reads over the shared in-browser API. */
-async function openExecution(page: Page): Promise<void> {
+async function openExecution(
+  page: Page,
+  projection:
+    | ReturnType<typeof runProjection>
+    | ReturnType<typeof unavailableResearchProjection> = runProjection(),
+): Promise<void> {
   await installCriticalFlowApi(page);
   // Registered after the shared catch-all, so these win.
   await page.route(
@@ -135,12 +242,12 @@ async function openExecution(page: Page): Promise<void> {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ data: runProjection() }),
+        body: JSON.stringify({ data: projection }),
       });
     },
   );
   await page.route(`**${BASE}/content-shadow-runs?**`, async (route) => {
-    const summary = runProjection();
+    const summary = projection;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -380,9 +487,56 @@ test("the quality rail counts three states and never rounds one up", async ({
 
   // The advisory disclosure: a pass tally that hides them overstates itself.
   await expect(rail).toContainText("本轮 7 项检查里有 3 项为提示级");
+});
 
-  // Zero outside sources, said out loud rather than left blank.
-  await expect(rail).toContainText("0 条 —— 本轮未做外部检索");
+test("research sources lead with customer-readable status and keep technical evidence in a drawer", async ({
+  page,
+}) => {
+  await openExecution(page);
+
+  const sources = page.locator("[data-research-source-card]");
+  await expect(sources).toHaveCount(2);
+
+  const firstParty = sources.first();
+  await expect(firstParty).toContainText("第一方页面");
+  await expect(firstParty).toContainText("Signup analytics page");
+  await expect(firstParty).toContainText("只支持第一方产品事实");
+  await expect(firstParty).toContainText("https://example.test/signup");
+  await expect(firstParty).toContainText("Shows the product signup path");
+
+  await page.getByRole("button", { name: "查看全部来源" }).click();
+  const drawer = page.locator("[data-research-sources-drawer]");
+  await expect(drawer).toContainText("证据 Hash");
+  await expect(drawer).toContainText("externalbenc");
+  await expect(drawer).toContainText("Hash 方法");
+  await expect(drawer).toContainText("SHA-256（归一化正文）");
+  await expect(drawer).toContainText("正文已截断");
+  await expect(drawer).toContainText("摘要为截断预览");
+  await expect(drawer).toContainText("retrieval:external-forrester");
+  await expect(drawer).toContainText("Benchmark context is usable only");
+  const drawerText = await drawer.innerText();
+  expect(drawerText).not.toContain("content-shadow.qa.");
+  expect(drawerText).not.toMatch(/\brl\d+|\bsc\d+b?\b/u);
+  await page.getByRole("button", { name: "Close" }).click();
+});
+
+test("research sources say when a field was not provided instead of fabricating one", async ({
+  page,
+}) => {
+  await openExecution(page, unavailableResearchProjection());
+
+  const source = page.locator("[data-research-source-card]").first();
+  await expect(source).toContainText("Pricing page");
+  await expect(source).toContainText("页面证据不完整，只能辅助判断");
+  await expect(source).toContainText("该来源未提供");
+
+  await page.getByRole("button", { name: "查看全部来源" }).click();
+  const drawer = page.locator("[data-research-sources-drawer]");
+  await expect(drawer).toContainText("Pricing page");
+  await expect(drawer).toContainText("该来源未提供");
+  await expect(drawer).toContainText("Hash 方法");
+  await expect(drawer).toContainText("完整");
+  await expect(drawer).toContainText("完整摘要");
 });
 
 test("the quality rail shows no identifier a customer cannot act on", async ({

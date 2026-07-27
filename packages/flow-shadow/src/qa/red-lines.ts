@@ -11,6 +11,18 @@ import { fail, pass, unevaluable, type QaRuleResult } from "./rule-types.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
 import { citationEntry, parentheticalCitations } from "./names.ts";
 import {
+  factualClaimDescription,
+  findBroadExternalFactualClaims,
+} from "./factual-claims.ts";
+import {
+  evidenceSourceDescription,
+  findEvidenceTextMatchForSource,
+} from "./evidence.ts";
+import {
+  checkBrandVoice,
+  checkClaimRestrictions,
+} from "./policy-rules.ts";
+import {
   flattenLine,
   isHeadingLine,
   normalizeHeading,
@@ -44,8 +56,10 @@ import {
  *   the verdict depend on a mutable row, so replaying a frozen run after an
  *   operator renamed a competitor would produce different claims for the same
  *   inputs.
- * - **RL3** (SERP plagiarism) — SignalFrame holds no SERP snippet corpus, so
- *   Slice 2 has NO plagiarism detection at all.
+ * - **RL3** (SERP-wide plagiarism) — the frozen pack has no SERP snippet
+ *   corpus. The separate source-overlap rule does bounded exact-shingle and
+ *   near-duplicate comparison against captured first-party/external pages, but
+ *   it is not a whole-web or SERP plagiarism search.
  * - **RL6** (psychological-safety disclaimer) — oracle-domain only.
  * - **RL9** (atom-label leak) — the draft is minted by the markdown envelope,
  *   which has no atom-block scaffold to leak.
@@ -70,6 +84,11 @@ export const RED_LINE_CHECKS: readonly RedLineCheck[] = [
   { id: "rl12_citation_integrity", title: "Citations resolve to a source" },
   { id: "rl12b_unresolved_link", title: "Links resolve to a source" },
   { id: "rl13_banned_jargon", title: "No AI-slop vocabulary" },
+  { id: "rl14_brand_voice", title: "Content follows frozen brand policy" },
+  {
+    id: "rl15_claim_restrictions",
+    title: "Content follows frozen claim restrictions",
+  },
 ];
 
 const CHAT_RESIDUE: readonly RegExp[] = [
@@ -88,11 +107,11 @@ const WEAK_VERBS: readonly RegExp[] = [/\bis about\b/i, /\brelates to\b/i];
  * REMOVED from the ported HARD list, deliberately: `architecture`, `mechanism`,
  * `engine`, `module`, `robust`, `systemic`, `high-bandwidth`, `antenna`,
  * `rebooting`. Those are ordinary vocabulary in B2B software writing —
- * SignalFrame's own documentation uses several of them — and the original list
- * inherited them from a style guide where they read as pseudo-technical affect
- * in an astrology context. Keeping them would fail correct technical prose. This
- * note exists so the omission is not mistaken for an incomplete port and
- * "restored" later.
+ * product and engineering documentation routinely uses several of them — and
+ * the original list inherited them from a style guide where they read as
+ * pseudo-technical affect in an astrology context. Keeping them would fail
+ * correct technical prose. This note exists so the omission is not mistaken for
+ * an incomplete port and "restored" later.
  *
  * What remains is AI-slop vocabulary no human B2B editor writes on purpose, and
  * even that is ADVISORY: a style preference must not gate a factual review.
@@ -338,11 +357,7 @@ export function checkRl5(context: QaContext): QaRuleResult {
 // RL7 — banned author tokens
 // ---------------------------------------------------------------------------
 
-/**
- * Ported as a function over an EMPTY token list. SignalFrame has no author
- * persona in Slice 2, so nothing is banned; the scan is kept so a Slice 3 brand
- * vocabulary drops in without re-deriving it.
- */
+/** Legacy author-token denylist; frozen brand policy is evaluated by RL14. */
 export const BANNED_AUTHOR_TOKENS: readonly string[] = [];
 
 export function checkRl7(context: QaContext): QaRuleResult {
@@ -350,7 +365,7 @@ export function checkRl7(context: QaContext): QaRuleResult {
     return pass(
       "rl7_banned_tokens",
       "rl7_no_banned_tokens",
-      "No brand or author token list is configured in Slice 2, so nothing is banned.",
+      "No legacy author-token denylist is configured for this check. Frozen prohibited terms and brand constraints are evaluated separately by the brand-voice rule.",
     );
   }
   const hits: Finding[] = [];
@@ -387,22 +402,95 @@ export function checkRl8(context: QaContext): QaRuleResult {
     );
   }
   const hits = findUnsupportedClaims(context.index, context.body);
+  const broad = findBroadExternalFactualClaims(context);
+  // The broad scanner deliberately overlaps the older attribution/research
+  // scanner so quantified attributed prose cannot escape. Collapse only the
+  // broad reading whose text contains the already-located research assertion;
+  // otherwise one supported sentence is counted again as an unsupported
+  // generic percentage claim.
+  const broadClaims = broad.claims.filter((claim) => {
+    const statement = claim.excerpt.toLowerCase().replace(/\s+/g, " ").trim();
+    return !hits.some((hit) => {
+      if (hit.line !== claim.line) return false;
+      const excerpt = hit.excerpt.toLowerCase().replace(/\s+/g, " ").trim();
+      const complete = hit.statement
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+      return (
+        (excerpt.length > 0 && statement.includes(excerpt)) ||
+        (complete.length > 0 &&
+          (statement.includes(complete) || complete.includes(statement)))
+      );
+    });
+  });
   // `support === null`, never "nothing resolved". A link to the customer's own
   // site resolves — it is just not EVIDENCE, and this rule asks for evidence.
   const unresolved = hits.filter((hit) => hit.resolution.support === null);
-  if (unresolved.length === 0) {
-    return pass(
+  const uncertainResearch = hits.filter((hit) => {
+    const support = hit.resolution.support;
+    if (support === null || support.source.kind !== "external_page") return false;
+    const alignment = findEvidenceTextMatchForSource(
+      support.source,
+      hit.statement,
+    );
+    return alignment.match === null || alignment.bounded;
+  });
+  const unsupportedBroad = broadClaims.filter(
+    (claim) => claim.status === "unsupported",
+  );
+  const uncertainBroad = broadClaims.filter(
+    (claim) => claim.status === "uncertain",
+  );
+
+  if (unresolved.length > 0 || unsupportedBroad.length > 0) {
+    const researchDetail =
+      unresolved.length === 0 ? "" : excerptList(unresolved);
+    const broadDetail = unsupportedBroad
+      .slice(0, QA_THRESHOLDS.maxReportedFindings)
+      .map(factualClaimDescription)
+      .join("; ");
+    const joined = [researchDetail, broadDetail].filter(Boolean).join("; ");
+    return fail(
       "rl8_unsupported_claim",
-      "rl8_all_claims_resolved",
-      hits.length === 0
-        ? "No sentence in the scanned body matched an external-research assertion pattern. That is a statement about what this deterministic scan found, not a guarantee that the draft asserts nothing. Exactly four shapes are scanned for: a research noun with an assertion verb near it; `according to`/`per` followed by a research noun; a year in front of a titled study; and a capitalized name followed by an assertion verb or by `according to`/`per`, in a sentence that also carries a number. EVERY named-entity shape requires that number, so an attributed claim with no statistic in it — and any claim phrased outside these four shapes — is not seen here."
-        : `All ${hits.length} external-research assertion(s) resolve to a source the frozen research pack carries.`,
+      "rl8_claim_unresolved",
+      `${unresolved.length + unsupportedBroad.length} external factual assertion(s) have no supporting external page in the frozen research pack (authority D): ${joined}. First-party page content and site identity cannot support an external factual claim. ${unverifiableNote(context)}`,
     );
   }
-  return fail(
+
+  if (
+    uncertainResearch.length > 0 ||
+    uncertainBroad.length > 0 ||
+    broad.truncated
+  ) {
+    const sources = uncertainResearch
+      .map((hit) => hit.resolution.support?.source)
+      .filter((source) => source !== undefined)
+      .map(evidenceSourceDescription);
+    const uncertainDetail = [
+      ...uncertainResearch.map(
+        (hit) =>
+          `line ${hit.line}: "${truncateExcerpt(hit.statement, QA_THRESHOLDS.maxExcerptChars)}"`,
+      ),
+      ...uncertainBroad
+        .slice(0, QA_THRESHOLDS.maxReportedFindings)
+        .map(factualClaimDescription),
+    ]
+      .slice(0, QA_THRESHOLDS.maxReportedFindings)
+      .join("; ");
+    return unevaluable(
+      "rl8_unsupported_claim",
+      "rl8_claim_support_uncertain",
+      `${uncertainResearch.length + uncertainBroad.length} external factual assertion(s) name or resemble frozen evidence but could not be aligned reliably enough for a machine judgement: ${uncertainDetail || "the candidate bound was reached"}.${sources.length > 0 ? ` Resolved source(s): ${[...new Set(sources)].join("; ")}.` : ""} This deterministic lexical gate is not a full semantic fact-check; a reviewer must confirm that each source really entails the statement.`,
+    );
+  }
+
+  return pass(
     "rl8_unsupported_claim",
-    "rl8_claim_unresolved",
-    `${unresolved.length} external-research assertion(s) resolve to no source in the frozen research pack (authority D): ${excerptList(unresolved)}. ${unverifiableNote(context)}`,
+    "rl8_all_claims_resolved",
+    hits.length === 0 && broadClaims.length === 0
+      ? "No scanned sentence matched the supported external-fact shapes: attributed/research statements (including those without numbers), quantified or time-comparison claims, guarantees, or superlatives. This bounded English heuristic is not a full semantic fact-check and does not claim the draft contains no other proposition."
+      : `All ${hits.length + broadClaims.length} scanned external factual assertion(s) align with frozen external page evidence. First-party evidence was excluded. This is deterministic lexical evidence alignment, not a full semantic fact-check.`,
   );
 }
 
@@ -513,11 +601,11 @@ type MarkerRole = "locator" | "evidence";
 /**
  * How sure this rule is that the marker is a reference AT ALL.
  *
- * Recognition and resolution are separate questions, and in Slice 2 only the
- * first one has any information in it: the frozen pack retrieves nothing
- * external, so "did it resolve?" is the constant `no` and recognition alone
- * decides what gets reported. That makes the confidence of a recognition into a
- * product decision rather than an implementation detail.
+ * Recognition and resolution are separate questions. The frozen pack may carry
+ * external page captures, so a recognised marker is resolved against eligible
+ * evidence rather than being accepted by shape alone. Confidence still decides
+ * whether an unresolved shape is a factual failure or a review-required
+ * ambiguity.
  *
  * - `high` — the thing is unmistakably offered as a source: an address, a
  *   footnote, an `et al.`, a name beside a year, a link a sentence attributes a
@@ -803,20 +891,25 @@ export function checkRl12(context: QaContext): QaRuleResult {
 /**
  * What an unresolved reference actually means, stated without overclaiming.
  *
- * With an empty pack the gate knows one thing: it cannot confirm the reference
- * from SignalFrame's own records. It does NOT know the reference is invented,
- * and saying so would be the gate lying about its own evidence. Once the pack
- * carries citable sources the stronger sentence becomes true, so both are here
- * and the pack decides which one is printed.
+ * The gate knows whether the frozen index exposes citable external identities;
+ * it never knows that an unresolved reference was invented. The detail reports
+ * actual external-page/body counts rather than assuming retrieval did not run.
  */
 function unverifiableNote(context: QaContext): string {
+  const externalPages = context.input.pack.sources.filter(
+    (source) => source.kind === "external_page",
+  );
+  const capturedBodies = externalPages.filter(
+    (source) => source.contentText !== null,
+  ).length;
   return context.index.citableCount === 0
-    ? "This run retrieved no external research, so the frozen pack holds NOTHING external to resolve against: the correct reading is that these references cannot be verified here, not that they were invented. Every one of them needs a human to confirm it before this draft goes anywhere."
-    : "The pack is assembled only from confirmed frozen project records, so an attribution that does not resolve names a source we do not hold.";
+    ? `The frozen source index exposes no citable external identity for this reference. The pack contains ${externalPages.length} external-page row(s), ${capturedBodies} with captured body text. These references cannot be verified here; the correct reading is that they are unverifiable here, not that they were invented. A human must confirm them.`
+    : `The frozen source index exposes ${context.index.citableCount} citable external source(s), but this attribution did not resolve to any of them. These references are unsupported by this pack and cannot be verified here; that is not proof they do not exist, so a human must confirm them.`;
 }
 
 export function checkRl12b(context: QaContext): QaRuleResult {
   const hits: Finding[] = [];
+  const identityOnly: Finding[] = [];
   for (const entry of context.body) {
     const flat = flattenLine(entry.text);
     // A link a sentence attributes a claim to is RL12's business; reporting it
@@ -832,6 +925,8 @@ export function checkRl12b(context: QaContext): QaRuleResult {
       });
       if (provenance === "unresolved") {
         hits.push({ line: entry.line, excerpt: link.target });
+      } else if (provenance === "first_party_identity") {
+        identityOnly.push({ line: entry.line, excerpt: link.target });
       }
     }
   }
@@ -839,12 +934,18 @@ export function checkRl12b(context: QaContext): QaRuleResult {
     ? fail(
         "rl12b_unresolved_link",
         "rl12b_link_unresolved",
-        `${hits.length} link(s) point outside the customer's own web identity and could not be checked against the frozen research pack: ${excerptList(hits)}. The pack carries this project's frozen site origin (and its ICP conversion target when the profile has one), so a link to the customer's own site or a subdomain of it resolves here; these do not. This run retrieved nothing external, so the correct reading is that these destinations cannot be verified from our records — NOT that they are wrong or invented. A reviewer confirms them by hand.`,
+        `${hits.length} link(s) could not be checked against an exact frozen page or the customer's frozen web identity: ${excerptList(hits)}. The correct reading is that these destinations cannot be verified from our records — NOT that they are wrong or invented. A reviewer confirms them by hand.${identityOnly.length > 0 ? ` A further ${identityOnly.length} first-party link(s) resolve only as customer-owned identity; that proves ownership, not page contents.` : ""}`,
       )
+    : identityOnly.length > 0
+      ? pass(
+          "rl12b_unresolved_link",
+          "rl12b_first_party_identity_only",
+          `${identityOnly.length} first-party link(s) resolve to the frozen customer site/conversion identity: ${excerptList(identityOnly)}. This proves the destination is customer-owned; it does NOT verify that a page exists at the precise path or that its content supports any statement. Exact captured first-party pages carry a separate evidence role.`,
+        )
     : pass(
         "rl12b_unresolved_link",
         "rl12b_links_resolve",
-        "Every body link resolves to the frozen research pack — the customer's own site origin and conversion target are part of it — or the body carries none.",
+        "Every body link resolves to an exact frozen first-party/external page, or the body carries none.",
       );
 }
 
@@ -861,5 +962,7 @@ export function evaluateRedLineRules(
     checkRl12(context),
     checkRl12b(context),
     checkRl13(context),
+    checkBrandVoice(context),
+    checkClaimRestrictions(context),
   ];
 }

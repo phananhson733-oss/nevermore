@@ -1,5 +1,9 @@
 import { and, desc, eq, lt, or } from "drizzle-orm";
-import { canonicalize, type CanonicalValue } from "../hash.ts";
+import {
+  canonicalize,
+  contentHash as canonicalContentHash,
+  type CanonicalValue,
+} from "../hash.ts";
 import {
   flowShadowQaGates,
   flowShadowResearchPacks,
@@ -35,8 +39,15 @@ import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
  * new rules — which is exactly the property pinning the adapter version buys.
  * Advancing the adapter version instead would additionally break the request
  * contract's `flowAdapterVersion` literal for every client.
+ *
+ * 0.4.0 (Task 6 governed research): the manifest now freezes first-party page
+ * snapshots, canonical keyword/competitor/generative facts, external retrieval
+ * targets, and the customer content policy. Research packs now persist the
+ * retrieved content lineage and deterministic QA inputs. Runs frozen before
+ * this version cannot be replayed under the richer rules without pretending
+ * those inputs existed, so they intentionally fail the projection guard.
  */
-export const CONTENT_SHADOW_PROJECTION_VERSION = "content-shadow.0.3.2";
+export const CONTENT_SHADOW_PROJECTION_VERSION = "content-shadow.0.4.0";
 
 export interface FlowShadowRunRow {
   readonly id: string;
@@ -255,6 +266,13 @@ export class FlowShadowResearchPacksRepository extends Repository {
   async insert(
     values: FlowShadowResearchPackInsert,
   ): Promise<FlowShadowResearchPackRow> {
+    const canonicalPack = canonicalize(values.pack as CanonicalValue);
+    const derivedHash = canonicalContentHash(values.pack as CanonicalValue);
+    if (values.contentHash !== derivedHash) {
+      throw new Error(
+        "flow shadow research pack content hash does not match canonical pack",
+      );
+    }
     const [inserted] = await this.exec
       .insert(flowShadowResearchPacks)
       .values({
@@ -273,7 +291,11 @@ export class FlowShadowResearchPacksRepository extends Repository {
       { workspaceId: values.workspaceId, projectId: values.projectId },
       values.flowShadowRunId,
     );
-    if (existing && existing.content_hash === values.contentHash) {
+    if (
+      existing &&
+      existing.content_hash === values.contentHash &&
+      canonicalize(existing.pack as CanonicalValue) === canonicalPack
+    ) {
       return existing;
     }
     throw new Error(

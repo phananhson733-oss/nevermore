@@ -33,6 +33,7 @@ import {
   type EvidenceExcerpt,
   type LLMArtifactResult,
   type PromptCurrentMetadata,
+  type PromptResearchContext,
 } from "@sf/artifacts";
 import { parseIcp } from "@sf/engine";
 import { CRAWL_PROJECTION_LIMITS, subjectUrlOf } from "@sf/sources";
@@ -76,6 +77,11 @@ export interface ArtifactPromptRequest {
    * artifact generation leaves it absent and its prompt bytes are unchanged.
    */
   readonly contentBriefOutline?: ContentBriefOutline | null;
+  /**
+   * Governed research excerpts are allowed ONLY on the Content Shadow English
+   * draft. Every other artifact path passes `null`.
+   */
+  readonly researchContext?: PromptResearchContext | null;
 }
 
 interface RunRequest extends ArtifactPromptRequest {
@@ -722,5 +728,9 @@ export async function buildArtifactPromptInput(
     requiresValidationRollback:
       req.artifactType === "technical_ticket" && action.risk === "high",
     contentBriefOutline: req.contentBriefOutline ?? null,
+    researchContext:
+      req.artifactType === "english_blog_draft"
+        ? (req.researchContext ?? null)
+        : null,
   };
 }

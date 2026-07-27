@@ -507,6 +507,7 @@ describeDb("content opportunity vertical single chain", () => {
       diagRunId,
     );
     if (!sourceRun) throw new Error("chain diagnostic run is missing");
+    const frozenKeywordId = randomUUID();
     const frozen = buildContentShadowFrozenInput({
       inputs: {
         siteId: sourceRun.site_id,
@@ -517,7 +518,7 @@ describeDb("content opportunity vertical single chain", () => {
         contentBriefRevision: 1,
         competitorEntityIds: [],
         clusterKey: "content-vertical",
-        keywordEntityIds: [randomUUID()],
+        keywordEntityIds: [frozenKeywordId],
         generativeQueryEntityIds: [],
         firstParty: {
           siteOrigin: "https://content-vertical.example",
@@ -527,6 +528,41 @@ describeDb("content opportunity vertical single chain", () => {
           briefSections: [],
           targetKeywords: [],
           pageAssignment: "unassigned",
+        },
+        researchContext: {
+          firstPartyPageSnapshots: [],
+          searchKeywordFacts: [
+            {
+              id: frozenKeywordId,
+              display: "content vertical",
+              market: "US",
+              language: "en",
+              intent: null,
+              buyerStage: null,
+              cluster: "content-vertical",
+              mapping: {
+                decision: "unassigned",
+                mappedSitePageId: null,
+                reviewState: "unreviewed",
+                revision: 0,
+              },
+              lastSeen: "2026-07-27T00:00:00.000Z",
+              evidenceRefs: [],
+            },
+          ],
+          generativeKeywordFacts: [],
+          competitorFacts: [],
+          externalTargets: [],
+          contentPolicy: {
+            brandConstraints: [],
+            complianceConstraints: [],
+            prohibitedTerms: [],
+            claimRestrictions: [
+              "no_guarantees",
+              "no_unsupported_quantified_claims",
+              "no_unverified_superlatives",
+            ],
+          },
         },
       },
       outputLocale: "en",

@@ -77,6 +77,7 @@ describe("the reason this Task exists", () => {
             siteOrigin: "https://elsewhere.example",
             icpPrimaryConversionUrl: null,
           },
+          includeFirstPartyPageSnapshots: false,
         }),
       ),
     );
@@ -93,10 +94,13 @@ describe("what counts as first-party", () => {
     );
   });
 
-  it("resolves a link to a subdomain of the frozen site origin", () => {
+  it("does not infer ownership for an unverified subdomain", () => {
     const evaluation = evaluateDraftQa(qaInput(FIRST_PARTY_SUBDOMAIN_DRAFT));
 
-    expect(evaluation.verdict).toBe("passed");
+    expect(evaluation.verdict).toBe("needs_review");
+    expect(
+      claim(FIRST_PARTY_SUBDOMAIN_DRAFT, "rl12b_unresolved_link")?.status,
+    ).toBe("failed");
   });
 
   it("resolves a link to the frozen ICP conversion target on another host", () => {
@@ -108,10 +112,7 @@ describe("what counts as first-party", () => {
     expect(evaluateDraftQa(qaInput(draft)).verdict).toBe("passed");
   });
 
-  /**
-   * The suffix test is anchored on a leading dot on purpose. A host that merely
-   * ends with the origin's text belongs to someone else.
-   */
+  /** Hostname resemblance never proves ownership. */
   it("does NOT resolve a look-alike host that only ends with the origin text", () => {
     expect(claim(LOOKALIKE_HOST_DRAFT, "rl12b_unresolved_link")?.status).toBe(
       "failed",
@@ -243,7 +244,7 @@ describe("first-party identity is not evidence", () => {
     } as const;
 
     expect(resolveAttribution(index, own).role).toBe("first_party_identity");
-    expect(resolveLinkProvenance(index, own)).toBe("first_party");
+    expect(resolveLinkProvenance(index, own)).toBe("first_party_identity");
     expect(resolveAssertionSupport(index, [own])).toBeNull();
   });
 
@@ -278,19 +279,27 @@ describe("first-party identity is not evidence", () => {
     expect(typeof surface.resolveLinkProvenance).toBe("function");
   });
 
-  it("grades the first-party sources `A`, never `D`", () => {
-    const firstParty = fixturePack().sources.filter((source) =>
-      source.kind.startsWith("first_party"),
+  it("grades first-party identities `A` and captured pages `B`, never `D`", () => {
+    const firstPartyIdentity = fixturePack().sources.filter((source) =>
+      ["first_party_site", "first_party_conversion"].includes(source.kind),
     );
 
-    expect(firstParty.map((source) => source.kind)).toEqual([
+    expect(firstPartyIdentity.map((source) => source.kind)).toEqual([
       "first_party_site",
       "first_party_conversion",
     ]);
-    for (const source of firstParty) {
+    for (const source of firstPartyIdentity) {
       expect(source.authorityTier).toBe("A");
       expect(source.limitation).toContain("First-party identity only");
     }
+    const capturedPage = fixturePack().sources.find(
+      (source) => source.kind === "first_party_page",
+    );
+    expect(capturedPage).toMatchObject({
+      authorityTier: "B",
+      availability: "available",
+    });
+    expect(capturedPage?.contentText).not.toBeNull();
   });
 
   it("omits the conversion source entirely when the ICP carries none", () => {

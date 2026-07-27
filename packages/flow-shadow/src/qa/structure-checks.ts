@@ -7,6 +7,7 @@ import {
 import { citationEntry } from "./names.ts";
 import { longestCommonNgram } from "./ngram.ts";
 import { fail, pass, unevaluable, type QaRuleResult } from "./rule-types.ts";
+import { checkSourceOverlap } from "./source-overlap.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
 import {
   extractMarkdownLinks,
@@ -83,6 +84,10 @@ export const STRUCTURE_CHECKS: readonly StructureCheck[] = [
     id: "scdup_brief_overlap",
     title: "Draft is not a restatement of the brief",
   },
+  {
+    id: "scdup_source_overlap",
+    title: "Draft is distinct from frozen page content",
+  },
 ];
 
 interface Finding {
@@ -157,17 +162,16 @@ export function checkSc1(context: QaContext): QaRuleResult {
 }
 
 export function checkSc2(context: QaContext): QaRuleResult {
-  // The frozen pack carries no own-domain list and no internal-link candidates,
-  // so "internal" cannot be told from "external" here at all. Gating on a
-  // distinction we cannot make would only produce noise; this becomes a real
-  // gate in Slice 3, when publishing and link resolution exist.
+  // This port counts total links but does not yet turn frozen page/site
+  // provenance into an internal-link recommendation ladder. It stays advisory
+  // and unevaluable rather than pretending the total-link count is that ladder.
   const links = context.body.flatMap((entry) =>
     extractMarkdownLinks(entry.text).map((link) => link.target),
   );
   return unevaluable(
     "sc2_internal_link_density",
-    "sc2_no_own_domain_list",
-    `Advisory (never gates): the frozen research pack carries no own-domain or internal-link candidate list, so internal links cannot be distinguished from external ones. The body carries ${links.length} link(s) in total; the internal-link ladder is not gated in Slice 2.`,
+    "sc2_internal_classification_deferred",
+    `Advisory (never gates): this check counted ${links.length} body link(s) in total but does not classify them into an internal-link recommendation ladder from frozen page/site provenance. Internal-link density was not judged.`,
   );
 }
 
@@ -288,8 +292,8 @@ export function checkSc4(context: QaContext): QaRuleResult {
   );
   return unevaluable(
     "sc4_link_distribution",
-    "sc4_no_own_domain_list",
-    `Advisory (never gates): link distribution is defined over INTERNAL links, and the frozen pack carries no own-domain list to identify them. ${links.length} line(s) carry a link; distribution is not gated in Slice 2.`,
+    "sc4_internal_classification_deferred",
+    `Advisory (never gates): ${links.length} body line(s) carry a link, but this check does not classify frozen page/site provenance into internal-link recommendations. Internal-link distribution was not judged.`,
   );
 }
 
@@ -489,10 +493,16 @@ function referenceEntries(context: QaContext): readonly ReferenceEntry[] {
 export function checkSc9(context: QaContext): QaRuleResult {
   const present = context.referenceSections.length > 0;
   if (context.index.citableCount === 0) {
+    const externalPages = context.input.pack.sources.filter(
+      (source) => source.kind === "external_page",
+    );
+    const capturedBodies = externalPages.filter(
+      (source) => source.contentText !== null,
+    ).length;
     return pass(
       "sc9_sources_section",
       "sc9_no_citable_sources",
-      `Advisory (never gates): the frozen research pack carries no EXTERNAL citable source — every source in it is a first-party record (project record IDs plus this project's own site origin and conversion target) — so a Sources section is not expected. The draft ${present ? "carries one anyway" : "carries none under a heading recognised as a reference list"}.`,
+      `Advisory (never gates): the frozen source index exposes no citable external identity for a Sources list. The pack contains ${externalPages.length} external-page row(s), ${capturedBodies} with captured body text. The draft ${present ? "carries a reference-list section anyway" : "carries none under a heading recognised as a reference list"}.`,
     );
   }
   const entries = referenceEntries(context);
@@ -619,10 +629,20 @@ export function checkSc9b(context: QaContext): QaRuleResult {
     }
   }
   if (unsupported.length > 0) {
+    const externalPages = context.input.pack.sources.filter(
+      (source) => source.kind === "external_page",
+    );
+    const capturedBodies = externalPages.filter(
+      (source) => source.contentText !== null,
+    ).length;
+    const resolutionContext =
+      context.index.citableCount === 0
+        ? `The frozen source index exposes no citable external identity. The pack contains ${externalPages.length} external-page row(s), ${capturedBodies} with captured body text.`
+        : `The frozen source index exposes ${context.index.citableCount} citable external source(s), but these entries matched none of them.`;
     return fail(
       "sc9b_sources_resolve_to_pack",
       "sc9b_source_unresolved",
-      `${unsupported.length} of ${entries.length} reference entry(ies) resolve to no source in the frozen research pack (authority D): ${excerptList(unsupported)}. ${context.index.citableCount === 0 ? "This run retrieved no external research at all, so NOTHING external can be confirmed from our records — this is a statement that the reference is unverifiable here, not evidence that it was invented. A human has to check each entry." : "The pack is assembled only from records the customer confirmed, so an entry that does not resolve names a source we do not hold."}`,
+      `${unsupported.length} of ${entries.length} reference entry(ies) resolve to no source in the frozen research pack (authority D): ${excerptList(unsupported)}. ${resolutionContext} This means the entries are unsupported by this pack and unverifiable here; it is not evidence of invention or nonexistence. A human must confirm them.`,
     );
   }
   if (unverifiable.length > 0) {
@@ -639,7 +659,7 @@ export function checkSc9b(context: QaContext): QaRuleResult {
   return pass(
     "sc9b_sources_resolve_to_pack",
     "sc9b_sources_resolve",
-    `All ${entries.length} reference entry(ies) resolve: every entry under an evidence heading (sources, references, bibliography, works cited) resolves to the frozen research pack, and every entry under a navigation heading (further reading, see also) points at the customer's own frozen web identity.`,
+    `All ${entries.length} reference entry(ies) resolve: every entry under an evidence heading (sources, references, bibliography, works cited) resolves to external evidence in the frozen pack, and every entry under a navigation heading (further reading, see also) points at an accounted-for frozen page or web identity.`,
   );
 }
 
@@ -716,10 +736,10 @@ export function checkSc11(context: QaContext): QaRuleResult {
 /**
  * SC-DUP (new, not ported).
  *
- * RL3 used this dynamic program against SERP snippets, which SignalFrame does
- * not hold. It DOES hold the pinned brief revision, and the most realistic
- * failure of a shadow pipeline is a model that restates the brief and calls it
- * a draft. Advisory: a restatement is a quality problem, not a false statement.
+ * RL3 used this dynamic program against SERP snippets, which the frozen pack
+ * does not hold. It does hold the pinned brief revision, and a realistic shadow
+ * pipeline failure is a model that restates the brief and calls it a draft.
+ * Advisory: a restatement is a quality problem, not a false statement.
  */
 export function checkScDup(context: QaContext): QaRuleResult {
   const brief = context.input.briefMarkdown.trim();
@@ -763,5 +783,6 @@ export function evaluateStructureRules(
     checkSc10(context),
     checkSc11(context),
     checkScDup(context),
+    checkSourceOverlap(context),
   ];
 }

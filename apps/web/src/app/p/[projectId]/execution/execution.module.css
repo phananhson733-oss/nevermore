@@ -679,6 +679,174 @@
   line-height: 1.55;
 }
 
+.researchSources {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.researchSource {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+}
+
+.researchSourceHead {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.researchSourceLabel {
+  margin: 0 0 4px;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.researchSourceTitle {
+  margin: 0;
+  font-size: var(--sf-text-lg);
+  line-height: 1.3;
+}
+
+.researchSourceFacts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.researchSourceFacts > div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.researchSourceFacts dt,
+.researchDrawerFacts dt {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+}
+
+.researchSourceFacts dd,
+.researchDrawerFacts dd {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.researchSourceFacts a {
+  color: var(--sf-cobalt-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.researchSourceSummary {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--sf-text-base);
+  line-height: 1.6;
+}
+
+.researchSourceSummary strong {
+  font-size: var(--sf-text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.researchSourceAction {
+  justify-self: start;
+  min-height: 38px;
+  padding: 8px 12px;
+  color: var(--sf-fg);
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: var(--sf-text-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.researchSourceAction:hover,
+.researchSourceAction:focus-visible {
+  background: var(--sf-cobalt-soft);
+  border-color: color-mix(in srgb, var(--sf-accent) 30%, var(--sf-border));
+  outline: none;
+}
+
+.researchDrawer {
+  display: grid;
+  gap: 18px;
+}
+
+.drawerSourceList {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.drawerSourceItem {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.drawerSourceItem:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.researchDrawerFacts {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.researchDrawerFacts > div {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--sf-border);
+}
+
+.researchDrawerFacts > div:first-child {
+  border-top: 0;
+}
+
+.researchDrawerSection {
+  display: grid;
+  gap: 8px;
+}
+
+.researchDrawerSection h5 {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  line-height: 1.4;
+}
+
+.researchDrawerList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--sf-text-base);
+  line-height: 1.55;
+}
+
 /* ------------------------------------------------- review + publish ------- */
 
 .docActions {
@@ -1139,17 +1307,65 @@
 }
 
 .historyList li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
+  display: grid;
+  gap: 12px;
   padding: 12px 0;
   border-top: 1px solid var(--sf-border);
-  font-size: var(--sf-text-base);
 }
 
 .historyList li:first-child {
   border-top: 0;
+}
+
+.historyHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.historyHeader strong {
+  font-size: var(--sf-text-base);
+  line-height: 1.45;
+}
+
+.historyBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.historyFacts {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.historyFacts > div {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--sf-border);
+}
+
+.historyFacts > div:first-child {
+  border-top: 0;
+}
+
+.historyFacts dt {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+}
+
+.historyFacts dd {
+  margin: 0;
+  font-size: var(--sf-text-base);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------- responsive ---- */
@@ -1243,6 +1459,13 @@
   }
 
   .qaFacts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .researchSourceFacts > div,
+  .researchDrawerFacts > div,
+  .historyFacts > div {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
   }

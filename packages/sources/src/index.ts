@@ -162,6 +162,25 @@ export type { RobotsGroup } from "./crawl/robots.ts";
 export { parseSitemapXml, collectSitemap } from "./crawl/sitemap.ts";
 export type { SitemapDocument } from "./crawl/sitemap.ts";
 
+// Worker-only governed public-web research retrieval.
+export {
+  PUBLIC_WEB_RESEARCH_ADAPTER_VERSION,
+  PUBLIC_WEB_RESEARCH_CONTENT_HASH_METHOD,
+  PUBLIC_WEB_RESEARCH_LIMITS,
+  PUBLIC_WEB_RESEARCH_USER_AGENT,
+  retrievePublicWebResearch,
+} from "./research/retriever.ts";
+export type {
+  PublicWebResearchBatch,
+  PublicWebResearchFetch,
+  PublicWebResearchFetchInit,
+  PublicWebResearchOptions,
+  PublicWebResearchSnapshot,
+  PublicWebResearchStopReason,
+  PublicWebResearchUrlGuard,
+  PublicWebResearchUsage,
+} from "./research/retriever.ts";
+
 // GSC adapter (spec §7.4).
 export { createGscAdapter, gscAdapter } from "./gsc/adapter.ts";
 export type { GscConfig, GscParams, GscRaw } from "./gsc/adapter.ts";

@@ -35,6 +35,8 @@ import {
   FlowShadowQaGatesRepository,
   FlowShadowResearchPacksRepository,
   FlowShadowRunsRepository,
+  PageSnapshotsRepository,
+  SitePagesRepository,
   CONTENT_SHADOW_PROJECTION_VERSION,
   SourceConnectionsRepository,
   type CanonicalValue,
@@ -49,6 +51,8 @@ import {
 } from "@sf/db/schema";
 import {
   buildContentShadowInputManifest,
+  CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS,
+  extractContentBriefExternalTargets,
   CONTENT_SHADOW_ADAPTER_VERSION,
 } from "@sf/flow-shadow";
 import {
@@ -90,14 +94,61 @@ const BRIEF_MARKDOWN = [
   "",
   "- Intro",
   "- Core sections",
+  "",
+  "[Analyst note](https://example.net/research/onboarding-automation)",
 ].join("\n");
+const EXTERNAL_RESEARCH_URL = "https://example.net/research/onboarding-automation";
+const CRAWL_PAGE_EXTRACT_SCHEMA_VERSION = "crawl.page-extract.v1";
+const firstPartyPageUrl = (projectId: string, index = 0): string =>
+  `https://${projectId}.example.test/templates/onboarding-checklist${index === 0 ? "" : `-${index}`}`;
+const firstPartyProjection = (projectId: string, index = 0) => ({
+  fetchUrl: firstPartyPageUrl(projectId, index),
+  status: 200,
+  finalStatus: 200,
+  redirectChain: [],
+  canonicalTarget: null,
+  robotsIndexable: true,
+  robotsDirectives: [],
+  title: "Onboarding Checklist Template",
+  metaDescription: "A first-party template page for onboarding handoffs.",
+  h1: ["Onboarding Checklist Template"],
+  headings: ["Onboarding Checklist Template", "Handoff Steps"],
+  wordCount: 42,
+  internalOutlinks: [],
+  jsonLd: { types: [], errorCount: 0 },
+  sitemapMember: true,
+  bodyExcerpt:
+    index === 0
+      ? "Use this onboarding checklist to keep customer handoffs and milestones consistent."
+      : `First-party context page ${index}.`,
+  paragraphs:
+    index === 0
+      ? [
+          "Use this onboarding checklist to keep customer handoffs and milestones consistent.",
+          "Track owners, due dates, and dependencies in one shared workflow.",
+        ]
+      : [
+          `First-party context page ${index}.`,
+          "Track owners, due dates, and dependencies in one shared workflow.",
+        ],
+  responseMs: 123,
+  contentType: "text/html; charset=utf-8",
+} as const);
 
 const generateArtifact = vi.hoisted(() => vi.fn());
+const retrievePublicWebResearch = vi.hoisted(() => vi.fn());
 vi.mock("@sf/artifacts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sf/artifacts")>();
   return {
     ...actual,
     createOpenAIClient: () => ({ generateArtifact }),
+  };
+});
+vi.mock("@sf/sources", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sf/sources")>();
+  return {
+    ...actual,
+    retrievePublicWebResearch,
   };
 });
 
@@ -128,8 +179,9 @@ interface ShadowFixture {
   readonly diagnosticRunId: string;
   readonly asyncRunId: string;
   readonly flowShadowRunId: string;
-  readonly contentHash: string;
   readonly keywordId: string;
+  readonly crawlSnapshotId: string;
+  readonly crawlCapturedAt: string;
 }
 
 async function seedProject(db: Db): Promise<ProjectSeed> {
@@ -141,6 +193,10 @@ async function seedProject(db: Db): Promise<ProjectSeed> {
   const icpProfile = {
     productName: "Shadow fixture",
     siteLanguageCodes: ["en"],
+    brandConstraints: ["Use precise operational language."],
+    complianceConstraints: ["Do not promise guaranteed time savings."],
+    prohibitedTerms: ["best-in-class"],
+    claimRestrictions: ["Do not cite unsupported benchmarks."],
   };
   const icpContentHash = contentHash(icpProfile);
 
@@ -359,6 +415,7 @@ async function seedShadowChain(
     readonly projectionVersion?: string;
     readonly promptSetVersion?: string;
     readonly briefMarkdown?: string;
+    readonly firstPartyPageCount?: number;
   } = {},
 ): Promise<ShadowFixture> {
   const flowAdapterVersion =
@@ -454,7 +511,7 @@ async function seedShadowChain(
        id, workspace_id, project_id, display_keyword, normalized_keyword,
        market, language_tag, query_kind, cluster_key, mapping_decision,
        mapping_review_state, first_seen_at, last_seen_at
-     ) VALUES ($1,$2,$3,$4,$5,'US','en','search_query',$6,'new_asset','confirmed', now(), now())`,
+     ) VALUES ($1,$2,$3,$4,$5,'US','en','search_query',$6,'new_asset','confirmed',$7,$7)`,
     [
       keywordId,
       scope.workspaceId,
@@ -462,8 +519,48 @@ async function seedShadowChain(
       "onboarding checklist",
       "onboarding checklist",
       CLUSTER_KEY,
+      capturedAt,
     ],
   );
+  const firstPartyPageCount = options.firstPartyPageCount ?? 1;
+  const pageSnapshots: Array<{
+    readonly pageSnapshotId: string;
+    readonly url: string;
+    readonly urlHash: string;
+    readonly contentHash: string;
+  }> = [];
+  for (let index = 0; index < firstPartyPageCount; index += 1) {
+    const url = firstPartyPageUrl(scope.projectId, index);
+    const projection = firstPartyProjection(scope.projectId, index);
+    const extract = {
+      schemaVersion: CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
+      subjectUrl: url,
+      depth: 0,
+      projection,
+    } as const;
+    const sitePage = await new SitePagesRepository(db).upsertNormalizedUrl({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      siteId,
+      normalizedUrl: url,
+      templateKey: "checklist",
+    });
+    const pageSnapshot = await new PageSnapshotsRepository(db).create({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      sitePageId: sitePage.id,
+      dataSnapshotId: diagnostic.snapshotId,
+      contentHash: contentHash(extract as unknown as CanonicalValue),
+      extract,
+      capturedAt,
+    });
+    pageSnapshots.push({
+      pageSnapshotId: pageSnapshot.id,
+      url,
+      urlHash: sitePage.normalized_url_hash,
+      contentHash: pageSnapshot.content_hash,
+    });
+  }
 
   const asyncRunId = randomUUID();
   await db.insert(asyncRuns).values({
@@ -516,6 +613,55 @@ async function seedShadowChain(
         },
       ],
     }).outline,
+    researchContext: {
+      firstPartyPageSnapshots: [
+        ...pageSnapshots.map((page) => ({
+          pageSnapshotId: page.pageSnapshotId,
+          dataSnapshotId: diagnostic.snapshotId,
+          url: page.url,
+          urlHash: page.urlHash,
+          contentHash: page.contentHash,
+          capturedAt,
+        })),
+      ],
+      searchKeywordFacts: [
+        {
+          id: keywordId,
+          display: "onboarding checklist",
+          market: "US",
+          language: "en",
+          intent: null,
+          buyerStage: null,
+          cluster: CLUSTER_KEY,
+          mapping: {
+            decision: "new_asset",
+            mappedSitePageId: null,
+            reviewState: "confirmed",
+            revision: 0,
+          },
+          lastSeen: capturedAt,
+          evidenceRefs: [],
+        },
+      ],
+      generativeKeywordFacts: [],
+      competitorFacts: [],
+      externalTargets: extractContentBriefExternalTargets({
+        briefMarkdown: options.briefMarkdown ?? BRIEF_MARKDOWN,
+        firstPartyOrigins: [`https://${scope.projectId}.example.test`],
+        maxTargets: CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS.externalTargets,
+      }),
+      contentPolicy: {
+        brandConstraints: ["Use precise operational language."],
+        complianceConstraints: ["Do not promise guaranteed time savings."],
+        prohibitedTerms: ["best-in-class"],
+        claimRestrictions: [
+          "no_guarantees",
+          "no_unsupported_quantified_claims",
+          "no_unverified_superlatives",
+          "Do not cite unsupported benchmarks.",
+        ],
+      },
+    },
     flowAdapterVersion,
     promptSetVersion:
       options.promptSetVersion ?? CONTENT_SHADOW_PROMPT_SET_VERSION,
@@ -549,8 +695,9 @@ async function seedShadowChain(
     diagnosticRunId,
     asyncRunId,
     flowShadowRunId: shadowRun.id,
-    contentHash: frozenHash,
     keywordId,
+    crawlSnapshotId: diagnostic.snapshotId,
+    crawlCapturedAt: diagnostic.capturedAt,
   };
 }
 
@@ -595,6 +742,45 @@ describeDb("runContentShadow", () => {
         errorCode: null,
       },
     });
+    retrievePublicWebResearch.mockReset();
+    retrievePublicWebResearch.mockResolvedValue({
+      adapterVersion: "public_web_research.v1",
+      sources: [
+        {
+          requestedUrl: EXTERNAL_RESEARCH_URL,
+          finalUrl: EXTERNAL_RESEARCH_URL,
+          urlHash: contentHash({ url: EXTERNAL_RESEARCH_URL }),
+          contentHash: contentHash({ text: "External analyst source." }),
+          capturedAt: "2026-07-27T08:09:10.000Z",
+          title: "External analyst source",
+          excerpt: "External analyst source.",
+          contentText: "External analyst source.",
+          status: 200,
+          contentType: "text/html; charset=utf-8",
+          bodyBytes: 512,
+          wordCount: 3,
+          contentTruncated: false,
+          excerptTruncated: false,
+          responseMs: 8,
+          redirectChain: [],
+          availability: "available",
+          limitation: null,
+        },
+      ],
+      availability: "available",
+      limitation: null,
+      stopReason: null,
+      usage: {
+        targetCount: 1,
+        attemptedTargets: 1,
+        availableTargets: 1,
+        partialTargets: 0,
+        unavailableTargets: 0,
+        bodyBytes: 512,
+        redirectsFollowed: 0,
+        elapsedMs: 8,
+      },
+    });
   });
 
   it("appends research, draft and QA children then completes the canonical run", async () => {
@@ -609,10 +795,25 @@ describeDb("runContentShadow", () => {
     const pack = await new FlowShadowResearchPacksRepository(
       handle.db,
     ).findByRun(fixture.scope, fixture.flowShadowRunId);
-    expect(pack?.content_hash).toBe(fixture.contentHash);
+    expect(pack?.content_hash).toBe(
+      contentHash(pack?.pack as unknown as CanonicalValue),
+    );
     // Invariant 8: the persisted pack keeps the two observations separate.
     expect(pack?.pack["searchObservation"]).toBeDefined();
     expect(pack?.pack["generativeObservation"]).toBeDefined();
+    expect(
+      (pack?.pack["sources"] as ReadonlyArray<Record<string, unknown>>).some(
+        (source) => source["kind"] === "first_party_page",
+      ),
+    ).toBe(true);
+    expect(
+      (pack?.pack["sources"] as ReadonlyArray<Record<string, unknown>>).some(
+        (source) =>
+          source["kind"] === "external_page" &&
+          source["url"] === EXTERNAL_RESEARCH_URL,
+      ),
+    ).toBe(true);
+    expect(retrievePublicWebResearch).toHaveBeenCalledOnce();
 
     const artifacts = new ExecutionArtifactsRepository(handle.db);
     const draft = await artifacts.findLiveByActionType(
@@ -625,6 +826,21 @@ describeDb("runContentShadow", () => {
     expect(revision?.content_text).toBe(DRAFT_MARKDOWN);
     expect(revision?.generated_by).toBe("llm");
     expect(revision?.analysis_invocation_id).not.toBeNull();
+    const promptInput = generateArtifact.mock.calls[0]?.[0] as {
+      readonly researchContext: {
+        readonly sources: readonly Record<string, unknown>[];
+        readonly policy: Record<string, unknown>;
+      } | null;
+    };
+    expect(promptInput.researchContext?.sources).toHaveLength(2);
+    expect(
+      promptInput.researchContext?.sources.map((source) => source["kind"]),
+    ).toEqual(["external_page", "first_party_page"]);
+    expect(promptInput.researchContext?.policy).toMatchObject({
+      brandConstraints: ["Use precise operational language."],
+      complianceConstraints: ["Do not promise guaranteed time savings."],
+      prohibitedTerms: ["best-in-class"],
+    });
 
     // The model call is recorded under the shadow pipeline's own closed task.
     const invocations = await handle.pool.query(
@@ -699,6 +915,7 @@ describeDb("runContentShadow", () => {
       [fixture.flowShadowRunId],
     );
     expect(packs.rows[0].count).toBe(1);
+    expect(retrievePublicWebResearch).toHaveBeenCalledTimes(1);
 
     const gates = await new FlowShadowQaGatesRepository(handle.db).findByRun(
       fixture.scope,
@@ -718,6 +935,55 @@ describeDb("runContentShadow", () => {
       fixture.asyncRunId,
     );
     expect(run?.status).toBe("completed");
+  });
+
+  it("fails with input drift when the frozen first-party snapshot set changes", async () => {
+    const fixture = await seedShadowChain(handle);
+    const addedUrl = firstPartyPageUrl(fixture.scope.projectId, 99);
+    const addedProjection = firstPartyProjection(
+      fixture.scope.projectId,
+      99,
+    );
+    const addedExtract = {
+      schemaVersion: CRAWL_PAGE_EXTRACT_SCHEMA_VERSION,
+      subjectUrl: addedUrl,
+      depth: 0,
+      projection: addedProjection,
+    } as const;
+    const addedSitePage = await new SitePagesRepository(
+      handle.db,
+    ).upsertNormalizedUrl({
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      siteId: fixture.siteId,
+      normalizedUrl: addedUrl,
+      templateKey: "checklist",
+    });
+    await new PageSnapshotsRepository(handle.db).create({
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      sitePageId: addedSitePage.id,
+      dataSnapshotId: fixture.crawlSnapshotId,
+      contentHash: contentHash(addedExtract as unknown as CanonicalValue),
+      extract: addedExtract,
+      capturedAt: fixture.crawlCapturedAt,
+    });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const run = await new AsyncRunsRepository(handle.db).findById(
+      fixture.scope,
+      fixture.asyncRunId,
+    );
+    expect(run).toMatchObject({
+      status: "failed",
+      last_error_code: "CONTENT_SHADOW_INPUT_DRIFT",
+    });
+    expect(retrievePublicWebResearch).not.toHaveBeenCalled();
   });
 
   /**
@@ -979,6 +1245,92 @@ describeDb("runContentShadow", () => {
       briefSections: ["Objective", "Audience", "Outline"],
       targetKeywords: ["onboarding checklist"],
       pageAssignment: "new_asset",
+    });
+    expect(
+      (generateArtifact.mock.calls[0]?.[0] as {
+        readonly researchContext: { readonly sources: readonly unknown[] } | null;
+      }).researchContext?.sources,
+    ).toHaveLength(2);
+  });
+
+  it("prioritizes usable external research sources when the pack has more than eight first-party pages", async () => {
+    const fixture = await seedShadowChain(handle, { firstPartyPageCount: 10 });
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const promptInput = generateArtifact.mock.calls.at(-1)?.[0] as {
+      readonly researchContext: {
+        readonly sources: ReadonlyArray<Record<string, unknown>>;
+      } | null;
+    };
+    const kinds = promptInput.researchContext?.sources.map(
+      (source) => source["kind"],
+    );
+    expect(promptInput.researchContext?.sources).toHaveLength(8);
+    expect(kinds?.[0]).toBe("external_page");
+    expect(kinds).toContain("external_page");
+  });
+
+  it("persists an unavailable external research snapshot deterministically", async () => {
+    retrievePublicWebResearch.mockResolvedValueOnce({
+      adapterVersion: "public_web_research.v1",
+      sources: [
+        {
+          requestedUrl: EXTERNAL_RESEARCH_URL,
+          finalUrl: null,
+          urlHash: null,
+          contentHash: null,
+          capturedAt: "2026-07-27T08:09:10.000Z",
+          title: null,
+          excerpt: null,
+          contentText: null,
+          status: null,
+          contentType: null,
+          bodyBytes: 0,
+          wordCount: 0,
+          contentTruncated: false,
+          excerptTruncated: false,
+          responseMs: 15,
+          redirectChain: [],
+          availability: "unavailable",
+          limitation: "Public-web research rejected the target.",
+        },
+      ],
+      availability: "unavailable",
+      limitation: "Public-web research rejected the target.",
+      stopReason: null,
+      usage: {
+        targetCount: 1,
+        attemptedTargets: 1,
+        availableTargets: 0,
+        partialTargets: 0,
+        unavailableTargets: 1,
+        bodyBytes: 0,
+        redirectsFollowed: 0,
+        elapsedMs: 15,
+      },
+    });
+    const fixture = await seedShadowChain(handle);
+
+    await runContentShadow(ctx, {
+      runId: fixture.asyncRunId,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+    });
+
+    const pack = await new FlowShadowResearchPacksRepository(
+      handle.db,
+    ).findByRun(fixture.scope, fixture.flowShadowRunId);
+    const unavailable = (
+      pack?.pack["sources"] as ReadonlyArray<Record<string, unknown>>
+    ).find((source) => source["kind"] === "external_page");
+    expect(unavailable).toMatchObject({
+      availability: "unavailable",
+      limitation: "Public-web research rejected the target.",
     });
   });
 

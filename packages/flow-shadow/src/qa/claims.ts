@@ -2,9 +2,14 @@ import {
   firstPartyIdentityKind,
   type FirstPartyIdentityKind,
 } from "../first-party.ts";
-import type { AuthorityTier, ResearchPack } from "../types.ts";
+import type {
+  AuthorityTier,
+  ResearchPack,
+  ResearchSource,
+} from "../types.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
 import {
+  canonicalHostname,
   canonicalUrl,
   clauseBefore,
   flattenLine,
@@ -29,10 +34,10 @@ import {
  * catch.
  *
  * This chain answers a different question: "does the attribution RESOLVE to a
- * source the frozen research pack actually carries?" The pack is assembled only
- * from database rows the customer already confirmed, so a fabricated source has
- * nowhere to resolve to. Shape is used to FIND the attribution; only identity
- * decides whether it holds.
+ * source the frozen research pack actually carries?" The pack contains frozen
+ * project records and immutable page snapshots, so a name absent from that
+ * tuple has nowhere to resolve to. Shape is used to FIND the attribution; only
+ * an eligible source identity decides whether it holds.
  *
  * Two properties of this chain are load-bearing, and each was absent once:
  *
@@ -52,28 +57,41 @@ import {
  *    url, and an assertion that NAMES who it attributes to can only be
  *    supported by that name and by the link the name is written as.
  *
- * Slice 2 consequence, stated plainly: the deterministic pack retrieves nothing
- * external, so every `ref` it emits is an opaque SignalFrame uuid or the
- * customer's own web identity, and NO external attribution can resolve. That is
- * not a gap in this chain — it is the true statement that a Slice 2 draft has no
- * external research behind it, so any external citation in one is invented.
+ * Current governed packs can carry frozen `external_page` captures. Those page
+ * identities can resolve an attribution; project rows such as search keywords,
+ * content briefs and unfetched competitor identities cannot. Resolution is
+ * therefore evidence-specific rather than a proxy for whether the pack happens
+ * to contain a human-readable label.
  */
 
 export interface SourceIdentity {
+  readonly kind: string;
   readonly ref: string;
+  readonly label: string;
   readonly authority: AuthorityTier;
   readonly url: string | null;
+  /**
+   * Lowercase hostname with every label preserved. Ownership compares this
+   * field; `domain` may fold `www.` for citation lookup and must not be used to
+   * infer control.
+   */
+  readonly hostname: string | null;
   readonly domain: string | null;
   readonly name: string | null;
   /** Longest alphabetic token of `name`, for partial name matching. */
   readonly nameToken: string | null;
+  /** Frozen page bytes; identity-only rows carry `null`. */
+  readonly contentText: string | null;
+  /** The frozen body is only a prefix of the retrieved page. */
+  readonly contentTruncated: boolean;
   /**
    * Which half of the customer's own web identity this is, or `null` for an
    * outside source. A first-party identity answers "does this link point at the
    * customer's own property?" and NOTHING else — never "this claim is
    * supported".
    */
-  readonly firstParty: FirstPartyIdentityKind | null;
+  readonly firstParty: FirstPartyIdentityKind | "page" | null;
+  readonly role: SourceRole;
 }
 
 export interface SourceIndex {
@@ -84,12 +102,10 @@ export interface SourceIndex {
    *
    * First-party identities are deliberately excluded even though they carry
    * URLs. The rules that read this ask one question — "is there anything
-   * external in the pack to resolve a citation against?" — and the honest Slice
-   * 2 answer is still no. Counting the customer's own site here would flip every
-   * one of those messages from "this run retrieved no external research, so
-   * these references cannot be verified here" to "an attribution that does not
-   * resolve names a source we do not hold", i.e. from an honest limitation to an
-   * accusation the gate cannot support.
+   * external in the pack to resolve a citation against?" A governed pack can
+   * now answer yes through `external_page` captures. Counting the customer's own
+   * site would still corrupt that answer by presenting ownership as independent
+   * support.
    */
   readonly citableCount: number;
 }
@@ -106,73 +122,185 @@ function longestAlphaToken(name: string): string | null {
   return best;
 }
 
-function identityFor(
-  ref: string,
-  authority: AuthorityTier,
-  firstParty: FirstPartyIdentityKind | null,
-): SourceIdentity {
-  if (UUID.test(ref.trim())) {
+interface StructuralResearchSource {
+  readonly label?: unknown;
+  readonly url?: unknown;
+  readonly contentText?: unknown;
+}
+
+function identityFor(source: ResearchSource): SourceIdentity {
+  const fields = source as ResearchSource & StructuralResearchSource;
+  const kind = String(source.kind);
+  const firstParty: SourceIdentity["firstParty"] =
+    kind === "first_party_page"
+      ? "page"
+      : firstPartyIdentityKind(source.kind);
+  const contentText =
+    typeof fields.contentText === "string" &&
+    fields.contentText.trim().length > 0
+      ? fields.contentText
+      : null;
+  // `competitor` rows produced by the governed pack are project records, not
+  // retrieved evidence. A few pre-page-capture tests intentionally construct a
+  // human-readable competitor ref as a legacy citable source; keep that narrow
+  // compatibility seam without allowing UUID-backed competitor/search/brief
+  // rows to launder an attribution merely because they carry a display label.
+  const legacyExternalIdentity =
+    kind === "competitor" && !UUID.test(source.ref.trim());
+  const role: SourceRole =
+    kind === "external_page"
+      ? "external_evidence"
+      : kind === "first_party_page"
+      ? contentText === null
+        ? "first_party_identity"
+        : "first_party_evidence"
+      : firstParty !== null
+        ? "first_party_identity"
+        : legacyExternalIdentity
+          ? "external_evidence"
+          : "project_record";
+  const label =
+    typeof fields.label === "string" && fields.label.trim().length > 0
+      ? fields.label.trim()
+      : source.ref;
+  const address =
+    typeof fields.url === "string" && fields.url.trim().length > 0
+      ? fields.url.trim()
+      : source.ref;
+  const shared = {
+    kind,
+    ref: source.ref,
+    label,
+    authority: source.authorityTier,
+    contentText,
+    contentTruncated: source.contentTruncated === true,
+    firstParty,
+    role,
+  } as const;
+
+  if (UUID.test(address.trim()) && label === source.ref) {
     return {
-      ref,
-      authority,
+      ...shared,
       url: null,
+      hostname: null,
       domain: null,
       name: null,
       nameToken: null,
-      firstParty,
     };
   }
-  const url = canonicalUrl(ref);
-  if (url) {
+  // Frozen brief/search/generative/competitor identity rows describe project
+  // inputs. Their labels and opaque refs must never become attribution keys.
+  // Only retrieved external pages (plus the explicit legacy fixture seam above)
+  // can provide external evidence.
+  if (role === "project_record") {
     return {
-      ref,
-      authority,
-      url: url.url,
-      domain: url.domain,
+      ...shared,
+      url: null,
+      hostname: null,
+      domain: null,
       name: null,
       nameToken: null,
-      firstParty,
+    };
+  }
+  const url = canonicalUrl(address);
+  const hostname = canonicalHostname(address);
+  if (url && hostname) {
+    const name = normalizeName(label);
+    return {
+      ...shared,
+      url: url.url,
+      hostname,
+      domain: url.domain,
+      name: name.length > 0 && label !== address ? name : null,
+      nameToken:
+        name.length > 0 && label !== address ? longestAlphaToken(name) : null,
     };
   }
   // A first-party identity that is not URL-shaped resolves NOTHING: it is
-  // deliberately not given a name token. `normalizeFirstPartyUrl` already
-  // rejects such a value at the freeze boundary, so reaching here means the row
-  // was malformed, and a malformed origin must not become a fuzzy name matcher
-  // that confirms references by accident.
+  // deliberately not given a name token. A malformed origin must not become a
+  // fuzzy name matcher that confirms references by accident.
   if (firstParty !== null) {
     return {
-      ref,
-      authority,
+      ...shared,
       url: null,
+      hostname: null,
       domain: null,
       name: null,
       nameToken: null,
-      firstParty,
     };
   }
-  const name = normalizeName(ref);
+  const name = normalizeName(label);
   return {
-    ref,
-    authority,
+    ...shared,
     url: null,
+    hostname: null,
     domain: null,
     name: name.length > 0 ? name : null,
     nameToken: longestAlphaToken(name),
-    firstParty,
   };
 }
 
 export function buildSourceIndex(pack: ResearchPack): SourceIndex {
-  const identities = pack.sources.map((source) =>
-    identityFor(
-      source.ref,
-      source.authorityTier,
-      firstPartyIdentityKind(source.kind),
-    ),
-  );
+  const rawIdentities = pack.sources.map(identityFor);
+  // Source kind alone cannot override ownership. If an `external_page` row
+  // points at the frozen customer site (or exactly at another first-party
+  // identity such as the conversion target), demote it to a first-party role.
+  // This closes both URL and label/name laundering: the row cannot become
+  // independent evidence merely because an upstream target was misclassified.
+  const identities = rawIdentities.map((identity): SourceIdentity => {
+    if (identity.role !== "external_evidence" || identity.url === null) {
+      return identity;
+    }
+    const exactPageOwner = rawIdentities.find(
+      (owner) =>
+        (owner.firstParty === "page" || owner.firstParty === "site") &&
+        owner.hostname === identity.hostname &&
+        owner.url === identity.url,
+    );
+    const siteOwner = rawIdentities.find(
+      (owner) =>
+        owner.firstParty === "site" &&
+        owner.hostname !== null &&
+        identity.hostname !== null &&
+        identity.hostname === owner.hostname,
+    );
+    const exactIdentityOwner = rawIdentities.find(
+      (owner) =>
+        owner.role === "first_party_identity" &&
+        owner.hostname === identity.hostname &&
+        owner.url === identity.url,
+    );
+    if (
+      exactPageOwner === undefined &&
+      siteOwner === undefined &&
+      exactIdentityOwner === undefined
+    ) {
+      return identity;
+    }
+    // A conversion target can be a third-party scheduler. Exact ownership there
+    // proves only "this is the configured destination"; it does not turn the
+    // scheduler's page body into customer evidence. An exact-host site capture
+    // or exact frozen first-party page is different: its captured body can
+    // support a precise customer statement.
+    if (exactPageOwner === undefined && siteOwner === undefined) {
+      return {
+        ...identity,
+        firstParty: exactIdentityOwner?.firstParty ?? "conversion",
+        role: "first_party_identity",
+      };
+    }
+    return {
+      ...identity,
+      firstParty: "page",
+      role:
+        identity.contentText === null
+          ? "first_party_identity"
+          : "first_party_evidence",
+    };
+  });
   const citableCount = identities.filter(
     (identity) =>
-      identity.firstParty === null &&
+      identity.role === "external_evidence" &&
       (identity.url !== null || identity.nameToken !== null),
   ).length;
   return { identities, citableCount };
@@ -206,19 +334,38 @@ export interface Resolution {
   readonly authority: AuthorityTier;
 }
 
-export type SourceRole = "external_evidence" | "first_party_identity";
+export type SourceRole =
+  | "external_evidence"
+  | "first_party_evidence"
+  | "first_party_identity"
+  | "project_record";
 
 const UNRESOLVED: Resolution = { source: null, role: null, authority: "D" };
 
 function resolved(identity: SourceIdentity): Resolution {
   return {
     source: identity,
-    role:
-      identity.firstParty === null
-        ? "external_evidence"
-        : "first_party_identity",
+    role: identity.role,
     authority: identity.authority,
   };
+}
+
+function preferredIdentity(
+  identities: readonly SourceIdentity[],
+  predicate: (identity: SourceIdentity) => boolean,
+  roles: readonly SourceRole[] = [
+    "external_evidence",
+    "first_party_evidence",
+    "first_party_identity",
+    "project_record",
+  ],
+): SourceIdentity | null {
+  for (const role of roles) {
+    for (const identity of identities) {
+      if (identity.role === role && predicate(identity)) return identity;
+    }
+  }
+  return null;
 }
 
 /**
@@ -234,45 +381,63 @@ export function resolveAttribution(
 ): Resolution {
   if (attribution.kind === "url") {
     const url = canonicalUrl(attribution.value);
-    if (!url) return UNRESOLVED;
+    const hostname = canonicalHostname(attribution.value);
+    if (!url || !hostname) return UNRESOLVED;
+    // Customer ownership wins before any external-page row. Otherwise a frozen
+    // external target pointed at the customer's own host could relabel an
+    // internal page as independent evidence and launder a claim.
+    const exactFirstParty = preferredIdentity(
+      index.identities,
+      (identity) =>
+        identity.hostname === hostname && identity.url === url.url,
+      ["first_party_evidence", "first_party_identity"],
+    );
+    if (exactFirstParty !== null) return resolved(exactFirstParty);
+    // Arbitrary paths on the exact verified SITE hostname are first-party. DNS
+    // suffix resemblance is not an ownership proof: a docs/blog/app subdomain
+    // needs its own frozen site origin or exact first-party page identity.
+    // External sources and conversion targets are exact-only for the same
+    // reason, especially when the latter is a multi-tenant SaaS scheduler.
     for (const identity of index.identities) {
-      if (identity.url === url.url) return resolved(identity);
+      if (identity.firstParty !== "site" || identity.hostname === null) {
+        continue;
+      }
+      if (hostname === identity.hostname) {
+        return resolved(identity);
+      }
     }
-    for (const identity of index.identities) {
-      if (identity.domain === url.domain) return resolved(identity);
-    }
-    // Subdomains of the customer's own SITE ORIGIN, and only of that. A B2B site
-    // routinely serves its blog, docs and app from `blog.`/`docs.`/`app.`, and
-    // treating those as unresolvable would put every correct internal link back
-    // in front of a human. The suffix test is anchored on a leading dot, so
-    // `signalframe.example.attacker.test` does NOT match `signalframe.example`.
-    //
-    // It is applied to the `site` identity ALONE. Widening an external source's
-    // domain would let a draft cite `fake.forrester.example` on the strength of
-    // a pack entry for `forrester.example`; widening the ICP CONVERSION target
-    // is worse, because that url's host is routinely a third-party scheduler
-    // (`https://calendly.com/acme/demo`), and widening it would hand every other
-    // tenant of that scheduler the customer's own-property status.
-    for (const identity of index.identities) {
-      if (identity.firstParty !== "site" || identity.domain === null) continue;
-      if (url.domain.endsWith(`.${identity.domain}`)) return resolved(identity);
-    }
+    const exactExternal = preferredIdentity(
+      index.identities,
+      (identity) => identity.url === url.url,
+      ["external_evidence"],
+    );
+    if (exactExternal !== null) return resolved(exactExternal);
+    const sameExternalDomain = preferredIdentity(
+      index.identities,
+      (identity) => identity.domain === url.domain,
+      ["external_evidence"],
+    );
+    if (sameExternalDomain !== null) return resolved(sameExternalDomain);
     return UNRESOLVED;
   }
 
   const name = normalizeName(attribution.value);
   if (name.length === 0) return UNRESOLVED;
-  for (const identity of index.identities) {
-    if (identity.name !== null && identity.name === name) {
-      return resolved(identity);
-    }
-  }
+  const exactName = preferredIdentity(
+    index.identities,
+    (identity) => identity.name !== null && identity.name === name,
+  );
+  if (exactName !== null) return resolved(exactName);
   // Partial match, but only on a token long enough to be an identity: "the",
   // "data" and "2024" must never be able to resolve an attribution.
-  for (const identity of index.identities) {
-    if (identity.nameToken === null) continue;
-    if (name.split(" ").includes(identity.nameToken)) return resolved(identity);
-  }
+  const nameTokens = name.split(" ");
+  const partialName = preferredIdentity(
+    index.identities,
+    (identity) =>
+      identity.nameToken !== null &&
+      nameTokens.includes(identity.nameToken),
+  );
+  if (partialName !== null) return resolved(partialName);
   return UNRESOLVED;
 }
 
@@ -303,6 +468,24 @@ export function resolveAssertionSupport(
   return null;
 }
 
+/** The FIRST exact first-party page that may support a customer-owned claim. */
+export function resolveFirstPartyAssertionSupport(
+  index: SourceIndex,
+  attributions: readonly Attribution[],
+): AssertionSupport | null {
+  for (const attribution of attributions) {
+    if (attribution.kind !== "url") continue;
+    const resolution = resolveAttribution(index, attribution);
+    if (
+      resolution.role === "first_party_evidence" &&
+      resolution.source !== null
+    ) {
+      return { source: resolution.source, authority: resolution.authority };
+    }
+  }
+  return null;
+}
+
 /**
  * Where an address points, for the one rule that asks that question.
  *
@@ -311,7 +494,11 @@ export function resolveAssertionSupport(
  * customer's origin is that their own call to action stops reading as an
  * unverifiable outside reference — and it is a complete answer NOWHERE else.
  */
-export type LinkProvenance = "external_evidence" | "first_party" | "unresolved";
+export type LinkProvenance =
+  | "external_evidence"
+  | "first_party_evidence"
+  | "first_party_identity"
+  | "unresolved";
 
 export function resolveLinkProvenance(
   index: SourceIndex,
@@ -319,7 +506,10 @@ export function resolveLinkProvenance(
 ): LinkProvenance {
   const resolution = resolveAttribution(index, attribution);
   if (resolution.role === "external_evidence") return "external_evidence";
-  if (resolution.role === "first_party_identity") return "first_party";
+  if (resolution.role === "first_party_evidence")
+    return "first_party_evidence";
+  if (resolution.role === "first_party_identity")
+    return "first_party_identity";
   return "unresolved";
 }
 
@@ -484,6 +674,8 @@ export interface ClaimResolution {
 export interface ClaimHit {
   readonly line: number;
   readonly excerpt: string;
+  /** The complete sentence containing the assertion, for evidence alignment. */
+  readonly statement: string;
   readonly resolution: ClaimResolution;
 }
 
@@ -491,10 +683,10 @@ export interface ClaimHit {
  * Research-assertion patterns.
  *
  * These target EXTERNAL research specifically. "our data shows" / "the export
- * indicates" are deliberately absent: SignalFrame drafts are written over
- * first-party evidence that the prompt really did supply, and treating every
- * mention of the customer's own numbers as an unsupported claim would block
- * honest drafts while teaching reviewers to ignore the block.
+ * indicates" are deliberately absent: customer drafts can be written over
+ * frozen first-party evidence, and treating every mention of customer-owned
+ * numbers as an outside attribution would block honest drafts while teaching
+ * reviewers to ignore the block.
  */
 /**
  * Nouns that name a piece of external research. `analysis`/`analyses` are
@@ -589,24 +781,24 @@ const ENTITY_ASSERTION = new RegExp(
 );
 
 /**
- * `According to <Name>, <statistic>` and `Per <Name>, <statistic>`.
+ * `According to <Name>, ...` and `Per <Name>, ...`, with or without a number.
  *
  * The frame is an explicit attribution — the writer is telling the reader where
- * this came from — so it needs no research noun and no assertion verb. Without
- * this, `According to Forrester Research, 73% …` was blocked purely because the
- * company's last word happens to be a research noun, while `According to
- * Forrester, 73% …`, `According to Gartner, onboarding time fell 40%` and `Per
- * Forrester, churn is 42%` all passed. Three of the four are the same sentence.
+ * this came from — so it needs no research noun, assertion verb, or statistic.
+ * Without this, `According to Forrester Research, 73% …` was blocked purely
+ * because the company's last word happens to be a research noun, while
+ * `According to Forrester, structured milestones improve activation` and
+ * `Per Gartner, onboarding time fell` passed.
  *
- * A statistic is still required, and the name still goes through
- * `trimNameSpan`, so `According to the dashboard, 12 accounts stalled` (no
- * capitalized name) and `According to our own export, …` (possessive) stay out.
+ * The name still goes through `trimNameSpan`, so `According to the dashboard,
+ * accounts stalled` (no capitalized name) and `According to our own export, …`
+ * (possessive) stay out.
  */
 // The frame is spelled with an explicit case class rather than carried on the
 // `i` flag: `i` would also fold `[A-Z]` in the name group, and the whole point
 // of that group is that the name is CAPITALIZED.
 const ATTRIBUTION_FRAME_ASSERTION =
-  /\b(?:[Aa]ccording\s+[Tt]o|[Pp]er)\s+((?:[A-Z][A-Za-z0-9&.'’-]*)(?:[ ](?:[A-Z][A-Za-z0-9&.'’-]*|&)){0,7})[^.!?]{0,80}?\d/dg;
+  /\b(?:[Aa]ccording\s+[Tt]o|[Pp]er)\s+((?:[A-Z][A-Za-z0-9&.'’-]*)(?:[ ](?:[A-Z][A-Za-z0-9&.'’-]*|&)){0,7})/dg;
 
 /** Heads that are a pronoun or a possessive: never an outside authority. */
 const PRONOUN_HEAD =
@@ -804,6 +996,7 @@ export function findUnsupportedClaims(
       hits.push({
         line: entry.line,
         excerpt: match.excerpt,
+        statement: flat.text.slice(sentence.start, sentence.end).trim(),
         resolution: { support, authority: support?.authority ?? "D" },
       });
     }

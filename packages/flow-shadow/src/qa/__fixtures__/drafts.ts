@@ -372,10 +372,8 @@ export const SCAFFOLD_CTA_DRAFT = [
 ].join("\n");
 
 /**
- * The same draft, linking to a SUBDOMAIN of the frozen site origin. B2B sites
- * routinely serve their blog, docs and app from `blog.`/`docs.`/`app.`, and
- * treating those as unverifiable would put every correct internal link back in
- * front of a human.
+ * The same draft, linking to an UNVERIFIED SUBDOMAIN of the frozen site origin.
+ * Hostname suffix resemblance alone cannot prove the customer controls it.
  */
 export const FIRST_PARTY_SUBDOMAIN_DRAFT = SCAFFOLD_CTA_DRAFT.replace(
   "https://signalframe.example/demo",

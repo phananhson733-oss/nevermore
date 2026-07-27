@@ -1684,19 +1684,73 @@
       "advisoryTag": "advisory only",
       "claimBasis": "Basis:",
       "claimUnnamed": "Unnamed check",
-      "scopeNote": "{advisory} of the {total} checks in this run are advisory: they are recorded as passed even when they match, and never change the conclusion above. Not checked this run: duplication against outside content, facts beyond this project's own data, and brand tone.",
+      "scopeNote": "{advisory} of the {total} checks in this run are advisory: they are recorded as passed even when they match, and never change the conclusion above. This run does check source overlap, brand voice, and claim restrictions; it still does not invent missing evidence for the draft.",
+      "researchConclusion": "Start with the conclusion: {external} page source(s) can support an external claim, {firstParty} can support customer-owned product facts, {partial} page source(s) are only partially usable, and {unavailable} page source(s) are currently unavailable. {pages} source(s) carry actual page content, while {identity} additional identity or metric records remain traceable in the full sources drawer.",
+      "research": {
+        "openAll": "View all sources",
+        "drawerTitle": "Full sources and evidence",
+        "drawerSubtitle": "{count} source(s) returned for this run, listed exactly as the payload carried them.",
+        "unavailable": "Not provided for this source",
+        "noSources": "This run returned no research sources.",
+        "availability": {
+          "available": "Available",
+          "partial": "Partially available",
+          "unavailable": "Unavailable"
+        },
+        "citability": {
+          "externalEvidence": "Can support an external evidence claim",
+          "firstPartyFacts": "Supports only customer-owned product facts",
+          "identityOnly": "Identity or metric record, not an independent fact source",
+          "partialPage": "Page evidence is incomplete and can only support part of the claim",
+          "unavailable": "Cannot support a factual claim right now"
+        },
+        "fields": {
+          "url": "Source URL",
+          "capturedAt": "Captured at",
+          "citability": "Citability",
+          "hash": "Evidence hash",
+          "hashMethod": "Hash method",
+          "bodyCompleteness": "Body completeness",
+          "summary": "Source summary",
+          "previewCompleteness": "Preview completeness",
+          "evidenceRefs": "Evidence refs",
+          "metrics": "Fetch metrics",
+          "limitation": "Full limitation"
+        },
+        "hashMethod": {
+          "sha256_canonical_extract": "SHA-256 (canonical extract)",
+          "sha256_normalized_text": "SHA-256 (normalized text)"
+        },
+        "bodyCompleteness": {
+          "complete": "Complete",
+          "truncated": "Body truncated"
+        },
+        "previewCompleteness": {
+          "complete": "Full preview",
+          "truncated": "Preview is truncated"
+        },
+        "metricsSummary": "HTTP {status} · {contentType} · {bodyBytes} bytes · {wordCount} words · {responseMs} ms · {redirects} redirects",
+        "kind": {
+          "content_brief": "Content brief",
+          "search_query": "Search query",
+          "generative_query": "Generative query",
+          "competitor": "Competitor record",
+          "first_party_site": "First-party site",
+          "first_party_conversion": "First-party conversion page",
+          "first_party_page": "First-party page",
+          "external_page": "External page"
+        }
+      },
       "blocker": {
         "title": "Cannot pass review yet",
         "body": "{count} reference(s) in this draft cannot be checked against the research records frozen for this run. This is not a run failure — the run finished, and both the draft and the records were produced and are readable.",
         "more": "and {count} more, listed under the checks above",
-        "why": "Why: this run's research records are assembled only from data already confirmed inside this project, with no outside retrieval. An outside source cited in the draft therefore has nothing here to be checked against. That is the boundary of this stage, not a defect.",
+        "why": "Why: this run distinguishes frozen external pages, first-party pages, and identity records. A blocked citation means the claim is not sufficiently supported by the frozen evidence, or the source type itself cannot stand alone as proof. That is a judgment boundary, not a run defect.",
         "next": "Next: send the draft back for more evidence, or write a new revision without the references that cannot be checked and run it again."
       },
       "facts": {
         "frozenRecords": "Frozen records",
         "recordCount": "{count}",
-        "externalCitable": "Citable outside sources",
-        "externalCitableValue": "0 — no outside retrieval this run",
         "connectedSources": "Connected data sources",
         "noConnectedSources": "None connected",
         "frozenHash": "Frozen input fingerprint"
@@ -1727,8 +1781,11 @@
         "sc10_table_integrity": "Tables that read correctly",
         "sc11_banned_headings": "Headings a reader would skip past",
         "scdup_brief_overlap": "The draft restates the brief instead of writing",
+        "scdup_source_overlap": "The draft overlaps too closely with a frozen source",
         "citability_geo": "How quotable this reads to an AI answer",
-        "brief-outline": "Coverage of the topics this cluster committed to"
+        "brief-outline": "Coverage of the topics this cluster committed to",
+        "rl14_brand_voice": "Brand voice falls outside the customer's stated boundary",
+        "rl15_claim_restrictions": "A claim goes beyond what the sources allow"
       },
       "revisionNumber": "Revision {revision}",
       "humanState": {
@@ -1786,20 +1843,25 @@
         "changesNone": "None"
       },
       "history": {
-        "button": "Versions this screen holds",
-        "buttonSuperseded": "Versions this screen holds (review superseded)",
-        "title": "Versions this screen holds",
-        "subtitle": "Two points, not a full history: there is no operation that lists every revision of a deliverable.",
-        "currentRow": "Revision {revision} — the text on screen now",
-        "judgedRow": "Revision {revision} — the revision the automated checks judged",
-        "briefRow": "Content brief revision {revision} — frozen into this run",
-        "noRevision": "No revision has been produced yet",
-        "noVerdict": "No automated verdict yet",
+        "button": "View revision history",
+        "buttonSuperseded": "View revision history (review superseded)",
+        "title": "Full revision history",
+        "subtitle": "Each revision is listed with its timestamp, status, frozen hash, and review decision. This drawer only shows revision records the payload actually returned.",
+        "revisionRow": "Revision {revision}",
+        "empty": "This payload has not exposed full revision records yet, so this screen does not invent them.",
+        "fieldUnavailable": "Not provided for this revision",
         "badgeCurrent": "Current",
         "badgeJudged": "Judged",
         "badgeSuperseded": "Superseded",
-        "badgeBrief": "Frozen brief",
-        "note": "Every revision keeps its own body, frozen input fingerprint and the automated verdict of its time; a revision is never overwritten."
+        "fields": {
+          "generatedBy": "Generated by",
+          "hash": "Frozen hash",
+          "createdAt": "Created at",
+          "validation": "Validation errors",
+          "note": "Revision note"
+        },
+        "validation": "{count} validation errors",
+        "note": "The screen no longer compresses current, judged, and brief into a three-row pseudo-history. If a revision record did not arrive, it is stated as missing."
       }
     },
     "publish": {

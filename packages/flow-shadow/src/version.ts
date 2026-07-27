@@ -10,7 +10,7 @@
  *
  * The adapter is an EXTRACTION, never a runtime import: nothing in this package
  * may reach into the sibling `gengrowth-flow-mvp` repository at runtime
- * (Slice 2 red line D). Ported logic is rewritten here as dependency-free
- * TypeScript.
+ * (Slice 2 red line D). Ported logic is rewritten here as self-contained,
+ * dependency-free TypeScript; hostname ownership never widens by DNS suffix.
  */
-export const CONTENT_SHADOW_ADAPTER_VERSION = "content-shadow-adapter.0.3.0";
+export const CONTENT_SHADOW_ADAPTER_VERSION = "content-shadow-adapter.0.4.0";

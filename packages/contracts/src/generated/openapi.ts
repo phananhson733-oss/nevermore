@@ -2540,14 +2540,14 @@ export interface components {
             /** @description Defaults to the confirmed brief's current revision when omitted. */
             contentBriefRevision?: number;
             /** @constant */
-            flowAdapterVersion?: "content-shadow-adapter.0.3.0";
+            flowAdapterVersion?: "content-shadow-adapter.0.4.0";
             competitorEntityIds?: components["schemas"]["Uuid"][];
             searchCluster: components["schemas"]["ContentShadowSearchCluster"];
             /** @description Generative answer observation, kept separate from search demand observation. */
             generativeQueryEntityIds?: components["schemas"]["Uuid"][];
             outputLocale: components["schemas"]["LocaleCode"];
             /** @constant */
-            capabilityContractVersion: "content-shadow.0.3.0";
+            capabilityContractVersion: "content-shadow.0.4.0";
         };
         ContentShadowQaClaim: {
             claimId: string;
@@ -2572,17 +2572,51 @@ export interface components {
             detail: string;
         };
         /**
-         * @description first_party_site and first_party_conversion are the customer's OWN web identity.
-         *     They are first-party records like every other pack source, so they grade A, but they
-         *     are never evidence for a claim: they only let the QA gate tell a link to the
-         *     customer's property apart from an outside citation.
+         * @description Customer-readable, body-free projection of one immutable research source.
+         *     Full retrieved content and URL-hash internals remain server-side in the
+         *     append-only pack. This shape exposes the bounded excerpt, reproducible content-hash
+         *     method and independent body/excerpt truncation flags needed for honest review without
+         *     leaking the complete page body. Runtime refinement requires contentHash and
+         *     contentHashMethod to be present or null together; contentTruncated requires partial
+         *     availability plus an auditable hash; excerptTruncated requires a retained excerpt and
+         *     cannot accompany unavailable. Every URL is HTTP(S)-only with no embedded credentials.
          */
         ContentShadowAuthoritySource: {
             /** @enum {string} */
-            kind: "content_brief" | "search_query" | "generative_query" | "competitor" | "first_party_site" | "first_party_conversion";
+            kind: "content_brief" | "search_query" | "generative_query" | "competitor" | "first_party_site" | "first_party_conversion" | "first_party_page" | "external_page";
             ref: string;
+            label: string;
+            /**
+             * Format: uri
+             * @description Public HTTP(S) URL; embedded credentials are rejected by runtime refinement.
+             */
+            url: string | null;
             /** @enum {string} */
-            authorityTier: "A" | "B" | "C" | "D";
+            availability: "available" | "partial" | "unavailable";
+            /** @enum {string} */
+            authorityTier: "A" | "B" | "C";
+            /** Format: date-time */
+            capturedAt: string | null;
+            contentHash: string | null;
+            /**
+             * @description Reproducible normalization method for contentHash; null when no body hash exists.
+             * @enum {string|null}
+             */
+            contentHashMethod: "sha256_canonical_extract" | "sha256_normalized_text" | null;
+            /** @description True when the retained immutable research body is only a bounded prefix. */
+            contentTruncated: boolean;
+            excerpt: string | null;
+            /** @description True when excerpt is only a bounded customer-readable preview. */
+            excerptTruncated: boolean;
+            metrics: {
+                status: number | null;
+                contentType: string | null;
+                bodyBytes: number | null;
+                wordCount: number | null;
+                responseMs: number | null;
+                redirectChain: string[];
+            } | null;
+            evidenceRefs: string[];
             limitation: string | null;
         };
         /**
@@ -2606,6 +2640,90 @@ export interface components {
             targetKeywords: string[];
             /** @enum {string} */
             pageAssignment: "existing_page" | "new_asset" | "mixed" | "unassigned";
+        };
+        ContentShadowFirstPartyPageSnapshotIdentity: {
+            pageSnapshotId: components["schemas"]["Uuid"];
+            dataSnapshotId: components["schemas"]["Uuid"];
+            /**
+             * Format: uri
+             * @description Public HTTP(S) snapshot URL without embedded credentials.
+             */
+            url: string;
+            urlHash: string;
+            contentHash: string;
+            /** Format: date-time */
+            capturedAt: string;
+        };
+        ContentShadowKeywordMapping: {
+            /** @enum {string} */
+            decision: "unassigned" | "existing_page" | "new_asset";
+            mappedSitePageId: components["schemas"]["Uuid"] | null;
+            /** @enum {string} */
+            reviewState: "unreviewed" | "confirmed";
+            revision: number;
+        };
+        ContentShadowKeywordFact: {
+            id: components["schemas"]["Uuid"];
+            display: string;
+            market: string;
+            language: components["schemas"]["LocaleCode"];
+            intent: string | null;
+            buyerStage: string | null;
+            cluster: string | null;
+            mapping: components["schemas"]["ContentShadowKeywordMapping"];
+            /** Format: date-time */
+            lastSeen: string;
+            evidenceRefs: string[];
+        };
+        ContentShadowCompetitorFact: {
+            id: components["schemas"]["Uuid"];
+            domain: string;
+            name: string | null;
+            /** @enum {string} */
+            status: "candidate" | "approved" | "excluded";
+            /** @enum {string|null} */
+            relationship: "direct" | "indirect" | "status_quo" | "benchmark" | "publisher" | null;
+            scopes: ("positioning" | "product_capability" | "keyword_gap" | "content" | "serp_visibility")[];
+            revision: number;
+        };
+        ContentShadowExternalResearchTarget: {
+            ref: string;
+            kind: string;
+            /**
+             * Format: uri
+             * @description Public HTTP(S) research target; embedded credentials are rejected by runtime refinement.
+             */
+            url: string;
+            label: string;
+        };
+        ContentShadowContentPolicy: {
+            brandConstraints: string[];
+            complianceConstraints: string[];
+            prohibitedTerms: string[];
+            claimRestrictions: string[];
+        };
+        /**
+         * @description Complete canonical research identity frozen into the run's content address. The
+         *     search, generative and competitor fact ids exactly equal their legacy identity sets;
+         *     every collection is deterministic, bounded and unique by its canonical id/ref.
+         */
+        ContentShadowResearchContext: {
+            firstPartyPageSnapshots: components["schemas"]["ContentShadowFirstPartyPageSnapshotIdentity"][];
+            searchKeywordFacts: components["schemas"]["ContentShadowKeywordFact"][];
+            generativeKeywordFacts: components["schemas"]["ContentShadowKeywordFact"][];
+            competitorFacts: components["schemas"]["ContentShadowCompetitorFact"][];
+            externalTargets: components["schemas"]["ContentShadowExternalResearchTarget"][];
+            contentPolicy: components["schemas"]["ContentShadowContentPolicy"];
+        };
+        ContentShadowArtifactRevisionSummary: {
+            revision: number;
+            contentHash: string;
+            generatedBy: string;
+            editorId: components["schemas"]["Uuid"] | null;
+            note: string | null;
+            validationErrorCount: number;
+            /** Format: date-time */
+            createdAt: string;
         };
         /**
          * @description Read-only Content Shadow run projection. Status is projected from the canonical async
@@ -2644,6 +2762,7 @@ export interface components {
                 generativeQueryEntityIds: components["schemas"]["Uuid"][];
                 firstParty: components["schemas"]["ContentShadowFirstPartyIdentity"];
                 contentBriefOutline: components["schemas"]["ContentShadowBriefOutline"];
+                researchContext: components["schemas"]["ContentShadowResearchContext"];
             };
             research: {
                 packId: components["schemas"]["Uuid"];
@@ -2668,6 +2787,8 @@ export interface components {
                 /** @description The revision this run installed or evaluated; 0 before it installs one. */
                 currentRevision: number;
                 contentText: string | null;
+                /** @description Complete immutable artifact revision ledger, newest first. */
+                revisionHistory: components["schemas"]["ContentShadowArtifactRevisionSummary"][];
             } | null;
             qa: {
                 gateId: components["schemas"]["Uuid"];
@@ -2730,10 +2851,10 @@ export interface components {
             /**
              * @description The reviewer's explicit statement that they read every finding needing human
              *     confirmation. Must be true when the automated verdict is needs_review; a
-             *     one-click pass would make that verdict decorative.
-             * @default false
+             *     one-click pass would make that verdict decorative. Omission is interpreted as
+             *     false by the request validator.
              */
-            acknowledgeFindings: boolean;
+            acknowledgeFindings?: boolean;
         };
         /**
          * @description What the review did, as facts that can be checked against the record rather than as

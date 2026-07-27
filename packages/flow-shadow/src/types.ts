@@ -1,11 +1,12 @@
 /**
  * Pure contracts for the pinned Content Shadow Flow adapter (Slice 2).
  *
- * Everything in this package is deterministic and dependency-free: no clock, no
- * randomness, no network, no database, and no runtime import of the sibling
- * `gengrowth-flow-mvp` repository (Slice 2 red line D). The adapter's job is
- * scaffolding + verification, not generation: the English draft itself is minted
- * by the pinned markdown LLM envelope in `@sf/artifacts` (Slice 2 decision D1).
+ * Everything in this package is deterministic and I/O-free: no clock,
+ * randomness, network, filesystem, database, or runtime import of the sibling
+ * `gengrowth-flow-mvp` repository (Slice 2 red line D). Host ownership is
+ * exact-host and dependency-free. The adapter's job is scaffolding +
+ * verification, not generation: the English draft itself is minted by the
+ * pinned markdown LLM envelope in `@sf/artifacts` (Slice 2 decision D1).
  */
 
 /**
@@ -72,6 +73,126 @@ export interface ContentShadowFirstPartyIdentity {
   readonly icpPrimaryConversionUrl: string | null;
 }
 
+/**
+ * The append-only first-party page snapshot identity frozen into a Content
+ * Shadow run. The body is deliberately not part of the manifest: these fields
+ * are enough to prove which immutable snapshot a later bounded body came from,
+ * while keeping the frozen tuple compact.
+ */
+export interface ContentShadowFirstPartyPageSnapshotIdentity {
+  readonly pageSnapshotId: string;
+  readonly dataSnapshotId: string;
+  /**
+   * Absolute http(s) URL on `firstParty.siteOrigin`'s exact hostname. The
+   * manifest builder enforces this before hashing; a subdomain needs its own
+   * verified site origin rather than implicit suffix ownership.
+   */
+  readonly url: string;
+  readonly urlHash: string;
+  readonly contentHash: string;
+  readonly capturedAt: string;
+}
+
+export type ContentShadowKeywordMappingDecision = Exclude<
+  ContentShadowPageAssignment,
+  "mixed"
+>;
+export type ContentShadowKeywordMappingReviewState =
+  | "unreviewed"
+  | "confirmed";
+
+/**
+ * The exact mapping state that shaped a keyword fact at accept time. Keeping
+ * revision and review state beside the decision prevents a later operator edit
+ * from silently changing the research supplied to a replayed run.
+ */
+export interface ContentShadowKeywordMapping {
+  readonly decision: ContentShadowKeywordMappingDecision;
+  readonly mappedSitePageId: string | null;
+  readonly reviewState: ContentShadowKeywordMappingReviewState;
+  readonly revision: number;
+}
+
+/**
+ * One frozen SearchQuery or GenerativeQuery fact. Search and generative facts
+ * live in distinct collections in `ContentShadowResearchContext`; they are
+ * never merged into a synthetic demand metric.
+ */
+export interface ContentShadowKeywordFact {
+  readonly id: string;
+  readonly display: string;
+  readonly market: string;
+  readonly language: string;
+  readonly intent: string | null;
+  readonly buyerStage: string | null;
+  readonly cluster: string | null;
+  readonly mapping: ContentShadowKeywordMapping;
+  readonly lastSeen: string;
+  readonly evidenceRefs: readonly string[];
+}
+
+export type ContentShadowCompetitorStatus =
+  | "candidate"
+  | "approved"
+  | "excluded";
+export type ContentShadowCompetitorRelationship =
+  | "direct"
+  | "indirect"
+  | "status_quo"
+  | "benchmark"
+  | "publisher";
+export type ContentShadowCompetitorScope =
+  | "positioning"
+  | "product_capability"
+  | "keyword_gap"
+  | "content"
+  | "serp_visibility";
+
+/** Frozen competitor fact and public-web targeting identity. */
+export interface ContentShadowCompetitorFact {
+  readonly id: string;
+  readonly domain: string;
+  readonly name: string | null;
+  readonly status: ContentShadowCompetitorStatus;
+  readonly relationship: ContentShadowCompetitorRelationship | null;
+  readonly scopes: readonly ContentShadowCompetitorScope[];
+  readonly revision: number;
+}
+
+/**
+ * A public URL explicitly approved as research input. `ref` is a caller-stable
+ * identity (not an array index), so target order cannot change the hash or
+ * detach a retrieved page from the target that authorized it.
+ */
+export interface ContentShadowExternalResearchTarget {
+  readonly ref: string;
+  readonly kind: string;
+  readonly url: string;
+  readonly label: string;
+}
+
+/** Frozen brand, compliance and claim boundaries supplied to drafting + QA. */
+export interface ContentShadowContentPolicy {
+  readonly brandConstraints: readonly string[];
+  readonly complianceConstraints: readonly string[];
+  readonly prohibitedTerms: readonly string[];
+  readonly claimRestrictions: readonly string[];
+}
+
+/**
+ * Deterministic research facts frozen into the run's input address. Every
+ * collection is canonicalized (stable sort + de-duplication) by the manifest
+ * builder before hashing.
+ */
+export interface ContentShadowResearchContext {
+  readonly firstPartyPageSnapshots: readonly ContentShadowFirstPartyPageSnapshotIdentity[];
+  readonly searchKeywordFacts: readonly ContentShadowKeywordFact[];
+  readonly generativeKeywordFacts: readonly ContentShadowKeywordFact[];
+  readonly competitorFacts: readonly ContentShadowCompetitorFact[];
+  readonly externalTargets: readonly ContentShadowExternalResearchTarget[];
+  readonly contentPolicy: ContentShadowContentPolicy;
+}
+
 export interface ContentShadowFrozenInput {
   readonly primaryFindingId: string;
   readonly sourceActionId: string;
@@ -94,6 +215,11 @@ export interface ContentShadowFrozenInput {
    * real input change that the existing hash guard must catch (decision O-2).
    */
   readonly contentBriefOutline: ContentShadowBriefOutline;
+  /**
+   * Frozen research facts, snapshot identities, explicit external targets and
+   * content-policy boundaries. This is part of the content-hash tuple.
+   */
+  readonly researchContext: ContentShadowResearchContext;
   readonly flowAdapterVersion: string;
   readonly promptSetVersion: string;
   readonly projectionVersion: string;
@@ -130,6 +256,7 @@ export interface ContentShadowInputManifest {
   readonly generativeQueryEntityIds: readonly string[];
   readonly firstParty: ContentShadowFirstPartyIdentity;
   readonly contentBriefOutline: ContentShadowBriefOutline;
+  readonly researchContext: ContentShadowResearchContext;
   readonly flowAdapterVersion: string;
   readonly promptSetVersion: string;
   readonly projectionVersion: string;
@@ -170,17 +297,21 @@ export interface BriefOutlineProjectionStats {
  * nowhere to have come from. If pack assembly ever produces `D`, that is a bug
  * meaning it invented a source, not a new tier to support.
  *
- * Slice 2's deterministic pack emits only `A`: every source in it is a
- * first-party SignalFrame record the customer already confirmed.
+ * The governed research pack emits `A` for confirmed project identities and
+ * `B` for auditable public page captures. `C` remains available for
+ * user-provided/generated provenance, but `D` is statically excluded from
+ * `ResearchSource`.
  */
 export type AuthorityTier = "A" | "B" | "C" | "D";
+/** A pack source can only carry a real, provenance-backed evidence grade. */
+export type ResearchAuthorityTier = Exclude<AuthorityTier, "D">;
 
 /**
- * `first_party_site` / `first_party_conversion` are the customer's OWN web
- * identity, and they are the only pack sources that carry a resolvable URL in
- * Slice 2. They are first-party records like every other source here, so they
- * grade `A`; they are deliberately NOT counted as external evidence, because a
- * draft cannot cite the customer's own site as proof of an outside claim.
+ * `first_party_site`, `first_party_conversion` and `first_party_page` describe
+ * the customer's own web identity. They are deliberately distinct from
+ * `external_page`: a draft cannot cite the customer's own site as proof of an
+ * outside claim, even when a frozen page body is useful for supported product
+ * facts and duplicate checks.
  */
 export type ResearchSourceKind =
   | "content_brief"
@@ -188,30 +319,139 @@ export type ResearchSourceKind =
   | "generative_query"
   | "competitor"
   | "first_party_site"
-  | "first_party_conversion";
+  | "first_party_conversion"
+  | "first_party_page"
+  | "external_page";
+
+export type ResearchSourceAvailability =
+  | "available"
+  | "partial"
+  | "unavailable";
+
+/**
+ * The method names are explicit because a content hash without its
+ * normalization algorithm cannot be independently reproduced.
+ */
+export type ResearchContentHashMethod =
+  | "sha256_canonical_extract"
+  | "sha256_normalized_text";
+
+/** Bounded transport/retrieval measurements; never a merged demand metric. */
+export interface ResearchSourceMetrics {
+  readonly status: number | null;
+  readonly contentType: string | null;
+  readonly bodyBytes: number | null;
+  readonly wordCount: number | null;
+  readonly responseMs: number | null;
+  /** Redirect order is causal and is therefore preserved, not sorted. */
+  readonly redirectChain: readonly string[];
+}
+
+/**
+ * A body already retrieved by an outer adapter or loaded from an immutable
+ * first-party PageSnapshot. `buildResearchPack` consumes this value as data; it
+ * never performs retrieval itself.
+ */
+export interface RetrievedResearchSnapshot {
+  /** PageSnapshot id for first party; frozen external target ref otherwise. */
+  readonly ref: string;
+  readonly kind: "first_party_page" | "external_page";
+  readonly label: string;
+  /** The URL whose retrieval was authorized by the frozen manifest. */
+  readonly requestedUrl: string;
+  /** Terminal URL after safe redirects, or the first-party snapshot URL. */
+  readonly url: string | null;
+  readonly availability: ResearchSourceAvailability;
+  readonly capturedAt: string | null;
+  readonly urlHash: string | null;
+  readonly contentHash: string | null;
+  readonly contentHashMethod: ResearchContentHashMethod | null;
+  readonly contentText: string | null;
+  /**
+   * True when the retrieval adapter retained only a bounded prefix of the
+   * normalized body. This is distinct from `excerptTruncated`: a bounded
+   * preview does not mean the auditable body projection is incomplete.
+   */
+  readonly contentTruncated: boolean;
+  readonly excerpt: string | null;
+  /** True when `excerpt` is only a bounded preview of a longer body. */
+  readonly excerptTruncated: boolean;
+  readonly metrics: ResearchSourceMetrics | null;
+  readonly evidenceRefs: readonly string[];
+  readonly limitation: string | null;
+}
 
 export interface ResearchSource {
   readonly kind: ResearchSourceKind;
-  /** The canonical SignalFrame id this source resolves to. */
+  /** Canonical project id, PageSnapshot id or frozen external target ref. */
   readonly ref: string;
-  readonly authorityTier: AuthorityTier;
+  readonly authorityTier: ResearchAuthorityTier;
+  readonly label: string;
+  readonly url: string | null;
+  /**
+   * Adapter availability, downgraded from `available` to `partial` only when
+   * the pack itself truncates the retained body projection.
+   */
+  readonly availability: ResearchSourceAvailability;
+  readonly capturedAt: string | null;
+  readonly urlHash: string | null;
+  readonly contentHash: string | null;
+  readonly contentHashMethod: ResearchContentHashMethod | null;
+  /**
+   * Bounded, immutable research text supplied to drafting and duplicate checks.
+   * Null means no body was supplied; it never means an empty page was observed.
+   */
+  readonly contentText: string | null;
+  /**
+   * True when the retained body was truncated by either the retrieval adapter
+   * or this pack's deterministic body-text bounds.
+   */
+  readonly contentTruncated: boolean;
+  readonly excerpt: string | null;
+  /**
+   * True when the retained excerpt is only a bounded preview. This does not by
+   * itself increment `ResearchRetrievalSummary.truncatedSourceCount`.
+   */
+  readonly excerptTruncated: boolean;
+  readonly metrics: ResearchSourceMetrics | null;
+  readonly evidenceRefs: readonly string[];
   /** Honest statement of what this source does NOT yet prove; never null-padded. */
   readonly limitation: string | null;
 }
 
 /**
- * Search observation for the frozen cluster. Carries identities only: Task 4
- * asserts no demand metric, because no metric was read. Search and generative
- * observation stay in two separate shapes (invariant 8).
+ * Search observation for the frozen cluster. Search and generative observation
+ * stay in two separate shapes (invariant 8); neither shape invents a shared
+ * volume or citation metric.
  */
 export interface ResearchSearchObservation {
   readonly clusterKey: string;
   readonly keywordEntityIds: readonly string[];
+  readonly keywordFacts: readonly ContentShadowKeywordFact[];
 }
 
 /** Generative (AI answer) observation for the frozen query set. */
 export interface ResearchGenerativeObservation {
   readonly generativeQueryEntityIds: readonly string[];
+  readonly keywordFacts: readonly ContentShadowKeywordFact[];
+}
+
+/** Counts derived only from frozen targets and supplied snapshot values. */
+export interface ResearchRetrievalSummary {
+  readonly targetCount: number;
+  readonly suppliedSnapshotCount: number;
+  readonly availableSourceCount: number;
+  readonly partialSourceCount: number;
+  readonly unavailableSourceCount: number;
+  readonly firstPartyPageCount: number;
+  readonly externalPageCount: number;
+  readonly contentSourceCount: number;
+  readonly contentCharacterCount: number;
+  /**
+   * Sources whose BODY projection was truncated by the retrieval adapter or
+   * by the pack. Preview-only (`excerptTruncated`) sources are not counted.
+   */
+  readonly truncatedSourceCount: number;
 }
 
 /** The deterministic research pack persisted in `flow_shadow_research_packs`. */
@@ -234,6 +474,9 @@ export interface ResearchPack {
   readonly searchObservation: ResearchSearchObservation;
   readonly generativeObservation: ResearchGenerativeObservation;
   readonly competitorEntityIds: readonly string[];
+  readonly competitorFacts: readonly ContentShadowCompetitorFact[];
+  readonly policy: ContentShadowContentPolicy;
+  readonly retrievalSummary: ResearchRetrievalSummary;
   readonly sources: readonly ResearchSource[];
   readonly limitations: readonly string[];
 }

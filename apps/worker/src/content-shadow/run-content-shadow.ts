@@ -2,6 +2,7 @@ import {
   ActionsRepository,
   AnalysisInvocationsRepository,
   AsyncRunsRepository,
+  CompetitorsRepository,
   contentHash,
   CONTENT_SHADOW_PROJECTION_VERSION,
   DiagnosticRunsRepository,
@@ -14,11 +15,15 @@ import {
   IcpProfilesRepository,
   KeywordsRepository,
   MAX_KEYWORD_ENTITY_BATCH,
+  PageSnapshotsRepository,
   SitesRepository,
   toRunAttempt,
   type ArtifactRow,
   type CanonicalValue,
+  type CompetitorEntityRow,
   type FlowShadowRunRow,
+  type KeywordEntityRow,
+  type PageSnapshotWithSitePageIdentityRow,
   type ProjectScope,
 } from "@sf/db";
 import {
@@ -36,14 +41,31 @@ import {
   buildContentShadowInputManifest,
   buildResearchPack,
   CONTENT_SHADOW_ADAPTER_VERSION,
+  ContentShadowFirstPartyIdentityError,
+  ContentShadowFirstPartyPageOwnershipError,
+  ContentShadowObservationSeparationError,
+  CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS,
+  ContentShadowResearchContextBoundsError,
+  ContentShadowResearchContextConflictError,
   evaluateDraftQa,
+  extractContentBriefExternalTargets,
   qaClaimsToJson,
   researchPackToJson,
   type BriefOutlineProjectionStats,
+  type ContentShadowFirstPartyIdentity,
   type ContentShadowInputManifest,
+  type ContentShadowResearchContext,
+  type ResearchPack,
+  type RetrievedResearchSnapshot,
 } from "@sf/flow-shadow";
 import { parseIcp } from "@sf/engine";
+import {
+  PUBLIC_WEB_RESEARCH_CONTENT_HASH_METHOD,
+  retrievePublicWebResearch,
+  type PublicWebResearchSnapshot,
+} from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
+import { parseCrawlPageExtract } from "../collection/materialize-crawl-pages.ts";
 import {
   buildArtifactPromptInput,
   artifactContentHash,
@@ -90,6 +112,8 @@ export interface ContentShadowJobPayload {
 export const CONTENT_SHADOW_DRAFT_TASK = "content_shadow_draft" as const;
 export const CONTENT_SHADOW_ARTIFACT_TYPE = "english_blog_draft" as const;
 export const CONTENT_SHADOW_INPUT_DRIFT = "CONTENT_SHADOW_INPUT_DRIFT";
+export const CONTENT_SHADOW_RESEARCH_INTEGRITY =
+  "CONTENT_SHADOW_RESEARCH_INTEGRITY";
 
 /** A permanent failure whose stable code is surfaced on the canonical run. */
 export class ContentShadowPermanentError extends Error {
@@ -188,6 +212,285 @@ interface LiveShadowInputs {
    * a draft that merely restates the brief.
    */
   readonly briefMarkdown: string;
+  readonly pageSnapshots: readonly PageSnapshotWithSitePageIdentityRow[];
+}
+
+function profileStringArray(profile: unknown, key: string): readonly string[] {
+  if (typeof profile !== "object" || profile === null) return [];
+  const value = (profile as Record<string, unknown>)[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function keywordFact(row: KeywordEntityRow) {
+  return {
+    id: row.id,
+    display: row.display_keyword,
+    market: row.market,
+    language: row.language_tag,
+    intent: row.intent,
+    buyerStage: row.buyer_stage,
+    cluster: row.cluster_key,
+    mapping: {
+      decision: row.mapping_decision,
+      mappedSitePageId: row.mapped_site_page_id,
+      reviewState: row.mapping_review_state,
+      revision: row.mapping_revision,
+    },
+    lastSeen: row.last_seen_at,
+    evidenceRefs: [],
+  } as const;
+}
+
+function competitorFact(row: CompetitorEntityRow) {
+  return {
+    id: row.id,
+    domain: row.domain,
+    name: row.name,
+    status: row.review_status,
+    relationship: row.relationship,
+    scopes: [...row.analysis_scope],
+    revision: row.revision,
+  } as const;
+}
+
+function competitorExternalTargets(
+  competitors: readonly ReturnType<typeof competitorFact>[],
+) {
+  return competitors
+    .filter((competitor) => competitor.status !== "excluded")
+    .map((competitor) => ({
+      ref: `competitor-root:${competitor.id}`,
+      kind: "competitor_root",
+      url: `https://${competitor.domain}/`,
+      label: competitor.name ?? competitor.domain,
+    }));
+}
+
+function compareAscii(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function frozenExternalTargets(input: {
+  readonly briefMarkdown: string;
+  readonly firstParty: ContentShadowFirstPartyIdentity;
+  readonly competitors: readonly ReturnType<typeof competitorFact>[];
+}): ContentShadowResearchContext["externalTargets"] {
+  const conversion = input.firstParty.icpPrimaryConversionUrl;
+  const briefTargets = extractContentBriefExternalTargets({
+    briefMarkdown: input.briefMarkdown,
+    firstPartyOrigins: [input.firstParty.siteOrigin],
+    maxTargets: CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS.externalTargets,
+  }).filter((target) => conversion === null || target.url !== conversion);
+  const candidates = [
+    ...briefTargets.map((target) => ({ priority: 0, target })),
+    ...competitorExternalTargets(input.competitors).map((target) => ({
+      priority: 1,
+      target,
+    })),
+  ].sort(
+    (left, right) =>
+      left.priority - right.priority ||
+      compareAscii(left.target.url, right.target.url) ||
+      compareAscii(left.target.ref, right.target.ref),
+  );
+  const byUrl = new Map<string, (typeof candidates)[number]["target"]>();
+  for (const candidate of candidates) {
+    if (!byUrl.has(candidate.target.url)) {
+      byUrl.set(candidate.target.url, candidate.target);
+    }
+  }
+  return [...byUrl.values()].slice(
+    0,
+    CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS.externalTargets,
+  );
+}
+
+function frozenCrawlSnapshotId(manifest: Record<string, unknown>): string {
+  const snapshots = manifest["snapshots"];
+  if (!Array.isArray(snapshots)) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "the frozen diagnosis has no readable crawl snapshot lineage",
+    );
+  }
+  const crawlIds = snapshots.flatMap((value) => {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value)
+    ) {
+      return [];
+    }
+    const snapshot = value as Record<string, unknown>;
+    return snapshot["provider"] === "crawl" &&
+      typeof snapshot["snapshotId"] === "string" &&
+      snapshot["snapshotId"].length > 0
+      ? [snapshot["snapshotId"]]
+      : [];
+  });
+  if (crawlIds.length !== 1) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "the frozen diagnosis must identify exactly one crawl snapshot",
+    );
+  }
+  return crawlIds[0]!;
+}
+
+function uniqueNonEmpty(values: readonly string[]): readonly string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function firstPartySnapshot(
+  page: PageSnapshotWithSitePageIdentityRow,
+): RetrievedResearchSnapshot | null {
+  if (page.canonical_extract === null) return null;
+  try {
+    const extract = parseCrawlPageExtract(JSON.parse(page.canonical_extract));
+    if (extract.projection.fetchUrl !== page.normalized_url) return null;
+    const sections = uniqueNonEmpty([
+      extract.projection.title ?? "",
+      extract.projection.metaDescription ?? "",
+      ...extract.projection.h1,
+      ...extract.projection.headings,
+      extract.projection.bodyExcerpt ?? "",
+      ...extract.projection.paragraphs,
+    ]);
+    const contentText = sections.length > 0 ? sections.join("\n\n") : null;
+    return {
+      ref: page.page_snapshot_id,
+      kind: "first_party_page",
+      label: extract.projection.title ?? page.normalized_url,
+      requestedUrl: page.normalized_url,
+      url: page.normalized_url,
+      availability: "available",
+      capturedAt: page.captured_at,
+      urlHash: page.normalized_url_hash,
+      contentHash: page.content_hash,
+      contentHashMethod: "sha256_canonical_extract",
+      contentText,
+      excerpt: extract.projection.bodyExcerpt,
+      contentTruncated: false,
+      excerptTruncated: false,
+      metrics: null,
+      evidenceRefs: [
+        `data-snapshot:${page.data_snapshot_id}`,
+        `page-snapshot:${page.page_snapshot_id}`,
+      ],
+      limitation:
+        "Content text is a bounded human-text projection of the frozen canonical extract; contentHash still identifies the full canonical extract bytes.",
+    } as RetrievedResearchSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function isReplayManifestValidationError(error: unknown): boolean {
+  return (
+    error instanceof ContentShadowFirstPartyIdentityError ||
+    error instanceof ContentShadowFirstPartyPageOwnershipError ||
+    error instanceof ContentShadowObservationSeparationError ||
+    error instanceof ContentShadowResearchContextBoundsError ||
+    error instanceof ContentShadowResearchContextConflictError
+  );
+}
+
+function externalResearchSnapshot(
+  targetRef: string,
+  label: string,
+  requestedUrl: string,
+  snapshot: PublicWebResearchSnapshot,
+): RetrievedResearchSnapshot {
+  return {
+    ref: targetRef,
+    kind: "external_page",
+    label,
+    requestedUrl,
+    url: snapshot.finalUrl,
+    availability: snapshot.availability,
+    capturedAt: snapshot.capturedAt,
+    urlHash: snapshot.urlHash,
+    contentHash: snapshot.contentHash,
+    contentHashMethod:
+      snapshot.contentHash === null
+        ? null
+        : PUBLIC_WEB_RESEARCH_CONTENT_HASH_METHOD,
+    contentText: snapshot.contentText,
+    contentTruncated: snapshot.contentTruncated,
+    excerpt: snapshot.excerpt,
+    excerptTruncated: snapshot.excerptTruncated,
+    metrics: {
+      status: snapshot.status,
+      contentType: snapshot.contentType,
+      bodyBytes: snapshot.bodyBytes,
+      wordCount: snapshot.wordCount,
+      responseMs: snapshot.responseMs,
+      redirectChain: [...snapshot.redirectChain],
+    },
+    evidenceRefs: [`external-target:${targetRef}`],
+    limitation: snapshot.limitation,
+  } as RetrievedResearchSnapshot;
+}
+
+function promptResearchContext(pack: ResearchPack) {
+  const usablePageSources = pack.sources
+    .filter(
+      (source) =>
+        (source.kind === "first_party_page" || source.kind === "external_page") &&
+        source.url !== null &&
+        source.capturedAt !== null &&
+        source.contentHash !== null &&
+        (source.excerpt !== null || source.contentText !== null),
+    );
+  const externalSources = usablePageSources.filter(
+    (source) => source.kind === "external_page",
+  );
+  const firstPartySources = usablePageSources.filter(
+    (source) => source.kind === "first_party_page",
+  );
+  const sources = [...externalSources, ...firstPartySources]
+    .slice(0, 8)
+    .map((source) => ({
+      sourceRef: source.ref,
+      kind: source.kind,
+      label: source.label,
+      url: source.url!,
+      availability: source.availability,
+      authorityTier: source.authorityTier,
+      capturedAt: source.capturedAt!,
+      contentHash: source.contentHash!,
+      excerpt: source.excerpt ?? source.contentText!,
+      evidenceRefs: [...source.evidenceRefs],
+      limitation: source.limitation ?? "No additional limitation recorded.",
+    }));
+  return {
+    sources,
+    policy: {
+      brandConstraints: [...pack.policy.brandConstraints],
+      complianceConstraints: [...pack.policy.complianceConstraints],
+      prohibitedTerms: [...pack.policy.prohibitedTerms],
+      claimRestrictions: [...pack.policy.claimRestrictions],
+    },
+  } as const;
+}
+
+function assertStoredResearchPackIntegrity(
+  packRow: { readonly content_hash: string; readonly pack: Record<string, unknown> },
+): ResearchPack {
+  const derived = contentHash(packRow.pack as CanonicalValue);
+  if (derived !== packRow.content_hash) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_RESEARCH_INTEGRITY,
+      "the stored Content Shadow research pack no longer matches its canonical content hash",
+    );
+  }
+  return packRow.pack as unknown as ResearchPack;
 }
 
 /**
@@ -360,37 +663,131 @@ async function loadLiveShadowInputs(
       "the frozen diagnosis' ICP profile is missing",
     );
   }
+  const generativeRows =
+    frozen.generativeQueryEntityIds.length === 0
+      ? []
+      : await new KeywordsRepository(ctx.db).listByIds(scope, [
+          ...new Set(frozen.generativeQueryEntityIds),
+        ]);
+  if (
+    generativeRows.length !== new Set(frozen.generativeQueryEntityIds).size
+  ) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "a frozen generative keyword is missing from this project",
+    );
+  }
+  for (const keyword of generativeRows) {
+    if (keyword.query_kind !== "generative_query") {
+      throw new ContentShadowPermanentError(
+        CONTENT_SHADOW_INPUT_DRIFT,
+        "a frozen generative keyword is no longer a GenerativeQuery entity",
+      );
+    }
+  }
+  const competitorRows =
+    frozen.competitorEntityIds.length === 0
+      ? []
+      : await new CompetitorsRepository(ctx.db).listByIds(scope, [
+          ...new Set(frozen.competitorEntityIds),
+        ]);
+  if (competitorRows.length !== new Set(frozen.competitorEntityIds).size) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "a frozen competitor is missing from this project",
+    );
+  }
+  const crawlSnapshotId = frozenCrawlSnapshotId(diagnosticRun.input_manifest);
+  const pageSnapshots = await new PageSnapshotsRepository(
+    ctx.db,
+  ).listByDataSnapshotWithSitePageIdentity(scope, crawlSnapshotId);
+  if (
+    pageSnapshots.some(
+      (page) =>
+        page.site_id !== diagnosticRun.site_id ||
+        page.data_snapshot_id !== crawlSnapshotId,
+    )
+  ) {
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "the frozen diagnosis' first-party page snapshot lineage is inconsistent",
+    );
+  }
+  const firstParty: ContentShadowFirstPartyIdentity = {
+    siteOrigin: site.origin,
+    icpPrimaryConversionUrl:
+      parseIcp(icpProfile.profile).primaryConversion?.targetUrl ?? null,
+  };
+  const competitorFacts = competitorRows.map(competitorFact);
+  const researchContext: ContentShadowResearchContext = {
+    firstPartyPageSnapshots: pageSnapshots
+      .slice(0, CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS.firstPartyPageSnapshots)
+      .map((page) => ({
+        pageSnapshotId: page.page_snapshot_id,
+        dataSnapshotId: page.data_snapshot_id,
+        url: page.normalized_url,
+        urlHash: page.normalized_url_hash,
+        contentHash: page.content_hash,
+        capturedAt: page.captured_at,
+      })),
+    searchKeywordFacts: keywordRows.map(keywordFact),
+    generativeKeywordFacts: generativeRows.map(keywordFact),
+    competitorFacts,
+    externalTargets: frozenExternalTargets({
+      briefMarkdown: briefRevision.content_text ?? "",
+      firstParty,
+      competitors: competitorFacts,
+    }),
+    contentPolicy: {
+      brandConstraints: profileStringArray(icpProfile.profile, "brandConstraints"),
+      complianceConstraints: profileStringArray(
+        icpProfile.profile,
+        "complianceConstraints",
+      ),
+      prohibitedTerms: profileStringArray(icpProfile.profile, "prohibitedTerms"),
+      claimRestrictions: [
+        "no_guarantees",
+        "no_unsupported_quantified_claims",
+        "no_unverified_superlatives",
+        ...profileStringArray(icpProfile.profile, "claimRestrictions"),
+      ],
+    },
+  };
 
   // Rebuild from live values + currently pinned versions. An advanced adapter,
   // prompt set or projection version changes the hash by construction.
-  const manifest = buildContentShadowInputManifest({
-    primaryFindingId: finding.id,
-    sourceActionId: action.id,
-    sourceDiagnosticRunId: action.source_diagnostic_run_id,
-    contentBriefArtifactId: brief.id,
-    contentBriefRevision: row.content_brief_revision,
-    competitorEntityIds: frozen.competitorEntityIds,
-    searchCluster: {
-      clusterKey: frozen.clusterKey,
-      keywordEntityIds: frozen.keywordEntityIds,
-    },
-    generativeQueryEntityIds: frozen.generativeQueryEntityIds,
-    firstParty: {
-      siteOrigin: site.origin,
-      // `parseIcp` is the one shared reader of the profile jsonb, so this side
-      // cannot disagree with the accepting service about what the value is.
-      icpPrimaryConversionUrl:
-        parseIcp(icpProfile.profile).primaryConversion?.targetUrl ?? null,
-    },
-    contentBriefOutline: extraction.outline,
-    // All three pinned versions come from the CURRENTLY pinned constants, never
-    // from the row under audit: reading a version back out of the frozen row
-    // would make its drift check tautologically true.
-    flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
-    promptSetVersion: CONTENT_SHADOW_PROMPT_SET_VERSION,
-    projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
-    outputLocale: frozen.outputLocale,
-  });
+  let manifest: ContentShadowInputManifest;
+  try {
+    manifest = buildContentShadowInputManifest({
+      primaryFindingId: finding.id,
+      sourceActionId: action.id,
+      sourceDiagnosticRunId: action.source_diagnostic_run_id,
+      contentBriefArtifactId: brief.id,
+      contentBriefRevision: row.content_brief_revision,
+      competitorEntityIds: frozen.competitorEntityIds,
+      searchCluster: {
+        clusterKey: frozen.clusterKey,
+        keywordEntityIds: frozen.keywordEntityIds,
+      },
+      generativeQueryEntityIds: frozen.generativeQueryEntityIds,
+      firstParty,
+      contentBriefOutline: extraction.outline,
+      researchContext,
+      // All three pinned versions come from the CURRENTLY pinned constants,
+      // never from the row under audit: reading a version back out of the
+      // frozen row would make its drift check tautologically true.
+      flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
+      promptSetVersion: CONTENT_SHADOW_PROMPT_SET_VERSION,
+      projectionVersion: CONTENT_SHADOW_PROJECTION_VERSION,
+      outputLocale: frozen.outputLocale,
+    });
+  } catch (error) {
+    if (!isReplayManifestValidationError(error)) throw error;
+    throw new ContentShadowPermanentError(
+      CONTENT_SHADOW_INPUT_DRIFT,
+      "live Content Shadow inputs no longer form the frozen canonical manifest",
+    );
+  }
   const recomputed = contentHash(manifest as unknown as CanonicalValue);
   if (recomputed !== row.content_hash) {
     throw new ContentShadowPermanentError(
@@ -425,6 +822,7 @@ async function loadLiveShadowInputs(
       projectedKeywordCount: extraction.projectedKeywordCount,
       unconfirmedMappingCount: extraction.unconfirmedMappingCount,
     },
+    pageSnapshots,
   };
 }
 
@@ -609,15 +1007,61 @@ export async function runContentShadow(
     const live = await loadLiveShadowInputs(ctx, scope, shadowRun);
 
     // --- RESEARCH: deterministic, idempotent ------------------------------
-    const pack = buildResearchPack(live.manifest, live.briefOutlineStats);
-    await new FlowShadowResearchPacksRepository(ctx.db).insert({
-      workspaceId,
-      projectId,
-      flowShadowRunId: shadowRun.id,
-      analysisInvocationId: null,
-      contentHash: shadowRun.content_hash,
-      pack: researchPackToJson(pack),
-    });
+    const packs = new FlowShadowResearchPacksRepository(ctx.db);
+    const existingPack = await packs.findByRun(scope, shadowRun.id);
+    const pack =
+      existingPack === null
+        ? await (async (): Promise<ResearchPack> => {
+            const firstPartySnapshots = live.pageSnapshots
+              .map(firstPartySnapshot)
+              .filter(
+                (
+                  snapshot,
+                ): snapshot is NonNullable<typeof snapshot> => snapshot !== null,
+              );
+            const externalTargets = live.manifest.researchContext.externalTargets;
+            const externalBatch =
+              externalTargets.length === 0
+                ? null
+                : await retrievePublicWebResearch(
+                    externalTargets.map((target) => target.url),
+                    ctx.signal ? { signal: ctx.signal } : {},
+                  );
+            const retrieved = [
+              ...firstPartySnapshots,
+              ...(externalBatch?.sources ?? []).map((snapshot, index) => {
+                const target = externalTargets[index];
+                if (!target) {
+                  throw new ContentShadowPermanentError(
+                    "CONTENT_SHADOW_RESEARCH_UNAVAILABLE",
+                    "retrieved research did not align with its frozen target list",
+                  );
+                }
+                return externalResearchSnapshot(
+                  target.ref,
+                  target.label,
+                  target.url,
+                  snapshot,
+                );
+              }),
+            ];
+            const built = buildResearchPack(
+              live.manifest,
+              live.briefOutlineStats,
+              retrieved,
+            );
+            const packJson = researchPackToJson(built);
+            await packs.insert({
+              workspaceId,
+              projectId,
+              flowShadowRunId: shadowRun.id,
+              analysisInvocationId: null,
+              contentHash: contentHash(packJson as CanonicalValue),
+              pack: packJson,
+            });
+            return built;
+          })()
+        : assertStoredResearchPackIntegrity(existingPack);
 
     // --- DRAFT: pinned markdown LLM envelope ------------------------------
     const artifact = await claimDraftArtifact(
@@ -640,6 +1084,7 @@ export async function runContentShadow(
         sourceDiagnosticRunId: live.sourceDiagnosticRunId,
         sourceIcpProfileId: live.sourceIcpProfileId,
         contentBriefOutline: live.contentBriefOutline,
+        researchContext: promptResearchContext(pack),
       });
 
       const client = createOpenAIClient({

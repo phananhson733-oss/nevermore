@@ -12,15 +12,47 @@ import { Bcp47Locale, IsoDateTime, Uuid } from "./common.ts";
  */
 
 export const CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION =
-  "content-shadow.0.3.0" as const;
+  "content-shadow.0.4.0" as const;
 
 /** Server-fixed pinned Flow adapter version (decision R3). */
 export const CONTENT_SHADOW_ADAPTER_CONTRACT_VERSION =
-  "content-shadow-adapter.0.3.0" as const;
+  "content-shadow-adapter.0.4.0" as const;
 
 const MAX_COMPETITORS = 50;
 const MAX_SEARCH_KEYWORDS = 500;
 const MAX_GENERATIVE_QUERIES = 500;
+const MAX_FIRST_PARTY_PAGE_SNAPSHOTS = 50;
+const MAX_EXTERNAL_RESEARCH_TARGETS = 8;
+const MAX_RESEARCH_EVIDENCE_REFS = 50;
+const MAX_RESEARCH_SOURCE_EVIDENCE_REFS = 100;
+const MAX_RESEARCH_SOURCES = 1200;
+const MAX_CONTENT_POLICY_ITEMS = 100;
+const MAX_ARTIFACT_REVISION_HISTORY = 1000;
+const Sha256 = z.string().regex(/^[a-f0-9]{64}$/u);
+const HttpUrl = z
+  .string()
+  .trim()
+  .url()
+  .max(2048)
+  .refine(
+    (value) => {
+      try {
+        const parsed = new URL(value);
+        return (
+          (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+          parsed.username === "" &&
+          parsed.password === ""
+        );
+      } catch {
+        return false;
+      }
+    },
+    {
+      message:
+        "Research URLs must use HTTP(S) and must not contain embedded credentials",
+    },
+  );
+const BoundedText = z.string().trim().min(1).max(10_000);
 
 const uniqueUuids = (max: number, min = 0) =>
   z
@@ -153,12 +185,79 @@ export const ContentShadowAuthoritySource = z
       "competitor",
       "first_party_site",
       "first_party_conversion",
+      "first_party_page",
+      "external_page",
     ]),
     ref: z.string().trim().min(1).max(500),
-    authorityTier: z.enum(["A", "B", "C", "D"]),
+    label: z.string().trim().min(1).max(500),
+    url: HttpUrl.nullable(),
+    availability: z.enum(["available", "partial", "unavailable"]),
+    authorityTier: z.enum(["A", "B", "C"]),
+    capturedAt: IsoDateTime.nullable(),
+    contentHash: Sha256.nullable(),
+    contentHashMethod: z
+      .enum(["sha256_canonical_extract", "sha256_normalized_text"])
+      .nullable(),
+    /**
+     * True when the immutable body retained by the research adapter or pack is
+     * only a bounded prefix. This remains customer-visible even though the
+     * complete body itself is deliberately excluded from the wire contract.
+     */
+    contentTruncated: z.boolean(),
+    excerpt: z.string().max(10_000).nullable(),
+    /** True when the customer-readable excerpt is a bounded preview. */
+    excerptTruncated: z.boolean(),
+    metrics: z
+      .object({
+        status: z.number().int().min(100).max(599).nullable(),
+        contentType: z.string().trim().min(1).max(200).nullable(),
+        bodyBytes: z.number().int().min(0).nullable(),
+        wordCount: z.number().int().min(0).nullable(),
+        responseMs: z.number().int().min(0).nullable(),
+        redirectChain: z.array(HttpUrl).max(10),
+      })
+      .strict()
+      .nullable(),
+    evidenceRefs: z
+      .array(z.string().trim().min(1).max(500))
+      .max(MAX_RESEARCH_SOURCE_EVIDENCE_REFS),
     limitation: z.string().trim().min(1).max(2000).nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((source, ctx) => {
+    if ((source.contentHash === null) !== (source.contentHashMethod === null)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["contentHashMethod"],
+        message:
+          "contentHash and contentHashMethod must either both be present or both be null",
+      });
+    }
+    if (
+      source.contentTruncated &&
+      (source.availability !== "partial" ||
+        source.contentHash === null ||
+        source.contentHashMethod === null)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["contentTruncated"],
+        message:
+          "A truncated body requires partial availability and an auditable content hash",
+      });
+    }
+    if (
+      source.excerptTruncated &&
+      (source.excerpt === null || source.availability === "unavailable")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["excerptTruncated"],
+        message:
+          "A truncated excerpt requires a retained excerpt from an available or partial source",
+      });
+    }
+  });
 export type ContentShadowAuthoritySource = z.infer<
   typeof ContentShadowAuthoritySource
 >;
@@ -209,22 +308,195 @@ export type ContentShadowFirstPartyIdentity = z.infer<
   typeof ContentShadowFirstPartyIdentity
 >;
 
+export const ContentShadowFirstPartyPageSnapshotIdentity = z
+  .object({
+    pageSnapshotId: Uuid,
+    dataSnapshotId: Uuid,
+    url: HttpUrl,
+    urlHash: Sha256,
+    contentHash: Sha256,
+    capturedAt: IsoDateTime,
+  })
+  .strict();
+
+export const ContentShadowKeywordMapping = z
+  .object({
+    decision: z.enum(["unassigned", "existing_page", "new_asset"]),
+    mappedSitePageId: Uuid.nullable(),
+    reviewState: z.enum(["unreviewed", "confirmed"]),
+    revision: z.number().int().min(0),
+  })
+  .strict();
+
+export const ContentShadowKeywordFact = z
+  .object({
+    id: Uuid,
+    display: z.string().trim().min(1).max(500),
+    market: z.string().trim().min(1).max(32),
+    language: Bcp47Locale,
+    intent: z.string().trim().min(1).max(100).nullable(),
+    buyerStage: z.string().trim().min(1).max(100).nullable(),
+    cluster: z.string().trim().min(1).max(200).nullable(),
+    mapping: ContentShadowKeywordMapping,
+    lastSeen: IsoDateTime,
+    evidenceRefs: z
+      .array(z.string().trim().min(1).max(500))
+      .max(MAX_RESEARCH_EVIDENCE_REFS),
+  })
+  .strict();
+
+export const ContentShadowCompetitorFact = z
+  .object({
+    id: Uuid,
+    domain: z.string().trim().min(1).max(253),
+    name: z.string().trim().min(1).max(160).nullable(),
+    status: z.enum(["candidate", "approved", "excluded"]),
+    relationship: z
+      .enum(["direct", "indirect", "status_quo", "benchmark", "publisher"])
+      .nullable(),
+    scopes: z
+      .array(
+        z.enum([
+          "positioning",
+          "product_capability",
+          "keyword_gap",
+          "content",
+          "serp_visibility",
+        ]),
+      )
+      .max(5),
+    revision: z.number().int().min(0),
+  })
+  .strict();
+
+export const ContentShadowExternalResearchTarget = z
+  .object({
+    ref: z.string().trim().min(1).max(500),
+    kind: z.string().trim().min(1).max(100),
+    url: HttpUrl,
+    label: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export const ContentShadowContentPolicy = z
+  .object({
+    brandConstraints: z.array(BoundedText).max(MAX_CONTENT_POLICY_ITEMS),
+    complianceConstraints: z.array(BoundedText).max(MAX_CONTENT_POLICY_ITEMS),
+    prohibitedTerms: z.array(BoundedText).max(MAX_CONTENT_POLICY_ITEMS),
+    claimRestrictions: z.array(BoundedText).max(MAX_CONTENT_POLICY_ITEMS),
+  })
+  .strict();
+
+export const ContentShadowResearchContext = z
+  .object({
+    firstPartyPageSnapshots: z
+      .array(ContentShadowFirstPartyPageSnapshotIdentity)
+      .max(MAX_FIRST_PARTY_PAGE_SNAPSHOTS),
+    searchKeywordFacts: z
+      .array(ContentShadowKeywordFact)
+      .min(1)
+      .max(MAX_SEARCH_KEYWORDS),
+    generativeKeywordFacts: z
+      .array(ContentShadowKeywordFact)
+      .max(MAX_GENERATIVE_QUERIES),
+    competitorFacts: z.array(ContentShadowCompetitorFact).max(MAX_COMPETITORS),
+    externalTargets: z
+      .array(ContentShadowExternalResearchTarget)
+      .max(MAX_EXTERNAL_RESEARCH_TARGETS),
+    contentPolicy: ContentShadowContentPolicy,
+  })
+  .strict()
+  .superRefine((context, ctx) => {
+    const identityLists = [
+      {
+        path: ["firstPartyPageSnapshots"] as const,
+        values: context.firstPartyPageSnapshots.map(
+          (snapshot) => snapshot.pageSnapshotId,
+        ),
+      },
+      {
+        path: ["searchKeywordFacts"] as const,
+        values: context.searchKeywordFacts.map((fact) => fact.id),
+      },
+      {
+        path: ["generativeKeywordFacts"] as const,
+        values: context.generativeKeywordFacts.map((fact) => fact.id),
+      },
+      {
+        path: ["competitorFacts"] as const,
+        values: context.competitorFacts.map((fact) => fact.id),
+      },
+      {
+        path: ["externalTargets"] as const,
+        values: context.externalTargets.map((target) => target.ref),
+      },
+    ];
+    for (const identity of identityLists) {
+      if (new Set(identity.values).size !== identity.values.length) {
+        ctx.addIssue({
+          code: "custom",
+          path: [...identity.path],
+          message: "Frozen research identities must be unique",
+        });
+      }
+    }
+  });
+export type ContentShadowResearchContext = z.infer<
+  typeof ContentShadowResearchContext
+>;
+
 export const ContentShadowFrozenInputs = z
   .object({
     primaryFindingId: Uuid,
     sourceDiagnosticRunId: Uuid,
-    competitorEntityIds: z.array(Uuid).max(MAX_COMPETITORS),
+    competitorEntityIds: uniqueUuids(MAX_COMPETITORS),
     searchCluster: z
       .object({
         clusterKey: z.string().trim().min(1).max(200),
-        keywordEntityIds: z.array(Uuid).max(MAX_SEARCH_KEYWORDS),
+        keywordEntityIds: uniqueUuids(MAX_SEARCH_KEYWORDS, 1),
       })
       .strict(),
-    generativeQueryEntityIds: z.array(Uuid).max(MAX_GENERATIVE_QUERIES),
+    generativeQueryEntityIds: uniqueUuids(MAX_GENERATIVE_QUERIES),
     firstParty: ContentShadowFirstPartyIdentity,
     contentBriefOutline: ContentShadowBriefOutline,
+    researchContext: ContentShadowResearchContext,
   })
-  .strict();
+  .strict()
+  .superRefine((inputs, ctx) => {
+    const exactSet = (left: readonly string[], right: readonly string[]) =>
+      JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+    const identities = [
+      {
+        path: ["researchContext", "searchKeywordFacts"] as const,
+        label: "search keyword",
+        expected: inputs.searchCluster.keywordEntityIds,
+        actual: inputs.researchContext.searchKeywordFacts.map((fact) => fact.id),
+      },
+      {
+        path: ["researchContext", "generativeKeywordFacts"] as const,
+        label: "generative keyword",
+        expected: inputs.generativeQueryEntityIds,
+        actual: inputs.researchContext.generativeKeywordFacts.map(
+          (fact) => fact.id,
+        ),
+      },
+      {
+        path: ["researchContext", "competitorFacts"] as const,
+        label: "competitor",
+        expected: inputs.competitorEntityIds,
+        actual: inputs.researchContext.competitorFacts.map((fact) => fact.id),
+      },
+    ];
+    for (const identity of identities) {
+      if (!exactSet(identity.expected, identity.actual)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [...identity.path],
+          message: `Frozen ${identity.label} facts must match the frozen identity set`,
+        });
+      }
+    }
+  });
 export type ContentShadowFrozenInputs = z.infer<
   typeof ContentShadowFrozenInputs
 >;
@@ -232,7 +504,7 @@ export type ContentShadowFrozenInputs = z.infer<
 export const ContentShadowResearch = z
   .object({
     packId: Uuid,
-    sources: z.array(ContentShadowAuthoritySource).max(1000),
+    sources: z.array(ContentShadowAuthoritySource).max(MAX_RESEARCH_SOURCES),
     limitations: z.array(z.string().trim().min(1).max(2000)).max(100),
     generatedAt: IsoDateTime,
   })
@@ -249,8 +521,58 @@ export const ContentShadowDraft = z
     status: z.enum(["generating", "draft", "ready", "failed", "archived"]),
     currentRevision: z.number().int().min(0),
     contentText: z.string().nullable(),
+    revisionHistory: z
+      .array(
+        z
+          .object({
+            revision: z.number().int().min(1),
+            contentHash: Sha256,
+            generatedBy: z.string().trim().min(1).max(100),
+            editorId: Uuid.nullable(),
+            note: z.string().trim().min(1).max(2000).nullable(),
+            validationErrorCount: z.number().int().min(0),
+            createdAt: IsoDateTime,
+          })
+          .strict(),
+      )
+      .max(MAX_ARTIFACT_REVISION_HISTORY),
   })
-  .strict();
+  .strict()
+  .superRefine((draft, ctx) => {
+    for (let index = 1; index < draft.revisionHistory.length; index += 1) {
+      if (
+        draft.revisionHistory[index - 1]!.revision !==
+        draft.revisionHistory[index]!.revision + 1
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["revisionHistory", index, "revision"],
+          message:
+            "Revision history must be contiguous, complete and newest-first",
+        });
+      }
+    }
+    const oldestRevision = draft.revisionHistory.at(-1);
+    if (oldestRevision !== undefined && oldestRevision.revision !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["revisionHistory", draft.revisionHistory.length - 1, "revision"],
+        message: "A complete revision history must include revision 1",
+      });
+    }
+    if (
+      draft.currentRevision > 0 &&
+      !draft.revisionHistory.some(
+        (revision) => revision.revision === draft.currentRevision,
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["revisionHistory"],
+        message: "Revision history must include the run's projected revision",
+      });
+    }
+  });
 export type ContentShadowDraft = z.infer<typeof ContentShadowDraft>;
 
 export const ContentShadowQaGate = z

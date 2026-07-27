@@ -1684,19 +1684,73 @@
       "advisoryTag": "仅提示",
       "claimBasis": "判定依据：",
       "claimUnnamed": "未命名检查项",
-      "scopeNote": "本轮 {total} 项检查里有 {advisory} 项为提示级：它们即使命中也记为通过，不会改变上面的结论。本轮不检查：与外部内容的重复度、超出本项目数据的外部事实、品牌语气。",
+      "scopeNote": "本轮 {total} 项检查里有 {advisory} 项为提示级：它们即使命中也记为通过，不会改变上面的结论。本轮会检查来源重叠、品牌语气和主张限制；仍然不会替客户补造缺失证据。",
+      "researchConclusion": "先看结论：可直接支撑外部依据的页面 {external} 条，可支撑第一方产品事实的页面 {firstParty} 条，部分可用页面 {partial} 条，暂不可用页面 {unavailable} 条；真正带页面内容的来源共 {pages} 条，另外还有 {identity} 条身份或指标记录保留在来源抽屉里。",
+      "research": {
+        "openAll": "查看全部来源",
+        "drawerTitle": "完整来源与证据",
+        "drawerSubtitle": "本次运行共返回 {count} 条来源；这里按真实 payload 完整列出。",
+        "unavailable": "该来源未提供",
+        "noSources": "本次运行没有返回任何研究来源。",
+        "availability": {
+          "available": "可用",
+          "partial": "部分可用",
+          "unavailable": "暂不可用"
+        },
+        "citability": {
+          "externalEvidence": "可作为外部依据",
+          "firstPartyFacts": "只支持第一方产品事实",
+          "identityOnly": "身份或指标记录，不能单独作为事实依据",
+          "partialPage": "页面证据不完整，只能辅助判断",
+          "unavailable": "当前不能支持事实判断"
+        },
+        "fields": {
+          "url": "来源 URL",
+          "capturedAt": "抓取时间",
+          "citability": "可引用性",
+          "hash": "证据 Hash",
+          "hashMethod": "Hash 方法",
+          "bodyCompleteness": "正文完整性",
+          "summary": "来源摘要",
+          "previewCompleteness": "摘要完整性",
+          "evidenceRefs": "证据引用",
+          "metrics": "抓取指标",
+          "limitation": "完整限制"
+        },
+        "hashMethod": {
+          "sha256_canonical_extract": "SHA-256（规范提取）",
+          "sha256_normalized_text": "SHA-256（归一化正文）"
+        },
+        "bodyCompleteness": {
+          "complete": "完整",
+          "truncated": "正文已截断"
+        },
+        "previewCompleteness": {
+          "complete": "完整摘要",
+          "truncated": "摘要为截断预览"
+        },
+        "metricsSummary": "HTTP {status} · {contentType} · {bodyBytes} bytes · {wordCount} 词 · {responseMs} ms · {redirects} 次跳转",
+        "kind": {
+          "content_brief": "内容 Brief",
+          "search_query": "搜索问题",
+          "generative_query": "生成式问题",
+          "competitor": "竞品记录",
+          "first_party_site": "第一方站点",
+          "first_party_conversion": "第一方转化页",
+          "first_party_page": "第一方页面",
+          "external_page": "外部页面"
+        }
+      },
       "blocker": {
         "title": "当前不能通过评审",
         "body": "草稿里有 {count} 处引用无法在本轮冻结的研究记录中核实。这不是运行失败 —— 本次运行已完成，草稿与研究记录都已产出并可查阅。",
         "more": "另有 {count} 处，可在上方检查项中展开查看",
-        "why": "原因：本轮的研究记录只由项目内已确认的数据组装，不做任何外部检索，因此草稿中引用的外部来源在这里没有可比对的对象。这是本阶段的范围边界，不是缺陷。",
+        "why": "原因：本轮会对已冻结的外部页面、第一方页面与身份记录分别校验。被拦住的地方表示当前引用没有得到足够支持，或引用的来源类型本身不能单独充当事实依据；这不是运行故障。",
         "next": "下一步：把草稿退回补充证据，或删掉无法核实的引用后写一个新 Revision 重新检查。"
       },
       "facts": {
         "frozenRecords": "冻结记录",
         "recordCount": "{count} 条",
-        "externalCitable": "外部可引用来源",
-        "externalCitableValue": "0 条 —— 本轮未做外部检索",
         "connectedSources": "已连接的数据源",
         "noConnectedSources": "本项目暂无已连接来源",
         "frozenHash": "冻结输入指纹"
@@ -1727,8 +1781,11 @@
         "sc10_table_integrity": "表格能被正确读取",
         "sc11_banned_headings": "读者会跳过的标题",
         "scdup_brief_overlap": "草稿在复述 Brief 而不是写作",
+        "scdup_source_overlap": "草稿与已冻结来源重复得过近",
         "citability_geo": "对 AI 回答而言的可引用程度",
-        "brief-outline": "是否覆盖了冻结 cluster 的目标关键词"
+        "brief-outline": "是否覆盖了冻结 cluster 的目标关键词",
+        "rl14_brand_voice": "品牌语气不符合当前客户表达边界",
+        "rl15_claim_restrictions": "主张超出了来源允许的表述边界"
       },
       "revisionNumber": "Revision {revision}",
       "humanState": {
@@ -1786,20 +1843,25 @@
         "changesNone": "无"
       },
       "history": {
-        "button": "本屏持有的版本",
-        "buttonSuperseded": "本屏持有的版本（含已失效评审）",
-        "title": "本屏持有的版本",
-        "subtitle": "只有两个点，不是完整历史：目前没有任何 operation 能列出一份交付物的全部 Revision。",
-        "currentRow": "Revision {revision} —— 当前屏幕上的正文",
-        "judgedRow": "Revision {revision} —— 自动检查判定的版本",
-        "briefRow": "内容 Brief 的 Revision {revision} —— 已冻结进本次运行",
-        "noRevision": "尚未产出任何版本",
-        "noVerdict": "尚无自动检查结论",
+        "button": "查看 Revision 历史",
+        "buttonSuperseded": "查看 Revision 历史（含已失效评审）",
+        "title": "完整 Revision 历史",
+        "subtitle": "每一版都单独列出创建时间、状态、冻结 hash 与评审决定；这里只显示当前 payload 真正带回来的版本记录。",
+        "revisionRow": "Revision {revision}",
+        "empty": "当前 payload 还没有公开完整的 revision 记录，因此这里不会伪造历史。",
+        "fieldUnavailable": "该版本未提供",
         "badgeCurrent": "当前",
         "badgeJudged": "已判定",
         "badgeSuperseded": "评审已失效",
-        "badgeBrief": "冻结的 Brief",
-        "note": "每个 Revision 都保存自己的正文、冻结输入指纹与当时的自动检查结论；任何一版都不会被覆盖。"
+        "fields": {
+          "generatedBy": "生成方式",
+          "hash": "冻结 Hash",
+          "createdAt": "创建时间",
+          "validation": "校验错误",
+          "note": "版本备注"
+        },
+        "validation": "{count} 条校验错误",
+        "note": "不会再把当前版、判定版和 Brief 压扁成三条伪历史；如果某一版没有随 payload 返回，它就明确显示为未提供。"
       }
     },
     "publish": {

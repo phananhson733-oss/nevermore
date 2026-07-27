@@ -24,11 +24,12 @@
 
 import {
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { InfiniteData } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Badge,
   EmptyState,
@@ -44,6 +45,7 @@ import {
   useArtifactRevision,
   useContentShadowRun,
   useContentShadowRuns,
+  type ContentShadowAuthoritySource,
   type ContentShadowRun,
   type ContentShadowRunSummary,
 } from "@/lib/api/hooks-content-shadow";
@@ -59,6 +61,7 @@ import { ComparePanes } from "./_compare.tsx";
 import { coverageClaimOf } from "./_compare-view.ts";
 import { connectedSourceProviders } from "./_connected-sources.ts";
 import { MarkdownBlocks } from "./_markdown-blocks.tsx";
+import { Overlay } from "./_overlay.tsx";
 import {
   advisoryClaimCount,
   blockingClaims,
@@ -85,6 +88,90 @@ import styles from "./execution.module.css";
 
 const DASH = "—";
 const HASH_CHARS = 12;
+
+interface ResearchSourceView {
+  readonly id: string;
+  readonly kind: ContentShadowAuthoritySource["kind"];
+  readonly label: string;
+  readonly availability: ContentShadowAuthoritySource["availability"];
+  readonly url: string | null;
+  readonly capturedAt: string | null;
+  readonly authorityTier: ContentShadowAuthoritySource["authorityTier"];
+  readonly contentHash: string | null;
+  readonly contentHashMethod: ContentShadowAuthoritySource["contentHashMethod"];
+  readonly contentTruncated: boolean;
+  readonly excerpt: string | null;
+  readonly excerptTruncated: boolean;
+  readonly evidenceRefs: readonly string[];
+  readonly limitation: string | null;
+  readonly metrics: ContentShadowAuthoritySource["metrics"];
+}
+
+interface ArtifactRevisionHistoryView {
+  readonly revision: number;
+  readonly hash: string | null;
+  readonly createdAt: string | null;
+  readonly generatedBy: string;
+  readonly note: string | null;
+  readonly validationErrorCount: number;
+  readonly isCurrent: boolean;
+  readonly isJudged: boolean;
+}
+
+function formatUtcTimestamp(value: string | null, locale: string): string | null {
+  if (value === null) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function researchSourceView(
+  source: ContentShadowAuthoritySource,
+): ResearchSourceView {
+  return {
+    id: `${source.kind}:${source.ref}`,
+    kind: source.kind,
+    label: source.label,
+    availability: source.availability,
+    url: source.url,
+    capturedAt: source.capturedAt,
+    authorityTier: source.authorityTier,
+    contentHash: source.contentHash,
+    contentHashMethod: source.contentHashMethod ?? null,
+    contentTruncated: source.contentTruncated ?? false,
+    excerpt: source.excerpt,
+    excerptTruncated: source.excerptTruncated ?? false,
+    evidenceRefs: source.evidenceRefs,
+    limitation: source.limitation,
+    metrics: source.metrics,
+  };
+}
+
+function artifactRevisionHistory(
+  draft: ContentShadowRun["draft"],
+  evaluatedRevision: number | null,
+  currentRevision: number | null,
+): readonly ArtifactRevisionHistoryView[] {
+  if (draft === null) return [];
+  return [...draft.revisionHistory]
+    .map((entry) => {
+      return {
+        revision: entry.revision,
+        hash: entry.contentHash,
+        createdAt: entry.createdAt,
+        generatedBy: entry.generatedBy,
+        note: entry.note,
+        validationErrorCount: entry.validationErrorCount,
+        isCurrent: currentRevision === entry.revision,
+        isJudged: evaluatedRevision === entry.revision,
+      } satisfies ArtifactRevisionHistoryView;
+    })
+    .sort((left, right) => right.revision - left.revision);
+}
 
 /** A group state is conveyed by a character AND a word, never by colour alone. */
 const GROUP_MARK: Readonly<Record<QaGroup["state"], string>> = {
@@ -257,6 +344,264 @@ function HumanReviewRow({ state }: { readonly state: HumanReviewState }) {
   );
 }
 
+function isPageSource(source: ResearchSourceView): boolean {
+  return (
+    source.kind === "first_party_page" || source.kind === "external_page"
+  );
+}
+
+function availabilityTone(
+  availability: ContentShadowAuthoritySource["availability"],
+): StatusTone {
+  switch (availability) {
+    case "available":
+      return "success";
+    case "partial":
+      return "warning";
+    case "unavailable":
+      return "neutral";
+  }
+}
+
+function availabilityKey(
+  availability: ContentShadowAuthoritySource["availability"],
+): "available" | "partial" | "unavailable" {
+  return availability;
+}
+
+function citabilityKey(
+  source: ResearchSourceView,
+):
+  | "externalEvidence"
+  | "firstPartyFacts"
+  | "identityOnly"
+  | "partialPage"
+  | "unavailable" {
+  if (source.availability !== "available") {
+    return source.availability === "partial" ? "partialPage" : "unavailable";
+  }
+  if (source.kind === "external_page") return "externalEvidence";
+  if (source.kind === "first_party_page") return "firstPartyFacts";
+  return "identityOnly";
+}
+
+function sourceConclusionCounts(sources: readonly ResearchSourceView[]) {
+  return {
+    availableExternalPages: sources.filter(
+      (source) =>
+        source.kind === "external_page" && source.availability === "available",
+    ).length,
+    availableFirstPartyPages: sources.filter(
+      (source) =>
+        source.kind === "first_party_page" &&
+        source.availability === "available",
+    ).length,
+    partialPages: sources.filter(
+      (source) => isPageSource(source) && source.availability === "partial",
+    ).length,
+    unavailablePages: sources.filter(
+      (source) => isPageSource(source) && source.availability === "unavailable",
+    ).length,
+    pageSourcesWithContent: sources.filter(
+      (source) => isPageSource(source) && source.contentHash !== null,
+    ).length,
+    identityRecords: sources.filter((source) => !isPageSource(source)).length,
+  };
+}
+
+function AllSourcesDrawer({
+  sources,
+}: {
+  readonly sources: readonly ResearchSourceView[];
+}) {
+  const t = useTranslations("studio.qa");
+  const locale = useLocale();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={styles.researchSourceAction}
+        onClick={() => setOpen(true)}
+        data-research-sources-button=""
+      >
+        {t("research.openAll")}
+      </button>
+      <Overlay
+        open={open}
+        shape="drawer"
+        title={t("research.drawerTitle")}
+        subtitle={t("research.drawerSubtitle", { count: sources.length })}
+        onClose={() => setOpen(false)}
+        returnFocusRef={buttonRef}
+        testId="research-sources-overlay"
+      >
+        <div className={styles.researchDrawer} data-research-sources-drawer="">
+          <ul className={styles.drawerSourceList}>
+            {sources.map((source) => {
+              const capturedAt = formatUtcTimestamp(source.capturedAt, locale);
+              return (
+                <li key={source.id} className={styles.drawerSourceItem}>
+                  <div className={styles.researchSourceHead}>
+                    <div>
+                      <p className={styles.researchSourceLabel}>
+                        {t(`research.kind.${source.kind}` as never)}
+                      </p>
+                      <h5 className={styles.researchSourceTitle}>{source.label}</h5>
+                    </div>
+                    <StatusPill tone={availabilityTone(source.availability)}>
+                      {t(
+                        `research.availability.${availabilityKey(source.availability)}` as never,
+                      )}
+                    </StatusPill>
+                  </div>
+                  <dl className={styles.researchDrawerFacts}>
+                    <div>
+                      <dt>{t("research.fields.citability")}</dt>
+                      <dd>{t(`research.citability.${citabilityKey(source)}` as never)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.url")}</dt>
+                      <dd>{source.url ?? t("research.unavailable")}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.capturedAt")}</dt>
+                      <dd>{capturedAt ?? t("research.unavailable")}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.hash")}</dt>
+                      <dd>
+                        {source.contentHash === null
+                          ? t("research.unavailable")
+                          : `${source.contentHash.slice(0, HASH_CHARS)}…`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.hashMethod")}</dt>
+                      <dd>
+                        {source.contentHashMethod === null
+                          ? t("research.unavailable")
+                          : t(
+                              `research.hashMethod.${source.contentHashMethod}` as never,
+                            )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.bodyCompleteness")}</dt>
+                      <dd>
+                        {source.contentTruncated
+                          ? t("research.bodyCompleteness.truncated")
+                          : t("research.bodyCompleteness.complete")}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.summary")}</dt>
+                      <dd>{source.excerpt ?? t("research.unavailable")}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.previewCompleteness")}</dt>
+                      <dd>
+                        {source.excerptTruncated
+                          ? t("research.previewCompleteness.truncated")
+                          : t("research.previewCompleteness.complete")}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.evidenceRefs")}</dt>
+                      <dd>
+                        {source.evidenceRefs.length === 0
+                          ? t("research.unavailable")
+                          : source.evidenceRefs.join(" · ")}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.metrics")}</dt>
+                      <dd>
+                        {source.metrics === null
+                          ? t("research.unavailable")
+                          : t("research.metricsSummary", {
+                              status: source.metrics.status ?? DASH,
+                              contentType:
+                                source.metrics.contentType ?? t("research.unavailable"),
+                              bodyBytes: source.metrics.bodyBytes ?? DASH,
+                              wordCount: source.metrics.wordCount ?? DASH,
+                              responseMs: source.metrics.responseMs ?? DASH,
+                              redirects: source.metrics.redirectChain.length,
+                            })}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("research.fields.limitation")}</dt>
+                      <dd>{source.limitation ?? t("research.unavailable")}</dd>
+                    </div>
+                  </dl>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </Overlay>
+    </>
+  );
+}
+
+function CompactPageSourceRow({
+  source,
+}: {
+  readonly source: ResearchSourceView;
+}) {
+  const t = useTranslations("studio.qa");
+  const locale = useLocale();
+  const capturedAt = formatUtcTimestamp(source.capturedAt, locale);
+
+  return (
+    <article className={styles.researchSource} data-research-source-card="">
+      <div className={styles.researchSourceHead}>
+        <div>
+          <p className={styles.researchSourceLabel}>
+            {t(`research.kind.${source.kind}` as never)}
+          </p>
+          <h5 className={styles.researchSourceTitle}>
+            {source.label}
+          </h5>
+        </div>
+        <StatusPill tone={availabilityTone(source.availability)}>
+          {t(`research.availability.${availabilityKey(source.availability)}` as never)}
+        </StatusPill>
+      </div>
+
+      <dl className={styles.researchSourceFacts}>
+        <div>
+          <dt>{t("research.fields.citability")}</dt>
+          <dd>
+            {t(`research.citability.${citabilityKey(source)}` as never)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("research.fields.capturedAt")}</dt>
+          <dd>
+            {capturedAt ?? t("research.unavailable")}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("research.fields.url")}</dt>
+          <dd>{source.url ?? t("research.unavailable")}</dd>
+        </div>
+      </dl>
+
+      <p className={styles.researchSourceSummary}>
+        <strong>{t("research.fields.summary")}</strong>
+        <span>
+          {source.excerpt ?? t("research.unavailable")}
+        </span>
+      </p>
+    </article>
+  );
+}
+
 function QaRail({
   run,
   connectedProviders,
@@ -288,6 +633,9 @@ function QaRail({
   const evaluatedRevision = run.qa?.evaluatedRevision ?? null;
   const stale = verdictIsStale(evaluatedRevision, currentRevision);
   const researchLimitations = run.research?.limitations ?? [];
+  const researchSources = (run.research?.sources ?? []).map(researchSourceView);
+  const conclusion = sourceConclusionCounts(researchSources);
+  const compactSources = researchSources.filter(isPageSource).slice(0, 4);
   const humanState = humanReviewState({
     verdict,
     evaluatedRevision,
@@ -363,6 +711,16 @@ function QaRail({
 
       <section className={styles.qaSection}>
         <h4>{t("sectionEvidence")}</h4>
+        <p className={styles.qaNote}>
+          {t("researchConclusion", {
+            external: conclusion.availableExternalPages,
+            firstParty: conclusion.availableFirstPartyPages,
+            partial: conclusion.partialPages,
+            unavailable: conclusion.unavailablePages,
+            pages: conclusion.pageSourcesWithContent,
+            identity: conclusion.identityRecords,
+          })}
+        </p>
         <dl className={styles.qaFacts}>
           <div>
             <dt>{t("facts.frozenRecords")}</dt>
@@ -373,12 +731,6 @@ function QaRail({
                     count: run.research.sources.length,
                   })}
             </dd>
-          </div>
-          <div>
-            <dt>{t("facts.externalCitable")}</dt>
-            {/* Zero by construction, and said so rather than left blank: the
-                pack holds only records already confirmed inside the project. */}
-            <dd>{t("facts.externalCitableValue")}</dd>
           </div>
           <div>
             <dt>{t("facts.connectedSources")}</dt>
@@ -402,6 +754,20 @@ function QaRail({
             </dd>
           </div>
         </dl>
+        {compactSources.length > 0 ? (
+          <div className={styles.researchSources} data-research-sources="">
+            {compactSources.map((source) => (
+              <CompactPageSourceRow key={source.id} source={source} />
+            ))}
+          </div>
+        ) : (
+          <p className={styles.qaNote} data-research-source-unavailable="sources">
+            {t("research.noSources")}
+          </p>
+        )}
+        {researchSources.length > 0 ? (
+          <AllSourcesDrawer sources={researchSources} />
+        ) : null}
         {researchLimitations.length > 0 ? (
           <ul className={styles.qaNote} data-research-limitations="">
             {researchLimitations.map((limitation, index) => (
@@ -531,6 +897,7 @@ function DocPanel({
   generationMode,
   connectedProviders,
   liveArtifact,
+  revisionHistory,
   compareMode,
   onCompareMode,
 }: {
@@ -540,6 +907,7 @@ function DocPanel({
   readonly generationMode: string | null;
   readonly connectedProviders: readonly string[] | null;
   readonly liveArtifact: Artifact | null;
+  readonly revisionHistory: readonly ArtifactRevisionHistoryView[];
   readonly compareMode: CompareMode;
   readonly onCompareMode: (mode: CompareMode) => void;
 }) {
@@ -634,8 +1002,7 @@ function DocPanel({
           <RevisionHistory
             currentRevision={currentRevision}
             evaluatedRevision={evaluatedRevision}
-            briefRevision={run.source.contentBriefRevision}
-            artifactStatus={artifactStatus}
+            revisions={revisionHistory}
           />
           <ReviewSurface
             projectId={projectId}
@@ -907,6 +1274,11 @@ export function ContentShadowSection({
             generationMode={generationMode}
             connectedProviders={connectedProviders}
             liveArtifact={liveArtifact}
+            revisionHistory={artifactRevisionHistory(
+              detail.draft,
+              detail.qa?.evaluatedRevision ?? null,
+              liveArtifact?.currentRevision ?? detail.draft?.currentRevision ?? null,
+            )}
             compareMode={compareMode}
             onCompareMode={setCompareMode}
           />

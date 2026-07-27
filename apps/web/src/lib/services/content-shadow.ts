@@ -15,13 +15,17 @@ import {
   IcpProfilesRepository,
   IdempotencyRepository,
   KeywordsRepository,
+  PageSnapshotsRepository,
   ProjectsRepository,
   SitesRepository,
   type ArtifactRow,
+  type ArtifactRevisionRow,
   type CanonicalValue,
+  type CompetitorEntityRow,
   type Executor,
   type FlowShadowQaGateRow,
   type FlowShadowRunRow,
+  type KeywordEntityRow,
   type ProjectScope,
   type WorkspaceScope,
 } from "@sf/db";
@@ -32,16 +36,23 @@ import {
 } from "@sf/artifacts";
 import {
   buildContentShadowInputManifest,
+  CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS,
+  extractContentBriefExternalTargets,
   qaSeverityForClaimId,
   CONTENT_SHADOW_ADAPTER_VERSION,
   type ContentShadowFirstPartyIdentity,
   type ContentShadowInputManifest,
+  type ContentShadowResearchContext,
 } from "@sf/flow-shadow";
 import { parseIcp } from "@sf/engine";
 import {
   CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
   ContentShadowAuthoritySource,
+  ContentShadowDraft,
+  ContentShadowFrozenInputs as ContentShadowFrozenInputsSchema,
   ContentShadowQaClaim,
+  ContentShadowResearch,
+  ContentShadowResearchContext as ContentShadowResearchContextSchema,
   CONTRACT_VERSION,
   type ContentShadowRunResponse,
   type ContentShadowRunSummary,
@@ -87,8 +98,13 @@ import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
 const IDEMPOTENCY_SCOPE = "createContentShadowRun";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const CAPABILITY_ID = "content-shadow";
-const CAPABILITY_VERSION = "0.3.0";
+const CAPABILITY_VERSION = "0.4.0";
 const CONTENT_BRIEF_ARTIFACT_TYPE = "content_brief";
+const DEFAULT_CLAIM_RESTRICTIONS = [
+  "no_guarantees",
+  "no_unsupported_quantified_claims",
+  "no_unverified_superlatives",
+] as const;
 
 /** The frozen content rules whose Action template mints a `content_brief`. */
 const CONTENT_BRIEF_RULE_IDS: ReadonlySet<string> = new Set([
@@ -158,6 +174,148 @@ export interface ContentShadowInputs {
    * draft a child of the brief rather than its sibling (Slice 2 Task 4b).
    */
   readonly contentBriefOutline: ContentBriefOutline;
+  /**
+   * Canonical research facts and immutable first-party snapshot identities.
+   * The accepting service and the worker independently rebuild this complete
+   * value from repositories; neither side is allowed to copy it from the
+   * previously frozen manifest when checking replay drift.
+   */
+  readonly researchContext: ContentShadowResearchContext;
+}
+
+function profileStringArray(profile: unknown, key: string): readonly string[] {
+  if (typeof profile !== "object" || profile === null) return [];
+  const value = (profile as Record<string, unknown>)[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function frozenCrawlSnapshotId(
+  diagnosticManifest: Record<string, unknown>,
+): string {
+  const snapshots = diagnosticManifest["snapshots"];
+  if (!Array.isArray(snapshots)) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "The frozen diagnosis has no readable crawl snapshot lineage.",
+    );
+  }
+  const crawlIds = snapshots.flatMap((value) => {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value)
+    ) {
+      return [];
+    }
+    const snapshot = value as Record<string, unknown>;
+    return snapshot["provider"] === "crawl" &&
+      typeof snapshot["snapshotId"] === "string" &&
+      snapshot["snapshotId"].length > 0
+      ? [snapshot["snapshotId"]]
+      : [];
+  });
+  if (crawlIds.length !== 1) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "The frozen diagnosis must identify exactly one crawl snapshot.",
+    );
+  }
+  return crawlIds[0]!;
+}
+
+function keywordFact(row: KeywordEntityRow) {
+  return {
+    id: row.id,
+    display: row.display_keyword,
+    market: row.market,
+    language: row.language_tag,
+    intent: row.intent,
+    buyerStage: row.buyer_stage,
+    cluster: row.cluster_key,
+    mapping: {
+      decision: row.mapping_decision,
+      mappedSitePageId: row.mapped_site_page_id,
+      reviewState: row.mapping_review_state,
+      revision: row.mapping_revision,
+    },
+    lastSeen: row.last_seen_at,
+    // Keyword identities currently carry no claim-level evidence ledger. An
+    // empty array is explicit absence; no synthetic evidence id is invented.
+    evidenceRefs: [],
+  } as const;
+}
+
+function competitorFact(row: CompetitorEntityRow) {
+  return {
+    id: row.id,
+    domain: row.domain,
+    name: row.name,
+    status: row.review_status,
+    relationship: row.relationship,
+    scopes: [...row.analysis_scope],
+    revision: row.revision,
+  } as const;
+}
+
+function competitorExternalTargets(
+  competitors: readonly ReturnType<typeof competitorFact>[],
+) {
+  return competitors
+    .filter((competitor) => competitor.status !== "excluded")
+    .map((competitor) => ({
+      ref: `competitor-root:${competitor.id}`,
+      kind: "competitor_root",
+      url: `https://${competitor.domain}/`,
+      label: competitor.name ?? competitor.domain,
+    }));
+}
+
+function compareAscii(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function frozenExternalTargets(input: {
+  readonly briefMarkdown: string;
+  readonly firstParty: ContentShadowFirstPartyIdentity;
+  readonly competitors: readonly ReturnType<typeof competitorFact>[];
+}): ContentShadowResearchContext["externalTargets"] {
+  const conversion = input.firstParty.icpPrimaryConversionUrl;
+  const briefTargets = extractContentBriefExternalTargets({
+    briefMarkdown: input.briefMarkdown,
+    firstPartyOrigins: [input.firstParty.siteOrigin],
+    maxTargets: CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS.externalTargets,
+  }).filter((target) => conversion === null || target.url !== conversion);
+  const candidates = [
+    ...briefTargets.map((target) => ({ priority: 0, target })),
+    ...competitorExternalTargets(input.competitors).map((target) => ({
+      priority: 1,
+      target,
+    })),
+  ].sort(
+    (left, right) =>
+      left.priority - right.priority ||
+      compareAscii(left.target.url, right.target.url) ||
+      compareAscii(left.target.ref, right.target.ref),
+  );
+  const byUrl = new Map<string, (typeof candidates)[number]["target"]>();
+  // Explicit links the confirmed brief names outrank derived competitor roots;
+  // sorting happens before the cap so request/repository row order cannot
+  // change which bounded targets enter the frozen address.
+  for (const candidate of candidates) {
+    if (!byUrl.has(candidate.target.url)) {
+      byUrl.set(candidate.target.url, candidate.target);
+    }
+  }
+  return [...byUrl.values()].slice(
+    0,
+    CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS.externalTargets,
+  );
 }
 
 /**
@@ -339,12 +497,13 @@ export async function loadContentShadowInputs(
 
   // Every frozen identity must belong to this live project (decision R4).
   const competitorEntityIds = [...new Set(body.competitorEntityIds)];
+  let competitorRows: CompetitorEntityRow[] = [];
   if (competitorEntityIds.length > 0) {
-    const found = await new CompetitorsRepository(exec).listByIds(
+    competitorRows = await new CompetitorsRepository(exec).listByIds(
       projectScope,
       competitorEntityIds,
     );
-    if (found.length !== competitorEntityIds.length) {
+    if (competitorRows.length !== competitorEntityIds.length) {
       throw new ProblemError(
         "VALIDATION_ERROR",
         "Every frozen competitor must belong to this project.",
@@ -378,8 +537,9 @@ export async function loadContentShadowInputs(
   }
 
   const generativeQueryEntityIds = [...new Set(body.generativeQueryEntityIds)];
+  let generativeRows: KeywordEntityRow[] = [];
   if (generativeQueryEntityIds.length > 0) {
-    const generativeRows = await keywords.listByIds(
+    generativeRows = await keywords.listByIds(
       projectScope,
       generativeQueryEntityIds,
     );
@@ -411,6 +571,69 @@ export async function loadContentShadowInputs(
       mappingReviewState: row.mapping_review_state,
     })),
   });
+  const crawlSnapshotId = frozenCrawlSnapshotId(
+    diagnosticRun.input_manifest,
+  );
+  const pageRows = await new PageSnapshotsRepository(
+    exec,
+  ).listByDataSnapshotWithSitePageIdentity(projectScope, crawlSnapshotId);
+  if (
+    pageRows.some(
+      (page) =>
+        page.site_id !== diagnosticRun.site_id ||
+        page.data_snapshot_id !== crawlSnapshotId,
+    )
+  ) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "The frozen diagnosis' first-party page snapshot lineage is inconsistent.",
+    );
+  }
+  const competitorFacts = competitorRows.map(competitorFact);
+  const researchContext: ContentShadowResearchContext = {
+    // The repository returns URL-ascending immutable snapshots. Keep the first
+    // bounded set deterministically; the full bodies stay in PageSnapshots and
+    // are re-read by id only inside the controlled worker.
+    firstPartyPageSnapshots: pageRows
+      .slice(
+        0,
+        CONTENT_SHADOW_RESEARCH_CONTEXT_LIMITS.firstPartyPageSnapshots,
+      )
+      .map((page) => ({
+        pageSnapshotId: page.page_snapshot_id,
+        dataSnapshotId: page.data_snapshot_id,
+        url: page.normalized_url,
+        urlHash: page.normalized_url_hash,
+        contentHash: page.content_hash,
+        capturedAt: page.captured_at,
+      })),
+    searchKeywordFacts: keywordRows.map(keywordFact),
+    generativeKeywordFacts: generativeRows.map(keywordFact),
+    competitorFacts,
+    externalTargets: frozenExternalTargets({
+      briefMarkdown: briefRevision.content_text ?? "",
+      firstParty,
+      competitors: competitorFacts,
+    }),
+    contentPolicy: {
+      brandConstraints: profileStringArray(
+        icpProfile.profile,
+        "brandConstraints",
+      ),
+      complianceConstraints: profileStringArray(
+        icpProfile.profile,
+        "complianceConstraints",
+      ),
+      prohibitedTerms: profileStringArray(
+        icpProfile.profile,
+        "prohibitedTerms",
+      ),
+      claimRestrictions: [
+        ...DEFAULT_CLAIM_RESTRICTIONS,
+        ...profileStringArray(icpProfile.profile, "claimRestrictions"),
+      ],
+    },
+  };
 
   return {
     siteId: diagnosticRun.site_id,
@@ -425,6 +648,7 @@ export async function loadContentShadowInputs(
     generativeQueryEntityIds,
     firstParty,
     contentBriefOutline: outline,
+    researchContext,
   };
 }
 
@@ -455,6 +679,7 @@ export function buildContentShadowFrozenInput(input: {
     generativeQueryEntityIds: inputs.generativeQueryEntityIds,
     firstParty: inputs.firstParty,
     contentBriefOutline: inputs.contentBriefOutline,
+    researchContext: inputs.researchContext,
     flowAdapterVersion: CONTENT_SHADOW_ADAPTER_VERSION,
     // One constant, one source. The service used to read `PROMPT_SET_VERSION`
     // from `@sf/engine` while the worker read a same-valued but INDEPENDENT
@@ -770,9 +995,16 @@ export async function createContentShadowRun(
 }
 
 function frozenStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "string")
+  ) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The frozen Content Shadow manifest is unreadable.",
+    );
+  }
+  return [...value];
 }
 
 /**
@@ -871,18 +1103,143 @@ function projectBriefOutline(
   };
 }
 
+/**
+ * Read the append-only manifest as one strict contract value. Individual
+ * helpers make the failure actionable, while the final schema parse catches
+ * invalid UUIDs, URLs, duplicates, bounds and identity-set drift. No damaged
+ * member is filtered into a plausible-looking smaller frozen context.
+ */
+export function projectContentShadowFrozenInputs(
+  manifest: Record<string, unknown>,
+  primaryFindingId: string,
+): ContentShadowFrozenInputsDto {
+  const clusterRecord = manifestRecord(manifest, "searchCluster");
+  const candidate = {
+    primaryFindingId,
+    sourceDiagnosticRunId: requiredManifestString(
+      manifest,
+      "sourceDiagnosticRunId",
+    ),
+    competitorEntityIds: frozenStringArray(manifest["competitorEntityIds"]),
+    searchCluster: {
+      clusterKey: requiredManifestString(clusterRecord, "clusterKey"),
+      keywordEntityIds: frozenStringArray(clusterRecord["keywordEntityIds"]),
+    },
+    generativeQueryEntityIds: frozenStringArray(
+      manifest["generativeQueryEntityIds"],
+    ),
+    firstParty: projectFirstParty(manifest),
+    contentBriefOutline: projectBriefOutline(manifest),
+    researchContext: projectFrozenResearchContext(manifest),
+  };
+  const parsed = ContentShadowFrozenInputsSchema.safeParse(candidate);
+  if (!parsed.success) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The frozen Content Shadow manifest is unreadable.",
+    );
+  }
+  return parsed.data;
+}
+
 type ContentShadowSources = NonNullable<
   ContentShadowRunResponse["research"]
 >["sources"];
 
-/** Project the stored pack's sources through the response contract shape. */
-function projectPackSources(
+/**
+ * Project the stored pack into the deliberately narrower customer wire shape.
+ *
+ * `contentText`, URL-hash internals and hash-method machinery remain in the
+ * append-only pack for QA/replay, but never cross this boundary. An unreadable
+ * source fails the read: "we could not parse research" must not become an empty
+ * source list that looks like "no research was needed".
+ */
+export function projectContentShadowPackSources(
   pack: Record<string, unknown>,
 ): ContentShadowSources {
   const sources = pack["sources"];
-  if (!Array.isArray(sources)) return [];
-  const parsed = ContentShadowAuthoritySource.array().safeParse(sources);
-  return parsed.success ? parsed.data : [];
+  if (!Array.isArray(sources)) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The stored Content Shadow research sources are unreadable.",
+    );
+  }
+  const projected = sources.map((value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return value;
+    }
+    const source = value as Record<string, unknown>;
+    const rawMetrics = source["metrics"];
+    const metrics =
+      rawMetrics === null
+        ? null
+        : typeof rawMetrics === "object" && !Array.isArray(rawMetrics)
+          ? (() => {
+              const record = rawMetrics as Record<string, unknown>;
+              return {
+                status: record["status"],
+                contentType: record["contentType"],
+                bodyBytes: record["bodyBytes"],
+                wordCount: record["wordCount"],
+                responseMs: record["responseMs"],
+                redirectChain: record["redirectChain"],
+              };
+            })()
+          : rawMetrics;
+    return {
+      kind: source["kind"],
+      ref: source["ref"],
+      label: source["label"],
+      url: source["url"],
+      availability: source["availability"],
+      authorityTier: source["authorityTier"],
+      capturedAt: source["capturedAt"],
+      contentHash: source["contentHash"],
+      contentHashMethod: source["contentHashMethod"],
+      contentTruncated: source["contentTruncated"],
+      excerpt: source["excerpt"],
+      excerptTruncated: source["excerptTruncated"],
+      metrics,
+      evidenceRefs: source["evidenceRefs"],
+      limitation: source["limitation"],
+    };
+  });
+  const parsed = ContentShadowAuthoritySource.array().safeParse(projected);
+  if (!parsed.success) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The stored Content Shadow research sources are unreadable.",
+    );
+  }
+  return parsed.data;
+}
+
+function projectResearchLimitations(pack: Record<string, unknown>): string[] {
+  const parsed = ContentShadowResearch.shape.limitations.safeParse(
+    pack["limitations"],
+  );
+  if (!parsed.success) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The stored Content Shadow research limitations are unreadable.",
+    );
+  }
+  return parsed.data;
+}
+
+function projectFrozenResearchContext(
+  manifest: Record<string, unknown>,
+): ContentShadowRunResponse["frozenInputs"]["researchContext"] {
+  const parsed = ContentShadowResearchContextSchema.safeParse(
+    manifest["researchContext"],
+  );
+  if (!parsed.success) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The frozen Content Shadow research context is unreadable.",
+    );
+  }
+  return parsed.data;
 }
 
 type ContentShadowQaClaimsDto = NonNullable<
@@ -924,6 +1281,67 @@ function projectQaClaims(stored: unknown): ContentShadowQaClaimsDto {
 
 type ContentShadowDraftDto = NonNullable<ContentShadowRunResponse["draft"]>;
 
+type RevisionHistoryDto = ContentShadowDraftDto["revisionHistory"];
+
+/**
+ * Convert the complete repository ledger without synthesising current/judged
+ * milestones. `listRevisions` promises newest-first; an out-of-order or
+ * duplicate result is an integrity failure, not something this reader sorts
+ * into a plausible story.
+ */
+export function projectContentShadowRevisionHistory(
+  rows: readonly Pick<
+    ArtifactRevisionRow,
+    | "revision"
+    | "content_hash"
+    | "generated_by"
+    | "editor_id"
+    | "note"
+    | "validation_errors"
+    | "created_at"
+  >[],
+): RevisionHistoryDto {
+  for (let index = 1; index < rows.length; index += 1) {
+    if (rows[index - 1]!.revision !== rows[index]!.revision + 1) {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "The Content Shadow revision ledger is not complete and newest-first.",
+      );
+    }
+  }
+  if (rows.length > 0 && rows.at(-1)!.revision !== 1) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The Content Shadow revision ledger is incomplete.",
+    );
+  }
+  const projected = rows.map((row) => {
+    if (!Array.isArray(row.validation_errors)) {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "The Content Shadow revision ledger is unreadable.",
+      );
+    }
+    return {
+      revision: row.revision,
+      contentHash: row.content_hash,
+      generatedBy: row.generated_by,
+      editorId: row.editor_id,
+      note: row.note,
+      validationErrorCount: row.validation_errors.length,
+      createdAt: row.created_at,
+    };
+  });
+  const parsed = ContentShadowDraft.shape.revisionHistory.safeParse(projected);
+  if (!parsed.success) {
+    throw new ProblemError(
+      "DEPENDENCY_UNAVAILABLE",
+      "The Content Shadow revision ledger is unreadable.",
+    );
+  }
+  return parsed.data;
+}
+
 /**
  * Resolve the draft THIS run owns, never the Action's currently live artifact.
  *
@@ -950,12 +1368,24 @@ async function resolveRunScopedDraft(
     artifact: ArtifactRow,
     revision: number,
     contentText: string | null,
-  ): ContentShadowDraftDto => ({
-    artifactId: artifact.id,
-    status: artifact.status as ContentShadowDraftDto["status"],
-    currentRevision: revision,
-    contentText,
-  });
+  ): Promise<ContentShadowDraftDto> =>
+    artifacts.listRevisions(scope, artifact.id).then((revisions) => {
+      const candidate = {
+        artifactId: artifact.id,
+        status: artifact.status as ContentShadowDraftDto["status"],
+        currentRevision: revision,
+        contentText,
+        revisionHistory: projectContentShadowRevisionHistory(revisions),
+      };
+      const parsed = ContentShadowDraft.safeParse(candidate);
+      if (!parsed.success) {
+        throw new ProblemError(
+          "DEPENDENCY_UNAVAILABLE",
+          "The Content Shadow draft projection is unreadable.",
+        );
+      }
+      return parsed.data;
+    });
 
   if (gate) {
     const artifact = await artifacts.findById(
@@ -968,7 +1398,7 @@ async function resolveRunScopedDraft(
         artifact.id,
         gate.evaluated_revision,
       );
-      return project(
+      return await project(
         artifact,
         gate.evaluated_revision,
         revision?.content_text ?? null,
@@ -983,12 +1413,12 @@ async function resolveRunScopedDraft(
   if (generated) {
     const artifact = await artifacts.findById(scope, generated.artifact_id);
     if (artifact) {
-      return project(artifact, generated.revision, generated.content_text);
+      return await project(artifact, generated.revision, generated.content_text);
     }
   }
 
   const claimed = await artifacts.findByGenerationRun(scope, asyncRunId);
-  return claimed ? project(claimed, 0, null) : null;
+  return claimed ? await project(claimed, 0, null) : null;
 }
 
 /**
@@ -1109,12 +1539,11 @@ export async function getContentShadowRun(
   }
 
   const manifest = shadowRun.frozen_input_manifest;
-  const cluster = manifest["searchCluster"];
-  const clusterRecord =
-    typeof cluster === "object" && cluster !== null && !Array.isArray(cluster)
-      ? (cluster as Record<string, unknown>)
-      : {};
   const outputLocale = requiredManifestString(manifest, "outputLocale");
+  const frozenInputs = projectContentShadowFrozenInputs(
+    manifest,
+    shadowRun.source_finding_id,
+  );
 
   const pack = await new FlowShadowResearchPacksRepository(db).findByRun(
     projectScope,
@@ -1138,8 +1567,8 @@ export async function getContentShadowRun(
       ? null
       : {
           packId: pack.id,
-          sources: projectPackSources(pack.pack),
-          limitations: frozenStringArray(pack.pack["limitations"]),
+          sources: projectContentShadowPackSources(pack.pack),
+          limitations: projectResearchLimitations(pack.pack),
           generatedAt: pack.created_at,
         };
 
@@ -1166,23 +1595,7 @@ export async function getContentShadowRun(
       contentBriefArtifactId: shadowRun.content_brief_artifact_id,
       contentBriefRevision: shadowRun.content_brief_revision,
     },
-    frozenInputs: {
-      primaryFindingId: shadowRun.source_finding_id,
-      sourceDiagnosticRunId: requiredManifestString(
-        manifest,
-        "sourceDiagnosticRunId",
-      ),
-      competitorEntityIds: frozenStringArray(manifest["competitorEntityIds"]),
-      searchCluster: {
-        clusterKey: requiredManifestString(clusterRecord, "clusterKey"),
-        keywordEntityIds: frozenStringArray(clusterRecord["keywordEntityIds"]),
-      },
-      generativeQueryEntityIds: frozenStringArray(
-        manifest["generativeQueryEntityIds"],
-      ),
-      firstParty: projectFirstParty(manifest),
-      contentBriefOutline: projectBriefOutline(manifest),
-    },
+    frozenInputs,
     research,
     draft,
     qa: gate

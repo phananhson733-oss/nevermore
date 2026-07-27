@@ -55,15 +55,11 @@ describe("source index", () => {
   });
 
   /**
-   * S2. Subdomain widening belongs to the SITE ORIGIN alone.
-   *
-   * The ICP conversion target's host is routinely a third-party scheduler — the
-   * repository's own fixture uses a different registrable domain for the two —
-   * and widening it handed every other tenant of that scheduler the customer's
-   * own-property status: with `https://calendly.com/acme/demo` frozen, a link
-   * to `https://evil.calendly.com/anything` resolved as first-party.
+   * Ownership is exact-host, including for the project site. A subdomain must
+   * arrive as its own verified site origin or exact frozen PageSnapshot; DNS
+   * suffix resemblance is not evidence of control.
    */
-  it("widens the site origin to its subdomains and the conversion target to nothing", () => {
+  it("keeps site ownership on the exact hostname and never widens either identity", () => {
     const index = buildSourceIndex(
       fixturePack({
         firstParty: {
@@ -75,10 +71,21 @@ describe("source index", () => {
     const provenance = (value: string) =>
       resolveLinkProvenance(index, { kind: "url", value });
 
-    expect(provenance("https://docs.signalframe.example/onboarding")).toBe(
-      "first_party",
+    expect(provenance("https://signalframe.example/onboarding")).toBe(
+      "first_party_identity",
     );
-    expect(provenance("https://calendly.com/acme/demo")).toBe("first_party");
+    expect(provenance("https://docs.signalframe.example/onboarding")).toBe(
+      "unresolved",
+    );
+    expect(provenance("https://www.signalframe.example/onboarding")).toBe(
+      "unresolved",
+    );
+    expect(provenance("https://calendly.com/acme/demo")).toBe(
+      "first_party_identity",
+    );
+    expect(provenance("https://www.calendly.com/acme/demo")).toBe(
+      "unresolved",
+    );
     expect(provenance("https://evil.calendly.com/anything")).toBe("unresolved");
     expect(provenance("https://signalframe.example.attacker.test/x")).toBe(
       "unresolved",
@@ -87,7 +94,7 @@ describe("source index", () => {
 });
 
 describe("canonicalUrl", () => {
-  it("folds case, `www.`, trailing slash and fragment", () => {
+  it("folds case, `www.`, trailing slash and fragment for citation lookup", () => {
     expect(canonicalUrl("HTTPS://WWW.Example.com/a/#top")).toStrictEqual({
       url: "example.com/a",
       domain: "example.com",
@@ -453,7 +460,7 @@ describe("claim extraction boundaries", () => {
     expect(hits[0]?.resolution.authority).toBe("D");
     // The same address, asked the other question, is a complete answer.
     expect(resolveLinkProvenance(index, { kind: "url", value: own })).toBe(
-      "first_party",
+      "first_party_identity",
     );
   });
 });
@@ -549,8 +556,21 @@ describe("identities too weak to resolve anything", () => {
         ...base.sources,
         {
           kind: "first_party_site",
-          ref: "SignalFrame Analytics",
+          ref: "Malformed Origin Token",
           authorityTier: "A",
+          label: "Malformed Origin Token",
+          url: null,
+          availability: "unavailable",
+          capturedAt: null,
+          urlHash: null,
+          contentHash: null,
+          contentHashMethod: null,
+          contentText: null,
+          contentTruncated: false,
+          excerpt: null,
+          excerptTruncated: false,
+          metrics: null,
+          evidenceRefs: [],
           limitation: null,
         },
       ],
@@ -558,7 +578,7 @@ describe("identities too weak to resolve anything", () => {
     const index = buildSourceIndex(pack);
     const named = {
       kind: "name",
-      value: "SignalFrame Analytics Group",
+      value: "Malformed Origin Token Group",
     } as const;
 
     expect(index.citableCount).toBe(0);
@@ -570,11 +590,11 @@ describe("identities too weak to resolve anything", () => {
 /**
  * The chain has to RESOLVE, not only refuse.
  *
- * Slice 2's own pack retrieves nothing external, so "did this resolve?" is the
- * constant no for every real run — which means a suite made only of refusals
- * would pass just as happily against a chain that resolves nothing at all. Each
- * case below is a shape a correct draft is entitled to, and blocking it would be
- * the false-accusation failure rather than a missed fabrication.
+ * A pack may now carry captured external pages, so the chain must prove both
+ * halves: project records do not resolve as evidence, while real page captures
+ * and explicit legacy citable fixtures do. Each case below is a shape a correct
+ * draft is entitled to, and blocking it would be the false-accusation failure
+ * rather than a missed fabrication.
  */
 describe("what the chain does resolve", () => {
   /**
@@ -637,7 +657,7 @@ describe("what the chain does resolve", () => {
   /**
    * RL12b's question — "is this address one the frozen inputs account for?"
    * (`claims.ts:306-313`) — has a positive answer, and the suite never took it:
-   * every provenance assertion so far was `first_party` or `unresolved`. If this
+   * every provenance assertion so far was first-party or `unresolved`. If this
    * arm collapsed, every correctly cited external source would be reported as an
    * unaccounted-for link, which is noise a reviewer learns to click through.
    *
@@ -668,9 +688,8 @@ describe("what the chain does resolve", () => {
    * towards a human instead of towards a silent match (`text.ts:642-649`).
    *
    * Both spellings below are a homograph of the frozen origin — one of the
-   * origin itself, one of a subdomain the suffix rule would otherwise widen —
-   * and granting either one own-property status is the same defect the leading
-   * dot in that rule was added to prevent.
+   * origin itself, one of an unverified subdomain — and granting either one
+   * own-property status would turn parser uncertainty into a silent match.
    */
   it("refuses a host it cannot canonicalize rather than reading it as ours", () => {
     const index = buildSourceIndex(fixturePack());
@@ -804,7 +823,7 @@ describe("an address survives flattening byte for byte", () => {
     const value = "https://signalframe.example/~guides/deep_dive_2024";
 
     expect(resolveLinkProvenance(index, { kind: "url", value })).toBe(
-      "first_party",
+      "first_party_identity",
     );
     expect(flattenLine(`See ${value} for detail.`).urls[0]?.value).toBe(value);
   });

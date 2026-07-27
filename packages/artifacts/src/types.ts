@@ -44,7 +44,7 @@ export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
  * merely happened to be equal.
  */
 export const CONTENT_SHADOW_PROMPT_SET_VERSION =
-  "mvp.prompts.content-shadow.0.3.0";
+  "mvp.prompts.content-shadow.0.4.0";
 
 /** Closed task vocabulary persisted by AnalysisInvocation. */
 export const ANALYSIS_INVOCATION_TASKS = [
@@ -113,6 +113,46 @@ export interface PromptCurrentMetadata {
   readonly currentDescription: string | null;
 }
 
+/**
+ * One immutable, bounded research excerpt admitted to the English Blog prompt.
+ *
+ * The full retrieved page body is deliberately absent: the model receives only
+ * the excerpt selected by the governed research stage plus the source identity,
+ * capture time, and content hash needed to audit that selection.
+ */
+export interface PromptResearchSource {
+  readonly sourceRef: string;
+  readonly kind: string;
+  readonly label: string;
+  readonly url: string;
+  readonly availability: string;
+  readonly authorityTier: string;
+  readonly capturedAt: string;
+  readonly contentHash: string;
+  readonly excerpt: string;
+  readonly evidenceRefs: readonly string[];
+  readonly limitation: string;
+}
+
+/** Customer-confirmed brand/compliance rules frozen with the research pack. */
+export interface PromptContentPolicy {
+  readonly brandConstraints: readonly string[];
+  readonly complianceConstraints: readonly string[];
+  readonly prohibitedTerms: readonly string[];
+  /**
+   * Customer-specific restrictions stay verbatim instead of being narrowed to
+   * three built-in rules. The prompt boundary still sanitizes and bounds every
+   * entry before it leaves the process.
+   */
+  readonly claimRestrictions: readonly string[];
+}
+
+/** Governed research projection available only to `english_blog_draft`. */
+export interface PromptResearchContext {
+  readonly sources: readonly PromptResearchSource[];
+  readonly policy: PromptContentPolicy;
+}
+
 /** The full allowlisted artifact generation input. */
 export interface ArtifactPromptInput {
   readonly artifactType: ArtifactType;
@@ -133,6 +173,12 @@ export interface ArtifactPromptInput {
    * `briefSections` is empty ("the brief carried no readable outline").
    */
   readonly contentBriefOutline: ContentBriefOutline | null;
+  /**
+   * Frozen research excerpts and content policy for the English Blog draft.
+   * Every other artifact type passes `null`, preserving its prompt bytes and
+   * preventing research-page text from leaking into unrelated generation.
+   */
+  readonly researchContext: PromptResearchContext | null;
 }
 
 /** Built artifact content — a markdown/csv string or a metadata JSON object. */

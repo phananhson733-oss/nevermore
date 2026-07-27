@@ -72,7 +72,7 @@ describe("evaluateDraftQa", () => {
 
   it("records the pinned adapter version that produced the judgement", () => {
     expect(evaluateDraftQa(input).adapterVersion).toBe(
-      "content-shadow-adapter.0.3.0",
+      "content-shadow-adapter.0.4.0",
     );
   });
 });

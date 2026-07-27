@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { ResearchSource } from "./types.ts";
 import { evaluateDraftQa, QA_THRESHOLDS } from "./qa/index.ts";
+import { CLEAN_DRAFT } from "./qa/__fixtures__/drafts.ts";
 import { fixturePack } from "./qa/__fixtures__/pack.ts";
 
 /**
@@ -95,5 +97,60 @@ describe("termination inside the advertised input bound", () => {
     const splitLines = Date.now() - splitStart;
 
     expect(oneLine).toBeLessThan(Math.max(splitLines, 50) * 20);
+  });
+
+  it("bounds a maximal frozen page corpus and fails to human review", () => {
+    const corpusText =
+      "A frozen methodology appendix discusses sampling frames, interview protocols, cohort definitions, and correction records. ".repeat(
+        260,
+      );
+    const externalPages: ResearchSource[] = Array.from(
+      { length: 33 },
+      (_, index) => ({
+        kind: "external_page",
+        ref: `bounded-external-page-${index}`,
+        authorityTier: "B",
+        label: `Bounded external page ${index}`,
+        url: `https://research.example/corpus/${index}`,
+        availability: "available",
+        capturedAt: "2026-07-27T08:00:00.000Z",
+        urlHash: "a".repeat(64),
+        contentHash: "b".repeat(64),
+        contentHashMethod: "sha256_canonical_extract",
+        contentText: corpusText,
+        contentTruncated: false,
+        excerpt: corpusText.slice(0, 240),
+        excerptTruncated: true,
+        metrics: null,
+        evidenceRefs: [],
+        limitation: null,
+      }),
+    );
+    const base = fixturePack();
+    const started = Date.now();
+    const evaluation = evaluateDraftQa({
+      draftMarkdown: CLEAN_DRAFT,
+      briefMarkdown: "## Brief\n\nDefine the activation milestone.\n",
+      pack: { ...base, sources: [...base.sources, ...externalPages] },
+      briefOutlineStats: {
+        briefSectionCount: 2,
+        projectedSectionCount: 2,
+        clusterKeywordCount: 1,
+        projectedKeywordCount: 1,
+        unconfirmedMappingCount: 0,
+      },
+    });
+    const elapsed = Date.now() - started;
+    const overlap = evaluation.rules.find(
+      (rule) => rule.ruleId === "scdup_source_overlap",
+    );
+
+    expect(overlap).toMatchObject({
+      pass: true,
+      evaluable: false,
+      reasonCode: "scdup_source_comparison_bounded",
+    });
+    expect(evaluation.verdict).toBe("needs_review");
+    expect(elapsed).toBeLessThan(10_000);
   });
 });

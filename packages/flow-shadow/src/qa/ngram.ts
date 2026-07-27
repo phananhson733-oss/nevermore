@@ -3,10 +3,11 @@ import { QA_THRESHOLDS } from "./thresholds.ts";
 /**
  * Token-overlap primitives.
  *
- * `longestCommonNgram` is the dynamic program the sibling tooling used for SERP
- * plagiarism detection. SignalFrame has no SERP snippet corpus in Slice 2, so
- * that rule is not ported — but the algorithm is, because we DO own a corpus
- * the draft can plagiarise: the pinned content brief (SC-DUP).
+ * `longestCommonNgram` is the dynamic program the sibling tooling used for
+ * SERP-wide plagiarism detection. The frozen pack has no SERP snippet corpus,
+ * so that rule is not ported — but the algorithm is, because the gate does own
+ * the pinned content brief (SC-DUP). Captured page bodies use the separate
+ * bounded shingle/Jaccard rule rather than multiplying this O(n·m) comparison.
  *
  * The DP is O(n·m), so both sides are capped before it runs. The cap is a
  * deterministic prefix, never a sample.

@@ -76,6 +76,17 @@ interface Recorded {
   readonly url: string;
 }
 
+function draftHistory(scenario: Scenario) {
+  return Array.from({ length: scenario.artifactRevision }, (_, index) => {
+    const revision = index + 1;
+    return {
+      revision,
+      contentHash: `${CONTENT_HASH.slice(0, 56)}${String(revision).padStart(8, "0")}`,
+      createdAt: `2026-07-25T00:0${Math.min(revision, 9)}:00.000Z`,
+    };
+  });
+}
+
 function draftArtifact(scenario: Scenario) {
   return {
     id: DRAFT_ARTIFACT_ID,
@@ -180,7 +191,15 @@ function runProjection(scenario: Scenario) {
         {
           kind: "content_brief",
           ref: BRIEF_ARTIFACT_ID,
+          label: "Q3 onboarding brief",
+          url: "https://example.test/briefs/onboarding",
+          availability: "available",
           authorityTier: "A",
+          capturedAt: NOW,
+          contentHash: CONTENT_HASH,
+          excerpt: "Defines the audience and allowed evidence boundaries.",
+          metrics: null,
+          evidenceRefs: ["brief-revision:3"],
           limitation: "The confirmed content brief revision.",
         },
       ],
@@ -194,6 +213,15 @@ function runProjection(scenario: Scenario) {
       status: scenario.artifactStatus,
       currentRevision: scenario.evaluatedRevision,
       contentText: DRAFT_BODY,
+      revisionHistory: draftHistory(scenario).map((entry) => ({
+        revision: entry.revision,
+        contentHash: entry.contentHash,
+        generatedBy: "structured_llm",
+        editorId: null,
+        note: null,
+        validationErrorCount: 0,
+        createdAt: entry.createdAt,
+      })),
     },
     qa: {
       gateId: "00000000-0000-4000-8000-000000000909",
@@ -382,6 +410,36 @@ test("a review names the revision it applies to, in three places", async ({
   await page.locator("[data-review-pass]").click();
   await expect(page.locator("[data-review-confirm]")).toContainText(
     "你正在评审 Revision 1",
+  );
+});
+
+test("revision history lists every returned revision with ledger fields and honest badges", async ({
+  page,
+}) => {
+  await openExecution(
+    page,
+    scenario({ artifactRevision: 3, artifactStatus: "draft" }),
+  );
+
+  await page.locator("[data-review-history]").click();
+  const items = page.locator("[data-review-history-item]");
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toContainText("Revision 3");
+  await expect(items.nth(0)).toContainText("structured_llm");
+  await expect(items.nth(0)).toContainText("0 条校验错误");
+  await expect(items.nth(1)).toContainText("Revision 2");
+  await expect(items.nth(2)).toContainText("Revision 1");
+  await expect(page.locator("[data-review-history-overlay]")).toContainText(
+    "生成方式",
+  );
+  await expect(page.locator("[data-review-history-overlay]")).toContainText(
+    "冻结 Hash",
+  );
+  await expect(page.locator("[data-review-history-overlay]")).toContainText(
+    "创建时间",
+  );
+  await expect(page.locator("[data-review-history-overlay]")).toContainText(
+    "版本备注",
   );
 });
 

@@ -29,7 +29,6 @@ import {
   FindingsRepository,
   FlowShadowQaGatesRepository,
   FlowShadowResearchPacksRepository,
-  FlowShadowRunsRepository,
   SourceConnectionsRepository,
   type ProjectScope,
 } from "@sf/db";
@@ -467,17 +466,14 @@ async function seedResearchPack(
   fixture: ShadowFixture,
   flowShadowRunId: string,
 ): Promise<void> {
-  const shadowRun = await new FlowShadowRunsRepository(handle.db).findById(
-    fixture.scope,
-    flowShadowRunId,
-  );
+  const pack = { sources: [], limitations: [] };
   await new FlowShadowResearchPacksRepository(handle.db).insert({
     workspaceId: fixture.scope.workspaceId,
     projectId: fixture.scope.projectId,
     flowShadowRunId,
     analysisInvocationId: null,
-    contentHash: shadowRun!.content_hash,
-    pack: { sources: [], limitations: [] },
+    contentHash: contentHash(pack),
+    pack,
   });
 }
 
@@ -1037,19 +1033,16 @@ describeDb("getContentShadowRun", () => {
     // which is why this needed no OpenAPI change.
     const fixture = await seedShadowFixture(handle);
     const run = await startRun(fixture);
-    const shadowRun = await new FlowShadowRunsRepository(handle.db).findById(
-      fixture.scope,
-      run.flowShadowRunId,
-    );
     const failureLimitation =
       "Content brief outline extraction FAILED: the pinned brief revision carried no machine-readable `## ` section heading, so this draft was NOT guided by the brief. Review the draft against the brief by hand.";
+    const pack = { sources: [], limitations: [failureLimitation] };
     await new FlowShadowResearchPacksRepository(handle.db).insert({
       workspaceId: fixture.scope.workspaceId,
       projectId: fixture.scope.projectId,
       flowShadowRunId: run.flowShadowRunId,
       analysisInvocationId: null,
-      contentHash: shadowRun!.content_hash,
-      pack: { sources: [], limitations: [failureLimitation] },
+      contentHash: contentHash(pack),
+      pack,
     });
 
     const projection = await read(fixture, run.flowShadowRunId);
@@ -1157,6 +1150,11 @@ describeDb("getContentShadowRun", () => {
     expect(projectionA.draft?.currentRevision).toBe(
       projectionA.qa?.evaluatedRevision,
     );
+    // The run-scoped body stays pinned to revision 1, while the customer can
+    // still inspect the artifact's complete immutable ledger newest-first.
+    expect(
+      projectionA.draft?.revisionHistory.map((revision) => revision.revision),
+    ).toEqual([2, 1]);
 
     const projectionB = await read(fixture, runB.flowShadowRunId);
     expect(projectionB.draft).toMatchObject({
