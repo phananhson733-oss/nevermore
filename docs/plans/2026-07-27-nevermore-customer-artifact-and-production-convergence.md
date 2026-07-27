@@ -240,7 +240,10 @@ Keep existing Crawl/CSV/DataForSEO service contracts and internal operations int
 
 - GSC and GA4 use their real existing controls;
 - GitHub renders an honest `planned` card in this task;
-- internal sources move into a compact evidence-readiness summary without connection controls.
+- Crawl, CSV, and DataForSEO remain in service/audit readiness and evidence
+  provenance, but their names and controls do not appear on the customer
+  Connections page. A generic aggregate readiness explanation may remain; it
+  must not look like another connector collection.
 
 **Step 4: Replace customer-visible branding**
 
