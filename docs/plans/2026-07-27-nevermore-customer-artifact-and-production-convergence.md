@@ -639,4 +639,3 @@ The standalone customer Artifact must represent the complete released product, n
 **Step 5: Stop gate**
 
 Do not mark complete until every explicit requirement has direct code/runtime/test evidence and the Owner approves the customer-visible product walkthrough.
-
