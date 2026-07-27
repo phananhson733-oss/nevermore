@@ -22,3 +22,7 @@ export * from "./zod/content-shadow.ts";
 export * from "./zod/opportunities.ts";
 export * from "./zod/recheck.ts";
 export * from "./zod/growth-map.ts";
+export * from "./zod/keyword-governance.ts";
+export * from "./zod/artifact-approval.ts";
+export * from "./zod/delivery-connections.ts";
+export * from "./zod/publication.ts";
