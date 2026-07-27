@@ -243,7 +243,10 @@ Keep existing Crawl/CSV/DataForSEO service contracts and internal operations int
 - Crawl, CSV, and DataForSEO remain in service/audit readiness and evidence
   provenance, but their names and controls do not appear on the customer
   Connections page. A generic aggregate readiness explanation may remain; it
-  must not look like another connector collection.
+  must not look like another connector collection or use an unexplained hidden
+  denominator. Customer-visible analysis readiness is derived only from GSC and
+  GA4; GitHub remains a planned delivery connector and is not counted as an
+  analysis source.
 
 **Step 4: Replace customer-visible branding**
 
