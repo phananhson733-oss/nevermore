@@ -693,6 +693,16 @@ export const PublicationDestination = z
       });
     }
     if (
+      destination.state === "unavailable" &&
+      destination.limitation === null
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["limitation"],
+        message: "An unavailable destination must explain its limitation",
+      });
+    }
+    if (
       destination.state === "revoked" &&
       (destination.revision < 2 || destination.limitation === null)
     ) {

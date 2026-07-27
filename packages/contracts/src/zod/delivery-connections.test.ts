@@ -729,6 +729,18 @@ describe("publication destination client/server contracts", () => {
         limitation: null,
       }).success,
     ).toBe(false);
+    const unavailable = {
+      ...destination,
+      state: "unavailable" as const,
+      limitation: "Provider capability probe is unavailable.",
+    };
+    expect(PublicationDestination.parse(unavailable)).toEqual(unavailable);
+    expect(
+      PublicationDestination.safeParse({
+        ...unavailable,
+        limitation: null,
+      }).success,
+    ).toBe(false);
     expect(
       PublicationDestination.safeParse({
         ...destination,
