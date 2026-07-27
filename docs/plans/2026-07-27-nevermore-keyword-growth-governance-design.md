@@ -234,6 +234,7 @@ Authority migration：
 10. 旧 Content Shadow Pack 保持原 schema 和现有校验语义，不原地改写；adapter 在读取历史 Pack 时使用 legacy alias resolver；
 11. Rename 保留 Topic Node Identity 并增加 alias；Split/Merge 创建新的 Identity、记录 `split_into`/`merged_into` successor relationship，并要求受影响关键词重新审核，不能静默迁移；
 12. Backfill 完成且新旧读链双读校验通过前，不切换 Opportunity、Finding 与 Content Shadow 的 authority。
+13. `0023_measurement_windows.sql` 继续只负责不可变 Measurement Window；`mvp.rules.0.2.2` 的数据库白名单、Governance Projection 门禁和 `CONTENT-GAP-011@2` 映射与 Topic/Keyword authority 一起进入 `0024_keyword_governance_foundation.sql`，不得用第二个 `0023` 或静默顺延既有迁移分配。
 
 Keyword Review Revision 迁移：
 

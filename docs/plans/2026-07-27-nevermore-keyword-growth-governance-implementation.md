@@ -93,7 +93,7 @@ Do not create a Keyword migration while those two reserved migrations are absent
 
 | Migration | Owner |
 | --- | --- |
-| `0024_keyword_governance_foundation.sql` | Topic identity and Keyword Review ledger |
+| `0024_keyword_governance_foundation.sql` | Topic identity, Keyword Review ledger, and the `mvp.rules.0.2.2` governed Content Gap database gate |
 | `0025_keyword_relation_governance.sql` | duplicate/cannibalization relations |
 | `0026_action_execution_state.sql` | blockers and business progress |
 | `0027_opportunity_decision_ledger.sql` | durable opportunity decisions |
@@ -513,6 +513,13 @@ check (decision_origin in ('migration_baseline', 'user', 'system_suggestion'))
 ```
 
 Store actor, reason, decided_at, and the full reviewed projection. Use composite scope FKs wherever the schema already exposes them.
+
+This migration also widens the deterministic diagnostic database gate to
+`mvp.rules.0.2.2`, requires the frozen
+`growth-governance.1.0.0` manifest envelope for new `0.2.2` runs, and maps
+`CONTENT-GAP-011` to Rule Version 2. Keep `0.2.0` and `0.2.1` replayable.
+Do not consume the reserved `0023_measurement_windows.sql` ordinal for this
+rule-set change.
 
 **Step 4: Backfill safely**
 
