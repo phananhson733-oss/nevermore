@@ -158,6 +158,19 @@ export function apiRouteTemplate(rawUrl: string): string {
   ) {
     return `${base}/artifacts/:artifactId/approval`;
   }
+  if (resource === "publications" && segments[3] === "attempts") {
+    const attempts = `${base}/publications/attempts`;
+    if (segments.length === 4) return attempts;
+    if (segments.length === 5) {
+      return `${attempts}/:publicationAttemptId`;
+    }
+    if (
+      segments.length === 6 &&
+      (segments[5] === "rollback" || segments[5] === "reconcile")
+    ) {
+      return `${attempts}/:publicationAttemptId/${segments[5]}`;
+    }
+  }
   if (resource === "delivery-connections") {
     const connections = `${base}/delivery-connections`;
     if (segments.length === 3) return connections;

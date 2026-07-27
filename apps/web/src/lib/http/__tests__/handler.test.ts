@@ -488,4 +488,45 @@ describe("HTTP request completion metrics", () => {
       ),
     ).toBe("/api/mvp/:unknown");
   });
+
+  it("recognizes governed publication command and history routes without logging attempt ids", () => {
+    const attempts =
+      "https://example.test/api/mvp/projects/customer-secret-project/publications/attempts";
+
+    expect(apiRouteTemplate(attempts)).toBe(
+      "/api/mvp/projects/:projectId/publications/attempts",
+    );
+    expect(
+      apiRouteTemplate(
+        `${attempts}/customer-secret-attempt?providerToken=hidden`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/publications/attempts/:publicationAttemptId",
+    );
+    expect(
+      apiRouteTemplate(
+        `${attempts}/customer-secret-attempt/rollback`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/publications/attempts/:publicationAttemptId/rollback",
+    );
+    expect(
+      apiRouteTemplate(
+        `${attempts}/customer-secret-attempt/reconcile`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/publications/attempts/:publicationAttemptId/reconcile",
+    );
+
+    expect(
+      apiRouteTemplate(
+        `${attempts}/customer-secret-attempt/provider-success`,
+      ),
+    ).toBe("/api/mvp/:unknown");
+    expect(
+      apiRouteTemplate(
+        "https://example.test/api/mvp/projects/customer-secret-project/publications",
+      ),
+    ).toBe("/api/mvp/:unknown");
+  });
 });
