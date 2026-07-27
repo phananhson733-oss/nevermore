@@ -69,6 +69,35 @@ function source(
 }
 
 describe("Sources readiness projection", () => {
+  it("keeps all five internal provider families in the audit-readiness contract", () => {
+    expect(SOURCE_PROVIDER_ORDER).toEqual([
+      "crawl",
+      "gsc",
+      "ga4",
+      "csv",
+      "dataforseo",
+    ]);
+
+    const sources = [
+      source("crawl", { latestSnapshot: snapshot("crawl", "available") }),
+      source("gsc", { latestSnapshot: snapshot("gsc", "available") }),
+      source("ga4", { state: "connected", latestSnapshot: null }),
+      source("csv", { latestSnapshot: snapshot("csv", "available") }),
+      source("dataforseo"),
+    ] as const;
+
+    expect(deriveSourcesReadiness(sources)).toMatchObject({
+      familyCount: 5,
+      expectedFamilyCount: 5,
+      enabledCount: 4,
+      usableCount: 3,
+      gapProviders: ["ga4"],
+      missingProviders: [],
+    });
+    expect(sourcesCoveragePercentage(sources)).toBe(75);
+    expect(sourcesReadyForDiagnosis(sources)).toBe(false);
+  });
+
   it("derives connected, usable, partial, and unavailable counts from canonical slots", () => {
     const sources = [
       source("crawl", { latestSnapshot: snapshot("crawl", "available") }),

@@ -65,11 +65,11 @@ export default async function ProjectLayout({
       </a>
 
       <aside className={styles.sidebar} data-app-shell-sidebar="">
-        <div className={styles.brand} aria-label="SignalFrame">
+        <div className={styles.brand} aria-label="GenGrowth">
           <span className={styles.brandMark} aria-hidden="true">
             <Sparkles size={17} strokeWidth={2.2} />
           </span>
-          <span className={styles.brandWord}>signalframe</span>
+          <span className={styles.brandWord}>GenGrowth</span>
         </div>
 
         <ProjectSwitcher
@@ -176,7 +176,7 @@ export default async function ProjectLayout({
                   title={tNav("logout")}
                 >
                   <span className={styles.accountMonogram} aria-hidden="true">
-                    SF
+                    GG
                   </span>
                 </button>
               </form>

@@ -46,6 +46,10 @@ export const E2E_SNAPSHOT_PROVENANCE = {
 
 export interface CriticalFlowApiState {
   readonly collectionRequests: unknown[];
+  readonly sourceConnectRequests: {
+    readonly provider: "gsc" | "ga4";
+    readonly body: unknown;
+  }[];
   readonly diagnosticRequests: unknown[];
   readonly findingReviewRequests: unknown[];
   readonly artifactCreateRequests: unknown[];
@@ -438,6 +442,7 @@ export async function installCriticalFlowApi(
 ): Promise<CriticalFlowApiState> {
   const state: CriticalFlowApiState = {
     collectionRequests: [],
+    sourceConnectRequests: [],
     diagnosticRequests: [],
     findingReviewRequests: [],
     artifactCreateRequests: [],
@@ -457,8 +462,17 @@ export async function installCriticalFlowApi(
       body: "isolated e2e bundle",
       contentType: "application/zip",
       headers: {
-        "Content-Disposition": 'attachment; filename="signalframe-client.zip"',
+        "Content-Disposition": 'attachment; filename="gengrowth-client.zip"',
       },
+    });
+  });
+
+  await page.route("**/mock-google-oauth**", async (route) => {
+    const provider = new URL(route.request().url()).searchParams.get("provider");
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: `<title>Google OAuth configuration</title><h1>Configure ${provider ?? "Google"}</h1>`,
     });
   });
 
@@ -485,6 +499,23 @@ export async function installCriticalFlowApi(
           sourceSlot("csv"),
           sourceSlot("dataforseo"),
         ],
+      });
+      return;
+    }
+
+    const connectMatch = path.match(
+      new RegExp(`^${BASE}/sources/(gsc|ga4)/connect$`),
+    );
+    if (method === "POST" && connectMatch) {
+      const provider = connectMatch[1] as "gsc" | "ga4";
+      const body = request.postDataJSON();
+      state.sourceConnectRequests.push({ provider, body });
+      await json(route, {
+        data: {
+          phase: "authorization",
+          authorizationUrl: `${url.origin}/mock-google-oauth?provider=${provider}`,
+          expiresAt: "2026-07-18T12:15:00.000Z",
+        },
       });
       return;
     }

@@ -16,7 +16,7 @@ export default async function NewProjectPage() {
     <main className={styles.page}>
       <header className={styles.header}>
         <div className={styles.headerText}>
-          <p className="sf-eyebrow">SignalFrame</p>
+          <p className="sf-eyebrow">GenGrowth</p>
           <h1 className={styles.title}>{t("title")}</h1>
           <p className={styles.subtitle}>{t("subtitle")}</p>
         </div>

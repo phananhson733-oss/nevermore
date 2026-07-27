@@ -107,7 +107,7 @@
     "dataforseo": "DataForSEO",
     "ahrefs": "Ahrefs",
     "semrush": "Semrush",
-    "system": "SignalFrame system",
+    "system": "GenGrowth system",
     "llm": "Language model"
   },
   "domain": {
@@ -132,7 +132,7 @@
   },
   "auth": {
     "title": "Operator sign-in",
-    "subtitle": "Sign in to your SignalFrame workspace.",
+    "subtitle": "Sign in to your GenGrowth workspace.",
     "emailLabel": "Email",
     "passwordLabel": "Password",
     "signInButton": "Sign in",
@@ -750,6 +750,13 @@
     "importing": "Importing…",
     "confirmDisabledHint": "Map the required fields to enable import.",
     "notAvailable": "Not available in this MVP.",
+    "connections": {
+      "customerTitle": "Customer-managed connections",
+      "customerDescription": "Connect the analysis and delivery services your team manages.",
+      "githubLabel": "GitHub",
+      "githubStatus": "Planned",
+      "githubDescription": "Reserved for approved pull-request and merge workflows. GenGrowth cannot access repositories or create pull requests yet."
+    },
     "fields": {
       "keyword": "Keyword",
       "searchVolume": "Search volume",
@@ -880,7 +887,7 @@
       "hideDetails": "Hide evidence details",
       "sourceProvider": "Source provider",
       "provider": {
-        "system": "SignalFrame system",
+        "system": "GenGrowth system",
         "llm": "Language model"
       },
       "availability": "Availability",

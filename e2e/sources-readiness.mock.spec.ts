@@ -113,45 +113,48 @@ test.beforeEach(async ({ page }) => {
   await installSourcesProjection(page);
 });
 
-test("Sources derives readiness and exposes canonical immutable provenance", async ({
+test("Sources derives customer readiness and exposes connector provenance", async ({
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
 
   const readiness = page.getByRole("region", { name: "Source readiness" });
-  // Readiness is intentionally scoped to enabled evidence families. The
-  // disabled DataForSEO slot remains visible on the page, but it must not
-  // dilute the actionable coverage denominator.
-  await expect(readiness).toContainText("2 / 4");
-  await expect(readiness).toContainText("50%");
+  // Customer readiness is explainable from the visible analysis connectors:
+  // GSC is partial, GA4 has no snapshot, and hidden internal evidence cannot
+  // inflate either the numerator or denominator.
+  await expect(readiness).toContainText("0 / 2");
+  await expect(readiness).toContainText("0%");
   await expect(readiness).toContainText("Connected");
-  await expect(readiness).toContainText("4");
-  await expect(readiness).toContainText("Usable");
   await expect(readiness).toContainText("2");
+  await expect(readiness).toContainText("Usable");
+  await expect(readiness).toContainText("0");
   await expect(readiness).toContainText("Partial");
   await expect(readiness).toContainText("1");
   await expect(readiness).toContainText("Unavailable");
   await expect(readiness).toContainText("1");
-  await expect(readiness).not.toContainText("83%");
+  await expect(readiness).not.toContainText("50%");
 
   const gap = page.getByRole("note", { name: "Coverage gap" });
   await expect(gap).toContainText("Search Console");
   await expect(gap).toContainText("Google Analytics 4");
   await expect(gap).not.toContainText("DataForSEO");
 
-  const crawl = page.getByRole("region", { name: "Site crawl" });
-  await expect(crawl).toContainText("Live");
-  await expect(crawl).toContainText("Latest immutable snapshot");
-  await expect(crawl).toContainText("crawl.site_graph.v1");
-  await expect(crawl).toContainText("0.2.0");
-  await expect(crawl).toContainText("crawl.site_graph.v2");
-  await expect(crawl).toContainText("Jun 1, 2026 – Jun 30, 2026");
-  await expect(crawl).toContainText("12,345");
-  await expect(crawl).toContainText("0123456789ab…89abcdef");
-  await expect(crawl).not.toContainText(LONG_CHECKSUM);
-
-  const csv = page.getByRole("region", { name: "CSV upload" });
-  await expect(csv).toContainText("Manual");
+  const customerConnections = page.locator("[data-customer-connector-grid]");
+  await expect(
+    customerConnections.locator("[data-customer-connector-card]"),
+  ).toHaveCount(3);
+  const gsc = customerConnections.getByRole("region", {
+    name: "Search Console",
+  });
+  await expect(gsc).toContainText("Live");
+  await expect(gsc).toContainText("Latest immutable snapshot");
+  await expect(gsc).toContainText("gsc.page_query_daily.v1");
+  await expect(gsc).toContainText("0.2.0");
+  await expect(gsc).toContainText("gsc.search_analytics.v1");
+  await expect(gsc).toContainText("Jun 1, 2026 – Jun 30, 2026");
+  await expect(gsc).toContainText("42");
+  await expect(gsc).toContainText("0123456789ab…89abcdef");
+  await expect(gsc).not.toContainText(LONG_CHECKSUM);
 
   const ga4 = page.getByRole("region", { name: "Google Analytics 4" });
   await expect(ga4).toContainText("No snapshot yet");
@@ -159,15 +162,19 @@ test("Sources derives readiness and exposes canonical immutable provenance", asy
   await expect(ga4).not.toContainText("Dataset");
   await expect(ga4).not.toContainText("Checksum");
 
+  await expect(page.getByRole("main")).not.toContainText("Site crawl");
+  await expect(page.getByRole("main")).not.toContainText("CSV upload");
+  await expect(page.getByRole("main")).not.toContainText("DataForSEO");
+
   const footline = page.getByRole("contentinfo", {
     name: "Snapshot provenance policy",
   });
-  await expect(footline).toContainText("4 immutable snapshots");
+  await expect(footline).toContainText("1 immutable snapshot");
   await expect(footline).toContainText("Credentials are never rendered");
   await expect(page.getByText("credential-must-never-render")).toHaveCount(0);
 
   await expect(
-    crawl.locator('[data-testid="source-provenance-dynamic"]'),
+    gsc.locator('[data-testid="source-provenance-dynamic"]'),
   ).toHaveCount(7);
 });
 
@@ -227,7 +234,7 @@ test("Sources readiness exposes no blocking axe violations in its definition lis
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
   await expect(
     page.getByRole("region", { name: "Source readiness" }),
-  ).toContainText("2 / 4");
+  ).toContainText("0 / 2");
   // Exactly one `main` landmark — the shell's (`layout.tsx:187`). No axe scan
   // here can report a duplicate: the scans select WCAG tags and keep only
   // critical/serious, while `landmark-no-duplicate-main` is best-practice at

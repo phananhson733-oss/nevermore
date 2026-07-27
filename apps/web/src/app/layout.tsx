@@ -21,7 +21,7 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "SignalFrame",
+  title: "GenGrowth",
   description: "Connected diagnosis and delivery workbench",
 };
 

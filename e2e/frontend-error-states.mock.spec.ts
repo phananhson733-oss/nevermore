@@ -65,38 +65,48 @@ async function nodeInSidebar(
   }, selector);
 }
 
-test("CSV preview has a readable 390px card view without horizontal panning", async ({
+test("CSV import stays off the customer surface while its preview service remains available", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
 
-  const csv = page.getByRole("region", { name: "CSV upload" });
-  await csv.locator('input[type="file"]').setInputFiles({
-    name: "keywords.csv",
-    mimeType: "text/csv",
-    buffer: Buffer.from(
-      "keyword,search_volume,market_code,language_code\nsignal frame,120,US,en\n",
-    ),
+  await expect(page.getByRole("main")).not.toContainText("CSV upload");
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+
+  const preview = await page.evaluate(async (projectId) => {
+    const form = new FormData();
+    form.append(
+      "file",
+      new File(
+        [
+          "keyword,search_volume,market_code,language_code\nsignal frame,120,US,en\n",
+        ],
+        "keywords.csv",
+        { type: "text/csv" },
+      ),
+    );
+    const response = await fetch(
+      `/api/mvp/projects/${projectId}/sources/csv/import`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": "csv-internal-preview" },
+        body: form,
+      },
+    );
+    return { status: response.status, body: await response.json() };
+  }, E2E_PROJECT_ID);
+
+  expect(preview.status).toBe(200);
+  expect(preview.body.data).toMatchObject({
+    rowCount: 1,
+    detectedColumns: [
+      "keyword",
+      "search_volume",
+      "market_code",
+      "language_code",
+    ],
   });
-
-  const caption = "CSV preview with 1 row and 4 columns";
-  const cards = csv.getByRole("list", { name: caption });
-  await expect(cards).toBeVisible();
-  await expect(csv.getByRole("table", { name: caption })).toBeHidden();
-  await expect(cards.locator("dt")).toHaveText([
-    "keyword",
-    "search_volume",
-    "market_code",
-    "language_code",
-  ]);
-  await expect(cards.locator("dd")).toHaveText([
-    "signal frame",
-    "120",
-    "US",
-    "en",
-  ]);
-
   expect(
     await page.evaluate(
       () =>
@@ -104,19 +114,6 @@ test("CSV preview has a readable 390px card view without horizontal panning", as
         document.documentElement.clientWidth + 1,
     ),
   ).toBe(false);
-
-  const results = await new AxeBuilder({ page })
-    .include('section[aria-labelledby="source-csv"]')
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
-  expect(
-    results.violations
-      .filter(
-        (violation) =>
-          violation.impact === "critical" || violation.impact === "serious",
-      )
-      .map((violation) => violation.id),
-  ).toEqual([]);
 });
 
 test("Sources full-screen query errors expose stable code, request ID, and retry without raw detail", async ({
@@ -171,6 +168,31 @@ test("Sources settles a failed status query once and offers a status retry", asy
   page,
 }) => {
   let runReads = 0;
+  let sourceReads = 0;
+  const sourceConnectionId = "00000000-0000-4000-8000-000000000154";
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/sources`,
+    async (route) => {
+      sourceReads += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: [
+            sourceSlot("crawl"),
+            sourceSlot("gsc", {
+              id: sourceConnectionId,
+              state: "connected",
+              connectedAt: "2026-07-18T12:00:00.000Z",
+            }),
+            sourceSlot("ga4"),
+            sourceSlot("csv"),
+            sourceSlot("dataforseo"),
+          ],
+        }),
+      });
+    },
+  );
   await page.route(
     `**/api/mvp/projects/${E2E_PROJECT_ID}/runs/collection-run`,
     async (route) => {
@@ -190,52 +212,36 @@ test("Sources settles a failed status query once and offers a status retry", asy
   );
 
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
-  const crawl = page.getByRole("region", { name: "Site crawl" });
-  await crawl.getByRole("button", { name: "Collect now" }).click();
+  const gsc = page.getByRole("region", { name: "Search Console" });
+  await gsc.getByRole("button", { name: "Collect now" }).click();
 
   await expect(
-    crawl.getByText("We couldn't refresh this run's status", { exact: false }),
+    gsc.getByText("We couldn't refresh this run's status", { exact: false }),
   ).toBeVisible();
-  await expect(crawl.getByRole("button", { name: "Retry" })).toBeVisible();
-  await expect(crawl).not.toContainText("raw upstream response");
+  await expect(gsc.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(gsc).not.toContainText("raw upstream response");
   await expect.poll(() => runReads).toBe(2);
   // Initial read + mutation-success invalidation + exactly one settled-error
   // invalidation. A repeated error effect would continue increasing this.
-  await expect.poll(() => api.sourceReads).toBe(3);
+  await expect.poll(() => sourceReads).toBe(3);
 
-  const settledSourceReads = api.sourceReads;
+  const settledSourceReads = sourceReads;
   await page.waitForTimeout(750);
-  expect(api.sourceReads).toBe(settledSourceReads);
+  expect(sourceReads).toBe(settledSourceReads);
   expect(api.collectionRequests).toHaveLength(1);
+  expect(api.collectionRequests[0]).toEqual({
+    provider: "gsc",
+    sourceConnectionId,
+  });
 
-  await crawl.getByRole("button", { name: "Retry" }).click();
+  await gsc.getByRole("button", { name: "Retry" }).click();
   await expect.poll(() => runReads).toBe(4);
   expect(api.collectionRequests).toHaveLength(1);
 });
 
-test("AC-046: Sources exposes permission, partial, and automatic rate-limit retry states", async ({
+test("AC-046: Sources exposes customer permission and partial states", async ({
   page,
 }) => {
-  const rateRun = {
-    id: "rate-limit-run",
-    projectId: E2E_PROJECT_ID,
-    kind: "collection",
-    status: "queued",
-    progress: {
-      phase: "retry_wait",
-      current: 1,
-      total: 3,
-      messageKey: "worker.collection.retry_wait",
-    },
-    lastError: {
-      code: "RATE_LIMITED",
-      summary: "Provider rate limit reached; automatic retry is scheduled.",
-    },
-    resultRef: null,
-    queuedAt: "2026-07-18T12:00:00.000Z",
-    startedAt: null,
-    completedAt: null,
-  };
   const partialSnapshot = {
     id: "00000000-0000-4000-8000-000000000151",
     siteId: E2E_SITE_ID,
@@ -255,11 +261,7 @@ test("AC-046: Sources exposes permission, partial, and automatic rate-limit retr
     checksum: "a".repeat(64),
   } satisfies MockDataSnapshot;
   const sources = [
-    sourceSlot("crawl", {
-      state: "syncing",
-      activeRun: rateRun,
-      limitation: "Provider rate limit reached; automatic retry is scheduled.",
-    }),
+    sourceSlot("crawl"),
     sourceSlot("gsc", {
       id: "00000000-0000-4000-8000-000000000152",
       state: "permission_denied",
@@ -288,30 +290,9 @@ test("AC-046: Sources exposes permission, partial, and automatic rate-limit retr
       });
     },
   );
-  await page.route(
-    `**/api/mvp/projects/${E2E_PROJECT_ID}/runs/rate-limit-run`,
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ data: rateRun }),
-      });
-    },
-  );
-
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
 
-  const crawl = page.getByRole("region", { name: "Site crawl" });
-  await expect(crawl.getByText("Syncing", { exact: true })).toBeVisible();
-  await expect(
-    crawl.getByText(
-      "Provider rate limit reached; automatic retry is scheduled.",
-    ),
-  ).toBeVisible();
-  await expect(crawl.getByText("Automatic retry scheduled.")).toBeVisible();
-  await expect(
-    crawl.getByRole("button", { name: "Collect now" }),
-  ).toBeDisabled();
+  await expect(page.getByRole("main")).not.toContainText("Site crawl");
 
   const gsc = page.getByRole("region", { name: "Search Console" });
   await expect(

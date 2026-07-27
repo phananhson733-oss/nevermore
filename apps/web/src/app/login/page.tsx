@@ -29,10 +29,10 @@ export default async function LoginPage({
       <Card padding="lg" className={styles.card}>
         <div className={styles.brand}>
           <span className={styles.brandMark} aria-hidden="true" />
-          <span className={styles.brandWord}>SignalFrame</span>
+          <span className={styles.brandWord}>GenGrowth</span>
         </div>
 
-        <p className="sf-eyebrow">SignalFrame</p>
+        <p className="sf-eyebrow">GenGrowth</p>
         <h1 className={styles.title}>{t("title")}</h1>
         <p className={styles.subtitle}>{t("subtitle")}</p>
 

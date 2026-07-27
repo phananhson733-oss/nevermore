@@ -50,15 +50,15 @@ test.beforeEach(async ({ page }) => {
   await installCriticalFlowApi(page);
 });
 
-test("Sources preserves the artifact grid at desktop and collapses without page overflow", async ({
+test("Sources lays out only the three customer connectors without overflow", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 2048, height: 1200 });
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
   await page.waitForLoadState("networkidle");
 
-  const cards = page.locator("[data-source-card]");
-  await expect(cards).toHaveCount(5);
+  const cards = page.locator("[data-customer-connector-card]");
+  await expect(cards).toHaveCount(3);
   const first = await cards.nth(0).boundingBox();
   const second = await cards.nth(1).boundingBox();
   expect(first).not.toBeNull();
@@ -79,21 +79,36 @@ test("Sources preserves the artifact grid at desktop and collapses without page 
   expect(Math.abs(readinessLead!.y - readinessGap!.y)).toBeLessThan(1);
 
   await expect(
-    page.locator('[data-source-card][data-provider="dataforseo"]'),
+    page.locator(
+      '[data-customer-connector-card][data-connector-state="planned"]',
+    ),
   ).toHaveCSS("border-top-style", "dashed");
+  await expect(
+    page.locator(
+      '[data-customer-connector-card][data-provider="dataforseo"]',
+    ),
+  ).toHaveCount(0);
+
+  await expect(page.getByRole("main")).not.toContainText("Site crawl");
+  await expect(page.getByRole("main")).not.toContainText("CSV upload");
+  await expect(page.getByRole("main")).not.toContainText("DataForSEO");
 
   const badgeFontSize = await cards
     .first()
-    .getByText("CR", { exact: true })
+    .getByText("GS", { exact: true })
     .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
   expect(badgeFontSize).toBeGreaterThanOrEqual(12);
 
   const footline = page.locator("[data-source-footline]");
   await expect(footline).toHaveAttribute("data-readiness-state", "not-ready");
   await expect(
-    footline.getByText("Evidence is ready for diagnosis", { exact: true }),
+    footline.getByText("Customer analysis connections are ready", {
+      exact: true,
+    }),
   ).toHaveCount(0);
-  const reviewGaps = footline.getByRole("link", { name: "Review source gaps" });
+  const reviewGaps = footline.getByRole("link", {
+    name: "Review connection gaps",
+  });
   await expect(reviewGaps).toHaveAttribute("href", "#source-readiness");
 
   await page.setViewportSize({ width: 1920, height: 1080 });
@@ -151,10 +166,10 @@ test("Sources exposes the diagnosis CTA only when every enabled family is usable
       contentType: "application/json",
       body: JSON.stringify({
         data: [
-          usableSource("crawl", 1),
+          sourceSlot("crawl"),
           usableSource("gsc", 2),
           usableSource("ga4", 3),
-          usableSource("csv", 4),
+          sourceSlot("csv"),
           sourceSlot("dataforseo"),
         ],
       }),
@@ -167,19 +182,21 @@ test("Sources exposes the diagnosis CTA only when every enabled family is usable
   await expect(coverage).toHaveAttribute("aria-valuenow", "100");
   await expect(coverage).toContainText("100%");
   await expect(
-    page.locator("[data-source-readiness-lead]").getByText("4 / 4", {
+    page.locator("[data-source-readiness-lead]").getByText("2 / 2", {
       exact: true,
     }),
   ).toBeVisible();
   await expect(
     page.locator("[data-source-readiness] progress").nth(1),
-  ).toHaveAttribute("max", "4");
+  ).toHaveAttribute("max", "2");
   const footline = page.locator("[data-source-footline]");
   await expect(footline).toHaveAttribute("data-readiness-state", "ready");
   await expect(
-    footline.getByText("Evidence is ready for diagnosis", { exact: true }),
+    footline.getByText("Customer analysis connections are ready", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
-    footline.getByRole("link", { name: "Review diagnostic coverage" }),
+    footline.getByRole("link", { name: "Review analysis workspace" }),
   ).toHaveAttribute("href", `/p/${E2E_PROJECT_ID}/growth-map?object=pages`);
 });

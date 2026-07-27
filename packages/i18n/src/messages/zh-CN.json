@@ -107,7 +107,7 @@
     "dataforseo": "DataForSEO",
     "ahrefs": "Ahrefs",
     "semrush": "Semrush",
-    "system": "SignalFrame 系统",
+    "system": "GenGrowth 系统",
     "llm": "语言模型"
   },
   "domain": {
@@ -132,7 +132,7 @@
   },
   "auth": {
     "title": "操作员登录",
-    "subtitle": "登录你的 SignalFrame 工作区。",
+    "subtitle": "登录你的 GenGrowth 工作区。",
     "emailLabel": "邮箱",
     "passwordLabel": "密码",
     "signInButton": "登录",
@@ -750,6 +750,13 @@
     "importing": "正在导入…",
     "confirmDisabledHint": "映射必填字段后即可导入。",
     "notAvailable": "本 MVP 暂不提供。",
+    "connections": {
+      "customerTitle": "客户可管理连接",
+      "customerDescription": "连接由你的团队管理的分析与交付服务。",
+      "githubLabel": "GitHub",
+      "githubStatus": "待接入",
+      "githubDescription": "为已批准的拉取请求与合并流程预留。GenGrowth 当前不会访问代码仓库或创建拉取请求。"
+    },
     "fields": {
       "keyword": "关键词",
       "searchVolume": "搜索量",
@@ -880,7 +887,7 @@
       "hideDetails": "收起证据详情",
       "sourceProvider": "数据来源",
       "provider": {
-        "system": "SignalFrame 系统",
+        "system": "GenGrowth 系统",
         "llm": "语言模型"
       },
       "availability": "可用性",

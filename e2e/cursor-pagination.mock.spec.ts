@@ -441,7 +441,7 @@ test("Sources keeps partial counts visible while a failed next page is retried",
     if (cursor === null) {
       await json(
         route,
-        listEnvelope([snapshotFixture(1)], "source-snapshots-2"),
+        listEnvelope([snapshotFixture(1, "gsc")], "source-snapshots-2"),
       );
       return;
     }
@@ -461,12 +461,12 @@ test("Sources keeps partial counts visible while a failed next page is retried",
       );
       return;
     }
-    await json(route, listEnvelope([snapshotFixture(2)], null));
+    await json(route, listEnvelope([snapshotFixture(2, "gsc")], null));
   });
 
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
-  const crawl = page.getByRole("region", { name: "Site crawl" });
-  await expect(crawl).toContainText("At least 1 snapshot loaded");
+  const gsc = page.getByRole("region", { name: "Search Console" });
+  await expect(gsc).toContainText("At least 1 immutable snapshot loaded");
   await page
     .getByRole("button", { name: "Load more snapshot history" })
     .click();
@@ -476,9 +476,9 @@ test("Sources keeps partial counts visible while a failed next page is retried",
       { exact: true },
     ),
   ).toBeVisible();
-  await expect(crawl).toContainText("At least 1 snapshot loaded");
+  await expect(gsc).toContainText("At least 1 immutable snapshot loaded");
   await page.getByRole("button", { name: "Retry" }).click();
-  await expect(crawl).toContainText("2 snapshots collected");
+  await expect(gsc).toContainText("2 immutable snapshots");
   await expect(
     page.getByRole("button", { name: "Load more snapshot history" }),
   ).toHaveCount(0);
@@ -492,7 +492,7 @@ test("Sources refetches page one when a cached history refresh fails", async ({
   await page.route(`**${API_BASE}/snapshots**`, async (route) => {
     snapshotReads += 1;
     if (snapshotReads === 1 || snapshotReads >= 4) {
-      await json(route, listEnvelope([snapshotFixture(1)], null));
+      await json(route, listEnvelope([snapshotFixture(1, "gsc")], null));
       return;
     }
     await json(
@@ -510,9 +510,9 @@ test("Sources refetches page one when a cached history refresh fails", async ({
   });
 
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
-  const crawl = page.getByRole("region", { name: "Site crawl" });
-  await expect(crawl).toContainText("1 snapshots collected");
-  await crawl.getByRole("button", { name: "Collect now" }).click();
+  const gsc = page.getByRole("region", { name: "Search Console" });
+  await expect(gsc).toContainText("1 immutable snapshot");
+  await page.getByRole("button", { name: "Refresh all sources" }).click();
 
   await expect(
     page.getByText(
@@ -520,8 +520,8 @@ test("Sources refetches page one when a cached history refresh fails", async ({
       { exact: true },
     ),
   ).toBeVisible({ timeout: 15_000 });
-  await expect(crawl).toContainText("At least 1 snapshot loaded");
+  await expect(gsc).toContainText("At least 1 immutable snapshot loaded");
   await page.getByRole("button", { name: "Retry" }).click();
   await expect.poll(() => snapshotReads).toBe(4);
-  await expect(crawl).toContainText("1 snapshots collected");
+  await expect(gsc).toContainText("1 immutable snapshot");
 });

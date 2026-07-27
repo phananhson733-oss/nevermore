@@ -26,7 +26,7 @@ async function json(route: Route, body: unknown): Promise<void> {
   });
 }
 
-test("enabled DataForSEO slot collects without inventing a client-side connection", async ({
+test("enabled DataForSEO stays internal while its collection service remains available", async ({
   page,
 }) => {
   const api = await installCriticalFlowApi(page);
@@ -52,27 +52,37 @@ test("enabled DataForSEO slot collects without inventing a client-side connectio
 
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
 
-  const dataForSeo = page.getByRole("region", { name: "DataForSEO" });
-  await expect(dataForSeo).toContainText("Live");
-  await expect(dataForSeo).toContainText("Disconnected");
-  await expect(dataForSeo).toContainText(
-    "This is not complete competitor-gap coverage.",
-  );
+  await expect(page.getByRole("main")).not.toContainText("DataForSEO");
   await expect(
-    dataForSeo.getByRole("button", { name: "Collect ranking keywords" }),
-  ).toBeEnabled();
-  await expect(dataForSeo).not.toContainText("Not available in this MVP.");
+    page.locator(
+      '[data-customer-connector-card][data-provider="dataforseo"]',
+    ),
+  ).toHaveCount(0);
 
   await page.getByRole("button", { name: "简体中文" }).click();
-  const collect = dataForSeo.getByRole("button", { name: "采集排名关键词" });
-  await expect(dataForSeo).toContainText("这并不代表完整的竞品差距覆盖");
-  await collect.click();
+  await expect(page.getByRole("main")).not.toContainText("DataForSEO");
 
+  const status = await page.evaluate(async (projectId) => {
+    const response = await fetch(
+      `/api/mvp/projects/${projectId}/collection-runs`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "dataforseo-internal-collection",
+        },
+        body: JSON.stringify({ provider: "dataforseo" }),
+      },
+    );
+    return response.status;
+  }, E2E_PROJECT_ID);
+
+  expect(status).toBe(202);
   await expect.poll(() => api.collectionRequests.length).toBe(1);
   expect(api.collectionRequests[0]).toEqual({ provider: "dataforseo" });
 });
 
-test("a provisioned DataForSEO connection can be disconnected from the card", async ({
+test("a provisioned DataForSEO connection has no customer control while its service contract remains intact", async ({
   page,
 }) => {
   await installCriticalFlowApi(page);
@@ -112,10 +122,24 @@ test("a provisioned DataForSEO connection can be disconnected from the card", as
 
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
 
-  const dataForSeo = page.getByRole("region", { name: "DataForSEO" });
-  await dataForSeo
-    .getByRole("button", { name: "Disconnect — DataForSEO" })
-    .click();
+  await expect(page.getByRole("main")).not.toContainText("DataForSEO");
+  await expect(
+    page.getByRole("button", { name: "Disconnect — DataForSEO" }),
+  ).toHaveCount(0);
+
+  const status = await page.evaluate(
+    async ({ projectId, sourceConnectionId }) => {
+      const response = await fetch(
+        `/api/mvp/projects/${projectId}/sources/${sourceConnectionId}`,
+        { method: "DELETE" },
+      );
+      return response.status;
+    },
+    { projectId: E2E_PROJECT_ID, sourceConnectionId },
+  );
+
+  expect(status).toBe(204);
   await expect.poll(() => disconnectRequests).toBe(1);
-  await expect(dataForSeo).toContainText("Disconnected");
+  await page.reload();
+  await expect(page.getByRole("main")).not.toContainText("DataForSEO");
 });

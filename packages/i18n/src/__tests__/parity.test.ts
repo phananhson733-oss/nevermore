@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 
+import { DEFAULT_LOCALE } from "../config.ts";
 import en from "../messages/en.json";
 import zhCN from "../messages/zh-CN.json";
 
@@ -42,6 +43,39 @@ describe("i18n message key parity", () => {
 
   it("has identical key sets across locales", () => {
     expect(new Set(enPaths)).toEqual(new Set(zhPaths));
+  });
+
+  it("keeps the GenGrowth customer brand Chinese-first", () => {
+    expect(DEFAULT_LOCALE).toBe("zh-CN");
+    expect(en.auth.subtitle).toBe("Sign in to your GenGrowth workspace.");
+    expect(zhCN.auth.subtitle).toBe("登录你的 GenGrowth 工作区。");
+    expect(en.provider.system).toBe("GenGrowth system");
+    expect(zhCN.provider.system).toBe("GenGrowth 系统");
+    expect(en.diagnosis.evidence.provider.system).toBe("GenGrowth system");
+    expect(zhCN.diagnosis.evidence.provider.system).toBe("GenGrowth 系统");
+
+    expect(JSON.stringify(en)).not.toContain("SignalFrame");
+    expect(JSON.stringify(zhCN)).not.toContain("SignalFrame");
+  });
+
+  it("describes exactly three customer-managed connectors and an honest GitHub plan", () => {
+    expect(en.sources.connections).toEqual({
+      customerTitle: "Customer-managed connections",
+      customerDescription:
+        "Connect the analysis and delivery services your team manages.",
+      githubLabel: "GitHub",
+      githubStatus: "Planned",
+      githubDescription:
+        "Reserved for approved pull-request and merge workflows. GenGrowth cannot access repositories or create pull requests yet.",
+    });
+    expect(zhCN.sources.connections).toEqual({
+      customerTitle: "客户可管理连接",
+      customerDescription: "连接由你的团队管理的分析与交付服务。",
+      githubLabel: "GitHub",
+      githubStatus: "待接入",
+      githubDescription:
+        "为已批准的拉取请求与合并流程预留。GenGrowth 当前不会访问代码仓库或创建拉取请求。",
+    });
   });
 
   it("localizes the GA4 key-event input placeholder instead of hardcoding UI chrome", () => {

@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * Sources data-hub client view (spec §4.2, §7). Renders the five fixed source
- * cards (crawl, gsc, ga4, csv, dataforseo) with honest state: `connected` is not
- * `available`, so a card with no usable snapshot says "no snapshot yet" rather
- * than faking a number (`unavailable != 0`, spec §1.3). Status is always carried
- * by a text label, never colour alone (spec §4.4).
+ * Sources data-hub client view (spec §4.2, §7). The service keeps its five
+ * canonical evidence families, while the customer-managed surface exposes only
+ * GSC, GA4, and an honest planned GitHub slot. Crawl, CSV, and DataForSEO remain
+ * in the unnamed readiness projection and service layer; they are not rendered
+ * as customer connections. `connected` is not `available`, so a connection with
+ * no usable snapshot never fakes a measurement (`unavailable != 0`, spec §1.3).
  *
  * TanStack Query owns all server-state (spec §3.2). After a collect/import 202 we
  * poll the run and, on a terminal status, refetch the sources + snapshots so the
@@ -23,6 +24,7 @@ import {
   Database,
   FileUp,
   Globe2,
+  GitPullRequest,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -76,11 +78,8 @@ import { sourceLimitationForDisplay } from "../_view-model.ts";
 import {
   SOURCE_PROVIDER_ORDER,
   abbreviateChecksum,
-  deriveSourcesReadiness,
   sourceAcquisitionMode,
   sourcePrimaryRowCount,
-  sourcesReadyForDiagnosis,
-  sourcesCoveragePercentage,
   type SourceAcquisitionMode,
 } from "./_sources-readiness.ts";
 import styles from "./sources.module.css";
@@ -101,6 +100,76 @@ const PROVIDER_BADGE: Readonly<Record<Provider, string>> = {
   csv: "CSV",
   dataforseo: "DF",
 };
+
+const CUSTOMER_SOURCE_ORDER = ["gsc", "ga4"] as const satisfies readonly Provider[];
+
+interface CustomerConnectorReadiness {
+  readonly connectedCount: number;
+  readonly usableCount: number;
+  readonly partialCount: number;
+  readonly unavailableCount: number;
+  readonly enabledCount: number;
+  readonly gapProviders: readonly GoogleProvider[];
+  readonly coveragePercentage: number;
+  readonly ready: boolean;
+}
+
+function isCustomerSource(
+  source: SourceConnection,
+): source is SourceConnection & { readonly provider: GoogleProvider } {
+  return source.provider === "gsc" || source.provider === "ga4";
+}
+
+/**
+ * Customer readiness must be explainable from the visible GSC and GA4 cards.
+ * GitHub is a planned delivery connector and the three internal evidence
+ * families remain in audit/service gates, so neither belongs in this UI ratio.
+ */
+function deriveCustomerConnectorReadiness(
+  sources: readonly SourceConnection[],
+): CustomerConnectorReadiness {
+  const byProvider = new Map(
+    sources.filter(isCustomerSource).map((source) => [source.provider, source]),
+  );
+  const expectedSources = CUSTOMER_SOURCE_ORDER.map((provider) =>
+    byProvider.get(provider),
+  );
+  const usableCount = expectedSources.filter(
+    (source) =>
+      source?.featureEnabled === true &&
+      source.latestSnapshot?.availability === "available",
+  ).length;
+  const partialCount = expectedSources.filter(
+    (source) =>
+      source?.featureEnabled === true &&
+      source.latestSnapshot?.availability === "partial",
+  ).length;
+  const enabledCount = CUSTOMER_SOURCE_ORDER.length;
+  const gapProviders = CUSTOMER_SOURCE_ORDER.filter((provider) => {
+    const source = byProvider.get(provider);
+    return (
+      source === undefined ||
+      !source.featureEnabled ||
+      source.latestSnapshot?.availability !== "available"
+    );
+  });
+
+  return {
+    connectedCount: expectedSources.filter(
+      (source) =>
+        source?.featureEnabled === true &&
+        source.id !== null &&
+        source.state !== "disconnected",
+    ).length,
+    usableCount,
+    partialCount,
+    unavailableCount: enabledCount - usableCount - partialCount,
+    enabledCount,
+    gapProviders,
+    coveragePercentage: Math.round((usableCount / enabledCount) * 100),
+    ready: usableCount === enabledCount && gapProviders.length === 0,
+  };
+}
 
 interface SourcesPresentationCopy {
   readonly heroEyebrow: (count: number) => string;
@@ -159,7 +228,7 @@ interface SourcesPresentationCopy {
 
 const EN_SOURCES_COPY: SourcesPresentationCopy = {
   heroEyebrow: (count) =>
-    `Evidence intake · ${count} canonical ${count === 1 ? "source" : "sources"}`,
+    `Customer connections · ${count} ${count === 1 ? "connector" : "connectors"}`,
   heroTitle: "Every recommendation starts with trusted data.",
   heroSummary: (usable, partial) =>
     `${usable} sources have fully usable evidence${partial > 0 ? ` and ${partial} are partially usable` : ""}. Connection state and snapshot availability are shown separately.`,
@@ -171,8 +240,8 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
   readinessEyebrow: "Evidence coverage",
   readinessTitle: "Coverage you can act on",
   readinessDescription:
-    "Only fully usable latest snapshots count toward coverage.",
-  readinessComplete: "Enabled sources usable",
+    "Only fully usable GSC and GA4 snapshots count toward this customer-visible coverage.",
+  readinessComplete: "Analysis connectors usable",
   readinessPartial: "Coverage has gaps",
   readinessUnavailable: "No usable snapshots yet",
   connected: "Connected",
@@ -184,7 +253,7 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
   coverageGap: "Coverage gap",
   coverageGapDescription:
     "Enabled families without a fully usable latest snapshot:",
-  coverageComplete: "Every enabled source family has a usable snapshot.",
+  coverageComplete: "Both visible analysis connectors have a usable snapshot.",
   noUsableSnapshots: "No usable snapshots yet",
   noUsableSnapshot: "No usable snapshot",
   latestImmutableSnapshot: "Latest immutable snapshot",
@@ -222,10 +291,10 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
   snapshotDetails: "Snapshot details",
   sourceHealth: "Source health",
   noMeasuredValue: "No usable measurement",
-  readyForDiagnosis: "Evidence is ready for diagnosis",
-  notReadyForDiagnosis: "Evidence coverage is not ready for diagnosis",
-  reviewDiagnosis: "Review diagnostic coverage",
-  reviewSourceGaps: "Review source gaps",
+  readyForDiagnosis: "Customer analysis connections are ready",
+  notReadyForDiagnosis: "Customer analysis connections need attention",
+  reviewDiagnosis: "Review analysis workspace",
+  reviewSourceGaps: "Review connection gaps",
   coveragePercentage: (percentage) => `${percentage}% evidence coverage`,
   mode: { live: "Live", manual: "Manual", disabled: "Disabled" },
   footerAria: "Snapshot provenance policy",
@@ -240,7 +309,7 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
 };
 
 const ZH_SOURCES_COPY: SourcesPresentationCopy = {
-  heroEyebrow: (count) => `证据接入 · 已配置 ${count} 个规范数据来源`,
+  heroEyebrow: (count) => `客户连接 · ${count} 个连接位`,
   heroTitle: "每一条建议，都从可信数据开始。",
   heroSummary: (usable, partial) =>
     `当前有 ${usable} 个数据来源完全可用${partial > 0 ? `，另有 ${partial} 个部分可用` : ""}；连接状态与快照可用性分别呈现。`,
@@ -252,8 +321,8 @@ const ZH_SOURCES_COPY: SourcesPresentationCopy = {
   readinessEyebrow: "证据覆盖",
   readinessTitle: "数据覆盖足以开始行动",
   readinessDescription:
-    "只有完全可用的最新快照才计入覆盖率。",
-  readinessComplete: "已启用数据源均可用",
+    "此处仅按 GSC 与 GA4 的完全可用最新快照计算客户可见覆盖率。",
+  readinessComplete: "分析连接均可用",
   readinessPartial: "覆盖仍有缺口",
   readinessUnavailable: "尚无可用快照",
   connected: "已连接",
@@ -264,7 +333,7 @@ const ZH_SOURCES_COPY: SourcesPresentationCopy = {
   historyUnavailable: "历史暂不可用",
   coverageGap: "覆盖缺口",
   coverageGapDescription: "以下已启用类别尚无完全可用的最新快照：",
-  coverageComplete: "每个已启用的数据源类别都有可用快照。",
+  coverageComplete: "两个客户可见分析连接均有可用快照。",
   noUsableSnapshots: "尚无可用快照",
   noUsableSnapshot: "无可用快照",
   latestImmutableSnapshot: "最新不可变快照",
@@ -302,10 +371,10 @@ const ZH_SOURCES_COPY: SourcesPresentationCopy = {
   snapshotDetails: "快照详情",
   sourceHealth: "数据源健康度",
   noMeasuredValue: "暂无可用度量",
-  readyForDiagnosis: "证据已可用于诊断",
-  notReadyForDiagnosis: "证据覆盖尚未达到诊断就绪状态",
-  reviewDiagnosis: "查看诊断覆盖度",
-  reviewSourceGaps: "查看数据源缺口",
+  readyForDiagnosis: "客户分析连接已就绪",
+  notReadyForDiagnosis: "客户分析连接仍需处理",
+  reviewDiagnosis: "查看分析工作区",
+  reviewSourceGaps: "查看连接缺口",
   coveragePercentage: (percentage) => `${percentage}% 证据覆盖`,
   mode: { live: "实时采集", manual: "手动导入", disabled: "未启用" },
   footerAria: "快照来源策略",
@@ -1481,6 +1550,8 @@ function SourceCard({
       )}
       data-provider={source.provider}
       data-source-card=""
+      data-customer-connector-card=""
+      data-connector-state="active"
       aria-labelledby={titleId}
     >
       <header className={styles.cardHead}>
@@ -1576,6 +1647,58 @@ function SourceCard({
   );
 }
 
+// ------------------------------------------------ Customer / internal split --
+
+function GithubPlannedCard() {
+  const t = useTranslations("sources");
+  const titleId = "source-github";
+
+  return (
+    <Panel
+      padding="none"
+      className={cx(styles.card, styles.cardPlanned)}
+      data-provider="github"
+      data-customer-connector-card=""
+      data-connector-state="planned"
+      aria-labelledby={titleId}
+    >
+      <header className={styles.cardHead}>
+        <span className={styles.sourceLogo} aria-hidden="true">
+          <GitPullRequest size={21} strokeWidth={1.85} />
+          <span className={styles.sourceBadge}>GH</span>
+        </span>
+        <div className={styles.cardHeadText}>
+          <span className={styles.sourceMode}>
+            {t("connections.customerTitle")}
+          </span>
+          <h2 id={titleId} className={styles.cardTitle}>
+            {t("connections.githubLabel")}
+          </h2>
+        </div>
+        <div className={styles.cardStatuses}>
+          <StatusPill tone="warning">
+            {t("connections.githubStatus")}
+          </StatusPill>
+        </div>
+      </header>
+
+      <div className={cx(styles.cardBody, styles.plannedBody)}>
+        <GitPullRequest
+          className={styles.plannedIcon}
+          size={28}
+          strokeWidth={1.6}
+          aria-hidden="true"
+        />
+        <p>{t("connections.githubDescription")}</p>
+      </div>
+
+      <footer className={styles.plannedFooter}>
+        <span>{t("connections.githubStatus")}</span>
+      </footer>
+    </Panel>
+  );
+}
+
 // ---------------------------------------------------------- Readiness summary --
 
 function ReadinessSummary({
@@ -1590,27 +1713,24 @@ function ReadinessSummary({
   const locale = useLocale();
   const tProvider = useTranslations("provider");
   const copy = sourcesPresentationCopy(locale);
-  const readiness = deriveSourcesReadiness(sources);
-  const hasGaps =
-    readiness.gapProviders.length > 0 ||
-    readiness.missingProviders.length > 0;
+  const readiness = deriveCustomerConnectorReadiness(sources);
+  const hasGaps = readiness.gapProviders.length > 0;
   const hasUsableSnapshots = readiness.usableCount > 0;
   const overallLabel = !hasUsableSnapshots
     ? copy.readinessUnavailable
     : hasGaps
       ? copy.readinessPartial
       : copy.readinessComplete;
-  const coveragePercentage = sourcesCoveragePercentage(sources);
+  const coveragePercentage = readiness.coveragePercentage;
   const historyValue =
     snapshotCount === null
       ? "—"
       : snapshotHistoryComplete
         ? String(snapshotCount)
         : `≥ ${snapshotCount}`;
-  const gapLabels = [
-    ...readiness.gapProviders.map((provider) => tProvider(provider)),
-    ...readiness.missingProviders.map((provider) => tProvider(provider)),
-  ];
+  const gapLabels = readiness.gapProviders.map((provider) =>
+    tProvider(provider),
+  );
 
   return (
     <Panel
@@ -1722,7 +1842,11 @@ function ReadinessSummary({
                 ? copy.noUsableSnapshots
                 : copy.coverageGapDescription}
             </p>
-            <span className={styles.gapProviders}>{gapLabels.join(", ")}</span>
+            {gapLabels.length > 0 ? (
+              <span className={styles.gapProviders}>
+                {gapLabels.join(", ")}
+              </span>
+            ) : null}
           </div>
         </aside>
       ) : (
@@ -1751,7 +1875,8 @@ function SnapshotPolicyFootline({
 }) {
   const locale = useLocale();
   const copy = sourcesPresentationCopy(locale);
-  const readyForDiagnosis = sourcesReadyForDiagnosis(sources);
+  const readyForDiagnosis =
+    deriveCustomerConnectorReadiness(sources).ready;
   const countLabel =
     snapshotCount === null
       ? copy.historyUnavailable
@@ -1877,9 +2002,6 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     return counts;
   }, [loadedSnapshots]);
   const snapshotHistoryAvailable = snapshots.data !== undefined;
-  const snapshotHistoryCount = snapshotHistoryAvailable
-    ? loadedSnapshots.length
-    : null;
   const snapshotHistoryComplete =
     snapshotHistoryAvailable &&
     !snapshots.hasNextPage &&
@@ -1894,6 +2016,9 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
       list.find((source) => source.provider === provider),
     ).filter((source): source is SourceConnection => source !== undefined);
   }, [sources.data]);
+  const customerSources = ordered.filter((source) =>
+    isCustomerSource(source),
+  );
 
   if (sources.isLoading) {
     return (
@@ -1912,8 +2037,14 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     );
   }
 
-  const pageReadiness = deriveSourcesReadiness(sources.data);
+  const pageReadiness = deriveCustomerConnectorReadiness(customerSources);
   const refreshing = sources.isFetching || snapshots.isFetching;
+  const customerSnapshotHistoryCount = snapshotHistoryAvailable
+    ? loadedSnapshots.filter(
+        (snapshot) =>
+          snapshot.provider === "gsc" || snapshot.provider === "ga4",
+      ).length
+    : null;
 
   return (
     <div className={styles.page}>
@@ -1922,7 +2053,7 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
           <div className={styles.heroEyebrow}>
             <h1 className={styles.pageLabel}>{t("title")}</h1>
             <span aria-hidden="true">·</span>
-            <span>{copy.heroEyebrow(pageReadiness.familyCount)}</span>
+            <span>{copy.heroEyebrow(3)}</span>
           </div>
           <h2 className={styles.heroTitle}>{copy.heroTitle}</h2>
           <p className={styles.subtitle}>
@@ -1956,8 +2087,8 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
       </aside>
 
       <ReadinessSummary
-        sources={sources.data}
-        snapshotCount={snapshotHistoryCount}
+        sources={customerSources}
+        snapshotCount={customerSnapshotHistoryCount}
         snapshotHistoryComplete={snapshotHistoryComplete}
       />
 
@@ -1967,24 +2098,40 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
         </p>
       ) : null}
 
-      <div className={styles.cards} data-source-grid="">
-        {ordered.map((source) => (
-          <SourceCard
-            key={source.provider}
-            source={source}
-            projectId={projectId}
-            snapshotCount={
-              snapshotHistoryAvailable
-                ? (snapshotCounts.get(source.provider) ?? 0)
-                : null
-            }
-            snapshotHistoryComplete={snapshotHistoryComplete}
-            onRefetch={refetchSources}
-            intent={intent?.provider === source.provider ? intent : null}
-            onClearIntent={() => setIntent(null)}
-          />
-        ))}
-      </div>
+      <section
+        className={styles.customerConnections}
+        aria-labelledby="customer-connections-title"
+      >
+        <header className={styles.connectionSectionHeader}>
+          <h2 id="customer-connections-title">
+            {t("connections.customerTitle")}
+          </h2>
+          <p>{t("connections.customerDescription")}</p>
+        </header>
+        <div
+          className={styles.cards}
+          data-source-grid=""
+          data-customer-connector-grid=""
+        >
+          {customerSources.map((source) => (
+            <SourceCard
+              key={source.provider}
+              source={source}
+              projectId={projectId}
+              snapshotCount={
+                snapshotHistoryAvailable
+                  ? (snapshotCounts.get(source.provider) ?? 0)
+                  : null
+              }
+              snapshotHistoryComplete={snapshotHistoryComplete}
+              onRefetch={refetchSources}
+              intent={intent?.provider === source.provider ? intent : null}
+              onClearIntent={() => setIntent(null)}
+            />
+          ))}
+          <GithubPlannedCard />
+        </div>
+      </section>
 
       {snapshots.isLoading ||
       snapshotHistoryLoadError ||
@@ -2028,8 +2175,8 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
 
       <SnapshotPolicyFootline
         projectId={projectId}
-        sources={sources.data}
-        snapshotCount={snapshotHistoryCount}
+        sources={customerSources}
+        snapshotCount={customerSnapshotHistoryCount}
         snapshotHistoryComplete={snapshotHistoryComplete}
       />
     </div>

@@ -22,6 +22,32 @@ test.beforeEach(async ({ page }) => {
   api = await installCriticalFlowApi(page);
 });
 
+test("customer surfaces render GenGrowth and the default first paint remains zh-CN", async ({
+  page,
+}) => {
+  await page.context().clearCookies();
+
+  await page.goto("/login");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page).toHaveTitle("GenGrowth");
+  await expect(page.getByText("GenGrowth", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "操作员登录" })).toBeVisible();
+  await expect(page.getByText("登录你的 GenGrowth 工作区。")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("SignalFrame");
+
+  await page.goto("/new-project");
+  await expect(page.getByText("GenGrowth", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "新建项目" })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("SignalFrame");
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  const shellBrand = page.locator('[data-app-shell-sidebar] [aria-label="GenGrowth"]');
+  await expect(shellBrand).toContainText("GenGrowth");
+  await expect(page.locator("[data-app-shell-sidebar]")).not.toContainText(
+    "SignalFrame",
+  );
+});
+
 test("project navigation exposes live destinations and localizes stage chrome", async ({
   page,
 }) => {
@@ -70,53 +96,118 @@ test("project navigation exposes live destinations and localizes stage chrome", 
   // Sources left the primary nav; it is now reached from the Overview itself.
   await page.getByRole("link", { name: "管理数据连接" }).click();
   await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
-  const dataForSeo = page.getByRole("region", { name: "DataForSEO" });
-  await expect(dataForSeo).toContainText("本 MVP 暂不提供。");
-  await expect(dataForSeo.getByRole("button")).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "数据源就绪度" }),
+  ).toBeVisible();
+  await expect(page.getByRole("main")).not.toContainText("站点抓取");
+  await expect(page.getByRole("main")).not.toContainText("CSV 上传");
+  await expect(page.getByRole("main")).not.toContainText("DataForSEO");
 });
 
-test("Sources chrome localizes to zh-CN while server-supplied provider content remains intact", async ({
+test("Sources exposes only GSC, GA4, and an honest planned GitHub customer card", async ({
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
-  await page.getByRole("button", { name: "简体中文" }).click();
 
-  await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
-  await expect(
-    page.getByText("最近采集", { exact: true }).first(),
-  ).toBeVisible();
-  await expect(page.getByText("可用性", { exact: true }).first()).toBeVisible();
-  await expect(
-    page.getByText(
-      "Static HTML only; JavaScript-rendered content may be absent.",
-      {
-        exact: true,
-      },
-    ),
-  ).toBeVisible();
-});
-
-test("collection trigger polls status and refreshes the captured snapshot", async ({
-  page,
-}) => {
-  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
-  const crawl = page.getByRole("region", { name: "Site crawl" });
-
-  await expect(crawl).toContainText(
-    "Static HTML only; JavaScript-rendered content may be absent.",
+  const customerConnections = page.locator("[data-customer-connector-grid]");
+  const customerCards = customerConnections.locator(
+    "[data-customer-connector-card]",
   );
-  await expect(crawl).not.toContainText("no snapshot has been collected yet");
+  await expect(customerCards).toHaveCount(3);
 
-  await crawl.getByRole("button", { name: "Collect now" }).click();
-  await expect.poll(() => api.collectionRequests.length).toBe(1);
-  expect(api.collectionRequests[0]).toMatchObject({ provider: "crawl" });
-  await expect(crawl).toContainText("Progress: 1/2");
-  await expect(crawl).not.toContainText("worker.collection.raw_key");
+  const gsc = customerConnections.getByRole("region", {
+    name: "Search Console",
+  });
+  const ga4 = customerConnections.getByRole("region", {
+    name: "Google Analytics 4",
+  });
+  const github = customerConnections.getByRole("region", { name: "GitHub" });
+  await expect(gsc.getByRole("button", { name: "Connect" })).toBeVisible();
+  await expect(ga4.getByRole("button", { name: "Connect" })).toBeVisible();
+  await expect(github).toContainText("Planned");
+  await expect(github.getByRole("button")).toHaveCount(0);
+  await expect(github.getByRole("link")).toHaveCount(0);
+  await expect(customerConnections).not.toContainText("Site crawl");
+  await expect(customerConnections).not.toContainText("CSV upload");
+  await expect(customerConnections).not.toContainText("DataForSEO");
 
-  await expect
-    .poll(() => api.collectionRunPolls, { timeout: 10_000 })
-    .toBeGreaterThanOrEqual(3);
-  await expect.poll(() => api.sourceReads).toBeGreaterThan(2);
+  await expect(
+    page.getByRole("region", { name: "Source readiness" }),
+  ).toBeVisible();
+  await expect(page.getByRole("main")).not.toContainText("Site crawl");
+  await expect(page.getByRole("main")).not.toContainText("CSV upload");
+  await expect(page.getByRole("main")).not.toContainText("DataForSEO");
+
+  await page.getByRole("button", { name: "简体中文" }).click();
+  await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
+  await expect(github).toContainText("待接入");
+  await expect(github).not.toContainText("已连接");
+});
+
+test("each visible Google connector action starts the real authorization route", async ({
+  page,
+}) => {
+  for (const [provider, label] of [
+    ["gsc", "Search Console"],
+    ["ga4", "Google Analytics 4"],
+  ] as const) {
+    await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+    const card = page
+      .locator("[data-customer-connector-grid]")
+      .getByRole("region", { name: label });
+    await card.getByRole("button", { name: "Connect" }).click();
+    await expect(page).toHaveURL(`/mock-google-oauth?provider=${provider}`);
+  }
+
+  expect(api.sourceConnectRequests).toEqual([
+    {
+      provider: "gsc",
+      body: {
+        phase: "authorize",
+        returnPath: `/p/${E2E_PROJECT_ID}/sources`,
+      },
+    },
+    {
+      provider: "ga4",
+      body: {
+        phase: "authorize",
+        returnPath: `/p/${E2E_PROJECT_ID}/sources`,
+      },
+    },
+  ]);
+});
+
+test("internal crawl service remains available without distorting customer readiness", async ({
+  page,
+}) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+  const readiness = page.getByRole("region", { name: "Source readiness" });
+  await expect(readiness).toContainText("0 / 2");
+  await expect(page.getByRole("main")).not.toContainText("Site crawl");
+  await expect(
+    page.getByRole("button", { name: "Collect now" }),
+  ).toHaveCount(0);
+
+  const response = await page.evaluate(async (projectId) => {
+    const result = await fetch(
+      `/api/mvp/projects/${projectId}/collection-runs`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "critical-flow-internal-crawl",
+        },
+        body: JSON.stringify({ provider: "crawl" }),
+      },
+    );
+    return { status: result.status, body: await result.json() };
+  }, E2E_PROJECT_ID);
+
+  expect(response.status).toBe(202);
+  expect(response.body.data.run.kind).toBe("collection");
+  await expect.poll(() => api.collectionRequests).toEqual([
+    { provider: "crawl" },
+  ]);
 });
 
 // REMOVED: "diagnosis review creates an action and renders each evidence id

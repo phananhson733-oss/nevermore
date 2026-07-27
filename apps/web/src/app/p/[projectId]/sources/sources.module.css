@@ -116,6 +116,34 @@
   }
 }
 
+/* -------------------------------------------- Connection presentation ----- */
+.customerConnections {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+.connectionSectionHeader {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.connectionSectionHeader h2 {
+  margin: 0;
+  color: var(--sf-fg);
+  font-family: var(--sf-font-display);
+  font-size: clamp(22px, 2.2vw, 28px);
+  font-weight: 630;
+  letter-spacing: -0.035em;
+}
+.connectionSectionHeader p {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 /* --------------------------------------------------------- Readiness ------ */
 .readiness {
   display: grid;
@@ -428,6 +456,16 @@
   box-shadow: none;
   transform: none;
 }
+.cardPlanned {
+  background: color-mix(in srgb, var(--sf-surface) 70%, var(--sf-amber-soft));
+  border-style: dashed;
+  box-shadow: none;
+}
+.cardPlanned:hover {
+  border-color: var(--sf-amber);
+  box-shadow: none;
+  transform: none;
+}
 .cardHead {
   display: grid;
   grid-template-columns: 43px minmax(0, 1fr) auto;
@@ -481,6 +519,10 @@
   color: var(--sf-mint-text);
   background: var(--sf-mint-soft);
 }
+.card[data-provider="github"] .sourceLogo {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+}
 .cardHeadText {
   display: flex;
   flex-direction: column;
@@ -519,6 +561,31 @@
   flex-direction: column;
   gap: 13px;
   padding: 14px 20px 15px;
+}
+.plannedBody {
+  justify-content: center;
+  gap: 12px;
+  color: var(--sf-muted);
+}
+.plannedBody p {
+  max-width: 58ch;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.plannedIcon {
+  color: var(--sf-amber-text);
+}
+.plannedFooter {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 20px 15px;
+  color: var(--sf-amber-text);
+  border-top: 1px solid var(--sf-border);
+  font-size: 14px;
+  font-weight: 800;
 }
 .metaLabel {
   font-size: var(--sf-text-xs);
@@ -748,6 +815,11 @@
 @container sources-page (min-width: 721px) {
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container sources-page (min-width: 1181px) {
+  .cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 @container sources-page (max-width: 480px) {
