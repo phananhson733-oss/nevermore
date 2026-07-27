@@ -6,6 +6,23 @@
 
 **Architecture:** Extend the existing append-only keyword, competitor, evidence, finding, action, artifact, and observation foundation instead of creating a parallel SEO product. Introduce stable Topic identities and append-only governance decisions, project them through versioned OpenAPI read/write contracts, then add monitoring and external evidence only after their lineage and provider boundaries are real.
 
+> **2026-07-27 product convergence correction**
+>
+> The existing Chinese-first four-module customer workspace is the only UI and
+> interaction baseline:
+> `docs/artifacts/GenGrowth-Interactive-Artifact.html`, generated from
+> `docs/artifact-src/`. Keywords and competitors remain first-class built-in
+> object modes inside Growth Map. The former standalone
+> `Nevermore-Keyword-Growth-Audit.html` line was retired because it incorrectly
+> turned backend judgement requirements into a second customer product.
+>
+> Tasks 1–3 below are retained only as historical plan evidence and **must not be
+> executed or recreated**. Their 13 audited requirements feed the canonical
+> governance, materialization, execution and measurement tasks from Stage 1
+> onward. Any later Artifact work must update the existing four-module source
+> and preserve its interaction model; it must never create a parallel HTML
+> workspace.
+
 **Tech Stack:** TypeScript, Next.js App Router, React 19, Zod, OpenAPI 3.1, Drizzle ORM, PostgreSQL, pg-boss, Vitest, Playwright, Node.js 24, pnpm.
 
 ---

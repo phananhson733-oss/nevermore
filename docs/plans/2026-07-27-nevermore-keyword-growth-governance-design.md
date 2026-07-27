@@ -20,6 +20,12 @@ Nevermore 不新增一个与现有产品并行的“SEO 工具”，也不把 13
 
 `URL / 产品画像 → 页面、关键词、竞品与技术证据 → 统一增长机会 → 执行交付物 → 发布或变更回执 → 效果追踪`
 
+界面与交互的唯一基线是现有
+`docs/artifacts/GenGrowth-Interactive-Artifact.html`（源码位于
+`docs/artifact-src/`）。关键词库与竞品库是 Growth Map 内置的一级对象模式，
+不是新的顶层产品模块，也不是仅在后端隐藏的证据源。新增能力优先改变其背后的
+入库、治理、判断、Opportunity 物化和跨模块状态，不另建平行 HTML Artifact。
+
 本设计采用以下决策：
 
 1. 保留现有 `keyword_occurrences`、`keyword_entities`、`keyword_entity_sources`、`competitor_entities` 等 canonical 底座。
