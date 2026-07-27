@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "active": {
+    "version": "0.3.0",
+    "status": "active",
+    "normative": true,
+    "authorityRoot": "authority/implementation-spec-v0.3",
+    "lockPath": "scripts/spec-v0.3-lock.json"
+  },
+  "candidates": [
+    {
+      "version": "0.4.0",
+      "status": "candidate",
+      "normative": false,
+      "authorityRoot": "authority/implementation-spec-v0.4",
+      "lockPath": "scripts/spec-v0.4-candidate-lock.json"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "lockFormat": 1,
+  "candidateVersion": "0.4.0",
+  "baseActiveVersion": "0.3.0",
+  "authorityStatus": "candidate",
+  "normative": false,
+  "authorityRoot": "authority/implementation-spec-v0.4",
+  "discovery": {
+    "path": "authority/index.json",
+    "sha256": "96bd5d787a1df86da5fda5f0bfc865d80b8a9ecd6e47618a882255d6b6450858"
+  },
+  "candidateFiles": {
+    "README.md": "da0f1f10a1990a781e7e39fbb4204adee31128f6389e3cec0ed38fc9e74421c9",
+    "openapi.candidate.yaml": "18c128ae338570849047b7714dd23db99e49ac2d011040dfb6083e24cf43c91a",
+    "schema.candidate.sql": "3ae031104eb837cf7429ff3a2e29f1b2bd9fb2e4551e971d3df24e2680f26786",
+    "provider-boundaries.md": "eb2d6c1ec29a53ef6eeaa757c7628aeeaf1962aa0e76fd12ff0166a63c07b6ed",
+    "repository-invariants.md": "98076189f7e3cdcc6e6f56cc8255525a4887671f858d5914b134378991957d69",
+    "acceptance-matrix.md": "d60555a3de38894ed48a43e1272d128051a45aa7d3e81b08de2781c12a369b19",
+    "scripts/verify-candidate.mjs": "8b80839a36ee7535b94a836c34aa38664ad769ec7d3a9ad16c5c8cdcb0f0960a",
+    "scripts/verify-candidate.test.mjs": "a6e53d4c46aabc305282c8c7a32068f4f56262b9f65605199c9929beb1d2d51e"
+  },
+  "inventory": {
+    "providerKinds": [
+      "github",
+      "wordpress"
+    ],
+    "receiptKinds": [
+      "change_receipt",
+      "delivery_receipt"
+    ],
+    "candidateTables": [
+      "app.artifact_approval_events",
+      "app.publication_destinations",
+      "app.publication_attempts",
+      "app.publication_receipts"
+    ],
+    "operationIds": [
+      "listArtifactApprovalEvents",
+      "appendArtifactApprovalEvent",
+      "listPublicationDestinations",
+      "appendPublicationDestinationRevision",
+      "getPublicationDestination",
+      "revokePublicationDestination",
+      "createPublicationAttempt",
+      "getPublicationAttempt",
+      "reconcilePublicationAttempt",
+      "createPublicationRollbackAttempt"
+    ],
+    "asyncRunKinds": [
+      "collection",
+      "diagnostic",
+      "artifact_generation",
+      "export",
+      "product_profile_synthesis",
+      "content_shadow",
+      "publication"
+    ],
+    "asyncResultTypes": [
+      "collection_run",
+      "diagnostic_run",
+      "artifact",
+      "export",
+      "icp_profile",
+      "flow_shadow_run",
+      "publication_attempt"
+    ]
+  }
+}

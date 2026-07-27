@@ -1,0 +1,1046 @@
+openapi: 3.1.0
+info:
+  title: Nevermore Authorized Publication API — Review Candidate
+  version: 0.4.0-candidate
+  description: |
+    Non-normative review candidate for authorized GitHub and WordPress delivery.
+    Nothing in this document is active until Task 8 atomically promotes matching
+    routes, repositories, workers, adapters, migrations, generated contracts,
+    tests and a formal v0.4 lock.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+x-authority-status: candidate
+x-normative: false
+x-active-authority: authority/implementation-spec-v0.3
+x-promotion-mode: atomic_with_runtime
+
+servers:
+  - url: /api/mvp
+    description: Proposed same-origin web application API after atomic promotion
+security:
+  - supabaseSessionCookie: []
+tags:
+  - name: Artifact Approvals
+    description: Durable exact-revision approval, revocation, and supersession events.
+  - name: Publication Destinations
+    description: Append-only GitHub or WordPress authorization and capability revisions.
+  - name: Publication Attempts
+    description: Authorized external-write attempts and immutable provider receipts.
+
+paths:
+  /projects/{projectId}/artifacts/{artifactId}/approval-events:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/ArtifactId'
+    get:
+      tags: [Artifact Approvals]
+      operationId: listArtifactApprovalEvents
+      summary: List the append-only approval timeline for one project-scoped Artifact
+      responses:
+        '200':
+          description: Approval, revocation, and supersession events in recorded order
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    maxItems: 1000
+                    items: { $ref: '#/components/schemas/ArtifactApprovalEvent' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [Artifact Approvals]
+      operationId: appendArtifactApprovalEvent
+      summary: Append approval, revocation, or supersession for an exact Artifact Revision
+      description: |
+        The authenticated session supplies eventActorId. For an approved event
+        that actor is also reviewerActorId. A revoked or superseded event records
+        its own terminal actor while retaining reviewer lineage only through the
+        referenced source approval. The server re-reads the immutable Artifact
+        Revision, verifies its content hash and QA gate, and never treats
+        execution_artifacts.status or updatedAt as approval.
+      x-side-effect-class: internal_write
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppendArtifactApprovalEventRequest' }
+      responses:
+        '201':
+          description: Durable approval event appended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArtifactApprovalEvent' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /projects/{projectId}/publication-destinations:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Publication Destinations]
+      operationId: listPublicationDestinations
+      summary: List append-only publication destination heads for this project
+      responses:
+        '200':
+          description: Current project-scoped destination revisions
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    maxItems: 100
+                    items: { $ref: '#/components/schemas/PublicationDestination' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [Publication Destinations]
+      operationId: appendPublicationDestinationRevision
+      summary: Append a project/site-scoped destination revision after authorization and capability probing
+      description: |
+        The client supplies a server-issued authorizationGrantRef plus requested
+        scope. The server consumes that reference, performs provider capability
+        probes, normalizes providerScope, and creates authorizationSnapshot,
+        readiness state, and limitations. Client-authored authorization or probe
+        facts are never accepted.
+      x-side-effect-class: internal_write
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppendPublicationDestinationRevisionRequest' }
+      responses:
+        '201':
+          description: Destination revision appended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicationDestination' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /projects/{projectId}/publication-destinations/{destinationRef}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DestinationRef'
+    get:
+      tags: [Publication Destinations]
+      operationId: getPublicationDestination
+      summary: Read one project-scoped destination and its append-only revision history
+      responses:
+        '200':
+          description: Destination with current revision first
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [current, revisions]
+                properties:
+                  current: { $ref: '#/components/schemas/PublicationDestination' }
+                  revisions:
+                    type: array
+                    minItems: 1
+                    maxItems: 1000
+                    items: { $ref: '#/components/schemas/PublicationDestination' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /projects/{projectId}/publication-destinations/{destinationRef}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DestinationRef'
+    post:
+      tags: [Publication Destinations]
+      operationId: revokePublicationDestination
+      summary: Append a revoked destination revision without deleting history
+      x-side-effect-class: internal_write
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baseRevision, reason]
+              properties:
+                baseRevision: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '201':
+          description: Revoked revision appended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicationDestination' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /projects/{projectId}/publication-attempts:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [Publication Attempts]
+      operationId: createPublicationAttempt
+      summary: Queue one authorized external write for an exact approved Artifact Revision
+      description: |
+        Re-reads the latest project/site destination, canonical target, exact
+        durable approval event and current remote revision before queuing. The
+        client submits only approvalEventId; the server re-reads the append-only
+        event and rejects later revocation or supersession. The Idempotency-Key may
+        replay only when the canonical request hash is identical. A different hash
+        or a second active publication for the target returns 409.
+      x-side-effect-class: external_write
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePublicationAttemptRequest' }
+      responses:
+        '202':
+          description: Publication attempt accepted; external change is not yet proven
+          headers:
+            Location:
+              required: true
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicationAttemptAccepted' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /projects/{projectId}/publication-attempts/{publicationAttemptId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PublicationAttemptId'
+    get:
+      tags: [Publication Attempts]
+      operationId: getPublicationAttempt
+      summary: Read the frozen attempt, canonical async status and immutable receipts
+      responses:
+        '200':
+          description: Attempt detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicationAttempt' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /projects/{projectId}/publication-attempts/{publicationAttemptId}/reconcile:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PublicationAttemptId'
+    post:
+      tags: [Publication Attempts]
+      operationId: reconcilePublicationAttempt
+      summary: Re-read provider and live URL facts before any Change Receipt
+      description: |
+        GitHub requires merged SHA plus deployed live canonical URL. WordPress
+        requires publish status, exact post revision and bounded live canonical
+        URL verification. The server re-reads the stored attempt, current
+        destination authorization and provider facts. Unknown facts remain
+        pending or unavailable.
+      x-side-effect-class: internal_write
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedAttemptRequestHash]
+              properties:
+                expectedAttemptRequestHash: { $ref: '#/components/schemas/Sha256' }
+      responses:
+        '202':
+          description: Reconciliation accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicationAttemptAccepted' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /projects/{projectId}/publication-attempts/{publicationAttemptId}/rollback-requests:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PublicationAttemptId'
+    post:
+      tags: [Publication Attempts]
+      operationId: createPublicationRollbackAttempt
+      summary: Queue a separately authorized rollback without rewriting history
+      description: |
+        The path attempt is the immutable sourcePublicationAttemptId. The server
+        requires its verified Change Receipt, re-reads its provider-specific
+        rollbackPlan, current destination grant and current remote revision, then
+        freezes a new rollback-purpose authorization snapshot from the
+        authenticated actor and a new customer acknowledgement. The source
+        approval is historical lineage only: rollback never reuses the original
+        publish authorization and does not require that source approval to remain
+        current or unrevoked.
+      x-side-effect-class: external_write
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - previewRef
+                - previewChecksum
+                - expectedCurrentRemoteRevision
+                - customerAcknowledgementInput
+                - reason
+              properties:
+                previewRef: { type: string, minLength: 1, maxLength: 1024 }
+                previewChecksum: { $ref: '#/components/schemas/Sha256' }
+                expectedCurrentRemoteRevision:
+                  type: string
+                  minLength: 1
+                  maxLength: 512
+                customerAcknowledgementInput:
+                  $ref: '#/components/schemas/CustomerAcknowledgementInput'
+                reason: { type: string, minLength: 3, maxLength: 2000 }
+      responses:
+        '202':
+          description: Independent rollback attempt accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicationAttemptAccepted' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    supabaseSessionCookie:
+      type: apiKey
+      in: cookie
+      name: sb-auth-token
+      description: Logical same-origin Supabase SSR session cookie; deployed cookie name may include the project reference.
+
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    DestinationRef:
+      name: destinationRef
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    PublicationAttemptId:
+      name: publicationAttemptId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[ -~]+$'
+
+  responses:
+    Problem:
+      description: RFC 9457 problem response; secrets and provider payload bodies are redacted
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: true
+            required: [type, title, status, code]
+            properties:
+              type: { type: string, format: uri }
+              title: { type: string }
+              status: { type: integer, minimum: 400, maximum: 599 }
+              code: { type: string }
+              detail: { type: string }
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+    Sha256:
+      type: string
+      pattern: '^[a-f0-9]{64}$'
+    ProviderKind:
+      type: string
+      enum: [github, wordpress]
+    DestinationState:
+      type: string
+      enum: [pending, ready, unavailable, revoked]
+    ReceiptKind:
+      type: string
+      enum: [delivery_receipt, change_receipt]
+    PublicationState:
+      type: string
+      description: |
+        Customer projection derived from async status plus immutable receipts.
+        A Delivery Receipt, including an opened PR, WordPress Draft, or scheduled
+        post, remains pending and cannot assert an intermediate success state.
+      enum: [pending, changed, unavailable, revoked, failed]
+
+    AuthorizationSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - authorizationId
+        - actorId
+        - grantedAt
+        - expiresAt
+        - scopes
+        - destinationRef
+        - destinationRevision
+        - purpose
+        - customerAcknowledgement
+      properties:
+        authorizationId: { $ref: '#/components/schemas/Uuid' }
+        actorId: { $ref: '#/components/schemas/Uuid' }
+        grantedAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200 }
+        destinationRef: { $ref: '#/components/schemas/Uuid' }
+        destinationRevision: { type: integer, minimum: 1 }
+        purpose:
+          type: string
+          enum: [connector_configuration, publish, rollback]
+        customerAcknowledgement:
+          $ref: '#/components/schemas/CustomerAcknowledgement'
+
+    CustomerAcknowledgement:
+      type: object
+      additionalProperties: false
+      required:
+        - customerAcknowledgementId
+        - actorId
+        - acknowledgedAt
+        - acknowledgementScope
+      properties:
+        customerAcknowledgementId: { $ref: '#/components/schemas/Uuid' }
+        actorId: { $ref: '#/components/schemas/Uuid' }
+        acknowledgedAt: { type: string, format: date-time }
+        acknowledgementScope:
+          type: string
+          enum:
+            - connector_configuration
+            - exact_artifact_revision_for_publication
+            - rollback_preview
+
+    CustomerAcknowledgementInput:
+      type: object
+      additionalProperties: false
+      description: Actor, acknowledgement id and timestamp are derived by the server from the authenticated request.
+      required: [acknowledged, acknowledgementScope]
+      properties:
+        acknowledged: { type: boolean, const: true }
+        acknowledgementScope:
+          type: string
+          enum:
+            - exact_artifact_revision_for_publication
+            - rollback_preview
+
+    ApproveArtifactRevisionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - eventKind
+        - artifactRevisionId
+        - expectedArtifactRevision
+        - expectedQaGateVersion
+        - customerAcknowledgementInput
+      properties:
+        eventKind: { type: string, const: approved }
+        artifactRevisionId: { $ref: '#/components/schemas/Uuid' }
+        expectedArtifactRevision: { type: integer, minimum: 1 }
+        expectedQaGateVersion: { type: string, minLength: 1, maxLength: 100 }
+        customerAcknowledgementInput:
+          $ref: '#/components/schemas/CustomerAcknowledgementInput'
+
+    InvalidateArtifactApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [eventKind, supersedesApprovalEventId, reason]
+      properties:
+        eventKind:
+          type: string
+          enum: [revoked, superseded]
+        supersedesApprovalEventId: { $ref: '#/components/schemas/Uuid' }
+        reason: { type: string, minLength: 3, maxLength: 2000 }
+
+    AppendArtifactApprovalEventRequest:
+      oneOf:
+        - $ref: '#/components/schemas/ApproveArtifactRevisionRequest'
+        - $ref: '#/components/schemas/InvalidateArtifactApprovalRequest'
+      discriminator:
+        propertyName: eventKind
+
+    ArtifactApprovalEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - approvalEventId
+        - eventKind
+        - supersedesApprovalEventId
+        - eventActorId
+        - artifactId
+        - artifactRevisionId
+        - artifactRevision
+        - artifactContentHash
+        - reviewerActorId
+        - qaGateVersion
+        - qaGateSnapshot
+        - qaGateSnapshotHash
+        - customerAcknowledgement
+        - reason
+        - recordedAt
+      properties:
+        approvalEventId: { $ref: '#/components/schemas/Uuid' }
+        eventKind:
+          type: string
+          enum: [approved, revoked, superseded]
+        supersedesApprovalEventId:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        eventActorId: { $ref: '#/components/schemas/Uuid' }
+        artifactId: { $ref: '#/components/schemas/Uuid' }
+        artifactRevisionId: { $ref: '#/components/schemas/Uuid' }
+        artifactRevision: { type: integer, minimum: 1 }
+        artifactContentHash: { $ref: '#/components/schemas/Sha256' }
+        reviewerActorId:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        qaGateVersion: { type: string, minLength: 1, maxLength: 100 }
+        qaGateSnapshot:
+          type: object
+          additionalProperties: true
+        qaGateSnapshotHash: { $ref: '#/components/schemas/Sha256' }
+        customerAcknowledgement:
+          $ref: '#/components/schemas/CustomerAcknowledgement'
+        reason: { type: [string, 'null'], minLength: 3, maxLength: 2000 }
+        recordedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties: { eventKind: { const: approved } }
+          then:
+            properties:
+              supersedesApprovalEventId: { type: 'null' }
+              reviewerActorId: { $ref: '#/components/schemas/Uuid' }
+              reason: { type: 'null' }
+          else:
+            properties:
+              supersedesApprovalEventId: { $ref: '#/components/schemas/Uuid' }
+              reviewerActorId: { type: 'null' }
+              reason: { type: string, minLength: 3, maxLength: 2000 }
+
+    ArtifactApprovalSnapshot:
+      type: object
+      additionalProperties: false
+      description: |
+        Durable append-only approval authority for one exact Artifact Revision.
+        execution_artifacts.status=ready and updatedAt are never approval facts.
+      required:
+        - approvalEventId
+        - approvalState
+        - artifactId
+        - artifactRevisionId
+        - approvedArtifactRevision
+        - approvedArtifactContentHash
+        - reviewerActorId
+        - qaGateVersion
+        - qaGateSnapshot
+        - qaGateSnapshotHash
+        - customerAcknowledgement
+        - approvedAt
+      properties:
+        approvalEventId: { $ref: '#/components/schemas/Uuid' }
+        approvalState: { type: string, const: approved }
+        artifactId: { $ref: '#/components/schemas/Uuid' }
+        artifactRevisionId: { $ref: '#/components/schemas/Uuid' }
+        approvedArtifactRevision: { type: integer, minimum: 1 }
+        approvedArtifactContentHash: { $ref: '#/components/schemas/Sha256' }
+        reviewerActorId: { $ref: '#/components/schemas/Uuid' }
+        qaGateVersion: { type: string, minLength: 1, maxLength: 100 }
+        qaGateSnapshot:
+          type: object
+          additionalProperties: true
+        qaGateSnapshotHash: { $ref: '#/components/schemas/Sha256' }
+        customerAcknowledgement:
+          $ref: '#/components/schemas/CustomerAcknowledgement'
+        approvedAt: { type: string, format: date-time }
+
+    RemotePrecondition:
+      type: object
+      additionalProperties: false
+      required: [kind, revision]
+      properties:
+        kind:
+          type: string
+          enum: [must_match, must_not_exist]
+        revision:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 512
+      allOf:
+        - if:
+            properties: { kind: { const: must_match } }
+          then:
+            properties: { revision: { type: string, minLength: 1, maxLength: 512 } }
+          else:
+            properties: { revision: { type: 'null' } }
+
+    RollbackPlan:
+      type: object
+      additionalProperties: false
+      required: [providerKind, strategy, priorRemoteRevision, expectedCurrentRemoteRevision, facts]
+      properties:
+        providerKind: { $ref: '#/components/schemas/ProviderKind' }
+        strategy:
+          type: string
+          enum: [github_revert_pr, wordpress_restore_revision]
+        priorRemoteRevision: { type: string, minLength: 1, maxLength: 512 }
+        expectedCurrentRemoteRevision: { type: string, minLength: 1, maxLength: 512 }
+        facts:
+          type: object
+          additionalProperties: true
+
+    GitHubDestinationScope:
+      type: object
+      additionalProperties: false
+      required:
+        - providerKind
+        - installationId
+        - repositoryId
+        - repositoryOwner
+        - repositoryName
+        - baseBranch
+        - branchPrefix
+        - contentPath
+        - grantedPermissions
+      properties:
+        providerKind: { type: string, const: github }
+        installationId: { type: integer, minimum: 1 }
+        repositoryId: { type: integer, minimum: 1 }
+        repositoryOwner: { type: string, minLength: 1, maxLength: 100 }
+        repositoryName: { type: string, minLength: 1, maxLength: 100 }
+        baseBranch: { type: string, minLength: 1, maxLength: 255 }
+        branchPrefix: { type: string, minLength: 1, maxLength: 200 }
+        contentPath: { type: string, minLength: 1, maxLength: 1024 }
+        grantedPermissions:
+          type: array
+          minItems: 3
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            enum: [metadata_read, contents_read, contents_write, pull_requests_write]
+
+    WordPressDestinationScope:
+      type: object
+      additionalProperties: false
+      required:
+        - providerKind
+        - siteBaseUrl
+        - encryptedSecretRef
+        - authenticatedUserId
+        - postType
+        - authorAllowlist
+        - statusAllowlist
+        - capabilities
+      properties:
+        providerKind: { type: string, const: wordpress }
+        siteBaseUrl:
+          type: string
+          format: uri
+          pattern: '^[Hh][Tt][Tt][Pp][Ss]?://'
+        encryptedSecretRef: { type: string, minLength: 1, maxLength: 512 }
+        authenticatedUserId: { type: integer, minimum: 1 }
+        postType: { type: string, minLength: 1, maxLength: 100 }
+        authorAllowlist:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        statusAllowlist:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum: [draft, future, publish]
+        capabilities:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 100 }
+
+    GitHubDestinationSelection:
+      type: object
+      additionalProperties: false
+      required:
+        - providerKind
+        - repositoryId
+        - baseBranch
+        - branchPrefix
+        - contentPath
+      properties:
+        providerKind: { type: string, const: github }
+        repositoryId: { type: integer, minimum: 1 }
+        baseBranch: { type: string, minLength: 1, maxLength: 255 }
+        branchPrefix: { type: string, minLength: 1, maxLength: 200 }
+        contentPath: { type: string, minLength: 1, maxLength: 1024 }
+
+    WordPressDestinationSelection:
+      type: object
+      additionalProperties: false
+      required:
+        - providerKind
+        - postType
+        - authorAllowlist
+        - statusAllowlist
+      properties:
+        providerKind: { type: string, const: wordpress }
+        postType: { type: string, minLength: 1, maxLength: 100 }
+        authorAllowlist:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        statusAllowlist:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum: [draft, future, publish]
+
+    AppendPublicationDestinationRevisionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - siteId
+        - destinationRef
+        - baseRevision
+        - targetRef
+        - providerKind
+        - requestedScope
+        - authorizationGrantRef
+      properties:
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        destinationRef: { $ref: '#/components/schemas/Uuid' }
+        baseRevision: { type: integer, minimum: 0 }
+        targetRef: { type: string, minLength: 1, maxLength: 2048 }
+        providerKind: { $ref: '#/components/schemas/ProviderKind' }
+        requestedScope:
+          oneOf:
+            - $ref: '#/components/schemas/GitHubDestinationSelection'
+            - $ref: '#/components/schemas/WordPressDestinationSelection'
+          discriminator:
+            propertyName: providerKind
+        authorizationGrantRef: { $ref: '#/components/schemas/Uuid' }
+
+    PublicationDestination:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - destinationRef
+        - revision
+        - siteId
+        - providerKind
+        - targetRef
+        - state
+        - providerScope
+        - authorizationSnapshot
+        - readinessObservation
+        - limitation
+        - createdAt
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        destinationRef: { $ref: '#/components/schemas/Uuid' }
+        revision: { type: integer, minimum: 1 }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        providerKind: { $ref: '#/components/schemas/ProviderKind' }
+        targetRef: { type: string, minLength: 1, maxLength: 2048 }
+        state: { $ref: '#/components/schemas/DestinationState' }
+        providerScope:
+          oneOf:
+            - $ref: '#/components/schemas/GitHubDestinationScope'
+            - $ref: '#/components/schemas/WordPressDestinationScope'
+          discriminator:
+            propertyName: providerKind
+        authorizationSnapshot: { $ref: '#/components/schemas/AuthorizationSnapshot' }
+        readinessObservation:
+          type: object
+          additionalProperties: true
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        createdAt: { type: string, format: date-time }
+
+    CreatePublicationAttemptRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - destinationRef
+        - expectedDestinationRevision
+        - approvalEventId
+        - previewRef
+        - previewChecksum
+        - rollbackPlanRef
+        - rollbackPlanChecksum
+        - remotePrecondition
+        - idempotencyKey
+      properties:
+        destinationRef: { $ref: '#/components/schemas/Uuid' }
+        expectedDestinationRevision: { type: integer, minimum: 1 }
+        approvalEventId: { $ref: '#/components/schemas/Uuid' }
+        previewRef: { type: string, minLength: 1, maxLength: 1024 }
+        previewChecksum: { $ref: '#/components/schemas/Sha256' }
+        rollbackPlanRef: { type: string, minLength: 1, maxLength: 1024 }
+        rollbackPlanChecksum: { $ref: '#/components/schemas/Sha256' }
+        remotePrecondition: { $ref: '#/components/schemas/RemotePrecondition' }
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[ -~]+$'
+          description: Must exactly equal the Idempotency-Key header.
+
+    PublicationAttemptAccepted:
+      type: object
+      additionalProperties: false
+      required: [publicationAttemptId, asyncRunId, state, replayed]
+      properties:
+        publicationAttemptId: { $ref: '#/components/schemas/Uuid' }
+        asyncRunId: { $ref: '#/components/schemas/Uuid' }
+        state: { type: string, const: pending }
+        replayed: { type: boolean }
+
+    PublicationReceipt:
+      type: object
+      additionalProperties: false
+      description: |
+        Immutable provider fact. A delivery receipt never proves a live change.
+        A change receipt proves verified live lineage but never proves positive Results.
+      required:
+        - id
+        - receiptKind
+        - predecessorDeliveryReceiptId
+        - providerKind
+        - providerRequestId
+        - remoteScopeRef
+        - remoteObjectKind
+        - remoteObjectId
+        - remoteRevision
+        - deliveryUrl
+        - liveCanonicalUrl
+        - contentChecksum
+        - verificationState
+        - evidenceRefs
+        - limitation
+        - observedAt
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        receiptKind: { $ref: '#/components/schemas/ReceiptKind' }
+        predecessorDeliveryReceiptId:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        providerKind: { $ref: '#/components/schemas/ProviderKind' }
+        providerRequestId: { type: string, minLength: 1, maxLength: 512 }
+        remoteScopeRef:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: Stable repository + PR or WordPress site + post lineage.
+        remoteObjectKind:
+          type: string
+          enum: [github_pull_request, github_merge, wordpress_post, wordpress_revision]
+        remoteObjectId: { type: string, minLength: 1, maxLength: 512 }
+        remoteRevision: { type: string, minLength: 1, maxLength: 512 }
+        deliveryUrl: { type: [string, 'null'], format: uri }
+        liveCanonicalUrl: { type: [string, 'null'], format: uri }
+        contentChecksum: { $ref: '#/components/schemas/Sha256' }
+        verificationState:
+          type: string
+          enum: [provider_accepted, pending, verified_live, unavailable]
+        evidenceRefs:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        observedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties: { receiptKind: { const: change_receipt } }
+          then:
+            properties:
+              predecessorDeliveryReceiptId:
+                $ref: '#/components/schemas/Uuid'
+              verificationState: { type: string, const: verified_live }
+              liveCanonicalUrl: { type: string, format: uri }
+              evidenceRefs:
+                type: array
+                minItems: 1
+                maxItems: 100
+                uniqueItems: true
+                items: { type: string, minLength: 1, maxLength: 500 }
+              limitation: { type: 'null' }
+          else:
+            properties:
+              predecessorDeliveryReceiptId: { type: 'null' }
+              verificationState:
+                type: string
+                enum: [provider_accepted, pending, unavailable]
+
+    PublicationAttempt:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - asyncRunId
+        - siteId
+        - destinationRef
+        - destinationRevision
+        - targetRef
+        - actionId
+        - artifactId
+        - approvedArtifactRevision
+        - approvedArtifactContentHash
+        - publicationApproval
+        - sourceApproval
+        - attemptKind
+        - sourcePublicationAttemptId
+        - providerKind
+        - sideEffectClass
+        - authorizationSnapshot
+        - previewRef
+        - previewChecksum
+        - remotePrecondition
+        - rollbackPlan
+        - idempotencyKey
+        - requestHash
+        - state
+        - receipts
+        - requestedAt
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        asyncRunId: { $ref: '#/components/schemas/Uuid' }
+        siteId: { $ref: '#/components/schemas/Uuid' }
+        destinationRef: { $ref: '#/components/schemas/Uuid' }
+        destinationRevision: { type: integer, minimum: 1 }
+        targetRef: { type: string, minLength: 1, maxLength: 2048 }
+        actionId: { $ref: '#/components/schemas/Uuid' }
+        artifactId: { $ref: '#/components/schemas/Uuid' }
+        approvedArtifactRevision: { type: integer, minimum: 1 }
+        approvedArtifactContentHash: { $ref: '#/components/schemas/Sha256' }
+        publicationApproval:
+          oneOf:
+            - $ref: '#/components/schemas/ArtifactApprovalSnapshot'
+            - type: 'null'
+        sourceApproval:
+          oneOf:
+            - $ref: '#/components/schemas/ArtifactApprovalSnapshot'
+            - type: 'null'
+        attemptKind:
+          type: string
+          enum: [publish, rollback]
+        sourcePublicationAttemptId:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        providerKind: { $ref: '#/components/schemas/ProviderKind' }
+        sideEffectClass: { type: string, const: external_write }
+        authorizationSnapshot: { $ref: '#/components/schemas/AuthorizationSnapshot' }
+        previewRef: { type: string, minLength: 1, maxLength: 1024 }
+        previewChecksum: { $ref: '#/components/schemas/Sha256' }
+        remotePrecondition: { $ref: '#/components/schemas/RemotePrecondition' }
+        rollbackPlan: { $ref: '#/components/schemas/RollbackPlan' }
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[ -~]+$'
+        requestHash: { $ref: '#/components/schemas/Sha256' }
+        state: { $ref: '#/components/schemas/PublicationState' }
+        receipts:
+          type: array
+          maxItems: 2
+          items: { $ref: '#/components/schemas/PublicationReceipt' }
+        requestedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties: { attemptKind: { const: publish } }
+          then:
+            properties:
+              sourcePublicationAttemptId: { type: 'null' }
+              publicationApproval:
+                $ref: '#/components/schemas/ArtifactApprovalSnapshot'
+              sourceApproval: { type: 'null' }
+              authorizationSnapshot:
+                allOf:
+                  - $ref: '#/components/schemas/AuthorizationSnapshot'
+                  - properties:
+                      purpose: { type: string, const: publish }
+          else:
+            properties:
+              sourcePublicationAttemptId:
+                $ref: '#/components/schemas/Uuid'
+              publicationApproval: { type: 'null' }
+              sourceApproval:
+                $ref: '#/components/schemas/ArtifactApprovalSnapshot'
+              authorizationSnapshot:
+                allOf:
+                  - $ref: '#/components/schemas/AuthorizationSnapshot'
+                  - properties:
+                      purpose: { type: string, const: rollback }
