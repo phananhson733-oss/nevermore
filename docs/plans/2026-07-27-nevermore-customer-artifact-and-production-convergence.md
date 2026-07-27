@@ -401,7 +401,7 @@ Run Flow Shadow unit, integration, content vertical E2E, security, and determini
 - Create: `authority/implementation-spec-v0.4/provider-boundaries.md`
 - Create: `authority/implementation-spec-v0.4/acceptance-matrix.md`
 - Create: `scripts/spec-v0.4-candidate-lock.json`
-- Modify: authority discovery so v0.4 is reported as `candidate`, never `active`
+- Modify: authority discovery so v0.4 is reported as `candidate` while v0.3 remains active
 
 **Step 1: Write failing candidate-authority verifier tests**
 
@@ -538,8 +538,9 @@ passes the bounded live-page verification.
 In the same implementation change, promote the reviewed v0.4 candidate into
 `openapi/mvp.yaml`, migration `0022`, generated contracts, runtime package
 versions, lock, route expectations, and both authority/implementation
-verifiers. No operation or table enters the active lock without its working
-route/repository/worker and tests.
+verifiers. Flip authority discovery from v0.4 `candidate` to v0.4 `active` in
+that same commit, after all promotion gates pass. No operation or table enters
+the active lock without its working route/repository/worker and tests.
 
 **Step 5: Connect customer UI**
 
@@ -579,7 +580,8 @@ not publication.
 
 Require:
 
-- target/action/artifact revision/publication receipt lineage;
+- target/action/artifact revision/`change_receipt` lineage;
+- optional `delivery_receipt` lineage for timeline and audit display only;
 - immutable baseline and outcome snapshot IDs;
 - absolute before/after windows;
 - timezone;
@@ -659,7 +661,7 @@ Run Results unit/integration/mock/real E2E, export, print, mobile, accessibility
 
 **Step 1: Prove the complete chain**
 
-One test project must complete:
+One deterministic acceptance project must complete:
 
 ```text
 Product URL
@@ -712,7 +714,12 @@ The release SHA may pass at T0 with:
 - live delivery smoke receipts;
 - honest real-project states of `pending`, `insufficient_data`, or
   `unavailable`;
-- a scheduled follow-up bound to the immutable Change Receipt and release SHA.
+
+When a real immutable Change Receipt exists, schedule the elapsed-time follow-up
+against that receipt and the release SHA. When the Owner has approved only a
+delivery smoke and no Change Receipt exists, do not schedule a measurement
+follow-up yet; hosted acceptance passes with an honest delivery-only `pending`
+state.
 
 After the configured absolute window has elapsed, append the real GSC/GA4/UTM
 outcome observations and rerun the customer Results review. Do not hold the code
