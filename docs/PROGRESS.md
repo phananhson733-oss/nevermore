@@ -10,8 +10,8 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 ## Candidate identity and authority
 
 - Branch: `codex/unified-growth-opportunity-v03`
-- Documentation reconciliation base HEAD:
-  `306dbf866cb46d8d0c4f51f0e04646715a965ead`
+- Final v0.3 verification anchor before this progress-only update:
+  `8d06984cdd64a63657c5208cba2c2c0f134a5866`
 - Nevermore program root: `/Users/wzb/Code/nevermore`
 - Git repository common directory:
   `/Users/wzb/Code/nevermore/signalframe-mvp-app/.git`
@@ -25,9 +25,9 @@ convergence worktree from older evidence recorded in checked-in stop gates.
   `0021_content_shadow_invocation_task.sql` (**21 ordered migrations**)
 - Contract inventory: **49 API operations / 9 async operations / 44 app tables / 11 frozen rules**
 
-The base SHA above is the exact commit inspected before this documentation
-change. A tracked file cannot contain the hash of the commit that contains
-itself; therefore the final candidate SHA must always be read with
+The verification anchor above is the exact commit inspected before this
+progress-only change. A tracked file cannot contain the hash of the commit that
+contains itself; therefore the final candidate SHA must always be read with
 `git rev-parse HEAD` and then compared with deployed
 `/api/mvp/health/version` and Railway startup logs.
 
@@ -81,11 +81,11 @@ that confirms merge/publish and records the live canonical URL may anchor
 GSC/GA4/UTM before/after attribution. Those capabilities are not part of the
 current v0.3 operation, async, or table counts.
 
-## Fresh verification on this convergence worktree
+## Fresh verification on the final v0.3 candidate
 
-“Fresh” means the command was rerun against the base SHA above plus the current
-Task 2 documentation diff. It does not mean a hosted provider, production
-database, or deployed origin was exercised.
+“Fresh” means the command was rerun against the verification anchor above. It
+does not mean a hosted provider, production database, or deployed origin was
+exercised.
 
 | Gate | Fresh result |
 | --- | --- |
@@ -95,12 +95,16 @@ database, or deployed origin was exercised.
 | Authority/verifier tests | `pnpm verify:spec:test` passed: **76/76** Node tests, including the docs gate. |
 | Implementation consistency | `pnpm implementation:check` passed with **49 / 9 / 44 / 11** and the current safety/purity checks. |
 | Deployment config | `pnpm deploy:check` passed for Vercel Web + Supabase state + Railway worker-only topology. |
+| Disposable database | All **21** migrations were present; `pnpm db:migrate:check` passed with **44 tables / 56 indexes / 69 triggers / 18 routines**. |
 | Lint | `pnpm lint` passed across the E2E and workspace packages. |
 | Typecheck | `pnpm typecheck` passed across the E2E and workspace packages. |
-| Unit tests | `pnpm test` passed: **315 files / 4,173 tests**. |
+| Unit tests | `pnpm test` passed: **315 files / 4,176 tests**. |
+| Integration tests | `pnpm test:integration` passed on the disposable loopback database: **67 files / 495 tests**. |
 | Production build | `pnpm build` passed across all buildable workspace packages; `apps/web/next-env.d.ts` remained clean. |
-| Targeted customer-surface mock E2E | **28 passed**: Critical **14** + Sources suites **7** + frontend affected **4** + cursor affected **3**. |
-| Diff whitespace check | `git diff --check` passed for the final Task 2 worktree diff. |
+| Complete mock browser E2E | `pnpm test:e2e:mock` passed: **155/155** Chromium scenarios, including Overview, Growth Map, Content Shadow, Sources, Execution, Results, responsive and accessibility coverage. |
+| Customer deliverables | Interactive Artifact verification passed with **4 routes / 56 declared actions / 14 forms / 0 unexercised actions or forms**. Product Manual verification passed with **4 routes / 3 customer-visible connections / 0 internal audience, implementation-dictionary, or workstation-path exposures**. |
+| Independent review | Complete-diff review found no remaining P0/P1 or customer-visible/data-honesty P2 blocker after the customer naming and manual-isolation fixes. |
+| Diff whitespace check | `git diff --check` passed on the final candidate. |
 
 The first documentation-consistency run was intentionally red before these docs
 were changed: **1 passed / 6 failed**. It exposed the missing root README,
