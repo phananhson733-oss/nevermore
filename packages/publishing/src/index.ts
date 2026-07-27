@@ -17,6 +17,12 @@ export {
   type RetryMode,
 } from "./http";
 export {
+  createNodeHostnameResolver,
+  createNodePinnedFetch,
+  createNodePublishingTransport,
+  type NodePublishingTransportOptions,
+} from "./node-network";
+export {
   DEFAULT_PUBLICATION_POLICY,
   assertReceiptLineage,
   buildGitHubDeliveryPlan,

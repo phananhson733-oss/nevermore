@@ -30,6 +30,14 @@ export interface WordPressWriteAuthorization {
   readonly contentChecksum: string;
   readonly remoteScopeRef: string;
   readonly expectedRemoteRevision: string;
+  /** Server time at which this exact immutable grant was issued. */
+  readonly authorizedAt: string;
+  /** Server time at which attempt acceptance atomically consumed the grant. */
+  readonly consumedAt: string;
+  /**
+   * Grant-consumption deadline, not credential freshness. The credential or
+   * provider token may independently expire and must be resolved at execution.
+   */
   readonly expiresAt: string;
 }
 
@@ -40,6 +48,7 @@ export interface WordPressDestinationScope {
   readonly authenticatedUserId: number;
   readonly allowedAuthorIds: readonly number[];
   readonly allowedStatuses: readonly WordPressDeliveryStatus[];
+  /** WordPress REST collection bases, for example `posts` or `pages`. */
   readonly allowedPostTypes: readonly string[];
 }
 
@@ -150,6 +159,10 @@ interface WordPressType {
   readonly capabilities?: Readonly<Record<string, string>>;
 }
 
+type WordPressTypeCollection = Readonly<
+  Record<string, WordPressType>
+>;
+
 interface WordPressPost {
   readonly id?: number;
   readonly status?: string;
@@ -245,35 +258,64 @@ export function createWordPressPublishingAdapter(
     }
 
     let finalRequestId = user.providerRequestId;
-    for (const postType of input.scope.allowedPostTypes) {
-      const type = await transport.request<WordPressType>({
-        provider: "wordpress",
-        operation: "probe_post_type",
-        method: "GET",
-        url:
-          `${siteOrigin}/wp-json/wp/v2/types/` +
-          encodeURIComponent(typeSlugForRestBase(postType)) +
-          "?context=edit",
-        allowedOrigins: [siteOrigin],
-        headers,
-        secrets: [input.credential.authorizationValue],
-        retry: "safe_read",
-      });
-      if (
-        type.body.rest_base !== postType ||
-        typeof type.body.slug !== "string" ||
-        typeof type.body.capabilities?.edit_posts !== "string"
-      ) {
+    let customTypes:
+      | {
+          readonly body: WordPressTypeCollection;
+          readonly providerRequestId: string | null;
+        }
+      | null = null;
+    for (const restBase of input.scope.allowedPostTypes) {
+      const builtInSlug = typeSlugForRestBase(restBase);
+      let type: WordPressType | null;
+      let providerRequestId: string | null;
+      if (builtInSlug !== null) {
+        const response = await transport.request<WordPressType>({
+          provider: "wordpress",
+          operation: "probe_post_type",
+          method: "GET",
+          url:
+            `${siteOrigin}/wp-json/wp/v2/types/` +
+            encodeURIComponent(builtInSlug) +
+            "?context=edit",
+          allowedOrigins: [siteOrigin],
+          headers,
+          secrets: [input.credential.authorizationValue],
+          retry: "safe_read",
+        });
+        type = isWordPressTypeCapability(
+          response.body,
+          restBase,
+          builtInSlug,
+        )
+          ? response.body
+          : null;
+        providerRequestId = response.providerRequestId;
+      } else {
+        customTypes ??=
+          await transport.request<WordPressTypeCollection>({
+            provider: "wordpress",
+            operation: "probe_post_type",
+            method: "GET",
+            url: `${siteOrigin}/wp-json/wp/v2/types?context=edit`,
+            allowedOrigins: [siteOrigin],
+            headers,
+            secrets: [input.credential.authorizationValue],
+            retry: "safe_read",
+          });
+        type = findCustomWordPressType(customTypes.body, restBase);
+        providerRequestId = customTypes.providerRequestId;
+      }
+      if (type === null) {
         throw new PublishingProviderError({
           code: "SCOPE_DENIED",
           provider: "wordpress",
           operation: "probe_post_type",
           message: "WordPress post type is not available in this destination.",
-          providerRequestId: type.providerRequestId,
+          providerRequestId,
           remoteScopeRef: wordpressSiteScopeRef(siteOrigin),
         });
       }
-      finalRequestId = type.providerRequestId;
+      finalRequestId = providerRequestId;
     }
 
     return {
@@ -462,7 +504,7 @@ export function createWordPressPublishingAdapter(
     readonly expectedRemoteRevision: string;
     readonly expectedCanonicalUrl: string;
   }): Promise<WordPressChangeObservation> {
-    validatePublishAuthorization(input, options.now());
+    validatePublishAuthorization(input);
     const siteOrigin = validateChangeInput(input);
     const probe = await probeScope({
       credential: input.credential,
@@ -625,14 +667,23 @@ function validatePublishAuthorization(
     readonly publishAuthorization: WordPressWriteAuthorization | null;
     readonly expectedRemoteRevision: string;
   },
-  now: Date,
 ): void {
   const authorization = input.publishAuthorization;
   if (authorization === null) {
     throw publishAuthorizationError("authorization_missing");
   }
+  const authorizedAt = Date.parse(authorization.authorizedAt);
+  const consumedAt = Date.parse(authorization.consumedAt);
   const expiresAt = Date.parse(authorization.expiresAt);
-  if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) {
+  if (
+    !Number.isFinite(authorizedAt) ||
+    !Number.isFinite(consumedAt) ||
+    !Number.isFinite(expiresAt) ||
+    consumedAt < authorizedAt
+  ) {
+    throw publishAuthorizationError("authorization_lineage_mismatch");
+  }
+  if (consumedAt > expiresAt) {
     throw publishAuthorizationError("authorization_expired");
   }
   if (authorization.purpose !== "publish") {
@@ -645,7 +696,9 @@ function validatePublishAuthorization(
     !/^[a-f0-9]{64}$/u.test(authorization.contentChecksum) ||
     authorization.contentChecksum !== input.delivery.contentChecksum ||
     authorization.remoteScopeRef !== input.delivery.remoteScopeRef ||
-    authorization.expectedRemoteRevision !== input.expectedRemoteRevision
+    authorization.expectedRemoteRevision !==
+      input.expectedRemoteRevision ||
+    input.delivery.remote.revision !== input.expectedRemoteRevision
   ) {
     throw publishAuthorizationError("authorization_lineage_mismatch");
   }
@@ -662,7 +715,7 @@ function publishAuthorizationError(reason: string): PublishingProviderError {
     code: "PUBLISH_APPROVAL_REQUIRED",
     provider: "wordpress",
     operation: "publish_post",
-    message: "A current server-issued WordPress publish authorization is required.",
+    message: "A valid server-issued WordPress publish authorization is required.",
     safeDetails: { reason },
   });
 }
@@ -888,8 +941,52 @@ function wordpressSiteScopeRef(siteOrigin: string): string {
   return `wordpress:${siteOrigin}`;
 }
 
-function typeSlugForRestBase(restBase: string): string {
-  return restBase === "posts" ? "post" : restBase;
+function typeSlugForRestBase(restBase: string): string | null {
+  if (restBase === "posts") {
+    return "post";
+  }
+  if (restBase === "pages") {
+    return "page";
+  }
+  return null;
+}
+
+function isWordPressTypeCapability(
+  value: unknown,
+  restBase: string,
+  expectedSlug?: string,
+): value is WordPressType {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const type = value as WordPressType;
+  return (
+    type.rest_base === restBase &&
+    typeof type.slug === "string" &&
+    /^[a-z][a-z0-9_-]*$/u.test(type.slug) &&
+    (expectedSlug === undefined || type.slug === expectedSlug) &&
+    typeof type.capabilities?.edit_posts === "string" &&
+    /^[a-z][a-z0-9_]*$/u.test(type.capabilities.edit_posts)
+  );
+}
+
+function findCustomWordPressType(
+  collection: unknown,
+  restBase: string,
+): WordPressType | null {
+  if (
+    typeof collection !== "object" ||
+    collection === null ||
+    Array.isArray(collection)
+  ) {
+    return null;
+  }
+  const matches = Object.entries(collection).filter(
+    ([slug, type]) =>
+      isWordPressTypeCapability(type, restBase) &&
+      type.slug === slug,
+  );
+  return matches.length === 1 ? (matches[0]?.[1] ?? null) : null;
 }
 
 function originOf(value: string | undefined): string | null {

@@ -34,6 +34,19 @@ export interface ResolvedEndpoint {
   readonly addresses: readonly string[];
 }
 
+/**
+ * Internal boundary signal used by production DNS resolvers. Keeping this
+ * distinct from an ordinary resolver failure lets the transport retain the
+ * public `UNSAFE_ENDPOINT` failure instead of disguising a blocked address as
+ * provider downtime.
+ */
+export class UnsafeResolvedAddressError extends Error {
+  constructor() {
+    super("DNS resolution contained a non-public address.");
+    this.name = "UnsafeResolvedAddressError";
+  }
+}
+
 export type RetryMode = "never" | "safe_read";
 
 export interface BoundedTransportOptions {
@@ -403,6 +416,9 @@ async function assertSafeEndpoint(
     if (error instanceof PublishingProviderError) {
       throw error;
     }
+    if (error instanceof UnsafeResolvedAddressError) {
+      throw unsafeEndpoint(provider, operation);
+    }
     throw new PublishingProviderError({
       code: "REMOTE_UNAVAILABLE",
       provider,
@@ -513,7 +529,7 @@ function serializeRequestBody(
   return serialized;
 }
 
-function isPublicAddress(address: string): boolean {
+export function isPublicAddress(address: string): boolean {
   const version = isIP(address);
   if (version === 4) {
     const parts = address.split(".").map(Number);

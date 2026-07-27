@@ -151,6 +151,89 @@ describe("WordPress REST publishing adapter", () => {
     });
   });
 
+  it("maps the built-in pages REST base to the page type slug", async () => {
+    const pageScope: WordPressDestinationScope = {
+      ...SCOPE,
+      allowedPostTypes: ["pages"],
+    };
+    const fake = queuedFetch([
+      probeResponses()[0] as Response,
+      probeResponses()[1] as Response,
+      json(
+        {
+          slug: "page",
+          rest_base: "pages",
+          capabilities: { edit_posts: "edit_pages" },
+        },
+        200,
+        { "x-wp-request-id": "wp-page-type-1" },
+      ),
+    ]);
+
+    const result = await createAdapter(fake.fetch).probeScope({
+      credential: CREDENTIAL,
+      scope: pageScope,
+    });
+
+    expect(fake.calls[2]?.url).toBe(
+      "https://content.example.com/wp-json/wp/v2/types/page?context=edit",
+    );
+    expect(result.allowedPostTypes).toEqual(["pages"]);
+    expect(result.providerRequestId).toBe("wp-page-type-1");
+  });
+
+  it("discovers a custom REST base from type capabilities and rejects an unknown one without guessing a slug", async () => {
+    const collection = {
+      book: {
+        slug: "book",
+        rest_base: "library",
+        capabilities: { edit_posts: "edit_books" },
+      },
+    };
+    const customScope: WordPressDestinationScope = {
+      ...SCOPE,
+      allowedPostTypes: ["library"],
+    };
+    const custom = queuedFetch([
+      probeResponses()[0] as Response,
+      probeResponses()[1] as Response,
+      json(collection, 200, { "x-wp-request-id": "wp-types-1" }),
+    ]);
+
+    await expect(
+      createAdapter(custom.fetch).probeScope({
+        credential: CREDENTIAL,
+        scope: customScope,
+      }),
+    ).resolves.toMatchObject({ allowedPostTypes: ["library"] });
+    expect(custom.calls[2]?.url).toBe(
+      "https://content.example.com/wp-json/wp/v2/types?context=edit",
+    );
+
+    const unknownScope: WordPressDestinationScope = {
+      ...SCOPE,
+      allowedPostTypes: ["missing-rest-base"],
+    };
+    const unknown = queuedFetch([
+      probeResponses()[0] as Response,
+      probeResponses()[1] as Response,
+      json(collection, 200, { "x-wp-request-id": "wp-types-2" }),
+    ]);
+    await expect(
+      createAdapter(unknown.fetch).probeScope({
+        credential: CREDENTIAL,
+        scope: unknownScope,
+      }),
+    ).rejects.toMatchObject({
+      code: "SCOPE_DENIED",
+      operation: "probe_post_type",
+    });
+    expect(unknown.calls[2]?.url).toBe(
+      "https://content.example.com/wp-json/wp/v2/types?context=edit",
+    );
+    expect(unknown.calls).toHaveLength(3);
+  });
+
   it("fails closed when site identity, edit capability, or post type drifts", async () => {
     const identityDrift = queuedFetch([
       json({
@@ -547,7 +630,7 @@ describe("WordPress REST publishing adapter", () => {
     expect(JSON.stringify(error)).not.toContain("Credential");
   });
 
-  it("requires separate publish approval and verifies exact published revision and live canonical", async () => {
+  it("accepts a grant consumed before expiry despite queue delay and verifies the exact live revision", async () => {
     const delivery = {
       kind: "delivery" as const,
       provider: "wordpress" as const,
@@ -648,7 +731,9 @@ describe("WordPress REST publishing adapter", () => {
         contentChecksum: delivery.contentChecksum,
         remoteScopeRef: delivery.remoteScopeRef,
         expectedRemoteRevision: '"wp-revision-1"',
-        expiresAt: "2026-07-27T08:45:00.000Z",
+        authorizedAt: "2026-07-27T07:50:00.000Z",
+        consumedAt: "2026-07-27T07:59:00.000Z",
+        expiresAt: "2026-07-27T07:59:30.000Z",
       },
       expectedRemoteRevision: '"wp-revision-1"',
       expectedCanonicalUrl:
@@ -749,6 +834,8 @@ describe("WordPress REST publishing adapter", () => {
           contentChecksum: delivery.contentChecksum,
           remoteScopeRef: delivery.remoteScopeRef,
           expectedRemoteRevision: '"wp-revision-1"',
+          authorizedAt: "2026-07-27T07:50:00.000Z",
+          consumedAt: "2026-07-27T07:59:00.000Z",
           expiresAt: "2026-07-27T08:10:00.000Z",
         },
         expectedRemoteRevision: '"wp-revision-1"',
@@ -794,12 +881,41 @@ describe("WordPress REST publishing adapter", () => {
         predecessorDeliveryReceiptId: "delivery-receipt-wp-1",
         delivery,
         publishAuthorization: {
+          authorizationGrantRef: "00000000-0000-4000-8000-000000000506",
+          purpose: "publish",
+          predecessorDeliveryReceiptId: "delivery-receipt-wp-1",
+          contentChecksum: delivery.contentChecksum,
+          remoteScopeRef: delivery.remoteScopeRef,
+          expectedRemoteRevision: '"wp-revision-2"',
+          authorizedAt: "2026-07-27T07:50:00.000Z",
+          consumedAt: "2026-07-27T07:59:00.000Z",
+          expiresAt: "2026-07-27T08:10:00.000Z",
+        },
+        expectedRemoteRevision: '"wp-revision-2"',
+        expectedCanonicalUrl:
+          "https://content.example.com/customer-onboarding/",
+      }),
+    ).rejects.toMatchObject({
+      code: "PUBLISH_APPROVAL_REQUIRED",
+      safeDetails: { reason: "authorization_lineage_mismatch" },
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    await expect(
+      adapter.publishAndReconcile({
+        credential: CREDENTIAL,
+        scope: SCOPE,
+        predecessorDeliveryReceiptId: "delivery-receipt-wp-1",
+        delivery,
+        publishAuthorization: {
           authorizationGrantRef: "00000000-0000-4000-8000-000000000502",
           purpose: "publish",
           predecessorDeliveryReceiptId: "delivery-receipt-wp-1",
           contentChecksum: delivery.contentChecksum,
           remoteScopeRef: delivery.remoteScopeRef,
           expectedRemoteRevision: '"wp-revision-1"',
+          authorizedAt: "2026-07-27T07:50:00.000Z",
+          consumedAt: "2026-07-27T08:00:00.000Z",
           expiresAt: "2026-07-27T07:59:59.000Z",
         },
         expectedRemoteRevision: '"wp-revision-1"',
@@ -825,6 +941,8 @@ describe("WordPress REST publishing adapter", () => {
           remoteScopeRef:
             "wordpress:https://content.example.com:post:999",
           expectedRemoteRevision: '"wp-revision-1"',
+          authorizedAt: "2026-07-27T07:50:00.000Z",
+          consumedAt: "2026-07-27T07:59:00.000Z",
           expiresAt: "2026-07-27T08:10:00.000Z",
         },
         expectedRemoteRevision: '"wp-revision-1"',
@@ -849,6 +967,8 @@ describe("WordPress REST publishing adapter", () => {
           contentChecksum: delivery.contentChecksum,
           remoteScopeRef: delivery.remoteScopeRef,
           expectedRemoteRevision: '"wp-revision-1"',
+          authorizedAt: "2026-07-27T07:50:00.000Z",
+          consumedAt: "2026-07-27T07:59:00.000Z",
           expiresAt: "2026-07-27T08:10:00.000Z",
         },
         expectedRemoteRevision: '"wp-revision-1"',
@@ -858,6 +978,32 @@ describe("WordPress REST publishing adapter", () => {
     ).rejects.toMatchObject({
       code: "PUBLISH_APPROVAL_REQUIRED",
       safeDetails: { reason: "authorization_purpose_mismatch" },
+    });
+
+    await expect(
+      adapter.publishAndReconcile({
+        credential: CREDENTIAL,
+        scope: SCOPE,
+        predecessorDeliveryReceiptId: "delivery-receipt-wp-1",
+        delivery,
+        publishAuthorization: {
+          authorizationGrantRef: "00000000-0000-4000-8000-000000000505",
+          purpose: "publish",
+          predecessorDeliveryReceiptId: "delivery-receipt-wp-1",
+          contentChecksum: delivery.contentChecksum,
+          remoteScopeRef: delivery.remoteScopeRef,
+          expectedRemoteRevision: '"wp-revision-1"',
+          authorizedAt: "2026-07-27T08:00:00.000Z",
+          consumedAt: "2026-07-27T07:59:00.000Z",
+          expiresAt: "2026-07-27T08:10:00.000Z",
+        },
+        expectedRemoteRevision: '"wp-revision-1"',
+        expectedCanonicalUrl:
+          "https://content.example.com/customer-onboarding/",
+      }),
+    ).rejects.toMatchObject({
+      code: "PUBLISH_APPROVAL_REQUIRED",
+      safeDetails: { reason: "authorization_lineage_mismatch" },
     });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
