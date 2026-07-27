@@ -48,7 +48,10 @@ The whole requirement is complete only when both are true.
 
 Tasks 1–3 below may run immediately because they create only repository-owned audit Artifact files.
 
-Before Task 4 begins, complete and verify Tasks 8–10 of:
+Before Task 4 begins:
+
+1. complete the review-only Task 7 candidate authority; and
+2. implement and verify Tasks 8–9 of:
 
 `docs/plans/2026-07-27-nevermore-customer-artifact-and-production-convergence.md`
 
@@ -58,8 +61,13 @@ That prerequisite atomically owns:
 - `0023_measurement_windows.sql`;
 - Publication/Change Receipt;
 - immutable Measurement Window;
-- customer-readable measurement Results foundation;
 - the v0.4 authority and global verifier promotion.
+
+Convergence Task 10 is not a storage or authority prerequisite for Topic
+identity, Keyword Review decisions, duplicate governance, Artifact sources,
+Action blockers/progress, or raw Keyword Rank History. It may proceed in
+parallel after Tasks 8–9, but it must be complete before Keyword Task 19 begins
+receipt-backed Results work.
 
 Do not create a Keyword migration while those two reserved migrations are absent. Do not renumber the publication/measurement migrations from this plan. After the prerequisite is merged into the same branch and fresh-database verification passes, Keyword Growth owns the following allocation:
 
@@ -1469,10 +1477,10 @@ git commit -m "docs(keyword): record final acceptance evidence"
 Execute strictly in this order:
 
 1. Tasks 1–3: audit Artifact;
-2. complete and verify publication/measurement convergence Tasks 8–10, including migrations 0022–0023;
-3. Tasks 4–13: Stage 1 production foundation and stop gate;
+2. complete convergence Task 7, then implement and verify Tasks 8–9, including migrations 0022–0023 and active v0.4 authority promotion;
+3. Tasks 4–13: Stage 1 production foundation and stop gate; convergence Task 10 may proceed in parallel after Tasks 8–9;
 4. Tasks 14–18: Stage 2 structure and monitoring;
-5. Task 19: extend the already-landed Receipt/Measurement foundation with keyword Results;
+5. ensure convergence Task 10 is complete, then run Task 19 to extend the Receipt/Measurement foundation with keyword Results;
 6. Task 20: close the Stage 2 stop gate;
 7. Tasks 21–24: approved Stage 3 sources;
 8. Task 25: final 13-requirement acceptance.
