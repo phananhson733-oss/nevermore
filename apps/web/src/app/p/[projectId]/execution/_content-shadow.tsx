@@ -287,7 +287,7 @@ function QaRail({
   const verdict = run.qa?.verdict ?? null;
   const evaluatedRevision = run.qa?.evaluatedRevision ?? null;
   const stale = verdictIsStale(evaluatedRevision, currentRevision);
-  const externalLimitation = run.research?.limitations[0] ?? null;
+  const researchLimitations = run.research?.limitations ?? [];
   const humanState = humanReviewState({
     verdict,
     evaluatedRevision,
@@ -402,8 +402,12 @@ function QaRail({
             </dd>
           </div>
         </dl>
-        {externalLimitation !== null ? (
-          <p className={styles.qaNote}>{externalLimitation}</p>
+        {researchLimitations.length > 0 ? (
+          <ul className={styles.qaNote} data-research-limitations="">
+            {researchLimitations.map((limitation, index) => (
+              <li key={`${index}:${limitation}`}>{limitation}</li>
+            ))}
+          </ul>
         ) : null}
       </section>
 
@@ -482,7 +486,7 @@ function DocBody({ run }: { readonly run: ContentShadowRun }) {
     return (
       <div className={styles.docBody} data-shadow-body="">
         <p className={styles.docLabel}>
-          {`English draft · Target market: ${run.outputLocale}`}
+          {t("draftMetadata", { locale: run.outputLocale })}
         </p>
         <MarkdownBlocks markdown={body} tableClassName={styles.tableScroll} />
       </div>

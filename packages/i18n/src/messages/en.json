@@ -1601,6 +1601,7 @@
       "revision": "Revision {revision}",
       "briefRevision": "From content brief revision {revision}",
       "deliverableType": "English blog draft",
+      "draftMetadata": "English draft · Target market: {locale}",
       "partial": "Partially completed",
       "loading": "Loading this deliverable.",
       "loadError": "This project's content deliverables could not be loaded.",

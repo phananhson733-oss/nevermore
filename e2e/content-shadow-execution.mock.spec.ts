@@ -27,6 +27,11 @@ const DRAFT_ARTIFACT_ID = "00000000-0000-4000-8000-000000000903";
 const FINDING_ID = "00000000-0000-4000-8000-000000000904";
 const BRIEF_ARTIFACT_ID = "00000000-0000-4000-8000-000000000905";
 const CONTENT_HASH = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+const RESEARCH_LIMITATIONS = [
+  "This pack carries only first-party frozen project records; no external source was retrieved or graded.",
+  "No search demand or generative citation metric was read for this run.",
+  "The automated checks do not include external fact-checking or brand-tone review.",
+] as const;
 
 const DRAFT_BODY = [
   "# How onboarding analytics reveal activation drop-off",
@@ -98,9 +103,7 @@ function runProjection() {
           limitation: "First-party identity only.",
         },
       ],
-      limitations: [
-        "This pack carries only first-party frozen SignalFrame records; no external source was retrieved or graded.",
-      ],
+      limitations: [...RESEARCH_LIMITATIONS],
       generatedAt: "2026-07-25T00:01:00.000Z",
     },
     draft: {
@@ -206,6 +209,69 @@ test("renders the deliverable body itself, at reading size", async ({
     scrollWidth: document.documentElement.scrollWidth,
   }));
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+});
+
+test("localizes draft metadata as chrome without translating the English body", async ({
+  page,
+}) => {
+  await openExecution(page);
+
+  const draftBody = page.locator("[data-shadow-body]");
+  await expect(
+    draftBody.getByText("英文草稿 · 目标市场：en", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    draftBody.getByText(/Activation stalls where the product stops explaining/),
+  ).toBeVisible();
+
+  await page.locator("[data-view-switch='compare']").click();
+  const compareDraft = page.locator("[data-compare-draft]");
+  await expect(
+    compareDraft.getByText("英文草稿 · 目标市场：en", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    compareDraft.getByText(
+      /Activation stalls where the product stops explaining/,
+    ),
+  ).toBeVisible();
+});
+
+test("keeps draft metadata English when the workbench locale is English", async ({
+  page,
+}) => {
+  await page.context().addCookies([
+    { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+  ]);
+  await openExecution(page);
+
+  await expect(
+    page
+      .locator("[data-shadow-body]")
+      .getByText("English draft · Target market: en", { exact: true }),
+  ).toBeVisible();
+
+  await page.locator("[data-view-switch='compare']").click();
+  await expect(
+    page
+      .locator("[data-compare-draft]")
+      .getByText("English draft · Target market: en", { exact: true }),
+  ).toBeVisible();
+});
+
+test("shows every declared research limitation as a semantic list", async ({
+  page,
+}) => {
+  await openExecution(page);
+
+  const rail = page.locator("[data-qa-rail]");
+  const list = rail.locator("[data-research-limitations]");
+  const items = list.getByRole("listitem");
+  await expect(list).toHaveCount(1);
+  await expect(items).toHaveCount(RESEARCH_LIMITATIONS.length);
+  for (const [index, limitation] of RESEARCH_LIMITATIONS.entries()) {
+    await expect(items.nth(index)).toHaveText(limitation);
+  }
+  await expect(rail).not.toContainText("SignalFrame");
 });
 
 test("a blocked verdict reads as a held-back citation, never as a failure", async ({

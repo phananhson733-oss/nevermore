@@ -67,6 +67,7 @@ export function ComparePanes({
   coverageClaim,
 }: ComparePanesProps) {
   const t = useTranslations("studio.compare");
+  const tShadow = useTranslations("studio.shadow");
   const missing = new Set(
     uncoveredTopics(coverageClaim, outline.targetKeywords),
   );
@@ -160,7 +161,7 @@ export function ComparePanes({
         ) : (
           <div className={styles.compareBody}>
             <p className={styles.docLabel}>
-              {`English draft · Target market: ${outputLocale}`}
+              {tShadow("draftMetadata", { locale: outputLocale })}
             </p>
             <MarkdownBlocks
               markdown={draftBody}

@@ -1601,6 +1601,7 @@
       "revision": "Revision {revision}",
       "briefRevision": "来自内容 Brief 的 Revision {revision}",
       "deliverableType": "English 博客草稿",
+      "draftMetadata": "英文草稿 · 目标市场：{locale}",
       "partial": "部分完成",
       "loading": "正在读取这份交付物。",
       "loadError": "本项目的内容交付物读取失败。",

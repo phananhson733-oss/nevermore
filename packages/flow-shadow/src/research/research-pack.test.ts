@@ -127,6 +127,19 @@ describe("buildResearchPack", () => {
     expect(pack.limitations.join(" ")).toMatch(/no external source/i);
   });
 
+  it("keeps every customer-visible research limitation free of the internal brand", () => {
+    const pack = buildResearchPack(manifest, STATS);
+    const customerVisibleLimitations = [
+      ...pack.limitations,
+      ...pack.sources.map((source) => source.limitation),
+    ];
+
+    expect(customerVisibleLimitations.join("\n")).not.toMatch(/SignalFrame/i);
+    expect(pack.limitations.join("\n")).toMatch(
+      /first-party frozen project records/i,
+    );
+  });
+
   /**
    * The pack used to state, unconditionally, that the SEO/GEO judgement "is not
    * implemented yet". The read API returns this list verbatim, so a reviewer
