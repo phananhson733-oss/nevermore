@@ -9,9 +9,11 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 
 ## Candidate identity and authority
 
-- Branch: `codex/unified-growth-opportunity-v03`
-- Final v0.3 verification anchor before this progress-only update:
-  `8d06984cdd64a63657c5208cba2c2c0f134a5866`
+- Integration branch: `codex/complete-customer-artifact-v04`
+- Final v0.3 baseline already integrated into `main`:
+  `1f3a2daebc8d426a58eb236d2ac3409d1d6bbbb2`
+- Complete customer Artifact verification anchor before this progress-only
+  update: `c404703796dda6d09d524e5ba26b57ccaa4c9c16`
 - Nevermore program root: `/Users/wzb/Code/nevermore`
 - Git repository common directory:
   `/Users/wzb/Code/nevermore/signalframe-mvp-app/.git`
@@ -25,10 +27,10 @@ convergence worktree from older evidence recorded in checked-in stop gates.
   `0021_content_shadow_invocation_task.sql` (**21 ordered migrations**)
 - Contract inventory: **49 API operations / 9 async operations / 44 app tables / 11 frozen rules**
 
-The verification anchor above is the exact commit inspected before this
-progress-only change. A tracked file cannot contain the hash of the commit that
-contains itself; therefore the final candidate SHA must always be read with
-`git rev-parse HEAD` and then compared with deployed
+The Artifact verification anchor above is the exact commit inspected before
+this progress-only change. A tracked file cannot contain the hash of the commit
+that contains itself; therefore the final integrated SHA must always be read
+with `git rev-parse HEAD` and then compared with deployed
 `/api/mvp/health/version` and Railway startup logs.
 
 ## Naming, navigation, and current boundary
@@ -71,6 +73,39 @@ publish/attribution interaction in customer collateral is scenario-only unless
 and until a later machine contract and the correct provider receipts prove
 otherwise.
 
+Customer Artifact checkpoint: **complete**
+
+The complete Chinese-first customer Artifact is now generated from repository-
+owned source under `docs/artifact-src/`; the historical visualization directory
+is provenance-only and is not a build or verification input. The generated
+interactive Artifact and product manual use one canonical scenario model:
+
+- **12 URLs**, each selectable with URL-specific detail and result status;
+- **12 Keywords / 6 Topic Clusters / 9 Competitors**, with ingestion and
+  evidence provenance;
+- **11 Artifacts / 18 immutable documents / 18 Revisions**, including
+  Technical Ticket, Metadata Rewrite, Content Brief, English Blog Draft, QA,
+  Revision Review, Publish / Change Receipt, UTM Plan, and Results;
+- **12 page observations**, of which five have a fixed-window observed or
+  insufficient-data state and seven are explicitly unavailable or not
+  observed—never fabricated as zero;
+- exactly **three customer-managed connections**: GSC, GA4, and a planned
+  GitHub position.
+
+All four modules are complete customer surfaces rather than implementation
+narration. Primary routes, Growth Map modes/selections/pagination, Execution
+selection, Results tabs/window, and overlays are encoded in hash-query history.
+Cross-module jumps retain the exact target through reload, Back, and Forward.
+The standalone files have no network dependencies and no Nevermore,
+compatibility-name, workstation-path, or internal-audience exposure.
+
+Next implementation slice: **governed external research and content quality**
+
+The next sequence closes frozen external source retrieval, first-party page
+content, duplicate-content detection, factual-claim fail-closed behavior,
+brand/claim restrictions, research metrics, and complete Revision history
+before publication authority is promoted.
+
 Next reviewed slice: **v0.4 authorized publication and attribution**
 
 v0.4 begins as a non-normative candidate and must not alter the shared OpenAPI
@@ -102,8 +137,10 @@ exercised.
 | Integration tests | `pnpm test:integration` passed on the disposable loopback database: **67 files / 495 tests**. |
 | Production build | `pnpm build` passed across all buildable workspace packages; `apps/web/next-env.d.ts` remained clean. |
 | Complete mock browser E2E | `pnpm test:e2e:mock` passed: **155/155** Chromium scenarios, including Overview, Growth Map, Content Shadow, Sources, Execution, Results, responsive and accessibility coverage. |
-| Customer deliverables | Interactive Artifact verification passed with **4 routes / 56 declared actions / 14 forms / 0 unexercised actions or forms**. Product Manual verification passed with **4 routes / 3 customer-visible connections / 0 internal audience, implementation-dictionary, or workstation-path exposures**. |
-| Independent review | Complete-diff review found no remaining P0/P1 or customer-visible/data-honesty P2 blocker after the customer naming and manual-isolation fixes. |
+| Customer deliverable generation | `pnpm artifact:regen` generated both committed files twice with stable SHA-256: Interactive Artifact `5314cb69642e5ffc73f803e52a0a2543338d3dff05a7ea4b912101f7cae69a4a`; Product Manual `7cc0f1492d16c14c6193b65b7a8cc7694a994f540787401b86576e1a10fcc9a6`. |
+| Customer deliverable verification | `pnpm artifact:verify` passed with **4 routes / 56 declared actions / 14 forms / 0 unexercised actions or forms**. Product Manual verification passed with **4 routes / 3 customer-visible connections / 0 internal audience, implementation-dictionary, or workstation-path exposures**. Physical-path tests reject lexical and symbolic-link escapes. |
+| Complete customer Artifact browser E2E | `pnpm test:e2e:artifact` passed: **20/20**, covering repo ownership, offline/no-leak behavior, all four modules, 12 URL selection/pagination, Keyword/Competitor provenance, required readable deliverables, honest Results/UTM attribution, URL/history deep links, keyboard focus, axe, and 1440/1024/768/390 viewports with at least 16px primary reading text. |
+| Independent review | Complete-diff and deep-link follow-up reviews found no remaining blocker after repository-path hardening and cross-module target persistence were added. |
 | Diff whitespace check | `git diff --check` passed on the final candidate. |
 
 The first documentation-consistency run was intentionally red before these docs
