@@ -391,22 +391,21 @@ Run Flow Shadow unit, integration, content vertical E2E, security, and determini
 
 ---
 
-### Task 7: Version the v0.4 authorized-publication authority
+### Task 7: Review the v0.4 authority without promoting the live contract
 
 **Files:**
 
 - Create: `authority/implementation-spec-v0.4/`
-- Create: `scripts/spec-v0.4-lock.json`
-- Create: `packages/contracts/src/zod/publication.ts`
-- Create: `packages/contracts/src/zod/publication.test.ts`
-- Create: `packages/db/migrations/0022_publication_foundation.sql`
-- Modify: `openapi/mvp.yaml`
-- Regenerate: `packages/contracts/src/generated/openapi.ts`
-- Modify: all independent authority/implementation verifiers
+- Create: `authority/implementation-spec-v0.4/openapi.candidate.yaml`
+- Create: `authority/implementation-spec-v0.4/schema.candidate.sql`
+- Create: `authority/implementation-spec-v0.4/provider-boundaries.md`
+- Create: `authority/implementation-spec-v0.4/acceptance-matrix.md`
+- Create: `scripts/spec-v0.4-candidate-lock.json`
+- Modify: authority discovery so v0.4 is reported as `candidate`, never `active`
 
-**Step 1: Write failing contract and verifier tests**
+**Step 1: Write failing candidate-authority verifier tests**
 
-The publication contract must require:
+The candidate publication contract must require:
 
 - project/site-scoped target;
 - provider kind `github | wordpress`;
@@ -428,31 +427,57 @@ Reject:
 - a second active publication for the same target;
 - any positive Results claim derived only from a receipt.
 
-**Step 2: Add append-only publication persistence**
+The provider boundary must also specify:
 
-Introduce narrowly owned tables:
+- GitHub App installation authorization, repository selection, branch/base-branch scope, and permission checks;
+- WordPress site-scoped credential setup, encrypted-secret reference, capability probe, and author/status limits;
+- separate `delivery_receipt` and `change_receipt` semantics;
+- a reconciliation path that confirms GitHub merge plus live deployment, or WordPress `publish` plus a live canonical URL;
+- explicit `pending`, `unavailable`, and revocation behavior.
 
-- `publication_targets`;
+**Step 2: Model append-only persistence without a second target truth**
+
+The candidate schema may introduce narrowly owned tables such as:
+
+- `publication_destinations`;
 - `publication_attempts`;
 - `publication_receipts`.
 
-`async_runs` remains status truth. The new tables own target identity, frozen request/approval/preview/rollback lineage, remote response facts, and immutable receipts—not a second generic workflow status.
+`async_runs` remains status truth. Publication rows reference the canonical
+`target_ref`, action, Artifact, and exact Artifact Revision. They own only the
+provider destination, frozen authorization/preview/rollback request, remote
+response facts, and immutable receipt facts. They never create or own a second
+canonical target identity.
 
-**Step 3: Evolve authority atomically**
+**Step 3: Keep the current contract untouched**
 
-Update v0.4 narrative, SQL, OpenAPI, lock, generated contracts, route expectations, migration expectations, package/runtime versions, and both verifiers in the same commit.
+Do not modify `openapi/mvp.yaml`, generated clients, active migrations, runtime
+packages, or the v0.3 lock in this task. The v0.4 folder is a reviewed,
+non-normative candidate until Task 8 promotes candidate authority together with
+working routes, repositories, workers, provider adapters, and tests in one
+atomic implementation change.
 
 **Step 4: Verify**
 
-Run contract, migration, authority, implementation, OpenAPI, generation, and integration gates.
+Run the candidate-authority verifier, current v0.3 authority/spec verifiers, and
+`git diff --check`. Expected: v0.4 candidate passes its review matrix while the
+active machine surface remains exactly v0.3.
 
 ---
 
-### Task 8: Implement GitHub PR and WordPress publish adapters
+### Task 8: Atomically promote authorization, publication, and provider adapters
 
 **Files:**
 
+- Create: `packages/contracts/src/zod/delivery-connections.ts`
+- Create: `packages/contracts/src/zod/delivery-connections.test.ts`
+- Create: `packages/contracts/src/zod/publication.ts`
+- Create: `packages/contracts/src/zod/publication.test.ts`
+- Create: `packages/db/migrations/0022_publication_foundation.sql`
+- Create: delivery-connection and publication repositories
 - Create: `packages/publishing/`
+- Create: GitHub App install/callback/repository-selection routes
+- Create: WordPress site/credential/capability-probe routes
 - Create: `apps/web/src/lib/services/publication.ts`
 - Create: `apps/web/src/app/api/mvp/projects/[projectId]/publications/route.ts`
 - Create: `apps/web/src/app/api/mvp/projects/[projectId]/publications/[publicationId]/route.ts`
@@ -462,11 +487,17 @@ Run contract, migration, authority, implementation, OpenAPI, generation, and int
 - Modify: `apps/worker/src/index.ts`
 - Modify: `apps/web/src/app/p/[projectId]/sources/_sources.tsx`
 - Modify: `apps/web/src/app/p/[projectId]/execution/*`
+- Modify: `openapi/mvp.yaml`
+- Regenerate: `packages/contracts/src/generated/openapi.ts`
+- Create: `scripts/spec-v0.4-lock.json`
+- Modify: v0.4 authority and all independent authority/implementation verifiers
 
-**Step 1: Write adapter contract tests**
+**Step 1: Write connection, publication, and adapter contract tests**
 
 Use deterministic fake providers to prove:
 
+- GitHub installation/repository authorization and WordPress site capability probing;
+- project/site ownership, revocation, encrypted-secret references, and redacted responses;
 - preflight and remote revision checks;
 - dry-run/preview;
 - idempotent create/update;
@@ -476,7 +507,10 @@ Use deterministic fake providers to prove:
 - bounded time/body/retry behavior;
 - exact remote IDs/URLs/checksums in receipts.
 
-**Step 2: Implement GitHub as the first live connector**
+Reject a publication request until its provider destination is live, scoped to
+the project/site, and the exact Artifact Revision has current approval.
+
+**Step 2: Implement GitHub as the first live delivery connector**
 
 Use GitHub App installation authorization. The safe default delivery is:
 
@@ -486,19 +520,43 @@ Use GitHub App installation authorization. The safe default delivery is:
 4. wait for human merge;
 5. verify merged SHA and deployed/live URL separately.
 
-Never auto-merge by default.
+Creating or updating a PR produces a `delivery_receipt`, not a
+`change_receipt`. Never auto-merge by default. A reconciler or explicit
+confirmation route creates the immutable `change_receipt` only after the merge
+SHA and the actual live/deployed URL have been verified.
 
 **Step 3: Implement WordPress as the first CMS adapter**
 
 Use a site-scoped WordPress REST credential stored encrypted. Default to draft or scheduled post creation; publishing requires a separate explicit approval. Record post ID, revision, canonical URL, status, and rollback reference.
 
-**Step 4: Connect customer UI**
+A draft/scheduled creation produces a `delivery_receipt`. The reconciler creates
+a `change_receipt` only when WordPress reports `publish` and the canonical URL
+passes the bounded live-page verification.
 
-The GitHub card becomes live only after the route/provider path exists. Execution exposes Preview, Create PR/Create Draft, Receipt, Retry, and Rollback Request with precise permission/error states.
+**Step 4: Promote the live contract atomically**
 
-**Step 5: Verify**
+In the same implementation change, promote the reviewed v0.4 candidate into
+`openapi/mvp.yaml`, migration `0022`, generated contracts, runtime package
+versions, lock, route expectations, and both authority/implementation
+verifiers. No operation or table enters the active lock without its working
+route/repository/worker and tests.
 
-Run unit/integration/mock E2E, recovery, secret-scan, and one Owner-approved sandbox-provider smoke for each adapter. Never run live writes against an unapproved repository/site.
+**Step 5: Connect customer UI**
+
+The GitHub card becomes live only after its installation, repository selection,
+permission, and readiness path exists. WordPress setup is exposed only in the
+publication destination flow; it does not become a fourth top-level customer
+data-source card. Execution exposes Preview, Create PR/Create Draft, Delivery
+Receipt, Change Receipt, Retry, and Rollback Request with precise
+permission/error states.
+
+**Step 6: Verify**
+
+Run current and candidate authority checks, contract, migration, unit,
+integration, mock E2E, recovery, secret-scan, and one Owner-approved
+sandbox-provider delivery smoke for each adapter. Never run live writes against
+an unapproved repository/site. A PR-open or Draft-create smoke proves delivery,
+not publication.
 
 ---
 
@@ -539,7 +597,10 @@ Introduce narrowly owned measurement-window and campaign identity tables. Reuse 
 
 **Step 3: Add asynchronous collection**
 
-Anchor outcome collection to the actual publication/change receipt. A configured provider without a usable snapshot remains unavailable. Missing rows never become zero.
+Anchor outcome collection only to an actual `change_receipt`. A
+`delivery_receipt` for an open PR, draft, or scheduled post keeps the window
+`pending` and never starts the outcome clock. A configured provider without a
+usable snapshot remains unavailable. Missing rows never become zero.
 
 **Step 4: Verify**
 
@@ -610,7 +671,9 @@ Product URL
 → Action and Artifact Revision
 → English Draft / Code Fix review
 → authorized GitHub PR or WordPress Draft
-→ Publication/Change Receipt
+→ Delivery Receipt
+→ human merge/publish and live URL verification
+→ Change Receipt
 → technical recheck
 → GSC/GA4/UTM outcome window
 → Results and customer export
@@ -632,10 +695,34 @@ Deploy Vercel Web and Railway Worker from the same immutable SHA. Verify:
 - Owner-approved WordPress sandbox draft;
 - no secrets/customer payloads in evidence.
 
+PR creation and draft creation are delivery smoke tests. If the Owner also
+approves a sandbox merge/publish, verify the resulting Change Receipt. Without
+that additional approval, hosted acceptance must show `pending`, not fabricate a
+publication or outcome.
+
 **Step 4: Refresh the complete Artifact**
 
 The standalone customer Artifact must represent the complete released product, not only earlier completed slices. Scenario-only values remain labelled.
 
-**Step 5: Stop gate**
+**Step 5: Separate release acceptance from elapsed-time measurement follow-up**
 
-Do not mark complete until every explicit requirement has direct code/runtime/test evidence and the Owner approves the customer-visible product walkthrough.
+The release SHA may pass at T0 with:
+
+- deterministic provider fixtures proving full window classification;
+- live delivery smoke receipts;
+- honest real-project states of `pending`, `insufficient_data`, or
+  `unavailable`;
+- a scheduled follow-up bound to the immutable Change Receipt and release SHA.
+
+After the configured absolute window has elapsed, append the real GSC/GA4/UTM
+outcome observations and rerun the customer Results review. Do not hold the code
+release hostage to future data, and do not treat missing elapsed-time evidence
+as zero or positive lift.
+
+**Step 6: Stop gate**
+
+Do not mark the implementation complete until every code/runtime requirement has
+direct test evidence, provider delivery smoke is recorded when Owner-approved,
+honest pending/unavailable states pass, and the Owner approves the
+customer-visible product walkthrough. Do not mark the operational measurement
+follow-up complete until its real absolute window has elapsed and been reviewed.
