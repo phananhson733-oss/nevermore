@@ -4,9 +4,198 @@
 
 **Goal:** Deliver the Slice 1 technical Growth Opportunity loop—URL and ICP input → honest Growth Audit → one-primary-Finding Opportunity review → one canonical Action and `technical_ticket` → immutable recheck → Results—inside Nevermore without creating a parallel SEO/GEO product or a second lifecycle truth.
 
-**Architecture:** Keep `Project` as the container and project Growth Opportunities from the existing Evidence → Finding → Finding Review → Action → Artifact chain. Add only five narrowly owned runtime/projection tables, expose a versioned v0.3 audit/recheck contract, and reduce the frontstage shell to Today, Growth Map, Execution, and Results while retaining legacy URLs as compatibility routes. Stop after the technical vertical and a product review; the SEO/GEO Content Shadow is a separate Slice 2 plan and creates no tables or production workflow in this plan.
+**Architecture:** Keep `Project` as the container and project Growth Opportunities from the existing Evidence → Finding → Finding Review → Action → Artifact chain. Add only five narrowly owned runtime/projection tables, expose a versioned v0.3 audit/recheck contract, and reduce the client-visible shell to 概览 / Overview, 增长地图 / Growth Map, 执行中心 / Execution, and 效果追踪 / Results while retaining legacy route keys as compatibility details. Stop after the technical vertical and a product review; the integrated SEO/GEO frontstage, richer context contract, and content/publish lifecycle require the explicit Revision 2 companion scope below rather than being implied by this Slice 1 plan.
 
 **Tech Stack:** TypeScript, Next.js App Router, React, Zod, OpenAPI 3.1, Drizzle ORM, PostgreSQL, pg-boss, Vitest, Playwright, pnpm, Node.js 24.
+
+---
+
+## Revision 4 implementation correction · Product profile synthesis
+
+This correction supersedes Revision 3 wherever it treats product-profile creation as a four-step Audit intake. The production implementation must keep profile synthesis and Audit creation as separate commands and lifecycles.
+
+### R4.1 Client flow
+
+Implement two visible states:
+
+1. `Product URL` input with an optional business hint;
+2. review and confirm the synthesized product profile.
+
+The background probe may reuse the existing URL-safety, fetch and extraction infrastructure, but the client must not expose a separate `AI 探索` navigation page. While the job runs, show one inline progress state. On success, route directly to the review result; on failure, keep the URL and show a retryable error.
+
+Do not request or render site language, output locale, workbench language, growth goal, conversion event, Priority URLs or Audit scope in this product-profile command. Those values live in workspace preferences or later work-specific commands.
+
+### R4.2 Profile draft contract
+
+Introduce or review a versioned `ProductProfileDraft` contract before connecting the Artifact to production. It should cover:
+
+- `productName`, `oneLiner`, `category`, `productType`, `businessModels[]`, `valueProposition`, `coreFeatures[]`;
+- `targetMarkets[]` with explicit primary when the user confirms more than one;
+- `targetAudiences[]` / ICP candidates with target company or audience, Buyer, User, use cases, triggers, pains and JTBD;
+- `competitorCandidates[]` with `name`, `domain`, `relationship: direct | indirect`, `similarity`, `reason`, evidence references and review status;
+- `confidence`, source Site ID, schema version and append-only draft / confirmed version identifiers.
+
+The client initially renders one Primary ICP and 3–5 Direct plus 3 Indirect competitors. The server contract may retain richer candidates, but it must not require the client to expose every internal field before confirmation.
+
+### R4.3 Commands and state boundaries
+
+Use separate commands for:
+
+- `requestProductProfileSynthesis(productUrl, optionalHint)`;
+- `updateProductProfileDraft(profileId, patch)`;
+- `reviewCompetitorCandidate(profileId, candidateId, status)`;
+- `addDeclaredCompetitor(profileId, competitor)`;
+- `confirmProductProfile(profileId)`.
+
+Confirming the profile creates a versioned product-context input. It does not start a Growth Audit. Keyword discovery, competitor corpus enrichment, Audit creation and content planning consume the confirmed profile through their own input manifests.
+
+### R4.4 Internal extensibility
+
+Revision 3's composable business-model / vertical packs remain an internal synthesis and validation mechanism. Do not serialize Pack labels, governed custom attributes, provenance ledgers or Context hashes into the primary client review card. Only surface a source or confidence detail when it helps the customer correct a product, audience or competitor conclusion.
+
+### R4.5 Test delta
+
+Add tests for:
+
+- URL-only happy path and optional hint;
+- safe fetch failure, retry and duplicate synthesis suppression;
+- generation success transitions directly into review without an intermediate exploration route;
+- editing product category, product type, business model, markets and Primary ICP;
+- deselecting an incorrect competitor and adding a declared competitor;
+- enforcing Direct / Indirect relationship values and domain deduplication;
+- confirming a product profile without implicitly creating an Audit;
+- desktop and 390px mobile behavior, focus containment and no horizontal overflow.
+
+---
+
+## Revision 3 implementation correction · Progressive B2B context
+
+This correction supersedes any task below that requires a customer to complete the entire ICP payload before the system may perform safe site exploration.
+
+### R3.1 Required lifecycle
+
+Implement the production flow as one lifecycle with explicit state boundaries:
+
+1. create or update a Draft project context from Website URL, market(s), primary growth goal and primary conversion;
+2. run the existing SSRF-guarded public Site Probe / Crawl collection and read already-authorized source snapshots;
+3. synthesize a versioned Context / ICP Draft with field provenance, confidence, assumptions, contradictions and missing-data markers;
+4. let the user review structured suggestions, including multi-URL Priority URL candidates and B2B ICP Cards;
+5. validate and freeze `CompleteIcpProfileInputV2` as a new append-only profile version;
+6. start the full Growth Audit with the frozen Site ID and ICP Profile ID.
+
+The initial exploration job is not the full audit and must not fabricate provider data. It may only use public first-party sources under the existing URL-safety policy plus snapshots from connections the user has already authorized.
+
+### R3.2 UI responsibility
+
+The initial UI exposes only four required values. Site language, delivery locale, UI language, customer model and business type use detected / default values in a collapsed editable section. All enumerable values use controlled selections.
+
+Do not render `priorityUrls` as a first-step textarea. Build Priority URL candidates from the URL inventory and keep their selection independent from the full-site Audit scope. A user can accept, exclude, search the inventory, or manually add a URL after discovery.
+
+Represent market priority explicitly as `primaryMarket` plus ordered secondary markets; do not infer priority from checkbox insertion order. Define the discovery dependency set (`website`, market scope / primary market, source / output locale, customer and business model, primary goal, conversion and business hint). A change to any dependency cancels an in-flight synthesis, marks the current Context Draft stale, resets review eligibility and requires a new exploration version.
+
+The review UI must support:
+
+- ProductProfile edit and re-infer;
+- 2–7 candidate B2B ICP Cards with Primary / Secondary / Excluded status;
+- company profile, buyer / user roles, triggers, pains, JTBD, outcomes, barriers, qualification signals and disqualifiers;
+- separate buying context for Sales Motion, Buying Committee, Decision Criteria, ACV, Sales Cycle, Procurement and Technographic Fit;
+- field-level `declared / observed / computed / inferred / missing / contradicted` provenance;
+- low-confidence and missing-data review without blocking unrelated audit modules;
+- optional proof and execution constraints that become gates only for the work they affect.
+
+### R3.3 Contract and persistence consequences
+
+`gengrowth-agents` is not a contract dependency. Reuse only proven probe / review patterns; define the GenGrowth B2B schema in Nevermore OpenAPI and Zod.
+
+Do not replace that dependency with a different fixed SaaS ontology. Model Context as:
+
+- versioned Universal Core objects;
+- discriminated business-model packs;
+- optional versioned vertical packs selected by applicability rules;
+- governed custom attribute definitions for evidence-discovered or customer-declared dimensions;
+- work-specific requirements evaluated only by the affected Artifact gate.
+
+Every extension definition needs a stable key, type, applicability, source authority, evidence refs, confidence, review status and schema version. Unknown and not-applicable states are first class. Persist the set of loaded pack versions in the Context hash and Audit input manifest.
+
+Revision 2's V2 fields remain required. Before production implementation, extend the schema review to candidate ICP Cards, distinct buyer / user roles, success metrics, buying barriers, qualification signals, disqualifiers, Sales Motion and evidence / confidence metadata. Buying Committee remains structured. Technographic and Procurement objects require an explicit schema / evidence decision because the current accepted contract does not yet ground their complete shape.
+
+Keep Draft and Complete validation separate. Draft synthesis may be incomplete and nullable; a Complete profile must pass pointer-level validation. Do not pack new structures into legacy segment, competitor or constraint strings. Include schema version and canonicalized provenance-bearing payload in the content hash and Audit input manifest.
+
+### R3.4 Test delta
+
+Add tests for:
+
+- four-field initial intake and controlled selection options;
+- Site Probe success, safe failure and retry without duplicate project creation;
+- detected defaults and manual override precedence;
+- Priority URL discovery, multi-selection and full-site scope independence;
+- explicit Primary / Secondary market behavior and derived-draft invalidation after a dependency changes;
+- URL Inventory search, no-result behavior, manual URL normalization, de-duplication and declared provenance;
+- B2B candidate-card generation with evidence refs and missing-data honesty;
+- Primary / Secondary / Excluded review decisions;
+- low-confidence ACV / Procurement / Buying Committee handling;
+- Draft-to-Complete immutable version transition;
+- inline field provenance for declared / observed / computed / inferred / missing / contradicted;
+- business-model / vertical-pack applicability, unknown / not-applicable behavior and governed custom attributes;
+- mobile and desktop accessibility, focus containment / restoration, keyboard operation and no page-level horizontal overflow.
+
+---
+
+## Revision 2 scope correction
+
+The product review on Tuesday, July 21, 2026 changed the frontstage target. This implementation plan remains useful as the Slice 1 technical foundation, but it is no longer sufficient as the sole visible product contract.
+
+### R2.1 What changed
+
+The approved client-facing artifact now requires:
+
+- multi-URL portfolio-first presentation rather than a single-URL hero;
+- Chinese-first UI copy with English brief / draft output;
+- visible keyword and competitor libraries inside Growth Map;
+- direct Execution previews for code fix, metadata rewrite, brief, draft, and publish receipt;
+- Results organized around before/after page deltas and UTM windows, not only immutable-run semantics;
+- richer context capture for Site / Market, Business / Offer, ICP / JTBD, Competitors / Constraints, followed by immutable-version review.
+
+### R2.2 Implementation consequence
+
+Treat the current plan as the backend truth and technical slice, but not as the complete frontstage definition.
+
+Any implementation task derived from this document must now preserve these additional requirements:
+
+- no frontstage assumption that one URL is the primary default for all client views;
+- no hiding keyword or competitor datasets behind backstage-only surfaces;
+- no client-facing screen that requires understanding internal governance terms before seeing the work output;
+- no minimal ICP form that collapses structured context into a few short fields.
+
+### R2.3 Immediate planning delta
+
+Before production implementation starts, the execution backlog must add a companion frontstage scope that covers:
+
+1. portfolio projection for multiple URLs;
+2. keyword library projection with provenance fields;
+3. competitor library projection with origin, scope, and status fields;
+4. execution preview components for all required work item types;
+5. result reporting components for before/after and UTM audit tables;
+6. progressive context capture and review UI for the richer ICP model;
+7. contract-first `CompleteIcpProfileInputV2` evolution before any richer field is submitted by the production UI.
+
+This does not invalidate the technical foundation in this document. It does invalidate any assumption that Slice 1 may ship with a technically correct but client-incomprehensible frontstage.
+
+### R2.4 Rich context contract landing
+
+The artifact form is a **target-state V2 form**, not a claim that the current strict request schema accepts every visible field. The current `openapi/mvp.yaml` and `packages/contracts/src/zod/icp.ts` accept Persona Jobs and pains, but reject unknown keys such as objections, buying triggers, decision criteria, buying committee, Negative ICP, secondary conversions, approved proof, content voice, and field provenance.
+
+Before building the production form:
+
+1. introduce `CompleteIcpProfileInputV2` with `profileSchemaVersion: "2"` and the exact mappings in Design R2.6;
+2. preserve legacy V1 reads and requests during transition, but never silently coerce V2 fields into V1 strings;
+3. update OpenAPI, Zod, generated contracts, pointer-level validation tests, form/view-models, fixtures, canonical content-hash tests, and diagnostic input-manifest tests in one contract slice;
+4. persist V2 in the existing append-only `icp_profiles.profile` JSONB and create a new immutable profile version on confirmation; never mutate or reinterpret a historical V1 row;
+5. include the profile schema version in the canonical hashed payload and in the audit input manifest so rechecks remain reproducible;
+6. keep UI language preference outside ICP, while market, site languages, and output locale remain explicit project/profile inputs;
+7. store URL-extracted suggestions with field-level provenance and require confirmation before a Complete V2 profile can start an Audit.
+
+No new ICP lifecycle table is planned. A database migration is required only if implementation evidence shows a need to query/index a V2 field outside the existing JSONB snapshot.
 
 ---
 
@@ -39,7 +228,7 @@ Use `@everything-claude-code:tdd-workflow` for each code task, `@frontend-design
 - Rule set: remains `mvp.rules.0.2.0` in Slice 1 because this plan maps and reuses the eleven existing rules; any new rule requires its own parity review and same-commit authority update.
 - Prompt set: remains `mvp.prompts.0.2.0` because this slice adds no model-authored Finding or Action.
 - Export schema: `signalframe.service-bundle.0.3.0` when the product-version task updates exports.
-- Frontstage terms: `Growth Audit`, `Growth Opportunity`, `Audit Evidence`, `Opportunity Review`, `Execution`, `Results`.
+- Client-visible terms: `概览`, `增长地图`, `页面与机会`, `关键词库`, `竞品库`, `执行中心`, `效果追踪`; `Audit Evidence` and `Opportunity Review` are selected-object detail states, not primary navigation.
 - API JSON uses camelCase; SQL and persisted run manifests use snake_case where the repository already does so.
 
 ## Current rule projection freeze
@@ -645,7 +834,7 @@ The new-project UI becomes a progressive audit intake:
 
 The user-facing URL field may contain `https://example.com` or a deeper page such as `https://example.com/customer-onboarding/`. The intake view-model passes only the normalized origin to the existing project boundary, then supplies the normalized submitted page/path as `scope: { kind: "url", targetRefs: [...] }` to the audit request; an origin-only input uses `scope: { kind: "site" }`. Reuse the repository's URL safety/normalization rules, and never fetch the submitted URL in the browser.
 
-On submit, create the project with complete ICP, then call `createGrowthAuditRun` using `project.site.id` and the non-null `project.currentIcpProfileId`. If audit enqueue fails after project creation, route to Today with a recoverable “Audit not started” state and a Retry control; Today reloads the project DTO and reuses its Site/ICP IDs, never creates a second project, and refuses retry if context is no longer complete.
+On submit, create the project with complete ICP, then call `createGrowthAuditRun` using `project.site.id` and the non-null `project.currentIcpProfileId`. If audit enqueue fails after project creation, route to the client-visible Overview (`today` compatibility route key) with a recoverable “Audit not started” state and a Retry control; Overview reloads the project DTO and reuses its Site/ICP IDs, never creates a second project, and refuses retry if context is no longer complete.
 
 Add the optional field and its schemas to both app and authority OpenAPI in the same commit. This changes an existing operation rather than adding a second project-intake endpoint.
 
@@ -880,15 +1069,20 @@ expect(primaryNavigation(projectId).map((item) => item.key)).toEqual([
 ]);
 ```
 
+These are compatibility route keys, not visible labels. The same test must assert the Chinese-first labels `概览`, `增长地图`, `执行中心`, and `效果追踪`; `today` must never render as “Today” or “今日” in the client shell.
+
 The Growth Map view-model tests must prove:
 
-- two stages/tabs only: `audit_evidence` and `opportunity_review`;
-- Audit Evidence has no Confirm command;
-- Opportunity Review exposes Confirm only for `readiness: "reviewable"`;
+- three visible object modes inside Growth Map: `pages`, `keywords`, and `competitors`;
+- `pages` is the default and exposes a project-level multi-URL portfolio rather than one URL hero;
+- Audit Evidence and Opportunity Review remain states/details of the same URL/Opportunity object, not competing top-level tabs;
+- observed Evidence has no Confirm command, while a reviewable Opportunity exposes Confirm only for `readiness: "reviewable"`;
 - each command contains one `primaryFindingId`, never `supportingFindingIds`;
-- the `/customer-onboarding/` target shows three separately reviewable cards;
+- the `/customer-onboarding/` target can be selected from a multi-URL list and shows three separately reviewable cards;
 - the missing supporting guide candidate is visible but disabled with a clear “Needs a measured Finding” explanation;
 - `no_data` is rendered as “No data / 数据不足”, never as `0` or `0%`.
+- Keyword rows expose market, language, cluster, intent, mapped URL, source, observed-at/freshness, and status.
+- Competitor rows expose relation, analysis scope, origin/evidence, and candidate/approved/excluded status.
 
 **Step 2: Run the unit test and verify failure**
 
@@ -902,21 +1096,23 @@ Expected: FAIL because the four-entry shell and Growth Map do not exist.
 
 Use `@frontend-design`. Preserve the existing authenticated Project shell and ProjectSwitcher, but replace primary navigation with:
 
-- Today: next decision, latest audit freshness, work awaiting review, verification alerts;
-- Growth Map: Audit Evidence and Opportunity Review over one dataset;
-- Execution: canonical Actions and Artifacts, not a second backlog;
-- Results: immutable recheck comparisons and honest outcome states.
+- 概览 / Overview: next decision, latest audit freshness, work awaiting review, verification alerts; the internal `today` key may remain during route migration;
+- Growth Map: multi-URL portfolio plus visible Keyword Library and Competitor Library subviews over one evidence system;
+- Execution: canonical Actions and Artifacts with direct previews of article, brief, metadata, bug/code fix, and publish/UTM work;
+- Results: immutable recheck comparisons, fixed before/after windows, page deltas, UTM audit, and honest outcome states.
 
 Inside Growth Map:
 
-- place a target/story rail above or beside the evidence map;
+- default to a searchable, filterable multi-URL table and selected URL detail;
+- expose `页面与机会`, `关键词库`, and `竞品库` as second-level object modes;
 - show Site Health, Search & AI Visibility, and Demand & Competition as filters over one map;
 - show eight audit modules only as deep-detail filters, not eight primary pages;
 - make source, observed-at time, affected target, limitation, and Finding ID inspectable;
 - use one focused card/drawer for each Opportunity;
+- make keyword and competitor provenance visible and support manual/CSV ingestion alongside automated discovery;
 - call the existing Finding Review hook with `primaryFindingId` on Confirm.
 
-Do not add role toggles, “operator mode vs customer mode”, a market nav, a keyword nav, a competitor nav, a blog nav, or a publishing nav.
+Do not add role toggles, “operator mode vs customer mode”, or separate primary navigation for Market, Keyword, Competitor, Blog, or Publishing. Keyword and Competitor are required second-level subviews inside Growth Map; content and technical work are required previews inside Execution.
 
 **Step 4: Keep legacy URLs as compatibility routes**
 
@@ -942,7 +1138,7 @@ Keep `context` and `sources` as secondary routes linked from the audit setup/fre
 
 The E2E must:
 
-1. land on Today;
+1. land on client-visible 概览 / Overview through the `today` compatibility route;
 2. open Growth Map;
 3. inspect `TECH-CANONICAL-002` evidence;
 4. prove no Confirm button exists in Audit Evidence;
@@ -1162,7 +1358,7 @@ The mock must use stable IDs but mimic real response contracts. The test walks e
 ```text
 URL + ICP
 → createGrowthAuditRun
-→ Today freshness/status
+→ Overview freshness/status (`today` compatibility route)
 → Growth Map / Audit Evidence
 → inspect canonical conflict and No Data limitation
 → Growth Map / Opportunity Review
@@ -1226,7 +1422,8 @@ Record evidence for each decision in `docs/reviews/2026-07-21-growth-opportunity
 
 - [ ] Operators and a client can explain Growth Map without being taught the old seven-page model.
 - [ ] No Data is understood as missing coverage, not a zero score.
-- [ ] Audit Evidence and Opportunity Review feel like two stages of one object.
+- [ ] The default Growth Map is clearly a multi-URL portfolio, and Audit Evidence / Opportunity Review remain understandable states of one selected object.
+- [ ] Keyword and Competitor libraries show provenance and analysis scope without introducing separate primary navigation.
 - [ ] One measured Finding creates exactly one Action and one technical ticket.
 - [ ] Recheck compares two immutable runs and makes no outcome claim beyond its evidence.
 - [ ] No parallel Opportunity, content, Action, Artifact, or checkpoint lifecycle was introduced.
@@ -1271,13 +1468,13 @@ Slice 1 is complete only when all of the following are true:
 
 - the authority package, lock, OpenAPI, migrations, runtime constants, generated contracts, and both verifiers agree on v0.3;
 - a full audit run freezes URL/ICP/snapshot inputs and surfaces all eight module coverage states under three frontstage lenses;
-- Growth Map displays the same Evidence once across Audit Evidence and Opportunity Review;
+- Growth Map defaults to a multi-URL portfolio, exposes Keyword and Competitor subviews with provenance, and displays the same Evidence once across selected-object Evidence and Opportunity Review;
 - a reviewable Opportunity has exactly one primary Finding and no direct mutation route;
 - the existing Finding Review transaction creates one canonical Action with one template-fixed Artifact type;
 - Execution shows that canonical Action/Artifact chain;
 - recheck creates a new immutable run linked to prior run, Action, target scope, and capability version;
 - Results labels technical condition, observed outcome, and insufficient data honestly;
-- only Today, Growth Map, Execution, and Results are primary entries;
+- only 概览 / Overview, 增长地图 / Growth Map, 执行中心 / Execution, and 效果追踪 / Results are primary entries;
 - legacy deep links remain safe;
 - full verification is green;
 - the documented Slice 1 product stop gate is accepted.

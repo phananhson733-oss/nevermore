@@ -5,6 +5,7 @@ build/
 .next/
 .next-e2e-mock/
 .next-e2e-real/
+apps/web/.next-*/
 out/
 coverage/
 *.tsbuildinfo
@@ -19,6 +20,7 @@ coverage/
 playwright-report/
 test-results/
 .vitest/
+.gstack/
 
 # OS
 .DS_Store

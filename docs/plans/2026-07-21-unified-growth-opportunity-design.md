@@ -1,4 +1,4 @@
-# Nevermore Unified Growth Opportunity — Product Design & PRD
+# GenGrowth Unified Growth Opportunity — Product Design (current nevermore codebase)
 
 **Date:** 2026-07-21  
 **Status:** Approved design baseline  
@@ -8,6 +8,233 @@
 **Product requirements authority:** [`2026-07-21-unified-growth-opportunity-prd.md`](./2026-07-21-unified-growth-opportunity-prd.md)  
 **Implementation companion:** `2026-07-21-unified-growth-opportunity-implementation.md`  
 **Artifact companion:** `/Users/wzb/.codex/visualizations/2026/07/20/019f7ff0-3874-7623-90f3-1ebdea7c313f/index.html`
+
+---
+
+## Revision 4 Override · Product Profile First
+
+This override follows the third Context / ICP artifact review on July 21, 2026. It supersedes Revision 3's client-facing four-step flow. The rich internal Context model remains valid, but it is no longer exposed as the product-profile setup experience.
+
+### R4.1 One job for this surface
+
+The dialog has one job: turn a product URL into an editable product profile. Audit scope, content locale, technical findings, Priority URLs and execution constraints belong to later surfaces.
+
+The visible experience has two states:
+
+1. `输入产品 URL` — one required URL and one collapsed optional business hint;
+2. `审核产品画像` — a readable result composed of Product Profile, Target Market & Users, and Competitor Pool.
+
+Profile generation is an inline loading state attached to the primary action. It is not a separate `AI 探索` page and does not narrate Crawl, Sitemap, robots.txt or technical diagnosis to the customer.
+
+### R4.2 Product-profile result hierarchy
+
+The first visual anchor is a ProductProfileCard inspired by the successful result hierarchy in `gengrowth-agents`, not its ontology:
+
+1. product name and one-liner;
+2. highlighted value proposition;
+3. category, product type, business model and target markets;
+4. target-audience tags and core features;
+5. explicit `重新识别` and `编辑档案` actions.
+
+The default state is readable. Structured form controls appear only after the user asks to edit.
+
+The second section summarizes one Primary ICP with target company / audience, Buyer, User, use cases, triggers, pains and JTBD. It avoids ACV, Procurement, schema details and field-by-field provenance at this stage.
+
+The third section groups 3–5 Direct and 3 Indirect competitor candidates. Each row shows name, domain, relationship, similarity and a one-line reason. Users can deselect wrong candidates or add a competitor without leaving the profile.
+
+### R4.3 Information removed from this surface
+
+- Site language, delivery locale and workbench language remain system / workspace settings, not product-profile fields.
+- Growth goal and conversion event may be requested when creating a specific Audit or campaign, not before profile synthesis.
+- Priority URL discovery belongs to Growth Map / Audit.
+- Keyword themes belong to the Keyword Library after the product profile is accepted.
+- Context Packs, custom-attribute governance and immutable hashes stay behind the product surface.
+- Buying context and execution constraints are requested only when the affected work requires them.
+
+### R4.4 Responsive behavior
+
+Desktop uses one strong ProductProfileCard followed by two full-width review sections. Mobile keeps the two-step navigation, one-column cards, 16px primary reading text, fixed confirmation action and no page-level horizontal overflow. The user scrolls one content region while the dialog header, step orientation and footer remain stable.
+
+---
+
+## Revision 3 Override · Progressive B2B Context
+
+This override follows the second Context / ICP artifact review on July 21, 2026. It supersedes Revision 2's presentation of four complete context blocks as five user-entered steps.
+
+### R3.1 Design principle
+
+The product keeps a rich, versioned ICP model but does not expose that model as an onboarding questionnaire. `gengrowth-agents` is an interaction reference for probe → synthesis → review, not the authoritative GenGrowth B2B schema.
+
+The client-facing flow is now:
+
+1. `基础信息` — Website URL, target markets, primary growth goal, and primary conversion;
+2. `AI 探索` — public site probe, Sitemap / Crawl inventory, connected-source observations, and evidence-bound synthesis;
+3. `审核建议` — business profile, B2B ICP Cards, JTBD, buying context, Priority URLs, keyword themes, and competitor candidates;
+4. `确认启动` — scope, provenance, assumptions / missing data, immutable Context Version, then full Audit.
+
+Detected defaults for site language, delivery locale, UI language, customer model, and business type are collapsed into one editable disclosure. Enumerated values use select / multi-select controls. Free text is reserved for genuinely open-ended business knowledge.
+
+### R3.2 Progressive responsibility model
+
+| Context object | Initial responsibility | Review behavior |
+|---|---|---|
+| URL, target market, primary goal, primary conversion | User declared | Required before exploration |
+| Site language, locale, customer model, business type | Detected or defaulted | User confirms only when wrong |
+| Product profile and positioning | First-party content + AI inference | Editable / re-inferable with evidence |
+| Priority URLs | Sitemap, Crawl, GSC, GA4, SERP and issue mapping | Multi-URL checkbox review; full-site scope remains separate |
+| Keyword and competitor seeds | Source-backed discovery | Candidate set with origin and approve / exclude |
+| B2B ICP / JTBD | Evidence-bound synthesis | 2–7 ranked candidate cards; Primary / Secondary / Excluded |
+| Deal, procurement, buying committee details | AI candidate plus explicit user confirmation | Low-confidence when the site cannot support the claim |
+| Proof, claim and execution constraints | User-approved evidence plus detected candidates | Optional at first audit; required before affected execution |
+
+### R3.3 B2B review model
+
+A B2B ICP review is not a Persona textarea. Each candidate card includes company profile, buyer roles, user roles, trigger events, pains, JTBD, desired outcomes, success metrics, buying barriers, qualification signals, disqualifiers, evidence coverage, confidence, assumptions, contradictions, and missing data.
+
+Buying context is a separate review block for Sales Motion, Buying Committee, Decision Criteria, ACV band, Sales Cycle, Procurement / Security / Legal path, Technographic Fit, objections, and required proof. These fields are not all equally discoverable. The UI must distinguish observed evidence from inferred candidates and explicitly mark low-confidence values.
+
+The template varies by business type. B2B SaaS is one supported example, not the default ontology for professional services, developer tools, marketplaces, e-commerce, media, or hybrid businesses.
+
+The Context model is composable rather than a frozen questionnaire. It layers a Universal Core, business-model packs, optional vertical packs, governed evidence-discovered attributes, and work-specific context. A manufacturing / channel business may need distributor coverage, plant capacity and certification signals; a professional-services firm may need engagement model, delivery geography and partner-led buying; a Developer Tool may need deployment model, security posture and developer-to-enterprise expansion. None of those should be forced through SaaS-only fields or silently dropped because `gengrowth-agents` does not currently model them.
+
+Evidence-discovered attributes remain governed: each definition has a stable key, data type, applicability rule, provenance, evidence refs, confidence and schema version. `unknown` and `not applicable` are valid states. The UI may let an operator or customer add a custom attribute, but it does not store an untyped blob as authoritative profile truth.
+
+### R3.4 Visual behavior
+
+- The first step shows four visible required inputs and one collapsed defaults card.
+- A multi-market selection has an explicit Primary radio / rank; checkbox insertion order is not business meaning.
+- The AI exploration step visualizes source phases and does not imply that an LLM alone produced the profile.
+- Any change to an exploration dependency invalidates the derived draft and returns the flow to exploration; accepted suggestions never remain silently stale.
+- Review modules are collapsed by default. Priority URLs opens first because multi-URL scope is the most immediate correction.
+- Priority URL review includes a real searchable Crawl inventory and manual URL insertion with declared provenance.
+- Candidate ICP cards show rank, evidence coverage and confidence before the full edit form.
+- Review fields show derivation, source / evidence and confidence inline, including explicit Missing and Contradicted examples.
+- Chinese is the main reading language; English remains for stable nouns such as B2B, ICP, JTBD, Sales Motion, ACV, URL, SEO/GEO, GSC and GA4.
+- Mobile keeps the four-step navigation and fixed actions while the content region scrolls without page-level horizontal overflow.
+- Every dialog traps keyboard focus, makes the app shell inert and `aria-hidden`, closes on Escape and restores focus to the opening control.
+
+### R3.5 Design evidence
+
+The richer B2B model is grounded in the local wiki's Product / ICP Intelligence workflow: it generates candidate ICP Cards only after source planning and evidence extraction, requires human review, and requires evidence refs, confidence, assumptions, contradictions and missing data. It is also consistent with Nevermore's append-only draft / complete ICP lifecycle. Where Technographic or Procurement structure goes beyond the current accepted contract, the UI labels it as a target-state candidate rather than an existing production capability.
+
+---
+
+## Revision 2 Override
+
+This design baseline was revised on July 21, 2026 after the artifact review exposed a mismatch between product intent and client-facing readability. When this section conflicts with the rest of the document, this section wins.
+
+### R2.1 Frontstage design correction
+
+The prior design still centered too much of the frontstage on internal sequencing:
+
+- one primary URL hero;
+- stage-heavy reading of `Audit Evidence` then `Opportunity Review`;
+- thin ICP capture;
+- abstract Execution terminology;
+- Results organized around immutable-run governance rather than client comprehension.
+
+The corrected frontstage is a **GenGrowth client-facing growth workspace** with Chinese-first UI and English output assets. The current production foundation remains in the nevermore codebase.
+
+### R2.2 Corrected navigation
+
+The only top-level navigation is:
+
+1. `概览`
+2. `增长地图`
+3. `执行中心`
+4. `效果追踪`
+
+`增长地图` itself contains three visible subviews:
+
+- `页面与机会`
+- `关键词库`
+- `竞品库`
+
+These are no longer hidden backstage assets.
+
+### R2.3 Corrected page model
+
+The frontstage no longer teaches the product through a single featured URL. It teaches the product through a portfolio:
+
+- multiple URLs are visible by default;
+- one selected URL may open a richer detail panel;
+- keyword and competitor datasets remain mapped back to URLs and clusters;
+- execution items remain linked to either a URL or a keyword cluster.
+
+### R2.4 Corrected content hierarchy
+
+Execution must directly preview the work itself:
+
+- code fix;
+- metadata rewrite;
+- content brief;
+- English blog draft;
+- publish receipt / UTM plan.
+
+Results must directly preview:
+
+- before/after page deltas;
+- UTM campaign tables;
+- measurement windows with exact dates;
+- timeline of audit, fix, publish, and observation.
+
+### R2.5 Corrected language system
+
+- Interface copy: Chinese-first;
+- standard product nouns may stay in English where clearer;
+- blog and draft body output: English;
+- typography must prioritize Chinese readability, not small mono labels;
+- client surfaces must avoid operator-only phrases such as `slide`, over-abstract `stage`, or governance-heavy rule talk.
+
+### R2.6 Corrected context capture design
+
+The setup pattern must show four explicit context blocks plus a final review step:
+
+1. Site / Market
+2. Business Draft
+3. ICP / JTBD
+4. Competitors / Constraints
+5. Review / immutable profile version / Audit scope
+
+The interface must make it visible that ICP is not a single short text field. The **current** strict `CompleteIcpProfileInput` already covers product and business profile, markets/locales, string segments, personas with `jobs` and `painPoints`, use cases, offers, differentiators, one primary conversion, priority products/URLs, competitor strings, four constraint classes, growth questions, and 90-day goals.
+
+The richer fields visible in the target-state artifact are **not all accepted by that current contract**. Because the current OpenAPI and Zod objects reject unknown keys, production code must not pack these values into unrelated strings or pretend that the artifact form already round-trips through nevermore. Before this UI can ship, define a versioned `CompleteIcpProfileInputV2` payload with `profileSchemaVersion: "2"` and preserve it in the existing append-only `icp_profiles.profile` JSONB snapshot and `contentHash` lifecycle.
+
+| Artifact context | Current contract | V2 production mapping |
+|---|---|---|
+| Product, offer, differentiators, primary conversion, priority products/URLs | Direct fields already exist | Preserve existing fields |
+| Market, site language, delivery locale | Direct fields already exist | Preserve existing fields; UI language remains a project/user preference, not ICP |
+| Persona role, Jobs, pains | `personas[].roleOrContext`, `jobs`, `painPoints` | Preserve and extend the Persona object |
+| Company / firmographic profile | Only free-form `segments[]` exists | Add structured `firmographicCriteria` and retain a human-readable segment label |
+| Secondary conversion goals | Only `primaryConversion` exists | Add `secondaryConversions[]` |
+| Objections, buying triggers, decision criteria | No current fields | Add arrays to each Persona |
+| Buying committee | No current field | Add structured `buyingCommittee[]` with role, influence, and concerns |
+| Negative ICP | No current field | Add `exclusionCriteria[]` |
+| Alternatives / status quo | Competitor strings are insufficient | Add `alternatives[]`; competitor corpus remains a separate governed dataset |
+| Approved proof and claim boundaries | No proof-source field | Add `approvedProofSources[]` and `claimRestrictions[]` |
+| Content voice | No current field | Add `contentVoice` |
+| Brand, compliance, technical, resource constraints | Four arrays already exist | Preserve; do not collapse them into one restrictions textarea |
+| Field origin / confidence | No current field | Add `fieldProvenance` so URL extraction, interview, CRM, and manual confirmation are distinguishable |
+
+This schema evolution is contract-first: update OpenAPI, Zod, generated clients, form/view-models, fixtures, pointer-level validation, content-hash tests, and diagnostic input-manifest tests in the same production slice. The database can continue using the current immutable JSONB profile row unless an implementation audit finds a query/index requirement; no new lifecycle table is implied by the artifact.
+
+The local implementation evidence for this design is:
+
+- `/Users/wzb/Code/nevermore/signalframe-mvp-app/openapi/mvp.yaml` — authoritative Complete ICP Profile fields and immutable version request;
+- `/Users/wzb/Code/nevermore/signalframe-mvp/artifact/src/data/mock-project.ts` — richer segments, personas, jobs, objections, offers, conversions, priority URLs, and competitors already represented in the earlier artifact;
+- `/Users/wzb/gengrowth-flow-mvp` — keyword-to-brief/draft/publish operating flow to be projected into Execution;
+- `/Users/wzb/gengrowth-wiki/docs/03-marketing/03-seo/keyword-research-sop.md` — keyword-source and research methodology;
+- `/Users/wzb/gengrowth-agents` — audit, diagnosis, discovery, and technical optimization capability source.
+
+### R2.7 Design acceptance override
+
+The artifact passes design review only if:
+
+- the user can immediately understand the portfolio is multi-URL;
+- Chinese text remains readable at normal desktop and mobile sizes;
+- keyword and competitor data provenance is visible without opening documentation;
+- Execution reads like client work output, not a rules engine;
+- Results reads like a before/after business report, not only a systems verification screen.
 
 ---
 
@@ -22,7 +249,7 @@ The two systems shared backend nouns such as Evidence, Finding, Action, and Arti
 
 The approved product definition is therefore:
 
-> **Nevermore starts from a URL, runs one Growth Audit across the site and its market, turns evidence into ranked Growth Opportunities, then helps a team deliver and verify the appropriate technical or content work.**
+> **GenGrowth starts from one target site and its multi-URL portfolio, runs one Growth Audit across the site and its market, turns evidence into ranked Growth Opportunities, then helps a team deliver and verify the appropriate technical or content work.**
 
 The product has one loop:
 
@@ -199,6 +426,50 @@ The frontstage classification uses action language rather than backend taxonomie
 `Expand`—authority, links, citations, and distribution—is a reserved future work shape. It is not emitted by the initial contract and does not appear in the first-slice enum.
 
 Report modules, technical check IDs, and action domains remain available in Evidence detail and contracts, not as competing primary navigation systems.
+
+## 4.5 Frontstage information architecture
+
+The corrected frontstage should use four primary destinations:
+
+1. `概览`
+2. `增长地图`
+3. `执行中心`
+4. `效果追踪`
+
+Within `增长地图`, use a second-level segmented control for object mode, not separate primary nav:
+
+1. `页面与机会`
+2. `关键词库`
+3. `竞品库`
+
+This keeps the product visually unified while still exposing the SEO/GEO expansion that comes from `gengrowth-flow-mvp`.
+
+### 4.5.1 URL mode
+
+URL mode is the default multi-URL operating surface:
+
+- left side: searchable list or table of many URLs;
+- top controls: search, status filters, priority filters, batch selection;
+- right side: URL detail, linked opportunities, related keywords, related competitors;
+- summary: counts at the project level rather than a single page hero.
+
+### 4.5.2 Keyword library mode
+
+Keyword mode must expose ingestion provenance, not only the keyword text:
+
+- source badges such as `GSC`, `Competitor Gap`, `SERP`, `Google Suggest`, `VOC`, `Manual CSV`;
+- target URL or missing asset mapping;
+- execution state such as queued, brief-ready, drafting, published, observing;
+- clear distinction between observed demand and manually added hypotheses.
+
+### 4.5.3 Competitor library mode
+
+Competitor mode must expose both type and scope:
+
+- type: direct, indirect, benchmark, status quo;
+- scope: full domain, selected URLs, relevant keywords only, content profile only;
+- source badges such as manual domain, SERP overlap, AI citation, directory, customer input;
+- status such as approved, candidate, excluded.
 
 ---
 
@@ -419,9 +690,9 @@ This is the primary artifact story because it visibly connects complete audit ev
 
 The project shell has four primary entries.
 
-### 8.1 Today
+### 8.1 概览 / Overview
 
-Purpose: answer what matters now, why, and what decision or work is next.
+Purpose: answer what matters now, why, and what decision or work is next. The existing internal route key `today` may remain temporarily for compatibility, but the client-visible label is `概览`.
 
 Required content:
 
@@ -442,14 +713,15 @@ Forbidden content:
 
 ### 8.2 Growth Map
 
-Purpose: understand evidence and turn it into reviewed Opportunities.
+Purpose: understand the complete site-and-market portfolio and turn evidence into reviewed Opportunities.
 
-Primary stages:
+Visible object modes:
 
-1. `Audit Evidence`;
-2. `Opportunity Review`.
+1. `页面与机会` — searchable multi-URL portfolio by default;
+2. `关键词库` — query, cluster, intent, market, mapped URL, status, and provenance;
+3. `竞品库` — domain, relationship, analysis scope, origin/evidence, and approval status.
 
-Audit Evidence contains:
+For a selected URL, keyword, competitor, or Opportunity, `Audit Evidence` and `Opportunity Review` remain **detail states of that object**, never primary stages or competing top-level tabs. The selected-object evidence detail contains:
 
 - run, scope, freshness, and data completeness;
 - Site Health, Search & AI Visibility, and Demand & Competition lenses;
@@ -458,7 +730,7 @@ Audit Evidence contains:
 - No Data and limitations;
 - compare and export.
 
-Opportunity Review contains:
+The selected-object Opportunity detail contains:
 
 - ranked cross-lens Opportunity cards;
 - a detail drawer with target, evidence, impact, confidence, effort, risk, and dependency;
@@ -471,15 +743,14 @@ Purpose: plan and deliver the work created from confirmed Opportunities.
 
 Required content:
 
-- Ready, In Progress, Review, and Done lanes;
-- action ordering with transparent factors;
-- one selected Opportunity context rail;
-- current artifact type and revision;
-- technical validation and rollback details;
-- content research and fact-gate state where applicable;
-- revision-specific review decision.
+- a queue filtered by actual deliverable type and status;
+- a direct, readable preview of the selected code fix, metadata rewrite, Content Brief, English Blog Draft, schema patch, comparison brief, or Publish Receipt / UTM Plan;
+- linked URL or keyword cluster, source Opportunity, owner, status, and acceptance checklist;
+- technical validation and rollback details for code work;
+- research sources, claim boundaries, and approval controls for content work;
+- canonical URL, CMS entry, revision checksum, rollback snapshot, tracking plan, and measurement window for published work.
 
-The first artifact demonstrates technical ticket, metadata rewrite, and content brief. It may show a reviewed content draft, but it must not simulate a real CMS write.
+Artifact type, revision history, and governance metadata may be inspected, but cannot replace the work preview as the primary content. The target-state artifact uses a deterministic simulated Publish Receipt; it never performs a real CMS write.
 
 ### 8.4 Results
 
@@ -487,10 +758,11 @@ Purpose: show what was delivered and what the evidence now supports.
 
 Required content:
 
-- technical before/after run comparison;
-- indexing and publication state when available;
-- Search, conversion, and AI observations with window and source;
-- verified, observed, and insufficient-data labels;
+- fixed absolute baseline and current windows;
+- technical before/after recheck comparison;
+- page-level Search, conversion, and AI observations with source;
+- UTM campaign, source/medium/content, direct conversions, and assisted conversions;
+- indexing/publication state, attribution boundaries, and insufficient-data states;
 - client-safe report and export access;
 - next Opportunity created by regression or incomplete results.
 
@@ -503,7 +775,7 @@ The following are not primary project navigation:
 - Market and Demand: Growth Map lenses and tables.
 - Findings: canonical records surfaced through Audit Evidence and Opportunity Review.
 - Plan and Studio: combined in Execution.
-- Publish: a guarded Execution action in a later milestone.
+- Publish: a guarded Execution action; the artifact shows only its deterministic target-state receipt.
 - Knowledge: governed backend capability and project settings.
 - Membership and policy: settings and server authorization, not a demo switcher.
 
@@ -871,27 +1143,27 @@ The replacement artifact is a deterministic, high-fidelity **target-state design
 
 ### 15.1 Required routes
 
-1. Today;
-2. Growth Map;
-3. Execution;
-4. Results.
+1. 概览 / Overview;
+2. 增长地图 / Growth Map;
+3. 执行中心 / Execution;
+4. 效果追踪 / Results.
 
 Secondary states may use drawers or tabs. They do not become primary navigation.
 
 ### 15.2 Required main story
 
-The demo must prove one cross-lens Opportunity:
+The demo must first prove a portfolio, then allow one cross-lens Opportunity to be inspected:
 
-1. open Growth Map;
-2. inspect audit scope and No Data;
-3. open the `/customer-onboarding/` target story;
-4. see technical, Search, GEO, and competitor evidence together;
+1. open Growth Map and immediately see a searchable list of many URLs;
+2. switch among Page Portfolio, Keyword Library, and Competitor Library with visible provenance;
+3. select `/customer-onboarding/` as one example among the portfolio, not as the only target;
+4. inspect technical, Search, GEO, and competitor evidence together, including No Data and limitations;
 5. review the three related Opportunities separately;
 6. confirm one primary Finding at a time and observe one canonical Action per Opportunity;
-7. see the resulting technical ticket, metadata rewrite, and content brief as three related work items in Execution;
-8. inspect technical validation and the target-state Content Shadow fact gate;
-9. complete a simulated technical recheck;
-10. see technical improvement while Search/GEO remains within an observation window.
+7. see the resulting code fix, metadata rewrite, Content Brief, English Blog Draft, and publish/UTM work directly in Execution;
+8. inspect validation, rollback, research, and claim-boundary details without making those rules the hero content;
+9. complete a simulated technical recheck and inspect the simulated Publish Receipt;
+10. compare fixed before/after page and UTM windows, including assisted conversions and honest attribution limits.
 
 ### 15.3 Required interaction boundaries
 
@@ -899,8 +1171,8 @@ The demo must prove one cross-lens Opportunity:
 - Opportunity Review contains the explicit confirm boundary.
 - Confirm applies to one primary Finding and is idempotent in demo state; the target grouping has no bulk Confirm.
 - No Data cannot be selected as a failure.
-- Content revision approval is not equivalent to publication.
-- The demo never performs a real CMS write.
+- Content revision approval is not equivalent to publication; a separate simulated Publish Receipt proves this distinction.
+- The demo never performs a real CMS write, even when it displays the deterministic target-state receipt.
 - Results never fabricate rank, traffic, AI citation, or revenue change.
 
 ### 15.4 Visual direction
@@ -935,7 +1207,7 @@ Sections 16.1–16.3 and the technical portions of 16.4–16.7 are Slice 1 produ
 
 ### 16.1 Product comprehension
 
-- A first-time reviewer can describe the product as one URL-to-opportunity-to-result loop.
+- A first-time reviewer can describe the product as one site/URL-portfolio-to-opportunity-to-result loop.
 - They do not describe Audit and SEO/GEO Content as separate products.
 - They can identify the current primary Opportunity and next decision within one minute.
 
@@ -1069,6 +1341,6 @@ The product is not successful merely because it displays eight audit modules, im
 
 ## 20. Final Product Statement
 
-> **Nevermore turns a URL and its market evidence into a reviewed queue of Growth Opportunities, then connects each opportunity to technical or content delivery and honest verification.**
+> **GenGrowth turns a target site, its multi-URL portfolio, and its market evidence into a reviewed queue of Growth Opportunities, then connects each opportunity to technical or content delivery and honest verification.**
 
 This statement is the standard against which the PRD, implementation plan, artifact, and future production changes must be reviewed. If this design and the Chinese PRD differ, the PRD controls product scope while this document controls the detailed technical design until the discrepancy is resolved explicitly.

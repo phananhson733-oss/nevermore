@@ -1,4 +1,4 @@
-# Nevermore 统一增长机会产品需求文档（PRD）
+# GenGrowth 统一增长机会产品需求文档（当前 nevermore 代码库）
 
 **日期：** 2026-07-21  
 **状态：** 已确认，可进入 Artifact 与实施规划  
@@ -7,6 +7,735 @@
 **配套设计：** [`2026-07-21-unified-growth-opportunity-design.md`](./2026-07-21-unified-growth-opportunity-design.md)  
 **替代文档：** `2026-07-20-connected-growth-audit-optimization-design.md` 与其 18 任务实施计划  
 **Artifact：** `/Users/wzb/.codex/visualizations/2026/07/20/019f7ff0-3874-7623-90f3-1ebdea7c313f/index.html`
+
+---
+
+## Revision 5 · Growth Framework 四个 Deep Dive 对 Nevermore 的能力吸收
+
+本节来自 2026-07-21 对 `growth-framework` 四个 Deep Dive 与 Nevermore 现有产品链的重新校准，优先级高于 Revision 4 及本文后续任何冲突表述。这里的主客体必须保持明确：
+
+> **需要优化的是 Nevermore 产品。四个 Deep Dive 是能力输入、领域检查表与目标态参考，不是要被继续优化的四份产品方案，也不是四套准备独立建设的系统。**
+
+本 Revision 采用 **additive convergence（增量收敛）**：保留并延续 Revision 2 的四入口客户工作台、Revision 3 的丰富 B2B 上下文模型，以及 Revision 4 的 `Product URL → 后台生成 → Product Profile/ICP/竞品审核` 最新前台流程。它只补充 Nevermore 从四个 Deep Dive 吸收哪些能力、如何落入现有对象、实施顺序与 Demo 验收；不重写已有 PRD，不恢复已被后续 Revision 推翻的复杂首屏，也不把 Demo 目标态误写成当前生产能力。
+
+输入材料：
+
+- [`deepdive-01-diagnosis.md`](../../../docs/growth-framework/deepdive-01-diagnosis.md)：产品画像、诊断上下文、内容资产盘点与竞品候选；
+- [`deepdive-02-webtech.md`](../../../docs/growth-framework/deepdive-02-webtech.md)：技术健康、性能、渲染、内链、Structured Data 与工程验证；
+- [`deepdive-03-acquisition.md`](../../../docs/growth-framework/deepdive-03-acquisition.md)：Keyword、Competitor、Topic Cluster、SEO/GEO Content 与内容执行；
+- [`deepdive-04-landing.md`](../../../docs/growth-framework/deepdive-04-landing.md)：Landing、CTA、Form、Trust、UTM 与转化观察。
+
+四份文档中的 30/60/90 日历、独立模块导航、工具栈档位、ICE 公式、原始状态名和泛化自动化承诺不自动成为 Nevermore 产品需求。只有通过本 Revision 映射到 Nevermore canonical object、数据诚实规则、权限边界和实施停点的能力，才进入产品范围。
+
+### R5.1 单一产品链与四个 Capability Lens
+
+四个 Deep Dive 被吸收为四个 `Capability Lens`，即同一项目、同一证据和同一工作链上的观察角度：
+
+1. `Product / Diagnosis`：这个产品是什么、服务谁、有哪些站点资产和可信业务上下文；
+2. `WebTech`：网站能否被抓取、渲染、理解、信任和稳定使用；
+3. `Search / GEO Acquisition`：市场在搜索什么、AI 在回答什么、现有页面覆盖什么，以及应该改善或创建什么内容；
+4. `Landing / Conversion`：流量到达页面后，Message、CTA、Form、Trust 与 Measurement 是否支持转化。
+
+它们统一进入现有 canonical chain：
+
+```text
+Project
+→ Source / Snapshot / Observation
+→ Evidence
+→ Finding
+→ Finding Review
+→ Action
+→ Artifact Revision
+→ Approval / Authorized Delivery
+→ Recheck / Outcome Observation
+→ Results
+```
+
+强制约束：
+
+- `Lens` 只用于组织 Evidence、筛选 Growth Map 和解释 Opportunity，不拥有独立生命周期；
+- 一个 Observation 或 Evidence Packet 可以带多个 `lens_tags`，但每项可确认 Opportunity 仍恰好锚定一个 primary canonical Finding；
+- Confirm 继续复用 Finding Review 事务并幂等创建唯一 Action；
+- Artifact 继续由 Action 产生，编辑产生新的 Revision；
+- Results 继续来自 immutable Snapshot、Recheck、Measurement Observation 和明确窗口，不来自任务完成状态；
+- 不新增 `Diagnosis App`、`WebTech App`、`Acquisition App`、`Landing App` 四套一级导航；
+- 不新增四套 stage、queue、approval、publish、result 或身份系统；
+- Deep Dive 中的领域状态只能在必要时成为某个 canonical object 的局部属性，不得复制 Project、Run、Finding、Action、Artifact 或 Result 状态。
+
+### R5.2 四个 Lens 的能力吸收与明确边界
+
+| Lens | 本轮吸收到 Nevermore | 延后或不吸收 |
+|---|---|---|
+| `Product / Diagnosis` | URL 提交后的 Product Profile 草拟与审核；Product/Business Model/Offer/Market/ICP/JTBD/Buyer/User 建模；字段级 provenance、confidence、missing/conflicting；Profile Version；URL Portfolio 初始化；Competitor Candidate 初始化；Content Inventory 与数据覆盖基线 | 不把完整 ICP 变成首次问卷；不做独立“AI 探索”页面；不把产品画像确认等同于启动全站 Audit；不采用 Deep Dive 的通用 ICE 表作为 canonical priority；不自动承诺完整竞品流量、外链或社媒情报 |
+| `WebTech` | Crawlability、Indexability、Canonical、Redirect、Sitemap、Raw HTML/JS Rendering、Core Web Vitals 来源分层、Resource/Cache、Internal Linking、Topic Cluster linking、Structured Data、Internationalization、Template-level 聚合；Technical Ticket、Schema/Internal Link/Performance Fix 投影；Validation、Rollback 与 Recheck | 首阶段不自动改生产代码或 CDN；不自建完整 RUM/CrUX 数据平台；不把 Lab 数据冒充 Field 数据；不强制客户重构 SSR/SSG；不把 CI/CD 性能门禁作为 Slice 1 前置条件 |
+| `Search / GEO Acquisition` | Keyword 与 Competitor 候选建库；SearchQuery 与 GenerativeQuery；Cluster-first Page Map；Intent、Buyer Stage、Market 与 Existing-page-first；Content Gap/Decay；Content Brief、Research Pack、English Draft、SEO/GEO/Factual QA、Human Review；固定版本 `gengrowth-flow-mvp` Shadow adapter | 首阶段不做 Social Matrix、KOL/KOC、Outreach、HARO、Backlink CRM、多格式分发或完整 Rank Tracking 产品；不自建完整第三方竞品数据库；不自动写 CMS；不把 Keyword 数、文章数或 Draft 完成当增长结果 |
+| `Landing / Conversion` | Traffic Source × Landing Page、Keyword Cluster × Page、Campaign × Page 的 Target 观察；Above-the-fold、Message Match、CTA、Form、Trust、Speed × Conversion Evidence；Landing Revision Brief、Headline/CTA Rewrite、Form Spec、Trust Pack、Tracking/UTM Plan；before/after 与 attribution limitation | 不自建 Landing Page Builder、Form Builder、Heatmap/Session Replay、CRM 或通用 A/B Testing 平台；不自动选择 winner；不在样本不足时排实验；不把相关性写成因果；不在没有授权与回滚能力时写生产环境 |
+
+所有延期项都可以作为未来 Candidate 保留，但不能出现在当前 Demo 中伪装成已连接、已执行或已产生增长。
+
+### R5.3 目标与读模型
+
+四个 Lens 不要求四套数据库。Nevermore 在现有 canonical truth 之上增加客户可读 projection，目标态最少包括：
+
+#### R5.3.1 `ProductContextReadModel`
+
+用于概览和 Product Profile 审核，至少包含：
+
+- `project_id`、`profile_version_id`、`generated_at`、`review_status`；
+- Product category、business model、offer、value proposition、primary market；
+- Primary ICP、Buyer、User、JTBD、trigger、pain、use case；
+- Direct/Indirect competitor candidates；
+- 每个关键字段的 `derivation`、`evidence_refs`、`confidence` 与 `missing/conflicting`；
+- URL、Keyword、Competitor 和 connected source 的覆盖摘要。
+
+该 Read Model 引用 append-only Profile Version，不覆盖历史诊断上下文。
+
+#### R5.3.2 `TargetRef`
+
+Opportunity 的主要 Target 继续使用统一引用：
+
+- `site`；
+- `template`；
+- `url`；
+- `topic`；
+- `new_asset`；
+- Slice 3 可扩展 `form`、`cta`、`campaign` 或 `conversion_path`。
+
+扩展 Target Type 前必须同时更新 contract、validation、fixtures、projection 与 migration；不得把 Form/CTA/Campaign ID 塞进 URL 字符串或自由 JSON。
+
+#### R5.3.3 `GrowthOpportunityReadModel`
+
+继续由 canonical 对象投影，不成为第二套真相表：
+
+```text
+TargetRef
++ lens_tags[]
++ primary_finding_id
++ supporting_findings[] / observations[]
++ evidence_summary / source_coverage / limitations
++ work_type: Fix | Improve | Create
++ review_state
++ confirmed_action_id?
++ current_artifact_revision?
++ delivery_receipt?
++ verification_summary?
+```
+
+#### R5.3.4 Growth Map 数据面
+
+Growth Map 至少提供以下 project-scoped read models：
+
+| Read Model | 关键字段 |
+|---|---|
+| `UrlPortfolioItem` | normalized URL、page type、template、cluster、priority、issue/opportunity count、owner、last snapshot、before/current delta |
+| `KeywordLibraryItem` | keyword、market、language、intent、buyer stage、cluster、mapped URL、volume/KD/rank 的 nullable observation、source、collected_at、freshness、status |
+| `CompetitorLibraryItem` | domain、relation、analysis scope、origin、evidence refs、candidate/approved/excluded、last observed |
+| `TopicClusterItem` | cluster intent、SearchQuery Set、GenerativeQuery Set、existing pages、page roles、coverage gap、primary CTA、status |
+| `PageAssignmentItem` | cluster、page/new asset、page role、primary intent、primary query、supporting queries、canonical relationship、decision reason |
+
+这些对象首先是读模型和经过治理的 Library 视图。只有真实查询、版本、去重、同步或生命周期需求得到证明时，才新增独立持久对象。
+
+### R5.4 Keyword、Competitor 与 Cluster-first 规则
+
+Nevermore 吸收 `gengrowth-flow-mvp` 的执行原则，而不是复制其 Google Sheet UI 或领域模板：
+
+> **Keyword 是发现与衡量单位，Page 是交付单位，Topic Cluster 是执行与经营单位。**
+
+最小关系链：
+
+```text
+Product Profile / ICP
+→ Keyword Candidate + Competitor Candidate
+→ Approved Competitor Scope
+→ Canonical Keyword / SearchQuery / GenerativeQuery
+→ Topic Cluster
+→ Existing Page or New Asset Decision
+→ Page Role + CTA
+→ Finding / Opportunity
+→ Action / Artifact / Outcome
+```
+
+产品要求：
+
+- 首次建库不能是空表，系统从 Sitemap/Crawl、现有页面、GSC、approved competitor scope、SERP/Suggest/PAA、VOC、CSV 与 operator input 生成候选；
+- 手工输入与自动发现进入同一 Library，只通过 `source_kind` 区分；
+- 每条候选保留来源、采集时间、freshness、market、language 和 approval status；
+- Competitor Candidate 在客户或运营人员确认 `relation` 与 `analysis_scope` 前，不进入全站 Keyword Gap；
+- `direct`、`indirect`、`status_quo`、`benchmark`、`publisher` 与 `serp_competitor` 不得混为同一种关系；
+- Cluster 必须展示包含的 Query、Existing URL、缺失 Page Role、重复/冲突映射和建议 CTA；
+- `Existing-page-first` 是决策要求，不是永远禁止新页面。Create 必须证明现有 URL 无法合理承接该 intent；
+- Keyword、Competitor 或 Cluster 自身不是可 Confirm 的 Action。只有形成 canonical Finding 后才能进入 Opportunity Review。
+
+### R5.5 Execution Artifact Projection 与 Content Shadow
+
+Execution 面向客户展示真实工作物正文，而不是把 `artifact_type`、gate 名或内部状态当主内容。客户可见 projection 包括：
+
+| Lens | 客户侧 Artifact Projection | Canonical 要求 |
+|---|---|---|
+| WebTech | `Technical Ticket`、`Code Fix Proposal`、`Schema Patch`、`Internal Link Plan`、`Performance Fix` | 必须引用 Action、Target、Evidence Snapshot、Acceptance、Validation 与 Rollback |
+| Search/GEO | `Content Brief`、`Research Pack`、`English Blog Draft`、`SEO/GEO QA`、`Factual Review` | 固定 Flow adapter/version；来源与 claim boundary 可检查；人审绑定当前 Revision |
+| Landing | `Landing Revision Brief`、`Headline/CTA Rewrite`、`Form Optimization Spec`、`Trust Pack` | 必须引用 Landing Target、Message/Conversion Evidence 与 preview contract |
+| Measurement | `Tracking Plan`、`UTM Plan`、`Publish/Change Receipt` | Plan 不等于已发布；Receipt 不等于 positive outcome |
+
+Projection 不是新的状态机。一个客户侧卡片可以把同一 canonical Artifact Revision 的正文、附件、QA 和 Receipt 组合呈现，但不能偷偷创建平行 approval。若两个交付物需要独立确认、撤回、发布或回滚，它们必须在对应 Slice 中获得明确的新 Action Template / Artifact Type 与合同迁移，不能长期寄生在自由 JSON。
+
+Slice 2 的 `Content Shadow` 固定为：
+
+```text
+一个 approved Competitor Set
++ 一个 SearchQuery Cluster
++ 一个独立 GenerativeQuery Set
++ 一个 Existing Page / New Asset 决策
+→ canonical Content Finding
+→ Confirmed Action
+→ Content Brief
+→ version-pinned Research Pack
+→ English Draft
+→ SEO / GEO / Factual Gates
+→ Human Review
+→ Reviewed Artifact Revision
+```
+
+Shadow 的边界：
+
+- 不连接真实 CMS 写入；
+- 不把 `drafted`、`qa_passed` 或 `reviewed` 写成 published；
+- 不把 Flow 的本地文件、Sheet row 或脚本状态作为 Nevermore canonical truth；
+- 不直接 runtime import sibling repository；使用 extraction、versioned package 或 pinned adapter；
+- Astrology-specific 字段、prompt、模板与发布目标必须替换为 project/site policy pack；
+- Draft 中无法由 Authority 或客户事实支持的 claim 必须阻塞或标记 `needs_review`；
+- 编辑 Draft 后旧 Approval 失效，必须审核新 Revision。
+
+### R5.6 Landing、UTM 与 Results 闭环
+
+Landing / Conversion Lens 在 Slice 3 进入生产范围，并复用同一 Target、Finding、Action、Artifact 和 Results 链。
+
+Landing Opportunity 可以聚合以下 scope：
+
+- 单个 URL；
+- Landing template；
+- Traffic Source × Landing Page；
+- Keyword Cluster × Landing Page；
+- Campaign × Landing Page；
+- Form、CTA 或 Trust block。
+
+Landing Execution 至少能够生成：
+
+- Above-the-fold / Message Match 诊断；
+- Headline、Subheadline 与 CTA Rewrite；
+- Form Optimization Spec；
+- Trust Pack；
+- Landing Revision Brief；
+- Tracking Plan 与 UTM Plan。
+
+进入 Results 前必须存在清晰合同：
+
+- `baseline_snapshot_id`；
+- 绝对 `before_window` 与 `after_window`；
+- `approval_ref` 与被批准的 Artifact Revision；
+- `preview_url`，适用时；
+- `published_at`、`published_by` 与 `change_receipt`，真实发布后；
+- `rollback_ref`；
+- `utm_schema` 与 attribution limitation；
+- `outcome_snapshot_id` 或明确的 `pending/unavailable`。
+
+Results 分开表达：
+
+1. `technical_verified`：Recheck 直接证明目标技术条件改变；
+2. `observed`：在固定窗口观察到 Search、GEO、Landing 或 Conversion 变化，但不声称因果；
+3. `insufficient_data`：样本、窗口、连接或归因不足；
+4. `unavailable`：来源未连接、权限不足或 collection failed；
+5. `regressed`：目标条件恶化或问题再次出现。
+
+`0` 是真实测量值，不能代替 `unavailable`；连接了 Provider 也不等于该次 Run 有数据；Publish Receipt 只证明变更发生，不证明 Ranking、AI citation、Traffic、Conversion 或 Revenue 增长。
+
+### R5.7 信息架构与状态约束
+
+一级入口继续固定为四个：
+
+1. `概览`；
+2. `增长地图`；
+3. `执行中心`；
+4. `效果追踪`。
+
+四个 Capability Lens 只出现在：
+
+- Growth Map 的筛选器与 Evidence badges；
+- Opportunity detail 的证据分组；
+- Execution 的 Artifact projection 类型；
+- Results 的验证来源与 limitation。
+
+明确禁止：
+
+- 在一级侧栏增加 Diagnosis、WebTech、Acquisition、Landing；
+- 把四个 Lens 做成固定顺序的 Wizard；
+- 在客户界面同时展示 Deep Dive phase、A0–A14、内部 queue 和 canonical state；
+- 用 `slide`、`phase complete`、`AI exploring` 或规则说明面板作为页面主叙事；
+- 为内部运营和客户自助建立两套 UI。两类用户看到同一项目与同一工作对象，差异只由服务端权限决定。
+
+### R5.8 中文工作台、英文内容与数据诚实
+
+- 工作台、决策说明、错误、limitation 与 Results 解释采用中文；
+- SEO、GEO、ICP、CTA、SERP、Keyword、Competitor、Content Brief、UTM 等标准名词保留英文；
+- 面向海外市场的 Blog、Article Draft、标题与正文默认使用选定市场的英文变体；
+- Content Brief 可以中文解释策略，但交付字段与英文 Draft 的语言要求必须清楚分区；
+- 市场、地区、关系、状态等枚举使用 select、multi-select、segmented control 或 filter，不使用自由文本代替结构化值；
+- 客户侧默认展示结论、正文和下一步，Source、Rule、Revision、Manifest 与 QA 细节放入可展开 Drawer；
+- 正文基准字号不低于 16px，表格主要内容不低于 15px，只有短标签和次级 metadata 可以使用 14px；行高不低于 1.5；
+- 所有 `observed`、`computed`、`inferred`、`declared`、`missing`、`conflicting` 与 `unavailable` 必须在使用点可辨认；
+- Demo 的确定性样例必须标记为 `示例数据 / Target State`，不得表现为已从真实 Provider 拉取的生产结果。
+
+### R5.9 权限、审核与发布边界
+
+同一工作台不等于所有用户拥有相同写权限。权限必须由服务端按 Project、Site、Action 与 Side-effect Class 校验，前端隐藏按钮不能代替授权。
+
+最低边界：
+
+- Product Profile、Competitor Scope、Finding、Artifact Revision 和 UTM Plan 可以分别审核；
+- Approval 绑定精确 Revision，内容变化后旧 Approval 失效；
+- `reviewed`、`approved`、`publish_ready`、`published` 和 `verified` 是不同事实；
+- Slice 1 只允许可逆的内部数据写入与显式 Recheck，不写客户生产站点；
+- Slice 2 Content Shadow 无任何外部 CMS write；
+- Slice 3 真实发布必须具有 site-scoped permission、human approval、preview、idempotency、rollback reference 与 Change/Publish Receipt；
+- CMS、Git、Tracking 或 Form 的授权分别管理，不因用户能编辑 Blog 就推断其能部署代码或修改 Measurement；
+- 生产写入失败、部分成功或验证失败必须进入可检查状态，不能用成功 toast 覆盖。
+
+### R5.10 三个实施 Slice 与 Stop Gates
+
+#### Slice 1：Product Context + Multi-URL WebTech
+
+```text
+Product URL
+→ Product Profile Draft / Review / Version
+→ Multi-URL Portfolio
+→ WebTech Audit
+→ Evidence / Finding / Opportunity
+→ Technical Artifact
+→ Recheck
+→ Technical Results
+```
+
+范围：
+
+- Revision 4 的 URL-first Product Profile 体验；
+- URL Portfolio 与 template-level Target；
+- 第一批 Crawl/Index/Render/Structured Data/Internal Link/Performance rules；
+- Technical Ticket、Metadata Rewrite、Schema/Internal Link/Performance projection；
+- immutable Run compare 与 Recheck。
+
+Stop Gate：
+
+- 首屏只需 Product URL 与可选一句补充，Profile Draft 有来源且可审核；
+- Profile 确认后形成 append-only version，旧 Run 不被改写；
+- Growth Map 默认显示多个 URL，并可按 template 聚合；
+- 至少一个真实 template/url Technical Finding 可 Confirm 为一个 Action；
+- 一个 Technical Artifact 包含 Evidence、Acceptance、Validation 与 Rollback；
+- Recheck 比较两个 immutable Run，并诚实展示 no data / unavailable；
+- 没有新增平行 Finding、Action、Artifact 或 Lens 状态；
+- 未通过此 Gate 前，不迁入 Content lifecycle。
+
+#### Slice 2：Keyword / Competitor / SEO-GEO Content Shadow
+
+```text
+Approved Competitor Scope
++ Keyword / SearchQuery / GenerativeQuery Library
+→ Topic Cluster + Page Map
+→ Content Finding / Opportunity
+→ Content Brief + Research + English Draft + QA
+→ Human-reviewed Revision
+```
+
+范围：
+
+- 初始 Keyword/Competitor candidates 与人工确认；
+- Cluster-first、Existing-page-first 与 Page Assignment；
+- 一个测试项目、一个 Competitor Set、一个 Cluster、一个 GenerativeQuery Set；
+- 固定 commit/version 的 Flow Shadow；
+- Content Brief、Research Pack、English Draft、SEO/GEO/Factual QA；
+- Revision-bound human review。
+
+Stop Gate：
+
+- Keyword、Competitor、Query 与 Cluster 均有 source、market、freshness 和 approval 状态；
+- Competitor Candidate 未经确认不能进入全站 Keyword Gap；
+- 一个 Cluster 能清楚解释 Query、Existing URL/New Asset、Page Role 与 CTA；
+- Content Opportunity 复用 Slice 1 的 Evidence/Finding/Action 链；
+- Execution 可直接阅读 Brief、英文正文、来源、QA 和 Review Decision；
+- unsupported claim 被阻塞或标记 needs review；
+- 编辑后旧 Approval 失效；
+- 没有真实 CMS、Git 或外部分发写入；
+- 未通过此 Gate 前，不开放发布与自动 Measurement。
+
+#### Slice 3：Landing / Authorized Publish / UTM Results
+
+```text
+Landing + Conversion Evidence
+→ Landing Opportunity
+→ Revision Brief / UTM Plan
+→ Approval + Preview
+→ Authorized Change / Publish Receipt
+→ Recheck + UTM / Outcome Observation
+→ Results
+```
+
+范围：
+
+- Landing、CTA、Form、Trust 与 Message Match Evidence；
+- Landing Revision、Tracking/UTM Artifact；
+- 经批准的 CMS/Git/Tracking adapter Canary；
+- Change/Publish Receipt、Rollback 与 post-change verification；
+- page-level before/after、direct/assisted conversion 与 attribution limitation。
+
+Stop Gate：
+
+- 每次外部写入都有 site-scoped permission、当前 Revision Approval 与 preview；
+- 写入幂等，partial failure 可见，并有 rollback reference；
+- baseline、change 和 outcome 使用绝对时间与 immutable snapshot；
+- UTM 表能区分 source/medium/campaign/content、direct 与 assisted conversion；
+- 技术验证、观察到的业务变化和因果未知明确分开；
+- 没有数据时显示 pending、insufficient_data 或 unavailable，不填 0；
+- Publish/Change Receipt 不产生虚假的 positive outcome。
+
+### R5.11 Artifact Demo 的页面与交互验收
+
+Artifact Demo 是客户直接看到的 Target State，不是内部规则教学页。Demo 必须包含以下可操作页面。
+
+#### 概览
+
+- 展示已审核的 Product Profile Card、Primary ICP、Target Market 与 Competitor Candidate 摘要；
+- 显示 Profile Version、最近更新时间和低置信度/待确认数量，但不平铺内部 schema；
+- 显示 URL 数、Keyword 数、Competitor 数、Cluster 数和数据源状态；
+- 数据源状态区分 connected、collecting、available、unavailable 与 failed；
+- 有明确的 `编辑产品档案` 与 `审核竞品候选` 入口，不显示独立 `AI 探索` 导航。
+
+#### 增长地图
+
+- 默认首先展示不少于 8 个不同类型 URL，证明多 URL 是常态；
+- 提供 `页面与机会`、`关键词库`、`竞品库` 三个明确子视图；
+- 提供四 Lens filter，但 Lens 不是页面流程；
+- URL 视图支持搜索、page type/template/cluster/status 筛选与批量展开，不提供 Bulk Confirm；
+- 展示一个 template-level Technical Opportunity，并能展开受影响 URL；
+- Keyword 视图展示 source、intent、cluster、mapped URL、nullable metrics、freshness；
+- Competitor 视图支持 approve、exclude、修改 relation/scope 和手动添加；
+- Cluster detail 展示 SearchQuery、GenerativeQuery、Existing Pages、Page Roles、Coverage Gap 与 CTA；
+- Opportunity detail 展示 primary Finding、supporting Evidence、limitation、工作类型和一个明确 Next Decision。
+
+#### 执行中心
+
+- 直接展示至少一个 Technical Ticket 或 Code Fix Proposal 的实际内容；
+- 直接展示一个 Metadata Rewrite 的 before/after；
+- 直接展示一个可阅读的 Content Brief 与一篇英文 Blog Draft 正文；
+- 展示 Research Sources、SEO/GEO/Factual QA 与 blocked/needs-review claim；
+- 展示一个 Landing Revision Brief、Headline/CTA Rewrite 和 UTM Plan；
+- 每张卡都显示 linked Target、Action、owner、status、current Revision、acceptance 和 preview；
+- 编辑产生新 Revision，界面立即显示旧 Approval 已失效；
+- Publish 按钮在 Slice 2 Demo 中明确为不可用或模拟，不用 toast 假装发布成功；
+- 治理 metadata 收进 Drawer，正文和决策始终占据主视觉。
+
+#### 效果追踪
+
+- 显示绝对 before/after 时间窗口，而不是“最近一段时间”；
+- 至少展示一个 Technical Recheck 的旧值、新值与 verified 结论；
+- Search/GEO 数据可以保持 pending 或 insufficient_data，不伪造 ranking/AI citation 提升；
+- 展示一张 UTM audit table，包括 source、medium、campaign、content、sessions、direct conversions、assisted conversions；
+- 展示 Change/Publish Receipt 时间线，并明确 Receipt 与 Outcome 的区别；
+- 每个结果旁显示 source、freshness、sample/window 与 attribution limitation；
+- 没有数据的单元格显示 `未连接`、`采集中`、`数据不足` 或 `不可用`，不显示虚假的 0。
+
+#### 跨页面与可用性
+
+- 客户在 10 秒内能理解这是多 URL 的统一增长工作台，不是 SEO Blog 生成器或单 URL 审计器；
+- 客户在 1 分钟内能完成：选择 Target → 查看 Evidence → Confirm primary Finding → 打开对应 Execution Artifact；
+- 前台以中文为主，英文 Blog 正文与英文市场文案不被机器翻译成中文；
+- 不出现第二套内部/客户模式开关；无权限动作由服务端结果和明确原因控制；
+- 1440、1024、768、390 四个视口无 root overflow；表格在窄屏进入 Drawer 或受控横向容器；
+- Dialog 满足 focus trap、背景 inert/aria-hidden、Escape 关闭和焦点恢复；
+- Keyboard focus、Reduced Motion、空状态、错误状态和 loading 状态可验证；
+- 禁止让小字号规则面板、slide 编号、phase 宣告或系统架构图占据客户首屏。
+
+### R5.12 Revision 5 总验收
+
+只有同时满足以下条件，才算成功吸收四个 Deep Dive：
+
+- 团队能指出每项吸收能力属于哪个 Lens、进入哪条 canonical object chain、在哪个 Slice 实现；
+- Product/Diagnosis、WebTech、Search/GEO 与 Landing 没有变成四个产品、四套导航或四套状态；
+- Product Profile 使用少量输入生成、Evidence-backed 审核与版本化，而不是长表单；
+- WebTech 支持多 URL 和 template-level Opportunity，并能产生可验证技术交付物；
+- Keyword/Competitor Library 具有来源和审核，Content execution 遵守 Cluster-first；
+- Content Shadow 可展示真实 Brief、英文 Draft、QA 与 Revision Review，但不外部发布；
+- Landing/UTM 通过统一 Action/Artifact/Receipt/Results 链进入，而不是另建 CRO 系统；
+- Demo 直接呈现客户可读工作物和 before/after，不以规则告知代替产品；
+- 中文工作台、英文内容输出、No Data、数据 provenance 与权限边界均在使用点可见；
+- 三个 Slice 均有强制 Stop Gate，前一 Gate 未通过时不得用后续 Target State 反向宣称生产能力已经完成。
+
+---
+
+## Revision 4 · 产品画像建模与 Audit 解耦
+
+本节来自 2026-07-21 对 Artifact 的第三次 Context / ICP 评审，优先级高于 Revision 3 的四段式 Context 流程。Revision 3 对“完整 B2B 模型不能变成首次问卷”的判断仍然有效，但前台呈现仍暴露了过多 Audit、locale 与 schema-governance 信息。
+
+### R4.1 产品决定
+
+客户此时要完成的是**产品画像建模**，不是配置内容生产，也不是启动全站 Audit。客户侧路径收敛为：
+
+1. 输入产品 URL；
+2. 系统在后台读取公开产品页面并自动分类；
+3. 直接审核产品档案卡、目标市场 / 用户画像与初始竞品池；
+4. 确认后把该画像作为关键词库、竞品库、SEO/GEO 内容与后续 Audit 的公共输入。
+
+`AI 探索` 不再作为独立可见步骤。抓取、解析和模型推断是 URL 提交后的后台生成过程，前台最多显示一条短暂的 `正在生成产品档案` 状态，然后直接进入审核结果。
+
+### R4.2 首次输入
+
+产品画像入口只要求 `Product URL`。当官网无法准确解释业务时，用户可以展开一个可选的“一句话业务补充”。以下信息不出现在该入口：
+
+- 网站主要语言；
+- 内容输出 locale；
+- 工作台语言；
+- Priority URLs；
+- 增长目标与转化事件；
+- Audit scope、技术诊断或执行约束；
+- Context Packs、schema version、provenance ledger 等内部治理结构。
+
+目标市场、客户类型、产品形态和商业模式由系统初始化，在结果卡中审核修改，而不是在生成前要求用户选择。
+
+### R4.3 审核结果
+
+客户侧只显示三部分：
+
+1. `产品档案`：产品名称、one-liner、产品类别、产品形态、商业模式、价值主张、目标市场、目标用户标签与核心能力；
+2. `目标市场与用户画像`：Primary ICP、目标公司 / 用户群、Buyer、User、主要场景、触发事件、核心痛点与 JTBD；
+3. `初始竞品池`：默认 3–5 个 Direct competitors 与 3 个 Indirect competitors，展示名称、domain、关系、相似度和简短原因，允许取消、重新识别和手动补充。
+
+产品档案和用户画像默认以可读结果卡呈现，不把编辑表单直接平铺。用户主动点击 `编辑档案` 或 `编辑画像` 后才显示结构化控件。`gengrowth-agents` 的 ProductProfileCard 可以作为呈现参考，但 GenGrowth 仍需覆盖更丰富的 B2B 业务，不继承其 schema 边界。
+
+### R4.4 后续边界
+
+Priority URLs、关键词机会、技术问题、Buying Committee、ACV、Procurement、内容输出语言和执行约束没有被删除；它们移到各自真正需要的后续阶段。可组合 Context Packs 与 governed attributes 保留为内部扩展机制，不作为产品画像首屏价值展示。
+
+### R4.5 验收标准
+
+- 首屏只有 Product URL 与一个折叠的可选补充，没有语言、locale、工作台偏好或 Audit 字段；
+- 没有独立 `AI 探索` 导航页；生成完成后自动进入审核结果；
+- 审核结果首屏首先展示 Product Profile Card，而不是 Priority URLs 或 Context Packs；
+- 客户能修改产品档案和 Primary ICP，能取消错误竞品并手动添加竞品；
+- 竞品池明确区分 Direct / Indirect，并能容纳至少 3–5 个 Direct 与 3 个 Indirect 候选；
+- 产品画像确认后才成为关键词、竞品、内容与 Audit 的公共输入，不在该弹窗里直接启动 Audit。
+
+---
+
+## Revision 3 · 渐进式 B2B 上下文采集
+
+本节来自 2026-07-21 对 Context / ICP Artifact 的再次评审，优先级高于 Revision 2 中“把四个完整内容块直接做成五步表单”的表述。
+
+### R3.1 核心产品决定
+
+完整 ICP 是系统必须维护的数据模型，**不是客户首次启动时必须手填的字段清单**。`gengrowth-agents` 只用于参考“少量输入 → Site Probe / 数据探索 → AI 草拟 → 人工审核”的交互方式；它的四个 onboarding 字段既不是 GenGrowth 的 ICP schema，也不足以覆盖复杂 B2B 业务。
+
+客户首次只需确认四项启动信息：
+
+1. Website URL；
+2. 目标市场 / 地区，可多选并排序 primary / secondary；
+3. 本阶段主要增长目标；
+4. 主要转化目标。
+
+网站主要语言、内容输出 locale、工作台语言、客户类型和业务类型应有可修改的检测值 / 默认值，不作为五个额外空白题。市场、语言、客户类型、业务类型、Sales Motion、公司规模、公司阶段、Customer Motion、ACV 区间和销售周期等可枚举字段必须使用 dropdown、multi-select、segmented control 或 checkbox，不使用自由文本模拟结构化数据。
+
+### R3.2 四段式体验
+
+Context 前台固定为四段，而不是把完整 schema 平铺给用户：
+
+1. `基础信息`：四项启动信息；默认值折叠展示、可修改；
+2. `AI 探索`：Probe 首页、robots.txt、Sitemap、Crawl、已有内容和已连接数据源；
+3. `审核建议`：审核业务画像、B2B ICP Cards、JTBD、购买路径、Priority URLs、关键词与竞品候选；
+4. `确认启动`：确认范围、来源、低置信度 / missing data，并冻结新的 append-only Context Version 后启动完整 Audit。
+
+`Priority URLs` 不得作为首次必填 textarea。系统先从 Sitemap、Crawl、GSC landing pages、GA4 conversion proximity、SERP / keyword mapping 和技术问题中生成多个候选 URL；用户通过勾选、排除、搜索全站 URL 库或手动补充完成审核。全站 Audit scope 与 Priority URL ordering 必须分开表达。
+
+### R3.3 B2B 不能退化成 Persona 文本框
+
+当 `customerModel = B2B / B2B2C` 时，系统应生成 2–7 个 candidate ICP Cards，并允许标记 Primary、Secondary 与 Excluded。每个候选至少覆盖：
+
+- Company Profile：industry / sub-industry、company size、company stage、business model、Customer Motion、region；
+- Buyer Roles 与 User Roles，二者不能合并；
+- Trigger Events、Pain Points、Use Cases 与 Current Workarounds；
+- JTBD 的 situation、struggle、job statement、desired outcomes、anxieties；
+- Success Metrics、Buying Barriers、Qualification Signals 与 Disqualifiers；
+- Evidence coverage、confidence、assumptions、contradictions、missing data 与 review status。
+
+另设 B2B buying context：Sales Motion、Buying Committee、Decision Criteria、典型 ACV、Sales Cycle、Procurement / Security / Legal 路径、Technographic Fit、主要购买阻力和所需 Proof。网站通常不能可靠推断 ACV、采购路径与完整 Buying Committee；这些字段必须以低置信度候选或待确认项呈现，不能伪装成 observed fact。
+
+该模型不能只适配 B2B SaaS；业务类型至少覆盖 SaaS、专业服务 / Agency、Developer Tool、Marketplace、E-commerce、Media 及混合模式，并允许业务类型驱动不同的 ICP 模板与问题集。
+
+同时，GenGrowth 不把上述字段清单固化为“全部 B2B 的唯一答案”。目标模型是可组合 Context，而不是复制 `gengrowth-agents` 或把当前 SaaS 示例扩成另一套僵硬问卷：
+
+1. `Universal Core`：市场、目标、转化、Company / Buyer / User、JTBD、Evidence 等跨业务公共对象；
+2. `Business-model Pack`：SaaS、服务、Developer Tool、Marketplace、制造 / 渠道型业务等按模式加载的结构；
+3. `Vertical Pack`：例如合规、采购、渠道、地理覆盖、部署方式、门店 / 产能等行业特有维度；
+4. `Evidence-discovered Attributes`：探索中发现、但模板尚未覆盖的业务事实，以有类型、有来源、有版本的扩展字段进入审核；
+5. `Work-specific Context`：只在某类执行物需要时追问，例如 Comparison Page 的 approved claims 或 Technical Fix 的 deploy window。
+
+系统允许 `unknown / not applicable`，也允许用户新增自定义属性。扩展字段必须声明稳定 ID、label、value type、applicability、provenance、evidence refs、confidence 与 schema version，不能退化成不可治理的自由 JSON 或拼接进旧字符串。首次 Audit 只加载与当前业务和工作相关的模块。
+
+### R3.4 来源、证据与合同边界
+
+每个生成字段至少区分：
+
+- `declared`：用户输入或明确确认；
+- `observed`：Crawl、GSC、GA4、SERP 或其他受治理来源直接观察；
+- `computed`：从 observation 可重复计算；
+- `inferred`：基于 Evidence 的 AI 草拟；
+- `missing / contradicted`：证据不足或相互冲突。
+
+`CompleteIcpProfileInputV2` 除 Revision 2 已列字段外，还需要在合同设计阶段评审 B2B 结构：candidate ICP Cards、buyer / user roles、success metrics、qualification signals、disqualifiers、Sales Motion、Buying Committee 和字段级 evidence / confidence。Technographic 与 Procurement 是合理目标态扩展，但当前 Nevermore 与 wiki 的正式合同证据不完整；它们必须先完成 schema / evidence review，不能直接塞入旧 constraint 字符串。
+
+### R3.5 验收标准
+
+- 首屏在桌面端和手机端都明确显示“只填写 4 项”，没有 Priority URLs 或完整 ICP 的人工文本域；
+- 可枚举信息使用选择控件，检测 / 默认值折叠但可修改；
+- 多市场必须有显式 Primary 控件；不能依赖“最先勾选”这种隐式顺序；
+- AI 探索显示具体来源、进度与 observed / computed / inferred 边界；
+- 审核页能看到多个 URL 候选、2–7 个 B2B ICP Cards 和独立 buying context；
+- URL Inventory 必须真的支持搜索与手动添加；不能用 toast 假装已经打开；
+- 修改 Website、Primary Market、目标、转化或其他探索输入后，旧建议立即标记 stale 并要求重新探索；
+- 关键字段旁直接显示 derivation、evidence、confidence、missing / contradicted，而不只在页面底部给一个总说明；
+- 所有 AI 建议可修改、重新生成、接受或排除；低置信度与 missing data 可见；
+- Context dialog 在桌面和移动端都满足 focus trap、背景 inert / aria-hidden、Escape 关闭与焦点恢复；
+- 完整 schema 可以很丰富，但首次 Audit 不以“用户手填 31 个字段组”为门槛。
+
+---
+
+## Revision 2 · 客户侧工作台修正
+
+本节是 2026-07-21 的第二次产品修正，优先级高于本文后续任何冲突表述。触发原因是最新 artifact demo 暴露出 8 个核心问题：单 URL 视角过强、客户侧可读性差、中文优先策略不明确、Execution 过于抽象、Results 无法解释 before/after、关键词库与竞品库来源不透明、ICP 上下文采集过浅，以及 stage / slide 类内部术语泄漏到客户界面。
+
+### R2.1 修正后的一句话定义
+
+> **GenGrowth 是一套给客户直接看的海外增长工作台：用中文界面管理多 URL 审计、关键词库、竞品库、SEO/GEO brief、英文 blog draft、技术修复、发布与 UTM 结果追踪。当前生产基础位于 nevermore 代码库。**
+
+### R2.2 现在明确推翻的旧假设
+
+- 不再把“从一个 URL 出发”视为前台主叙事。多 URL portfolio 是常态，Growth Map 默认展示页面与机会；
+- 不再区分内部运营视角与客户自助视角，前台只保留一套客户可理解的工作台；
+- 不再让 Growth Map 以 `Audit Evidence` / `Opportunity Review` 两段式规则说明作为主视觉核心；客户首先看到的是 URL、关键词库、竞品库和机会明细；
+- 不再把关键词库、竞品库仅视为 Growth Map 的隐含资产。它们必须在 Growth Map 中作为明确可见的子视图存在；
+- 不再让 Execution 只讲 `artifact type`、`revision`、`fact gate` 等抽象对象；Execution 必须直出 code fix、metadata rewrite、content brief、English draft、publish receipt；
+- 不再让 Results 主要围绕 immutable run 术语组织；Results 必须以明确日期窗口展示 before/after、page delta、UTM campaign、conversion observation；
+- 不再接受过于简短的 ICP 填写。前台必须体现 Site/Market、Business/Offer、ICP/JTBD、Competitors/Constraints 四个内容块，再经过来源、完整度与不可变版本 Review；
+- 不再在客户界面使用 `slide`、过强的 `stage`、或接近内部 SOP 的提示文案。
+
+### R2.3 修正后的一级信息架构
+
+一级入口固定为四个：
+
+1. `概览`：项目上下文完整度、数据源状态、URL portfolio 摘要、当前优先事项；
+2. `增长地图`：三个并列子视图 `页面与机会`、`关键词库`、`竞品库`；
+3. `执行中心`：与已发现问题/机会直接对应的执行物；
+4. `效果追踪`：before/after、UTM、recheck、时间线和限制说明。
+
+### R2.4 修正后的语言与输出策略
+
+- 前台 UI 文案：中文优先；
+- 专有名词与标准对象：保留英文，例如 `Keyword`、`Competitor`、`Content Brief`、`UTM`；
+- blog / brief / draft 正文输出：英文；
+- Results 的解释文案：中文，但指标名可中英混排；
+- 任何客户侧页面都要以“可读”优先，禁止使用纯内部治理话术堆砌。
+
+### R2.5 修正后的 Growth Map 定义
+
+Growth Map 必须同时支持三类对象：
+
+- `URL Portfolio`：多 URL 列表、priority、issue counts、owner、status、before/current delta；
+- `Keyword Library`：来源、intent、cluster、mapped URL、status、volume/KD；
+- `Competitor Library`：relation、scope、origin、approve/exclude 状态、决策洞察。
+
+关键词库来源至少支持前台解释：
+
+- GSC；
+- site crawl / existing pages；
+- competitor keyword gap；
+- suggest / PAA / SERP observation；
+- VOC / sales notes / interviews；
+- manual CSV or operator input。
+
+首次建库不能从空表开始。Project 创建并确认 Complete ICP Profile 后，应自动形成可审核的初始数据集：
+
+- URL 侧：Sitemap、Crawl-discovered pages、现有页面类型与 GSC landing pages；
+- Keyword 侧：竞品关键词映射、Content Gap、种子词多维扩展、Suggest/PAA、社区与 VOC、趋势信号、GSC 意外词；
+- 手工侧：单条添加、CSV 导入与历史词表迁移；
+- 治理侧：标准化、去重、cluster、intent、market/language、mapped URL、来源、采集时间与 freshness 必须随记录保存。
+
+每条 Keyword 至少保留：`keyword_id`、`normalized_keyword`、`market`、`language`、`cluster_id`、`intent`、`buyer_stage`、`volume`、`kd`、`current_rank`、`mapped_url`、`status`、`source_kind`、`source_ref`、`collected_at`、`freshness`。手工输入与自动发现只是不同来源，不是两套词库。
+
+竞品库来源至少支持前台解释：
+
+- manual approved domains；
+- recurring SERP overlap；
+- AI citation co-occurrence；
+- customer interviews / sales notes；
+- auto discovery candidates；
+- approve / exclude 决策。
+
+每条 Competitor 至少保留：`competitor_id`、`domain`、`relation`（direct / indirect / status quo / benchmark / publisher）、`analysis_scope`、`origin`、`evidence_refs`、`approval_status`、`last_observed_at`。自动发现只进入 Candidate；客户确认 analysis scope 后才允许进入 Keyword Gap，避免把大站、媒体站或偶然 SERP 重叠误当全站竞品。
+
+### R2.6 修正后的 Execution 定义
+
+Execution 必须直出以下工作物，而不是只展示抽象流程状态：
+
+- `Code Fix`；
+- `Metadata Rewrite`；
+- `Content Brief`；
+- `English Blog Draft`；
+- `Publish Receipt / UTM Plan`。
+
+每个执行物至少要显示：
+
+- linked URL or keyword cluster；
+- owner；
+- status；
+- acceptance checklist；
+- preview body。
+
+### R2.7 修正后的 Results 定义
+
+Results 必须回答三个问题：
+
+1. 改之前与改之后，页面级指标分别是什么；
+2. 哪些变化来自技术 recheck，哪些来自 Search / GEO / content observation；
+3. UTM campaign、source / medium、conversions、assisted conversions 在指定窗口内如何变化。
+
+Results 必须显示：
+
+- 绝对日期窗口；
+- page-level before / after；
+- UTM audit table；
+- 关键动作时间线；
+- limitation 与 insufficient data。
+
+### R2.8 Revision 2 验收标准
+
+- 客户首次打开 demo 时，能在 10 秒内理解这不是“单 URL 审计器”，而是一套多 URL 增长工作台；
+- Growth Map 默认可见多个 URL，且能切换到关键词库和竞品库；
+- 关键词库和竞品库都清楚标出来源，不要求用户从空白手工构建全部数据；
+- Execution 至少能直接看到一个 code fix、一个 metadata rewrite、一个 content brief、一个英文 draft，以及一个可追溯的模拟 Publish Receipt / UTM Plan；
+- Results 至少能直接看到一个页面的 before/after 和一个包含 direct / assisted conversions 的 UTM campaign 表；
+- UI 字号与层级满足中文阅读习惯，不能再出现小字号规则面板主导界面；
+- 项目上下文必须体现完整 ICP / JTBD / competitor / constraints，而不是只留简短自由输入框。
+
+### R2.9 丰富 ICP 的数据契约边界
+
+当前 nevermore 的 `CompleteIcpProfileInput` 是 strict contract，并非任意 JSON 表单。它已经覆盖产品、业务模式、市场/语言、segments、Persona 的 Jobs 与 pains、use cases、offers、differentiators、primary conversion、priority products/URLs、competitors、四类 constraints、growth questions 和 90-day goals；但它**没有** objections、buying triggers、decision criteria、buying committee、Negative ICP、secondary conversions、alternatives、approved proof、content voice 和字段来源。因此 Artifact 中的 31 个字段组属于目标态 `CompleteIcpProfileInputV2`，不能宣称已可直接写入当前 API。
+
+生产落地必须满足：
+
+- V2 显式包含 `profileSchemaVersion: "2"`；
+- Persona V2 增加 `objections[]`、`buyingTriggers[]`、`decisionCriteria[]`；
+- Profile V2 增加 `firmographicCriteria`、`secondaryConversions[]`、`buyingCommittee[]`、`exclusionCriteria[]`、`alternatives[]`、`approvedProofSources[]`、`claimRestrictions[]`、`contentVoice`、`fieldProvenance`；
+- UI language 属于用户/项目偏好，不混入 ICP；market、site language 与 delivery locale 仍是 Profile / Project 的明确输入；
+- 不允许把新字段拼进旧 `segments[]`、`competitors[]` 或 constraint 字符串来绕过 schema；
+- OpenAPI、Zod、生成类型、表单、pointer-level validation、fixtures、content hash 与 Audit input manifest 必须同一生产 Slice 更新；
+- 每次确认 V2 都创建新的 append-only ICP profile 版本；历史 V1 不原地修改，URL 自动草拟字段保留来源并经用户确认；
+- 现有 `icp_profiles.profile` JSONB 可继续承载 V2；只有在实现审计证明需要单独查询/索引某字段时才新增迁移。
 
 ---
 
@@ -83,7 +812,7 @@
 
 ### 3.1 一句话定义
 
-> **Nevermore 从一个 URL 出发，通过统一 Growth Audit 发现、确认、执行并验证增长机会。技术审计、SEO 需求、GEO 可见性、竞品研究和内容生产，是同一个 Opportunity 的证据与执行能力。**
+> **GenGrowth 从一个目标站点及其多 URL portfolio 出发，通过统一 Growth Audit 发现、确认、执行并验证增长机会。技术审计、SEO 需求、GEO 可见性、竞品研究和内容生产，是同一个 Opportunity 的证据与执行能力。**
 
 ### 3.2 产品承诺
 
@@ -174,14 +903,9 @@ Nevermore 是唯一产品壳、项目边界和长期 System of Record。
 - 审阅具体 Artifact Revision；
 - 理解哪些结果已验证、哪些仍需观察。
 
-### 5.3 客户自助
+### 5.3 单一客户侧工作台规则
 
-客户自助使用同一项目、同一证据和同一工作对象。差异来自引导、权限和责任，不创建另一套页面和状态。
-
-首阶段 Artifact 不展示七角色与模式模拟器。真实外部登录出现时，从两类权限开始：
-
-- Operator/Admin；
-- Collaborator/Editor。
+内部团队代客户执行与客户本人登录时，使用同一项目、同一证据、同一工作对象和同一套四入口界面。首阶段不展示“内部运营 / 客户自助”模式开关，也不创建两套页面或状态；权限差异只控制具体动作能否执行，不改变客户看到的产品模型。
 
 ---
 
@@ -198,6 +922,8 @@ Project 持有：
 - Review Event、Action；
 - Artifact Revision、Export；
 - 后续 Verification。
+
+Project 前台必须天然支持多个目标 URL、多个关键词 cluster 和多个 competitor object 并存。单个 URL 可以是某个 Opportunity 的 primary target，但不能再被误当成整个项目的唯一前台中心。
 
 ### 6.2 Growth Opportunity 是前台主对象
 
@@ -449,9 +1175,11 @@ verification_summary?
 
 项目内只保留四个一级入口。
 
-### 10.1 今日
+### 10.1 概览 / Overview
 
 回答：现在最重要的 Opportunity 是什么，为什么重要，下一步需要什么决定？
+
+客户端显示名称固定为“概览”；现有 `today` 只可作为兼容 route key，不得继续显示为一级入口名称。
 
 必须有：
 
@@ -471,12 +1199,13 @@ verification_summary?
 
 ### 10.2 Growth Map
 
-产品核心工作区，包含两个阶段：
+产品核心工作区，包含三个客户可见的对象视图：
 
-1. `Audit Evidence`；
-2. `Opportunity Review`。
+1. `页面与机会`：默认多 URL portfolio；
+2. `关键词库`：Keyword、cluster、intent、market、mapped URL、status、source/freshness；
+3. `竞品库`：domain、relation、analysis scope、origin/evidence、approval status。
 
-Audit Evidence 必须展示：
+`Audit Evidence` 与 `Opportunity Review` 只作为当前选中 URL、Keyword、Competitor 或 Opportunity 的详情状态，不是一级阶段或主导航。选中对象的 Evidence 详情必须展示：
 
 - Run、Scope、Freshness、Data Completeness；
 - Site Health、Search & AI Visibility、Demand & Competition；
@@ -484,7 +1213,7 @@ Audit Evidence 必须展示：
 - No Data 与 Limitation；
 - Compare 与 Export。
 
-Opportunity Review 必须展示：
+选中对象的 Opportunity 详情必须展示：
 
 - 跨 Lens Opportunity 列表；
 - Target、Evidence、Impact、Confidence、Effort、Risk、Dependency；
@@ -497,21 +1226,14 @@ Opportunity Review 必须展示：
 
 必须展示：
 
-- Ready、In Progress、Review、Done；
-- 排序因子而非不可解释总分；
-- 当前选中 Opportunity；
-- Artifact Type 与 Revision；
-- 技术 Validation 与 Rollback；
-- 内容 Research/Fact Gate；
-- 绑定 Revision 的 Review Decision。
+- 按真实交付物类型与状态筛选的队列；
+- 当前选中交付物的可读正文，而不是规则说明；
+- linked URL / keyword cluster、source Opportunity、owner、status、acceptance checklist；
+- Code Fix、Metadata Rewrite、Content Brief、English Blog Draft、Schema Patch、Comparison Brief、Publish Receipt / UTM Plan；
+- 技术交付物的 Validation / Rollback 与内容交付物的 Research / claim boundaries；
+- 发布交付物的 canonical URL、CMS entry、revision checksum、rollback snapshot、UTM 与 measurement window。
 
-首个 Artifact 展示：
-
-- `technical_ticket`；
-- `metadata_rewrite`；
-- `content_brief`。
-
-可演示 Reviewed Draft，但不连接真实 CMS。
+Artifact Type、Revision 与 Review Decision 是可检查的治理元数据，但不得成为主视觉。Demo 中的 Publish Receipt 是确定性目标态模拟，不连接真实 CMS。
 
 ### 10.4 Results
 
@@ -519,10 +1241,12 @@ Opportunity Review 必须展示：
 
 必须展示：
 
+- 固定绝对日期的 baseline / current 窗口；
 - 技术 before/after Run；
+- 页面级 Search / Conversion / AI before/after；
+- UTM campaign、source/medium/content、direct conversions、assisted conversions；
 - Index/Publication 状态（如有）；
-- Search、Conversion、AI Observation；
-- Window、Source、Limitation；
+- Source、Limitation 与 attribution boundary；
 - verified、observed、insufficient_data；
 - 客户安全 Report 与 Export；
 - Regression 产生的新 Evidence/Finding。
@@ -534,7 +1258,7 @@ Opportunity Review 必须展示：
 - Market/Demand：Growth Map Lens；
 - Findings：Audit Evidence 与 Opportunity Review 内部 canonical record；
 - Plan/Studio：Execution；
-- Publish：后续 Execution 风险动作；
+- Publish：Execution 内的风险动作与回执；
 - Knowledge：后台治理与 Settings；
 - Membership/Policy：服务端权限与 Settings。
 
@@ -546,7 +1270,7 @@ Opportunity Review 必须展示：
 
 ### 11.1 URL → Audit-ready
 
-1. 输入 URL、市场、语言和最少业务背景；
+1. 输入主域名并确认市场、语言、priority URLs、业务与完整 ICP / JTBD；URL 自动草拟字段，但 Audit 不得以单句背景代替 Complete ICP Profile；
 2. 创建 Project、Site 和默认 Crawl Source；
 3. 自动启动 Crawl，不强制先连接所有可选数据源；
 4. Growth Map 显示 Source Readiness 与 Limitation；
@@ -884,23 +1608,23 @@ Artifact 是跨 Slice 1 技术路径和拟议 Slice 2 Content Shadow 故事板�
 
 只有：
 
-1. 今日；
-2. Growth Map；
-3. Execution；
-4. Results。
+1. 概览 / Overview；
+2. 增长地图 / Growth Map；
+3. 执行中心 / Execution；
+4. 效果追踪 / Results。
 
 ### 18.2 主演示路径
 
-1. 打开 Growth Map；
-2. 检查 Scope、Coverage 与 No Data；
-3. 打开 `/customer-onboarding/` Target Story；
-4. 同时查看技术、Search、GEO、Competitor Evidence；
+1. 打开 Growth Map，默认直接看到可搜索的多 URL portfolio；
+2. 在页面与机会、关键词库与竞品库之间切换，并看到数据来源；
+3. 从 URL 列表中选择 `/customer-onboarding/` 作为一个示例，而不是唯一目标；
+4. 检查 Scope、Coverage、No Data，并同时查看技术、Search、GEO、Competitor Evidence；
 5. 分别查看三项 Related Opportunity；
 6. 每次只 Confirm 一项 primary Finding，并观察每项 Opportunity 对应一个 canonical Action；
-7. Execution 将 Technical Ticket、Metadata Rewrite、Content Brief 显示为三项 Related Work；
-8. 查看技术 Validation 与目标态 Content Shadow Fact Gate；
-9. 模拟 Technical Recheck；
-10. Results 显示技术改善，Search/GEO 仍在 Observation Window。
+7. Execution 直接展示 Code Fix、Metadata Rewrite、Content Brief、English Blog Draft 与 Publish Receipt / UTM Plan 正文；
+8. 查看技术 Validation、Rollback、内容 Research 与 claim boundaries；
+9. 模拟 Technical Recheck 并检查确定性的模拟 Publish Receipt；
+10. Results 用固定窗口展示页面与 UTM before/after、direct / assisted conversions 与 attribution limitation。
 
 ### 18.3 交互边界
 
@@ -908,8 +1632,8 @@ Artifact 是跨 Slice 1 技术路径和拟议 Slice 2 Content Shadow 故事板�
 - Opportunity Review 有明确 Confirm；
 - Confirm 只作用于一个 primary Finding，replay 不重复 Action；Target Group 没有 Bulk Confirm；
 - No Data 不可作为 failure；
-- Revision Approval 不等于 Publication；
-- 不执行真实 CMS；
+- Revision Approval 不等于 Publication；独立模拟 Publish Receipt 用来证明这一区别；
+- 即使展示模拟回执，也不执行真实 CMS；
 - 不伪造 Ranking、Traffic、AI Citation 或 Revenue。
 
 ### 18.4 视觉要求
@@ -936,7 +1660,7 @@ Artifact 是跨 Slice 1 技术路径和拟议 Slice 2 Content Shadow 故事板�
 ### 18.5 响应式
 
 - 1440：完整 Evidence Map 与 Execution Workspace；
-- 1024/768：两列或阶段布局；
+- 1024/768：两列或纵向堆叠布局；
 - 390：先显示结论、Evidence Summary 和 Next Decision；
 - 深层表格进入 Drawer 或受控横向容器；
 - 所有关键视口无 Root Overflow；
@@ -949,7 +1673,7 @@ Artifact 是跨 Slice 1 技术路径和拟议 Slice 2 Content Shadow 故事板�
 
 ### 19.1 产品理解
 
-- 新用户能把产品描述成一个 URL → Opportunity → Result 闭环；
+- 新用户能把产品描述成 Site + URL Portfolio + Market Data → Opportunity → Work → Result 闭环；
 - 不再把 Audit 与 SEO/GEO Content 描述成两个产品；
 - 1 分钟内找到最高优先 Opportunity 和下一步决定。
 
@@ -1021,6 +1745,6 @@ Artifact 是跨 Slice 1 技术路径和拟议 Slice 2 Content Shadow 故事板�
 
 ## 21. 最终产品声明
 
-> **Nevermore 把一个 URL 及其市场证据转化为经过确认的 Growth Opportunity 队列，再把每个 Opportunity 连接到技术或内容交付与诚实验证。**
+> **GenGrowth 把一个目标站点、多 URL portfolio 及其市场证据转化为经过确认的 Growth Opportunity 队列，再把每个 Opportunity 连接到技术或内容交付与诚实验证。**
 
 后续 Artifact、实施计划和生产变更都必须能够证明这句话，而不能重新长成两个平行产品。
