@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { ApiError } from "@/lib/api";
-import { isTerminalRun, type ExportKind, type RunStatus } from "@/lib/api/hooks-report";
+import {
+  isTerminalRun,
+  type ExportKind,
+  type RunStatus,
+} from "@/lib/api/hooks-report";
 
 /**
  * Closed state machine behind the export rail's create/track flow (R3
@@ -23,6 +27,9 @@ export type ExportRailPhase =
   | "protocolError"
   | "createFailed";
 
+/** Which protocol break put the rail into `protocolError` (message selector). */
+export type ExportProtocolFault = "acceptedInvalid" | "bundleMismatch";
+
 export interface ActiveExportRef {
   readonly exportId: string;
   readonly kind: ExportKind;
@@ -40,6 +47,8 @@ export interface ExportRailState {
   readonly requestedKind: ExportKind | null;
   /** True when the tracked export was adopted from a 409 body pointer. */
   readonly adopted: boolean;
+  /** Non-null exactly while `phase === "protocolError"`. */
+  readonly protocolFault: ExportProtocolFault | null;
 }
 
 export const INITIAL_EXPORT_RAIL_STATE: ExportRailState = {
@@ -47,6 +56,7 @@ export const INITIAL_EXPORT_RAIL_STATE: ExportRailState = {
   active: null,
   requestedKind: null,
   adopted: false,
+  protocolFault: null,
 };
 
 export interface ExportPointer {
@@ -65,6 +75,11 @@ export type ExportRailEvent =
       readonly type: "exportTerminal";
       readonly exportId: string;
       readonly status: RunStatus;
+    }
+  | {
+      /** The detail read answered with a bundle other than the tracked one. */
+      readonly type: "bundleMismatch";
+      readonly trackedExportId: string;
     };
 
 export function reduceExportRail(
@@ -83,6 +98,7 @@ export function reduceExportRail(
         active: null,
         requestedKind: event.kind,
         adopted: false,
+        protocolFault: null,
       };
     }
     case "accepted": {
@@ -99,7 +115,12 @@ export function reduceExportRail(
       // A 202 whose body names no trackable export must become a visible
       // protocol error, never a silently blank rail.
       if (state.phase !== "creating") return state;
-      return { ...state, phase: "protocolError", active: null };
+      return {
+        ...state,
+        phase: "protocolError",
+        active: null,
+        protocolFault: "acceptedInvalid",
+      };
     }
     case "conflict": {
       if (state.phase !== "creating") return state;
@@ -132,6 +153,25 @@ export function reduceExportRail(
       // terminal failure message) mounted while re-enabling the create
       // buttons.
       return { ...state, phase: "idle" };
+    }
+    case "bundleMismatch": {
+      // The tracked poll answered with some other bundle. Showing it would be
+      // showing the wrong export; keeping `tracking` would lock the create
+      // buttons behind a poll that can never settle. Drop the pointer and
+      // surface a recoverable protocol error instead.
+      if (state.phase !== "tracking") return state;
+      if (
+        state.active === null ||
+        state.active.exportId !== event.trackedExportId
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        phase: "protocolError",
+        active: null,
+        protocolFault: "bundleMismatch",
+      };
     }
   }
 }
@@ -167,6 +207,24 @@ export function parseExportPointer(
     exportId: parsed.data.exportId,
     kind: readPointerKind(parsed.data.kind),
   };
+}
+
+/**
+ * OpenAPI pins an export create's 202 `resourceRef` to
+ * `{ type: "export", id: Uuid }`. Anything else — null, a wrong-type ref, a
+ * non-UUID id — is a protocol break the rail must surface as `acceptedInvalid`
+ * instead of tracking: an unvalidated id would lock both create buttons behind
+ * a poll that can never resolve.
+ */
+export const AcceptedExportRefSchema = z.object({
+  type: z.literal("export"),
+  id: z.uuid(),
+});
+
+/** The trackable export id named by a 202 body, or null when it names none. */
+export function parseAcceptedExportId(resourceRef: unknown): string | null {
+  const parsed = AcceptedExportRefSchema.safeParse(resourceRef);
+  return parsed.success ? parsed.data.id : null;
 }
 
 /** Map one create failure onto exactly one machine event (D5). */

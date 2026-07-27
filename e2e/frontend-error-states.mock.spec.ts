@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import {
   E2E_ACTIVE_EXPORT_BUNDLE_ID,
+  E2E_EXPORT_BUNDLE_ID,
   E2E_PROJECT_ID,
   E2E_SITE_ID,
   E2E_SNAPSHOT_PROVENANCE,
@@ -1033,7 +1034,7 @@ test("Results maps bundle-read dependency errors and exposes a retry", async ({
 }) => {
   let bundleReads = 0;
   await page.route(
-    `**/api/mvp/projects/${E2E_PROJECT_ID}/exports/export-bundle`,
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/exports/${E2E_EXPORT_BUNDLE_ID}`,
     async (route) => {
       bundleReads += 1;
       await route.fulfill({
@@ -1150,7 +1151,9 @@ test("Results export double click sends exactly one POST and never drops the liv
   await expect
     .poll(() => scoped.exportDetailReads.length, { timeout: 15_000 })
     .toBeGreaterThanOrEqual(3);
-  expect(new Set(scoped.exportDetailReads)).toEqual(new Set(["export-bundle"]));
+  expect(new Set(scoped.exportDetailReads)).toEqual(
+    new Set([E2E_EXPORT_BUNDLE_ID]),
+  );
   expect(scoped.exportRequests).toHaveLength(1);
 
   await expect(
@@ -1193,14 +1196,53 @@ test("Results adopts a 409 current pointer and tracks the existing export", asyn
 });
 
 /**
- * D5: a 202 that names no trackable export must become a visible protocol
- * error — never a silently blank rail (the old rail rendered nothing).
+ * D5 + adversarial P1: OpenAPI pins the 202 `resourceRef` to
+ * `{ type: "export", id: Uuid }`. Every malformed shape — null, a wrong-type
+ * ref, a non-UUID id — must become a visible protocol error: never a silently
+ * blank rail, never a poll against an unvalidated id, and never a permanently
+ * locked pair of create buttons.
  */
-test("Results surfaces a 202 without a resourceRef as a protocol error", async ({
+for (const [label, mode] of [
+  ["null resourceRef", "acceptedMissingResourceRef"],
+  ["wrong-type resourceRef", "acceptedWrongTypeResourceRef"],
+  ["non-UUID resourceRef id", "acceptedNonUuidResourceRef"],
+] as const) {
+  test(`Results surfaces a 202 with a ${label} as a protocol error`, async ({
+    page,
+  }) => {
+    const scoped = await installCriticalFlowApi(page, { exportCreate: mode });
+
+    await page.goto(`/p/${E2E_PROJECT_ID}/results`);
+    await page
+      .getByRole("button", { name: "Client bundle", exact: true })
+      .click();
+
+    await expect(
+      page.getByText("no trackable export id was returned", { exact: false }),
+    ).toBeVisible();
+    // The invalid id was never trusted: no export-detail GET ever left.
+    expect(scoped.exportDetailReads).toEqual([]);
+    // The failure is recoverable: both create buttons unlock again.
+    await expect(
+      page.getByRole("button", { name: "Client bundle", exact: true }),
+    ).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "Service bundle", exact: true }),
+    ).toBeEnabled();
+  });
+}
+
+/**
+ * Adversarial P1: a detail body whose `bundle.id` is not the tracked export is
+ * a protocol break. The wrong bundle must never render as the manifest, and
+ * the rail must recover — protocol error shown, create buttons re-enabled —
+ * instead of tracking (and locking on) an export it never asked about.
+ */
+test("Results treats a detail bundle that is not the tracked export as a recoverable protocol error", async ({
   page,
 }) => {
   const scoped = await installCriticalFlowApi(page, {
-    exportCreate: "acceptedMissingResourceRef",
+    exportDetailIdMismatch: true,
   });
 
   await page.goto(`/p/${E2E_PROJECT_ID}/results`);
@@ -1209,13 +1251,80 @@ test("Results surfaces a 202 without a resourceRef as a protocol error", async (
     .click();
 
   await expect(
-    page.getByText("no trackable export id was returned", { exact: false }),
+    page.getByText("answered with a different export", { exact: false }),
   ).toBeVisible();
-  expect(scoped.exportDetailReads).toEqual([]);
-  // The failure is retryable: the create buttons unlock again.
+  // The mismatched (completed) bundle is never shown as if it were ours.
+  await expect(
+    page.getByRole("heading", { name: "Export manifest" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Download client bundle" }),
+  ).toHaveCount(0);
+  // The poll stopped at the first mismatched read and the rail recovered.
+  expect(scoped.exportDetailReads).toEqual([E2E_EXPORT_BUNDLE_ID]);
   await expect(
     page.getByRole("button", { name: "Client bundle", exact: true }),
   ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Service bundle", exact: true }),
+  ).toBeEnabled();
+});
+
+/**
+ * Adversarial P2: one logical create attempt holds one Idempotency-Key. When
+ * the response is lost after the command may have reached the server, the
+ * explicit Retry must replay the same key + body so the server can deduplicate
+ * — a rotated key would be a second export command.
+ */
+test("Results export Retry replays the same Idempotency-Key after a lost response", async ({
+  page,
+}) => {
+  const scoped = await installCriticalFlowApi(page, {
+    exportDetailSequence: ["running", "completed"],
+  });
+  const idempotencyKeys: string[] = [];
+  let dropResponse = true;
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/exports`,
+    async (route) => {
+      idempotencyKeys.push(
+        route.request().headers()["idempotency-key"] ?? "<missing>",
+      );
+      if (dropResponse) {
+        // The command is recorded as sent, then the response is lost.
+        dropResponse = false;
+        await route.abort("failed");
+        return;
+      }
+      await route.fallback();
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
+  await page
+    .getByRole("button", { name: "Client bundle", exact: true })
+    .click();
+  await expect(
+    page.getByText("Export failed. Please try again.", { exact: false }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Retry export" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Export manifest" }),
+  ).toBeVisible({ timeout: 15_000 });
+
+  // Two POSTs left the browser; both carried the SAME idempotency key.
+  expect(idempotencyKeys).toHaveLength(2);
+  expect(idempotencyKeys[0]).toBe(idempotencyKeys[1]);
+  expect(idempotencyKeys[0]).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  );
+  // The replayed command resolves to one export: a single bundle is tracked.
+  expect(new Set(scoped.exportDetailReads)).toEqual(
+    new Set([E2E_EXPORT_BUNDLE_ID]),
+  );
+  // Only the replay reached the mock server (the first POST was aborted).
+  expect(scoped.exportRequests).toHaveLength(1);
 });
 
 /**

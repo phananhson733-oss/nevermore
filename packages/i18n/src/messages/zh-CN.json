@@ -1966,6 +1966,7 @@
     "retryExportStatus": "重试状态检查",
     "retryCreateExport": "重试导出",
     "exportProtocolError": "导出请求已受理，但未返回可跟踪的导出编号。请重新发起导出。",
+    "exportProtocolMismatch": "导出服务返回的不是当前跟踪的导出。请重新发起导出。",
     "exportFailed": "导出失败，请重试。",
     "emptyTitle": "尚无报告",
     "emptyHint": "先运行诊断并确认发现，即可生成报告。"

@@ -1966,6 +1966,7 @@
     "retryExportStatus": "Retry status check",
     "retryCreateExport": "Retry export",
     "exportProtocolError": "The export was accepted but no trackable export id was returned. Start the export again.",
+    "exportProtocolMismatch": "The export service answered with a different export than the one being tracked. Start the export again.",
     "exportFailed": "Export failed. Please try again.",
     "emptyTitle": "No report yet",
     "emptyHint": "Run a diagnosis and confirm findings to produce a report."

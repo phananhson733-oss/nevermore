@@ -5,6 +5,7 @@ import {
   INITIAL_EXPORT_RAIL_STATE,
   exportCreateLocked,
   exportRailEventFromError,
+  parseAcceptedExportId,
   parseExportPointer,
   reduceExportRail,
   type ExportRailState,
@@ -99,7 +100,46 @@ describe("reduceExportRail", () => {
     });
     expect(
       reduceExportRail(creating, { type: "acceptedInvalid" }),
-    ).toMatchObject({ phase: "protocolError", active: null });
+    ).toMatchObject({
+      phase: "protocolError",
+      active: null,
+      protocolFault: "acceptedInvalid",
+    });
+  });
+
+  it("turns a mismatched detail bundle into a recoverable protocol error", () => {
+    const mismatched = reduceExportRail(tracking(), {
+      type: "bundleMismatch",
+      trackedExportId: EXPORT_ID,
+    });
+    expect(mismatched).toMatchObject({
+      phase: "protocolError",
+      active: null,
+      protocolFault: "bundleMismatch",
+    });
+    // Recoverable, not a permanent lock: the buttons unlock and a fresh
+    // submit starts a clean attempt.
+    expect(exportCreateLocked(mismatched)).toBe(false);
+    expect(
+      reduceExportRail(mismatched, { type: "submit", kind: "client_bundle" }),
+    ).toMatchObject({ phase: "creating", protocolFault: null });
+  });
+
+  it("ignores mismatch reports outside tracking or about another export", () => {
+    const live = tracking();
+    expect(
+      reduceExportRail(live, {
+        type: "bundleMismatch",
+        trackedExportId: OTHER_EXPORT_ID,
+      }),
+    ).toBe(live);
+    const idle = state();
+    expect(
+      reduceExportRail(idle, {
+        type: "bundleMismatch",
+        trackedExportId: EXPORT_ID,
+      }),
+    ).toBe(idle);
   });
 
   it("adopts a valid 409 pointer and tracks the existing export", () => {
@@ -109,7 +149,11 @@ describe("reduceExportRail", () => {
     });
     const adopted = reduceExportRail(creating, {
       type: "conflict",
-      pointer: { runId: RUN_ID, exportId: OTHER_EXPORT_ID, kind: "client_bundle" },
+      pointer: {
+        runId: RUN_ID,
+        exportId: OTHER_EXPORT_ID,
+        kind: "client_bundle",
+      },
     });
     expect(adopted).toMatchObject({
       phase: "tracking",
@@ -161,7 +205,12 @@ describe("reduceExportRail", () => {
   });
 
   it("settles to idle on the tracked export's terminal poll and keeps the pointer", () => {
-    for (const status of ["completed", "partial", "failed", "cancelled"] as const) {
+    for (const status of [
+      "completed",
+      "partial",
+      "failed",
+      "cancelled",
+    ] as const) {
       const settled = reduceExportRail(tracking(), {
         type: "exportTerminal",
         exportId: EXPORT_ID,
@@ -221,11 +270,34 @@ describe("exportCreateLocked", () => {
   });
 });
 
+describe("parseAcceptedExportId", () => {
+  it("accepts exactly the contract shape: type export plus a UUID id", () => {
+    expect(parseAcceptedExportId({ type: "export", id: EXPORT_ID })).toBe(
+      EXPORT_ID,
+    );
+  });
+
+  it("rejects null, missing, wrong-type, and non-UUID resourceRefs", () => {
+    expect(parseAcceptedExportId(null)).toBeNull();
+    expect(parseAcceptedExportId(undefined)).toBeNull();
+    expect(
+      parseAcceptedExportId({ type: "artifact", id: EXPORT_ID }),
+    ).toBeNull();
+    expect(
+      parseAcceptedExportId({ type: "export", id: "export-bundle" }),
+    ).toBeNull();
+    expect(parseAcceptedExportId({ type: "export" })).toBeNull();
+    expect(parseAcceptedExportId({ id: EXPORT_ID })).toBeNull();
+  });
+});
+
 describe("parseExportPointer", () => {
   it("accepts only well-formed UUID pointers", () => {
-    expect(
-      parseExportPointer({ runId: RUN_ID, exportId: EXPORT_ID }),
-    ).toEqual({ runId: RUN_ID, exportId: EXPORT_ID, kind: null });
+    expect(parseExportPointer({ runId: RUN_ID, exportId: EXPORT_ID })).toEqual({
+      runId: RUN_ID,
+      exportId: EXPORT_ID,
+      kind: null,
+    });
     expect(
       parseExportPointer({
         runId: RUN_ID,
@@ -262,7 +334,11 @@ describe("parseExportPointer", () => {
 describe("exportRailEventFromError", () => {
   it("maps a 409 with a valid current pointer onto conflict-with-pointer", () => {
     const event = exportRailEventFromError(
-      conflictError({ runId: RUN_ID, exportId: EXPORT_ID, kind: "client_bundle" }),
+      conflictError({
+        runId: RUN_ID,
+        exportId: EXPORT_ID,
+        kind: "client_bundle",
+      }),
     );
     expect(event).toEqual({
       type: "conflict",

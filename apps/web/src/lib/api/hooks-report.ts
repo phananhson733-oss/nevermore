@@ -196,6 +196,13 @@ export interface Report {
 export interface CreateExportInput {
   readonly kind: ExportKind;
   readonly outputLocale: string;
+  /**
+   * The `Idempotency-Key` for this logical create attempt (header, not body).
+   * The caller owns rotation: an explicit Retry of the same command must
+   * replay the same key so the server deduplicates instead of creating a
+   * second export when only the response was lost.
+   */
+  readonly idempotencyKey: string;
 }
 
 /** The `202` accepted envelope for a queued export (OpenAPI `AsyncAcceptedResponse`). */
@@ -305,19 +312,21 @@ export function useProjectReport(
 }
 
 /**
- * Queue a versioned export (spec §10.5). Generates a fresh `Idempotency-Key` per
- * attempt (mirrors `useCreateProject`) and returns the `202` payload; the caller
- * reads `resourceRef.id` to poll the resulting bundle.
+ * Queue a versioned export (spec §10.5). The `Idempotency-Key` is part of the
+ * mutation variables — one logical attempt, one key — so an explicit Retry can
+ * replay the identical command instead of minting a new server-side export.
+ * Returns the `202` payload; the caller reads `resourceRef.id` to poll the
+ * resulting bundle.
  */
 export function useCreateExport(
   projectId: string,
 ): UseMutationResult<AsyncAcceptedData, ApiError, CreateExportInput> {
   return useMutation({
-    mutationFn: async (body: CreateExportInput) => {
+    mutationFn: async ({ idempotencyKey, ...body }: CreateExportInput) => {
       const res = await apiSend<DataEnvelope<AsyncAcceptedData>>(
         "POST",
         `/projects/${projectId}/exports`,
-        { body, idempotencyKey: crypto.randomUUID() },
+        { body, idempotencyKey },
       );
       return res.data;
     },

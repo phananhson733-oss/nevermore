@@ -27,6 +27,7 @@ import {
   INITIAL_EXPORT_RAIL_STATE,
   exportCreateLocked,
   exportRailEventFromError,
+  parseAcceptedExportId,
   reduceExportRail,
 } from "./_export-state.ts";
 import styles from "./report.module.css";
@@ -210,13 +211,20 @@ function ExportManifest({
 
 function ExportStatus({
   query,
+  expectedExportId,
 }: {
   readonly query: UseQueryResult<ExportBundle, ApiError>;
+  readonly expectedExportId: string;
 }) {
   const t = useTranslations("report");
   const tRun = useTranslations("runState");
   const uiLocale = useLocale();
-  const bundle = query.data;
+  // A bundle that is not the tracked export must never be rendered, not even
+  // for the frame before the machine reacts with its `bundleMismatch` event.
+  const bundle =
+    query.data !== undefined && query.data.id === expectedExportId
+      ? query.data
+      : undefined;
 
   if (query.error !== null) {
     return (
@@ -305,11 +313,21 @@ export function ExportSection({
     reduceExportRail,
     INITIAL_EXPORT_RAIL_STATE,
   );
-  // Synchronous single-flight fence (D5, run-diagnosis precedent): the hook
-  // mints a fresh Idempotency-Key per attempt, so two racing handler entries
-  // would be two server commands. The machine fence and the disabled buttons
-  // are only per-render views of the same rule.
+  // Synchronous single-flight fence (D5, run-diagnosis precedent): two racing
+  // handler entries would be two server commands. The machine fence and the
+  // disabled buttons are only per-render views of the same rule.
   const submitInFlight = useRef(false);
+  // One logical create attempt holds one Idempotency-Key + body. It is kept
+  // across refusals/lost responses so an explicit Retry of the same command
+  // replays the identical request (the server deduplicates on the key), and
+  // cleared once the attempt reaches a trusted conclusion (202 tracked or 409
+  // takeover) so the next command mints a fresh key. Requesting a different
+  // kind or locale is a different command and also mints a fresh key.
+  const attemptRef = useRef<{
+    readonly key: string;
+    readonly kind: ExportKind;
+    readonly outputLocale: string;
+  } | null>(null);
 
   // One tracked export at a time; the query stays mounted after terminal so
   // the manifest/download (or the terminal failure) keeps its data source.
@@ -318,10 +336,19 @@ export function ExportSection({
   const polledId = exportQuery.data?.id;
   const polledStatus = exportQuery.data?.run.status;
   useEffect(() => {
-    if (state.phase !== "tracking") return;
-    if (polledId === undefined || polledStatus === undefined) return;
-    if (polledId !== state.active?.exportId) return;
-    if (!isTerminalRun(polledStatus)) return;
+    if (state.phase !== "tracking" || state.active === null) return;
+    if (polledId === undefined) return;
+    if (polledId !== state.active.exportId) {
+      // The detail endpoint answered with a different bundle than the one
+      // being tracked: recoverable protocol error, never the wrong manifest
+      // and never a permanently locked rail.
+      dispatch({
+        type: "bundleMismatch",
+        trackedExportId: state.active.exportId,
+      });
+      return;
+    }
+    if (polledStatus === undefined || !isTerminalRun(polledStatus)) return;
     dispatch({
       type: "exportTerminal",
       exportId: polledId,
@@ -335,20 +362,36 @@ export function ExportSection({
     if (submitInFlight.current) return;
     if (locked) return;
     submitInFlight.current = true;
+    const held = attemptRef.current;
+    const attempt =
+      held !== null &&
+      held.kind === kind &&
+      held.outputLocale === exportOutputLocale
+        ? held
+        : { key: crypto.randomUUID(), kind, outputLocale: exportOutputLocale };
+    attemptRef.current = attempt;
     dispatch({ type: "submit", kind });
     try {
       const accepted = await createExport.mutateAsync({
-        kind,
-        outputLocale: exportOutputLocale,
+        kind: attempt.kind,
+        outputLocale: attempt.outputLocale,
+        idempotencyKey: attempt.key,
       });
-      const exportId = accepted.resourceRef?.id;
-      if (exportId === undefined || exportId.length === 0) {
+      const exportId = parseAcceptedExportId(accepted.resourceRef);
+      if (exportId === null) {
         dispatch({ type: "acceptedInvalid" });
       } else {
+        // Trusted 202: the attempt concluded; the next command is a new one.
+        attemptRef.current = null;
         dispatch({ type: "accepted", exportId });
       }
     } catch (error) {
-      dispatch(exportRailEventFromError(error));
+      const event = exportRailEventFromError(error);
+      if (event.type === "conflict" && event.pointer !== null) {
+        // Adopted takeover also concludes the attempt.
+        attemptRef.current = null;
+      }
+      dispatch(event);
     } finally {
       submitInFlight.current = false;
     }
@@ -425,7 +468,11 @@ export function ExportSection({
         ) : null}
         {state.phase === "protocolError" ? (
           <p className={styles.exportError} role="alert">
-            {t("exportProtocolError")}
+            {t(
+              state.protocolFault === "bundleMismatch"
+                ? "exportProtocolMismatch"
+                : "exportProtocolError",
+            )}
           </p>
         ) : null}
         {state.phase === "creating" ? (
@@ -437,7 +484,12 @@ export function ExportSection({
         {state.adopted && state.phase === "tracking" ? (
           <p className={styles.mutedNote}>{t("exportAlreadyActive")}</p>
         ) : null}
-        {state.active !== null ? <ExportStatus query={exportQuery} /> : null}
+        {state.active !== null ? (
+          <ExportStatus
+            query={exportQuery}
+            expectedExportId={state.active.exportId}
+          />
+        ) : null}
       </div>
     </Panel>
   );

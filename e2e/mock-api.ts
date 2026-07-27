@@ -60,19 +60,28 @@ export interface CriticalFlowApiState {
 
 /* ------------------------------------------------------------------ *
  * R3 blueprint D8: the export mock is programmable. The create route  *
- * can answer 202 (with or without a resourceRef) or 409 (with or      *
- * without a body `current` pointer), and the detail route serves a    *
- * per-read run-state sequence whose last step repeats — so specs can  *
- * drive queued -> running -> 503 -> (Retry) -> running -> completed   *
- * against the closed client state machine. Defaults preserve the      *
- * original behavior: 202 + first detail read already completed.       *
+ * can answer 202 (with a valid, missing, wrong-type, or non-UUID      *
+ * resourceRef) or 409 (with or without a body `current` pointer), and *
+ * the detail route serves a per-read run-state sequence whose last    *
+ * step repeats — so specs can drive queued -> running -> 503 ->       *
+ * (Retry) -> running -> completed against the closed client state     *
+ * machine, or a well-formed detail body whose id is not the tracked   *
+ * export. Defaults preserve the original behavior: 202 + first detail *
+ * read already completed.                                             *
  * ------------------------------------------------------------------ */
 
 /** UUID pair for the 409 takeover pointer: the client adopts only zod-valid
- *  UUIDs, so the non-UUID "export-bundle" id cannot be used here. */
+ *  UUIDs. */
 export const E2E_ACTIVE_EXPORT_RUN_ID = "00000000-0000-4000-8000-000000000860";
 export const E2E_ACTIVE_EXPORT_BUNDLE_ID =
   "00000000-0000-4000-8000-000000000861";
+/** Default 202 resourceRef id. OpenAPI pins `resourceRef.id` to a Uuid and the
+ *  client rejects anything else, so the mock must not hand out a slug. */
+export const E2E_EXPORT_BUNDLE_ID = "00000000-0000-4000-8000-000000000862";
+/** A well-formed but WRONG bundle id, served by the detail route when
+ *  `exportDetailIdMismatch` is set (protocol-break drill). */
+export const E2E_MISMATCHED_EXPORT_BUNDLE_ID =
+  "00000000-0000-4000-8000-000000000863";
 
 export type MockExportDetailStep =
   | "queued"
@@ -80,14 +89,36 @@ export type MockExportDetailStep =
   | "unavailable"
   | "completed";
 
+export type MockExportCreateMode =
+  | "accepted"
+  | "acceptedMissingResourceRef"
+  | "acceptedWrongTypeResourceRef"
+  | "acceptedNonUuidResourceRef"
+  | "conflictWithCurrent"
+  | "conflictWithoutCurrent";
+
 export interface CriticalFlowApiOptions {
-  readonly exportCreate?:
-    | "accepted"
-    | "acceptedMissingResourceRef"
-    | "conflictWithCurrent"
-    | "conflictWithoutCurrent";
+  readonly exportCreate?: MockExportCreateMode;
   /** Consumed one step per detail GET (per exportId); last step repeats. */
   readonly exportDetailSequence?: readonly MockExportDetailStep[];
+  /** Serve every export-detail body with a well-formed but different id. */
+  readonly exportDetailIdMismatch?: boolean;
+}
+
+/** The 202 resourceRef for each programmable create mode (D8). */
+function acceptedExportResourceRef(
+  mode: MockExportCreateMode,
+): { type: string; id: string } | null {
+  switch (mode) {
+    case "acceptedMissingResourceRef":
+      return null;
+    case "acceptedWrongTypeResourceRef":
+      return { type: "artifact", id: E2E_EXPORT_BUNDLE_ID };
+    case "acceptedNonUuidResourceRef":
+      return { type: "export", id: "export-bundle" };
+    default:
+      return { type: "export", id: E2E_EXPORT_BUNDLE_ID };
+  }
 }
 
 const NOW = "2026-07-18T12:00:00.000Z";
@@ -682,10 +713,7 @@ export async function installCriticalFlowApi(
           data: {
             run,
             statusUrl: `${BASE}/runs/${run.id}`,
-            resourceRef:
-              createMode === "acceptedMissingResourceRef"
-                ? null
-                : { type: "export", id: "export-bundle" },
+            resourceRef: acceptedExportResourceRef(createMode),
           },
         },
         202,
@@ -695,8 +723,8 @@ export async function installCriticalFlowApi(
 
     const exportDetailMatch =
       method === "GET" &&
-      (path === `${BASE}/exports/export-bundle`
-        ? "export-bundle"
+      (path === `${BASE}/exports/${E2E_EXPORT_BUNDLE_ID}`
+        ? E2E_EXPORT_BUNDLE_ID
         : path === `${BASE}/exports/${E2E_ACTIVE_EXPORT_BUNDLE_ID}`
           ? E2E_ACTIVE_EXPORT_BUNDLE_ID
           : null);
@@ -727,7 +755,10 @@ export async function installCriticalFlowApi(
       const completed = step === "completed";
       await json(route, {
         data: {
-          id: exportDetailMatch,
+          id:
+            options.exportDetailIdMismatch === true
+              ? E2E_MISMATCHED_EXPORT_BUNDLE_ID
+              : exportDetailMatch,
           kind: "client_bundle",
           schemaVersion: "1.0.0",
           outputLocale: latestExportRequest?.outputLocale ?? "en",
