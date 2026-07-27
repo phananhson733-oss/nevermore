@@ -29,6 +29,10 @@
     "not-started": "计划中 · 未完成",
     incomplete: "计划中 · 未完成",
   };
+  const FLAG_CONTEXT_LABELS = {
+    rank_history_complete: "排名历史",
+    receipt_backed_results_complete: "回执支持的结果 / 效果追踪",
+  };
   const DEFAULT_STATE = {
     view: "requirements",
     requirementId: 1,
@@ -544,7 +548,18 @@
                   status === "complete" || status === "completed" ? "✓" : "!"
                 }</span>
                 <div>
-                  <strong>${escapeHtml(flag.label)}</strong>
+                  <strong>
+                    ${
+                      FLAG_CONTEXT_LABELS[flag.id]
+                        ? `<span>${escapeHtml(
+                            FLAG_CONTEXT_LABELS[flag.id],
+                          )} · </span>`
+                        : ""
+                    }${escapeHtml(flag.label)}
+                  </strong>
+                  <span class="completion-flag__id">${escapeHtml(
+                    flag.id,
+                  )}</span>
                   <p data-reading-text>${escapeHtml(statusLabel)} · ${escapeHtml(
                     flag.evidenceNeeded,
                   )}</p>
@@ -800,6 +815,8 @@
   }
 
   function renderAcceptanceView() {
+    const focusedRequirement = getRequirement(state.requirementId);
+    const focusedFlags = list(focusedRequirement.completionFlags);
     const article = document.getElementById("review-detail");
     article.className = "audit-panel acceptance-detail";
     article.removeAttribute("data-requirement-detail");
@@ -812,6 +829,48 @@
           测试和真实 Provider 证据；不可用状态必须诚实呈现。
         </p>
       </div>
+      <section
+        class="acceptance-focus"
+        data-acceptance-focus
+        data-focused-requirement="${focusedRequirement.id}"
+        aria-labelledby="acceptance-focus-title"
+      >
+        <div class="acceptance-focus__heading">
+          <div>
+            <p class="eyebrow">当前需求验收焦点 · REVIEW ${String(
+              focusedRequirement.id,
+            ).padStart(2, "0")}</p>
+            <h3 id="acceptance-focus-title">${escapeHtml(
+              focusedRequirement.title,
+            )}</h3>
+          </div>
+          ${decisionStamp(focusedRequirement.decision)}
+        </div>
+        <p data-reading-text>${escapeHtml(
+          focusedRequirement.targetTruth,
+        )}</p>
+        ${
+          focusedFlags.length > 0
+            ? `
+              <div class="acceptance-focus__flags">
+                <h4>必须分别验收的完成门槛</h4>
+                ${renderCompletionFlags(focusedRequirement)}
+              </div>
+            `
+            : `
+              <div class="acceptance-focus__flags">
+                <h4>上线所需证据</h4>
+                ${renderList(focusedRequirement.completionEvidence)}
+              </div>
+            `
+        }
+        <button
+          class="button button--secondary"
+          type="button"
+          data-action="select-linked-requirement"
+          data-target-requirement-id="${focusedRequirement.id}"
+        >返回该需求完整审核</button>
+      </section>
       <div class="acceptance-index">
         ${audit.acceptanceLayers
           .map(
@@ -1177,6 +1236,8 @@
     } else {
       dialog.removeAttribute("open");
     }
+    dialog.querySelector("[data-dialog-body]")?.replaceChildren();
+    delete dialog.dataset.requirementId;
     const invoker = dialogInvoker;
     dialogInvoker = null;
     if (options.restoreFocus !== false && invoker?.focus) {
@@ -1263,8 +1324,17 @@
       return;
     }
     if (action === "go-to-acceptance") {
+      const requirementId = Number(
+        getDialog()?.dataset.requirementId ?? state.requirementId,
+      );
       closeDialog({ restoreFocus: false });
-      commitState({ view: "acceptance" });
+      commitState({
+        view: "acceptance",
+        requirementId,
+        decision: "all",
+        module: "all",
+        stage: "all",
+      });
     }
   }
 

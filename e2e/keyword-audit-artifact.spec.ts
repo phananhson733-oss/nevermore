@@ -494,9 +494,26 @@ test("visible module, stage, and evidence actions reach their governed destinati
   await goToAcceptance.click();
   await expect(dialog).toBeHidden();
   await expectCurrentView(page, "acceptance");
-  await expect(page.getByRole("main")).toContainText(
-    /rank_history_complete|排名历史/,
-  );
+  await expect
+    .poll(() => {
+      const [, query = ""] = new URL(page.url()).hash.split("?");
+      return new URLSearchParams(query).get("item");
+    })
+    .toBe("9");
+  const acceptanceFlags = page.locator("[data-completion-flag]");
+  await expect(acceptanceFlags).toHaveCount(2);
+  expect(
+    await acceptanceFlags.evaluateAll((elements) =>
+      elements.map((element) =>
+        element.getAttribute("data-completion-flag"),
+      ),
+    ),
+  ).toEqual([
+    "rank_history_complete",
+    "receipt_backed_results_complete",
+  ]);
+  await expect(acceptanceFlags.nth(0)).toContainText(/计划中|未完成/);
+  await expect(acceptanceFlags.nth(1)).toContainText(/计划中|未完成/);
 });
 
 test("the evidence dialog traps focus, closes with Escape, and restores its invoker", async ({
