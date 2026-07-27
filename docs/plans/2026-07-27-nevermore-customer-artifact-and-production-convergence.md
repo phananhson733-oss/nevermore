@@ -302,10 +302,17 @@ Expected: Nevermore `main` is the sole local integration baseline.
 
 **Files:**
 
+- Create: `docs/artifact-src/README.md`
+- Create: `docs/artifact-src/styles.css`
+- Create: `docs/artifact-src/workspace-data.js`
+- Create: `docs/artifact-src/client-app.js`
+- Create: `scripts/resolve-artifact-source.mjs`
 - Modify: `scripts/build-static-customer-artifact.mjs`
 - Modify: `scripts/build-product-manual.mjs`
 - Modify: `scripts/verify-static-customer-artifact.cjs`
 - Modify: `scripts/verify-product-manual.cjs`
+- Modify: `package.json`
+- Modify: `pnpm-lock.yaml`
 - Regenerate: `docs/artifacts/GenGrowth-Interactive-Artifact.html`
 - Regenerate: `docs/artifacts/GenGrowth-Product-Manual.html`
 - Create: `e2e/complete-customer-artifact.spec.ts`
@@ -327,13 +334,41 @@ The Artifact must contain:
 
 **Step 2: Prove current Artifact failure**
 
-Run both current verifiers and the new Playwright test. Record every missing interaction or stale module.
+Run both current verifiers and the new Playwright test. Record every missing
+interaction or stale module. The current hard-coded
+`/Users/.../.codex/visualizations` input and
+`/tmp/gengrowth-artifact-jsdom-*` dependency must fail this reproducibility
+gate; generated output containing any workstation path must also fail.
 
-**Step 3: Build from one canonical scenario model**
+**Step 3: Bring the executable Artifact source into the repository**
 
-Generate both HTML deliverables from the same deterministic model. Every count, URL, Keyword, Competitor, Artifact, receipt, and result must derive from that one model to prevent cross-page drift.
+Vendor the historical `styles.css`, `workspace-data.js`, and `client-app.js` as
+the initial `docs/artifact-src/` baseline, preserving provenance in its README.
+After that commit, the historical visualization folder is reference-only and
+must never be a build or verification input.
 
-**Step 4: Make every interaction stateful**
+Declare `jsdom` as a normal repository development dependency and wire:
+
+- `artifact:build`;
+- `artifact:manual`;
+- `artifact:verify`;
+- `artifact:regen`;
+- `test:e2e:artifact`.
+
+CLI overrides may remain as diagnostics, but all defaults must resolve from the
+repository root. The builders and verifiers must reject absolute user paths,
+`.codex/visualizations`, the historical `/tmp` dependency root, and remote asset
+dependencies in generated customer files.
+
+**Step 4: Build both outputs from one canonical scenario model**
+
+Generate the interactive HTML and manual from the same repo-owned deterministic
+`workspace-data.js`. Every count, URL, Keyword, Competitor, Artifact, receipt,
+and result must derive from that one model to prevent cross-page drift. The
+manual may inspect the built Artifact, but it may not read a second external
+workspace snapshot.
+
+**Step 5: Make every interaction stateful**
 
 Use query/hash/history state for:
 
@@ -345,9 +380,12 @@ Use query/hash/history state for:
 - dialogs/drawers;
 - Results window.
 
-**Step 5: Verify**
+**Step 6: Verify**
 
-Run syntax checks, both Node verifiers, Playwright at four viewports, axe, keyboard/dialog checks, browser back/forward checks, and screenshot review.
+Run `pnpm artifact:regen`, both Node verifiers with no dependency-path
+arguments, Playwright at four viewports, axe, keyboard/dialog checks, browser
+back/forward checks, screenshot review, and `git diff --check`. Re-run generation
+once more and require a clean diff.
 
 ---
 
