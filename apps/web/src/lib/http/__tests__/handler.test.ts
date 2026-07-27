@@ -429,4 +429,63 @@ describe("HTTP request completion metrics", () => {
       apiRouteTemplate(`${prefix}/customer-secret-competitor/history`),
     ).toBe("/api/mvp/:unknown");
   });
+
+  it("recognizes governed approval and delivery routes without logging customer ids", () => {
+    const project =
+      "https://example.test/api/mvp/projects/customer-secret-project";
+
+    expect(
+      apiRouteTemplate(
+        `${project}/artifacts/customer-secret-artifact/approval`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/artifacts/:artifactId/approval",
+    );
+
+    const connections = `${project}/delivery-connections`;
+    expect(apiRouteTemplate(connections)).toBe(
+      "/api/mvp/projects/:projectId/delivery-connections",
+    );
+    expect(apiRouteTemplate(`${connections}/readiness`)).toBe(
+      "/api/mvp/projects/:projectId/delivery-connections/readiness",
+    );
+    expect(
+      apiRouteTemplate(`${connections}/customer-secret-destination`),
+    ).toBe(
+      "/api/mvp/projects/:projectId/delivery-connections/:destinationRef",
+    );
+    expect(
+      apiRouteTemplate(
+        `${connections}/customer-secret-destination/revoke`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/delivery-connections/:destinationRef/revoke",
+    );
+    expect(
+      apiRouteTemplate(`${connections}/authorization-grants/github`),
+    ).toBe(
+      "/api/mvp/projects/:projectId/delivery-connections/authorization-grants/github",
+    );
+    expect(
+      apiRouteTemplate(`${connections}/authorization-grants/wordpress`),
+    ).toBe(
+      "/api/mvp/projects/:projectId/delivery-connections/authorization-grants/wordpress",
+    );
+    expect(
+      apiRouteTemplate(
+        `${connections}/authorization-grants/customer-secret-grant/revoke`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/delivery-connections/authorization-grants/:grantId/revoke",
+    );
+
+    expect(
+      apiRouteTemplate(`${connections}/customer-secret/extra`),
+    ).toBe("/api/mvp/:unknown");
+    expect(
+      apiRouteTemplate(
+        `${connections}/authorization-grants/customer-secret-grant`,
+      ),
+    ).toBe("/api/mvp/:unknown");
+  });
 });

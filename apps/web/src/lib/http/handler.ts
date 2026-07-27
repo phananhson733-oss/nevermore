@@ -151,6 +151,47 @@ export function apiRouteTemplate(rawUrl: string): string {
   ) {
     return `${base}/actions/:actionId/artifacts`;
   }
+  if (
+    resource === "artifacts" &&
+    segments.length === 5 &&
+    segments[4] === "approval"
+  ) {
+    return `${base}/artifacts/:artifactId/approval`;
+  }
+  if (resource === "delivery-connections") {
+    const connections = `${base}/delivery-connections`;
+    if (segments.length === 3) return connections;
+    if (segments.length === 4 && segments[3] === "readiness") {
+      return `${connections}/readiness`;
+    }
+    if (
+      segments.length === 4 &&
+      segments[3] !== "authorization-grants"
+    ) {
+      return `${connections}/:destinationRef`;
+    }
+    if (
+      segments.length === 5 &&
+      segments[3] !== "authorization-grants" &&
+      segments[4] === "revoke"
+    ) {
+      return `${connections}/:destinationRef/revoke`;
+    }
+    if (
+      segments.length === 5 &&
+      segments[3] === "authorization-grants" &&
+      (segments[4] === "github" || segments[4] === "wordpress")
+    ) {
+      return `${connections}/authorization-grants/${segments[4]}`;
+    }
+    if (
+      segments.length === 6 &&
+      segments[3] === "authorization-grants" &&
+      segments[5] === "revoke"
+    ) {
+      return `${connections}/authorization-grants/:grantId/revoke`;
+    }
+  }
   return UNKNOWN_API_ROUTE;
 }
 
