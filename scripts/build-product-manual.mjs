@@ -1,0 +1,1420 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import process from "node:process";
+import vm from "node:vm";
+
+const repoRoot = path.resolve(import.meta.dirname, "..");
+const artifactFile = path.join(
+  repoRoot,
+  "docs/artifacts/GenGrowth-Interactive-Artifact.html",
+);
+const workspaceDataFile =
+  "/Users/wzb/.codex/visualizations/2026/07/20/019f7ff0-3874-7623-90f3-1ebdea7c313f/workspace-data.js";
+const outputFile = path.join(
+  repoRoot,
+  "docs/artifacts/GenGrowth-Product-Manual.html",
+);
+
+const [artifactSource, workspaceSource] = await Promise.all([
+  readFile(artifactFile, "utf8"),
+  readFile(workspaceDataFile, "utf8"),
+]);
+
+const sandbox = { window: {} };
+vm.runInNewContext(workspaceSource, sandbox, {
+  filename: workspaceDataFile,
+  timeout: 5_000,
+});
+const workspace = sandbox.window.GenGrowthWorkspace;
+if (!workspace?.dataSources?.length) {
+  throw new Error("workspace-data.js did not expose a valid GenGrowth workspace");
+}
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const artifactHash = createHash("sha256")
+  .update(artifactSource)
+  .digest("hex");
+
+const currentActionIds = new Set([
+  ...[...artifactSource.matchAll(/data-action=(?:\\?["'])([^"'\\]+)(?:\\?["'])/g)]
+    .map((match) => match[1])
+    .filter((value) => value && !value.includes("${")),
+  ...[...artifactSource.matchAll(/\baction\s*===\s*["']([^"']+)["']/g)].map(
+    (match) => match[1],
+  ),
+]);
+
+const currentFormIds = new Set([
+  ...[...artifactSource.matchAll(/data-form=\\?["']([^"'\\]+)\\?["']/g)].map(
+    (match) => match[1],
+  ),
+  ...[
+    ...artifactSource.matchAll(
+      /\bform\.dataset\.form\s*===\s*["']([^"']+)["']/g,
+    ),
+  ].map((match) => match[1]),
+]);
+
+const actionSpecs = [
+  ["nav", "切换主模块", "全局导航", "Project / Route", "进入概览、增长地图、执行中心或效果追踪，同时更新 URL hash、关闭移动导航与弹窗并把焦点移回主内容。", "只改变当前浏览器的 route 与选择状态；不会产生业务对象或外部请求。", "—"],
+  ["toggle-nav", "打开 / 关闭移动导航", "全局导航", "Navigation", "在窄屏展开或收起主导航，并维护 aria-expanded 与焦点返回。", "只改变 mobileNav UI 状态，刷新后恢复。", "—"],
+  ["close-overlay", "关闭 / 取消 / 完成", "全局弹窗", "Overlay", "关闭当前 Modal 或 Drawer，并把焦点送回触发按钮。", "清空 overlay 与 payload；没有业务对象副作用。", "—"],
+  ["open-profile", "查看产品画像", "产品画像", "Product Profile", "打开产品、商业模式、Offer、市场、ICP、JTBD、触发、痛点、用例与竞品池的客户可见抽屉。", "只打开只读视图；进入时把画像证据页签恢复到默认值。", "—"],
+  ["edit-profile", "编辑产品与 ICP 画像", "产品画像", "Product Profile", "打开画像编辑表单，让客户确认产品定位、目标公司、Buyer、Champion、User 与业务场景。", "点击本身不写数据；提交后创建新的 append-only Profile Version。", "profile-edit"],
+  ["open-profile-evidence", "查看字段证据", "产品画像", "Profile Field", "展示每个画像字段的值、推导方式、来源引用、置信度以及 confirmed、missing、conflicting 等状态。", "只读查看，不提升置信度，也不把缺失字段自动补齐。", "—"],
+  ["open-profile-history", "查看画像版本历史", "产品画像", "Profile Version", "打开当前版本与历史版本列表，说明修改不会覆盖既有快照。", "只读查看 append-only 历史。", "—"],
+  ["open-profile-version", "打开历史画像版本", "产品画像", "Profile Version", "打开指定版本的完整只读字段快照；变更摘要与 previousVersionId 目前仅存在于数据对象，当前弹窗未直接渲染。", "只改变弹窗 payload；历史版本不可编辑。", "—"],
+  ["open-connections", "管理数据连接", "数据连接", "Data Source", "打开客户可见的数据连接，只列 GSC、GA4 与 GitHub 预留位。", "只读打开；不会触发 OAuth 或真实 Provider 请求。", "—"],
+  ["open-source", "查看数据源详情", "数据连接", "Data Source", "GSC / GA4 展示范围、观察时间、Freshness SLA 与用途；GitHub 展示 Planned Flow；内部来源仅给出系统证据说明。", "当前弹窗不直接列出 source.capabilities；所有分支只读且不伪装成真实连接。", "—"],
+  ["start-sync", "更新分析数据", "数据连接", "Sync Run", "打开 GSC / GA4 场景更新时间选择表单。", "点击本身不更新；提交只改变选中来源的 observedAt 并生成场景审计。", "sync-run"],
+  ["open-task", "打开优先事项", "概览", "Task Preview", "根据 Artifact、Competitor 或 Finding 类型显示需要客户判断的对象与下一步。", "只打开任务预览，不直接批准、排除或发布。", "—"],
+  ["task-go", "开始处理优先事项", "概览", "Artifact / Competitor / Finding", "Artifact 进入执行中心；竞品进入审核；Finding 进入证据审核。", "Artifact 分支更新 route 与 selectedArtifact；其他分支打开相应决策表单。", "competitor-review / finding-review"],
+  ["map-tab", "切换页面、关键词、竞品库", "增长地图", "Growth Map Tab", "在页面与机会、关键词库、竞品库三个对象视图间切换。", "写入 mapTab，并把相应分页恢复为第一页。", "—"],
+  ["page-search", "搜索 URL、标题或机会", "增长地图", "URL Portfolio", "根据输入的路径、页面标题或机会名称过滤多 URL 组合。", "搜索词由输入事件维护；该按钮把分页归一到第一页。", "—"],
+  ["page-view", "按 URL / 主题簇 / 机会查看", "增长地图", "Page Read Model", "切换同一批全站对象的三种组织方式，支持一个机会关联一个或多个 URL，也支持模板级机会。", "只改变 pageView 与分页，不修改 URL、Cluster 或 Opportunity。", "—"],
+  ["open-page-filters", "打开更多筛选", "增长地图", "Page Filters", "打开模板、主题簇、页面状态与能力视角筛选抽屉。", "点击本身不筛选；提交 page-filters 才写 UI state。", "page-filters"],
+  ["clear-page-filters", "清除高级筛选", "增长地图", "Page Filters", "把模板、主题簇、页面状态与 Lens 恢复为全部，并关闭筛选抽屉。", "仅修改 UI 筛选与分页，不修改底层对象。", "—"],
+  ["toggle-page-rows", "展开 / 收起本页详情", "增长地图", "URL Portfolio", "为当前分页的每条 URL 展示模板、主题簇、来源与关联机会。", "只切换 pageRowsExpanded，不改变数据。", "—"],
+  ["select-map-page", "选择 URL", "增长地图", "URL", "更新右侧 URL 详情，显示自然搜索指标、主题簇、当前问题与优先交付物。", "只写 selectedPageId；窄屏会把详情滚入视野。", "—"],
+  ["select-map-cluster", "选择主题簇", "增长地图", "Topic Cluster", "展示现有页面角色、Search Query、Generative Query、Coverage Gap、CTA 与最高优先机会。", "只写 selectedClusterId。", "—"],
+  ["select-map-opportunity", "选择增长机会", "增长地图", "Opportunity", "展示 Priority、Lens、主要 Finding、支撑来源、目标 URLs、限制、输出与下一步决定。", "只写 selectedOpportunityId。", "—"],
+  ["open-cluster-page", "从主题簇定位页面", "增长地图", "Cluster → URL", "切回按 URL 视图并选择主题簇中的目标页面。", "清页面搜索与类型过滤，重置分页并写 selectedPageId。", "—"],
+  ["open-opportunity-page", "从机会定位目标页面", "增长地图", "Opportunity → URL", "切回按 URL 视图并选择 Opportunity 关联的具体页面。", "只改变当前视图、过滤器与 selectedPageId。", "—"],
+  ["page-change", "上一页 / 下一页", "增长地图", "Pagination", "切换 URL、Keyword 或 Competitor 当前分页。", "只写 state.pages[kind]，边界由 disabled 状态约束。", "—"],
+  ["open-page", "查看完整页面证据", "增长地图 / 结果", "URL Evidence", "打开内部页面证据抽屉，而不是打开真实客户网站；无有效 URL 时显示阻断回执。", "只读打开 page-evidence 或 receipt，不写网站，也不导航到外部 URL。", "—"],
+  ["evidence-tab", "切换页面证据页签", "页面证据", "Evidence View", "在摘要、抓取与渲染、搜索与分析、执行与复查四个证据面板间切换。", "只写 evidenceTab。", "—"],
+  ["keyword-source", "按入库来源筛选", "关键词库", "Keyword Source", "按竞品缺口、内容缺口、Suggest/PAA、社区 VOC、趋势、GSC 意外词或手工来源过滤。", "只写 keywordSource 并重置关键词分页。", "—"],
+  ["select-map-keyword", "选择关键词", "关键词库", "Keyword", "更新右侧关键词摘要、Intent、Cluster、映射页面、CTA 与当前状态。", "只写 selectedKeywordId。", "—"],
+  ["open-keyword", "查看关键词详情", "关键词库", "Keyword", "打开指标、Market、Cluster、Mapped URL、CTA、来源、新鲜度与同簇需求信号。", "只读；缺失 Volume、KD、Rank 保持 null 语义，不写成 0。", "—"],
+  ["add-keyword", "手动添加关键词", "关键词库", "Keyword", "打开手工关键词入库表单。", "点击本身不创建；提交后生成 sourceKind=manual、status=new 的内存对象，当前没有自动去重。", "keyword-add"],
+  ["go-keyword-artifact", "打开相关交付物", "关键词库", "Keyword → Artifact", "先沿 Cluster 找映射 URL，再寻找目标 URL 命中的首个 Artifact；找不到时给出诚实回执。", "命中时进入执行中心并选择 Artifact；未命中不创建空交付物。", "—"],
+  ["select-map-competitor", "选择竞品", "竞品库", "Competitor", "更新右侧竞品摘要、关系、范围、审核状态与参与正式分析的条件。", "只写 selectedCompetitorId。", "—"],
+  ["open-competitor", "查看竞品档案", "竞品库 / 产品画像", "Competitor", "打开 Organic Overlap、Shared Keywords、AI Citation、发现原因、来源与分析范围。", "只读查看，不自动把 Candidate 加入 Keyword Gap。", "—"],
+  ["add-competitor", "手动添加候选竞品", "竞品库", "Competitor", "打开名称、域名、关系、分析范围与备注表单。", "提交后以 candidate 入库，外部指标保持 null；当前没有域名去重或在线校验。", "competitor-add"],
+  ["review-competitor", "审核竞品及范围", "竞品库", "Competitor", "打开 Candidate / Approved / Excluded 与分析范围决策。", "提交更新审核人、时间与备注；Excluded 会强制 analysisScope=excluded。", "competitor-review"],
+  ["go-competitors", "从画像进入竞品库", "产品画像", "Profile → Competitor", "关闭画像并进入 Growth Map 的 Competitor tab。", "写 route、mapTab 与 hash；不修改竞品池。", "—"],
+  ["review-finding", "审核问题证据", "页面证据", "Finding", "打开规则、来源、可复查证据与确认 / 排除决定表单。", "提交会更新 Finding、关联 Opportunity，并在当前实现中只投影首个 URL 状态。", "finding-review"],
+  ["open-opportunity", "查看增长机会", "增长地图 / 跨模块", "Opportunity", "打开状态、目标 URLs、Finding 证据、已有 Artifacts 与客户下一步。", "只读打开 Opportunity drawer。", "—"],
+  ["decide-opportunity", "记录机会决定", "增长地图", "Opportunity", "打开 Confirmed、“需要更多数据”（needs_data）与 Dismissed 三选一决策。", "提交会写 Opportunity 状态；needs_data 当前由表单与 handler 支持，但尚未进入 canonical opportunityStatus 枚举，应视为当前实现缺口。", "opportunity-decision"],
+  ["create-artifact", "创建执行物", "增长地图", "Opportunity → Artifact", "打开 Artifact Type、标题、Owner 与摘要表单。", "提交创建 Revision 1、status=review 的 Artifact，并把 Opportunity 置为 in_execution。", "artifact-create"],
+  ["artifact-filter", "筛选交付物类型", "执行中心", "Artifact List", "在全部、Blog、Brief、Code、Metadata、Landing、Publish 七个队列筛选间切换。", "只写 artifactFilter。", "—"],
+  ["select-artifact", "选择交付物", "执行中心", "Artifact", "切换中央客户可见正文与右侧治理面板。", "只写 selectedArtifactId。", "—"],
+  ["go-artifact", "进入执行中心处理交付物", "跨模块", "Artifact", "进入 Execution，恢复全部类型筛选并选中指定 Artifact。", "写 selectedArtifactId、artifactFilter、route 与 hash。", "—"],
+  ["share-artifact", "模拟分享交付物", "执行中心", "Artifact Share", "打开模拟权限、审核人、有效期与附言表单。", "提交生成 local-artifact:// 场景回执；不发邮件，不创建真实外链。", "artifact-share"],
+  ["edit-artifact", "创建新 Revision", "执行中心", "Artifact Revision", "打开标题、客户可见修订摘要与变更说明表单。", "提交 revision+1、状态回到 review、移除 human gate；旧 Approval 失效但历史快照保留。", "artifact-edit"],
+  ["open-artifact-history", "查看交付物版本历史", "执行中心", "Artifact Revision", "打开 append-only Revision 列表。", "只读，不覆盖任何 Revision。", "—"],
+  ["open-artifact-revision", "查看历史 Revision", "执行中心", "Artifact Revision", "打开历史正文、创建信息、当时状态、目标 URLs、修订摘要与门禁快照。", "当前只读弹窗未单独渲染 sourceRefs / Evidence；历史快照不被修改。", "—"],
+  ["approve-artifact", "批准当前 Revision", "执行中心", "Artifact Approval", "打开人工确认与审批备注表单。", "提交前要求 status=review 且全部非人工门禁通过；成功后补 human gate 并写审计。", "artifact-approve"],
+  ["publish-artifact", "模拟发布", "执行中心", "Artifact Release", "打开模拟目标、固定 28 天观察窗口、回滚范围与确认表单。", "成功只在浏览器内存创建 simulated Release、rollbackRef 与 Audit Event；不写 CMS 或 GitHub。", "artifact-publish"],
+  ["open-receipt", "查看动作回执", "执行中心 / 结果", "Release Receipt", "打开现有 Release 或演示 fallback 回执，展示动作、目标、时间与回滚引用。", "只读；Receipt 证明动作发生，不等于产生效果。", "—"],
+  ["copy-receipt-link", "复制模拟预览地址", "回执", "Clipboard", "尝试把 local-artifact:// 模拟地址写入系统剪贴板，并显示成功或失败反馈。", "这是唯一可能越过页面会话的本地副作用；仍无网络且地址不可外部访问。", "—"],
+  ["result-tab", "切换结果视图", "效果追踪", "Results View", "切换结果摘要、URL 改前 / 改后、Campaign / UTM 三个页签。", "只写 resultTab。", "—"],
+  ["open-result-page", "查看 URL 结果详情", "效果追踪", "Page Observation", "打开 Baseline、Current、来源、新鲜度、关联 Opportunity 与归因限制。", "只读固定窗口 Observation，不修改结果。", "—"],
+  ["open-campaign", "查看 Campaign / UTM", "效果追踪", "Campaign", "打开 Source、Medium、Campaign、Content、Landing URL、Session、直接与辅助转化。", "只读 GA4 + UTM 场景快照；不能证明单一 Campaign 因果。", "—"],
+  ["share-report", "模拟分享结果报告", "效果追踪", "Report Share", "打开模拟权限、收件人、有效期与报告范围表单。", "提交生成 local-artifact:// 场景回执；不发邮件，不创建真实报告链接。", "report-share"],
+  ["open-audit-event", "查看审计事件", "效果追踪 / 审计", "Audit Event", "打开事件类型、时间、Actor 与 objectRefs。", "只读审计；不撤销也不重放事件。", "—"],
+];
+
+const formSpecs = [
+  ["page-filters", "页面高级筛选", "template、cluster、status、lens（均为 Select）", "将四项筛选写入 UI state，分页回到 1。", "没有业务对象写入；Clear 会恢复 all。"],
+  ["profile-edit", "产品与 ICP 画像新版本", "oneLiner、valueProposition、businessModel、primaryMarket、offer、company、buyer、champion、users、jobs、triggers、pains、useCases", "克隆当前画像、版本号 +1、追加完整 Profile Version、记录 profile_confirmed。", "Required 字段由浏览器校验；当前会话 append-only，刷新后恢复 seed。"],
+  ["keyword-add", "手工关键词入库", "text、market、intent、clusterId、mappedUrlId、note", "创建 manual source Keyword，status=new，Volume / KD / Rank 为 null，并写 keyword_added 审计。", "当前没有自动去重；不调用关键词 Provider。"],
+  ["competitor-add", "手工候选竞品入库", "name、domain、relation、analysisScope、note", "创建 candidate，外部指标为 null，写 competitor_reviewed 审计。", "不检查域名在线状态或重复域名。"],
+  ["competitor-review", "竞品审核", "id、status、analysisScope、note", "更新 Candidate / Approved / Excluded、范围、审核人、时间与备注。", "选择 Excluded 时强制 analysisScope=excluded。"],
+  ["finding-review", "Finding 审核", "id、decision=confirmed|dismissed、note", "更新 Finding；联动 Opportunity；把首个目标 URL 投影为 action_required 或 monitoring。", "当前多 URL Finding 只更新 urlIds[0] 的 URL 状态，这是已知实现边界。"],
+  ["opportunity-decision", "Opportunity 决策", "id、decision=confirmed|needs_data|dismissed、note", "更新 Opportunity 审核状态与审计事件。", "不会反向改写 Finding 或所有 URL；needs_data 是当前 handler 可写值，但尚未进入 canonical enum。"],
+  ["artifact-create", "从机会创建执行物", "opportunityId、type、title、owner、summary", "创建 Revision 1、status=review、目标 URLs 与来源证据，并把 Opportunity 置为 in_execution。", "缺少 Opportunity 时阻断；当前演示会预先通过全部非 human 默认门禁。"],
+  ["artifact-edit", "创建新 Revision", "id、title、revisionSummary、changeNote", "revision+1、回到 review、移除 human gate、旧 Approval 失效、追加不可变快照。", "不覆盖历史 Revision 或历史 Release。"],
+  ["artifact-share", "模拟分享交付物", "id、access、recipients、expiry、note", "生成 local-artifact://preview/artifacts/... 回执并写 report_shared 审计。", "不发邮件；access 与 note 当前只用于演示表单。"],
+  ["artifact-approve", "批准当前 Revision", "id、confirmed、note", "校验状态和非人工门禁，通过后 status=approved、补 human gate、写审核人和时间。", "条件不满足时返回 blocked receipt，不改变 Artifact。"],
+  ["artifact-publish", "模拟发布", "id、confirmed、note", "要求 Approved + 全部门禁，通过后创建 simulated Release、rollbackRef、publishedAt 与审计事件。", "没有 CMS、GitHub 或第三方写入；note 当前不写入 Release。"],
+  ["report-share", "模拟分享结果", "access、recipients、expiry、scope[]", "至少一个 scope 时生成 local-artifact://preview/results/... 回执与审计。", "不发邮件；未选择范围时阻断。"],
+  ["sync-run", "场景数据更新时间", "sources[]=src-gsc|src-ga4", "只更新选中来源的 observedAt、重算摘要并记录 sync_completed。", "不访问真实 GSC / GA4，不增加 URL、Keyword 或 Observation 数量。"],
+];
+
+const overlayGroups = [
+  ["产品画像", "profile、profile-edit、profile-evidence、profile-history、profile-version", "从画像总览、字段证据到 append-only 历史版本；把“系统为何这样判断”与“客户确认了什么”放在同一链路。"],
+  ["数据连接", "connections、source-detail、sync-run", "只对客户呈现 GSC、GA4、GitHub；内部抓取与研究来源通过 provenance 被引用。"],
+  ["增长地图", "page-filters、page-evidence、keyword-detail、keyword-add、competitor-detail、competitor-add、competitor-review、finding-review、opportunity、opportunity-decision", "把查看、筛选、证据审核、竞品治理与 Opportunity 决策分成单一目的的决策窗口。"],
+  ["概览任务", "task-preview", "将概览中的 Top 3 队列对象解释为具体下一步，再按对象类型转场。"],
+  ["执行中心", "artifact-share、artifact-edit、artifact-create、artifact-history、artifact-revision、artifact-approve、artifact-publish", "围绕客户可见 Artifact 正文，提供版本、门禁、批准、模拟分享与模拟发布。"],
+  ["结果与审计", "receipt、result-page、campaign、report-share、audit-event", "把动作回执、技术复查、固定窗口观察、UTM 与审计记录分开呈现。"],
+];
+
+if (actionSpecs.length !== currentActionIds.size) {
+  throw new Error(
+    `Action spec mismatch: manual=${actionSpecs.length}, artifact=${currentActionIds.size}`,
+  );
+}
+const actionSpecIds = new Set(actionSpecs.map(([id]) => id));
+const missingActions = [...currentActionIds].filter((id) => !actionSpecIds.has(id));
+const extraActions = [...actionSpecIds].filter((id) => !currentActionIds.has(id));
+if (missingActions.length || extraActions.length) {
+  throw new Error(
+    `Action spec drift. Missing: ${missingActions.join(", ")}; extra: ${extraActions.join(", ")}`,
+  );
+}
+if (formSpecs.length !== currentFormIds.size) {
+  throw new Error(
+    `Form spec mismatch: manual=${formSpecs.length}, artifact=${currentFormIds.size}`,
+  );
+}
+
+const sourceNotes = {
+  "src-sitemap": ["场景 URL 清单", "系统维护的内部站点地图证据，不是客户外部连接。"],
+  "src-crawl": ["渲染抓取与技术证据", "支撑 URL、技术 Finding 与复查；当前是确定性场景快照。"],
+  "src-gsc": ["Query、Landing Page、Rank 与 Search Observation", "客户可见的分析数据源，但 externalConnection=false；“可用”表示场景数据可演示。"],
+  "src-ga4": ["Page、Campaign / UTM 与 Conversion Observation", "客户可见的分析数据源，但不会访问真实 GA4 账号。"],
+  "src-github": ["未来 Code Patch → PR → Human Merge → Receipt", "客户可见预留位；当前 planned / unavailable，不创建分支或真实 PR。"],
+  "src-serp": ["美国市场 SERP 与 Keyword 样本", "内部研究证据，按 72 小时 SLA 计算新鲜度。"],
+  "src-ai-answers": ["固定 Generative Query 与 AI Citation 样本", "内部 GEO 场景证据，不声称实时监控所有 AI 平台。"],
+  "src-manual-profile": ["已确认产品、ICP 与购买背景", "客户确认字段与手工对象的 provenance；通过新 Profile Version 更新。"],
+  "src-customer-notes": ["已批准访谈摘要、JTBD、Pain 与 VOC", "内部批准的手工快照，当前场景只读。"],
+  "src-competitor-corpus": ["竞品事实、Gap 与 Comparison Evidence", "只有已批准且未排除范围的竞品才进入正式比较。"],
+  "src-cms": ["一次模拟发布回执", "内部场景证据，不代表已连接客户 CMS。"],
+};
+
+const sourceCards = workspace.dataSources
+  .map((source) => {
+    const [purpose, boundary] = sourceNotes[source.id] || [
+      source.recordScope || "系统证据",
+      "当前场景数据源。",
+    ];
+    const observed = source.observedAt
+      ? new Date(source.observedAt).toLocaleString("zh-CN", {
+          timeZone: "Asia/Shanghai",
+          hour12: false,
+        })
+      : "不可用";
+    return `
+      <article class="index-card source-card" data-source-id="${escapeHtml(source.id)}" data-manual-search-item>
+        <header>
+          <div>
+            <span class="index-id">${escapeHtml(source.id)}</span>
+            <h3>${escapeHtml(source.name)}</h3>
+          </div>
+          <span class="fact-tag ${source.audienceVisibility === "customer" ? "is-current" : "is-logic"}">${source.audienceVisibility === "customer" ? "客户可见" : "内部证据"}</span>
+        </header>
+        <dl class="index-meta">
+          <div><dt>Kind</dt><dd>${escapeHtml(source.kind)}</dd></div>
+          <div><dt>状态</dt><dd>${escapeHtml(source.status)}${source.connectionState ? ` · ${escapeHtml(source.connectionState)}` : ""}</dd></div>
+          <div><dt>观察时间</dt><dd>${escapeHtml(observed)}</dd></div>
+          <div><dt>Freshness SLA</dt><dd>${escapeHtml(source.freshnessSlaHours)} 小时</dd></div>
+        </dl>
+        <p><strong>当前用途：</strong>${escapeHtml(purpose)}</p>
+        <p class="boundary-line"><strong>真实性边界：</strong>${escapeHtml(boundary)}</p>
+      </article>`;
+  })
+  .join("");
+
+const actionCards = actionSpecs
+  .map(
+    ([id, label, module, object, immediate, sideEffect, form], index) => `
+      <article class="index-card action-card" data-action-id="${escapeHtml(id)}" data-manual-search-item>
+        <header>
+          <div class="action-number">${String(index + 1).padStart(2, "0")}</div>
+          <div>
+            <span class="index-id">${escapeHtml(id)}</span>
+            <h3>${escapeHtml(label)}</h3>
+          </div>
+          <span class="module-chip">${escapeHtml(module)}</span>
+        </header>
+        <dl class="index-meta">
+          <div><dt>作用对象</dt><dd>${escapeHtml(object)}</dd></div>
+          <div><dt>相关 Form</dt><dd>${escapeHtml(form)}</dd></div>
+        </dl>
+        <p><strong>立即结果：</strong>${escapeHtml(immediate)}</p>
+        <p class="boundary-line"><strong>状态与副作用：</strong>${escapeHtml(sideEffect)}</p>
+        <small>持久性：除剪贴板复制外，均仅当前浏览器会话；刷新后恢复 RelayOps 场景初始快照。</small>
+      </article>`,
+  )
+  .join("");
+
+const formCards = formSpecs
+  .map(
+    ([id, label, fields, success, boundary]) => `
+      <article class="index-card form-card" data-form-id="${escapeHtml(id)}" data-manual-search-item>
+        <header>
+          <div>
+            <span class="index-id">${escapeHtml(id)}</span>
+            <h3>${escapeHtml(label)}</h3>
+          </div>
+          <span class="fact-tag is-simulation">写操作</span>
+        </header>
+        <p><strong>输入字段：</strong>${escapeHtml(fields)}</p>
+        <p><strong>提交成功：</strong>${escapeHtml(success)}</p>
+        <p class="boundary-line"><strong>阻断与边界：</strong>${escapeHtml(boundary)}</p>
+      </article>`,
+  )
+  .join("");
+
+const overlayCards = overlayGroups
+  .map(
+    ([group, kinds, description]) => `
+      <article class="compact-card" data-manual-search-item>
+        <span class="eyebrow">${escapeHtml(group)}</span>
+        <h3>${escapeHtml(kinds)}</h3>
+        <p>${escapeHtml(description)}</p>
+      </article>`,
+  )
+  .join("");
+
+const count = (value) => Array.isArray(value) ? value.length : 0;
+const snapshotCounts = [
+  ["数据源", count(workspace.dataSources)],
+  ["URLs", count(workspace.urls)],
+  ["Findings", count(workspace.findings)],
+  ["Opportunities", count(workspace.opportunities)],
+  ["Keywords", count(workspace.keywords)],
+  ["Topic Clusters", count(workspace.clusters)],
+  ["Competitors", count(workspace.competitors)],
+  ["Artifacts", count(workspace.artifacts)],
+  ["Releases", count(workspace.releases)],
+  ["页面观察", count(workspace.results?.pageObservations)],
+  ["技术复查", count(workspace.results?.technicalVerifications)],
+  ["Campaigns", count(workspace.campaigns)],
+  ["Audit Events", count(workspace.auditEvents)],
+  ["Profile Versions", count(workspace.profileVersions)],
+];
+
+const snapshotCards = snapshotCounts
+  .map(
+    ([label, value]) =>
+      `<div><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`,
+  )
+  .join("");
+
+const css = `
+:root {
+  --paper: #f4efe5;
+  --paper-deep: #ebe3d5;
+  --surface: #fffdf8;
+  --surface-soft: #f8f4ec;
+  --pine: #0c352e;
+  --pine-2: #164d42;
+  --pine-3: #23685d;
+  --ink: #18302b;
+  --muted: #667973;
+  --line: #d8d0c2;
+  --lime: #c9f55a;
+  --lime-deep: #a7d83a;
+  --coral: #ad4236;
+  --aqua: #80ddd2;
+  --amber: #e4aa3f;
+  --violet: #8b77be;
+  --shadow: 0 18px 42px rgba(23, 48, 43, 0.09);
+  --serif: "Iowan Old Style", "Songti SC", "Noto Serif CJK SC", "STSong", Georgia, serif;
+  --sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 104px; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    linear-gradient(rgba(12, 53, 46, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(12, 53, 46, .035) 1px, transparent 1px),
+    var(--paper);
+  background-size: 28px 28px;
+  font: 15px/1.72 var(--sans);
+}
+a { color: inherit; }
+button, input { font: inherit; }
+button { color: inherit; }
+:focus-visible { outline: 3px solid var(--coral); outline-offset: 3px; }
+[hidden] { display: none !important; }
+.sr-only {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
+}
+.skip-link {
+  position: fixed; left: 18px; top: 12px; z-index: 100;
+  padding: 10px 14px; border-radius: 10px; color: white; background: var(--pine);
+  transform: translateY(-150%); transition: transform .2s ease;
+}
+.skip-link:focus { transform: translateY(0); }
+
+.manual-toolbar {
+  position: sticky; top: 0; z-index: 50;
+  display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.1fr) auto;
+  gap: 18px; align-items: center;
+  min-height: 78px; padding: 12px clamp(18px, 3vw, 46px);
+  color: #f5f4e9; background: rgba(8, 44, 37, .97);
+  border-bottom: 1px solid rgba(255,255,255,.15);
+  backdrop-filter: blur(14px);
+}
+.brand-lockup { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.brand-mark {
+  display: grid; place-items: center; width: 46px; height: 46px; flex: 0 0 auto;
+  border-radius: 14px; color: var(--pine); background: var(--lime);
+  font: 700 26px/1 var(--serif);
+}
+.brand-lockup strong, .brand-lockup small { display: block; }
+.brand-lockup strong { font: 600 17px/1.2 var(--serif); letter-spacing: .02em; }
+.brand-lockup small { margin-top: 4px; color: #aac3bc; font-size: 11px; }
+.toolbar-search { position: relative; min-width: 0; }
+.toolbar-search input {
+  width: 100%; min-height: 46px; padding: 0 48px 0 16px; color: var(--ink);
+  border: 1px solid rgba(255,255,255,.18); border-radius: 14px; background: #f8f6ef;
+}
+.toolbar-search kbd {
+  position: absolute; right: 11px; top: 10px; padding: 2px 8px;
+  color: #71817c; border: 1px solid #c9c7bd; border-radius: 7px; background: #fff;
+  font: 11px/1.6 var(--mono);
+}
+.toolbar-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.mode-switch { display: flex; gap: 3px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.09); }
+.mode-switch button, .toolbar-button {
+  min-height: 38px; padding: 0 12px; border: 0; border-radius: 9px;
+  color: #dce8e3; background: transparent; cursor: pointer; white-space: nowrap;
+}
+.mode-switch button.is-active { color: var(--pine); background: var(--lime); font-weight: 700; }
+.toolbar-button { border: 1px solid rgba(255,255,255,.22); }
+.toolbar-button:hover { background: rgba(255,255,255,.09); }
+.mobile-mode-select { display: none; }
+.mobile-mode-select select {
+  min-height: 38px; max-width: 94px; padding: 0 28px 0 10px;
+  color: #f3f7f5; border: 1px solid rgba(255,255,255,.22); border-radius: 9px;
+  background: var(--pine-2); font-size: 12px;
+}
+.mobile-toc-button { display: none; }
+
+.manual-layout {
+  display: grid; grid-template-columns: 262px minmax(0, 1fr);
+  width: min(1720px, 100%); margin: 0 auto;
+}
+.manual-nav {
+  position: sticky; top: 78px; align-self: start; height: calc(100vh - 78px);
+  padding: 28px 20px 36px; overflow-y: auto;
+  color: #d8e6e0; background: var(--pine);
+  border-right: 1px solid rgba(255,255,255,.08);
+}
+.toc-scrim { display: none; }
+.manual-nav > span { display: block; margin: 0 12px 14px; color: var(--lime); font: 700 11px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.nav-mode-switch { display: none; }
+.manual-nav a {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px;
+  padding: 9px 10px; color: #b8cdc6; border-radius: 10px; text-decoration: none; font-size: 13px;
+}
+.manual-nav a:hover, .manual-nav a.is-active { color: white; background: rgba(255,255,255,.09); }
+.manual-nav a small { color: #b4c9c2; font: 10px/1.8 var(--mono); }
+.nav-footer { margin: 26px 10px 0; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.1); color: #87a29a; font-size: 11px; }
+
+.manual-main { min-width: 0; overflow: clip; }
+.manual-section { padding: 76px clamp(26px, 5vw, 86px); border-bottom: 1px solid var(--line); }
+.manual-section:nth-child(even) { background: rgba(255,255,255,.25); }
+.hero {
+  position: relative; min-height: 690px; display: grid; align-content: center;
+  color: #f6f4ea; background:
+    radial-gradient(circle at 78% 16%, rgba(201,245,90,.17), transparent 29%),
+    radial-gradient(circle at 74% 78%, rgba(128,221,210,.11), transparent 27%),
+    var(--pine);
+  overflow: hidden;
+}
+.hero::after {
+  content: ""; position: absolute; right: -120px; bottom: -180px;
+  width: 520px; height: 520px; border: 1px solid rgba(201,245,90,.18); border-radius: 50%;
+  box-shadow: 0 0 0 50px rgba(201,245,90,.025), 0 0 0 110px rgba(201,245,90,.018);
+}
+.hero-content { position: relative; z-index: 1; width: min(1020px, 100%); }
+.hero .eyebrow { color: var(--lime); }
+.hero h1 {
+  max-width: 920px; margin: 18px 0 22px;
+  font: 500 clamp(48px, 6.6vw, 94px)/.98 var(--serif); letter-spacing: -.045em;
+}
+.hero-lead { max-width: 810px; margin: 0; color: #cadbd5; font-size: clamp(17px, 1.7vw, 23px); line-height: 1.62; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 34px 0; }
+.primary-link, .secondary-link {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 48px;
+  padding: 0 18px; border-radius: 13px; text-decoration: none; font-weight: 700;
+}
+.primary-link { color: var(--pine); background: var(--lime); }
+.secondary-link { color: white; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.05); }
+.build-line { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.build-line code { padding: 5px 9px; border-radius: 8px; color: #bcd2ca; background: rgba(255,255,255,.07); font: 11px/1.4 var(--mono); overflow-wrap: anywhere; }
+
+.section-heading { max-width: 950px; margin-bottom: 34px; }
+.eyebrow { color: var(--coral); font: 800 11px/1.3 var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+.section-heading h2 {
+  margin: 10px 0 13px; font: 500 clamp(35px, 4.3vw, 62px)/1.08 var(--serif); letter-spacing: -.035em;
+}
+.section-heading p { max-width: 830px; margin: 0; color: var(--muted); font-size: 17px; }
+h3 { line-height: 1.35; }
+.lead-quote {
+  margin: 32px 0; padding: 28px 30px; color: white; background: var(--pine);
+  border-left: 6px solid var(--lime); border-radius: 0 18px 18px 0;
+  font: 500 clamp(23px, 2.5vw, 36px)/1.5 var(--serif);
+}
+.fact-legend, .fact-boundaries, .advantage-grid, .module-grid, .route-grid, .compact-grid, .artifact-grid, .snapshot-grid {
+  display: grid; gap: 14px;
+}
+.fact-legend { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 30px; }
+.fact-legend article, .compact-card, .advantage-card, .module-card {
+  min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 8px 18px rgba(23,48,43,.035);
+}
+.fact-legend strong { display: block; margin: 10px 0 6px; }
+.fact-legend p, .compact-card p, .advantage-card p, .module-card p { margin: 0; color: var(--muted); }
+.fact-tag, .module-chip {
+  display: inline-flex; width: max-content; max-width: 100%; align-items: center;
+  padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 800;
+}
+.fact-tag.is-current { color: #0d5d52; background: #d8f2ec; }
+.fact-tag.is-scenario { color: #6d5c19; background: #f8e9ae; }
+.fact-tag.is-simulation { color: #9a3f32; background: #fde0d9; }
+.fact-tag.is-future { color: #5f4b8c; background: #e8e1f7; }
+.fact-tag.is-logic { color: #365d75; background: #e1edf4; }
+.module-chip { color: #345c54; background: #e6efeb; }
+.snapshot-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); margin-top: 28px; }
+.snapshot-grid div { padding: 16px 12px; border-top: 1px solid rgba(255,255,255,.18); }
+.snapshot-grid strong, .snapshot-grid span { display: block; }
+.snapshot-grid strong { color: var(--lime); font: 500 29px/1 var(--serif); }
+.snapshot-grid span { margin-top: 6px; color: #9fb8b0; font-size: 10px; }
+.snapshot-note { color: #95b0a7; font-size: 11px; }
+
+.advantage-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.advantage-card { position: relative; padding-top: 46px; }
+.advantage-card::before { content: attr(data-number); position: absolute; top: 15px; right: 18px; color: #d6ded8; font: 500 27px/1 var(--serif); }
+.advantage-card h3 { margin: 0 0 10px; font: 600 22px/1.25 var(--serif); }
+.object-chain {
+  display: grid; grid-template-columns: repeat(7, minmax(112px, 1fr)); gap: 9px;
+  margin: 34px 0; padding: 22px; border-radius: 20px; color: white; background: var(--pine);
+}
+.object-chain div { position: relative; padding: 18px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; background: rgba(255,255,255,.055); }
+.object-chain div:not(:last-child)::after { content: "→"; position: absolute; right: -14px; top: 31px; z-index: 2; color: var(--lime); font-weight: 900; }
+.object-chain strong, .object-chain small { display: block; }
+.object-chain small { margin-top: 5px; color: #9fb9b1; }
+.rule-note { padding: 18px 20px; border-radius: 14px; color: #3c514b; background: #e6eee8; border: 1px solid #cad9d2; }
+
+.route-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.route-card { display: grid; min-height: 250px; padding: 24px; border-radius: 18px; color: white; background: var(--pine); text-decoration: none; }
+.route-card:nth-child(2) { background: #18574c; }
+.route-card:nth-child(3) { color: var(--ink); background: var(--aqua); }
+.route-card:nth-child(4) { color: var(--ink); background: var(--lime); }
+.route-card span { color: inherit; opacity: .7; font: 700 11px/1.2 var(--mono); letter-spacing: .12em; }
+.route-card:nth-child(3) span, .route-card:nth-child(4) span { color: #153c35; opacity: 1; }
+.route-card h3 { margin: auto 0 8px; font: 500 31px/1.12 var(--serif); }
+.route-card p { margin: 0; opacity: .78; }
+
+.walkthrough { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--surface); }
+.walkthrough article { display: grid; grid-template-columns: 110px minmax(180px, .7fr) minmax(0, 1.6fr) 110px; gap: 18px; align-items: start; padding: 20px; border-bottom: 1px solid var(--line); }
+.walkthrough article:last-child { border-bottom: 0; }
+.walkthrough time { color: var(--coral); font: 700 13px/1.4 var(--mono); }
+.walkthrough strong { font-size: 16px; }
+.walkthrough p { margin: 0; color: var(--muted); }
+.walkthrough a { justify-self: end; text-decoration: none; font-weight: 800; color: var(--pine-3); }
+
+.module-grid { grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); align-items: start; }
+.module-card h3, .compact-card h3 { margin: 6px 0 9px; font: 600 22px/1.3 var(--serif); overflow-wrap: anywhere; }
+.feature-list { display: grid; gap: 10px; margin: 18px 0 0; padding: 0; list-style: none; }
+.feature-list li { position: relative; padding-left: 21px; color: #485e58; }
+.feature-list li::before { content: ""; position: absolute; left: 0; top: .72em; width: 7px; height: 7px; border-radius: 50%; background: var(--coral); }
+.presenter-card {
+  position: sticky; top: 104px; padding: 25px; border-radius: 18px; color: white; background: var(--pine);
+  box-shadow: var(--shadow);
+}
+.presenter-card h3 { margin: 8px 0 18px; font: 500 27px/1.25 var(--serif); }
+.presenter-card .eyebrow { color: var(--lime); }
+.presenter-card dl { margin: 0; }
+.presenter-card div { padding: 11px 0; border-top: 1px solid rgba(255,255,255,.13); }
+.presenter-card dt { color: var(--lime); font-size: 11px; font-weight: 800; }
+.presenter-card dd { margin: 4px 0 0; color: #cfe0da; }
+.warning-card { margin-top: 14px; padding: 15px; color: #713d34; border: 1px solid #f2b5a8; border-radius: 13px; background: #fff0ec; }
+.compact-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.artifact-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.artifact-grid .compact-card strong { display: block; margin-top: 8px; }
+.metrics-strip { display: grid; grid-template-columns: repeat(4, 1fr); margin: 22px 0; color: white; border-radius: 18px; background: var(--pine); overflow: hidden; }
+.metrics-strip div { padding: 20px; border-right: 1px solid rgba(255,255,255,.15); }
+.metrics-strip div:last-child { border-right: 0; }
+.metrics-strip strong, .metrics-strip span { display: block; }
+.metrics-strip strong { color: var(--lime); font: 500 31px/1 var(--serif); }
+.metrics-strip span { margin-top: 7px; color: #a9c0b9; font-size: 12px; }
+
+details { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+details + details { margin-top: 10px; }
+summary { padding: 17px 19px; cursor: pointer; font-weight: 800; }
+details > div { padding: 0 19px 19px; color: var(--muted); }
+details p { margin-top: 0; }
+.logic-block { margin-top: 25px; }
+.logic-block pre {
+  margin: 0; padding: 20px; color: #dfece7; border-radius: 15px; background: #102f2a;
+  overflow-x: auto; font: 12px/1.7 var(--mono);
+}
+
+.index-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px; margin: 22px 0;
+}
+.index-toolbar p { margin: 0; color: var(--muted); }
+.index-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.index-card {
+  min-width: 0; padding: 19px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface);
+}
+.index-card > header { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.index-card h3 { margin: 4px 0 0; font: 600 19px/1.28 var(--serif); }
+.index-id { color: var(--coral); font: 700 10px/1.3 var(--mono); overflow-wrap: anywhere; }
+.action-number { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; color: var(--pine); border-radius: 11px; background: var(--lime); font: 700 13px/1 var(--mono); }
+.index-meta { display: grid; grid-template-columns: repeat(2, 1fr); margin: 15px 0; border: 1px solid #e5ded2; border-radius: 10px; overflow: hidden; }
+.index-meta div { padding: 9px 11px; border-right: 1px solid #e5ded2; }
+.index-meta div:last-child { border-right: 0; }
+.index-meta dt { color: #586a64; font-size: 10px; }
+.index-meta dd { margin: 3px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.index-card p { margin: 9px 0; color: #536660; }
+.index-card small { display: block; margin-top: 12px; color: #5b6d67; }
+.boundary-line { padding-top: 9px; border-top: 1px solid #e7e0d5; }
+.source-card { border-top: 4px solid var(--aqua); }
+.form-card { border-top: 4px solid var(--coral); }
+
+.capability-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.capability-card { padding: 24px; border-radius: 18px; }
+.capability-card h3 { margin: 10px 0; font: 600 25px/1.2 var(--serif); }
+.capability-card ul { padding-left: 20px; }
+.capability-card.is-current { background: #ddf1eb; border: 1px solid #b7dcd3; }
+.capability-card.is-scenario { background: #fff0d0; border: 1px solid #edd092; }
+.capability-card.is-future { background: #ece5f8; border: 1px solid #d1c4e8; }
+.source-registry { padding: 20px; border: 1px dashed #aa9e8f; border-radius: 15px; background: rgba(255,255,255,.35); }
+.source-registry code { overflow-wrap: anywhere; font: 11px/1.6 var(--mono); }
+.search-empty { display: none; margin-top: 20px; padding: 20px; text-align: center; border: 1px dashed var(--line); border-radius: 14px; }
+.search-empty.is-visible { display: block; }
+.search-hit { animation: flash 1.4s ease; }
+@keyframes flash { 0%, 100% { box-shadow: none; } 25% { box-shadow: 0 0 0 4px rgba(241,110,89,.28); } }
+
+html[data-manual-mode="buyer"] [data-manual-audience="internal"] { display: none !important; }
+html[data-manual-mode="internal"] [data-manual-audience="buyer"] { display: none !important; }
+html.is-searching [data-manual-audience] { display: block !important; }
+
+@media (max-width: 1180px) {
+  html { scroll-padding-top: 138px; }
+  .manual-toolbar { grid-template-columns: minmax(190px, .7fr) minmax(260px, 1fr); }
+  .toolbar-actions { grid-column: 1 / -1; justify-content: space-between; }
+  .manual-layout { grid-template-columns: 220px minmax(0, 1fr); }
+  .fact-legend { grid-template-columns: repeat(3, 1fr); }
+  .snapshot-grid { grid-template-columns: repeat(4, 1fr); }
+  .object-chain { grid-template-columns: repeat(4, 1fr); }
+  .object-chain div::after { display: none; }
+  .artifact-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 900px) {
+  html { scroll-padding-top: 124px; }
+  .manual-toolbar { grid-template-columns: 1fr auto; }
+  .toolbar-search { grid-column: 1 / -1; grid-row: 2; }
+  .toolbar-actions { grid-column: auto; }
+  .mode-switch { display: none; }
+  .mobile-mode-select { display: block; }
+  .toolbar-actions [data-manual-expand] { display: none; }
+  .mobile-toc-button { display: inline-flex; }
+  .manual-layout { display: block; }
+  .manual-nav {
+    position: fixed; inset: 0 auto 0 0; z-index: 70; width: min(82vw, 310px); height: 100vh; top: 0;
+    transform: translateX(-105%); transition: transform .22s ease; box-shadow: var(--shadow);
+  }
+  body.is-toc-open .manual-nav { transform: translateX(0); }
+  body.is-toc-open .toc-scrim {
+    display: block; position: fixed; inset: 0; z-index: 60;
+    border: 0; background: rgba(5, 25, 21, .54); backdrop-filter: blur(2px);
+  }
+  .nav-mode-switch {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+    margin: 0 8px 18px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.08);
+  }
+  .nav-mode-switch button {
+    min-height: 38px; padding: 0 6px; color: #dce8e3; border: 0; border-radius: 9px;
+    background: transparent; font-size: 11px;
+  }
+  .nav-mode-switch button.is-active { color: var(--pine); background: var(--lime); font-weight: 800; }
+  .manual-section { padding: 58px 24px; }
+  .hero { min-height: 620px; }
+  .module-grid, .capability-columns { grid-template-columns: 1fr; }
+  .presenter-card { position: static; }
+  .route-grid, .advantage-grid { grid-template-columns: repeat(2, 1fr); }
+  .compact-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 620px) {
+  body { font-size: 14px; }
+  .manual-toolbar { padding: 10px 12px; }
+  .brand-lockup small { display: none; }
+  .toolbar-actions { gap: 5px; }
+  .toolbar-button { padding: 0 9px; font-size: 12px; }
+  .manual-section { padding: 46px 17px; }
+  .hero h1 { font-size: clamp(38px, 11vw, 48px); line-height: 1.05; }
+  .hero-actions { display: grid; }
+  .primary-link, .secondary-link { width: 100%; }
+  .fact-legend, .snapshot-grid, .advantage-grid, .route-grid, .compact-grid, .artifact-grid, .index-grid, .object-chain { grid-template-columns: 1fr; }
+  .walkthrough article { grid-template-columns: 72px minmax(0, 1fr); }
+  .walkthrough article p, .walkthrough article a { grid-column: 2; }
+  .walkthrough article a { justify-self: start; }
+  .metrics-strip { grid-template-columns: repeat(2, 1fr); }
+  .metrics-strip div:nth-child(2) { border-right: 0; }
+  .index-card > header { flex-wrap: wrap; }
+  .index-meta { grid-template-columns: 1fr; }
+  .index-meta div { border-right: 0; border-bottom: 1px solid #e5ded2; }
+  .index-meta div:last-child { border-bottom: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}
+@media print {
+  @page { margin: 15mm 13mm; }
+  html { scroll-padding-top: 0; }
+  body { color: #172b26; background: white; font-size: 10.5pt; }
+  .manual-toolbar, .manual-nav, .skip-link, .hero-actions, .index-toolbar, .search-empty { display: none !important; }
+  .manual-layout { display: block; width: 100%; }
+  .manual-main { overflow: visible; }
+  .manual-section { padding: 12mm 0; break-before: auto; background: white !important; }
+  .manual-section h2, .manual-section h3 { break-after: avoid; }
+  .hero { min-height: auto; color: #172b26; background: white; break-before: auto; }
+  .hero::after { display: none; }
+  .hero .eyebrow, .eyebrow, .index-id { color: #8e4438; }
+  .hero-lead, .snapshot-note { color: #43564f; }
+  .snapshot-grid div { border-color: #ccc; }
+  .snapshot-grid strong { color: #183f37; }
+  .snapshot-grid span { color: #5d6d68; }
+  .build-line code { color: #333; background: #eee; }
+  .presenter-card, .object-chain, .lead-quote, .metrics-strip { color: #172b26; background: #f1eee7; box-shadow: none; }
+  .presenter-card dd, .object-chain small, .metrics-strip span { color: #4f625b; }
+  .object-chain strong, .metrics-strip strong { color: #183f37; }
+  .index-card, .compact-card, .advantage-card, .module-card, details { break-inside: avoid; box-shadow: none; }
+  details > div { display: block !important; }
+  details:not([open]) > *:not(summary) { display: block !important; }
+  a { text-decoration: none; }
+  [data-manual-audience] { display: block !important; }
+}
+`;
+
+const html = `<!doctype html>
+<html lang="zh-CN" data-manual-mode="all" data-manual-build="1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="GenGrowth 海外增长工作台完整中文产品说明书：购买方讲解、模块查阅、按钮、表单、数据来源、规则、状态与底层逻辑。" />
+    <meta name="theme-color" content="#0c352e" />
+    <title>GenGrowth · 完整产品说明书与讲解手册</title>
+    <style>${css}</style>
+  </head>
+  <body>
+    <a class="skip-link" href="#manual-content">跳到说明书正文</a>
+    <header class="manual-toolbar" aria-label="说明书工具栏">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true">G</span>
+        <span><strong>GenGrowth 产品说明书</strong><small>Artifact build 15.0-static · 中文主版</small></span>
+      </div>
+      <label class="toolbar-search">
+        <span class="sr-only">搜索说明书</span>
+        <input id="manual-search" data-manual-search type="search" placeholder="搜索模块、按钮、Action、Source、Rule 或 FAQ…" autocomplete="off" />
+        <kbd>/</kbd>
+      </label>
+      <div class="toolbar-actions">
+        <div class="mode-switch" role="group" aria-label="阅读模式">
+          <button type="button" data-manual-mode="buyer" aria-pressed="false">采购讲解</button>
+          <button type="button" data-manual-mode="internal" aria-pressed="false">内部查阅</button>
+          <button type="button" data-manual-mode="all" class="is-active" aria-pressed="true">全部</button>
+        </div>
+        <label class="mobile-mode-select">
+          <span class="sr-only">阅读模式</span>
+          <select data-manual-mode-select aria-label="切换阅读模式">
+            <option value="buyer">采购讲解</option>
+            <option value="internal">内部查阅</option>
+            <option value="all" selected>全部内容</option>
+          </select>
+        </label>
+        <button class="toolbar-button" type="button" data-manual-expand aria-expanded="false" aria-controls="manual-content">展开全部</button>
+        <button class="toolbar-button" type="button" data-manual-print aria-label="打印说明书">打印</button>
+        <button class="toolbar-button mobile-toc-button" type="button" data-toc-toggle aria-expanded="false" aria-controls="manual-navigation">目录</button>
+      </div>
+    </header>
+
+    <div class="manual-layout">
+      <nav id="manual-navigation" class="manual-nav" aria-label="产品说明书目录">
+        <span>Manual index</span>
+        <div class="nav-mode-switch" role="group" aria-label="移动端阅读模式">
+          <button type="button" data-manual-mode="buyer" aria-pressed="false">采购讲解</button>
+          <button type="button" data-manual-mode="internal" aria-pressed="false">内部查阅</button>
+          <button type="button" data-manual-mode="all" class="is-active" aria-pressed="true">全部</button>
+        </div>
+        ${[
+          ["00", "cover", "版本基线"],
+          ["01", "product", "产品定义与优势"],
+          ["02", "walkthrough", "购买方演示路线"],
+          ["03", "profile", "产品画像 / ICP"],
+          ["04", "overview", "概览 Overview"],
+          ["05", "growth-map", "增长地图"],
+          ["06", "execution", "执行中心"],
+          ["07", "results", "效果追踪"],
+          ["08", "connections", "数据连接"],
+          ["09", "overlay-audit", "弹窗与审计"],
+          ["10", "rules", "对象、规则与状态机"],
+          ["11", "sources", "数据来源字典"],
+          ["12", "actions", "Action / 按钮索引"],
+          ["13", "forms", "Form / 表单索引"],
+          ["14", "boundaries", "当前与未来边界"],
+          ["15", "faq", "FAQ 与来源登记"],
+        ]
+          .map(
+            ([number, id, label]) =>
+              `<a data-manual-nav href="#${id}"><small>${number}</small><span>${label}</span></a>`,
+          )
+          .join("")}
+        <div class="nav-footer">单文件离线 HTML<br />搜索、模式、打印均在本地运行</div>
+      </nav>
+      <button class="toc-scrim" type="button" data-toc-scrim aria-label="关闭说明书目录"></button>
+
+      <main id="manual-content" class="manual-main">
+        <section id="cover" class="manual-section hero">
+          <div class="hero-content">
+            <span class="eyebrow">GenGrowth · Customer-facing product field guide</span>
+            <h1>把增长机会讲清楚，<br />也把每个按钮讲明白。</h1>
+            <p class="hero-lead">这不是旧 Artifact 的规则附录，而是一份以当前交互式 Artifact 为唯一产品蓝本的完整中文说明书：购买方可以顺着价值链理解产品，我方可以反查模块、对象、按钮、表单、数据来源、规则、状态变化与真实性边界。</p>
+            <div class="hero-actions">
+              <a class="primary-link" href="#walkthrough">开始购买方讲解</a>
+              <a class="secondary-link" href="#actions">查找按钮与 Action</a>
+              <a class="secondary-link" href="./GenGrowth-Interactive-Artifact.html#/overview">打开当前 Artifact</a>
+            </div>
+            <div class="build-line">
+              <code>Artifact: 15.0-static</code>
+              <code>Dataset: ${escapeHtml(workspace.datasetKind)}</code>
+              <code>Snapshot: ${escapeHtml(workspace.snapshotAt)}</code>
+              <code>SHA-256: ${artifactHash}</code>
+            </div>
+            <div class="snapshot-grid">${snapshotCards}</div>
+            <p class="snapshot-note">以上数量仅表示 RelayOps 当前场景快照，不代表产品容量、套餐上限或生产规模。</p>
+          </div>
+        </section>
+
+        <section class="manual-section" aria-labelledby="truth-title">
+          <div class="section-heading">
+            <span class="eyebrow">Read this first</span>
+            <h2 id="truth-title">场景真实性：先统一五种事实标签</h2>
+            <p>说明书中的所有优势都必须能在当前 Artifact 中找到可见依据。任何真实 OAuth、CMS 写入、GitHub PR 或生产级持久化，都不能从未来规划偷换成当前能力。</p>
+          </div>
+          <div class="fact-legend">
+            <article><span class="fact-tag is-current">当前已呈现</span><strong>可在 Artifact 操作</strong><p>当前页面、弹窗、按钮与状态逻辑确实存在。</p></article>
+            <article><span class="fact-tag is-scenario">离线场景数据</span><strong>确定性 RelayOps 快照</strong><p>用于完整演示，不表示已连接客户真实账号。</p></article>
+            <article><span class="fact-tag is-simulation">会话内模拟</span><strong>浏览器内存变化</strong><p>审核、Revision、分享、发布与更新刷新后重置。</p></article>
+            <article><span class="fact-tag is-future">计划 / 未接入</span><strong>可见但尚不可用</strong><p>例如 GitHub PR、真实 CMS Publish 与生产持久化。</p></article>
+            <article><span class="fact-tag is-logic">内部逻辑</span><strong>规则与对象解释</strong><p>说明当前页面如何计算、关联、阻断和审计。</p></article>
+          </div>
+          <div class="rule-note" data-capability-boundary="scenario"><strong>当前场景边界：</strong>本文件与交互式 Artifact 都可完全离线打开。GSC、GA4、CMS、GitHub 和第三方 Provider 没有真实外部连接或写入；所有业务变更只保存在当前浏览器内存，刷新页面后重置。模拟分享不会发送邮件，模拟发布不会修改客户网站。</div>
+        </section>
+
+        <section id="product" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">01 · Product definition</span>
+            <h2>产品定义与优势：不是另一份审计报告</h2>
+            <p>GenGrowth 把产品与 ICP、网站和市场证据、可审核的问题、增长机会、客户可见交付物以及固定窗口结果，组织在同一条可追溯链路中。</p>
+          </div>
+          <blockquote class="lead-quote">客户看到的不只是“发现了什么”，还包括“为什么、影响哪些 URL、要交付什么、谁来批准、动作是否发生、结果是否被独立复查”。</blockquote>
+          <div class="object-chain" aria-label="核心对象链">
+            <div><strong>Product Profile</strong><small>产品 / ICP / JTBD</small></div>
+            <div><strong>Data & Evidence</strong><small>URL / Query / Source</small></div>
+            <div><strong>Finding</strong><small>可审核的问题事实</small></div>
+            <div><strong>Opportunity</strong><small>决策与执行聚合</small></div>
+            <div><strong>Artifact</strong><small>正文 / Patch / Brief</small></div>
+            <div><strong>Release Receipt</strong><small>证明动作发生</small></div>
+            <div><strong>Results</strong><small>Verification / Observation</small></div>
+          </div>
+          <div class="advantage-grid">
+            <article class="advantage-card" data-number="01"><h3>完整业务上下文</h3><p>产品画像不是一句 ICP 描述，而是产品定位、市场、Buyer、Champion、Users、JTBD、触发、痛点、用例、来源和置信度的版本化上下文。</p></article>
+            <article class="advantage-card" data-number="02"><h3>一站式机会地图</h3><p>URL、Topic Cluster、Keyword、Competitor、Finding 与 Opportunity 互相映射；多 URL 和模板级机会是常态，不被压成单页卡片。</p></article>
+            <article class="advantage-card" data-number="03"><h3>Cluster-first 内容策略</h3><p>关键词先进入主题簇，再决定现有页面、新资产、页面角色和 CTA；避免“一词一文”的内容工厂。</p></article>
+            <article class="advantage-card" data-number="04"><h3>客户可直接审核的输出</h3><p>执行中心展示英文 Blog、Brief、Metadata、Code、Schema、Landing 与发布回执的真实正文，而不只是任务标题。</p></article>
+            <article class="advantage-card" data-number="05"><h3>治理与可追溯版本</h3><p>Artifact Revision、Quality Gates、人工批准、批准失效、模拟 Release、Rollback Ref 和 Audit Event 使用同一对象链。</p></article>
+            <article class="advantage-card" data-number="06"><h3>诚实的结果边界</h3><p>Receipt 证明动作，Technical Verification 证明可复查技术条件，Observation 记录固定窗口变化；三者不会被混成虚假因果。</p></article>
+          </div>
+          <h3>四个客户工作台入口</h3>
+          <div class="route-grid">
+            <a class="route-card" href="./GenGrowth-Interactive-Artifact.html#/overview"><span>OVERVIEW</span><h3>概览</h3><p>今天先判断哪三件事。</p></a>
+            <a class="route-card" href="./GenGrowth-Interactive-Artifact.html#/growth-map"><span>GROWTH MAP</span><h3>增长地图</h3><p>页面、关键词、竞品与机会。</p></a>
+            <a class="route-card" href="./GenGrowth-Interactive-Artifact.html#/execution"><span>EXECUTION</span><h3>执行中心</h3><p>直接审核完整交付物与版本。</p></a>
+            <a class="route-card" href="./GenGrowth-Interactive-Artifact.html#/results"><span>RESULTS</span><h3>效果追踪</h3><p>改前、改后与归因边界。</p></a>
+          </div>
+        </section>
+
+        <section id="walkthrough" class="manual-section" data-manual-audience="buyer">
+          <div class="section-heading">
+            <span class="eyebrow">02 · Buyer walkthrough</span>
+            <h2>购买方演示路线：10 分钟讲清完整闭环</h2>
+            <p>从真实性边界开始，以产品画像约束分析，再经过机会、交付物、批准、模拟发布和结果边界收束。不要从某一张关键词表或审计分数开始。</p>
+          </div>
+          <div class="walkthrough">
+            <article><time>00:00–00:30</time><strong>先指向离线场景通知</strong><p>明确这是确定性 Demo：不会访问客户真实 GSC / GA4，也不会写 CMS / GitHub。这样后续所有按钮都不会被误解成已上线连接。</p><a href="#boundaries">边界</a></article>
+            <article><time>00:30–01:30</time><strong>打开产品画像</strong><p>说明推荐由产品、市场、ICP、JTBD、Buying Trigger 与 Conversion Goal 约束；字段有来源、置信度、缺失和冲突。</p><a href="#profile">画像</a></article>
+            <article><time>01:30–02:30</time><strong>回到概览 Top 3</strong><p>复杂全站数据不会直接压给客户；概览只保留需要客户判断的 Artifact、Candidate Competitor 与 Unreviewed Finding。</p><a href="#overview">概览</a></article>
+            <article><time>02:30–04:30</time><strong>增长地图选择多个 URL</strong><p>演示按 URL、Topic Cluster、Opportunity 三种查看方式；同一个 Opportunity 可以覆盖一个 URL、多个 URL 或页面模板。</p><a href="#growth-map">地图</a></article>
+            <article><time>04:30–06:00</time><strong>关键词与竞品治理</strong><p>Keyword 先进入 Cluster、Page 与 CTA；Competitor 先进入 Candidate，再由客户确认关系和分析范围，避免错误样本污染结论。</p><a href="#growth-map">对象库</a></article>
+            <article><time>06:00–08:30</time><strong>执行中心查看正文</strong><p>展示完整 English Blog、Brief、Metadata、Code 或 Landing Revision，同时指出 Evidence、Target URL、Owner、Gate、Revision 与 Approval。</p><a href="#execution">执行</a></article>
+            <article><time>08:30–10:00</time><strong>模拟发布后看 Results</strong><p>Release Receipt 证明动作已经在场景中发生；Results 仍需要独立 Technical Verification 或固定窗口 Observation，系统不会即时伪造增长。</p><a href="#results">结果</a></article>
+          </div>
+        </section>
+
+        <section id="profile" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">03 · Product Profile / ICP</span>
+            <h2>产品画像 / ICP：所有增长建议的业务约束层</h2>
+            <p>画像不是先让用户填写几十个陌生字段，也不是“AI 探索审计”页面。当前流程从产品 URL 与核心业务事实建立产品档案，再让客户审核、修正并形成新版本。</p>
+          </div>
+          <div class="module-grid">
+            <article class="module-card">
+              <span class="fact-tag is-current">当前已呈现</span>
+              <h3>产品、公司与购买角色</h3>
+              <ul class="feature-list">
+                <li>产品类别、One-liner、Value Proposition、Business Model、Offer 与主要海外市场。</li>
+                <li>目标公司画像、Buyer、内部 Champion、实际 Users，以及主要 Conversion Goal。</li>
+                <li>JTBD、Buying Triggers、Pains、Use Cases 与已确认竞品池。</li>
+                <li>字段级 derivation、evidenceRefs、confidence、confirmed / inferred / missing / conflicting。</li>
+                <li>编辑保存创建新 Profile Version；旧版本进入只读历史而不是被覆盖。</li>
+              </ul>
+              <div class="warning-card"><strong>当前实现细节：</strong>画像对象会更新完整值，但 oneLiner、valueProposition、company 与 champion 的既有 profileFields provenance 记录不会在当前 handler 中同步重写。手册把它标为实现边界，不包装成已完整解决。</div>
+            </article>
+            <aside class="presenter-card" data-manual-audience="buyer">
+              <span class="eyebrow">Presenter card · 90 sec</span>
+              <h3>“系统为什么推荐这些关键词和页面？”</h3>
+              <dl>
+                <div><dt>点击路径</dt><dd>顶部产品画像 → 字段证据 → 版本历史。</dd></div>
+                <div><dt>一句话</dt><dd>建议不是从网站文本随意猜测，而是由客户已确认的产品与购买上下文约束。</dd></div>
+                <div><dt>指给客户看</dt><dd>Buyer、Champion、JTBD、字段来源、低置信度、缺失 / 冲突与 Version。</dd></div>
+                <div><dt>不要说</dt><dd>不要说“AI 已经完全理解客户业务”或“所有 ICP 字段都已自动验证”。</dd></div>
+              </dl>
+            </aside>
+          </div>
+        </section>
+
+        <section id="overview" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">04 · Overview</span>
+            <h2>概览 Overview：今天先做哪三件事</h2>
+            <p>概览不是总报表。它把当前需要客户判断的对象压缩成可执行队列，再给出机会构成、数据连接与业务上下文。</p>
+          </div>
+          <div class="compact-grid">
+            <article class="compact-card"><span class="eyebrow">Priority queue</span><h3>待审核 Artifact</h3><p>优先放入已有完整交付物、但仍需要人工审核的对象；点击后直接进入执行中心查看正文。</p></article>
+            <article class="compact-card"><span class="eyebrow">Priority queue</span><h3>Candidate Competitor</h3><p>候选竞品必须由客户确认关系与分析范围；未经批准不会进入正式 Keyword Gap。</p></article>
+            <article class="compact-card"><span class="eyebrow">Priority queue</span><h3>Unreviewed Finding</h3><p>带规则、来源和可复查证据的问题事实；客户可以确认或排除，而不是被迫接受系统结论。</p></article>
+          </div>
+          <div class="module-grid" style="margin-top:16px">
+            <article class="module-card">
+              <h3>机会构成与业务上下文</h3>
+              <p>SEO 内容、技术、GEO / AI、竞品与 CRO 只是对当前开放 Opportunity 的解释性展示归类，不是五套独立生命周期。右侧业务上下文始终显示 ICP、JTBD、市场和主转化，让“为什么优先”可被复核。</p>
+              <div class="logic-block" data-manual-audience="internal">
+                <pre>Overview Queue
+1. 取待审核 Artifact
+2. 取 Candidate Competitor
+3. 取 Unreviewed Finding
+4. 每类优先一项，再补后续
+5. 最多显示 3 项</pre>
+              </div>
+            </article>
+            <aside class="presenter-card" data-manual-audience="buyer">
+              <span class="eyebrow">Presenter card · 60 sec</span>
+              <h3>“客户不需要阅读 39 条发现才能开始。”</h3>
+              <dl>
+                <div><dt>重点</dt><dd>把系统发现转成今天需要客户判断的三个对象。</dd></div>
+                <div><dt>转场</dt><dd>选择一个待审核 Artifact，进入执行中心看完整输出。</dd></div>
+                <div><dt>优势</dt><dd>减少客户决策负担，而不是减少证据；完整证据仍可沿对象链打开。</dd></div>
+              </dl>
+            </aside>
+          </div>
+        </section>
+
+        <section id="growth-map" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">05 · Growth Map</span>
+            <h2>增长地图：URL、关键词、竞品和机会在同一个工作台</h2>
+            <p>增长地图不是只给一个 URL 的详情页。当前场景有 ${count(workspace.urls)} 个 URL、${count(workspace.clusters)} 个 Topic Cluster 与 ${count(workspace.opportunities)} 个 Opportunity；一个机会关联多个 URL 是正常路径。</p>
+          </div>
+          <div class="metrics-strip">
+            <div><strong>${count(workspace.urls)}</strong><span>当前场景 URLs</span></div>
+            <div><strong>${count(workspace.keywords)}</strong><span>Keywords</span></div>
+            <div><strong>${count(workspace.competitors)}</strong><span>Competitors</span></div>
+            <div><strong>${count(workspace.opportunities)}</strong><span>Opportunities</span></div>
+          </div>
+          <div class="compact-grid">
+            <article class="compact-card"><span class="eyebrow">Pages / URLs</span><h3>按 URL、主题簇、机会切换</h3><p>URL 视图看一页的技术、搜索、GEO 与内容信号；Cluster 视图看一组需求如何被页面承接；Opportunity 视图看多 URL 目标、Finding 和输出。</p></article>
+            <article class="compact-card"><span class="eyebrow">Keyword library</span><h3>来源可追溯的 Cluster-first 词库</h3><p>每个词保留来源、Intent、Market、Volume / KD / Rank 的缺失语义、Cluster、Mapped URL、CTA、新鲜度与相关 Artifact。</p></article>
+            <article class="compact-card"><span class="eyebrow">Competitor library</span><h3>先治理关系与范围，再正式比较</h3><p>Direct、Indirect、Status Quo、Benchmark、Publisher 等关系，与 Full Domain、Relevant Keywords、Profile Only、Excluded 范围分开管理。</p></article>
+          </div>
+          <h3>关键词不会直接变成一篇孤立文章</h3>
+          <div class="object-chain">
+            <div><strong>Keyword Candidate</strong><small>保留入库来源</small></div>
+            <div><strong>Topic Cluster</strong><small>需求主题与角色</small></div>
+            <div><strong>Existing / New Page</strong><small>决定承接资产</small></div>
+            <div><strong>Page Role</strong><small>Pillar / Support</small></div>
+            <div><strong>CTA</strong><small>映射转化目标</small></div>
+            <div><strong>Opportunity</strong><small>证据与限制</small></div>
+            <div><strong>Artifact</strong><small>Brief / Blog / Fix</small></div>
+          </div>
+          <details open>
+            <summary>URL 详情与页面证据如何工作</summary>
+            <div><p>选中 URL 后，右侧显示 28 天自然搜索点击、平均排名、Topic Cluster、当前问题和最高优先输出。点击“查看完整页面证据”打开内部 Drawer，分为摘要、抓取与渲染、搜索与分析、执行与复查四个页签。按钮图标虽然类似外链，但当前不会打开真实网站。</p></div>
+          </details>
+          <details>
+            <summary>Competitor 参与正式分析的规则</summary>
+            <div><p>手工新增默认进入 Candidate。只有 Approved 且 analysisScope 不是 Excluded 的竞品才进入正式 Gap 与对比；Candidate 可以保留发现证据但不会污染正式结论。选择 Excluded 会强制范围也为 Excluded，同时保留历史审核记录。</p></div>
+          </details>
+          <details>
+            <summary>Opportunity 如何支持多个 URL 与页面模板</summary>
+            <div><p>Opportunity 使用 urlIds 关联一个或多个 URL；部分场景还带 targetKind=template 与 templateKey，用于说明同一 Editorial Template 或页面族的问题。当前 UI 把 findingIds[0] 当作“主要 Finding”，但还没有独立 primary_finding_id 合同，这属于后续 canonical model 范围。</p></div>
+          </details>
+        </section>
+
+        <section id="execution" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">06 · Execution</span>
+            <h2>执行中心：直接查看并处理完整交付物</h2>
+            <p>增长地图确认的 Finding / Opportunity 在这里变成客户可以直接审核的 Artifact，而不是“建议写一篇文章”“修一下 canonical”这类空任务。</p>
+          </div>
+          <div class="artifact-grid">
+            <article class="compact-card"><span class="fact-tag is-current">当前正文</span><strong>English Blog Draft</strong><p>英文 SEO / GEO 正文、Title、Author、字数、引用与质量检查。</p></article>
+            <article class="compact-card"><span class="fact-tag is-current">当前正文</span><strong>Content Brief</strong><p>主题、Intent、页面角色、结构、证据要求、CTA 与决策问题。</p></article>
+            <article class="compact-card"><span class="fact-tag is-current">当前正文</span><strong>Comparison Brief</strong><p>对比维度、事实公平性、竞品范围与法律审核门禁。</p></article>
+            <article class="compact-card"><span class="fact-tag is-current">当前正文</span><strong>Code Patch</strong><p>问题、实现提案、影响 URL、验证步骤与回滚说明。</p></article>
+            <article class="compact-card"><span class="fact-tag is-current">当前正文</span><strong>Schema Patch</strong><p>结构化数据提案、JSON-LD、事实校验与技术验证。</p></article>
+            <article class="compact-card"><span class="fact-tag is-current">当前正文</span><strong>Metadata Rewrite</strong><p>当前与提议的 Title / Description、Intent 与摘要设计依据。</p></article>
+            <article class="compact-card"><span class="fact-tag is-current">当前正文</span><strong>Landing Revision</strong><p>Hero、Form、Trust、Tracking、Campaign 与 Conversion Path。</p></article>
+            <article class="compact-card"><span class="fact-tag is-simulation">场景回执</span><strong>Publish Receipt</strong><p>模拟目标、时间、Release ID、Rollback Ref 与固定观察窗口。</p></article>
+          </div>
+          <div class="module-grid" style="margin-top:18px">
+            <article class="module-card">
+              <h3>Revision、Quality Gates、Approval 与 Release</h3>
+              <ul class="feature-list">
+                <li>Artifact 保存 Title、Type、Owner、Opportunity、Target URLs、Evidence、Required Gates、Passed Gates 与当前 Revision。</li>
+                <li>Readiness = Passed Gates ÷ Required Gates；Research、SEO、GEO、Factual、Human、Technical、Tracking、Publish、Legal 按类型组合。</li>
+                <li>只有 status=review 且全部非 Human Gate 通过时才能批准；批准会补 Human Gate。</li>
+                <li>修改客户可见内容创建新 Revision，移除 Human Gate 并使旧 Approval 失效。</li>
+                <li>只有 Approved 且全部 Gate 完成才能模拟发布；成功生成 Release、Rollback Ref 与 Audit Event。</li>
+              </ul>
+              <div class="warning-card"><strong>当前场景生成逻辑：</strong>从 Opportunity 新建 Artifact 时，所有非 Human 默认门禁会直接标为 passed。这只是离线演示工作流，不代表真实研究、SEO、技术或法律检查已经由外部系统执行。</div>
+            </article>
+            <aside class="presenter-card" data-manual-audience="buyer">
+              <span class="eyebrow">Presenter card · 2 min</span>
+              <h3>“发现机会以后，客户到底收到什么？”</h3>
+              <dl>
+                <div><dt>一句话</dt><dd>这里不是任务标题列表，而是可直接审核的正文、目标 URL、证据、负责人、质量门禁和版本。</dd></div>
+                <div><dt>指给客户看</dt><dd>正文、Target URLs、Evidence、Readiness、Revision、来源 Opportunity。</dd></div>
+                <div><dt>不要说</dt><dd>不要说已经自动写入 CMS、已经自动创建 GitHub PR，或 Gate 通过就等于产生增长。</dd></div>
+                <div><dt>下一步</dt><dd>批准 → 模拟发布 → 查看 Receipt 与 Results 的区别。</dd></div>
+              </dl>
+            </aside>
+          </div>
+        </section>
+
+        <section id="results" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">07 · Results</span>
+            <h2>效果追踪：改前、改后与归因边界</h2>
+            <p>正常的增长交付不应只展示“现在有多少”。当前 Results 使用固定 Baseline / Current 窗口，分开呈现 Technical Verification、Page Observation、Campaign / UTM 与动作回执。</p>
+          </div>
+          <div class="compact-grid">
+            <article class="compact-card"><span class="fact-tag is-current">Technical Verification</span><h3>可复查技术条件</h3><p>旧值、新值、验收值和 Verified / Not Resolved / Unavailable；例如 canonical 是否唯一、结构化步骤是否完整。</p></article>
+            <article class="compact-card"><span class="fact-tag is-scenario">Page Observation</span><h3>固定窗口相关变化</h3><p>自然搜索点击、转化、AI Citation 等 Before / Current；Observed 只表示同一窗口记录到变化，不代表单一 Artifact 因果。</p></article>
+            <article class="compact-card"><span class="fact-tag is-scenario">Campaign / UTM</span><h3>分发与转化路径</h3><p>Source、Medium、Campaign、Content、Landing URL、Sessions、Direct 与 Assisted Conversion，同时保留归因限制。</p></article>
+          </div>
+          <blockquote class="lead-quote">Receipt 证明动作发生；Technical Verification 证明技术条件；Observation 记录固定窗口变化。三者不是同一个对象，也不能互相替代。</blockquote>
+          <div class="module-grid">
+            <article class="module-card">
+              <h3>结果状态的诚实语义</h3>
+              <ul class="feature-list">
+                <li><strong>Verified：</strong>复查条件满足，例如期望值与当前值一致。</li>
+                <li><strong>Not Resolved：</strong>动作可能发生，但技术验收仍未达标。</li>
+                <li><strong>Observed：</strong>固定窗口观察到变化，不宣称因果。</li>
+                <li><strong>Insufficient：</strong>样本或 Campaign 组合不足以支持结论。</li>
+                <li><strong>Unavailable：</strong>目标变更未进入可复查部署快照或来源不可用。</li>
+              </ul>
+            </article>
+            <aside class="presenter-card" data-manual-audience="buyer">
+              <span class="eyebrow">Presenter card · 90 sec</span>
+              <h3>“发布回执不是增长结果。”</h3>
+              <dl>
+                <div><dt>画面证据</dt><dd>技术复查三态、结果边界卡、动作回执与效果事件双时间线。</dd></div>
+                <div><dt>优势</dt><dd>把“做过什么”和“发生什么变化”分开，避免为了看起来成功而制造即时增长数字。</dd></div>
+                <div><dt>限制</dt><dd>没有对照实验或更强归因证据时，不把单一 Artifact 写成全部增量原因。</dd></div>
+              </dl>
+            </aside>
+          </div>
+        </section>
+
+        <section id="connections" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">08 · Connections</span>
+            <h2>数据连接：客户只看到 GSC、GA4 与 GitHub</h2>
+            <p>Sitemap、Crawl、SERP、AI Answers、Profile、客户访谈、竞品语料与 CMS 场景回执是系统证据，不在连接管理里伪装成客户要配置的 Provider。</p>
+          </div>
+          <div class="compact-grid">
+            <article class="compact-card"><span class="fact-tag is-scenario">场景可用</span><h3>Google Search Console</h3><p>支撑 Query、Landing Page、Rank、Search Observation 与 URL 映射；当前 externalConnection=false。</p></article>
+            <article class="compact-card"><span class="fact-tag is-scenario">场景可用</span><h3>Google Analytics 4</h3><p>支撑 Page、Campaign / UTM 与 Conversion Observation；当前不会读取真实客户账号。</p></article>
+            <article class="compact-card"><span class="fact-tag is-future">待接入</span><h3>GitHub</h3><p>预留 Branch → PR → Human Review → Merge → Rollback Receipt 流程；当前 connectionState=unavailable。</p></article>
+          </div>
+          <details open data-manual-audience="internal">
+            <summary>Source Freshness 规则</summary>
+            <div><p>status=unavailable 或没有 observedAt → Unavailable；Age ≤ SLA → Fresh；SLA &lt; Age ≤ 2×SLA → Aging；Age &gt; 2×SLA → Stale。对象引用多个来源时，当前 UI 显示最旧有效来源观察时间，避免只展示最新来源掩盖陈旧证据。</p></div>
+          </details>
+          <details data-manual-audience="internal">
+            <summary>缺失值诚实规则</summary>
+            <div><p>null 不是 0。Volume 缺失显示“未连接”，KD 缺失显示“不可用”，Rank 缺失显示“未覆盖”；真实数值 0 仍保留为 0。手工新增 Keyword / Competitor 的外部指标为空，不能翻译成“没有流量”或“没有 AI 引用”。</p></div>
+          </details>
+        </section>
+
+        <section id="overlay-audit" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">09 · Overlay & Audit</span>
+            <h2>弹窗与审计：31 类单一目的决策窗口</h2>
+            <p>Overlay 不是装饰层。查看、决策、创建、修改、模拟外部动作和回执被拆成不同窗口；关键写操作记录 Audit Event，许多操作同时生成 Receipt。</p>
+          </div>
+          <div class="compact-grid">${overlayCards}</div>
+          <div class="rule-note" style="margin-top:18px"><strong>统一行为：</strong>打开 Overlay 会让主工作区 inert / aria-hidden，Esc 或 Close 恢复焦点；关键写操作通过统一 Form handler 更新对象并追加 Audit Event。刷新页面后这些场景事件恢复到初始快照。</div>
+        </section>
+
+        <section id="rules" class="manual-section" data-manual-audience="internal">
+          <div class="section-heading">
+            <span class="eyebrow">10 · Object model & lifecycle</span>
+            <h2>对象模型与生命周期：从事实到交付再到结果</h2>
+            <p>Diagnosis、WebTech、Acquisition、Landing 是 Finding / Opportunity 的 Lens，不是四套 Project、四套状态机或四套交付对象。</p>
+          </div>
+          <div class="compact-grid">
+            <article class="compact-card"><span class="eyebrow">Finding</span><h3>可审核的问题事实</h3><p>包含 ruleId、Lens、Severity、Status、URL、Source 与 Evidence。确认或排除会留下客户审核记录。</p></article>
+            <article class="compact-card"><span class="eyebrow">Opportunity</span><h3>面向执行的决策聚合</h3><p>聚合一个或多个 Finding、一个或多个 URL、Priority、限制和 Artifact。当前主要 Finding 是 findingIds[0] 的 UI 约定。</p></article>
+            <article class="compact-card"><span class="eyebrow">Artifact</span><h3>客户可见的交付物</h3><p>保存正文、Type、Owner、Target URLs、Evidence、Required Gates、Passed Gates、Revision、Approval 与 Release 关系。</p></article>
+          </div>
+          <h3>关键状态机</h3>
+          <details open><summary>Finding</summary><div><pre>Unreviewed
+├─ Confirm → Confirmed
+│            ├─ Opportunity → Confirmed
+│            └─ 首个 URL → Action Required
+└─ Dismiss → Dismissed
+             ├─ Opportunity → Dismissed
+             └─ 首个 URL → Monitoring</pre></div></details>
+          <details><summary>Opportunity</summary><div><pre>Identified / Existing
+├─ Confirm → Confirmed
+├─ “需要更多数据” → needs_data*
+├─ Dismiss → Dismissed
+└─ Create Artifact → In Execution
+* 当前表单与 handler 可写入 needs_data，但 canonical opportunityStatus 枚举尚未包含该值；它不是已经稳定的状态合同。
+
+Delivered / Observing / Closed 存在于场景数据，
+但当前 Publish 不会自动推进完整 Opportunity 状态链。</pre></div></details>
+          <details><summary>Artifact 与 Revision</summary><div><pre>Review
+├─ 非 Human Gate 未完成 → Approval Blocked
+└─ 非 Human Gate 完成 + 人工批准 → Approved
+   └─ 全部 Gate 完成 + Simulated Publish
+      → Published + Release Receipt + Rollback Ref
+
+任意可编辑 Artifact
+└─ New Revision → Review
+   ├─ Human Gate 移除
+   ├─ 旧 Approval 失效
+   └─ 历史 Revision / Release 保留</pre></div></details>
+          <details><summary>Competitor</summary><div><pre>Manual Add → Candidate
+Candidate + Review
+├─ Approved + Non-excluded Scope → 参与正式分析
+├─ Candidate → 保留但不参与
+└─ Excluded → 强制 Excluded Scope，历史证据保留</pre></div></details>
+          <details><summary>底层规则速查</summary><div>
+            <p><strong>开放机会：</strong>closed 与 dismissed 不计入开放机会。Priority 按 P0 → P1 → P2；同优先级按状态、Finding 数与标题排序。</p>
+            <p><strong>画像完整度：</strong>从十类核心上下文是否存在计算，不是字段置信度均值。</p>
+            <p><strong>Readiness：</strong>Passed Gates ÷ Required Gates × 100。</p>
+            <p><strong>Results：</strong>页面 KPI 聚合 pageObservations；百分比为 (current-before)/before；before=0 且 current&gt;0 显示“新增”；Tagged UTM 只聚合 campaign 非空记录。</p>
+          </div></details>
+        </section>
+
+        <section id="sources" class="manual-section" data-manual-audience="internal">
+          <div class="section-heading">
+            <span class="eyebrow">11 · Source Dictionary</span>
+            <h2>数据来源字典：11 个来源的可见性、用途与边界</h2>
+            <p>客户连接只显示 3 个来源；完整对象 provenance 使用 11 个来源。每条来源都保留 status、audienceVisibility、observedAt、Freshness SLA 与 recordScope。</p>
+          </div>
+          <div class="index-grid">${sourceCards}</div>
+        </section>
+
+        <section id="actions" class="manual-section" data-manual-audience="internal">
+          <div class="section-heading">
+            <span class="eyebrow">12 · Action index</span>
+            <h2>Action / 按钮索引：57 个当前真实交互</h2>
+            <p>索引来自当前 Artifact 的 handleAction 与 data-action，而不是根据设计图猜测。每项说明作用对象、立即结果、状态副作用、相关 Form、外部副作用和持久性。</p>
+          </div>
+          <div class="index-toolbar"><p><strong>${actionSpecs.length}</strong> 个 Action · 搜索框可按中文、英文 action、对象或模块过滤。</p></div>
+          <div class="index-grid">${actionCards}</div>
+          <div class="search-empty" data-search-empty>没有匹配的 Action、Form 或 Source。请尝试 Opportunity、review-finding、src-gsc、批准、归因等关键词。</div>
+        </section>
+
+        <section id="forms" class="manual-section" data-manual-audience="internal">
+          <div class="section-heading">
+            <span class="eyebrow">13 · Form index</span>
+            <h2>Form / 表单索引：14 类写操作与阻断条件</h2>
+            <p>打开表单与提交表单是两个不同动作。下面只描述当前 handler 实际会读取的字段、创建或修改的对象、阻断条件与审计副作用。</p>
+          </div>
+          <div class="index-grid">${formCards}</div>
+        </section>
+
+        <section id="boundaries" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">14 · Capability boundary</span>
+            <h2>当前与未来能力边界：买方讲解不能越线</h2>
+            <p>当前 Artifact 已形成可演示闭环，但外部连接、生产持久化与部分 canonical object contract 仍是后续范围。</p>
+          </div>
+          <div class="capability-columns">
+            <article class="capability-card is-current" data-capability-boundary="current">
+              <span class="fact-tag is-current">当前 Artifact 已实现</span>
+              <h3>可见且可操作</h3>
+              <ul>
+                <li>四入口工作台与中文客户主界面。</li>
+                <li>字段 provenance 与 append-only Profile Version。</li>
+                <li>URL / Cluster / Keyword / Competitor / Opportunity read model。</li>
+                <li>Finding 与 Opportunity 审核。</li>
+                <li>完整 Artifact 正文、Revision、Gate、Approval 失效。</li>
+                <li>模拟分享、模拟发布、Receipt 与 Audit。</li>
+                <li>固定窗口 Results、UTM 与归因限制。</li>
+              </ul>
+            </article>
+            <article class="capability-card is-scenario" data-capability-boundary="scenario">
+              <span class="fact-tag is-simulation">当前会话模拟</span>
+              <h3>完整交互，但不外写</h3>
+              <ul>
+                <li>GSC / GA4“可用”表示场景快照可分析。</li>
+                <li>Sync 只更新时间，不拉真实数据。</li>
+                <li>分享生成 local-artifact://，不发邮件。</li>
+                <li>发布生成 simulated Release，不写 CMS。</li>
+                <li>所有业务变化在浏览器内存，刷新后重置。</li>
+                <li>复制按钮会尝试真实写本地剪贴板。</li>
+              </ul>
+            </article>
+            <article class="capability-card is-future" data-capability-boundary="future">
+              <span class="fact-tag is-future">未来 / 计划能力</span>
+              <h3>当前不能宣称可用</h3>
+              <ul>
+                <li>真实 GitHub Branch、PR、Merge、Rollback 回写。</li>
+                <li>真实 CMS Publish、站点权限与 Idempotency。</li>
+                <li>独立 canonical Action 对象。</li>
+                <li>严格 primary_finding_id 与统一 TargetRef。</li>
+                <li>独立 SearchQuery / GenerativeQuery / PageAssignment。</li>
+                <li>完整 B2B ICP V2、多候选 ICP 卡片。</li>
+                <li>完整 Results contract 与 regressed 状态。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="faq" class="manual-section">
+          <div class="section-heading">
+            <span class="eyebrow">15 · FAQ & source registry</span>
+            <h2>FAQ、讲解口径与来源登记</h2>
+            <p>以下问题可以直接用于购买方问答；答案只描述当前 Artifact，生产安全、DPA、真实 Provider 与后端架构需要独立材料。</p>
+          </div>
+          <details open><summary>这是实时产品吗？</summary><div><p>当前文件是离线确定性场景 Artifact。数据来自内置 RelayOps 快照，不连接真实 GSC、GA4、CMS、GitHub 或第三方 Provider。它用于验证产品信息架构、对象闭环、客户审核与真实性边界。</p></div></details>
+          <details><summary>GSC / GA4 为什么显示可用？</summary><div><p>“可用”表示当前场景快照可用于分析演示，不等于 OAuth 已连接。更新分析数据只修改当前会话 observedAt、重算摘要并写同步 Audit Event。</p></div></details>
+          <details><summary>GitHub 能自动创建 PR 吗？</summary><div><p>当前不能。界面保留了 Branch → PR → Review → Merge → Rollback Receipt 的计划流程，connectionState 明确为 unavailable。</p></div></details>
+          <details><summary>为什么 Keyword 不直接生成文章？</summary><div><p>因为 Keyword 是发现与衡量单位，Page 是交付单位，Topic Cluster 是执行与经营单位。平台先决定主题、现有 / 新页面、页面角色和 CTA，再形成 Opportunity 与 Artifact。</p></div></details>
+          <details><summary>候选竞品会影响正式分析吗？</summary><div><p>不会。只有 Approved 且分析范围不是 Excluded 的竞品才进入正式 Gap 与比较。Candidate 可以保留发现证据，等待客户审核。</p></div></details>
+          <details><summary>为什么修改 Artifact 后必须重新批准？</summary><div><p>Approval 绑定精确 Revision。客户可见正文、实现说明或验收范围变化后，旧 Approval 不能自动延续；历史 Revision 和 Release 仍作为只读审计记录保留。</p></div></details>
+          <details><summary>模拟分享或发布会修改客户网站吗？</summary><div><p>不会。分享只生成不可外部访问的 local-artifact:// 地址；发布只在浏览器内存创建 simulated Release、Rollback Ref 与 Audit Event。不会发邮件，也没有真实外部写入。</p></div></details>
+          <details><summary>结果增长能归因于某个 Artifact 吗？</summary><div><p>当前不能直接这样推断。Observed 只表示固定窗口变化；Technical Verification 表示可复查条件；Release Receipt 表示动作发生。因果需要更严格实验或归因证据。</p></div></details>
+          <details><summary>四个 Lens 是四套产品吗？</summary><div><p>不是。Diagnosis、WebTech、Acquisition、Landing 只是同一 Finding / Opportunity 对象链的观察视角，不拥有独立 Project、Artifact 或 Results 生命周期。</p></div></details>
+          <div class="source-registry" data-manual-audience="internal" style="margin-top:24px">
+            <strong>事实来源优先级</strong>
+            <ol>
+              <li>当前交互式 Artifact 的可见行为与内嵌场景数据。</li>
+              <li>当前 client-app.js 的 handleAction / handleForm / renderOverlay 逻辑。</li>
+              <li>当前 workspace-data.js 的对象、状态、来源与派生规则。</li>
+              <li>PRD 只用于标注未来边界，不能覆盖当前行为。</li>
+            </ol>
+            <p><code>${escapeHtml(artifactFile)}</code></p>
+            <p><code>${escapeHtml(workspaceDataFile)}</code></p>
+            <p><code>Artifact SHA-256: ${artifactHash}</code></p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+        var root = document.documentElement;
+        var body = document.body;
+        var search = document.querySelector("[data-manual-search]");
+        var modeButtons = Array.from(document.querySelectorAll("button[data-manual-mode]"));
+        var mobileModeSelect = document.querySelector("[data-manual-mode-select]");
+        document.querySelectorAll(".manual-section").forEach(function (section) {
+          section.setAttribute("data-manual-search-item", "");
+        });
+        var searchItems = Array.from(document.querySelectorAll("[data-manual-search-item]"));
+        var empty = document.querySelector("[data-search-empty]");
+        var expandButton = document.querySelector("[data-manual-expand]");
+        var tocButton = document.querySelector("[data-toc-toggle]");
+        var tocScrim = document.querySelector("[data-toc-scrim]");
+        var manualNav = document.querySelector("#manual-navigation");
+        var manualMain = document.querySelector("#manual-content");
+        var navLinks = Array.from(document.querySelectorAll("[data-manual-nav]"));
+
+        function normalize(value) {
+          return String(value || "").toLowerCase().normalize("NFKC").replace(/\\s+/g, " ").trim();
+        }
+
+        function setMode(mode) {
+          root.setAttribute("data-manual-mode", mode);
+          modeButtons.forEach(function (button) {
+            var active = button.getAttribute("data-manual-mode") === mode;
+            button.classList.toggle("is-active", active);
+            button.setAttribute("aria-pressed", String(active));
+          });
+          if (mobileModeSelect) mobileModeSelect.value = mode;
+        }
+
+        modeButtons.forEach(function (button) {
+          button.addEventListener("click", function () {
+            setMode(button.getAttribute("data-manual-mode"));
+          });
+        });
+        mobileModeSelect.addEventListener("change", function () {
+          setMode(mobileModeSelect.value);
+        });
+
+        function applySearch() {
+          var query = normalize(search.value);
+          var visible = 0;
+          root.classList.toggle("is-searching", Boolean(query));
+          searchItems.forEach(function (item) {
+            var haystack = normalize(
+              item.textContent + " " +
+              (item.getAttribute("data-action-id") || "") + " " +
+              (item.getAttribute("data-form-id") || "") + " " +
+              (item.getAttribute("data-source-id") || "")
+            );
+            var match = !query || haystack.indexOf(query) !== -1;
+            item.hidden = !match;
+            item.classList.toggle("search-hit", Boolean(query && match));
+            if (match) visible += 1;
+          });
+          if (empty) empty.classList.toggle("is-visible", Boolean(query && visible === 0));
+          if (query) {
+            document.querySelectorAll("details").forEach(function (details) {
+              if (normalize(details.textContent).indexOf(query) !== -1) details.open = true;
+            });
+          }
+        }
+
+        search.addEventListener("input", applySearch);
+        search.addEventListener("change", applySearch);
+
+        expandButton.addEventListener("click", function () {
+          var expand = expandButton.getAttribute("aria-expanded") !== "true";
+          document.querySelectorAll("details").forEach(function (details) {
+            details.open = expand;
+          });
+          expandButton.setAttribute("aria-expanded", String(expand));
+          expandButton.textContent = expand ? "收起全部" : "展开全部";
+        });
+
+        document.querySelector("[data-manual-print]").addEventListener("click", function () {
+          window.print();
+        });
+
+        function isMobileToc() {
+          return window.matchMedia("(max-width: 900px)").matches;
+        }
+
+        function setToc(open, restoreFocus) {
+          open = Boolean(open && isMobileToc());
+          body.classList.toggle("is-toc-open", open);
+          tocButton.setAttribute("aria-expanded", String(open));
+          manualNav.setAttribute("aria-hidden", String(isMobileToc() && !open));
+          if (isMobileToc() && !open) manualNav.setAttribute("inert", "");
+          else manualNav.removeAttribute("inert");
+          if ("inert" in manualMain) manualMain.inert = open;
+          else manualMain.setAttribute("aria-hidden", open ? "true" : "false");
+          body.style.overflow = open ? "hidden" : "";
+          if (open) {
+            var first = manualNav.querySelector("button, a[href]");
+            if (first) first.focus();
+          } else if (restoreFocus) {
+            tocButton.focus();
+          }
+        }
+
+        tocButton.addEventListener("click", function () {
+          setToc(!body.classList.contains("is-toc-open"), false);
+        });
+        tocScrim.addEventListener("click", function () {
+          setToc(false, true);
+        });
+
+        navLinks.forEach(function (link) {
+          link.addEventListener("click", function () {
+            setToc(false, false);
+          });
+        });
+
+        document.addEventListener("keydown", function (event) {
+          var tag = document.activeElement && document.activeElement.tagName;
+          var editable = tag === "INPUT" || tag === "TEXTAREA" || document.activeElement.isContentEditable;
+          if ((event.key === "/" && !editable) || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k")) {
+            event.preventDefault();
+            search.focus();
+            search.select();
+          }
+          if (event.key === "Escape" && body.classList.contains("is-toc-open")) {
+            event.preventDefault();
+            setToc(false, true);
+          }
+          if (event.key === "Tab" && body.classList.contains("is-toc-open")) {
+            var focusable = Array.from(manualNav.querySelectorAll("button:not([disabled]), a[href], select:not([disabled])"));
+            var firstFocusable = focusable[0];
+            var lastFocusable = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === firstFocusable) {
+              event.preventDefault();
+              lastFocusable.focus();
+            } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+              event.preventDefault();
+              firstFocusable.focus();
+            }
+          }
+        });
+
+        window.addEventListener("resize", function () {
+          if (!isMobileToc()) setToc(false, false);
+          else if (!body.classList.contains("is-toc-open")) manualNav.setAttribute("aria-hidden", "true");
+        });
+
+        if ("IntersectionObserver" in window) {
+          var sections = Array.from(document.querySelectorAll("main section[id]"));
+          var observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              if (!entry.isIntersecting) return;
+              navLinks.forEach(function (link) {
+                link.classList.toggle("is-active", link.getAttribute("href") === "#" + entry.target.id);
+              });
+            });
+          }, { rootMargin: "-18% 0px -72% 0px", threshold: 0 });
+          sections.forEach(function (section) { observer.observe(section); });
+        }
+
+        setMode("all");
+        setToc(false, false);
+      })();
+    </script>
+  </body>
+</html>`;
+
+await mkdir(path.dirname(outputFile), { recursive: true });
+await writeFile(outputFile, html, "utf8");
+
+console.log(
+  JSON.stringify(
+    {
+      output: outputFile,
+      bytes: Buffer.byteLength(html),
+      artifactHash,
+      actionIndex: actionSpecs.length,
+      formIndex: formSpecs.length,
+      sourceIndex: workspace.dataSources.length,
+    },
+    null,
+    2,
+  ),
+);
