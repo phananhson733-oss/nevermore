@@ -7,16 +7,16 @@
   "migrationFilePattern": "^[0-9]{4}_.+\\.sql$",
   "authorityFiles": {
     "README.md": "dfe97d1ca273053a27841ab903ce236ad4d62329b0f86ee303912c617a5977b8",
-    "MVP-IMPLEMENTATION-SPEC.md": "1befd168310f989adfb6fee89aba4a298450bfc19c6dac262b326538236d70ce",
-    "openapi.yaml": "efc7608b73a6aeb7e7b0655102f765c25f165f681ad0f4aa8d88a487ba566af7",
+    "MVP-IMPLEMENTATION-SPEC.md": "485a9cfb68413e302638e04abd64cf9645d959841d9d71970bb33e4137ed91cd",
+    "openapi.yaml": "b5d46f3909614ac41b95b09f03ba50950df3c2c77eefa2b5e0299172f73cd81c",
     "schema.sql": "c960089b404dbfe6712f619d32eac62ad1992e632f247c5105a88ddc468cb76b",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "scripts/schema-smoke.sql": "17366c8984199b11ef466b9a5db42f4a4362b3a376947781586cf9708ae4c6f5",
     "scripts/verify-spec.mjs": "843cee90bd0fb15936860fde09ae2a31b64b7e1b4278c10e9d510916cb781813"
   },
   "implementationFiles": {
-    "openapi/mvp.yaml": "efc7608b73a6aeb7e7b0655102f765c25f165f681ad0f4aa8d88a487ba566af7",
-    "packages/contracts/src/generated/openapi.ts": "0596daf3e0d1955f35a5820dcf0204935f73e6982637cc0285af197b2a90e761",
+    "openapi/mvp.yaml": "b5d46f3909614ac41b95b09f03ba50950df3c2c77eefa2b5e0299172f73cd81c",
+    "packages/contracts/src/generated/openapi.ts": "7292beddc3edc0e8489345d10d92565cbe243c0096f388dd8e06f2ff2f8c5d00",
     "schemas/service-bundle-manifest.schema.json": "8b9fbbf7ef33336feeeffce987e7787843c43d72900e6b0023ff09b5acc89f80",
     "packages/db/migrations/schema-smoke.sql": "17366c8984199b11ef466b9a5db42f4a4362b3a376947781586cf9708ae4c6f5",
     "scripts/verify-implementation.mjs": "b8f3f2deffe559e1867a64d55131c9123ac2847274d5e047d5595d6df36238c2"

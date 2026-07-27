@@ -3,12 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RULE_OPPORTUNITY_PROJECTION } from "@sf/contracts";
 import { ActionsRepository, type ProjectScope } from "@sf/db";
 import { reviewProjectFinding } from "@/lib/services/finding-review";
-import { createActionArtifact } from "@/lib/services/artifacts";
-import { getProjectOpportunity } from "@/lib/services/opportunities";
 import {
-  getWorkspaceView,
-  type ExecutionView,
-} from "@/lib/services/workspace-view";
+  createActionArtifact,
+  listProjectArtifacts,
+} from "@/lib/services/artifacts";
+import { getProjectOpportunity } from "@/lib/services/opportunities";
+import type { ArtifactDto } from "@/lib/services/artifact-mappers";
 import {
   buildCtx,
   createDbHandle,
@@ -24,11 +24,12 @@ import {
 
 /**
  * Vertical proof of the Slice 1 technical delivery chain (Task 7): one measured
- * Finding -> one canonical Action -> one template-fixed Artifact, projected
- * read-only onto the Execution surface. The chain is driven through the REAL
- * services (finding review, artifact create) and the REAL worker runner, then
- * observed through the canonical read models — no bespoke fixtures, no writes
- * from the projection layer.
+ * Finding -> one canonical Action -> one template-fixed Artifact. The chain is
+ * driven through the REAL services (finding review, artifact create) and the
+ * REAL worker runner, then observed through the canonical read models — no
+ * bespoke fixtures, no writes from the read layer. The Execution aggregate view
+ * that once mirrored this join was retired with stop gate §19.4; the Artifact
+ * list projection is the canonical delivery read model now.
  */
 
 const describeDb = DB_AVAILABLE ? describe : describe.skip;
@@ -52,7 +53,7 @@ describeDb("technical opportunity vertical single chain", () => {
   let confirmedArtifactType: string;
   let primaryActionCount: number;
   let supportingActionCounts: number[];
-  let executionView: ExecutionView;
+  let deliveredArtifacts: ArtifactDto[];
 
   beforeAll(async () => {
     handle = createDbHandle(DATABASE_URL);
@@ -60,7 +61,11 @@ describeDb("technical opportunity vertical single chain", () => {
 
     // Crawl-only diagnostic: trips the technical rules and leaves every Finding
     // reviewable (nothing is auto-confirmed), so this test owns the confirm.
-    const run = await runMissingProviderDiagnostic(handle, ctx, "tech-vertical");
+    const run = await runMissingProviderDiagnostic(
+      handle,
+      ctx,
+      "tech-vertical",
+    );
     scope = run.scope;
     actor = run.actor;
 
@@ -70,7 +75,8 @@ describeDb("technical opportunity vertical single chain", () => {
       { limit: 100, cursor: null, activeOnly: false },
     );
     const httpFinding = findings.data.find((f) => f.ruleId === "TECH-HTTP-001");
-    if (!httpFinding) throw new Error("golden fixture did not trip TECH-HTTP-001");
+    if (!httpFinding)
+      throw new Error("golden fixture did not trip TECH-HTTP-001");
     primaryFindingId = httpFinding.id;
     supportingFindingIds = findings.data
       .filter((f) => f.id !== httpFinding.id)
@@ -94,7 +100,8 @@ describeDb("technical opportunity vertical single chain", () => {
       actor,
       { reviewState: "confirmed", baseRevision: httpFinding.reviewRevision },
     );
-    if (!firstReview.action) throw new Error("confirm did not create an Action");
+    if (!firstReview.action)
+      throw new Error("confirm did not create an Action");
     firstActionId = firstReview.action.id;
 
     const replay = await reviewProjectFinding(
@@ -152,16 +159,12 @@ describeDb("technical opportunity vertical single chain", () => {
       projectId: scope.projectId,
     });
 
-    const view = await getWorkspaceView(
+    const artifactPage = await listProjectArtifacts(
       { workspaceId: scope.workspaceId },
       scope.projectId,
-      "execution",
-      "en",
+      { limit: 100, cursor: null },
     );
-    if (view.view !== "execution") {
-      throw new Error(`expected execution view, got ${view.view}`);
-    }
-    executionView = view;
+    deliveredArtifacts = artifactPage.data;
   }, 120_000);
 
   afterAll(async () => {
@@ -188,20 +191,12 @@ describeDb("technical opportunity vertical single chain", () => {
     for (const count of supportingActionCounts) expect(count).toBe(0);
   });
 
-  it("projects exactly one current technical-ticket chain on the Execution surface", () => {
-    expect(executionView.chains).toHaveLength(1);
-    const chain = executionView.chains[0]!;
-    expect(chain.primaryFindingId).toBe(primaryFindingId);
-    expect(chain.fixedArtifactType).toBe("technical_ticket");
-    expect(chain.auditRecheckState).toBe("current");
-    expect(chain.artifact?.currentRevision).toBe(1);
-
-    const currentTechnicalTickets = executionView.chains.filter(
-      (c) =>
-        c.fixedArtifactType === "technical_ticket" &&
-        c.auditRecheckState === "current" &&
-        c.artifact !== null,
-    );
-    expect(currentTechnicalTickets).toHaveLength(1);
+  it("delivers exactly one template-fixed technical ticket on the canonical Artifact read model", () => {
+    expect(deliveredArtifacts).toHaveLength(1);
+    const delivered = deliveredArtifacts[0]!;
+    expect(delivered.actionId).toBe(firstActionId);
+    expect(delivered.artifactType).toBe("technical_ticket");
+    expect(delivered.currentRevision).toBe(1);
+    expect(delivered.status).not.toBe("archived");
   });
 });

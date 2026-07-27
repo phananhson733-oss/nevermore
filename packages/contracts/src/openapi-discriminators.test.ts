@@ -2,14 +2,12 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import type {
-  components,
-  operations,
-} from "./generated/openapi.ts";
+import type { components, operations } from "./generated/openapi.ts";
 
 type Equal<Left, Right> =
-  (<Value>() => Value extends Left ? 1 : 2) extends
-  (<Value>() => Value extends Right ? 1 : 2)
+  (<Value>() => Value extends Left ? 1 : 2) extends <
+    Value,
+  >() => Value extends Right ? 1 : 2
     ? true
     : false;
 type Expect<Value extends true> = Value;
@@ -22,7 +20,8 @@ type ConnectResponse =
   operations["connectProjectSource"]["responses"][200]["content"]["application/json"];
 type WorkspaceResponse =
   operations["getProjectWorkspaceView"]["responses"][200]["content"]["application/json"];
-type ExportSchemaVersion = components["schemas"]["ExportBundle"]["schemaVersion"];
+type ExportSchemaVersion =
+  components["schemas"]["ExportBundle"]["schemaVersion"];
 
 type _DraftMode = Expect<
   Equal<components["schemas"]["DraftContextRequest"]["mode"], "draft">
@@ -84,26 +83,16 @@ type _OverviewFrozenDiagnosticRun = Expect<
     components["schemas"]["Uuid"] | null
   >
 >;
-type _PlanView = Expect<
-  Equal<components["schemas"]["PlanView"]["view"], "plan">
->;
-type _StudioView = Expect<
-  Equal<components["schemas"]["StudioView"]["view"], "studio">
->;
-type _ReportView = Expect<
-  Equal<components["schemas"]["ReportView"]["view"], "report">
->;
+// Stop gate §19.4: the workspace aggregate serves exactly the one view a
+// shipped screen consumes. If this union widens again, that is a deliberate
+// contract change, not drift.
 type _WorkspaceResponseView = Expect<
-  Equal<
-    WorkspaceResponse["data"]["view"],
-    "overview" | "plan" | "studio" | "report"
-  >
+  Equal<WorkspaceResponse["data"]["view"], "overview">
 >;
 type _ReadableExportSchemaVersions = Expect<
   Equal<
     ExportSchemaVersion,
-    | "signalframe.service-bundle.0.2.0"
-    | "signalframe.service-bundle.0.3.0"
+    "signalframe.service-bundle.0.2.0" | "signalframe.service-bundle.0.3.0"
   >
 >;
 
@@ -123,9 +112,6 @@ describe("generated OpenAPI discriminator literals", () => {
       ["phase", "authorization"],
       ["phase", "connected"],
       ["view", "overview"],
-      ["view", "plan"],
-      ["view", "studio"],
-      ["view", "report"],
     ] as const) {
       expect(generated).toContain(`${property}: "${literal}";`);
     }
@@ -140,11 +126,24 @@ describe("generated OpenAPI discriminator literals", () => {
       ["phase", "PropertySelectionPhase"],
       ["phase", "ConnectedPhase"],
       ["view", "OverviewView"],
-      ["view", "PlanView"],
-      ["view", "StudioView"],
-      ["view", "ReportView"],
     ] as const) {
       expect(generated).not.toContain(`${property}: "${schemaName}";`);
+    }
+  });
+
+  it("no longer emits the retired workspace views (stop gate §19.4)", () => {
+    // `plan`, `studio` and `report` were Slice 1 redirect screens and
+    // `execution` never reached the contract; none of them may resurface as a
+    // workspace view literal without a deliberate spec change.
+    for (const literal of ["plan", "studio", "report", "execution"] as const) {
+      expect(generated).not.toContain(`view: "${literal}";`);
+    }
+    for (const schemaName of [
+      "PlanView",
+      "StudioView",
+      "ReportView",
+    ] as const) {
+      expect(generated).not.toContain(schemaName);
     }
   });
 

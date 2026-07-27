@@ -4,7 +4,8 @@ process.env["APP_ORIGIN"] ??= "http://localhost:3000";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
 process.env["SUPABASE_ANON_KEY"] ??= "test-anon";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] ??= "test-service-role";
-process.env["CREDENTIAL_ENCRYPTION_KEY"] ??= Buffer.alloc(32).toString("base64");
+process.env["CREDENTIAL_ENCRYPTION_KEY"] ??=
+  Buffer.alloc(32).toString("base64");
 process.env["GOOGLE_OAUTH_CLIENT_ID"] ??= "id";
 process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ??= "secret";
 process.env["DATAFORSEO_ENABLED"] ??= "false";
@@ -71,7 +72,6 @@ describeDb("workspace overview coverage (spec §11.3, AC-036)", () => {
       { workspaceId },
       created.project.id,
       "overview",
-      null,
     );
 
     expect(view.view).toBe("overview");

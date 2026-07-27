@@ -309,7 +309,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [overview, plan, studio, report]
+            enum: [overview]
         - name: outputLocale
           in: query
           schema: { $ref: '#/components/schemas/LocaleCode' }
@@ -5362,27 +5362,6 @@ components:
         artifactType: { $ref: '#/components/schemas/ArtifactType' }
         status: { $ref: '#/components/schemas/ArtifactStatus' }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }
-    PlanView:
-      type: object
-      additionalProperties: false
-      required: [view, actions]
-      properties:
-        view: { const: plan }
-        actions: { type: array, items: { $ref: '#/components/schemas/Action' } }
-    StudioView:
-      type: object
-      additionalProperties: false
-      required: [view, artifacts]
-      properties:
-        view: { const: studio }
-        artifacts: { type: array, items: { $ref: '#/components/schemas/Artifact' } }
-    ReportView:
-      type: object
-      additionalProperties: false
-      required: [view, report]
-      properties:
-        view: { const: report }
-        report: { $ref: '#/components/schemas/Report' }
     WorkspaceViewResponse:
       type: object
       additionalProperties: false
@@ -5391,13 +5370,7 @@ components:
         data:
           oneOf:
             - $ref: '#/components/schemas/OverviewView'
-            - $ref: '#/components/schemas/PlanView'
-            - $ref: '#/components/schemas/StudioView'
-            - $ref: '#/components/schemas/ReportView'
           discriminator:
             propertyName: view
             mapping:
               overview: '#/components/schemas/OverviewView'
-              plan: '#/components/schemas/PlanView'
-              studio: '#/components/schemas/StudioView'
-              report: '#/components/schemas/ReportView'

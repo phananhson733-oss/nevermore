@@ -3159,32 +3159,8 @@ export interface components {
             status: components["schemas"]["ArtifactStatus"];
             updatedAt: components["schemas"]["Timestamp"];
         };
-        PlanView: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            view: "plan";
-            actions: components["schemas"]["Action"][];
-        };
-        StudioView: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            view: "studio";
-            artifacts: components["schemas"]["Artifact"][];
-        };
-        ReportView: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            view: "report";
-            report: components["schemas"]["Report"];
-        };
         WorkspaceViewResponse: {
-            data: components["schemas"]["OverviewView"] | components["schemas"]["PlanView"] | components["schemas"]["StudioView"] | components["schemas"]["ReportView"];
+            data: components["schemas"]["OverviewView"];
         };
     };
     responses: {
@@ -3642,7 +3618,7 @@ export interface operations {
     getProjectWorkspaceView: {
         parameters: {
             query: {
-                view: "overview" | "plan" | "studio" | "report";
+                view: "overview";
                 outputLocale?: components["schemas"]["LocaleCode"];
             };
             header?: never;

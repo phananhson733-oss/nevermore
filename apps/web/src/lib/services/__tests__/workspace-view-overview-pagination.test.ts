@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   transaction: vi.fn(),
   getProject: vi.fn(),
-  getProjectReport: vi.fn(),
   listProjectActions: vi.fn(),
   listProjectArtifacts: vi.fn(),
   listProjectFindings: vi.fn(),
@@ -21,9 +20,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/services/projects", () => ({ getProject: mocks.getProject }));
-vi.mock("@/lib/services/report", () => ({
-  getProjectReport: mocks.getProjectReport,
-}));
 vi.mock("@/lib/services/actions-service", () => ({
   listProjectActions: mocks.listProjectActions,
 }));
@@ -72,10 +68,7 @@ function action(
   };
 }
 
-function finding(
-  id: string,
-  evidenceId: string | null = null,
-): FindingDto {
+function finding(id: string, evidenceId: string | null = null): FindingDto {
   return {
     id,
     ruleId: "TECH-HTTP-001",
@@ -222,7 +215,9 @@ describe("workspace complete pagination and snapshot reads", () => {
     vi.spyOn(
       GrowthMapReadRepository.prototype,
       "findLatestReadableRun",
-    ).mockResolvedValue({ id: "00000000-0000-4000-8000-000000000090" } as never);
+    ).mockResolvedValue({
+      id: "00000000-0000-4000-8000-000000000090",
+    } as never);
     vi.spyOn(
       GrowthMapReadRepository.prototype,
       "listCurrentRunUrls",
@@ -252,20 +247,27 @@ describe("workspace complete pagination and snapshot reads", () => {
   });
 
   it("keeps an older critical action and its evidence/artifact behind 100 newer rows", async () => {
-    mocks.listProjectActions.mockImplementation(async (_scope, _projectId, options) =>
-      options.cursor === null
-        ? {
-            data: Array.from({ length: 100 }, (_, index) =>
-              action(`recent-medium-${index}`, `recent-finding-${index}`, "medium"),
-            ),
-            nextCursor: "actions-page-2",
-            limit: 100,
-          }
-        : {
-            data: [action("old-critical", "old-critical-finding", "critical")],
-            nextCursor: null,
-            limit: 100,
-          },
+    mocks.listProjectActions.mockImplementation(
+      async (_scope, _projectId, options) =>
+        options.cursor === null
+          ? {
+              data: Array.from({ length: 100 }, (_, index) =>
+                action(
+                  `recent-medium-${index}`,
+                  `recent-finding-${index}`,
+                  "medium",
+                ),
+              ),
+              nextCursor: "actions-page-2",
+              limit: 100,
+            }
+          : {
+              data: [
+                action("old-critical", "old-critical-finding", "critical"),
+              ],
+              nextCursor: null,
+              limit: 100,
+            },
     );
     mocks.listProjectFindings.mockImplementation(
       async (_scope, _projectId, options) =>
@@ -302,7 +304,10 @@ describe("workspace complete pagination and snapshot reads", () => {
         options.cursor === null
           ? {
               data: Array.from({ length: 100 }, (_, index) =>
-                snapshot(`recent-snapshot-${index}`, "2026-07-19T00:00:00.000Z"),
+                snapshot(
+                  `recent-snapshot-${index}`,
+                  "2026-07-19T00:00:00.000Z",
+                ),
               ),
               nextCursor: "snapshots-page-2",
               limit: 100,
@@ -316,7 +321,7 @@ describe("workspace complete pagination and snapshot reads", () => {
             },
     );
 
-    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview", null);
+    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview");
 
     expect(view.view).toBe("overview");
     if (view.view !== "overview") throw new Error("expected Overview view");
@@ -389,7 +394,7 @@ describe("workspace complete pagination and snapshot reads", () => {
       limit: 100,
     });
 
-    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview", null);
+    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview");
 
     expect(view.view).toBe("overview");
     if (view.view !== "overview") throw new Error("expected Overview view");
@@ -402,11 +407,10 @@ describe("workspace complete pagination and snapshot reads", () => {
     );
     expect(
       vi.mocked(GrowthMapReadRepository.prototype.listResolvedTargets),
-    ).toHaveBeenCalledWith(
-      SCOPE,
-      "00000000-0000-4000-8000-000000000090",
-      [firstUrl, secondUrl],
-    );
+    ).toHaveBeenCalledWith(SCOPE, "00000000-0000-4000-8000-000000000090", [
+      firstUrl,
+      secondUrl,
+    ]);
   });
 
   it("returns a null frozen run and no legacy work cards when no readable audit exists", async () => {
@@ -419,7 +423,7 @@ describe("workspace complete pagination and snapshot reads", () => {
       limit: 100,
     });
 
-    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview", null);
+    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview");
 
     expect(view.view).toBe("overview");
     if (view.view !== "overview") throw new Error("expected Overview view");
@@ -431,14 +435,16 @@ describe("workspace complete pagination and snapshot reads", () => {
   });
 
   it("fails explicitly when a resource cursor stops advancing", async () => {
-    mocks.listProjectActions.mockImplementation(async (_scope, _projectId, options) => ({
-      data: [action("action", "finding", "high")],
-      nextCursor: options.cursor === null ? "stuck-cursor" : "stuck-cursor",
-      limit: 100,
-    }));
+    mocks.listProjectActions.mockImplementation(
+      async (_scope, _projectId, options) => ({
+        data: [action("action", "finding", "high")],
+        nextCursor: options.cursor === null ? "stuck-cursor" : "stuck-cursor",
+        limit: 100,
+      }),
+    );
 
     await expect(
-      getWorkspaceView(SCOPE, SCOPE.projectId, "overview", null),
+      getWorkspaceView(SCOPE, SCOPE.projectId, "overview"),
     ).rejects.toMatchObject({
       code: "DEPENDENCY_UNAVAILABLE",
       message: expect.stringContaining("pagination did not advance"),
@@ -451,7 +457,7 @@ describe("workspace complete pagination and snapshot reads", () => {
     mocks.listProjectFindings.mockRejectedValueOnce(dependencyFailure);
 
     await expect(
-      getWorkspaceView(SCOPE, SCOPE.projectId, "overview", null),
+      getWorkspaceView(SCOPE, SCOPE.projectId, "overview"),
     ).rejects.toBe(dependencyFailure);
 
     expect(mocks.listProjectActions).not.toHaveBeenCalled();
@@ -459,7 +465,12 @@ describe("workspace complete pagination and snapshot reads", () => {
     expect(mocks.listProjectArtifacts).not.toHaveBeenCalled();
   });
 
-  it("keeps all 101 Plan actions when a concurrent update moves the last row ahead of page one", async () => {
+  it("keeps a work card a concurrent update moved ahead of page one inside the snapshot", async () => {
+    // Formerly pinned via the retired `plan` view; the repeatable-read snapshot
+    // guarantee belongs to the shared resource walker, so Overview pins it now.
+    vi.mocked(
+      GrowthMapReadRepository.prototype.listResolvedTargets,
+    ).mockResolvedValue([{ finding_id: "finding-moved-during-read" }] as never);
     const movedDuringRead = action(
       "action-moved-during-read",
       "finding-moved-during-read",
@@ -492,12 +503,13 @@ describe("workspace complete pagination and snapshot reads", () => {
       },
     );
 
-    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "plan", null);
+    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "overview");
 
-    expect(view.view).toBe("plan");
-    if (view.view !== "plan") throw new Error("expected Plan view");
-    expect(view.actions).toHaveLength(101);
-    expect(view.actions.at(-1)?.id).toBe(movedDuringRead.id);
+    expect(view.view).toBe("overview");
+    if (view.view !== "overview") throw new Error("expected Overview view");
+    expect(view.topActions.map((item) => item.id)).toEqual([
+      "action-moved-during-read",
+    ]);
     expect(mocks.listProjectActions).toHaveBeenCalledTimes(2);
     expect(mocks.listProjectActions.mock.calls[1]?.[3]).toBe(READ_TX);
     expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
@@ -506,36 +518,7 @@ describe("workspace complete pagination and snapshot reads", () => {
     });
   });
 
-  it("returns every Studio artifact beyond the first 100-row page", async () => {
-    mocks.listProjectArtifacts.mockImplementation(
-      async (_scope, _projectId, options, exec) => {
-        expect(exec).toBe(READ_TX);
-        return options.cursor === null
-          ? {
-              data: Array.from({ length: 100 }, (_, index) =>
-                artifact(`artifact-${index}`, `action-${index}`),
-              ),
-              nextCursor: "artifacts-page-2",
-              limit: 100,
-            }
-          : {
-              data: [artifact("artifact-100", "action-100")],
-              nextCursor: null,
-              limit: 100,
-            };
-      },
-    );
-
-    const view = await getWorkspaceView(SCOPE, SCOPE.projectId, "studio", null);
-
-    expect(view.view).toBe("studio");
-    if (view.view !== "studio") throw new Error("expected Studio view");
-    expect(view.artifacts).toHaveLength(101);
-    expect(view.artifacts.at(-1)?.id).toBe("artifact-100");
-    expect(mocks.listProjectArtifacts).toHaveBeenCalledTimes(2);
-  });
-
-  it("fails a Plan projection after the bounded page budget is exhausted", async () => {
+  it("fails the Overview actions projection after the bounded page budget is exhausted", async () => {
     mocks.listProjectActions.mockImplementation(
       async (_scope, _projectId, options) => ({
         data: [],
@@ -548,7 +531,7 @@ describe("workspace complete pagination and snapshot reads", () => {
     );
 
     await expect(
-      getWorkspaceView(SCOPE, SCOPE.projectId, "plan", null),
+      getWorkspaceView(SCOPE, SCOPE.projectId, "overview"),
     ).rejects.toMatchObject({
       code: "DEPENDENCY_UNAVAILABLE",
       message: expect.stringContaining("100-page safety budget"),

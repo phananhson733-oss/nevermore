@@ -900,7 +900,7 @@ Provider 内部错误先映射到这些产品码或 Run `lastError.code`；不�
 - `reviewProductProfileCompetitor` — 审核、更正或排除一个竞品候选并追加新版本。
 - `addProductProfileCompetitor` — 补录一个用户声明的竞品并追加新版本。
 - `confirmProductProfile` — 显式确认已审核版本；不得隐式启动诊断或 Audit。
-- `getProjectWorkspaceView` — 读取 overview/plan/studio/report 聚合视图。
+- `getProjectWorkspaceView` — 读取 overview 聚合视图（view 枚举已收窄至唯一在售屏幕，见 §11.4）。
 - `listProjectSources` — 读取连接、capability、最新 snapshot。
 - `connectProjectSource` — OAuth authorize/property selection。
 - `handleGoogleOAuthCallback` — Google callback 并 303 返回 Sources。
@@ -968,7 +968,7 @@ URL inventory 只允许由冻结 Crawl `PageSnapshot` 或冻结 GSC/GA4 且持�
 
 ### 11.4 Workspace view
 
-`GET /projects/{projectId}/workspace?view=overview|plan|studio|report` 是 UI 聚合读模型，减少七屏瀑布请求；它不得成为独立 canonical store。`view=plan` 与 Actions API、`view=studio` 与 Artifacts API、`view=report` 与 Report API 必须由同一 repository/service projection 产生，contract test 比较一致性。
+`GET /projects/{projectId}/workspace?view=overview` 是 UI 聚合读模型，减少 Overview 首屏瀑布请求；它不得成为独立 canonical store。`view=overview` 的 findings/actions/artifacts/snapshots 投影必须由与各自专用 API 相同的 repository/service projection 产生，绝不重算 priority，contract test 比较一致性。历史上的 `plan|studio|report` 视图随 Slice 1 屏幕删除而从枚举收窄（stop gate §19.4）：恢复后的诊断、行动与报告能力分别经 `createDiagnosticRun`/`getProjectRun`、`updateProjectAction`、`getProjectReport` 与 `createProjectExport` 各自端点读写，不再经 workspace 聚合。
 
 Diagnosis 屏由 `listProjectFindings` 一次返回分页 Findings，并在 `meta` 附带 latest DiagnosticRun、coverage 和 11 条 rule result（含 pass/candidate/skipped/inconclusive 与 reason）。因此“没有 Finding”与“规则未运行/缺数据”在 API 和 UI 中必须可区分。
 

@@ -1,21 +1,11 @@
 import {
-  ActionsRepository,
   AsyncRunsRepository,
-  FindingsRepository,
   GrowthMapReadRepository,
   MAX_GROWTH_MAP_URL_PAGE_SIZE,
-  ProjectsRepository,
-  type ActionRow,
   type Executor,
-  type FindingRow,
   type ProjectScope,
   type WorkspaceScope,
 } from "@sf/db";
-import {
-  RULE_OPPORTUNITY_PROJECTION,
-  type ArtifactType,
-  type OpportunityRuleId,
-} from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getProject } from "./projects";
@@ -23,7 +13,6 @@ import type { ProjectDto } from "./mappers";
 import { toAsyncRunDto, type AsyncRunDto } from "./runs";
 import { listProjectActions } from "./actions-service";
 import { listProjectArtifacts } from "./artifacts";
-import { getProjectReport, type ReportDto } from "./report";
 import { listProjectFindings } from "./findings-list";
 import { listProjectSnapshots } from "./snapshots";
 import type {
@@ -36,18 +25,15 @@ import type { ArtifactDto } from "./artifact-mappers";
 import type { DataSnapshotDto } from "./source-mappers";
 
 /**
- * Workspace aggregate read model (spec §11.3). Each view is produced by the SAME
- * canonical projection as its dedicated API (AC-036): `plan` ↔ Actions, `studio`
- * ↔ Artifacts, `report` ↔ Report. It is a read convenience, never a separate
- * store, and never recomputes priority.
+ * Workspace aggregate read model (spec §11.3). Overview is the only view a
+ * shipped screen consumes (stop gate §19.4): the former `plan`/`studio`/
+ * `report` views left with their Slice 1 screens, and the restored
+ * capabilities read their own endpoints instead. The projection is produced by
+ * the SAME canonical readers as the dedicated APIs (AC-036): it is a read
+ * convenience, never a separate store, and never recomputes priority.
  */
 
-export type WorkspaceViewName =
-  | "overview"
-  | "plan"
-  | "studio"
-  | "report"
-  | "execution";
+export type WorkspaceViewName = "overview";
 
 const WORKSPACE_PAGE_SIZE = 100;
 const WORKSPACE_MAX_PAGES_PER_RESOURCE = 100;
@@ -60,7 +46,7 @@ interface WorkspacePage<Row> {
   readonly nextCursor: string | null;
 }
 
-type WorkspaceProjection = "Overview" | "Plan" | "Studio" | "Execution";
+type WorkspaceProjection = "Overview";
 type WorkspaceResource = "actions" | "artifacts" | "findings" | "snapshots";
 
 function workspacePaginationFailure(
@@ -149,7 +135,8 @@ export interface OverviewView {
 
 /**
  * Minimal delivery sidecar for the Overview. Artifact bodies/revisions remain
- * on Studio; Overview only needs the canonical action association and status.
+ * on the Artifacts API; Overview only needs the canonical action association
+ * and status.
  */
 export interface OverviewDeliveryFocusDto {
   artifactId: string;
@@ -209,8 +196,9 @@ function uniqueEvidence(evidence: readonly EvidenceDto[]): EvidenceDto[] {
 
 /**
  * Produce Overview-only highlights from the same DTO rows used by Sources,
- * Diagnosis, Plan, and Studio. Priority bands/statuses are read as persisted;
- * this function selects and associates rows but never re-scores an action.
+ * Diagnosis, and the Actions/Artifacts APIs. Priority bands/statuses are read
+ * as persisted; this function selects and associates rows but never re-scores
+ * an action.
  */
 export function buildOverviewHighlights(input: {
   readonly actions: readonly ActionDto[];
@@ -330,398 +318,103 @@ const EMPTY_COVERAGE: CoverageDto = {
   limitations: [],
 };
 
-export interface PlanView {
-  view: "plan";
-  actions: ActionDto[];
-}
-
-export interface StudioView {
-  view: "studio";
-  artifacts: ArtifactDto[];
-}
-
-export interface ReportView {
-  view: "report";
-  report: ReportDto;
-}
-
-/**
- * Read-side audit-recheck state for one canonical chain, derived purely from
- * persisted lineage (never a new column):
- *  - `resolved`: the Finding was resolved in a later audit run (`resolvedAt`).
- *  - `drifted`: the Finding moved beyond the audit run its Action froze
- *    (`lastSeenRunId !== action.sourceDiagnosticRunId`, or it `regressed`) —
- *    the same divergence run-artifact.ts and artifacts.ts treat as a conflict.
- *  - `current`: the Action still points at the Finding's latest audit run.
- */
-export type AuditRecheckState = "current" | "drifted" | "resolved";
-
-export interface ExecutionChainActionSummary {
-  readonly id: string;
-  readonly status: string;
-}
-
-export interface ExecutionChainArtifactSummary {
-  readonly id: string;
-  readonly status: string;
-  readonly currentRevision: number;
-}
-
-/**
- * One canonical Execution chain: a confirmed primary Finding, its single
- * Finding-owned Action, and the template-fixed Artifact that Action produces.
- * The Artifact type is read from `RULE_OPPORTUNITY_PROJECTION`, never recomputed.
- */
-export interface ExecutionChainDto {
-  readonly primaryFindingId: string;
-  readonly ruleId: OpportunityRuleId;
-  readonly targetRef: string;
-  readonly action: ExecutionChainActionSummary;
-  readonly fixedArtifactType: ArtifactType;
-  readonly artifact: ExecutionChainArtifactSummary | null;
-  readonly auditRecheckState: AuditRecheckState;
-}
-
-export interface ExecutionView {
-  view: "execution";
-  chains: ExecutionChainDto[];
-}
-
-/** Minimal Finding projection input for the single-chain join. */
-export interface ExecutionChainFindingInput {
-  readonly id: string;
-  readonly ruleId: string;
-  readonly reviewState: string;
-  readonly regressed: boolean;
-  readonly resolvedAt: string | null;
-  readonly lastSeenRunId: string;
-  readonly subjectRefs: readonly string[];
-}
-
-/** Minimal Action projection input; the Action stays Finding-owned. */
-export interface ExecutionChainActionInput {
-  readonly id: string;
-  readonly findingId: string;
-  readonly status: string;
-  readonly sourceDiagnosticRunId: string;
-}
-
-function isOpportunityRuleId(ruleId: string): ruleId is OpportunityRuleId {
-  return Object.prototype.hasOwnProperty.call(
-    RULE_OPPORTUNITY_PROJECTION,
-    ruleId,
-  );
-}
-
-/** First non-dismissed Action per source Finding (one canonical Action, spec §9.1). */
-function firstActiveActionByFinding(
-  actions: readonly ExecutionChainActionInput[],
-): Map<string, ExecutionChainActionInput> {
-  const byFinding = new Map<string, ExecutionChainActionInput>();
-  for (const action of actions) {
-    if (action.status === "dismissed") continue;
-    if (!byFinding.has(action.findingId))
-      byFinding.set(action.findingId, action);
-  }
-  return byFinding;
-}
-
-function deriveAuditRecheckState(
-  finding: ExecutionChainFindingInput,
-  action: ExecutionChainActionInput,
-): AuditRecheckState {
-  if (finding.resolvedAt !== null) return "resolved";
-  if (
-    finding.regressed ||
-    finding.lastSeenRunId !== action.sourceDiagnosticRunId
-  ) {
-    return "drifted";
-  }
-  return "current";
-}
-
-function executionTargetRef(
-  finding: ExecutionChainFindingInput,
-  ruleId: OpportunityRuleId,
-): string {
-  const ref = finding.subjectRefs.find((value) => value.length > 0);
-  return ref ?? ruleId;
-}
-
-/**
- * Project the read-only Execution single chains. For each confirmed primary
- * Finding on an opportunity rule with a live (non-dismissed) Action, associate
- * its template-fixed Artifact. This selects and joins persisted rows; it never
- * re-scores priority, recomputes the Artifact type, or writes an Action.
- */
-export function buildExecutionChain(input: {
-  readonly findings: readonly ExecutionChainFindingInput[];
-  readonly actions: readonly ExecutionChainActionInput[];
-  readonly artifacts: readonly ArtifactDto[];
-}): ExecutionChainDto[] {
-  const actionByFinding = firstActiveActionByFinding(input.actions);
-  const chains: ExecutionChainDto[] = [];
-  for (const finding of input.findings) {
-    if (finding.reviewState !== "confirmed") continue;
-    if (!isOpportunityRuleId(finding.ruleId)) continue;
-    const action = actionByFinding.get(finding.id);
-    if (!action) continue;
-
-    const ruleId = finding.ruleId;
-    const fixedArtifactType = RULE_OPPORTUNITY_PROJECTION[ruleId].artifactType;
-    const artifact =
-      input.artifacts.find(
-        (item) =>
-          item.actionId === action.id &&
-          item.artifactType === fixedArtifactType &&
-          item.status !== "archived",
-      ) ?? null;
-
-    chains.push({
-      primaryFindingId: finding.id,
-      ruleId,
-      targetRef: executionTargetRef(finding, ruleId),
-      action: { id: action.id, status: action.status },
-      fixedArtifactType,
-      artifact: artifact
-        ? {
-            id: artifact.id,
-            status: artifact.status,
-            currentRevision: artifact.currentRevision,
-          }
-        : null,
-      auditRecheckState: deriveAuditRecheckState(finding, action),
-    });
-  }
-  return chains;
-}
-
-function toExecutionFindingInput(row: FindingRow): ExecutionChainFindingInput {
-  return {
-    id: row.id,
-    ruleId: row.rule_id,
-    reviewState: row.review_state,
-    regressed: row.regressed,
-    resolvedAt: row.resolved_at,
-    lastSeenRunId: row.last_seen_run_id,
-    subjectRefs: row.subject_refs.filter(
-      (ref): ref is string => typeof ref === "string",
-    ),
-  };
-}
-
-function toExecutionActionInput(row: ActionRow): ExecutionChainActionInput {
-  return {
-    id: row.id,
-    findingId: row.source_finding_id,
-    status: row.status,
-    sourceDiagnosticRunId: row.source_diagnostic_run_id,
-  };
-}
-
-export type WorkspaceView =
-  | OverviewView
-  | PlanView
-  | StudioView
-  | ReportView
-  | ExecutionView;
+export type WorkspaceView = OverviewView;
 
 export async function getWorkspaceView(
   scope: WorkspaceScope,
   projectId: string,
   view: WorkspaceViewName,
-  outputLocale: string | null,
 ): Promise<WorkspaceView> {
-  if (view === "report") {
-    const report = await getProjectReport(
-      scope,
-      projectId,
-      outputLocale,
-      new Date().toISOString(),
-    );
-    return { view: "report", report };
-  }
-
   const { db } = getDb();
   return db.transaction(
     async (tx): Promise<WorkspaceView> => {
-      switch (view) {
-        case "overview": {
-          const projectScope = { workspaceId: scope.workspaceId, projectId };
-          const project = await getProject(scope, projectId, tx);
-          let overviewCoverage: CoverageDto | null | undefined;
-          // One PostgreSQL transaction executor is shared by every reader. Run
-          // the loaders sequentially so a failed/capped paginator cannot leave
-          // sibling queries enqueueing work after the callback rejects and the
-          // transaction begins rollback.
-          const activeRunRows = await new AsyncRunsRepository(
-            tx,
-          ).listActiveByProject(projectScope);
-          const frozenAudit = await loadLatestFrozenAuditMembership(
-            tx,
-            projectScope,
-          );
-          const findings = await loadCompleteWorkspaceResource(
-            "Overview",
-            "findings",
-            async (cursor) => {
-              const page = await listProjectFindings(
-                scope,
-                projectId,
-                {
-                  limit: WORKSPACE_PAGE_SIZE,
-                  cursor,
-                  // A persisted action may still point to a now-resolved finding.
-                  // Keep that canonical association visible rather than dropping it.
-                  activeOnly: false,
-                },
-                tx,
-              );
-              if (overviewCoverage === undefined) {
-                overviewCoverage = page.meta.coverage;
-              }
-              return {
-                data: page.data,
-                nextCursor: page.meta.nextCursor,
-              };
-            },
-          );
-          const plan = await loadCompleteWorkspaceResource(
-            "Overview",
-            "actions",
-            (cursor) =>
-              listProjectActions(
-                scope,
-                projectId,
-                { limit: WORKSPACE_PAGE_SIZE, cursor },
-                tx,
-              ),
-          );
-          const snapshots = await loadCompleteWorkspaceResource(
-            "Overview",
-            "snapshots",
-            (cursor) =>
-              listProjectSnapshots(
-                scope,
-                projectId,
-                { limit: WORKSPACE_PAGE_SIZE, cursor },
-                tx,
-              ),
-          );
-          const studio = await loadCompleteWorkspaceResource(
-            "Overview",
-            "artifacts",
-            (cursor) =>
-              listProjectArtifacts(
-                scope,
-                projectId,
-                { limit: WORKSPACE_PAGE_SIZE, cursor },
-                tx,
-              ),
-          );
-          const highlights = buildOverviewHighlights({
-            actions: plan,
-            snapshots,
-            findings,
-            artifacts: studio,
-            currentRunFindingIds: frozenAudit.findingIds,
-          });
-          return {
-            view: "overview",
-            project,
-            coverage: overviewCoverage ?? EMPTY_COVERAGE,
-            activeRuns: activeRunRows.map(toAsyncRunDto),
-            frozenDiagnosticRunId: frozenAudit.diagnosticRunId,
-            ...highlights,
-          };
-        }
-        case "plan": {
-          const actions = await loadCompleteWorkspaceResource(
-            "Plan",
-            "actions",
-            (cursor) =>
-              listProjectActions(
-                scope,
-                projectId,
-                { limit: WORKSPACE_PAGE_SIZE, cursor },
-                tx,
-              ),
-          );
-          return { view: "plan", actions };
-        }
-        case "studio": {
-          const artifacts = await loadCompleteWorkspaceResource(
-            "Studio",
-            "artifacts",
-            (cursor) =>
-              listProjectArtifacts(
-                scope,
-                projectId,
-                { limit: WORKSPACE_PAGE_SIZE, cursor },
-                tx,
-              ),
-          );
-          return { view: "studio", artifacts };
-        }
-        case "execution": {
-          const projectScope = { workspaceId: scope.workspaceId, projectId };
-          // Validate project membership on the shared executor, then walk the
-          // canonical Artifact/Finding/Action projections sequentially (never a
-          // separate store) so buildExecutionChain joins persisted rows only.
-          const project = await new ProjectsRepository(tx).findById(
+      const projectScope = { workspaceId: scope.workspaceId, projectId };
+      const project = await getProject(scope, projectId, tx);
+      let overviewCoverage: CoverageDto | null | undefined;
+      // One PostgreSQL transaction executor is shared by every reader. Run
+      // the loaders sequentially so a failed/capped paginator cannot leave
+      // sibling queries enqueueing work after the callback rejects and the
+      // transaction begins rollback.
+      const activeRunRows = await new AsyncRunsRepository(
+        tx,
+      ).listActiveByProject(projectScope);
+      const frozenAudit = await loadLatestFrozenAuditMembership(
+        tx,
+        projectScope,
+      );
+      const findings = await loadCompleteWorkspaceResource(
+        "Overview",
+        "findings",
+        async (cursor) => {
+          const page = await listProjectFindings(
             scope,
             projectId,
-          );
-          if (!project)
-            throw new ProblemError("NOT_FOUND", "Project not found.");
-          const artifacts = await loadCompleteWorkspaceResource(
-            "Execution",
-            "artifacts",
-            (cursor) =>
-              listProjectArtifacts(
-                scope,
-                projectId,
-                { limit: WORKSPACE_PAGE_SIZE, cursor },
-                tx,
-              ),
-          );
-          const findings = await loadCompleteWorkspaceResource(
-            "Execution",
-            "findings",
-            async (cursor) => {
-              const page = await new FindingsRepository(tx).list(projectScope, {
-                limit: WORKSPACE_PAGE_SIZE,
-                cursor,
-                // A persisted Action may point at a now-resolved Finding; keep
-                // the canonical chain visible and mark it via auditRecheckState.
-                activeOnly: false,
-              });
-              return {
-                data: page.rows.map(toExecutionFindingInput),
-                nextCursor: page.nextCursor,
-              };
+            {
+              limit: WORKSPACE_PAGE_SIZE,
+              cursor,
+              // A persisted action may still point to a now-resolved finding.
+              // Keep that canonical association visible rather than dropping it.
+              activeOnly: false,
             },
+            tx,
           );
-          const actions = await loadCompleteWorkspaceResource(
-            "Execution",
-            "actions",
-            async (cursor) => {
-              const page = await new ActionsRepository(tx).list(projectScope, {
-                limit: WORKSPACE_PAGE_SIZE,
-                cursor,
-              });
-              return {
-                data: page.rows.map(toExecutionActionInput),
-                nextCursor: page.nextCursor,
-              };
-            },
-          );
+          if (overviewCoverage === undefined) {
+            overviewCoverage = page.meta.coverage;
+          }
           return {
-            view: "execution",
-            chains: buildExecutionChain({ findings, actions, artifacts }),
+            data: page.data,
+            nextCursor: page.meta.nextCursor,
           };
-        }
-      }
+        },
+      );
+      const plan = await loadCompleteWorkspaceResource(
+        "Overview",
+        "actions",
+        (cursor) =>
+          listProjectActions(
+            scope,
+            projectId,
+            { limit: WORKSPACE_PAGE_SIZE, cursor },
+            tx,
+          ),
+      );
+      const snapshots = await loadCompleteWorkspaceResource(
+        "Overview",
+        "snapshots",
+        (cursor) =>
+          listProjectSnapshots(
+            scope,
+            projectId,
+            { limit: WORKSPACE_PAGE_SIZE, cursor },
+            tx,
+          ),
+      );
+      const artifacts = await loadCompleteWorkspaceResource(
+        "Overview",
+        "artifacts",
+        (cursor) =>
+          listProjectArtifacts(
+            scope,
+            projectId,
+            { limit: WORKSPACE_PAGE_SIZE, cursor },
+            tx,
+          ),
+      );
+      const highlights = buildOverviewHighlights({
+        actions: plan,
+        snapshots,
+        findings,
+        artifacts,
+        currentRunFindingIds: frozenAudit.findingIds,
+      });
+      return {
+        view,
+        project,
+        coverage: overviewCoverage ?? EMPTY_COVERAGE,
+        activeRuns: activeRunRows.map(toAsyncRunDto),
+        frozenDiagnosticRunId: frozenAudit.diagnosticRunId,
+        ...highlights,
+      };
     },
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );

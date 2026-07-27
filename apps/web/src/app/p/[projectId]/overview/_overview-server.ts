@@ -26,7 +26,6 @@ export async function loadInitialOverviewView(
       { workspaceId: operator.workspaceId },
       projectId,
       "overview",
-      null,
     );
     if (workspaceView.view !== "overview") {
       throw new ProblemError(

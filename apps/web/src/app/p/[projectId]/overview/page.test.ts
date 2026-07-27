@@ -78,7 +78,6 @@ describe("Overview page first paint", () => {
       { workspaceId: WORKSPACE_ID },
       PROJECT_ID,
       "overview",
-      null,
     );
     expect(initialView).toBe(VIEW);
   });
@@ -96,9 +95,9 @@ describe("Overview page first paint", () => {
   it("maps an unauthenticated request to the shared 404 boundary", async () => {
     mocks.getOperatorContext.mockResolvedValue(null);
 
-    await expect(
-      loadInitialOverviewView(PROJECT_ID, {}),
-    ).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(loadInitialOverviewView(PROJECT_ID, {})).rejects.toThrow(
+      "NEXT_NOT_FOUND",
+    );
     expect(mocks.getWorkspaceView).not.toHaveBeenCalled();
   });
 
@@ -111,9 +110,9 @@ describe("Overview page first paint", () => {
       new ProblemError("NOT_FOUND", "Project not found."),
     );
 
-    await expect(
-      loadInitialOverviewView(PROJECT_ID, {}),
-    ).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(loadInitialOverviewView(PROJECT_ID, {})).rejects.toThrow(
+      "NEXT_NOT_FOUND",
+    );
     expect(mocks.notFound).toHaveBeenCalledTimes(1);
   });
 
@@ -124,8 +123,8 @@ describe("Overview page first paint", () => {
     });
     mocks.getWorkspaceView.mockResolvedValue({ view: "plan", actions: [] });
 
-    await expect(
-      loadInitialOverviewView(PROJECT_ID, {}),
-    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    await expect(loadInitialOverviewView(PROJECT_ID, {})).rejects.toMatchObject(
+      { code: "DEPENDENCY_UNAVAILABLE" },
+    );
   });
 });
