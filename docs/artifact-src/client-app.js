@@ -484,11 +484,14 @@
   }
 
   function focusOverlay() {
-    window.requestAnimationFrame(() => {
+    const focusFirstControl = () => {
       const dialog = document.querySelector('.client-overlay [role="dialog"]');
+      if (!dialog || dialog.contains(document.activeElement)) return;
       const target = dialog?.querySelector('[data-autofocus], input:not([type="hidden"]), select, textarea, button:not([data-action="close-overlay"]), button');
       target?.focus();
-    });
+    };
+    focusFirstControl();
+    window.requestAnimationFrame(focusFirstControl);
   }
 
   function commitState(mode = 'push') {
@@ -572,7 +575,10 @@
     state.evidenceTab = 'summary';
     if (shouldRender) {
       commitState('replace');
-      window.requestAnimationFrame(() => restoreFocus());
+      restoreFocus();
+      window.requestAnimationFrame(() => {
+        if (document.activeElement === document.body) restoreFocus();
+      });
     }
   }
 
