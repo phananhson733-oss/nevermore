@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Turn the audited 13 keyword/SEO/GEO requests into a production-ready Nevermore capability that preserves one canonical opportunity lifecycle, provides a Chinese-first audit Artifact, and closes the loop from governed keyword decisions through execution evidence to receipt-backed measurement.
+**Goal:** Turn the audited 13 keyword/SEO/GEO requests into a production-ready Nevermore capability that preserves one canonical opportunity lifecycle, presents every capability inside the existing Chinese-first four-module customer Artifact, and closes the loop from governed keyword decisions through execution evidence to receipt-backed measurement.
 
 **Architecture:** Extend the existing append-only keyword, competitor, evidence, finding, action, artifact, and observation foundation instead of creating a parallel SEO product. Introduce stable Topic identities and append-only governance decisions, project them through versioned OpenAPI read/write contracts, then add monitoring and external evidence only after their lineage and provider boundaries are real.
 
@@ -46,7 +46,10 @@ The whole requirement is complete only when both are true.
 
 ## Required convergence prerequisite and migration allocation
 
-Tasks 1–3 below may run immediately because they create only repository-owned audit Artifact files.
+Tasks 1–3 below may run immediately because they create only the repository-owned
+complete customer Artifact and its secondary audit Evidence. The default
+experience must be `概览 / 增长地图 / 执行中心 / 效果追踪`; the requirement register
+must never become a fifth module or the primary page.
 
 Before Task 4 begins:
 
@@ -97,9 +100,9 @@ The local `verify-keyword-stage-gates` script is additive. It never replaces `pn
 
 ---
 
-## Stage 0 — Audited design Artifact
+## Stage 0 — Integrated four-module customer Artifact
 
-### Task 1: Freeze the audit Artifact source contract
+### Task 1: Freeze the integrated product and secondary-audit source contract
 
 **Files:**
 
@@ -146,6 +149,18 @@ Also assert:
 - requirement 12 says `observation`, not causal attribution;
 - no workstation path, credential, `SignalFrame`, `signalframe-mvp-app`, or `@sf/` appears in customer-visible data.
 
+Add and verify `integratedProduct` as the primary contract:
+
+- exactly four modules in this order: `overview / growth-map / execution / results`;
+- a unified lifecycle from URL/Product Profile through Growth Map, Execution,
+  Receipt and Results;
+- all 13 capabilities mapped into those four modules with an entry point,
+  canonical objects, governed action and next hop;
+- `current / next / provider-dependent` truth states;
+- only GSC, GA4 and GitHub as customer-visible connections;
+- the original `requirements` register marked `secondary-evidence`;
+- no RelayOps scenario identity or fabricated business metrics.
+
 **Step 2: Run the test and verify failure**
 
 Run:
@@ -162,18 +177,28 @@ Define:
 
 ```js
 window.NevermoreKeywordAudit = Object.freeze({
-  version: "1.0.0",
+  version: "2.0.0",
   reviewedAt: "2026-07-27",
-  title: "关键词库与 SEO/GEO 能力需求审计",
+  title: "Nevermore · SEO/GEO 增长工作台",
   customerVisibleConnectors: ["GSC", "GA4", "GitHub"],
+  integratedProduct: {
+    requirementsEvidenceRole: "secondary-evidence",
+    modules: [/* overview, growth-map, execution, results */],
+    capabilities: [/* all 13 requirements placed in existing modules */],
+    canonicalObjects: [/* current and target truth */],
+    lifecycle: [/* complete cross-module flow */],
+    crossModuleJourneys: [/* content, technical, monitoring */],
+  },
   requirements: [/* exact 13 audited records */],
-  modules: [/* overview, growth-map, execution, results */],
+  modules: [/* compatibility projection of the four modules */],
   stages: [/* stage 1, 2, 3 */],
   acceptanceLayers: [/* data, contract, service, ui, mutation, tests, provider */],
 });
 ```
 
-The source contains the real audit decisions, not RelayOps scenario metrics. Use Chinese for explanatory copy and English only for stable product/domain nouns.
+The source contains the complete product placement plus the real audit evidence,
+not RelayOps scenario metrics. Use Chinese for explanatory copy and English only
+for stable product/domain nouns.
 
 **Step 4: Add a source README**
 
@@ -185,7 +210,9 @@ Document:
 - standalone generated output path;
 - deterministic build rule;
 - no remote asset or workstation path rule;
-- Artifact is audit evidence, not production-completion evidence.
+- primary Artifact is the complete four-module product experience;
+- audit decisions are secondary Evidence, not the product IA;
+- target screens are not production-completion evidence.
 
 **Step 5: Run the test and verify pass**
 
@@ -206,7 +233,7 @@ git commit -m "docs(keyword): freeze audit artifact data"
 
 ---
 
-### Task 2: Build the Chinese-first interactive audit interface
+### Task 2: Build the Chinese-first integrated product interface
 
 **Files:**
 
@@ -221,9 +248,9 @@ git commit -m "docs(keyword): freeze audit artifact data"
 Extend the data verifier or create `scripts/verify-keyword-audit-artifact.cjs` and assert:
 
 ```js
-assert.match(html, /data-keyword-audit-build="1\.0-static"/);
-assert.match(html, /关键词库与 SEO\/GEO 能力需求审计/);
-assert.match(html, /审核通过不等于已上线/);
+assert.match(html, /data-keyword-audit-build="2\.0-static"/);
+assert.match(html, /data-primary-experience="growth-workspace"/);
+assert.match(html, /Nevermore · SEO\/GEO 增长工作台/);
 assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/i);
 assert.doesNotMatch(html, /<link\b[^>]*rel=["']stylesheet/i);
 assert.doesNotMatch(html, /\bfetch\s*\(/);
@@ -231,14 +258,15 @@ assert.doesNotMatch(html, /\bfetch\s*\(/);
 
 Use JSDOM to assert:
 
-- 13 demand rows render;
-- selecting requirement 2 renders duplicate-governance detail;
-- selecting requirement 9 shows separate history/results completion;
-- decision filters work repeatedly, not only the first click;
-- module selection filters the demand list;
-- stage selection renders scope, dependencies, exit gate, and exclusions;
-- browser hash parsing restores the current view and requirement;
-- no generic toast is used as the destination of a visible action.
+- default route is Overview, not the requirement audit;
+- the primary nav is exactly the existing four modules;
+- Growth Map exposes Page, Keyword, Topic, Competitor, Internal Link,
+  Keyword History and External Evidence object views;
+- all 13 capabilities have a module entry, readable detail and governed next hop;
+- repeated module/object switching and browser history restore state;
+- GSC/GA4/GitHub are the only customer connection cards;
+- the 13-row audit exists only in a secondary Evidence Dialog;
+- no generic toast, mock metric or remote call is used as a visible destination.
 
 **Step 2: Run the verifier and verify failure**
 
@@ -252,15 +280,15 @@ Expected: FAIL because output/source is missing.
 
 **Step 3: Implement the visual system**
 
-Use a refined editorial audit-ledger direction:
+Use the existing Nevermore editorial growth-workspace direction:
 
 - warm paper background;
 - forest green structural color;
 - vermilion review stamps;
 - readable Chinese body at 16–18px;
 - high-contrast focus ring;
-- left demand register, main review sheet, right evidence/impact rail at wide desktop;
-- one-column list/detail flow on mobile;
+- four-module sidebar, main product surface and contextual detail rail at wide desktop;
+- one-column module/detail flow on mobile;
 - no small mono-heavy card wall;
 - no purple gradients;
 - no remote font.
@@ -268,13 +296,13 @@ Use a refined editorial audit-ledger direction:
 Required regions:
 
 ```html
-<header>审核结论与范围声明</header>
-<nav aria-label="审计视图">需求审核 / 模块影响 / 分阶段落地 / 验收证据</nav>
-<main id="audit-content">
-  <aside aria-label="需求清单"></aside>
-  <article aria-live="polite"></article>
-  <aside aria-label="影响与证据"></aside>
+<header>项目身份、GSC / GA4 / GitHub 与方案依据</header>
+<nav aria-label="客户工作区">概览 / 增长地图 / 执行中心 / 效果追踪</nav>
+<main id="product-content" data-product-surface="overview">
+  <section>当前模块的完整客户工作区</section>
+  <aside>上下文详情与下一跳</aside>
 </main>
+<dialog data-audit-evidence-dialog>13 条审核证据</dialog>
 ```
 
 **Step 4: Implement deterministic state and interactions**
@@ -283,18 +311,17 @@ State shape:
 
 ```js
 const state = {
-  view: "requirements",
-  requirementId: 1,
-  decision: "all",
-  module: "all",
-  stage: "all",
+  view: "overview",
+  object: null,
+  capability: null,
+  target: null,
 };
 ```
 
 Serialize it into:
 
 ```text
-#/requirements?item=2&decision=rewrite&module=growth-map
+#/growth-map?object=keyword-library&capability=keyword-relation-governance
 ```
 
 All list/tab/filter buttons must be delegated through one stable event handler and re-render safely after every click.
@@ -305,7 +332,11 @@ Read the three source files, guard all paths with `artifact-path-guard.cjs`, inl
 
 `docs/artifacts/Nevermore-Keyword-Growth-Audit.html`
 
-Do not apply the customer Artifact's automatic `Nevermore → GenGrowth` sanitizer; this is the internal formal product audit. Still reject workstation paths, compatibility package names, network dependencies, and credentials.
+Do not apply the customer Artifact's automatic `Nevermore → GenGrowth`
+sanitizer; this file remains the formal Nevermore product contract even though
+its UI is customer-readable. Reject workstation paths, compatibility package
+names, network dependencies, credentials, RelayOps scenario identity and
+unlabelled mock metrics.
 
 **Step 6: Build and verify**
 
@@ -327,7 +358,7 @@ git commit -m "feat(keyword): deliver interactive audit artifact"
 
 ---
 
-### Task 3: Add browser, accessibility, and visual regression gates
+### Task 3: Add integrated-workspace browser, accessibility, and visual regression gates
 
 **Files:**
 
@@ -343,8 +374,12 @@ Cover:
 - repository-owned source and generated file;
 - no network request;
 - `lang=zh-CN`;
-- 13 items;
-- repeated tab/filter/requirement switching;
+- exact four-module primary navigation;
+- repeated module, Growth Map object and capability switching;
+- all 13 capability entries and governed next hops;
+- 13 audit rows only inside secondary Evidence;
+- exactly GSC/GA4/GitHub customer connections;
+- no RelayOps/mock metrics/toast/network;
 - back/forward state restoration;
 - desktop 1440×1000;
 - tablet 1024×768;

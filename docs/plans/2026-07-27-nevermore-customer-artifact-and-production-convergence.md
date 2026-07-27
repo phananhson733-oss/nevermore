@@ -486,6 +486,7 @@ The provider boundary must also specify:
 
 The candidate schema may introduce narrowly owned tables such as:
 
+- `artifact_approval_events`;
 - `publication_destinations`;
 - `publication_attempts`;
 - `publication_receipts`.
@@ -495,6 +496,15 @@ The candidate schema may introduce narrowly owned tables such as:
 provider destination, frozen authorization/preview/rollback request, remote
 response facts, and immutable receipt facts. They never create or own a second
 canonical target identity.
+
+`execution_artifacts.status = ready` is not a durable approval event. The
+candidate must therefore define an append-only `artifact_approval_events`
+authority bound to one exact `artifact_revision_id`, revision number and content
+hash. Publication attempts reference that event with an enforced foreign key.
+Editing the Artifact, superseding/revoking the approval, changing the QA gate,
+or changing the content hash makes the approval ineligible before any external
+write. A response-only Content Shadow review receipt or `updated_at` timestamp
+must never be used as publication authorization truth.
 
 **Step 3: Keep the current contract untouched**
 
@@ -518,10 +528,12 @@ active machine surface remains exactly v0.3.
 
 - Create: `packages/contracts/src/zod/delivery-connections.ts`
 - Create: `packages/contracts/src/zod/delivery-connections.test.ts`
+- Create: `packages/contracts/src/zod/artifact-approval.ts`
+- Create: `packages/contracts/src/zod/artifact-approval.test.ts`
 - Create: `packages/contracts/src/zod/publication.ts`
 - Create: `packages/contracts/src/zod/publication.test.ts`
 - Create: `packages/db/migrations/0022_publication_foundation.sql`
-- Create: delivery-connection and publication repositories
+- Create: artifact-approval, delivery-connection and publication repositories
 - Create: `packages/publishing/`
 - Create: GitHub App install/callback/repository-selection routes
 - Create: WordPress site/credential/capability-probe routes
@@ -543,6 +555,8 @@ active machine surface remains exactly v0.3.
 
 Use deterministic fake providers to prove:
 
+- append-only approval of one exact Artifact Revision/content hash, explicit
+  reviewer/acknowledgement/QA lineage, stale-revision refusal and revocation;
 - GitHub installation/repository authorization and WordPress site capability probing;
 - project/site ownership, revocation, encrypted-secret references, and redacted responses;
 - preflight and remote revision checks;
@@ -555,7 +569,8 @@ Use deterministic fake providers to prove:
 - exact remote IDs/URLs/checksums in receipts.
 
 Reject a publication request until its provider destination is live, scoped to
-the project/site, and the exact Artifact Revision has current approval.
+the project/site, and the exact Artifact Revision has a current append-only
+approval event. `execution_artifacts.status = ready` alone is never sufficient.
 
 **Step 2: Implement GitHub as the first live delivery connector**
 

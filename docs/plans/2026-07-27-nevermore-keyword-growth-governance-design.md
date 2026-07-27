@@ -31,7 +31,7 @@ Nevermore 不新增一个与现有产品并行的“SEO 工具”，也不把 13
 7. 参考来源由 Evidence/Research Pack/Artifact provenance 透传，不要求用户在关键词卡片重复手填 URL。
 8. 任务阻断与进度属于 Action/Artifact 的正式业务状态，不复用 `async_runs.progress` 冒充客户任务进展。
 9. 客户可见数据连接仍只有 GSC、GA4 和 GitHub。VOC、用户评价、DataForSEO、SERP、AI Citation 与 Backlink Provider 属于内部证据能力，其来源可在证据旁披露，但不作为虚假的客户连接卡。
-10. Artifact 是正式需求审计交付物，用于展示真实审核结论、当前证据、目标状态、阶段和验收边界；它不证明尚未实现的功能已经上线。
+10. 主 Artifact 是四模块融合后的完整客户产品工作区，不是“哪些需求要、哪些不要”的取舍页。13 条审核结论只作为二级 Evidence，负责解释当前证据、目标状态、实施条件和验收边界；Artifact 本身仍不证明尚未实现的功能已经上线。
 
 ---
 
@@ -417,68 +417,75 @@ Competitor Monitor Policy：
 
 ---
 
-## 7. 审计 Artifact 设计
+## 7. 完整客户 Artifact 与二级审计 Evidence
 
 ### 7.1 目的与身份
 
-Artifact 名称：
+客户可见名称：
 
-`Nevermore 关键词库与 SEO/GEO 能力需求审计`
+`Nevermore · SEO/GEO 增长工作台`
 
 副标题：
 
-`正式产品方案 · 13 条需求的审核、改写、影响范围与落地证据`
+`从页面、关键词与竞品机会，到交付、发布回执与持续效果追踪`
 
-它是当前真实需求的产品评审交付物，不是 RelayOps 场景 Demo，也不是客户工作台的第五个路由。生成文件必须独立、离线、可分享、中文优先，并明确写明“审核通过不等于已上线”。
+它呈现 Nevermore 现有 `概览 / 增长地图 / 执行中心 / 效果追踪`
+四个模块吸收全部 13 项能力后的完整客户体验，不创建第五个路由或平行 SEO
+产品。原需求审核仍保留在同一个 Artifact 内，但只能从“方案依据”进入二级
+Evidence Dialog，不能成为默认首页、主导航或首要筛选。生成文件必须独立、
+离线、可分享、中文优先，并对 `当前可用 / 下一阶段 / 依赖外部接入` 诚实标注。
 
 ### 7.2 视觉方向
 
-采用“编辑部审阅册 + 证据台账”的精炼视觉：
+采用与正式 Nevermore 工作区一致的“编辑式增长控制台”：
 
 - 暖米白纸张背景、深森林绿主色、朱红审核标记、少量石墨灰；
 - 中文正文不小于 16px，关键结论 20–32px；
 - 标题可使用有编辑感的中文宋体 fallback，正文使用可读黑体 fallback；
 - 避免密集小字、等宽标签泛滥、紫色渐变和大面积无意义统计卡；
-- 桌面使用左侧需求清单、中央审核详情、右侧影响与证据摘要；
-- 窄屏退化为单列，详情在 Drawer/Dialog 中展示；
+- 桌面保留现有四模块侧栏、模块主工作区和上下文详情面板；
+- Growth Map 使用对象切换与主表/图 + 详情面板，支持反复切换多个 URL、Keyword、Topic、Competitor 和 Link；
+- Execution 使用任务队列 + 交付物正文 + 治理侧栏，不以状态卡代替 Blog、Brief、Metadata、Bug/Code Fix 和发布回执；
+- Results 将技术复查、GSC、GA4、UTM、Ranking、GEO Observation 与变更时间线分开呈现；
+- 窄屏退化为单列，详情与二级 Evidence 在 Drawer/Dialog 中展示；
 - 所有状态同时使用文字与颜色，不依赖颜色单独传意。
 
-### 7.3 五个信息区
+### 7.3 主信息架构
 
-1. `审核结论`
-   - 13 条需求总数；
-   - 直接纳入、改写后纳入、后置；
-   - 推荐架构；
-   - 当前生产基线与未实现边界。
-2. `需求审核台`
-   - 左侧 13 条可筛选需求；
-   - 右侧显示原始诉求、问题、当前证据、审核决定、正式改写、影响模块、依赖、验收证据；
-   - URL/Keyword/Competitor/Action/Artifact 等对象可点击查看关系。
-3. `模块影响`
-   - 概览、增长地图、执行中心、效果追踪；
-   - 选中模块后筛选关联需求并显示客户界面变化。
-4. `分阶段落地`
-   - Stage 1 Canonical Governance；
-   - Stage 2 Structure & Monitoring；
-   - Stage 3 External Evidence；
-   - 每阶段展示包含/不包含、依赖和退出门槛。
-5. `验收证据矩阵`
-   - Data；
-   - Contract/API；
-   - Service；
-   - UI；
-   - Mutation/Audit；
-   - Unit/Integration/E2E；
-   - Live Provider 或诚实 Unavailable。
+1. `概览`
+   - 今天最应处理的 Opportunity、被阻断任务、内容衰减/决策 SLA 和最近结果；
+   - 数据连接只展示 GSC、GA4、GitHub；
+   - 每条卡直接进入 Growth Map、Execution 或 Results 的 canonical target。
+2. `增长地图`
+   - 页面与机会；
+   - 关键词库；
+   - Topic Governance；
+   - 竞品库；
+   - Internal Link Graph；
+   - Keyword History；
+   - External Evidence（VOC、Backlink、GEO Citation 的统一入口与诚实可用状态）。
+3. `执行中心`
+   - Action 队列、blocker/unblock condition 和真实业务阶段；
+   - English Blog、Content Brief、Metadata、Schema/Code Patch、Publish/UTM；
+   - Artifact Sources、QA、Revision、Approval、Delivery/Change Receipt。
+4. `效果追踪`
+   - 技术复查；
+   - GSC/GA4 固定窗口；
+   - UTM/Campaign；
+   - Keyword Rank History；
+   - GEO Citation Observation；
+   - 发布/变更时间线和 attribution limitation。
+5. `方案依据`（二级）
+   - 原始 13 条需求、审核改写、当前证据、依赖和验收矩阵；
+   - 仅解释为什么模块这样工作，不参与客户主流程导航。
 
 ### 7.4 交互合同
 
-- 点击结论卡：筛选相应审核决定，不弹通用 Toast；
-- 点击需求：切换完整详情并同步 URL Hash；
-- 点击模块：进入模块影响视图并高亮关联需求；
-- 点击阶段：显示该阶段的范围、依赖、验收和不包含项；
-- 点击证据：打开结构化证据抽屉，不泄露工作站绝对路径；
-- 浏览器前进/后退恢复选中需求、筛选和视图；
+- 四个主导航可反复切换，每次都更新 URL Hash，并可被浏览器前进/后退和刷新恢复；
+- Growth Map 的对象 Tab、列表行和图节点可反复切换；选中不同 URL/Keyword/Competitor 必须更新对应详情；
+- 每个能力至少有一个现有模块入口、一个受治理的目标和一个下一跳；
+- 主按钮进入真实模块 surface、canonical command、Evidence/Results view 或 Provider readiness，不弹通用 Toast；
+- 点击“方案依据”打开结构化二级 Evidence Dialog，不泄露工作站绝对路径；
 - 键盘可遍历，Dialog Trap Focus，Escape 关闭并恢复焦点；
 - 支持 `prefers-reduced-motion`；
 - 无网络、无远程字体、无外部脚本；
@@ -487,14 +494,17 @@ Artifact 名称：
 
 ### 7.5 Artifact 真相标签
 
-每条需求必须显示：
+主产品区块与能力必须显示：
 
-- `当前已存在`
-- `部分存在`
-- `尚未实现`
+- `当前可用`
+- `下一阶段`
 - `依赖外部接入`
 
-每条审核结论必须显示：
+“下一阶段”或“依赖外部接入”表示该能力已进入现有模块和正式实施顺序，
+不表示该能力被产品放弃。没有真实 Observation、Receipt 或 Provider 时使用
+明确的 unavailable/pending 空状态，不填写场景指标。
+
+二级审核 Evidence 可继续显示：
 
 - `直接纳入`
 - `改写后纳入`
@@ -502,18 +512,19 @@ Artifact 名称：
 
 页面固定范围声明：
 
-> 本 Artifact 展示 Nevermore 的正式需求审核与目标方案。代码、数据、合同、测试和真实 Provider 证据全部完成之前，目标状态不视为已经上线。
+> 本 Artifact 展示 Nevermore 四模块吸收全部 SEO/GEO 能力后的完整产品体验。每项能力的当前可用状态仍以代码、数据、合同、测试和真实 Provider/Receipt 证据为准。
 
 ---
 
 ## 8. 分阶段落地
 
-### Stage 0：审计与计划
+### Stage 0：融合产品 Artifact 与正式计划
 
 交付：
 
 - 本设计文档；
-- 中文交互式审计 Artifact；
+- 中文优先的四模块完整客户 Artifact；
+- 同一 Artifact 中的二级需求审计 Evidence；
 - 需求到生产对象的 Evidence Matrix；
 - 详细 TDD 实施计划。
 
@@ -522,7 +533,8 @@ Artifact 名称：
 - 13 条需求无遗漏；
 - 每条有决定、改写口径、依赖和验收；
 - Artifact 可离线打开、所有交互有真实目的；
-- Artifact 清楚区分 current/target；
+- 默认主体验只显示四模块，13 项能力都有入口、目标和下一跳；
+- Artifact 清楚区分 current/next/provider-dependent；
 - 计划不覆盖或提交其他进行中的工作。
 
 ### Stage 1：Canonical Governance 与 Execution Transparency
