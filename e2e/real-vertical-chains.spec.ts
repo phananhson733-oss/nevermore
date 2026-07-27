@@ -785,23 +785,51 @@ const CANONICAL_VISUAL_VIEWPORTS = [
   { label: "mobile", width: 390, height: 844 },
 ] as const;
 
+/**
+ * Every screen pins the same three-part ready contract the Results screen
+ * established (R3 blueprint D7): a content anchor only the resolved read model
+ * renders, a stable-state signal that rejects every busy state the screen can
+ * paint, and settled query traffic. Each anchor below was re-measured against
+ * the live DOM after the Slice 1 Overview rewrite retired the old "Signal
+ * rail" region (the label now survives only in i18n).
+ */
 async function waitForCanonicalScreenReady(
   page: Page,
   screen: (typeof CANONICAL_VISUAL_SCREENS)[number],
 ): Promise<void> {
-  const landmark =
-    screen === "overview"
-      ? page.getByRole("region", { name: "Signal rail" })
-      : screen === "sources"
-        ? page.getByRole("region", { name: "Source readiness" })
-        : screen === "studio"
-          ? page
-              .locator("[data-studio-queue]")
-              .locator('[data-studio-artifact-type="technical_ticket"]')
-              .first()
-          : page.locator("[data-report-document]");
-  await expect(landmark).toBeVisible();
-  if (screen === "results") {
+  if (screen === "overview") {
+    // Slice 1 customer Overview. `[data-overview-page]` renders only after the
+    // workspace read model resolves (the pending branch renders a page-level
+    // spinner instead), and every busy or incoherent state inside it — the
+    // section LoadingBlocks, the queue-sync spinner, and the run-pair
+    // mismatch notice — renders `role="status"`, so zero of them is the
+    // settled state.
+    const overviewPage = page.locator("[data-overview-page]");
+    await expect(overviewPage).toBeVisible();
+    await expect(overviewPage.locator('[role="status"]')).toHaveCount(0);
+  } else if (screen === "sources") {
+    // The readiness Panel renders only once the sources read model resolves;
+    // its accessible name is the stable English chrome the mock suite pins.
+    // In-flight run rows, CSV preview reads, and history loads all render
+    // `role="status"` while active.
+    await expect(
+      page.getByRole("region", { name: "Source readiness" }),
+    ).toBeVisible();
+    await expect(page.locator('main [role="status"]')).toHaveCount(0);
+  } else if (screen === "studio") {
+    // The queue row carrying the canonical technical_ticket artifact proves
+    // the artifact read model resolved with this fixture's data. Generation
+    // progress and the R2 rail's linked-action load render `role="status"`
+    // while in flight.
+    await expect(
+      page
+        .locator("[data-studio-queue]")
+        .locator('[data-studio-artifact-type="technical_ticket"]')
+        .first(),
+    ).toBeVisible();
+    await expect(page.locator('main [role="status"]')).toHaveCount(0);
+  } else {
+    await expect(page.locator("[data-report-document]")).toBeVisible();
     // R3 blueprint D7: the baseline is captured only once BOTH Results blocks
     // are settled — the report document above plus the recheck block's
     // terminal UI (comparison or honest empty state), never its spinner.

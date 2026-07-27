@@ -102,10 +102,19 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   await expect(heroA).not.toContainText("Isolation Project B");
   await expect(heroB).not.toContainText("Isolation Project A");
 
-  await Promise.all([
-    pageA.goto(`/p/${projectA.projectId}/sources`),
-    pageB.goto(`/p/${projectB.projectId}/report`),
-  ]);
+  // These two navigations were a Promise.all. Sequenced deliberately: probed
+  // in isolation, the /report compat redirect resolves cleanly (307 ->
+  // /results, goto settles), but racing it against the sources navigation in
+  // a second tab of the same dev server aborts one navigation
+  // deterministically (first-compile contention). Isolation is about state,
+  // not simultaneity, so the claim is unchanged; the goto still tolerates
+  // exactly the abort error with the URL assertion below as the arrival
+  // signal.
+  await pageA.goto(`/p/${projectA.projectId}/sources`);
+  await pageB.goto(`/p/${projectB.projectId}/report`).catch((error) => {
+    if (!String(error).includes("ERR_ABORTED")) throw error;
+  });
+  await pageB.waitForURL(`**/p/${projectB.projectId}/results`);
   await Promise.all([
     expect(pageA.locator("[data-source-grid]")).toBeVisible(),
     expect(pageB.locator("[data-report-page]")).toBeVisible(),
