@@ -1,6 +1,6 @@
-# Nevermore 关键词增长需求审计 Artifact 数据源
+# Nevermore 关键词增长融合方案 Artifact 数据源
 
-本目录保存 `Nevermore 关键词库与 SEO/GEO 能力需求审计` 的 repository-owned source。它服务于正式需求审核和实施验收，不是客户工作台中的第五个模块，也不是用场景数据代替生产能力的 Demo。
+本目录保存 Nevermore 四模块完整增长方案及其需求审计 Evidence 的 repository-owned source。Artifact 的主体验回答“Overview、Growth Map、Execution、Results 如何形成统一客户闭环”；13 条原始需求及审核结论退居二级 Evidence，用于解释方案依据。它不是客户工作台中的第五个模块，也不用场景数据代替生产能力。
 
 ## Authority 与来源
 
@@ -10,7 +10,7 @@
 - 数据真相：`audit-data.js`
 - 独立输出：`docs/artifacts/Nevermore-Keyword-Growth-Audit.html`
 
-原始需求定义待审核的产品诉求；已批准设计定义 Nevermore 的正式产品决策；`audit-data.js` 只是这些决策的可视化数据投影。Artifact 不得反向成为生产功能的 authority。
+原始需求定义待审核的产品诉求；已批准设计定义 Nevermore 的正式产品决策；`audit-data.js` 冻结完整产品蓝图和审核 Evidence 的可视化投影。Artifact 不得反向成为生产功能的 authority。
 
 ## 数据合同
 
@@ -18,10 +18,38 @@
 
 - `version`、`reviewedAt`、`title`、范围声明和生产声明；
 - `customerVisibleConnectors`，且只能为 `GSC`、`GA4`、`GitHub`；
-- `requirements`，按原始编号完整包含 1–13；
+- `connectorPolicy`，定义三项真实客户连接、readiness、unavailable 和内部 Evidence Provider 边界；
+- `integratedProduct`，作为主 Artifact 的唯一四模块融合合同；
+- `requirements`，按原始编号完整包含 1–13，仅作为 secondary evidence；
 - `modules`，对应概览、增长地图、执行中心、效果追踪；
 - `stages`，对应 Stage 1–3；
 - `acceptanceLayers`，对应 Data、Contract、Service、UI、Mutation/Audit、Tests 和 Provider 证据。
+
+### 主产品合同
+
+`integratedProduct` 固定包含：
+
+- `requirementsEvidenceRole: "secondary-evidence"`；
+- `lifecycle`：从产品上下文、站点证据、Topic/Keyword 治理、机会决策、执行、变更回执到结果回流；
+- `modules`：严格为 Overview、Growth Map、Execution、Results 四个现有客户模块；
+- `growthMapSections`：严格对应 `page-portfolio`、`keyword-library`、`topic-governance`、`competitor-corpus`、`internal-link-graph`、`keyword-history`、`external-evidence`；
+- `canonicalObjects`：显式区分 `current`、`next`、`provider-dependent`；
+- `capabilities`：13 项正式能力与原始需求一一映射；
+- `crossModuleJourneys`：内容增长、技术修复和持续监控三类完整客户旅程；
+- `connectorPolicy`：与顶层 `connectorPolicy` 使用同一个 truth。
+
+每个模块必须有客户目标、主页面区块、跨模块入口/出口、canonical objects 和能力归属。每项 Capability 必须有：
+
+- 唯一 `id` 与对应 `requirementId`；
+- `primaryModule` 与 `supportingModules`；
+- `entryPoints` 与 `exitPoints`；
+- `canonicalObjects`；
+- `truthStatus` 与 `implementationCondition`；
+- 唯一 `primaryAction`，并指向真实 module surface、canonical command、evidence/results view 或 provider readiness。
+
+`defer` 只描述实施时序或外部条件，不表示能力被删除。Backlink、GEO Citation、VOC 和完整竞品监控仍属于完整产品方案，但在 Provider、授权、成本、许可、频率和数据覆盖满足之前保持 `provider-dependent`。
+
+### 二级审核 Evidence
 
 每条 `requirements` 记录必须同时回答：
 
@@ -57,6 +85,8 @@
 
 Artifact 必须把当前事实和目标方案并列呈现：
 
+- 主体验先呈现完整四模块产品、页面区块和跨模块闭环，不使用 adopt/rewrite/defer 取舍卡作为首页；
+- 逐条审核结论只在 secondary evidence 视图中出现；
 - 当前证据只描述已验证的 canonical 能力；
 - 目标验收使用将来态，不得显示为已完成状态；
 - 静态界面、可点击按钮或场景数据不是生产完成证据；
@@ -86,8 +116,10 @@ docs/artifacts/Nevermore-Keyword-Growth-Audit.html
 
 Artifact 完成只证明：
 
+- Nevermore 四模块、统一生命周期、主页面区块、canonical objects 和跨模块入口/出口已经形成一致方案；
+- 13 项能力全部拥有模块归属、受治理动作、实施条件与真实状态；
 - 13 条需求已经被逐条审核；
 - 产品决定、阶段、依赖和验收边界已经被冻结；
-- 审核结果可以被一致、离线、可访问地呈现。
+- 完整产品方案与审核 Evidence 可以被一致、离线、可访问地呈现。
 
 它不证明任何目标功能已经上线。每条需求仍需按适用范围补齐 Data、Domain、Contract、Service、Mutation、客户 UI、自动化测试，以及真实 Provider 或诚实不可用状态后，才可标记生产完成。

@@ -10,6 +10,1823 @@
     return Object.freeze(value);
   }
 
+  const connectorPolicy = {
+    customerVisible: ["GSC", "GA4", "GitHub"],
+    connections: [
+      {
+        id: "gsc",
+        name: "GSC",
+        truthStatus: "current",
+        purpose:
+          "提供搜索查询、页面曝光、点击、排名与索引表现，支持增长地图和效果追踪。",
+        readiness: "需要项目级 Google Search Console 授权与站点 Scope 校验。",
+        unavailableText:
+          "尚未授权、权限不足或窗口内没有数据时，明确显示不可用原因，不以 0 补位。",
+      },
+      {
+        id: "ga4",
+        name: "GA4",
+        truthStatus: "current",
+        purpose:
+          "提供页面、Campaign 与 Conversion 的固定窗口观测，支持效果追踪与内容衰减判断。",
+        readiness: "需要项目级 GA4 Property 授权、时区与 Conversion 定义确认。",
+        unavailableText:
+          "尚未授权、指标定义未确认或样本不足时，显示不可用/部分可用及修复入口。",
+      },
+      {
+        id: "github",
+        name: "GitHub",
+        truthStatus: "next",
+        purpose:
+          "承接 Technical/Code Patch 的受审核变更、PR 与 Change Receipt；自动创建 PR 属于下一阶段。",
+        readiness:
+          "需要 Repository 授权、目标分支、允许写入范围和审批策略全部确认。",
+        unavailableText:
+          "未授权或自动变更未启用时，仅提供可下载 Patch 与明确接入条件，不伪造 PR 状态。",
+      },
+    ],
+    internalEvidenceProviders: [
+      "站点 Crawl 与 Page Snapshot",
+      "Keyword / SERP 数据 Provider",
+      "AI Citation 数据 Provider",
+      "Interview / User Review 来源",
+      "Backlink 数据 Provider",
+    ],
+    rule:
+      "客户连接页只显示 GSC、GA4 与 GitHub。其他来源属于 Nevermore 内部 Evidence 能力，可在具体证据旁披露来源、时间和限制，但不能伪装成客户已经连接的应用。",
+    unavailableRule:
+      "任何连接或 Evidence Provider 缺少授权、权限、覆盖、新鲜度或历史窗口时，必须返回结构化 unavailable、partial 或 stale，并给出恢复条件。",
+    mockBoundary:
+      "正式 Artifact 不展示历史演示场景、演示指标或补造的排名、点击、引用、外链与转化数据。",
+  };
+
+  const integratedProduct = {
+    id: "nevermore-unified-growth-lifecycle",
+    title: "Nevermore 四模块完整增长闭环",
+    customerPromise:
+      "让中文客户用一套工作台看清海外市场的产品与站点现状，决定下一步增长机会，审核真实交付物，并用可重放证据验证结果。",
+    operatingPrinciple:
+      "Overview、Growth Map、Execution 与 Results 不是四个孤立页面；它们共同消费同一组稳定对象，并通过 Decision、Action、Artifact、Receipt 与 Observation 形成闭环。",
+    requirementsEvidenceRole: "secondary-evidence",
+    requirementsEvidenceStatement:
+      "原始 13 条需求与逐条审核结论保留为二级 Evidence，用于解释为什么这样设计；客户主体验首先呈现完整产品、四模块与跨模块工作流。",
+    truthStates: {
+      current:
+        "当前正式基础已经存在，可由真实数据、Contract、Service、UI 与测试证据支持。",
+      next:
+        "已进入正式实施方案，但在适用生产证据全部完成前不能显示为已上线。",
+      "provider-dependent":
+        "产品能力保留在完整方案中；启用时间取决于外部授权、Provider、成本、频率、许可或数据覆盖，不表示放弃。",
+    },
+    connectorPolicy,
+    growthMapSections: [
+      "page-portfolio",
+      "keyword-library",
+      "topic-governance",
+      "competitor-corpus",
+      "internal-link-graph",
+      "keyword-history",
+      "external-evidence",
+    ],
+    lifecycle: [
+      {
+        id: "context",
+        order: 1,
+        name: "确认产品与增长上下文",
+        customerQuestion: "我们是谁、服务谁、在哪个海外市场取得什么结果？",
+        primaryModule: "overview",
+        truthStatus: "current",
+        entry: "输入主站 URL 与必要业务信息，系统形成可审核的产品画像。",
+        exit: "产品类别、商业模式、目标客户、市场与 Conversion Goal 获得确认。",
+        canonicalObjects: ["product-profile", "project-policy"],
+      },
+      {
+        id: "inventory",
+        order: 2,
+        name: "盘点全站与市场证据",
+        customerQuestion: "当前页面、关键词、竞品和技术证据分别说明了什么？",
+        primaryModule: "growth-map",
+        truthStatus: "current",
+        entry: "产品画像确认后开始站点采集，并接入已授权的一方数据。",
+        exit: "页面、关键词、竞品、Evidence 与 Finding 拥有稳定身份和来源。",
+        canonicalObjects: [
+          "site-page-snapshot",
+          "keyword-entity",
+          "competitor-entity",
+          "evidence-finding",
+        ],
+      },
+      {
+        id: "govern",
+        order: 3,
+        name: "治理 Topic、关键词与页面归属",
+        customerQuestion: "哪些词和页面属于同一增长主题，哪些需要人工决策？",
+        primaryModule: "growth-map",
+        truthStatus: "next",
+        entry: "基于已入库证据生成 Topic、Mapping 与重复/蚕食候选。",
+        exit: "进入执行的关键词拥有已确认 Topic、页面归属和关系决策。",
+        canonicalObjects: [
+          "topic-model",
+          "keyword-review-decision",
+          "keyword-relation-decision",
+        ],
+      },
+      {
+        id: "prioritize",
+        order: 4,
+        name: "确定下一项增长机会",
+        customerQuestion: "现在最值得推进的机会是什么，为什么？",
+        primaryModule: "overview",
+        truthStatus: "next",
+        entry: "Growth Map、Results 或 Monitor 产生可解释的 Opportunity。",
+        exit: "客户选择推进、拒绝、延后或 Snooze；推进项关联唯一 Action。",
+        canonicalObjects: ["growth-opportunity", "opportunity-decision"],
+      },
+      {
+        id: "execute",
+        order: 5,
+        name: "审核并处理交付物",
+        customerQuestion: "文章、Brief、Metadata 或 Code Patch 是否可信并可执行？",
+        primaryModule: "execution",
+        truthStatus: "current",
+        entry: "已批准 Opportunity 进入唯一 Action/Artifact 工作流。",
+        exit: "交付物通过来源、QA、Revision 和 Approval 审核，或显示真实 Blocker。",
+        canonicalObjects: [
+          "action-artifact",
+          "research-pack",
+          "artifact-source-ref",
+          "action-execution-state",
+        ],
+      },
+      {
+        id: "change",
+        order: 6,
+        name: "发布或实施并留存回执",
+        customerQuestion: "什么在何时真正发生了变化？",
+        primaryModule: "execution",
+        truthStatus: "next",
+        entry: "Approved Artifact 进入发布、技术变更或 GitHub 交付。",
+        exit: "Publication/Change Receipt 与 Measurement Plan 被不可变记录。",
+        canonicalObjects: [
+          "publication-change-receipt",
+          "measurement-window",
+        ],
+      },
+      {
+        id: "measure",
+        order: 7,
+        name: "观察结果并回流下一轮",
+        customerQuestion: "改动之后发生了什么，下一步应该做什么？",
+        primaryModule: "results",
+        truthStatus: "next",
+        entry: "Receipt 到达固定观测窗口，GSC/GA4/技术复查或其他 Observation 可用。",
+        exit: "结果以 Observation 而非夸大因果呈现，并回流 Overview 与 Growth Map。",
+        canonicalObjects: [
+          "keyword-metric-observation",
+          "measurement-window",
+          "citation-observation",
+          "competitor-snapshot-delta",
+        ],
+      },
+    ],
+    canonicalObjects: [
+      {
+        id: "product-profile",
+        name: "产品画像",
+        truthStatus: "current",
+        authority:
+          "经 URL 证据与客户审核确认的产品类别、商业模式、ICP、市场和 Conversion Goal。",
+        modules: ["overview", "growth-map"],
+      },
+      {
+        id: "project-policy",
+        name: "项目范围与治理策略",
+        truthStatus: "current",
+        authority:
+          "项目级 Scope、市场、语言、连接授权和后续 SLA/Monitor Policy 的统一上下文。",
+        modules: ["overview", "growth-map", "execution", "results"],
+      },
+      {
+        id: "site-page-snapshot",
+        name: "Site Page / Page Snapshot",
+        truthStatus: "current",
+        authority:
+          "站内 URL 的稳定身份，以及带采集时间、Hash、来源与覆盖状态的页面证据。",
+        modules: ["growth-map", "execution", "results"],
+      },
+      {
+        id: "keyword-entity",
+        name: "Keyword Entity / Source Occurrence",
+        truthStatus: "current",
+        authority:
+          "关键词的稳定身份、市场、语言、Query Kind、来源 lineage 与当前治理投影。",
+        modules: ["growth-map", "execution", "results"],
+      },
+      {
+        id: "competitor-entity",
+        name: "Competitor Entity",
+        truthStatus: "current",
+        authority:
+          "已审核竞品的稳定身份、来源、状态和最近观测，不把静态值伪装成历史。",
+        modules: ["overview", "growth-map"],
+      },
+      {
+        id: "evidence-finding",
+        name: "Evidence / Finding",
+        truthStatus: "current",
+        authority:
+          "可回放的原始证据与经规则/审核形成的问题判断，保留 Scope、时间和限制。",
+        modules: ["overview", "growth-map", "execution", "results"],
+      },
+      {
+        id: "growth-opportunity",
+        name: "Growth Opportunity",
+        truthStatus: "current",
+        authority:
+          "由 Finding、Action 和 Artifact 聚合的客户可读机会投影；下一阶段增加 Durable Decision。",
+        modules: ["overview", "growth-map", "execution"],
+      },
+      {
+        id: "action-artifact",
+        name: "Action / Artifact",
+        truthStatus: "current",
+        authority:
+          "由已确认问题或机会产生的唯一执行任务，以及对应可审核交付物与 Revision。",
+        modules: ["overview", "growth-map", "execution", "results"],
+      },
+      {
+        id: "research-pack",
+        name: "Research Pack",
+        truthStatus: "current",
+        authority:
+          "内容交付物冻结的研究上下文、来源引用、Hash、可用性与 Limitation。",
+        modules: ["execution"],
+      },
+      {
+        id: "topic-model",
+        name: "Topic Model / Topic Node Identity",
+        truthStatus: "next",
+        authority:
+          "可版本化 Draft/Confirmed Topic 结构、稳定 Node Identity、Alias 与后继关系。",
+        modules: ["growth-map", "execution"],
+      },
+      {
+        id: "keyword-review-decision",
+        name: "Keyword Review Decision",
+        truthStatus: "next",
+        authority:
+          "关键词状态、Intent、Buyer Stage、Topic 与 Page Mapping 的 append-only 决策账本。",
+        modules: ["growth-map", "execution", "results"],
+      },
+      {
+        id: "keyword-relation-decision",
+        name: "Keyword Relation Candidate / Decision",
+        truthStatus: "next",
+        authority:
+          "重复或蚕食候选信号、证据、人工 Primary/Supporting/Keep/Park 决策与 Revision。",
+        modules: ["growth-map", "execution", "results"],
+      },
+      {
+        id: "artifact-source-ref",
+        name: "Artifact Source Ref",
+        truthStatus: "next",
+        authority:
+          "由 Research Pack、Evidence、Finding、Page Snapshot 或 Receipt 适配的统一只读来源投影。",
+        modules: ["execution"],
+      },
+      {
+        id: "action-execution-state",
+        name: "Action Blocker / Business Progress",
+        truthStatus: "next",
+        authority:
+          "任务阻断、解锁条件、Owner、业务 Phase、Next Step 和 versioned Step Definition。",
+        modules: ["execution"],
+      },
+      {
+        id: "opportunity-decision",
+        name: "Opportunity Decision / SLA",
+        truthStatus: "next",
+        authority:
+          "Opportunity Fingerprint、SLA、Advance/Decline/Defer/Snooze、Owner 与 Related Action。",
+        modules: ["overview", "growth-map", "execution"],
+      },
+      {
+        id: "keyword-metric-observation",
+        name: "Keyword Metric Observation",
+        truthStatus: "next",
+        authority:
+          "按稳定关键词、Provider、Market、Device 聚合的不可变 Rank/Volume/KD Observation。",
+        modules: ["growth-map", "results"],
+      },
+      {
+        id: "link-observation",
+        name: "Internal Link Observation / Graph",
+        truthStatus: "next",
+        authority:
+          "从 Page Snapshot 采集的有方向 Link Edge、Snapshot、Freshness 与 Graph Coverage。",
+        modules: ["growth-map", "execution"],
+      },
+      {
+        id: "content-decay-alert",
+        name: "Content Decay Policy / Alert",
+        truthStatus: "next",
+        authority:
+          "带 Policy Version、窗口、最低样本、季节性、缺数和证据 Pointer 的衰减判断。",
+        modules: ["overview", "growth-map", "execution", "results"],
+      },
+      {
+        id: "competitor-snapshot-delta",
+        name: "Competitor Snapshot / Delta",
+        truthStatus: "next",
+        authority:
+          "已审核竞品的周期 Collection Run、不可变 Snapshot、Delta 与去重提醒。",
+        modules: ["overview", "growth-map", "results"],
+      },
+      {
+        id: "publication-change-receipt",
+        name: "Publication / Change Receipt",
+        truthStatus: "next",
+        authority:
+          "对真实发布、GitHub 变更、技术复查或受审核手工变更的不可变发生证明。",
+        modules: ["execution", "results"],
+      },
+      {
+        id: "measurement-window",
+        name: "Measurement Window / Outcome Observation",
+        truthStatus: "next",
+        authority:
+          "围绕 Receipt 冻结的前后观测窗口、指标定义、来源、新鲜度与结果限制。",
+        modules: ["overview", "results"],
+      },
+      {
+        id: "voc-source",
+        name: "Interview / User Review Source",
+        truthStatus: "provider-dependent",
+        authority:
+          "受治理的访谈摘要或用户评价来源，包含 Provider、许可、Pointer、时间与保留策略。",
+        modules: ["growth-map", "execution"],
+      },
+      {
+        id: "citation-observation",
+        name: "GEO Citation Observation",
+        truthStatus: "provider-dependent",
+        authority:
+          "Query、Platform、Answer Snapshot、Citation URL、Passage、Captured At 与可用性。",
+        modules: ["results"],
+      },
+      {
+        id: "backlink-snapshot",
+        name: "Backlink Snapshot / Opportunity",
+        truthStatus: "provider-dependent",
+        authority:
+          "Provider-neutral Site、Referring Domain、Target Page、Competitor Snapshot 与指标定义。",
+        modules: ["growth-map"],
+      },
+    ],
+    modules: [
+      {
+        id: "overview",
+        name: "概览",
+        enName: "Overview",
+        truthStatus: "current",
+        customerGoal:
+          "让客户在一个页面知道当前产品状态、今天最该推进什么、哪些机会需要决策以及哪些内容正在衰减。",
+        customerQuestion: "现在最重要的事情是什么，为什么需要我决定？",
+        mainSections: [
+          {
+            id: "priority-queue",
+            title: "接下来优先做",
+            purpose:
+              "聚合真实 Finding、Opportunity、Action 与 Artifact，按预期影响和可执行性展示优先项。",
+            truthStatus: "current",
+            capabilityIds: [],
+            primaryAction: {
+              id: "section-overview-open-priority",
+              label: "查看优先事项",
+              destination: {
+                kind: "module-surface",
+                target: "overview/priority-queue",
+              },
+            },
+          },
+          {
+            id: "product-context",
+            title: "产品画像与数据准备",
+            purpose:
+              "显示已确认的产品、ICP、市场、Conversion Goal，以及 GSC/GA4/GitHub 的真实 readiness。",
+            truthStatus: "current",
+            capabilityIds: [],
+            primaryAction: {
+              id: "section-overview-open-context",
+              label: "查看产品画像与连接",
+              destination: {
+                kind: "evidence-view",
+                target: "overview/product-context",
+              },
+            },
+          },
+          {
+            id: "decision-reminders",
+            title: "待决策机会",
+            purpose:
+              "显示超过项目 SLA 且没有 Action、Decision 或有效 Snooze 的机会。",
+            truthStatus: "next",
+            capabilityIds: ["opportunity-decision-sla"],
+            primaryAction: {
+              id: "section-overview-open-decisions",
+              label: "处理待决策机会",
+              destination: {
+                kind: "canonical-command",
+                target: "opportunity-decision.open",
+              },
+            },
+          },
+          {
+            id: "health-alerts",
+            title: "健康度与竞品变化",
+            purpose:
+              "展示有真实窗口、样本、Snapshot 与 Freshness 的内容衰减和竞品变化。",
+            truthStatus: "next",
+            capabilityIds: [
+              "content-decay-monitor",
+              "competitor-delta-monitor",
+            ],
+            primaryAction: {
+              id: "section-overview-open-health-alerts",
+              label: "查看健康度证据",
+              destination: {
+                kind: "evidence-view",
+                target: "overview/health-alerts",
+              },
+            },
+          },
+        ],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "overview",
+            surface: "Opportunity 回流",
+            trigger: "页面、关键词、竞品或结构证据形成需客户决策的机会。",
+            carries: ["growth-opportunity", "evidence-finding"],
+          },
+          {
+            fromModule: "results",
+            toModule: "overview",
+            surface: "结果与健康预警回流",
+            trigger: "固定窗口观测或 Monitor 产生可解释的新信号。",
+            carries: ["measurement-window", "content-decay-alert"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "overview",
+            toModule: "growth-map",
+            surface: "查看证据",
+            trigger: "客户需要理解机会对应的 URL、Keyword、Topic 或 Competitor。",
+            carries: ["growth-opportunity", "evidence-finding"],
+          },
+          {
+            fromModule: "overview",
+            toModule: "execution",
+            surface: "推进机会",
+            trigger: "客户确认 Advance，系统创建或打开唯一 Action。",
+            carries: ["opportunity-decision", "action-artifact"],
+          },
+        ],
+        canonicalObjects: [
+          "product-profile",
+          "project-policy",
+          "growth-opportunity",
+          "opportunity-decision",
+          "content-decay-alert",
+          "measurement-window",
+          "competitor-snapshot-delta",
+        ],
+        capabilityIds: [
+          "opportunity-decision-sla",
+          "content-decay-monitor",
+          "competitor-delta-monitor",
+        ],
+      },
+      {
+        id: "growth-map",
+        name: "增长地图",
+        enName: "Growth Map",
+        truthStatus: "current",
+        customerGoal:
+          "把整站页面、关键词、Topic、竞品和结构证据放在一个可治理的地图中，并形成可执行机会。",
+        customerQuestion: "增长机会来自哪里，它应该落到哪个页面或任务？",
+        mainSections: [
+          {
+            id: "page-portfolio",
+            title: "页面与机会",
+            purpose:
+              "按 URL 查看页面身份、技术/内容/GEO 信号、Finding、Opportunity 与当前 Action。",
+            truthStatus: "current",
+            capabilityIds: ["content-decay-monitor"],
+            primaryAction: {
+              id: "section-growth-map-open-pages",
+              label: "查看页面组合",
+              destination: {
+                kind: "module-surface",
+                target: "growth-map/page-portfolio",
+              },
+            },
+          },
+          {
+            id: "keyword-library",
+            title: "关键词库",
+            purpose:
+              "查看稳定关键词身份、来源、Intent、Cluster、页面映射和最新可用指标。",
+            truthStatus: "current",
+            capabilityIds: [
+              "keyword-relation-governance",
+              "voc-source-governance",
+            ],
+            primaryAction: {
+              id: "section-growth-map-open-keywords",
+              label: "查看关键词库",
+              destination: {
+                kind: "module-surface",
+                target: "growth-map/keyword-library",
+              },
+            },
+          },
+          {
+            id: "topic-governance",
+            title: "Topic 与关键词治理",
+            purpose:
+              "生成并确认 Topic Model，审核页面归属以及重复/蚕食候选关系。",
+            truthStatus: "next",
+            capabilityIds: [
+              "topic-governance",
+              "keyword-relation-governance",
+            ],
+            primaryAction: {
+              id: "section-growth-map-open-topic-governance",
+              label: "进入 Topic 治理",
+              destination: {
+                kind: "canonical-command",
+                target: "topic-model.open-or-create-draft",
+              },
+            },
+          },
+          {
+            id: "competitor-corpus",
+            title: "竞品库",
+            purpose:
+              "管理已审核竞品、来源、覆盖与最新真实观测，逐步加入周期 Snapshot Delta。",
+            truthStatus: "current",
+            capabilityIds: ["competitor-delta-monitor"],
+            primaryAction: {
+              id: "section-growth-map-open-competitors",
+              label: "查看竞品库",
+              destination: {
+                kind: "module-surface",
+                target: "growth-map/competitor-corpus",
+              },
+            },
+          },
+          {
+            id: "internal-link-graph",
+            title: "Internal Link Graph",
+            purpose:
+              "基于 Page Snapshot 与有方向 Link Observation 查看 Hub、Spoke、单向与孤岛页面。",
+            truthStatus: "next",
+            capabilityIds: ["internal-link-graph"],
+            primaryAction: {
+              id: "section-growth-map-open-link-graph",
+              label: "查看内链结构",
+              destination: {
+                kind: "module-surface",
+                target: "growth-map/internal-link-graph",
+              },
+            },
+          },
+          {
+            id: "keyword-history",
+            title: "关键词趋势",
+            purpose:
+              "查看按 Provider/Market/Device 分面的真实 Rank Series，以及有 Receipt 时的变更事件。",
+            truthStatus: "next",
+            capabilityIds: ["keyword-rank-history"],
+            primaryAction: {
+              id: "section-growth-map-open-keyword-history",
+              label: "查看关键词历史",
+              destination: {
+                kind: "results-view",
+                target: "growth-map/keyword-history",
+              },
+            },
+          },
+          {
+            id: "external-evidence",
+            title: "外部证据与接入条件",
+            purpose:
+              "呈现 VOC、Citation、Backlink 等证据的真实 readiness；没有 Provider 时只显示不可用条件。",
+            truthStatus: "provider-dependent",
+            capabilityIds: [
+              "voc-source-governance",
+              "backlink-evidence",
+            ],
+            primaryAction: {
+              id: "section-growth-map-open-provider-readiness",
+              label: "查看外部证据条件",
+              destination: {
+                kind: "provider-readiness",
+                target: "growth-map/external-evidence-readiness",
+              },
+            },
+          },
+        ],
+        entryPoints: [
+          {
+            fromModule: "overview",
+            toModule: "growth-map",
+            surface: "优先事项证据",
+            trigger: "客户从概览打开 Opportunity 的页面、关键词、竞品或结构依据。",
+            carries: ["growth-opportunity", "evidence-finding"],
+          },
+          {
+            fromModule: "results",
+            toModule: "growth-map",
+            surface: "结果回溯",
+            trigger: "客户从结果窗口定位到发生变化的 URL、Keyword 或 Competitor。",
+            carries: [
+              "measurement-window",
+              "keyword-metric-observation",
+              "competitor-snapshot-delta",
+            ],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "overview",
+            surface: "形成 Opportunity",
+            trigger: "证据通过治理并需要客户决定是否推进。",
+            carries: ["evidence-finding", "growth-opportunity"],
+          },
+          {
+            fromModule: "growth-map",
+            toModule: "execution",
+            surface: "去执行",
+            trigger: "已确认机会拥有 Topic/Page/Scope 与可创建的 Action。",
+            carries: [
+              "keyword-review-decision",
+              "growth-opportunity",
+              "action-artifact",
+            ],
+          },
+          {
+            fromModule: "growth-map",
+            toModule: "results",
+            surface: "查看历史",
+            trigger: "客户需要查看关键词、页面或竞品的真实 Observation。",
+            carries: [
+              "keyword-metric-observation",
+              "competitor-snapshot-delta",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "site-page-snapshot",
+          "keyword-entity",
+          "competitor-entity",
+          "evidence-finding",
+          "growth-opportunity",
+          "topic-model",
+          "keyword-review-decision",
+          "keyword-relation-decision",
+          "link-observation",
+          "keyword-metric-observation",
+          "content-decay-alert",
+          "competitor-snapshot-delta",
+          "voc-source",
+          "backlink-snapshot",
+        ],
+        capabilityIds: [
+          "topic-governance",
+          "keyword-relation-governance",
+          "voc-source-governance",
+          "opportunity-decision-sla",
+          "internal-link-graph",
+          "keyword-rank-history",
+          "content-decay-monitor",
+          "backlink-evidence",
+          "competitor-delta-monitor",
+        ],
+      },
+      {
+        id: "execution",
+        name: "执行中心",
+        enName: "Execution",
+        truthStatus: "current",
+        customerGoal:
+          "让客户直接看到并审核 English Blog、Brief、Metadata、Schema/Code Patch 和 Publish/UTM，不需要从规则说明猜测交付物。",
+        customerQuestion: "交付物是什么、基于什么、卡在哪里、下一步谁来做？",
+        mainSections: [
+          {
+            id: "work-queue",
+            title: "当前交付物队列",
+            purpose:
+              "按 Action/Artifact 展示待审核、被阻断、进行中、待发布和待验证的真实业务状态。",
+            truthStatus: "current",
+            capabilityIds: [
+              "action-blocker",
+              "action-business-progress",
+              "opportunity-decision-sla",
+            ],
+            primaryAction: {
+              id: "section-execution-open-queue",
+              label: "查看当前交付物",
+              destination: {
+                kind: "module-surface",
+                target: "execution/work-queue",
+              },
+            },
+          },
+          {
+            id: "artifact-body",
+            title: "交付物主体",
+            purpose:
+              "直接展示可审核 English Blog、Brief、Metadata、Technical Ticket 与 Code Patch 主体。",
+            truthStatus: "current",
+            capabilityIds: [
+              "topic-governance",
+              "keyword-relation-governance",
+              "voc-source-governance",
+              "internal-link-graph",
+              "content-decay-monitor",
+            ],
+            primaryAction: {
+              id: "section-execution-open-artifact",
+              label: "打开交付物",
+              destination: {
+                kind: "module-surface",
+                target: "execution/artifact-body",
+              },
+            },
+          },
+          {
+            id: "research-sources",
+            title: "参考来源与证据",
+            purpose:
+              "按 Artifact Type 展示真实 Source Ref、时间、Authority、可用性与 Limitation。",
+            truthStatus: "next",
+            capabilityIds: ["artifact-source-provenance"],
+            primaryAction: {
+              id: "section-execution-open-sources",
+              label: "查看参考来源",
+              destination: {
+                kind: "evidence-view",
+                target: "execution/artifact-sources",
+              },
+            },
+          },
+          {
+            id: "blocker-progress",
+            title: "阻断与业务进度",
+            purpose:
+              "显示 Blocker、解锁条件、Owner、Phase、Next Step；只有正式 Step Definition 才显示步数。",
+            truthStatus: "next",
+            capabilityIds: ["action-blocker", "action-business-progress"],
+            primaryAction: {
+              id: "section-execution-open-governance",
+              label: "查看阻断与下一步",
+              destination: {
+                kind: "evidence-view",
+                target: "execution/blocker-progress",
+              },
+            },
+          },
+          {
+            id: "approval-publication",
+            title: "审核、发布与变更回执",
+            purpose:
+              "把 Approval、Publication/Change Receipt 和 Measurement Plan 留在同一交付链。",
+            truthStatus: "next",
+            capabilityIds: ["keyword-rank-history"],
+            primaryAction: {
+              id: "section-execution-open-publication",
+              label: "审核并查看发布计划",
+              destination: {
+                kind: "canonical-command",
+                target: "artifact.approve-or-open-publication",
+              },
+            },
+          },
+        ],
+        entryPoints: [
+          {
+            fromModule: "overview",
+            toModule: "execution",
+            surface: "已推进机会",
+            trigger: "客户在概览记录 Advance 并创建或打开唯一 Action。",
+            carries: ["opportunity-decision", "action-artifact"],
+          },
+          {
+            fromModule: "growth-map",
+            toModule: "execution",
+            surface: "受治理机会",
+            trigger: "Keyword、Topic、Page、Link 或 Monitor 机会已经满足执行门槛。",
+            carries: [
+              "keyword-review-decision",
+              "growth-opportunity",
+              "action-artifact",
+            ],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "execution",
+            toModule: "results",
+            surface: "进入效果验证",
+            trigger: "变更真实发生并产生 Receipt 与 Measurement Window。",
+            carries: [
+              "publication-change-receipt",
+              "measurement-window",
+              "action-artifact",
+            ],
+          },
+          {
+            fromModule: "execution",
+            toModule: "growth-map",
+            surface: "返回来源对象",
+            trigger: "客户需要回看交付物对应的 URL、Keyword、Topic 或 Finding。",
+            carries: [
+              "action-artifact",
+              "artifact-source-ref",
+              "evidence-finding",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "growth-opportunity",
+          "opportunity-decision",
+          "action-artifact",
+          "research-pack",
+          "artifact-source-ref",
+          "action-execution-state",
+          "publication-change-receipt",
+          "measurement-window",
+          "keyword-review-decision",
+          "keyword-relation-decision",
+        ],
+        capabilityIds: [
+          "topic-governance",
+          "keyword-relation-governance",
+          "voc-source-governance",
+          "artifact-source-provenance",
+          "action-blocker",
+          "action-business-progress",
+          "opportunity-decision-sla",
+          "internal-link-graph",
+          "content-decay-monitor",
+        ],
+      },
+      {
+        id: "results",
+        name: "效果追踪",
+        enName: "Results",
+        truthStatus: "current",
+        customerGoal:
+          "用技术复查、GSC/GA4 固定窗口、关键词 Observation 和 GEO 证据说明改动后发生了什么，同时明确因果边界。",
+        customerQuestion: "哪些变化真实发生了，证据窗口和限制是什么？",
+        mainSections: [
+          {
+            id: "technical-recheck",
+            title: "技术复查",
+            purpose:
+              "用独立 Recheck 验证 canonical、Schema、Metadata 或 Code Patch 是否真正生效。",
+            truthStatus: "current",
+            capabilityIds: [],
+            primaryAction: {
+              id: "section-results-open-recheck",
+              label: "查看技术复查",
+              destination: {
+                kind: "results-view",
+                target: "results/technical-recheck",
+              },
+            },
+          },
+          {
+            id: "gsc-ga4-windows",
+            title: "GSC / GA4 固定窗口",
+            purpose:
+              "展示页面、Campaign 与 Conversion 的来源、窗口、样本、新鲜度和缺数状态。",
+            truthStatus: "next",
+            capabilityIds: ["content-decay-monitor"],
+            primaryAction: {
+              id: "section-results-open-observation-windows",
+              label: "查看观测窗口",
+              destination: {
+                kind: "results-view",
+                target: "results/observation-windows",
+              },
+            },
+          },
+          {
+            id: "keyword-outcomes",
+            title: "关键词趋势与目标词结果",
+            purpose:
+              "先展示原始 Rank Series，再在 Receipt 和固定窗口存在时展示改前/改后。",
+            truthStatus: "next",
+            capabilityIds: [
+              "keyword-relation-governance",
+              "keyword-rank-history",
+            ],
+            primaryAction: {
+              id: "section-results-open-keyword-outcomes",
+              label: "查看目标词结果",
+              destination: {
+                kind: "results-view",
+                target: "results/keyword-outcomes",
+              },
+            },
+          },
+          {
+            id: "change-timeline",
+            title: "动作回执与结果时间线",
+            purpose:
+              "将 Approved Revision、Publication/Change Receipt 与 Measurement Window 明确分层。",
+            truthStatus: "next",
+            capabilityIds: [
+              "keyword-rank-history",
+              "content-decay-monitor",
+            ],
+            primaryAction: {
+              id: "section-results-open-change-timeline",
+              label: "查看变更与观测证据",
+              destination: {
+                kind: "evidence-view",
+                target: "results/change-timeline",
+              },
+            },
+          },
+          {
+            id: "geo-observations",
+            title: "GEO Citation Observation",
+            purpose:
+              "展示 Query、Platform、Passage、时间和 Snapshot；结构差异只作为 Analysis。",
+            truthStatus: "provider-dependent",
+            capabilityIds: ["geo-citation-observation"],
+            primaryAction: {
+              id: "section-results-open-geo-readiness",
+              label: "查看 GEO 观测条件",
+              destination: {
+                kind: "provider-readiness",
+                target: "results/geo-citation-readiness",
+              },
+            },
+          },
+        ],
+        entryPoints: [
+          {
+            fromModule: "execution",
+            toModule: "results",
+            surface: "发布或变更回执",
+            trigger: "Approved Artifact 已实施并产生正式 Receipt。",
+            carries: [
+              "publication-change-receipt",
+              "measurement-window",
+              "action-artifact",
+            ],
+          },
+          {
+            fromModule: "growth-map",
+            toModule: "results",
+            surface: "对象历史",
+            trigger: "客户从 Keyword、Page 或 Competitor 打开原始 Observation。",
+            carries: [
+              "keyword-metric-observation",
+              "competitor-snapshot-delta",
+            ],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "results",
+            toModule: "overview",
+            surface: "结果回流优先级",
+            trigger: "新结果形成待决策机会或健康度预警。",
+            carries: [
+              "measurement-window",
+              "growth-opportunity",
+              "content-decay-alert",
+            ],
+          },
+          {
+            fromModule: "results",
+            toModule: "growth-map",
+            surface: "回看对象证据",
+            trigger: "客户需要定位变化对应的 URL、Keyword、Topic 或 Competitor。",
+            carries: [
+              "measurement-window",
+              "keyword-metric-observation",
+              "competitor-snapshot-delta",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "site-page-snapshot",
+          "keyword-entity",
+          "keyword-relation-decision",
+          "keyword-metric-observation",
+          "publication-change-receipt",
+          "measurement-window",
+          "content-decay-alert",
+          "competitor-snapshot-delta",
+          "citation-observation",
+        ],
+        capabilityIds: [
+          "keyword-relation-governance",
+          "keyword-rank-history",
+          "content-decay-monitor",
+          "geo-citation-observation",
+        ],
+      },
+    ],
+    capabilities: [
+      {
+        id: "topic-governance",
+        requirementId: 1,
+        title: "Topic Map 与执行前治理",
+        customerOutcome:
+          "在不阻断发现/导入的前提下，让进入执行的关键词拥有已确认 Topic 与页面归属。",
+        primaryModule: "growth-map",
+        supportingModules: ["execution"],
+        truthStatus: "next",
+        deliveryStage: ["stage-1", "stage-2"],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "growth-map",
+            surface: "关键词库 / Topic 治理",
+            trigger: "已有页面、关键词和产品上下文，可生成 Draft Topic Model。",
+            carries: ["keyword-entity", "site-page-snapshot", "topic-model"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "execution",
+            surface: "创建或打开执行任务",
+            trigger: "Topic Revision、Keyword Mapping 与执行门槛均已确认。",
+            carries: [
+              "topic-model",
+              "keyword-review-decision",
+              "action-artifact",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "topic-model",
+          "keyword-review-decision",
+          "keyword-entity",
+          "site-page-snapshot",
+        ],
+        primaryAction: {
+          id: "capability-topic-governance-open",
+          label: "生成或审核 Topic Model",
+          destination: {
+            kind: "canonical-command",
+            target: "topic-model.open-or-create-draft",
+          },
+        },
+        implementationCondition:
+          "先完成稳定 Topic Identity、Revision、历史 Alias 和 Keyword Review authority，再开放完整交互图。",
+      },
+      {
+        id: "keyword-relation-governance",
+        requirementId: 2,
+        title: "重复与蚕食关系治理",
+        customerOutcome:
+          "看见候选依据并人工决定 Primary、Supporting、Keep Separate 或 Park，所有原词仍可追溯。",
+        primaryModule: "growth-map",
+        supportingModules: ["execution", "results"],
+        truthStatus: "next",
+        deliveryStage: ["stage-1"],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "growth-map",
+            surface: "关键词库 / 关系候选",
+            trigger: "Topic、Intent、Page Mapping、SERP overlap 等信号产生候选。",
+            carries: ["keyword-entity", "keyword-relation-decision"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "execution",
+            surface: "带关系决策进入 Brief/Artifact",
+            trigger: "Primary/Supporting 或其他关系决策已审核。",
+            carries: ["keyword-relation-decision", "action-artifact"],
+          },
+          {
+            fromModule: "growth-map",
+            toModule: "results",
+            surface: "查看主词与支持词结果",
+            trigger: "存在真实 Keyword Observation。",
+            carries: [
+              "keyword-relation-decision",
+              "keyword-metric-observation",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "keyword-entity",
+          "keyword-relation-decision",
+          "evidence-finding",
+        ],
+        primaryAction: {
+          id: "capability-keyword-relation-review",
+          label: "审核重复/蚕食候选",
+          destination: {
+            kind: "canonical-command",
+            target: "keyword-relation.review",
+          },
+        },
+        implementationCondition:
+          "候选生成必须保留信号、Rule Version 与 Freshness，且任何决策都不能删除稳定关键词或来源。",
+      },
+      {
+        id: "voc-source-governance",
+        requirementId: 3,
+        title: "Interview 与 User Review 来源治理",
+        customerOutcome:
+          "区分访谈摘要和用户评价，并知道来源授权、时间和限制。",
+        primaryModule: "growth-map",
+        supportingModules: ["execution"],
+        truthStatus: "provider-dependent",
+        deliveryStage: ["stage-3"],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "growth-map",
+            surface: "关键词来源 / 外部证据条件",
+            trigger: "客户拥有受治理文件，或 Provider 授权与许可已通过。",
+            carries: ["voc-source", "keyword-entity"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "execution",
+            surface: "来源透传到交付物",
+            trigger: "来源可披露且已进入统一 Keyword/Artifact lineage。",
+            carries: ["voc-source", "artifact-source-ref"],
+          },
+        ],
+        canonicalObjects: [
+          "voc-source",
+          "keyword-entity",
+          "artifact-source-ref",
+        ],
+        primaryAction: {
+          id: "capability-voc-source-readiness",
+          label: "查看 VOC 来源与接入条件",
+          destination: {
+            kind: "provider-readiness",
+            target: "growth-map/voc-source-readiness",
+          },
+        },
+        implementationCondition:
+          "先支持受治理手工/CSV；外部平台只有在授权、许可、PII 与保留策略批准后接入。",
+      },
+      {
+        id: "artifact-source-provenance",
+        requirementId: 4,
+        title: "Artifact 参考来源",
+        customerOutcome:
+          "在交付物旁直接看到它基于哪些证据、何时采集、是否可披露及有哪些限制。",
+        primaryModule: "execution",
+        supportingModules: [],
+        truthStatus: "next",
+        deliveryStage: ["stage-1"],
+        entryPoints: [
+          {
+            fromModule: "execution",
+            toModule: "execution",
+            surface: "交付物治理侧栏",
+            trigger: "客户打开任一 Artifact Revision。",
+            carries: [
+              "action-artifact",
+              "research-pack",
+              "artifact-source-ref",
+            ],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "execution",
+            toModule: "growth-map",
+            surface: "返回来源对象",
+            trigger: "客户从 Source Ref 查看对应 Page、Keyword 或 Finding。",
+            carries: ["artifact-source-ref", "evidence-finding"],
+          },
+        ],
+        canonicalObjects: [
+          "artifact-source-ref",
+          "research-pack",
+          "evidence-finding",
+          "action-artifact",
+        ],
+        primaryAction: {
+          id: "capability-artifact-source-open",
+          label: "查看结构化参考来源",
+          destination: {
+            kind: "evidence-view",
+            target: "execution/artifact-sources",
+          },
+        },
+        implementationCondition:
+          "每个在售 Artifact Type 必须有来源 adapter 或明确 unavailable；来源从 Evidence lineage 透传，不在 Keyword Card 重复维护。",
+      },
+      {
+        id: "action-blocker",
+        requirementId: 5,
+        title: "阻断原因与解锁条件",
+        customerOutcome:
+          "无需打开详情就能知道任务卡在哪里、谁负责以及满足什么条件可继续。",
+        primaryModule: "execution",
+        supportingModules: [],
+        truthStatus: "next",
+        deliveryStage: ["stage-1"],
+        entryPoints: [
+          {
+            fromModule: "execution",
+            toModule: "execution",
+            surface: "任务队列",
+            trigger: "Action/Artifact 存在 Active Blocker。",
+            carries: ["action-execution-state", "action-artifact"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "execution",
+            toModule: "growth-map",
+            surface: "查看或补齐依赖证据",
+            trigger: "解锁条件指向 Page、Keyword、Competitor 或 Finding。",
+            carries: ["action-execution-state", "evidence-finding"],
+          },
+        ],
+        canonicalObjects: [
+          "action-execution-state",
+          "action-artifact",
+          "evidence-finding",
+        ],
+        primaryAction: {
+          id: "capability-action-blocker-resolve",
+          label: "查看解锁条件",
+          destination: {
+            kind: "canonical-command",
+            target: "action-blocker.resolve-or-open-dependency",
+          },
+        },
+        implementationCondition:
+          "Blocker 必须有 Source、Observed At、Freshness 与 Active/Resolved 生命周期，不能由前端猜测。",
+      },
+      {
+        id: "action-business-progress",
+        requirementId: 6,
+        title: "业务阶段与任务进度",
+        customerOutcome:
+          "看到真实 Phase 与 Next Step；只有正式步骤定义存在时才看到 completed/total。",
+        primaryModule: "execution",
+        supportingModules: [],
+        truthStatus: "next",
+        deliveryStage: ["stage-1"],
+        entryPoints: [
+          {
+            fromModule: "execution",
+            toModule: "execution",
+            surface: "任务队列与交付物详情",
+            trigger: "Action 正在研究、生成、审核、发布或验证。",
+            carries: ["action-execution-state", "action-artifact"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "execution",
+            toModule: "results",
+            surface: "待验证",
+            trigger: "发布/变更已经发生，业务阶段进入 Measurement。",
+            carries: [
+              "action-execution-state",
+              "publication-change-receipt",
+              "measurement-window",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "action-execution-state",
+          "action-artifact",
+          "publication-change-receipt",
+        ],
+        primaryAction: {
+          id: "capability-action-progress-open",
+          label: "查看任务阶段与下一步",
+          destination: {
+            kind: "module-surface",
+            target: "execution/action-progress",
+          },
+        },
+        implementationCondition:
+          "Progress 必须来自业务状态 adapter；没有 Versioned Step Definition 时不得输出伪造步数或百分比。",
+      },
+      {
+        id: "opportunity-decision-sla",
+        requirementId: 7,
+        title: "Opportunity SLA 与决策",
+        customerOutcome:
+          "长期未决机会重新进入概览，并能推进、拒绝、延后或 Snooze，而不是无限搁置。",
+        primaryModule: "overview",
+        supportingModules: ["growth-map", "execution"],
+        truthStatus: "next",
+        deliveryStage: ["stage-2"],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "overview",
+            surface: "待决策机会",
+            trigger: "Opportunity 超过项目 SLA 且没有 Action、Decision 或有效 Snooze。",
+            carries: ["growth-opportunity", "opportunity-decision"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "overview",
+            toModule: "execution",
+            surface: "推进机会",
+            trigger: "客户选择 Advance。",
+            carries: ["opportunity-decision", "action-artifact"],
+          },
+          {
+            fromModule: "overview",
+            toModule: "growth-map",
+            surface: "查看机会证据",
+            trigger: "客户在决策前查看对应对象。",
+            carries: ["growth-opportunity", "evidence-finding"],
+          },
+        ],
+        canonicalObjects: [
+          "growth-opportunity",
+          "opportunity-decision",
+          "action-artifact",
+        ],
+        primaryAction: {
+          id: "capability-opportunity-decision-record",
+          label: "处理待决策机会",
+          destination: {
+            kind: "canonical-command",
+            target: "opportunity-decision.record",
+          },
+        },
+        implementationCondition:
+          "先建立稳定 Opportunity Fingerprint、可配置 SLA、Decision Ledger、Owner、Reason 和 Snoozed Until。",
+      },
+      {
+        id: "internal-link-graph",
+        requirementId: 8,
+        title: "Internal Link Graph",
+        customerOutcome:
+          "看懂 Hub/Spoke、单向和孤岛页面，并从有证据的建议创建唯一修复任务。",
+        primaryModule: "growth-map",
+        supportingModules: ["execution"],
+        truthStatus: "next",
+        deliveryStage: ["stage-2"],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "growth-map",
+            surface: "页面与机会 / Internal Link Graph",
+            trigger: "Page Snapshot 拥有完整 Link Observation 与 Coverage。",
+            carries: ["site-page-snapshot", "link-observation"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "execution",
+            surface: "创建或打开补内链 Action",
+            trigger: "客户确认有证据的 Link Recommendation。",
+            carries: ["link-observation", "action-artifact"],
+          },
+        ],
+        canonicalObjects: [
+          "link-observation",
+          "site-page-snapshot",
+          "action-artifact",
+        ],
+        primaryAction: {
+          id: "capability-internal-link-action",
+          label: "查看内链建议并去执行",
+          destination: {
+            kind: "canonical-command",
+            target: "internal-link-action.create-or-open",
+          },
+        },
+        implementationCondition:
+          "必须先建立 canonical Page/Link node-edge authority、Snapshot 与 Coverage，不能从 Finding 文案拼图。",
+      },
+      {
+        id: "keyword-rank-history",
+        requirementId: 9,
+        title: "关键词历史与回执支持的结果",
+        customerOutcome:
+          "先看到真实 Rank Series，再在变更确有 Receipt 时看到目标词前后窗口。",
+        primaryModule: "growth-map",
+        supportingModules: ["results"],
+        truthStatus: "next",
+        deliveryStage: ["stage-1", "stage-2"],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "growth-map",
+            surface: "关键词详情 / 历史",
+            trigger: "选中稳定 Keyword Identity 且存在 Observation。",
+            carries: ["keyword-entity", "keyword-metric-observation"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "results",
+            surface: "目标词结果",
+            trigger: "Publication/Change Receipt 与固定 Measurement Window 可用。",
+            carries: [
+              "keyword-metric-observation",
+              "publication-change-receipt",
+              "measurement-window",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "keyword-metric-observation",
+          "keyword-entity",
+          "publication-change-receipt",
+          "measurement-window",
+        ],
+        primaryAction: {
+          id: "capability-keyword-history-open",
+          label: "查看关键词趋势",
+          destination: {
+            kind: "results-view",
+            target: "growth-map/keyword-history",
+          },
+        },
+        implementationCondition:
+          "原始历史和 Receipt-backed Results 必须独立验收；缺数不补零、无 Receipt 不显示改动点。",
+      },
+      {
+        id: "content-decay-monitor",
+        requirementId: 10,
+        title: "内容衰减监控",
+        customerOutcome:
+          "主动发现有足够样本的真实衰减，并直接决定是否创建内容复审任务。",
+        primaryModule: "overview",
+        supportingModules: ["growth-map", "execution", "results"],
+        truthStatus: "next",
+        deliveryStage: ["stage-2"],
+        entryPoints: [
+          {
+            fromModule: "results",
+            toModule: "overview",
+            surface: "健康度预警",
+            trigger: "Versioned Policy 在有效窗口命中且通过样本/季节性/缺数保护。",
+            carries: [
+              "measurement-window",
+              "content-decay-alert",
+              "growth-opportunity",
+            ],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "overview",
+            toModule: "growth-map",
+            surface: "查看页面与趋势证据",
+            trigger: "客户打开 Alert 详情。",
+            carries: [
+              "content-decay-alert",
+              "site-page-snapshot",
+              "keyword-metric-observation",
+            ],
+          },
+          {
+            fromModule: "overview",
+            toModule: "execution",
+            surface: "创建内容复审 Action",
+            trigger: "客户选择推进。",
+            carries: [
+              "content-decay-alert",
+              "opportunity-decision",
+              "action-artifact",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "content-decay-alert",
+          "keyword-metric-observation",
+          "measurement-window",
+          "opportunity-decision",
+        ],
+        primaryAction: {
+          id: "capability-content-decay-decide",
+          label: "查看衰减证据并决策",
+          destination: {
+            kind: "canonical-command",
+            target: "content-decay-alert.decide",
+          },
+        },
+        implementationCondition:
+          "先有不可变页面/关键词历史与可配置 Policy，再实现去重 Alert、Snooze 与 Action 闭环。",
+      },
+      {
+        id: "backlink-evidence",
+        requirementId: 11,
+        title: "Backlink Evidence",
+        customerOutcome:
+          "在真实数据可用时比较站点、页面、引用域和竞品外链，并形成可解释机会。",
+        primaryModule: "growth-map",
+        supportingModules: [],
+        truthStatus: "provider-dependent",
+        deliveryStage: ["stage-3"],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "growth-map",
+            surface: "外部证据与接入条件",
+            trigger: "受治理文件已导入，或 Backlink Provider 完成授权和指标口径确认。",
+            carries: ["backlink-snapshot"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "overview",
+            surface: "Backlink Opportunity",
+            trigger: "真实 Snapshot Comparison 形成有证据的机会。",
+            carries: ["backlink-snapshot", "growth-opportunity"],
+          },
+        ],
+        canonicalObjects: [
+          "backlink-snapshot",
+          "competitor-entity",
+          "site-page-snapshot",
+          "growth-opportunity",
+        ],
+        primaryAction: {
+          id: "capability-backlink-readiness",
+          label: "查看 Backlink 数据条件",
+          destination: {
+            kind: "provider-readiness",
+            target: "growth-map/backlink-readiness",
+          },
+        },
+        implementationCondition:
+          "保留正式能力；满足受治理导入或 Provider 授权、商业成本、指标定义、频率与保留策略批准后实施，不等于放弃。",
+      },
+      {
+        id: "geo-citation-observation",
+        requirementId: 12,
+        title: "GEO Citation Observation",
+        customerOutcome:
+          "查看平台、Query、被引用段落和采集时间，并把结构差异当作分析而非因果。",
+        primaryModule: "results",
+        supportingModules: [],
+        truthStatus: "provider-dependent",
+        deliveryStage: ["stage-3"],
+        entryPoints: [
+          {
+            fromModule: "results",
+            toModule: "results",
+            surface: "GEO 观测",
+            trigger: "Citation Provider 可用且产生带 Snapshot/Pointer 的真实 Observation。",
+            carries: ["citation-observation"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "results",
+            toModule: "growth-map",
+            surface: "回看被引用页面与关键词",
+            trigger: "客户从 Citation Observation 打开来源对象。",
+            carries: [
+              "citation-observation",
+              "site-page-snapshot",
+              "keyword-entity",
+            ],
+          },
+        ],
+        canonicalObjects: [
+          "citation-observation",
+          "site-page-snapshot",
+          "keyword-entity",
+          "publication-change-receipt",
+        ],
+        primaryAction: {
+          id: "capability-geo-citation-readiness",
+          label: "查看 GEO 观测证据与条件",
+          destination: {
+            kind: "provider-readiness",
+            target: "results/geo-citation-readiness",
+          },
+        },
+        implementationCondition:
+          "只有 Provider 授权、回答 Snapshot、引用 Pointer 和失败状态完整时启用；Analysis 不得写成因果归因。",
+      },
+      {
+        id: "competitor-delta-monitor",
+        requirementId: 13,
+        title: "竞品 Snapshot Delta 监控",
+        customerOutcome:
+          "看到竞品新内容、重叠与排名变化的前后证据，并决定是否更新机会。",
+        primaryModule: "growth-map",
+        supportingModules: ["overview"],
+        truthStatus: "provider-dependent",
+        deliveryStage: ["stage-2", "stage-3"],
+        entryPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "growth-map",
+            surface: "竞品库 / 监控策略",
+            trigger: "Approved Competitor 与可执行 Provider Policy 均可用。",
+            carries: ["competitor-entity", "competitor-snapshot-delta"],
+          },
+        ],
+        exitPoints: [
+          {
+            fromModule: "growth-map",
+            toModule: "overview",
+            surface: "竞品变化提醒",
+            trigger: "真实前后 Snapshot 形成新的去重 Delta。",
+            carries: ["competitor-snapshot-delta", "growth-opportunity"],
+          },
+        ],
+        canonicalObjects: [
+          "competitor-snapshot-delta",
+          "competitor-entity",
+          "growth-opportunity",
+        ],
+        primaryAction: {
+          id: "capability-competitor-monitor-readiness",
+          label: "查看竞品监控状态",
+          destination: {
+            kind: "provider-readiness",
+            target: "growth-map/competitor-monitor-readiness",
+          },
+        },
+        implementationCondition:
+          "Stage 2 先完成 Policy/Schedule/Snapshot/Delta；完整内容、SERP 与 GEO 来源在 Provider 授权后启用。",
+      },
+    ],
+    crossModuleJourneys: [
+      {
+        id: "content-growth",
+        title: "从关键词机会到 English Blog 结果",
+        customerOutcome:
+          "客户能从关键词与 Topic 证据一路审核内容、发布并查看目标词和转化窗口。",
+        steps: [
+          {
+            module: "growth-map",
+            action: "审核 Keyword、Topic、页面归属和关系候选。",
+            canonicalObjects: [
+              "keyword-entity",
+              "topic-model",
+              "keyword-review-decision",
+              "keyword-relation-decision",
+            ],
+          },
+          {
+            module: "overview",
+            action: "查看机会依据并记录 Advance/Decline/Defer/Snooze。",
+            canonicalObjects: [
+              "growth-opportunity",
+              "opportunity-decision",
+            ],
+          },
+          {
+            module: "execution",
+            action: "审核 English Blog/Brief、参考来源、QA、Revision 与发布计划。",
+            canonicalObjects: [
+              "action-artifact",
+              "research-pack",
+              "artifact-source-ref",
+            ],
+          },
+          {
+            module: "results",
+            action: "在 Receipt 和固定窗口存在时查看关键词、流量与转化 Observation。",
+            canonicalObjects: [
+              "publication-change-receipt",
+              "measurement-window",
+              "keyword-metric-observation",
+            ],
+          },
+          {
+            module: "growth-map",
+            action: "把新结果回流到页面、关键词和下一轮 Topic 决策。",
+            canonicalObjects: [
+              "keyword-metric-observation",
+              "growth-opportunity",
+            ],
+          },
+        ],
+      },
+      {
+        id: "technical-optimization",
+        title: "从技术 Finding 到可验证修复",
+        customerOutcome:
+          "客户能从 URL 问题看到真实 Patch、审批/变更回执和独立技术复查。",
+        steps: [
+          {
+            module: "growth-map",
+            action: "从 Page Snapshot 和 Evidence 查看 Technical Finding。",
+            canonicalObjects: ["site-page-snapshot", "evidence-finding"],
+          },
+          {
+            module: "overview",
+            action: "确认优先级并推进唯一修复 Action。",
+            canonicalObjects: [
+              "growth-opportunity",
+              "opportunity-decision",
+              "action-artifact",
+            ],
+          },
+          {
+            module: "execution",
+            action: "审核 Metadata/Schema/Code Patch、来源、Blocker 和下一步。",
+            canonicalObjects: [
+              "action-artifact",
+              "artifact-source-ref",
+              "action-execution-state",
+            ],
+          },
+          {
+            module: "results",
+            action: "使用 Change Receipt 和独立 Recheck 验证技术条件是否变化。",
+            canonicalObjects: [
+              "publication-change-receipt",
+              "measurement-window",
+              "evidence-finding",
+            ],
+          },
+        ],
+      },
+      {
+        id: "continuous-monitoring",
+        title: "从持续观测到下一轮优化",
+        customerOutcome:
+          "客户能把内容衰减、竞品变化和关键词趋势转成去重提醒与正式任务。",
+        steps: [
+          {
+            module: "results",
+            action: "读取固定窗口、关键词历史或 Provider-backed Observation。",
+            canonicalObjects: [
+              "measurement-window",
+              "keyword-metric-observation",
+              "competitor-snapshot-delta",
+            ],
+          },
+          {
+            module: "overview",
+            action: "查看健康度/竞品提醒并记录正式决策。",
+            canonicalObjects: [
+              "content-decay-alert",
+              "growth-opportunity",
+              "opportunity-decision",
+            ],
+          },
+          {
+            module: "growth-map",
+            action: "回到 URL、Keyword 或 Competitor 查看前后证据。",
+            canonicalObjects: [
+              "site-page-snapshot",
+              "keyword-metric-observation",
+              "competitor-snapshot-delta",
+            ],
+          },
+          {
+            module: "execution",
+            action: "创建或打开唯一复审/修复 Action 并审核交付物。",
+            canonicalObjects: ["action-artifact", "action-execution-state"],
+          },
+          {
+            module: "results",
+            action: "等待真实 Receipt 和下一固定窗口，不以即时变化冒充效果。",
+            canonicalObjects: [
+              "publication-change-receipt",
+              "measurement-window",
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
   const audit = {
     version: "1.0.0",
     reviewedAt: "2026-07-27",
@@ -25,6 +1842,8 @@
       scope: "关键词库、增长地图、执行中心、概览与 SEO/GEO 核心能力",
     },
     customerVisibleConnectors: ["GSC", "GA4", "GitHub"],
+    connectorPolicy,
+    integratedProduct,
     summary: {
       requirementCount: 13,
       adoptCount: 4,
