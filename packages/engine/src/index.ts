@@ -35,6 +35,28 @@ export type {
   DatasetAvailability,
 } from "./context.ts";
 
+export {
+  GOVERNANCE_PROJECTION_VERSION,
+  parseGovernanceProjectionV1,
+} from "./governance.ts";
+export type {
+  GovernanceProjectionV1,
+  GovernanceKeywordClusterV1,
+  GovernanceKeywordFactV1,
+  GovernanceKeywordOccurrenceRefV1,
+  GovernanceKeywordMetricRefV1,
+  GovernanceKeywordStatus,
+  GovernanceKeywordQueryKind,
+  GovernanceKeywordMappingDecision,
+  GovernanceKeywordMappingReviewState,
+  GovernanceCompetitorFactV1,
+  GovernanceCompetitorOriginRefV1,
+  GovernanceCompetitorReviewStatus,
+  GovernanceCompetitorRelationship,
+  GovernanceCompetitorAnalysisScope,
+  GovernanceCompetitorOriginKind,
+} from "./governance.ts";
+
 export { parseIcp, isEnglishProject } from "./icp.ts";
 export type { EngineIcp, EngineConversion, CustomerModel } from "./icp.ts";
 

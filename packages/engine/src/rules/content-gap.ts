@@ -8,11 +8,14 @@
  * search volume (null volumes are skipped, never counted as 0 — spec §1.3). For a
  * qualifying cluster the frozen `cluster_key.v1` is matched against crawled pages
  * via `intent_match.v1` (English only). Only a confident `uncovered` verdict is a
- * defect.
+ * defect. Version 2 additionally intersects demand with the manifest-frozen
+ * Keyword Library when governance is present; manifests that predate governance
+ * retain the exact version-1 evaluation path.
  */
 
 import type { CsvKeywordProjection } from "@sf/sources";
 import type { DiagnosticContext } from "../context.ts";
+import type { GovernanceKeywordClusterV1 } from "../governance.ts";
 import type { DiagnosticRule, EvidenceDraft, FindingCandidate } from "../rule.ts";
 import { findingTarget } from "../target.ts";
 import { matchIntent, pageFieldBag } from "../util/intent-match.ts";
@@ -25,10 +28,15 @@ const DATAFORSEO_LIMITATION =
   "Search volume and ranking are DataForSEO vendor observations over the configured market, language, rank filter, and row cap; clustering is heuristic.";
 const INTENT_LIMITATION =
   "Intent match is an English-only heuristic over URL/title/H1 tokens.";
+const CONTENT_GAP_COMPETITOR_SCOPES: ReadonlySet<string> = new Set([
+  "keyword_gap",
+  "content",
+  "serp_visibility",
+]);
 
 export const contentGapRule = {
   id: "CONTENT-GAP-011",
-  version: 1,
+  version: 2,
   domain: "content_intent",
   requiredDatasets: [
     { dataset: "crawl", required: true },
@@ -55,7 +63,20 @@ export const contentGapRule = {
     const candidates: FindingCandidate[] = [];
     let qualifyingClusters = 0;
     let inconclusiveCount = 0;
-    for (const [clusterKey, keywords] of ctx.csvClusters) {
+    for (const [clusterKey, legacyKeywords] of ctx.csvClusters) {
+      const governedCluster =
+        ctx.governance === null
+          ? null
+          : ctx.governedKeywordCluster(clusterKey);
+      const keywords =
+        ctx.governance === null
+          ? legacyKeywords
+          : ctx.governedKeywordGapKeywords(clusterKey);
+      // Once governance is frozen into the manifest, absence of reviewed
+      // intersection is a deliberate "not eligible", never permission to fall
+      // back to every imported row.
+      if (ctx.governance !== null && keywords.length === 0) continue;
+
       const totalVolume = totalAvailableVolume(keywords);
       const qualifies =
         keywords.length >= MIN_KEYWORDS && totalVolume >= MIN_TOTAL_VOLUME;
@@ -70,7 +91,13 @@ export const contentGapRule = {
       }
 
       candidates.push(
-        buildCandidate(ctx, clusterKey, keywords.length, totalVolume),
+        buildCandidate(
+          ctx,
+          clusterKey,
+          keywords,
+          totalVolume,
+          governedCluster,
+        ),
       );
     }
 
@@ -131,13 +158,18 @@ function buildPageBags(ctx: DiagnosticContext): ReadonlySet<string>[] {
 function buildCandidate(
   ctx: DiagnosticContext,
   clusterKey: string,
-  keywordCount: number,
+  keywords: readonly CsvKeywordProjection[],
   totalVolume: number,
+  governedCluster: GovernanceKeywordClusterV1 | null,
 ): FindingCandidate {
+  const keywordCount = keywords.length;
   const subjectRef = `keyword_cluster:${clusterKey}`;
   const crawlPartial = ctx.datasetAvailability("crawl") === "partial";
   const keywordGapEvidence = ctx
-    .keywordGapContributions(clusterKey)
+    .keywordGapContributions(
+      clusterKey,
+      ctx.governance === null ? undefined : keywords,
+    )
     .map(({ provider, keywords }): EvidenceDraft => {
       const availability = ctx.providerAvailability(provider);
       const partial = availability === "partial";
@@ -167,6 +199,24 @@ function buildCandidate(
         limitation: `${sourceLimitation} Rows without reported search volume are excluded from this provider's volume sum.${partial ? " The selected keyword-gap snapshot is partial, so omitted rows may affect completeness." : ""}`,
       };
     });
+  const governanceEvidence =
+    governedCluster === null
+      ? []
+      : [
+          buildKeywordGovernanceEvidence(
+            ctx,
+            subjectRef,
+            governedCluster,
+            keywordCount,
+          ),
+        ];
+  const competitorSupport = buildCompetitorSupport(
+    ctx,
+    subjectRef,
+    governedCluster === null
+      ? ctx.observedAt("governance")
+      : latestEligibleKeywordSeenAt(ctx, governedCluster),
+  );
   const contentEvidence: EvidenceDraft = {
     sourceProvider: "crawl",
     origin: "derived",
@@ -181,12 +231,23 @@ function buildCandidate(
       ? `${INTENT_LIMITATION} The selected crawl snapshot is partial, so omitted pages may affect completeness.`
       : INTENT_LIMITATION,
   };
+  const metrics: Record<string, number | string | null> = {
+    clusterKey,
+    keywordCount,
+    totalVolume,
+    ...competitorSupport.metrics,
+  };
   return {
     subjectRefs: [subjectRef],
     severity: "high",
     titleArgs: { clusterKey, keywordCount, totalVolume },
-    metrics: { clusterKey, keywordCount, totalVolume },
-    evidence: [...keywordGapEvidence, contentEvidence],
+    metrics,
+    evidence: [
+      ...keywordGapEvidence,
+      ...governanceEvidence,
+      ...competitorSupport.evidence,
+      contentEvidence,
+    ],
     target: findingTarget(
       {
         relation: "affected_by_keyword_cluster",
@@ -197,4 +258,103 @@ function buildCandidate(
       "target_definition",
     ),
   };
+}
+
+function buildKeywordGovernanceEvidence(
+  ctx: DiagnosticContext,
+  subjectRef: string,
+  cluster: GovernanceKeywordClusterV1,
+  intersectedKeywordCount: number,
+): EvidenceDraft {
+  const eligibleFactCount = cluster.keywords.filter(
+    (keyword) =>
+      keyword.status === "approved" &&
+      keyword.mappingReviewState === "confirmed" &&
+      keyword.clusterKey === cluster.clusterKey,
+  ).length;
+  return {
+    sourceProvider: "system",
+    origin: "derived",
+    method: "computed",
+    grade: "B",
+    availability: "available",
+    support: "supports",
+    subjectRefs: [subjectRef],
+    claim: `The frozen Keyword Library contains ${eligibleFactCount} approved, confirmed facts for cluster "${cluster.clusterKey}"; ${intersectedKeywordCount} intersect the frozen demand observations used by this finding.`,
+    observedAt: latestEligibleKeywordSeenAt(ctx, cluster),
+    limitation:
+      "Keyword eligibility is the reviewed state frozen into this diagnostic manifest; later Library edits are intentionally excluded from replay.",
+  };
+}
+
+function buildCompetitorSupport(
+  ctx: DiagnosticContext,
+  subjectRef: string,
+  observedAt: string,
+): {
+  readonly metrics: Readonly<Record<string, number | string>>;
+  readonly evidence: readonly EvidenceDraft[];
+} {
+  const competitors = ctx.approvedCompetitorEvidence.filter((competitor) =>
+    competitor.analysisScopes.some((scope) =>
+      CONTENT_GAP_COMPETITOR_SCOPES.has(scope),
+    ),
+  );
+  if (competitors.length === 0) {
+    return { metrics: {}, evidence: [] };
+  }
+  const ids = competitors
+    .map((competitor) => competitor.competitorEntityId)
+    .sort(compareAscii);
+  const scopes = [
+    ...new Set(
+      competitors.flatMap((competitor) =>
+        competitor.analysisScopes.filter((scope) =>
+          CONTENT_GAP_COMPETITOR_SCOPES.has(scope),
+        ),
+      ),
+    ),
+  ].sort(compareAscii);
+  return {
+    metrics: {
+      approvedCompetitorCount: ids.length,
+      approvedCompetitorIds: ids.join(","),
+      approvedCompetitorScopes: scopes.join(","),
+    },
+    evidence: [
+      {
+        sourceProvider: "system",
+        origin: "derived",
+        method: "computed",
+        grade: "B",
+        availability: "available",
+        support: "context",
+        subjectRefs: [subjectRef],
+        claim: `Approved Competitor Library context includes entity IDs ${ids.join(", ")} across analysis scopes ${scopes.join(", ")}.`,
+        observedAt,
+        limitation:
+          "Approved competitor governance is supporting context only; it does not establish keyword demand, page absence, or a competitor finding target. Its frozen origin refs carry no independent timestamp in GovernanceProjectionV1, so observedAt is the latest eligible Keyword fact used by this finding.",
+      },
+    ],
+  };
+}
+
+function latestEligibleKeywordSeenAt(
+  ctx: DiagnosticContext,
+  cluster: GovernanceKeywordClusterV1,
+): string {
+  const instants = cluster.keywords
+    .filter(
+      (keyword) =>
+        keyword.status === "approved" &&
+        keyword.mappingReviewState === "confirmed" &&
+        keyword.clusterKey === cluster.clusterKey,
+    )
+    .map((keyword) => keyword.lastSeenAt)
+    .sort(compareAscii);
+  return instants.at(-1) ?? ctx.observedAt("governance");
+}
+
+function compareAscii(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -6,12 +6,24 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import { DiagnosticContext } from "./context.ts";
-import type { ObservationView } from "./context.ts";
+import type {
+  DiagnosticContextInput,
+  ObservationView,
+} from "./context.ts";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  parseGovernanceProjectionV1,
+} from "./governance.ts";
+import type { GovernanceProjectionV1 } from "./governance.ts";
 import { parseIcp } from "./icp.ts";
 import { testObservationLineage } from "./test-observation-lineage.ts";
 
 const OBSERVED_AT = "2026-07-22T00:00:00Z";
 const SUBJECT_URL = "https://example.com/pricing";
+
+function fixtureUuid(index: number): string {
+  return `10000000-0000-4000-8000-${index.toString().padStart(12, "0")}`;
+}
 
 function makePage(fetchUrl: string, title: string): CrawlPageProjection {
   return {
@@ -74,7 +86,12 @@ function keywordObservation(
   };
 }
 
-function buildContext(observations: readonly ObservationView[]): DiagnosticContext {
+function buildContext(
+  observations: readonly ObservationView[],
+  governance?: GovernanceProjectionV1,
+): DiagnosticContext {
+  const governanceInput: Pick<DiagnosticContextInput, "governance"> | object =
+    governance === undefined ? {} : { governance };
   return DiagnosticContext.build({
     icp: parseIcp({ productName: "Acme" }),
     deliveryLocale: "en",
@@ -86,6 +103,7 @@ function buildContext(observations: readonly ObservationView[]): DiagnosticConte
       csv: "unavailable",
     },
     capturedAt: { crawl: OBSERVED_AT },
+    ...governanceInput,
   });
 }
 
@@ -423,3 +441,214 @@ describe("DiagnosticContext keyword demand aggregation", () => {
     );
   });
 });
+
+describe("DiagnosticContext frozen governance lookup", () => {
+  it("keeps old manifests compatible as an explicit no-governance context", () => {
+    const ctx = buildContext([]);
+
+    expect(ctx.governance).toBeNull();
+    expect([...ctx.governedKeywordClusters]).toEqual([]);
+    expect(ctx.governedKeywordCluster("missing")).toBeNull();
+    expect(ctx.governedKeywordGapKeywords("missing")).toEqual([]);
+    expect(ctx.approvedCompetitorEvidence).toEqual([]);
+  });
+
+  it("exposes sorted governed clusters, reviewed demand intersections, and approved competitor evidence", () => {
+    const approvedProjection: CsvKeywordProjection = {
+      keyword: "project-management software",
+      clusterKey: "project-management",
+      searchVolume: 700,
+      currentUrl: null,
+      currentRank: null,
+      competitorDomain: "rival.example",
+      competitorRank: 2,
+      marketCode: "US",
+      languageCode: "en",
+    };
+    const excludedProjection: CsvKeywordProjection = {
+      ...approvedProjection,
+      keyword: "excluded project tool",
+      searchVolume: 900,
+    };
+    const approvedObservation = keywordObservation("csv", approvedProjection);
+    const excludedObservation = keywordObservation("csv", excludedProjection);
+    const governance = parseGovernanceProjectionV1({
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [
+        {
+          clusterKey: "zeta",
+          keywords: [],
+        },
+        {
+          clusterKey: "project-management",
+          keywords: [
+            governedKeywordFact(excludedObservation, 1, {
+              displayKeyword: "Excluded Project Tool",
+              normalizedKeyword: "excluded project tool",
+              status: "excluded",
+            }),
+            governedKeywordFact(approvedObservation, 2, {
+              displayKeyword: "Project Management Software",
+              normalizedKeyword: "project management software",
+            }),
+          ],
+        },
+      ],
+      competitors: [
+        governedCompetitor(1, {
+          domain: "zeta.example",
+        }),
+        governedCompetitor(2, {
+          domain: "candidate.example",
+          reviewStatus: "candidate",
+          relationship: null,
+          analysisScopes: [],
+          originRefs: [
+            {
+              occurrenceId: fixtureUuid(4_002),
+              originKind: "manual",
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        }),
+        governedCompetitor(3, {
+          domain: "alpha.example",
+          relationship: "benchmark",
+          analysisScopes: ["positioning"],
+          originRefs: [
+            {
+              occurrenceId: fixtureUuid(4_003),
+              originKind: "product_profile",
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        }),
+      ],
+    });
+
+    const ctx = buildContext(
+      [excludedObservation, approvedObservation],
+      governance,
+    );
+
+    expect([...ctx.governedKeywordClusters.keys()]).toEqual([
+      "project-management",
+      "zeta",
+    ]);
+    expect(ctx.governedKeywordCluster("project-management")).toEqual(
+      governance.keywordClusters[0],
+    );
+    expect(ctx.governedKeywordCluster("missing")).toBeNull();
+    expect(ctx.governedKeywordGapKeywords("project-management")).toEqual([
+      approvedProjection,
+    ]);
+    expect(
+      ctx.approvedCompetitorEvidence.map(
+        (competitor) => competitor.competitorEntityId,
+      ),
+    ).toEqual([fixtureUuid(3_003), fixtureUuid(3_001)]);
+    expect(
+      ctx.approvedCompetitorEvidence.flatMap(
+        (competitor) => competitor.analysisScopes,
+      ),
+    ).toEqual(["positioning", "keyword_gap", "serp_visibility"]);
+    expect(
+      ctx
+        .approvedCompetitorsForScope("keyword_gap")
+        .map((competitor) => competitor.competitorEntityId),
+    ).toEqual([fixtureUuid(3_001)]);
+  });
+
+  it("does not let a lineage ref override a conflicting canonical keyword identity", () => {
+    const projection: CsvKeywordProjection = {
+      keyword: "project management software",
+      clusterKey: "project-management",
+      searchVolume: 700,
+      currentUrl: null,
+      currentRank: null,
+      competitorDomain: null,
+      competitorRank: null,
+      marketCode: "US",
+      languageCode: "en",
+    };
+    const observation = keywordObservation("csv", projection);
+    const governance = parseGovernanceProjectionV1({
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [
+        {
+          clusterKey: projection.clusterKey,
+          keywords: [
+            governedKeywordFact(observation, 3, {
+              displayKeyword: "Different Search Intent",
+              normalizedKeyword: "different search intent",
+            }),
+          ],
+        },
+      ],
+      competitors: [],
+    });
+
+    const ctx = buildContext([observation], governance);
+
+    expect(ctx.governedKeywordGapKeywords(projection.clusterKey)).toEqual([]);
+  });
+});
+
+function governedKeywordFact(
+  observation: ObservationView,
+  fixtureIndex: number,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const projection = observation.valueJson as CsvKeywordProjection;
+  return {
+    keywordEntityId: fixtureUuid(1_000 + fixtureIndex),
+    displayKeyword: projection.keyword,
+    normalizedKeyword: projection.keyword.toLowerCase(),
+    marketCode: projection.marketCode,
+    languageTag: projection.languageCode,
+    revision: 1,
+    status: "approved",
+    queryKind: "search_query",
+    intent: "commercial",
+    buyerStage: "consideration",
+    clusterKey: projection.clusterKey,
+    mappingDecision: "new_asset",
+    mappedSitePageId: null,
+    mappingReviewState: "confirmed",
+    lastSeenAt: OBSERVED_AT,
+    occurrenceRefs: [
+      {
+        occurrenceId: fixtureUuid(2_000 + fixtureIndex),
+        snapshotId: observation.snapshotId,
+        observationId: observation.observationId,
+      },
+    ],
+    metricRefs: [],
+    ...overrides,
+  };
+}
+
+function governedCompetitor(
+  fixtureIndex: number,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    competitorEntityId: fixtureUuid(3_000 + fixtureIndex),
+    domain: "zeta.example",
+    reviewStatus: "approved",
+    revision: 2,
+    relationship: "direct",
+    analysisScopes: ["serp_visibility", "keyword_gap"],
+    originRefs: [
+      {
+        occurrenceId: fixtureUuid(4_000 + fixtureIndex),
+        originKind: "manual",
+        snapshotId: null,
+        observationId: null,
+      },
+    ],
+    ...overrides,
+  };
+}

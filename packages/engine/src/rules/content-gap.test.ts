@@ -1,16 +1,26 @@
 import { METRIC_CRAWL_PAGE, METRIC_CSV_KEYWORD_GAP, type CrawlPageProjection } from "@sf/sources";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DiagnosticContext,
   type CoverageInput,
   type ObservationView,
 } from "../context.ts";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  parseGovernanceProjectionV1,
+  type GovernanceProjectionV1,
+} from "../governance.ts";
 import { parseIcp, type EngineIcp } from "../icp.ts";
 import { runPipeline } from "../pipeline.ts";
 import { testObservationLineage } from "../test-observation-lineage.ts";
 import { contentGapRule } from "./content-gap.ts";
 
 const OBSERVED_AT = "2026-07-18T00:00:00.000Z";
+const GOVERNANCE_LAST_SEEN_AT = "2026-07-19T00:00:00.000Z";
+
+function fixtureUuid(index: number): string {
+  return `20000000-0000-4000-8000-${index.toString().padStart(12, "0")}`;
+}
 
 /** A qualifying cluster: 10 keywords, 1400 combined volume, top = first keyword. */
 const QUALIFYING_CLUSTER: readonly (readonly [string, number | null])[] = [
@@ -120,7 +130,10 @@ function buildContext(input: {
   readonly icp: EngineIcp;
   readonly observations: readonly ObservationView[];
   readonly coverage?: Partial<CoverageInput>;
+  readonly governance?: GovernanceProjectionV1;
 }): DiagnosticContext {
+  const governance =
+    input.governance === undefined ? {} : { governance: input.governance };
   return DiagnosticContext.build({
     icp: input.icp,
     deliveryLocale: "en",
@@ -132,11 +145,355 @@ function buildContext(input: {
       csv: "available",
       ...input.coverage,
     },
-    capturedAt: { crawl: OBSERVED_AT, csv: OBSERVED_AT },
+    capturedAt: {
+      crawl: OBSERVED_AT,
+      csv: OBSERVED_AT,
+      governance: OBSERVED_AT,
+    },
+    ...governance,
   });
 }
 
+function governanceForCluster(
+  observations: readonly ObservationView[],
+  options: {
+    readonly status?: "candidate" | "approved" | "excluded" | "parked";
+    readonly mappingReviewState?: "unreviewed" | "confirmed";
+    readonly factClusterKey?: string | null;
+    readonly manualLineage?: boolean;
+    readonly competitors?: readonly Record<string, unknown>[];
+    readonly factOverride?: (
+      index: number,
+    ) => Readonly<Record<string, unknown>>;
+  } = {},
+): GovernanceProjectionV1 {
+  const keywordObservations = observations.filter(
+    (observation) => observation.metricKey === METRIC_CSV_KEYWORD_GAP,
+  );
+  const firstProjection = keywordObservations[0]
+    ?.valueJson as
+    | {
+        readonly clusterKey: string;
+      }
+    | undefined;
+  if (!firstProjection) throw new Error("expected keyword observations");
+  return parseGovernanceProjectionV1({
+    projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+    keywordClusters: [
+      {
+        clusterKey: firstProjection.clusterKey,
+        keywords: keywordObservations.map((observation, index) => {
+          const projection = observation.valueJson as {
+            readonly keyword: string;
+            readonly clusterKey: string;
+            readonly marketCode: string;
+            readonly languageCode: string;
+          };
+          return {
+            keywordEntityId: fixtureUuid(1_000 + index),
+            displayKeyword: projection.keyword,
+            normalizedKeyword: projection.keyword
+              .normalize("NFKC")
+              .trim()
+              .replace(/\s+/gu, " ")
+              .toLowerCase(),
+            marketCode: projection.marketCode.toUpperCase(),
+            languageTag: projection.languageCode,
+            revision: 1,
+            status: options.status ?? "approved",
+            queryKind: "search_query",
+            intent: "commercial",
+            buyerStage: "consideration",
+            clusterKey:
+              options.factClusterKey === undefined
+                ? projection.clusterKey
+                : options.factClusterKey,
+            mappingDecision: "new_asset",
+            mappedSitePageId: null,
+            mappingReviewState:
+              options.mappingReviewState ?? "confirmed",
+            lastSeenAt: GOVERNANCE_LAST_SEEN_AT,
+            occurrenceRefs: [
+              {
+                occurrenceId: fixtureUuid(2_000 + index),
+                snapshotId: options.manualLineage
+                  ? null
+                  : observation.snapshotId,
+                observationId: options.manualLineage
+                  ? null
+                  : observation.observationId,
+              },
+            ],
+            metricRefs: [],
+            ...options.factOverride?.(index),
+          };
+        }),
+      },
+    ],
+    competitors: options.competitors ?? [],
+  });
+}
+
+function competitorFact(input: {
+  readonly fixtureIndex: number;
+  readonly competitorEntityId: string;
+  readonly domain: string;
+  readonly reviewStatus?: "candidate" | "approved" | "excluded";
+  readonly relationship?:
+    | "direct"
+    | "indirect"
+    | "status_quo"
+    | "benchmark"
+    | "publisher"
+    | null;
+  readonly analysisScopes?: readonly string[];
+}): Record<string, unknown> {
+  const reviewStatus = input.reviewStatus ?? "approved";
+  return {
+    competitorEntityId: input.competitorEntityId,
+    domain: input.domain,
+    reviewStatus,
+    revision: 2,
+    relationship:
+      input.relationship === undefined
+        ? reviewStatus === "approved"
+          ? "direct"
+          : null
+        : input.relationship,
+    analysisScopes:
+      input.analysisScopes ?? (reviewStatus === "approved" ? ["keyword_gap"] : []),
+    originRefs: [
+      {
+        occurrenceId: fixtureUuid(3_000 + input.fixtureIndex),
+        originKind: "manual",
+        snapshotId: null,
+        observationId: null,
+      },
+    ],
+  };
+}
+
 describe("contentGapRule (CONTENT-GAP-011)", () => {
+  it("declares rule v2 while preserving the exact v1 candidate behavior for old no-governance replay", () => {
+    const ctx = buildContext({
+      icp: icpOf({}),
+      observations: [
+        ...clusterObs("project-management", QUALIFYING_CLUSTER),
+        crawlObs(
+          "https://example.com/pricing",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing",
+            h1: ["Pricing"],
+          }),
+        ),
+      ],
+    });
+
+    expect(contentGapRule.version).toBe(2);
+    const result = contentGapRule.evaluate(ctx);
+    expect(result.status).toBe("candidate");
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    expect(result.candidates[0]?.metrics).toEqual({
+      clusterKey: "project-management",
+      keywordCount: 10,
+      totalVolume: 1400,
+    });
+    expect(
+      result.candidates[0]?.evidence.map((evidence) => evidence.sourceProvider),
+    ).toEqual(["csv", "crawl"]);
+  });
+
+  it("emits a reviewed governed candidate using only intersected frozen demand observations", () => {
+    const observations = [
+      ...clusterObs("project-management", QUALIFYING_CLUSTER),
+      crawlObs(
+        "https://example.com/pricing",
+        makePage({
+          fetchUrl: "https://example.com/pricing",
+          title: "Pricing",
+          h1: ["Pricing"],
+        }),
+      ),
+    ];
+    const governance = governanceForCluster(observations, {
+      // No Observation ref: canonical keyword identity must provide the frozen
+      // intersection, with no DB lookup or network fallback.
+      manualLineage: true,
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network must not be used"));
+
+    try {
+      const result = contentGapRule.evaluate(
+        buildContext({ icp: icpOf({}), observations, governance }),
+      );
+
+      expect(result.status).toBe("candidate");
+      if (result.status !== "candidate") throw new Error("expected candidate");
+      expect(result.candidates[0]?.metrics).toMatchObject({
+        clusterKey: "project-management",
+        keywordCount: 10,
+        totalVolume: 1400,
+      });
+      expect(result.candidates[0]?.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sourceProvider: "system",
+            origin: "derived",
+            method: "computed",
+            support: "supports",
+            observedAt: GOVERNANCE_LAST_SEEN_AT,
+          }),
+        ]),
+      );
+      expect(
+        result.candidates[0]?.evidence.find(
+          (evidence) =>
+            evidence.sourceProvider === "system" &&
+            evidence.support === "supports",
+        )?.observedAt,
+      ).not.toBe(OBSERVED_AT);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("suppresses unreviewed, excluded, mismatched, and below-threshold reviewed keyword facts", () => {
+    const observations = [
+      ...clusterObs("project-management", QUALIFYING_CLUSTER),
+      crawlObs(
+        "https://example.com/pricing",
+        makePage({
+          fetchUrl: "https://example.com/pricing",
+          title: "Pricing",
+          h1: ["Pricing"],
+        }),
+      ),
+    ];
+    const governanceCases = [
+      governanceForCluster(observations, {
+        mappingReviewState: "unreviewed",
+      }),
+      governanceForCluster(observations, { status: "excluded" }),
+      governanceForCluster(observations, {
+        factClusterKey: "another-cluster",
+      }),
+      governanceForCluster(observations, {
+        factOverride: (index) =>
+          index === 9 ? { mappingReviewState: "unreviewed" } : {},
+      }),
+    ];
+
+    for (const governance of governanceCases) {
+      expect(
+        contentGapRule.evaluate(
+          buildContext({ icp: icpOf({}), observations, governance }),
+        ),
+      ).toEqual({
+        status: "pass",
+        metrics: { qualifyingClusters: 0 },
+      });
+    }
+  });
+
+  it("uses approved competitors only as contextual support and never changes the keyword-cluster target", () => {
+    const observations = [
+      ...clusterObs("project-management", QUALIFYING_CLUSTER),
+      crawlObs(
+        "https://example.com/pricing",
+        makePage({
+          fetchUrl: "https://example.com/pricing",
+          title: "Pricing",
+          h1: ["Pricing"],
+        }),
+      ),
+    ];
+    const zetaId = fixtureUuid(4_001);
+    const candidateId = fixtureUuid(4_002);
+    const alphaId = fixtureUuid(4_003);
+    const positioningOnlyId = fixtureUuid(4_004);
+    const governance = governanceForCluster(observations, {
+      competitors: [
+        competitorFact({
+          fixtureIndex: 1,
+          competitorEntityId: zetaId,
+          domain: "zeta.example",
+          relationship: "benchmark",
+          analysisScopes: ["serp_visibility", "keyword_gap"],
+        }),
+        competitorFact({
+          fixtureIndex: 2,
+          competitorEntityId: candidateId,
+          domain: "candidate.example",
+          reviewStatus: "candidate",
+        }),
+        competitorFact({
+          fixtureIndex: 3,
+          competitorEntityId: alphaId,
+          domain: "alpha.example",
+          relationship: "direct",
+          analysisScopes: ["positioning", "content"],
+        }),
+        competitorFact({
+          fixtureIndex: 4,
+          competitorEntityId: positioningOnlyId,
+          domain: "positioning-only.example",
+          relationship: "indirect",
+          analysisScopes: ["positioning"],
+        }),
+      ],
+    });
+
+    const result = contentGapRule.evaluate(
+      buildContext({ icp: icpOf({}), observations, governance }),
+    );
+
+    expect(result.status).toBe("candidate");
+    if (result.status !== "candidate") throw new Error("expected candidate");
+    const candidate = result.candidates[0]!;
+    expect(candidate.metrics).toMatchObject({
+      approvedCompetitorCount: 2,
+      approvedCompetitorIds: `${zetaId},${alphaId}`,
+      approvedCompetitorScopes:
+        "content,keyword_gap,serp_visibility",
+    });
+    expect(candidate.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceProvider: "system",
+          support: "context",
+          subjectRefs: ["keyword_cluster:project-management"],
+          observedAt: GOVERNANCE_LAST_SEEN_AT,
+          limitation: expect.stringContaining(
+            "no independent timestamp",
+          ),
+        }),
+      ]),
+    );
+    expect(JSON.stringify(candidate.evidence)).not.toContain(positioningOnlyId);
+    expect(
+      candidate.evidence.find(
+        (evidence) =>
+          evidence.sourceProvider === "system" &&
+          evidence.support === "context",
+      )?.observedAt,
+    ).not.toBe(OBSERVED_AT);
+    expect(candidate.subjectRefs).toEqual([
+      "keyword_cluster:project-management",
+    ]);
+    expect(candidate.target).toEqual({
+      version: 1,
+      relation: "affected_by_keyword_cluster",
+      targetKind: "keyword_cluster",
+      targetRef: "project-management",
+      members: [],
+    });
+    expect(JSON.stringify(candidate.target)).not.toContain("competitor");
+  });
+
   it("emits one candidate for a qualifying cluster with no related page", () => {
     const ctx = buildContext({
       icp: icpOf({}),

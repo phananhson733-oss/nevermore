@@ -15,6 +15,14 @@ import {
   METRIC_GSC_PAGE,
   subjectUrlOf,
 } from "@sf/sources";
+import {
+  parseGovernanceProjectionV1,
+  type GovernanceCompetitorAnalysisScope,
+  type GovernanceCompetitorFactV1,
+  type GovernanceKeywordClusterV1,
+  type GovernanceKeywordFactV1,
+  type GovernanceProjectionV1,
+} from "./governance.ts";
 import { isEnglishProject, type EngineIcp } from "./icp.ts";
 import type { Dataset } from "./rule.ts";
 import {
@@ -72,6 +80,11 @@ export interface DiagnosticContextInput {
   readonly deliveryLocale: string;
   readonly observations: readonly ObservationView[];
   readonly coverage: CoverageInput;
+  /**
+   * Optional frozen Keyword/Competitor Library facts. Historical manifests omit
+   * this field and therefore retain the exact pre-governance replay behavior.
+   */
+  readonly governance?: GovernanceProjectionV1;
   /** Frozen snapshot availability keyed by its actual source provider. */
   readonly availabilityByProvider?: Readonly<
     Record<string, DatasetAvailability>
@@ -90,6 +103,7 @@ type KeywordGapProvider = "csv" | "dataforseo";
 interface KeywordProjectionRow {
   readonly projection: CsvKeywordProjection;
   readonly provider: KeywordGapProvider;
+  readonly observationId: string;
 }
 
 export interface KeywordGapContribution {
@@ -104,12 +118,29 @@ const KEYWORD_CONTRIBUTION_PROVIDER_ORDER = [
 const EMPTY_KEYWORD_GAP_CONTRIBUTIONS = Object.freeze(
   [] as KeywordGapContribution[],
 );
+const EMPTY_KEYWORD_PROJECTIONS = Object.freeze(
+  [] as CsvKeywordProjection[],
+);
+const EMPTY_APPROVED_COMPETITORS = Object.freeze(
+  [] as GovernanceCompetitorFactV1[],
+);
 
 export class DiagnosticContext {
   readonly icp: EngineIcp;
   readonly deliveryLocale: string;
   readonly coverage: CoverageInput;
   readonly capturedAt: Readonly<Record<string, string>>;
+  readonly governance: GovernanceProjectionV1 | null;
+  /** Stable ASCII-ordered lookup over the frozen Keyword Library clusters. */
+  readonly governedKeywordClusters: ReadonlyMap<
+    string,
+    GovernanceKeywordClusterV1
+  >;
+  /**
+   * Approved Competitor Library facts only, in canonical domain/entity order.
+   * These are contextual evidence; they never become finding targets.
+   */
+  readonly approvedCompetitorEvidence: readonly GovernanceCompetitorFactV1[];
   private readonly availabilityByProvider: Readonly<
     Record<string, DatasetAvailability>
   >;
@@ -157,6 +188,10 @@ export class DiagnosticContext {
     string,
     readonly KeywordGapContribution[]
   >;
+  private readonly governedKeywordGapKeywordsByCluster: ReadonlyMap<
+    string,
+    readonly CsvKeywordProjection[]
+  >;
   /** Derived internal inlink counts per subjectUrl (pipeline step 4). */
   readonly internalInlinks: ReadonlyMap<string, number>;
 
@@ -173,6 +208,26 @@ export class DiagnosticContext {
     this.deliveryLocale = input.deliveryLocale;
     this.coverage = input.coverage;
     this.capturedAt = input.capturedAt;
+    this.governance =
+      input.governance === undefined
+        ? null
+        : parseGovernanceProjectionV1(input.governance);
+    const governedKeywordClusters = new Map<
+      string,
+      GovernanceKeywordClusterV1
+    >();
+    for (const cluster of this.governance?.keywordClusters ?? []) {
+      governedKeywordClusters.set(cluster.clusterKey, cluster);
+    }
+    this.governedKeywordClusters = governedKeywordClusters;
+    this.approvedCompetitorEvidence =
+      this.governance === null
+        ? EMPTY_APPROVED_COMPETITORS
+        : Object.freeze(
+            this.governance.competitors.filter(
+              (competitor) => competitor.reviewStatus === "approved",
+            ),
+          );
     this.availabilityByProvider = Object.freeze({
       ...input.availabilityByProvider,
     });
@@ -260,7 +315,11 @@ export class DiagnosticContext {
           const rows = keywordRows.get(obs.subjectRef) ?? new Map();
           const identity = canonicalKeywordIdentity(projection);
           const existing = rows.get(identity);
-          const candidate: KeywordProjectionRow = { projection, provider };
+          const candidate: KeywordProjectionRow = Object.freeze({
+            projection,
+            provider,
+            observationId: obs.observationId,
+          });
           if (existing === undefined || prefersKeywordRow(candidate, existing)) {
             rows.set(identity, candidate);
           }
@@ -343,11 +402,19 @@ export class DiagnosticContext {
       string,
       readonly KeywordGapContribution[]
     >();
+    const keywordProjectionRowsByCluster = new Map<
+      string,
+      readonly KeywordProjectionRow[]
+    >();
     for (const subjectRef of [...keywordRows.keys()].sort(compareAscii)) {
       const rows = keywordRows.get(subjectRef);
       if (!rows) continue;
       const selectedRows = [...rows.entries()].sort(([left], [right]) =>
         compareAscii(left, right),
+      );
+      keywordProjectionRowsByCluster.set(
+        subjectRef,
+        Object.freeze(selectedRows.map(([, row]) => row)),
       );
       csv.set(
         subjectRef,
@@ -379,6 +446,43 @@ export class DiagnosticContext {
               : [];
           }),
         ),
+      );
+    }
+    const governedKeywordGapKeywordsByCluster = new Map<
+      string,
+      readonly CsvKeywordProjection[]
+    >();
+    for (const [
+      clusterKey,
+      governedCluster,
+    ] of governedKeywordClusters) {
+      const eligibleFacts = governedCluster.keywords.filter(
+        (keyword) =>
+          keyword.status === "approved" &&
+          keyword.mappingReviewState === "confirmed" &&
+          keyword.clusterKey === governedCluster.clusterKey,
+      );
+      if (eligibleFacts.length === 0) {
+        governedKeywordGapKeywordsByCluster.set(
+          clusterKey,
+          EMPTY_KEYWORD_PROJECTIONS,
+        );
+        continue;
+      }
+      const canonicalIdentities = new Set<string>();
+      for (const keyword of eligibleFacts) {
+        canonicalIdentities.add(governanceKeywordIdentity(keyword));
+      }
+      const matched = (
+        keywordProjectionRowsByCluster.get(clusterKey) ?? []
+      ).filter((row) =>
+        canonicalIdentities.has(
+          observedGovernanceKeywordIdentity(row.projection),
+        ),
+      );
+      governedKeywordGapKeywordsByCluster.set(
+        clusterKey,
+        Object.freeze(matched.map((row) => row.projection)),
       );
     }
 
@@ -415,6 +519,8 @@ export class DiagnosticContext {
     this.keywordGapProviders = keywordGapProviders;
     this.keywordGapContributionsByCluster =
       keywordGapContributionsByCluster;
+    this.governedKeywordGapKeywordsByCluster =
+      governedKeywordGapKeywordsByCluster;
     this.internalInlinks = inlinks;
   }
 
@@ -550,10 +656,60 @@ export class DiagnosticContext {
    */
   keywordGapContributions(
     clusterKey: string,
+    selectedKeywords?: readonly CsvKeywordProjection[],
   ): readonly KeywordGapContribution[] {
-    return (
+    const contributions =
       this.keywordGapContributionsByCluster.get(clusterKey) ??
-      EMPTY_KEYWORD_GAP_CONTRIBUTIONS
+      EMPTY_KEYWORD_GAP_CONTRIBUTIONS;
+    if (selectedKeywords === undefined) return contributions;
+    if (selectedKeywords.length === 0) {
+      return EMPTY_KEYWORD_GAP_CONTRIBUTIONS;
+    }
+    const selected = new Set(selectedKeywords);
+    return Object.freeze(
+      contributions.flatMap((contribution) => {
+        const keywords = contribution.keywords.filter((keyword) =>
+          selected.has(keyword),
+        );
+        return keywords.length === 0
+          ? []
+          : [
+              Object.freeze({
+                provider: contribution.provider,
+                keywords: Object.freeze(keywords),
+              }),
+            ];
+      }),
+    );
+  }
+
+  governedKeywordCluster(
+    clusterKey: string,
+  ): GovernanceKeywordClusterV1 | null {
+    return this.governedKeywordClusters.get(clusterKey) ?? null;
+  }
+
+  /**
+   * Frozen CSV/DataForSEO demand rows that intersect approved + confirmed
+   * Keyword Library facts for the exact outer cluster. No-governance contexts
+   * intentionally return an empty set; callers choose the legacy path explicitly.
+   */
+  governedKeywordGapKeywords(
+    clusterKey: string,
+  ): readonly CsvKeywordProjection[] {
+    return (
+      this.governedKeywordGapKeywordsByCluster.get(clusterKey) ??
+      EMPTY_KEYWORD_PROJECTIONS
+    );
+  }
+
+  approvedCompetitorsForScope(
+    scope: GovernanceCompetitorAnalysisScope,
+  ): readonly GovernanceCompetitorFactV1[] {
+    return Object.freeze(
+      this.approvedCompetitorEvidence.filter((competitor) =>
+        competitor.analysisScopes.includes(scope),
+      ),
     );
   }
 }
@@ -673,12 +829,13 @@ function prefersKeywordRow(
     keywordProjectionRichness(existing.projection);
   if (richnessDifference !== 0) return richnessDifference > 0;
 
-  return (
-    compareAscii(
-      canonicalKeywordProjection(candidate.projection),
-      canonicalKeywordProjection(existing.projection),
-    ) < 0
+  const canonicalDifference = compareAscii(
+    canonicalKeywordProjection(candidate.projection),
+    canonicalKeywordProjection(existing.projection),
   );
+  return canonicalDifference !== 0
+    ? canonicalDifference < 0
+    : compareAscii(candidate.observationId, existing.observationId) < 0;
 }
 
 function keywordProviderPriority(provider: KeywordGapProvider): number {
@@ -708,6 +865,37 @@ function canonicalKeywordProjection(projection: CsvKeywordProjection): string {
     projection.marketCode,
     projection.languageCode,
   ]);
+}
+
+function governanceKeywordIdentity(
+  keyword: GovernanceKeywordFactV1,
+): string {
+  return JSON.stringify([
+    canonicalKeywordText(keyword.normalizedKeyword),
+    keyword.marketCode.toUpperCase(),
+    keyword.languageTag.toLowerCase(),
+    keyword.queryKind,
+  ]);
+}
+
+function observedGovernanceKeywordIdentity(
+  projection: CsvKeywordProjection,
+): string {
+  return JSON.stringify([
+    canonicalKeywordText(projection.keyword),
+    projection.marketCode.toUpperCase(),
+    projection.languageCode.toLowerCase(),
+    "search_query",
+  ]);
+}
+
+function canonicalKeywordText(keyword: string): string {
+  const canonicalKeyword = keyword
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+  return canonicalKeyword || keyword.normalize("NFKC").toLowerCase().trim();
 }
 
 function conversionTypePattern(type: string): RegExp | null {
