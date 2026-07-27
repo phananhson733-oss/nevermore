@@ -344,6 +344,55 @@
     }
   }
 
+  function markRouteOptionsAsUrlState(route, options) {
+    const has = (key) => Object.prototype.hasOwnProperty.call(options, key);
+
+    if (route === 'growth-map') {
+      if (has('mapTab') && mapTabs.includes(state.mapTab)) {
+        state.urlFlags.mapTab = true;
+      }
+      if (has('pageView') && pageViews.includes(state.pageView)) {
+        state.urlFlags.pageView = true;
+      }
+
+      const selectionOptions = [
+        ['selectedPageId', workspace.urls, 'pages', 'url'],
+        ['selectedClusterId', workspace.clusters, 'pages', 'cluster'],
+        ['selectedOpportunityId', workspace.opportunities, 'pages', 'opportunity'],
+        ['selectedKeywordId', workspace.keywords, 'keywords', null],
+        ['selectedCompetitorId', workspace.competitors, 'competitors', null],
+      ];
+      selectionOptions.forEach(([stateKey, collection, tab, view]) => {
+        if (!has(stateKey) || !byId(collection, state[stateKey])) return;
+        state.mapTab = tab;
+        state.urlFlags.mapTab = true;
+        if (view) {
+          state.pageView = view;
+          state.urlFlags.pageView = true;
+        }
+        state.urlFlags.selection[tab] = true;
+      });
+    }
+
+    if (route === 'execution') {
+      if (has('artifactFilter') && artifactFilters.includes(state.artifactFilter) && state.artifactFilter !== 'all') {
+        state.urlFlags.artifactFilter = true;
+      }
+      if (has('selectedArtifactId') && byId(workspace.artifacts, state.selectedArtifactId)) {
+        state.urlFlags.artifactSelection = true;
+      }
+    }
+
+    if (route === 'results') {
+      if (has('resultTab') && resultTabs.includes(state.resultTab)) {
+        state.urlFlags.resultTab = true;
+      }
+      if (has('resultWindowId') && state.resultWindowId) {
+        state.urlFlags.resultWindow = true;
+      }
+    }
+  }
+
   function currentMapSelectionId() {
     if (state.mapTab === 'keywords') return state.selectedKeywordId;
     if (state.mapTab === 'competitors') return state.selectedCompetitorId;
@@ -453,6 +502,7 @@
     state.route = route;
     state.mobileNav = false;
     Object.assign(state, options);
+    markRouteOptionsAsUrlState(route, options);
     const scrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
     window.scrollTo({ top: 0, behavior: scrollBehavior });
     commitState('push');

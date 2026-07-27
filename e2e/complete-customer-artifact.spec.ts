@@ -443,6 +443,66 @@ test("secondary selections, pagination, Results windows, and dialogs survive URL
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
+test("cross-module jumps preserve the exact target through reload and browser history", async ({
+  page,
+}) => {
+  await gotoArtifact(page, "growth-map");
+  await page
+    .locator(
+      '.v14-page-row-button[data-action="select-map-page"][data-id="url-salesforce"]',
+    )
+    .click();
+  const goToArtifact = page
+    .locator('.v13-detail-panel [data-action="go-artifact"][data-id]')
+    .first();
+  await expect(goToArtifact).toBeVisible();
+  const artifactId = await goToArtifact.getAttribute("data-id");
+  expect(artifactId).toBeTruthy();
+  await goToArtifact.click();
+
+  await expect.poll(() => {
+    const [, query = ""] = new URL(page.url()).hash.split("?");
+    return new URLSearchParams(query).get("a");
+  }).toBe(artifactId);
+  await expect(
+    page.locator(
+      `.client-work-item[data-action="select-artifact"][data-id="${artifactId}"]`,
+    ),
+  ).toHaveClass(/is-active/);
+  await expect(page.locator(".client-artifact-document")).toBeVisible();
+  const executionTargetUrl = page.url();
+
+  await page.reload();
+  expect(page.url()).toBe(executionTargetUrl);
+  await expect(
+    page.locator(
+      `.client-work-item[data-action="select-artifact"][data-id="${artifactId}"]`,
+    ),
+  ).toHaveClass(/is-active/);
+
+  await page.goBack();
+  await expect(page).toHaveURL(
+    /#\/growth-map\?(?=[^#]*\bs=url-salesforce\b)/,
+  );
+  await expect(
+    page.locator(
+      '.v14-page-row-button[data-action="select-map-page"][data-id="url-salesforce"]',
+    ),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".v13-detail-panel")).toHaveAttribute(
+    "data-selected-page-id",
+    "url-salesforce",
+  );
+
+  await page.goForward();
+  expect(page.url()).toBe(executionTargetUrl);
+  await expect(
+    page.locator(
+      `.client-work-item[data-action="select-artifact"][data-id="${artifactId}"]`,
+    ),
+  ).toHaveClass(/is-active/);
+});
+
 test("Execution renders every required deliverable as readable customer content", async ({
   page,
 }) => {

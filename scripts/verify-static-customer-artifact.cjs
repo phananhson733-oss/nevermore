@@ -159,6 +159,10 @@ const setValue = (selector, value) => {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 };
 
+const currentHashRoute = () => dom.window.location.hash.split("?")[0];
+const currentHashParams = () =>
+  new URLSearchParams(dom.window.location.hash.split("?")[1] || "");
+
 assert.equal(document.title, "GenGrowth · RelayOps 交互式产品 Artifact");
 assert.equal(document.documentElement.lang, "zh-CN");
 assert.equal(document.querySelector(".boot-error"), null);
@@ -225,7 +229,7 @@ click('.client-overlay__header .icon-button[data-action="close-overlay"]');
 
 click('.v13-context-panel [data-action="open-profile"]');
 click('[data-action="go-competitors"]');
-assert.equal(dom.window.location.hash, "#/growth-map");
+assert.equal(dom.window.location.hash, "#/growth-map?m=competitors");
 assert.equal(one('[data-action="map-tab"][data-tab="competitors"]').getAttribute("aria-selected"), "true");
 click('.primary-nav [data-action="nav"][data-route="overview"]');
 
@@ -324,10 +328,11 @@ assert.match(one("#overlay-title").textContent, /安全|证据/);
 click('.client-overlay__footer [data-action="create-artifact"][data-id="opp-proof-request"]');
 assert.equal(one('form[data-form="artifact-create"]').id, "artifact-create-form");
 submit('form[data-form="artifact-create"]');
-assert.equal(dom.window.location.hash, "#/execution");
+assert.equal(currentHashRoute(), "#/execution");
 assert.match(one(".client-generated-artifact").textContent, /执行目标/);
 assert.match(one(".client-generated-artifact").textContent, /验收条件/);
 const createdArtifactId = one(".client-work-item.is-active").dataset.id;
+assert.equal(currentHashParams().get("a"), createdArtifactId);
 click(`[data-action="open-artifact-history"][data-id="${createdArtifactId}"]`);
 assert.match(one("#overlay-title").textContent, /版本历史/);
 assert.equal(many('[data-action="open-artifact-revision"]', 1).length, 1);
@@ -379,8 +384,11 @@ assert.equal(one('[data-action="page-view"][data-view="url"]').getAttribute("ari
 
 click('[data-action="page-view"][data-view="opportunity"]');
 clickElement(one('tr[data-action="select-map-opportunity"][data-id="opp-commercial-intent"]'));
-click('[data-action="go-artifact"]');
-assert.equal(dom.window.location.hash, "#/execution");
+const linkedArtifactButton = one('[data-action="go-artifact"]');
+const linkedArtifactId = linkedArtifactButton.dataset.id;
+clickElement(linkedArtifactButton);
+assert.equal(currentHashRoute(), "#/execution");
+assert.equal(currentHashParams().get("a"), linkedArtifactId);
 click('.primary-nav [data-action="nav"][data-route="growth-map"]');
 
 click('[data-action="map-tab"][data-tab="keywords"]');
@@ -395,8 +403,8 @@ assert.ok(document.querySelector(`[data-action="open-keyword"][data-id="${keywor
 click(`.v13-detail-actions [data-action="open-keyword"][data-id="${keywordId}"]`);
 assert.match(one("#overlay-title").textContent, /onboarding|customer|software|automation/i);
 click('.client-overlay [data-action="go-keyword-artifact"]');
-assert.ok(["#/execution", "#/growth-map"].includes(dom.window.location.hash));
-if (dom.window.location.hash === "#/growth-map") {
+assert.ok(["#/execution", "#/growth-map"].includes(currentHashRoute()));
+if (currentHashRoute() === "#/growth-map") {
   assert.match(one("#overlay-title").textContent, /交付物|已记录|尚无/i);
   click('.client-overlay__header .icon-button[data-action="close-overlay"]');
 } else {
