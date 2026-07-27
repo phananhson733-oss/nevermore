@@ -776,7 +776,7 @@ const CANONICAL_VISUAL_SCREENS = [
   "overview",
   "sources",
   "studio",
-  "report",
+  "results",
 ] as const;
 
 const CANONICAL_VISUAL_VIEWPORTS = [
@@ -801,6 +801,12 @@ async function waitForCanonicalScreenReady(
               .first()
           : page.locator("[data-report-document]");
   await expect(landmark).toBeVisible();
+  if (screen === "results") {
+    // R3 blueprint D7: the baseline is captured only once BOTH Results blocks
+    // are settled — the report document above plus the recheck block's
+    // terminal UI (comparison or honest empty state), never its spinner.
+    await expect(page.locator("[data-results-recheck-settled]")).toHaveCount(1);
+  }
   // These pages hydrate their canonical read models with client-side queries.
   // Capturing `main` alone can freeze the transient loading state on the first
   // viewport while later cached viewports contain data. Wait until the query
@@ -838,6 +844,7 @@ async function assertCanonicalVisualRegression(
             page.locator('[data-testid="overview-dynamic-value"]'),
             page.locator('[data-testid="source-provenance-dynamic"]'),
             page.locator('[data-testid="report-dynamic-value"]'),
+            page.locator('[data-testid="results-dynamic-value"]'),
           ],
         },
       );

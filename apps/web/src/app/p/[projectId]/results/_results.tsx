@@ -53,11 +53,27 @@ function ObservedWindow({
     <dl className={styles.window}>
       <div>
         <dt>{t("priorLabel")}</dt>
-        <dd>{results.priorObservedAt}</dd>
+        <dd>
+          {/* Runtime provenance stays readable on screen; the semantic <time>
+              plus the testid give the visual baseline two mask anchors (D7). */}
+          <time
+            dateTime={results.priorObservedAt}
+            data-testid="results-dynamic-value"
+          >
+            {results.priorObservedAt}
+          </time>
+        </dd>
       </div>
       <div>
         <dt>{t("currentLabel")}</dt>
-        <dd>{results.currentObservedAt}</dd>
+        <dd>
+          <time
+            dateTime={results.currentObservedAt}
+            data-testid="results-dynamic-value"
+          >
+            {results.currentObservedAt}
+          </time>
+        </dd>
       </div>
     </dl>
   );
