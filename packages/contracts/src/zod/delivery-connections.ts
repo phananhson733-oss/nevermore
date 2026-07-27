@@ -657,14 +657,21 @@ export const PublicationDestination = z
         message: "Authorization must bind the same destinationRef",
       });
     }
+    const authorizedRevision =
+      destination.state === "revoked"
+        ? destination.revision - 1
+        : destination.revision;
     if (
       destination.authorizationSnapshot.destinationRevision !==
-      destination.revision
+      authorizedRevision
     ) {
       ctx.addIssue({
         code: "custom",
         path: ["authorizationSnapshot", "destinationRevision"],
-        message: "Authorization must bind the same destination revision",
+        message:
+          destination.state === "revoked"
+            ? "Revocation must preserve the exact predecessor authorization"
+            : "Authorization must bind the same destination revision",
       });
     }
     if (
@@ -683,6 +690,17 @@ export const PublicationDestination = z
         code: "custom",
         path: ["limitation"],
         message: "A ready destination cannot carry a limitation",
+      });
+    }
+    if (
+      destination.state === "revoked" &&
+      (destination.revision < 2 || destination.limitation === null)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["state"],
+        message:
+          "A revoked destination must supersede a prior revision and explain the revocation",
       });
     }
   });

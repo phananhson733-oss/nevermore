@@ -695,6 +695,40 @@ describe("publication destination client/server contracts", () => {
         },
       }).success,
     ).toBe(false);
+
+    const revoked = {
+      ...destination,
+      revision: 2,
+      state: "revoked" as const,
+      authorizationSnapshot: authorization,
+      readinessObservation: {
+        revokedBy: ids.actor,
+        revokedAt: "2026-07-27T09:20:00Z",
+      },
+      limitation: "Customer revoked delivery access.",
+    };
+    expect(PublicationDestination.parse(revoked)).toEqual(revoked);
+    expect(
+      PublicationDestination.safeParse({
+        ...revoked,
+        authorizationSnapshot: {
+          ...authorization,
+          destinationRevision: 2,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      PublicationDestination.safeParse({
+        ...revoked,
+        revision: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      PublicationDestination.safeParse({
+        ...revoked,
+        limitation: null,
+      }).success,
+    ).toBe(false);
     expect(
       PublicationDestination.safeParse({
         ...destination,
