@@ -247,6 +247,9 @@ Keep existing Crawl/CSV/DataForSEO service contracts and internal operations int
   denominator. Customer-visible analysis readiness is derived only from GSC and
   GA4; GitHub remains a planned delivery connector and is not counted as an
   analysis source.
+- Customer-visible snapshot history is fetched with server-side GSC and GA4
+  provider filters. Hidden provider rows and cursors must not affect visible
+  history counts, completeness, retry states, or Load More behavior.
 
 **Step 4: Replace customer-visible branding**
 
