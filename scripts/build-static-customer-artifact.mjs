@@ -23,6 +23,11 @@ const [styles, workspaceData, clientApp] = await Promise.all([
 const protectInlineScript = (source) =>
   source.replaceAll("</script", "<\\/script");
 
+const sanitizeCustomerSource = (source) =>
+  source
+    .replaceAll("Nevermore", "GenGrowth")
+    .replaceAll("nevermore", "gengrowth");
+
 const html = `<!doctype html>
 <html lang="zh-CN" data-artifact-build="15.0-static">
   <head>
@@ -40,7 +45,7 @@ const html = `<!doctype html>
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%231f4d47'/%3E%3Cpath d='M18 46V18h8l12 17V18h8v28h-8L26 29v17z' fill='%23f6efe4'/%3E%3C/svg%3E"
     />
     <style>
-${styles}
+${sanitizeCustomerSource(styles)}
     </style>
   </head>
   <body>
@@ -53,10 +58,10 @@ ${styles}
       </main>
     </noscript>
     <script>
-${protectInlineScript(workspaceData)}
+${protectInlineScript(sanitizeCustomerSource(workspaceData))}
     </script>
     <script>
-${protectInlineScript(clientApp)}
+${protectInlineScript(sanitizeCustomerSource(clientApp))}
     </script>
   </body>
 </html>

@@ -31,6 +31,16 @@ for (const [label, pattern] of forbiddenDependencies) {
   assert.equal(pattern.test(html), false, `Artifact must not contain ${label}`);
 }
 
+assert.doesNotMatch(
+  html,
+  /\b(?:Nevermore|SignalFrame)\b/i,
+  "Customer Artifact must not expose an internal project or compatibility name",
+);
+assert.doesNotMatch(
+  html,
+  /(?:\/Users\/|\.codex\/visualizations|signalframe-mvp-app)/i,
+  "Customer Artifact must not expose workstation or implementation paths",
+);
 assert.match(html, /data-artifact-build="15\.0-static"/);
 assert.match(html, /<style>[\s\S]+<\/style>/);
 assert.match(html, /window\.GenGrowthWorkspace/);
