@@ -239,6 +239,78 @@ test("Sources settles a failed status query once and offers a status retry", asy
   expect(api.collectionRequests).toHaveLength(1);
 });
 
+test("AC-046: Sources exposes automatic rate-limit retry on a visible connector", async ({
+  page,
+}) => {
+  const rateRun = {
+    id: "rate-limit-run",
+    projectId: E2E_PROJECT_ID,
+    kind: "collection",
+    status: "queued",
+    progress: {
+      phase: "retry_wait",
+      current: 1,
+      total: 3,
+      messageKey: "worker.collection.retry_wait",
+    },
+    lastError: {
+      code: "RATE_LIMITED",
+      summary: "Provider rate limit reached; automatic retry is scheduled.",
+    },
+    resultRef: null,
+    queuedAt: "2026-07-18T12:00:00.000Z",
+    startedAt: null,
+    completedAt: null,
+  };
+  const sources = [
+    sourceSlot("crawl"),
+    sourceSlot("gsc", {
+      id: "00000000-0000-4000-8000-000000000155",
+      state: "syncing",
+      connectedAt: "2026-07-18T12:00:00.000Z",
+      activeRun: rateRun,
+      limitation:
+        "Provider rate limit reached; automatic retry is scheduled.",
+    }),
+    sourceSlot("ga4"),
+    sourceSlot("csv"),
+    sourceSlot("dataforseo"),
+  ];
+
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/sources`,
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: sources }),
+      });
+    },
+  );
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/runs/${rateRun.id}`,
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: rateRun }),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+
+  const gsc = page.getByRole("region", { name: "Search Console" });
+  await expect(gsc.getByText("Syncing", { exact: true })).toBeVisible();
+  await expect(gsc).toContainText(
+    "Provider rate limit reached; automatic retry is scheduled.",
+  );
+  await expect(gsc.getByText("Automatic retry scheduled.")).toBeVisible();
+  await expect(
+    gsc.getByRole("button", { name: "Collect now" }),
+  ).toBeDisabled();
+});
+
 test("AC-046: Sources exposes customer permission and partial states", async ({
   page,
 }) => {
