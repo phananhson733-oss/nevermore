@@ -138,7 +138,7 @@ describe("getOperatorContext provisioning boundary", () => {
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(db.transactionSpies.tx.execute).toHaveBeenCalledTimes(1);
     expect(db.transactionSpies.workspaceValues).toHaveBeenCalledWith({
-      name: "SignalFrame",
+      name: "GenGrowth",
     });
     expect(db.transactionSpies.profileValues).toHaveBeenCalledWith({
       user_id: DEV_USER_ID,

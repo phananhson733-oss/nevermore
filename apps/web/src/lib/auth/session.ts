@@ -5,8 +5,12 @@ import { getDb } from "@/lib/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { DEV_USER_ID, DEV_USER_NAME, isDevAuthEnabled } from "@/lib/auth/dev";
 
-/** The single internal workspace name (spec §1.2: one workspace, all operators). */
-const SINGLETON_WORKSPACE_NAME = "SignalFrame";
+/**
+ * The single development workspace name (spec §1.2: one workspace, all
+ * operators). Workspace names are rendered as customer data, so this uses the
+ * customer-facing brand even though the bootstrap itself is local-dev only.
+ */
+const SINGLETON_WORKSPACE_NAME = "GenGrowth";
 
 /** Resolved operator identity + workspace for a request. */
 export interface OperatorContext {
