@@ -1946,7 +1946,8 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
   const queryClient = useQueryClient();
 
   const sources = useProjectSources(projectId);
-  const snapshots = useProjectSnapshots(projectId);
+  const gscSnapshots = useProjectSnapshots(projectId, "gsc");
+  const ga4Snapshots = useProjectSnapshots(projectId, "ga4");
   const connect = useConnectSource(projectId);
 
   const [intent, setIntent] = useState<PropertySelectionPhase | null>(null);
@@ -1990,25 +1991,49 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     void queryClient.invalidateQueries({ queryKey: ["snapshots", projectId] });
   }, [queryClient, projectId]);
 
-  const loadedSnapshots = useMemo(
-    () => uniqueCursorItems(snapshots.data),
-    [snapshots.data],
+  const loadedGscSnapshots = useMemo(
+    () =>
+      uniqueCursorItems(gscSnapshots.data).filter(
+        (snapshot) => snapshot.provider === "gsc",
+      ),
+    [gscSnapshots.data],
   );
-  const snapshotCounts = useMemo(() => {
-    const counts = new Map<Provider, number>();
-    for (const snapshot of loadedSnapshots) {
-      counts.set(snapshot.provider, (counts.get(snapshot.provider) ?? 0) + 1);
-    }
-    return counts;
-  }, [loadedSnapshots]);
-  const snapshotHistoryAvailable = snapshots.data !== undefined;
+  const loadedGa4Snapshots = useMemo(
+    () =>
+      uniqueCursorItems(ga4Snapshots.data).filter(
+        (snapshot) => snapshot.provider === "ga4",
+      ),
+    [ga4Snapshots.data],
+  );
+  const gscSnapshotHistoryAvailable = gscSnapshots.data !== undefined;
+  const ga4SnapshotHistoryAvailable = ga4Snapshots.data !== undefined;
+  const gscSnapshotHistoryComplete =
+    gscSnapshotHistoryAvailable &&
+    !gscSnapshots.hasNextPage &&
+    !gscSnapshots.isError &&
+    !gscSnapshots.isFetchNextPageError;
+  const ga4SnapshotHistoryComplete =
+    ga4SnapshotHistoryAvailable &&
+    !ga4Snapshots.hasNextPage &&
+    !ga4Snapshots.isError &&
+    !ga4Snapshots.isFetchNextPageError;
+  const snapshotHistoryAvailable =
+    gscSnapshotHistoryAvailable && ga4SnapshotHistoryAvailable;
   const snapshotHistoryComplete =
-    snapshotHistoryAvailable &&
-    !snapshots.hasNextPage &&
-    !snapshots.isError &&
-    !snapshots.isFetchNextPageError;
+    gscSnapshotHistoryComplete && ga4SnapshotHistoryComplete;
   const snapshotHistoryLoadError =
-    snapshots.isError || snapshots.isFetchNextPageError;
+    gscSnapshots.isError ||
+    gscSnapshots.isFetchNextPageError ||
+    ga4Snapshots.isError ||
+    ga4Snapshots.isFetchNextPageError;
+  const snapshotHistoryLoading =
+    gscSnapshots.isLoading || ga4Snapshots.isLoading;
+  const snapshotHistoryHasNext =
+    gscSnapshots.hasNextPage === true || ga4Snapshots.hasNextPage === true;
+  const snapshotHistoryFetching =
+    gscSnapshots.isFetching || ga4Snapshots.isFetching;
+  const snapshotHistoryFetchingNext =
+    gscSnapshots.isFetchingNextPage || ga4Snapshots.isFetchingNextPage;
 
   const ordered = useMemo(() => {
     const list = sources.data ?? [];
@@ -2038,13 +2063,43 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
   }
 
   const pageReadiness = deriveCustomerConnectorReadiness(customerSources);
-  const refreshing = sources.isFetching || snapshots.isFetching;
+  const refreshing = sources.isFetching || snapshotHistoryFetching;
   const customerSnapshotHistoryCount = snapshotHistoryAvailable
-    ? loadedSnapshots.filter(
-        (snapshot) =>
-          snapshot.provider === "gsc" || snapshot.provider === "ga4",
-      ).length
+    ? loadedGscSnapshots.length + loadedGa4Snapshots.length
     : null;
+  const customerSnapshotHistories = {
+    gsc: {
+      count: gscSnapshotHistoryAvailable ? loadedGscSnapshots.length : null,
+      complete: gscSnapshotHistoryComplete,
+    },
+    ga4: {
+      count: ga4SnapshotHistoryAvailable ? loadedGa4Snapshots.length : null,
+      complete: ga4SnapshotHistoryComplete,
+    },
+  } satisfies Readonly<
+    Record<
+      GoogleProvider,
+      { readonly count: number | null; readonly complete: boolean }
+    >
+  >;
+  const loadMoreCustomerSnapshots = () => {
+    const customerSnapshotQueries = [gscSnapshots, ga4Snapshots] as const;
+    if (snapshotHistoryLoadError) {
+      void Promise.all(
+        customerSnapshotQueries.flatMap((query) => {
+          if (query.isFetchNextPageError) return [query.fetchNextPage()];
+          if (query.isError) return [query.refetch()];
+          return [];
+        }),
+      );
+      return;
+    }
+    void Promise.all(
+      customerSnapshotQueries.flatMap((query) =>
+        query.hasNextPage ? [query.fetchNextPage()] : [],
+      ),
+    );
+  };
 
   return (
     <div className={styles.page}>
@@ -2067,7 +2122,11 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
           variant="primary"
           className={styles.refreshButton}
           onClick={() => {
-            void Promise.all([sources.refetch(), snapshots.refetch()]);
+            void Promise.all([
+              sources.refetch(),
+              gscSnapshots.refetch(),
+              ga4Snapshots.refetch(),
+            ]);
           }}
           disabled={refreshing}
         >
@@ -2118,12 +2177,10 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
               key={source.provider}
               source={source}
               projectId={projectId}
-              snapshotCount={
-                snapshotHistoryAvailable
-                  ? (snapshotCounts.get(source.provider) ?? 0)
-                  : null
+              snapshotCount={customerSnapshotHistories[source.provider].count}
+              snapshotHistoryComplete={
+                customerSnapshotHistories[source.provider].complete
               }
-              snapshotHistoryComplete={snapshotHistoryComplete}
               onRefetch={refetchSources}
               intent={intent?.provider === source.provider ? intent : null}
               onClearIntent={() => setIntent(null)}
@@ -2133,11 +2190,11 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
         </div>
       </section>
 
-      {snapshots.isLoading ||
+      {snapshotHistoryLoading ||
       snapshotHistoryLoadError ||
-      snapshots.hasNextPage ? (
+      snapshotHistoryHasNext ? (
         <div className={styles.pagination} aria-live="polite">
-          {snapshots.isLoading ? (
+          {snapshotHistoryLoading ? (
             <span className={styles.paginationStatus}>
               <Spinner size="sm" label={t("loadingHistory")} />
               {t("loadingHistory")}
@@ -2148,22 +2205,16 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
               {tCommon("loadMoreError")}
             </p>
           ) : null}
-          {!snapshots.isLoading &&
-          (snapshots.hasNextPage || snapshotHistoryLoadError) ? (
+          {!snapshotHistoryLoading &&
+          (snapshotHistoryHasNext || snapshotHistoryLoadError) ? (
             <Button
               variant="secondary"
-              onClick={() => {
-                if (snapshots.isFetchNextPageError) {
-                  void snapshots.fetchNextPage();
-                } else if (snapshotHistoryLoadError) {
-                  void snapshots.refetch();
-                } else {
-                  void snapshots.fetchNextPage();
-                }
-              }}
-              disabled={snapshots.isFetchingNextPage || snapshots.isFetching}
+              onClick={loadMoreCustomerSnapshots}
+              disabled={
+                snapshotHistoryFetchingNext || snapshotHistoryFetching
+              }
             >
-              {snapshots.isFetchingNextPage || snapshots.isFetching
+              {snapshotHistoryFetchingNext || snapshotHistoryFetching
                 ? tCommon("loadingMore")
                 : snapshotHistoryLoadError
                   ? tCommon("retry")

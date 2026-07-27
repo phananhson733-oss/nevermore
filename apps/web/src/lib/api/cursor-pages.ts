@@ -14,9 +14,16 @@ export interface CursorPage<T> {
 }
 
 /** Build one bounded cursor-list URL without leaking an opaque cursor unescaped. */
-export function cursorPageUrl(path: string, cursor: string | null): string {
+export function cursorPageUrl(
+  path: string,
+  cursor: string | null,
+  filters: Readonly<Record<string, string | null | undefined>> = {},
+): string {
   const params = new URLSearchParams({ limit: String(CURSOR_PAGE_LIMIT) });
   if (cursor !== null) params.set("cursor", cursor);
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== null && value !== undefined) params.set(key, value);
+  }
   return `${path}?${params.toString()}`;
 }
 

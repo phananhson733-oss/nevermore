@@ -437,7 +437,13 @@ test("Sources keeps partial counts visible while a failed next page is retried",
 }) => {
   let nextPageAttempts = 0;
   await page.route(`**${API_BASE}/snapshots**`, async (route) => {
-    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    const params = new URL(route.request().url()).searchParams;
+    const provider = params.get("provider");
+    const cursor = params.get("cursor");
+    if (provider === "ga4") {
+      await json(route, listEnvelope([], null));
+      return;
+    }
     if (cursor === null) {
       await json(
         route,
@@ -485,13 +491,103 @@ test("Sources keeps partial counts visible while a failed next page is retried",
   expect(nextPageAttempts).toBe(3);
 });
 
+test("Sources pages GSC and GA4 independently of hidden-provider history", async ({
+  page,
+}) => {
+  const cursorsByProvider = new Map<string, (string | null)[]>([
+    ["gsc", []],
+    ["ga4", []],
+    ["unfiltered", []],
+  ]);
+  await page.route(`**${API_BASE}/snapshots**`, async (route) => {
+    const url = new URL(route.request().url());
+    const provider = url.searchParams.get("provider") ?? "unfiltered";
+    const cursor = url.searchParams.get("cursor");
+    cursorsByProvider.get(provider)?.push(cursor);
+
+    if (provider === "gsc") {
+      await json(
+        route,
+        cursor === null
+          ? listEnvelope(
+              [snapshotFixture(11, "gsc")],
+              "gsc-snapshots-page-2",
+            )
+          : listEnvelope([snapshotFixture(12, "gsc")], null),
+      );
+      return;
+    }
+    if (provider === "ga4") {
+      await json(
+        route,
+        listEnvelope([snapshotFixture(13, "ga4")], null),
+      );
+      return;
+    }
+
+    // This is the legacy global history window: hidden providers occupy its
+    // first page and cursor. The customer page must never request or page it.
+    await json(
+      route,
+      cursor === null
+        ? listEnvelope(
+            [
+              snapshotFixture(14, "crawl"),
+              snapshotFixture(15, "csv"),
+              snapshotFixture(16, "dataforseo"),
+            ],
+            "hidden-snapshots-page-2",
+          )
+        : listEnvelope([snapshotFixture(17, "crawl")], null),
+    );
+  });
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+
+  const gsc = page.getByRole("region", { name: "Search Console" });
+  const ga4 = page.getByRole("region", { name: "Google Analytics 4" });
+  const footline = page.getByRole("contentinfo", {
+    name: "Snapshot provenance policy",
+  });
+  await expect(gsc).toContainText("At least 1 immutable snapshot loaded");
+  await expect(ga4).toContainText("1 immutable snapshot");
+  await expect(footline).toContainText("At least 2 immutable snapshots");
+  await expect(
+    page.getByRole("button", { name: "Load more snapshot history" }),
+  ).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Load more snapshot history" })
+    .click();
+
+  await expect(gsc).toContainText("2 immutable snapshots");
+  await expect(ga4).toContainText("1 immutable snapshot");
+  await expect(footline).toContainText("3 immutable snapshots");
+  await expect(
+    page.getByRole("button", { name: "Load more snapshot history" }),
+  ).toHaveCount(0);
+  expect(cursorsByProvider.get("gsc")).toEqual([
+    null,
+    "gsc-snapshots-page-2",
+  ]);
+  expect(cursorsByProvider.get("ga4")).toEqual([null]);
+  expect(cursorsByProvider.get("unfiltered")).toEqual([]);
+});
+
 test("Sources refetches page one when a cached history refresh fails", async ({
   page,
 }) => {
-  let snapshotReads = 0;
+  let gscSnapshotReads = 0;
   await page.route(`**${API_BASE}/snapshots**`, async (route) => {
-    snapshotReads += 1;
-    if (snapshotReads === 1 || snapshotReads >= 4) {
+    const provider = new URL(route.request().url()).searchParams.get(
+      "provider",
+    );
+    if (provider === "ga4") {
+      await json(route, listEnvelope([], null));
+      return;
+    }
+    gscSnapshotReads += 1;
+    if (gscSnapshotReads === 1 || gscSnapshotReads >= 4) {
       await json(route, listEnvelope([snapshotFixture(1, "gsc")], null));
       return;
     }
@@ -522,6 +618,6 @@ test("Sources refetches page one when a cached history refresh fails", async ({
   ).toBeVisible({ timeout: 15_000 });
   await expect(gsc).toContainText("At least 1 immutable snapshot loaded");
   await page.getByRole("button", { name: "Retry" }).click();
-  await expect.poll(() => snapshotReads).toBe(4);
+  await expect.poll(() => gscSnapshotReads).toBe(4);
   await expect(gsc).toContainText("1 immutable snapshot");
 });

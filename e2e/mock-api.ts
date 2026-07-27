@@ -589,7 +589,13 @@ export async function installCriticalFlowApi(
     }
 
     if (method === "GET" && path === `${BASE}/snapshots`) {
-      await json(route, listEnvelope([crawlSnapshot]));
+      const provider = url.searchParams.get("provider");
+      await json(
+        route,
+        listEnvelope(
+          provider === null || provider === "crawl" ? [crawlSnapshot] : [],
+        ),
+      );
       return;
     }
 

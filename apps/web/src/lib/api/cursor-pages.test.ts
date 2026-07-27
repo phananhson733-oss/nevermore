@@ -17,6 +17,13 @@ describe("cursor pages", () => {
     expect(cursorPageUrl("/projects/p/actions", "next+/=")).toBe(
       "/projects/p/actions?limit=100&cursor=next%2B%2F%3D",
     );
+    expect(
+      cursorPageUrl("/projects/p/snapshots", "next+/=", {
+        provider: "gsc",
+      }),
+    ).toBe(
+      "/projects/p/snapshots?limit=100&cursor=next%2B%2F%3D&provider=gsc",
+    );
   });
 
   it("follows nextCursor, stops null, and exposes cyclic cursors as errors", () => {

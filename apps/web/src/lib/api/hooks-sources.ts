@@ -243,10 +243,13 @@ const sourcesKey = (projectId: string): readonly unknown[] => [
   "sources",
   projectId,
 ];
-const snapshotsKey = (projectId: string): readonly unknown[] => [
-  "snapshots",
-  projectId,
-];
+const snapshotsKey = (
+  projectId: string,
+  provider?: Provider,
+): readonly unknown[] =>
+  provider === undefined
+    ? ["snapshots", projectId]
+    : ["snapshots", projectId, provider];
 const runKey = (projectId: string, runId: string): readonly unknown[] => [
   "run",
   projectId,
@@ -275,18 +278,25 @@ export function useProjectSources(
   });
 }
 
-/** Immutable snapshot history as bounded pages with each page's `meta` envelope. */
+/**
+ * Immutable snapshot history as bounded pages with each page's `meta` envelope.
+ * Customer surfaces pass a provider so the server applies the provider filter
+ * before pagination; omitting it preserves the internal all-provider contract.
+ */
 export function useProjectSnapshots(
   projectId: string,
+  provider?: Provider,
 ): UseInfiniteQueryResult<
   InfiniteData<ListEnvelope<DataSnapshot>, string | null>,
   ApiError
 > {
   return useInfiniteQuery({
-    queryKey: snapshotsKey(projectId),
+    queryKey: snapshotsKey(projectId, provider),
     queryFn: ({ pageParam }) =>
       apiGet<ListEnvelope<DataSnapshot>>(
-        cursorPageUrl(`/projects/${projectId}/snapshots`, pageParam),
+        cursorPageUrl(`/projects/${projectId}/snapshots`, pageParam, {
+          provider,
+        }),
       ),
     initialPageParam: null as string | null,
     getNextPageParam: nextCursorPageParam,
