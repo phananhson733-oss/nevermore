@@ -4,10 +4,14 @@ import path from "node:path";
 import process from "node:process";
 import vm from "node:vm";
 
+import pathGuard from "./artifact-path-guard.cjs";
 import {
   artifactPaths,
+  repositoryRoot,
   resolveRepositoryArtifactPath,
 } from "./resolve-artifact-source.mjs";
+
+const { assertRepositoryOwnedPath } = pathGuard;
 
 const [artifactArgument, outputArgument] = process.argv.slice(2);
 const artifactFile = resolveRepositoryArtifactPath(
@@ -20,6 +24,13 @@ const outputFile = resolveRepositoryArtifactPath(
   artifactPaths.productManual,
   "Product manual output",
 );
+assertRepositoryOwnedPath({
+  repositoryRoot,
+  candidatePath: artifactFile,
+  label: "Interactive Artifact input",
+  mustExist: true,
+  kind: "file",
+});
 
 const artifactSource = await readFile(artifactFile, "utf8");
 const embeddedScripts = [

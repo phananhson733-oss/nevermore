@@ -1,6 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import pathGuard from "./artifact-path-guard.cjs";
+
+const { assertRepositoryOwnedPath } = pathGuard;
+
 export const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -27,19 +31,16 @@ const forbiddenPathPatterns = [
   ["historical temporary dependency root", /(?:^|[/\\])tmp[/\\]gengrowth-artifact-jsdom-/i],
 ];
 
-const isInsideRepository = (resolvedPath) => {
-  const relative = path.relative(repositoryRoot, resolvedPath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-};
-
 export function resolveRepositoryArtifactPath(argument, fallback, label) {
   const resolvedPath = argument
     ? path.resolve(repositoryRoot, argument)
     : fallback;
 
-  if (!isInsideRepository(resolvedPath)) {
-    throw new Error(`${label} must stay inside the Nevermore repository`);
-  }
+  assertRepositoryOwnedPath({
+    repositoryRoot,
+    candidatePath: resolvedPath,
+    label,
+  });
 
   for (const [description, pattern] of forbiddenPathPatterns) {
     if (pattern.test(resolvedPath)) {

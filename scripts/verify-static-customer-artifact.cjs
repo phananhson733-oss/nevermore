@@ -3,6 +3,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { JSDOM, VirtualConsole } = require("jsdom");
+const {
+  assertRepositoryOwnedPath,
+} = require("./artifact-path-guard.cjs");
 
 const repoRoot = path.resolve(__dirname, "..");
 const defaultArtifactFile = path.join(
@@ -15,12 +18,13 @@ const [artifactArgument] = process.argv.slice(2);
 
 const resolveRepositoryFile = (argument, fallback, label) => {
   const resolved = argument ? path.resolve(repoRoot, argument) : fallback;
-  const relative = path.relative(repoRoot, resolved);
-  assert.equal(
-    relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative)),
-    true,
-    `${label} must stay inside the Nevermore repository`,
-  );
+  assertRepositoryOwnedPath({
+    repositoryRoot: repoRoot,
+    candidatePath: resolved,
+    label,
+    mustExist: true,
+    kind: "file",
+  });
   assert.doesNotMatch(
     resolved,
     /(?:^|[/\\])\.codex[/\\]visualizations(?:[/\\]|$)|(?:^|[/\\])tmp[/\\]gengrowth-artifact-jsdom-/i,

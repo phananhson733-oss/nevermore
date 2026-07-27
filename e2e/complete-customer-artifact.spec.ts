@@ -80,11 +80,17 @@ test("the executable Artifact source is complete and physically owned by the rep
     ).toBe(true);
   }
 
-  const [readme, styles, workspaceData, clientApp] = await Promise.all(
+  const sourceContents = await Promise.all(
     ARTIFACT_SOURCE_FILES.map((fileName) =>
       readFile(path.join(ARTIFACT_SOURCE_DIRECTORY, fileName), "utf8"),
     ),
   );
+  const [readme, styles, workspaceData, clientApp] = sourceContents as [
+    string,
+    string,
+    string,
+    string,
+  ];
   expect(readme).toMatch(/来源|历史|provenance|reference[- ]only/i);
   expect(styles.trim().length).toBeGreaterThan(1_000);
   expect(workspaceData).toMatch(/\bGenGrowthWorkspace\b/);

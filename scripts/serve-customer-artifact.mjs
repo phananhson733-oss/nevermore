@@ -1,10 +1,12 @@
 import { createReadStream } from "node:fs";
-import { access } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import pathGuard from "./artifact-path-guard.cjs";
+
+const { assertRepositoryOwnedPath } = pathGuard;
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const artifactFile = path.join(
@@ -20,7 +22,13 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error(`Invalid --port value: ${String(process.argv[portIndex + 1])}`);
 }
 
-await access(artifactFile);
+assertRepositoryOwnedPath({
+  repositoryRoot,
+  candidatePath: artifactFile,
+  label: "Interactive Artifact",
+  mustExist: true,
+  kind: "file",
+});
 
 const server = createServer((request, response) => {
   const requestUrl = new URL(

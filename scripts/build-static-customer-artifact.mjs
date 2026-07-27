@@ -2,7 +2,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { resolveArtifactBuildPaths } from "./resolve-artifact-source.mjs";
+import pathGuard from "./artifact-path-guard.cjs";
+import {
+  repositoryRoot,
+  resolveArtifactBuildPaths,
+} from "./resolve-artifact-source.mjs";
+
+const { assertRepositoryOwnedPath } = pathGuard;
 
 const [sourceDirectoryArgument, outputFileArgument] = process.argv.slice(2);
 
@@ -18,12 +24,28 @@ try {
 }
 
 const { sourceDirectory, outputFile } = buildPaths;
+assertRepositoryOwnedPath({
+  repositoryRoot,
+  candidatePath: sourceDirectory,
+  label: "Artifact source directory",
+  mustExist: true,
+  kind: "directory",
+});
 
-const [styles, workspaceData, clientApp] = await Promise.all([
-  readFile(path.join(sourceDirectory, "styles.css"), "utf8"),
-  readFile(path.join(sourceDirectory, "workspace-data.js"), "utf8"),
-  readFile(path.join(sourceDirectory, "client-app.js"), "utf8"),
-]);
+const sourceFiles = ["styles.css", "workspace-data.js", "client-app.js"].map(
+  (fileName) =>
+    assertRepositoryOwnedPath({
+      repositoryRoot,
+      candidatePath: path.join(sourceDirectory, fileName),
+      label: `Artifact source ${fileName}`,
+      mustExist: true,
+      kind: "file",
+    }),
+);
+
+const [styles, workspaceData, clientApp] = await Promise.all(
+  sourceFiles.map((sourceFile) => readFile(sourceFile, "utf8")),
+);
 
 const protectInlineScript = (source) =>
   source.replaceAll("</script", "<\\/script");

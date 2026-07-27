@@ -22,7 +22,7 @@
     "build": "pnpm -r --if-present build",
     "artifact:build": "node scripts/build-static-customer-artifact.mjs",
     "artifact:manual": "node scripts/build-product-manual.mjs",
-    "artifact:verify": "node scripts/verify-static-customer-artifact.cjs && node scripts/verify-product-manual.cjs",
+    "artifact:verify": "node --test scripts/artifact-path-guard.test.cjs && node scripts/verify-static-customer-artifact.cjs && node scripts/verify-product-manual.cjs",
     "artifact:regen": "pnpm artifact:build && pnpm artifact:manual",
     "test": "vitest run --project unit",
     "test:watch": "vitest",
