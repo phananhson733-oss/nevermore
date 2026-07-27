@@ -658,12 +658,12 @@ function addLineageIssues(
   ctx: z.RefinementCtx,
 ): void {
   const change = window.verifiedChangeReceipt;
-  if (window.artifactContentHash !== change.contentChecksum) {
+  if (window.artifactContentHash !== change.artifactContentHash) {
     ctx.addIssue({
       code: "custom",
       path: ["artifactContentHash"],
       message:
-        "Measurement Artifact checksum must match the verified Change Receipt",
+        "Measurement Artifact identity must match the verified Change Receipt",
     });
   }
   if (window.canonicalUrl !== change.liveCanonicalUrl) {
@@ -688,6 +688,7 @@ function addLineageIssues(
     if (
       delivery.providerKind !== change.providerKind ||
       delivery.remoteScopeRef !== change.remoteScopeRef ||
+      delivery.artifactContentHash !== change.artifactContentHash ||
       delivery.contentChecksum !== change.contentChecksum
     ) {
       ctx.addIssue({

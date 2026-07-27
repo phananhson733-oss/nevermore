@@ -35,7 +35,9 @@ const ids = {
   utm: "90000000-0000-4000-8000-000000000024",
 } as const;
 
-const checksum = "a".repeat(64);
+const artifactContentHash = "a".repeat(64);
+const contentChecksum = "b".repeat(64);
+const otherHash = "c".repeat(64);
 const beforeWindow = {
   startAt: "2026-06-01T00:00:00Z",
   endAt: "2026-06-15T00:00:00Z",
@@ -53,7 +55,8 @@ const deliveryReceipt = {
   remoteObjectId: "pull-request-17",
   remoteRevision: "head-sha",
   deliveryUrl: "https://github.com/example/relayops/pull/17",
-  contentChecksum: checksum,
+  artifactContentHash,
+  contentChecksum,
   remoteFacts: { repository: "example/relayops", pullRequest: 17 },
   observedAt: "2026-06-20T10:00:00Z",
   receiptKind: "delivery_receipt" as const,
@@ -73,7 +76,8 @@ const changeReceipt = {
   remoteObjectId: "merge-17",
   remoteRevision: "merge-sha",
   deliveryUrl: "https://github.com/example/relayops/pull/17",
-  contentChecksum: checksum,
+  artifactContentHash,
+  contentChecksum,
   remoteFacts: { repository: "example/relayops", mergedPullRequest: 17 },
   observedAt: "2026-06-20T12:00:00Z",
   receiptKind: "change_receipt" as const,
@@ -244,7 +248,7 @@ function measurementWindow() {
     artifactId: ids.artifact,
     artifactRevisionId: ids.artifactRevision,
     artifactRevision: 3,
-    artifactContentHash: checksum,
+    artifactContentHash,
     publicationAttemptId: ids.publicationAttempt,
     verifiedChangeReceipt: changeReceipt,
     timelineDeliveryReceipt: deliveryReceipt,
@@ -358,11 +362,17 @@ describe("immutable measurement window", () => {
     ).toBe(false);
   });
 
-  it("binds the exact artifact checksum and canonical URL to the verified Change Receipt", () => {
+  it("binds the exact Artifact identity hash and canonical URL to the verified Change Receipt", () => {
     const base = measurementWindow();
 
     for (const changed of [
-      { artifactContentHash: "b".repeat(64) },
+      { artifactContentHash: otherHash },
+      {
+        verifiedChangeReceipt: {
+          ...base.verifiedChangeReceipt,
+          artifactContentHash: otherHash,
+        },
+      },
       { canonicalUrl: "https://relayops.example/another-page/" },
       {
         verifiedChangeReceipt: {
@@ -406,7 +416,16 @@ describe("immutable measurement window", () => {
         ...base,
         timelineDeliveryReceipt: {
           ...base.timelineDeliveryReceipt,
-          contentChecksum: "b".repeat(64),
+          artifactContentHash: otherHash,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        timelineDeliveryReceipt: {
+          ...base.timelineDeliveryReceipt,
+          contentChecksum: otherHash,
         },
       }).success,
     ).toBe(false);

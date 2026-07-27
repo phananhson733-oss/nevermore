@@ -17,6 +17,12 @@ const OpaqueRef = nonEmptyText(1024);
 const RemoteRef = nonEmptyText(512);
 const TargetRef = nonEmptyText(2048);
 const EvidenceRef = nonEmptyText(500);
+const ArtifactContentHash = PublicationChecksum.describe(
+  "SHA-256 of the JCS artifact identity payload, currently contentHash({ text })",
+);
+const ProviderContentChecksum = PublicationChecksum.describe(
+  "SHA-256 of the exact provider content/payload UTF-8 bytes",
+);
 
 const uniqueEvidenceRefs = (minimum = 0) =>
   z
@@ -170,7 +176,8 @@ const PublicationReceiptCommonShape = {
   remoteObjectId: RemoteRef,
   remoteRevision: RemoteRef,
   deliveryUrl: PublicationHttpUrl.nullable(),
-  contentChecksum: PublicationChecksum,
+  artifactContentHash: ArtifactContentHash,
+  contentChecksum: ProviderContentChecksum,
   remoteFacts: RemoteFacts,
   observedAt: IsoDateTime,
 } as const;
@@ -290,11 +297,12 @@ const PublicationAttemptCommonShape = {
   actionId: Uuid,
   artifactId: Uuid,
   approvedArtifactRevision: z.number().int().min(1),
-  approvedArtifactContentHash: PublicationChecksum,
+  approvedArtifactContentHash: ArtifactContentHash,
   providerKind: PublicationProviderKind,
   sideEffectClass: z.literal("external_write"),
   previewRef: OpaqueRef,
-  previewChecksum: PublicationChecksum,
+  previewChecksum: ArtifactContentHash,
+  contentChecksum: ProviderContentChecksum,
   remotePrecondition: PublicationRemotePrecondition,
   rollbackPlan: PublicationRollbackPlan,
   authorizationGrantRef: Uuid,
@@ -435,6 +443,25 @@ export const PublicationAttempt = z
           message: "Receipt provider must match the publication attempt",
         });
       }
+      if (
+        receipt.artifactContentHash !==
+        attempt.approvedArtifactContentHash
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["receipts", index, "artifactContentHash"],
+          message:
+            "Receipt Artifact identity must match the approved Artifact content hash",
+        });
+      }
+      if (receipt.contentChecksum !== attempt.contentChecksum) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["receipts", index, "contentChecksum"],
+          message:
+            "Receipt provider bytes must match the publication attempt content checksum",
+        });
+      }
     }
 
     if (change === undefined) {
@@ -471,6 +498,16 @@ export const PublicationAttempt = z
         code: "custom",
         path: ["receipts", changeIndex, "contentChecksum"],
         message: "Delivery and Change Receipt checksums must match",
+      });
+    }
+    if (
+      change.artifactContentHash !== delivery.artifactContentHash
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["receipts", changeIndex, "artifactContentHash"],
+        message:
+          "Delivery and Change Receipt Artifact identities must match",
       });
     }
     if (change.remoteScopeRef !== delivery.remoteScopeRef) {

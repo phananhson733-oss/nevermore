@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   CreatePublicationAttemptRequest,
@@ -29,7 +30,14 @@ const ids = {
   attempt: "00000000-0000-4000-8000-000000000213",
   site: "00000000-0000-4000-8000-000000000214",
 };
-const checksum = "a".repeat(64);
+const artifactText = "# Customer onboarding\n";
+const sha256Utf8 = (value: string) =>
+  createHash("sha256").update(value, "utf8").digest("hex");
+// A one-key object has the same serialization under JSON.stringify and JCS.
+const artifactContentHash = sha256Utf8(
+  JSON.stringify({ text: artifactText }),
+);
+const contentChecksum = sha256Utf8(artifactText);
 const qaChecksum = "b".repeat(64);
 const requestHash = "c".repeat(64);
 
@@ -39,7 +47,7 @@ const approvalSnapshot = {
   artifactId: ids.artifact,
   artifactRevisionId: ids.revision,
   approvedArtifactRevision: 3,
-  approvedArtifactContentHash: checksum,
+  approvedArtifactContentHash: artifactContentHash,
   reviewerActorId: ids.actor,
   qaGateVersion: "content-shadow.qa.v4",
   qaGateSnapshot: { verdict: "passed" },
@@ -136,12 +144,13 @@ describe("publication and rollback client requests", () => {
     ["artifactId", ids.artifact],
     ["artifactRevisionId", ids.revision],
     ["approvedArtifactRevision", 3],
-    ["approvedArtifactContentHash", checksum],
+    ["approvedArtifactContentHash", artifactContentHash],
     ["qaGateSnapshot", { verdict: "passed" }],
     ["qaGateSnapshotHash", qaChecksum],
     ["authorizationSnapshot", publishAuthorization],
     ["rollbackPlan", rollbackPlan],
-    ["previewChecksum", checksum],
+    ["previewChecksum", artifactContentHash],
+    ["contentChecksum", contentChecksum],
     ["rollbackPlanChecksum", qaChecksum],
     ["actorId", ids.actor],
     ["reviewerActorId", ids.actor],
@@ -190,7 +199,8 @@ describe("publication and rollback client requests", () => {
       ["authorizationSnapshot", rollbackAuthorization],
       ["sourceApproval", approvalSnapshot],
       ["rollbackPlan", rollbackPlan],
-      ["previewChecksum", checksum],
+      ["previewChecksum", artifactContentHash],
+      ["contentChecksum", contentChecksum],
       ["actorId", ids.actor],
       ["reviewerActorId", ids.actor],
       ["probeFacts", { revisionExists: true }],
@@ -290,7 +300,8 @@ describe("delivery and change receipt lineage", () => {
     remoteRevision: "head-sha",
     deliveryUrl: "https://github.com/gengrowth/website/pull/42",
     liveCanonicalUrl: null,
-    contentChecksum: checksum,
+    artifactContentHash,
+    contentChecksum,
     verificationState: "provider_accepted" as const,
     remoteFacts: { headSha: "head-sha", baseSha: "base-sha" },
     evidenceRefs: [],
@@ -316,6 +327,12 @@ describe("delivery and change receipt lineage", () => {
     expect(PublicationReceipt.parse(delivery)).toEqual(delivery);
     expect(PublicationChangeReceipt.parse(change)).toEqual(change);
     expect(PublicationReceipt.parse(change)).toEqual(change);
+  });
+
+  it("keeps the JCS Artifact identity distinct from exact UTF-8 provider bytes", () => {
+    expect(artifactContentHash).toMatch(/^[a-f0-9]{64}$/u);
+    expect(contentChecksum).toMatch(/^[a-f0-9]{64}$/u);
+    expect(artifactContentHash).not.toBe(contentChecksum);
   });
 
   it("requires change receipts to point to a delivery predecessor", () => {
@@ -426,11 +443,12 @@ describe("server publication attempt union", () => {
     actionId: ids.action,
     artifactId: ids.artifact,
     approvedArtifactRevision: 3,
-    approvedArtifactContentHash: checksum,
+    approvedArtifactContentHash: artifactContentHash,
     providerKind: "github" as const,
     sideEffectClass: "external_write" as const,
     previewRef: "preview://artifact/revision/3",
-    previewChecksum: checksum,
+    previewChecksum: artifactContentHash,
+    contentChecksum,
     remotePrecondition: {
       kind: "must_match" as const,
       revision: "base-sha",
@@ -509,7 +527,8 @@ describe("server publication attempt union", () => {
       remoteRevision: "head-sha",
       deliveryUrl: "https://github.com/gengrowth/website/pull/42",
       liveCanonicalUrl: null,
-      contentChecksum: checksum,
+      artifactContentHash,
+      contentChecksum,
       verificationState: "provider_accepted" as const,
       remoteFacts: { headSha: "head-sha", baseSha: "base-sha" },
       evidenceRefs: [],
@@ -548,6 +567,10 @@ describe("server publication attempt union", () => {
       [delivery, { ...change, contentChecksum: qaChecksum }],
       [
         delivery,
+        { ...change, artifactContentHash: contentChecksum },
+      ],
+      [
+        delivery,
         {
           ...change,
           remoteScopeRef: "github:repository:101:pull-request:43",
@@ -572,6 +595,30 @@ describe("server publication attempt union", () => {
         }).success,
       ).toBe(false);
     }
+
+    expect(
+      PublicationAttempt.safeParse({
+        ...changedAttempt,
+        contentChecksum: artifactContentHash,
+      }).success,
+    ).toBe(false);
+    expect(
+      PublicationAttempt.safeParse({
+        ...changedAttempt,
+        receipts: [
+          {
+            ...delivery,
+            artifactContentHash: contentChecksum,
+            contentChecksum: artifactContentHash,
+          },
+          {
+            ...change,
+            artifactContentHash: contentChecksum,
+            contentChecksum: artifactContentHash,
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("returns a strict accepted response without claiming delivery", () => {

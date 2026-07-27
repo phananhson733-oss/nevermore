@@ -15,6 +15,7 @@ export interface DeliveryObservation<TRemote> {
   readonly state: "pending";
   readonly observedAt: string;
   readonly providerRequestId: string | null;
+  /** SHA-256 of the exact provider content/payload UTF-8 bytes. */
   readonly contentChecksum: string;
   readonly remoteScopeRef: string;
   readonly remote: TRemote;
@@ -26,6 +27,7 @@ export interface ChangeObservation<TEvidence> {
   readonly state: "verified";
   readonly observedAt: string;
   readonly predecessorDeliveryReceiptId: string;
+  /** SHA-256 of the exact provider content/payload UTF-8 bytes. */
   readonly contentChecksum: string;
   readonly remoteScopeRef: string;
   readonly providerRequestId: string | null;
@@ -37,6 +39,7 @@ export interface ChangeObservation<TEvidence> {
 export interface ReceiptLineageDelivery {
   readonly id: string;
   readonly provider: PublishingProvider;
+  /** SHA-256 of the exact provider content/payload UTF-8 bytes. */
   readonly contentChecksum: string;
   readonly remoteScopeRef: string;
   readonly observedAt: string;
@@ -45,6 +48,7 @@ export interface ReceiptLineageDelivery {
 export interface ReceiptLineageChange {
   readonly predecessorDeliveryReceiptId: string;
   readonly provider: PublishingProvider;
+  /** SHA-256 of the exact provider content/payload UTF-8 bytes. */
   readonly contentChecksum: string;
   readonly remoteScopeRef: string;
   readonly observedAt: string;
