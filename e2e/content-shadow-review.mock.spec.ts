@@ -185,7 +185,7 @@ function runProjection(scenario: Scenario) {
         },
       ],
       limitations: [
-        "This pack carries only first-party frozen SignalFrame records; no external source was retrieved or graded.",
+        "This pack carries only first-party frozen project records; no external source was retrieved or graded.",
       ],
       generatedAt: NOW,
     },
@@ -372,6 +372,9 @@ test("a review names the revision it applies to, in three places", async ({
   await openExecution(page, scenario());
 
   const doc = page.locator("[data-shadow-doc]");
+  await expect(page.locator("[data-content-shadow]")).not.toContainText(
+    "SignalFrame",
+  );
   await expect(doc.locator("[data-shadow-revision]")).toHaveText(/Revision 1/u);
   await expect(page.locator("[data-qa-verdict-revision]")).toContainText(
     "该结论对应 Revision 1",

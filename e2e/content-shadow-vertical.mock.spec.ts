@@ -211,6 +211,7 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   await expect(rail).toContainText("Frozen records");
   await expect(rail).toContainText("Citable outside sources");
   await expect(rail).toContainText("0 — no outside retrieval this run");
+  await expect(rail).not.toContainText("SignalFrame");
   await expect(rail).toContainText(
     "no external source was retrieved or graded",
   );

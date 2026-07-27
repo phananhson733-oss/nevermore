@@ -812,7 +812,7 @@ export function checkRl12(context: QaContext): QaRuleResult {
 function unverifiableNote(context: QaContext): string {
   return context.index.citableCount === 0
     ? "This run retrieved no external research, so the frozen pack holds NOTHING external to resolve against: the correct reading is that these references cannot be verified here, not that they were invented. Every one of them needs a human to confirm it before this draft goes anywhere."
-    : "The pack is assembled only from confirmed SignalFrame records, so an attribution that does not resolve names a source we do not hold.";
+    : "The pack is assembled only from confirmed frozen project records, so an attribution that does not resolve names a source we do not hold.";
 }
 
 export function checkRl12b(context: QaContext): QaRuleResult {

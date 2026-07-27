@@ -120,6 +120,12 @@ describe("structure checks", () => {
     expect(sc4?.evaluable).toBe(false);
   });
 
+  it("keeps customer-visible structure details free of the internal brand", () => {
+    const sources = rule(CLEAN_DRAFT, "sc9_sources_section");
+
+    expect(sources?.detail).not.toMatch(/SignalFrame/i);
+  });
+
   it("detects a draft that merely restates the brief", () => {
     const restated = [
       "# Onboarding analytics",

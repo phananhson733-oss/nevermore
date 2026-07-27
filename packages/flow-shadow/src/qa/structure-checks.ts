@@ -492,7 +492,7 @@ export function checkSc9(context: QaContext): QaRuleResult {
     return pass(
       "sc9_sources_section",
       "sc9_no_citable_sources",
-      `Advisory (never gates): the frozen research pack carries no EXTERNAL citable source — every source in it is a first-party record (SignalFrame uuids plus this project's own site origin and conversion target) — so a Sources section is not expected. The draft ${present ? "carries one anyway" : "carries none under a heading recognised as a reference list"}.`,
+      `Advisory (never gates): the frozen research pack carries no EXTERNAL citable source — every source in it is a first-party record (project record IDs plus this project's own site origin and conversion target) — so a Sources section is not expected. The draft ${present ? "carries one anyway" : "carries none under a heading recognised as a reference list"}.`,
     );
   }
   const entries = referenceEntries(context);

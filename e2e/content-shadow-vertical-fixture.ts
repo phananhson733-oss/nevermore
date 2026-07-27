@@ -291,7 +291,7 @@ function runProjection(state: ContentVerticalState) {
         },
       ],
       limitations: [
-        "This pack carries only first-party frozen SignalFrame records; no external source was retrieved or graded.",
+        "This pack carries only first-party frozen project records; no external source was retrieved or graded.",
       ],
       generatedAt: NOW,
     },

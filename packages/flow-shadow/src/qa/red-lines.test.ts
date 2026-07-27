@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ResearchPack } from "../types.ts";
 import { CLEAN_DRAFT } from "./__fixtures__/drafts.ts";
-import { fixturePack, qaInput } from "./__fixtures__/pack.ts";
+import {
+  fixturePack,
+  packWithCitableSources,
+  qaInput,
+} from "./__fixtures__/pack.ts";
 import { buildQaContext } from "./context.ts";
 import { checkRl4, checkRl5, checkRl10, checkRl12 } from "./red-lines.ts";
 import { QA_THRESHOLDS } from "./thresholds.ts";
@@ -293,6 +297,26 @@ describe("RL12 — what a sentence offers as evidence", () => {
     // A3's cost boundary: alone, the same bullet is never a block.
     expect(control.evaluable).toBe(false);
     expect(control.reasonCode).toBe("rl12_citation_unjudged");
+  });
+
+  it("keeps customer-visible citation details free of the internal brand", () => {
+    const draft = [
+      "# Onboarding analytics",
+      "",
+      "## What onboarding analytics covers",
+      "",
+      "Forrester (2024) puts median activation at 34% of new accounts.",
+      "",
+    ].join("\n");
+    const result = checkRl12(
+      contextFor(
+        draft,
+        packWithCitableSources(["https://example.test/known-source"]),
+      ),
+    );
+
+    expect(result.reasonCode).toBe("rl12_citation_unresolved");
+    expect(result.detail).not.toMatch(/SignalFrame/i);
   });
 });
 
