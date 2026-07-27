@@ -2287,6 +2287,10 @@ that no user of the product can reach. R4 is an engineering task once R1-R3 are
 settled: delete the two dead readers, or give the editor a `popstate` guard and
 keep them.
 
+**Resolved (2026-07-27).** The Owner ruled on all of R1-R3 and §19.4: each
+capability returns as an entry point on a shipped destination. The rulings, the
+restoration commits, and their acceptance evidence are recorded in §21.
+
 ### 14.9 N-1
 
 `git diff 2f2bd78..HEAD` over `apps/web/src/app/p/[projectId]/overview`,
@@ -2794,6 +2798,9 @@ the no-CSS rule was a proxy for, met directly.
 `real-vertical-chains` at `:447`, covered in full in the D8 addendum in §4. The
 suite's serial ordering means the B2C fixture never runs at all.
 
+**Resolved (2026-07-27).** The diagnosis trigger returned on the Growth Map
+hero (§21.1) and this failure closed with it; the B2C fixture runs again.
+
 ### 17.4 R3 — 2 failures, one of which is a live product defect
 
 The `report print media` test fails because `globals.css:199` scopes the print
@@ -2821,6 +2828,9 @@ being visible, which is the Owner decision itself. A mock-suite regression net
 covers the fixed half without needing a database, and asserts the page heading
 survives print media as well — a rule that hid everything would satisfy the two
 shell assertions and be worse than the defect.
+
+**Resolved (2026-07-27).** The client report and export returned on Results
+(§21.3); both R3 failures here closed with it.
 
 ### 17.5 The one test-side cause — fixed in `dbdf826`
 
@@ -3263,6 +3273,10 @@ its reason*, so it is not later "fixed" into a 422 that would hand an
 unauthenticated prober the difference between a bad id shape and a project that
 exists.
 
+**Resolved (2026-07-27).** Ruled together with R2/R3 as anticipated: the view
+enum narrowed to the shipped destination (`6cb931b`, §21.4), and the pinned
+route tests reddened and were rewritten with it.
+
 ---
 
 ## 20. A mutation is invisible until the branch it lives in has mounted
@@ -3309,3 +3323,234 @@ actually rendered, and prove the placement by mutating and watching it fail.
 Every landmark assertion added in §17.6b sits after its spec's own content wait
 for this reason. A mutation that survives is a question, not an answer — and the
 first thing to ask is whether the test could see it at all.
+
+---
+
+## 21. Closeout — the §14.8 restorations, ruled and landed (2026-07-27)
+
+On 2026-07-27 the Owner ruled on the four §14.8/§19.4 findings, all in the
+same direction: **each capability returns as an entry point on a shipped
+destination.** Nothing was deleted; the server surfaces §14.8 documented as
+"live and unreachable" are now reachable. Each restoration below went through
+the same pipeline — read-only reconnaissance, a blueprint revised under two
+rounds of adversarial review (codex), a TDD landing, then an adversarial
+verification round whose accepted findings landed as a separate fix round.
+This section records the rulings, the commits, and the acceptance evidence;
+the resolved markers in §14.8, §17.3, §17.4 and §19.4 point here.
+
+### 21.1 R1 — the diagnosis trigger, on the Growth Map hero
+
+**Ruling:** restore the trigger on the Growth Map. The Growth Map is inside the
+N-1 freeze, so the ruling itself carries the pinpoint unfreeze — the option the
+Owner selected said so explicitly.
+
+- `66b9632 fix(api): expose the active diagnostic run pointer in the 409 body`
+  — the server half first: both 409 answers in `diagnostics.ts` now carry the
+  current run pointer, so a client refused for concurrency knows what to poll.
+- `fb96d65 feat(growth-map): restore the diagnosis trigger on the Growth Map
+  hero` — a closed run state machine behind the hero trigger, 16 mock e2e
+  cases, and the first-diagnosis 404 portfolio state made switchable in the
+  mock API.
+- `e3e2cea test(e2e): re-aim runDiagnosisAndConfirmFinding at the Growth Map
+  DOM` — the real chain walks the restored trigger instead of the retired
+  Diagnosis screen.
+
+Adversarial review: 6 P1 + 8 P2 accepted into the blueprint before landing;
+the verification round's findings landed as `0edbed4` (sticky crawl gate,
+single live region, the 390px hero restored to its pre-R1 height — the
+non-hero regions byte-identical across both viewports) and `c56d6b5`
+(terminal-time fixture, crawl-gate/live-region/partial specs, and the real
+chain's 404-then-recovery and `Open Execution` href pins). Mutation rounds:
+twelve on the landing, M1-M11 on the fix round, all killed.
+
+### 21.2 R2 — Action override, from the Execution rail
+
+**Ruling:** restore the override as an entry point on Execution (not frozen;
+no unfreeze needed). The 238px rail cannot hold a form, so the trigger lives
+on the rail and opens a dialog.
+
+- `2cfe001 refactor(action-status): lift the Action status graph to the
+  project shared layer` — with 36 parity cases against the server's graph.
+- `77bdf10 feat(execution): closed override state machine for the Adjust
+  action dialog` — the two 409 semantics (version conflict vs. refused
+  transition) are distinct states with distinct recoveries.
+- `c803ea5 feat(execution): rail trigger + Adjust action dialog with mutable
+  override mock` — dialog identity keyed on `action.id`, discard
+  confirmation, guarded `setQueryData`, and the `studio.override.*` strings.
+- `99b3c5b test(execution): cross-page reachability, coverage honesty,
+  viewport/axe acceptance` — actions beyond the first page are reachable
+  through automatic pagination, proven at three viewports.
+
+Adversarial review: 5 P1 + 6 P2 accepted pre-landing; the verification round
+landed as `8a3e01b` (baseline frozen into the reducer, the dirty-editor guard
+inverted to disable the trigger, submitting locks every exit, `refreshFailed`
+carries the real error) and `846c0bc` (background refetch cannot rebase the
+frozen baseline, a hanging PATCH has no exit, Back is guarded, cursor
+sequences asserted exactly). Mutations M1-M8 all killed.
+
+### 21.3 R3 — the client report and export, on Results
+
+**Ruling:** restore the report and export on Results, reusing the three
+existing endpoints and the projection — the largest of the three by scope.
+
+- `1307a84 refactor(results): migrate the client report into three-seam
+  Results modules` — the dead `_report.tsx` client's report is carved into
+  presentational / read-model / export seams (`report.module.css` moved with
+  history).
+- `878b0e9 feat(results): assemble the Results screen around the restored
+  client report` — recheck block and report document on one screen, heading
+  tree demoted under the page `h1`, `outputLocale` deep link kept, and the
+  §17.4 print boundary honoured via `.screenOnly`.
+- `e9ec458 fix(exports): close the export tracking loop end to end (D5)` —
+  the export 409 now carries the current export pointer, and the client
+  state machine polls it to terminal.
+- `ef68f9f test(results): revive the removed export guards and drive the
+  closed loop (D8)` — the guards §14.8 said were deleted with the screen run
+  again, against a programmable mock sequence.
+- `7c5c37d test(results): rename the visual screen and remint its platform
+  baselines (D7)` — the canonical visual screen `report` becomes `results`,
+  with fresh darwin and linux baselines.
+
+Adversarial review: 5 P1 + 5 P2 accepted pre-landing; the verification round
+landed as `3a1e134` (strict zod validation of the 202 `resourceRef`, one
+`Idempotency-Key` per attempt, a lost-response replay case) and `f157f6b`
+(finding cards titled with an `h4`, the accessibility-tree count pinned, deep
+link acceptance measured by `reportReads`). Mutation rounds: eight killed plus
+one honestly-recorded untestable survivor — Playwright's role engine
+normalises a native `h2` carrying `aria-level=1`, and the `div role="heading"`
+variant of the same mutation is killed, which proves the assertion is alive.
+
+### 21.4 The workspace view enum follows the ruling (§19.4)
+
+`6cb931b refactor(workspace): narrow the view enum to the shipped
+destination` — `view ∈ {overview}`; the `plan`/`studio`/`report` views §19.4
+showed still being served for deleted screens are gone, along with the
+unreachable `execution` branch and 1,087 lines of dead view-building code. The
+contract tax was paid in the same commit (both OpenAPI documents, regenerated
+contracts, authority spec §11.4, four lock hashes), and the §19.4 pin tests
+did their job: they reddened first and were rewritten to assert the retired
+views now answer 422. Route operation counts are unchanged. Two couplings
+surfaced and were handled: the technical-vertical integration test moved onto
+the canonical Artifact read model, and `outputLocale` stays in the contract
+while the service signature narrowed.
+
+### 21.5 The canonical visual loop is whole again
+
+`test:e2e:real`'s AC-044 ran the full restored chain green for the first time
+on 2026-07-27 — project creation → CSV through the real worker → offline
+provider seam → diagnosis from the Growth Map hero → Finding confirm →
+artifact to ready → report and export on Results — on fresh disposable
+databases on both darwin and linux. At that moment the visual segment was
+temporarily narrowed to the results screen, because the other three quarters
+of the loop had rotted while the suite was red:
+
+- **The ready anchors predated Slice 1.** The overview wait was
+  `getByRole("region", { name: "Signal rail" })` — a region the Slice 1
+  customer Overview rewrite retired; the string survives only in
+  `packages/i18n` (`en.json:524`) and matches nothing in `apps/web/src`. This
+  is §14.2's pattern surviving one layer deeper: not an assertion on a dead
+  screen, but a wait on a dead landmark inside a live one.
+- **The overview/sources/studio baselines predated Slice 1 and R2.** The
+  overview and sources images showed screens that no longer exist; the studio
+  images predated the R2 rail trigger and badges.
+
+**The re-pinned waits (this round, `e2e/` only).** Each screen now pins the
+same three-part contract the results screen established in R3 blueprint D7 —
+a content anchor only the resolved read model renders, a stable-state signal,
+and settled network traffic. The anchors were measured against the live DOM
+through a throwaway mock-environment probe before being written:
+
+| screen | content anchor | stable state |
+|---|---|---|
+| overview | `[data-overview-page]` (ready branch only) | zero `role="status"` inside it |
+| sources | region "Source readiness" | zero `role="status"` in `main` |
+| studio | queue row with `data-studio-artifact-type="technical_ticket"` | zero `role="status"` in `main` |
+| results | `[data-report-document]` (unchanged, R3 D7) | `[data-results-recheck-settled]` |
+
+The probe's most useful result was a rejection: the mock overview fixture
+deliberately serves a mismatched run pair, and its settled DOM keeps exactly
+one `role="status"` — the run-pair mismatch notice. The stable-state signal
+therefore rejects not only loading states but the incoherent-read state, which
+must never become a baseline.
+
+**The baselines were reminted on both platforms** — 18 files, 9 per platform
+(`canonical-relayops-{overview,sources,studio}-{wide,desktop,mobile}`), minted
+with `--update-snapshots=missing` on a fresh disposable database after
+deleting the stale files, then verified with a clean fresh-database run.
+darwin: AC-044 passed in 1.3m with all four screens compared. linux: the same
+recipe as the R3 D7 mint — ubuntu:24.04, node v24.12.0,
+`playwright install --with-deps chromium`, loopback Postgres inside the
+container — the mint run wrote all nine, and a clean verification run on a fresh container and fresh database passed AC-044 in 1.9m with all four screens compared (the first container's verification was interrupted with the round and re-run to completion). The six R3 results baselines were kept, not
+reminted, and passed unchanged in both platforms' verification runs. The
+masks are unchanged.
+
+**One dead string was removed with the visual work.**
+`studio.override.hideAdjustment` was on the R2 blueprint's string list, but
+the dialog form the blueprint evolved into never consumed it (a dialog closes;
+it does not collapse). Removed from `en.json` and `zh-CN.json` at the same
+position — the two files remain line-aligned — leaving `plan.hideAdjustment`,
+which `plan/_plan.tsx:1023` still reads, untouched. `grep` finds zero
+remaining references.
+
+**The full suite.** With the anchors re-pinned and the baselines reminted,
+the complete `test:e2e:real` job ran green for the first time in its
+existence: **42 passed, 0 failed, in 2.8 minutes**, on a fresh disposable
+database. The 2026-07-26 baseline (§17) was 30/12/1; the pre-restoration
+state after the a11y fixes was 39/3/1 with all three residual reds waiting on
+the rulings this section records.
+
+The full run surfaced one more pre-existing test-side defect on the way
+there, invisible while the suite was red ahead of it. AC-010
+(`project-isolation.spec.ts`) drove its two tabs through
+`Promise.all([pageA.goto(sources), pageB.goto(report)])`, and the /report
+compat navigation aborted deterministically (`net::ERR_ABORTED`, the tab left
+sitting on its previous URL). Probed in isolation the compat route is clean —
+a direct navigation from a loaded overview answers 307 → /results 200 and the
+goto settles without error — so the failure is the race between two
+first-compile navigations on one dev server, not the redirect. The two
+navigations are now sequenced (isolation is a claim about state, not
+simultaneity), the goto tolerates exactly that one abort error, and
+`waitForURL` plus the existing projection assertions carry the arrival proof.
+Every assertion the test made before is still made.
+
+### 21.6 Gate results
+
+| gate | result |
+|---|---|
+| `pnpm lint` | pass |
+| `pnpm typecheck` | pass |
+| unit (`vitest --project unit`) | **4170 passed** (315 files) — unchanged |
+| integration (`vitest --project integration`, fresh disposable DB) | **495 passed** (67 files) — unchanged |
+| `test:e2e:mock` | **148 passed, 0 failed** (4.0m) |
+| `test:e2e:real` AC-044, darwin, fresh DB, clean run | **1 passed** (1.3m) |
+| `test:e2e:real` AC-044, linux container, fresh DB, clean run | **1 passed** (1.9m) |
+| `test:e2e:real` full suite, darwin, fresh DB | **42 passed, 0 failed** (2.8m) — the first full green this job has ever produced (the 2026-07-26 baseline was 30/12/1) |
+
+The product diff of this round is empty: the changes are `e2e/`, two i18n
+message files (one dead key), and this document — the same N-1 shape §14.9
+established.
+
+### 21.7 Known residuals after this round
+
+1. **R2, popstate vs. selection.** Next's dev popstate restore does not
+   reliably re-render Execution with the traversed URL, so "selection follows
+   history traversal" cannot be asserted deterministically; the cross-Action
+   pristineness it would have proven is asserted through the dialog identity
+   contract instead. Recorded where it bites,
+   `action-override.mock.spec.ts:633` (KNOWN LIMIT).
+2. **The linux baselines are arm64 rasterisations.** They were minted in an
+   ubuntu:24.04 container on the colima VM (aarch64); CI's `ubuntu-latest`
+   database job is amd64. Whether `maxDiffPixelRatio: 0.02` absorbs the
+   cross-architecture rasterisation difference is a question only a CI run
+   can answer. This was already true of the R3 results baselines; the nine
+   new files inherit the same status.
+3. **R1's gate read exhausts the snapshot cursor chain.** `useProjectSnapshots`
+   walks up to 100 pages to decide whether the trigger's crawl gate holds —
+   accepted in the R1 blueprint (D1) with the constraint that it blocks only
+   the button, never Growth Map body rendering, and covered by a two-page
+   cursor mock proving both.
+4. **"Last diagnosed at X" is not shown.** The run-state copy on the Growth
+   Map hero is session-scoped by design; showing the real last-run time needs
+   the Growth Map contract extended (`findLatestReadableRun` already selects
+   `run_completed_at`; the projection does not carry it). Left for a later
+   slice, recorded in the R1 blueprint (D8).
