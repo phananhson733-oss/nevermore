@@ -313,5 +313,20 @@ jobs:
       - name: Install Chromium for mock E2E
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Rebuild repository-owned customer deliverables
+        run: pnpm artifact:regen
+
+      - name: Require deterministic committed customer deliverables
+        run: >-
+          git diff --exit-code --
+          docs/artifacts/GenGrowth-Interactive-Artifact.html
+          docs/artifacts/GenGrowth-Product-Manual.html
+
+      - name: Verify the complete customer Artifact and manual
+        run: pnpm artifact:verify
+
+      - name: Run complete customer Artifact browser acceptance
+        run: pnpm test:e2e:artifact
+
       - name: Run database-free critical-flow mock E2E
         run: pnpm test:e2e:mock

@@ -22,7 +22,7 @@
   --surface-3: #ece8de;
   --ink: #1c2925;
   --ink-soft: #35443f;
-  --muted: #6b7772;
+  --muted: #596762;
   --line: #d9d4c8;
   --line-strong: #beb8aa;
   --green: #24564d;
@@ -31,6 +31,7 @@
   --lime: #c8ef70;
   --lime-soft: #ecf9cb;
   --coral: #ec6c54;
+  --coral-ink: #b34737;
   --coral-soft: #fde1d9;
   --teal: #42a99c;
   --teal-soft: #d9f1ed;
@@ -140,7 +141,7 @@
 }
 
 .v13-priority-item small {
-  color: var(--coral);
+  color: var(--coral-ink);
   font-size: 12px;
   font-style: normal;
   font-weight: 800;
@@ -443,7 +444,7 @@
 .v13-source-strip__intro p {
   margin: 6px 0 0;
   color: #a7bbb4;
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.6;
 }
 
@@ -979,7 +980,7 @@ div.v13-source-chip {
 
 .v13-work-queue-header .eyebrow {
   margin: 0;
-  color: var(--coral);
+  color: var(--coral-ink);
 }
 
 .v13-work-queue-header h2 {
@@ -1069,7 +1070,7 @@ div.v13-source-chip {
 
 .v13-document-kicker .eyebrow {
   margin: 0;
-  color: var(--coral);
+  color: var(--coral-ink);
 }
 
 .v13-document-grid {
@@ -1293,7 +1294,7 @@ div.v13-source-chip {
 .v13-quality-note {
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 16px;
   line-height: 1.55;
 }
 
@@ -2034,7 +2035,7 @@ button.v14-topbar-pill:hover {
 }
 
 .v14-map-tabs span {
-  color: #74807b;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -2263,7 +2264,7 @@ button.v14-topbar-pill:hover {
 .v14-page-table .client-primary-cell small,
 .v14-page-table td > small {
   margin-top: 3px;
-  color: #85908c;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -2322,7 +2323,7 @@ button.v14-topbar-pill:hover {
 
 .v14-detail-header .eyebrow {
   margin-bottom: 7px;
-  color: var(--coral);
+  color: var(--coral-ink);
   font-size: 11px;
 }
 
@@ -2390,7 +2391,7 @@ button.v14-topbar-pill:hover {
 }
 
 .v14-detail-metrics span {
-  color: #89938f;
+  color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -2465,7 +2466,7 @@ button.v14-topbar-pill:hover {
 .v14-opportunity-card p,
 .v14-no-opportunity p {
   margin: 5px 0 0;
-  color: #76817d;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
 }
@@ -10711,7 +10712,7 @@ button:disabled {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .client-campaign-summary,
@@ -10829,11 +10830,11 @@ button:disabled {
 }
 
 @keyframes client-pop {
-  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  from { transform: translateY(10px) scale(0.985); }
 }
 
 @keyframes client-slide {
-  from { transform: translateX(30px); opacity: 0; }
+  from { transform: translateX(30px); }
 }
 
 .client-overlay__header {
@@ -11515,7 +11516,7 @@ button:disabled {
 
   .client-page-header p {
     margin-top: 9px;
-    font-size: 15px;
+    font-size: 16px;
   }
 
   .client-page-actions {
@@ -11726,7 +11727,7 @@ button:disabled {
   }
 
   @keyframes client-sheet {
-    from { transform: translateY(30px); opacity: 0; }
+    from { transform: translateY(30px); }
   }
 
   .client-overlay__header {
@@ -12289,7 +12290,7 @@ button:disabled {
   padding-left: 19px;
   margin: 0;
   color: var(--ink-soft);
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.5;
 }
 
@@ -12874,6 +12875,7 @@ button:disabled {
     observationStatus: {
       OBSERVED: 'observed',
       INSUFFICIENT: 'insufficient',
+      NOT_OBSERVED: 'not_observed',
       UNAVAILABLE: 'unavailable',
     },
     auditEventType: {
@@ -12970,6 +12972,18 @@ button:disabled {
       published: '场景已发布',
       blocked: '已阻断',
     },
+    artifactType: {
+      technical_ticket: 'Technical Ticket / 技术工单',
+      code_patch: '代码修复方案',
+      metadata_rewrite: 'Metadata Rewrite / 元数据重写',
+      content_brief: 'Content Brief / 内容简报',
+      english_blog_draft: 'English Blog Draft',
+      schema_patch: 'Schema Patch / 结构化数据修复',
+      landing_revision: 'Landing Revision Brief / 落地页改版',
+      publish_receipt: 'Publish / Change Receipt / 发布与变更回执',
+      utm_plan: 'UTM Plan / UTM 追踪计划',
+      comparison_brief: 'Comparison Brief / 竞品对比简报',
+    },
     verificationStatus: {
       verified: '已验证',
       not_resolved: '未解决',
@@ -12978,6 +12992,7 @@ button:disabled {
     observationStatus: {
       observed: '观察到变化',
       insufficient: '数据不足',
+      not_observed: '固定窗口未观察',
       unavailable: '不可用',
     },
     freshness: {
@@ -12998,7 +13013,7 @@ button:disabled {
     supersededAt: '2026-07-20T08:40:00.000Z',
     profileFieldCount: 11,
     confirmedFieldCount: 2,
-    lowConfidenceFieldCount: 5,
+    lowConfidenceFieldCount: 3,
     pendingConfirmationCount: 9,
     missingFieldCount: 4,
     conflictingFieldCount: 1,
@@ -13391,11 +13406,14 @@ button:disabled {
     },
   ];
 
+  const scenarioLabel = '离线演示场景 · 非真实客户数据';
+  const attributionBoundary = '对象之间仅表示同一目标、工作流或观察窗口的可追溯关系；回执不等于效果，固定窗口内的共同变化不证明由单一交付物、发布或 Campaign 造成。';
+
   const dataset = {
     schemaVersion: 'gengrowth-workspace.v1',
     datasetKind: enums.datasetKind.SCENARIO,
     snapshotAt: '2026-07-21T09:30:00.000Z',
-    scenarioNotice: '用于 RelayOps 客户交付物的确定性场景快照；不代表已连接真实 GSC、GA4、内容管理系统或第三方数据服务。',
+    scenarioNotice: `${scenarioLabel}。用于 RelayOps 客户交付物的确定性场景快照；不代表已连接真实 GSC、GA4、GitHub、内容管理系统或第三方数据服务。`,
     project: {
       id: 'prj-relayops-us',
       slug: 'relayops-us-growth',
@@ -13522,7 +13540,7 @@ button:disabled {
     ],
     releases: [
       { id: 'rel-blog-automation', projectId: 'prj-relayops-us', artifactId: 'art-blog-automation', kind: 'cms_publish', status: 'published', simulated: true, publishedAt: '2026-06-01T03:06:00.000Z', targetUrlId: 'url-blog-automation', targetUrl: '/blog/customer-onboarding-automation/', rollbackRef: 'RB-2026-06-01-021', observationWindow: { start: '2026-06-01', end: '2026-06-28', days: 28 }, message: '离线场景中已模拟发布英文博客，并建立 UTM 追踪与固定 28 天观察窗口；没有发生真实 CMS 写入。' },
-      { id: 'rel-code-canonical', projectId: 'prj-relayops-us', artifactId: 'art-code-canonical', kind: 'git_deploy', status: 'published', simulated: true, publishedAt: '2026-05-30T09:42:00.000Z', targetUrlId: 'url-onboarding', targetUrl: '/customer-onboarding/', rollbackRef: 'RB-2026-05-30-004', observationWindow: { start: '2026-05-30', end: '2026-06-26', days: 28 }, message: '离线场景中已模拟部署规范链接代码修复，并记录后续渲染抓取复查；没有访问真实 GitHub 或部署环境。' },
+      { id: 'rel-code-canonical', projectId: 'prj-relayops-us', artifactId: 'art-code-canonical', kind: 'git_deploy', status: 'published', simulated: true, publishedAt: '2026-05-30T09:42:00.000Z', targetUrlId: 'url-onboarding', targetUrl: '/customer-onboarding/', rollbackRef: 'RB-2026-05-30-004', observationWindow: { start: '2026-06-01', end: '2026-06-28', days: 28 }, message: '离线场景中已模拟部署规范链接代码修复，并记录后续渲染抓取复查；没有访问真实 GitHub 或部署环境。' },
       { id: 'rel-publish-receipt', projectId: 'prj-relayops-us', artifactId: 'art-publish-automation', kind: 'receipt_archive', status: 'published', simulated: true, publishedAt: '2026-06-01T03:06:00.000Z', targetUrlId: 'url-blog-automation', targetUrl: '/blog/customer-onboarding-automation/', rollbackRef: 'RB-2026-06-01-021', observationWindow: { start: '2026-06-01', end: '2026-06-28', days: 28 }, message: '离线场景模拟发布回执已归档并绑定观察窗口；没有发生真实外部写入。' },
     ],
     results: {
@@ -13555,13 +13573,1177 @@ button:disabled {
       { id: 'evt-action-canonical', projectId: 'prj-relayops-us', type: 'action_created', actorType: 'system', actorId: 'gengrowth', at: '2026-05-29T03:20:01.000Z', objectRefs: ['opp-canonical-fix', 'art-code-canonical'] },
       { id: 'evt-blog-r4', projectId: 'prj-relayops-us', type: 'artifact_revised', actorType: 'system', actorId: 'flow-shadow', at: '2026-05-31T11:08:00.000Z', objectRefs: ['art-blog-automation'] },
       { id: 'evt-code-approved', projectId: 'prj-relayops-us', type: 'artifact_approved', actorType: 'user', actorId: 'user-wz', at: '2026-05-29T09:14:00.000Z', objectRefs: ['art-code-canonical'] },
-      { id: 'evt-code-published', projectId: 'prj-relayops-us', type: 'change_published', actorType: 'user', actorId: 'engineering', at: '2026-05-30T02:10:00.000Z', objectRefs: ['art-code-canonical', 'url-onboarding'] },
+      { id: 'evt-code-published', projectId: 'prj-relayops-us', type: 'change_published', actorType: 'user', actorId: 'engineering', at: '2026-05-30T09:42:00.000Z', objectRefs: ['art-code-canonical', 'url-onboarding'] },
       { id: 'evt-blog-published', projectId: 'prj-relayops-us', type: 'change_published', actorType: 'user', actorId: 'growth-ops', at: '2026-06-01T03:06:00.000Z', objectRefs: ['art-blog-automation', 'art-publish-automation', 'url-blog-automation'] },
       { id: 'evt-canonical-verified', projectId: 'prj-relayops-us', type: 'recheck_completed', actorType: 'system', actorId: 'gengrowth', at: '2026-06-02T14:20:00.000Z', objectRefs: ['ver-canonical', 'opp-canonical-fix'] },
       { id: 'evt-search-observed', projectId: 'prj-relayops-us', type: 'observation_recorded', actorType: 'system', actorId: 'measurement-job', at: '2026-06-29T01:00:00.000Z', objectRefs: ['obs-page-onboarding', 'obs-page-blog'] },
       { id: 'evt-landing-insufficient', projectId: 'prj-relayops-us', type: 'observation_recorded', actorType: 'system', actorId: 'measurement-job', at: '2026-06-29T01:02:00.000Z', objectRefs: ['obs-page-pricing', 'art-landing-pricing'] },
     ],
   };
+
+  dataset.artifacts.push(
+    {
+      id: 'art-ticket-canonical',
+      projectId: 'prj-relayops-us',
+      opportunityId: 'opp-canonical-fix',
+      type: 'technical_ticket',
+      title: 'Technical Ticket：修复 /customer-onboarding/ 的规范链接冲突',
+      status: 'approved',
+      revision: 1,
+      targetUrlIds: ['url-onboarding'],
+      sourceRefs: ['src-crawl'],
+      requiredGates: ['technical', 'human'],
+      passedGates: ['technical', 'human'],
+    },
+    {
+      id: 'art-utm-guide',
+      projectId: 'prj-relayops-us',
+      opportunityId: 'opp-blog-refresh',
+      type: 'utm_plan',
+      title: 'UTM Plan：客户上线自动化指南分发追踪方案',
+      status: 'approved',
+      revision: 1,
+      targetUrlIds: ['url-blog-automation'],
+      sourceRefs: ['src-ga4', 'src-manual-profile'],
+      requiredGates: ['tracking', 'human'],
+      passedGates: ['tracking', 'human'],
+    }
+  );
+
+  dataset.opportunities.forEach(function attachNewArtifactIds(opportunity) {
+    if (opportunity.id === 'opp-canonical-fix' && !opportunity.artifactIds.includes('art-ticket-canonical')) {
+      opportunity.artifactIds.push('art-ticket-canonical');
+    }
+    if (opportunity.id === 'opp-blog-refresh' && !opportunity.artifactIds.includes('art-utm-guide')) {
+      opportunity.artifactIds.push('art-utm-guide');
+    }
+  });
+
+  const unavailableMetricPairs = function unavailableMetricPairs() {
+    return {
+      clicks: { before: null, current: null },
+      impressions: { before: null, current: null },
+      conversions: { before: null, current: null },
+      aiCitations: { before: null, current: null },
+    };
+  };
+
+  const observationLineage = {
+    'obs-page-onboarding': {
+      releaseIds: ['rel-code-canonical'],
+      campaignIds: ['cmpg-partner-webinar', 'cmpg-google-organic'],
+      attributionStatus: 'not_claimed',
+      limitation: '该 URL 同时存在代码修复、未发布的内容交付物、自然搜索与活动流量；固定窗口变化只能作为描述性观察，不能归因于其中任一对象。',
+    },
+    'obs-page-blog': {
+      releaseIds: ['rel-blog-automation', 'rel-publish-receipt'],
+      campaignIds: ['cmpg-linkedin-guide', 'cmpg-newsletter-guide', 'cmpg-chatgpt-referral'],
+      attributionStatus: 'not_claimed',
+      limitation: '场景发布、UTM 活动、自然搜索与引荐流量在同一窗口重叠；本记录不把结果归因于单一 Draft、发布或 Campaign。',
+    },
+    'obs-page-checklist': {
+      releaseIds: [],
+      campaignIds: [],
+      attributionStatus: 'natural_observation_only',
+      limitation: '没有绑定场景发布或 UTM Campaign；仅保留同窗口自然表现作为背景对照。',
+    },
+    'obs-page-compare': {
+      releaseIds: [],
+      campaignIds: [],
+      attributionStatus: 'not_claimed',
+      limitation: '对比 Brief 仍被事实与法务门禁阻断，观察值不得解释为该交付物带来的结果。',
+    },
+    'obs-page-pricing': {
+      opportunityIds: ['opp-pricing-landing'],
+      releaseIds: [],
+      campaignIds: [],
+      attributionStatus: 'insufficient',
+      limitation: '落地页 Revision 尚未批准或发布，且两个窗口的渠道组合不同；样本不足以进行归因判断。',
+    },
+  };
+
+  dataset.results.scenarioLabel = scenarioLabel;
+  dataset.results.windowId = 'window-us-2026-06-28d';
+  dataset.results.measurementPolicy = {
+    label: 'Results / 效果结果',
+    windowType: 'fixed_before_after',
+    attributionMode: 'descriptive_only',
+    receiptIsOutcome: false,
+    statement: attributionBoundary,
+  };
+  dataset.results.pageObservations = dataset.results.pageObservations.map(function labelExistingObservation(observation) {
+    const lineage = observationLineage[observation.id];
+    return {
+      scenarioLabel: scenarioLabel,
+      windowId: dataset.results.windowId,
+      windowCoverage: observation.status === enums.observationStatus.INSUFFICIENT ? 'insufficient' : 'complete',
+      relatedArtifactIds: [],
+      releaseIds: lineage.releaseIds,
+      campaignIds: lineage.campaignIds,
+      attributionStatus: lineage.attributionStatus,
+      attributionBoundary: lineage.limitation,
+      ...observation,
+      opportunityIds: lineage.opportunityIds || observation.opportunityIds,
+    };
+  }).concat([
+    {
+      id: 'obs-page-home',
+      scenarioLabel: scenarioLabel,
+      windowId: dataset.results.windowId,
+      urlId: 'url-home',
+      opportunityIds: [],
+      relatedArtifactIds: [],
+      releaseIds: [],
+      campaignIds: [],
+      status: enums.observationStatus.NOT_OBSERVED,
+      windowCoverage: 'not_observed',
+      attributionStatus: 'not_evaluable',
+      sourceRefs: ['src-gsc', 'src-ga4'],
+      metrics: unavailableMetricPairs(),
+      limitation: '首页未被纳入本次 URL 级固定 28 天结果样本，不能显示 before / current 数值。',
+      attributionBoundary: attributionBoundary,
+    },
+    {
+      id: 'obs-page-salesforce',
+      scenarioLabel: scenarioLabel,
+      windowId: dataset.results.windowId,
+      urlId: 'url-salesforce',
+      opportunityIds: ['opp-integration-structure'],
+      relatedArtifactIds: ['art-schema-integration'],
+      releaseIds: [],
+      campaignIds: [],
+      status: enums.observationStatus.NOT_OBSERVED,
+      windowCoverage: 'not_observed',
+      attributionStatus: 'not_evaluable',
+      sourceRefs: ['src-gsc', 'src-ga4'],
+      metrics: unavailableMetricPairs(),
+      limitation: 'Schema 修复尚未完成并发布，没有形成可比较的固定窗口结果；技术复查与效果观察必须分开。',
+      attributionBoundary: attributionBoundary,
+    },
+    {
+      id: 'obs-page-time-to-value',
+      scenarioLabel: scenarioLabel,
+      windowId: dataset.results.windowId,
+      urlId: 'url-time-to-value',
+      opportunityIds: ['opp-cluster-consolidation', 'opp-editorial-template'],
+      relatedArtifactIds: ['art-code-editorial-template'],
+      releaseIds: [],
+      campaignIds: [],
+      status: enums.observationStatus.NOT_OBSERVED,
+      windowCoverage: 'not_observed',
+      attributionStatus: 'not_evaluable',
+      sourceRefs: ['src-gsc', 'src-ga4'],
+      metrics: unavailableMetricPairs(),
+      limitation: '该页存在主题竞争与模板修复提案，但没有已发布 Revision 对应的完整 before / current 窗口。',
+      attributionBoundary: attributionBoundary,
+    },
+    {
+      id: 'obs-page-security',
+      scenarioLabel: scenarioLabel,
+      windowId: dataset.results.windowId,
+      urlId: 'url-security',
+      opportunityIds: ['opp-proof-request'],
+      relatedArtifactIds: [],
+      releaseIds: [],
+      campaignIds: [],
+      status: enums.observationStatus.UNAVAILABLE,
+      windowCoverage: 'source_unavailable',
+      attributionStatus: 'not_evaluable',
+      sourceRefs: ['src-crawl'],
+      metrics: unavailableMetricPairs(),
+      limitation: '该信任页只有抓取证据，没有 URL 级 GSC / GA4 固定窗口映射，结果不可用。',
+      attributionBoundary: attributionBoundary,
+    },
+    {
+      id: 'obs-page-solution-cs',
+      scenarioLabel: scenarioLabel,
+      windowId: dataset.results.windowId,
+      urlId: 'url-solution-cs',
+      opportunityIds: ['opp-solution-icp'],
+      relatedArtifactIds: [],
+      releaseIds: [],
+      campaignIds: [],
+      status: enums.observationStatus.NOT_OBSERVED,
+      windowCoverage: 'not_observed',
+      attributionStatus: 'not_evaluable',
+      sourceRefs: ['src-gsc', 'src-ga4'],
+      metrics: unavailableMetricPairs(),
+      limitation: '解决方案页尚未产生客户批准并发布的 Revision，因此未开启结果观察窗口。',
+      attributionBoundary: attributionBoundary,
+    },
+    {
+      id: 'obs-page-template-plan',
+      scenarioLabel: scenarioLabel,
+      windowId: dataset.results.windowId,
+      urlId: 'url-template-plan',
+      opportunityIds: ['opp-post-download-cta'],
+      relatedArtifactIds: [],
+      releaseIds: [],
+      campaignIds: [],
+      status: enums.observationStatus.NOT_OBSERVED,
+      windowCoverage: 'not_observed',
+      attributionStatus: 'not_evaluable',
+      sourceRefs: ['src-gsc', 'src-ga4'],
+      metrics: unavailableMetricPairs(),
+      limitation: '下载后的下一步仍处于机会阶段，没有发布回执或固定窗口观察。',
+      attributionBoundary: attributionBoundary,
+    },
+    {
+      id: 'obs-page-docs-start',
+      scenarioLabel: scenarioLabel,
+      windowId: dataset.results.windowId,
+      urlId: 'url-docs-start',
+      opportunityIds: ['opp-docs-navigation'],
+      relatedArtifactIds: [],
+      releaseIds: [],
+      campaignIds: [],
+      status: enums.observationStatus.UNAVAILABLE,
+      windowCoverage: 'source_unavailable',
+      attributionStatus: 'not_evaluable',
+      sourceRefs: ['src-crawl'],
+      metrics: unavailableMetricPairs(),
+      limitation: '目标变更尚未进入部署快照，且文档页没有 URL 级 GSC / GA4 固定窗口映射。',
+      attributionBoundary: attributionBoundary,
+    },
+  ]);
+
+  const releaseLineage = {
+    'rel-blog-automation': {
+      revisionId: 'rev-art-blog-automation-r4',
+      relatedArtifactIds: ['art-blog-automation', 'art-publish-automation', 'art-utm-guide'],
+      opportunityIds: ['opp-blog-refresh'],
+      observationIds: ['obs-page-blog'],
+      campaignIds: ['cmpg-linkedin-guide', 'cmpg-newsletter-guide', 'cmpg-chatgpt-referral'],
+    },
+    'rel-code-canonical': {
+      revisionId: 'rev-art-code-canonical-r2',
+      relatedArtifactIds: ['art-ticket-canonical', 'art-code-canonical'],
+      opportunityIds: ['opp-canonical-fix'],
+      observationIds: ['obs-page-onboarding'],
+      campaignIds: [],
+    },
+    'rel-publish-receipt': {
+      revisionId: 'rev-art-publish-automation-r1',
+      relatedArtifactIds: ['art-publish-automation', 'art-blog-automation', 'art-utm-guide'],
+      opportunityIds: ['opp-blog-refresh'],
+      observationIds: ['obs-page-blog'],
+      campaignIds: ['cmpg-linkedin-guide', 'cmpg-newsletter-guide'],
+    },
+  };
+  dataset.releases = dataset.releases.map(function labelRelease(release) {
+    const lineage = releaseLineage[release.id];
+    return {
+      scenarioLabel: scenarioLabel,
+      ...release,
+      revisionId: lineage.revisionId,
+      relatedArtifactIds: lineage.relatedArtifactIds,
+      opportunityIds: lineage.opportunityIds,
+      observationIds: lineage.observationIds,
+      campaignIds: lineage.campaignIds,
+      attributionStatus: 'not_claimed',
+      attributionBoundary: attributionBoundary,
+    };
+  });
+
+  const campaignLineage = {
+    'cmpg-linkedin-guide': {
+      utmPlanArtifactId: 'art-utm-guide',
+      releaseIds: ['rel-blog-automation'],
+      observationIds: ['obs-page-blog'],
+      relatedArtifactIds: ['art-utm-guide', 'art-blog-automation'],
+      attributionStatus: 'descriptive_utm_observation',
+    },
+    'cmpg-newsletter-guide': {
+      utmPlanArtifactId: 'art-utm-guide',
+      releaseIds: ['rel-blog-automation'],
+      observationIds: ['obs-page-blog'],
+      relatedArtifactIds: ['art-utm-guide', 'art-blog-automation'],
+      attributionStatus: 'descriptive_utm_observation',
+    },
+    'cmpg-partner-webinar': {
+      utmPlanArtifactId: null,
+      releaseIds: [],
+      observationIds: ['obs-page-onboarding'],
+      relatedArtifactIds: [],
+      attributionStatus: 'descriptive_utm_observation',
+    },
+    'cmpg-google-organic': {
+      utmPlanArtifactId: null,
+      releaseIds: ['rel-code-canonical'],
+      observationIds: ['obs-page-onboarding'],
+      relatedArtifactIds: ['art-code-canonical', 'art-ticket-canonical'],
+      attributionStatus: 'untagged_channel_observation',
+    },
+    'cmpg-chatgpt-referral': {
+      utmPlanArtifactId: null,
+      releaseIds: ['rel-blog-automation'],
+      observationIds: ['obs-page-blog'],
+      relatedArtifactIds: ['art-blog-automation'],
+      attributionStatus: 'untagged_channel_observation',
+    },
+  };
+  dataset.campaigns = dataset.campaigns.map(function labelCampaign(campaign) {
+    const lineage = campaignLineage[campaign.id];
+    return {
+      scenarioLabel: scenarioLabel,
+      ...campaign,
+      utmPlanArtifactId: lineage.utmPlanArtifactId,
+      releaseIds: lineage.releaseIds,
+      observationIds: lineage.observationIds,
+      relatedArtifactIds: lineage.relatedArtifactIds,
+      attributionStatus: lineage.attributionStatus,
+      attributionBoundary: attributionBoundary,
+    };
+  });
+
+  const artifactLineage = {
+    'art-blog-automation': {
+      releaseIds: ['rel-blog-automation'],
+      observationIds: ['obs-page-blog'],
+      campaignIds: ['cmpg-linkedin-guide', 'cmpg-newsletter-guide', 'cmpg-chatgpt-referral'],
+    },
+    'art-brief-onboarding': {
+      releaseIds: [],
+      observationIds: ['obs-page-onboarding'],
+      campaignIds: [],
+    },
+    'art-code-canonical': {
+      releaseIds: ['rel-code-canonical'],
+      observationIds: ['obs-page-onboarding'],
+      campaignIds: ['cmpg-google-organic'],
+    },
+    'art-meta-onboarding': {
+      releaseIds: [],
+      observationIds: ['obs-page-onboarding'],
+      campaignIds: [],
+    },
+    'art-schema-integration': {
+      releaseIds: [],
+      observationIds: ['obs-page-salesforce'],
+      campaignIds: [],
+    },
+    'art-landing-pricing': {
+      releaseIds: [],
+      observationIds: ['obs-page-pricing'],
+      campaignIds: [],
+    },
+    'art-publish-automation': {
+      releaseIds: ['rel-publish-receipt', 'rel-blog-automation'],
+      observationIds: ['obs-page-blog'],
+      campaignIds: ['cmpg-linkedin-guide', 'cmpg-newsletter-guide'],
+    },
+    'art-compare-userpilot': {
+      releaseIds: [],
+      observationIds: ['obs-page-compare'],
+      campaignIds: [],
+    },
+    'art-code-editorial-template': {
+      releaseIds: [],
+      observationIds: ['obs-page-blog', 'obs-page-time-to-value'],
+      campaignIds: [],
+    },
+    'art-ticket-canonical': {
+      releaseIds: ['rel-code-canonical'],
+      observationIds: ['obs-page-onboarding'],
+      campaignIds: ['cmpg-google-organic'],
+    },
+    'art-utm-guide': {
+      releaseIds: ['rel-blog-automation', 'rel-publish-receipt'],
+      observationIds: ['obs-page-blog'],
+      campaignIds: ['cmpg-linkedin-guide', 'cmpg-newsletter-guide'],
+    },
+  };
+
+  const artifactDocumentSpecs = {
+    'art-ticket-canonical': {
+      documentTypeLabel: 'Technical Ticket / 技术工单',
+      language: 'zh-CN',
+      summary: '离线演示场景中的客户可读 Technical Ticket。目标是让工程团队用一个可验证、可回滚的变更消除 /customer-onboarding/ 渲染结果中的多个 canonical 目标；本工单不是已创建的真实 GitHub Issue 或 Pull Request。',
+      blocks: [
+        {
+          id: 'problem',
+          heading: '问题、范围与证据',
+          paragraphs: ['渲染抓取快照在同一页面观察到 2 个 canonical 目标，而验收值是唯一且绝对的 1 个目标。影响范围只包含 /customer-onboarding/，不外推到未抓取模板，也不把搜索表现变化解释为该技术问题造成。'],
+          keyValues: [
+            { label: 'Finding', value: 'fnd-canonical-conflict · canonical.multiple_targets' },
+            { label: '证据来源', value: '2026-07-21 渲染抓取场景快照' },
+            { label: '目标值', value: 'canonical_count = 1；canonical 为绝对 HTTPS URL' },
+          ],
+        },
+        {
+          id: 'implementation',
+          heading: '建议实现',
+          paragraphs: ['在 commercial-product 模板的 head 生成路径中只保留由规范 URL 解析器输出的 link 元素，并移除页面级重复注入。修改必须保持查询参数规范化策略不变。'],
+          code: {
+            language: 'html',
+            content: '<link rel="canonical" href="https://relayops.com/customer-onboarding/">',
+          },
+          bullets: ['模板级输出 canonical，页面内容组件不得再次注入', '保留协议、主机名与尾斜杠策略', '不在本工单中更改重定向、hreflang 或站点地图'],
+        },
+        {
+          id: 'acceptance',
+          heading: '验收、复查与回滚',
+          bullets: ['对目标 URL 重新执行渲染抓取，断言 canonical_count === 1', '确认唯一目标为绝对 HTTPS URL 且返回 200', '抽查同模板其他页面，确认没有删除其合法 canonical', '若出现索引目标漂移，回滚到 RB-2026-05-30-004 对应的场景前一版本'],
+          paragraphs: ['Change Receipt / 变更回执只证明场景工作流记录了变更；Results / 效果结果需要独立固定窗口，不能由本工单或回执直接推导。'],
+        },
+      ],
+    },
+    'art-code-canonical': {
+      documentTypeLabel: 'Code Fix Proposal / 代码修复方案',
+      language: 'zh-CN',
+      summary: '与 Technical Ticket 配套的离线场景代码修复提案，展示最小实现范围、验证命令和回滚边界。该正文是客户审核材料，不代表真实仓库已创建分支、提交或 PR。',
+      blocks: [
+        {
+          id: 'patch',
+          heading: '建议 Patch',
+          paragraphs: ['让页面壳层成为 canonical 的唯一写入点，删除 commercial-product 页面组件内重复的 head 注入。以下伪差异用于客户确认预期，不对应任何真实 GitHub 写入。'],
+          code: {
+            language: 'diff',
+            content: '- <Canonical href={page.canonicalUrl} />\n+ {/* canonical is emitted once by the shared page shell */}',
+          },
+        },
+        {
+          id: 'validation',
+          heading: '技术验证',
+          bullets: ['构建目标页面并保存渲染 HTML', '统计 link[rel="canonical"]，期望恰好为 1', '解析 href 并确认 https://relayops.com/customer-onboarding/', '对同模板页面运行回归抓取并保存证据快照'],
+          paragraphs: ['技术复查已经在场景数据中达到 2 → 1 的验收值；该复查只验证 HTML 不变量，不证明点击、转化或 AI 引用变化来自本 Patch。'],
+        },
+        {
+          id: 'rollback',
+          heading: '发布前置与回滚',
+          keyValues: [
+            { label: '人工门禁', value: '工程负责人审核模板影响范围' },
+            { label: '模拟发布', value: 'rel-code-canonical' },
+            { label: '模拟回滚引用', value: 'RB-2026-05-30-004' },
+          ],
+          paragraphs: ['GitHub 当前在客户连接中标记为尚未接入，因此本 Artifact 不声称创建了真实 PR、合并或部署。'],
+        },
+      ],
+    },
+    'art-meta-onboarding': {
+      documentTypeLabel: 'Metadata Rewrite / 元数据重写',
+      language: 'zh-CN',
+      summary: '面向美国英语市场的 Metadata Rewrite 客户审核稿。它把商业搜索意图、实施型客户上线差异与可验证结果写入标题和描述，同时避免未经支持的第一名、保证性收益或竞品比较声明。',
+      blocks: [
+        {
+          id: 'metadata',
+          heading: '建议元数据',
+          keyValues: [
+            { label: 'SEO Title', value: 'Customer Onboarding Software for Implementation Teams | RelayOps' },
+            { label: 'Meta Description', value: 'Standardize handoffs, surface implementation risk, and help customer success teams reach value faster with one shared onboarding workflow.' },
+            { label: 'Canonical', value: 'https://relayops.com/customer-onboarding/' },
+          ],
+        },
+        {
+          id: 'rationale',
+          heading: '搜索与 GEO 理由',
+          bullets: ['主要 Keyword：customer onboarding software', '保留“implementation teams”以区别只做产品内引导的工具', '描述覆盖 handoff、risk 与 time to value 三个已确认 JTBD', '不写“best”“guaranteed”或未经证据支持的百分比'],
+          paragraphs: ['GSC 场景快照显示商业页曝光较高但点击率偏低；这是改写优先级的证据，不是未来点击提升的承诺。'],
+        },
+        {
+          id: 'review',
+          heading: '审核与发布条件',
+          paragraphs: ['事实与 SEO 门禁已通过，人工审核仍待完成。批准后还需要真实 CMS 或代码发布回执，再建立独立固定窗口；当前 observation 只能作为同 URL 的描述性背景。'],
+        },
+      ],
+    },
+    'art-brief-onboarding': {
+      documentTypeLabel: 'Content Brief / 内容简报',
+      language: 'zh-CN',
+      summary: '客户上线软件商业页的 Content Brief。本文档以已确认产品画像、Keyword 来源与竞品场景语料为边界，指导英文页面回答“为什么实施团队需要共享工作流”并承接工作流评估 CTA。',
+      blocks: [
+        {
+          id: 'audience-intent',
+          heading: '受众、意图与任务',
+          keyValues: [
+            { label: '主要受众', value: 'Customer Success VP 与 Customer Success Operations' },
+            { label: '主要意图', value: 'commercial investigation · customer onboarding software' },
+            { label: '目标 CTA', value: 'Request a workflow review' },
+          ],
+          paragraphs: ['读者需要判断 RelayOps 是否适合实施型、跨团队客户上线，而不是寻找纯产品内引导。正文应分别写清销售交接、实施风险与价值实现周期。'],
+        },
+        {
+          id: 'outline',
+          heading: '建议英文页面结构',
+          bullets: ['H1: Customer onboarding software built for implementation work', 'Answer block: what customer onboarding software should coordinate', 'Workflow section: sales-to-implementation handoff', 'Risk section: surface dependencies before escalation', 'Proof section: only customer-approved operational evidence', 'CTA: request a workflow review'],
+        },
+        {
+          id: 'evidence-guardrails',
+          heading: '证据与写作边界',
+          paragraphs: ['可引用来源包括产品画像 v4、GSC 场景快照和已批准竞品场景语料。不得复制竞品措辞，不得把 Keyword volume 写成客户需求规模，也不得把尚未观察的 Results 当作产品效果。'],
+          bullets: ['每个事实声明必须能回到 sourceRefs', '比较性表述只描述已审核能力范围', '保留安全审批角色仍有冲突这一已知缺口'],
+        },
+      ],
+    },
+    'art-blog-automation': {
+      documentTypeLabel: 'English Blog Draft',
+      language: 'en-US',
+      summary: 'Scenario-labelled English Blog Draft for customer review. The article explains where automation helps an implementation-led onboarding program and where accountable human judgment must remain. It is not a claim that a real CMS publish occurred.',
+      blocks: [
+        {
+          id: 'article-opening',
+          heading: 'How to Automate Customer Onboarding Without Losing the Human Touch',
+          paragraphs: [
+            'Customer onboarding automation works best when it removes coordination work without removing accountability. Growing customer success teams often start with spreadsheets, email reminders, and a different project plan for every implementation manager. That approach can support a small book of business, but it becomes fragile as volume rises. Context disappears between sales and implementation, owners miss dependencies, and risk becomes visible only after a customer escalates.',
+            'A better automation strategy begins with one shared workflow. Capture the commercial promises, desired outcomes, stakeholders, dependencies, and target dates during the sales-to-implementation handoff. Then turn that context into a reusable onboarding plan. Automation can create tasks, remind owners, flag overdue dependencies, and summarize progress. People still decide whether a milestone is truly complete, whether a risk needs executive attention, and whether the customer is ready to move forward.',
+          ],
+        },
+        {
+          id: 'article-framework',
+          heading: 'Automate the repeatable work, keep judgment visible',
+          paragraphs: [
+            'Start by mapping the moments that happen in nearly every onboarding journey: handoff, kickoff, technical validation, enablement, launch, and value review. Define the evidence required to complete each milestone. A kickoff should not close because a calendar event ended; it should close when stakeholders, outcomes, responsibilities, and the next decision are recorded. This makes automation dependable because the workflow is based on observable completion criteria.',
+            'Use alerts selectively. An alert should help a person make a decision, not create another inbox. Useful signals include a critical dependency that has no owner, a milestone that is late, a customer stakeholder who has stopped responding, or a promised integration that has not passed validation. Route each signal to the role able to act, and include the evidence behind it. Teams should be able to see why an item was flagged and dismiss it with a reason.',
+          ],
+        },
+        {
+          id: 'article-measurement',
+          heading: 'Measure the operating system, not just activity',
+          paragraphs: [
+            'Track time to first value, on-time milestone rate, reopened tasks, risk age, and escalation frequency. Compare consistent windows and preserve the workflow version used for each cohort. A faster cycle is encouraging, but it does not prove that one reminder or template caused the improvement. Customer mix, implementation complexity, staffing, and channel changes can all affect the result.',
+            'The goal is not a fully autonomous customer journey. The goal is a reliable operating system that gives customers consistent guidance and gives teams more time for discovery, problem solving, and relationship work. Begin with one high-volume onboarding motion, document its decisions, automate the repetitive transitions, and review the exceptions with the people closest to the customer.',
+          ],
+        },
+        {
+          id: 'article-cta',
+          heading: 'Next step',
+          paragraphs: ['Request a workflow review to map your current handoff, milestones, risk signals, and measurement boundaries. This scenario draft uses approved profile and research snapshots; every factual claim still requires customer review before any real publication.'],
+        },
+      ],
+    },
+    'art-schema-integration': {
+      documentTypeLabel: 'Schema Patch / 结构化数据修复',
+      language: 'zh-CN',
+      summary: 'Salesforce 集成页的 Schema Patch 客户审核稿。目标是让 6 个可见实施步骤与结构化 HowTo 步骤一一对应；当前场景复查只观察到 3 / 6，因此状态仍是执行中而不是已完成。',
+      blocks: [
+        {
+          id: 'schema',
+          heading: '建议 JSON-LD 结构',
+          paragraphs: ['name、text 与 position 必须直接来自页面可见步骤，不能为了结构化数据添加用户看不到的声明。以下片段展示字段形状，完整 Patch 需要覆盖 6 个步骤。'],
+          code: {
+            language: 'json',
+            content: '{"@context":"https://schema.org","@type":"HowTo","name":"Connect Salesforce to RelayOps","step":[{"@type":"HowToStep","position":1,"name":"Authorize Salesforce","text":"Connect an approved Salesforce account."}]}',
+          },
+        },
+        {
+          id: 'acceptance',
+          heading: '验收检查',
+          bullets: ['structured_steps === visible_steps === 6', '每个 name 与 text 在可见页面中可找到', 'JSON-LD 可解析且不包含空字段', '渲染抓取与结构化数据测试均保存场景证据'],
+          paragraphs: ['当前复查值为 3 / 6，尚未达到验收值。没有发布回执，也没有结果窗口；因此不得显示为已验证。'],
+        },
+      ],
+    },
+    'art-landing-pricing': {
+      documentTypeLabel: 'Landing Revision Brief / 落地页改版简报',
+      language: 'zh-CN',
+      summary: '定价页的 Landing Revision Brief，围绕付费搜索信息匹配、信任证据、演示申请表单和追踪边界组织客户审核。它是待审核提案，不是已上线实验，也没有赢家结论。',
+      blocks: [
+        {
+          id: 'above-fold',
+          heading: '首屏信息与 CTA',
+          keyValues: [
+            { label: 'Headline', value: 'Choose an onboarding plan that fits your implementation motion' },
+            { label: 'Supporting copy', value: 'Pricing scales with collaboration seats and active onboarding volume.' },
+            { label: 'Primary CTA', value: 'Request a tailored workflow review' },
+          ],
+          paragraphs: ['首屏应延续付费搜索中的“implementation workflow”承诺，不使用无法公开验证的折扣或节省比例。'],
+        },
+        {
+          id: 'trust-form',
+          heading: '信任证据与表单',
+          bullets: ['只展示已获客户批准的安全和数据处理事实', '表单保留公司邮箱、团队规模、每月上线量与主要目标', '每个字段解释用途，非必要字段不设为必填', '提交后提供明确下一步而非死胡同'],
+        },
+        {
+          id: 'measurement',
+          heading: '追踪与归因边界',
+          paragraphs: ['记录 CTA 点击、表单开始、表单完成和 demo_requested。当前两个窗口的渠道组合不同，且样本仅 198 → 214 个会话，因此 Results 状态是数据不足，不能把 26 → 27 次转化归因于尚未批准的 Revision。'],
+        },
+      ],
+    },
+    'art-publish-automation': {
+      documentTypeLabel: 'Publish / Change Receipt / 发布与变更回执',
+      language: 'zh-CN',
+      summary: '离线演示场景中的 Publish Receipt / Change Receipt。它记录英文文章 Revision 4 的模拟目标、时间、回滚引用和观察窗口；没有真实 CMS 写入、外部链接或邮件发送。',
+      blocks: [
+        {
+          id: 'receipt',
+          heading: '模拟发布回执',
+          keyValues: [
+            { label: 'Receipt', value: 'rel-publish-receipt' },
+            { label: '目标 URL', value: '/blog/customer-onboarding-automation/' },
+            { label: 'Artifact Revision', value: 'art-blog-automation · Revision 4' },
+            { label: '模拟发布时间', value: '2026-06-01 03:06 UTC' },
+            { label: '模拟回滚引用', value: 'RB-2026-06-01-021' },
+          ],
+        },
+        {
+          id: 'window',
+          heading: '观察窗口与 Results',
+          paragraphs: ['场景记录建立了 2026-06-01 至 2026-06-28 的固定 28 天窗口，并关联同 URL 的观察与 UTM 行。回执只证明工作流状态和关系被记录；它不等于正向效果，也不证明文章造成观察到的变化。'],
+          bullets: ['Observation：obs-page-blog', 'UTM Plan：art-utm-guide', '关联 Campaign：LinkedIn 与 newsletter 两条已标记分发', '未标记的 ChatGPT 引荐只作渠道观察'],
+        },
+      ],
+    },
+    'art-utm-guide': {
+      documentTypeLabel: 'UTM Plan / UTM 追踪计划',
+      language: 'zh-CN',
+      summary: '客户上线自动化指南的 UTM Plan。它定义 LinkedIn 与 newsletter 分发的命名、参数、落地页和验收方法；计划与场景 Campaign 行可追溯，但不声称 UTM 标签或某个渠道造成全部转化增量。',
+      blocks: [
+        {
+          id: 'taxonomy',
+          heading: '命名规范',
+          keyValues: [
+            { label: 'utm_campaign', value: 'q3-onboarding-guide' },
+            { label: 'utm_source', value: 'linkedin 或 newsletter' },
+            { label: 'utm_medium', value: 'social 或 email' },
+            { label: 'utm_content', value: 'ops-carousel 或 implementation-checklist' },
+          ],
+          paragraphs: ['全部使用小写 kebab-case；source 表示发布平台，medium 表示渠道类别，content 区分同一 Campaign 内的素材。禁止把受众姓名、邮箱或其他个人数据放进 UTM。'],
+        },
+        {
+          id: 'examples',
+          heading: '客户可复制的场景 URL',
+          code: {
+            language: 'text',
+            content: 'https://relayops.com/blog/customer-onboarding-automation/?utm_source=linkedin&utm_medium=social&utm_campaign=q3-onboarding-guide&utm_content=ops-carousel\nhttps://relayops.com/blog/customer-onboarding-automation/?utm_source=newsletter&utm_medium=email&utm_campaign=q3-onboarding-guide&utm_content=implementation-checklist',
+          },
+        },
+        {
+          id: 'qa-attribution',
+          heading: 'QA、观察与归因',
+          bullets: ['发布前验证 URL 编码、落地页 200 与 GA4 campaign 参数', '分别保留 cmpg-linkedin-guide 与 cmpg-newsletter-guide 稳定 ID', '使用同一固定窗口报告 sessions、direct conversions 与 assisted conversions', '有标签的 Campaign 与自然搜索、引荐流量分开汇总'],
+          paragraphs: ['UTM 只支持来源分类，不自动建立因果。Results 中的直接与辅助转化是当前归因模型下的描述性计数；客户组合、其他渠道和同期发布仍可能影响结果。'],
+        },
+      ],
+    },
+    'art-compare-userpilot': {
+      documentTypeLabel: 'Comparison Brief / 竞品对比简报',
+      language: 'zh-CN',
+      summary: 'RelayOps 与 Userpilot 的客户审核型 Comparison Brief。它只使用已批准竞品场景语料和搜索结果页快照，区分实施型客户上线与产品内引导，不把未经复核的竞品事实写成公开结论。',
+      blocks: [
+        {
+          id: 'positioning',
+          heading: '对比角度',
+          paragraphs: ['RelayOps 的建议叙事聚焦跨销售、实施与客户成功团队的客户上线协作；Userpilot 只作为读者可能评估的产品内引导类别参照。不得暗示竞品缺少某项能力，除非新鲜证据直接支持。'],
+          bullets: ['读者任务：选择适合实施型客户上线的工作流', 'RelayOps 证据：已确认产品画像与公开页面', '竞品证据：已批准场景语料，当前新鲜度超过策略窗口'],
+        },
+        {
+          id: 'blocker',
+          heading: '发布阻断',
+          paragraphs: ['竞品事实年龄为 143 天，超过 90 天策略；Legal、Factual 与 Human 门禁尚未通过。因此本 Brief 保持 blocked，不能模拟发布，也不能把同 URL 的观察结果归因于该简报。'],
+        },
+      ],
+    },
+    'art-code-editorial-template': {
+      documentTypeLabel: 'Template Code Fix / 模板代码修复',
+      language: 'zh-CN',
+      summary: 'editorial-article 模板的场景代码修复方案，同时覆盖客户上线自动化与价值实现周期两篇文章。它统一标题层级和 Article JSON-LD，但不声称已经创建 GitHub PR 或部署。',
+      blocks: [
+        {
+          id: 'scope',
+          heading: '模板范围',
+          keyValues: [
+            { label: 'Template', value: 'editorial-article' },
+            { label: '已识别 URL', value: '/blog/customer-onboarding-automation/；/blog/time-to-value/' },
+            { label: 'Finding', value: 'fnd-editorial-template-structure' },
+          ],
+          paragraphs: ['只覆盖当前抓取快照识别到的 2 个 URL；未抓取页面不在本次结论范围。'],
+        },
+        {
+          id: 'implementation',
+          heading: '建议实现与验收',
+          code: {
+            language: 'text',
+            content: 'one visible h1 per article\nheading order must not skip levels\nArticle.mainEntityOfPage must equal the canonical URL',
+          },
+          bullets: ['每篇文章只有一个可见 H1', 'H2 / H3 层级与内容大纲一致', 'Article headline、dateModified 与 author 来自可见内容', '对两个已识别 URL 保存渲染抓取回归证据'],
+          paragraphs: ['GitHub 客户连接仍为尚未接入，客户需先审核代码范围；现阶段没有 Release 或完整 Results 窗口。'],
+        },
+      ],
+    },
+  };
+
+  const artifactRevisionHistory = {
+    'art-blog-automation': [
+      {
+        revision: 1,
+        createdAt: '2026-05-29T08:30:00.000Z',
+        createdBy: 'flow-shadow',
+        statusAtCreation: 'draft',
+        revisionNote: '建立英文文章骨架与核心搜索意图。',
+        changeNote: '从已确认 Finding 生成首个客户可见草稿。',
+        snapshotSummary: 'Revision 1 仅包含问题定义、目标读者、核心 Keyword 与初版标题结构，尚未形成完整英文正文。',
+        passedGates: ['research'],
+      },
+      {
+        revision: 2,
+        createdAt: '2026-05-30T04:20:00.000Z',
+        createdBy: 'content-strategist',
+        statusAtCreation: 'review',
+        revisionNote: '补齐自动化边界与人工判断章节。',
+        changeNote: '根据客户画像加入跨团队交接、风险信号与人工责任。',
+        snapshotSummary: 'Revision 2 增加销售到实施交接、风险提醒和人工决策边界，但事实核验与 GEO 问答覆盖尚未完成。',
+        passedGates: ['research', 'seo'],
+      },
+      {
+        revision: 3,
+        createdAt: '2026-05-31T06:45:00.000Z',
+        createdBy: 'content-strategist',
+        statusAtCreation: 'review',
+        revisionNote: '加入衡量边界、解答模块和语义 CTA。',
+        changeNote: '补充固定窗口解释、非因果声明与工作流评估 CTA。',
+        snapshotSummary: 'Revision 3 已形成完整英文草稿并加入 GEO 解答模块；人工审核门禁仍待完成。',
+        passedGates: ['research', 'seo', 'geo', 'factual'],
+      },
+      {
+        revision: 4,
+        createdAt: '2026-05-31T11:08:00.000Z',
+        createdBy: 'customer-editor',
+        statusAtCreation: 'published',
+        revisionNote: '完成客户事实审核并收紧效果与归因表述。',
+        changeNote: '客户批准可见正文；场景发布与固定观察窗口随后单独记录。',
+        snapshotSummary: 'Revision 4 是当前客户可见 English Blog Draft，保留完整正文、事实边界与发布前人工审核记录。',
+        passedGates: ['research', 'seo', 'geo', 'factual', 'human'],
+        reviewedAt: '2026-05-31T11:08:00.000Z',
+        reviewedBy: 'customer-editor',
+      },
+    ],
+    'art-brief-onboarding': [
+      {
+        revision: 1,
+        createdAt: '2026-05-28T07:00:00.000Z',
+        createdBy: 'flow-shadow',
+        statusAtCreation: 'draft',
+        revisionNote: '建立商业页意图与读者任务。',
+        changeNote: '从 Keyword、Finding 和产品画像生成初始范围。',
+        snapshotSummary: 'Revision 1 记录主要受众、商业搜索意图与目标 CTA，尚未完成页面大纲。',
+        passedGates: ['research'],
+      },
+      {
+        revision: 2,
+        createdAt: '2026-05-29T05:30:00.000Z',
+        createdBy: 'seo-strategist',
+        statusAtCreation: 'review',
+        revisionNote: '补齐英文页面结构与 GEO 解答块。',
+        changeNote: '加入实施型差异、证据要求和语义 CTA。',
+        snapshotSummary: 'Revision 2 增加完整大纲、主要 Keyword、GEO 问答和证据引用要求，等待人工审核。',
+        passedGates: ['research', 'seo', 'geo'],
+      },
+      {
+        revision: 3,
+        createdAt: '2026-05-30T02:15:00.000Z',
+        createdBy: 'customer-editor',
+        statusAtCreation: 'approved',
+        revisionNote: '明确决策者、使用者与禁止声明。',
+        changeNote: '客户确认画像边界与比较性写作限制。',
+        snapshotSummary: 'Revision 3 是当前已批准 Content Brief，包含受众、意图、页面结构、证据和 CTA。',
+        passedGates: ['research', 'seo', 'geo', 'human'],
+        reviewedAt: '2026-05-30T02:15:00.000Z',
+        reviewedBy: 'customer-editor',
+      },
+    ],
+    'art-code-canonical': [
+      {
+        revision: 1,
+        createdAt: '2026-05-29T04:10:00.000Z',
+        createdBy: 'growth-engineer',
+        statusAtCreation: 'review',
+        revisionNote: '提出移除页面级重复 canonical 注入。',
+        changeNote: '建立最小 Patch、模板范围和抓取验收。',
+        snapshotSummary: 'Revision 1 包含最小代码差异与 canonical_count 验收，但尚未完成人工工程审核。',
+        passedGates: ['technical'],
+      },
+      {
+        revision: 2,
+        createdAt: '2026-05-29T09:14:00.000Z',
+        createdBy: 'engineering',
+        statusAtCreation: 'published',
+        revisionNote: '补充同模板回归检查和回滚引用。',
+        changeNote: '工程审核通过；模拟发布另由 release 记录。',
+        snapshotSummary: 'Revision 2 是当前代码修复方案，包含实现、验证、同模板回归和回滚边界。',
+        passedGates: ['technical', 'human'],
+        reviewedAt: '2026-05-29T09:14:00.000Z',
+        reviewedBy: 'engineering',
+      },
+    ],
+    'art-meta-onboarding': [
+      {
+        revision: 1,
+        createdAt: '2026-07-19T06:40:00.000Z',
+        createdBy: 'seo-strategist',
+        statusAtCreation: 'draft',
+        revisionNote: '建立搜索标题与描述候选。',
+        changeNote: '围绕 commercial Keyword 生成首个元数据版本。',
+        snapshotSummary: 'Revision 1 提出 SEO Title 与 Meta Description，尚未完成事实核验。',
+        passedGates: ['seo'],
+      },
+      {
+        revision: 2,
+        createdAt: '2026-07-20T03:25:00.000Z',
+        createdBy: 'seo-strategist',
+        statusAtCreation: 'review',
+        revisionNote: '删除无法支持的领先与保证性措辞。',
+        changeNote: '根据产品画像收紧差异化与结果表述。',
+        snapshotSummary: 'Revision 2 是当前 Metadata Rewrite，SEO 与事实门禁已通过，等待客户人工审核。',
+        passedGates: ['seo', 'factual'],
+      },
+    ],
+    'art-schema-integration': [
+      {
+        revision: 1,
+        createdAt: '2026-07-20T05:10:00.000Z',
+        createdBy: 'growth-engineer',
+        statusAtCreation: 'in_execution',
+        revisionNote: '建立 HowTo JSON-LD 形状与 6 / 6 验收条件。',
+        changeNote: '当前实现只覆盖 3 / 6 步骤，保留未解决状态。',
+        snapshotSummary: 'Revision 1 包含 JSON-LD 示例、可见内容一致性约束与复查条件；技术复查尚未通过。',
+        passedGates: ['technical', 'human'],
+      },
+    ],
+    'art-landing-pricing': [
+      {
+        revision: 1,
+        createdAt: '2026-07-20T06:30:00.000Z',
+        createdBy: 'conversion-strategist',
+        statusAtCreation: 'review',
+        revisionNote: '建立首屏、信任证据、表单和 Tracking 范围。',
+        changeNote: '保留样本不足与渠道组合变化的限制。',
+        snapshotSummary: 'Revision 1 是待审核 Landing Revision Brief，没有发布或实验赢家结论。',
+        passedGates: ['factual', 'tracking'],
+      },
+    ],
+    'art-publish-automation': [
+      {
+        revision: 1,
+        createdAt: '2026-06-01T03:06:00.000Z',
+        createdBy: 'growth-ops',
+        statusAtCreation: 'published',
+        revisionNote: '记录英文文章 Revision 4 的模拟发布与观察窗口。',
+        changeNote: '保存模拟目标、时间、回滚引用、UTM 关系和非因果声明。',
+        snapshotSummary: 'Revision 1 是场景 Publish / Change Receipt；它不代表真实 CMS 写入，也不等于正向效果。',
+        passedGates: ['publish', 'tracking'],
+        reviewedAt: '2026-06-01T03:06:00.000Z',
+        reviewedBy: 'growth-ops',
+      },
+    ],
+    'art-compare-userpilot': [
+      {
+        revision: 1,
+        createdAt: '2026-07-19T08:20:00.000Z',
+        createdBy: 'research-editor',
+        statusAtCreation: 'blocked',
+        revisionNote: '建立实施型客户上线的对比角度。',
+        changeNote: '因竞品事实过期，保留事实、法务与人工门禁阻断。',
+        snapshotSummary: 'Revision 1 是被阻断的 Comparison Brief，不可发布或用于归因结论。',
+        passedGates: ['research'],
+      },
+    ],
+    'art-code-editorial-template': [
+      {
+        revision: 1,
+        createdAt: '2026-07-21T01:30:00.000Z',
+        createdBy: 'growth-engineer',
+        statusAtCreation: 'review',
+        revisionNote: '统一标题层级与 Article JSON-LD 验收。',
+        changeNote: '范围限定为抓取快照识别到的两个 editorial-article URL。',
+        snapshotSummary: 'Revision 1 是模板代码修复审核稿；GitHub 尚未接入，没有真实 PR 或部署。',
+        passedGates: ['technical', 'factual'],
+      },
+    ],
+    'art-ticket-canonical': [
+      {
+        revision: 1,
+        createdAt: '2026-05-29T03:35:00.000Z',
+        createdBy: 'growth-engineer',
+        statusAtCreation: 'approved',
+        revisionNote: '把 Finding 转为可实施、可验证、可回滚的 Technical Ticket。',
+        changeNote: '明确唯一 canonical 验收、模板范围与结果归因边界。',
+        snapshotSummary: 'Revision 1 是已批准 Technical Ticket 场景稿；GitHub 尚未接入，因此没有真实 Issue 或 PR。',
+        passedGates: ['technical', 'human'],
+        reviewedAt: '2026-05-29T09:00:00.000Z',
+        reviewedBy: 'engineering',
+      },
+    ],
+    'art-utm-guide': [
+      {
+        revision: 1,
+        createdAt: '2026-05-31T09:40:00.000Z',
+        createdBy: 'growth-ops',
+        statusAtCreation: 'approved',
+        revisionNote: '建立指南分发的 UTM taxonomy、示例和 QA。',
+        changeNote: '绑定两条已标记 Campaign，并明确 UTM 不建立因果。',
+        snapshotSummary: 'Revision 1 是已批准 UTM Plan 场景稿，覆盖 LinkedIn 与 newsletter 分发。',
+        passedGates: ['tracking', 'human'],
+        reviewedAt: '2026-05-31T10:10:00.000Z',
+        reviewedBy: 'growth-ops',
+      },
+    ],
+  };
+
+  const qualityGateLabelsZh = {
+    research: '研究证据',
+    seo: 'SEO',
+    geo: 'GEO',
+    factual: '事实核验',
+    human: '人工审核',
+    technical: '技术验证',
+    tracking: 'Tracking',
+    publish: '发布检查',
+    legal: 'Legal 审核',
+  };
+
+  function revisionDecision(status) {
+    if (status === enums.artifactStatus.PUBLISHED) return '场景已发布';
+    if (status === enums.artifactStatus.APPROVED) return '已批准';
+    if (status === enums.artifactStatus.BLOCKED) return '已阻断';
+    if (status === enums.artifactStatus.IN_EXECUTION) return '执行中';
+    if (status === enums.artifactStatus.REVIEW) return '待审核';
+    return '草稿';
+  }
+
+  function historicalDocumentBlocks(artifact, revisionSpec) {
+    return [
+      {
+        id: 'historical-snapshot',
+        heading: `Revision ${revisionSpec.revision} 历史正文快照`,
+        paragraphs: [
+          `${revisionSpec.snapshotSummary} 这是 ${scenarioLabel}中的不可变客户可见快照，不会随着当前 Revision 的正文变化而被覆盖。`,
+          `本版本修订摘要：${revisionSpec.revisionNote} 变更说明：${revisionSpec.changeNote}`,
+        ],
+      },
+      {
+        id: 'historical-scope',
+        heading: '当时的范围、证据与状态',
+        keyValues: [
+          { label: 'Artifact', value: artifact.id },
+          { label: '目标 URL', value: artifact.targetUrlIds.join(' · ') },
+          { label: '来源引用', value: artifact.sourceRefs.join(' · ') },
+          { label: '当时状态', value: revisionDecision(revisionSpec.statusAtCreation) },
+        ],
+        paragraphs: ['历史 Revision 用于 Revision Review / 版本审核与审计，不代表当前版本已获相同批准，也不会把后来出现的 Release、Campaign 或 Results 倒填为当时已知事实。'],
+      },
+    ];
+  }
+
+  function buildArtifactDocument(artifact, revisionSpec) {
+    const documentSpec = artifactDocumentSpecs[artifact.id];
+    const currentRevision = revisionSpec.revision === artifact.revision;
+    const revisionId = `rev-${artifact.id}-r${revisionSpec.revision}`;
+    const related = artifactLineage[artifact.id];
+    const releaseIds = currentRevision ? related.releaseIds.slice() : [];
+    const observationIds = currentRevision ? related.observationIds.slice() : [];
+    const campaignIds = currentRevision ? related.campaignIds.slice() : [];
+    const passedGates = revisionSpec.passedGates.slice();
+    const checks = artifact.requiredGates.map(function buildQualityCheck(gate) {
+      const passed = passedGates.includes(gate);
+      return {
+        label: qualityGateLabelsZh[gate] || gate,
+        status: passed ? 'passed' : 'pending',
+        evidence: passed
+          ? `Revision ${revisionSpec.revision} 的 ${qualityGateLabelsZh[gate] || gate}门禁已在场景快照中记录通过。`
+          : `Revision ${revisionSpec.revision} 尚未记录 ${qualityGateLabelsZh[gate] || gate}门禁通过。`,
+      };
+    });
+    return {
+      id: `doc-${artifact.id}-r${revisionSpec.revision}`,
+      artifactId: artifact.id,
+      revision: revisionSpec.revision,
+      revisionId: revisionId,
+      scenarioLabel: scenarioLabel,
+      documentTypeLabel: documentSpec.documentTypeLabel,
+      language: documentSpec.language,
+      title: currentRevision ? artifact.title : `${artifact.title} · Revision ${revisionSpec.revision} 历史快照`,
+      summary: currentRevision
+        ? documentSpec.summary
+        : `${scenarioLabel}中的 ${documentSpec.documentTypeLabel} 历史正文。${revisionSpec.snapshotSummary}`,
+      blocks: currentRevision ? documentSpec.blocks : historicalDocumentBlocks(artifact, revisionSpec),
+      qa: {
+        label: 'QA / 质量检查',
+        status: checks.every(function allPassed(check) { return check.status === 'passed'; }) ? 'passed' : 'pending',
+        checks: checks,
+      },
+      revisionReview: {
+        label: 'Revision Review / 版本审核',
+        revision: revisionSpec.revision,
+        decision: revisionDecision(revisionSpec.statusAtCreation),
+        reviewedBy: revisionSpec.reviewedBy || '尚未完成人工审核',
+        reviewedAt: revisionSpec.reviewedAt || null,
+        note: revisionSpec.revisionNote,
+      },
+      releaseAndResults: {
+        label: 'Publish / Change Receipt 与 Results / 效果结果',
+        releaseIds: releaseIds,
+        observationIds: observationIds,
+        campaignIds: campaignIds,
+        receiptStatement: releaseIds.length
+          ? `关联 ${releaseIds.length} 条场景 Publish / Change Receipt；回执仅证明工作流记录存在。`
+          : '本 Revision 没有直接或相关的场景 Publish / Change Receipt。',
+        attributionBoundary: attributionBoundary,
+      },
+    };
+  }
+
+  const artifactDocuments = [];
+  const artifactRevisions = [];
+  dataset.artifacts.forEach(function buildArtifactHistory(artifact) {
+    const history = artifactRevisionHistory[artifact.id];
+    history.forEach(function appendRevision(revisionSpec) {
+      const document = buildArtifactDocument(artifact, revisionSpec);
+      artifactDocuments.push(document);
+      artifactRevisions.push({
+        id: `rev-${artifact.id}-r${revisionSpec.revision}`,
+        artifactId: artifact.id,
+        revision: revisionSpec.revision,
+        documentId: document.id,
+        scenarioLabel: scenarioLabel,
+        createdAt: revisionSpec.createdAt,
+        createdBy: revisionSpec.createdBy,
+        statusAtCreation: revisionSpec.statusAtCreation,
+        revisionNote: revisionSpec.revisionNote,
+        changeNote: revisionSpec.changeNote,
+        requiredGates: artifact.requiredGates.slice(),
+        passedGates: revisionSpec.passedGates.slice(),
+        targetUrlIds: artifact.targetUrlIds.slice(),
+        sourceRefs: artifact.sourceRefs.slice(),
+      });
+    });
+  });
+
+  dataset.artifacts = dataset.artifacts.map(function attachArtifactCanon(artifact) {
+    const opportunity = dataset.opportunities.find(function findOpportunity(item) { return item.id === artifact.opportunityId; });
+    const lineage = artifactLineage[artifact.id];
+    const revisionIds = artifactRevisionHistory[artifact.id].map(function revisionId(item) {
+      return `rev-${artifact.id}-r${item.revision}`;
+    });
+    return {
+      scenarioLabel: scenarioLabel,
+      ...artifact,
+      documentId: `doc-${artifact.id}-r${artifact.revision}`,
+      revisionIds: revisionIds,
+      lineage: {
+        findingIds: opportunity ? opportunity.findingIds.slice() : [],
+        releaseIds: lineage.releaseIds.slice(),
+        observationIds: lineage.observationIds.slice(),
+        campaignIds: lineage.campaignIds.slice(),
+        attributionStatus: 'not_claimed',
+        attributionBoundary: attributionBoundary,
+      },
+    };
+  });
+  dataset.artifactDocuments = artifactDocuments;
+  dataset.artifactRevisions = artifactRevisions;
+
+  function sourceNames(sourceRefs) {
+    return sourceRefs.map(function resolveSourceName(sourceId) {
+      const source = dataset.dataSources.find(function findSource(item) { return item.id === sourceId; });
+      return source ? source.name : sourceId;
+    });
+  }
+
+  const keywordIntakeLabels = {
+    competitor_gap: '竞品 Keyword Gap 场景分析',
+    content_gap: '内容覆盖缺口场景分析',
+    suggest_paa: 'Seed + Suggest / PAA 场景采样',
+    community_voc: '客户访谈摘要 / VOC',
+    trend_signal: '搜索趋势场景信号',
+    gsc_unexpected: 'GSC 场景快照中的意外查询',
+    manual_csv: '客户手动 / CSV 入库',
+    manual: '客户手动入库',
+  };
+
+  dataset.dataSources = dataset.dataSources.map(function labelSource(source) {
+    return { scenarioLabel: scenarioLabel, ...source };
+  });
+  dataset.urls = dataset.urls.map(function labelUrl(url) {
+    const observation = dataset.results.pageObservations.find(function findObservation(item) { return item.urlId === url.id; });
+    return {
+      scenarioLabel: scenarioLabel,
+      ...url,
+      observationId: observation ? observation.id : null,
+      observationStatus: observation ? observation.status : enums.observationStatus.NOT_OBSERVED,
+    };
+  });
+  dataset.findings = dataset.findings.map(function labelFinding(finding) {
+    return { scenarioLabel: scenarioLabel, ...finding };
+  });
+  dataset.opportunities = dataset.opportunities.map(function labelOpportunity(opportunity) {
+    return { scenarioLabel: scenarioLabel, ...opportunity };
+  });
+  dataset.keywords = dataset.keywords.map(function attachKeywordProvenance(keyword) {
+    return {
+      scenarioLabel: scenarioLabel,
+      ...keyword,
+      provenance: {
+        label: 'Keyword 来源 / 入库路径',
+        intakePath: keywordIntakeLabels[keyword.sourceKind] || keyword.sourceKind,
+        sourceRefs: keyword.sourceRefs.slice(),
+        sourceNames: sourceNames(keyword.sourceRefs),
+        statement: `该 Keyword 通过“${keywordIntakeLabels[keyword.sourceKind] || keyword.sourceKind}”进入离线场景库；volume、difficulty 与 rank 是场景快照值，不是实时第三方查询。`,
+      },
+    };
+  });
+  dataset.clusters = dataset.clusters.map(function labelCluster(cluster) {
+    return { scenarioLabel: scenarioLabel, ...cluster };
+  });
+  dataset.competitors = dataset.competitors.map(function attachCompetitorProvenance(competitor) {
+    const reviewState = competitor.status === enums.competitorStatus.APPROVED
+      ? '已由场景客户审核纳入分析范围'
+      : competitor.status === enums.competitorStatus.EXCLUDED
+        ? '已由场景客户审核排除'
+        : '仅为候选，尚未参与正式差距结论';
+    return {
+      scenarioLabel: scenarioLabel,
+      ...competitor,
+      provenance: {
+        label: 'Competitor 发现路径 / 系统证据',
+        discoveryPath: sourceNames(competitor.sourceRefs).join(' + '),
+        sourceRefs: competitor.sourceRefs.slice(),
+        sourceNames: sourceNames(competitor.sourceRefs),
+        reviewState: reviewState,
+        statement: `${competitor.name} 来自 ${sourceNames(competitor.sourceRefs).join('、')}；${reviewState}。重叠率、共享 Keyword 与 AI 引用均为离线场景快照。`,
+      },
+    };
+  });
+
+  dataset.results.pageObservations = dataset.results.pageObservations.map(function attachObservationArtifacts(observation) {
+    const relatedArtifactIds = Object.keys(artifactLineage).filter(function referencesObservation(artifactId) {
+      return artifactLineage[artifactId].observationIds.includes(observation.id);
+    });
+    return {
+      ...observation,
+      relatedArtifactIds: relatedArtifactIds,
+      attributionBoundary: observation.attributionBoundary || observation.limitation || attributionBoundary,
+    };
+  });
+  dataset.results.technicalVerifications = dataset.results.technicalVerifications.map(function attachVerificationLineage(verification) {
+    const lineageByVerification = {
+      'ver-canonical': {
+        relatedArtifactIds: ['art-ticket-canonical', 'art-code-canonical'],
+        releaseIds: ['rel-code-canonical'],
+      },
+      'ver-integration-schema': {
+        relatedArtifactIds: ['art-schema-integration'],
+        releaseIds: [],
+      },
+      'ver-docs-navigation': {
+        relatedArtifactIds: [],
+        releaseIds: [],
+      },
+    };
+    const lineage = lineageByVerification[verification.id];
+    return {
+      scenarioLabel: scenarioLabel,
+      ...verification,
+      relatedArtifactIds: lineage.relatedArtifactIds,
+      releaseIds: lineage.releaseIds,
+      attributionStatus: 'technical_acceptance_only',
+      attributionBoundary: '技术复查只验证明确的验收值，不等于业务 Results，也不证明任何搜索、引用或转化变化。',
+    };
+  });
+  dataset.auditEvents = dataset.auditEvents.map(function labelAuditEvent(event) {
+    return { scenarioLabel: scenarioLabel, ...event };
+  });
+  dataset.project = { scenarioLabel: scenarioLabel, ...dataset.project };
 
   function countBy(items, keyOrSelector) {
     const selector = typeof keyOrSelector === 'function' ? keyOrSelector : function selectKey(item) { return item[keyOrSelector]; };
@@ -13629,6 +14811,54 @@ button:disabled {
 
   function workQueueStatusCounts(data) {
     return countBy(data.artifacts, 'status');
+  }
+
+  function artifactTypeCounts(data) {
+    return countBy(data.artifacts, 'type');
+  }
+
+  function observationStatusCounts(data) {
+    return countBy(data.results.pageObservations, 'status');
+  }
+
+  function releaseStatusCounts(data) {
+    return countBy(data.releases, 'status');
+  }
+
+  function campaignStatusCounts(data) {
+    return countBy(data.campaigns, 'status');
+  }
+
+  function inventoryCounts(data) {
+    return {
+      urls: data.urls.length,
+      findings: data.findings.length,
+      opportunities: data.opportunities.length,
+      keywords: data.keywords.length,
+      clusters: data.clusters.length,
+      competitors: data.competitors.length,
+      artifacts: data.artifacts.length,
+      artifactDocuments: data.artifactDocuments.length,
+      artifactRevisions: data.artifactRevisions.length,
+      releases: data.releases.length,
+      pageObservations: data.results.pageObservations.length,
+      technicalVerifications: data.results.technicalVerifications.length,
+      campaigns: data.campaigns.length,
+      taggedCampaigns: data.campaigns.filter(function tagged(item) { return Boolean(item.campaign); }).length,
+      customerManagedSources: data.dataSources.filter(function customerSource(item) {
+        return item.audienceVisibility === enums.sourceVisibility.CUSTOMER;
+      }).length,
+      availableCustomerConnections: data.dataSources.filter(function availableCustomerSource(item) {
+        return item.audienceVisibility === enums.sourceVisibility.CUSTOMER
+          && item.connectionState === 'available';
+      }).length,
+      fixedWindowObservedUrls: data.results.pageObservations.filter(function fixedWindow(item) {
+        return item.windowCoverage === 'complete' || item.windowCoverage === 'insufficient';
+      }).length,
+      unavailableOrNotObservedUrls: data.results.pageObservations.filter(function noWindow(item) {
+        return item.status === enums.observationStatus.UNAVAILABLE || item.status === enums.observationStatus.NOT_OBSERVED;
+      }).length,
+    };
   }
 
   function aggregateMetricPairs(records) {
@@ -13701,6 +14931,11 @@ button:disabled {
       keywordStatusCounts: keywordStatusCounts(data),
       competitorStatusCounts: competitorStatusCounts(data),
       workQueueStatusCounts: workQueueStatusCounts(data),
+      artifactTypeCounts: artifactTypeCounts(data),
+      observationStatusCounts: observationStatusCounts(data),
+      releaseStatusCounts: releaseStatusCounts(data),
+      campaignStatusCounts: campaignStatusCounts(data),
+      inventoryCounts: inventoryCounts(data),
       resultTotals: beforeCurrentResultTotals(data),
       utmTotals: utmTotals(data),
       sourceFreshness: sourceFreshness(data),
@@ -13723,6 +14958,11 @@ button:disabled {
     keywordStatusCounts: keywordStatusCounts,
     competitorStatusCounts: competitorStatusCounts,
     workQueueStatusCounts: workQueueStatusCounts,
+    artifactTypeCounts: artifactTypeCounts,
+    observationStatusCounts: observationStatusCounts,
+    releaseStatusCounts: releaseStatusCounts,
+    campaignStatusCounts: campaignStatusCounts,
+    inventoryCounts: inventoryCounts,
     beforeCurrentResultTotals: beforeCurrentResultTotals,
     utmTotals: utmTotals,
     sourceFreshness: sourceFreshness,
@@ -13733,7 +14973,9 @@ button:disabled {
     schemaVersion: dataset.schemaVersion,
     datasetKind: dataset.datasetKind,
     snapshotAt: dataset.snapshotAt,
+    scenarioLabel: scenarioLabel,
     scenarioNotice: dataset.scenarioNotice,
+    attributionBoundary: attributionBoundary,
     enums: enums,
     labelsZh: labelsZh,
     project: dataset.project,
@@ -13748,6 +14990,8 @@ button:disabled {
     clusters: dataset.clusters,
     competitors: dataset.competitors,
     artifacts: dataset.artifacts,
+    artifactDocuments: dataset.artifactDocuments,
+    artifactRevisions: dataset.artifactRevisions,
     releases: dataset.releases,
     results: dataset.results,
     campaigns: dataset.campaigns,
@@ -13784,6 +15028,7 @@ button:disabled {
       clusters: seed.clusters,
       competitors: seed.competitors,
       artifacts: seed.artifacts,
+      artifactDocuments: seed.artifactDocuments || [],
       releases: seed.releases,
       results: seed.results,
       campaigns: seed.campaigns,
@@ -13821,6 +15066,35 @@ button:disabled {
     const value = window.location.hash.replace(/^#\/?/, '').split('?')[0];
     return allowedRoutes.includes(value) ? value : 'overview';
   };
+  const initialSelections = {
+    artifact: workspace.artifacts.find((item) => item.type === 'english_blog_draft')?.id || workspace.artifacts[0]?.id,
+    page: workspace.urls.find((item) => item.status === 'action_required')?.id || workspace.urls.find((item) => item.priority === 'p0')?.id || workspace.urls[0]?.id,
+    cluster: workspace.clusters.find((cluster) => workspace.opportunities.some((item) => item.urlIds.some((urlId) => workspace.urls.find((url) => url.id === urlId)?.clusterId === cluster.id) && !['closed', 'dismissed'].includes(item.status)))?.id || workspace.clusters[0]?.id,
+    opportunity: workspace.opportunities.find((item) => item.priority === 'p0' && !['closed', 'dismissed'].includes(item.status))?.id || workspace.opportunities[0]?.id,
+    keyword: workspace.keywords[0]?.id,
+    competitor: workspace.competitors.find((item) => item.status === 'candidate')?.id || workspace.competitors[0]?.id,
+  };
+  const defaultResultWindowId = workspace.results.windowId
+    || `${workspace.results.currentWindow.start}_${workspace.results.currentWindow.end}`;
+  const freshUrlFlags = () => ({
+    mapTab: false,
+    pageView: false,
+    pageNumber: { pages: false, keywords: false, competitors: false },
+    selection: { pages: false, keywords: false, competitors: false },
+    search: { pages: false, keywords: false, competitors: false },
+    status: { pages: false, keywords: false, competitors: false },
+    keywordSource: false,
+    pageType: false,
+    pageTemplate: false,
+    pageCluster: false,
+    pageStatus: false,
+    pageLens: false,
+    pageRowsExpanded: false,
+    artifactFilter: false,
+    artifactSelection: false,
+    resultTab: false,
+    resultWindow: false,
+  });
 
   const state = {
     route: routeFromHash(),
@@ -13833,13 +15107,14 @@ button:disabled {
     pageLensFilter: 'all',
     pageRowsExpanded: false,
     resultTab: 'overview',
+    resultWindowId: defaultResultWindowId,
     artifactFilter: 'all',
-    selectedArtifactId: workspace.artifacts.find((item) => item.type === 'english_blog_draft')?.id || workspace.artifacts[0]?.id,
-    selectedPageId: workspace.urls.find((item) => item.status === 'action_required')?.id || workspace.urls.find((item) => item.priority === 'p0')?.id || workspace.urls[0]?.id,
-    selectedClusterId: workspace.clusters.find((cluster) => workspace.opportunities.some((item) => item.urlIds.some((urlId) => workspace.urls.find((url) => url.id === urlId)?.clusterId === cluster.id) && !['closed', 'dismissed'].includes(item.status)))?.id || workspace.clusters[0]?.id,
-    selectedOpportunityId: workspace.opportunities.find((item) => item.priority === 'p0' && !['closed', 'dismissed'].includes(item.status))?.id || workspace.opportunities[0]?.id,
-    selectedKeywordId: workspace.keywords[0]?.id,
-    selectedCompetitorId: workspace.competitors.find((item) => item.status === 'candidate')?.id || workspace.competitors[0]?.id,
+    selectedArtifactId: initialSelections.artifact,
+    selectedPageId: initialSelections.page,
+    selectedClusterId: initialSelections.cluster,
+    selectedOpportunityId: initialSelections.opportunity,
+    selectedKeywordId: initialSelections.keyword,
+    selectedCompetitorId: initialSelections.competitor,
     keywordSource: 'all',
     searches: { pages: '', keywords: '', competitors: '' },
     statusFilters: { pages: 'all', keywords: 'all', competitors: 'all' },
@@ -13850,7 +15125,9 @@ button:disabled {
     evidenceTab: 'summary',
     mobileNav: false,
     lastFocus: null,
+    urlFlags: freshUrlFlags(),
   };
+  const overlayPayloadCache = new Map();
 
   const icon = (name) => {
     const paths = {
@@ -13902,7 +15179,9 @@ button:disabled {
     code_patch: '代码修复',
     metadata_rewrite: 'Metadata 重写',
     schema_patch: 'Schema 修复',
+    technical_ticket: 'Technical Ticket / 技术工单',
     landing_revision: 'Landing 页面改版',
+    utm_plan: 'UTM Plan / 追踪方案',
     publish_receipt: '发布回执',
     comparison_brief: '竞品对比 Brief',
   };
@@ -13919,7 +15198,9 @@ button:disabled {
     code_patch: '增长工程师',
     metadata_rewrite: 'SEO 策略师',
     schema_patch: '增长工程师',
+    technical_ticket: '增长工程师',
     landing_revision: '转化策略师',
+    utm_plan: '增长运营',
     publish_receipt: '增长运营',
     comparison_brief: '研究编辑',
   };
@@ -13961,7 +15242,7 @@ button:disabled {
 
   function derived() {
     const openOpportunities = workspace.opportunities.filter((item) => !['closed', 'dismissed'].includes(item.status));
-    const resultTotals = aggregate(workspace.results.pageObservations);
+    const resultTotals = aggregate(activeResultsRecord().pageObservations || []);
     const taggedCampaigns = workspace.campaigns.filter((item) => item.campaign);
     return {
       openOpportunities,
@@ -14019,23 +15300,167 @@ button:disabled {
     }, {});
   }
 
+  const mapTabs = ['pages', 'keywords', 'competitors'];
+  const pageViews = ['url', 'cluster', 'opportunity'];
+  const artifactFilters = ['all', 'blog', 'brief', 'code', 'metadata', 'landing', 'publish'];
+  const resultTabs = ['overview', 'pages', 'campaigns'];
+  const overlayKinds = new Set([
+    'profile', 'profile-edit', 'profile-evidence', 'profile-history', 'profile-version',
+    'connections', 'source-detail', 'sync-run', 'page-filters', 'page-evidence',
+    'keyword-detail', 'keyword-add', 'competitor-detail', 'competitor-add',
+    'competitor-review', 'finding-review', 'opportunity', 'opportunity-decision',
+    'task-preview', 'artifact-share', 'artifact-edit', 'artifact-create',
+    'artifact-history', 'artifact-revision', 'artifact-approve', 'artifact-publish',
+    'receipt', 'result-page', 'campaign', 'report-share', 'audit-event',
+  ]);
+  let lastReconciledHref = '';
+
+  function resetRouteState(route) {
+    state.urlFlags = freshUrlFlags();
+    state.overlay = null;
+    state.overlayPayload = null;
+    state.evidenceTab = 'summary';
+    if (route === 'growth-map') {
+      state.mapTab = 'pages';
+      state.pageView = 'url';
+      state.pageTypeFilter = 'all';
+      state.pageTemplateFilter = 'all';
+      state.pageClusterFilter = 'all';
+      state.pageStatusFilter = 'all';
+      state.pageLensFilter = 'all';
+      state.pageRowsExpanded = false;
+      state.keywordSource = 'all';
+      state.searches = { pages: '', keywords: '', competitors: '' };
+      state.statusFilters = { pages: 'all', keywords: 'all', competitors: 'all' };
+      state.pages = { pages: 1, keywords: 1, competitors: 1 };
+      state.selectedPageId = initialSelections.page;
+      state.selectedClusterId = initialSelections.cluster;
+      state.selectedOpportunityId = initialSelections.opportunity;
+      state.selectedKeywordId = initialSelections.keyword;
+      state.selectedCompetitorId = initialSelections.competitor;
+    }
+    if (route === 'execution') {
+      state.artifactFilter = 'all';
+      state.selectedArtifactId = initialSelections.artifact;
+    }
+    if (route === 'results') {
+      state.resultTab = 'overview';
+      state.resultWindowId = defaultResultWindowId;
+    }
+  }
+
+  function currentMapSelectionId() {
+    if (state.mapTab === 'keywords') return state.selectedKeywordId;
+    if (state.mapTab === 'competitors') return state.selectedCompetitorId;
+    if (state.pageView === 'cluster') return state.selectedClusterId;
+    if (state.pageView === 'opportunity') return state.selectedOpportunityId;
+    return state.selectedPageId;
+  }
+
+  function serializeStateHash() {
+    const params = new URLSearchParams();
+    const flags = state.urlFlags;
+    if (state.route === 'growth-map') {
+      if (flags.mapTab) params.set('m', state.mapTab);
+      if (state.mapTab === 'pages' && flags.pageView) params.set('v', state.pageView);
+      if (flags.pageNumber[state.mapTab]) params.set('p', String(state.pages[state.mapTab]));
+      if (flags.selection[state.mapTab] && currentMapSelectionId()) params.set('s', currentMapSelectionId());
+      if (flags.search[state.mapTab]) params.set('q', state.searches[state.mapTab]);
+      if (flags.status[state.mapTab]) params.set('st', state.statusFilters[state.mapTab]);
+      if (state.mapTab === 'keywords' && flags.keywordSource) params.set('src', state.keywordSource);
+      if (state.mapTab === 'pages') {
+        if (flags.pageType) params.set('pt', state.pageTypeFilter);
+        if (flags.pageTemplate) params.set('tpl', state.pageTemplateFilter);
+        if (flags.pageCluster) params.set('cl', state.pageClusterFilter);
+        if (flags.pageStatus) params.set('ps', state.pageStatusFilter);
+        if (flags.pageLens) params.set('ln', state.pageLensFilter);
+        if (flags.pageRowsExpanded) params.set('x', state.pageRowsExpanded ? '1' : '0');
+      }
+    }
+    if (state.route === 'execution') {
+      if (flags.artifactFilter) params.set('f', state.artifactFilter);
+      if (flags.artifactSelection && state.selectedArtifactId) params.set('a', state.selectedArtifactId);
+    }
+    if (state.route === 'results') {
+      if (flags.resultTab) params.set('t', state.resultTab);
+      if (flags.resultWindow) params.set('w', state.resultWindowId);
+    }
+    if (state.overlay) {
+      params.set('o', state.overlay);
+      const payloadId = state.overlayPayload?.id || (typeof state.overlayPayload === 'string' ? state.overlayPayload : '');
+      if (payloadId) params.set('i', payloadId);
+      if (state.overlay === 'task-preview' && state.overlayPayload?.kind) params.set('k', state.overlayPayload.kind);
+      if (state.overlay === 'page-evidence' && state.evidenceTab !== 'summary') params.set('e', state.evidenceTab);
+    }
+    const query = params.toString();
+    return `#/${state.route}${query ? `?${query}` : ''}`;
+  }
+
+  function writeLocation(mode = 'replace') {
+    const nextHash = serializeStateHash();
+    if (window.location.hash === nextHash) {
+      lastReconciledHref = window.location.href;
+      return;
+    }
+    try {
+      const method = mode === 'push' ? 'pushState' : 'replaceState';
+      window.history[method]({ gengrowthArtifact: true, overlay: Boolean(state.overlay) }, '', nextHash);
+    } catch {
+      // Some browsers restrict History API calls for file:// documents. A hash
+      // fallback keeps the standalone Artifact usable without a local server.
+      if (mode === 'replace') window.location.replace(nextHash);
+      else window.location.hash = nextHash;
+    }
+    lastReconciledHref = window.location.href;
+  }
+
+  function captureFocus(element) {
+    if (!(element instanceof Element)) return null;
+    const action = element.dataset?.action;
+    if (!action) return { element };
+    const identityKeys = ['id', 'route', 'tab', 'filter', 'view', 'kind', 'source', 'cluster'];
+    const identity = Object.fromEntries(identityKeys.filter((key) => element.dataset[key]).map((key) => [key, element.dataset[key]]));
+    const candidates = [...document.querySelectorAll(`[data-action="${action.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`)]
+      .filter((candidate) => Object.entries(identity).every(([key, value]) => candidate.dataset[key] === value));
+    return { action, identity, index: Math.max(0, candidates.indexOf(element)), element };
+  }
+
+  function restoreFocus(descriptor = state.lastFocus) {
+    if (!descriptor) return;
+    if (descriptor.action) {
+      const candidates = [...document.querySelectorAll(`[data-action="${descriptor.action.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`)]
+        .filter((candidate) => Object.entries(descriptor.identity || {}).every(([key, value]) => candidate.dataset[key] === value));
+      const target = candidates[Math.min(descriptor.index || 0, Math.max(0, candidates.length - 1))];
+      if (target) {
+        target.focus({ preventScroll: true });
+        return;
+      }
+    }
+    descriptor.element?.focus?.({ preventScroll: true });
+  }
+
+  function focusOverlay() {
+    window.requestAnimationFrame(() => {
+      const dialog = document.querySelector('.client-overlay [role="dialog"]');
+      const target = dialog?.querySelector('[data-autofocus], input:not([type="hidden"]), select, textarea, button:not([data-action="close-overlay"]), button');
+      target?.focus();
+    });
+  }
+
+  function commitState(mode = 'push') {
+    render();
+    writeLocation(mode);
+  }
+
   function setRoute(route, options = {}) {
     if (!allowedRoutes.includes(route)) return;
+    resetRouteState(route);
     state.route = route;
     state.mobileNav = false;
     Object.assign(state, options);
-    const nextHash = `#/${route}`;
-    try {
-      window.history.replaceState(null, '', nextHash);
-    } catch {
-      // Browsers may reject replaceState for a document opened directly from
-      // disk. Keep the standalone Artifact navigable without a local server.
-      window.location.hash = nextHash;
-    }
-    closeOverlay(false);
     const scrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
     window.scrollTo({ top: 0, behavior: scrollBehavior });
-    render();
+    commitState('push');
     window.requestAnimationFrame(() => document.querySelector('#route-content')?.focus());
   }
 
@@ -14056,10 +15481,16 @@ button:disabled {
     };
     if (!actionByState[stateKey] || !byId(collectionByState[stateKey] || [], id)) return;
     state[stateKey] = id;
+    const selectionKind = ['selectedKeywordId'].includes(stateKey)
+      ? 'keywords'
+      : ['selectedCompetitorId'].includes(stateKey)
+        ? 'competitors'
+        : 'pages';
+    state.urlFlags.selection[selectionKind] = true;
     // Keep selection state and the rendered master-detail tree in one lifecycle.
     // A full render makes repeated URL clicks and tab/view round-trips use the
     // same path, avoiding stale row/detail DOM after a previous partial swap.
-    render();
+    commitState('push');
     window.requestAnimationFrame(() => {
       if (!window.matchMedia('(max-width: 1024px)').matches) {
         const actionSelector = `[data-action="${actionByState[stateKey]}"][data-id="${id}"]`;
@@ -14079,23 +15510,174 @@ button:disabled {
   }
 
   function openOverlay(kind, payload = null) {
-    state.lastFocus = document.activeElement;
+    if (!overlayKinds.has(kind)) return;
+    const wasOpen = Boolean(state.overlay);
+    if (!wasOpen) state.lastFocus = captureFocus(document.activeElement);
+    if (payload && typeof payload === 'object' && payload.id) overlayPayloadCache.set(payload.id, payload);
     state.overlay = kind;
     state.overlayPayload = payload;
     state.evidenceTab = 'summary';
-    render();
-    window.requestAnimationFrame(() => {
-      const dialog = document.querySelector('.client-overlay [role="dialog"]');
-      const target = dialog?.querySelector('[data-autofocus], input:not([type="hidden"]), select, textarea, button:not([data-action="close-overlay"]), button');
-      target?.focus();
-    });
+    commitState(wasOpen ? 'replace' : 'push');
+    focusOverlay();
   }
 
   function closeOverlay(shouldRender = true) {
     state.overlay = null;
     state.overlayPayload = null;
-    if (shouldRender) render();
-    window.requestAnimationFrame(() => state.lastFocus?.focus?.());
+    state.evidenceTab = 'summary';
+    if (shouldRender) {
+      commitState('replace');
+      window.requestAnimationFrame(() => restoreFocus());
+    }
+  }
+
+  function overlayPayloadFromParams(kind, params) {
+    const id = params.get('i');
+    if (kind === 'task-preview') return id ? { id, kind: params.get('k') || 'finding' } : null;
+    if (kind === 'receipt') {
+      return (id && overlayPayloadCache.get(id))
+        || workspace.releases.find((item) => item.id === id)
+        || workspace.shareReceipts.find((item) => item.id === id)
+        || null;
+    }
+    return id ? { id } : null;
+  }
+
+  function hydrateStateFromLocation() {
+    const raw = window.location.hash.replace(/^#\/?/, '');
+    const [routeCandidate, query = ''] = raw.split('?');
+    const route = allowedRoutes.includes(routeCandidate) ? routeCandidate : 'overview';
+    const params = new URLSearchParams(query);
+    resetRouteState(route);
+    state.route = route;
+    state.mobileNav = false;
+
+    if (route === 'growth-map') {
+      const requestedTab = params.get('m');
+      if (mapTabs.includes(requestedTab)) {
+        state.mapTab = requestedTab;
+        state.urlFlags.mapTab = true;
+      }
+      const requestedView = params.get('v');
+      if (state.mapTab === 'pages' && pageViews.includes(requestedView)) {
+        state.pageView = requestedView;
+        state.urlFlags.pageView = true;
+      }
+      const page = Number(params.get('p'));
+      if (params.has('p') && Number.isInteger(page) && page > 0 && page < 1000) {
+        state.pages[state.mapTab] = page;
+        state.urlFlags.pageNumber[state.mapTab] = true;
+      }
+      const selection = params.get('s');
+      const selectionConfig = state.mapTab === 'keywords'
+        ? ['selectedKeywordId', workspace.keywords]
+        : state.mapTab === 'competitors'
+          ? ['selectedCompetitorId', workspace.competitors]
+          : state.pageView === 'cluster'
+            ? ['selectedClusterId', workspace.clusters]
+            : state.pageView === 'opportunity'
+              ? ['selectedOpportunityId', workspace.opportunities]
+              : ['selectedPageId', workspace.urls];
+      if (selection && byId(selectionConfig[1], selection)) {
+        state[selectionConfig[0]] = selection;
+        state.urlFlags.selection[state.mapTab] = true;
+      }
+      if (params.has('q')) {
+        state.searches[state.mapTab] = String(params.get('q') || '').slice(0, 160);
+        state.urlFlags.search[state.mapTab] = true;
+      }
+      if (params.has('st')) {
+        state.statusFilters[state.mapTab] = String(params.get('st') || 'all').slice(0, 80);
+        state.urlFlags.status[state.mapTab] = true;
+      }
+      if (state.mapTab === 'keywords' && params.has('src')) {
+        const source = params.get('src');
+        const allowedSources = new Set(['all', ...workspace.keywords.map((item) => item.sourceKind)]);
+        if (allowedSources.has(source)) {
+          state.keywordSource = source;
+          state.urlFlags.keywordSource = true;
+        }
+      }
+      if (state.mapTab === 'pages') {
+        const filters = [
+          ['pt', 'pageTypeFilter', 'pageType', new Set(['all', ...workspace.urls.map((item) => item.pageType)])],
+          ['tpl', 'pageTemplateFilter', 'pageTemplate', new Set(['all', ...workspace.urls.map((item) => item.templateKey).filter(Boolean)])],
+          ['cl', 'pageClusterFilter', 'pageCluster', new Set(['all', ...workspace.clusters.map((item) => item.id)])],
+          ['ps', 'pageStatusFilter', 'pageStatus', new Set(['all', ...workspace.urls.map((item) => item.status)])],
+          ['ln', 'pageLensFilter', 'pageLens', new Set(['all', ...Object.keys(labels.lens)])],
+        ];
+        filters.forEach(([param, stateKey, flagKey, allowed]) => {
+          const value = params.get(param);
+          if (params.has(param) && allowed.has(value)) {
+            state[stateKey] = value;
+            state.urlFlags[flagKey] = true;
+          }
+        });
+        if (params.has('x')) {
+          state.pageRowsExpanded = params.get('x') === '1';
+          state.urlFlags.pageRowsExpanded = true;
+        }
+      }
+    }
+
+    if (route === 'execution') {
+      const filter = params.get('f');
+      if (artifactFilters.includes(filter)) {
+        state.artifactFilter = filter;
+        state.urlFlags.artifactFilter = true;
+      }
+      const artifactId = params.get('a');
+      if (artifactId && byId(workspace.artifacts, artifactId)) {
+        state.selectedArtifactId = artifactId;
+        state.urlFlags.artifactSelection = true;
+      }
+    }
+
+    if (route === 'results') {
+      const tab = params.get('t');
+      if (resultTabs.includes(tab)) {
+        state.resultTab = tab;
+        state.urlFlags.resultTab = true;
+      }
+      const resultWindowIds = new Set([
+        defaultResultWindowId,
+        ...(workspace.results.windows || []).map((item) => item.id),
+      ]);
+      const windowId = params.get('w');
+      if (windowId && resultWindowIds.has(windowId)) {
+        state.resultWindowId = windowId;
+        state.urlFlags.resultWindow = true;
+      }
+    }
+
+    const overlay = params.get('o');
+    if (overlayKinds.has(overlay)) {
+      const idRequired = new Set([
+        'profile-version', 'source-detail', 'page-evidence', 'keyword-detail',
+        'competitor-detail', 'competitor-review', 'finding-review', 'opportunity',
+        'opportunity-decision', 'task-preview', 'artifact-share', 'artifact-edit',
+        'artifact-create', 'artifact-history', 'artifact-revision', 'artifact-approve',
+        'artifact-publish', 'result-page', 'campaign', 'audit-event',
+      ]);
+      const payload = overlayPayloadFromParams(overlay, params);
+      if (!idRequired.has(overlay) || payload) {
+        state.overlay = overlay;
+        state.overlayPayload = payload;
+        if (overlay === 'page-evidence' && ['summary', 'crawl', 'analytics', 'history'].includes(params.get('e'))) {
+          state.evidenceTab = params.get('e');
+        }
+      }
+    }
+  }
+
+  function reconcileLocation() {
+    if (window.location.href === lastReconciledHref) return;
+    const hadOverlay = Boolean(state.overlay);
+    hydrateStateFromLocation();
+    render();
+    writeLocation('replace');
+    if (state.overlay) focusOverlay();
+    else if (hadOverlay) window.requestAnimationFrame(() => restoreFocus());
   }
 
   function recordEvent(type, objectRefs, actorId = 'customer-user') {
@@ -14160,6 +15742,7 @@ button:disabled {
       passedGates: clone(fields.passedGates || item.passedGates),
       targetUrlIds: clone(item.targetUrlIds),
       sourceRefs: clone(item.sourceRefs),
+      documentId: fields.documentId || item.documentId || null,
       generatedContent: clone(fields.generatedContent || item.generatedContent || null),
     };
   }
@@ -14263,7 +15846,28 @@ button:disabled {
 
   function metricCompare(label, pair) {
     if (!pair) return '';
+    if (pair.before === null || pair.before === undefined || pair.current === null || pair.current === undefined) {
+      return `<div><span>${label}</span><strong>不可用</strong><small>当前固定窗口尚无可比较观测</small></div>`;
+    }
     return `<div><span>${label}</span><strong>${compact(pair.current)}</strong><small>${compact(pair.before)} → ${compact(pair.current)} · ${percent(pair.before, pair.current)}</small></div>`;
+  }
+
+  function metricPairText(pair) {
+    if (!pair || pair.before === null || pair.before === undefined || pair.current === null || pair.current === undefined) return '不可用';
+    return `${compact(pair.before)} → ${compact(pair.current)}`;
+  }
+
+  function activeResultsRecord() {
+    return (workspace.results.windows || []).find((item) => item.id === state.resultWindowId) || workspace.results;
+  }
+
+  function activeResultWindow() {
+    const results = activeResultsRecord();
+    return {
+      id: results.windowId || results.id || state.resultWindowId || defaultResultWindowId,
+      baseline: results.baselineWindow || workspace.results.baselineWindow,
+      current: results.currentWindow || workspace.results.currentWindow,
+    };
   }
 
   function filterRows(kind, rows) {
@@ -14574,9 +16178,9 @@ button:disabled {
       ['all', '全部任务', () => true],
       ['blog', 'English Blog', (item) => item.type === 'english_blog_draft'],
       ['brief', '内容 / 竞品 Brief', (item) => ['content_brief', 'comparison_brief'].includes(item.type)],
-      ['code', '代码 / Schema 修复', (item) => ['code_patch', 'schema_patch'].includes(item.type)],
+      ['code', '技术工单 / 代码 / Schema', (item) => ['technical_ticket', 'code_patch', 'schema_patch'].includes(item.type)],
       ['metadata', 'Metadata 重写', (item) => item.type === 'metadata_rewrite'],
-      ['landing', 'Landing 页面改版', (item) => item.type === 'landing_revision'],
+      ['landing', 'Landing / UTM 追踪', (item) => ['landing_revision', 'utm_plan'].includes(item.type)],
       ['publish', '发布回执', (item) => item.type === 'publish_receipt'],
     ];
     const filterGroups = Object.fromEntries(filterConfig.map(([key, , predicate]) => [key, workspace.artifacts.filter(predicate)]));
@@ -14584,12 +16188,12 @@ button:disabled {
     if (!items.some((item) => item.id === state.selectedArtifactId)) state.selectedArtifactId = items[0]?.id || workspace.artifacts[0]?.id;
     const selected = byId(workspace.artifacts, state.selectedArtifactId);
     const reviewCount = workspace.artifacts.filter((item) => item.status === 'review').length;
-    return `${pageHeader('执行中心', '直接查看并处理交付物', '每个任务都来自增长地图中的已确认问题或机会。这里直接呈现 English Blog、内容 Brief、Metadata、代码修复、Landing 页面与发布回执。', '<button class="button button--secondary" data-action="nav" data-route="growth-map">返回增长地图</button>')}
+    return `${pageHeader('执行中心', '直接查看并处理交付物', '每个任务都来自增长地图中的已确认问题或机会。这里直接呈现 Technical Ticket、English Blog、内容 Brief、Metadata、代码修复、Landing、UTM Plan 与发布回执。', '<button class="button button--secondary" data-action="nav" data-route="growth-map">返回增长地图</button>')}
       <section class="panel v13-execution-toolbar"><div role="tablist" aria-label="按交付物类型筛选">${filterConfig.map(([key, label]) => `<button id="tab-artifact-${key}" role="tab" aria-controls="artifact-workspace" aria-selected="${state.artifactFilter === key}" tabindex="${state.artifactFilter === key ? '0' : '-1'}" class="${state.artifactFilter === key ? 'is-active' : ''}" data-action="artifact-filter" data-filter="${key}">${label}</button>`).join('')}</div><span>共 ${workspace.artifacts.length} 项 · ${reviewCount} 个需要你的审核</span></section>
       <div id="artifact-workspace" role="tabpanel" aria-labelledby="tab-artifact-${state.artifactFilter}" class="client-execution-shell v13-execution-shell">
         <aside class="panel client-work-queue">
           <header class="v13-work-queue-header"><div><span class="eyebrow">执行队列</span><h2>当前交付物</h2></div><span>${items.length}</span></header>
-          <div class="client-work-list">${items.map((item) => `<button class="client-work-item v13-work-item ${item.id === state.selectedArtifactId ? 'is-active' : ''}" data-action="select-artifact" data-id="${item.id}"><span class="v13-work-item__mark">${item.type === 'english_blog_draft' ? 'EN' : item.type === 'content_brief' || item.type === 'comparison_brief' ? 'BR' : item.type === 'code_patch' || item.type === 'schema_patch' ? '&lt;/&gt;' : item.type === 'metadata_rewrite' ? 'MD' : item.type === 'landing_revision' ? 'LP' : 'PR'}</span><span class="v13-work-item__copy"><span class="client-work-type">${escapeHtml(artifactTypeLabels[item.type] || item.type)}</span><strong>${escapeHtml(item.title)}</strong><small>v${item.revision} · ${item.targetUrlIds.map(urlName).join(', ')}</small>${badge(statusLabel('artifactStatus', item.status), toneFor(item.status))}</span></button>`).join('') || '<div class="empty-state">当前筛选没有交付物。</div>'}</div>
+          <div class="client-work-list">${items.map((item) => `<button class="client-work-item v13-work-item ${item.id === state.selectedArtifactId ? 'is-active' : ''}" data-action="select-artifact" data-id="${item.id}"><span class="v13-work-item__mark">${item.type === 'english_blog_draft' ? 'EN' : item.type === 'content_brief' || item.type === 'comparison_brief' ? 'BR' : item.type === 'technical_ticket' ? 'TK' : item.type === 'code_patch' || item.type === 'schema_patch' ? '&lt;/&gt;' : item.type === 'metadata_rewrite' ? 'MD' : item.type === 'utm_plan' ? 'UTM' : item.type === 'landing_revision' ? 'LP' : 'PR'}</span><span class="v13-work-item__copy"><span class="client-work-type">${escapeHtml(artifactTypeLabels[item.type] || item.type)}</span><strong>${escapeHtml(item.title)}</strong><small>v${item.revision} · ${item.targetUrlIds.map(urlName).join(', ')}</small>${badge(statusLabel('artifactStatus', item.status), toneFor(item.status))}</span></button>`).join('') || '<div class="empty-state">当前筛选没有交付物。</div>'}</div>
         </aside>
         <article class="panel client-artifact-document">${selected ? renderArtifact(selected) : '<div class="empty-state">请选择一个交付物。</div>'}</article>
       </div>`;
@@ -14612,7 +16216,7 @@ button:disabled {
       </header>
       <section class="client-artifact-meta" aria-label="交付治理信息"><div><span>关联目标</span><strong>${item.targetUrlIds.map(urlName).join(' · ')}</strong></div><div><span>执行动作</span><strong>${escapeHtml(opportunity?.title || '未绑定')}</strong></div><div><span>负责人</span><strong>${escapeHtml(owner)}</strong></div><div><span>验收门禁</span><strong>${escapeHtml(acceptance)}</strong></div></section>
       ${item.approvalInvalidatedAt ? `<div class="client-approval-invalidated"><strong>旧版批准已失效</strong><span>Revision ${item.revision} 修改了客户可见内容，需要重新完成人工审核门禁。历史发布记录仍保留，不会被覆盖。</span></div>` : ''}
-      <div class="v13-document-grid"><div class="client-document-body v13-document-body">${item.revisionNote ? `<section class="client-revision-note"><span>Revision ${item.revision} 修订摘要</span><strong>${escapeHtml(item.revisionNote)}</strong><small>${escapeHtml(item.changeNote || '客户可见正文已创建新版本。')}</small></section>` : ''}${item.type === 'english_blog_draft' ? `<div class="v13-seo-title"><span>SEO 标题 · 57 个字符</span><strong>${escapeHtml(item.title)}</strong></div><div class="v13-byline"><span>RO</span><div><strong>RelayOps 编辑团队</strong><small>Revision ${item.revision} · ${item.sourceRefs.length} 条已批准证据</small></div></div>` : ''}${artifactDocument(item)}</div><aside class="v13-quality-panel"><div class="v13-quality-score"><span>交付就绪度</span><strong>${readiness}</strong><small>/ 100</small></div><section><h3>质量检查</h3>${item.requiredGates.map((gate) => { const passed = item.passedGates.includes(gate); return `<div class="v13-quality-gate ${passed ? 'is-passed' : 'is-pending'}"><span>${passed ? icon('check') : '!'}</span><div><small>${escapeHtml(qualityGateLabels[gate] || gate)}</small><strong>${passed ? '已通过' : '等待补充'}</strong></div></div>`; }).join('')}</section>${missingGates.length && !canApprove ? `<div class="v13-quality-blocker"><strong>当前不能批准</strong><p>仍需通过：${missingGates.map((gate) => qualityGateLabels[gate] || gate).join('、')}</p></div>` : ''}<section><h3>证据与范围</h3><button class="v13-quality-link" data-action="open-opportunity" data-id="${opportunity?.id}"><span>来源机会</span><strong>${escapeHtml(opportunity?.title || '—')}</strong>${icon('arrow')}</button><dl class="v13-quality-facts"><div><dt>目标 URLs</dt><dd>${item.targetUrlIds.length}</dd></div><div><dt>证据</dt><dd>${item.sourceRefs.length} 条</dd></div><div><dt>客户连接</dt><dd>${publicSources.map((source) => source.name).join(' · ') || '不依赖外部连接'}</dd></div><div><dt>系统证据</dt><dd>${internalSignalCount(item.sourceRefs)} 条信号</dd></div></dl></section><section><h3>发布与结果</h3>${receipt ? `<dl class="v13-quality-facts"><div><dt>${item.approvalInvalidatedAt ? '历史发布' : '发布版本'}</dt><dd>${escapeHtml(receipt.id)}</dd></div><div><dt>回滚引用</dt><dd>${escapeHtml(receipt.rollbackRef || '—')}</dd></div><div><dt>目标</dt><dd>${escapeHtml(receipt.targetUrl || urlName(item.targetUrlIds[0]))}</dd></div></dl>` : `<p class="v13-quality-note">发布后会在这里建立固定观察窗口、发布版本与回滚回执。</p>`}${observation ? `<button class="v13-quality-link" data-action="open-result-page" data-id="${observation.id}"><span>最新观察</span><strong>${statusLabel('observationStatus', observation.status)} · ${observation.metrics.conversions.before} → ${observation.metrics.conversions.current} 次转化</strong>${icon('arrow')}</button>` : ''}</section></aside></div>`;
+      <div class="v13-document-grid"><div class="client-document-body v13-document-body">${item.revisionNote ? `<section class="client-revision-note"><span>Revision ${item.revision} 修订摘要</span><strong>${escapeHtml(item.revisionNote)}</strong><small>${escapeHtml(item.changeNote || '客户可见正文已创建新版本。')}</small></section>` : ''}${item.type === 'english_blog_draft' ? `<div class="v13-seo-title"><span>SEO 标题 · 57 个字符</span><strong>${escapeHtml(item.title)}</strong></div><div class="v13-byline"><span>RO</span><div><strong>RelayOps 编辑团队</strong><small>Revision ${item.revision} · ${item.sourceRefs.length} 条已批准证据</small></div></div>` : ''}${artifactDocument(item)}</div><aside class="v13-quality-panel"><div class="v13-quality-score"><span>交付就绪度</span><strong>${readiness}</strong><small>/ 100</small></div><section><h3>质量检查</h3>${item.requiredGates.map((gate) => { const passed = item.passedGates.includes(gate); return `<div class="v13-quality-gate ${passed ? 'is-passed' : 'is-pending'}"><span>${passed ? icon('check') : '!'}</span><div><small>${escapeHtml(qualityGateLabels[gate] || gate)}</small><strong>${passed ? '已通过' : '等待补充'}</strong></div></div>`; }).join('')}</section>${missingGates.length && !canApprove ? `<div class="v13-quality-blocker"><strong>当前不能批准</strong><p>仍需通过：${missingGates.map((gate) => qualityGateLabels[gate] || gate).join('、')}</p></div>` : ''}<section><h3>证据与范围</h3><button class="v13-quality-link" data-action="open-opportunity" data-id="${opportunity?.id}"><span>来源机会</span><strong>${escapeHtml(opportunity?.title || '—')}</strong>${icon('arrow')}</button><dl class="v13-quality-facts"><div><dt>目标 URLs</dt><dd>${item.targetUrlIds.length}</dd></div><div><dt>证据</dt><dd>${item.sourceRefs.length} 条</dd></div><div><dt>客户连接</dt><dd>${publicSources.map((source) => source.name).join(' · ') || '不依赖外部连接'}</dd></div><div><dt>系统证据</dt><dd>${internalSignalCount(item.sourceRefs)} 条信号</dd></div></dl></section><section><h3>发布与结果</h3>${receipt ? `<dl class="v13-quality-facts"><div><dt>${item.approvalInvalidatedAt ? '历史发布' : '发布版本'}</dt><dd>${escapeHtml(receipt.id)}</dd></div><div><dt>回滚引用</dt><dd>${escapeHtml(receipt.rollbackRef || '—')}</dd></div><div><dt>目标</dt><dd>${escapeHtml(receipt.targetUrl || urlName(item.targetUrlIds[0]))}</dd></div></dl>` : `<p class="v13-quality-note">发布后会在这里建立固定观察窗口、发布版本与回滚回执。</p>`}${observation ? `<button class="v13-quality-link" data-action="open-result-page" data-id="${observation.id}"><span>最新观察</span><strong>${statusLabel('observationStatus', observation.status)} · 转化 ${escapeHtml(metricPairText(observation.metrics?.conversions))}</strong>${icon('arrow')}</button>` : ''}</section></aside></div>`;
   }
 
   function artifactDocument(item) {
@@ -14620,26 +16224,26 @@ button:disabled {
       const content = item.generatedContent;
       return `<div class="client-generated-artifact"><section><span>执行目标</span><h3>${escapeHtml(content.objective)}</h3><p>${escapeHtml(content.summary)}</p></section><section><h3>主要 Finding</h3><p>${escapeHtml(content.primaryFinding)}</p></section><section><h3>证据与适用范围</h3><ul>${content.evidence.map((entry) => `<li>${escapeHtml(entry)}</li>`).join('')}</ul></section><section><h3>执行方案</h3><ol>${content.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol></section><section><h3>验收条件</h3><ul>${content.acceptance.map((entry) => `<li>${escapeHtml(entry)}</li>`).join('')}</ul></section><section><h3>限制与回滚</h3><p>${escapeHtml(content.limitation)}</p><p>${escapeHtml(content.rollback)}</p></section></div>`;
     }
-    const documents = {
-      'art-blog-automation': `<div class="client-blog-draft"><p class="client-doc-label">English draft · Target market: United States</p><h1>How to Automate Customer Onboarding Without Losing the Human Touch</h1><p class="client-lede">Customer onboarding automation should remove coordination work—not the moments where judgment, reassurance, and a real relationship matter. The strongest programs use automation to make human attention more timely and more useful.</p><h2>Start with the handoffs, not the software</h2><p>Most onboarding delays begin between teams. Sales closes the account, Implementation asks for context, Customer Success reconstructs the success plan, and the customer repeats information they have already shared. Before choosing an automation, map the minimum context that must survive each handoff: the business outcome, committed timeline, stakeholders, technical constraints, and known risk.</p><p>A shared workflow should make that context visible without forcing every team into the same operating style. The system can create the project, assign owners, calculate due dates, and notify the next participant. A person still owns the promise and decides when the plan should change.</p><h2>Automate repeatable coordination</h2><p>Good candidates include workspace creation, task assignment, status reminders, meeting preparation, document collection, and routine progress updates. Each automation needs a clear trigger, an accountable owner, an exception path, and a visible audit trail. If nobody can explain what happens when required data is missing, the workflow is not ready to automate.</p><blockquote>Automation should make the next best human action obvious.</blockquote><h2>Keep four moments deliberately human</h2><ol><li><strong>Kickoff alignment:</strong> confirm outcomes, roles, constraints, and what “live” means.</li><li><strong>Risk conversations:</strong> interpret weak signals before sending an escalation.</li><li><strong>Change decisions:</strong> renegotiate scope or timeline when new facts appear.</li><li><strong>Value confirmation:</strong> connect delivered work to the customer’s original goal.</li></ol><h2>A practical implementation sequence</h2><p>Begin with one customer segment and one workflow. Capture the current cycle time and escalation rate, define the required context, then automate one handoff at a time. Review exceptions every week. The goal is not maximum automation coverage; it is a shorter path to value with fewer invisible failures.</p><p class="client-doc-cta"><strong>Want to review your onboarding workflow?</strong><br>Book a 30-minute workflow review with RelayOps to identify the first handoff worth automating.</p></div>`,
-      'art-brief-onboarding': `<div class="client-brief"><h3>内容简报</h3><dl class="client-brief-grid"><div><dt>主要受众</dt><dd>50–500 人规模的 B2B SaaS 公司客户成功副总裁</dd></div><div><dt>搜索意图</dt><dd>商业调研，重点关注实施风险</dd></div><div><dt>主要查询词</dt><dd>customer onboarding software</dd></div><div><dt>主要 CTA</dt><dd>Book an onboarding workflow review</dd></div></dl><h3>需要回答的决策问题</h3><ul><li>产品如何保留从 Sales 到 Customer Success 的上下文？</li><li>哪些环节可以自动化，哪些环节必须经人工批准？</li><li>将现有客户成功流程接入需要多长时间？</li><li>如何衡量风险、责任归属与 time-to-value？</li></ul><h3>推荐结构</h3><ol><li>Customer onboarding software：定义与购买标准</li><li>工作流编排与产品采用的区别</li><li>实施模式与集成要求</li><li>客户证明、安全与变更管理</li><li>评估清单与下一步</li></ol><h3>证据要求</h3><p>使用已批准的客户访谈摘要支撑 JTBD；使用 GSC 场景导出数据证明已观察到的搜索需求；使用已批准的竞品语料核实对比事实。超过 90 天的主张必须更新。</p></div>`,
-      'art-code-canonical': `<div class="client-code-fix"><h3>问题</h3><p>渲染后的产品页面包含两个目标不同的 canonical 声明。爬虫可能会错误地将信号归并到另一个 URL。</p><pre><code><span class="diff-remove">- &lt;link rel="canonical" href="https://relayops.com/customer-onboarding" /&gt;</span>\n<span class="diff-remove">- &lt;link rel="canonical" href="https://relayops.com/customer-onboarding/" /&gt;</span>\n<span class="diff-add">+ &lt;link rel="canonical" href="https://relayops.com/customer-onboarding/" /&gt;</span></code></pre><h3>实施方案</h3><ul><li>将 canonical 的生成职责移至 route metadata 工厂。</li><li>按照共享的尾斜杠策略规范化 URL。</li><li>移除旧版 layout 层的 canonical 组件。</li></ul><h3>验证</h3><pre><code>canonical_count === 1\ncanonical_is_absolute === true\ncanonical_target === requested_normalized_url</code></pre><h3>回滚</h3><p>回退部署 <code>rel-canonical-v2</code>；无需迁移数据。</p></div>`,
-      'art-code-editorial-template': `<div class="client-code-fix"><h3>模板级范围</h3><p>此提案会更新共享的 <code>editorial-article</code> 模板，目前影响已发现的两个 URL。URL 列表来自发现该问题时使用的同一份抓取快照。</p><pre><code><span class="diff-remove">- articleHeading(level: route.depth + 1)</span>\n<span class="diff-add">+ articleHeading(level: 1)</span>\n<span class="diff-add">+ articleSchema({ headline, datePublished, dateModified, author })</span></code></pre><h3>受影响的 URL</h3><ul><li>/blog/customer-onboarding-automation/</li><li>/blog/time-to-value/</li></ul><h3>验收条件</h3><pre><code>h1_count === 1\narticle_schema_count === 1\nschema_headline === visible_h1\nschema_modified_matches_page === true</code></pre><h3>验证与回滚</h3><p>对所有使用 <code>editorial-article</code> 的 URL 执行渲染后抓取。如果任何页面丢失可见标题或输出重复的 Article schema，则回退该模板提交。</p></div>`,
-      'art-meta-onboarding': `<div class="client-copy-review"><section><span>当前版本</span><h3>Onboarding Platform | RelayOps</h3><p>Manage customer onboarding in one place. Learn more about RelayOps.</p></section><section class="is-proposed"><span>提议版本</span><h3>Customer Onboarding Software for B2B SaaS | RelayOps</h3><p>Preserve Sales-to-CS context, automate repeatable handoffs, and surface onboarding risk before it delays time to value.</p></section><h3>搜索摘要设计依据</h3><p>明确商业品类、买方背景和三项差异化成果，同时不使用缺乏依据的最高级表述。</p></div>`,
-      'art-schema-integration': `<div class="client-code-fix"><h3>拟议的 HowTo 结构</h3><pre><code>{\n  "@type": "HowTo",\n  "name": "Connect Salesforce to RelayOps",\n  "step": [\n    { "@type": "HowToStep", "name": "Authorize Salesforce" },\n    { "@type": "HowToStep", "name": "Map onboarding fields" },\n    { "@type": "HowToStep", "name": "Test the first handoff" }\n  ]\n}</code></pre><p>结构化步骤必须与页面上可见的六个实施步骤完全一致。当前草稿仍在执行中，尚未通过事实审查。</p></div>`,
-      'art-landing-pricing': `<div class="client-landing-review"><div class="client-copy-review"><section><span>当前首屏</span><h3>Scale Customer Success</h3><p>One platform for every customer journey.</p></section><section class="is-proposed"><span>提议首屏</span><h3>Standardize Customer Onboarding Without Losing Account Context</h3><p>Give Sales, Implementation, and Customer Success one accountable workflow—from closed-won to first value.</p><button class="client-preview-cta" type="button" disabled>See your onboarding workflow</button></section></div><h3>表单调整</h3><p>将必填字段从 8 个减少到 5 个，仅保留工作邮箱、公司、团队规模、当前使用的工具和主要客户入职挑战。</p><h3>信任要素</h3><ul><li>与 50–500 人规模客户群体相匹配的客户证明</li><li>在表单旁提供公开的安全与数据处理证据</li><li>不使用未经证实的“fastest implementation”主张</li></ul><h3>追踪方案</h3><p><code>pricing_demo_started</code> → <code>pricing_demo_submitted</code>，按 campaign 和设备细分。最短观察窗口：28 天。</p></div>`,
-      'art-publish-automation': `<div class="client-receipt-inline"><span class="receipt-check">${icon('check')}</span><h3>场景已模拟发布</h3><p>自动化指南已写入离线场景 CMS 快照，并建立模拟的 28 天观察窗口；未发生真实外部写入。</p><dl><div><dt>模拟发布 URL</dt><dd>/blog/customer-onboarding-automation/</dd></div><div><dt>场景 CMS 条目</dt><dd>blogPost_8f29</dd></div><div><dt>模拟回滚引用</dt><dd>RB-2026-06-01-021</dd></div><div><dt>追踪标识</dt><dd>q3-onboarding-guide</dd></div></dl></div>`,
-      'art-compare-userpilot': `<div class="client-brief"><h3>对比简报</h3><p><strong>状态：</strong>暂时阻塞，需先使用已批准的语料库更新竞品主张，并完成法务审查。</p><h3>对比维度</h3><ul><li>主要工作流与目标团队</li><li>Sales-to-CS 上下文保留能力</li><li>实施投入与集成</li><li>风险可见性与责任归属</li><li>定价模式与所需服务</li></ul><h3>公平性规范</h3><p>每项竞品主张都必须附有带日期的公开来源。避免绝对排名、杜撰功能缺口，或根据文档缺失推断主张。</p></div>`,
-    };
-    return documents[item.id] || `<div class="client-brief"><h3>${escapeHtml(artifactTypeLabels[item.type] || item.type)}</h3><p>该交付物已绑定机会、目标 URL、证据来源与门禁；等待负责团队补充正文。</p></div>`;
+    const document = workspace.artifactDocuments.find((candidate) => candidate.id === item.documentId)
+      || workspace.artifactDocuments.find((candidate) => candidate.artifactId === item.id && Number(candidate.revision) === Number(item.revision));
+    if (!document) {
+      return `<div class="client-brief"><h3>${escapeHtml(artifactTypeLabels[item.type] || item.type)}</h3><p>这份交付物尚未绑定客户可见 Document。关联机会、目标 URL、证据与门禁仍然保留，但当前不会用另一份场景正文静默补位。</p></div>`;
+    }
+    const isEnglishBlog = item.type === 'english_blog_draft' && /^en/i.test(document.language || '');
+    const renderBlock = (block) => `<section data-document-block="${escapeHtml(block.id)}">${block.heading && (!isEnglishBlog || block.heading !== document.title) ? `<h${isEnglishBlog ? '2' : '3'}>${escapeHtml(block.heading)}</h${isEnglishBlog ? '2' : '3'}>` : ''}${(block.paragraphs || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}${block.keyValues?.length ? `<dl class="client-brief-grid">${block.keyValues.map((entry) => `<div><dt>${escapeHtml(entry.label)}</dt><dd>${escapeHtml(entry.value)}</dd></div>`).join('')}</dl>` : ''}${block.bullets?.length ? `<ul>${block.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join('')}</ul>` : ''}${block.code ? `<pre><code data-language="${escapeHtml(block.code.language || 'text')}">${escapeHtml(block.code.content)}</code></pre>` : ''}</section>`;
+    const qa = document.qa || { label: 'QA / 质量检查', status: 'pending', checks: [] };
+    const review = document.revisionReview || {};
+    const releaseAndResults = document.releaseAndResults || {};
+    return `<article class="${isEnglishBlog ? 'client-blog-draft' : 'client-brief'} client-canonical-document" lang="${escapeHtml(document.language || 'zh-CN')}" data-document-id="${escapeHtml(document.id)}"><p class="client-doc-label">${escapeHtml(document.scenarioLabel || seed.scenarioLabel || '离线演示场景')} · ${escapeHtml(document.documentTypeLabel || artifactTypeLabels[item.type] || item.type)}</p>${isEnglishBlog ? `<h1>${escapeHtml(document.title)}</h1>` : `<h3>${escapeHtml(document.title)}</h3>`}<p class="client-lede">${escapeHtml(document.summary)}</p>${(document.blocks || []).map(renderBlock).join('')}<section class="client-canonical-governance"><h3>${escapeHtml(qa.label)}</h3><p><strong>${qa.status === 'passed' ? '已通过' : '仍有待处理项'}</strong></p><ul>${(qa.checks || []).map((check) => `<li><strong>${escapeHtml(check.label)} · ${check.status === 'passed' ? '已通过' : '待处理'}</strong><span>${escapeHtml(check.evidence)}</span></li>`).join('')}</ul></section><section class="client-canonical-governance"><h3>${escapeHtml(review.label || 'Revision Review / 版本审核')}</h3><dl class="client-brief-grid"><div><dt>Revision</dt><dd>${escapeHtml(review.revision ?? document.revision)}</dd></div><div><dt>审核决定</dt><dd>${escapeHtml(review.decision || '待审核')}</dd></div><div><dt>审核人</dt><dd>${escapeHtml(review.reviewedBy || '尚未完成人工审核')}</dd></div><div><dt>审核时间</dt><dd>${escapeHtml(review.reviewedAt ? dateZh(review.reviewedAt) : '尚未完成')}</dd></div></dl><p>${escapeHtml(review.note || '当前 Revision 尚无额外审核说明。')}</p></section><section class="client-canonical-governance"><h3>${escapeHtml(releaseAndResults.label || 'Publish / Change Receipt 与 Results / 效果结果')}</h3><p>${escapeHtml(releaseAndResults.receiptStatement || '当前 Revision 没有关联发布或变更回执。')}</p><p><strong>归因边界：</strong>${escapeHtml(releaseAndResults.attributionBoundary || seed.attributionBoundary || '动作回执不等于效果，固定窗口观察不归因给单一交付物。')}</p><dl class="client-brief-grid"><div><dt>Release IDs</dt><dd>${escapeHtml((releaseAndResults.releaseIds || []).join(' · ') || '无')}</dd></div><div><dt>Observation IDs</dt><dd>${escapeHtml((releaseAndResults.observationIds || []).join(' · ') || '无')}</dd></div><div><dt>Campaign IDs</dt><dd>${escapeHtml((releaseAndResults.campaignIds || []).join(' · ') || '无')}</dd></div></dl></section></article>`;
   }
 
   function renderResults() {
     const totals = derived().resultTotals;
     const tagged = derived().taggedTotals;
+    const window = activeResultWindow();
     const actions = '<button class="button button--primary" data-action="share-report">模拟分享结果</button>';
     const tabs = [['overview', '结果摘要'], ['pages', '页面改前 / 改后'], ['campaigns', 'Campaign / UTM']];
-    return `${pageHeader('效果追踪', '改前、改后与归因边界', `${workspace.results.baselineWindow.start}–${workspace.results.baselineWindow.end} 对比 ${workspace.results.currentWindow.start}–${workspace.results.currentWindow.end} · 美国市场 · 固定 28 天`, actions)}
+    return `${pageHeader('效果追踪', '改前、改后与归因边界', `${window.baseline.start}–${window.baseline.end} 对比 ${window.current.start}–${window.current.end} · ${escapeHtml(window.current.market || window.baseline.market || '美国市场')} · 固定 ${window.current.days || window.baseline.days || 28} 天`, actions)}
       <section class="client-kpi-strip client-result-strip">
         <div><span>自然搜索点击</span><strong>${compact(totals.clicks.current)}</strong><small>${compact(totals.clicks.before)} → ${compact(totals.clicks.current)} · ${percent(totals.clicks.before, totals.clicks.current)}</small></div>
         <div><span>转化</span><strong>${compact(totals.conversions.current)}</strong><small>${compact(totals.conversions.before)} → ${compact(totals.conversions.current)} · ${percent(totals.conversions.before, totals.conversions.current)}</small></div>
@@ -14658,7 +16262,8 @@ button:disabled {
   }
 
   function renderResultPages() {
-    return `<div class="client-table-scroll"><table class="client-table client-result-page-table"><thead><tr><th>页面</th><th>状态</th><th>自然搜索点击</th><th>转化</th><th>AI 引用</th><th></th></tr></thead><tbody>${workspace.results.pageObservations.map((item) => { const url = byId(workspace.urls, item.urlId); const freshness = sourceFreshness(item.sourceRefs); return `<tr><td><button class="client-primary-cell" data-action="open-result-page" data-id="${item.id}"><strong>${escapeHtml(url?.title)}</strong><small>${escapeHtml(url?.path)} · 来源 ${item.sourceRefs.map(sourceName).join(' / ')} · 更新 ${escapeHtml(freshness.label)}</small></button></td><td>${badge(statusLabel('observationStatus', item.status), toneFor(item.status))}</td><td>${item.metrics.clicks.before} → <strong>${item.metrics.clicks.current}</strong></td><td>${item.metrics.conversions.before} → <strong>${item.metrics.conversions.current}</strong></td><td>${item.metrics.aiCitations.before} → <strong>${item.metrics.aiCitations.current}</strong></td><td><button class="row-arrow" data-action="open-result-page" data-id="${item.id}" aria-label="查看页面结果">${icon('arrow')}</button></td></tr>`; }).join('')}</tbody></table></div>`;
+    const results = activeResultsRecord();
+    return `<div class="client-table-scroll"><table class="client-table client-result-page-table"><thead><tr><th>页面</th><th>状态</th><th>自然搜索点击</th><th>转化</th><th>AI 引用</th><th></th></tr></thead><tbody>${(results.pageObservations || []).map((item) => { const url = byId(workspace.urls, item.urlId); const freshness = sourceFreshness(item.sourceRefs); return `<tr><td><button class="client-primary-cell" data-action="open-result-page" data-id="${item.id}"><strong>${escapeHtml(url?.title)}</strong><small>${escapeHtml(url?.path)} · 来源 ${item.sourceRefs.map(sourceName).join(' / ') || '尚无可用观测来源'} · 更新 ${escapeHtml(freshness.label)}</small></button></td><td>${badge(statusLabel('observationStatus', item.status), toneFor(item.status))}</td><td>${escapeHtml(metricPairText(item.metrics?.clicks))}</td><td>${escapeHtml(metricPairText(item.metrics?.conversions))}</td><td>${escapeHtml(metricPairText(item.metrics?.aiCitations))}</td><td><button class="row-arrow" data-action="open-result-page" data-id="${item.id}" aria-label="查看页面结果">${icon('arrow')}</button></td></tr>`; }).join('')}</tbody></table></div>`;
   }
 
   function renderResultCampaigns() {
@@ -14817,7 +16422,10 @@ button:disabled {
     let content = '';
     if (state.evidenceTab === 'summary') content = `<div class="client-evidence-hero"><div><span>页面类型</span><strong>${escapeHtml(url.pageType === 'blog' ? '博客页' : pageTypeLabels[url.pageType] || url.pageType)}</strong></div><div><span>优先级</span><strong>${url.priority.toUpperCase()}</strong></div><div><span>发现问题</span><strong>${findings.length}</strong></div><div><span>交付物</span><strong>${artifacts.length}</strong></div></div><section class="client-overlay-section"><h3>已发现问题</h3><div class="client-compact-list">${findings.map((item) => { const opportunity = opportunities.find((opp) => opp.findingIds.includes(item.id)); const needsReview = item.status === 'unreviewed'; return `<button data-action="${needsReview || !opportunity ? 'review-finding' : 'open-opportunity'}" data-id="${needsReview || !opportunity ? item.id : opportunity.id}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(labels.lens[item.lens])} · ${severityLabels[item.severity] || item.severity} · ${needsReview ? '待审核' : statusLabel('findingStatus', item.status)}</small>${needsReview ? '<em>审核问题</em>' : ''}${icon('arrow')}</button>`; }).join('') || '<p>当前没有发现问题。</p>'}</div></section>`;
     if (state.evidenceTab === 'crawl') content = `<dl class="client-detail-grid"><div><dt>页面清单</dt><dd>站点地图 + 导航 + 渲染抓取</dd></div><div><dt>Canonical</dt><dd>${findings.some((item) => item.ruleId.includes('canonical')) ? '检测到 Canonical 冲突' : '1 个绝对目标 URL'}</dd></div><div><dt>主题簇</dt><dd>${escapeHtml(byId(workspace.clusters, url.clusterId)?.label)}</dd></div><div><dt>来源快照</dt><dd>${url.sourceRefs.map(sourceName).join(' · ')}</dd></div></dl><pre class="client-evidence-code"><code>GET ${escapeHtml(url.path)}\nrender_status: 200\nindexability: allowed\nstructured_findings: ${findings.filter((item) => item.lens === 'webtech').length}\nsnapshot: ${escapeHtml(seed.snapshotAt)}</code></pre>`;
-    if (state.evidenceTab === 'analytics') content = observation ? `<div class="client-result-numbers">${metricCompare('点击量', observation.metrics.clicks)}${metricCompare('转化数', observation.metrics.conversions)}${metricCompare('AI 引用', observation.metrics.aiCitations)}</div><p class="client-honesty-note">窗口：${workspace.results.baselineWindow.start}–${workspace.results.baselineWindow.end} 对比 ${workspace.results.currentWindow.start}–${workspace.results.currentWindow.end}。状态：${statusLabel('observationStatus', observation.status)}。</p>` : '<div class="empty-state">这个 URL 目前没有符合比较条件的观察记录。</div>';
+    if (state.evidenceTab === 'analytics') {
+      const window = activeResultWindow();
+      content = observation ? `<div class="client-result-numbers">${metricCompare('点击量', observation.metrics.clicks)}${metricCompare('转化数', observation.metrics.conversions)}${metricCompare('AI 引用', observation.metrics.aiCitations)}</div><p class="client-honesty-note">窗口：${window.baseline.start}–${window.baseline.end} 对比 ${window.current.start}–${window.current.end}。状态：${statusLabel('observationStatus', observation.status)}。${escapeHtml(observation.limitation || observation.attributionBoundary || '')}</p>` : '<div class="empty-state">这个 URL 目前没有符合比较条件的观察记录。</div>';
+    }
     if (state.evidenceTab === 'history') content = `<div class="client-compact-list">${artifacts.map((item) => `<button data-action="go-artifact" data-id="${item.id}"><strong>${escapeHtml(item.title)}</strong><small>${evidenceArtifactTypeLabels[item.type] || artifactTypeLabels[item.type] || item.type} · ${statusLabel('artifactStatus', item.status)}</small>${icon('arrow')}</button>`).join('') || '<p>尚无交付物。</p>'}</div><section class="client-overlay-section"><h3>技术复查</h3>${workspace.results.technicalVerifications.filter((item) => item.checkedUrlIds.includes(id)).map((item) => `<p>${badge(statusLabel('verificationStatus', item.status), toneFor(item.status))} <code>${escapeHtml(item.assertion)}</code></p>`).join('') || '<p>尚未进入复查窗口。</p>'}</section>`;
     return overlayFrame(url.title, url.path, `<div class="client-evidence-tabs" role="tablist" aria-label="页面证据视图">${tabs.map(([key, label]) => `<button id="tab-evidence-${key}" role="tab" aria-controls="panel-evidence-${key}" aria-selected="${state.evidenceTab === key}" tabindex="${state.evidenceTab === key ? '0' : '-1'}" class="${state.evidenceTab === key ? 'is-active' : ''}" data-action="evidence-tab" data-tab="${key}">${label}</button>`).join('')}</div><div id="panel-evidence-${state.evidenceTab}" role="tabpanel" aria-labelledby="tab-evidence-${state.evidenceTab}">${content}</div>`, { drawer: true });
   }
@@ -14924,15 +16532,16 @@ button:disabled {
     const artifact = byId(workspace.artifacts, id);
     const revisions = workspace.artifactRevisions.filter((item) => item.artifactId === id).sort((a, b) => Number(b.revision) - Number(a.revision));
     if (!artifact) return overlayFrame('未找到交付物', '版本历史', '<div class="empty-state">该交付物不存在或不在当前项目中。</div>', { drawer: true });
-    return overlayFrame('交付物版本历史', `${artifactTypeLabels[artifact.type]} · 追加式不可变记录`, `<div class="client-version-list">${revisions.map((revision) => `<button data-action="open-artifact-revision" data-id="${revision.id}"><span>${badge(Number(revision.revision) === Number(artifact.revision) ? '当前 Revision' : '历史 Revision', Number(revision.revision) === Number(artifact.revision) ? 'success' : 'neutral')}</span><strong>Revision ${revision.revision} · ${escapeHtml(revision.title)}</strong><small>${dateZh(revision.createdAt)} · ${escapeHtml(revision.changeNote)}</small>${icon('arrow')}</button>`).join('')}</div><div class="client-honesty-note">每个 Revision 都保存标题、客户可见内容、门禁快照、目标 URL 与来源证据；历史版本不可覆盖。</div>`, { drawer: true, footer: `<button class="button button--primary" data-action="go-artifact" data-id="${artifact.id}">返回当前 Revision</button>` });
+    return overlayFrame('交付物版本历史', `${artifactTypeLabels[artifact.type] || artifact.type} · 追加式不可变记录`, `<div class="client-version-list">${revisions.map((revision) => `<button data-action="open-artifact-revision" data-id="${revision.id}"><span>${badge(Number(revision.revision) === Number(artifact.revision) ? '当前 Revision' : '历史 Revision', Number(revision.revision) === Number(artifact.revision) ? 'success' : 'neutral')}</span><strong>Revision ${revision.revision} · ${escapeHtml(revision.title || artifact.title)}</strong><small>${dateZh(revision.createdAt)} · ${escapeHtml(revision.changeNote)}</small>${icon('arrow')}</button>`).join('')}</div><div class="client-honesty-note">每个 Revision 都保存标题、客户可见内容、门禁快照、目标 URL 与来源证据；历史版本不可覆盖。</div>`, { drawer: true, footer: `<button class="button button--primary" data-action="go-artifact" data-id="${artifact.id}">返回当前 Revision</button>` });
   }
 
   function renderArtifactRevision(id) {
     const revision = byId(workspace.artifactRevisions, id);
     if (!revision) return overlayFrame('未找到 Revision', '版本历史', '<div class="empty-state">该版本记录不存在。</div>');
     const artifact = byId(workspace.artifacts, revision.artifactId);
-    const historicalArtifact = { ...artifact, ...clone(revision), id: revision.artifactId, revision: revision.revision, title: revision.title, generatedContent: revision.generatedContent };
-    return overlayFrame(revision.title, `Revision ${revision.revision} · 只读快照`, `<section class="client-revision-snapshot"><dl class="client-detail-grid"><div><dt>创建时间</dt><dd>${dateZh(revision.createdAt)}</dd></div><div><dt>创建者</dt><dd>${escapeHtml(revision.createdBy)}</dd></div><div><dt>当时状态</dt><dd>${escapeHtml(statusLabel('artifactStatus', revision.statusAtCreation))}</dd></div><div><dt>目标 URLs</dt><dd>${revision.targetUrlIds.map(urlName).join(' · ')}</dd></div></dl><div class="client-revision-note"><span>Revision ${revision.revision} 修订摘要</span><strong>${escapeHtml(revision.revisionNote)}</strong><small>${escapeHtml(revision.changeNote)}</small></div><div class="client-document-body">${artifactDocument(historicalArtifact)}</div><section class="client-overlay-section"><h3>门禁快照</h3><div class="client-chip-row">${revision.requiredGates.map((gate) => `<span>${revision.passedGates.includes(gate) ? '✓' : '○'} ${escapeHtml(qualityGateLabels[gate] || gate)}</span>`).join('')}</div></section></section>`, { wide: true, footer: `<button class="button button--primary" data-action="open-artifact-history" data-id="${revision.artifactId}">返回版本历史</button>` });
+    const revisionTitle = revision.title || artifact?.title || `Revision ${revision.revision}`;
+    const historicalArtifact = { ...artifact, ...clone(revision), id: revision.artifactId, revision: revision.revision, title: revisionTitle, documentId: revision.documentId, generatedContent: revision.generatedContent };
+    return overlayFrame(revisionTitle, `Revision ${revision.revision} · 只读快照`, `<section class="client-revision-snapshot"><dl class="client-detail-grid"><div><dt>创建时间</dt><dd>${dateZh(revision.createdAt)}</dd></div><div><dt>创建者</dt><dd>${escapeHtml(revision.createdBy)}</dd></div><div><dt>当时状态</dt><dd>${escapeHtml(statusLabel('artifactStatus', revision.statusAtCreation))}</dd></div><div><dt>目标 URLs</dt><dd>${revision.targetUrlIds.map(urlName).join(' · ')}</dd></div></dl><div class="client-revision-note"><span>Revision ${revision.revision} 修订摘要</span><strong>${escapeHtml(revision.revisionNote)}</strong><small>${escapeHtml(revision.changeNote)}</small></div><div class="client-document-body">${artifactDocument(historicalArtifact)}</div><section class="client-overlay-section"><h3>门禁快照</h3><div class="client-chip-row">${revision.requiredGates.map((gate) => `<span>${revision.passedGates.includes(gate) ? '✓' : '○'} ${escapeHtml(qualityGateLabels[gate] || gate)}</span>`).join('')}</div></section></section>`, { wide: true, footer: `<button class="button button--primary" data-action="open-artifact-history" data-id="${revision.artifactId}">返回版本历史</button>` });
   }
 
   function renderArtifactShare(id) {
@@ -14969,12 +16578,14 @@ button:disabled {
   }
 
   function renderResultPage(id) {
-    const observation = workspace.results.pageObservations.find((item) => item.id === id);
+    const observation = (activeResultsRecord().pageObservations || []).find((item) => item.id === id);
     if (!observation) return '';
     const url = byId(workspace.urls, observation.urlId);
     const freshness = sourceFreshness(observation.sourceRefs);
+    const window = activeResultWindow();
     const metricLabels = { clicks: '自然搜索点击', conversions: '转化', aiCitations: 'AI 引用' };
-    return overlayFrame(url.title, `${url.path} · ${statusLabel('observationStatus', observation.status)}`, `<div class="client-result-numbers">${Object.entries(observation.metrics).map(([name, pair]) => metricCompare(metricLabels[name] || name.replace(/([A-Z])/g, ' $1'), pair)).join('')}</div><dl class="client-detail-grid"><div><dt>基线窗口</dt><dd>${workspace.results.baselineWindow.start}–${workspace.results.baselineWindow.end}</dd></div><div><dt>当前窗口</dt><dd>${workspace.results.currentWindow.start}–${workspace.results.currentWindow.end}</dd></div><div><dt>来源</dt><dd>${observation.sourceRefs.map(sourceName).join(' · ')}</dd></div><div><dt>更新于</dt><dd>${escapeHtml(freshness.label)}</dd></div></dl><section class="client-overlay-section"><h3>关联增长机会</h3><div class="client-compact-list">${observation.opportunityIds.map((oppId) => { const opp = byId(workspace.opportunities, oppId); return `<button data-action="open-opportunity" data-id="${oppId}"><strong>${escapeHtml(opp?.title)}</strong><small>${labels.lens[opp?.lens]} · ${statusLabel('opportunityStatus', opp?.status)}</small>${icon('arrow')}</button>`; }).join('') || '<p>这是未绑定增长机会的自然观察页。</p>'}</div></section>${observation.sample ? `<div class="client-honesty-note"><strong>归因限制：</strong>${escapeHtml(observation.sample.note)} 基线 ${observation.sample.beforeSessions} 个会话，当前 ${observation.sample.currentSessions} 个会话。</div>` : '<div class="client-honesty-note"><strong>归因限制：</strong>“已观察”表示同一固定窗口内记录到变化，不代表由单一 Artifact 造成；动作回执也不等于效果结果。</div>'}`, { wide: true });
+    const limitation = observation.attributionBoundary || observation.limitation || observation.sample?.note || '“已观察”表示同一固定窗口内记录到变化，不代表由单一 Artifact 造成；动作回执也不等于效果结果。';
+    return overlayFrame(url.title, `${url.path} · ${statusLabel('observationStatus', observation.status)}`, `<div class="client-result-numbers">${Object.entries(observation.metrics || {}).map(([name, pair]) => metricCompare(metricLabels[name] || name.replace(/([A-Z])/g, ' $1'), pair)).join('')}</div><dl class="client-detail-grid"><div><dt>基线窗口</dt><dd>${window.baseline.start}–${window.baseline.end}</dd></div><div><dt>当前窗口</dt><dd>${window.current.start}–${window.current.end}</dd></div><div><dt>来源</dt><dd>${observation.sourceRefs.map(sourceName).join(' · ') || '尚无可用观测来源'}</dd></div><div><dt>更新于</dt><dd>${escapeHtml(freshness.label)}</dd></div></dl><section class="client-overlay-section"><h3>关联增长机会</h3><div class="client-compact-list">${(observation.opportunityIds || []).map((oppId) => { const opp = byId(workspace.opportunities, oppId); return `<button data-action="open-opportunity" data-id="${oppId}"><strong>${escapeHtml(opp?.title)}</strong><small>${labels.lens[opp?.lens]} · ${statusLabel('opportunityStatus', opp?.status)}</small>${icon('arrow')}</button>`; }).join('') || '<p>这是未绑定增长机会的自然观察页。</p>'}</div></section><div class="client-honesty-note"><strong>归因限制：</strong>${escapeHtml(limitation)}${observation.sample ? ` 基线 ${observation.sample.beforeSessions} 个会话，当前 ${observation.sample.currentSessions} 个会话。` : ''}</div>`, { wide: true });
   }
 
   function renderCampaign(id) {
@@ -14982,11 +16593,13 @@ button:disabled {
     if (!item) return '';
     const url = byId(workspace.urls, item.landingUrlId);
     const freshness = sourceFreshness(item.sourceRefs);
-    return overlayFrame(item.campaign || `${item.source} 引荐`, `${item.source} / ${item.medium}`, `<div class="client-campaign-path"><span>${escapeHtml(item.source)}</span>${icon('arrow')}<span>${escapeHtml(item.content)}</span>${icon('arrow')}<button data-action="open-page" data-id="${url.id}">${escapeHtml(url.path)}</button></div><div class="client-result-numbers">${metricCompare('会话', item.metrics.sessions)}${metricCompare('直接转化', item.metrics.conversions)}${metricCompare('辅助转化', item.metrics.assistedConversions)}</div><section class="client-overlay-section"><h3>UTM 标识</h3><pre class="client-evidence-code"><code>utm_source=${escapeHtml(item.source)}\nutm_medium=${escapeHtml(item.medium)}\nutm_campaign=${escapeHtml(item.campaign || '(未标记)')}\nutm_content=${escapeHtml(item.content)}</code></pre></section><dl class="client-detail-grid"><div><dt>窗口</dt><dd>${workspace.results.baselineWindow.start}–${workspace.results.currentWindow.end}</dd></div><div><dt>来源</dt><dd>${item.sourceRefs.map(sourceName).join(' · ')}</dd></div><div><dt>更新于</dt><dd>${escapeHtml(freshness.label)}</dd></div><div><dt>样本</dt><dd>固定场景快照 · Landing URL 稳定 ID</dd></div></dl><div class="client-honesty-note"><strong>归因限制：</strong>该行来自 GA4 + UTM 场景快照；直接 / 辅助转化只用于描述当前归因模型，不证明单一 Campaign 造成全部增量。</div>`, { wide: true });
+    const window = activeResultWindow();
+    return overlayFrame(item.campaign || `${item.source} 引荐`, `${item.source} / ${item.medium}`, `<div class="client-campaign-path"><span>${escapeHtml(item.source)}</span>${icon('arrow')}<span>${escapeHtml(item.content)}</span>${icon('arrow')}<button data-action="open-page" data-id="${url.id}">${escapeHtml(url.path)}</button></div><div class="client-result-numbers">${metricCompare('会话', item.metrics.sessions)}${metricCompare('直接转化', item.metrics.conversions)}${metricCompare('辅助转化', item.metrics.assistedConversions)}</div><section class="client-overlay-section"><h3>UTM 标识</h3><pre class="client-evidence-code"><code>utm_source=${escapeHtml(item.source)}\nutm_medium=${escapeHtml(item.medium)}\nutm_campaign=${escapeHtml(item.campaign || '(未标记)')}\nutm_content=${escapeHtml(item.content)}</code></pre></section><dl class="client-detail-grid"><div><dt>窗口</dt><dd>${window.baseline.start}–${window.current.end}</dd></div><div><dt>来源</dt><dd>${item.sourceRefs.map(sourceName).join(' · ')}</dd></div><div><dt>更新于</dt><dd>${escapeHtml(freshness.label)}</dd></div><div><dt>样本</dt><dd>固定场景快照 · Landing URL 稳定 ID</dd></div></dl><div class="client-honesty-note"><strong>归因限制：</strong>${escapeHtml(item.attributionBoundary || '该行来自 GA4 + UTM 场景快照；直接 / 辅助转化只用于描述当前归因模型，不证明单一 Campaign 造成全部增量。')}</div>`, { wide: true });
   }
 
   function renderReportShare() {
-    return overlayFrame('模拟分享结果报告', '固定窗口 · 当前筛选范围', `<form id="report-share-form" data-form="report-share" class="client-form"><div class="client-honesty-note"><strong>离线场景：</strong>这里演示报告范围、权限和审计逻辑；不会创建真实可访问链接，也不会发送邮件。</div><label><span>模拟访问权限</span><select name="access"><option value="workspace">项目成员</option><option value="reviewers">指定收件人</option><option value="link">持模拟地址者可查看</option></select></label><label><span>模拟收件人</span><input name="recipients" type="email" value="leadership@relayops.com" required></label><label><span>模拟有效期</span><select name="expiry"><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label><fieldset><legend>包含范围</legend><label class="client-check-row"><input type="checkbox" checked name="scope" value="summary"> 结果摘要</label><label class="client-check-row"><input type="checkbox" checked name="scope" value="pages"> URL 改前 / 改后</label><label class="client-check-row"><input type="checkbox" checked name="scope" value="campaigns"> Campaign / UTM</label><label class="client-check-row"><input type="checkbox" checked name="scope" value="limitations"> 观察结论限制</label></fieldset></form>`, { footer: '<button class="button button--secondary" data-action="close-overlay">取消</button><button class="button button--primary" type="submit" form="report-share-form">生成模拟报告预览</button>' });
+    const window = activeResultWindow();
+    return overlayFrame('模拟分享结果报告', `${window.baseline.start}–${window.baseline.end} 对比 ${window.current.start}–${window.current.end}`, `<form id="report-share-form" data-form="report-share" class="client-form"><div class="client-honesty-note"><strong>离线场景：</strong>这里演示当前固定窗口的报告范围、权限和审计逻辑；不会创建真实可访问链接，也不会发送邮件。动作回执不等于效果，窗口变化不归因给单一交付物。</div><label><span>模拟访问权限</span><select name="access"><option value="workspace">项目成员</option><option value="reviewers">指定收件人</option><option value="link">持模拟地址者可查看</option></select></label><label><span>模拟收件人</span><input name="recipients" type="email" value="leadership@relayops.com" required></label><label><span>模拟有效期</span><select name="expiry"><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label><fieldset><legend>包含范围</legend><label class="client-check-row"><input type="checkbox" checked name="scope" value="summary"> 结果摘要</label><label class="client-check-row"><input type="checkbox" checked name="scope" value="pages"> URL 改前 / 改后</label><label class="client-check-row"><input type="checkbox" checked name="scope" value="campaigns"> Campaign / UTM</label><label class="client-check-row"><input type="checkbox" checked name="scope" value="limitations"> 观察结论限制</label></fieldset></form>`, { footer: '<button class="button button--secondary" data-action="close-overlay">取消</button><button class="button button--primary" type="submit" form="report-share-form">生成模拟报告预览</button>' });
   }
 
   function renderAuditEvent(id) {
@@ -15025,13 +16638,49 @@ button:disabled {
       state.pageStatusFilter = 'all';
       state.pageLensFilter = 'all';
       state.pages.pages = 1;
+      state.urlFlags.pageTemplate = false;
+      state.urlFlags.pageCluster = false;
+      state.urlFlags.pageStatus = false;
+      state.urlFlags.pageLens = false;
+      state.urlFlags.pageNumber.pages = false;
       return closeOverlay();
     }
-    if (action === 'toggle-page-rows') { state.pageRowsExpanded = !state.pageRowsExpanded; return render(); }
-    if (action === 'map-tab') { state.mapTab = button.dataset.tab; state.pages[state.mapTab] = 1; return render(); }
-    if (action === 'page-search') { state.pages.pages = 1; return render(); }
-    if (action === 'page-view') { state.pageView = button.dataset.view; state.pages.pages = 1; return render(); }
-    if (action === 'keyword-source') { state.keywordSource = button.dataset.source; state.pages.keywords = 1; return render(); }
+    if (action === 'toggle-page-rows') {
+      state.pageRowsExpanded = !state.pageRowsExpanded;
+      state.urlFlags.pageRowsExpanded = true;
+      return commitState('replace');
+    }
+    if (action === 'map-tab') {
+      state.mapTab = button.dataset.tab;
+      state.pages[state.mapTab] = 1;
+      state.urlFlags.mapTab = true;
+      state.urlFlags.pageNumber[state.mapTab] = false;
+      state.urlFlags.selection[state.mapTab] = false;
+      return commitState('push');
+    }
+    if (action === 'page-search') {
+      state.pages.pages = 1;
+      state.urlFlags.search.pages = true;
+      state.urlFlags.pageNumber.pages = false;
+      state.urlFlags.selection.pages = false;
+      return commitState('push');
+    }
+    if (action === 'page-view') {
+      state.pageView = button.dataset.view;
+      state.pages.pages = 1;
+      state.urlFlags.pageView = true;
+      state.urlFlags.pageNumber.pages = false;
+      state.urlFlags.selection.pages = false;
+      return commitState('push');
+    }
+    if (action === 'keyword-source') {
+      state.keywordSource = button.dataset.source;
+      state.pages.keywords = 1;
+      state.urlFlags.keywordSource = true;
+      state.urlFlags.pageNumber.keywords = false;
+      state.urlFlags.selection.keywords = false;
+      return commitState('push');
+    }
     if (action === 'select-map-page') return selectMapObject('selectedPageId', id);
     if (action === 'select-map-cluster') return selectMapObject('selectedClusterId', id);
     if (action === 'select-map-opportunity') return selectMapObject('selectedOpportunityId', id);
@@ -15041,14 +16690,21 @@ button:disabled {
       state.pageTypeFilter = 'all';
       state.searches.pages = '';
       state.pages.pages = 1;
-      return render();
+      state.urlFlags.pageView = true;
+      state.urlFlags.selection.pages = true;
+      state.urlFlags.pageType = false;
+      state.urlFlags.search.pages = false;
+      state.urlFlags.pageNumber.pages = false;
+      return commitState('push');
     }
     if (action === 'select-map-keyword') return selectMapObject('selectedKeywordId', id);
     if (action === 'select-map-competitor') return selectMapObject('selectedCompetitorId', id);
     if (action === 'page-change') {
       const kind = button.dataset.kind;
       state.pages[kind] = Math.max(1, state.pages[kind] + Number(button.dataset.delta));
-      return render();
+      state.urlFlags.pageNumber[kind] = true;
+      state.urlFlags.selection[kind] = false;
+      return commitState('push');
     }
     if (action === 'open-page') {
       if (!byId(workspace.urls, id)) {
@@ -15059,7 +16715,7 @@ button:disabled {
       }
       return openOverlay('page-evidence', { id });
     }
-    if (action === 'evidence-tab') { state.evidenceTab = button.dataset.tab; return render(); }
+    if (action === 'evidence-tab') { state.evidenceTab = button.dataset.tab; return commitState('replace'); }
     if (action === 'open-keyword') return openOverlay('keyword-detail', { id });
     if (action === 'add-keyword') return openOverlay('keyword-add');
     if (action === 'open-competitor') return openOverlay('competitor-detail', { id });
@@ -15067,16 +16723,25 @@ button:disabled {
     if (action === 'review-competitor') return openOverlay('competitor-review', { id });
     if (action === 'review-finding') return openOverlay('finding-review', { id });
     if (action === 'go-competitors') return setRoute('growth-map', { mapTab: 'competitors' });
-    if (action === 'artifact-filter') { state.artifactFilter = button.dataset.filter; return render(); }
-    if (action === 'select-artifact') { state.selectedArtifactId = id; return render(); }
+    if (action === 'artifact-filter') {
+      state.artifactFilter = button.dataset.filter;
+      state.urlFlags.artifactFilter = true;
+      state.urlFlags.artifactSelection = false;
+      return commitState('push');
+    }
+    if (action === 'select-artifact') {
+      state.selectedArtifactId = id;
+      state.urlFlags.artifactSelection = true;
+      return commitState('push');
+    }
     if (action === 'open-opportunity') return openOverlay('opportunity', { id });
     if (action === 'decide-opportunity') return openOverlay('opportunity-decision', { id });
     if (action === 'create-artifact') return openOverlay('artifact-create', { id });
-    if (action === 'go-artifact') { state.selectedArtifactId = id; return setRoute('execution', { artifactFilter: 'all' }); }
+    if (action === 'go-artifact') return setRoute('execution', { selectedArtifactId: id, artifactFilter: 'all' });
     if (action === 'go-keyword-artifact') {
       const keywordUrls = workspace.keywords.filter((item) => item.clusterId === button.dataset.cluster).map((item) => item.mappedUrlId).filter(Boolean);
       const item = workspace.artifacts.find((artifact) => artifact.targetUrlIds.some((urlId) => keywordUrls.includes(urlId)));
-      if (item) { state.selectedArtifactId = item.id; return setRoute('execution', { artifactFilter: 'all' }); }
+      if (item) return setRoute('execution', { selectedArtifactId: item.id, artifactFilter: 'all' });
       return openOverlay('receipt', receipt('review', { subject: '尚无相关交付物', message: '这个主题簇已正式入库，但当前还没有生成交付物。' }));
     }
     if (action === 'share-artifact') return openOverlay('artifact-share', { id });
@@ -15089,13 +16754,20 @@ button:disabled {
       const found = workspace.releases.find((item) => item.artifactId === id) || (id === 'art-publish-automation' ? receipt('publish', { id: 'RCP-PUBLISH-20260601-021', artifactId: id, publishedAt: '2026-06-01T03:06:00.000Z', targetUrl: '/blog/customer-onboarding-automation/', rollbackRef: 'RB-2026-06-01-021', message: '文章已发布，固定 28 天观察窗口已建立。' }) : null);
       return openOverlay('receipt', found);
     }
-    if (action === 'result-tab') { state.resultTab = button.dataset.tab; return render(); }
+    if (action === 'result-tab') {
+      state.resultTab = button.dataset.tab;
+      state.urlFlags.resultTab = true;
+      return commitState('push');
+    }
     if (action === 'open-result-page') return openOverlay('result-page', { id });
     if (action === 'open-campaign') return openOverlay('campaign', { id });
-    if (action === 'share-report') return openOverlay('report-share');
+    if (action === 'share-report') {
+      state.urlFlags.resultWindow = true;
+      return openOverlay('report-share');
+    }
     if (action === 'open-task') return openOverlay('task-preview', { kind: button.dataset.kind, id });
     if (action === 'task-go') {
-      if (button.dataset.kind === 'artifact') { state.selectedArtifactId = id; return setRoute('execution', { artifactFilter: 'all' }); }
+      if (button.dataset.kind === 'artifact') return setRoute('execution', { selectedArtifactId: id, artifactFilter: 'all' });
       if (button.dataset.kind === 'competitor') return openOverlay('competitor-review', { id });
       return openOverlay('finding-review', { id });
     }
@@ -15127,6 +16799,12 @@ button:disabled {
       state.pageStatusFilter = values.status;
       state.pageLensFilter = values.lens;
       state.pages.pages = 1;
+      state.urlFlags.pageTemplate = values.template !== 'all';
+      state.urlFlags.pageCluster = values.cluster !== 'all';
+      state.urlFlags.pageStatus = values.status !== 'all';
+      state.urlFlags.pageLens = values.lens !== 'all';
+      state.urlFlags.pageNumber.pages = false;
+      state.urlFlags.selection.pages = false;
       return closeOverlay();
     }
     if (form.dataset.form === 'profile-edit') {
@@ -15302,11 +16980,38 @@ button:disabled {
       const current = workspace.artifacts[index];
       if (!current) return openOverlay('receipt', receipt('blocked', { subject: '尚未创建 Revision', message: '交付物不存在，当前版本历史没有变化。' }));
       const oldRevision = current.revision;
+      const nextRevision = Number(current.revision) + 1;
       const hadApproval = ['approved', 'published'].includes(current.status) || current.passedGates.includes('human');
+      const currentDocument = workspace.artifactDocuments.find((document) => document.id === current.documentId);
+      const nextDocument = currentDocument ? {
+        ...clone(currentDocument),
+        id: `doc-${current.id}-r${nextRevision}`,
+        revision: nextRevision,
+        revisionId: `rev-${current.id}-r${nextRevision}`,
+        title: values.title.trim(),
+        revisionReview: {
+          label: 'Revision Review / 版本审核',
+          revision: nextRevision,
+          decision: '待审核',
+          reviewedBy: '尚未完成人工审核',
+          reviewedAt: null,
+          note: values.revisionSummary.trim(),
+        },
+        releaseAndResults: {
+          label: 'Publish / Change Receipt 与 Results / 效果结果',
+          releaseIds: [],
+          observationIds: [],
+          campaignIds: [],
+          receiptStatement: '这个新 Revision 尚无 Publish / Change Receipt。',
+          attributionBoundary: seed.attributionBoundary || '动作回执不等于效果，固定窗口观察不归因给单一交付物。',
+        },
+      } : null;
       const next = {
         ...clone(current),
         title: values.title.trim(),
-        revision: Number(current.revision) + 1,
+        revision: nextRevision,
+        documentId: nextDocument?.id || current.documentId,
+        revisionIds: [...(current.revisionIds || []), `rev-${current.id}-r${nextRevision}`],
         revisionNote: values.revisionSummary.trim(),
         changeNote: values.changeNote.trim(),
         status: 'review',
@@ -15317,6 +17022,7 @@ button:disabled {
         approvalInvalidatedAt: hadApproval ? new Date().toISOString() : current.approvalInvalidatedAt,
       };
       workspace.artifacts.splice(index, 1, next);
+      if (nextDocument) workspace.artifactDocuments.push(nextDocument);
       workspace.artifactRevisions.push(artifactRevisionSnapshot(next, { createdAt: next.updatedAt, createdBy: 'customer-user' }));
       recordEvent('artifact_revised', [next.id, `revision:${oldRevision}`, `revision:${next.revision}`]);
       return openOverlay('receipt', receipt('review', { artifactId: next.id, subject: `${next.title} · Revision ${next.revision}`, message: hadApproval ? `新 Revision 已追加；Revision ${oldRevision} 的批准状态已失效，历史发布与 Revision 快照均保留为只读记录。` : `新 Revision 已追加，交付物已进入审核状态。` }));
@@ -15361,7 +17067,8 @@ button:disabled {
       const reportScopeLabels = { summary: '结果摘要', pages: 'URL 改前 / 改后', campaigns: 'Campaign / UTM', limitations: '观察结论限制' };
       if (!scopes.length) return openOverlay('receipt', receipt('blocked', { subject: '尚未创建报告', message: '请至少选择一个报告范围；当前没有生成访问链接，也没有写入分享记录。' }));
       const selectedScopeLabels = scopes.map((scope) => reportScopeLabels[scope] || scope);
-      const result = receipt('share', { subject: 'RelayOps · 效果追踪报告', scopes: selectedScopeLabels, scenarioOnly: true, simulated: true, url: `local-artifact://preview/results/${workspace.project.slug}?window=2026-06&scope=${encodeURIComponent(scopes.join(','))}`, message: `已为“${values.recipients}”生成仅限当前浏览器会话的模拟报告预览，有效期参数为 ${values.expiry} 天；包含 ${selectedScopeLabels.join('、')}。没有创建真实链接，也没有发送邮件。` });
+      const window = activeResultWindow();
+      const result = receipt('share', { subject: `${workspace.project.name} · 效果追踪报告`, scopes: selectedScopeLabels, scenarioOnly: true, simulated: true, url: `local-artifact://preview/results/${workspace.project.slug}?window=${encodeURIComponent(window.id)}&scope=${encodeURIComponent(scopes.join(','))}`, message: `已为“${values.recipients}”生成 ${window.baseline.start}–${window.baseline.end} 对比 ${window.current.start}–${window.current.end} 的模拟报告预览，有效期参数为 ${values.expiry} 天；包含 ${selectedScopeLabels.join('、')}。没有创建真实链接，也没有发送邮件；动作回执不等于效果，固定窗口变化不归因给单一对象。` });
       workspace.shareReceipts.push(result);
       recordEvent('report_shared', [result.id, ...scopes.map((scope) => `scope:${scope}`)]);
       return openOverlay('receipt', result);
@@ -15388,7 +17095,10 @@ button:disabled {
     if (!kind) return;
     state.searches[kind] = event.target.value;
     state.pages[kind] = 1;
-    render();
+    state.urlFlags.search[kind] = true;
+    state.urlFlags.pageNumber[kind] = false;
+    state.urlFlags.selection[kind] = false;
+    commitState('replace');
     window.requestAnimationFrame(() => { const input = document.querySelector(`[data-search="${kind}"]`); if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } });
   });
 
@@ -15396,19 +17106,28 @@ button:disabled {
     if (event.target.matches('[data-page-type-filter]')) {
       state.pageTypeFilter = event.target.value;
       state.pages.pages = 1;
-      return render();
+      state.urlFlags.pageType = true;
+      state.urlFlags.pageNumber.pages = false;
+      state.urlFlags.selection.pages = false;
+      return commitState('replace');
     }
     const sourceKind = event.target.dataset.sourceFilter;
     if (sourceKind === 'keywords') {
       state.keywordSource = event.target.value;
       state.pages.keywords = 1;
-      return render();
+      state.urlFlags.keywordSource = true;
+      state.urlFlags.pageNumber.keywords = false;
+      state.urlFlags.selection.keywords = false;
+      return commitState('replace');
     }
     const kind = event.target.dataset.filter;
     if (!kind) return;
     state.statusFilters[kind] = event.target.value;
     state.pages[kind] = 1;
-    render();
+    state.urlFlags.status[kind] = true;
+    state.urlFlags.pageNumber[kind] = false;
+    state.urlFlags.selection[kind] = false;
+    commitState('replace');
   });
 
   app.addEventListener('submit', (event) => {
@@ -15421,6 +17140,7 @@ button:disabled {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && state.overlay) {
+      event.preventDefault();
       closeOverlay();
       return;
     }
@@ -15459,11 +17179,17 @@ button:disabled {
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
+    if (!container.contains(document.activeElement)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+      return;
+    }
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   });
 
-  window.addEventListener('hashchange', () => { state.route = routeFromHash(); render(); });
+  window.addEventListener('popstate', reconcileLocation);
+  window.addEventListener('hashchange', reconcileLocation);
 
   function render() {
     const views = { overview: renderOverview, 'growth-map': renderGrowthMap, execution: renderExecution, results: renderResults };
@@ -15476,7 +17202,10 @@ button:disabled {
     }
   }
 
+  hydrateStateFromLocation();
   render();
+  writeLocation('replace');
+  if (state.overlay) focusOverlay();
 }());
 
     </script>
