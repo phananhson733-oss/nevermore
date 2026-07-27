@@ -1856,7 +1856,7 @@ components:
         confidence: { type: string, enum: [high, medium, low, unknown] }
         evidenceRefs:
           type: array
-          maxItems: 50
+          maxItems: 100
           items: { $ref: '#/components/schemas/ProductProfileEvidenceRef' }
         limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
         observedAt:
@@ -4439,7 +4439,7 @@ components:
           type: integer
           minimum: 1
           description: Defaults to the confirmed brief's current revision when omitted.
-        flowAdapterVersion: { type: string, const: 'content-shadow-adapter.0.3.0' }
+        flowAdapterVersion: { type: string, const: 'content-shadow-adapter.0.4.0' }
         competitorEntityIds:
           type: array
           maxItems: 50
@@ -4453,7 +4453,7 @@ components:
           items: { $ref: '#/components/schemas/Uuid' }
           description: Generative answer observation, kept separate from search demand observation.
         outputLocale: { $ref: '#/components/schemas/LocaleCode' }
-        capabilityContractVersion: { type: string, const: 'content-shadow.0.3.0' }
+        capabilityContractVersion: { type: string, const: 'content-shadow.0.4.0' }
 
     ContentShadowQaClaim:
       type: object
@@ -4485,11 +4485,30 @@ components:
       type: object
       additionalProperties: false
       description: |
-        first_party_site and first_party_conversion are the customer's OWN web identity.
-        They are first-party records like every other pack source, so they grade A, but they
-        are never evidence for a claim: they only let the QA gate tell a link to the
-        customer's property apart from an outside citation.
-      required: [kind, ref, authorityTier, limitation]
+        Customer-readable, body-free projection of one immutable research source.
+        Full retrieved content and URL-hash internals remain server-side in the
+        append-only pack. This shape exposes the bounded excerpt, reproducible content-hash
+        method and independent body/excerpt truncation flags needed for honest review without
+        leaking the complete page body. Runtime refinement requires contentHash and
+        contentHashMethod to be present or null together; contentTruncated requires partial
+        availability plus an auditable hash; excerptTruncated requires a retained excerpt and
+        cannot accompany unavailable. Every URL is HTTP(S)-only with no embedded credentials.
+      required:
+        - kind
+        - ref
+        - label
+        - url
+        - availability
+        - authorityTier
+        - capturedAt
+        - contentHash
+        - contentHashMethod
+        - contentTruncated
+        - excerpt
+        - excerptTruncated
+        - metrics
+        - evidenceRefs
+        - limitation
       properties:
         kind:
           type: string
@@ -4500,10 +4519,58 @@ components:
             - competitor
             - first_party_site
             - first_party_conversion
+            - first_party_page
+            - external_page
         ref: { type: string, minLength: 1, maxLength: 500 }
+        label: { type: string, minLength: 1, maxLength: 500 }
+        url:
+          type: [string, 'null']
+          format: uri
+          pattern: '^[Hh][Tt][Tt][Pp][Ss]?://'
+          maxLength: 2048
+          description: Public HTTP(S) URL; embedded credentials are rejected by runtime refinement.
+        availability:
+          type: string
+          enum: [available, partial, unavailable]
         authorityTier:
           type: string
-          enum: [A, B, C, D]
+          enum: [A, B, C]
+        capturedAt: { type: [string, 'null'], format: date-time }
+        contentHash: { type: [string, 'null'], pattern: '^[a-f0-9]{64}$' }
+        contentHashMethod:
+          type: [string, 'null']
+          enum: [sha256_canonical_extract, sha256_normalized_text, null]
+          description: Reproducible normalization method for contentHash; null when no body hash exists.
+        contentTruncated:
+          type: boolean
+          description: True when the retained immutable research body is only a bounded prefix.
+        excerpt: { type: [string, 'null'], maxLength: 10000 }
+        excerptTruncated:
+          type: boolean
+          description: True when excerpt is only a bounded customer-readable preview.
+        metrics:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [status, contentType, bodyBytes, wordCount, responseMs, redirectChain]
+          properties:
+            status: { type: [integer, 'null'], minimum: 100, maximum: 599 }
+            contentType: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+            bodyBytes: { type: [integer, 'null'], minimum: 0 }
+            wordCount: { type: [integer, 'null'], minimum: 0 }
+            responseMs: { type: [integer, 'null'], minimum: 0 }
+            redirectChain:
+              type: array
+              maxItems: 10
+              items:
+                type: string
+                format: uri
+                pattern: '^[Hh][Tt][Tt][Pp][Ss]?://'
+                maxLength: 2048
+                description: HTTP(S) redirect URL without embedded credentials.
+        evidenceRefs:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 500 }
         limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
 
     ContentShadowFirstPartyIdentity:
@@ -4543,6 +4610,188 @@ components:
         pageAssignment:
           type: string
           enum: [existing_page, new_asset, mixed, unassigned]
+
+    ContentShadowFirstPartyPageSnapshotIdentity:
+      type: object
+      additionalProperties: false
+      required: [pageSnapshotId, dataSnapshotId, url, urlHash, contentHash, capturedAt]
+      properties:
+        pageSnapshotId: { $ref: '#/components/schemas/Uuid' }
+        dataSnapshotId: { $ref: '#/components/schemas/Uuid' }
+        url:
+          type: string
+          format: uri
+          pattern: '^[Hh][Tt][Tt][Pp][Ss]?://'
+          maxLength: 2048
+          description: Public HTTP(S) snapshot URL without embedded credentials.
+        urlHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        capturedAt: { type: string, format: date-time }
+
+    ContentShadowKeywordMapping:
+      type: object
+      additionalProperties: false
+      required: [decision, mappedSitePageId, reviewState, revision]
+      properties:
+        decision:
+          type: string
+          enum: [unassigned, existing_page, new_asset]
+        mappedSitePageId:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        reviewState:
+          type: string
+          enum: [unreviewed, confirmed]
+        revision: { type: integer, minimum: 0 }
+
+    ContentShadowKeywordFact:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - display
+        - market
+        - language
+        - intent
+        - buyerStage
+        - cluster
+        - mapping
+        - lastSeen
+        - evidenceRefs
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        display: { type: string, minLength: 1, maxLength: 500 }
+        market: { type: string, minLength: 1, maxLength: 32 }
+        language: { $ref: '#/components/schemas/LocaleCode' }
+        intent: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        buyerStage: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        cluster: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+        mapping: { $ref: '#/components/schemas/ContentShadowKeywordMapping' }
+        lastSeen: { type: string, format: date-time }
+        evidenceRefs:
+          type: array
+          maxItems: 50
+          items: { type: string, minLength: 1, maxLength: 500 }
+
+    ContentShadowCompetitorFact:
+      type: object
+      additionalProperties: false
+      required: [id, domain, name, status, relationship, scopes, revision]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        domain: { type: string, minLength: 1, maxLength: 253 }
+        name: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        status:
+          type: string
+          enum: [candidate, approved, excluded]
+        relationship:
+          type: [string, 'null']
+          enum: [direct, indirect, status_quo, benchmark, publisher, null]
+        scopes:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            enum: [positioning, product_capability, keyword_gap, content, serp_visibility]
+        revision: { type: integer, minimum: 0 }
+
+    ContentShadowExternalResearchTarget:
+      type: object
+      additionalProperties: false
+      required: [ref, kind, url, label]
+      properties:
+        ref: { type: string, minLength: 1, maxLength: 500 }
+        kind: { type: string, minLength: 1, maxLength: 100 }
+        url:
+          type: string
+          format: uri
+          pattern: '^[Hh][Tt][Tt][Pp][Ss]?://'
+          maxLength: 2048
+          description: Public HTTP(S) research target; embedded credentials are rejected by runtime refinement.
+        label: { type: string, minLength: 1, maxLength: 500 }
+
+    ContentShadowContentPolicy:
+      type: object
+      additionalProperties: false
+      required: [brandConstraints, complianceConstraints, prohibitedTerms, claimRestrictions]
+      properties:
+        brandConstraints:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 10000 }
+        complianceConstraints:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 10000 }
+        prohibitedTerms:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 10000 }
+        claimRestrictions:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 10000 }
+
+    ContentShadowResearchContext:
+      type: object
+      additionalProperties: false
+      description: |
+        Complete canonical research identity frozen into the run's content address. The
+        search, generative and competitor fact ids exactly equal their legacy identity sets;
+        every collection is deterministic, bounded and unique by its canonical id/ref.
+      required:
+        - firstPartyPageSnapshots
+        - searchKeywordFacts
+        - generativeKeywordFacts
+        - competitorFacts
+        - externalTargets
+        - contentPolicy
+      properties:
+        firstPartyPageSnapshots:
+          type: array
+          uniqueItems: true
+          maxItems: 50
+          items: { $ref: '#/components/schemas/ContentShadowFirstPartyPageSnapshotIdentity' }
+        searchKeywordFacts:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          maxItems: 500
+          items: { $ref: '#/components/schemas/ContentShadowKeywordFact' }
+        generativeKeywordFacts:
+          type: array
+          uniqueItems: true
+          maxItems: 500
+          items: { $ref: '#/components/schemas/ContentShadowKeywordFact' }
+        competitorFacts:
+          type: array
+          uniqueItems: true
+          maxItems: 50
+          items: { $ref: '#/components/schemas/ContentShadowCompetitorFact' }
+        externalTargets:
+          type: array
+          uniqueItems: true
+          maxItems: 8
+          items: { $ref: '#/components/schemas/ContentShadowExternalResearchTarget' }
+        contentPolicy: { $ref: '#/components/schemas/ContentShadowContentPolicy' }
+      x-signalframe-runtime-refinement: exactFrozenResearchIdentitySets
+
+    ContentShadowArtifactRevisionSummary:
+      type: object
+      additionalProperties: false
+      required: [revision, contentHash, generatedBy, editorId, note, validationErrorCount, createdAt]
+      properties:
+        revision: { type: integer, minimum: 1 }
+        contentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        generatedBy: { type: string, minLength: 1, maxLength: 100 }
+        editorId:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        note: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        validationErrorCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
 
     ContentShadowRunResponse:
       type: object
@@ -4604,11 +4853,13 @@ components:
             - generativeQueryEntityIds
             - firstParty
             - contentBriefOutline
+            - researchContext
           properties:
             primaryFindingId: { $ref: '#/components/schemas/Uuid' }
             sourceDiagnosticRunId: { $ref: '#/components/schemas/Uuid' }
             competitorEntityIds:
               type: array
+              uniqueItems: true
               maxItems: 50
               items: { $ref: '#/components/schemas/Uuid' }
             searchCluster:
@@ -4619,14 +4870,18 @@ components:
                 clusterKey: { type: string, minLength: 1, maxLength: 200 }
                 keywordEntityIds:
                   type: array
+                  minItems: 1
+                  uniqueItems: true
                   maxItems: 500
                   items: { $ref: '#/components/schemas/Uuid' }
             generativeQueryEntityIds:
               type: array
+              uniqueItems: true
               maxItems: 500
               items: { $ref: '#/components/schemas/Uuid' }
             firstParty: { $ref: '#/components/schemas/ContentShadowFirstPartyIdentity' }
             contentBriefOutline: { $ref: '#/components/schemas/ContentShadowBriefOutline' }
+            researchContext: { $ref: '#/components/schemas/ContentShadowResearchContext' }
         research:
           type: [object, 'null']
           additionalProperties: false
@@ -4635,7 +4890,7 @@ components:
             packId: { $ref: '#/components/schemas/Uuid' }
             sources:
               type: array
-              maxItems: 1000
+              maxItems: 1200
               items: { $ref: '#/components/schemas/ContentShadowAuthoritySource' }
             limitations:
               type: array
@@ -4650,7 +4905,7 @@ components:
             never the Action's currently live artifact. A later shadow run for the same Action
             may install a further revision on the same artifact row; that never changes what a
             finished run reports here. Null until this run claims or produces a draft.
-          required: [artifactId, status, currentRevision, contentText]
+          required: [artifactId, status, currentRevision, contentText, revisionHistory]
           properties:
             artifactId: { $ref: '#/components/schemas/Uuid' }
             status:
@@ -4662,6 +4917,12 @@ components:
               minimum: 0
               description: The revision this run installed or evaluated; 0 before it installs one.
             contentText: { type: [string, 'null'] }
+            revisionHistory:
+              type: array
+              maxItems: 1000
+              items: { $ref: '#/components/schemas/ContentShadowArtifactRevisionSummary' }
+              description: Complete immutable artifact revision ledger, newest first.
+              x-signalframe-runtime-refinement: completeNewestFirstRevisionHistory
         qa:
           type: [object, 'null']
           additionalProperties: false
@@ -4757,11 +5018,11 @@ components:
             review is refused (409 STALE_REVISION) rather than re-aimed at newer text.
         acknowledgeFindings:
           type: boolean
-          default: false
           description: |
             The reviewer's explicit statement that they read every finding needing human
             confirmation. Must be true when the automated verdict is needs_review; a
-            one-click pass would make that verdict decorative.
+            one-click pass would make that verdict decorative. Omission is interpreted as
+            false by the request validator.
 
     ContentShadowReviewReceipt:
       type: object
