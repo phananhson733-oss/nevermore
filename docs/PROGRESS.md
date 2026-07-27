@@ -11,10 +11,10 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 
 - Branch: `codex/unified-growth-opportunity-v03`
 - Documentation reconciliation base HEAD:
-  `09c447022bceff6d5d5fc52d8e940980106619ec`
+  `306dbf866cb46d8d0c4f51f0e04646715a965ead`
 - Nevermore program root: `/Users/wzb/Code/nevermore`
 - Git repository common directory:
-  `/Users/wzb/Code/nevermore/signalframe-mvp-app`
+  `/Users/wzb/Code/nevermore/signalframe-mvp-app/.git`
 - Application worktree:
   `/Users/wzb/.config/superpowers/worktrees/signalframe-mvp-app/unified-growth-opportunity-v03`
 - Product version: **0.3.0**
@@ -99,7 +99,7 @@ database, or deployed origin was exercised.
 | Typecheck | `pnpm typecheck` passed across the E2E and workspace packages. |
 | Unit tests | `pnpm test` passed: **315 files / 4,173 tests**. |
 | Production build | `pnpm build` passed across all buildable workspace packages; `apps/web/next-env.d.ts` remained clean. |
-| Targeted customer-surface mock E2E | **27 passed**: Critical **14** + Sources suites **7** + frontend affected **4** + cursor affected **2**. |
+| Targeted customer-surface mock E2E | **28 passed**: Critical **14** + Sources suites **7** + frontend affected **4** + cursor affected **3**. |
 | Diff whitespace check | `git diff --check` passed for the final Task 2 worktree diff. |
 
 The first documentation-consistency run was intentionally red before these docs
