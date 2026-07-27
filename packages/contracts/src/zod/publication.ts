@@ -379,6 +379,16 @@ export const PublicationAttempt = z
       });
     }
     if (
+      attempt.previewChecksum !== attempt.approvedArtifactContentHash
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["previewChecksum"],
+        message:
+          "Preview checksum must match the exact approved artifact content",
+      });
+    }
+    if (
       attempt.authorizationSnapshot.destinationRef !==
         attempt.destinationRef ||
       attempt.authorizationSnapshot.destinationRevision !==

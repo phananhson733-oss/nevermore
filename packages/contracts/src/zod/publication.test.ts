@@ -485,6 +485,17 @@ describe("server publication attempt union", () => {
     ).toBe(false);
   });
 
+  it("binds every publish and rollback preview to the exact approved artifact content", () => {
+    for (const attempt of [publish, rollback]) {
+      expect(
+        PublicationAttempt.safeParse({
+          ...attempt,
+          previewChecksum: qaChecksum,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("validates embedded delivery/change lineage against the attempt", () => {
     const delivery = {
       id: ids.receipt,
