@@ -9,26 +9,34 @@ const artifactFile = path.join(
   repoRoot,
   "docs/artifacts/GenGrowth-Interactive-Artifact.html",
 );
-const workspaceDataFile =
-  "/Users/wzb/.codex/visualizations/2026/07/20/019f7ff0-3874-7623-90f3-1ebdea7c313f/workspace-data.js";
 const outputFile = path.join(
   repoRoot,
   "docs/artifacts/GenGrowth-Product-Manual.html",
 );
 
-const [artifactSource, workspaceSource] = await Promise.all([
-  readFile(artifactFile, "utf8"),
-  readFile(workspaceDataFile, "utf8"),
-]);
+const artifactSource = await readFile(artifactFile, "utf8");
+const embeddedScripts = [
+  ...artifactSource.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi),
+].map((match) => match[1]);
+const workspaceSource = embeddedScripts.find((script) =>
+  script.includes("attachGenGrowthWorkspace"),
+);
+if (!workspaceSource) {
+  throw new Error(
+    "Interactive Artifact does not contain an embedded GenGrowth workspace",
+  );
+}
 
 const sandbox = { window: {} };
 vm.runInNewContext(workspaceSource, sandbox, {
-  filename: workspaceDataFile,
+  filename: artifactFile,
   timeout: 5_000,
 });
 const workspace = sandbox.window.GenGrowthWorkspace;
 if (!workspace?.dataSources?.length) {
-  throw new Error("workspace-data.js did not expose a valid GenGrowth workspace");
+  throw new Error(
+    "Interactive Artifact did not expose a valid GenGrowth workspace",
+  );
 }
 
 const escapeHtml = (value) =>
@@ -43,218 +51,14 @@ const artifactHash = createHash("sha256")
   .update(artifactSource)
   .digest("hex");
 
-const currentActionIds = new Set([
-  ...[...artifactSource.matchAll(/data-action=(?:\\?["'])([^"'\\]+)(?:\\?["'])/g)]
-    .map((match) => match[1])
-    .filter((value) => value && !value.includes("${")),
-  ...[...artifactSource.matchAll(/\baction\s*===\s*["']([^"']+)["']/g)].map(
-    (match) => match[1],
-  ),
-]);
-
-const currentFormIds = new Set([
-  ...[...artifactSource.matchAll(/data-form=\\?["']([^"'\\]+)\\?["']/g)].map(
-    (match) => match[1],
-  ),
-  ...[
-    ...artifactSource.matchAll(
-      /\bform\.dataset\.form\s*===\s*["']([^"']+)["']/g,
-    ),
-  ].map((match) => match[1]),
-]);
-
-const actionSpecs = [
-  ["nav", "切换主模块", "全局导航", "Project / Route", "进入概览、增长地图、执行中心或效果追踪，同时更新 URL hash、关闭移动导航与弹窗并把焦点移回主内容。", "只改变当前浏览器的 route 与选择状态；不会产生业务对象或外部请求。", "—"],
-  ["toggle-nav", "打开 / 关闭移动导航", "全局导航", "Navigation", "在窄屏展开或收起主导航，并维护 aria-expanded 与焦点返回。", "只改变 mobileNav UI 状态，刷新后恢复。", "—"],
-  ["close-overlay", "关闭 / 取消 / 完成", "全局弹窗", "Overlay", "关闭当前 Modal 或 Drawer，并把焦点送回触发按钮。", "清空 overlay 与 payload；没有业务对象副作用。", "—"],
-  ["open-profile", "查看产品画像", "产品画像", "Product Profile", "打开产品、商业模式、Offer、市场、ICP、JTBD、触发、痛点、用例与竞品池的客户可见抽屉。", "只打开只读视图；进入时把画像证据页签恢复到默认值。", "—"],
-  ["edit-profile", "编辑产品与 ICP 画像", "产品画像", "Product Profile", "打开画像编辑表单，让客户确认产品定位、目标公司、Buyer、Champion、User 与业务场景。", "点击本身不写数据；提交后创建新的 append-only Profile Version。", "profile-edit"],
-  ["open-profile-evidence", "查看字段证据", "产品画像", "Profile Field", "展示每个画像字段的值、推导方式、来源引用、置信度以及 confirmed、missing、conflicting 等状态。", "只读查看，不提升置信度，也不把缺失字段自动补齐。", "—"],
-  ["open-profile-history", "查看画像版本历史", "产品画像", "Profile Version", "打开当前版本与历史版本列表，说明修改不会覆盖既有快照。", "只读查看 append-only 历史。", "—"],
-  ["open-profile-version", "打开历史画像版本", "产品画像", "Profile Version", "打开指定版本的完整只读字段快照；变更摘要与 previousVersionId 目前仅存在于数据对象，当前弹窗未直接渲染。", "只改变弹窗 payload；历史版本不可编辑。", "—"],
-  ["open-connections", "管理数据连接", "数据连接", "Data Source", "打开客户可见的数据连接，只列 GSC、GA4 与 GitHub 预留位。", "只读打开；不会触发 OAuth 或真实 Provider 请求。", "—"],
-  ["open-source", "查看数据源详情", "数据连接", "Data Source", "GSC / GA4 展示范围、观察时间、Freshness SLA 与用途；GitHub 展示 Planned Flow；内部来源仅给出系统证据说明。", "当前弹窗不直接列出 source.capabilities；所有分支只读且不伪装成真实连接。", "—"],
-  ["start-sync", "更新分析数据", "数据连接", "Sync Run", "打开 GSC / GA4 场景更新时间选择表单。", "点击本身不更新；提交只改变选中来源的 observedAt 并生成场景审计。", "sync-run"],
-  ["open-task", "打开优先事项", "概览", "Task Preview", "根据 Artifact、Competitor 或 Finding 类型显示需要客户判断的对象与下一步。", "只打开任务预览，不直接批准、排除或发布。", "—"],
-  ["task-go", "开始处理优先事项", "概览", "Artifact / Competitor / Finding", "Artifact 进入执行中心；竞品进入审核；Finding 进入证据审核。", "Artifact 分支更新 route 与 selectedArtifact；其他分支打开相应决策表单。", "competitor-review / finding-review"],
-  ["map-tab", "切换页面、关键词、竞品库", "增长地图", "Growth Map Tab", "在页面与机会、关键词库、竞品库三个对象视图间切换。", "写入 mapTab，并把相应分页恢复为第一页。", "—"],
-  ["page-search", "搜索 URL、标题或机会", "增长地图", "URL Portfolio", "根据输入的路径、页面标题或机会名称过滤多 URL 组合。", "搜索词由输入事件维护；该按钮把分页归一到第一页。", "—"],
-  ["page-view", "按 URL / 主题簇 / 机会查看", "增长地图", "Page Read Model", "切换同一批全站对象的三种组织方式，支持一个机会关联一个或多个 URL，也支持模板级机会。", "只改变 pageView 与分页，不修改 URL、Cluster 或 Opportunity。", "—"],
-  ["open-page-filters", "打开更多筛选", "增长地图", "Page Filters", "打开模板、主题簇、页面状态与能力视角筛选抽屉。", "点击本身不筛选；提交 page-filters 才写 UI state。", "page-filters"],
-  ["clear-page-filters", "清除高级筛选", "增长地图", "Page Filters", "把模板、主题簇、页面状态与 Lens 恢复为全部，并关闭筛选抽屉。", "仅修改 UI 筛选与分页，不修改底层对象。", "—"],
-  ["toggle-page-rows", "展开 / 收起本页详情", "增长地图", "URL Portfolio", "为当前分页的每条 URL 展示模板、主题簇、来源与关联机会。", "只切换 pageRowsExpanded，不改变数据。", "—"],
-  ["select-map-page", "选择 URL", "增长地图", "URL", "更新右侧 URL 详情，显示自然搜索指标、主题簇、当前问题与优先交付物。", "只写 selectedPageId；窄屏会把详情滚入视野。", "—"],
-  ["select-map-cluster", "选择主题簇", "增长地图", "Topic Cluster", "展示现有页面角色、Search Query、Generative Query、Coverage Gap、CTA 与最高优先机会。", "只写 selectedClusterId。", "—"],
-  ["select-map-opportunity", "选择增长机会", "增长地图", "Opportunity", "展示 Priority、Lens、主要 Finding、支撑来源、目标 URLs、限制、输出与下一步决定。", "只写 selectedOpportunityId。", "—"],
-  ["open-cluster-page", "从主题簇定位页面", "增长地图", "Cluster → URL", "切回按 URL 视图并选择主题簇中的目标页面。", "清页面搜索与类型过滤，重置分页并写 selectedPageId。", "—"],
-  ["open-opportunity-page", "从机会定位目标页面", "增长地图", "Opportunity → URL", "切回按 URL 视图并选择 Opportunity 关联的具体页面。", "只改变当前视图、过滤器与 selectedPageId。", "—"],
-  ["page-change", "上一页 / 下一页", "增长地图", "Pagination", "切换 URL、Keyword 或 Competitor 当前分页。", "只写 state.pages[kind]，边界由 disabled 状态约束。", "—"],
-  ["open-page", "查看完整页面证据", "增长地图 / 结果", "URL Evidence", "打开内部页面证据抽屉，而不是打开真实客户网站；无有效 URL 时显示阻断回执。", "只读打开 page-evidence 或 receipt，不写网站，也不导航到外部 URL。", "—"],
-  ["evidence-tab", "切换页面证据页签", "页面证据", "Evidence View", "在摘要、抓取与渲染、搜索与分析、执行与复查四个证据面板间切换。", "只写 evidenceTab。", "—"],
-  ["keyword-source", "按入库来源筛选", "关键词库", "Keyword Source", "按竞品缺口、内容缺口、Suggest/PAA、社区 VOC、趋势、GSC 意外词或手工来源过滤。", "只写 keywordSource 并重置关键词分页。", "—"],
-  ["select-map-keyword", "选择关键词", "关键词库", "Keyword", "更新右侧关键词摘要、Intent、Cluster、映射页面、CTA 与当前状态。", "只写 selectedKeywordId。", "—"],
-  ["open-keyword", "查看关键词详情", "关键词库", "Keyword", "打开指标、Market、Cluster、Mapped URL、CTA、来源、新鲜度与同簇需求信号。", "只读；缺失 Volume、KD、Rank 保持 null 语义，不写成 0。", "—"],
-  ["add-keyword", "手动添加关键词", "关键词库", "Keyword", "打开手工关键词入库表单。", "点击本身不创建；提交后生成 sourceKind=manual、status=new 的内存对象，当前没有自动去重。", "keyword-add"],
-  ["go-keyword-artifact", "打开相关交付物", "关键词库", "Keyword → Artifact", "先沿 Cluster 找映射 URL，再寻找目标 URL 命中的首个 Artifact；找不到时给出诚实回执。", "命中时进入执行中心并选择 Artifact；未命中不创建空交付物。", "—"],
-  ["select-map-competitor", "选择竞品", "竞品库", "Competitor", "更新右侧竞品摘要、关系、范围、审核状态与参与正式分析的条件。", "只写 selectedCompetitorId。", "—"],
-  ["open-competitor", "查看竞品档案", "竞品库 / 产品画像", "Competitor", "打开 Organic Overlap、Shared Keywords、AI Citation、发现原因、来源与分析范围。", "只读查看，不自动把 Candidate 加入 Keyword Gap。", "—"],
-  ["add-competitor", "手动添加候选竞品", "竞品库", "Competitor", "打开名称、域名、关系、分析范围与备注表单。", "提交后以 candidate 入库，外部指标保持 null；当前没有域名去重或在线校验。", "competitor-add"],
-  ["review-competitor", "审核竞品及范围", "竞品库", "Competitor", "打开 Candidate / Approved / Excluded 与分析范围决策。", "提交更新审核人、时间与备注；Excluded 会强制 analysisScope=excluded。", "competitor-review"],
-  ["go-competitors", "从画像进入竞品库", "产品画像", "Profile → Competitor", "关闭画像并进入 Growth Map 的 Competitor tab。", "写 route、mapTab 与 hash；不修改竞品池。", "—"],
-  ["review-finding", "审核问题证据", "页面证据", "Finding", "打开规则、来源、可复查证据与确认 / 排除决定表单。", "提交会更新 Finding、关联 Opportunity，并在当前实现中只投影首个 URL 状态。", "finding-review"],
-  ["open-opportunity", "查看增长机会", "增长地图 / 跨模块", "Opportunity", "打开状态、目标 URLs、Finding 证据、已有 Artifacts 与客户下一步。", "只读打开 Opportunity drawer。", "—"],
-  ["decide-opportunity", "记录机会决定", "增长地图", "Opportunity", "打开 Confirmed、“需要更多数据”（needs_data）与 Dismissed 三选一决策。", "提交会写 Opportunity 状态；needs_data 当前由表单与 handler 支持，但尚未进入 canonical opportunityStatus 枚举，应视为当前实现缺口。", "opportunity-decision"],
-  ["create-artifact", "创建执行物", "增长地图", "Opportunity → Artifact", "打开 Artifact Type、标题、Owner 与摘要表单。", "提交创建 Revision 1、status=review 的 Artifact，并把 Opportunity 置为 in_execution。", "artifact-create"],
-  ["artifact-filter", "筛选交付物类型", "执行中心", "Artifact List", "在全部、Blog、Brief、Code、Metadata、Landing、Publish 七个队列筛选间切换。", "只写 artifactFilter。", "—"],
-  ["select-artifact", "选择交付物", "执行中心", "Artifact", "切换中央客户可见正文与右侧治理面板。", "只写 selectedArtifactId。", "—"],
-  ["go-artifact", "进入执行中心处理交付物", "跨模块", "Artifact", "进入 Execution，恢复全部类型筛选并选中指定 Artifact。", "写 selectedArtifactId、artifactFilter、route 与 hash。", "—"],
-  ["share-artifact", "模拟分享交付物", "执行中心", "Artifact Share", "打开模拟权限、审核人、有效期与附言表单。", "提交生成 local-artifact:// 场景回执；不发邮件，不创建真实外链。", "artifact-share"],
-  ["edit-artifact", "创建新 Revision", "执行中心", "Artifact Revision", "打开标题、客户可见修订摘要与变更说明表单。", "提交 revision+1、状态回到 review、移除 human gate；旧 Approval 失效但历史快照保留。", "artifact-edit"],
-  ["open-artifact-history", "查看交付物版本历史", "执行中心", "Artifact Revision", "打开 append-only Revision 列表。", "只读，不覆盖任何 Revision。", "—"],
-  ["open-artifact-revision", "查看历史 Revision", "执行中心", "Artifact Revision", "打开历史正文、创建信息、当时状态、目标 URLs、修订摘要与门禁快照。", "当前只读弹窗未单独渲染 sourceRefs / Evidence；历史快照不被修改。", "—"],
-  ["approve-artifact", "批准当前 Revision", "执行中心", "Artifact Approval", "打开人工确认与审批备注表单。", "提交前要求 status=review 且全部非人工门禁通过；成功后补 human gate 并写审计。", "artifact-approve"],
-  ["publish-artifact", "模拟发布", "执行中心", "Artifact Release", "打开模拟目标、固定 28 天观察窗口、回滚范围与确认表单。", "成功只在浏览器内存创建 simulated Release、rollbackRef 与 Audit Event；不写 CMS 或 GitHub。", "artifact-publish"],
-  ["open-receipt", "查看动作回执", "执行中心 / 结果", "Release Receipt", "打开现有 Release 或演示 fallback 回执，展示动作、目标、时间与回滚引用。", "只读；Receipt 证明动作发生，不等于产生效果。", "—"],
-  ["copy-receipt-link", "复制模拟预览地址", "回执", "Clipboard", "尝试把 local-artifact:// 模拟地址写入系统剪贴板，并显示成功或失败反馈。", "这是唯一可能越过页面会话的本地副作用；仍无网络且地址不可外部访问。", "—"],
-  ["result-tab", "切换结果视图", "效果追踪", "Results View", "切换结果摘要、URL 改前 / 改后、Campaign / UTM 三个页签。", "只写 resultTab。", "—"],
-  ["open-result-page", "查看 URL 结果详情", "效果追踪", "Page Observation", "打开 Baseline、Current、来源、新鲜度、关联 Opportunity 与归因限制。", "只读固定窗口 Observation，不修改结果。", "—"],
-  ["open-campaign", "查看 Campaign / UTM", "效果追踪", "Campaign", "打开 Source、Medium、Campaign、Content、Landing URL、Session、直接与辅助转化。", "只读 GA4 + UTM 场景快照；不能证明单一 Campaign 因果。", "—"],
-  ["share-report", "模拟分享结果报告", "效果追踪", "Report Share", "打开模拟权限、收件人、有效期与报告范围表单。", "提交生成 local-artifact:// 场景回执；不发邮件，不创建真实报告链接。", "report-share"],
-  ["open-audit-event", "查看审计事件", "效果追踪 / 审计", "Audit Event", "打开事件类型、时间、Actor 与 objectRefs。", "只读审计；不撤销也不重放事件。", "—"],
-];
-
-const formSpecs = [
-  ["page-filters", "页面高级筛选", "template、cluster、status、lens（均为 Select）", "将四项筛选写入 UI state，分页回到 1。", "没有业务对象写入；Clear 会恢复 all。"],
-  ["profile-edit", "产品与 ICP 画像新版本", "oneLiner、valueProposition、businessModel、primaryMarket、offer、company、buyer、champion、users、jobs、triggers、pains、useCases", "克隆当前画像、版本号 +1、追加完整 Profile Version、记录 profile_confirmed。", "Required 字段由浏览器校验；当前会话 append-only，刷新后恢复 seed。"],
-  ["keyword-add", "手工关键词入库", "text、market、intent、clusterId、mappedUrlId、note", "创建 manual source Keyword，status=new，Volume / KD / Rank 为 null，并写 keyword_added 审计。", "当前没有自动去重；不调用关键词 Provider。"],
-  ["competitor-add", "手工候选竞品入库", "name、domain、relation、analysisScope、note", "创建 candidate，外部指标为 null，写 competitor_reviewed 审计。", "不检查域名在线状态或重复域名。"],
-  ["competitor-review", "竞品审核", "id、status、analysisScope、note", "更新 Candidate / Approved / Excluded、范围、审核人、时间与备注。", "选择 Excluded 时强制 analysisScope=excluded。"],
-  ["finding-review", "Finding 审核", "id、decision=confirmed|dismissed、note", "更新 Finding；联动 Opportunity；把首个目标 URL 投影为 action_required 或 monitoring。", "当前多 URL Finding 只更新 urlIds[0] 的 URL 状态，这是已知实现边界。"],
-  ["opportunity-decision", "Opportunity 决策", "id、decision=confirmed|needs_data|dismissed、note", "更新 Opportunity 审核状态与审计事件。", "不会反向改写 Finding 或所有 URL；needs_data 是当前 handler 可写值，但尚未进入 canonical enum。"],
-  ["artifact-create", "从机会创建执行物", "opportunityId、type、title、owner、summary", "创建 Revision 1、status=review、目标 URLs 与来源证据，并把 Opportunity 置为 in_execution。", "缺少 Opportunity 时阻断；当前演示会预先通过全部非 human 默认门禁。"],
-  ["artifact-edit", "创建新 Revision", "id、title、revisionSummary、changeNote", "revision+1、回到 review、移除 human gate、旧 Approval 失效、追加不可变快照。", "不覆盖历史 Revision 或历史 Release。"],
-  ["artifact-share", "模拟分享交付物", "id、access、recipients、expiry、note", "生成 local-artifact://preview/artifacts/... 回执并写 report_shared 审计。", "不发邮件；access 与 note 当前只用于演示表单。"],
-  ["artifact-approve", "批准当前 Revision", "id、confirmed、note", "校验状态和非人工门禁，通过后 status=approved、补 human gate、写审核人和时间。", "条件不满足时返回 blocked receipt，不改变 Artifact。"],
-  ["artifact-publish", "模拟发布", "id、confirmed、note", "要求 Approved + 全部门禁，通过后创建 simulated Release、rollbackRef、publishedAt 与审计事件。", "没有 CMS、GitHub 或第三方写入；note 当前不写入 Release。"],
-  ["report-share", "模拟分享结果", "access、recipients、expiry、scope[]", "至少一个 scope 时生成 local-artifact://preview/results/... 回执与审计。", "不发邮件；未选择范围时阻断。"],
-  ["sync-run", "场景数据更新时间", "sources[]=src-gsc|src-ga4", "只更新选中来源的 observedAt、重算摘要并记录 sync_completed。", "不访问真实 GSC / GA4，不增加 URL、Keyword 或 Observation 数量。"],
-];
-
 const overlayGroups = [
-  ["产品画像", "profile、profile-edit、profile-evidence、profile-history、profile-version", "从画像总览、字段证据到 append-only 历史版本；把“系统为何这样判断”与“客户确认了什么”放在同一链路。"],
-  ["数据连接", "connections、source-detail、sync-run", "只对客户呈现 GSC、GA4、GitHub；内部抓取与研究来源通过 provenance 被引用。"],
-  ["增长地图", "page-filters、page-evidence、keyword-detail、keyword-add、competitor-detail、competitor-add、competitor-review、finding-review、opportunity、opportunity-decision", "把查看、筛选、证据审核、竞品治理与 Opportunity 决策分成单一目的的决策窗口。"],
-  ["概览任务", "task-preview", "将概览中的 Top 3 队列对象解释为具体下一步，再按对象类型转场。"],
-  ["执行中心", "artifact-share、artifact-edit、artifact-create、artifact-history、artifact-revision、artifact-approve、artifact-publish", "围绕客户可见 Artifact 正文，提供版本、门禁、批准、模拟分享与模拟发布。"],
-  ["结果与审计", "receipt、result-page、campaign、report-share、audit-event", "把动作回执、技术复查、固定窗口观察、UTM 与审计记录分开呈现。"],
+  ["产品画像", "画像查看、编辑与版本历史", "从画像总览、字段证据到历史版本，把“系统为何这样判断”与“客户确认了什么”放在同一链路。"],
+  ["数据连接", "连接状态、来源详情与场景更新", "只对客户呈现 GSC、GA4 与 GitHub，并明确场景数据和真实账号连接的差别。"],
+  ["增长地图", "筛选、详情、审核与机会决定", "把对象查看、证据审核、竞品治理与增长机会决定分成单一目的的窗口。"],
+  ["概览任务", "优先事项预览与跨模块处理", "将概览中的 Top 3 队列对象解释为具体下一步，再按对象类型进入对应工作台。"],
+  ["执行中心", "版本、批准、分享与模拟发布", "围绕客户可见交付物正文，提供版本、质量门禁、批准、模拟分享与模拟发布。"],
+  ["结果与审计", "回执、页面结果、Campaign 与审计记录", "把动作回执、技术复查、固定窗口观察、UTM 与审计记录分开呈现。"],
 ];
-
-if (actionSpecs.length !== currentActionIds.size) {
-  throw new Error(
-    `Action spec mismatch: manual=${actionSpecs.length}, artifact=${currentActionIds.size}`,
-  );
-}
-const actionSpecIds = new Set(actionSpecs.map(([id]) => id));
-const missingActions = [...currentActionIds].filter((id) => !actionSpecIds.has(id));
-const extraActions = [...actionSpecIds].filter((id) => !currentActionIds.has(id));
-if (missingActions.length || extraActions.length) {
-  throw new Error(
-    `Action spec drift. Missing: ${missingActions.join(", ")}; extra: ${extraActions.join(", ")}`,
-  );
-}
-if (formSpecs.length !== currentFormIds.size) {
-  throw new Error(
-    `Form spec mismatch: manual=${formSpecs.length}, artifact=${currentFormIds.size}`,
-  );
-}
-
-const sourceNotes = {
-  "src-sitemap": ["场景 URL 清单", "系统维护的内部站点地图证据，不是客户外部连接。"],
-  "src-crawl": ["渲染抓取与技术证据", "支撑 URL、技术 Finding 与复查；当前是确定性场景快照。"],
-  "src-gsc": ["Query、Landing Page、Rank 与 Search Observation", "客户可见的分析数据源，但 externalConnection=false；“可用”表示场景数据可演示。"],
-  "src-ga4": ["Page、Campaign / UTM 与 Conversion Observation", "客户可见的分析数据源，但不会访问真实 GA4 账号。"],
-  "src-github": ["未来 Code Patch → PR → Human Merge → Receipt", "客户可见预留位；当前 planned / unavailable，不创建分支或真实 PR。"],
-  "src-serp": ["美国市场 SERP 与 Keyword 样本", "内部研究证据，按 72 小时 SLA 计算新鲜度。"],
-  "src-ai-answers": ["固定 Generative Query 与 AI Citation 样本", "内部 GEO 场景证据，不声称实时监控所有 AI 平台。"],
-  "src-manual-profile": ["已确认产品、ICP 与购买背景", "客户确认字段与手工对象的 provenance；通过新 Profile Version 更新。"],
-  "src-customer-notes": ["已批准访谈摘要、JTBD、Pain 与 VOC", "内部批准的手工快照，当前场景只读。"],
-  "src-competitor-corpus": ["竞品事实、Gap 与 Comparison Evidence", "只有已批准且未排除范围的竞品才进入正式比较。"],
-  "src-cms": ["一次模拟发布回执", "内部场景证据，不代表已连接客户 CMS。"],
-};
-
-const sourceCards = workspace.dataSources
-  .map((source) => {
-    const [purpose, boundary] = sourceNotes[source.id] || [
-      source.recordScope || "系统证据",
-      "当前场景数据源。",
-    ];
-    const observed = source.observedAt
-      ? new Date(source.observedAt).toLocaleString("zh-CN", {
-          timeZone: "Asia/Shanghai",
-          hour12: false,
-        })
-      : "不可用";
-    return `
-      <article class="index-card source-card" data-source-id="${escapeHtml(source.id)}" data-manual-search-item>
-        <header>
-          <div>
-            <span class="index-id">${escapeHtml(source.id)}</span>
-            <h3>${escapeHtml(source.name)}</h3>
-          </div>
-          <span class="fact-tag ${source.audienceVisibility === "customer" ? "is-current" : "is-logic"}">${source.audienceVisibility === "customer" ? "客户可见" : "内部证据"}</span>
-        </header>
-        <dl class="index-meta">
-          <div><dt>Kind</dt><dd>${escapeHtml(source.kind)}</dd></div>
-          <div><dt>状态</dt><dd>${escapeHtml(source.status)}${source.connectionState ? ` · ${escapeHtml(source.connectionState)}` : ""}</dd></div>
-          <div><dt>观察时间</dt><dd>${escapeHtml(observed)}</dd></div>
-          <div><dt>Freshness SLA</dt><dd>${escapeHtml(source.freshnessSlaHours)} 小时</dd></div>
-        </dl>
-        <p><strong>当前用途：</strong>${escapeHtml(purpose)}</p>
-        <p class="boundary-line"><strong>真实性边界：</strong>${escapeHtml(boundary)}</p>
-      </article>`;
-  })
-  .join("");
-
-const actionCards = actionSpecs
-  .map(
-    ([id, label, module, object, immediate, sideEffect, form], index) => `
-      <article class="index-card action-card" data-action-id="${escapeHtml(id)}" data-manual-search-item>
-        <header>
-          <div class="action-number">${String(index + 1).padStart(2, "0")}</div>
-          <div>
-            <span class="index-id">${escapeHtml(id)}</span>
-            <h3>${escapeHtml(label)}</h3>
-          </div>
-          <span class="module-chip">${escapeHtml(module)}</span>
-        </header>
-        <dl class="index-meta">
-          <div><dt>作用对象</dt><dd>${escapeHtml(object)}</dd></div>
-          <div><dt>相关 Form</dt><dd>${escapeHtml(form)}</dd></div>
-        </dl>
-        <p><strong>立即结果：</strong>${escapeHtml(immediate)}</p>
-        <p class="boundary-line"><strong>状态与副作用：</strong>${escapeHtml(sideEffect)}</p>
-        <small>持久性：除剪贴板复制外，均仅当前浏览器会话；刷新后恢复 RelayOps 场景初始快照。</small>
-      </article>`,
-  )
-  .join("");
-
-const formCards = formSpecs
-  .map(
-    ([id, label, fields, success, boundary]) => `
-      <article class="index-card form-card" data-form-id="${escapeHtml(id)}" data-manual-search-item>
-        <header>
-          <div>
-            <span class="index-id">${escapeHtml(id)}</span>
-            <h3>${escapeHtml(label)}</h3>
-          </div>
-          <span class="fact-tag is-simulation">写操作</span>
-        </header>
-        <p><strong>输入字段：</strong>${escapeHtml(fields)}</p>
-        <p><strong>提交成功：</strong>${escapeHtml(success)}</p>
-        <p class="boundary-line"><strong>阻断与边界：</strong>${escapeHtml(boundary)}</p>
-      </article>`,
-  )
-  .join("");
 
 const overlayCards = overlayGroups
   .map(
@@ -269,7 +73,12 @@ const overlayCards = overlayGroups
 
 const count = (value) => Array.isArray(value) ? value.length : 0;
 const snapshotCounts = [
-  ["数据源", count(workspace.dataSources)],
+  [
+    "客户连接",
+    workspace.dataSources.filter(
+      (source) => source.audienceVisibility === "customer",
+    ).length,
+  ],
   ["URLs", count(workspace.urls)],
   ["Findings", count(workspace.findings)],
   ["Opportunities", count(workspace.opportunities)],
@@ -374,20 +183,12 @@ button { color: inherit; }
   font: 11px/1.6 var(--mono);
 }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
-.mode-switch { display: flex; gap: 3px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.09); }
-.mode-switch button, .toolbar-button {
+.toolbar-button {
   min-height: 38px; padding: 0 12px; border: 0; border-radius: 9px;
   color: #dce8e3; background: transparent; cursor: pointer; white-space: nowrap;
 }
-.mode-switch button.is-active { color: var(--pine); background: var(--lime); font-weight: 700; }
 .toolbar-button { border: 1px solid rgba(255,255,255,.22); }
 .toolbar-button:hover { background: rgba(255,255,255,.09); }
-.mobile-mode-select { display: none; }
-.mobile-mode-select select {
-  min-height: 38px; max-width: 94px; padding: 0 28px 0 10px;
-  color: #f3f7f5; border: 1px solid rgba(255,255,255,.22); border-radius: 9px;
-  background: var(--pine-2); font-size: 12px;
-}
 .mobile-toc-button { display: none; }
 
 .manual-layout {
@@ -402,7 +203,6 @@ button { color: inherit; }
 }
 .toc-scrim { display: none; }
 .manual-nav > span { display: block; margin: 0 12px 14px; color: var(--lime); font: 700 11px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
-.nav-mode-switch { display: none; }
 .manual-nav a {
   display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px;
   padding: 9px 10px; color: #b8cdc6; border-radius: 10px; text-decoration: none; font-size: 13px;
@@ -582,16 +382,10 @@ details p { margin-top: 0; }
 .capability-card.is-current { background: #ddf1eb; border: 1px solid #b7dcd3; }
 .capability-card.is-scenario { background: #fff0d0; border: 1px solid #edd092; }
 .capability-card.is-future { background: #ece5f8; border: 1px solid #d1c4e8; }
-.source-registry { padding: 20px; border: 1px dashed #aa9e8f; border-radius: 15px; background: rgba(255,255,255,.35); }
-.source-registry code { overflow-wrap: anywhere; font: 11px/1.6 var(--mono); }
 .search-empty { display: none; margin-top: 20px; padding: 20px; text-align: center; border: 1px dashed var(--line); border-radius: 14px; }
 .search-empty.is-visible { display: block; }
 .search-hit { animation: flash 1.4s ease; }
 @keyframes flash { 0%, 100% { box-shadow: none; } 25% { box-shadow: 0 0 0 4px rgba(241,110,89,.28); } }
-
-html[data-manual-mode="buyer"] [data-manual-audience="internal"] { display: none !important; }
-html[data-manual-mode="internal"] [data-manual-audience="buyer"] { display: none !important; }
-html.is-searching [data-manual-audience] { display: block !important; }
 
 @media (max-width: 1180px) {
   html { scroll-padding-top: 138px; }
@@ -609,8 +403,6 @@ html.is-searching [data-manual-audience] { display: block !important; }
   .manual-toolbar { grid-template-columns: 1fr auto; }
   .toolbar-search { grid-column: 1 / -1; grid-row: 2; }
   .toolbar-actions { grid-column: auto; }
-  .mode-switch { display: none; }
-  .mobile-mode-select { display: block; }
   .toolbar-actions [data-manual-expand] { display: none; }
   .mobile-toc-button { display: inline-flex; }
   .manual-layout { display: block; }
@@ -623,15 +415,6 @@ html.is-searching [data-manual-audience] { display: block !important; }
     display: block; position: fixed; inset: 0; z-index: 60;
     border: 0; background: rgba(5, 25, 21, .54); backdrop-filter: blur(2px);
   }
-  .nav-mode-switch {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
-    margin: 0 8px 18px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.08);
-  }
-  .nav-mode-switch button {
-    min-height: 38px; padding: 0 6px; color: #dce8e3; border: 0; border-radius: 9px;
-    background: transparent; font-size: 11px;
-  }
-  .nav-mode-switch button.is-active { color: var(--pine); background: var(--lime); font-weight: 800; }
   .manual-section { padding: 58px 24px; }
   .hero { min-height: 620px; }
   .module-grid, .capability-columns { grid-template-columns: 1fr; }
@@ -687,16 +470,15 @@ html.is-searching [data-manual-audience] { display: block !important; }
   details > div { display: block !important; }
   details:not([open]) > *:not(summary) { display: block !important; }
   a { text-decoration: none; }
-  [data-manual-audience] { display: block !important; }
 }
 `;
 
 const html = `<!doctype html>
-<html lang="zh-CN" data-manual-mode="all" data-manual-build="1.0">
+<html lang="zh-CN" data-manual-build="1.0">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="GenGrowth 海外增长工作台完整中文产品说明书：购买方讲解、模块查阅、按钮、表单、数据来源、规则、状态与底层逻辑。" />
+    <meta name="description" content="GenGrowth 海外增长工作台中文客户产品说明书：产品价值、四个核心模块、产品画像、数据连接、场景边界与常见问题。" />
     <meta name="theme-color" content="#0c352e" />
     <title>GenGrowth · 完整产品说明书与讲解手册</title>
     <style>${css}</style>
@@ -710,23 +492,10 @@ const html = `<!doctype html>
       </div>
       <label class="toolbar-search">
         <span class="sr-only">搜索说明书</span>
-        <input id="manual-search" data-manual-search type="search" placeholder="搜索模块、按钮、Action、Source、Rule 或 FAQ…" autocomplete="off" />
+        <input id="manual-search" data-manual-search type="search" placeholder="搜索模块、产品画像、数据连接、场景边界或 FAQ…" autocomplete="off" />
         <kbd>/</kbd>
       </label>
       <div class="toolbar-actions">
-        <div class="mode-switch" role="group" aria-label="阅读模式">
-          <button type="button" data-manual-mode="buyer" aria-pressed="false">采购讲解</button>
-          <button type="button" data-manual-mode="internal" aria-pressed="false">内部查阅</button>
-          <button type="button" data-manual-mode="all" class="is-active" aria-pressed="true">全部</button>
-        </div>
-        <label class="mobile-mode-select">
-          <span class="sr-only">阅读模式</span>
-          <select data-manual-mode-select aria-label="切换阅读模式">
-            <option value="buyer">采购讲解</option>
-            <option value="internal">内部查阅</option>
-            <option value="all" selected>全部内容</option>
-          </select>
-        </label>
         <button class="toolbar-button" type="button" data-manual-expand aria-expanded="false" aria-controls="manual-content">展开全部</button>
         <button class="toolbar-button" type="button" data-manual-print aria-label="打印说明书">打印</button>
         <button class="toolbar-button mobile-toc-button" type="button" data-toc-toggle aria-expanded="false" aria-controls="manual-navigation">目录</button>
@@ -736,11 +505,6 @@ const html = `<!doctype html>
     <div class="manual-layout">
       <nav id="manual-navigation" class="manual-nav" aria-label="产品说明书目录">
         <span>Manual index</span>
-        <div class="nav-mode-switch" role="group" aria-label="移动端阅读模式">
-          <button type="button" data-manual-mode="buyer" aria-pressed="false">采购讲解</button>
-          <button type="button" data-manual-mode="internal" aria-pressed="false">内部查阅</button>
-          <button type="button" data-manual-mode="all" class="is-active" aria-pressed="true">全部</button>
-        </div>
         ${[
           ["00", "cover", "版本基线"],
           ["01", "product", "产品定义与优势"],
@@ -752,19 +516,16 @@ const html = `<!doctype html>
           ["07", "results", "效果追踪"],
           ["08", "connections", "数据连接"],
           ["09", "overlay-audit", "弹窗与审计"],
-          ["10", "rules", "对象、规则与状态机"],
-          ["11", "sources", "数据来源字典"],
-          ["12", "actions", "Action / 按钮索引"],
-          ["13", "forms", "Form / 表单索引"],
-          ["14", "boundaries", "当前与未来边界"],
-          ["15", "faq", "FAQ 与来源登记"],
+          ["10", "journey", "客户业务闭环"],
+          ["11", "boundaries", "当前与未来边界"],
+          ["12", "faq", "常见问题"],
         ]
           .map(
             ([number, id, label]) =>
               `<a data-manual-nav href="#${id}"><small>${number}</small><span>${label}</span></a>`,
           )
           .join("")}
-        <div class="nav-footer">单文件离线 HTML<br />搜索、模式、打印均在本地运行</div>
+        <div class="nav-footer">单文件离线 HTML<br />搜索与打印均在本地运行</div>
       </nav>
       <button class="toc-scrim" type="button" data-toc-scrim aria-label="关闭说明书目录"></button>
 
@@ -772,11 +533,11 @@ const html = `<!doctype html>
         <section id="cover" class="manual-section hero">
           <div class="hero-content">
             <span class="eyebrow">GenGrowth · Customer-facing product field guide</span>
-            <h1>把增长机会讲清楚，<br />也把每个按钮讲明白。</h1>
-            <p class="hero-lead">这不是旧 Artifact 的规则附录，而是一份以当前交互式 Artifact 为唯一产品蓝本的完整中文说明书：购买方可以顺着价值链理解产品，我方可以反查模块、对象、按钮、表单、数据来源、规则、状态变化与真实性边界。</p>
+            <h1>把增长机会讲清楚，<br />也把每一步边界讲明白。</h1>
+            <p class="hero-lead">这是一份由当前交互式 Artifact 直接生成的中文客户说明书：购买方可以顺着价值链理解产品、四个核心工作台、产品画像、数据连接、场景边界与交付结果。</p>
             <div class="hero-actions">
               <a class="primary-link" href="#walkthrough">开始购买方讲解</a>
-              <a class="secondary-link" href="#actions">查找按钮与 Action</a>
+              <a class="secondary-link" href="#journey">查看客户业务闭环</a>
               <a class="secondary-link" href="./GenGrowth-Interactive-Artifact.html#/overview">打开当前 Artifact</a>
             </div>
             <div class="build-line">
@@ -801,7 +562,7 @@ const html = `<!doctype html>
             <article><span class="fact-tag is-scenario">离线场景数据</span><strong>确定性 RelayOps 快照</strong><p>用于完整演示，不表示已连接客户真实账号。</p></article>
             <article><span class="fact-tag is-simulation">会话内模拟</span><strong>浏览器内存变化</strong><p>审核、Revision、分享、发布与更新刷新后重置。</p></article>
             <article><span class="fact-tag is-future">计划 / 未接入</span><strong>可见但尚不可用</strong><p>例如 GitHub PR、真实 CMS Publish 与生产持久化。</p></article>
-            <article><span class="fact-tag is-logic">内部逻辑</span><strong>规则与对象解释</strong><p>说明当前页面如何计算、关联、阻断和审计。</p></article>
+            <article><span class="fact-tag is-logic">可复查口径</span><strong>规则与边界说明</strong><p>说明当前页面如何关联对象、阻断不完整动作并保留审核记录。</p></article>
           </div>
           <div class="rule-note" data-capability-boundary="scenario"><strong>当前场景边界：</strong>本文件与交互式 Artifact 都可完全离线打开。GSC、GA4、CMS、GitHub 和第三方 Provider 没有真实外部连接或写入；所有业务变更只保存在当前浏览器内存，刷新页面后重置。模拟分享不会发送邮件，模拟发布不会修改客户网站。</div>
         </section>
@@ -839,7 +600,7 @@ const html = `<!doctype html>
           </div>
         </section>
 
-        <section id="walkthrough" class="manual-section" data-manual-audience="buyer">
+        <section id="walkthrough" class="manual-section">
           <div class="section-heading">
             <span class="eyebrow">02 · Buyer walkthrough</span>
             <h2>购买方演示路线：10 分钟讲清完整闭环</h2>
@@ -873,9 +634,9 @@ const html = `<!doctype html>
                 <li>字段级 derivation、evidenceRefs、confidence、confirmed / inferred / missing / conflicting。</li>
                 <li>编辑保存创建新 Profile Version；旧版本进入只读历史而不是被覆盖。</li>
               </ul>
-              <div class="warning-card"><strong>当前实现细节：</strong>画像对象会更新完整值，但 oneLiner、valueProposition、company 与 champion 的既有 profileFields provenance 记录不会在当前 handler 中同步重写。手册把它标为实现边界，不包装成已完整解决。</div>
+              <div class="warning-card"><strong>当前演示边界：</strong>画像修正会创建新版本；少数字段的既有来源记录不会在本次离线演示中同步重写。复核时应同时查看当前版本和字段证据，不把场景快照当作生产级数据合同。</div>
             </article>
-            <aside class="presenter-card" data-manual-audience="buyer">
+            <aside class="presenter-card">
               <span class="eyebrow">Presenter card · 90 sec</span>
               <h3>“系统为什么推荐这些关键词和页面？”</h3>
               <dl>
@@ -903,16 +664,8 @@ const html = `<!doctype html>
             <article class="module-card">
               <h3>机会构成与业务上下文</h3>
               <p>SEO 内容、技术、GEO / AI、竞品与 CRO 只是对当前开放 Opportunity 的解释性展示归类，不是五套独立生命周期。右侧业务上下文始终显示 ICP、JTBD、市场和主转化，让“为什么优先”可被复核。</p>
-              <div class="logic-block" data-manual-audience="internal">
-                <pre>Overview Queue
-1. 取待审核 Artifact
-2. 取 Candidate Competitor
-3. 取 Unreviewed Finding
-4. 每类优先一项，再补后续
-5. 最多显示 3 项</pre>
-              </div>
             </article>
-            <aside class="presenter-card" data-manual-audience="buyer">
+            <aside class="presenter-card">
               <span class="eyebrow">Presenter card · 60 sec</span>
               <h3>“客户不需要阅读 39 条发现才能开始。”</h3>
               <dl>
@@ -961,7 +714,7 @@ const html = `<!doctype html>
           </details>
           <details>
             <summary>Opportunity 如何支持多个 URL 与页面模板</summary>
-            <div><p>Opportunity 使用 urlIds 关联一个或多个 URL；部分场景还带 targetKind=template 与 templateKey，用于说明同一 Editorial Template 或页面族的问题。当前 UI 把 findingIds[0] 当作“主要 Finding”，但还没有独立 primary_finding_id 合同，这属于后续 canonical model 范围。</p></div>
+            <div><p>一个 Opportunity 可以关联一个 URL、多个 URL，或同一 Editorial Template 下的一组页面。详情区会突出主要证据，同时保留全部目标页面；涉及整类模板的执行范围仍需要客户确认。</p></div>
           </details>
         </section>
 
@@ -993,7 +746,7 @@ const html = `<!doctype html>
               </ul>
               <div class="warning-card"><strong>当前场景生成逻辑：</strong>从 Opportunity 新建 Artifact 时，所有非 Human 默认门禁会直接标为 passed。这只是离线演示工作流，不代表真实研究、SEO、技术或法律检查已经由外部系统执行。</div>
             </article>
-            <aside class="presenter-card" data-manual-audience="buyer">
+            <aside class="presenter-card">
               <span class="eyebrow">Presenter card · 2 min</span>
               <h3>“发现机会以后，客户到底收到什么？”</h3>
               <dl>
@@ -1029,7 +782,7 @@ const html = `<!doctype html>
                 <li><strong>Unavailable：</strong>目标变更未进入可复查部署快照或来源不可用。</li>
               </ul>
             </article>
-            <aside class="presenter-card" data-manual-audience="buyer">
+            <aside class="presenter-card">
               <span class="eyebrow">Presenter card · 90 sec</span>
               <h3>“发布回执不是增长结果。”</h3>
               <dl>
@@ -1052,14 +805,6 @@ const html = `<!doctype html>
             <article class="compact-card"><span class="fact-tag is-scenario">场景可用</span><h3>Google Analytics 4</h3><p>支撑 Page、Campaign / UTM 与 Conversion Observation；当前不会读取真实客户账号。</p></article>
             <article class="compact-card"><span class="fact-tag is-future">待接入</span><h3>GitHub</h3><p>预留 Branch → PR → Human Review → Merge → Rollback Receipt 流程；当前 connectionState=unavailable。</p></article>
           </div>
-          <details open data-manual-audience="internal">
-            <summary>Source Freshness 规则</summary>
-            <div><p>status=unavailable 或没有 observedAt → Unavailable；Age ≤ SLA → Fresh；SLA &lt; Age ≤ 2×SLA → Aging；Age &gt; 2×SLA → Stale。对象引用多个来源时，当前 UI 显示最旧有效来源观察时间，避免只展示最新来源掩盖陈旧证据。</p></div>
-          </details>
-          <details data-manual-audience="internal">
-            <summary>缺失值诚实规则</summary>
-            <div><p>null 不是 0。Volume 缺失显示“未连接”，KD 缺失显示“不可用”，Rank 缺失显示“未覆盖”；真实数值 0 仍保留为 0。手工新增 Keyword / Competitor 的外部指标为空，不能翻译成“没有流量”或“没有 AI 引用”。</p></div>
-          </details>
         </section>
 
         <section id="overlay-audit" class="manual-section">
@@ -1069,95 +814,30 @@ const html = `<!doctype html>
             <p>Overlay 不是装饰层。查看、决策、创建、修改、模拟外部动作和回执被拆成不同窗口；关键写操作记录 Audit Event，许多操作同时生成 Receipt。</p>
           </div>
           <div class="compact-grid">${overlayCards}</div>
-          <div class="rule-note" style="margin-top:18px"><strong>统一行为：</strong>打开 Overlay 会让主工作区 inert / aria-hidden，Esc 或 Close 恢复焦点；关键写操作通过统一 Form handler 更新对象并追加 Audit Event。刷新页面后这些场景事件恢复到初始快照。</div>
+          <div class="rule-note" style="margin-top:18px"><strong>统一行为：</strong>打开决策窗口后，键盘焦点进入当前窗口；Esc、取消或完成会返回原入口。关键决定会在场景中留下审计记录，但刷新页面后仍会恢复初始快照。</div>
         </section>
 
-        <section id="rules" class="manual-section" data-manual-audience="internal">
+        <section id="journey" class="manual-section">
           <div class="section-heading">
-            <span class="eyebrow">10 · Object model & lifecycle</span>
-            <h2>对象模型与生命周期：从事实到交付再到结果</h2>
-            <p>Diagnosis、WebTech、Acquisition、Landing 是 Finding / Opportunity 的 Lens，不是四套 Project、四套状态机或四套交付对象。</p>
+            <span class="eyebrow">10 · Customer journey</span>
+            <h2>对象链路与客户业务闭环：从业务背景到可复查结果</h2>
+            <p>客户不需要掌握内部状态字典。说明书只保留能够在界面中看见、审核和复查的业务旅程，并明确每一步的输入、客户决定与结果边界。</p>
           </div>
           <div class="compact-grid">
-            <article class="compact-card"><span class="eyebrow">Finding</span><h3>可审核的问题事实</h3><p>包含 ruleId、Lens、Severity、Status、URL、Source 与 Evidence。确认或排除会留下客户审核记录。</p></article>
-            <article class="compact-card"><span class="eyebrow">Opportunity</span><h3>面向执行的决策聚合</h3><p>聚合一个或多个 Finding、一个或多个 URL、Priority、限制和 Artifact。当前主要 Finding 是 findingIds[0] 的 UI 约定。</p></article>
-            <article class="compact-card"><span class="eyebrow">Artifact</span><h3>客户可见的交付物</h3><p>保存正文、Type、Owner、Target URLs、Evidence、Required Gates、Passed Gates、Revision、Approval 与 Release 关系。</p></article>
+            <article class="compact-card"><span class="eyebrow">01 · Context</span><h3>产品画像约束方向</h3><p>先确认产品、市场、ICP、购买角色、JTBD 与转化目标，让后续机会始终回到真实业务背景。</p></article>
+            <article class="compact-card"><span class="eyebrow">02 · Evidence</span><h3>增长地图组织证据</h3><p>把 URL、主题簇、关键词、竞品与问题关联到具体机会，客户可以追溯“为什么优先”。</p></article>
+            <article class="compact-card"><span class="eyebrow">03 · Decision</span><h3>客户确认执行方向</h3><p>需要人工判断的发现、竞品范围和机会不会被系统静默推进；确认后才进入交付物审核。</p></article>
+            <article class="compact-card"><span class="eyebrow">04 · Delivery</span><h3>执行中心交付完整正文</h3><p>客户审核正文、目标页面、版本和质量门禁；任何可见修改都会创建新 Revision 并需要重新确认。</p></article>
+            <article class="compact-card"><span class="eyebrow">05 · Receipt</span><h3>回执证明场景动作</h3><p>模拟分享与模拟发布生成可查看回执，但不会发送邮件、创建真实链接或修改客户网站。</p></article>
+            <article class="compact-card"><span class="eyebrow">06 · Results</span><h3>结果单独复查</h3><p>技术复查、固定观察窗口和归因限制独立呈现，不把动作回执直接等同于增长结果。</p></article>
           </div>
-          <h3>关键状态机</h3>
-          <details open><summary>Finding</summary><div><pre>Unreviewed
-├─ Confirm → Confirmed
-│            ├─ Opportunity → Confirmed
-│            └─ 首个 URL → Action Required
-└─ Dismiss → Dismissed
-             ├─ Opportunity → Dismissed
-             └─ 首个 URL → Monitoring</pre></div></details>
-          <details><summary>Opportunity</summary><div><pre>Identified / Existing
-├─ Confirm → Confirmed
-├─ “需要更多数据” → needs_data*
-├─ Dismiss → Dismissed
-└─ Create Artifact → In Execution
-* 当前表单与 handler 可写入 needs_data，但 canonical opportunityStatus 枚举尚未包含该值；它不是已经稳定的状态合同。
-
-Delivered / Observing / Closed 存在于场景数据，
-但当前 Publish 不会自动推进完整 Opportunity 状态链。</pre></div></details>
-          <details><summary>Artifact 与 Revision</summary><div><pre>Review
-├─ 非 Human Gate 未完成 → Approval Blocked
-└─ 非 Human Gate 完成 + 人工批准 → Approved
-   └─ 全部 Gate 完成 + Simulated Publish
-      → Published + Release Receipt + Rollback Ref
-
-任意可编辑 Artifact
-└─ New Revision → Review
-   ├─ Human Gate 移除
-   ├─ 旧 Approval 失效
-   └─ 历史 Revision / Release 保留</pre></div></details>
-          <details><summary>Competitor</summary><div><pre>Manual Add → Candidate
-Candidate + Review
-├─ Approved + Non-excluded Scope → 参与正式分析
-├─ Candidate → 保留但不参与
-└─ Excluded → 强制 Excluded Scope，历史证据保留</pre></div></details>
-          <details><summary>底层规则速查</summary><div>
-            <p><strong>开放机会：</strong>closed 与 dismissed 不计入开放机会。Priority 按 P0 → P1 → P2；同优先级按状态、Finding 数与标题排序。</p>
-            <p><strong>画像完整度：</strong>从十类核心上下文是否存在计算，不是字段置信度均值。</p>
-            <p><strong>Readiness：</strong>Passed Gates ÷ Required Gates × 100。</p>
-            <p><strong>Results：</strong>页面 KPI 聚合 pageObservations；百分比为 (current-before)/before；before=0 且 current&gt;0 显示“新增”；Tagged UTM 只聚合 campaign 非空记录。</p>
-          </div></details>
-        </section>
-
-        <section id="sources" class="manual-section" data-manual-audience="internal">
-          <div class="section-heading">
-            <span class="eyebrow">11 · Source Dictionary</span>
-            <h2>数据来源字典：11 个来源的可见性、用途与边界</h2>
-            <p>客户连接只显示 3 个来源；完整对象 provenance 使用 11 个来源。每条来源都保留 status、audienceVisibility、observedAt、Freshness SLA 与 recordScope。</p>
-          </div>
-          <div class="index-grid">${sourceCards}</div>
-        </section>
-
-        <section id="actions" class="manual-section" data-manual-audience="internal">
-          <div class="section-heading">
-            <span class="eyebrow">12 · Action index</span>
-            <h2>Action / 按钮索引：57 个当前真实交互</h2>
-            <p>索引来自当前 Artifact 的 handleAction 与 data-action，而不是根据设计图猜测。每项说明作用对象、立即结果、状态副作用、相关 Form、外部副作用和持久性。</p>
-          </div>
-          <div class="index-toolbar"><p><strong>${actionSpecs.length}</strong> 个 Action · 搜索框可按中文、英文 action、对象或模块过滤。</p></div>
-          <div class="index-grid">${actionCards}</div>
-          <div class="search-empty" data-search-empty>没有匹配的 Action、Form 或 Source。请尝试 Opportunity、review-finding、src-gsc、批准、归因等关键词。</div>
-        </section>
-
-        <section id="forms" class="manual-section" data-manual-audience="internal">
-          <div class="section-heading">
-            <span class="eyebrow">13 · Form index</span>
-            <h2>Form / 表单索引：14 类写操作与阻断条件</h2>
-            <p>打开表单与提交表单是两个不同动作。下面只描述当前 handler 实际会读取的字段、创建或修改的对象、阻断条件与审计副作用。</p>
-          </div>
-          <div class="index-grid">${formCards}</div>
         </section>
 
         <section id="boundaries" class="manual-section">
           <div class="section-heading">
-            <span class="eyebrow">14 · Capability boundary</span>
+            <span class="eyebrow">11 · Capability boundary</span>
             <h2>当前与未来能力边界：买方讲解不能越线</h2>
-            <p>当前 Artifact 已形成可演示闭环，但外部连接、生产持久化与部分 canonical object contract 仍是后续范围。</p>
+            <p>当前 Artifact 已形成可演示闭环，但真实外部连接、生产持久化、组织权限与生产级数据合同仍是后续范围。</p>
           </div>
           <div class="capability-columns">
             <article class="capability-card is-current" data-capability-boundary="current">
@@ -1191,11 +871,10 @@ Candidate + Review
               <ul>
                 <li>真实 GitHub Branch、PR、Merge、Rollback 回写。</li>
                 <li>真实 CMS Publish、站点权限与 Idempotency。</li>
-                <li>独立 canonical Action 对象。</li>
-                <li>严格 primary_finding_id 与统一 TargetRef。</li>
-                <li>独立 SearchQuery / GenerativeQuery / PageAssignment。</li>
-                <li>完整 B2B ICP V2、多候选 ICP 卡片。</li>
-                <li>完整 Results contract 与 regressed 状态。</li>
+                <li>生产级组织权限、长期历史与跨设备持久化。</li>
+                <li>更多真实搜索、分析、内容与代码平台连接。</li>
+                <li>多市场、多项目和更完整的 ICP 协作流程。</li>
+                <li>更严格的实验设计、归因证据和回归监控。</li>
               </ul>
             </article>
           </div>
@@ -1203,8 +882,8 @@ Candidate + Review
 
         <section id="faq" class="manual-section">
           <div class="section-heading">
-            <span class="eyebrow">15 · FAQ & source registry</span>
-            <h2>FAQ、讲解口径与来源登记</h2>
+            <span class="eyebrow">12 · FAQ</span>
+            <h2>FAQ 与客户讲解口径</h2>
             <p>以下问题可以直接用于购买方问答；答案只描述当前 Artifact，生产安全、DPA、真实 Provider 与后端架构需要独立材料。</p>
           </div>
           <details open><summary>这是实时产品吗？</summary><div><p>当前文件是离线确定性场景 Artifact。数据来自内置 RelayOps 快照，不连接真实 GSC、GA4、CMS、GitHub 或第三方 Provider。它用于验证产品信息架构、对象闭环、客户审核与真实性边界。</p></div></details>
@@ -1216,18 +895,6 @@ Candidate + Review
           <details><summary>模拟分享或发布会修改客户网站吗？</summary><div><p>不会。分享只生成不可外部访问的 local-artifact:// 地址；发布只在浏览器内存创建 simulated Release、Rollback Ref 与 Audit Event。不会发邮件，也没有真实外部写入。</p></div></details>
           <details><summary>结果增长能归因于某个 Artifact 吗？</summary><div><p>当前不能直接这样推断。Observed 只表示固定窗口变化；Technical Verification 表示可复查条件；Release Receipt 表示动作发生。因果需要更严格实验或归因证据。</p></div></details>
           <details><summary>四个 Lens 是四套产品吗？</summary><div><p>不是。Diagnosis、WebTech、Acquisition、Landing 只是同一 Finding / Opportunity 对象链的观察视角，不拥有独立 Project、Artifact 或 Results 生命周期。</p></div></details>
-          <div class="source-registry" data-manual-audience="internal" style="margin-top:24px">
-            <strong>事实来源优先级</strong>
-            <ol>
-              <li>当前交互式 Artifact 的可见行为与内嵌场景数据。</li>
-              <li>当前 client-app.js 的 handleAction / handleForm / renderOverlay 逻辑。</li>
-              <li>当前 workspace-data.js 的对象、状态、来源与派生规则。</li>
-              <li>PRD 只用于标注未来边界，不能覆盖当前行为。</li>
-            </ol>
-            <p><code>${escapeHtml(artifactFile)}</code></p>
-            <p><code>${escapeHtml(workspaceDataFile)}</code></p>
-            <p><code>Artifact SHA-256: ${artifactHash}</code></p>
-          </div>
         </section>
       </main>
     </div>
@@ -1238,8 +905,6 @@ Candidate + Review
         var root = document.documentElement;
         var body = document.body;
         var search = document.querySelector("[data-manual-search]");
-        var modeButtons = Array.from(document.querySelectorAll("button[data-manual-mode]"));
-        var mobileModeSelect = document.querySelector("[data-manual-mode-select]");
         document.querySelectorAll(".manual-section").forEach(function (section) {
           section.setAttribute("data-manual-search-item", "");
         });
@@ -1256,36 +921,12 @@ Candidate + Review
           return String(value || "").toLowerCase().normalize("NFKC").replace(/\\s+/g, " ").trim();
         }
 
-        function setMode(mode) {
-          root.setAttribute("data-manual-mode", mode);
-          modeButtons.forEach(function (button) {
-            var active = button.getAttribute("data-manual-mode") === mode;
-            button.classList.toggle("is-active", active);
-            button.setAttribute("aria-pressed", String(active));
-          });
-          if (mobileModeSelect) mobileModeSelect.value = mode;
-        }
-
-        modeButtons.forEach(function (button) {
-          button.addEventListener("click", function () {
-            setMode(button.getAttribute("data-manual-mode"));
-          });
-        });
-        mobileModeSelect.addEventListener("change", function () {
-          setMode(mobileModeSelect.value);
-        });
-
         function applySearch() {
           var query = normalize(search.value);
           var visible = 0;
           root.classList.toggle("is-searching", Boolean(query));
           searchItems.forEach(function (item) {
-            var haystack = normalize(
-              item.textContent + " " +
-              (item.getAttribute("data-action-id") || "") + " " +
-              (item.getAttribute("data-form-id") || "") + " " +
-              (item.getAttribute("data-source-id") || "")
-            );
+            var haystack = normalize(item.textContent);
             var match = !query || haystack.indexOf(query) !== -1;
             item.hidden = !match;
             item.classList.toggle("search-hit", Boolean(query && match));
@@ -1394,7 +1035,6 @@ Candidate + Review
           sections.forEach(function (section) { observer.observe(section); });
         }
 
-        setMode("all");
         setToc(false, false);
       })();
     </script>
@@ -1410,9 +1050,10 @@ console.log(
       output: outputFile,
       bytes: Buffer.byteLength(html),
       artifactHash,
-      actionIndex: actionSpecs.length,
-      formIndex: formSpecs.length,
-      sourceIndex: workspace.dataSources.length,
+      workspaceData: "embedded Artifact workspace",
+      customerConnections: workspace.dataSources.filter(
+        (source) => source.audienceVisibility === "customer",
+      ).length,
     },
     null,
     2,

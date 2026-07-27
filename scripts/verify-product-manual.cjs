@@ -16,8 +16,6 @@ const defaultArtifactFile = path.join(
   repoRoot,
   "docs/artifacts/GenGrowth-Interactive-Artifact.html",
 );
-const defaultWorkspaceDataFile =
-  "/Users/wzb/.codex/visualizations/2026/07/20/019f7ff0-3874-7623-90f3-1ebdea7c313f/workspace-data.js";
 const defaultDependencyRoot =
   "/tmp/gengrowth-artifact-jsdom-20260723";
 
@@ -25,13 +23,11 @@ const [
   manualArgument = defaultManualFile,
   dependencyRootArgument = defaultDependencyRoot,
   artifactArgument = defaultArtifactFile,
-  workspaceDataArgument = defaultWorkspaceDataFile,
 ] = process.argv.slice(2);
 
 const manualFile = path.resolve(manualArgument);
 const dependencyRoot = path.resolve(dependencyRootArgument);
 const artifactFile = path.resolve(artifactArgument);
-const workspaceDataFile = path.resolve(workspaceDataArgument);
 
 function readRequiredFile(file, label) {
   assert.equal(
@@ -52,70 +48,6 @@ function normalizeText(value) {
     .trim();
 }
 
-function uniqueAttributeValues(document, attribute) {
-  const values = [...document.querySelectorAll(`[${attribute}]`)].map(
-    (element) => normalizeText(element.getAttribute(attribute)),
-  );
-  assert.equal(
-    values.some((value) => value.length === 0),
-    false,
-    `${attribute} values must not be empty`,
-  );
-  const duplicates = sorted(
-    values.filter((value, index) => values.indexOf(value) !== index),
-  );
-  assert.deepEqual(
-    [...new Set(duplicates)],
-    [],
-    `${attribute} index entries must be unique`,
-  );
-  return new Set(values);
-}
-
-function assertExactSet(actual, expected, label) {
-  const missing = sorted([...expected].filter((value) => !actual.has(value)));
-  const extra = sorted([...actual].filter((value) => !expected.has(value)));
-  assert.deepEqual(
-    { missing, extra },
-    { missing: [], extra: [] },
-    `${label} must match the current Artifact exactly`,
-  );
-}
-
-function literalDataActions(artifactHtml) {
-  return new Set(
-    [...artifactHtml.matchAll(/data-action=(?:\\?["'])([^"'\\]+)(?:\\?["'])/g)]
-      .map((match) => match[1])
-      .filter((value) => value && !value.includes("${")),
-  );
-}
-
-function handledActions(artifactHtml) {
-  return new Set(
-    [...artifactHtml.matchAll(/\baction\s*===\s*["']([^"']+)["']/g)].map(
-      (match) => match[1],
-    ),
-  );
-}
-
-function literalDataForms(artifactHtml) {
-  return new Set(
-    [...artifactHtml.matchAll(/data-form=\\?["']([^"'\\]+)\\?["']/g)].map(
-      (match) => match[1],
-    ),
-  );
-}
-
-function handledForms(artifactHtml) {
-  return new Set(
-    [
-      ...artifactHtml.matchAll(
-        /\bform\.dataset\.form\s*===\s*["']([^"']+)["']/g,
-      ),
-    ].map((match) => match[1]),
-  );
-}
-
 function executeWorkspaceData(workspaceSource, filename) {
   const sandbox = {
     window: {},
@@ -127,7 +59,7 @@ function executeWorkspaceData(workspaceSource, filename) {
   const workspace = sandbox.window.GenGrowthWorkspace;
   assert.ok(
     workspace && Array.isArray(workspace.dataSources),
-    "workspace-data.js must expose window.GenGrowthWorkspace.dataSources",
+    "Embedded Artifact workspace must expose window.GenGrowthWorkspace.dataSources",
   );
   return workspace;
 }
@@ -144,16 +76,6 @@ function workspaceFromArtifact(artifactHtml) {
     "Could not find the embedded GenGrowth workspace data in the Artifact",
   );
   return executeWorkspaceData(workspaceScript, artifactFile);
-}
-
-function resolveWorkspace(artifactHtml) {
-  if (fs.existsSync(workspaceDataFile)) {
-    return executeWorkspaceData(
-      fs.readFileSync(workspaceDataFile, "utf8"),
-      workspaceDataFile,
-    );
-  }
-  return workspaceFromArtifact(artifactHtml);
 }
 
 function loadJSDOM() {
@@ -211,54 +133,6 @@ function dispatchInput(window, element, value) {
   );
 }
 
-function modeValue(element) {
-  return (
-    element.getAttribute("data-manual-mode") ||
-    element.getAttribute("data-mode-filter") ||
-    element.getAttribute("data-audience-filter") ||
-    element.value ||
-    ""
-  ).toLowerCase();
-}
-
-function isActiveControl(element) {
-  return (
-    element.getAttribute("aria-pressed") === "true" ||
-    element.getAttribute("aria-selected") === "true" ||
-    element.getAttribute("data-active") === "true" ||
-    element.classList.contains("is-active") ||
-    element.classList.contains("active")
-  );
-}
-
-function modeSignature(document) {
-  const rootMode =
-    document.documentElement.getAttribute("data-manual-mode") ||
-    document.body.getAttribute("data-manual-mode") ||
-    document.documentElement.getAttribute("data-mode") ||
-    document.body.getAttribute("data-mode") ||
-    "";
-  const audienceItems = [
-    ...document.querySelectorAll(
-      [
-        "[data-manual-audience]",
-        "[data-audience]",
-        "[data-content-mode]",
-        "[data-mode-content]",
-      ].join(","),
-    ),
-  ];
-  return JSON.stringify({
-    rootMode,
-    hidden: audienceItems.map((item) => isHidden(item)),
-    active: [
-      ...document.querySelectorAll(
-        "[data-manual-mode],[data-mode-filter],[data-audience-filter]",
-      ),
-    ].map((item) => isActiveControl(item)),
-  });
-}
-
 function elementLabel(element) {
   return normalizeText(
     element.textContent ||
@@ -286,7 +160,7 @@ async function main() {
     artifactFile,
     "Interactive Artifact",
   );
-  const workspace = resolveWorkspace(artifactHtml);
+  const workspace = workspaceFromArtifact(artifactHtml);
   const { JSDOM, VirtualConsole } = loadJSDOM();
 
   const forbiddenDocumentPatterns = [
@@ -306,6 +180,24 @@ async function main() {
       pattern.test(manualHtml),
       false,
       `Product manual must not contain ${label}`,
+    );
+  }
+
+  const forbiddenCustomerManualPatterns = [
+    [
+      "internal audience content",
+      /\bdata-manual-audience\s*=\s*["']?internal\b/i,
+    ],
+    ["the internal reading entry", /内部查阅/],
+    ["a /Users workstation path", /\/Users\//],
+    ["a .codex/visualizations path", /\.codex\/visualizations/i],
+    ["a signalframe-mvp-app workspace path", /signalframe-mvp-app/i],
+  ];
+  for (const [label, pattern] of forbiddenCustomerManualPatterns) {
+    assert.equal(
+      pattern.test(manualHtml),
+      false,
+      `Customer product manual must not contain ${label}`,
     );
   }
 
@@ -331,37 +223,6 @@ async function main() {
       `Product manual must not contain ${label}`,
     );
   }
-
-  const actionLiterals = literalDataActions(artifactHtml);
-  const actionHandlers = handledActions(artifactHtml);
-  const artifactActions = new Set([
-    ...actionLiterals,
-    ...actionHandlers,
-  ]);
-  assert.ok(
-    artifactActions.size > 0,
-    "The current Artifact must expose an action set",
-  );
-  assert.deepEqual(
-    sorted(
-      [...actionLiterals].filter((action) => !actionHandlers.has(action)),
-    ),
-    [],
-    "Every literal Artifact data-action must have a handleAction branch",
-  );
-
-  const formLiterals = literalDataForms(artifactHtml);
-  const formHandlers = handledForms(artifactHtml);
-  const artifactForms = new Set([...formLiterals, ...formHandlers]);
-  assert.ok(
-    artifactForms.size > 0,
-    "The current Artifact must expose a form set",
-  );
-  assert.deepEqual(
-    sorted([...formLiterals].filter((form) => !formHandlers.has(form))),
-    [],
-    "Every literal Artifact data-form must have a handleForm branch",
-  );
 
   const workspaceSourceIds = new Set(
     workspace.dataSources.map((source) => source.id),
@@ -501,6 +362,11 @@ async function main() {
     document.querySelector('meta[name="viewport"]'),
     "Product manual must declare a responsive viewport",
   );
+  assert.match(
+    manualHtml,
+    /@media\s*\(\s*max-width\s*:/i,
+    "Product manual must provide responsive narrow-screen styles",
+  );
   assert.equal(
     document.querySelectorAll("h1").length,
     1,
@@ -510,6 +376,62 @@ async function main() {
   const bodyText = normalizeText(document.body.textContent);
   const chineseCharacterCount = (bodyText.match(/[\u3400-\u9fff]/g) || [])
     .length;
+  assert.equal(
+    document.querySelectorAll(
+      [
+        '[data-manual-audience="internal" i]',
+        '[data-manual-mode]',
+        '[data-manual-mode-select]',
+        '[data-mode-filter]',
+        '[data-audience-filter]',
+      ].join(","),
+    ).length,
+    0,
+    "Customer product manual must physically exclude internal content and reading-mode controls",
+  );
+  assert.equal(
+    document.querySelectorAll(
+      [
+        "#sources",
+        "#actions",
+        "#forms",
+        ".source-registry",
+        "[data-action-id]",
+        "[data-form-id]",
+        "[data-source-id]",
+      ].join(","),
+    ).length,
+    0,
+    "Customer product manual must not expose Action, Form, or Source dictionaries",
+  );
+  for (const [label, pattern] of [
+    ["Action index", /Action\s*\/\s*按钮索引|Action index/i],
+    ["Form index", /Form\s*\/\s*表单索引|Form index/i],
+    ["Source dictionary", /数据来源字典|内部来源字典|Source Dictionary/i],
+  ]) {
+    assert.equal(
+      pattern.test(bodyText),
+      false,
+      `Customer product manual must not expose the ${label}`,
+    );
+  }
+  const customerSources = workspace.dataSources.filter(
+    (source) => source.audienceVisibility === "customer",
+  );
+  assert.ok(
+    customerSources.length >= 3,
+    "Embedded Artifact workspace must expose the customer connection set",
+  );
+  for (const source of customerSources) {
+    assert.match(
+      bodyText,
+      new RegExp(
+        source.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "i",
+      ),
+      `Customer product manual must explain the ${source.name} connection`,
+    );
+  }
   assert.ok(
     bodyText.length >= 12_000,
     `Product manual must be detailed (got ${bodyText.length} text characters)`,
@@ -535,9 +457,6 @@ async function main() {
     ["效果追踪", /效果追踪|Results|结果与归因/i],
     ["数据连接", /数据连接|Connections/i],
     ["弹窗与审计", /弹窗.*审计|审计.*弹窗|Overlay|Audit/i],
-    ["数据来源", /数据来源|来源字典|Source Dictionary/i],
-    ["Action / 按钮索引", /Action|按钮索引|动作索引|交互索引/i],
-    ["Form / 表单索引", /Form|表单索引|表单与写操作/i],
     ["当前与未来能力边界", /能力边界|当前.*未来|未来.*当前/],
     ["场景真实性", /场景真实性|场景边界|Demo.*边界|演示数据/i],
   ];
@@ -549,35 +468,6 @@ async function main() {
     [],
     "Product manual is missing required semantic chapters",
   );
-
-  const manualActions = uniqueAttributeValues(document, "data-action-id");
-  const manualForms = uniqueAttributeValues(document, "data-form-id");
-  const manualSources = uniqueAttributeValues(document, "data-source-id");
-  assertExactSet(manualActions, artifactActions, "Action index");
-  assertExactSet(manualForms, artifactForms, "Form index");
-  assertExactSet(manualSources, workspaceSourceIds, "Data source index");
-
-  for (const element of document.querySelectorAll("[data-action-id]")) {
-    assert.ok(
-      normalizeText(element.textContent).length >=
-        element.getAttribute("data-action-id").length + 12,
-      `Action ${element.getAttribute("data-action-id")} needs a useful explanation`,
-    );
-  }
-  for (const element of document.querySelectorAll("[data-form-id]")) {
-    assert.ok(
-      normalizeText(element.textContent).length >=
-        element.getAttribute("data-form-id").length + 16,
-      `Form ${element.getAttribute("data-form-id")} needs a useful explanation`,
-    );
-  }
-  for (const element of document.querySelectorAll("[data-source-id]")) {
-    assert.ok(
-      normalizeText(element.textContent).length >=
-        element.getAttribute("data-source-id").length + 16,
-      `Source ${element.getAttribute("data-source-id")} needs a useful explanation`,
-    );
-  }
 
   const externalResources = [
     ...document.querySelectorAll(
@@ -681,29 +571,24 @@ async function main() {
         "[data-manual-search-item]",
         "[data-search-item]",
         "[data-index-item]",
-        "[data-action-id]",
-        "[data-form-id]",
-        "[data-source-id]",
       ].join(","),
     ),
   ];
   assert.ok(
-    searchableItems.length >= artifactActions.size,
-    "Product manual must expose searchable index content",
+    searchableItems.length >= 8,
+    "Product manual must expose substantial searchable customer content",
   );
   const visibleBeforeSearch = searchableItems.filter(
     (element) => !isHidden(element),
   ).length;
-  dispatchInput(dom.window, searchInput, "review-finding");
+  dispatchInput(dom.window, searchInput, "产品画像");
   await nextTurn();
-  const targetAction = document.querySelector(
-    '[data-action-id="review-finding"]',
-  );
-  assert.ok(targetAction, "Search fixture action review-finding must exist");
+  const targetSection = document.querySelector("#profile");
+  assert.ok(targetSection, "Search fixture customer profile section must exist");
   assert.equal(
-    isHidden(targetAction),
+    isHidden(targetSection),
     false,
-    "Search must keep the matching action visible",
+    "Search must keep the matching customer section visible",
   );
   const visibleAfterSearch = searchableItems.filter(
     (element) => !isHidden(element),
@@ -715,44 +600,10 @@ async function main() {
   dispatchInput(dom.window, searchInput, "");
   await nextTurn();
   assert.equal(
-    isHidden(document.querySelector('[data-action-id="nav"]')),
+    isHidden(document.querySelector("#overview")),
     false,
-    "Clearing search must restore filtered action entries",
+    "Clearing search must restore filtered customer sections",
   );
-
-  const modeControls = [
-    ...document.querySelectorAll(
-      "[data-manual-mode],[data-mode-filter],[data-audience-filter]",
-    ),
-  ];
-  const modeControlMap = new Map(
-    modeControls.map((element) => [modeValue(element), element]),
-  );
-  for (const mode of ["all", "buyer", "internal"]) {
-    assert.ok(
-      modeControlMap.has(mode),
-      `Product manual must provide the ${mode} mode`,
-    );
-  }
-  let priorModeSignature = modeSignature(document);
-  for (const mode of ["buyer", "internal", "all"]) {
-    const control = modeControlMap.get(mode);
-    if (control.tagName === "OPTION") {
-      control.parentElement.value = control.value;
-      control.parentElement.dispatchEvent(
-        new dom.window.Event("change", { bubbles: true }),
-      );
-    } else {
-      control.click();
-    }
-    await nextTurn();
-    const nextModeSignature = modeSignature(document);
-    assert.ok(
-      isActiveControl(control) || nextModeSignature !== priorModeSignature,
-      `Switching to ${mode} mode must update the manual`,
-    );
-    priorModeSignature = nextModeSignature;
-  }
 
   const expandControl =
     findControl(document, [
@@ -850,32 +701,21 @@ async function main() {
         bytes: Buffer.byteLength(manualHtml),
         chineseCharacters: chineseCharacterCount,
         artifact: artifactFile,
-        workspaceData: fs.existsSync(workspaceDataFile)
-          ? workspaceDataFile
-          : "embedded Artifact workspace",
-        actionIndex: {
-          literalDataActions: actionLiterals.size,
-          handledActions: actionHandlers.size,
-          verifiedEntries: manualActions.size,
+        workspaceData: "embedded Artifact workspace",
+        customerExposure: {
+          internalAudienceBlocks: 0,
+          readingModeControls: 0,
+          actionFormSourceDictionaries: 0,
+          workstationPaths: 0,
         },
-        formIndex: {
-          literalDataForms: formLiterals.size,
-          handledForms: formHandlers.size,
-          verifiedEntries: manualForms.size,
-        },
-        sourceIndex: {
-          verifiedEntries: manualSources.size,
+        connections: {
           customerVisible: workspace.dataSources.filter(
             (source) => source.audienceVisibility === "customer",
-          ).length,
-          internal: workspace.dataSources.filter(
-            (source) => source.audienceVisibility === "internal",
           ).length,
         },
         artifactRoutes: expectedRoutes.length,
         interactions: {
           search: "PASS",
-          modes: "PASS",
           expand: "PASS",
           navigation: "PASS",
           print: "PASS",
