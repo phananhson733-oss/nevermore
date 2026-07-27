@@ -1,4 +1,35 @@
-# Production deployment decision — Vercel + Supabase + Railway
+# Nevermore v0.3 deployment decision — GenGrowth on Vercel + Supabase + Railway
+
+Nevermore is the internal repository and system of record; GenGrowth is the
+customer-facing brand, and its approved production origin is
+`https://app.gengrowth.ai`. The current candidate is product `0.3.0`, contract
+`2026-07-21`, backed by `authority/implementation-spec-v0.3/`.
+
+Contract inventory: **49 API operations / 9 async operations / 44 app tables / 11 frozen rules**
+
+Content Shadow state: **reviewed, not published**
+
+Current v0.3 external-write boundary: **no external writes**
+
+This is a versioned v0.3 fact, not a permanent product prohibition. The current
+deployment must not write to GitHub, WordPress, another CMS, Vercel, Cloudflare,
+or a customer production site, and it must not claim post-publication
+attribution.
+
+Next reviewed slice: **v0.4 authorized publication and attribution**
+
+v0.4 must begin as a non-normative authority candidate without changing the
+shared OpenAPI or migration chain. It becomes normative only when authority,
+routes, repositories, workers, adapters, generated contracts, migrations,
+rollback/reconciliation, and tests can be promoted atomically. A GitHub pull
+request or WordPress Draft produces a **delivery receipt**, not proof that a
+change is live. Only a separate **change receipt** that confirms merge/publish
+and records the live canonical URL may anchor attribution.
+
+The repository contains ordered migrations `0001` through `0021`. Historical
+production evidence through `0009` does not prove that the Slice 1/2 migrations
+through `0021` are hosted; every release must back up, restore-verify, apply,
+and replay-check the complete candidate chain before traffic promotion.
 
 ## Approved production topology (Owner decision, 2026-07-20)
 
@@ -75,7 +106,7 @@ self-healing retry states.
 
 ### Worker — Railway Hobby only
 
-1. Create one Railway service named for the SignalFrame worker from the same
+1. Create one Railway service named for the Nevermore worker from the same
    repository and `<release SHA>` used by Vercel.
 2. Build from the repository root with committed `railway.json`, which selects
    `Dockerfile.worker`. Config-as-code also pins the worker start command, so a

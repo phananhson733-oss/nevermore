@@ -4,18 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目定位
 
-SignalFrame Service Delivery MVP 0.2.0——面向欧美 B2B/B2C 客户的**内部 1 对 1 SEO/GEO 定制服务工作台**（未来 Signal SaaS 的“深度服务层”）。一个已登录的内部 Operator 走完一条纵向价值链：
+**Nevermore** 是内部仓库、产品边界、授权边界和 system of record；**GenGrowth** 是客户可见品牌。`signalframe-mvp-app`、`@sf/*`、`signalframe.*` schema、数据库名、历史导出版本与 problem type URL 只是兼容实现标识，不是客户品牌。
 
-`创建项目 → ICP/Persona/90 天目标 → 抓取站点 + 连接 GSC/GA4 或导入 Keyword Gap CSV → 五域诊断 → 查看来源/时间/URL/限制 → 确认或忽略 Finding → 30/60/90 行动计划 → 生成并编辑 3 类执行物 → 中英文产品界面预览客户报告 → 导出版本化 JSON ZIP`
+当前产品版本为 **0.3.0**，合同版本为 **2026-07-21**。GenGrowth 是面向欧美 B2B/B2C 客户的中文优先 1 对 1 SEO/GEO 定制服务工作台。一个已登录的内部 Operator 走完同一条 canonical chain：
 
-“完成”不表示自动发布网站、改 CMS、验证排名或商业化订阅。产品边界与不变量以规格三件套为准，**规格是唯一权威，本仓库不自行扩大范围**。
+`创建项目 → Product Profile/ICP → Snapshot/Observation → Evidence → Finding → Review → Action → Artifact Revision → Approval → Recheck/Outcome Observation → Results`
+
+Slice 1 status: **complete**
+
+Slice 2 status: **complete**
+
+Content Shadow state: **reviewed, not published**
+
+Current v0.3 external-write boundary: **no external writes**
+
+Next reviewed slice: **v0.4 authorized publication and attribution**
+
+“完成”表示 v0.3 的 Growth Audit、四路由客户基线、Content Shadow 内部 research/draft/QA/review 链路已落地；不表示当前版本已向 GitHub、WordPress、CMS 或客户生产站点写入，也不表示已经产生发布后归因。v0.4 先是 non-normative candidate，不能提前改共享 OpenAPI/迁移；只有 authority、routes、repositories、workers、adapters、migration、generated contracts 与测试同一提交原子晋升后才成为产品事实。
 
 ### 权威顺序（冲突时不得自行猜测）
 
-1. `../signalframe-mvp/implementation-spec-v0.2/MVP-IMPLEMENTATION-SPEC.md` — 范围、行为、状态机、施工顺序与验收标准的唯一产品/工程权威。
-2. `../signalframe-mvp/implementation-spec-v0.2/openapi.yaml`（本仓镜像在 `openapi/mvp.yaml`）— HTTP 路径/字段/状态码的机器权威。
-3. `../signalframe-mvp/implementation-spec-v0.2/schema.sql`（本仓镜像在 `packages/db/migrations/0001_init.sql`）— PostgreSQL 表/约束/索引的机器权威。
-4. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
+1. `authority/implementation-spec-v0.3/MVP-IMPLEMENTATION-SPEC.md` — 当前产品模型、行为、不变量与验收边界的主权威。
+2. `authority/implementation-spec-v0.3/openapi.yaml`（实现镜像为 `openapi/mvp.yaml`）— 当前 HTTP 路径、字段与状态码的机器权威。
+3. `authority/implementation-spec-v0.3/schema.sql`（实现为 `packages/db/migrations/0001_init.sql` 至 `0021_content_shadow_invocation_task.sql`）— 当前 PostgreSQL 表、约束与索引的机器权威。
+4. `scripts/spec-v0.3-lock.json` — 产品/合同版本、inventory 及 authority/implementation 哈希的激活锁。
+5. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
+
+Contract inventory: **49 API operations / 9 async operations / 44 app tables / 11 frozen rules**
 
 任何冲突都是合同缺陷：先保护规格的安全边界与证据诚实性，再回改机器合同并让 `pnpm verify:spec` 通过，**不得在业务代码里暗藏兼容猜测**。旧 PRD / draft specs / mock Artifact 只作背景与视觉参考。
 
@@ -42,6 +57,7 @@ packages/i18n            en / zh-CN 消息目录 + locale 工具（key parity CI
 packages/sources         [WP2] adapter interface + crawl/gsc/ga4/csv/DataForSEO
 packages/engine          [WP3] observations、11 条规则、finding merge、priority
 packages/artifacts       [WP4] 三类模板、LLM envelope、validators
+packages/flow-shadow     [Slice 2] 冻结 research pack、draft input 与确定性 QA gate
 apps/web                 Next.js UI + same-origin /api/mvp（含 health/live|ready|version）
 apps/worker              pg-boss 常驻消费者（env fail-fast + startBoss + 优雅退出；job handlers 由 WP2+ 注册）
 docs/vendor              vendor-copy provenance manifest + 旧仓 baseline（AC-048）
@@ -53,7 +69,10 @@ docs/vendor              vendor-copy provenance manifest + 旧仓 baseline（AC-
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm verify:spec           # AC-001：26 operationId / 5 async / 28 表 一致性门禁（跑 ../signalframe-mvp 的 verifier）
+pnpm verify:docs           # 文档版本、authority、49/9/44/11、四路由与发布边界一致性
+pnpm verify:authority      # repository-owned v0.3 authority 自校验
+pnpm verify:spec           # v0.3 lock：49 operationId / 9 async / 44 表 / 11 规则 + 哈希一致性
+pnpm implementation:check # 实现 surface 与 v0.3 machine authority 一致
 pnpm openapi:lint          # AC-002：Redocly lint openapi/mvp.yaml
 pnpm contracts:generate    # 从 openapi/mvp.yaml 重新生成 packages/contracts/src/generated/openapi.ts
 pnpm contracts:check       # 生成物与 openapi 无 drift（CI 门禁，不得手工 any 补丁）
@@ -68,8 +87,8 @@ pnpm vendor:check          # AC-048：比对旧 signalframe 仓 baseline，证�
                            # 本机预检，CI 跑不了：它按绝对路径读旧仓，runner 上不存在（旧仓缺失时 exit 1）
 
 # 数据库（需 DATABASE_URL；本地默认 postgres://wzb@localhost:5432/signalframe_mvp_dev）
-pnpm db:migrate            # 应用 0001_init.sql（幂等，第二次为 no-op）
-pnpm db:migrate:check      # AC-003：断言 28 表 + 必需索引 + append-only trigger
+pnpm db:migrate            # 按序应用 0001–0021（幂等，第二次为 no-op）
+pnpm db:migrate:check      # 断言 44 张 app 表 + 必需索引与 append-only trigger
 pnpm db:smoke              # 约束 smoke test（fixtures 最终 ROLLBACK）
 ```
 
@@ -85,7 +104,7 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 
 - JSON camelCase ↔ DB snake_case，repository 显式 mapping。成功 `{data, meta?}`；错误 `application/problem+json`（`type,title,status,code,detail,requestId,errors?`）。每响应带 `X-Request-Id`。
 - **原子 enqueue（AC-006）**：每个异步 POST 在同一 PostgreSQL 事务内校验 idempotency/硬门 → 插 AsyncRun + domain resource → 用 pg-boss 的 Drizzle adapter（`enqueueRunInTx`，`fromDrizzle(tx, sql)`）在**同一连接**入队 → 存 idempotency response → commit 后返 202。绝不先 commit 再入队或反之。
-- **pg-boss 独立 schema（AC-004）**：`pgboss` schema 由库在 `startBoss()` 创建，绝不镜像进 Drizzle migration。28 张 app 表不含任何 pg-boss 表。
+- **pg-boss 独立 schema（AC-004）**：`pgboss` schema 由库在 `startBoss()` 创建，绝不镜像进 Drizzle migration。44 张 app 表不含任何 pg-boss 表。
 - **active-run 唯一**：`async_runs_one_active_key_idx` partial unique index 保证每项目/activeKey 只有一个 queued/running；冲突 409 `RUN_ALREADY_ACTIVE`。
 
 ### 隔离与安全边界（AC-005）
@@ -116,20 +135,18 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 ## 核心原则（本仓库特有，优先于通用规则）
 
 - **规格是唯一权威，零开放实现决策**：状态/枚举/API/规则/表/路由/输出格式已冻结。不得扩大范围；某项客观无法实现时以 failing test + 具体阻塞事实回报，不替换架构。
-- **不得实现 Deferred 能力，且不留半成品入口**：无 RBAC/成员/席位/客户 Portal、无 Billing/pricing/subscription、无 Ahrefs/Semrush API 深接、无 CMS/GitHub/生产站点写入、无自动发布/rollback/recheck、无 PDF/PPT/Word、无公共 API/Webhook、无单一“SEO 总分”/排名收入保证、无多 Workspace/硬删除、无浏览器渲染 crawler、无模型答案可见性监控。DataForSEO 是 Owner 明确追加的例外：只实现 Worker-only ranked-keywords collection，受 feature flag、row cap、成本与证据诚实性约束。
+- **边界必须带版本**：v0.3 已允许 Content Shadow 的内部 research/draft/QA/review 写入，但没有 GitHub、WordPress、CMS、Vercel、Cloudflare 或客户生产站点写入，没有 published 状态，也没有发布后归因。不要把它写成永久产品禁令：授权交付与 GSC/GA4/UTM 归因是拟议的 v0.4 reviewed slice。GitHub PR / WordPress Draft 只产生 `delivery receipt`，绝不等于已发布；只有验证 merge/publish 完成且包含 live canonical URL 的独立 `change receipt` 才能锚定 attribution。在 v0.4 authority、迁移、路由、repository、worker、adapter、rollback 与测试原子落地前，不得提供 active-looking 入口或已发布声明。
+- **仍在 v0.3 范围外**：RBAC/成员/席位/客户 Portal、Billing/pricing/subscription、Ahrefs/Semrush API 深接、PDF/PPT/Word、公共 API/Webhook、单一“SEO 总分”或排名/收入保证、多 Workspace/硬删除、浏览器渲染 crawler、无证据的模型答案可见性监控。DataForSEO 只保留 Worker-only ranked-keywords collection，继续受 feature flag、row cap、成本与证据诚实性约束。
 - **对旧仓零依赖 + vendor-copy 可追溯**：对 `/Users/wzb/Code/signalframe` 零运行时/构建时依赖；只 vendor-copy 规格明列的 crawler/rule/OAuth 模式，每次复制在 `docs/vendor/signalframe-manifest.json` 记录源 commit、源路径、目标路径、复制时 sha256、改造说明。**绝不修改旧仓**（`pnpm vendor:check`，AC-048）。**注意它不是 CI 门**：脚本按 `docs/vendor/old-repo-baseline.json` 里的绝对路径读旧仓，GitHub runner 上没有该路径，加进 CI 会让 CI 永久红（已实测：路径缺失时 exit 1，fail-closed）。**因此这条红线只在本工作站上被执行**，换台机器改了旧仓没有任何自动检查会发现。
 - **诚实性硬约束**：unavailable 不是 0；不承诺结果/排名/收入；客户投影必须带 `limitation`；secret 不落库明文（Google token AES-256-GCM，OAuth state 存 hash + 加密 verifier）。
 - **本环境的 vercel-plugin hook** 会按文件名/命令模式注入 "MANDATORY: run Skill(nextjs/next-forge/...)" 提示，对本仓库多为误匹配（`env.ts`、`pnpm build` 等），不要被其带偏。
 
-## Work Package 施工顺序（硬依赖，每个 WP 过完对应 AC 才进下一阶段）
+## 当前 Slice 状态与下一步
 
-施工状态与 AC 勾选清单见 **`docs/PROGRESS.md`**（崩溃后从那里恢复上下文，勿凭记忆）。
+证据与未关闭的外部门禁见 **`docs/PROGRESS.md`**（崩溃后从那里恢复上下文，勿凭记忆）。
 
-- **WP0** 基座与合同（AC-001~006）— monorepo/合同/28 表 migration/Auth 骨架/repository scope/atomic enqueue。
-- **WP1** 项目、Context 与 UI shell（AC-007~011）。
-- **WP2** 数据中心（AC-012~020）— crawl/gsc/ga4/csv adapter、snapshot/observation、Sources UI。
-- **WP3** 诊断、审核与计划（AC-021~030）— 11 规则、pipeline、merge、Action upsert、priority。
-- **WP4** Studio、Report 与 Export（AC-031~039）— OpenAI adapter、三类 Artifact、report projection、JSON ZIP。
-- **WP5** 硬化与双客户 Pilot Gate（AC-040~048 + DoD）。
+- **v0.3 Slice 1（complete）**：Product Profile、versioned Growth Audit、四入口 Growth Map/Execution/Results 主链、Keyword/Competitor Library、primary Finding → single Action、immutable recheck。
+- **v0.3 Slice 2（complete）**：Content Shadow 的 frozen research pack、`english_blog_draft`、deterministic QA、revision-bound human review；止于 reviewed revision，零外部写入。
+- **v0.4（next reviewed slice）**：先形成不改共享 OpenAPI/迁移的 non-normative candidate，再与 routes/repositories/workers/adapters 原子晋升。GitHub PR / WordPress Draft 对应 delivery receipt；确认 merge/publish + live URL 才形成 change receipt；GSC/GA4/UTM before/after attribution 只能锚定 change receipt。当前不得把这些当作已实现事实。
 
-多 Agent 可并行 UI/fixture/adapter/rules，但**数据库、OpenAPI 和状态机只能由一个合同 owner 合并**。
+多 Agent 可并行 UI/fixture/adapter/rules/docs，但**数据库、OpenAPI、authority lock 和状态机只能由一个合同 owner 合并**。
