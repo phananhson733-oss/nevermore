@@ -1,22 +1,39 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { createRequire } = require("node:module");
 const { pathToFileURL } = require("node:url");
+const { JSDOM, VirtualConsole } = require("jsdom");
 
-const [artifactArgument, dependencyRootArgument] = process.argv.slice(2);
+const repoRoot = path.resolve(__dirname, "..");
+const defaultArtifactFile = path.join(
+  repoRoot,
+  "docs",
+  "artifacts",
+  "GenGrowth-Interactive-Artifact.html",
+);
+const [artifactArgument] = process.argv.slice(2);
 
-if (!artifactArgument || !dependencyRootArgument) {
-  console.error(
-    "Usage: node scripts/verify-static-customer-artifact.cjs <artifact-html> <directory-with-jsdom-dependency>",
+const resolveRepositoryFile = (argument, fallback, label) => {
+  const resolved = argument ? path.resolve(repoRoot, argument) : fallback;
+  const relative = path.relative(repoRoot, resolved);
+  assert.equal(
+    relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative)),
+    true,
+    `${label} must stay inside the Nevermore repository`,
   );
-  process.exit(1);
-}
+  assert.doesNotMatch(
+    resolved,
+    /(?:^|[/\\])\.codex[/\\]visualizations(?:[/\\]|$)|(?:^|[/\\])tmp[/\\]gengrowth-artifact-jsdom-/i,
+    `${label} must not use a historical workstation source`,
+  );
+  return resolved;
+};
 
-const artifactFile = path.resolve(artifactArgument);
-const dependencyRoot = path.resolve(dependencyRootArgument);
-const dependencyRequire = createRequire(path.join(dependencyRoot, "package.json"));
-const { JSDOM, VirtualConsole } = dependencyRequire("jsdom");
+const artifactFile = resolveRepositoryFile(
+  artifactArgument,
+  defaultArtifactFile,
+  "Interactive Artifact",
+);
 const html = fs.readFileSync(artifactFile, "utf8");
 
 const forbiddenDependencies = [

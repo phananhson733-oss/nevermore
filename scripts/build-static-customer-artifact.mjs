@@ -2,17 +2,22 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
+import { resolveArtifactBuildPaths } from "./resolve-artifact-source.mjs";
+
 const [sourceDirectoryArgument, outputFileArgument] = process.argv.slice(2);
 
-if (!sourceDirectoryArgument || !outputFileArgument) {
-  console.error(
-    "Usage: node scripts/build-static-customer-artifact.mjs <artifact-source-directory> <output-html>",
-  );
+let buildPaths;
+try {
+  buildPaths = resolveArtifactBuildPaths({
+    sourceDirectoryArgument,
+    outputFileArgument,
+  });
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
 
-const sourceDirectory = path.resolve(sourceDirectoryArgument);
-const outputFile = path.resolve(outputFileArgument);
+const { sourceDirectory, outputFile } = buildPaths;
 
 const [styles, workspaceData, clientApp] = await Promise.all([
   readFile(path.join(sourceDirectory, "styles.css"), "utf8"),

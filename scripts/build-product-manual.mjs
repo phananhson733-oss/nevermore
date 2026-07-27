@@ -4,14 +4,21 @@ import path from "node:path";
 import process from "node:process";
 import vm from "node:vm";
 
-const repoRoot = path.resolve(import.meta.dirname, "..");
-const artifactFile = path.join(
-  repoRoot,
-  "docs/artifacts/GenGrowth-Interactive-Artifact.html",
+import {
+  artifactPaths,
+  resolveRepositoryArtifactPath,
+} from "./resolve-artifact-source.mjs";
+
+const [artifactArgument, outputArgument] = process.argv.slice(2);
+const artifactFile = resolveRepositoryArtifactPath(
+  artifactArgument,
+  artifactPaths.interactiveArtifact,
+  "Interactive Artifact input",
 );
-const outputFile = path.join(
-  repoRoot,
-  "docs/artifacts/GenGrowth-Product-Manual.html",
+const outputFile = resolveRepositoryArtifactPath(
+  outputArgument,
+  artifactPaths.productManual,
+  "Product manual output",
 );
 
 const artifactSource = await readFile(artifactFile, "utf8");

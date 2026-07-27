@@ -4,8 +4,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const { createRequire } = require("node:module");
 const { pathToFileURL } = require("node:url");
+const { JSDOM, VirtualConsole } = require("jsdom");
 
 const repoRoot = path.resolve(__dirname, "..");
 const defaultManualFile = path.join(
@@ -16,18 +16,37 @@ const defaultArtifactFile = path.join(
   repoRoot,
   "docs/artifacts/GenGrowth-Interactive-Artifact.html",
 );
-const defaultDependencyRoot =
-  "/tmp/gengrowth-artifact-jsdom-20260723";
-
 const [
-  manualArgument = defaultManualFile,
-  dependencyRootArgument = defaultDependencyRoot,
-  artifactArgument = defaultArtifactFile,
+  manualArgument,
+  artifactArgument,
 ] = process.argv.slice(2);
 
-const manualFile = path.resolve(manualArgument);
-const dependencyRoot = path.resolve(dependencyRootArgument);
-const artifactFile = path.resolve(artifactArgument);
+function resolveRepositoryFile(argument, fallback, label) {
+  const resolved = argument ? path.resolve(repoRoot, argument) : fallback;
+  const relative = path.relative(repoRoot, resolved);
+  assert.equal(
+    relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative)),
+    true,
+    `${label} must stay inside the Nevermore repository`,
+  );
+  assert.doesNotMatch(
+    resolved,
+    /(?:^|[/\\])\.codex[/\\]visualizations(?:[/\\]|$)|(?:^|[/\\])tmp[/\\]gengrowth-artifact-jsdom-/i,
+    `${label} must not use a historical workstation source`,
+  );
+  return resolved;
+}
+
+const manualFile = resolveRepositoryFile(
+  manualArgument,
+  defaultManualFile,
+  "Product manual",
+);
+const artifactFile = resolveRepositoryFile(
+  artifactArgument,
+  defaultArtifactFile,
+  "Interactive Artifact",
+);
 
 function readRequiredFile(file, label) {
   assert.equal(
@@ -76,29 +95,6 @@ function workspaceFromArtifact(artifactHtml) {
     "Could not find the embedded GenGrowth workspace data in the Artifact",
   );
   return executeWorkspaceData(workspaceScript, artifactFile);
-}
-
-function loadJSDOM() {
-  const candidates = [
-    dependencyRoot,
-    defaultDependencyRoot,
-    repoRoot,
-  ].filter((candidate, index, values) => values.indexOf(candidate) === index);
-
-  for (const candidate of candidates) {
-    const packageFile = path.join(candidate, "package.json");
-    if (!fs.existsSync(packageFile)) continue;
-    try {
-      const dependencyRequire = createRequire(packageFile);
-      return dependencyRequire("jsdom");
-    } catch {
-      // Try the next known dependency root.
-    }
-  }
-
-  assert.fail(
-    `jsdom is required. Pass its dependency root as argument 2 (tried: ${candidates.join(", ")})`,
-  );
 }
 
 function isHidden(element) {
@@ -161,7 +157,6 @@ async function main() {
     "Interactive Artifact",
   );
   const workspace = workspaceFromArtifact(artifactHtml);
-  const { JSDOM, VirtualConsole } = loadJSDOM();
 
   const forbiddenDocumentPatterns = [
     ["external script", /<script\b[^>]*\bsrc\s*=/i],
