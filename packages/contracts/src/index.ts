@@ -26,3 +26,4 @@ export * from "./zod/keyword-governance.ts";
 export * from "./zod/artifact-approval.ts";
 export * from "./zod/delivery-connections.ts";
 export * from "./zod/publication.ts";
+export * from "./zod/measurement.ts";
