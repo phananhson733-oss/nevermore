@@ -73,6 +73,10 @@ const SAFE_CONNECTION_PARAMETER_ENV = {
 const IGNORED_SAFE_CONNECTION_PARAMETERS = new Set([
   "application_name",
   "fallback_application_name",
+  // node-postgres consumes this compatibility switch before connecting. psql
+  // already uses libpq semantics, so forwarding either its name or value would
+  // be unnecessary and would expose an unsupported environment input.
+  "uselibpqcompat",
 ]);
 
 function escapePgPassPassword(password: string): string {

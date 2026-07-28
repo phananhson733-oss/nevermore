@@ -415,6 +415,13 @@ const REQUIRED_COLUMNS = [
   ["backlink_facts", "source_ref"],
 ] as const;
 
+const REQUIRED_DIGEST_SIGNATURES = [
+  "bytea, text",
+  "text, text",
+] as const;
+const DIGEST_COMPATIBILITY_SHA256 =
+  "6bc55c2be22e768cdca86865ec8f910f2d81e10ffdea5fb3a4610240b52473ae";
+
 export interface MigrateCheckResult {
   ok: boolean;
   problems: string[];
@@ -493,6 +500,195 @@ export async function checkMigrations(
     for (const routine of REQUIRED_ROUTINES) {
       if (!routineSet.has(routine)) {
         problems.push(`missing routine app.${routine}`);
+      }
+    }
+
+    const pgcrypto = await client.query<{
+      extension_oid: string;
+      namespace_oid: string;
+      extension_schema: string;
+    }>(
+      `SELECT
+         extension_row.oid::text AS extension_oid,
+         extension_namespace.oid::text AS namespace_oid,
+         extension_namespace.nspname AS extension_schema
+       FROM pg_catalog.pg_extension extension_row
+       JOIN pg_catalog.pg_namespace extension_namespace
+         ON extension_namespace.oid = extension_row.extnamespace
+       WHERE extension_row.extname = 'pgcrypto'`,
+    );
+
+    if (pgcrypto.rows.length !== 1) {
+      problems.push("missing pgcrypto extension");
+    } else {
+      const extension = pgcrypto.rows[0]!;
+      const extensionDigests = await client.query<{ signature: string }>(
+        `SELECT pg_catalog.oidvectortypes(procedure.proargtypes) AS signature
+         FROM pg_catalog.pg_proc procedure
+         JOIN pg_catalog.pg_depend dependency
+           ON dependency.classid =
+                'pg_catalog.pg_proc'::pg_catalog.regclass
+          AND dependency.objid = procedure.oid
+          AND dependency.refclassid =
+                'pg_catalog.pg_extension'::pg_catalog.regclass
+          AND dependency.refobjid = $1::oid
+          AND dependency.deptype = 'e'
+         WHERE procedure.pronamespace = $2::oid
+           AND procedure.proname = 'digest'
+           AND pg_catalog.oidvectortypes(procedure.proargtypes) =
+               ANY ($3::text[])`,
+        [
+          extension.extension_oid,
+          extension.namespace_oid,
+          [...REQUIRED_DIGEST_SIGNATURES],
+        ],
+      );
+      const extensionDigestSet = new Set(
+        extensionDigests.rows.map((row) => row.signature),
+      );
+      for (const signature of REQUIRED_DIGEST_SIGNATURES) {
+        if (!extensionDigestSet.has(signature)) {
+          problems.push(
+            `missing pgcrypto extension function ${extension.extension_schema}.digest(${signature})`,
+          );
+        }
+      }
+
+      if (extension.extension_schema === "extensions") {
+        const wrappers = await client.query<{
+          signature: string;
+          language_name: string;
+          prosecdef: boolean;
+          provolatile: string;
+          proisstrict: boolean;
+          proparallel: string;
+          proconfig: string[] | null;
+          prosrc: string;
+          current_user_execute: boolean;
+          restricted_role_execute: boolean;
+        }>(
+          `SELECT
+             pg_catalog.oidvectortypes(procedure.proargtypes) AS signature,
+             procedure_language.lanname AS language_name,
+             procedure.prosecdef,
+             procedure.provolatile,
+             procedure.proisstrict,
+             procedure.proparallel,
+             procedure.proconfig,
+             procedure.prosrc,
+             pg_catalog.has_function_privilege(
+               current_user,
+               procedure.oid,
+               'EXECUTE'
+             ) AS current_user_execute,
+             EXISTS (
+               SELECT 1
+               FROM pg_catalog.pg_roles restricted_role
+               WHERE restricted_role.rolname IN (
+                 'anon',
+                 'authenticated',
+                 'service_role'
+               )
+                 AND pg_catalog.has_function_privilege(
+                   restricted_role.oid,
+                   procedure.oid,
+                   'EXECUTE'
+                 )
+             ) AS restricted_role_execute
+           FROM pg_catalog.pg_proc procedure
+           JOIN pg_catalog.pg_namespace procedure_namespace
+             ON procedure_namespace.oid = procedure.pronamespace
+           JOIN pg_catalog.pg_language procedure_language
+             ON procedure_language.oid = procedure.prolang
+           WHERE procedure_namespace.nspname = 'public'
+             AND procedure.proname = 'digest'
+             AND procedure.oid IN (
+               pg_catalog.to_regprocedure('public.digest(bytea,text)'),
+               pg_catalog.to_regprocedure('public.digest(text,text)')
+             )`,
+        );
+        const wrappersBySignature = new Map(
+          wrappers.rows.map((row) => [row.signature, row]),
+        );
+
+        for (const signature of REQUIRED_DIGEST_SIGNATURES) {
+          const wrapper = wrappersBySignature.get(signature);
+          if (!wrapper) {
+            problems.push(
+              `missing digest compatibility function public.digest(${signature})`,
+            );
+            continue;
+          }
+          if (
+            wrapper.language_name !== "sql" ||
+            wrapper.prosecdef ||
+            wrapper.provolatile !== "i" ||
+            !wrapper.proisstrict ||
+            wrapper.proparallel !== "s" ||
+            !wrapper.proconfig?.includes("search_path=pg_catalog") ||
+            wrapper.prosrc.trim() !==
+              "SELECT extensions.digest($1, $2)"
+          ) {
+            problems.push(
+              `unsafe digest compatibility function public.digest(${signature})`,
+            );
+          }
+          if (!wrapper.current_user_execute) {
+            problems.push(
+              `database runtime cannot execute public.digest(${signature})`,
+            );
+          }
+          if (wrapper.restricted_role_execute) {
+            problems.push(
+              `restricted API role can execute public.digest(${signature})`,
+            );
+          }
+        }
+      } else if (extension.extension_schema !== "public") {
+        problems.push(
+          `unsupported pgcrypto extension schema ${extension.extension_schema}`,
+        );
+      }
+
+      if (
+        extension.extension_schema === "extensions" ||
+        extension.extension_schema === "public"
+      ) {
+        try {
+          const digestRuntime = await client.query<{
+            bytea_digest: string;
+            text_digest: string;
+          }>(
+            `SELECT
+               pg_catalog.encode(
+                 public.digest(
+                   pg_catalog.convert_to(
+                     'signalframe-pgcrypto-compat',
+                     'UTF8'
+                   ),
+                   'sha256'::text
+                 ),
+                 'hex'
+               ) AS bytea_digest,
+               pg_catalog.encode(
+                 public.digest(
+                   'signalframe-pgcrypto-compat'::text,
+                   'sha256'::text
+                 ),
+                 'hex'
+               ) AS text_digest`,
+          );
+          const row = digestRuntime.rows[0];
+          if (
+            digestRuntime.rows.length !== 1 ||
+            row?.bytea_digest !== DIGEST_COMPATIBILITY_SHA256 ||
+            row?.text_digest !== DIGEST_COMPATIBILITY_SHA256
+          ) {
+            problems.push("digest compatibility runtime result is invalid");
+          }
+        } catch {
+          problems.push("digest compatibility runtime is unavailable");
+        }
       }
     }
 

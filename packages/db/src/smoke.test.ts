@@ -74,6 +74,31 @@ describe("buildPsqlSmokeSpawnConfig", () => {
     expect(config.pgPassContents).toBe("*:*:*:*:query\\:secret\n");
   });
 
+  it("ignores the node-postgres libpq compatibility switch without forwarding its value", () => {
+    const compatibilityValue = "customer-compatibility-sentinel";
+    const connectionString =
+      "postgresql://smoke@db.example/signalframe_ci" +
+      `?sslmode=require&uselibpqcompat=${compatibilityValue}`;
+
+    const config = buildPsqlSmokeSpawnConfig(
+      connectionString,
+      "/tmp/signalframe-smoke-test/.pgpass",
+      { PATH: "/safe/bin" },
+    );
+
+    expect(config.env).toMatchObject({
+      PGHOST: "db.example",
+      PGDATABASE: "signalframe_ci",
+      PGSSLMODE: "require",
+      PGUSER: "smoke",
+    });
+    expect(JSON.stringify(config.args)).not.toContain("uselibpqcompat");
+    expect(JSON.stringify(config.args)).not.toContain(compatibilityValue);
+    expect(JSON.stringify(config.env)).not.toContain("uselibpqcompat");
+    expect(JSON.stringify(config.env)).not.toContain(compatibilityValue);
+    expect(config.pgPassContents).toBe("");
+  });
+
   it("fails closed on secret-bearing libpq parameters without reflecting their values", () => {
     const secret = "customer-private-key-passphrase";
     let thrown: unknown;

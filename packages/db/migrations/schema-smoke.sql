@@ -1,7 +1,133 @@
 \set ON_ERROR_STOP on
 
 BEGIN;
-SET search_path = app, public;
+
+-- Application connections do not opt into the app schema. Prove both digest
+-- overloads resolve through the ordinary runtime path before the fixture
+-- narrows its own path to app/public.
+SET LOCAL search_path = "$user", public;
+DO $pgcrypto_runtime$
+BEGIN
+  IF encode(
+    digest(
+      convert_to('signalframe-pgcrypto-compat', 'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  ) IS DISTINCT FROM
+    '6bc55c2be22e768cdca86865ec8f910f2d81e10ffdea5fb3a4610240b52473ae'
+  THEN
+    RAISE EXCEPTION 'digest(bytea,text) is unavailable on the runtime search path';
+  END IF;
+  IF encode(
+    digest('signalframe-pgcrypto-compat'::text, 'sha256'),
+    'hex'
+  ) IS DISTINCT FROM
+    '6bc55c2be22e768cdca86865ec8f910f2d81e10ffdea5fb3a4610240b52473ae'
+  THEN
+    RAISE EXCEPTION 'digest(text,text) is unavailable on the runtime search path';
+  END IF;
+END;
+$pgcrypto_runtime$;
+
+SET LOCAL search_path = app, public;
+
+DO $pgcrypto_contract$
+DECLARE
+  pgcrypto_extension_oid oid;
+  pgcrypto_namespace_oid oid;
+  pgcrypto_schema name;
+  extension_digest_count integer;
+BEGIN
+  SELECT
+    extension_row.oid,
+    extension_namespace.oid,
+    extension_namespace.nspname
+  INTO
+    pgcrypto_extension_oid,
+    pgcrypto_namespace_oid,
+    pgcrypto_schema
+  FROM pg_catalog.pg_extension extension_row
+  JOIN pg_catalog.pg_namespace extension_namespace
+    ON extension_namespace.oid = extension_row.extnamespace
+  WHERE extension_row.extname = 'pgcrypto';
+
+  SELECT count(*)
+  INTO extension_digest_count
+  FROM pg_catalog.pg_proc procedure
+  JOIN pg_catalog.pg_depend dependency
+    ON dependency.classid =
+         'pg_catalog.pg_proc'::pg_catalog.regclass
+   AND dependency.objid = procedure.oid
+   AND dependency.refclassid =
+         'pg_catalog.pg_extension'::pg_catalog.regclass
+   AND dependency.refobjid = pgcrypto_extension_oid
+   AND dependency.deptype = 'e'
+  WHERE procedure.pronamespace = pgcrypto_namespace_oid
+    AND procedure.oid IN (
+      pg_catalog.to_regprocedure(
+        pg_catalog.format('%I.digest(bytea,text)', pgcrypto_schema)
+      ),
+      pg_catalog.to_regprocedure(
+        pg_catalog.format('%I.digest(text,text)', pgcrypto_schema)
+      )
+    );
+
+  IF extension_digest_count <> 2 THEN
+    RAISE EXCEPTION 'pgcrypto extension digest overloads are incomplete';
+  END IF;
+
+  IF pgcrypto_schema = 'extensions' THEN
+    IF (
+      SELECT count(*)
+      FROM pg_catalog.pg_proc procedure
+      JOIN pg_catalog.pg_namespace procedure_namespace
+        ON procedure_namespace.oid = procedure.pronamespace
+      JOIN pg_catalog.pg_language procedure_language
+        ON procedure_language.oid = procedure.prolang
+      WHERE procedure_namespace.nspname = 'public'
+        AND procedure.proname = 'digest'
+        AND procedure.oid IN (
+          pg_catalog.to_regprocedure('public.digest(bytea,text)'),
+          pg_catalog.to_regprocedure('public.digest(text,text)')
+        )
+        AND procedure_language.lanname = 'sql'
+        AND NOT procedure.prosecdef
+        AND procedure.provolatile = 'i'
+        AND procedure.proisstrict
+        AND procedure.proparallel = 's'
+        AND procedure.proconfig @>
+          ARRAY['search_path=pg_catalog']::text[]
+        AND procedure.prosrc = 'SELECT extensions.digest($1, $2)'
+        AND pg_catalog.has_function_privilege(
+          current_user,
+          procedure.oid,
+          'EXECUTE'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM pg_catalog.pg_roles restricted_role
+          WHERE restricted_role.rolname IN (
+            'anon',
+            'authenticated',
+            'service_role'
+          )
+            AND pg_catalog.has_function_privilege(
+              restricted_role.oid,
+              procedure.oid,
+              'EXECUTE'
+            )
+        )
+    ) <> 2 THEN
+      RAISE EXCEPTION 'public digest compatibility wrappers are unsafe or incomplete';
+    END IF;
+  ELSIF pgcrypto_schema = 'public' THEN
+    NULL;
+  ELSE
+    RAISE EXCEPTION 'unsupported pgcrypto extension schema';
+  END IF;
+END;
+$pgcrypto_contract$;
 
 DO $$
 BEGIN
@@ -3851,7 +3977,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0030_backlink_growth_path' THEN
+  ) IS DISTINCT FROM '0031_pgcrypto_digest_compatibility' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF (
