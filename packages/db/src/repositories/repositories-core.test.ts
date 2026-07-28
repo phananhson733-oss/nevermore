@@ -143,6 +143,81 @@ function repository<T>(Type: new (executor: never) => T): {
 }
 
 describe("core repositories", () => {
+  it("filters a run's Opportunity rules before applying the keyset page", async () => {
+    const { repo, db } = repository(FindingsRepository);
+    const first = {
+      id: "00000000-0000-4000-8000-000000000101",
+      updated_at: "2026-07-21T12:00:00.000Z",
+    };
+    const second = {
+      id: "00000000-0000-4000-8000-000000000102",
+      updated_at: "2026-07-20T12:00:00.000Z",
+    };
+    const ruleIds = ["TECH-HTTP-001", "CONTENT-GAP-011"] as const;
+
+    db.enqueue([first, second]);
+    const firstPage = await repo.list(scope, {
+      limit: 1,
+      cursor: null,
+      activeOnly: true,
+      lastSeenRunId: "run-current",
+      ruleIds,
+    });
+
+    expect(firstPage.rows).toEqual([first]);
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+    expect(db.last("limit").args).toEqual([2]);
+    let query = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(query.sql).toContain('"app"."findings"."active" =');
+    expect(query.sql).toContain('"app"."findings"."last_seen_run_id" =');
+    expect(query.sql).toContain('"app"."findings"."rule_id" in');
+    expect(query.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        true,
+        "run-current",
+        ...ruleIds,
+      ]),
+    );
+
+    db.enqueue([second]);
+    await expect(
+      repo.list(scope, {
+        limit: 1,
+        cursor: firstPage.nextCursor,
+        activeOnly: true,
+        lastSeenRunId: "run-current",
+        ruleIds,
+      }),
+    ).resolves.toEqual({ rows: [second], nextCursor: null });
+    query = new PgDialect().sqlToQuery(db.last("where").args[0] as never);
+    expect(query.sql).toContain('"app"."findings"."last_seen_run_id" =');
+    expect(query.sql).toContain('"app"."findings"."rule_id" in');
+    expect(query.params).toEqual(
+      expect.arrayContaining([
+        "run-current",
+        ...ruleIds,
+        first.updated_at,
+        first.id,
+      ]),
+    );
+
+    const callsBeforeEmptyRuleSet = db.calls.length;
+    await expect(
+      repo.list(scope, {
+        limit: 1,
+        cursor: null,
+        activeOnly: true,
+        lastSeenRunId: "run-current",
+        ruleIds: [],
+      }),
+    ).resolves.toEqual({ rows: [], nextCursor: null });
+    expect(db.calls).toHaveLength(callsBeforeEmptyRuleSet);
+  });
+
   it("excludes caller-selected finding review states in SQL", async () => {
     const { repo, db } = repository(FindingsRepository);
     db.enqueue([]);

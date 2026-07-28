@@ -12,7 +12,10 @@ import {
   type JobWithMetadata,
 } from "@sf/db";
 import { CONTRACT_VERSION } from "@sf/contracts";
-import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import {
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
 import {
@@ -31,6 +34,7 @@ const PAYLOAD = {
   contractVersion: CONTRACT_VERSION as string,
 };
 const SOURCE_CONNECTION_ID = "00000000-0000-4000-8000-000000000005";
+const LEGACY_RULE_SET_VERSION = "mvp.rules.0.2.1";
 
 beforeEach(() => {
   vi.spyOn(
@@ -79,6 +83,8 @@ describe("queueForRun", () => {
     );
     expect(queueForRun(run("export", {}))).toBe("export.bundle");
     expect(queueForRun(run("content_shadow", {}))).toBe("content-shadow");
+    expect(queueForRun(run("publication", {}))).toBe("publication");
+    expect(queueForRun(run("measurement", {}))).toBe("measurement");
   });
 
   it("rejects unknown/missing collection providers", () => {
@@ -91,6 +97,52 @@ describe("queueForRun", () => {
 });
 
 describe("prepareRunDelivery", () => {
+  it("accepts the frozen publication contract for a canonical publication run", async () => {
+    const publicationContract = "publication.0.4.0";
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue(
+      run("publication", {}, publicationContract),
+    );
+    const execute = vi.fn(async () => undefined);
+    const ctx = context();
+    const job = {
+      ...metadataJob(0),
+      data: {
+        ...PAYLOAD,
+        contractVersion: publicationContract,
+      },
+    };
+
+    await prepareRunDelivery(ctx, job, execute);
+
+    expect(execute).toHaveBeenCalledWith(job.data, expect.any(Object));
+  });
+
+  it("accepts the frozen measurement contract for a canonical measurement run", async () => {
+    const measurementContract = "measurement.0.1.0";
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue(
+      run("measurement", {}, measurementContract),
+    );
+    const execute = vi.fn(async () => undefined);
+    const ctx = context();
+    const job = {
+      ...metadataJob(0),
+      data: {
+        ...PAYLOAD,
+        contractVersion: measurementContract,
+      },
+    };
+
+    await prepareRunDelivery(ctx, job, execute);
+
+    expect(execute).toHaveBeenCalledWith(job.data, expect.any(Object));
+  });
+
   it("passes only an eligible metadata delivery to its runner", async () => {
     const prepare = vi
       .spyOn(AsyncRunsRepository.prototype, "prepareDelivery")
@@ -183,6 +235,34 @@ describe("prepareRunDelivery", () => {
         runId: PAYLOAD.runId,
       },
     });
+  });
+
+  it("executes a supported 0.2.1 pre-governance diagnostic delivery", async () => {
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue(run("diagnostic", {}, "0.2.0"));
+    vi.mocked(
+      DiagnosticRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce(diagnosticRun(LEGACY_RULE_SET_VERSION));
+    const reconcile = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const execute = vi.fn(async () => undefined);
+    const legacyPayload = { ...PAYLOAD, contractVersion: "0.2.0" };
+
+    await prepareRunDelivery(
+      context(),
+      { ...metadataJob(0), data: legacyPayload },
+      execute,
+    );
+
+    expect(execute).toHaveBeenCalledWith(
+      legacyPayload,
+      expect.objectContaining({ logger: expect.any(Object) }),
+    );
+    expect(reconcile).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -654,6 +734,28 @@ describe("reconcileActiveRuns", () => {
         status: "failed",
       },
     });
+  });
+
+  it("keeps a supported 0.2.1 diagnostic queue job recoverable", async () => {
+    const row = run("diagnostic", {}, "0.2.0");
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    vi.mocked(
+      DiagnosticRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce(diagnosticRun(LEGACY_RULE_SET_VERSION));
+    const terminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const getJobById = vi.fn(async () => jobFor(row, "active"));
+    const findJobs = vi.fn(async () => [jobFor(row, "active")]);
+
+    await reconcileActiveRuns(contextWithBoss({ getJobById, findJobs }));
+
+    expect(getJobById).toHaveBeenCalledWith("diagnose", row.id);
+    expect(terminal).not.toHaveBeenCalled();
   });
 
   it.each(["created", "retry", "active"] as const)(

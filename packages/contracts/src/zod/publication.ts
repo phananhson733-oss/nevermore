@@ -23,6 +23,22 @@ const ArtifactContentHash = PublicationChecksum.describe(
 const ProviderContentChecksum = PublicationChecksum.describe(
   "SHA-256 of the exact provider content/payload UTF-8 bytes",
 );
+const PublicationPreviewReason = z.string().trim().min(3).max(2000);
+const PublicationPreviewFactsSchemaVersion = nonEmptyText(100);
+
+/**
+ * Opaque token minted by the preview authority. This intentionally follows
+ * the narrower database alphabet instead of tightening the legacy attempt
+ * DTO's existing OpaqueRef compatibility boundary.
+ */
+export const PublicationPreviewRef = z
+  .string()
+  .min(32)
+  .max(1024)
+  .regex(/^[A-Za-z0-9._~-]+$/u);
+export type PublicationPreviewRef = z.infer<
+  typeof PublicationPreviewRef
+>;
 
 const uniqueEvidenceRefs = (minimum = 0) =>
   z
@@ -102,6 +118,195 @@ export const PublicationRollbackPlan = z.discriminatedUnion("providerKind", [
 ]);
 export type PublicationRollbackPlan = z.infer<
   typeof PublicationRollbackPlan
+>;
+
+/**
+ * A client selects one current destination revision and one durable approval.
+ * Artifact, provider, plan, checksum, expiry and actor facts are all resolved
+ * by the service and are intentionally absent.
+ */
+export const IssuePublicationPreviewRequest = z
+  .object({
+    destinationRef: Uuid,
+    expectedDestinationRevision: z.number().int().min(1),
+    approvalEventId: Uuid,
+    idempotencyKey: IdempotencyKey,
+  })
+  .strict();
+export type IssuePublicationPreviewRequest = z.infer<
+  typeof IssuePublicationPreviewRequest
+>;
+
+/**
+ * A rollback preview selects an exact historical attempt/change pair and the
+ * current destination revision. Remote state and the resolved rollback plan
+ * remain server-owned facts.
+ */
+export const IssuePublicationRollbackPreviewRequest = z
+  .object({
+    destinationRef: Uuid,
+    expectedDestinationRevision: z.number().int().min(1),
+    sourcePublicationAttemptId: Uuid,
+    sourceChangeReceiptId: Uuid,
+    idempotencyKey: IdempotencyKey,
+  })
+  .strict();
+export type IssuePublicationRollbackPreviewRequest = z.infer<
+  typeof IssuePublicationRollbackPreviewRequest
+>;
+
+const PublicationPreviewIssuedLineageShape = {
+  previewEventId: Uuid,
+  previewRef: PublicationPreviewRef,
+  eventKind: z.literal("issued"),
+  factsSchemaVersion: PublicationPreviewFactsSchemaVersion,
+  siteId: Uuid,
+  destinationId: Uuid,
+  destinationRef: Uuid,
+  destinationRevision: z.number().int().min(1),
+  providerKind: PublicationProviderKind,
+  targetRef: TargetRef,
+  actionId: Uuid,
+  artifactId: Uuid,
+  artifactRevisionId: Uuid,
+  artifactRevision: z.number().int().min(1),
+  artifactContentHash: ArtifactContentHash,
+  artifactApprovalEventId: Uuid,
+  remotePrecondition: PublicationRemotePrecondition,
+  rollbackPlan: PublicationRollbackPlan,
+  previewChecksum: ArtifactContentHash,
+  contentChecksum: ProviderContentChecksum,
+  factsHash: PublicationChecksum,
+  expiresAt: IsoDateTime,
+  createdAt: IsoDateTime,
+} as const;
+
+const PublishPublicationPreviewIssued = z
+  .object({
+    ...PublicationPreviewIssuedLineageShape,
+    previewKind: z.literal("publish"),
+    sourcePublicationAttemptId: z.null(),
+    sourceChangeReceiptId: z.null(),
+  })
+  .strict();
+
+const RollbackPublicationPreviewIssued = z
+  .object({
+    ...PublicationPreviewIssuedLineageShape,
+    previewKind: z.literal("rollback"),
+    sourcePublicationAttemptId: Uuid,
+    sourceChangeReceiptId: Uuid,
+  })
+  .strict();
+
+type PublicationPreviewIssuedValue =
+  | z.infer<typeof PublishPublicationPreviewIssued>
+  | z.infer<typeof RollbackPublicationPreviewIssued>;
+
+function validatePublicationPreviewLineage(
+  preview: PublicationPreviewIssuedValue,
+  ctx: z.RefinementCtx,
+): void {
+  if (preview.previewChecksum !== preview.artifactContentHash) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["previewChecksum"],
+      message:
+        "Preview checksum must match the exact approved artifact content",
+    });
+  }
+  if (preview.rollbackPlan.providerKind !== preview.providerKind) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["rollbackPlan", "providerKind"],
+      message: "Rollback plan provider must match preview provider",
+    });
+  }
+
+  const createdAt = Date.parse(preview.createdAt);
+  const expiresAt = Date.parse(preview.expiresAt);
+  if (
+    !Number.isFinite(createdAt) ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= createdAt
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expiresAt"],
+      message: "Publication preview expiry must be after creation",
+    });
+  }
+
+  if (preview.previewKind !== "rollback") {
+    return;
+  }
+  if (preview.remotePrecondition.kind !== "must_match") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["remotePrecondition"],
+      message: "Rollback preview requires an exact remote revision",
+    });
+    return;
+  }
+  if (
+    preview.remotePrecondition.revision !==
+    preview.rollbackPlan.expectedCurrentRemoteRevision
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["remotePrecondition", "revision"],
+      message:
+        "Rollback remote revision must match the frozen rollback plan",
+    });
+  }
+}
+
+/**
+ * Customer-safe server authority. It exposes enough frozen lineage to review
+ * the exact publication without returning the open providerPlan JSON, actor
+ * identity, request hash or other internal execution facts.
+ */
+export const IssuePublicationPreviewResponse =
+  PublishPublicationPreviewIssued.superRefine(
+    validatePublicationPreviewLineage,
+  );
+export type IssuePublicationPreviewResponse = z.infer<
+  typeof IssuePublicationPreviewResponse
+>;
+
+export const IssuePublicationRollbackPreviewResponse =
+  RollbackPublicationPreviewIssued.superRefine(
+    validatePublicationPreviewLineage,
+  );
+export type IssuePublicationRollbackPreviewResponse = z.infer<
+  typeof IssuePublicationRollbackPreviewResponse
+>;
+
+/**
+ * Preview identity is carried by the route. The body contains only the
+ * customer's authority-reduction intent and its idempotency key.
+ */
+export const RevokePublicationPreviewRequest = z
+  .object({
+    reason: PublicationPreviewReason,
+    idempotencyKey: IdempotencyKey,
+  })
+  .strict();
+export type RevokePublicationPreviewRequest = z.infer<
+  typeof RevokePublicationPreviewRequest
+>;
+
+export const RevokePublicationPreviewResponse = z
+  .object({
+    terminalEventId: Uuid,
+    eventKind: z.literal("revoked"),
+    supersededPreviewEventId: Uuid,
+    previewRef: PublicationPreviewRef,
+    createdAt: IsoDateTime,
+  })
+  .strict();
+export type RevokePublicationPreviewResponse = z.infer<
+  typeof RevokePublicationPreviewResponse
 >;
 
 /**

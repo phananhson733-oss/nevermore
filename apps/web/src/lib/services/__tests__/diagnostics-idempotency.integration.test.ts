@@ -33,7 +33,11 @@ import {
   sites,
   workspaces,
 } from "@sf/db/schema";
-import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import { CRAWL_METHOD_VERSION } from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -444,6 +448,11 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
       ruleSetVersion: RULE_SET_VERSION,
       promptSetVersion: PROMPT_SET_VERSION,
       deliveryLocale: "en-US",
+      governance: {
+        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+        keywordClusters: [],
+        competitors: [],
+      },
     };
 
     expect(persisted).toMatchObject({

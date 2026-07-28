@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiGet, apiSend } from "./client";
+import {
+  ApiError,
+  API_REQUEST_TIMEOUT_MS,
+  ApiRequestTimeoutError,
+  apiGet,
+  apiSend,
+  shouldRetryApiQuery,
+} from "./client";
 
 const problem = {
   type: "https://signalframe.test/problems/validation",
@@ -11,11 +18,31 @@ const problem = {
 } as const;
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("API client", () => {
+  it("does not retry terminal 4xx reads and retries one transient failure", () => {
+    const notFound = new ApiError({
+      ...problem,
+      status: 404,
+      code: "NOT_FOUND",
+    });
+    const unavailable = new ApiError({
+      ...problem,
+      status: 503,
+      code: "DEPENDENCY_UNAVAILABLE",
+    });
+
+    expect(shouldRetryApiQuery(0, notFound)).toBe(false);
+    expect(shouldRetryApiQuery(0, unavailable)).toBe(true);
+    expect(shouldRetryApiQuery(1, unavailable)).toBe(false);
+    expect(shouldRetryApiQuery(0, new TypeError("network failed"))).toBe(true);
+    expect(shouldRetryApiQuery(1, new TypeError("network failed"))).toBe(false);
+  });
+
   it("sends a same-origin GET and returns a JSON success envelope", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ data: { projectId: "project-1" } }), {
@@ -32,6 +59,7 @@ describe("API client", () => {
       method: "GET",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -57,8 +85,51 @@ describe("API client", () => {
         "Content-Type": "application/json",
         "Idempotency-Key": "idem-1",
       },
+      signal: expect.any(AbortSignal),
       body: JSON.stringify({ bundleType: "client_bundle" }),
     });
+  });
+
+  it("times out and aborts when fetch never settles", async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        return new Promise<Response>(() => undefined);
+      }),
+    );
+
+    const request = apiGet("/projects/project-1");
+    const settled = request.catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(API_REQUEST_TIMEOUT_MS);
+
+    await expect(settled).resolves.toMatchObject({
+      name: "ApiRequestTimeoutError",
+      timeoutMs: API_REQUEST_TIMEOUT_MS,
+    });
+    expect(requestSignal?.aborted).toBe(true);
+    expect(requestSignal?.reason).toBeInstanceOf(ApiRequestTimeoutError);
+  });
+
+  it("times out while a response body never finishes", async () => {
+    vi.useFakeTimers();
+    const response = {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers(),
+      text: vi.fn(() => new Promise<string>(() => undefined)),
+    } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const request = apiGet("/projects/project-1");
+    const settled = request.catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(API_REQUEST_TIMEOUT_MS);
+
+    await expect(settled).resolves.toBeInstanceOf(ApiRequestTimeoutError);
+    expect(response.text).toHaveBeenCalledTimes(1);
   });
 
   it.each([

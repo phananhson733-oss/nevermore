@@ -3,15 +3,24 @@ import type { components } from "../packages/contracts/src/generated/openapi.ts"
 import {
   ActionRecheckResultsResponse as ActionRecheckResultsResponseSchema,
   ConfirmedProductProfileRowDto as ConfirmedProductProfileRowSchema,
+  GeoCitationEvidenceResponse as GeoCitationEvidenceResponseSchema,
+  GrowthMapInternalLinkMap as GrowthMapInternalLinkMapSchema,
   GrowthMapUrlDetailResponse as GrowthMapUrlDetailResponseSchema,
   GrowthMapUrlPortfolioResponse as GrowthMapUrlPortfolioResponseSchema,
+  MeasurementTargetKeywordRanks as MeasurementTargetKeywordRanksSchema,
+  MeasurementWindowRecentResponse as MeasurementWindowRecentResponseSchema,
   ProductProfileDraft as ProductProfileDraftSchema,
   type ActionRecheckResultsResponse,
   type ConfirmedProductProfileRowDto,
+  type GeoCitationEvidenceResponse,
+  type GrowthMapInternalLinkMap,
   type GrowthMapUrlDetailResponse,
   type GrowthMapUrlFinding,
   type GrowthMapUrlPortfolioItem,
   type GrowthMapUrlPortfolioResponse,
+  type MeasurementWindow,
+  type MeasurementTargetKeywordRanks,
+  type MeasurementWindowRecentResponse,
 } from "../packages/contracts/src/index.ts";
 
 export const E2E_PROJECT_ID = "00000000-0000-4000-8000-000000000042";
@@ -394,6 +403,20 @@ export function overviewWorkspaceFixture(
     activeRuns: [],
     frozenDiagnosticRunId: null,
     topActions: [action],
+    decisionReminders: [],
+    contentDecayMonitor: {
+      version: "content-decay-monitor.v1",
+      projectionMode: "read_time",
+      scheduleState: "not_configured",
+      status: "unavailable",
+      timezone: "UTC",
+      timezoneSource: "fallback",
+      latestCheckpointMonth: null,
+      limitations: [
+        "Monthly scheduling is not connected; this is a read-time projection.",
+      ],
+      alerts: [],
+    },
     latestSnapshot: crawlSnapshot,
     // One canonical evidence id even though the Diagnosis fixture intentionally
     // includes a duplicate row to test its own per-finding de-duplication.
@@ -648,6 +671,24 @@ export async function installCriticalFlowApi(
       return;
     }
 
+    if (
+      method === "GET" &&
+      path === `${BASE}/artifacts/execution-states`
+    ) {
+      const artifactIds = url.searchParams.getAll("artifactId");
+      await json(route, {
+        data: {
+          projectId: E2E_PROJECT_ID,
+          items: artifactIds.map((artifactId) => ({
+            actionId: action.id,
+            artifactId,
+            current: null,
+          })),
+        },
+      });
+      return;
+    }
+
     if (method === "GET" && path === `${BASE}/artifacts`) {
       await json(route, listEnvelope([artifact]));
       return;
@@ -848,6 +889,12 @@ export const E2E_AUDIT_CRAWL_SNAPSHOT_ID =
 export const E2E_SECOND_SITE_PAGE_ID = "00000000-0000-4000-8000-000000000804";
 export const E2E_SECOND_PAGE_SNAPSHOT_ID =
   "00000000-0000-4000-8000-000000000805";
+export const E2E_RESOURCE_SITE_PAGE_ID =
+  "00000000-0000-4000-8000-000000000806";
+export const E2E_INTERNAL_LINK_OBSERVATION_ID =
+  "00000000-0000-4000-8000-000000000807";
+export const E2E_INTERNAL_LINK_TOPIC_ID =
+  "00000000-0000-4000-8000-000000000808";
 
 /** Three separately reviewable Findings on one URL: one per Slice 1 artifact type. */
 export const E2E_CANONICAL_FINDING_ID = "00000000-0000-4000-8000-000000000810";
@@ -1074,7 +1121,28 @@ export function growthAuditPortfolioFixture(
 /** The selected onboarding URL detail with three separately reviewable Findings. */
 export function growthAuditDetailFixture(
   confirmedFindingIds: ReadonlySet<string> = new Set(),
+  sitePageId = E2E_ONBOARDING_SITE_PAGE_ID,
 ): GrowthMapUrlDetailResponse {
+  if (sitePageId === E2E_SECOND_SITE_PAGE_ID) {
+    const item = onboardingPortfolioItem({
+      sitePageId: E2E_SECOND_SITE_PAGE_ID,
+      pageSnapshotId: E2E_SECOND_PAGE_SNAPSHOT_ID,
+      normalizedUrl: "https://example.test/pricing",
+      title: "Pricing overview",
+      findingIds: [],
+      reviewableFindingIds: [],
+    });
+    return GrowthMapUrlDetailResponseSchema.parse({
+      projectId: E2E_PROJECT_ID,
+      siteId: E2E_SITE_ID,
+      diagnosticRunId: E2E_AUDIT_DIAGNOSTIC_RUN_ID,
+      crawlSnapshotId: E2E_AUDIT_CRAWL_SNAPSHOT_ID,
+      data: {
+        ...item,
+        findings: [],
+      },
+    });
+  }
   const item = onboardingPortfolioItem({
     sitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
     pageSnapshotId: E2E_ONBOARDING_PAGE_SNAPSHOT_ID,
@@ -1100,6 +1168,152 @@ export function growthAuditDetailFixture(
   });
 }
 
+export function growthInternalLinkMapFixture(
+  selectedSitePageId: string,
+): GrowthMapInternalLinkMap {
+  const onboardingUrl = E2E_ONBOARDING_URL;
+  const pricingUrl = "https://example.test/pricing";
+  const resourcesUrl = "https://example.test/resources";
+  const observedEdge = {
+    sourceCanonicalUrl: pricingUrl,
+    targetCanonicalUrl: onboardingUrl,
+    sourceSitePageIds: [E2E_SECOND_SITE_PAGE_ID],
+    targetSitePageIds: [E2E_ONBOARDING_SITE_PAGE_ID],
+    facts: [
+      {
+        observationId: E2E_INTERNAL_LINK_OBSERVATION_ID,
+        sourceSitePageId: E2E_SECOND_SITE_PAGE_ID,
+        anchorText: "Customer onboarding",
+        rel: null,
+      },
+    ],
+    reciprocal: false,
+  };
+  const selectedOnboarding =
+    selectedSitePageId === E2E_ONBOARDING_SITE_PAGE_ID;
+  const selectedPricing =
+    selectedSitePageId === E2E_SECOND_SITE_PAGE_ID;
+  const selectedPage = selectedOnboarding
+    ? {
+        selectedSitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
+        canonicalUrl: onboardingUrl,
+        inboundSources: [observedEdge],
+        recommendationCoverage: {
+          availability: "available" as const,
+          limitations: [],
+        },
+        recommendations: [
+          {
+            sourceCanonicalUrl: resourcesUrl,
+            sourceSitePageIds: [E2E_RESOURCE_SITE_PAGE_ID],
+            targetCanonicalUrl: onboardingUrl,
+            targetSitePageIds: [E2E_ONBOARDING_SITE_PAGE_ID],
+            basis: {
+              kind: "same_confirmed_topic" as const,
+              topicNodeId: E2E_INTERNAL_LINK_TOPIC_ID,
+              topicModelRevision: 3,
+              topicLabel: "Customer onboarding",
+            },
+            explanation:
+              "资源页与目标页属于同一个已确认 Topic，冻结 Crawl 中未观察到这个链接方向。",
+          },
+        ],
+        totalRecommendationCount: 1,
+        recommendationsTruncated: false,
+      }
+    : selectedPricing
+      ? {
+          selectedSitePageId: E2E_SECOND_SITE_PAGE_ID,
+          canonicalUrl: pricingUrl,
+          inboundSources: [],
+          recommendationCoverage: {
+            availability: "available" as const,
+            limitations: [],
+          },
+          recommendations: [
+            {
+              sourceCanonicalUrl: onboardingUrl,
+              sourceSitePageIds: [E2E_ONBOARDING_SITE_PAGE_ID],
+              targetCanonicalUrl: pricingUrl,
+              targetSitePageIds: [E2E_SECOND_SITE_PAGE_ID],
+              basis: {
+                kind: "same_confirmed_topic" as const,
+                topicNodeId: E2E_INTERNAL_LINK_TOPIC_ID,
+                topicModelRevision: 3,
+                topicLabel: "Customer onboarding",
+              },
+              explanation:
+                "产品页与价格页属于同一个已确认 Topic，冻结 Crawl 中未观察到这个链接方向。",
+            },
+          ],
+          totalRecommendationCount: 1,
+          recommendationsTruncated: false,
+        }
+      : null;
+
+  return GrowthMapInternalLinkMapSchema.parse({
+    projectId: E2E_PROJECT_ID,
+    diagnosticRunId: E2E_AUDIT_DIAGNOSTIC_RUN_ID,
+    crawlSnapshot: {
+      snapshotId: E2E_AUDIT_CRAWL_SNAPSHOT_ID,
+      capturedAt: AUDIT_OBSERVED_AT,
+      availability: "available",
+      limitation: null,
+    },
+    coverage: {
+      availability: "available",
+      crawlCompleteness: "complete",
+      limitations: [],
+    },
+    graph: {
+      nodes: [
+        {
+          canonicalUrl: onboardingUrl,
+          sitePageIds: [E2E_ONBOARDING_SITE_PAGE_ID],
+          title: "Customer onboarding guide",
+          inboundCount: 1,
+          outboundCount: 0,
+          status: "one_way",
+          executionRefs: [
+            {
+              findingId: E2E_CANONICAL_FINDING_ID,
+              actionId: E2E_CANONICAL_ACTION_ID,
+            },
+          ],
+        },
+        {
+          canonicalUrl: pricingUrl,
+          sitePageIds: [E2E_SECOND_SITE_PAGE_ID],
+          title: "Pricing overview",
+          inboundCount: 0,
+          outboundCount: 1,
+          status: "one_way",
+          executionRefs: [
+            {
+              findingId: E2E_CONTENT_FINDING_ID,
+              actionId: null,
+            },
+          ],
+        },
+        {
+          canonicalUrl: resourcesUrl,
+          sitePageIds: [E2E_RESOURCE_SITE_PAGE_ID],
+          title: "Resources",
+          inboundCount: 0,
+          outboundCount: 0,
+          status: "orphan",
+          executionRefs: [],
+        },
+      ],
+      edges: [observedEdge],
+      totalEdgeCount: 1,
+      edgesTruncated: false,
+    },
+    selectedPage,
+    generatedAt: "2026-07-28T08:05:00.000Z",
+  });
+}
+
 /** Prior-vs-new recheck comparison; technical condition only, no lift claims. */
 export function recheckResultsFixture(): ActionRecheckResultsResponse {
   return ActionRecheckResultsResponseSchema.parse({
@@ -1122,6 +1336,516 @@ export function recheckResultsFixture(): ActionRecheckResultsResponse {
       "This recheck compares only the technical rule condition between two immutable runs.",
     ],
   });
+}
+
+function measurementFixtureId(value: number): string {
+  return `20000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
+}
+
+function measurementWindowFixture({
+  offset,
+  canonicalUrl,
+  recordedAt,
+  clicks,
+  sessions,
+  campaign,
+}: {
+  readonly offset: number;
+  readonly canonicalUrl: string;
+  readonly recordedAt: string;
+  readonly clicks: readonly [number, number];
+  readonly sessions: readonly [number, number];
+  readonly campaign: string;
+}): MeasurementWindow {
+  const beforeWindow = {
+    startAt: "2026-05-23T12:00:00.000Z",
+    endAt: "2026-06-20T12:00:00.000Z",
+  };
+  const afterWindow = {
+    startAt: "2026-06-20T12:00:00.000Z",
+    endAt: "2026-07-18T12:00:00.000Z",
+  };
+  const id = (delta: number) => measurementFixtureId(offset + delta);
+  const artifactContentHash = "a".repeat(64);
+  const contentChecksum = "b".repeat(64);
+
+  return {
+    measurementWindowId: id(1),
+    projectId: E2E_PROJECT_ID,
+    siteId: E2E_SITE_ID,
+    target: {
+      kind: "url",
+      targetRef: `site-page://${id(2)}`,
+      sitePageId: id(2),
+    },
+    actionId: id(3),
+    artifactId: id(4),
+    artifactRevisionId: id(5),
+    artifactRevision: 2,
+    artifactContentHash,
+    publicationAttemptId: id(6),
+    verifiedChangeReceipt: {
+      id: id(7),
+      providerKind: "github",
+      providerRequestId: `merge-${offset}`,
+      remoteScopeRef: "github:repository:gengrowth/e2e",
+      remoteObjectId: String(offset),
+      remoteRevision: `merge-sha-${offset}`,
+      deliveryUrl: `https://github.com/gengrowth/e2e/pull/${offset}`,
+      artifactContentHash,
+      contentChecksum,
+      remoteFacts: {},
+      observedAt: "2026-06-20T12:00:00.000Z",
+      receiptKind: "change_receipt",
+      predecessorDeliveryReceiptId: id(8),
+      remoteObjectKind: "github_merge",
+      liveCanonicalUrl: canonicalUrl,
+      verificationState: "verified_live",
+      evidenceRefs: [`evidence://github/merge/${offset}`],
+      limitation: null,
+    },
+    timelineDeliveryReceipt: null,
+    beforeWindow,
+    afterWindow,
+    timezone: "UTC",
+    url: canonicalUrl,
+    canonicalUrl,
+    interpretation: "observational_non_causal",
+    state: "observed",
+    technicalVerificationRef: null,
+    limitation:
+      "固定窗口观测仅用于判断变化方向，不把结果归因给单一交付物。",
+    dimensions: {
+      gsc: {
+        provider: "gsc",
+        state: "observed",
+        baselineSource: {
+          provider: "gsc",
+          sourceRef: id(9),
+          snapshotId: id(10),
+          coveredWindow: beforeWindow,
+          observedAt: "2026-06-20T13:00:00.000Z",
+          freshness: "current",
+        },
+        outcomeSource: {
+          provider: "gsc",
+          sourceRef: id(9),
+          snapshotId: id(11),
+          coveredWindow: afterWindow,
+          observedAt: "2026-07-18T13:00:00.000Z",
+          freshness: "current",
+        },
+        sampleSize: {
+          baseline: 12_400,
+          outcome: 15_600,
+          unit: "impressions",
+          coverage: "complete",
+        },
+        limitation: null,
+        metrics: {
+          clicks: { baseline: clicks[0], outcome: clicks[1] },
+          impressions: { baseline: 12_400, outcome: 15_600 },
+          ctr: { baseline: 0.033, outcome: 0.0368 },
+          averagePosition: { baseline: 15.2, outcome: 10.4 },
+        },
+      },
+      ga4: {
+        provider: "ga4",
+        state: "observed",
+        baselineSource: {
+          provider: "ga4",
+          sourceRef: id(12),
+          snapshotId: id(13),
+          coveredWindow: beforeWindow,
+          observedAt: "2026-06-20T13:00:00.000Z",
+          freshness: "current",
+        },
+        outcomeSource: {
+          provider: "ga4",
+          sourceRef: id(12),
+          snapshotId: id(14),
+          coveredWindow: afterWindow,
+          observedAt: "2026-07-18T13:00:00.000Z",
+          freshness: "current",
+        },
+        sampleSize: {
+          baseline: sessions[0],
+          outcome: sessions[1],
+          unit: "sessions",
+          coverage: "complete",
+        },
+        limitation: null,
+        directConversionDefinition: {
+          conversionDefinitionId: id(15),
+          kind: "direct",
+          eventNames: ["generate_lead"],
+          countingMethod: "once_per_session",
+          attributionBoundary: "ga4_reported_primary_touchpoint",
+          lookbackWindowDays: 30,
+        },
+        assistedConversionDefinition: {
+          conversionDefinitionId: id(16),
+          kind: "assisted",
+          eventNames: ["generate_lead"],
+          countingMethod: "once_per_session",
+          attributionBoundary: "path_touchpoint_not_primary",
+          lookbackWindowDays: 30,
+        },
+        metrics: {
+          sessions: { baseline: sessions[0], outcome: sessions[1] },
+          engagedSessions: { baseline: 214, outcome: 302 },
+          directConversions: { baseline: 18, outcome: 27 },
+          assistedConversions: { baseline: 11, outcome: 19 },
+        },
+        campaigns: [
+          {
+            identity: {
+              utmIdentityId: id(17),
+              source: "google",
+              medium: "organic",
+              campaign,
+              content: "guide",
+            },
+            metrics: {
+              sessions: { baseline: 118, outcome: 171 },
+              directConversions: { baseline: 7, outcome: 12 },
+              assistedConversions: { baseline: 3, outcome: 7 },
+            },
+          },
+        ],
+      },
+      geo: {
+        provider: "geo",
+        state: offset === 100 ? "observed" : "unavailable",
+        baselineSource:
+          offset === 100
+            ? {
+                provider: "geo",
+                sourceRef: id(18),
+                snapshotId: id(19),
+                coveredWindow: beforeWindow,
+                observedAt: "2026-06-20T13:00:00.000Z",
+                freshness: "current",
+              }
+            : null,
+        outcomeSource:
+          offset === 100
+            ? {
+                provider: "geo",
+                sourceRef: id(18),
+                snapshotId: id(20),
+                coveredWindow: afterWindow,
+                observedAt: "2026-07-18T13:00:00.000Z",
+                freshness: "current",
+              }
+            : null,
+        sampleSize: {
+          baseline: offset === 100 ? 20 : null,
+          outcome: offset === 100 ? 20 : null,
+          unit: "tracked_queries",
+          coverage: offset === 100 ? "complete" : "none",
+        },
+        limitation:
+          offset === 100
+            ? "固定窗口中的 AI 回答为独立观测，不支持单一交付物因果结论。"
+            : "当前 URL 尚未接入可验证的 GEO 引用观测来源。",
+        metrics: {
+          trackedQueries: {
+            baseline: offset === 100 ? 20 : null,
+            outcome: offset === 100 ? 20 : null,
+          },
+          citedQueries: {
+            baseline: offset === 100 ? 3 : null,
+            outcome: offset === 100 ? 7 : null,
+          },
+          citations: {
+            baseline: offset === 100 ? 4 : null,
+            outcome: offset === 100 ? 9 : null,
+          },
+          citationRate: {
+            baseline: offset === 100 ? 0.15 : null,
+            outcome: offset === 100 ? 0.35 : null,
+          },
+        },
+      },
+    },
+    recordedAt,
+  };
+}
+
+/** Two independently selectable URL windows for the customer Results surface. */
+export function recentMeasurementWindowsFixture(): MeasurementWindowRecentResponse {
+  return MeasurementWindowRecentResponseSchema.parse({
+    projectId: E2E_PROJECT_ID,
+    windows: [
+      measurementWindowFixture({
+        offset: 100,
+        canonicalUrl: "https://example.test/customer-onboarding/",
+        recordedAt: "2026-07-22T13:00:00.000Z",
+        clicks: [410, 574],
+        sessions: [350, 470],
+        campaign: "customer-onboarding",
+      }),
+      measurementWindowFixture({
+        offset: 200,
+        canonicalUrl: "https://example.test/pricing/",
+        recordedAt: "2026-07-21T13:00:00.000Z",
+        clicks: [721, 982],
+        sessions: [505, 688],
+        campaign: "pricing-intent",
+      }),
+    ],
+    generatedAt: "2026-07-23T13:00:00.000Z",
+  });
+}
+
+function targetKeywordRankPoint(input: {
+  readonly idOffset: number;
+  readonly phase: "before" | "after";
+  readonly value: number;
+}) {
+  const observedAt =
+    input.phase === "before"
+      ? "2026-06-01T12:00:00.000Z"
+      : "2026-07-01T12:00:00.000Z";
+  return {
+    occurrenceId: measurementFixtureId(input.idOffset),
+    snapshotId: measurementFixtureId(input.idOffset + 1),
+    observationId: measurementFixtureId(input.idOffset + 2),
+    provider: "dataforseo" as const,
+    metric: "absolute_rank" as const,
+    value: input.value,
+    valuePointer: "/valueJson/currentRank",
+    observedAt,
+    providerDataAsOf: null,
+    grade: "B" as const,
+    limitation:
+      "DataForSEO does not expose a separate provider data-as-of timestamp.",
+  };
+}
+
+/** Per-URL governed target Keyword ranks for the Results comparison. */
+export function measurementTargetKeywordRanksFixture(
+  measurementWindowId: string,
+): MeasurementTargetKeywordRanks {
+  const pricing =
+    measurementWindowId === measurementFixtureId(201);
+  const offset = pricing ? 200 : 100;
+  const keywordId = measurementFixtureId(offset + 30);
+  const beforeRank = pricing ? 8 : 12;
+  const afterRank = pricing ? 9 : 7;
+  const rankImprovement = beforeRank - afterRank;
+  const canonicalUrl = pricing
+    ? "https://example.test/pricing/"
+    : "https://example.test/customer-onboarding/";
+
+  return MeasurementTargetKeywordRanksSchema.parse({
+    projectId: E2E_PROJECT_ID,
+    measurementWindowId: measurementFixtureId(offset + 1),
+    sitePageId: measurementFixtureId(offset + 2),
+    canonicalUrl,
+    beforeWindow: {
+      startAt: "2026-05-23T12:00:00.000Z",
+      endAt: "2026-06-20T12:00:00.000Z",
+    },
+    afterWindow: {
+      startAt: "2026-06-20T12:00:00.000Z",
+      endAt: "2026-07-18T12:00:00.000Z",
+    },
+    interpretation:
+      "dataforseo_absolute_rank_observational_non_causal",
+    keywords: [
+      {
+        keywordId,
+        displayKeyword: pricing
+          ? "customer onboarding pricing"
+          : "customer onboarding automation",
+        normalizedKeyword: pricing
+          ? "customer onboarding pricing"
+          : "customer onboarding automation",
+        marketCode: "US",
+        languageTag: "en-US",
+        topicNodeId: measurementFixtureId(offset + 31),
+        topicLabel: pricing
+          ? "Pricing and packaging"
+          : "Customer onboarding",
+        topicModelRevision: 3,
+        state: "observed",
+        baselineObservation: targetKeywordRankPoint({
+          idOffset: offset + 32,
+          phase: "before",
+          value: beforeRank,
+        }),
+        outcomeObservation: targetKeywordRankPoint({
+          idOffset: offset + 35,
+          phase: "after",
+          value: afterRank,
+        }),
+        rankImprovement,
+        trend:
+          rankImprovement > 0
+            ? "improved"
+            : rankImprovement < 0
+              ? "regressed"
+              : "unchanged",
+        limitation: null,
+      },
+    ],
+    coverage: {
+      availability: "available",
+      limitations: [
+        "DataForSEO absolute rank is compared by collection observation time because the provider does not expose a separate data-as-of timestamp.",
+      ],
+    },
+    generatedAt: "2026-07-23T13:00:00.000Z",
+  });
+}
+
+/** Immutable per-URL GEO reverse lookup for the Results comparison. */
+export function measurementGeoCitationsFixture(
+  measurementWindowId: string,
+): GeoCitationEvidenceResponse {
+  const pricing =
+    measurementWindowId === measurementFixtureId(201);
+  const offset = pricing ? 200 : 100;
+  const canonicalUrl = pricing
+    ? "https://example.test/pricing/"
+    : "https://example.test/customer-onboarding/";
+  const evidence = {
+    projectId: E2E_PROJECT_ID,
+    siteId: E2E_SITE_ID,
+    measurementWindowId: measurementFixtureId(offset + 1),
+    sitePageId: measurementFixtureId(offset + 2),
+    canonicalUrl,
+    interpretation: "observational_non_causal" as const,
+    phases: pricing
+      ? { baseline: null, outcome: null }
+      : {
+          baseline: {
+            sourceConnectionId: measurementFixtureId(118),
+            snapshotId: measurementFixtureId(119),
+            normalizedObservationId:
+              measurementFixtureId(121),
+            queries: [
+              {
+                id: measurementFixtureId(122),
+                query: "best customer onboarding software",
+                platform: {
+                  kind: "known" as const,
+                  key: "chatgpt" as const,
+                },
+                model: "gpt-search",
+                collector: {
+                  kind: "browser_probe" as const,
+                  providerKey: "gengrowth-browser",
+                  version: "2026-07-28",
+                },
+                collectedAt: "2026-06-10T12:00:00.000Z",
+                marketCode: "US",
+                languageTag: "en-US",
+                citationState: "cited" as const,
+                answerEvidence: {
+                  excerpt:
+                    "RelayOps appears in the compared onboarding tools.",
+                  contentHash: "c".repeat(64),
+                  selector: "answer:0",
+                },
+                limitation:
+                  "Point-in-time answer observation; results may vary.",
+                citations: [
+                  {
+                    id: measurementFixtureId(123),
+                    citationUrl: canonicalUrl,
+                    citationOrdinal: 1,
+                    answerEvidenceExcerpt:
+                      "RelayOps appears in the compared onboarding tools.",
+                    citedPageExcerpt:
+                      "Automate customer onboarding handoffs.",
+                    citedPageContentHash: "d".repeat(64),
+                    citedParagraphHash: "e".repeat(64),
+                    citedParagraphSelector:
+                      "main p:nth-of-type(2)",
+                    citedParagraphIndex: 1,
+                    evidenceClassification:
+                      "direct_observation" as const,
+                  },
+                ],
+                evidenceStatements: [
+                  {
+                    classification: "inference" as const,
+                    statement:
+                      "被引用页面使用了明确的产品定义、分步骤流程和可定位的证据段落；同一查询下未被引用的对照内容缺少这组结构。",
+                    evidence: {
+                      excerpt:
+                        "Definition → workflow steps → evidence-backed implementation guidance.",
+                      contentHash: "9".repeat(64),
+                      selector: "structure-comparison:0",
+                    },
+                    limitation:
+                      "这是同一固定查询与采集窗口内的结构对照，不证明该结构导致了引用。",
+                  },
+                ],
+              },
+            ],
+          },
+          outcome: {
+            sourceConnectionId: measurementFixtureId(118),
+            snapshotId: measurementFixtureId(120),
+            normalizedObservationId:
+              measurementFixtureId(124),
+            queries: [
+              {
+                id: measurementFixtureId(125),
+                query: "customer onboarding automation tools",
+                platform: {
+                  kind: "known" as const,
+                  key: "perplexity" as const,
+                },
+                model: "sonar",
+                collector: {
+                  kind: "vendor_api" as const,
+                  providerKey: "gengrowth-visibility",
+                  version: "2026-07-28",
+                },
+                collectedAt: "2026-07-10T12:00:00.000Z",
+                marketCode: "US",
+                languageTag: "en-US",
+                citationState: "cited" as const,
+                answerEvidence: {
+                  excerpt:
+                    "RelayOps is included in the cited onboarding shortlist.",
+                  contentHash: "f".repeat(64),
+                  selector: "answer:citation[1]",
+                },
+                limitation:
+                  "Point-in-time answer observation; results may vary.",
+                citations: [
+                  {
+                    id: measurementFixtureId(126),
+                    citationUrl: canonicalUrl,
+                    citationOrdinal: 1,
+                    answerEvidenceExcerpt:
+                      "RelayOps is included in the cited onboarding shortlist.",
+                    citedPageExcerpt:
+                      "Automate customer onboarding handoffs.",
+                    citedPageContentHash: "d".repeat(64),
+                    citedParagraphHash: "e".repeat(64),
+                    citedParagraphSelector:
+                      "main p:nth-of-type(2)",
+                    citedParagraphIndex: 1,
+                    evidenceClassification:
+                      "direct_observation" as const,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+    limitation: pricing
+      ? "当前 URL 尚无真实 GEO 引用观测，不会把缺失值补为 0。"
+      : "固定窗口中的 AI 回答为独立观测，不支持单一交付物因果结论。",
+  };
+  return GeoCitationEvidenceResponseSchema.parse(evidence);
 }
 
 function confirmedProfileFixture(): ConfirmedProductProfileRowDto {
@@ -1227,6 +1951,8 @@ export interface GrowthVerticalApiState {
     readonly body: unknown;
   }[];
   readonly artifactStatusPatches: unknown[];
+  readonly internalLinkMapReads: string[];
+  readonly geoCitationReads: string[];
   readonly confirmedFindingIds: Set<string>;
   /**
    * First-diagnosis seam (R1): while false, the audit projection answers with
@@ -1254,6 +1980,8 @@ export async function installGrowthVerticalApi(
     findingReviewRequests: [],
     recheckRequests: [],
     artifactStatusPatches: [],
+    internalLinkMapReads: [],
+    geoCitationReads: [],
     confirmedFindingIds: new Set<string>(),
     auditProjectionAvailable: options.auditProjectionAvailable ?? true,
   };
@@ -1289,9 +2017,53 @@ export async function installGrowthVerticalApi(
       });
       return;
     }
-    // `/audit/urls/{sitePageId}` — always serve the onboarding detail.
+    const sitePageId = decodeURIComponent(
+      url.pathname.slice(`${BASE}/audit/urls/`.length),
+    );
+    if (
+      sitePageId !== E2E_ONBOARDING_SITE_PAGE_ID &&
+      sitePageId !== E2E_SECOND_SITE_PAGE_ID
+    ) {
+      await json(
+        route,
+        problem("NOT_FOUND", "SitePage is not in the frozen audit.", 404),
+        404,
+      );
+      return;
+    }
     await json(route, {
-      data: growthAuditDetailFixture(state.confirmedFindingIds),
+      data: growthAuditDetailFixture(
+        state.confirmedFindingIds,
+        sitePageId,
+      ),
+    });
+  });
+
+  await page.route(`**${BASE}/audit/internal-link-map**`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await json(
+        route,
+        problem("E2E_ROUTE_MISSING", "Internal Link Map is GET only", 501),
+        501,
+      );
+      return;
+    }
+    const url = new URL(route.request().url());
+    const sitePageId = url.searchParams.get("sitePageId");
+    if (
+      sitePageId !== E2E_ONBOARDING_SITE_PAGE_ID &&
+      sitePageId !== E2E_SECOND_SITE_PAGE_ID
+    ) {
+      await json(
+        route,
+        problem("NOT_FOUND", "Selected SitePage is not in the map.", 404),
+        404,
+      );
+      return;
+    }
+    state.internalLinkMapReads.push(sitePageId);
+    await json(route, {
+      data: growthInternalLinkMapFixture(sitePageId),
     });
   });
 
@@ -1426,6 +2198,38 @@ export async function installGrowthVerticalApi(
   await page.route(`**${BASE}/results`, async (route) => {
     await json(route, { data: recheckResultsFixture() });
   });
+
+  // Project-level immutable before/after windows across multiple URLs.
+  await page.route(`**${BASE}/measurement-windows/recent**`, async (route) => {
+    await json(route, { data: recentMeasurementWindowsFixture() });
+  });
+
+  await page.route(
+    `**${BASE}/measurement-windows/*/keyword-ranks`,
+    async (route) => {
+      const segments = new URL(route.request().url()).pathname.split("/");
+      const measurementWindowId = segments.at(-2) ?? "";
+      await json(route, {
+        data: measurementTargetKeywordRanksFixture(
+          measurementWindowId,
+        ),
+      });
+    },
+  );
+
+  await page.route(
+    `**${BASE}/measurement-windows/*/geo-citations`,
+    async (route) => {
+      const segments = new URL(route.request().url()).pathname.split("/");
+      const measurementWindowId = segments.at(-2) ?? "";
+      state.geoCitationReads.push(measurementWindowId);
+      await json(route, {
+        data: measurementGeoCitationsFixture(
+          measurementWindowId,
+        ),
+      });
+    },
+  );
 
   return state;
 }

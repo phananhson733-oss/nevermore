@@ -46,6 +46,26 @@ describe("pg-boss queue contract", () => {
     });
   });
 
+  it("gives publication a bounded non-replaying external-write window", () => {
+    expect(QUEUE_NAMES).toContain("publication");
+    expect(QUEUE_CONFIG.publication).toEqual({
+      expireInSeconds: 600,
+      retryLimit: 0,
+      retryBackoff: false,
+      heartbeatSeconds: 60,
+    });
+  });
+
+  it("registers measurement as a bounded retryable read-only queue", () => {
+    expect(QUEUE_NAMES).toContain("measurement");
+    expect(QUEUE_CONFIG.measurement).toEqual({
+      expireInSeconds: 600,
+      retryLimit: 3,
+      retryBackoff: true,
+      heartbeatSeconds: 60,
+    });
+  });
+
   it("constructs normal and enqueue-only clients without opening connections", () => {
     expect(createBoss("postgres://user@localhost/db")).toBeInstanceOf(PgBoss);
     expect(
@@ -95,5 +115,45 @@ describe("pg-boss queue contract", () => {
     await expect(
       enqueueRunInTx(boss, tx, "diagnose", PAYLOAD),
     ).rejects.toThrow(/explicit run job id/i);
+  });
+
+  it("places a measurement job after its absolute settlement timestamp in the same transaction", async () => {
+    const send = vi.fn(async () => PAYLOAD.runId as string | null);
+    const boss = { send } as unknown as PgBoss;
+    const tx = {} as DbTx;
+    const startAfter = new Date("2026-08-19T00:00:00.000Z");
+
+    await expect(
+      enqueueRunInTx(boss, tx, "measurement", PAYLOAD, { startAfter }),
+    ).resolves.toBe(PAYLOAD.runId);
+    expect(send).toHaveBeenCalledWith(
+      "measurement",
+      PAYLOAD,
+      expect.objectContaining({
+        id: PAYLOAD.runId,
+        startAfter,
+        db: expect.objectContaining({ executeSql: expect.any(Function) }),
+      }),
+    );
+  });
+
+  it.each([
+    new Date(Number.NaN),
+    "2026-08-19T00:00:00Z",
+    60,
+  ])("rejects a non-Date delayed enqueue value %s", async (startAfter) => {
+    const send = vi.fn();
+    const boss = { send } as unknown as PgBoss;
+
+    await expect(
+      enqueueRunInTx(
+        boss,
+        {} as DbTx,
+        "measurement",
+        PAYLOAD,
+        { startAfter } as never,
+      ),
+    ).rejects.toThrow(/startAfter/i);
+    expect(send).not.toHaveBeenCalled();
   });
 });

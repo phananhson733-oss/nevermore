@@ -4,6 +4,7 @@ import type { WorkerContext } from "./context.ts";
 const mocks = vi.hoisted(() => ({
   isRecoveryAbortError: vi.fn(),
   startRecovery: vi.fn(),
+  startCompetitorMonitor: vi.fn(),
   startOrphanCleanup: vi.fn(),
   startRetentionCleanup: vi.fn(),
 }));
@@ -18,6 +19,9 @@ vi.mock("./handlers/orphan-cleanup.ts", () => ({
 vi.mock("./handlers/retention-cleanup.ts", () => ({
   startRetentionCleanupLoop: mocks.startRetentionCleanup,
 }));
+vi.mock("./competitor-monitor/scheduler.ts", () => ({
+  startCompetitorMonitorSchedulerLoop: mocks.startCompetitorMonitor,
+}));
 
 import {
   getWorkerMaintenanceFromStartError,
@@ -27,6 +31,10 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.isRecoveryAbortError.mockReturnValue(false);
+  mocks.startCompetitorMonitor.mockReturnValue({
+    runNow: vi.fn(async () => undefined),
+    stop: vi.fn(async () => undefined),
+  });
 });
 
 afterEach(() => {
@@ -39,6 +47,7 @@ describe("startWorkerMaintenance", () => {
     const recoveryStop = vi.fn(async () => undefined);
     const orphanStop = vi.fn(async () => undefined);
     const retentionStop = vi.fn(async () => undefined);
+    const competitorMonitorStop = vi.fn(async () => undefined);
     let resolveImmediate!: () => void;
     const immediateSweep = new Promise<void>((resolve) => {
       resolveImmediate = resolve;
@@ -57,12 +66,18 @@ describe("startWorkerMaintenance", () => {
       runNow: vi.fn(() => immediateSweep),
       stop: retentionStop,
     });
+    mocks.startCompetitorMonitor.mockReturnValue({
+      runNow: vi.fn(() => immediateSweep),
+      stop: competitorMonitorStop,
+    });
 
     const maintenance = await startWorkerMaintenance({} as WorkerContext);
 
     expect(recoveryRunNow).toHaveBeenCalledTimes(1);
     expect(mocks.startOrphanCleanup).toHaveBeenCalledTimes(1);
     expect(mocks.startRetentionCleanup).toHaveBeenCalledTimes(1);
+    expect(mocks.startCompetitorMonitor).toHaveBeenCalledTimes(1);
+    expect(maintenance.competitorMonitor.runNow).not.toHaveBeenCalled();
     expect(maintenance.orphanCleanup.runNow).not.toHaveBeenCalled();
     expect(maintenance.retentionCleanup.runNow).not.toHaveBeenCalled();
 
@@ -71,6 +86,7 @@ describe("startWorkerMaintenance", () => {
     await maintenance.stop();
     expect(orphanStop).toHaveBeenCalledTimes(1);
     expect(retentionStop).toHaveBeenCalledTimes(1);
+    expect(competitorMonitorStop).toHaveBeenCalledTimes(1);
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
 
@@ -79,6 +95,7 @@ describe("startWorkerMaintenance", () => {
     const recoveryStop = vi.fn(async () => undefined);
     const orphanStop = vi.fn(async () => undefined);
     const retentionStop = vi.fn(() => new Promise<void>(() => undefined));
+    const competitorMonitorStop = vi.fn(async () => undefined);
     mocks.startRecovery.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: recoveryStop,
@@ -91,6 +108,10 @@ describe("startWorkerMaintenance", () => {
       runNow: vi.fn(async () => undefined),
       stop: retentionStop,
     });
+    mocks.startCompetitorMonitor.mockReturnValue({
+      runNow: vi.fn(async () => undefined),
+      stop: competitorMonitorStop,
+    });
     const maintenance = await startWorkerMaintenance({} as WorkerContext, {
       stopTimeoutMs: 50,
     });
@@ -102,6 +123,7 @@ describe("startWorkerMaintenance", () => {
     expect(retentionStop).toHaveBeenCalledTimes(1);
     expect(orphanStop).toHaveBeenCalledTimes(1);
     expect(recoveryStop).toHaveBeenCalledTimes(1);
+    expect(competitorMonitorStop).toHaveBeenCalledTimes(1);
 
     const rejected = expect(firstStop).rejects.toMatchObject({
       code: "WORKER_MAINTENANCE_STOP_FAILED",
@@ -128,12 +150,14 @@ describe("startWorkerMaintenance", () => {
     expect(recoveryStop).toHaveBeenCalledTimes(1);
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
+    expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
   });
 
   it("stops all previously started loops when a later loop cannot start", async () => {
     const startupFailure = new Error("orphan-startup-customer-secret");
     const recoveryStop = vi.fn(async () => undefined);
     const retentionStop = vi.fn(async () => undefined);
+    const competitorMonitorStop = vi.fn(async () => undefined);
     mocks.startRecovery.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: recoveryStop,
@@ -141,6 +165,10 @@ describe("startWorkerMaintenance", () => {
     mocks.startRetentionCleanup.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: retentionStop,
+    });
+    mocks.startCompetitorMonitor.mockReturnValue({
+      runNow: vi.fn(async () => undefined),
+      stop: competitorMonitorStop,
     });
     mocks.startOrphanCleanup.mockImplementation(() => {
       throw startupFailure;
@@ -151,6 +179,7 @@ describe("startWorkerMaintenance", () => {
     ).rejects.toBe(startupFailure);
 
     expect(retentionStop).toHaveBeenCalledTimes(1);
+    expect(competitorMonitorStop).toHaveBeenCalledTimes(1);
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
 
@@ -183,6 +212,7 @@ describe("startWorkerMaintenance", () => {
 
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
+    expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
     await maintenance.stop();
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
@@ -211,6 +241,7 @@ describe("startWorkerMaintenance", () => {
     await expect(starting).rejects.toBe(recoveryFailure);
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
+    expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
 
@@ -238,6 +269,7 @@ describe("startWorkerMaintenance", () => {
     expect(mocks.isRecoveryAbortError).toHaveBeenCalledWith(recoveryAbort);
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
+    expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
     await maintenance.stop();
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
@@ -247,6 +279,7 @@ describe("startWorkerMaintenance", () => {
     const startupFailure = new Error("orphan-startup-customer-secret");
     const recoveryStop = vi.fn(async () => undefined);
     const retentionStop = vi.fn(() => new Promise<void>(() => undefined));
+    const competitorMonitorStop = vi.fn(async () => undefined);
     mocks.startRecovery.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: recoveryStop,
@@ -254,6 +287,10 @@ describe("startWorkerMaintenance", () => {
     mocks.startRetentionCleanup.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: retentionStop,
+    });
+    mocks.startCompetitorMonitor.mockReturnValue({
+      runNow: vi.fn(async () => undefined),
+      stop: competitorMonitorStop,
     });
     mocks.startOrphanCleanup.mockImplementation(() => {
       throw startupFailure;
@@ -274,6 +311,7 @@ describe("startWorkerMaintenance", () => {
     expect(partial).toBeDefined();
     expect(recoveryStop).toHaveBeenCalledTimes(1);
     expect(retentionStop).toHaveBeenCalledTimes(1);
+    expect(competitorMonitorStop).toHaveBeenCalledTimes(1);
   });
 
   it("rejects an invalid stop deadline before any loop starts", async () => {
@@ -282,6 +320,7 @@ describe("startWorkerMaintenance", () => {
     ).rejects.toThrow(/stop timeout must be a positive integer/);
 
     expect(mocks.startRecovery).not.toHaveBeenCalled();
+    expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
   });

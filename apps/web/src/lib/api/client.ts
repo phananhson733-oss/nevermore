@@ -10,6 +10,9 @@ import { BASE_PATH } from "@/lib/base-path";
 
 const API_BASE = `${BASE_PATH}/api/mvp`;
 
+/** A customer-facing API read must always settle into data or an error state. */
+export const API_REQUEST_TIMEOUT_MS = 30_000;
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface SendOptions {
@@ -38,6 +41,32 @@ export class ApiError extends Error {
   fieldErrors(): readonly ProblemFieldError[] {
     return this.problem.errors ?? [];
   }
+}
+
+/** Transport timeout. It remains retryable once under `shouldRetryApiQuery`. */
+export class ApiRequestTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super("The request timed out before the server returned a complete response.");
+    this.name = "ApiRequestTimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
+ * Customer-state 4xx responses are terminal for the current read and should
+ * render their explicit empty/problem state immediately. Retry one transient
+ * network, parser, or server failure before surfacing it.
+ */
+export function shouldRetryApiQuery(
+  failureCount: number,
+  error: unknown,
+): boolean {
+  if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+    return false;
+  }
+  return failureCount < 1;
 }
 
 /** Structural guard: an untrusted response body is only a problem if it fits. */
@@ -86,14 +115,39 @@ async function request<T>(
   if (options?.idempotencyKey)
     headers["Idempotency-Key"] = options.idempotencyKey;
 
-  const init: RequestInit = { method, credentials: "same-origin", headers };
+  const controller = new AbortController();
+  const init: RequestInit = {
+    method,
+    credentials: "same-origin",
+    headers,
+    signal: controller.signal,
+  };
   if (options?.body !== undefined) init.body = JSON.stringify(options.body);
 
-  const response = await fetch(`${API_BASE}${path}`, init);
-  const parsed = await parseJson(response);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutFailure = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      const error = new ApiRequestTimeoutError(API_REQUEST_TIMEOUT_MS);
+      // Settle the timeout branch first, then cancel fetch/body consumption.
+      reject(error);
+      controller.abort(error);
+    }, API_REQUEST_TIMEOUT_MS);
+  });
 
-  if (!response.ok) throw new ApiError(toProblem(response, parsed));
-  return parsed as T;
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(`${API_BASE}${path}`, init);
+        const parsed = await parseJson(response);
+
+        if (!response.ok) throw new ApiError(toProblem(response, parsed));
+        return parsed as T;
+      })(),
+      timeoutFailure,
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }
 
 /** GET `${/api/mvp}${path}`; returns the parsed success body (caller unwraps `.data`). */

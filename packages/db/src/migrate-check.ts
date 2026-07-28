@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 44 app tables plus every named index, trigger, and callable routine
+ * exactly 76 app tables plus every named index, trigger, and callable routine
  * in the frozen SQL contract. Exits non-zero on drift. This is a structural
  * object-presence gate; the byte-for-byte migration/spec gate separately
  * prevents definition drift.
@@ -55,6 +55,38 @@ const EXPECTED_TABLES = [
   "flow_shadow_runs",
   "flow_shadow_research_packs",
   "flow_shadow_qa_gates",
+  "delivery_authorization_grants",
+  "artifact_approval_events",
+  "publication_destinations",
+  "publication_preview_events",
+  "publication_attempts",
+  "publication_receipts",
+  "measurement_windows",
+  "measurement_gsc_dimensions",
+  "measurement_ga4_dimensions",
+  "measurement_geo_dimensions",
+  "measurement_utm_identities",
+  "measurement_ga4_campaigns",
+  "topic_model_revisions",
+  "topic_node_identities",
+  "topic_node_revisions",
+  "topic_cluster_aliases",
+  "topic_node_successors",
+  "keyword_review_decisions",
+  "keyword_relation_identities",
+  "keyword_relation_candidates",
+  "keyword_relation_decisions",
+  "action_execution_step_definitions",
+  "action_execution_state_events",
+  "competitor_monitor_settings",
+  "competitor_monitor_runs",
+  "competitor_monitor_evaluations",
+  "competitor_monitor_signals",
+  "geo_query_observations",
+  "geo_citation_occurrences",
+  "backlink_authority_snapshots",
+  "backlink_facts",
+  "backlink_page_metrics",
 ] as const;
 
 const REQUIRED_INDEXES = [
@@ -114,6 +146,49 @@ const REQUIRED_INDEXES = [
   "flow_shadow_runs_content_hash_idx",
   "flow_shadow_research_packs_run_idx",
   "flow_shadow_qa_gates_run_idx",
+  "delivery_authorization_grants_project_state_idx",
+  "artifact_approval_events_one_approval_per_revision_idx",
+  "artifact_approval_events_one_terminal_per_event_idx",
+  "artifact_approval_events_artifact_timeline_idx",
+  "publication_destinations_project_ref_revision_idx",
+  "publication_destinations_one_consuming_grant_idx",
+  "publication_preview_events_issued_ref_idx",
+  "publication_preview_events_one_terminal_per_event_idx",
+  "publication_preview_events_project_ref_timeline_idx",
+  "publication_preview_events_artifact_destination_idx",
+  "publication_attempts_target_timeline_idx",
+  "publication_attempts_source_idx",
+  "publication_receipts_attempt_timeline_idx",
+  "measurement_windows_target_history_idx",
+  "measurement_windows_change_window_idx",
+  "measurement_ga4_campaigns_window_idx",
+  "topic_model_revisions_project_created_idx",
+  "topic_node_revisions_project_model_idx",
+  "topic_cluster_aliases_current_label_idx",
+  "topic_cluster_aliases_node_history_idx",
+  "topic_node_successors_predecessor_idx",
+  "topic_node_successors_successor_idx",
+  "keyword_review_decisions_project_decided_idx",
+  "keyword_review_decisions_topic_idx",
+  "keyword_relation_identities_keyword_a_idx",
+  "keyword_relation_identities_keyword_b_idx",
+  "keyword_relation_candidates_latest_idx",
+  "keyword_relation_decisions_latest_idx",
+  "action_execution_step_definitions_scope_idx",
+  "action_execution_state_events_current_idx",
+  "competitor_monitor_runs_competitor_created_idx",
+  "competitor_monitor_evaluations_competitor_time_idx",
+  "competitor_monitor_signals_competitor_time_idx",
+  "competitor_monitor_signals_rank_unique_idx",
+  "competitor_monitor_signals_content_unique_idx",
+  "geo_query_observations_identity_idx",
+  "geo_query_observations_normalized_idx",
+  "geo_citation_occurrences_query_idx",
+  "backlink_authority_identity_idx",
+  "backlink_authority_subject_source_idx",
+  "backlink_facts_target_page_idx",
+  "backlink_facts_referring_domain_idx",
+  "backlink_page_metrics_page_idx",
 ] as const;
 
 const REQUIRED_TRIGGERS = [
@@ -129,8 +204,11 @@ const REQUIRED_TRIGGERS = [
   "async_runs_set_updated_at",
   "async_runs_terminal_status_immutable",
   "collection_runs_provenance_guard",
+  "collection_runs_voc_provenance_guard",
   "data_snapshots_provenance_guard",
+  "data_snapshots_voc_provenance_guard",
   "normalized_observations_provenance_guard",
+  "normalized_observations_voc_provenance_guard",
   "normalized_observations_site_page_guard",
   "diagnostic_runs_frozen_input_guard",
   "diagnostic_runs_current_manifest_guard",
@@ -173,6 +251,7 @@ const REQUIRED_TRIGGERS = [
   "product_profile_invocation_attempts_transition_guard",
   "icp_profiles_product_profile_provenance_guard",
   "keyword_occurrences_lineage_guard",
+  "keyword_occurrences_voc_lineage_guard",
   "keyword_occurrences_append_only",
   "keyword_entities_mutation_guard",
   "keyword_entities_no_delete",
@@ -186,6 +265,72 @@ const REQUIRED_TRIGGERS = [
   "flow_shadow_research_packs_append_only",
   "flow_shadow_qa_gates_provenance_guard",
   "flow_shadow_qa_gates_append_only",
+  "delivery_authorization_grants_transition_guard",
+  "delivery_authorization_grants_no_delete",
+  "artifact_approval_events_lineage_guard",
+  "artifact_approval_events_append_only",
+  "publication_destinations_lineage_guard",
+  "publication_destinations_append_only",
+  "publication_preview_events_lineage_guard",
+  "publication_preview_events_append_only",
+  "publication_attempts_lineage_guard",
+  "publication_attempts_append_only",
+  "publication_receipts_lineage_guard",
+  "publication_receipts_append_only",
+  "measurement_windows_lineage_guard",
+  "measurement_windows_completeness_guard",
+  "measurement_windows_append_only",
+  "measurement_gsc_dimensions_lineage_guard",
+  "measurement_gsc_dimensions_append_only",
+  "measurement_ga4_dimensions_lineage_guard",
+  "measurement_ga4_dimensions_append_only",
+  "measurement_geo_dimensions_lineage_guard",
+  "measurement_geo_dimensions_append_only",
+  "measurement_utm_identities_scope_guard",
+  "measurement_utm_identities_append_only",
+  "measurement_ga4_campaigns_lineage_guard",
+  "measurement_ga4_campaigns_append_only",
+  "keyword_review_decisions_projection_guard",
+  "topic_model_revisions_mutation_guard",
+  "topic_model_revisions_topology_guard",
+  "topic_node_identities_creation_guard",
+  "topic_node_identities_append_only",
+  "topic_node_revisions_mutation_guard",
+  "topic_node_revisions_parent_cycle_guard",
+  "topic_cluster_aliases_window_guard",
+  "topic_cluster_aliases_retention_guard",
+  "topic_node_successors_cycle_guard",
+  "topic_node_successors_append_only",
+  "keyword_review_decisions_append_only",
+  "keyword_relation_candidates_insert_guard",
+  "keyword_relation_identities_append_only",
+  "keyword_relation_candidates_append_only",
+  "keyword_relation_decisions_insert_guard",
+  "keyword_relation_decisions_append_only",
+  "action_execution_step_definitions_insert_guard",
+  "action_execution_step_definitions_append_only",
+  "action_execution_state_events_insert_guard",
+  "action_execution_state_events_append_only",
+  "competitor_monitor_runs_insert_guard",
+  "competitor_monitor_evaluations_insert_guard",
+  "competitor_monitor_signals_insert_guard",
+  "competitor_monitor_runs_append_only",
+  "competitor_monitor_evaluations_append_only",
+  "competitor_monitor_signals_append_only",
+  "geo_normalized_observations_lineage_guard",
+  "geo_normalized_observations_completeness_guard",
+  "geo_query_observations_insert_guard",
+  "geo_query_observations_completeness_guard",
+  "geo_query_observations_append_only",
+  "geo_citation_occurrences_insert_guard",
+  "geo_citation_occurrences_completeness_guard",
+  "geo_citation_occurrences_append_only",
+  "backlink_authority_snapshots_insert_guard",
+  "backlink_facts_insert_guard",
+  "backlink_page_metrics_insert_guard",
+  "backlink_authority_snapshots_append_only",
+  "backlink_facts_append_only",
+  "backlink_page_metrics_append_only",
 ] as const;
 
 const REQUIRED_ROUTINES = [
@@ -207,6 +352,67 @@ const REQUIRED_ROUTINES = [
   "upsert_competitor_origin",
   "enforce_flow_shadow_run_provenance",
   "enforce_flow_shadow_child_provenance",
+  "enforce_delivery_authorization_grant_transition",
+  "enforce_artifact_approval_event_lineage",
+  "enforce_publication_destination_lineage",
+  "enforce_publication_preview_event_lineage",
+  "enforce_publication_attempt_lineage",
+  "enforce_publication_receipt_lineage",
+  "enforce_measurement_window_lineage",
+  "enforce_measurement_dimension_lineage",
+  "enforce_measurement_window_completeness",
+  "enforce_measurement_utm_identity_scope",
+  "enforce_measurement_ga4_campaign_lineage",
+  "enforce_keyword_review_projection",
+  "enforce_topic_model_revision_mutation",
+  "validate_confirmed_topic_model_topology",
+  "enforce_topic_node_identity_creation",
+  "enforce_topic_node_revision_mutation",
+  "prevent_topic_parent_cycle",
+  "prevent_topic_alias_window_overlap",
+  "enforce_topic_cluster_alias_retention",
+  "prevent_topic_successor_cycle",
+  "normalize_keyword_relation_semantic",
+  "keyword_relation_token_overlap",
+  "keyword_relation_candidate_stale_reasons",
+  "enforce_keyword_relation_candidate_insert",
+  "enforce_keyword_relation_decision_insert",
+  "enforce_action_execution_step_definition_insert",
+  "enforce_action_execution_state_insert",
+  "enforce_competitor_monitor_run_insert",
+  "enforce_competitor_monitor_evaluation_insert",
+  "enforce_competitor_monitor_signal_insert",
+  "enforce_geo_normalized_observation_insert",
+  "enforce_geo_query_observation_insert",
+  "enforce_geo_citation_occurrence_insert",
+  "enforce_geo_evidence_completeness",
+  "enforce_voc_collection_run_provenance",
+  "enforce_voc_data_snapshot_provenance",
+  "enforce_voc_keyword_evidence_observation",
+  "enforce_voc_keyword_occurrence_lineage",
+  "enforce_backlink_authority_snapshot_insert",
+  "enforce_backlink_fact_insert",
+  "enforce_backlink_page_metric_insert",
+] as const;
+
+const REQUIRED_COLUMNS = [
+  ["publication_attempts", "approved_artifact_content_hash"],
+  ["publication_attempts", "preview_checksum"],
+  ["publication_attempts", "content_checksum"],
+  ["publication_receipts", "artifact_content_hash"],
+  ["publication_receipts", "content_checksum"],
+  ["measurement_windows", "artifact_content_hash"],
+  ["measurement_windows", "content_checksum"],
+  ["measurement_windows", "result_hash"],
+  ["keyword_relation_candidates", "evidence_hash"],
+  ["action_execution_step_definitions", "definition_hash"],
+  ["action_execution_step_definitions", "request_hash"],
+  ["action_execution_state_events", "request_hash"],
+  ["geo_query_observations", "collector_version"],
+  ["geo_citation_occurrences", "cited_paragraph_selector"],
+  ["backlink_authority_snapshots", "source_ref"],
+  ["backlink_authority_snapshots", "checksum"],
+  ["backlink_facts", "source_ref"],
 ] as const;
 
 export interface MigrateCheckResult {
@@ -233,6 +439,31 @@ export async function checkMigrations(
     }
     for (const t of EXPECTED_TABLES) {
       if (!found.has(t)) problems.push(`missing table app.${t}`);
+    }
+
+    const columns = await client.query<{
+      table_name: string;
+      column_name: string;
+      is_nullable: string;
+      data_type: string;
+    }>(
+      `SELECT table_name, column_name, is_nullable, data_type
+         FROM information_schema.columns
+        WHERE table_schema = 'app'`,
+    );
+    const columnSet = new Set(
+      columns.rows
+        .filter(
+          (row) =>
+            row.is_nullable === "NO" && row.data_type === "text",
+        )
+        .map((row) => `${row.table_name}.${row.column_name}`),
+    );
+    for (const [table, column] of REQUIRED_COLUMNS) {
+      const qualified = `${table}.${column}`;
+      if (!columnSet.has(qualified)) {
+        problems.push(`missing required non-null text column app.${qualified}`);
+      }
     }
 
     const indexes = await client.query<{ indexname: string }>(
@@ -298,6 +529,7 @@ async function main(): Promise<void> {
   }
   console.log(
     `Migration check passed: ${EXPECTED_TABLES.length} app tables, ` +
+      `${REQUIRED_COLUMNS.length} authority hash columns, ` +
       `${REQUIRED_INDEXES.length} indexes, ${REQUIRED_TRIGGERS.length} triggers, and ` +
       `${REQUIRED_ROUTINES.length} routines present.`,
   );

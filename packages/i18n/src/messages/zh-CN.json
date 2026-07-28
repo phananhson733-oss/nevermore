@@ -603,6 +603,15 @@
         "queueSyncing": "正在将工作队列与当前冻结审计对齐…",
         "queueRunMismatch": "页面加载期间审计已更新；两次读取对齐前不会展示工作卡。",
         "queueUnavailable": "尚未识别到冻结审计，工作队列暂不可用。",
+        "decisionDue": "待决策 · 已搁置 {days} 天",
+        "decideOpportunityLabel": "决定是否推进：{summary}",
+        "decay": {
+          "detected": "{month} 月度衰减预警",
+          "reviewSuggested": "建议内容复审",
+          "rankSignal": "连续两个月平均位置分别下降 {first} / {second} 位",
+          "trafficSignal": "最近 28 天 clicks 环比下降 {percent}%",
+          "openLabel": "在增长地图查看需要内容复审的页面：{page}"
+        },
         "resultUnavailable": "暂无经过验证的审计前后结果",
         "resultUnavailableDescription": "数据源快照不等于增长 Result；完成一次可追溯的基线与现状复查后，这里才会显示审计前后变化。",
         "resultVerified": "已验证复查 · {state}",
@@ -949,6 +958,70 @@
       "competitors": {
         "label": "竞品库",
         "description": "竞品关系、范围与证据"
+      },
+      "backlinks": {
+        "label": "外链增长",
+        "description": "外链、引用域与竞品差距"
+      }
+    },
+    "backlinks": {
+      "eyebrow": "Backlink Growth Path",
+      "title": "看清站外权重从哪里来，以及下一步该补哪里",
+      "description": "把当前站点、页面与已批准竞品的外链事实放进同一条可追溯证据链。不同来源不会混算，数据不足时也不会补成 0。",
+      "loading": "正在读取外链与引用域证据…",
+      "error": "外链增长路径暂时无法读取，请重试。",
+      "unavailableTitle": "还没有可读取的外链证据",
+      "unavailableBoundary": "这里不会用推测值代替缺失数据。Provider、CSV 或 search-derived 采集形成真实快照后会自动呈现。",
+      "capturedAt": "采集于 {date}",
+      "siteSummary": "当前站点外链概览",
+      "currentSite": "当前站点",
+      "backlinks": "外链",
+      "referringDomains": "引用域",
+      "domainRating": "Domain Rating",
+      "domainAuthority": "Domain Authority",
+      "providerTotal": "Provider 索引总量",
+      "observedCount": "本次已发现记录",
+      "metricUnavailable": "未提供",
+      "notCollected": "暂无可验证数据",
+      "providerOnly": "仅真实 Provider 数据显示",
+      "providerObserved": "Provider 观测值",
+      "dataBoundary": "数据范围说明",
+      "opportunityEyebrow": "Growth Opportunities",
+      "opportunityTitle": "当前值得处理的外链机会",
+      "noOpportunity": "当前证据范围内没有触发外链机会。",
+      "severity": {
+        "high": "高优先级",
+        "medium": "中优先级"
+      },
+      "siteLevelOpportunity": "站点级机会",
+      "openPage": "查看对应页面",
+      "awaitingExecution": "审核后进入执行",
+      "openExecution": "打开执行任务",
+      "pagesEyebrow": "Page Distribution",
+      "pagesTitle": "页面获得外链的分布",
+      "noPages": "当前快照没有提供页面级外链数据。",
+      "competitorEyebrow": "Approved Competitors",
+      "competitorTitle": "与已批准竞品按同口径比较",
+      "comparisonReady": "仅比较同一 {provider} 与相近采集窗口的数据。",
+      "domainEyebrow": "Referring Domains",
+      "domainTitle": "主要引用域与落点页面",
+      "observedLinks": "已观测 {count} 条",
+      "authorityNotProvided": "未提供 DR / DA",
+      "sourceEyebrow": "Evidence Sources",
+      "sourceTitle": "每个数字来自哪里",
+      "traceability": "查看来源标识",
+      "rowCount": "快照记录 {count} 条",
+      "connectionBoundary": "外链 Provider、手动 CSV 与 search-derived 是增长地图的内置证据来源，不会作为新的客户数据连接显示；客户可见连接仍只有 GSC、GA4 与 GitHub。",
+      "source": {
+        "provider_import": "Provider 导入",
+        "manual_csv": "手动 CSV",
+        "search_derived": "Search-derived 发现"
+      },
+      "provider": {
+        "ahrefs": "Ahrefs",
+        "moz": "Moz",
+        "manual_csv": "CSV",
+        "search_derived": "内置发现"
       }
     },
     "realDataOnly": "已入库数据",
@@ -972,7 +1045,13 @@
       "competitorAiCitationWriterUnavailable": "暂无可用数据：Competitor Library v1 目前还没有 AI citation 数据。",
       "competitorCandidate": "该竞品尚待审核，暂未纳入分析。",
       "competitorExcluded": "该竞品已从获准的分析范围中排除。",
-      "competitorSourceApprovedReviewPending": "Product Profile 来源已确认，但该 Competitor Library 记录仍待审核。"
+      "competitorSourceApprovedReviewPending": "Product Profile 来源已确认，但该 Competitor Library 记录仍待审核。",
+      "rankNoObservations": "最近 90 天内暂无可验证的规范排名观测。",
+      "rankNoCanonicalPage": "该关键词尚未映射到唯一的现有页面，因此无法显示已验证的内容变更标记。",
+      "rankSinglePoint": "至少一项排名指标只有一次观测，目前还不能判断趋势。",
+      "rankMissingProviderTimestamp": "至少一条排名观测没有提供方数据时点。",
+      "rankDataForSeoAbsolute": "DataForSEO 显示提供方观测到的绝对排名，不提供数据时点。",
+      "rankGscRollingAverage": "GSC 显示按曝光加权的 28 天滚动平均位置，并非绝对 SERP 排名。"
     },
     "keywordLibrary": {
       "loadingLibrary": "正在加载关键词库…",
@@ -999,6 +1078,275 @@
         "status": "状态",
         "source": "真实来源 / 采集时间"
       },
+      "relations": {
+        "toolbarLabel": "关键词重复关系",
+        "toolbarTitle": "重复词治理",
+        "toolbarDescription": "系统会依据同一页面、搜索意图、市场与语言检查重复候选；已归并的支持词仍会显示在主词下方。",
+        "loading": "正在核对本页重复关系…",
+        "ready": "本页 {count} 组候选，已收起 {collapsed} 个支持词",
+        "empty": "本页未发现重复候选",
+        "refresh": "重新检测",
+        "refreshing": "正在检测…",
+        "refreshError": "重复关系检测失败，现有关键词仍可正常查看。",
+        "retry": "重试",
+        "badge": "{count} 组重复关系",
+        "openAria": "查看“{keyword}”的 {count} 组重复关系",
+        "supportingLabel": "支持词",
+        "offPagePrimary": "此词已归入主词“{keyword}”；主词位于其他分页，因此当前仍保留显示。",
+        "dialogEyebrow": "关键词关系",
+        "dialogTitle": "审核重复词",
+        "dialogDescription": "依据同一已确认页面、搜索意图、市场与语言进行判断。每次决定都会保留版本，可随时重新审核。",
+        "dialogKeywordDescription": "审核“{keyword}”关联的重复候选。每次决定都会保留版本，可随时重新审核。",
+        "close": "关闭重复词审核",
+        "candidateCount": "共 {count} 组候选",
+        "pairTitle": "候选词组",
+        "candidateCurrent": "证据有效",
+        "candidateStale": "证据已过期",
+        "displayState": {
+          "possible_duplicate": "待审核",
+          "folded": "已归并",
+          "kept_separate": "保持独立",
+          "parked_secondary": "次要词暂存",
+          "needs_research": "待补充研究",
+          "stale": "需重新检测"
+        },
+        "evidenceTitle": "判断依据",
+        "samePage": "同一已确认页面",
+        "sameIntent": "同一已审核意图：{intent}",
+        "marketLanguage": "{market} · {language}",
+        "sameTopic": "属于同一已确认主题",
+        "topicNotConfirmed": "主题关系尚未确认",
+        "lexicalOverlap": "词面重合 {value}%",
+        "serpOverlap": "SERP 重合 {value}%",
+        "serpUnavailable": "暂无规范 SERP 重合数据",
+        "decisionTitle": "审核决定",
+        "decisionDescription": "选择本组关键词在关键词库中的呈现和跟踪方式。",
+        "decision": {
+          "primary_supporting": {
+            "label": "设为主词 + 支持词",
+            "description": "保留主词行，支持词默认收起并显示在主词下方。"
+          },
+          "keep_separate": {
+            "label": "保持两个独立关键词",
+            "description": "两个词都继续显示并独立跟踪。"
+          },
+          "park_secondary": {
+            "label": "暂存次要词",
+            "description": "保留关系记录，但暂不进入当前重点队列。"
+          },
+          "needs_research": {
+            "label": "需要更多研究",
+            "description": "证据不足，等待 SERP 或人工研究后再决定。"
+          }
+        },
+        "primaryTitle": "选择主词",
+        "primaryHint": "另一个关键词会成为支持词。",
+        "reason": "审核说明",
+        "reasonHelp": "说明本次判断依据，便于团队后续复核。",
+        "reasonPlaceholder": "记录为什么这样处理，至少 3 个字符。",
+        "defaultReason": "根据当前页面、意图、市场与语言证据完成重复词审核。",
+        "save": "保存决定",
+        "saving": "正在保存…",
+        "saved": "决定已保存，关键词列表已更新。",
+        "replayed": "该决定此前已保存，现已同步最新结果。",
+        "conflict": "关系已被其他审核更新；系统已重新加载最新版本，请再次确认。",
+        "decisionError": "无法保存决定，请重试。",
+        "staleNotice": "候选证据已过期，请先重新检测，再做审核决定。",
+        "invalidDecision": "请填写审核说明，并在归并时选择有效主词。",
+        "currentDecision": "当前决定：{decision}",
+        "revision": "关系版本 {revision}",
+        "staleReason": {
+          "candidate_superseded": "已有更新的候选证据",
+          "keyword_unavailable": "关键词已不可用",
+          "governance_revision_changed": "关键词审核版本已变化",
+          "mapping_changed": "页面映射已变化",
+          "intent_changed": "搜索意图已变化",
+          "market_changed": "目标市场已变化",
+          "language_changed": "语言已变化"
+        }
+      },
+      "topicMap": {
+        "step": "Step 0 · 关键词治理基础",
+        "gatewayTitle": "话题地图决定关键词如何进入增长路径",
+        "gatewayDescription": "先确认中心主题与父子结构，再依据已发布结构判断内容覆盖、空缺与意图冲突。",
+        "gateway": {
+          "status": "结构状态",
+          "topics": "活跃话题",
+          "coverageGaps": "覆盖缺口",
+          "conflicts": "意图冲突"
+        },
+        "status": {
+          "draft": "有待发布草稿",
+          "confirmed": "已发布",
+          "unavailable": "尚未建立"
+        },
+        "loading": "正在读取话题地图…",
+        "manage": "管理话题地图",
+        "gatewayActionHint": "结构编辑、关键词覆盖与历史版本",
+        "workspaceError": "无法读取话题地图工作区。",
+        "insightsError": "已读取结构，但暂时无法读取关键词覆盖判断。",
+        "retry": "重试",
+        "dialogEyebrow": "关键词库 · Step 0",
+        "dialogTitle": "话题地图",
+        "dialogDescription": "建立产品的中心主题和父子关系，作为关键词入库、内容覆盖与冲突判断的共同依据。",
+        "close": "关闭话题地图",
+        "draftRevision": "草稿 v{revision} · 编辑 {edit}",
+        "confirmedRevision": "已发布 v{revision}",
+        "publishedAuthority": "当前显示已发布结构；覆盖数字来自同一已确认版本。",
+        "draftAuthority": "正在编辑草稿；右侧覆盖数字仍来自最近一次已发布版本，不会被草稿提前改写。",
+        "refresh": "刷新",
+        "beginFirstDraft": "建立第一版",
+        "beginDraft": "编辑新版本",
+        "confirm": "确认发布",
+        "structureEyebrow": "产品主题结构",
+        "structureTitle": "中心主题与父子节点",
+        "activeTopicCount": "{count} 个活跃话题",
+        "emptyStructureTitle": "草稿中还没有话题",
+        "emptyStructureDescription": "先建立一个根话题，再补充产品能力、用例和问题空间等子话题。",
+        "createRoot": "新建根话题",
+        "tree": {
+          "label": "话题地图树",
+          "noPublishedMetrics": "草稿节点 · 发布后计算覆盖",
+          "nodeSummary": "{keywords} 个关键词 · {pages} 个已有内容"
+        },
+        "historyTitle": "历史节点（{count}）",
+        "historyDescription": "删除、拆分或合并不会抹掉历史；旧节点保留为可追溯记录。",
+        "selectTopicTitle": "选择一个话题",
+        "selectTopicDescription": "从左侧结构选择节点，查看关键词覆盖、已有内容、冲突和编辑操作。",
+        "activeTopic": "活跃话题",
+        "retiredTopic": "历史话题",
+        "actionsLabel": "话题编辑操作",
+        "action": {
+          "create": "新建子话题",
+          "edit": "编辑结构",
+          "rename": "重命名",
+          "split": "拆分",
+          "merge": "合并",
+          "retire": "删除 / 退役"
+        },
+        "retireRootBlocked": "根话题不能删除；可通过拆分或合并重构。",
+        "retireChildrenBlocked": "请先移动、拆分或删除活跃子话题。",
+        "coverageState": {
+          "empty": "暂无关键词",
+          "uncovered": "未覆盖",
+          "partial": "部分覆盖",
+          "covered": "已覆盖",
+          "conflict": "存在冲突",
+          "draft": "草稿节点",
+          "unavailable": "指标不可用"
+        },
+        "insightUnavailableTitle": "暂无已发布覆盖判断",
+        "insightUnavailableDescription": "覆盖数字只基于已确认的话题地图；发布后系统会重新计算。",
+        "metric": {
+          "keywords": "关键词",
+          "mappedPages": "已有内容",
+          "reviewPending": "待审核关键词",
+          "conflicts": "意图冲突"
+        },
+        "mapping": {
+          "existing": "{count} 个词指向已有页面",
+          "newAsset": "{count} 个词需要新内容",
+          "unassigned": "{count} 个词尚未分配"
+        },
+        "node": {
+          "parent": "上级话题",
+          "root": "根话题",
+          "description": "话题说明",
+          "intentEnvelope": "搜索意图范围"
+        },
+        "notAvailable": "暂无数据",
+        "retiredHistoryTitle": "历史身份仍然保留",
+        "retiredHistoryDescription": "该话题不会继续参与当前覆盖判断，但旧版本、证据与后继关系仍可追溯。",
+        "successorKind": {
+          "split_into": "拆分为“{label}”",
+          "merged_into": "合并为“{label}”"
+        },
+        "editor": {
+          "eyebrow": "版本化编辑",
+          "cancel": "取消",
+          "saving": "正在保存…",
+          "begin": {
+            "title": "建立可编辑草稿",
+            "description": "草稿从当前已发布版本开始；如果这是第一版，将从空结构开始。",
+            "submit": "开始编辑",
+            "authority": "开始草稿不会改变客户当前看到的已发布覆盖判断。"
+          },
+          "create": {
+            "title": "新建话题",
+            "description": "新增一个稳定话题节点，并放入当前产品主题结构。",
+            "submit": "新建话题"
+          },
+          "edit": {
+            "title": "编辑结构与定义",
+            "description": "调整上级话题、说明和允许的搜索意图。",
+            "submit": "保存修改"
+          },
+          "rename": {
+            "title": "重命名话题",
+            "description": "名称会更新，稳定身份和历史引用保持不变。",
+            "submit": "保存新名称"
+          },
+          "split": {
+            "title": "拆分话题",
+            "description": "把范围过大的话题拆成至少两个后继话题。",
+            "submit": "拆分话题"
+          },
+          "merge": {
+            "title": "合并话题",
+            "description": "选择至少另一个话题，生成一个新的共同后继话题。",
+            "submit": "合并话题"
+          },
+          "retire": {
+            "title": "删除 / 退役话题",
+            "description": "从当前结构中停止使用该话题，但不会抹掉任何历史。",
+            "submit": "确认删除 / 退役",
+            "history": "发布后，受影响关键词会回到“待审核”；历史节点、旧版本和证据不会丢失。"
+          },
+          "confirm": {
+            "title": "确认并发布话题地图",
+            "description": "把当前草稿设为新的关键词治理依据，并重新计算覆盖、缺口和冲突。",
+            "submit": "确认发布",
+            "authority": "发布会使当前结构成为新的唯一确认版本，并刷新关键词与内容覆盖判断。"
+          }
+        },
+        "field": {
+          "label": "话题名称",
+          "newLabel": "新名称",
+          "parent": "上级话题",
+          "description": "话题说明",
+          "intentEnvelope": "搜索意图范围",
+          "intentEnvelopeHelp": "使用逗号分隔，例如：Informational, Commercial。",
+          "firstRoot": "这是草稿中的第一个节点，将自动成为根话题。",
+          "rootFixed": "根话题必须保留在结构顶层。",
+          "successorLabels": "拆分后的话题名称",
+          "successorLabelsHelp": "每行一个名称，至少填写两个。",
+          "successorLabelsPlaceholder": "实施与配置\n流程自动化",
+          "mergedLabel": "合并后的话题名称",
+          "mergeSources": "选择要一起合并的话题",
+          "reason": "变更说明",
+          "reasonHelp": "记录这次结构判断的依据，至少 3 个字符。"
+        },
+        "defaultReason": {
+          "create": "根据当前产品与关键词范围建立或新增话题。",
+          "edit": "根据当前产品结构调整话题定义与父子关系。",
+          "rename": "使用更准确的客户语言更新话题名称。",
+          "split": "当前话题范围过大，需要拆分为更清晰的增长路径。",
+          "merge": "这些话题意图与内容边界重合，合并为统一范围。",
+          "retire": "该话题不再参与当前增长判断，保留历史并退役。",
+          "confirm": "已审核当前话题结构，同意发布为新的关键词治理依据。"
+        },
+        "validation": {
+          "reason": "请填写至少 3 个字符的变更说明。",
+          "form": "请检查必填信息、话题关系和变更说明。",
+          "confirm": "草稿至少需要一个话题，并填写有效的发布说明。"
+        },
+        "conflict": "该草稿已被其他人更新；系统正在刷新最新版本，请核对后再次提交。",
+        "draftChangedNotice": "话题草稿已发生变化，编辑器已关闭并同步到最新版本。请核对后继续。",
+        "dismissNotice": "关闭草稿更新提示",
+        "mutationError": "无法保存这次话题地图变更。",
+        "generatedAt": "工作区更新于 {date}",
+        "historyGuarantee": "稳定身份与历史版本不会被删除"
+      },
       "marketLanguage": "市场与语言",
       "marketLanguageValue": "{market} · {language}",
       "queryKind": {
@@ -1020,6 +1368,8 @@
         "csv_import": "CSV 导入",
         "dataforseo_ranked": "DataForSEO 排名关键词",
         "gsc_top_query": "GSC 热门查询",
+        "interview_summary": "访谈摘要",
+        "user_review": "用户评价",
         "manual": "人工记录"
       },
       "scopeBasisLabel": "范围依据",
@@ -1051,6 +1401,92 @@
         "approved": "已确认",
         "rejected": "已拒绝"
       },
+      "review": {
+        "open": "审核 / 修改",
+        "saved": "审核结果已同步",
+        "eyebrow": "关键词治理",
+        "title": "审核“{keyword}”",
+        "description": "确认关键词状态、搜索意图、购买阶段、已发布 Topic 与落地页面。保存后会同步刷新关键词库、Topic 覆盖和重复词关系。",
+        "close": "关闭关键词审核",
+        "classificationTitle": "业务分类",
+        "classificationDescription": "使用明确选项完成审核；已有的非标准分类会保留为当前选项，不会被静默改写。",
+        "topicTitle": "绑定已确认 Topic",
+        "topicDescription": "Topic 只能选择最近一次已发布 Topic Map 中的稳定节点，不能手工输入名称。",
+        "mappingTitle": "选择增长落点",
+        "mappingDescription": "已确认 Topic 后，可以指向一个规范 SitePage，或创建新的内容资产。",
+        "field": {
+          "status": "关键词状态",
+          "intent": "搜索意图",
+          "buyerStage": "购买阶段",
+          "topic": "已发布 Topic",
+          "mappingDecision": "页面映射决定",
+          "sitePage": "规范页面",
+          "reason": "审核说明"
+        },
+        "status": {
+          "candidate": "候选",
+          "approved": "已确认",
+          "excluded": "已排除",
+          "parked": "已暂存"
+        },
+        "intent": {
+          "informational": "信息了解（Informational）",
+          "commercial": "方案评估（Commercial）",
+          "transactional": "行动转化（Transactional）",
+          "navigational": "品牌 / 导航（Navigational）"
+        },
+        "buyerStage": {
+          "awareness": "问题认知（Awareness）",
+          "consideration": "方案评估（Consideration）",
+          "decision": "购买决策（Decision）",
+          "retention": "采用与留存（Retention）"
+        },
+        "unclassified": "暂不分类",
+        "topicLoading": "正在读取已发布 Topic…",
+        "topicError": "无法读取已发布 Topic，当前不能安全修改 Topic 绑定。",
+        "retry": "重试",
+        "noConfirmedTopic": "当前没有可用的已发布 Topic Map。可以先保存为未分配，但不能声称已完成 Topic 或页面分配。",
+        "topicUnassigned": "暂不分配 Topic",
+        "coverageState": {
+          "empty": "暂无关键词",
+          "uncovered": "尚未覆盖",
+          "partial": "部分覆盖",
+          "covered": "覆盖完整",
+          "conflict": "存在意图冲突"
+        },
+        "confirmedTopicRevision": "已发布 Topic Map · v{revision}",
+        "topicMetrics": {
+          "keywords": "关键词",
+          "pages": "现有页面",
+          "conflicts": "意图冲突"
+        },
+        "mappingDecision": {
+          "unassigned": "暂不分配",
+          "existing_page": "映射到现有页面",
+          "new_asset": "创建新内容资产"
+        },
+        "selectSitePage": "选择规范页面",
+        "sitePagesTruncated": "当前下拉显示已加载的前 100 个规范页面；如目标页不在列表中，请先在页面与机会中定位该 URL。",
+        "sitePagesError": "页面库读取失败；若该关键词已有页面映射，可以保留当前页面，不能选择未验证的新页面。",
+        "reasonHelp": "记录为什么做出这次分类与映射决定，至少 3 个字符。",
+        "defaultReason": "根据当前产品、关键词证据与已发布 Topic Map 完成关键词审核。",
+        "conflictConfirmTitle": "所选 Topic 存在意图冲突",
+        "conflictConfirmDescription": "“{topic}”当前有多个页面或意图竞争。第一次提交已被拦截；请确认仍要把该关键词分配到此 Topic。",
+        "unknownTopic": "所选 Topic",
+        "backToEdit": "返回修改",
+        "confirmConflictAndSave": "确认冲突并保存",
+        "validation": {
+          "topicRequired": "现有页面或新内容资产必须先绑定一个已发布 Topic。",
+          "pageRequired": "请选择一个规范页面。",
+          "form": "请检查状态、Topic、页面映射与审核说明。"
+        },
+        "revisionConflict": "该关键词已被其他审核更新；系统已重新加载最新版本，请核对后再次提交。",
+        "saveError": "无法保存关键词审核，请重试。",
+        "revision": "当前治理版本 {revision}",
+        "cancel": "取消",
+        "save": "保存审核",
+        "saving": "正在保存…"
+      },
       "metricsEyebrow": "关键词指标",
       "metricsTitle": "关键词指标",
       "metricsDescription": "有数据时显示数值和更新时间；暂无数据时会说明原因。",
@@ -1066,6 +1502,53 @@
       "metricObservation": "Observation",
       "metricPointer": "规范字段指针",
       "viewMetricSourceDetails": "查看指标来源详情",
+      "rankHistory": {
+        "eyebrow": "排名监测",
+        "title": "90 天排名趋势",
+        "description": "仅显示真实观测点；没有观测的日期保持空白，不补值、不推断。",
+        "loading": "正在读取最近 90 天的排名观测…",
+        "error": "无法读取该关键词的排名趋势，关键词详情的其他内容仍可正常查看。",
+        "window": "{start} 至 {end}",
+        "coverage": "数据覆盖",
+        "unavailableTitle": "暂无排名趋势",
+        "unavailableDescription": "当前没有可绘制的规范排名观测。接入或刷新数据后会在这里显示。",
+        "axisRank": "排名（数字越小越靠上）",
+        "series": {
+          "dataforseo": "DataForSEO 绝对排名",
+          "gsc": "GSC 28 天平均位置"
+        },
+        "seriesDescription": {
+          "dataforseo": "搜索结果中的绝对排名观测。",
+          "gsc": "按曝光加权的 28 天滚动平均位置，不等同于绝对排名。"
+        },
+        "metric": {
+          "absolute_rank": "绝对排名",
+          "gsc_28d_average_position": "28 天曝光加权平均位置"
+        },
+        "verifiedChanges": "已验证的内容变更",
+        "changeNote": "这些标记只说明已验证的发布或回滚发生时间，不代表它们造成了排名变化。",
+        "noChanges": "该窗口内没有与当前规范页面匹配的已验证内容变更。",
+        "attemptKind": {
+          "publish": "发布",
+          "rollback": "回滚"
+        },
+        "changeItem": "{kind} · 内容版本 {revision}",
+        "changeTime": "生效时间",
+        "viewDataTable": "查看可访问的数据表",
+        "tableCaption": "最近 90 天排名观测明细",
+        "table": {
+          "source": "数据源",
+          "metric": "指标",
+          "observedAt": "观测时间",
+          "providerDataAsOf": "提供方数据时点",
+          "rank": "排名",
+          "grade": "证据等级",
+          "limitation": "数据说明"
+        },
+        "notProvided": "未提供",
+        "chartTitle": "{keyword} 的 90 天排名观测图",
+        "chartDescription": "图中包含 {seriesCount} 项独立指标和 {pointCount} 个真实观测点；排名数字越小，位置越靠上。"
+      },
       "sourcesEyebrow": "数据来源",
       "sourcesTitle": "来源记录",
       "sourcesDescription": "来源类型和更新时间会直接显示；ID 与字段指针可在详情中展开。",
@@ -1073,10 +1556,22 @@
       "providerDataAsOf": "数据时点",
       "notProvided": "提供方未提供",
       "occurrenceId": "来源记录 ID",
+      "collectionRunId": "采集任务 ID",
       "snapshotId": "数据快照 ID",
       "observationId": "观测记录 ID",
       "sourcePointer": "来源字段指针",
       "importPreviewId": "导入预览 ID",
+      "evidenceLabel": "证据摘要",
+      "sourceRecordHash": "来源记录指纹",
+      "reviewPlatformLabel": "评价平台",
+      "reviewPlatform": {
+        "app_store": "App Store",
+        "g2": "G2",
+        "capterra": "Capterra",
+        "other": "其他公开评价平台"
+      },
+      "openPublicReviewSource": "打开公开评价来源",
+      "deidentifiedEvidenceNotice": "这里只显示去标识化的证据摘要与不可变来源指纹，不展示受访者身份、评价作者或完整正文。",
       "scopeLimitation": "范围限制",
       "sourceLimitation": "来源限制",
       "notAvailable": "暂无数据",
@@ -1097,6 +1592,7 @@
       "originOccurrencesOnPage": "本页来源记录",
       "coverageLabel": "数据覆盖",
       "manageSources": "管理数据来源",
+      "editProfileCompetitors": "完善产品画像 / 添加竞品",
       "listLabel": "竞品列表",
       "loadedCount": "本页已加载 {count} 个竞品",
       "paginationLabel": "Competitor Library 翻页",
@@ -1190,10 +1686,76 @@
       "observedAt": "观测时间",
       "viewRecordDetails": "查看记录详情",
       "competitorId": "竞品 ID（Competitor）",
-      "revision": "记录版本"
+      "revision": "记录版本",
+      "monitor": {
+        "eyebrow": "月度动态",
+        "title": "竞品内容与排名变化",
+        "description": "仅比较已确认竞品在主站唯一市场、语言与最新已确认 Topic 下的真实月度数据。",
+        "loading": "正在读取竞品月度动态…",
+        "error": "暂时无法读取竞品月度动态。",
+        "retry": "重新读取",
+        "status": {
+          "not_configured": "尚未配置",
+          "paused": "已暂停",
+          "collecting": "正在采集",
+          "awaiting_baseline": "等待首次采集",
+          "baseline": "基线已建立",
+          "available": "本期可比较",
+          "partial": "部分可比较",
+          "unavailable": "暂不可用"
+        },
+        "stateDescription": {
+          "not_configured": "尚未配置月度监控，因此没有可展示的比较结果。",
+          "paused": "监控已暂停；历史数据保留，但不会继续排期采集。",
+          "collecting": "真实数据正在采集中，完成前不会提前生成判断。",
+          "awaiting_baseline": "尚未完成首次真实采集，当前不能建立比较基线。",
+          "baseline": "首次真实采集只用于建立基线；下一次可比采集完成后才判断变化。",
+          "available": "本期已有可比较数据。",
+          "partial": "本期仅有部分可比较数据，未观测部分不作推断。",
+          "unavailable": "缺少必要的历史、来源或可比时间窗口，当前不生成判断。"
+        },
+        "sourceAndFrequency": "来源与频率",
+        "monthly": "每月一次",
+        "settingsLabel": "竞品动态监控设置",
+        "frequencyLabel": "更新频率",
+        "onlySupportedCadence": "当前唯一支持的真实采集频率",
+        "enable": "启用每月监控",
+        "pause": "暂停监控",
+        "saving": "正在保存…",
+        "saved": "监控设置已更新。",
+        "conflict": "设置已被其他成员更新，请刷新真实状态后重试。",
+        "saveError": "监控设置保存失败，现有状态没有被替换。",
+        "refreshState": "刷新状态",
+        "confirmedScope": "已确认分析范围",
+        "topicRevision": "Topic 版本 {revision}",
+        "lastCollection": "最近一次采集",
+        "nextCollection": "下一次计划",
+        "unavailableValue": "不可用",
+        "notInConfirmedScope": "该竞品尚未进入已确认的月度监控范围。",
+        "signalListLabel": "竞品动态证据",
+        "rankSignal": "关键词排名提升",
+        "contentSignal": "Topic 内容动态",
+        "rankSummary": "排名 {previous} → {current}，提升 {improvement} 位",
+        "contentSummary": "首次可比观测：{keywordCount} 个已确认关键词重合 · {overlap}",
+        "topicLabel": "已确认 Topic",
+        "detectedAt": "发现时间",
+        "evidenceSource": "证据来源",
+        "viewEvidence": "查看不可变证据",
+        "currentSnapshot": "本期 Snapshot",
+        "previousSnapshot": "上期 Snapshot",
+        "signalId": "动态记录 ID",
+        "opportunityUpdateReady": "这条动态已成为增长地图的机会更新依据。",
+        "openOpportunityUpdate": "打开增长机会更新",
+        "noThresholdSignals": "本期可比数据中没有达到提醒阈值的新增动态。",
+        "executionTitle": "将证据带入现有执行流程",
+        "executionDescription": "可在执行中心继续形成 Content Brief、英文 Blog 或修复任务；这里不会把动态误报为已创建的任务。",
+        "openExecution": "进入执行中心"
+      }
     },
     "loadingPortfolio": "正在读取真实 URL 组合…",
     "loadingDetail": "正在读取所选 URL 的证据链…",
+    "auditUnavailableTitle": "尚未生成 URL 审计结果",
+    "auditUnavailableDescription": "这里没有可展示的冻结审计。请确认 Crawl 数据已采集，完善并确认产品画像后运行增长审计；系统不会用演示数据替代真实结果。",
     "portfolioError": "无法读取增长地图中的 URL，请重试。",
     "detailError": "无法读取这个 URL 的详情，请重试。",
     "runProvenance": "本页审计来源",
@@ -1345,6 +1907,80 @@
     "traceabilityDescription": "以下 ID 指向生成这个页面身份与指标的不可变 Snapshot / Observation；不包含按 URL 猜测出的关联。",
     "pageSnapshotSource": "Crawl PageSnapshot",
     "pageSnapshot": "页面快照",
+    "internalLinkMap": {
+      "eyebrow": "站内链接架构 · 冻结 Crawl",
+      "title": "内链地图",
+      "description": "这里展示冻结 Crawl 中真实观测到的页面与有向内链。数字只代表已观测事实；补链建议只基于已确认的 Topic，不把缺失数据当作 0。",
+      "loading": "正在读取这个 URL 的内链关系…",
+      "error": "暂时无法读取这个 URL 的内链地图；页面的其他审计证据不受影响。",
+      "retry": "重新读取",
+      "unavailable": "当前没有足够的冻结 Crawl 数据生成内链地图。",
+      "selectionUnavailable": "返回的数据不属于当前选中的 URL。系统已停止展示旧 URL 的内链信息，请重新读取。",
+      "summary": {
+        "label": "内链地图摘要",
+        "siteNodes": "站点页面节点",
+        "observedEdges": "已观测有向边",
+        "inbound": "该页已观测入链",
+        "outbound": "该页已观测出链"
+      },
+      "selectedStatus": "该页链接状态",
+      "unknownCounts": "抓取不完整，暂不显示缺失方向的 0 值。",
+      "status": {
+        "connected": "双向连通",
+        "one_way": "单向连通",
+        "orphan": "孤立页面",
+        "unknown": "数据不足"
+      },
+      "graph": {
+        "eyebrow": "真实节点与边",
+        "title": "所选 URL 的局部关系",
+        "visible": "显示 {nodes} 个节点 · {edges} 条边",
+        "nodesLabel": "所选 URL 的局部页面节点",
+        "edgesLabel": "所选 URL 的真实内链边",
+        "selected": "当前 URL",
+        "reciprocal": "双向",
+        "oneWay": "单向",
+        "emptyComplete": "完整 Crawl 中未观察到这个 URL 与其他页面之间的内链。",
+        "emptyPartial": "当前部分 Crawl 未观察到相邻内链，不能据此判断该页为孤立页。",
+        "truncated": "局部关系共有 {nodes} 个节点、{edges} 条边；当前仅显示可读范围。站点级边数仍以上方摘要为准。"
+      },
+      "inbound": {
+        "eyebrow": "入链证据",
+        "title": "哪些页面正在链接到这里",
+        "count": "{count} 个来源页面",
+        "listLabel": "当前 URL 的真实入链来源",
+        "emptyComplete": "完整 Crawl 中未观察到任何入链。",
+        "emptyPartial": "当前部分 Crawl 尚未观察到入链；这不是“0 条入链”或“孤立页面”的结论。",
+        "anchor": "锚文本：{anchor}",
+        "anchorUnavailable": "锚文本未采集",
+        "rel": "rel={rel}",
+        "observation": "Observation · {id}",
+        "truncated": "共有 {count} 个已观测来源页面；当前仅显示前几项。"
+      },
+      "recommendations": {
+        "eyebrow": "可执行补链机会",
+        "title": "建议从哪里补一条内链",
+        "count": "{count} 条建议",
+        "authority": "建议只来自同一已确认 Topic 且冻结 Crawl 中尚未观察到的链接方向；草稿 Topic 和相似 URL 不参与判断。",
+        "listLabel": "基于已确认 Topic 的补链建议",
+        "addLink": "建议补链",
+        "topicRevision": "Topic v{revision}",
+        "unavailable": "尚无已确认 Topic 或精确页面映射，因此不会生成猜测性建议。",
+        "empty": "基于当前已确认 Topic，暂无可验证的补链建议。",
+        "executionRefs": "补链建议关联的 Finding 与 Action",
+        "role": {
+          "target": "目标页面",
+          "source": "来源页面"
+        },
+        "findingRef": "Finding · {id}",
+        "actionPending": "尚未生成 Action",
+        "reviewFinding": "审核后生成补链任务",
+        "openAction": "打开 Action",
+        "noExecution": "该建议尚未关联规范 Finding 或 Action。",
+        "truncated": "当前显示 {shown} 条，共 {total} 条建议；其余建议仍保留在数据集中。"
+      },
+      "generatedAt": "内链地图生成时间"
+    },
     "ids": {
       "observation": "观测记录 ID（Observation）",
       "evidence": "证据 ID（Evidence）",
@@ -1512,6 +2148,39 @@
     "actionBinding": "行动关联",
     "findingBinding": "发现关联",
     "manualHandoff": "执行物始终由操作者控制：保存会创建新版本，不会自动发布任何改动。",
+    "executionState": {
+      "title": "交付执行实况",
+      "queueSummary": "当前交付执行状态",
+      "batchLoadError": "交付执行状态暂时不可用；列表不会用计划或草稿状态代替。",
+      "loading": "正在读取执行记录…",
+      "loadError": "暂时无法读取该交付物的执行记录。",
+      "emptyTitle": "尚无执行记录",
+      "emptyHint": "该交付物还没有状态事件；这里不会从行动计划状态推导结果。",
+      "status": {
+        "blocked": "受阻",
+        "inProgress": "执行中",
+        "completed": "已完成"
+      },
+      "phase": "当前阶段",
+      "phaseValue": {
+        "waitingForAuthorization": "等待授权",
+        "waitingForApproval": "等待批准",
+        "waitingForReview": "等待审核",
+        "implementation": "实施修复",
+        "technicalFix": "技术修复",
+        "drafting": "内容准备",
+        "qualityReview": "质量审核",
+        "delivery": "交付发布",
+        "verification": "结果验证",
+        "completed": "已完成"
+      },
+      "progress": "步骤进度",
+      "progressValue": "已完成 {completed} / {total} 个步骤",
+      "blocker": "当前阻碍",
+      "unlockCondition": "解除条件",
+      "nextStep": "下一步",
+      "historyCount": "已保留 {count} 条不可变状态记录"
+    },
     "summaryTitle": "产出概要",
     "statOutputs": "产出总数",
     "statReady": "可交付",
@@ -1691,6 +2360,7 @@
         "drawerTitle": "完整来源与证据",
         "drawerSubtitle": "本次运行共返回 {count} 条来源；这里按真实 payload 完整列出。",
         "unavailable": "该来源未提供",
+        "openSource": "在新窗口打开来源：{label}",
         "noSources": "本次运行没有返回任何研究来源。",
         "availability": {
           "available": "可用",
@@ -2041,9 +2711,10 @@
     "emptyHint": "先运行诊断并确认发现，即可生成报告。"
   },
   "results": {
-    "pageTitle": "结果",
-    "title": "复查结果",
-    "lead": "对比已确认 Action 的技术条件：先前运行与最新复查。本页仅呈现技术条件，不作流量、排名、营收或 AI 引用的判断。",
+    "pageTitle": "效果追踪",
+    "pageLead": "按 URL 查看发布前后的 GSC、GA4 与 UTM 表现；每个数值都保留来源窗口，不把相关变化写成因果结论。",
+    "title": "技术复查记录",
+    "lead": "这里仅复核已确认 Action 的技术条件；流量、排名与转化变化以上方固定窗口的真实观测为准。",
     "emptyTitle": "尚未复查",
     "emptyBody": "对已确认的 Action 运行一次复查，即可在此对比其先前与当前的技术条件。",
     "priorLabel": "先前运行观测于",
@@ -2063,6 +2734,176 @@
       "resolved": "已解决",
       "unchanged": "未改变",
       "unknown": "未知"
+    },
+    "measurement": {
+      "eyebrow": "审计前 / 审计后",
+      "title": "URL 效果与 UTM 审计",
+      "lead": "以经过验证的发布回执为分界，分别读取发布前 28 天与发布后 28 天。多个 URL 保持独立，避免把不同页面合并成一个看似漂亮但无法核验的总数。",
+      "recordCount": "{count} 个 URL 记录",
+      "loading": "正在读取可验证的改前 / 改后记录…",
+      "errorTitle": "暂时无法读取效果记录",
+      "errorBody": "技术复查与客户报告仍可使用；请重试读取 GSC、GA4 和 UTM 固定窗口。",
+      "retry": "重新读取",
+      "emptyTitle": "尚无可对比的改前 / 改后窗口",
+      "emptyBody": "交付物发布并生成可验证的 Change Receipt 后，系统会等待完整的结果窗口，再在这里显示真实变化。",
+      "selectorLabel": "选择要查看的 URL 效果记录",
+      "selectorTitle": "已追踪 URL",
+      "selectorLead": "选择不同 URL，右侧会切换到该页面自己的来源、时间窗口和指标。",
+      "detailEyebrow": "当前 URL",
+      "beforeWindow": "审计前窗口",
+      "afterWindow": "审计后窗口",
+      "changeVerifiedAt": "发布变更确认",
+      "recordedAt": "结果记录时间",
+      "receiptVerified": "已验证 {provider} 发布回执",
+      "receiptStartsClock": "Change Receipt 是结果窗口的起点；Delivery Receipt 仅作为交付时间线参考。",
+      "openReceipt": "查看发布证据",
+      "gscTitle": "自然搜索表现",
+      "gscDescription": "Google Search Console 固定窗口数据；平均排名数值越小越好。",
+      "ga4Title": "访问与转化",
+      "ga4Description": "Google Analytics 4 固定窗口数据，直接转化与助攻转化分开呈现。",
+      "geoTitle": "GEO / AI 引用",
+      "geoDescription": "只有接入可验证的平台、引用段落和查询来源后，才会在这里显示归因证据。",
+      "notAvailable": "不可用",
+      "sampleUnavailable": "样本量不可用",
+      "sampleComparison": "样本：{baseline} → {outcome}",
+      "nonCausal": "这些结果是固定时间窗口内的观测变化，用于评估方向，不代表某一篇文章、代码修复或单次发布独立造成了全部变化。",
+      "technicalVerification": "技术条件复查：",
+      "limitations": "{count} 条数据限制与说明",
+      "openCanonicalUrl": "打开当前页面",
+      "windowState": {
+        "technical_verified": "技术条件已验证",
+        "observed": "已观测",
+        "insufficient_data": "数据不足",
+        "unavailable": "不可用",
+        "regressed": "出现回退"
+      },
+      "observationState": {
+        "observed": "已观测",
+        "insufficient_data": "数据不足",
+        "unavailable": "不可用",
+        "regressed": "出现回退"
+      },
+      "sampleCoverage": {
+        "complete": "样本完整",
+        "partial": "样本不完整",
+        "none": "无可用样本"
+      },
+      "deliveryProvider": {
+        "github": "GitHub",
+        "wordpress": "WordPress"
+      },
+      "table": {
+        "metric": "指标",
+        "before": "审计前",
+        "after": "审计后",
+        "change": "变化"
+      },
+      "metric": {
+        "gscClicks": "自然搜索点击",
+        "gscImpressions": "自然搜索曝光",
+        "gscCtr": "点击率",
+        "gscAveragePosition": "GSC 平均位置",
+        "ga4Sessions": "Sessions",
+        "ga4EngagedSessions": "Engaged Sessions",
+        "ga4DirectConversions": "直接转化",
+        "ga4AssistedConversions": "助攻转化",
+        "geoTrackedQueries": "追踪查询",
+        "geoCitedQueries": "被引用查询",
+        "geoCitations": "AI 引用次数",
+        "geoCitationRate": "AI 引用率"
+      },
+      "campaign": {
+        "title": "UTM Campaign 改前 / 改后",
+        "lead": "每个 UTM identity 单独核验 Sessions、直接转化和助攻转化，不把不同 Campaign 混成一个总增长数字。",
+        "count": "{count} 个 Campaign",
+        "empty": "当前窗口没有可核验的 UTM Campaign 记录；不会用全站流量代替。",
+        "identity": "Campaign / 来源"
+      },
+      "targetKeywordRanks": {
+        "title": "目标关键词排名",
+        "lead": "只比较当前 URL 已确认目标关键词的 DataForSEO 绝对排名；GSC 平均排名仍在上方单独呈现。",
+        "loading": "正在读取目标关键词的固定窗口排名…",
+        "error": "目标关键词排名暂时无法读取；不会用 GSC 平均排名或推算值代替。",
+        "retry": "重新读取",
+        "emptyTitle": "当前 URL 暂无可比较的目标关键词",
+        "emptyBody": "确认 Topic Map 与页面目标关键词后，真实的 DataForSEO 观测会在这里进入改前 / 改后比较。",
+        "notAvailable": "不可用",
+        "improvedBy": "提升 {count} 位",
+        "regressedBy": "下降 {count} 位",
+        "unchanged": "无变化",
+        "generatedAt": "排名证据生成于 {value}",
+        "limitations": "{count} 条排名数据限制",
+        "nonCausal": "排名变化来自两个固定窗口的独立观测，不代表某一项交付物单独造成了变化。",
+        "limitation": {
+          "noConfirmedTopicMap": "当前还没有已确认的 Topic Map，因此该页面暂无受治理的目标关键词集合。",
+          "noConfirmedTargets": "当前页面还没有映射并确认目标关键词。",
+          "noCompleteComparisons": "当前没有目标关键词同时具备审计前与审计后的真实 DataForSEO 绝对排名观测。",
+          "partialComparisons": "部分目标关键词在审计前或审计后窗口缺少 DataForSEO 绝对排名观测。",
+          "noProviderDataAsOf": "DataForSEO 未提供独立的数据时点，因此这里按实际采集观测时间比较绝对排名。",
+          "unknown": "该项排名证据当前存在数据限制；系统不会用推算值或其他 URL 的排名代替。"
+        },
+        "coverage": {
+          "available": "数据完整",
+          "partial": "部分可用",
+          "stale": "数据过期",
+          "unavailable": "暂不可用"
+        },
+        "table": {
+          "keyword": "目标关键词",
+          "topic": "主题（Topic）",
+          "before": "审计前绝对排名",
+          "after": "审计后绝对排名",
+          "change": "变化"
+        }
+      },
+      "geoEvidence": {
+        "lead": "按当前 URL 的固定改前 / 改后窗口，展示真实 AI 查询、平台、采集器与直接引用证据；没有采集到的数据保持不可用，不补 0。",
+        "loading": "正在读取 GEO / AI 引用证据…",
+        "error": "GEO / AI 引用证据暂时无法读取；不会用模拟数据或推算值代替。",
+        "retry": "重新读取",
+        "phase": {
+          "baseline": "审计前引用证据",
+          "outcome": "审计后引用证据"
+        },
+        "phaseUnavailable": "不可用",
+        "phaseUnavailableBody": "当前固定窗口尚无可验证的查询与引用快照。",
+        "phaseSummary": "{queries} 条查询 · {citations} 条直接引用",
+        "citationState": {
+          "cited": "有直接引用",
+          "mentioned": "提及但未引用",
+          "unseen": "未出现",
+          "unavailable": "采集不可用"
+        },
+        "platform": {
+          "chatgpt": "ChatGPT",
+          "perplexity": "Perplexity",
+          "google_ai_overview": "Google AI Overview",
+          "gemini": "Gemini",
+          "claude": "Claude",
+          "copilot": "Microsoft Copilot"
+        },
+        "otherPlatform": "其他平台 · {provider}",
+        "platformLabel": "AI 平台",
+        "modelLabel": "模型 / 产品版本",
+        "collectorLabel": "采集器 / 版本",
+        "collectedAt": "采集时间",
+        "marketLanguage": "市场 / 语言",
+        "answerExcerpt": "回答证据摘录",
+        "citationOrdinal": "直接引用 #{ordinal}",
+        "openCitation": "打开被引用页面",
+        "answerCitationExcerpt": "回答中的引用上下文",
+        "citedPageExcerpt": "被引用页面摘录",
+        "paragraphIdentity": "被引用段落定位",
+        "noDirectCitation": "本次观测没有直接引用，不会把提及或推断记为引用。",
+        "structureTitle": "被引用与未引用内容的结构差异",
+        "structureBoundary": "仅呈现有证据约束的观察或推断，不把结构差异解释为引用原因。",
+        "structureClassification": {
+          "observation": "直接观察",
+          "inference": "受限推断"
+        },
+        "structureEvidenceExcerpt": "结构证据摘录",
+        "nonCausal": "这里呈现的是两个固定窗口中的独立观测。内容结构差异只能作为有证据约束的观察或推断，不能解释为“为什么被引用”，也不代表某一次发布造成了引用变化。"
+      }
     }
   }
 }

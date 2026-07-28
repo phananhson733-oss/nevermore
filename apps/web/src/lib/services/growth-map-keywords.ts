@@ -1,6 +1,8 @@
 import {
   GrowthMapKeywordDetailResponse,
   GrowthMapKeywordLibraryResponse,
+  KeywordGovernanceRevisionConflict,
+  ReviewKeywordRequest as ReviewKeywordRequestSchema,
   type GrowthMapCoverage,
   type GrowthMapKeywordLibraryItem,
   type GrowthMapKeywordMappedTarget,
@@ -8,9 +10,13 @@ import {
   type GrowthMapKeywordNumericMetric,
   type GrowthMapKeywordSourceOccurrence,
   type GrowthMapKeywordTextMetric,
+  type ReviewKeywordRequest,
   type SourceFreshness,
 } from "@sf/contracts";
 import {
+  KeywordGovernanceConflictError,
+  KeywordGovernanceIntegrityError,
+  KeywordGovernanceRepository,
   KeywordOccurrencesRepository,
   KeywordsRepository,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
@@ -23,6 +29,7 @@ import {
   projectPredicate,
   sameTimestamptzInstant,
   schemaTables,
+  type CurrentKeywordGovernance,
   type Executor,
   type KeywordEntityRow,
   type KeywordOccurrenceRow,
@@ -48,6 +55,17 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const GSC_TOP_QUERY_POINTER =
   /^\/valueJson\/topQueries\/([0-9]+)\/query$/u;
+const SHA256_HEX = /^[0-9a-f]{64}$/u;
+const KEYWORD_EVIDENCE_FRESHNESS_DAYS = {
+  interview_summary: 180,
+  user_review: 90,
+} as const;
+const USER_REVIEW_PLATFORMS = [
+  "app_store",
+  "g2",
+  "capterra",
+  "other",
+] as const;
 
 const NO_KEYWORDS =
   "No canonical Keyword Library entries are available on this cursor page.";
@@ -125,6 +143,7 @@ interface CanonicalSnapshotRow {
   readonly project_id: string;
   readonly site_id: string;
   readonly collection_run_id: string;
+  readonly source_connection_id: string | null;
   readonly provider: string;
   readonly dataset_key: string;
   readonly captured_at: string;
@@ -138,6 +157,7 @@ interface CanonicalCollectionRunRow {
   readonly workspace_id: string;
   readonly project_id: string;
   readonly site_id: string;
+  readonly source_connection_id: string | null;
   readonly provider: string;
   readonly operation: string;
   readonly method_version: string;
@@ -165,6 +185,22 @@ interface ProjectedOccurrence {
   readonly snapshot: CanonicalSnapshotRow | null;
 }
 
+interface InterviewSummaryEvidence {
+  readonly kind: "interview_summary";
+  readonly evidenceLabel: string;
+  readonly sourceRecordHash: string;
+}
+
+interface UserReviewEvidence {
+  readonly kind: "user_review";
+  readonly evidenceLabel: string;
+  readonly sourceRecordHash: string;
+  readonly reviewPlatform: (typeof USER_REVIEW_PLATFORMS)[number];
+  readonly sourceUrl: string | null;
+}
+
+type KeywordEvidence = InterviewSummaryEvidence | UserReviewEvidence;
+
 function corruptKeywordLibrary(): never {
   throw new ProblemError(
     "DEPENDENCY_UNAVAILABLE",
@@ -178,6 +214,28 @@ function projectNotFound(): never {
 
 function keywordNotFound(): never {
   throw new ProblemError("NOT_FOUND", "Keyword not found.");
+}
+
+function keywordRevisionConflict(
+  projectId: string,
+  keywordId: string,
+  expectedRevision: number,
+  currentRevision: number,
+): never {
+  const parsed = KeywordGovernanceRevisionConflict.safeParse({
+    kind: "revision_conflict",
+    resource: "keyword_review",
+    projectId,
+    resourceId: keywordId,
+    expectedRevision,
+    currentRevision,
+  });
+  if (!parsed.success) return corruptKeywordLibrary();
+  throw new ProblemError(
+    "STALE_REVISION",
+    "Keyword review revision is stale; refetch and retry.",
+    { current: parsed.data },
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -282,10 +340,25 @@ function canonicalProviderDataAsOf(
 
 function sourceFreshness(
   provider: string,
+  sourceKind: KeywordOccurrenceRow["source_kind"],
   providerDataAsOf: string | null,
   now: Date,
 ): SourceFreshness {
   if (providerDataAsOf === null) return "unknown";
+  if (
+    sourceKind === "interview_summary" ||
+    sourceKind === "user_review"
+  ) {
+    const captured = Date.parse(providerDataAsOf);
+    if (!Number.isFinite(captured)) return corruptKeywordLibrary();
+    const maxAge =
+      KEYWORD_EVIDENCE_FRESHNESS_DAYS[sourceKind] *
+      24 *
+      60 *
+      60 *
+      1_000;
+    return now.getTime() - captured > maxAge ? "stale" : "current";
+  }
   return isStale(provider, providerDataAsOf, now.getTime())
     ? "stale"
     : "current";
@@ -430,6 +503,7 @@ async function loadCanonicalSnapshots(
         project_id: dataSnapshots.project_id,
         site_id: dataSnapshots.site_id,
         collection_run_id: dataSnapshots.collection_run_id,
+        source_connection_id: dataSnapshots.source_connection_id,
         provider: dataSnapshots.provider,
         dataset_key: dataSnapshots.dataset_key,
         captured_at: dataSnapshots.captured_at,
@@ -475,6 +549,7 @@ async function loadCanonicalCollectionRuns(
         workspace_id: collectionRuns.workspace_id,
         project_id: collectionRuns.project_id,
         site_id: collectionRuns.site_id,
+        source_connection_id: collectionRuns.source_connection_id,
         provider: collectionRuns.provider,
         operation: collectionRuns.operation,
         method_version: collectionRuns.method_version,
@@ -676,6 +751,7 @@ function providerOccurrenceLineage(
     collectionRun.id !== snapshot.collection_run_id ||
     collectionRun.site_id !== snapshot.site_id ||
     collectionRun.provider !== snapshot.provider ||
+    collectionRun.source_connection_id !== snapshot.source_connection_id ||
     observation.snapshot_id !== snapshot.id ||
     snapshot.id !== occurrence.data_snapshot_id ||
     observation.availability !== "available" ||
@@ -749,6 +825,137 @@ function validateGscContext(
   );
 }
 
+function exactEvidenceLabel(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.trim() !== value ||
+    value.length < 1 ||
+    value.length > 200
+  ) {
+    return corruptKeywordLibrary();
+  }
+  return value;
+}
+
+function exactEvidenceRecordHash(value: unknown): string {
+  if (typeof value !== "string" || !SHA256_HEX.test(value)) {
+    return corruptKeywordLibrary();
+  }
+  return value;
+}
+
+function exactReviewPlatform(
+  value: unknown,
+): UserReviewEvidence["reviewPlatform"] {
+  if (
+    typeof value !== "string" ||
+    !USER_REVIEW_PLATFORMS.includes(
+      value as UserReviewEvidence["reviewPlatform"],
+    )
+  ) {
+    return corruptKeywordLibrary();
+  }
+  return value as UserReviewEvidence["reviewPlatform"];
+}
+
+function exactEvidenceHttpsUrl(value: unknown): string | null {
+  if (value === null) return null;
+  if (
+    typeof value !== "string" ||
+    value.trim() !== value ||
+    value.length > 2_048
+  ) {
+    return corruptKeywordLibrary();
+  }
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:") return corruptKeywordLibrary();
+    return parsed.toString();
+  } catch {
+    return corruptKeywordLibrary();
+  }
+}
+
+function validateKeywordEvidence(
+  snapshot: CanonicalSnapshotRow,
+  observation: CanonicalObservationRow,
+  occurrence: KeywordOccurrenceRow,
+): {
+  readonly evidence: KeywordEvidence;
+  readonly scopeLimitation: string;
+} {
+  if (!isRecord(observation.value_json)) return corruptKeywordLibrary();
+  const scope = snapshot.summary["keywordEvidenceScope"];
+  const timing = snapshot.summary["timing"];
+  if (
+    !isRecord(scope) ||
+    !isRecord(timing) ||
+    scope["sourceKind"] !== occurrence.source_kind ||
+    scope["marketCode"] !== occurrence.market ||
+    scope["languageTag"] !== occurrence.language_tag ||
+    observation.value_json["marketCode"] !== occurrence.market ||
+    observation.value_json["languageCode"] !== occurrence.language_tag ||
+    typeof timing["collectedAt"] !== "string" ||
+    !sameTimestamptzInstant(timing["collectedAt"], snapshot.captured_at)
+  ) {
+    return corruptKeywordLibrary();
+  }
+
+  const evidenceLabel = exactEvidenceLabel(
+    observation.value_json["evidenceLabel"],
+  );
+  const sourceRecordHash = exactEvidenceRecordHash(
+    observation.value_json["sourceRecordHash"],
+  );
+  if (occurrence.source_kind === "interview_summary") {
+    if (
+      scope["basis"] !== "customer_research" ||
+      scope["reviewPlatform"] !== undefined ||
+      observation.value_json["reviewPlatform"] !== undefined ||
+      observation.value_json["sourceUrl"] !== undefined
+    ) {
+      return corruptKeywordLibrary();
+    }
+    return {
+      evidence: {
+        kind: "interview_summary",
+        evidenceLabel,
+        sourceRecordHash,
+      },
+      scopeLimitation: boundedText(
+        `Interview-summary Keywords come from the frozen, customer-approved and de-identified research scope for market ${occurrence.market} and language ${occurrence.language_tag}; verbatim transcripts and participant identities are not projected into the Keyword Library.`,
+      ),
+    };
+  }
+
+  if (occurrence.source_kind !== "user_review") {
+    return corruptKeywordLibrary();
+  }
+  const reviewPlatform = exactReviewPlatform(
+    observation.value_json["reviewPlatform"],
+  );
+  if (
+    scope["basis"] !== "public_review_platform" ||
+    scope["reviewPlatform"] !== reviewPlatform
+  ) {
+    return corruptKeywordLibrary();
+  }
+  return {
+    evidence: {
+      kind: "user_review",
+      evidenceLabel,
+      sourceRecordHash,
+      reviewPlatform,
+      sourceUrl: exactEvidenceHttpsUrl(
+        observation.value_json["sourceUrl"] ?? null,
+      ),
+    },
+    scopeLimitation: boundedText(
+      `User-review Keywords come from a bounded ${reviewPlatform} public-review collection for market ${occurrence.market} and language ${occurrence.language_tag}; this is not the platform's complete review corpus, and review bodies or author identities are not projected into the Keyword Library.`,
+    ),
+  };
+}
+
 function projectManualOccurrence(
   occurrence: KeywordOccurrenceRow,
 ): ProjectedOccurrence {
@@ -801,6 +1008,7 @@ function projectProviderOccurrence(
   const { collectionRun, observation, snapshot } = lineage;
   let scopeLimitation: string | null;
   let importPreviewId: string | null = null;
+  let keywordEvidence: KeywordEvidence | null = null;
 
   switch (occurrence.source_kind) {
     case "csv_import": {
@@ -880,6 +1088,49 @@ function projectProviderOccurrence(
       scopeLimitation = validateGscContext(snapshot, occurrence);
       break;
     }
+    case "interview_summary":
+    case "user_review": {
+      const isInterview = occurrence.source_kind === "interview_summary";
+      const expectedDataset = isInterview
+        ? "voc.interview_summary.v1"
+        : "voc.user_review.v1";
+      const expectedOrigin = isInterview
+        ? "user_provided"
+        : "direct_public";
+      const expectedGrade = isInterview ? "C" : "B";
+      const expectedScope = isInterview
+        ? "user_provided"
+        : "provider_collection_scope";
+      if (
+        occurrence.scope_basis !== expectedScope ||
+        occurrence.source_pointer !== "/valueJson/keyword" ||
+        snapshot.provider !== "voc" ||
+        snapshot.dataset_key !== expectedDataset ||
+        snapshot.source_connection_id !== null ||
+        observation.provider !== "voc" ||
+        observation.metric_key !== "voc.keyword_evidence.v1" ||
+        observation.subject_type !== "keyword_cluster" ||
+        observation.site_page_id !== null ||
+        observation.origin !== expectedOrigin ||
+        observation.method !== "observed" ||
+        observation.grade !== expectedGrade ||
+        collectionRun.provider !== "voc" ||
+        collectionRun.operation !== "keyword_evidence_collection" ||
+        collectionRun.method_version !== expectedDataset ||
+        collectionRun.source_connection_id !== null ||
+        collectionRun.import_preview_id !== null
+      ) {
+        return corruptKeywordLibrary();
+      }
+      const projected = validateKeywordEvidence(
+        snapshot,
+        observation,
+        occurrence,
+      );
+      keywordEvidence = projected.evidence;
+      scopeLimitation = projected.scopeLimitation;
+      break;
+    }
     case "manual":
       return corruptKeywordLibrary();
     default:
@@ -888,6 +1139,7 @@ function projectProviderOccurrence(
 
   const freshness = sourceFreshness(
     snapshot.provider,
+    occurrence.source_kind,
     lineage.providerDataAsOf,
     now,
   );
@@ -932,14 +1184,60 @@ function projectProviderOccurrence(
             freshness: "unknown",
             scopeBasis: "provider_collection_scope",
           }
-        : {
+        : occurrence.source_kind === "gsc_top_query"
+          ? {
             ...common,
             sourceKind: "gsc_top_query",
             sourcePointer:
               occurrence.source_pointer ?? corruptKeywordLibrary(),
             scopeBasis: "project_context",
             scopeLimitation: scopeLimitation ?? corruptKeywordLibrary(),
-          };
+          }
+          : occurrence.source_kind === "interview_summary"
+            ? {
+                ...common,
+                sourceKind: "interview_summary",
+                collectionRunId: collectionRun.id,
+                sourcePointer: "/valueJson/keyword",
+                scopeBasis: "user_provided",
+                scopeLimitation:
+                  scopeLimitation ?? corruptKeywordLibrary(),
+                evidenceLabel:
+                  keywordEvidence?.kind === "interview_summary"
+                    ? keywordEvidence.evidenceLabel
+                    : corruptKeywordLibrary(),
+                sourceRecordHash:
+                  keywordEvidence?.kind === "interview_summary"
+                    ? keywordEvidence.sourceRecordHash
+                    : corruptKeywordLibrary(),
+              }
+            : occurrence.source_kind === "user_review"
+              ? {
+                  ...common,
+                  sourceKind: "user_review",
+                  collectionRunId: collectionRun.id,
+                  sourcePointer: "/valueJson/keyword",
+                  scopeBasis: "provider_collection_scope",
+                  scopeLimitation:
+                    scopeLimitation ?? corruptKeywordLibrary(),
+                  evidenceLabel:
+                    keywordEvidence?.kind === "user_review"
+                      ? keywordEvidence.evidenceLabel
+                      : corruptKeywordLibrary(),
+                  sourceRecordHash:
+                    keywordEvidence?.kind === "user_review"
+                      ? keywordEvidence.sourceRecordHash
+                      : corruptKeywordLibrary(),
+                  reviewPlatform:
+                    keywordEvidence?.kind === "user_review"
+                      ? keywordEvidence.reviewPlatform
+                      : corruptKeywordLibrary(),
+                  sourceUrl:
+                    keywordEvidence?.kind === "user_review"
+                      ? keywordEvidence.sourceUrl
+                      : corruptKeywordLibrary(),
+                }
+              : corruptKeywordLibrary();
   return { row: occurrence, observation, snapshot, dto };
 }
 
@@ -964,30 +1262,91 @@ function mappingReviewState(
   return corruptKeywordLibrary();
 }
 
+function assertGovernanceMirror(
+  entity: KeywordEntityRow,
+  governance: CurrentKeywordGovernance,
+  scope: ProjectScope,
+): void {
+  const current = governance.projection;
+  const reviewed = governance.reviewedProjection;
+  const decision = governance.decision;
+  if (
+    entity.workspace_id !== scope.workspaceId ||
+    entity.project_id !== scope.projectId ||
+    entity.id !== current.keywordId ||
+    current.projectId !== scope.projectId ||
+    current.currentDecisionId !== decision.decisionId ||
+    current.governanceRevision !== decision.governanceRevision ||
+    current.mappingRevision !== current.governanceRevision ||
+    entity.mapping_revision !== current.governanceRevision ||
+    entity.status !== current.status ||
+    entity.intent !== current.intent ||
+    entity.buyer_stage !== current.buyerStage ||
+    entity.cluster_key !== governance.clusterKey ||
+    entity.mapping_decision !== current.mappingDecision ||
+    entity.mapped_site_page_id !== current.mappedSitePageId ||
+    entity.mapping_review_state !== current.mappingReviewState ||
+    !sameTimestamptzInstant(entity.updated_at, current.updatedAt) ||
+    reviewed.projectId !== current.projectId ||
+    reviewed.keywordId !== current.keywordId ||
+    reviewed.governanceRevision !== current.governanceRevision ||
+    reviewed.status !== current.status ||
+    reviewed.intent !== current.intent ||
+    reviewed.buyerStage !== current.buyerStage ||
+    reviewed.topicNodeId !== current.topicNodeId ||
+    reviewed.topicModelRevision !== current.topicModelRevision ||
+    reviewed.clusterKey !== governance.clusterKey ||
+    reviewed.mappingDecision !== current.mappingDecision ||
+    reviewed.mappedSitePageId !== current.mappedSitePageId ||
+    reviewed.mappingReviewState !== current.mappingReviewState ||
+    reviewed.assignmentInvalidatedBy !==
+      current.assignmentInvalidatedBy
+  ) {
+    return corruptKeywordLibrary();
+  }
+}
+
 function mappedTarget(
   entity: KeywordEntityRow,
   rows: KeywordProjectionRows,
   scope: ProjectScope,
+  governance?: CurrentKeywordGovernance,
 ): GrowthMapKeywordMappedTarget {
-  const governance = {
-    reviewState: mappingReviewState(entity.mapping_review_state),
-    revision: entity.mapping_revision,
-    reason: null,
+  const current = governance?.projection;
+  const mappingDecision =
+    current === undefined
+      ? entity.mapping_decision
+      : current.mappingDecision;
+  const mappedSitePageId =
+    current === undefined
+      ? entity.mapped_site_page_id
+      : current.mappedSitePageId;
+  const targetGovernance = {
+    reviewState: mappingReviewState(
+      current === undefined
+        ? entity.mapping_review_state
+        : current.mappingReviewState,
+    ),
+    revision:
+      current === undefined
+        ? entity.mapping_revision
+        : current.governanceRevision,
+    reason: current?.reason ?? null,
   } as const;
-  switch (entity.mapping_decision) {
+  switch (mappingDecision) {
     case "unassigned":
-      if (entity.mapped_site_page_id !== null) return corruptKeywordLibrary();
-      return { ...governance, kind: "unassigned" };
+      if (mappedSitePageId !== null) return corruptKeywordLibrary();
+      return { ...targetGovernance, kind: "unassigned" };
     case "new_asset":
-      if (entity.mapped_site_page_id !== null) return corruptKeywordLibrary();
-      return { ...governance, kind: "new_asset" };
+      if (mappedSitePageId !== null) return corruptKeywordLibrary();
+      return { ...targetGovernance, kind: "new_asset" };
     case "existing_page": {
-      if (entity.mapped_site_page_id === null) return corruptKeywordLibrary();
-      const page = rows.sitePagesById.get(entity.mapped_site_page_id);
+      if (mappedSitePageId === null) return corruptKeywordLibrary();
+      const page = rows.sitePagesById.get(mappedSitePageId);
       if (!page) return corruptKeywordLibrary();
-      validateSitePage(page, scope, entity.mapped_site_page_id);
+      validateSitePage(page, scope, mappedSitePageId);
       return {
-        ...governance,
+        ...targetGovernance,
         kind: "existing_page",
         sitePageId: page.id,
         normalizedUrl: page.normalized_url,
@@ -1112,15 +1471,32 @@ function projectMetrics(
   };
 }
 
-function classificationLimitations(entity: KeywordEntityRow) {
+function classificationLimitations(
+  entity: KeywordEntityRow,
+  governance?: CurrentKeywordGovernance,
+) {
+  const intent =
+    governance === undefined
+      ? entity.intent
+      : governance.projection.intent;
+  const buyerStage =
+    governance === undefined
+      ? entity.buyer_stage
+      : governance.projection.buyerStage;
+  const topicNodeId =
+    governance === undefined ? null : governance.projection.topicNodeId;
+  const clusterKey =
+    governance === undefined ? entity.cluster_key : governance.clusterKey;
   return {
-    intent: entity.intent === null ? CLASSIFICATION_LIMITATIONS.intent : null,
+    intent: intent === null ? CLASSIFICATION_LIMITATIONS.intent : null,
     buyerStage:
-      entity.buyer_stage === null
+      buyerStage === null
         ? CLASSIFICATION_LIMITATIONS.buyerStage
         : null,
     cluster:
-      entity.cluster_key === null
+      topicNodeId !== null
+        ? null
+        : clusterKey === null
         ? CLASSIFICATION_LIMITATIONS.cluster
         : CLASSIFICATION_LIMITATIONS.clusterWithoutId,
   };
@@ -1162,14 +1538,24 @@ function projectItem(
   rows: KeywordProjectionRows,
   scope: ProjectScope,
   now: Date,
+  governance?: CurrentKeywordGovernance,
 ): GrowthMapKeywordLibraryItem {
   const { entity } = history;
   validateEntity(entity, scope);
+  if (governance !== undefined) {
+    assertGovernanceMirror(entity, governance, scope);
+  }
   const projected = history.rows.map((occurrence) =>
     projectOccurrence(occurrence, entity, rows, scope, now),
   );
-  const classifications = classificationLimitations(entity);
+  const classifications = classificationLimitations(entity, governance);
   const metrics = projectMetrics(projected);
+  const current = governance?.projection;
+  const topicNodeId = current?.topicNodeId ?? null;
+  const clusterKey = governance?.clusterKey ?? null;
+  if (topicNodeId !== null && clusterKey === null) {
+    return corruptKeywordLibrary();
+  }
   return {
     projectId: scope.projectId,
     keywordId: entity.id,
@@ -1178,15 +1564,17 @@ function projectItem(
     marketCode: entity.market,
     languageTag: entity.language_tag,
     queryKind: entity.query_kind,
-    status: entity.status,
-    revision: entity.mapping_revision,
-    intent: entity.intent,
-    buyerStage: entity.buyer_stage,
-    // `cluster_key` is a reviewed label, not a canonical cluster UUID. Do not
-    // fabricate an ID simply to fill the public reference shape.
-    cluster: null,
+    status: current?.status ?? entity.status,
+    revision: current?.governanceRevision ?? entity.mapping_revision,
+    intent: current === undefined ? entity.intent : current.intent,
+    buyerStage:
+      current === undefined ? entity.buyer_stage : current.buyerStage,
+    cluster:
+      topicNodeId === null || clusterKey === null
+        ? null
+        : { clusterId: topicNodeId, name: clusterKey },
     classificationLimitations: classifications,
-    mappedTarget: mappedTarget(entity, rows, scope),
+    mappedTarget: mappedTarget(entity, rows, scope, governance),
     sourceOccurrences: projected.map((occurrence) => occurrence.dto),
     metrics,
     coverage: itemCoverage({
@@ -1274,12 +1662,31 @@ async function detailInSnapshot(
   now: Date,
 ): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
   const scope = await loadActiveProject(exec, workspaceScope, projectId);
+  let governance: CurrentKeywordGovernance | null;
+  try {
+    governance = await new KeywordGovernanceRepository(exec).findCurrent(
+      scope,
+      keywordId,
+    );
+  } catch (error) {
+    if (error instanceof KeywordGovernanceIntegrityError) {
+      return corruptKeywordLibrary();
+    }
+    throw error;
+  }
+  if (!governance) return keywordNotFound();
   const entity = await new KeywordsRepository(exec).findById(scope, keywordId);
-  if (!entity) return keywordNotFound();
+  if (!entity) return corruptKeywordLibrary();
   const rows = await loadProjectionRows(exec, scope, [entity]);
   const history = rows.histories[0];
   if (!history) return corruptKeywordLibrary();
-  const data = projectItem(history, rows, scope, validNow(now));
+  const data = projectItem(
+    history,
+    rows,
+    scope,
+    validNow(now),
+    governance,
+  );
   try {
     return GrowthMapKeywordDetailResponse.parse({ projectId, data });
   } catch {
@@ -1298,5 +1705,123 @@ export async function getProjectAuditKeyword(
   return getDb().db.transaction(
     (tx) => detailInSnapshot(tx, scope, projectId, keywordId, now),
     { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
+}
+
+export interface KeywordReviewScope extends WorkspaceScope {
+  /** Server-resolved operator identity; never accepted from the request body. */
+  readonly actorId: string;
+}
+
+function mapKeywordReviewError(
+  error: unknown,
+  projectId: string,
+  keywordId: string,
+  expectedRevision: number,
+): never {
+  if (error instanceof KeywordGovernanceConflictError) {
+    switch (error.code) {
+      case "KEYWORD_NOT_FOUND":
+        return keywordNotFound();
+      case "REVISION_CONFLICT":
+        if (
+          error.expectedRevision === null ||
+          error.currentRevision === null ||
+          error.expectedRevision !== expectedRevision
+        ) {
+          return corruptKeywordLibrary();
+        }
+        return keywordRevisionConflict(
+          projectId,
+          keywordId,
+          error.expectedRevision,
+          error.currentRevision,
+        );
+      case "SITE_PAGE_NOT_FOUND":
+        throw new ProblemError(
+          "NOT_FOUND",
+          "Mapped page not found.",
+        );
+      case "TOPIC_ASSIGNMENT_INVALID":
+        throw new ProblemError(
+          "VALIDATION_ERROR",
+          "The selected Topic assignment is not active in the confirmed model revision.",
+        );
+    }
+  }
+  if (error instanceof KeywordGovernanceIntegrityError) {
+    return corruptKeywordLibrary();
+  }
+  throw error;
+}
+
+async function reviewKeywordInSnapshot(
+  exec: Executor,
+  scope: KeywordReviewScope,
+  projectId: string,
+  keywordId: string,
+  review: ReviewKeywordRequest,
+): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
+  try {
+    await new KeywordGovernanceRepository(exec).reviewKeyword(
+      { workspaceId: scope.workspaceId, projectId },
+      keywordId,
+      scope.actorId,
+      review,
+    );
+  } catch (error) {
+    mapKeywordReviewError(
+      error,
+      projectId,
+      keywordId,
+      review.expectedGovernanceRevision,
+    );
+  }
+
+  // Return the same canonical customer projection used by GET. The governance
+  // repository has already advanced the legacy read mirror and append-only
+  // decision ledger atomically inside this transaction.
+  return detailInSnapshot(
+    exec,
+    { workspaceId: scope.workspaceId },
+    projectId,
+    keywordId,
+    new Date(),
+  );
+}
+
+/** Review one Keyword's Topic/page governance without editing source history. */
+export async function reviewProjectAuditKeyword(
+  scope: KeywordReviewScope,
+  projectId: string,
+  keywordId: string,
+  body: ReviewKeywordRequest,
+  exec?: Executor,
+): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
+  if (!UUID.test(keywordId)) return keywordNotFound();
+  const parsed = ReviewKeywordRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Keyword review failed validation.",
+    );
+  }
+  if (exec) {
+    return reviewKeywordInSnapshot(
+      exec,
+      scope,
+      projectId,
+      keywordId,
+      parsed.data,
+    );
+  }
+  return getDb().db.transaction((tx) =>
+    reviewKeywordInSnapshot(
+      tx,
+      scope,
+      projectId,
+      keywordId,
+      parsed.data,
+    ),
   );
 }

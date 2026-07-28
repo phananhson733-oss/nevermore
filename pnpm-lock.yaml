@@ -226,6 +226,9 @@ importers:
       '@sf/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sf/publishing':
+        specifier: workspace:*
+        version: link:../../packages/publishing
       '@sf/sources':
         specifier: workspace:*
         version: link:../../packages/sources

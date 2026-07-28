@@ -30,6 +30,7 @@ import type {
   ActionRecheckRuleComparison,
   RecheckComparisonState,
 } from "@sf/contracts";
+import { MeasurementResultsSection } from "./_measurement-results.tsx";
 import { ReportSection } from "./_report-section.tsx";
 import styles from "./results.module.css";
 
@@ -185,7 +186,9 @@ export function ResultsClient({
     <div className={styles.page} data-results-page="">
       <header className={cx(styles.hero, styles.screenOnly)}>
         <h1 className={styles.heroTitle}>{t("pageTitle")}</h1>
+        <p className={styles.heroLead}>{t("pageLead")}</p>
       </header>
+      <MeasurementResultsSection projectId={projectId} />
       <RecheckResultsSection projectId={projectId} />
       <ReportSection
         projectId={projectId}

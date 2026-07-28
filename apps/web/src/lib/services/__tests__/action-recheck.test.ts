@@ -4,12 +4,14 @@ import {
   AsyncRunsRepository,
   AuditRunsRepository,
   CapabilityRunsRepository,
+  CompetitorsRepository,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   FindingsRepository,
   FindingTargetsRepository,
   IcpProfilesRepository,
   IdempotencyRepository,
+  KeywordsRepository,
   ProjectsRepository,
   SitesRepository,
   type DataSnapshotRow,
@@ -192,6 +194,14 @@ function mockHappyPathInputs() {
   vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
     crawlSnapshot,
   ]);
+  vi.spyOn(
+    KeywordsRepository.prototype,
+    "listDiagnosticEligible",
+  ).mockResolvedValue([]);
+  vi.spyOn(
+    CompetitorsRepository.prototype,
+    "listDiagnosticEligible",
+  ).mockResolvedValue([]);
 }
 
 beforeEach(() => {
@@ -267,9 +277,9 @@ describe("createActionRecheck transaction", () => {
     const insertQueued = vi
       .spyOn(AsyncRunsRepository.prototype, "insertQueued")
       .mockResolvedValue(queuedRun as never);
-    vi.spyOn(DiagnosticRunsRepository.prototype, "insert").mockResolvedValue(
-      undefined as never,
-    );
+    const diagnosticInsert = vi
+      .spyOn(DiagnosticRunsRepository.prototype, "insert")
+      .mockResolvedValue(undefined as never);
     vi.spyOn(CapabilityRunsRepository.prototype, "create").mockResolvedValue({
       async_run_id: runId,
     } as never);
@@ -290,6 +300,9 @@ describe("createActionRecheck transaction", () => {
       replayed: false,
       resourceRef: { type: "audit_run", id: auditRunId },
     });
+    expect(mocks.db.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "repeatable read",
+    });
     expect(insertQueued).toHaveBeenCalledTimes(1);
     expect(insertQueued.mock.calls[0]?.[0]).toMatchObject({
       kind: "diagnostic",
@@ -301,6 +314,15 @@ describe("createActionRecheck transaction", () => {
       actionId,
       targetScope: { kind: "http_status", ref: "404" },
       selectedSnapshotIds: [snapshotId],
+    });
+    expect(diagnosticInsert.mock.calls[0]?.[0]).toMatchObject({
+      inputManifest: {
+        governance: {
+          projectionVersion: "growth-governance.1.0.0",
+          keywordClusters: [],
+          competitors: [],
+        },
+      },
     });
     expect(auditCreate.mock.calls[0]?.[0]).toMatchObject({
       diagnosticRunId: runId,

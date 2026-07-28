@@ -13,13 +13,19 @@ import {
   type DataSnapshotRow,
   type WorkspaceScope,
 } from "@sf/db";
-import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import {
+  parseGovernanceProjectionV1,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+  type GovernanceProjectionV1,
+} from "@sf/engine";
 import { CRAWL_METHOD_VERSION } from "@sf/sources";
 import { CONTRACT_VERSION, type CreateDiagnosticRunRequest } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
 import { isPostgresUniqueViolation } from "./db-errors";
+import { freezeDiagnosticGovernance } from "./diagnostic-governance";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
 /**
@@ -71,6 +77,7 @@ export function buildDiagnosticFrozenInput(input: {
   };
   readonly snapshots: readonly DataSnapshotRow[];
   readonly deliveryLocale: string;
+  readonly governance: GovernanceProjectionV1;
 }): {
   readonly manifest: Record<string, unknown>;
   readonly inputHash: string;
@@ -78,6 +85,7 @@ export function buildDiagnosticFrozenInput(input: {
   const orderedSnapshots = [...input.snapshots].sort((left, right) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   );
+  const governance = parseGovernanceProjectionV1(input.governance);
   const manifest = {
     projectId: input.projectId,
     siteId: input.siteId,
@@ -90,10 +98,11 @@ export function buildDiagnosticFrozenInput(input: {
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: input.deliveryLocale,
+    governance,
   };
   return {
     manifest,
-    inputHash: contentHash(manifest as CanonicalValue),
+    inputHash: contentHash(manifest as unknown as CanonicalValue),
   };
 }
 
@@ -387,6 +396,7 @@ export async function createDiagnosticRun(
         );
       }
       assertDiagnosticSnapshotSelection(currentSnapshots);
+      const governance = await freezeDiagnosticGovernance(tx, projectScope);
 
       const frozenInput = buildDiagnosticFrozenInput({
         projectId,
@@ -398,6 +408,7 @@ export async function createDiagnosticRun(
         },
         snapshots: currentSnapshots,
         deliveryLocale: body.outputLocale,
+        governance,
       });
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
@@ -458,7 +469,7 @@ export async function createDiagnosticRun(
         location: statusUrl,
         replayed: false,
       };
-    });
+    }, { isolationLevel: "repeatable read" });
   } catch (error) {
     // Lost the active-key race: the partial unique index aborted the insert.
     if (

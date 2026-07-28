@@ -1,4 +1,5 @@
 import type { DiagnosticRule } from "../rule.ts";
+import { RULE_SET_VERSION } from "../registry.ts";
 import { techHttpStatusRule } from "./tech-http-status.ts";
 import { techCanonicalRule } from "./tech-canonical.ts";
 import { techLinkgraphRule } from "./tech-linkgraph.ts";
@@ -28,6 +29,42 @@ export const ALL_RULES: readonly DiagnosticRule[] = [
   geoEntityRule,
   geoCrawlerRule,
 ];
+
+/**
+ * The last pre-governance rule set. Historical runs pinned to this version
+ * must keep emitting CONTENT-GAP-011@1, even though the current implementation
+ * also contains the governance-aware @2 path.
+ */
+export const LEGACY_RULE_SET_VERSION = "mvp.rules.0.2.1";
+
+const legacyContentGapRule: DiagnosticRule = {
+  ...contentGapRule,
+  version: 1,
+  evaluate(ctx) {
+    if (ctx.governance !== null) {
+      throw new Error(
+        "CONTENT-GAP-011@1 cannot evaluate a governance-bearing context",
+      );
+    }
+    return contentGapRule.evaluate(ctx);
+  },
+};
+
+export const LEGACY_ALL_RULES: readonly DiagnosticRule[] = ALL_RULES.map(
+  (rule) => (rule.id === "CONTENT-GAP-011" ? legacyContentGapRule : rule),
+);
+
+/**
+ * Resolve only executors whose exact deterministic rule implementations remain
+ * shipped. Unknown versions return null so callers can fail closed.
+ */
+export function rulesForRuleSetVersion(
+  ruleSetVersion: string,
+): readonly DiagnosticRule[] | null {
+  if (ruleSetVersion === RULE_SET_VERSION) return ALL_RULES;
+  if (ruleSetVersion === LEGACY_RULE_SET_VERSION) return LEGACY_ALL_RULES;
+  return null;
+}
 
 export {
   techHttpStatusRule,

@@ -765,6 +765,84 @@ test("ready Overview renders the four current customer modules", async ({
   );
 });
 
+test("content-decay advice stays in the existing priority queue and deep-links the exact Growth Map URL", async ({
+  page,
+}) => {
+  const ready = readyScenario();
+  const scenario: OverviewScenario = {
+    ...ready,
+    workspace: overviewWorkspaceFixture({
+      frozenDiagnosticRunId: DIAGNOSTIC_RUN_ID,
+      contentDecayMonitor: {
+        version: "content-decay-monitor.v1",
+        projectionMode: "read_time",
+        scheduleState: "not_configured",
+        status: "available",
+        timezone: "UTC",
+        timezoneSource: "provider",
+        latestCheckpointMonth: "2026-06",
+        limitations: [
+          "Monthly scheduling is not connected; this is a read-time projection.",
+        ],
+        alerts: [
+          {
+            sitePageId: TOP_SITE_PAGE_ID,
+            normalizedUrl: "https://example.test/product",
+            detectedAt: "2026-06-29T08:00:00.000Z",
+            currentMonth: "2026-06",
+            triggers: ["rank_decline", "traffic_decline"],
+            rankTrend: {
+              olderMonth: "2026-04",
+              previousMonth: "2026-05",
+              currentMonth: "2026-06",
+              olderPosition: 8,
+              previousPosition: 13.1,
+              currentPosition: 18.2,
+              firstDecline: 5.1,
+              secondDecline: 5.1,
+            },
+            trafficTrend: {
+              previousMonth: "2026-05",
+              currentMonth: "2026-06",
+              previousClicks: 500,
+              currentClicks: 350,
+              changeRatio: -0.3,
+            },
+            sourceSnapshotIds: [
+              "00000000-0000-4000-8000-000000000741",
+              "00000000-0000-4000-8000-000000000742",
+              "00000000-0000-4000-8000-000000000743",
+            ],
+          },
+        ],
+      },
+    }),
+  };
+
+  await openOverview(page, scenario);
+  await page.getByRole("button", { name: "简体中文" }).click();
+
+  const priority = sectionByHeading(page, "接下来要决定、要完成什么");
+  const alert = priority.locator("[data-content-decay-alert]");
+  await expect(alert).toHaveCount(1);
+  await expect(alert).toContainText("建议内容复审");
+  await expect(alert).toContainText("连续两个月平均位置分别下降 5.1 / 5.1 位");
+  await expect(alert).toContainText("最近 28 天 clicks 环比下降 30%");
+  await expect(alert).toContainText("/product");
+  await expect(
+    alert.getByRole("link", {
+      name: "在增长地图查看需要内容复审的页面：/product",
+    }),
+  ).toHaveAttribute(
+    "href",
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${TOP_SITE_PAGE_ID}`,
+  );
+  await expect(page.locator("[data-overview-page] section")).toHaveCount(4);
+  await expect(page.getByText("自动执行内容复审", { exact: true })).toHaveCount(
+    0,
+  );
+});
+
 test("empty Overview keeps absence explicit across all four modules", async ({
   page,
 }) => {

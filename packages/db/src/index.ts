@@ -191,13 +191,34 @@ export type {
   GrowthMapUrlInventoryRow,
 } from "./repositories/growth-map.ts";
 export {
+  InternalLinkMapIntegrityError,
+  InternalLinkMapRepository,
+  MAX_INTERNAL_LINK_MAP_EXECUTION_ROWS,
+  MAX_INTERNAL_LINK_MAP_OBSERVATIONS,
+  MAX_INTERNAL_LINK_MAP_PAGE_LOOKUP,
+  MAX_INTERNAL_LINK_MAP_TOPIC_MAPPINGS,
+} from "./repositories/internal-link-map.ts";
+export type {
+  InternalLinkCrawlObservationRow,
+  InternalLinkExecutionRefRow,
+  InternalLinkMapIntegrityCode,
+  InternalLinkPageTopicAuthority,
+  InternalLinkPageTopicMapping,
+} from "./repositories/internal-link-map.ts";
+export * from "./repositories/content-decay-monitor.ts";
+export * from "./repositories/backlink-growth-map.ts";
+export {
   KeywordOccurrencesRepository,
+  MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL,
+  MAX_KEYWORD_OCCURRENCE_ENTITY_BATCH,
   MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
   normalizeKeywordIdentity,
 } from "./repositories/keyword-occurrences.ts";
 export type {
   CanonicalKeywordOccurrenceInput,
   KeywordLibraryUpsertResult,
+  KeywordOccurrenceBatchOptions,
+  KeywordOccurrenceForEntityRow,
   KeywordOccurrenceInput,
   KeywordOccurrenceListPage,
   KeywordOccurrenceRow,
@@ -213,10 +234,12 @@ export {
 export type { TopicClusterSupportingFindingRow } from "./repositories/topic-clusters.ts";
 export {
   KeywordsRepository,
+  MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
   MAX_KEYWORD_ENTITY_BATCH,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
 } from "./repositories/keywords.ts";
 export type {
+  DiagnosticKeywordEntityReadOptions,
   KeywordEntityListOptions,
   KeywordEntityListPage,
   KeywordEntityRow,
@@ -225,10 +248,19 @@ export type {
   KeywordReviewMappingInput,
   KeywordStatus,
 } from "./repositories/keywords.ts";
+export * from "./repositories/keyword-governance.ts";
+export * from "./repositories/keyword-rank-history.ts";
+export * from "./repositories/measurement-keyword-ranks.ts";
+export * from "./repositories/keyword-relations.ts";
+export * from "./repositories/topic-cluster-resolver.ts";
+export * from "./repositories/topic-models.ts";
+export * from "./repositories/topic-model-insights.ts";
 export {
   CompetitorsRepository,
+  MAX_COMPETITOR_ORIGIN_BATCH_TOTAL,
   MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
   MAX_COMPETITOR_PAGE_SIZE,
+  MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
 } from "./repositories/competitors.ts";
 export type {
   CompetitorAnalysisScope,
@@ -236,6 +268,7 @@ export type {
   CompetitorListOptions,
   CompetitorListPage,
   CompetitorOriginInput,
+  CompetitorOriginBatchOptions,
   CompetitorOriginKind,
   CompetitorOriginRow,
   CompetitorOriginUpsertResult,
@@ -282,6 +315,116 @@ export type {
   ArtifactRevisionRow,
   ArtifactListPage,
 } from "./repositories/execution-artifacts.ts";
+export {
+  ActionExecutionStateConflictError,
+  ActionExecutionStateIntegrityError,
+  ActionExecutionStateRepository,
+  actionExecutionStateRequestHash,
+  actionStepDefinitionRequestHash,
+} from "./repositories/action-execution-state.ts";
+export {
+  addCalendarMonthUtc,
+  CompetitorMonitorRepository,
+} from "./repositories/competitor-monitor.ts";
+export type {
+  CompetitorMonitorContextRow,
+  CompetitorMonitorDuePlan,
+  CompetitorMonitorLibraryRow,
+  CompetitorMonitorRunRow,
+  CompetitorMonitorSettingRow,
+  CompetitorMonitorSignalRow,
+  CompetitorRankFactRow,
+  ConfirmedTopicKeywordRow,
+  InsertCompetitorMonitorSignal,
+} from "./repositories/competitor-monitor.ts";
+export type {
+  ActionExecutionStateClock,
+  ActionExecutionStateConflictCode,
+  ActionExecutionStateIntegrityCode,
+  RegisterActionStepDefinitionInput,
+  RegisterActionStepDefinitionResult,
+} from "./repositories/action-execution-state.ts";
+export {
+  ArtifactApprovalConflictError,
+  ArtifactApprovalsRepository,
+} from "./repositories/artifact-approvals.ts";
+export type {
+  ArtifactApprovalClock,
+  ArtifactApprovalErrorCode,
+  ArtifactApprovalEventKind,
+  ArtifactApprovalEventRow,
+} from "./repositories/artifact-approvals.ts";
+export {
+  DeliveryAuthorizationGrantConflictError,
+  DeliveryAuthorizationGrantsRepository,
+  DeliveryConnectionConflictError,
+  DeliveryConnectionsRepository,
+  MAX_PUBLICATION_DESTINATION_HEADS,
+  MAX_PUBLICATION_DESTINATION_REVISIONS,
+  PublicationAlreadyActiveError,
+  PublicationIdempotencyConflictError,
+  PublicationInvariantError,
+  PublicationsRepository,
+  publicationActiveKey,
+  publicationRequestHash,
+} from "./repositories/publications.ts";
+export type {
+  CreatePublicationAttemptTransaction,
+  DeliveryAuthorizationGrantErrorCode,
+  DeliveryAuthorizationGrantRow,
+  DeliveryAuthorizationGrantState,
+  DeliveryAuthorizationPurpose,
+  PublicationAttemptKind,
+  PublicationAttemptExecutionRead,
+  PublicationAttemptRow,
+  PublicationAttemptTransactionResult,
+  PublicationClock,
+  PublicationDestinationHeadListOptions,
+  PublicationDestinationHeadListPage,
+  PublicationDestinationRevisionListOptions,
+  PublicationDestinationRow,
+  PublicationDestinationState,
+  PublicationExecutionReadOptions,
+  PublicationProviderKind,
+  PublicationReceiptKind,
+  PublicationReceiptRow,
+  PublicationReplay,
+  PublicationRepositoryDependencies,
+  ResolvedPublicationAttemptFacts,
+} from "./repositories/publications.ts";
+export {
+  MAX_MEASUREMENT_WINDOW_HISTORY,
+  MeasurementRunAlreadyActiveError,
+  MeasurementRunAlreadyCompletedError,
+  MeasurementRunIdempotencyConflictError,
+  MeasurementWindowInvariantError,
+  MeasurementWindowsRepository,
+  measurementWindowResultHash,
+} from "./repositories/measurement-windows.ts";
+export type {
+  AppendMeasurementWindowInput,
+  AppendMeasurementWindowResult,
+  CreateMeasurementRunTransaction,
+  MeasurementAuthorityReadOptions,
+  MeasurementChangeReceiptAuthority,
+  MeasurementObservationLineage,
+  MeasurementProviderEvidence,
+  MeasurementProviderEvidenceInput,
+  MeasurementRepositoryDependencies,
+  MeasurementRunTransactionResult,
+  MeasurementWindowHistoryOptions,
+  ResolvedMeasurementRunFacts,
+} from "./repositories/measurement-windows.ts";
+export {
+  GeoCitationAuthorityError,
+  GeoCitationAuthorityRepository,
+} from "./repositories/geo-citations.ts";
+export type {
+  AppendGeoCitationBatchInput,
+  AppendGeoCitationBatchResult,
+  GeoCitationAuthorityClock,
+  GeoCitationAuthorityErrorCode,
+} from "./repositories/geo-citations.ts";
 export { AnalysisInvocationsRepository } from "./repositories/analysis-invocations.ts";
 export type { AnalysisInvocationTask } from "./repositories/analysis-invocations.ts";
 export { ExportBundlesRepository } from "./repositories/export-bundles.ts";
@@ -310,6 +453,7 @@ export {
 } from "./queue.ts";
 export type {
   QueueName,
+  EnqueueRunOptions,
   RunJobPayload,
   BossOptions,
   Job,

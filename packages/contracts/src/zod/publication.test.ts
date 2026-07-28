@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   CreatePublicationAttemptRequest,
   CreatePublicationRollbackAttemptRequest,
+  IssuePublicationPreviewRequest,
+  IssuePublicationPreviewResponse,
+  IssuePublicationRollbackPreviewRequest,
+  IssuePublicationRollbackPreviewResponse,
   PublicationAttempt,
   PublicationAttemptAccepted,
   PublicationChangeReceipt,
@@ -12,6 +16,8 @@ import {
   PublicationRollbackPlan,
   PublicationState,
   ReconcilePublicationAttemptRequest,
+  RevokePublicationPreviewRequest,
+  RevokePublicationPreviewResponse,
 } from "./publication.ts";
 
 const ids = {
@@ -23,12 +29,15 @@ const ids = {
   asyncRun: "00000000-0000-4000-8000-000000000206",
   authorization: "00000000-0000-4000-8000-000000000207",
   destination: "00000000-0000-4000-8000-000000000208",
+  destinationRow: "00000000-0000-4000-8000-000000000217",
+  previewEvent: "00000000-0000-4000-8000-000000000218",
   receipt: "00000000-0000-4000-8000-000000000209",
   revision: "00000000-0000-4000-8000-000000000210",
   rollbackGrant: "00000000-0000-4000-8000-000000000211",
   sourceAttempt: "00000000-0000-4000-8000-000000000212",
   attempt: "00000000-0000-4000-8000-000000000213",
   site: "00000000-0000-4000-8000-000000000214",
+  terminalPreviewEvent: "00000000-0000-4000-8000-000000000219",
 };
 const artifactText = "# Customer onboarding\n";
 const sha256Utf8 = (value: string) =>
@@ -40,6 +49,9 @@ const artifactContentHash = sha256Utf8(
 const contentChecksum = sha256Utf8(artifactText);
 const qaChecksum = "b".repeat(64);
 const requestHash = "c".repeat(64);
+const previewFactsHash = "d".repeat(64);
+const previewRef =
+  "pvw_00000000-0000-4000-8000-000000000218";
 
 const approvalSnapshot = {
   approvalEventId: ids.approval,
@@ -282,6 +294,275 @@ describe("publication and rollback client requests", () => {
     expect(
       ReconcilePublicationAttemptRequest.safeParse({
         probeFacts: { providerAccepted: true },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("publication preview authority contracts", () => {
+  const publishIssueRequest = {
+    destinationRef: ids.destination,
+    expectedDestinationRevision: 1,
+    approvalEventId: ids.approval,
+    idempotencyKey: "publication-preview-issue-1",
+  };
+  const rollbackIssueRequest = {
+    destinationRef: ids.destination,
+    expectedDestinationRevision: 1,
+    sourcePublicationAttemptId: ids.sourceAttempt,
+    sourceChangeReceiptId: ids.receipt,
+    idempotencyKey: "publication-rollback-preview-issue-1",
+  };
+  const commonIssuedLineage = {
+    previewEventId: ids.previewEvent,
+    previewRef,
+    eventKind: "issued" as const,
+    factsSchemaVersion: "publication-preview-facts.v1",
+    siteId: ids.site,
+    destinationId: ids.destinationRow,
+    destinationRef: ids.destination,
+    destinationRevision: 1,
+    providerKind: "github" as const,
+    targetRef: "content/blog/customer-onboarding.md",
+    actionId: ids.action,
+    artifactId: ids.artifact,
+    artifactRevisionId: ids.revision,
+    artifactRevision: 3,
+    artifactContentHash,
+    artifactApprovalEventId: ids.approval,
+    rollbackPlan,
+    previewChecksum: artifactContentHash,
+    contentChecksum,
+    factsHash: previewFactsHash,
+    expiresAt: "2026-07-27T09:30:00Z",
+    createdAt: "2026-07-27T09:20:00Z",
+  };
+  const publishIssued = {
+    ...commonIssuedLineage,
+    previewKind: "publish" as const,
+    sourcePublicationAttemptId: null,
+    sourceChangeReceiptId: null,
+    remotePrecondition: {
+      kind: "must_match" as const,
+      revision: "base-sha",
+    },
+  };
+  const rollbackIssued = {
+    ...commonIssuedLineage,
+    previewKind: "rollback" as const,
+    sourcePublicationAttemptId: ids.sourceAttempt,
+    sourceChangeReceiptId: ids.receipt,
+    remotePrecondition: {
+      kind: "must_match" as const,
+      revision: rollbackPlan.expectedCurrentRemoteRevision,
+    },
+  };
+
+  it("accepts only publish preview selection intent from the client", () => {
+    expect(IssuePublicationPreviewRequest.parse(publishIssueRequest)).toEqual(
+      publishIssueRequest,
+    );
+
+    for (const [field, value] of [
+      ["previewEventId", ids.previewEvent],
+      ["previewRef", previewRef],
+      ["previewKind", "publish"],
+      ["factsSchemaVersion", "publication-preview-facts.v1"],
+      ["siteId", ids.site],
+      ["destinationId", ids.destinationRow],
+      ["providerKind", "github"],
+      ["targetRef", "content/blog/customer-onboarding.md"],
+      ["actionId", ids.action],
+      ["artifactId", ids.artifact],
+      ["artifactRevisionId", ids.revision],
+      ["artifactRevision", 3],
+      ["artifactContentHash", artifactContentHash],
+      ["providerPlan", { providerKind: "github", operation: "publish" }],
+      [
+        "remotePrecondition",
+        { kind: "must_match", revision: "base-sha" },
+      ],
+      ["rollbackPlan", rollbackPlan],
+      ["previewChecksum", artifactContentHash],
+      ["contentChecksum", contentChecksum],
+      ["factsHash", previewFactsHash],
+      ["expiresAt", "2026-07-27T09:30:00Z"],
+      ["eventActorId", ids.actor],
+      ["actorId", ids.actor],
+      ["requestHash", requestHash],
+      ["sourcePublicationAttemptId", ids.sourceAttempt],
+      ["sourceChangeReceiptId", ids.receipt],
+    ] as const) {
+      expect(
+        IssuePublicationPreviewRequest.safeParse({
+          ...publishIssueRequest,
+          [field]: value,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("accepts only rollback source selection intent from the client", () => {
+    expect(
+      IssuePublicationRollbackPreviewRequest.parse(rollbackIssueRequest),
+    ).toEqual(rollbackIssueRequest);
+
+    for (const [field, value] of [
+      ["previewEventId", ids.previewEvent],
+      ["previewRef", previewRef],
+      ["previewKind", "rollback"],
+      ["factsSchemaVersion", "publication-preview-facts.v1"],
+      ["approvalEventId", ids.approval],
+      ["siteId", ids.site],
+      ["destinationId", ids.destinationRow],
+      ["providerKind", "github"],
+      ["targetRef", "content/blog/customer-onboarding.md"],
+      ["artifactContentHash", artifactContentHash],
+      ["expectedCurrentRemoteRevision", "merged-sha"],
+      ["reason", "Restore the last verified live version."],
+      ["providerPlan", { providerKind: "github", operation: "rollback" }],
+      [
+        "remotePrecondition",
+        { kind: "must_match", revision: "merged-sha" },
+      ],
+      ["rollbackPlan", rollbackPlan],
+      ["previewChecksum", artifactContentHash],
+      ["contentChecksum", contentChecksum],
+      ["factsHash", previewFactsHash],
+      ["expiresAt", "2026-07-27T09:30:00Z"],
+      ["eventActorId", ids.actor],
+      ["actorId", ids.actor],
+      ["requestHash", requestHash],
+    ] as const) {
+      expect(
+        IssuePublicationRollbackPreviewRequest.safeParse({
+          ...rollbackIssueRequest,
+          [field]: value,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("returns strict customer-safe publish and rollback lineage", () => {
+    expect(IssuePublicationPreviewResponse.parse(publishIssued)).toEqual(
+      publishIssued,
+    );
+    expect(
+      IssuePublicationRollbackPreviewResponse.parse(rollbackIssued),
+    ).toEqual(rollbackIssued);
+
+    for (const [field, value] of [
+      ["providerPlan", { providerKind: "github", credentialRef: "secret" }],
+      ["eventActorId", ids.actor],
+      ["requestHash", requestHash],
+      ["idempotencyKey", publishIssueRequest.idempotencyKey],
+    ] as const) {
+      expect(
+        IssuePublicationPreviewResponse.safeParse({
+          ...publishIssued,
+          [field]: value,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects divergent or temporally invalid frozen lineage", () => {
+    expect(
+      IssuePublicationPreviewResponse.safeParse({
+        ...publishIssued,
+        previewRef: "preview://legacy/ref",
+      }).success,
+    ).toBe(false);
+    expect(
+      IssuePublicationPreviewResponse.safeParse({
+        ...publishIssued,
+        previewChecksum: "e".repeat(64),
+      }).success,
+    ).toBe(false);
+    expect(
+      IssuePublicationPreviewResponse.safeParse({
+        ...publishIssued,
+        rollbackPlan: {
+          ...rollbackPlan,
+          providerKind: "wordpress",
+          strategy: "wordpress_restore_revision",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      IssuePublicationPreviewResponse.safeParse({
+        ...publishIssued,
+        expiresAt: publishIssued.createdAt,
+      }).success,
+    ).toBe(false);
+    expect(
+      IssuePublicationRollbackPreviewResponse.safeParse({
+        ...rollbackIssued,
+        remotePrecondition: {
+          kind: "must_not_exist",
+          revision: null,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      IssuePublicationRollbackPreviewResponse.safeParse({
+        ...rollbackIssued,
+        remotePrecondition: {
+          kind: "must_match",
+          revision: "different-current-revision",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      IssuePublicationPreviewResponse.safeParse({
+        ...publishIssued,
+        sourcePublicationAttemptId: ids.sourceAttempt,
+      }).success,
+    ).toBe(false);
+    expect(
+      IssuePublicationRollbackPreviewResponse.safeParse({
+        ...rollbackIssued,
+        sourceChangeReceiptId: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps preview identity in the revoke path and body as intent only", () => {
+    const request = {
+      reason: "The destination changed after preview generation.",
+      idempotencyKey: "publication-preview-revoke-1",
+    };
+    const response = {
+      terminalEventId: ids.terminalPreviewEvent,
+      eventKind: "revoked" as const,
+      supersededPreviewEventId: ids.previewEvent,
+      previewRef,
+      createdAt: "2026-07-27T09:25:00Z",
+    };
+
+    expect(RevokePublicationPreviewRequest.parse(request)).toEqual(request);
+    expect(RevokePublicationPreviewResponse.parse(response)).toEqual(
+      response,
+    );
+    for (const [field, value] of [
+      ["previewEventId", ids.previewEvent],
+      ["previewRef", previewRef],
+      ["eventKind", "revoked"],
+      ["eventActorId", ids.actor],
+      ["factsHash", previewFactsHash],
+      ["providerPlan", { providerKind: "github" }],
+    ] as const) {
+      expect(
+        RevokePublicationPreviewRequest.safeParse({
+          ...request,
+          [field]: value,
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      RevokePublicationPreviewResponse.safeParse({
+        ...response,
+        eventActorId: ids.actor,
       }).success,
     ).toBe(false);
   });

@@ -32,6 +32,7 @@ import {
   type GrowthAuditAcceptedResult,
 } from "./audit-runs";
 import { buildDiagnosticFrozenInput } from "./diagnostics";
+import { freezeDiagnosticGovernance } from "./diagnostic-governance";
 import { isPostgresUniqueViolation } from "./db-errors";
 import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
 
@@ -257,20 +258,22 @@ export async function createActionRecheck(
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
   const boss = await getBoss();
   try {
-    return await db.transaction((tx) =>
-      runRecheckTransaction({
-        tx,
-        boss,
-        scope,
-        projectId,
-        actorId,
-        idempotencyKey,
-        activeKey,
-        requestHash,
-        expiresAt,
-        body,
-        context,
-      }),
+    return await db.transaction(
+      (tx) =>
+        runRecheckTransaction({
+          tx,
+          boss,
+          scope,
+          projectId,
+          actorId,
+          idempotencyKey,
+          activeKey,
+          requestHash,
+          expiresAt,
+          body,
+          context,
+        }),
+      { isolationLevel: "repeatable read" },
     );
   } catch (error) {
     if (isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")) {
@@ -376,12 +379,17 @@ async function persistRecheckRun(
 ): Promise<ActionRecheckAcceptedResult> {
   const { tx, scope, projectId, actorId, body, context } = input;
   const selectedSnapshotIds = [inputs.crawlSnapshot.id];
+  const governance = await freezeDiagnosticGovernance(tx, {
+    workspaceId: scope.workspaceId,
+    projectId,
+  });
   const frozen = buildDiagnosticFrozenInput({
     projectId,
     siteId: inputs.siteId,
     icp: inputs.icp,
     snapshots: [inputs.crawlSnapshot],
     deliveryLocale: context.outputLocale,
+    governance,
   });
   const capabilityManifestHash = contentHash({
     capabilityId: CAPABILITY_ID,

@@ -154,7 +154,7 @@ async function loadReadContext(
   );
   if (!run) {
     throw new ProblemError(
-      "NOT_FOUND",
+      "GROWTH_MAP_AUDIT_NOT_FOUND",
       "No completed Growth Map audit is available for this project.",
     );
   }

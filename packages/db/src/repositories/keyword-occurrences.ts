@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { canonicalUtcTimestamptz } from "../instant.ts";
 import {
   clientProjects,
+  keywordEntities,
   keywordEntitySources,
   keywordOccurrences,
 } from "../schema.ts";
@@ -16,6 +17,8 @@ export type KeywordSourceKind =
   | "csv_import"
   | "dataforseo_ranked"
   | "gsc_top_query"
+  | "interview_summary"
+  | "user_review"
   | "manual";
 export type KeywordScopeBasis =
   | "provider_collection_scope"
@@ -61,6 +64,22 @@ export type CanonicalKeywordOccurrenceInput =
           readonly scopeBasis: "project_context";
           readonly sourcePointer: string;
         }
+      | {
+          readonly manualEntryId: null;
+          readonly dataSnapshotId: string;
+          readonly normalizedObservationId: string;
+          readonly sourceKind: "interview_summary";
+          readonly scopeBasis: "user_provided";
+          readonly sourcePointer: "/valueJson/keyword";
+        }
+      | {
+          readonly manualEntryId: null;
+          readonly dataSnapshotId: string;
+          readonly normalizedObservationId: string;
+          readonly sourceKind: "user_review";
+          readonly scopeBasis: "provider_collection_scope";
+          readonly sourcePointer: "/valueJson/keyword";
+        }
     );
 
 export type ManualKeywordOccurrenceInput = KeywordOccurrenceInputCommon & {
@@ -102,12 +121,23 @@ export interface KeywordOccurrenceListPage {
   readonly nextCursor: string | null;
 }
 
+export interface KeywordOccurrenceForEntityRow extends KeywordOccurrenceRow {
+  readonly keyword_entity_id: string;
+}
+
+export interface KeywordOccurrenceBatchOptions {
+  readonly limitPerEntity: number;
+  readonly totalLimit: number;
+}
+
 export interface KeywordLibraryUpsertResult {
   readonly occurrenceId: string;
   readonly entityId: string;
 }
 
 export const MAX_KEYWORD_OCCURRENCE_PAGE_SIZE = 100;
+export const MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL = 10_000;
+export const MAX_KEYWORD_OCCURRENCE_ENTITY_BATCH = 5_000;
 const MAX_KEYWORD_LENGTH = 500;
 const MAX_SOURCE_REF_LENGTH = 2048;
 const UUID =
@@ -223,9 +253,11 @@ function assertInput(input: KeywordOccurrenceInput): {
     throw new RangeError("sourcePointer is not supported for sourceKind");
   }
   const expectedScopeBasis: Exclude<KeywordScopeBasis, "manual"> =
-    input.sourceKind === "csv_import"
+    input.sourceKind === "csv_import" ||
+    input.sourceKind === "interview_summary"
       ? "user_provided"
-      : input.sourceKind === "dataforseo_ranked"
+      : input.sourceKind === "dataforseo_ranked" ||
+          input.sourceKind === "user_review"
         ? "provider_collection_scope"
         : "project_context";
   if (input.scopeBasis !== expectedScopeBasis) {
@@ -270,6 +302,46 @@ function parseUpsertResult(value: unknown): KeywordLibraryUpsertResult {
     throw new Error("keyword library upsert returned an invalid result");
   }
   return { occurrenceId: row.occurrence_id, entityId: row.entity_id };
+}
+
+function assertOccurrenceBatch(
+  entityIds: readonly string[],
+  options: KeywordOccurrenceBatchOptions,
+): string[] {
+  if (entityIds.length > MAX_KEYWORD_OCCURRENCE_ENTITY_BATCH) {
+    throw new RangeError(
+      `entityIds must contain at most ${MAX_KEYWORD_OCCURRENCE_ENTITY_BATCH} ids`,
+    );
+  }
+  const unique = new Set<string>();
+  for (const entityId of entityIds) {
+    if (!UUID.test(entityId)) {
+      throw new RangeError("entityIds must contain only UUIDs");
+    }
+    if (unique.has(entityId)) {
+      throw new RangeError("entityIds must contain unique ids");
+    }
+    unique.add(entityId);
+  }
+  if (
+    !Number.isSafeInteger(options.limitPerEntity) ||
+    options.limitPerEntity < 1 ||
+    options.limitPerEntity > MAX_KEYWORD_OCCURRENCE_PAGE_SIZE
+  ) {
+    throw new RangeError(
+      `limitPerEntity must be between 1 and ${MAX_KEYWORD_OCCURRENCE_PAGE_SIZE}`,
+    );
+  }
+  if (
+    !Number.isSafeInteger(options.totalLimit) ||
+    options.totalLimit < 1 ||
+    options.totalLimit > MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL
+  ) {
+    throw new RangeError(
+      `totalLimit must be between 1 and ${MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL}`,
+    );
+  }
+  return [...unique].sort();
 }
 
 export class KeywordOccurrencesRepository extends Repository {
@@ -402,5 +474,88 @@ export class KeywordOccurrencesRepository extends Repository {
           ? encodeTimestampUuidCursor(last.created_at, last.id)
           : null,
     };
+  }
+
+  /**
+   * One project-scoped query for a whole frozen entity set. The window keeps a
+   * per-entity sentinel while the outer limit keeps the complete manifest read
+   * bounded independently of entity count.
+   */
+  async listForEntityIds(
+    scope: ProjectScope,
+    entityIds: readonly string[],
+    options: KeywordOccurrenceBatchOptions,
+  ): Promise<KeywordOccurrenceForEntityRow[]> {
+    const ids = assertOccurrenceBatch(entityIds, options);
+    if (ids.length === 0) return [];
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      with ranked_keyword_occurrences as (
+        select
+          ${keywordEntitySources.keyword_entity_id} as keyword_entity_id,
+          ${keywordOccurrences.id} as id,
+          ${keywordOccurrences.workspace_id} as workspace_id,
+          ${keywordOccurrences.project_id} as project_id,
+          ${keywordOccurrences.data_snapshot_id} as data_snapshot_id,
+          ${keywordOccurrences.normalized_observation_id} as normalized_observation_id,
+          ${keywordOccurrences.display_keyword} as display_keyword,
+          ${keywordOccurrences.normalized_keyword} as normalized_keyword,
+          ${keywordOccurrences.market} as market,
+          ${keywordOccurrences.language_tag} as language_tag,
+          ${keywordOccurrences.query_kind} as query_kind,
+          ${keywordOccurrences.source_kind} as source_kind,
+          ${keywordOccurrences.scope_basis} as scope_basis,
+          ${keywordOccurrences.source_pointer} as source_pointer,
+          ${keywordOccurrences.source_ref} as source_ref,
+          ${keywordOccurrences.collected_at}::text as collected_at,
+          ${keywordOccurrences.provider_data_as_of}::text as provider_data_as_of,
+          ${keywordOccurrences.created_at}::text as created_at,
+          row_number() over (
+            partition by ${keywordEntitySources.keyword_entity_id}
+            order by ${keywordOccurrences.created_at} desc, ${keywordOccurrences.id} desc
+          ) as entity_row_number
+        from ${keywordEntitySources}
+        inner join ${keywordOccurrences}
+          on ${keywordOccurrences.id} = ${keywordEntitySources.keyword_occurrence_id}
+         and ${keywordOccurrences.workspace_id} = ${keywordEntitySources.workspace_id}
+         and ${keywordOccurrences.project_id} = ${keywordEntitySources.project_id}
+        inner join ${keywordEntities}
+          on ${keywordEntities.id} = ${keywordEntitySources.keyword_entity_id}
+         and ${keywordEntities.workspace_id} = ${keywordEntitySources.workspace_id}
+         and ${keywordEntities.project_id} = ${keywordEntitySources.project_id}
+        inner join ${clientProjects}
+          on ${clientProjects.id} = ${keywordEntitySources.project_id}
+         and ${clientProjects.workspace_id} = ${keywordEntitySources.workspace_id}
+        where ${keywordEntitySources.workspace_id} = ${scope.workspaceId}
+          and ${keywordEntitySources.project_id} = ${scope.projectId}
+          and ${clientProjects.archived_at} is null
+          and ${keywordEntitySources.keyword_entity_id} in (
+            ${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}
+          )
+      )
+      select
+        keyword_entity_id,
+        id,
+        workspace_id,
+        project_id,
+        data_snapshot_id,
+        normalized_observation_id,
+        display_keyword,
+        normalized_keyword,
+        market,
+        language_tag,
+        query_kind,
+        source_kind,
+        scope_basis,
+        source_pointer,
+        source_ref,
+        collected_at,
+        provider_data_as_of,
+        created_at
+      from ranked_keyword_occurrences
+      where entity_row_number <= ${options.limitPerEntity}
+      order by keyword_entity_id asc, created_at desc, id desc
+      limit ${options.totalLimit + 1}
+    `);
+    return result.rows as unknown as KeywordOccurrenceForEntityRow[];
   }
 }

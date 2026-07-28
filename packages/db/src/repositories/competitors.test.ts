@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
+  MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION,
+  MAX_POSTGRES_INTEGER_REVISION,
+} from "@sf/contracts";
+import {
   CompetitorsRepository,
+  MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
+  MAX_COMPETITOR_ORIGIN_BATCH_TOTAL,
+  MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
   MAX_COMPETITOR_PAGE_SIZE,
   type CompetitorEntityRow,
   type CompetitorOriginInput,
@@ -284,6 +291,78 @@ describe("CompetitorsRepository", () => {
     expect(predicate.params).toContain("candidate");
   });
 
+  it("reads only approved diagnostic competitor facts with one sentinel", async () => {
+    const db = new FakeExecutor();
+    const approved = {
+      ...entity,
+      review_status: "approved",
+      relationship: "direct",
+      revision: 1,
+    } as const satisfies CompetitorEntityRow;
+    db.enqueue([approved]);
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(
+      repo.listDiagnosticEligible(scope, {
+        limit: MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
+      }),
+    ).resolves.toEqual([approved]);
+
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"workspace_id" = $');
+    expect(predicate.sql).toContain('"project_id" = $');
+    expect(predicate.sql).toContain('"archived_at" is null');
+    expect(predicate.params).toContain("approved");
+    expect(db.last("limit").args).toEqual([
+      MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
+    ]);
+  });
+
+  it("batch-loads bounded origins for many competitors in one project-scoped query", async () => {
+    const db = new FakeExecutor();
+    const secondId = "00000000-0000-4000-8000-000000000011";
+    const rows = [
+      {
+        id: "00000000-0000-4000-8000-000000000030",
+        competitor_id: entity.id,
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000031",
+        competitor_id: secondId,
+      },
+    ];
+    db.enqueue({ rows });
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(
+      repo.listOriginsForCompetitorIds(scope, [secondId, entity.id], {
+        limitPerEntity: MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
+        totalLimit: MAX_COMPETITOR_ORIGIN_BATCH_TOTAL,
+      }),
+    ).resolves.toEqual(rows);
+
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.sql).toMatch(/row_number\(\) over\s*\(\s*partition by/iu);
+    expect(compiled.sql).toContain('"workspace_id" = $');
+    expect(compiled.sql).toContain('"project_id" = $');
+    expect(compiled.sql).toContain('"archived_at" is null');
+    expect(compiled.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        entity.id,
+        secondId,
+        MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
+        MAX_COMPETITOR_ORIGIN_BATCH_TOTAL + 1,
+      ]),
+    );
+    expect(db.calls.filter((call) => call.method === "execute")).toHaveLength(1);
+  });
+
   it("reviews governance at the expected revision without writing any source column", async () => {
     const db = new FakeExecutor();
     db.enqueue([
@@ -318,6 +397,46 @@ describe("CompetitorsRepository", () => {
     );
     expect(predicate.sql).toContain('"revision" = $');
     expect(predicate.sql).toContain('"archived_at" is null');
+  });
+
+  it("allows only the final incrementable competitor CAS revision", async () => {
+    const db = new FakeExecutor();
+    db.enqueue([
+      {
+        ...entity,
+        revision: MAX_POSTGRES_INTEGER_REVISION,
+      },
+    ]);
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(
+      repo.review(scope, entity.id, {
+        expectedRevision:
+          MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION,
+        name: null,
+        reviewStatus: "candidate",
+        relationship: null,
+        analysisScope: [],
+      }),
+    ).resolves.toMatchObject({
+      revision: MAX_POSTGRES_INTEGER_REVISION,
+    });
+    expect(db.last("set").args[0]).toMatchObject({
+      revision: MAX_POSTGRES_INTEGER_REVISION,
+    });
+
+    const rejected = new FakeExecutor();
+    const rejectedRepo = new CompetitorsRepository(rejected as never);
+    await expect(
+      rejectedRepo.review(scope, entity.id, {
+        expectedRevision: MAX_POSTGRES_INTEGER_REVISION,
+        name: null,
+        reviewStatus: "candidate",
+        relationship: null,
+        analysisScope: [],
+      }),
+    ).rejects.toThrow(/incrementable PostgreSQL integer range/u);
+    expect(rejected.calls).toEqual([]);
   });
 
   it("rejects invalid governance and unbounded reads before SQL", async () => {
@@ -355,6 +474,23 @@ describe("CompetitorsRepository", () => {
       repo.listByProject(scope, {
         limit: MAX_COMPETITOR_PAGE_SIZE + 1,
         cursor: null,
+      }),
+    ).rejects.toThrow(/limit/i);
+    await expect(
+      repo.listOriginsForCompetitorIds(scope, [entity.id, entity.id], {
+        limitPerEntity: 1,
+        totalLimit: 2,
+      }),
+    ).rejects.toThrow(/unique|duplicate/i);
+    await expect(
+      repo.listOriginsForCompetitorIds(scope, [entity.id], {
+        limitPerEntity: MAX_COMPETITOR_ORIGIN_PAGE_SIZE + 1,
+        totalLimit: 2,
+      }),
+    ).rejects.toThrow(/limitPerEntity/i);
+    await expect(
+      repo.listDiagnosticEligible(scope, {
+        limit: MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ + 1,
       }),
     ).rejects.toThrow(/limit/i);
     expect(db.calls).toEqual([]);

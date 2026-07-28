@@ -26,7 +26,11 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bcp47Locale, MAX_ARTIFACT_CONTENT_CHARS } from "@sf/contracts";
+import {
+  Bcp47Locale,
+  MAX_ARTIFACT_CONTENT_CHARS,
+  type ActionExecutionStateEvent,
+} from "@sf/contracts";
 import {
   Clock3,
   CircleAlert,
@@ -71,6 +75,10 @@ import {
   useProjectRun,
   useUpdateArtifact,
 } from "@/lib/api/hooks-studio";
+import {
+  useActionExecutionState,
+  useArtifactExecutionStateBatches,
+} from "@/lib/api/hooks-action-execution-state";
 import type {
   Artifact,
   ArtifactAction,
@@ -86,6 +94,10 @@ import type {
 import { ProblemNotice, ProblemState } from "../_problem-display";
 import { studioRunQueryOutcome } from "../_frontend-error-state.ts";
 import { useUnsavedNavigationGuard } from "../_unsaved-navigation-guard.ts";
+import {
+  buildExecutionQueueStateView,
+  buildExecutionStateView,
+} from "./_execution-state-view.ts";
 import {
   readActiveGenerationFence,
   writeActiveGenerationFence,
@@ -456,6 +468,11 @@ function ArtifactRunMonitor({
 interface ArtifactCardProps {
   readonly artifact: Artifact;
   readonly actionTitle: string | undefined;
+  /**
+   * `undefined` means batch authority is not currently readable; `null` means
+   * the exact Artifact stream truthfully has no recorded event.
+   */
+  readonly executionState: ActionExecutionStateEvent | null | undefined;
   readonly generationActive: boolean;
   readonly selectionBlocked: boolean;
   readonly selected: boolean;
@@ -463,9 +480,88 @@ interface ArtifactCardProps {
   readonly onRegenerate: (() => void) | undefined;
 }
 
+function ArtifactExecutionSummary({
+  current,
+}: {
+  readonly current: ActionExecutionStateEvent | null | undefined;
+}) {
+  const t = useTranslations("studio.executionState");
+  if (current === undefined) return null;
+  const view = buildExecutionQueueStateView(current);
+  if (view.kind === "empty") return null;
+
+  return (
+    <section
+      className={cx(
+        styles.artExecutionSummary,
+        view.kind === "blocked" && styles.artExecutionBlocked,
+        view.kind === "completed" && styles.artExecutionCompleted,
+      )}
+      data-artifact-execution-state={view.kind}
+      aria-label={t("queueSummary")}
+    >
+      <div className={styles.artExecutionHead}>
+        {view.kind === "blocked" ? (
+          <CircleAlert aria-hidden="true" size={16} />
+        ) : view.kind === "completed" ? (
+          <CircleCheckBig aria-hidden="true" size={16} />
+        ) : (
+          <Clock3 aria-hidden="true" size={16} />
+        )}
+        <StatusPill
+          tone={
+            view.kind === "blocked"
+              ? "danger"
+              : view.kind === "completed"
+                ? "success"
+                : "info"
+          }
+        >
+          {view.kind === "blocked"
+            ? t("status.blocked")
+            : view.kind === "completed"
+              ? t("status.completed")
+              : t("status.inProgress")}
+        </StatusPill>
+      </div>
+
+      {view.kind === "blocked" ? (
+        <dl className={styles.artExecutionBlocker}>
+          <div>
+            <dt>{t("blocker")}</dt>
+            <dd>{view.blockerSummary}</dd>
+          </div>
+          <div>
+            <dt>{t("unlockCondition")}</dt>
+            <dd>{view.unlockCondition}</dd>
+          </div>
+        </dl>
+      ) : view.kind === "in_progress" && view.progress !== null ? (
+        <div className={styles.artExecutionProgress}>
+          <span>
+            {t("progressValue", {
+              completed: view.progress.completedSteps,
+              total: view.progress.totalSteps,
+            })}
+          </span>
+          <progress
+            value={view.progress.completedSteps}
+            max={view.progress.totalSteps}
+            aria-label={t("progressValue", {
+              completed: view.progress.completedSteps,
+              total: view.progress.totalSteps,
+            })}
+          />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ArtifactCard({
   artifact,
   actionTitle,
+  executionState,
   generationActive,
   selectionBlocked,
   selected,
@@ -533,6 +629,8 @@ function ArtifactCard({
           </span>
         </div>
       ) : null}
+
+      <ArtifactExecutionSummary current={executionState} />
 
       <div className={styles.artActions}>
         <Button
@@ -1110,6 +1208,16 @@ function EvidenceRail({
   const tLane = useTranslations("lane");
   const tBand = useTranslations("priorityBand");
   const tStatus = useTranslations("actionStatus");
+  const tExecution = useTranslations("studio.executionState");
+  const executionStateQuery = useActionExecutionState(
+    projectId,
+    artifact?.actionId ?? null,
+    artifact?.id ?? null,
+  );
+  const executionStateView =
+    executionStateQuery.data === undefined
+      ? null
+      : buildExecutionStateView(executionStateQuery.data);
 
   // One label per missing-action cause, shared by the rail heading and the
   // delivery-check binding row so the two can never contradict each other
@@ -1202,6 +1310,127 @@ function EvidenceRail({
                 {t("linkedActionSearchLimitHint")}
               </p>
             ) : null}
+          </section>
+
+          <section
+            className={styles.railSection}
+            data-execution-state-section=""
+          >
+            <div className={styles.executionStateHead}>
+              <span className={styles.railLabel}>{tExecution("title")}</span>
+              {executionStateView !== null &&
+              executionStateView.kind !== "empty" ? (
+                <StatusPill
+                  tone={
+                    executionStateView.kind === "blocked"
+                      ? "warning"
+                      : executionStateView.kind === "completed"
+                        ? "success"
+                        : "info"
+                  }
+                >
+                  {executionStateView.kind === "blocked"
+                    ? tExecution("status.blocked")
+                    : executionStateView.kind === "completed"
+                      ? tExecution("status.completed")
+                      : tExecution("status.inProgress")}
+                </StatusPill>
+              ) : null}
+            </div>
+
+            {executionStateQuery.isPending ||
+            (executionStateQuery.isFetching &&
+              executionStateView === null) ? (
+              <div
+                className={styles.executionStateNotice}
+                data-execution-state-loading=""
+              >
+                <Spinner size="sm" label={tExecution("loading")} />
+                <span>{tExecution("loading")}</span>
+              </div>
+            ) : executionStateQuery.isError ? (
+              <div
+                className={styles.executionStateNotice}
+                role="alert"
+                data-execution-state-error=""
+              >
+                <CircleAlert aria-hidden="true" size={18} />
+                <p>{tExecution("loadError")}</p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void executionStateQuery.refetch()}
+                >
+                  {tCommon("retry")}
+                </Button>
+              </div>
+            ) : executionStateView === null ||
+              executionStateView.kind === "empty" ? (
+              <div
+                className={styles.executionStateEmpty}
+                data-execution-state-empty=""
+              >
+                <Clock3 aria-hidden="true" size={18} />
+                <div>
+                  <strong>{tExecution("emptyTitle")}</strong>
+                  <p>{tExecution("emptyHint")}</p>
+                </div>
+              </div>
+            ) : (
+              <div
+                className={styles.executionStateCard}
+                data-execution-state={executionStateView.kind}
+              >
+                <dl className={styles.executionStateFacts}>
+                  <div>
+                    <dt>{tExecution("phase")}</dt>
+                    <dd>
+                      {executionStateView.phaseKey === null
+                        ? executionStateView.phase
+                        : tExecution(
+                            `phaseValue.${executionStateView.phaseKey}` as never,
+                          )}
+                    </dd>
+                  </div>
+                  {executionStateView.kind === "in_progress" &&
+                  executionStateView.progress !== null ? (
+                    <div>
+                      <dt>{tExecution("progress")}</dt>
+                      <dd>
+                        {tExecution("progressValue", {
+                          completed:
+                            executionStateView.progress.completedSteps,
+                          total: executionStateView.progress.totalSteps,
+                        })}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {executionStateView.kind === "blocked" ? (
+                    <>
+                      <div>
+                        <dt>{tExecution("blocker")}</dt>
+                        <dd>{executionStateView.blockerSummary}</dd>
+                      </div>
+                      <div>
+                        <dt>{tExecution("unlockCondition")}</dt>
+                        <dd>{executionStateView.unlockCondition}</dd>
+                      </div>
+                    </>
+                  ) : null}
+                  {executionStateView.nextStep !== null ? (
+                    <div>
+                      <dt>{tExecution("nextStep")}</dt>
+                      <dd>{executionStateView.nextStep}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+                <p className={styles.executionStateHistory}>
+                  {tExecution("historyCount", {
+                    count: executionStateView.historyCount,
+                  })}
+                </p>
+              </div>
+            )}
           </section>
 
           <section className={styles.railSection}>
@@ -1671,6 +1900,10 @@ export function StudioClient({
   const queryClient = useQueryClient();
   const artifacts = uniqueCursorItems(artifactsQuery.data);
   const actions = uniqueCursorItems(actionsQuery.data);
+  const artifactExecutionStatesQuery = useArtifactExecutionStateBatches(
+    projectId,
+    artifacts.map((artifact) => artifact.id),
+  );
 
   const [activeDeepLink, setActiveDeepLink] =
     useState<ExecutionDeepLink>(initialDeepLink);
@@ -1853,6 +2086,11 @@ export function StudioClient({
     actionsQuery.isError && actionsQuery.data === undefined;
   const actionById = new Map(
     actions.map((action) => [action.id, action] as const),
+  );
+  const executionStateByArtifactId = new Map(
+    (artifactExecutionStatesQuery.items ?? []).map(
+      (item) => [item.artifactId, item.current] as const,
+    ),
   );
   const eligibleActions = actions.filter(
     (action) => action.status !== "dismissed",
@@ -3059,6 +3297,25 @@ export function StudioClient({
             </Badge>
           </div>
           <div className={styles.queueScroll}>
+            {artifactExecutionStatesQuery.isError ? (
+              <div
+                className={styles.queueExecutionNotice}
+                role="alert"
+                data-artifact-execution-batch-error=""
+              >
+                <CircleAlert aria-hidden="true" size={17} />
+                <span>{t("executionState.batchLoadError")}</span>
+                <Button
+                  variant="text"
+                  size="sm"
+                  onClick={() =>
+                    void artifactExecutionStatesQuery.refetch()
+                  }
+                >
+                  {tCommon("retry")}
+                </Button>
+              </div>
+            ) : null}
             {artifactsInitialLoading ? (
               <div className={styles.queueState}>
                 <Spinner size="lg" label={tCommon("loading")} />
@@ -3100,6 +3357,13 @@ export function StudioClient({
                       key={artifact.id}
                       artifact={artifact}
                       actionTitle={action?.title}
+                      executionState={
+                        artifactExecutionStatesQuery.items === undefined ||
+                        !executionStateByArtifactId.has(artifact.id)
+                          ? undefined
+                          : (executionStateByArtifactId.get(artifact.id) ??
+                            null)
+                      }
                       generationActive={activeKeys.has(
                         artifactGenerationKey(
                           artifact.actionId,

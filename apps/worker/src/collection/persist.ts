@@ -29,6 +29,7 @@ import {
 import { resolveObservationSitePageLineage } from "./observation-site-page-lineage.ts";
 import { projectCollectionSnapshotKeywords } from "./keyword-library-projection.ts";
 import { projectCollectionSnapshotCompetitors } from "./competitor-library-projection.ts";
+import { projectCompetitorMonitorSnapshot } from "../competitor-monitor/project-snapshot.ts";
 
 /**
  * Adapter-agnostic collection persistence (spec §7.6, §13.3). The raw payload is
@@ -227,11 +228,19 @@ export async function persistCollectionResult(
         run.provider,
         observationsWithPageLineage,
       );
-      if (projectionsMutable) {
+      const monitorProjection = await projectCompetitorMonitorSnapshot(
+        tx,
+        scope,
+        run.id,
+        snapshot.id,
+      );
+      if (projectionsMutable && !monitorProjection.isCompetitorMonitor) {
         await projectCollectionSnapshotKeywords(tx, scope, snapshot);
         await projectCollectionSnapshotCompetitors(tx, scope, snapshot);
       }
-      await discrepancies.detectForSnapshot(scope, snapshot.id);
+      if (!monitorProjection.isCompetitorMonitor) {
+        await discrepancies.detectForSnapshot(scope, snapshot.id);
+      }
 
       await new CollectionRunsRepository(tx).finalize(run.id, {
         rowCount: outcome.rowCount,
@@ -243,7 +252,11 @@ export async function persistCollectionResult(
         stopReason: outcome.stopReason,
       });
 
-      if (projectionsMutable && run.source_connection_id) {
+      if (
+        projectionsMutable &&
+        !monitorProjection.isCompetitorMonitor &&
+        run.source_connection_id
+      ) {
         await sources.setLastSnapshot(
           run.source_connection_id,
           snapshot.id,
@@ -261,7 +274,7 @@ export async function persistCollectionResult(
       if (!terminalized) {
         throw new Error("collection attempt ownership changed while locked");
       }
-      if (projectionsMutable) {
+      if (projectionsMutable && !monitorProjection.isCompetitorMonitor) {
         await projects.setReadyToDiagnoseIfEligible(
           { workspaceId: run.workspace_id },
           run.project_id,
@@ -278,6 +291,7 @@ export async function persistCollectionResult(
           availability: outcome.availability,
           rowCount: outcome.rowCount,
           durationBucket: durationBucket(Date.now() - input.startedAtMs),
+          competitorMonitor: monitorProjection.isCompetitorMonitor,
         },
       });
 

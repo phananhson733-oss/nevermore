@@ -1,19 +1,29 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AsyncRunsRepository,
+  AuditRunsRepository,
+  CompetitorsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
+  EvidenceRepository,
+  FindingsRepository,
+  FindingTargetsRepository,
   IcpProfilesRepository,
+  KeywordOccurrencesRepository,
+  KeywordsRepository,
   MAX_SITE_PAGE_ID_LOOKUP,
   normalizedUrlHash,
   ObservationsRepository,
   PageSnapshotsRepository,
+  ProjectsRepository,
   ProviderDiscrepanciesRepository,
   SitePagesRepository,
   SitesRepository,
+  TelemetryRepository,
   toRunAttempt,
   type AsyncRunRow,
+  type CanonicalValue,
   type DataSnapshotRow,
   type DiagnosticRunRow,
   type IcpProfileRow,
@@ -22,6 +32,7 @@ import {
 } from "@sf/db";
 import {
   DiagnosticContext,
+  GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
   type FindingTargetDraft,
@@ -40,6 +51,8 @@ import {
   runDiagnostic,
   warnOnSlowRules,
 } from "./run-diagnostic.ts";
+
+const LEGACY_RULE_SET_VERSION = "mvp.rules.0.2.1";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -404,6 +417,10 @@ function diagnosticFixture(inputManifest: Record<string, unknown>): {
   readonly diagnostic: DiagnosticRunRow;
 } {
   const scope = { workspaceId: "workspace-1", projectId: "project-1" };
+  const requestedRuleSetVersion =
+    typeof inputManifest["ruleSetVersion"] === "string"
+      ? inputManifest["ruleSetVersion"]
+      : RULE_SET_VERSION;
   const run = {
     id: "run-1",
     workspace_id: scope.workspaceId,
@@ -432,8 +449,19 @@ function diagnosticFixture(inputManifest: Record<string, unknown>): {
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
+    ...(requestedRuleSetVersion === LEGACY_RULE_SET_VERSION
+      ? {}
+      : {
+          governance: {
+            projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+            keywordClusters: [],
+            competitors: [],
+          },
+        }),
     ...inputManifest,
   };
+  const ruleSetVersion = String(frozenManifest.ruleSetVersion);
+  const promptSetVersion = String(frozenManifest.promptSetVersion);
   return {
     scope,
     run,
@@ -444,8 +472,8 @@ function diagnosticFixture(inputManifest: Record<string, unknown>): {
       site_id: "site-1",
       icp_profile_id: "icp-1",
       icp_profile_version: 1,
-      rule_set_version: RULE_SET_VERSION,
-      prompt_set_version: PROMPT_SET_VERSION,
+      rule_set_version: ruleSetVersion,
+      prompt_set_version: promptSetVersion,
       output_locale: "en",
       input_manifest: frozenManifest,
       input_hash: contentHash(frozenManifest),
@@ -666,6 +694,7 @@ async function runObservationValidationFixture(
   lineage: {
     readonly frozenPages?: readonly FrozenPageIdentity[];
     readonly sitePages?: readonly SitePageIdentity[];
+    readonly governance?: unknown;
   } = {},
 ): Promise<{
   readonly contextBuild: ReturnType<typeof vi.spyOn>;
@@ -685,7 +714,12 @@ async function runObservationValidationFixture(
     provider === "crawl"
       ? [source.snapshot]
       : [crawl.snapshot, source.snapshot];
-  const fixture = diagnosticFixture({ snapshots: manifests });
+  const fixture = diagnosticFixture({
+    snapshots: manifests,
+    ...(lineage.governance === undefined
+      ? {}
+      : { governance: lineage.governance }),
+  });
   const transaction = vi.fn();
   const ctx = unitContext(transaction);
   const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
@@ -814,6 +848,239 @@ function mockClaimedDiagnostic(
     .mockResolvedValue(true);
 }
 
+function governedContentGapProjection(
+  review:
+    | { readonly status: "approved"; readonly mappingReviewState: "confirmed" }
+    | { readonly status: "candidate"; readonly mappingReviewState: "unreviewed" },
+) {
+  const observationId = (index: number) =>
+    `71000000-0000-4000-8000-${(index + 1)
+      .toString(16)
+      .padStart(12, "0")}`;
+  return {
+    projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+    keywordClusters: [
+      {
+        clusterKey: "project management",
+        keywords: Array.from({ length: 10 }, (_, index) => ({
+          keywordEntityId: `72000000-0000-4000-8000-${(index + 1)
+            .toString(16)
+            .padStart(12, "0")}`,
+          displayKeyword: `project management workflow ${index}`,
+          normalizedKeyword: `project management workflow ${index}`,
+          marketCode: "US",
+          languageTag: "en",
+          revision: 1,
+          status: review.status,
+          queryKind: "search_query",
+          intent: "commercial",
+          buyerStage: "consideration",
+          clusterKey: "project management",
+          mappingDecision: "new_asset",
+          mappedSitePageId: null,
+          mappingReviewState: review.mappingReviewState,
+          lastSeenAt: FROZEN_AT,
+          occurrenceRefs: [
+            {
+              occurrenceId: `73000000-0000-4000-8000-${(index + 1)
+                .toString(16)
+                .padStart(12, "0")}`,
+              snapshotId: SOURCE_FIXTURE_CONFIG.dataforseo.snapshotId,
+              observationId: observationId(index),
+            },
+          ],
+          metricRefs: [],
+        })),
+      },
+    ],
+    competitors: [
+      {
+        competitorEntityId: "74000000-0000-4000-8000-000000000001",
+        domain: "approved-competitor.example",
+        reviewStatus: "approved",
+        revision: 3,
+        relationship: "direct",
+        analysisScopes: ["keyword_gap", "serp_visibility"],
+        originRefs: [
+          {
+            occurrenceId: "75000000-0000-4000-8000-000000000001",
+            originKind: "manual",
+            snapshotId: null,
+            observationId: null,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function runGovernedContentGapFixture(
+  review:
+    | { readonly status: "approved"; readonly mappingReviewState: "confirmed" }
+    | { readonly status: "candidate"; readonly mappingReviewState: "unreviewed" },
+  ruleSetVersion: string = RULE_SET_VERSION,
+) {
+  const crawl = frozenSource("crawl");
+  const dataforseo = frozenSource("dataforseo");
+  const governance = governedContentGapProjection(review);
+  const fixture = diagnosticFixture({
+    snapshots: [crawl.manifest, dataforseo.manifest],
+    ruleSetVersion,
+    ...(ruleSetVersion === LEGACY_RULE_SET_VERSION ? {} : { governance }),
+  });
+  const transaction = vi.fn(
+    async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+  );
+  const ctx = unitContext(transaction);
+  mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+
+  vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+    crawl.snapshot,
+    dataforseo.snapshot,
+  ]);
+  vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue(
+    validIcpRow(),
+  );
+  vi.spyOn(
+    ProviderDiscrepanciesRepository.prototype,
+    "listUnresolvedBySnapshotIds",
+  ).mockResolvedValue([]);
+
+  const crawlObservation = availableObservationRow(
+    OBSERVATION_FIXTURES[0],
+    {
+      id: "76000000-0000-4000-8000-000000000001",
+      value_json: {
+        ...validProjectionFor(OBSERVATION_FIXTURES[0]),
+        title: "Pricing",
+        metaDescription: "Transparent plans for the Acme workspace.",
+        h1: ["Pricing"],
+        headings: ["Plans"],
+        wordCount: 1_200,
+        sitemapMember: true,
+        bodyExcerpt: "Compare Acme plans and choose the right workspace.",
+        paragraphs: [
+          "Compare Acme plans and choose the right workspace for your team.",
+        ],
+      },
+    },
+  );
+  const dataforseoObservations = Array.from(
+    { length: 10 },
+    (_, index) =>
+      observationRow("dataforseo", {
+        id: `71000000-0000-4000-8000-${(index + 1)
+          .toString(16)
+          .padStart(12, "0")}`,
+        subject_type: "keyword_cluster",
+        subject_ref: "project management",
+        availability: "available",
+        value_json: {
+          keyword: `project management workflow ${index}`,
+          clusterKey: "project management",
+          searchVolume: 100,
+          currentUrl: `${SITE_ORIGIN}/rank-${index}`,
+          currentRank: index + 1,
+          competitorDomain: null,
+          competitorRank: null,
+          marketCode: "US",
+          languageCode: "en",
+        },
+      }),
+  );
+  vi.spyOn(
+    ObservationsRepository.prototype,
+    "listBySnapshotIds",
+  ).mockResolvedValue([crawlObservation, ...dataforseoObservations]);
+  vi.spyOn(
+    PageSnapshotsRepository.prototype,
+    "listByDataSnapshotWithSitePageIdentity",
+  ).mockResolvedValue([frozenPageIdentity()]);
+  vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
+
+  vi.spyOn(
+    AsyncRunsRepository.prototype,
+    "lockAttemptForUpdate",
+  ).mockResolvedValue(fixture.run);
+  vi.spyOn(
+    ProjectsRepository.prototype,
+    "findByIdForUpdate",
+  ).mockResolvedValue({ archived_at: null } as never);
+  vi.spyOn(
+    ProjectsRepository.prototype,
+    "setStage",
+  ).mockResolvedValue(true);
+  const ruleResultInsert = vi
+    .spyOn(DiagnosticRunsRepository.prototype, "insertRuleResults")
+    .mockResolvedValue(undefined);
+  vi.spyOn(
+    DiagnosticRunsRepository.prototype,
+    "setCoverage",
+  ).mockResolvedValue(undefined);
+  vi.spyOn(FindingsRepository.prototype, "findByKey").mockResolvedValue(null);
+  let insertedFindingCount = 0;
+  const findingInsert = vi
+    .spyOn(FindingsRepository.prototype, "insert")
+    .mockImplementation(async () => {
+      insertedFindingCount += 1;
+      return {
+        id: `77000000-0000-4000-8000-${insertedFindingCount
+          .toString(16)
+          .padStart(12, "0")}`,
+      } as never;
+    });
+  const targetInsert = vi
+    .spyOn(FindingTargetsRepository.prototype, "insertMany")
+    .mockResolvedValue(1);
+  let insertedEvidenceCount = 0;
+  const evidenceInsert = vi
+    .spyOn(EvidenceRepository.prototype, "insertMany")
+    .mockImplementation(async (_values, rows) =>
+      rows.map(() => {
+        insertedEvidenceCount += 1;
+        return `78000000-0000-4000-8000-${insertedEvidenceCount
+          .toString(16)
+          .padStart(12, "0")}`;
+      }),
+    );
+  vi.spyOn(
+    EvidenceRepository.prototype,
+    "linkObservations",
+  ).mockResolvedValue(undefined);
+  vi.spyOn(
+    AuditRunsRepository.prototype,
+    "findByDiagnosticRunId",
+  ).mockResolvedValue(null);
+  vi.spyOn(TelemetryRepository.prototype, "emit").mockResolvedValue(undefined);
+
+  const liveGovernanceReads = [
+    vi.spyOn(KeywordsRepository.prototype, "listByProject"),
+    vi.spyOn(KeywordsRepository.prototype, "listDiagnosticEligible"),
+    vi.spyOn(KeywordOccurrencesRepository.prototype, "listForEntity"),
+    vi.spyOn(KeywordOccurrencesRepository.prototype, "listForEntityIds"),
+    vi.spyOn(CompetitorsRepository.prototype, "listByProject"),
+    vi.spyOn(CompetitorsRepository.prototype, "listDiagnosticEligible"),
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins"),
+    vi.spyOn(
+      CompetitorsRepository.prototype,
+      "listOriginsForCompetitorIds",
+    ),
+  ];
+
+  await runDiagnostic(ctx, {
+    runId: fixture.run.id,
+    ...fixture.scope,
+  });
+
+  return {
+    findingInsert,
+    targetInsert,
+    evidenceInsert,
+    ruleResultInsert,
+    liveGovernanceReads,
+  };
+}
+
 describe("diagnostic frozen snapshot validation", () => {
   it("requires an unambiguous frozen lineage mapping for every source-backed evidence provider", () => {
     const providers = ["crawl", "gsc", "ga4", "csv", "dataforseo"] as const;
@@ -837,6 +1104,265 @@ describe("diagnostic frozen snapshot validation", () => {
     expect(() =>
       lineageForEvidenceProvider("ga4", new Map()),
     ).toThrowError(/lineage/i);
+  });
+
+  it("passes the frozen governance projection to Context without live library reads", async () => {
+    const governance = {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [
+        {
+          competitorEntityId: "70000000-0000-4000-8000-000000000001",
+          domain: "competitor.example",
+          reviewStatus: "approved",
+          revision: 2,
+          relationship: "direct",
+          analysisScopes: ["keyword_gap", "serp_visibility"],
+          originRefs: [
+            {
+              occurrenceId: "70000000-0000-4000-8000-000000000002",
+              originKind: "manual",
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        },
+      ],
+    };
+    const keywordRead = vi
+      .spyOn(KeywordsRepository.prototype, "listByProject")
+      .mockRejectedValue(new Error("worker must not read the live library"));
+    const occurrenceRead = vi
+      .spyOn(KeywordOccurrencesRepository.prototype, "listForEntity")
+      .mockRejectedValue(new Error("worker must not read the live library"));
+    const competitorRead = vi
+      .spyOn(CompetitorsRepository.prototype, "listByProject")
+      .mockRejectedValue(new Error("worker must not read the live library"));
+    const originRead = vi
+      .spyOn(CompetitorsRepository.prototype, "listOrigins")
+      .mockRejectedValue(new Error("worker must not read the live library"));
+
+    const result = await runObservationValidationFixture(
+      "crawl",
+      availableObservationRow(OBSERVATION_FIXTURES[0]),
+      { governance },
+    );
+
+    expect(result.contextBuild).toHaveBeenCalledWith(
+      expect.objectContaining({ governance }),
+    );
+    expect(keywordRead).not.toHaveBeenCalled();
+    expect(occurrenceRead).not.toHaveBeenCalled();
+    expect(competitorRead).not.toHaveBeenCalled();
+    expect(originRead).not.toHaveBeenCalled();
+    expect(result.transaction).toHaveBeenCalledOnce();
+    expect(result.terminal).not.toHaveBeenCalled();
+  });
+
+  it("persists CONTENT-GAP-011@2 from frozen approved governance with keyword-cluster target and competitor context", async () => {
+    const result = await runGovernedContentGapFixture({
+      status: "approved",
+      mappingReviewState: "confirmed",
+    });
+    const contentGapWrites = result.findingInsert.mock.calls.filter(
+      ([values]) => values.ruleId === "CONTENT-GAP-011",
+    );
+
+    expect(contentGapWrites).toHaveLength(1);
+    expect(contentGapWrites[0]?.[0]).toMatchObject({
+      ruleId: "CONTENT-GAP-011",
+      ruleVersion: 2,
+      subjectRefs: ["keyword_cluster:project management"],
+      titleArgs: {
+        clusterKey: "project management",
+        keywordCount: 10,
+        totalVolume: 1_000,
+      },
+    });
+    expect(
+      result.targetInsert.mock.calls.flatMap(([, rows]) => rows),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relation: "affected_by_keyword_cluster",
+          targetKind: "keyword_cluster",
+          targetRef: "project management",
+        }),
+      ]),
+    );
+    const evidenceRows = result.evidenceInsert.mock.calls.flatMap(
+      ([, rows]) => rows,
+    );
+    expect(evidenceRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceProvider: "system",
+          support: "supports",
+          claim: expect.stringContaining(
+            "10 approved, confirmed facts",
+          ),
+        }),
+        expect.objectContaining({
+          sourceProvider: "system",
+          support: "context",
+          claim: expect.stringContaining(
+            "74000000-0000-4000-8000-000000000001",
+          ),
+        }),
+      ]),
+    );
+    expect(
+      result.ruleResultInsert.mock.calls
+        .flatMap(([, rows]) => rows)
+        .find((row) => row.ruleId === "CONTENT-GAP-011"),
+    ).toMatchObject({
+      ruleVersion: 2,
+      status: "candidate",
+    });
+    for (const read of result.liveGovernanceReads) {
+      expect(read).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([
+    {
+      status: "candidate",
+      mappingReviewState: "unreviewed",
+    },
+  ] as const)(
+    "does not persist CONTENT-GAP-011 when frozen keyword governance is $status/$mappingReviewState",
+    async (review) => {
+      const result = await runGovernedContentGapFixture(review);
+
+      expect(
+        result.findingInsert.mock.calls.some(
+          ([values]) => values.ruleId === "CONTENT-GAP-011",
+        ),
+      ).toBe(false);
+      for (const read of result.liveGovernanceReads) {
+        expect(read).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("replays a genuine 0.2.1 manifest without governance as CONTENT-GAP-011@1", async () => {
+    const result = await runGovernedContentGapFixture(
+      {
+        status: "approved",
+        mappingReviewState: "confirmed",
+      },
+      LEGACY_RULE_SET_VERSION,
+    );
+
+    expect(
+      result.findingInsert.mock.calls
+        .map(([values]) => values)
+        .find((values) => values.ruleId === "CONTENT-GAP-011"),
+    ).toMatchObject({
+      ruleId: "CONTENT-GAP-011",
+      ruleVersion: 1,
+      subjectRefs: ["keyword_cluster:project management"],
+    });
+    expect(
+      result.ruleResultInsert.mock.calls
+        .flatMap(([, rows]) => rows)
+        .find((row) => row.ruleId === "CONTENT-GAP-011"),
+    ).toMatchObject({
+      ruleVersion: 1,
+      status: "candidate",
+    });
+  });
+
+  it("rejects a current 0.2.2 manifest that omits mandatory governance", async () => {
+    const fixture = diagnosticFixture({ snapshots: [manifestEntry()] });
+    const { governance: _governance, ...manifestWithoutGovernance } =
+      fixture.diagnostic.input_manifest;
+    const diagnostic = {
+      ...fixture.diagnostic,
+      input_manifest: manifestWithoutGovernance,
+      input_hash: contentHash(
+        manifestWithoutGovernance as unknown as CanonicalValue,
+      ),
+    } satisfies DiagnosticRunRow;
+    const transaction = vi.fn();
+    const ctx = unitContext(transaction);
+    const terminal = mockClaimedDiagnostic(fixture.run, diagnostic);
+    const snapshots = vi.spyOn(
+      DataSnapshotsRepository.prototype,
+      "findByIds",
+    );
+    const contextBuild = vi.spyOn(DiagnosticContext, "build");
+
+    await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(contextBuild).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("rejects a 0.2.1 manifest that carries governance it never authorized", async () => {
+    const fixture = diagnosticFixture({
+      snapshots: [manifestEntry()],
+      ruleSetVersion: LEGACY_RULE_SET_VERSION,
+      governance: {
+        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+        keywordClusters: [],
+        competitors: [],
+      },
+    });
+    const ctx = unitContext();
+    const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+    const snapshots = vi.spyOn(
+      DataSnapshotsRepository.prototype,
+      "findByIds",
+    );
+
+    await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("rejects a malformed frozen governance block before loading snapshots or building Context", async () => {
+    const fixture = diagnosticFixture({
+      snapshots: [manifestEntry()],
+      governance: {
+        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+        keywordClusters: [],
+        competitors: [],
+        unexpected: true,
+      },
+    });
+    const ctx = unitContext();
+    const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+    const snapshots = vi.spyOn(
+      DataSnapshotsRepository.prototype,
+      "findByIds",
+    );
+    const contextBuild = vi.spyOn(DiagnosticContext, "build");
+
+    await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(contextBuild).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(toRunAttempt(fixture.run), {
+      status: "failed",
+      lastErrorCode: "UNAVAILABLE",
+      lastErrorSummary: "diagnostic failed",
+    });
   });
 
   it("passes exact immutable Crawl observation, SitePage, and PageSnapshot identities into Context", async () => {

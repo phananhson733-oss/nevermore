@@ -49,6 +49,26 @@ describe("startWorkerHealthSnapshotLoop", () => {
         payload: "customer-payload-secret",
         runId: "customer-run-secret",
       } as QueueTechnicalMetric,
+      {
+        kind: "publication",
+        queuedDepth: 2,
+        runningDepth: 1,
+        oldestQueuedAgeMs: 700,
+        averageRunDurationMs24h: 800,
+        maxRunDurationMs24h: 900,
+        retryCount24h: 0,
+        failureCount24h: 1,
+      },
+      {
+        kind: "measurement",
+        queuedDepth: 1,
+        runningDepth: 1,
+        oldestQueuedAgeMs: 1_000,
+        averageRunDurationMs24h: 2_000,
+        maxRunDurationMs24h: 3_000,
+        retryCount24h: 1,
+        failureCount24h: 0,
+      },
     ];
     const loadQueueMetrics = vi.fn(async () => metrics);
     const input = healthInput(logger);
@@ -100,6 +120,26 @@ describe("startWorkerHealthSnapshotLoop", () => {
             failureCount24h: 1,
           },
           zeroMetric("content_shadow"),
+          {
+            kind: "publication",
+            queuedDepth: 2,
+            runningDepth: 1,
+            oldestQueuedAgeMs: 700,
+            averageRunDurationMs24h: 800,
+            maxRunDurationMs24h: 900,
+            retryCount24h: 0,
+            failureCount24h: 1,
+          },
+          {
+            kind: "measurement",
+            queuedDepth: 1,
+            runningDepth: 1,
+            oldestQueuedAgeMs: 1_000,
+            averageRunDurationMs24h: 2_000,
+            maxRunDurationMs24h: 3_000,
+            retryCount24h: 1,
+            failureCount24h: 0,
+          },
         ],
       },
     ]);

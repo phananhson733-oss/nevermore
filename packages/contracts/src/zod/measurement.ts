@@ -35,11 +35,14 @@ function parsedAt(value: string): number {
   return Date.parse(value);
 }
 
-function equalInterval(
-  left: { startAt: string; endAt: string },
-  right: { startAt: string; endAt: string },
+function containsInterval(
+  container: { startAt: string; endAt: string },
+  contained: { startAt: string; endAt: string },
 ): boolean {
-  return left.startAt === right.startAt && left.endAt === right.endAt;
+  return (
+    parsedAt(container.startAt) <= parsedAt(contained.startAt) &&
+    parsedAt(container.endAt) >= parsedAt(contained.endAt)
+  );
 }
 
 function isIanaTimezone(value: string): boolean {
@@ -176,12 +179,12 @@ type CommonDimensionValue = {
     readonly sourceRef: string;
     readonly snapshotId: string;
     readonly freshness: z.infer<typeof SourceFreshness>;
-  };
+  } | null;
   readonly outcomeSource: {
     readonly sourceRef: string;
     readonly snapshotId: string;
     readonly freshness: z.infer<typeof SourceFreshness>;
-  };
+  } | null;
   readonly sampleSize: {
     readonly baseline: number | null;
     readonly outcome: number | null;
@@ -195,21 +198,11 @@ function addDimensionIssues(
   metricPairs: readonly MetricPair[],
   ctx: z.RefinementCtx,
 ): void {
+  const { baselineSource, outcomeSource } = dimension;
   if (
-    dimension.baselineSource.snapshotId ===
-    dimension.outcomeSource.snapshotId
-  ) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["outcomeSource", "snapshotId"],
-      message:
-        "Baseline and outcome Snapshot identities must be different",
-    });
-  }
-
-  if (
-    dimension.baselineSource.sourceRef !==
-    dimension.outcomeSource.sourceRef
+    baselineSource !== null &&
+    outcomeSource !== null &&
+    baselineSource.sourceRef !== outcomeSource.sourceRef
   ) {
     ctx.addIssue({
       code: "custom",
@@ -220,8 +213,8 @@ function addDimensionIssues(
   }
 
   const degradedSource =
-    dimension.baselineSource.freshness !== "current" ||
-    dimension.outcomeSource.freshness !== "current";
+    (baselineSource !== null && baselineSource.freshness !== "current") ||
+    (outcomeSource !== null && outcomeSource.freshness !== "current");
   if (degradedSource && dimension.limitation === null) {
     ctx.addIssue({
       code: "custom",
@@ -282,6 +275,14 @@ function addDimensionIssues(
           "Unavailable measurement data requires no sample coverage",
       });
     }
+    if (baselineSource !== null || outcomeSource !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["baselineSource"],
+        message:
+          "Unavailable measurement data cannot invent provider source lineage",
+      });
+    }
     return;
   }
 
@@ -301,7 +302,24 @@ function addDimensionIssues(
           "Insufficient data must identify partial or absent sample coverage",
       });
     }
+    if (baselineSource === null && outcomeSource === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["baselineSource"],
+        message:
+          "Insufficient measurement data must preserve at least one actual provider source",
+      });
+    }
     return;
+  }
+
+  if (baselineSource === null || outcomeSource === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["baselineSource"],
+      message:
+        "Observed and regressed dimensions require both canonical provider sources",
+    });
   }
 
   if (
@@ -355,8 +373,8 @@ export const GscMeasurementDimension = z
   .object({
     provider: z.literal("gsc"),
     state: MeasurementObservationState,
-    baselineSource: GscMeasurementSourceSnapshot,
-    outcomeSource: GscMeasurementSourceSnapshot,
+    baselineSource: GscMeasurementSourceSnapshot.nullable(),
+    outcomeSource: GscMeasurementSourceSnapshot.nullable(),
     sampleSize: GscSampleSize,
     limitation: NullableLimitation,
     metrics: GscMetrics,
@@ -474,12 +492,12 @@ export const Ga4MeasurementDimension = z
   .object({
     provider: z.literal("ga4"),
     state: MeasurementObservationState,
-    baselineSource: Ga4MeasurementSourceSnapshot,
-    outcomeSource: Ga4MeasurementSourceSnapshot,
+    baselineSource: Ga4MeasurementSourceSnapshot.nullable(),
+    outcomeSource: Ga4MeasurementSourceSnapshot.nullable(),
     sampleSize: Ga4SampleSize,
     limitation: NullableLimitation,
-    directConversionDefinition: DirectConversionDefinition,
-    assistedConversionDefinition: AssistedConversionDefinition,
+    directConversionDefinition: DirectConversionDefinition.nullable(),
+    assistedConversionDefinition: AssistedConversionDefinition.nullable(),
     metrics: Ga4Metrics,
     campaigns: z.array(Ga4CampaignMeasurement).max(100),
   })
@@ -493,9 +511,26 @@ export const Ga4MeasurementDimension = z
     ];
     addDimensionIssues(dimension, metricPairs, ctx);
 
+    const directDefinition = dimension.directConversionDefinition;
+    const assistedDefinition = dimension.assistedConversionDefinition;
     if (
-      dimension.directConversionDefinition.conversionDefinitionId ===
-      dimension.assistedConversionDefinition.conversionDefinitionId
+      dimension.baselineSource !== null &&
+      dimension.outcomeSource !== null &&
+      dimension.baselineSource.snapshotId ===
+        dimension.outcomeSource.snapshotId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["outcomeSource", "snapshotId"],
+        message:
+          "GA4 baseline and outcome require distinct canonical Snapshots",
+      });
+    }
+    if (
+      directDefinition !== null &&
+      assistedDefinition !== null &&
+      directDefinition.conversionDefinitionId ===
+        assistedDefinition.conversionDefinitionId
     ) {
       ctx.addIssue({
         code: "custom",
@@ -505,6 +540,66 @@ export const Ga4MeasurementDimension = z
         ],
         message:
           "Direct and assisted conversion definitions require distinct identities",
+      });
+    }
+
+    if (
+      dimension.state === "unavailable" &&
+      (directDefinition !== null ||
+        assistedDefinition !== null ||
+        dimension.campaigns.length > 0)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["directConversionDefinition"],
+        message:
+          "Unavailable GA4 data cannot invent conversion-definition or Campaign lineage",
+      });
+    }
+    if (
+      (dimension.state === "observed" ||
+        dimension.state === "regressed") &&
+      (directDefinition === null || assistedDefinition === null)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["directConversionDefinition"],
+        message:
+          "Observed and regressed GA4 data requires canonical direct and assisted definitions",
+      });
+    }
+    if (
+      directDefinition === null &&
+      (dimension.metrics.directConversions.baseline !== null ||
+        dimension.metrics.directConversions.outcome !== null ||
+        dimension.campaigns.some(
+          (campaign) =>
+            campaign.metrics.directConversions.baseline !== null ||
+            campaign.metrics.directConversions.outcome !== null,
+        ))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["metrics", "directConversions"],
+        message:
+          "Direct conversion values require a canonical direct conversion definition",
+      });
+    }
+    if (
+      assistedDefinition === null &&
+      (dimension.metrics.assistedConversions.baseline !== null ||
+        dimension.metrics.assistedConversions.outcome !== null ||
+        dimension.campaigns.some(
+          (campaign) =>
+            campaign.metrics.assistedConversions.baseline !== null ||
+            campaign.metrics.assistedConversions.outcome !== null,
+        ))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["metrics", "assistedConversions"],
+        message:
+          "Assisted conversion values require a canonical assisted conversion definition",
       });
     }
 
@@ -563,8 +658,8 @@ export const GeoMeasurementDimension = z
   .object({
     provider: z.literal("geo"),
     state: MeasurementObservationState,
-    baselineSource: GeoMeasurementSourceSnapshot,
-    outcomeSource: GeoMeasurementSourceSnapshot,
+    baselineSource: GeoMeasurementSourceSnapshot.nullable(),
+    outcomeSource: GeoMeasurementSourceSnapshot.nullable(),
     sampleSize: GeoSampleSize,
     limitation: NullableLimitation,
     metrics: GeoMetrics,
@@ -576,6 +671,19 @@ export const GeoMeasurementDimension = z
       Object.values(dimension.metrics),
       ctx,
     );
+    if (
+      dimension.baselineSource !== null &&
+      dimension.outcomeSource !== null &&
+      dimension.baselineSource.snapshotId ===
+        dimension.outcomeSource.snapshotId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["outcomeSource", "snapshotId"],
+        message:
+          "GEO baseline and outcome require distinct canonical Snapshots",
+      });
+    }
   });
 export type GeoMeasurementDimension = z.infer<
   typeof GeoMeasurementDimension
@@ -742,19 +850,21 @@ function addWindowIssues(
     });
   }
 
-  const snapshots: string[] = [];
+  const sourceObservedAt: number[] = [];
   for (const [dimensionName, dimension] of Object.entries(
     window.dimensions,
   )) {
-    snapshots.push(
-      dimension.baselineSource.snapshotId,
-      dimension.outcomeSource.snapshotId,
-    );
     for (const [phase, source, expectedWindow] of [
       ["baselineSource", dimension.baselineSource, window.beforeWindow],
       ["outcomeSource", dimension.outcomeSource, window.afterWindow],
     ] as const) {
-      if (!equalInterval(source.coveredWindow, expectedWindow)) {
+      if (source === null) continue;
+      sourceObservedAt.push(parsedAt(source.observedAt));
+      if (
+        (dimension.state === "observed" ||
+          dimension.state === "regressed") &&
+        !containsInterval(source.coveredWindow, expectedWindow)
+      ) {
         ctx.addIssue({
           code: "custom",
           path: ["dimensions", dimensionName, phase, "coveredWindow"],
@@ -775,21 +885,10 @@ function addWindowIssues(
       }
     }
   }
-  if (new Set(snapshots).size !== snapshots.length) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["dimensions"],
-      message:
-        "Every provider baseline/outcome Snapshot requires a distinct immutable identity",
-    });
-  }
-
-  const latestSourceObservedAt = Math.max(
-    ...Object.values(window.dimensions).flatMap((dimension) => [
-      parsedAt(dimension.baselineSource.observedAt),
-      parsedAt(dimension.outcomeSource.observedAt),
-    ]),
-  );
+  const latestSourceObservedAt =
+    sourceObservedAt.length === 0
+      ? Number.NEGATIVE_INFINITY
+      : Math.max(...sourceObservedAt);
   if (
     parsedAt(window.recordedAt) < parsedAt(window.afterWindow.endAt) ||
     parsedAt(window.recordedAt) < latestSourceObservedAt
@@ -970,4 +1069,66 @@ export const MeasurementWindowHistoryResponse = z
   });
 export type MeasurementWindowHistoryResponse = z.infer<
   typeof MeasurementWindowHistoryResponse
+>;
+
+/**
+ * Project-scoped feed of complete immutable Measurement Windows. Unlike the
+ * exact-target history projection, this feed intentionally spans every target
+ * in one project and carries no server-fabricated aggregate or causal claim.
+ */
+export const MeasurementWindowRecentResponse = z
+  .object({
+    projectId: Uuid,
+    windows: z.array(MeasurementWindow).max(100),
+    generatedAt: IsoDateTime,
+  })
+  .strict()
+  .superRefine((response, ctx) => {
+    const identities = new Set<string>();
+    response.windows.forEach((window, index) => {
+      if (identities.has(window.measurementWindowId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["windows", index, "measurementWindowId"],
+          message: "Recent measurement window identities must be unique",
+        });
+      }
+      identities.add(window.measurementWindowId);
+
+      if (window.projectId !== response.projectId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["windows", index, "projectId"],
+          message: "Recent measurement windows cannot cross project scope",
+        });
+      }
+      if (parsedAt(window.recordedAt) > parsedAt(response.generatedAt)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["generatedAt"],
+          message:
+            "Recent projection cannot be generated before a projected record",
+        });
+      }
+
+      const previous = response.windows[index - 1];
+      if (!previous) return;
+      const previousRecordedAt = parsedAt(previous.recordedAt);
+      const currentRecordedAt = parsedAt(window.recordedAt);
+      if (
+        previousRecordedAt < currentRecordedAt ||
+        (previousRecordedAt === currentRecordedAt &&
+          previous.measurementWindowId < window.measurementWindowId)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["windows", index, "recordedAt"],
+          message:
+            "Recent measurement windows must be ordered by recordedAt and identity descending",
+        });
+      }
+    });
+  });
+export type MeasurementWindowRecentResponse = z.infer<
+  typeof MeasurementWindowRecentResponse
 >;

@@ -1,26 +1,62 @@
-import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import {
+  MutationObserver,
+  QueryClient,
+  QueryObserver,
+} from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildGrowthMapCompetitorMonitorMutationOptions,
   buildGrowthMapCompetitorDetailQueryOptions,
+  buildGrowthMapCompetitorMonitorQueryOptions,
   buildGrowthMapCompetitorsQueryOptions,
   buildGrowthMapKeywordDetailQueryOptions,
+  buildGrowthMapKeywordRelationsQueryOptions,
+  buildGrowthMapKeywordRankHistoryQueryOptions,
   buildGrowthMapKeywordsQueryOptions,
+  buildGrowthMapTopicModelInsightsQueryOptions,
+  buildGrowthMapTopicModelWorkspaceQueryOptions,
+  buildGrowthMapInternalLinkMapQueryOptions,
   buildGrowthMapUrlDetailQueryOptions,
   buildGrowthMapUrlsQueryOptions,
+  beginGrowthMapTopicModelDraft,
+  confirmGrowthMapTopicModelDraft,
+  decideGrowthMapKeywordRelation,
   getGrowthMapCompetitorDetail,
+  getGrowthMapCompetitorMonitor,
   getGrowthMapCompetitors,
   getGrowthMapKeywordDetail,
+  getGrowthMapKeywordRelations,
+  getGrowthMapKeywordRankHistory,
   getGrowthMapKeywords,
+  getGrowthMapTopicModelInsights,
+  getGrowthMapTopicModelWorkspace,
+  getGrowthMapInternalLinkMap,
   getGrowthMapUrlDetail,
   getGrowthMapUrls,
   growthMapCompetitorDetailQueryKey,
+  growthMapCompetitorMonitorQueryKey,
   growthMapCompetitorsQueryKey,
   growthMapKeywordDetailQueryKey,
+  growthMapKeywordRelationsQueryKey,
+  growthMapKeywordRankHistoryQueryKey,
   growthMapKeywordsQueryKey,
+  growthMapTopicModelInsightsQueryKey,
+  growthMapTopicModelWorkspaceQueryKey,
+  growthMapInternalLinkMapQueryKey,
   growthMapUrlDetailQueryKey,
   growthMapUrlsQueryKey,
+  invalidateGrowthMapAfterTopicModelConfirmation,
+  invalidateGrowthMapAfterKeywordReview,
+  invalidateGrowthMapKeywordRelations,
+  invalidateGrowthMapTopicModelAfterConflict,
+  invalidateGrowthMapTopicModelDraft,
+  patchGrowthMapTopicModelDraft,
   refreshGrowthMapAfterFindingReview,
+  refreshGrowthMapKeywordRelations,
+  reviewGrowthMapKeyword,
+  updateGrowthMapCompetitorMonitor,
 } from "./hooks-growth-map";
+import { ApiError } from "./client";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
 const SITE_PAGE_A = "00000000-0000-4000-8000-000000000002";
@@ -50,6 +86,31 @@ const COMPETITOR_OBSERVATION = "00000000-0000-4000-8000-000000000025";
 const COMPETITOR_IMPORT_PREVIEW = "00000000-0000-4000-8000-000000000026";
 const COMPETITOR_EVIDENCE = "00000000-0000-4000-8000-000000000027";
 const MANUAL_ENTRY = "00000000-0000-4000-8000-000000000028";
+const RANK_OCCURRENCE = "00000000-0000-4000-8000-000000000029";
+const RANK_SNAPSHOT = "00000000-0000-4000-8000-000000000030";
+const RANK_OBSERVATION = "00000000-0000-4000-8000-000000000031";
+const KEYWORD_RELATION = "00000000-0000-4000-8000-000000000032";
+const KEYWORD_RELATION_CANDIDATE =
+  "00000000-0000-4000-8000-000000000033";
+const KEYWORD_RELATION_DECISION =
+  "00000000-0000-4000-8000-000000000034";
+const KEYWORD_RELATION_ACTOR =
+  "00000000-0000-4000-8000-000000000035";
+const KEYWORD_RELATION_PAGE =
+  "00000000-0000-4000-8000-000000000036";
+const KEYWORD_RELATION_TOPIC =
+  "00000000-0000-4000-8000-000000000037";
+const TOPIC_NODE_ROOT = "00000000-0000-4000-8000-000000000038";
+const TOPIC_NODE_CHILD = "00000000-0000-4000-8000-000000000039";
+const TOPIC_ACTOR = "00000000-0000-4000-8000-000000000040";
+const INTERNAL_LINK_FINDING =
+  "00000000-0000-4000-8000-000000000041";
+const INTERNAL_LINK_ACTION =
+  "00000000-0000-4000-8000-000000000042";
+const INTERNAL_LINK_TOPIC =
+  "00000000-0000-4000-8000-000000000043";
+const COMPETITOR_MONITOR_SIGNAL =
+  "00000000-0000-4000-8000-000000000044";
 const OBSERVED_AT = "2026-07-21T00:00:00.000Z";
 const UI_LOCALE = "en" as const;
 
@@ -132,6 +193,93 @@ function detailResponse(sitePageId: string) {
       },
       findings: [],
     },
+  } as const;
+}
+
+function internalLinkMapResponse(sitePageId: string) {
+  const selectedUrl =
+    sitePageId === SITE_PAGE_A
+      ? "https://example.test/customer-onboarding/"
+      : "https://example.test/pricing/";
+  const otherPageId =
+    sitePageId === SITE_PAGE_A ? SITE_PAGE_B : SITE_PAGE_A;
+  const otherUrl =
+    sitePageId === SITE_PAGE_A
+      ? "https://example.test/pricing/"
+      : "https://example.test/customer-onboarding/";
+  const urls = [selectedUrl, otherUrl].sort();
+  const selectedNode = {
+    canonicalUrl: selectedUrl,
+    sitePageIds: [sitePageId],
+    title: null,
+    inboundCount: 0,
+    outboundCount: 0,
+    status: "orphan" as const,
+    executionRefs: [
+      {
+        findingId: INTERNAL_LINK_FINDING,
+        actionId: INTERNAL_LINK_ACTION,
+      },
+    ],
+  };
+  const otherNode = {
+    canonicalUrl: otherUrl,
+    sitePageIds: [otherPageId],
+    title: null,
+    inboundCount: 0,
+    outboundCount: 0,
+    status: "orphan" as const,
+    executionRefs: [],
+  };
+  return {
+    projectId: PROJECT_ID,
+    diagnosticRunId: DIAGNOSTIC_RUN_ID,
+    crawlSnapshot: {
+      snapshotId: CRAWL_SNAPSHOT_ID,
+      capturedAt: OBSERVED_AT,
+      availability: "available" as const,
+      limitation: null,
+    },
+    coverage: {
+      availability: "available" as const,
+      crawlCompleteness: "complete" as const,
+      limitations: [],
+    },
+    graph: {
+      nodes: urls.map((url) =>
+        url === selectedUrl ? selectedNode : otherNode,
+      ),
+      edges: [],
+      totalEdgeCount: 0,
+      edgesTruncated: false,
+    },
+    selectedPage: {
+      selectedSitePageId: sitePageId,
+      canonicalUrl: selectedUrl,
+      inboundSources: [],
+      recommendationCoverage: {
+        availability: "available" as const,
+        limitations: [],
+      },
+      recommendations: [
+        {
+          sourceCanonicalUrl: otherUrl,
+          sourceSitePageIds: [otherPageId],
+          targetCanonicalUrl: selectedUrl,
+          targetSitePageIds: [sitePageId],
+          basis: {
+            kind: "same_confirmed_topic" as const,
+            topicNodeId: INTERNAL_LINK_TOPIC,
+            topicModelRevision: 2,
+            topicLabel: "Customer onboarding",
+          },
+          explanation: "同属一个已确认 Topic，且未观察到该方向的内链。",
+        },
+      ],
+      totalRecommendationCount: 1,
+      recommendationsTruncated: false,
+    },
+    generatedAt: OBSERVED_AT,
   } as const;
 }
 
@@ -236,6 +384,264 @@ function keywordDetailResponse(keywordId = KEYWORD_A) {
   } as const;
 }
 
+function keywordRankHistory(keywordId = KEYWORD_A) {
+  return {
+    projectId: PROJECT_ID,
+    keywordId,
+    mappedPage: null,
+    window: {
+      startedAt: "2026-04-22T00:00:00.000Z",
+      endedAt: "2026-07-21T00:00:00.000Z",
+      days: 90,
+    },
+    series: [
+      {
+        provider: "dataforseo",
+        metric: "absolute_rank",
+        interpretation: "Absolute Google organic rank observed by DataForSEO.",
+        points: [
+          {
+            occurrenceId: RANK_OCCURRENCE,
+            snapshotId: RANK_SNAPSHOT,
+            observationId: RANK_OBSERVATION,
+            provider: "dataforseo",
+            metric: "absolute_rank",
+            value: 12,
+            valuePointer: "/valueJson/currentRank",
+            observedAt: "2026-07-20T00:00:00.000Z",
+            providerDataAsOf: null,
+            grade: "B",
+            limitation:
+              "DataForSEO does not provide a provider data-as-of timestamp.",
+          },
+        ],
+      },
+    ],
+    changeMarkers: [],
+    coverage: {
+      availability: "partial",
+      limitations: [
+        "At least one rank series has fewer than two observations, so a trend cannot yet be established.",
+      ],
+    },
+    generatedAt: "2026-07-21T00:00:00.000Z",
+  } as const;
+}
+
+function keywordRelationCandidate() {
+  const participant = (
+    keywordId: string,
+    displayKeyword: string,
+  ) => ({
+    keywordId,
+    displayKeyword,
+    normalizedKeyword: displayKeyword.toLowerCase(),
+    governanceRevision: 2,
+    marketCode: "US",
+    languageTag: "en-US",
+    intent: "Commercial",
+    topicNodeId: KEYWORD_RELATION_TOPIC,
+    topicModelRevision: 1,
+    mappedSitePageId: KEYWORD_RELATION_PAGE,
+  });
+  return {
+    candidateId: KEYWORD_RELATION_CANDIDATE,
+    relationId: KEYWORD_RELATION,
+    projectId: PROJECT_ID,
+    candidateRevision: 1,
+    ruleVersion: "keyword-relation.1.0.0",
+    keywordA: participant(KEYWORD_A, "Customer onboarding software"),
+    keywordB: participant(KEYWORD_B, "Customer onboarding platform"),
+    signals: {
+      sameConfirmedMappedPage: true,
+      sameReviewedIntent: true,
+      sameMarket: true,
+      sameLanguage: true,
+      sameConfirmedTopic: true,
+      lexicalTokenOverlap: 0.67,
+      serpOverlap: {
+        availability: "unavailable",
+        value: null,
+        limitation:
+          "Canonical SERP-overlap observations are not available yet.",
+      },
+    },
+    evidenceHash: "a".repeat(64),
+    generatedAt: "2026-07-21T00:00:00.000Z",
+  } as const;
+}
+
+function undecidedKeywordRelation() {
+  return {
+    projectId: PROJECT_ID,
+    relationId: KEYWORD_RELATION,
+    candidate: keywordRelationCandidate(),
+    candidateState: "current",
+    staleReasons: [],
+    currentRelationRevision: 0,
+    decision: null,
+    decisionState: "none",
+    displayState: "possible_duplicate",
+    isEffectivelyFolded: false,
+    primaryKeywordId: null,
+    supportingKeywordId: null,
+  } as const;
+}
+
+function foldedKeywordRelation() {
+  return {
+    ...undecidedKeywordRelation(),
+    currentRelationRevision: 1,
+    decision: {
+      decisionId: KEYWORD_RELATION_DECISION,
+      relationId: KEYWORD_RELATION,
+      candidateId: KEYWORD_RELATION_CANDIDATE,
+      projectId: PROJECT_ID,
+      relationRevision: 1,
+      decisionKind: "primary_supporting",
+      primaryKeywordId: KEYWORD_A,
+      supportingKeywordId: KEYWORD_B,
+      reason: "Use one primary Keyword and retain supporting evidence.",
+      decidedBy: KEYWORD_RELATION_ACTOR,
+      decidedAt: "2026-07-21T00:05:00.000Z",
+    },
+    decisionState: "active",
+    displayState: "folded",
+    isEffectivelyFolded: true,
+    primaryKeywordId: KEYWORD_A,
+    supportingKeywordId: KEYWORD_B,
+  } as const;
+}
+
+function keywordRelationListResponse() {
+  return {
+    projectId: PROJECT_ID,
+    data: [undecidedKeywordRelation()],
+    meta: {
+      limit: 100,
+      nextCursor: null,
+      hasNext: false,
+      coverage: { availability: "available", limitations: [] },
+    },
+  } as const;
+}
+
+function topicNode(
+  topicNodeId: string,
+  parentTopicNodeId: string | null,
+  label: string,
+) {
+  return {
+    projectId: PROJECT_ID,
+    topicNodeId,
+    topicModelRevision: 1,
+    parentTopicNodeId,
+    label,
+    description: null,
+    intentEnvelope: [],
+    lifecycleState: "active",
+  } as const;
+}
+
+function confirmedTopicModel() {
+  return {
+    projectId: PROJECT_ID,
+    topicModelRevision: 1,
+    editRevision: 2,
+    rootTopicNodeId: TOPIC_NODE_ROOT,
+    nodes: [
+      topicNode(TOPIC_NODE_ROOT, null, "Customer onboarding"),
+      topicNode(TOPIC_NODE_CHILD, TOPIC_NODE_ROOT, "Automation"),
+    ],
+    aliases: [],
+    successorRelationships: [],
+    createdAt: "2026-07-20T00:00:00.000Z",
+    createdBy: TOPIC_ACTOR,
+    state: "confirmed",
+    confirmedAt: "2026-07-21T00:00:00.000Z",
+    confirmedBy: TOPIC_ACTOR,
+    contentHash: "b".repeat(64),
+  } as const;
+}
+
+function draftTopicModel(editRevision = 2) {
+  return {
+    ...confirmedTopicModel(),
+    topicModelRevision: 2,
+    editRevision,
+    nodes: confirmedTopicModel().nodes.map((node) => ({
+      ...node,
+      topicModelRevision: 2,
+    })),
+    state: "draft",
+    updatedAt: "2026-07-22T00:00:00.000Z",
+    confirmedAt: undefined,
+    confirmedBy: undefined,
+    contentHash: undefined,
+  } as const;
+}
+
+function topicWorkspace(
+  options: { readonly draftEditRevision?: number | null } = {},
+) {
+  const draft =
+    options.draftEditRevision === undefined
+      ? null
+      : draftTopicModel(options.draftEditRevision ?? 0);
+  return {
+    projectId: PROJECT_ID,
+    latestConfirmed: confirmedTopicModel(),
+    draft,
+    generatedAt: "2026-07-22T00:00:01.000Z",
+  } as const;
+}
+
+function topicInsights() {
+  return {
+    projectId: PROJECT_ID,
+    topicModelRevision: 1,
+    nodes: [
+      {
+        projectId: PROJECT_ID,
+        topicNodeId: TOPIC_NODE_ROOT,
+        topicModelRevision: 1,
+        label: "Customer onboarding",
+        keywordCount: 2,
+        approvedKeywordCount: 1,
+        reviewPendingKeywordCount: 1,
+        existingPageKeywordCount: 1,
+        newAssetKeywordCount: 0,
+        unassignedKeywordCount: 1,
+        mappedPageCount: 1,
+        conflictingIntentCount: 0,
+        coverageState: "partial",
+        limitation: "One Keyword is awaiting mapping review.",
+      },
+      {
+        projectId: PROJECT_ID,
+        topicNodeId: TOPIC_NODE_CHILD,
+        topicModelRevision: 1,
+        label: "Automation",
+        keywordCount: 0,
+        approvedKeywordCount: 0,
+        reviewPendingKeywordCount: 0,
+        existingPageKeywordCount: 0,
+        newAssetKeywordCount: 0,
+        unassignedKeywordCount: 0,
+        mappedPageCount: 0,
+        conflictingIntentCount: 0,
+        coverageState: "empty",
+        limitation: "No governed Keywords are assigned to this Topic.",
+      },
+    ],
+    coverage: {
+      availability: "partial",
+      limitations: ["One or more Topics have incomplete coverage."],
+    },
+    generatedAt: "2026-07-22T00:00:01.000Z",
+  } as const;
+}
+
 function competitorItem(competitorId = COMPETITOR_A) {
   const primary = competitorId === COMPETITOR_A;
   return {
@@ -327,6 +733,79 @@ function competitorDetailResponse(competitorId = COMPETITOR_A) {
   return {
     projectId: PROJECT_ID,
     data: competitorItem(competitorId),
+  } as const;
+}
+
+function competitorMonitorResponse() {
+  return {
+    projectId: PROJECT_ID,
+    config: {
+      enabled: true,
+      frequency: "monthly",
+      revision: 1,
+      updatedAt: OBSERVED_AT,
+    },
+    scope: {
+      market: "US",
+      languageTag: "en-US",
+      topicModelRevision: 1,
+    },
+    availability: "available",
+    limitation: null,
+    competitors: [
+      {
+        competitorId: COMPETITOR_A,
+        domain: "example-competitor.com",
+        name: "Example Competitor",
+        relationship: "direct",
+        analysisScopes: ["content", "serp_visibility"],
+        eligibility: "eligible",
+        collectionState: "collected",
+        evaluationState: "available",
+        lastCollectionAt: OBSERVED_AT,
+        nextCollectionAt: "2026-08-21T00:00:00.000Z",
+        limitation: null,
+        recentSignals: [
+          {
+            signalId: COMPETITOR_MONITOR_SIGNAL,
+            kind: "rank_gain",
+            competitorId: COMPETITOR_A,
+            detectedAt: OBSERVED_AT,
+            currentSnapshotId: COMPETITOR_SNAPSHOT,
+            previousSnapshotId: RANK_SNAPSHOT,
+            topicNodeId: TOPIC_NODE_ROOT,
+            topicLabel: "Customer onboarding",
+            keywordId: KEYWORD_A,
+            keyword: "customer onboarding automation",
+            previousRank: 13,
+            currentRank: 7,
+            improvement: 6,
+            limitation: null,
+            opportunityUpdate: {
+              state: "ready",
+              growthMapSection: "competitor_library",
+              sourceRef:
+                `competitor_monitor_signal:${COMPETITOR_MONITOR_SIGNAL}`,
+            },
+          },
+        ],
+      },
+      {
+        competitorId: COMPETITOR_B,
+        domain: "other-competitor.com",
+        name: "Other Competitor",
+        relationship: "indirect",
+        analysisScopes: ["content"],
+        eligibility: "eligible",
+        collectionState: "collected",
+        evaluationState: "baseline",
+        lastCollectionAt: OBSERVED_AT,
+        nextCollectionAt: "2026-08-21T00:00:00.000Z",
+        limitation: "首次采集仅建立 baseline，不生成竞品动态提醒。",
+        recentSignals: [],
+      },
+    ],
+    generatedAt: "2026-07-22T00:00:01.000Z",
   } as const;
 }
 
@@ -453,6 +932,91 @@ describe("Growth Map browser API boundary", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("keys selected Internal Link Maps exactly while keeping the graph overview readable", () => {
+    expect(
+      growthMapInternalLinkMapQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        SITE_PAGE_A,
+      ),
+    ).not.toEqual(
+      growthMapInternalLinkMapQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        SITE_PAGE_B,
+      ),
+    );
+    const overviewOptions = buildGrowthMapInternalLinkMapQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      null,
+    );
+    expect(overviewOptions.enabled).toBe(true);
+    expect(overviewOptions.staleTime).toBe(0);
+    expect(
+      buildGrowthMapInternalLinkMapQueryOptions(
+        "",
+        UI_LOCALE,
+        SITE_PAGE_A,
+      ).enabled,
+    ).toBe(false);
+  });
+
+  it("switching URL performs a distinct Internal Link Map request without reusing the first page", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(internalLinkMapResponse(SITE_PAGE_A)))
+      .mockResolvedValueOnce(ok(internalLinkMapResponse(SITE_PAGE_B)));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const observer = new QueryObserver(
+      client,
+      buildGrowthMapInternalLinkMapQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        SITE_PAGE_A,
+      ),
+    );
+
+    const unsubscribe = observer.subscribe(() => undefined);
+    await observer.refetch();
+    observer.setOptions(
+      buildGrowthMapInternalLinkMapQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        SITE_PAGE_B,
+      ),
+    );
+    await observer.refetch();
+    unsubscribe();
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      `/api/mvp/projects/${PROJECT_ID}/audit/internal-link-map?sitePageId=${SITE_PAGE_A}`,
+      `/api/mvp/projects/${PROJECT_ID}/audit/internal-link-map?sitePageId=${SITE_PAGE_B}`,
+    ]);
+  });
+
+  it("fetches the documented Internal Link Map graph overview without a selected SitePage", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        ok({
+          ...internalLinkMapResponse(SITE_PAGE_A),
+          selectedPage: null,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getGrowthMapInternalLinkMap(PROJECT_ID, null);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/internal-link-map`,
+      expect.any(Object),
+    );
+  });
+
   it("exports deterministic query-key helpers for list identity", () => {
     expect(growthMapUrlsQueryKey(PROJECT_ID, UI_LOCALE, { limit: 25 })).toEqual(
       growthMapUrlsQueryKey(PROJECT_ID, UI_LOCALE, {
@@ -463,7 +1027,7 @@ describe("Growth Map browser API boundary", () => {
     );
   });
 
-  it("invalidates the URL portfolio and the exact selected detail after one Finding review", async () => {
+  it("invalidates the URL portfolio, exact detail, and exact link-map refs after one Finding review", async () => {
     const client = new QueryClient();
     const invalidate = vi
       .spyOn(client, "invalidateQueries")
@@ -476,13 +1040,21 @@ describe("Growth Map browser API boundary", () => {
       SITE_PAGE_A,
     );
 
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledTimes(3);
     expect(invalidate).toHaveBeenNthCalledWith(1, {
       queryKey: ["growth-map", PROJECT_ID, UI_LOCALE, "urls"],
       refetchType: "active",
     });
     expect(invalidate).toHaveBeenNthCalledWith(2, {
       queryKey: growthMapUrlDetailQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        SITE_PAGE_A,
+      ),
+      refetchType: "active",
+    });
+    expect(invalidate).toHaveBeenNthCalledWith(3, {
+      queryKey: growthMapInternalLinkMapQueryKey(
         PROJECT_ID,
         UI_LOCALE,
         SITE_PAGE_A,
@@ -636,6 +1208,546 @@ describe("Growth Map browser API boundary", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("sends the exact existing Keyword review CAS body without client-owned facts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      ok({
+        projectId: PROJECT_ID,
+        data: {
+          ...keywordItem(),
+          status: "approved",
+          revision: 1,
+          intent: "commercial",
+          buyerStage: "consideration",
+          cluster: {
+            clusterId: TOPIC_NODE_CHILD,
+            name: "Onboarding automation",
+          },
+          classificationLimitations: {
+            intent: null,
+            buyerStage: null,
+            cluster: null,
+          },
+          mappedTarget: {
+            kind: "existing_page",
+            reviewState: "approved",
+            revision: 1,
+            reason: "Confirm the governed Topic and canonical page.",
+            sitePageId: SITE_PAGE_A,
+            normalizedUrl: "https://example.test/customer-onboarding/",
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const body = {
+      expectedGovernanceRevision: 0,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: TOPIC_NODE_CHILD,
+      topicModelRevision: 1,
+      mappingDecision: "existing_page",
+      mappedSitePageId: SITE_PAGE_A,
+      reason: "Confirm the governed Topic and canonical page.",
+    } as const;
+
+    const response = await reviewGrowthMapKeyword(
+      PROJECT_ID,
+      KEYWORD_A,
+      body,
+    );
+
+    expect(response.data.revision).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    );
+  });
+
+  it("refreshes Keyword list, exact detail, confirmed Topic insights, and relations after review", async () => {
+    const client = new QueryClient();
+    const invalidate = vi
+      .spyOn(client, "invalidateQueries")
+      .mockResolvedValue(undefined);
+
+    await invalidateGrowthMapAfterKeywordReview(
+      client,
+      PROJECT_ID,
+      UI_LOCALE,
+      KEYWORD_A,
+    );
+
+    expect(invalidate).toHaveBeenCalledTimes(4);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["growth-map", PROJECT_ID, UI_LOCALE, "keywords"],
+      refetchType: "active",
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: growthMapKeywordDetailQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_A,
+      ),
+      refetchType: "active",
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: growthMapTopicModelInsightsQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+      ),
+      refetchType: "active",
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: [
+        "growth-map",
+        PROJECT_ID,
+        UI_LOCALE,
+        "keyword-relations",
+      ],
+      refetchType: "active",
+    });
+  });
+
+  it("fetches and validates the selected Keyword's fixed 90-day rank history", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok(keywordRankHistory()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getGrowthMapKeywordRankHistory(PROJECT_ID, KEYWORD_A);
+    const options = buildGrowthMapKeywordRankHistoryQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      KEYWORD_A,
+    );
+
+    expect(result.keywordId).toBe(KEYWORD_A);
+    expect(result.window.days).toBe(90);
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "keyword",
+      KEYWORD_A,
+      "rank-history",
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}/rank-history`,
+      expect.any(Object),
+    );
+  });
+
+  it("isolates rank-history caches per Keyword and disables an empty identity", () => {
+    expect(
+      growthMapKeywordRankHistoryQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_A,
+      ),
+    ).not.toEqual(
+      growthMapKeywordRankHistoryQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_B,
+      ),
+    );
+    expect(
+      buildGrowthMapKeywordRankHistoryQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        null,
+      ).enabled,
+    ).toBe(false);
+  });
+
+  it("switching Keyword id performs a distinct rank-history request", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(keywordRankHistory(KEYWORD_A)))
+      .mockResolvedValueOnce(ok(keywordRankHistory(KEYWORD_B)));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const observer = new QueryObserver(
+      client,
+      buildGrowthMapKeywordRankHistoryQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_A,
+      ),
+    );
+
+    const unsubscribe = observer.subscribe(() => undefined);
+    await observer.refetch();
+    observer.setOptions(
+      buildGrowthMapKeywordRankHistoryQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_B,
+      ),
+    );
+    await observer.refetch();
+    unsubscribe();
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}/rank-history`,
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_B}/rank-history`,
+    ]);
+  });
+
+  it("does not construct rank-history fetches without an exact Keyword id", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      getGrowthMapKeywordRankHistory(PROJECT_ID, null),
+    ).rejects.toThrow("keywordId");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when rank history violates the fixed-window contract", async () => {
+    const invalid = {
+      ...keywordRankHistory(),
+      window: {
+        startedAt: "2026-06-21T00:00:00.000Z",
+        endedAt: "2026-07-21T00:00:00.000Z",
+        days: 30,
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(ok(invalid));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      getGrowthMapKeywordRankHistory(PROJECT_ID, KEYWORD_A),
+    ).rejects.toThrow();
+  });
+
+  it("batch-loads Keyword Relations with one stable sorted current-page query", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(ok(keywordRelationListResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+    const query = {
+      keywordIds: [KEYWORD_B, KEYWORD_A],
+      limit: 100,
+    } as const;
+
+    const options = buildGrowthMapKeywordRelationsQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      query,
+    );
+    const result = await getGrowthMapKeywordRelations(
+      PROJECT_ID,
+      query,
+    );
+
+    expect(result.data[0]?.relationId).toBe(KEYWORD_RELATION);
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "keyword-relations",
+      {
+        keywordIds: [KEYWORD_A, KEYWORD_B],
+        cursor: null,
+        limit: 100,
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keyword-relations?limit=100&keywordId=${KEYWORD_A}&keywordId=${KEYWORD_B}`,
+      expect.any(Object),
+    );
+  });
+
+  it("disables an empty relation batch and rejects duplicate IDs before fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(
+      buildGrowthMapKeywordRelationsQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        { keywordIds: [] },
+      ).enabled,
+    ).toBe(false);
+    await expect(
+      getGrowthMapKeywordRelations(PROJECT_ID, { keywordIds: [] }),
+    ).rejects.toThrow("keywordId");
+    expect(() =>
+      growthMapKeywordRelationsQueryKey(PROJECT_ID, UI_LOCALE, {
+        keywordIds: [KEYWORD_A, KEYWORD_A],
+      }),
+    ).toThrow("unique");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refreshes candidates without sending caller-owned server facts", async () => {
+    const response = {
+      projectId: PROJECT_ID,
+      eligiblePairCount: 1,
+      createdRelationCount: 1,
+      createdCandidateCount: 1,
+      generatedAt: "2026-07-21T00:10:00.000Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(ok(response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      refreshGrowthMapKeywordRelations(PROJECT_ID),
+    ).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keyword-relations`,
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+      }),
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.body).toBeUndefined();
+    expect(
+      new Headers(init.headers).has("Content-Type"),
+    ).toBe(false);
+  });
+
+  it("sends one strict CAS decision and rejects widened decision input", async () => {
+    const body = {
+      expectedRelationRevision: 0,
+      candidateId: KEYWORD_RELATION_CANDIDATE,
+      decisionKind: "primary_supporting",
+      primaryKeywordId: KEYWORD_A,
+      supportingKeywordId: KEYWORD_B,
+      reason: "Use the first Keyword as primary.",
+    } as const;
+    const response = {
+      data: foldedKeywordRelation(),
+      replayed: false,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(ok(response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      decideGrowthMapKeywordRelation(PROJECT_ID, {
+        relationId: KEYWORD_RELATION,
+        body,
+      }),
+    ).resolves.toMatchObject({
+      data: { displayState: "folded" },
+      replayed: false,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keyword-relations/${KEYWORD_RELATION}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    );
+
+    await expect(
+      decideGrowthMapKeywordRelation(PROJECT_ID, {
+        relationId: KEYWORD_RELATION,
+        body: { ...body, decidedBy: KEYWORD_RELATION_ACTOR } as never,
+      }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("invalidates only active relation batches after refresh, decision, or 409 recovery", async () => {
+    const client = new QueryClient();
+    const invalidate = vi
+      .spyOn(client, "invalidateQueries")
+      .mockResolvedValue(undefined);
+
+    await invalidateGrowthMapKeywordRelations(
+      client,
+      PROJECT_ID,
+      UI_LOCALE,
+    );
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: [
+        "growth-map",
+        PROJECT_ID,
+        UI_LOCALE,
+        "keyword-relations",
+      ],
+      refetchType: "active",
+    });
+  });
+
+  it("reads the Topic Model workspace and confirmed-only insights with distinct stable keys", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(topicWorkspace()))
+      .mockResolvedValueOnce(ok(topicInsights()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const workspaceOptions =
+      buildGrowthMapTopicModelWorkspaceQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+      );
+    const insightsOptions =
+      buildGrowthMapTopicModelInsightsQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+      );
+    const [workspace, insights] = await Promise.all([
+      getGrowthMapTopicModelWorkspace(PROJECT_ID),
+      getGrowthMapTopicModelInsights(PROJECT_ID),
+    ]);
+
+    expect(workspace.latestConfirmed?.topicModelRevision).toBe(1);
+    expect(insights.topicModelRevision).toBe(1);
+    expect(workspaceOptions.queryKey).toEqual(
+      growthMapTopicModelWorkspaceQueryKey(PROJECT_ID, UI_LOCALE),
+    );
+    expect(insightsOptions.queryKey).toEqual(
+      growthMapTopicModelInsightsQueryKey(PROJECT_ID, UI_LOCALE),
+    );
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      `/api/mvp/projects/${PROJECT_ID}/audit/topic-model`,
+      `/api/mvp/projects/${PROJECT_ID}/audit/topic-model/insights`,
+    ]);
+  });
+
+  it("sends strict begin, retire-patch, and confirm Topic Model CAS commands", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(topicWorkspace({ draftEditRevision: 2 })))
+      .mockResolvedValueOnce(ok(topicWorkspace({ draftEditRevision: 3 })))
+      .mockResolvedValueOnce(ok(topicWorkspace()));
+    vi.stubGlobal("fetch", fetchMock);
+    const beginBody = {
+      expectedLatestConfirmedRevision: 1,
+      reason: "Start a reviewed Topic Map revision.",
+    } as const;
+    const patchBody: Parameters<
+      typeof patchGrowthMapTopicModelDraft
+    >[1] = {
+      topicModelRevision: 2,
+      expectedEditRevision: 2,
+      reason: "Retire an obsolete Topic while retaining history.",
+      intents: [
+        {
+          kind: "retire",
+          topicNodeId: TOPIC_NODE_CHILD,
+          affectedKeywordReviewState: "unreviewed",
+        },
+      ],
+    };
+    const confirmBody = {
+      topicModelRevision: 2,
+      expectedEditRevision: 3,
+      reason: "Publish the reviewed Topic Map revision.",
+    } as const;
+
+    await beginGrowthMapTopicModelDraft(PROJECT_ID, beginBody);
+    await patchGrowthMapTopicModelDraft(PROJECT_ID, patchBody);
+    await confirmGrowthMapTopicModelDraft(PROJECT_ID, confirmBody);
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      `/api/mvp/projects/${PROJECT_ID}/audit/topic-model/draft`,
+      `/api/mvp/projects/${PROJECT_ID}/audit/topic-model/draft`,
+      `/api/mvp/projects/${PROJECT_ID}/audit/topic-model/draft/confirm`,
+    ]);
+    expect(
+      fetchMock.mock.calls.map(
+        ([, init]) => (init as RequestInit).method,
+      ),
+    ).toEqual(["POST", "PATCH", "POST"]);
+    expect(
+      fetchMock.mock.calls.map(
+        ([, init]) => JSON.parse(String((init as RequestInit).body)),
+      ),
+    ).toEqual([beginBody, patchBody, confirmBody]);
+
+    await expect(
+      beginGrowthMapTopicModelDraft(PROJECT_ID, {
+        ...beginBody,
+        actorId: TOPIC_ACTOR,
+      } as never),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps draft invalidation isolated and refreshes confirmed consumers only after publication", async () => {
+    const client = new QueryClient();
+    const invalidate = vi
+      .spyOn(client, "invalidateQueries")
+      .mockResolvedValue(undefined);
+
+    await invalidateGrowthMapTopicModelDraft(
+      client,
+      PROJECT_ID,
+      UI_LOCALE,
+    );
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenLastCalledWith({
+      queryKey: growthMapTopicModelWorkspaceQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+      ),
+      refetchType: "active",
+    });
+
+    invalidate.mockClear();
+    await invalidateGrowthMapTopicModelAfterConflict(
+      client,
+      PROJECT_ID,
+      UI_LOCALE,
+    );
+    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: growthMapTopicModelWorkspaceQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+      ),
+      refetchType: "active",
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: growthMapTopicModelInsightsQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+      ),
+      refetchType: "active",
+    });
+
+    invalidate.mockClear();
+    await invalidateGrowthMapAfterTopicModelConfirmation(
+      client,
+      PROJECT_ID,
+      UI_LOCALE,
+    );
+    expect(invalidate).toHaveBeenCalledTimes(5);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: growthMapTopicModelInsightsQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+      ),
+      refetchType: "active",
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["growth-map", PROJECT_ID, UI_LOCALE, "keywords"],
+      refetchType: "active",
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["growth-map", PROJECT_ID, UI_LOCALE, "keyword"],
+      refetchType: "active",
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: [
+        "growth-map",
+        PROJECT_ID,
+        UI_LOCALE,
+        "keyword-relations",
+      ],
+      refetchType: "active",
+    });
+  });
+
   it("fails closed on an invalid Keyword Library projection", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       ok({
@@ -723,6 +1835,157 @@ describe("Growth Map browser API boundary", () => {
         COMPETITOR_A,
       ).enabled,
     ).toBe(true);
+  });
+
+  it("reads one locale-scoped monitor projection for all visible Competitors", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(ok(competitorMonitorResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getGrowthMapCompetitorMonitor(PROJECT_ID);
+    const options = buildGrowthMapCompetitorMonitorQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+    );
+
+    expect(result.competitors.map((item) => item.competitorId)).toEqual([
+      COMPETITOR_A,
+      COMPETITOR_B,
+    ]);
+    expect(options.queryKey).toEqual(
+      growthMapCompetitorMonitorQueryKey(PROJECT_ID, UI_LOCALE),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitor-monitor`,
+      expect.any(Object),
+    );
+  });
+
+  it("updates strict monthly monitor config and refreshes only the current-locale canonical cache", async () => {
+    const previous = competitorMonitorResponse();
+    const updated = {
+      enabled: false,
+      frequency: "monthly",
+      revision: 2,
+      updatedAt: "2026-07-22T00:00:00.000Z",
+    } as const;
+    const body = {
+      expectedRevision: 1,
+      enabled: false,
+      frequency: "monthly",
+    } as const;
+    const fetchMock = vi.fn().mockResolvedValue(ok(updated));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+    const activeKey = growthMapCompetitorMonitorQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+    );
+    const otherLocaleKey = growthMapCompetitorMonitorQueryKey(
+      PROJECT_ID,
+      "zh-CN",
+    );
+    client.setQueryData(activeKey, previous);
+    client.setQueryData(otherLocaleKey, previous);
+    const invalidate = vi
+      .spyOn(client, "invalidateQueries")
+      .mockResolvedValue(undefined);
+    const observer = new MutationObserver(
+      client,
+      buildGrowthMapCompetitorMonitorMutationOptions(
+        client,
+        PROJECT_ID,
+        UI_LOCALE,
+      ),
+    );
+
+    await expect(observer.mutate(body)).resolves.toEqual(updated);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitor-monitor`,
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify(body),
+        credentials: "same-origin",
+      }),
+    );
+    expect(client.getQueryData(activeKey)).toEqual(previous);
+    expect(client.getQueryData(otherLocaleKey)).toEqual(previous);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: activeKey,
+      refetchType: "active",
+    });
+
+    await expect(
+      updateGrowthMapCompetitorMonitor(PROJECT_ID, {
+        ...body,
+        actorId: TOPIC_ACTOR,
+      } as never),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the canonical monitor cache intact and surfaces ApiError on a revision conflict", async () => {
+    const previous = competitorMonitorResponse();
+    const body = {
+      expectedRevision: 1,
+      enabled: false,
+      frequency: "monthly",
+    } as const;
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: "https://example.test/problems/version-conflict",
+          title: "Version conflict",
+          status: 409,
+          code: "VERSION_CONFLICT",
+          detail: "The competitor monitor revision has changed.",
+          requestId: "request-competitor-monitor-conflict",
+        }),
+        {
+          status: 409,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+    const key = growthMapCompetitorMonitorQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+    );
+    client.setQueryData(key, previous);
+    const invalidate = vi
+      .spyOn(client, "invalidateQueries")
+      .mockResolvedValue(undefined);
+    const observer = new MutationObserver(
+      client,
+      buildGrowthMapCompetitorMonitorMutationOptions(
+        client,
+        PROJECT_ID,
+        UI_LOCALE,
+      ),
+    );
+
+    const result = observer.mutate(body);
+
+    await expect(result).rejects.toBeInstanceOf(ApiError);
+    await expect(result).rejects.toMatchObject({
+      status: 409,
+      code: "VERSION_CONFLICT",
+    });
+    expect(client.getQueryData(key)).toEqual(previous);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: key,
+      refetchType: "active",
+    });
   });
 
   it("switching Competitor id performs a distinct detail request", async () => {

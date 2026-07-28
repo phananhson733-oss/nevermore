@@ -17,6 +17,7 @@ import type { CsvKeywordProjection } from "@sf/sources";
 import type { DiagnosticContext } from "../context.ts";
 import type { GovernanceKeywordClusterV1 } from "../governance.ts";
 import type { DiagnosticRule, EvidenceDraft, FindingCandidate } from "../rule.ts";
+import { competitorEntitySubjectRef } from "../subject-ref.ts";
 import { findingTarget } from "../target.ts";
 import { matchIntent, pageFieldBag } from "../util/intent-match.ts";
 
@@ -329,7 +330,10 @@ function buildCompetitorSupport(
         grade: "B",
         availability: "available",
         support: "context",
-        subjectRefs: [subjectRef],
+        subjectRefs: [
+          subjectRef,
+          ...ids.map(competitorEntitySubjectRef),
+        ],
         claim: `Approved Competitor Library context includes entity IDs ${ids.join(", ")} across analysis scopes ${scopes.join(", ")}.`,
         observedAt,
         limitation:

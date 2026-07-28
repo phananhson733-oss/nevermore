@@ -9,8 +9,10 @@
 
 import {
   ActionRecheckResultsResponse,
+  MeasurementWindowRecentResponse,
   type ActionRecheckResultsResponse as ActionRecheckResultsResponseDto,
   type CreateActionRecheckRequest,
+  type MeasurementWindowRecentResponse as MeasurementWindowRecentResponseDto,
 } from "@sf/contracts";
 import {
   useMutation,
@@ -81,4 +83,43 @@ export function useProjectResults(
 ): UseQueryResult<ActionRecheckResultsResponseDto, ApiError> {
   const uiLocale = useLocale();
   return useQuery(buildProjectResultsQueryOptions(projectId, uiLocale));
+}
+
+/* --------------------------------------- observational before/after windows */
+
+export const DEFAULT_RECENT_MEASUREMENT_LIMIT = 50;
+
+export function recentMeasurementWindowsQueryKey(
+  projectId: string,
+  limit = DEFAULT_RECENT_MEASUREMENT_LIMIT,
+) {
+  return ["measurement-windows", "recent", projectId, limit] as const;
+}
+
+/** Read the newest immutable before/after windows across all project URLs. */
+export async function getRecentMeasurementWindows(
+  projectId: string,
+  limit = DEFAULT_RECENT_MEASUREMENT_LIMIT,
+): Promise<MeasurementWindowRecentResponseDto> {
+  const response = await apiGet<DataEnvelope<unknown>>(
+    `/projects/${projectId}/measurement-windows/recent?limit=${limit}`,
+  );
+  return MeasurementWindowRecentResponse.parse(response.data);
+}
+
+export function buildRecentMeasurementWindowsQueryOptions(
+  projectId: string,
+  limit = DEFAULT_RECENT_MEASUREMENT_LIMIT,
+): UseQueryOptions<MeasurementWindowRecentResponseDto, ApiError> {
+  return {
+    queryKey: recentMeasurementWindowsQueryKey(projectId, limit),
+    queryFn: () => getRecentMeasurementWindows(projectId, limit),
+    enabled: projectId.length > 0,
+  };
+}
+
+export function useRecentMeasurementWindows(
+  projectId: string,
+): UseQueryResult<MeasurementWindowRecentResponseDto, ApiError> {
+  return useQuery(buildRecentMeasurementWindowsQueryOptions(projectId));
 }

@@ -263,6 +263,81 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+.executionStateHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.executionStateNotice,
+.executionStateEmpty {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 12px;
+  color: var(--sf-muted);
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+}
+.executionStateNotice > span,
+.executionStateNotice > p,
+.executionStateEmpty p {
+  margin: 0;
+  font-size: var(--sf-studio-readable-sm);
+  line-height: 1.5;
+}
+.executionStateNotice > button {
+  grid-column: 2;
+  justify-self: start;
+}
+.executionStateEmpty > div {
+  display: grid;
+  gap: 4px;
+}
+.executionStateEmpty strong {
+  font-size: var(--sf-studio-readable-sm);
+  color: var(--sf-fg);
+}
+.executionStateCard {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+}
+.executionStateFacts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.executionStateFacts > div {
+  display: grid;
+  gap: 3px;
+}
+.executionStateFacts dt {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 700;
+}
+.executionStateFacts dd {
+  margin: 0;
+  color: var(--sf-fg);
+  font-size: var(--sf-studio-readable-sm);
+  font-weight: 650;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.executionStateHistory {
+  margin: 0;
+  padding-top: 10px;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  line-height: 1.45;
+  border-top: 1px solid var(--sf-border);
+}
 .checkList {
   display: flex;
   flex-direction: column;
@@ -417,6 +492,26 @@
   gap: 8px;
   padding: 16px 12px 20px;
 }
+.queueExecutionNotice {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  margin: 12px 12px 0;
+  padding: 10px;
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+  border: 1px solid var(--sf-coral);
+  border-radius: var(--sf-radius-control);
+}
+.queueExecutionNotice > span {
+  font-size: var(--sf-studio-readable-sm);
+  line-height: 1.45;
+}
+.queueExecutionNotice > button {
+  grid-column: 2;
+  justify-self: start;
+}
 
 /* --------------------------------------------------------- Artifact card -- */
 .artCard {
@@ -487,6 +582,87 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+.artExecutionSummary {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  color: var(--sf-cobalt-text);
+  background: var(--sf-cobalt-soft);
+  border: 1px solid color-mix(in srgb, var(--sf-cobalt) 46%, transparent);
+  border-radius: 9px;
+}
+.artExecutionBlocked {
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+  border-color: color-mix(in srgb, var(--sf-coral) 56%, transparent);
+}
+.artExecutionCompleted {
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+  border-color: color-mix(in srgb, var(--sf-mint) 46%, transparent);
+}
+.artExecutionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.artExecutionHead > svg {
+  flex: none;
+}
+.artExecutionBlocker {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.artExecutionBlocker > div {
+  display: grid;
+  gap: 2px;
+}
+.artExecutionBlocker dt {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 750;
+}
+.artExecutionBlocker dd {
+  margin: 0;
+  color: var(--sf-fg);
+  font-size: var(--sf-studio-readable-sm);
+  font-weight: 650;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+.artExecutionProgress {
+  display: grid;
+  gap: 6px;
+}
+.artExecutionProgress > span {
+  color: var(--sf-fg);
+  font-size: var(--sf-studio-readable-sm);
+  font-weight: 650;
+  line-height: 1.4;
+}
+.artExecutionProgress progress {
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  appearance: none;
+  background: color-mix(in srgb, var(--sf-cobalt) 15%, var(--sf-surface));
+  border: none;
+  border-radius: 999px;
+}
+.artExecutionProgress progress::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--sf-cobalt) 15%, var(--sf-surface));
+  border-radius: 999px;
+}
+.artExecutionProgress progress::-webkit-progress-value {
+  background: var(--sf-cobalt);
+  border-radius: 999px;
+}
+.artExecutionProgress progress::-moz-progress-bar {
+  background: var(--sf-cobalt);
+  border-radius: 999px;
 }
 .artActions {
   display: flex;

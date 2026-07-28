@@ -496,6 +496,156 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/audit/internal-link-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the frozen Internal Link Map inside Growth Map
+         * @description Returns canonical site nodes and observed directed edges from the latest readable
+         *     Diagnostic Run's frozen Crawl Snapshot. An optional SitePage ID adds that exact
+         *     page's inbound sources and recommendations based only on the latest confirmed Topic
+         *     Model. Finding and Action references are canonical persisted identities. Partial
+         *     crawls never assert orphan status, and unavailable data returns no inferred graph.
+         *     Counts describe observed canonical edges only; missing authority is represented by
+         *     coverage and limitations. This is a built-in Growth Map capability, not a fifth
+         *     workspace module.
+         */
+        get: operations["getProjectAuditInternalLinkMap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/backlinks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the Backlink growth path inside Growth Map
+         * @description Returns immutable backlink and referring-domain facts for the primary site and
+         *     approved competitors. Provider imports (Ahrefs or Moz), manual CSV imports, and
+         *     built-in search-derived discoveries remain different source authorities. Only a
+         *     real provider import may expose provider index totals or DR/DA. CSV and
+         *     search-derived results are observed subsets and never claim complete coverage,
+         *     authority scores, or project-wide totals. Missing, partial, and unavailable data
+         *     are explicit and are never replaced with zero. This is a built-in Growth Map
+         *     growth path, not a fifth workspace module or a customer-managed data connection.
+         */
+        get: operations["getProjectAuditBacklinks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/topic-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the Growth Map Topic workspace
+         * @description Returns the latest immutable confirmed Topic Model together with its unique editable
+         *     successor, when present. The draft remains a working state inside Growth Map and never
+         *     replaces confirmed Keyword classification authority before explicit confirmation.
+         *     Topic Map is an internal Growth Map capability, not a fifth customer workspace module.
+         */
+        get: operations["getProjectAuditTopicModelWorkspace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/topic-model/insights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read confirmed Topic coverage inside Growth Map
+         * @description Returns customer-visible Keyword and content coverage for every active node in the
+         *     latest confirmed Topic Model. Draft edits never change this analysis before explicit
+         *     confirmation. Counts, conflicts, gaps, and limitations are derived from current
+         *     governed Keyword facts and remain part of the existing Growth Map workspace.
+         */
+        get: operations["getProjectAuditTopicModelInsights"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/topic-model/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin the unique next Growth Map Topic draft
+         * @description Starts one editable draft from the exact latest confirmed Topic Model revision. Zero is
+         *     the first-model sentinel. Actor identity, generation provenance, evidence, timestamps,
+         *     Topic Node UUIDs, aliases, and content hashes are resolved or generated by the server.
+         */
+        post: operations["beginProjectAuditTopicModelDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Apply a revision-checked Topic draft edit batch
+         * @description Applies create, update, rename, split, or merge intents to the exact draft edit revision.
+         *     Split and merge invalidation of affected Keyword assignments is atomic. The client never
+         *     submits Topic Node UUIDs for new nodes, legacy aliases, actors, provenance, or timestamps.
+         */
+        patch: operations["patchProjectAuditTopicModelDraft"];
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/topic-model/draft/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the exact Growth Map Topic draft
+         * @description Confirms one coherent, rooted Topic Map at the exact model and edit revisions. The
+         *     resulting content hash, confirmation actor and timestamp are server-owned. The previous
+         *     confirmed model remains immutable and historical Keyword evidence is not re-attributed.
+         */
+        post: operations["confirmProjectAuditTopicModelDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/audit/keywords": {
         parameters: {
             query?: never;
@@ -507,8 +657,9 @@ export interface paths {
          * List the project Keyword Library
          * @description Returns one bounded cursor page of stable Keyword identities with exact source
          *     occurrences, canonical Observation metric pointers, governed mapped targets, and
-         *     explicit coverage and limitations. This read surface exposes no filters, synthetic
-         *     totals, Finding confirmation, Action state, or mutation controls.
+         *     explicit coverage and limitations. This collection read exposes no filters,
+         *     synthetic totals, Finding confirmation, Action state, or collection mutation;
+         *     one selected Keyword can be reviewed through its exact detail resource.
          */
         get: operations["listProjectAuditKeywords"];
         put?: never;
@@ -537,7 +688,101 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Review one project Keyword governance decision
+         * @description Appends one human Keyword governance decision against an exact optimistic revision,
+         *     confirmed Topic Model revision, and optional same-project Site Page. Topic labels,
+         *     actor identity, timestamps, provenance, and source occurrence history remain
+         *     server-owned. An exact immediate retry is idempotent.
+         */
+        patch: operations["reviewProjectAuditKeyword"];
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/keywords/{keywordId}/rank-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one Keyword's fixed rank history
+         * @description Returns the exact trailing 90-day UTC rank evidence for one governed Keyword
+         *     inside Growth Map. DataForSEO absolute rank and GSC rolling 28-day
+         *     impression-weighted average position remain separate series and are never
+         *     presented as the same metric. Content-change markers come only from verified
+         *     Change Receipts for the exact canonical mapped page. The window is server-owned;
+         *     this built-in Growth Map capability is not a fifth workspace module.
+         */
+        get: operations["getProjectAuditKeywordRankHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/keyword-relations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List governed duplicate-Keyword relations
+         * @description Returns one bounded cursor page of immutable duplicate candidates and
+         *     customer decisions inside the existing Growth Map Keyword Library. Repeated
+         *     keywordId values attach at most one visible Keyword Library page in one
+         *     project-scoped query; they do not create a separate product module. Only an
+         *     active primary/supporting decision may fold a supporting Keyword from the
+         *     default list, and governance drift makes that fold stale and visible again.
+         */
+        get: operations["listProjectAuditKeywordRelations"];
+        put?: never;
+        /**
+         * Refresh governed duplicate-Keyword candidates
+         * @description Re-evaluates current reviewed Keywords using the server-owned duplicate
+         *     rule and appends only new immutable evidence snapshots. The command has no
+         *     request body or query parameters: relation identities, evidence hashes,
+         *     rule versions, actors, and clocks are server-owned. Existing Keywords,
+         *     occurrences, observations, rank history, and decisions are never deleted.
+         */
+        post: operations["refreshProjectAuditKeywordRelations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/keyword-relations/{relationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one governed duplicate-Keyword relation
+         * @description Returns the exact current candidate, immutable evidence snapshot, latest
+         *     decision, stale reasons, and effective display state for one stable
+         *     project-scoped Keyword Relation.
+         */
+        get: operations["getProjectAuditKeywordRelation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Decide one governed duplicate-Keyword relation
+         * @description Appends one compare-and-swap customer decision for the exact current
+         *     candidate evidence. The client may fold one exact pair, keep the Keywords
+         *     separate, park the secondary decision, or request more research. Actor and
+         *     time are server-owned; an exact immediate retry is reported as a replay.
+         */
+        patch: operations["decideProjectAuditKeywordRelation"];
         trace?: never;
     };
     "/projects/{projectId}/audit/competitors": {
@@ -551,8 +796,9 @@ export interface paths {
          * List the project Competitor Library
          * @description Returns one bounded cursor page of stable project Competitor identities with strict
          *     typed origin occurrences, reviewed analysis scope, canonical Observation-backed
-         *     insights, and explicit coverage. This slice exposes no filters, synthetic totals,
-         *     manual-entry controls, review controls, or mutation methods.
+         *     insights, and explicit coverage. This collection read exposes no filters,
+         *     synthetic totals, or manual-entry controls; one selected Competitor can be reviewed
+         *     through its exact detail resource.
          */
         get: operations["listProjectAuditCompetitors"];
         put?: never;
@@ -577,6 +823,42 @@ export interface paths {
          */
         get: operations["getProjectAuditCompetitor"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Review one project Competitor governance decision
+         * @description Applies one optimistic Competitor review without editing immutable origin
+         *     occurrences. Actor facts, timestamps, and provenance remain server-owned. An exact
+         *     immediate retry is idempotent and a stale divergent revision returns a conflict.
+         */
+        patch: operations["reviewProjectAuditCompetitor"];
+        trace?: never;
+    };
+    "/projects/{projectId}/audit/competitor-monitor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取增长地图竞品库的月度动态
+         * @description Reads approved Competitors only, under the primary Site's one exact market,
+         *     language and latest-confirmed Topic revision. This is a built-in Growth Map
+         *     Competitor Library capability, not a fifth workspace module. The read is
+         *     side-effect free. Missing source, history, confirmed Topic authority, or a
+         *     comparable window is unavailable; it is never represented as zero.
+         */
+        get: operations["getProjectAuditCompetitorMonitor"];
+        /**
+         * 启用或暂停竞品库月度动态
+         * @description Applies one compare-and-swap project setting. Monthly is the only supported
+         *     real cadence. Competitors, analysis scope, market, language, Topic authority,
+         *     provider observations, actor time and opportunity evidence remain server-owned.
+         */
+        put: operations["updateProjectAuditCompetitorMonitor"];
         post?: never;
         delete?: never;
         options?: never;
@@ -652,6 +934,65 @@ export interface paths {
         patch: operations["updateProjectAction"];
         trace?: never;
     };
+    "/projects/{projectId}/artifacts/execution-states": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read current execution facts for Artifact queue cards
+         * @description Reads the latest immutable Artifact-level execution event for the existing
+         *     Execution Center queue in one bounded project-scoped read instead of one request
+         *     per card. Every requested Artifact is returned exactly once. An item with current
+         *     null means no execution event has been recorded; clients must not infer one from
+         *     legacy Action or Artifact status. Full history remains on the exact stream endpoint.
+         */
+        get: operations["getArtifactExecutionStateBatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/actions/{actionId}/execution-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one exact delivery execution stream
+         * @description Reads the customer-visible delivery execution facts and blocker evidence used by
+         *     the existing Execution Center; this built-in capability does not create a fifth
+         *     workspace module. No artifactId selects the independent Action-level stream; an
+         *     artifactId selects only that Artifact stream. The two streams are never implicitly
+         *     aggregated. The legacy Action status remains the plan/review workflow and is never
+         *     used as a fallback for this delivery execution stream, so an empty history honestly
+         *     means that execution has not been recorded yet.
+         */
+        get: operations["getActionExecutionStateTimeline"];
+        put?: never;
+        /**
+         * Append one manual delivery execution update
+         * @description Appends one optimistic, immutable update to the exact Action- or Artifact-level
+         *     delivery execution stream used by the existing Execution Center. Path/query scope,
+         *     authenticated actor, Idempotency-Key, blocker owner, manual source identity,
+         *     observation time and freshness are server-owned. Trusted backend workflows resolve
+         *     non-manual QA, provider, approval, dependency, or async-failure sources separately;
+         *     a browser cannot label its own text as one of those authorities.
+         */
+        post: operations["updateActionExecutionState"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/artifacts": {
         parameters: {
             query?: never;
@@ -702,6 +1043,31 @@ export interface paths {
         head?: never;
         /** Create an immutable manual revision or change validated status */
         patch: operations["updateProjectArtifact"];
+        trace?: never;
+    };
+    "/projects/{projectId}/artifacts/{artifactId}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append approval or invalidation for one exact Artifact Revision
+         * @description Creates immutable publication authority inside the existing Execution Center without
+         *     publishing anything. Approval binds the exact current ready and valid Artifact Revision,
+         *     its server-resolved QA judgement, authenticated reviewer and explicit customer
+         *     acknowledgement. Revocation and supersession append a terminal event to one historical
+         *     approval. Actor identities, hashes, QA snapshots, durable acknowledgement identity and
+         *     timestamps are always server-owned.
+         */
+        post: operations["appendArtifactApprovalEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/projects/{projectId}/report": {
@@ -865,6 +1231,189 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/publications/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a short-lived preview for one approved publication
+         * @description Re-reads the current ready destination, exact approved Artifact Revision, Action
+         *     target and live provider state, then mints one append-only preview. The client only
+         *     selects the destination revision and approval event; provider plans, checksums,
+         *     readiness observations, actor identity and remote facts remain server-owned.
+         *     The body idempotencyKey must exactly match the Idempotency-Key header.
+         */
+        post: operations["issuePublicationPreview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/publications/previews/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a short-lived rollback preview from verified publication lineage
+         * @description Re-reads the exact source publication attempt, verified-live Change Receipt,
+         *     historical Artifact approval, current ready destination and live provider revision.
+         *     The client cannot supply a rollback plan, remote precondition, provider facts,
+         *     checksum or readiness authority. The body idempotencyKey must exactly match the
+         *     Idempotency-Key header.
+         */
+        post: operations["issuePublicationRollbackPreview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/publications/previews/{previewEventId}/{previewRef}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke one exact current publication preview
+         * @description Appends a terminal authority-reducing event for the exact preview event and opaque
+         *     preview reference in the route. The strict body contains only the customer's reason
+         *     and idempotency key, which must exactly match the Idempotency-Key header.
+         */
+        post: operations["revokePublicationPreview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/measurement-windows/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the project's latest immutable Measurement Windows
+         * @description Returns complete Measurement Windows across every URL target in the project, ordered
+         *     by recordedAt and measurement identity descending. This is the project-level evidence
+         *     feed used by the existing Results module. It does not accept a target filter, collapse
+         *     multiple URLs into one synthetic total, or add a server-fabricated lift field.
+         */
+        get: operations["getProjectRecentMeasurementWindows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/measurement-windows/{measurementWindowId}/keyword-ranks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compare one URL's confirmed target Keyword absolute ranks
+         * @description Returns the latest real DataForSEO absolute-rank observation inside each immutable
+         *     before/after Measurement Window for the exact measured URL. The target set comes only
+         *     from the latest confirmed Topic Map and current approved Keyword governance mapped to
+         *     that page. GSC average position is never substituted for absolute rank. Missing
+         *     observations remain nullable with explicit coverage limitations, and the comparison
+         *     is observational rather than causal. This is part of the existing Results module,
+         *     not a fifth workspace module.
+         */
+        get: operations["getProjectMeasurementTargetKeywordRanks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/measurement-windows/{measurementWindowId}/geo-citations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trace one URL's immutable GEO / AI citation evidence
+         * @description Returns only the GEO query and direct-citation observations already frozen into the
+         *     exact Measurement Window. The server owns the canonical URL, before/after windows,
+         *     source lineage, market, and language; callers cannot substitute filters or dates.
+         *     Missing observations remain unavailable rather than becoming zero. Bounded excerpts,
+         *     content hashes, and paragraph selectors support reverse lookup without storing a whole
+         *     third-party answer. Structural comparisons remain evidence-bounded observations or
+         *     explicitly limited inferences and never claim why a citation occurred or that one
+         *     publication caused it. This is evidence inside the existing Results module, not a
+         *     fifth workspace module.
+         */
+        get: operations["getProjectMeasurementGeoCitations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/measurement-windows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read immutable before/after Measurement Window history for one URL
+         * @description Returns finalized Measurement Windows for one exact canonical Site Page target,
+         *     newest first. Every window preserves absolute before/after intervals, GSC, GA4 and
+         *     GEO observations, UTM campaign identity, source Snapshot lineage, and the verified
+         *     publication Change Receipt that starts the outcome clock. Missing provider data is
+         *     represented as nullable unavailable/insufficient data with an explicit limitation;
+         *     this observational history never claims causal lift.
+         */
+        get: operations["getProjectMeasurementWindowHistory"];
+        put?: never;
+        /**
+         * Start an immutable before/after Measurement Window
+         * @description Starts one delayed observational measurement run from the exact verified publication
+         *     Change Receipt named by the customer. The Change Receipt is the only outcome-clock
+         *     authority: the service re-resolves the canonical URL target, Site Page, artifact
+         *     revision, publication lineage, UTC-symmetrical 28-day before/after intervals, provider
+         *     sources and execution schedule. A Delivery Receipt never starts this clock. The browser
+         *     cannot author target, time-window, provider, metric, result, revision or timestamp facts.
+         *     The body idempotency key must exactly match the Idempotency-Key header; an exact replay
+         *     returns the same pending Measurement Window and async run.
+         */
+        post: operations["createProjectMeasurementWindow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -885,7 +1434,7 @@ export interface components {
         /** @enum {string} */
         SourceState: "connecting" | "connected" | "syncing" | "available" | "partial" | "stale" | "permission_denied" | "unavailable" | "disconnected";
         /** @enum {string} */
-        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export" | "content_shadow";
+        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export" | "content_shadow" | "publication" | "measurement";
         /** @enum {string} */
         RunStatus: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
         /** @enum {string} */
@@ -1495,7 +2044,7 @@ export interface components {
             } | null;
             resultRef: {
                 /** @enum {string} */
-                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "flow_shadow_run";
+                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "flow_shadow_run" | "publication_attempt" | "measurement_window";
                 id: components["schemas"]["Uuid"];
             } | null;
             queuedAt: components["schemas"]["Timestamp"];
@@ -1882,6 +2431,223 @@ export interface components {
             data: components["schemas"]["GrowthMapUrlDetailResponse"];
         };
         /**
+         * @description Coverage and Crawl completeness move together. Partial crawls never assert orphan
+         *     status, and unavailable data returns no inferred graph.
+         */
+        InternalLinkMapCoverage: {
+            /** @enum {string} */
+            availability: "available" | "partial" | "unavailable";
+            /** @enum {string} */
+            crawlCompleteness: "complete" | "partial" | "unavailable";
+            limitations: string[];
+        };
+        /** @description A real Finding and its optional persisted Action; the map never fabricates execution state. */
+        InternalLinkMapExecutionRef: {
+            findingId: components["schemas"]["Uuid"];
+            actionId: components["schemas"]["Uuid"] | null;
+        };
+        /**
+         * @description One canonical site node with exact SitePage variants and observed edge counts.
+         *     Orphan is valid only for a complete Crawl; unknown carries no directional claim.
+         */
+        InternalLinkMapNode: {
+            /** Format: uri */
+            canonicalUrl: string;
+            sitePageIds: components["schemas"]["Uuid"][];
+            title: string | null;
+            inboundCount: number;
+            outboundCount: number;
+            /** @enum {string} */
+            status: "connected" | "one_way" | "orphan" | "unknown";
+            executionRefs: components["schemas"]["InternalLinkMapExecutionRef"][];
+        };
+        /** @description Exact Crawl Observation for one source SitePage variant. */
+        InternalLinkMapEdgeFact: {
+            observationId: components["schemas"]["Uuid"];
+            sourceSitePageId: components["schemas"]["Uuid"];
+            anchorText: string | null;
+            rel: string | null;
+        };
+        /** @description One observed directed canonical edge backed by exact source-variant facts. */
+        InternalLinkMapEdge: {
+            /** Format: uri */
+            sourceCanonicalUrl: string;
+            /** Format: uri */
+            targetCanonicalUrl: string;
+            sourceSitePageIds: components["schemas"]["Uuid"][];
+            targetSitePageIds: components["schemas"]["Uuid"][];
+            facts: components["schemas"]["InternalLinkMapEdgeFact"][];
+            reciprocal: boolean;
+        };
+        /** @description Missing confirmed Topic authority is explicit and never becomes a guessed recommendation. */
+        InternalLinkRecommendationCoverage: {
+            /** @enum {string} */
+            availability: "available" | "partial" | "unavailable";
+            limitations: string[];
+        };
+        /** @description A missing directed link suggested only from one exact confirmed Topic revision. */
+        InternalLinkRecommendation: {
+            /** Format: uri */
+            sourceCanonicalUrl: string;
+            sourceSitePageIds: components["schemas"]["Uuid"][];
+            /** Format: uri */
+            targetCanonicalUrl: string;
+            targetSitePageIds: components["schemas"]["Uuid"][];
+            basis: {
+                /** @constant */
+                kind: "same_confirmed_topic";
+                topicNodeId: components["schemas"]["Uuid"];
+                topicModelRevision: number;
+                topicLabel: string;
+            };
+            explanation: string;
+        };
+        /** @description Exact selected SitePage inbound evidence and confirmed-Topic recommendation projection. */
+        InternalLinkSelectedPage: {
+            selectedSitePageId: components["schemas"]["Uuid"];
+            /** Format: uri */
+            canonicalUrl: string;
+            inboundSources: components["schemas"]["InternalLinkMapEdge"][];
+            recommendationCoverage: components["schemas"]["InternalLinkRecommendationCoverage"];
+            recommendations: components["schemas"]["InternalLinkRecommendation"][];
+            totalRecommendationCount: number;
+            recommendationsTruncated: boolean;
+        };
+        /** @description Deterministically sorted canonical site graph from one frozen Crawl Snapshot. */
+        InternalLinkMapGraph: {
+            nodes: components["schemas"]["InternalLinkMapNode"][];
+            edges: components["schemas"]["InternalLinkMapEdge"][];
+            totalEdgeCount: number;
+            edgesTruncated: boolean;
+        };
+        InternalLinkMapCrawlSnapshot: {
+            snapshotId: components["schemas"]["Uuid"];
+            capturedAt: components["schemas"]["Timestamp"];
+            /** @enum {string} */
+            availability: "available" | "partial" | "unavailable";
+            limitation: string | null;
+        };
+        /**
+         * @description Frozen Internal Link Map within Growth Map. Counts describe observed canonical edges
+         *     only; missing authority is represented by coverage and limitations.
+         */
+        GrowthMapInternalLinkMap: {
+            projectId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"] | null;
+            crawlSnapshot: components["schemas"]["InternalLinkMapCrawlSnapshot"] | null;
+            coverage: components["schemas"]["InternalLinkMapCoverage"];
+            graph: components["schemas"]["InternalLinkMapGraph"];
+            selectedPage: components["schemas"]["InternalLinkSelectedPage"] | null;
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        GrowthMapInternalLinkMapHttpResponse: {
+            data: components["schemas"]["GrowthMapInternalLinkMap"];
+        };
+        /** @description Available means a real provider index; partial is an observed subset; unavailable cannot carry numeric projections. */
+        BacklinkCoverage: {
+            /** @enum {string} */
+            availability: "available" | "partial" | "unavailable";
+            /** @enum {string} */
+            indexScope: "provider_index" | "observed_subset" | "unavailable";
+            limitations: string[];
+        };
+        /** @description The semantics label is inseparable from the number. Missing data is null, never zero. */
+        BacklinkMetric: {
+            /** @enum {string} */
+            semantics: "provider_index_total" | "observed_fact_count" | "unavailable";
+            value: number | null;
+        };
+        BacklinkAuthorityMetric: {
+            /** @enum {string} */
+            kind: "domain_rating" | "domain_authority";
+            value: number;
+        };
+        BacklinkSnapshotTrace: {
+            /** @description Customer-safe trace label; never an internal object key, signed URL, or credential-bearing query. */
+            sourceRef: string;
+            checksum: string;
+            rowCount: number;
+            importPreviewId: components["schemas"]["Uuid"] | null;
+        };
+        /** @description Immutable source authority. Only provider_import can expose provider totals and DR/DA; CSV/search-derived remain observed subsets. */
+        BacklinkSnapshotSource: {
+            snapshotId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            subjectKind: "primary_site" | "approved_competitor";
+            subjectId: components["schemas"]["Uuid"];
+            subjectName: string;
+            domain: string;
+            /** @enum {string} */
+            sourceKind: "provider_import" | "manual_csv" | "search_derived";
+            /** @enum {string} */
+            provider: "ahrefs" | "moz" | "manual_csv" | "search_derived";
+            capturedAt: components["schemas"]["Timestamp"];
+            coverage: components["schemas"]["BacklinkCoverage"];
+            backlinks: components["schemas"]["BacklinkMetric"];
+            referringDomains: components["schemas"]["BacklinkMetric"];
+            authorityMetric: components["schemas"]["BacklinkAuthorityMetric"] | null;
+            trace: components["schemas"]["BacklinkSnapshotTrace"];
+        };
+        BacklinkReferringDomain: {
+            domain: string;
+            observedBacklinks: number;
+            authorityMetric: components["schemas"]["BacklinkAuthorityMetric"] | null;
+            /** Format: uri */
+            topTargetUrl: string;
+            snapshotId: components["schemas"]["Uuid"];
+            factIds: components["schemas"]["Uuid"][];
+        };
+        BacklinkPageItem: {
+            sitePageId: components["schemas"]["Uuid"];
+            /** Format: uri */
+            canonicalUrl: string;
+            title: string | null;
+            backlinks: components["schemas"]["BacklinkMetric"];
+            referringDomains: components["schemas"]["BacklinkMetric"];
+            snapshotId: components["schemas"]["Uuid"] | null;
+        };
+        BacklinkComparison: {
+            /** @enum {string} */
+            state: "comparable" | "insufficient" | "unavailable";
+            /** @enum {string|null} */
+            provider: "ahrefs" | "moz" | null;
+            primarySiteSnapshotId: components["schemas"]["Uuid"] | null;
+            competitorSnapshotIds: components["schemas"]["Uuid"][];
+            limitation: string | null;
+        };
+        BacklinkOpportunityExecutionRef: {
+            actionId: components["schemas"]["Uuid"];
+            artifactIds: components["schemas"]["Uuid"][];
+        };
+        BacklinkOpportunity: {
+            opportunityKey: string;
+            /** @enum {string} */
+            kind: "site_referring_domain_gap" | "page_without_provider_backlinks";
+            /** @enum {string} */
+            severity: "high" | "medium";
+            title: string;
+            summary: string;
+            sitePageId: components["schemas"]["Uuid"] | null;
+            evidenceSnapshotIds: components["schemas"]["Uuid"][];
+            executionRef: components["schemas"]["BacklinkOpportunityExecutionRef"] | null;
+        };
+        /** @description Customer-visible Backlink growth path inside the existing Growth Map; no customer connection or fifth module is introduced. */
+        GrowthMapBacklinkReadModel: {
+            projectId: components["schemas"]["Uuid"];
+            generatedAt: components["schemas"]["Timestamp"];
+            coverage: components["schemas"]["BacklinkCoverage"];
+            sources: components["schemas"]["BacklinkSnapshotSource"][];
+            primarySite: components["schemas"]["BacklinkSnapshotSource"] | null;
+            approvedCompetitors: components["schemas"]["BacklinkSnapshotSource"][];
+            comparison: components["schemas"]["BacklinkComparison"];
+            pages: components["schemas"]["BacklinkPageItem"][];
+            referringDomains: components["schemas"]["BacklinkReferringDomain"][];
+            opportunities: components["schemas"]["BacklinkOpportunity"][];
+        };
+        GrowthMapBacklinkHttpResponse: {
+            data: components["schemas"]["GrowthMapBacklinkReadModel"];
+        };
+        /**
          * @description The eight customer-facing Growth Audit modules (Slice 1).
          * @enum {string}
          */
@@ -2050,6 +2816,207 @@ export interface components {
         ProjectOpportunityDetailHttpResponse: {
             data: components["schemas"]["ProjectOpportunityDetailResponse"];
         };
+        /** @description Stable Topic Node identity projected at one exact Topic Model revision. */
+        TopicNodeRevision: {
+            projectId: components["schemas"]["Uuid"];
+            topicNodeId: components["schemas"]["Uuid"];
+            topicModelRevision: number;
+            parentTopicNodeId: components["schemas"]["Uuid"] | null;
+            label: string;
+            description: string | null;
+            intentEnvelope: string[];
+            /** @enum {string} */
+            lifecycleState: "active" | "superseded";
+        };
+        /** @description Read-only historical label compatibility; mutation requests cannot author aliases. */
+        TopicClusterAlias: {
+            aliasId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            topicNodeId: components["schemas"]["Uuid"];
+            clusterKey: string;
+            validFromTopicModelRevision: number;
+            validThroughTopicModelRevision: number | null;
+            isCurrent: boolean;
+        };
+        TopicNodeSuccessorRelationship: {
+            /** @enum {string} */
+            kind: "split_into" | "merged_into";
+            sourceTopicNodeId: components["schemas"]["Uuid"];
+            successorTopicNodeId: components["schemas"]["Uuid"];
+            topicModelRevision: number;
+        };
+        /** @description Unique customer-editable successor of the latest confirmed Topic Model. */
+        TopicModelDraftRevision: {
+            /** @constant */
+            state: "draft";
+            projectId: components["schemas"]["Uuid"];
+            topicModelRevision: number;
+            editRevision: number;
+            rootTopicNodeId: components["schemas"]["Uuid"] | null;
+            nodes: components["schemas"]["TopicNodeRevision"][];
+            aliases: components["schemas"]["TopicClusterAlias"][];
+            successorRelationships: components["schemas"]["TopicNodeSuccessorRelationship"][];
+            createdAt: components["schemas"]["Timestamp"];
+            createdBy: components["schemas"]["Uuid"];
+            updatedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description Immutable rooted Topic Map used as current Keyword classification authority. */
+        TopicModelConfirmedRevision: {
+            /** @constant */
+            state: "confirmed";
+            projectId: components["schemas"]["Uuid"];
+            topicModelRevision: number;
+            editRevision: number;
+            rootTopicNodeId: components["schemas"]["Uuid"] | null;
+            nodes: components["schemas"]["TopicNodeRevision"][];
+            aliases: components["schemas"]["TopicClusterAlias"][];
+            successorRelationships: components["schemas"]["TopicNodeSuccessorRelationship"][];
+            createdAt: components["schemas"]["Timestamp"];
+            createdBy: components["schemas"]["Uuid"];
+            confirmedAt: components["schemas"]["Timestamp"];
+            confirmedBy: components["schemas"]["Uuid"];
+            contentHash: string;
+        };
+        /** @description Confirmed authority and immediate editable successor are visible together. */
+        TopicModelWorkspaceProjection: {
+            projectId: components["schemas"]["Uuid"];
+            latestConfirmed: components["schemas"]["TopicModelConfirmedRevision"] | null;
+            draft: components["schemas"]["TopicModelDraftRevision"] | null;
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        TopicModelWorkspaceHttpResponse: {
+            data: components["schemas"]["TopicModelWorkspaceProjection"];
+        };
+        /** @enum {string} */
+        GrowthMapTopicNodeCoverageState: "empty" | "uncovered" | "partial" | "covered" | "conflict";
+        /**
+         * @description One active Topic Node projected from the latest confirmed model. Mapping-decision
+         *     counts partition keywordCount; conflict means one reviewed Intent maps to more than
+         *     one existing page.
+         */
+        GrowthMapTopicNodeInsight: {
+            projectId: components["schemas"]["Uuid"];
+            topicNodeId: components["schemas"]["Uuid"];
+            topicModelRevision: number;
+            label: string;
+            keywordCount: number;
+            approvedKeywordCount: number;
+            reviewPendingKeywordCount: number;
+            existingPageKeywordCount: number;
+            newAssetKeywordCount: number;
+            unassignedKeywordCount: number;
+            mappedPageCount: number;
+            conflictingIntentCount: number;
+            coverageState: components["schemas"]["GrowthMapTopicNodeCoverageState"];
+            limitation: string | null;
+        };
+        /** @description Partial and unavailable analysis always explains the missing or orphaned authority. */
+        GrowthMapTopicInsightsCoverage: {
+            /** @enum {string} */
+            availability: "available" | "partial" | "unavailable";
+            limitations: string[];
+        };
+        /**
+         * @description Exact customer-visible coverage for the latest confirmed Topic Model. Without a
+         *     confirmed model, the revision is null, nodes are empty, and coverage is unavailable.
+         */
+        GrowthMapTopicModelInsights: {
+            projectId: components["schemas"]["Uuid"];
+            topicModelRevision: number | null;
+            nodes: components["schemas"]["GrowthMapTopicNodeInsight"][];
+            coverage: components["schemas"]["GrowthMapTopicInsightsCoverage"];
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        GrowthMapTopicModelInsightsHttpResponse: {
+            data: components["schemas"]["GrowthMapTopicModelInsights"];
+        };
+        /** @description Starts the exact next draft; every generation, evidence, identity, actor, and timestamp fact is server-owned. */
+        BeginTopicModelDraftRequest: {
+            expectedLatestConfirmedRevision: number;
+            reason: string;
+        };
+        TopicNodeDraftShape: {
+            parentTopicNodeId: components["schemas"]["Uuid"] | null;
+            label: string;
+            description: string | null;
+            intentEnvelope: string[];
+        };
+        CreateTopicNodeIntent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "create";
+            parentTopicNodeId: components["schemas"]["Uuid"] | null;
+            label: string;
+            description: string | null;
+            intentEnvelope: string[];
+        };
+        UpdateTopicNodeIntent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "update";
+            topicNodeId: components["schemas"]["Uuid"];
+            parentTopicNodeId?: components["schemas"]["Uuid"] | null;
+            description?: string | null;
+            intentEnvelope?: string[];
+        };
+        RenameTopicNodeIntent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rename";
+            topicNodeId: components["schemas"]["Uuid"];
+            label: string;
+        };
+        /** @description Customer-facing deletion retires the stable Topic Node identity instead of physically deleting revision history. Every affected Keyword assignment returns to unreviewed. */
+        RetireTopicNodeIntent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "retire";
+            topicNodeId: components["schemas"]["Uuid"];
+            /** @constant */
+            affectedKeywordReviewState: "unreviewed";
+        };
+        SplitTopicNodeIntent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "split";
+            sourceTopicNodeId: components["schemas"]["Uuid"];
+            successors: components["schemas"]["TopicNodeDraftShape"][];
+            /** @constant */
+            affectedKeywordReviewState: "unreviewed";
+        };
+        MergeTopicNodeIntent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "merge";
+            sourceTopicNodeIds: components["schemas"]["Uuid"][];
+            successor: components["schemas"]["TopicNodeDraftShape"];
+            /** @constant */
+            affectedKeywordReviewState: "unreviewed";
+        };
+        TopicNodeDraftIntent: components["schemas"]["CreateTopicNodeIntent"] | components["schemas"]["UpdateTopicNodeIntent"] | components["schemas"]["RenameTopicNodeIntent"] | components["schemas"]["RetireTopicNodeIntent"] | components["schemas"]["SplitTopicNodeIntent"] | components["schemas"]["MergeTopicNodeIntent"];
+        PatchTopicModelDraftRequest: {
+            topicModelRevision: number;
+            expectedEditRevision: number;
+            reason: string;
+            intents: components["schemas"]["TopicNodeDraftIntent"][];
+        };
+        ConfirmTopicModelRequest: {
+            topicModelRevision: number;
+            expectedEditRevision: number;
+            reason: string;
+        };
         GrowthMapKeywordUnassignedTarget: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -2155,6 +3122,66 @@ export interface components {
             marketCode: components["schemas"]["MarketCode"];
             languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
         };
+        GrowthMapKeywordInterviewSummaryOccurrence: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            sourceKind: "interview_summary";
+            collectionRunId: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            sourceObservationId: components["schemas"]["Uuid"];
+            /** @constant */
+            sourcePointer: "/valueJson/keyword";
+            collectedAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            providerDataAsOf: string | null;
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            /** @constant */
+            scopeBasis: "user_provided";
+            scopeLimitation: string;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
+            /** @description Customer-safe, de-identified label for the frozen interview-summary evidence. */
+            evidenceLabel: string;
+            /** @description SHA-256 fingerprint for the immutable source record; never a participant identity or transcript. */
+            sourceRecordHash: string;
+        };
+        GrowthMapKeywordUserReviewOccurrence: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            sourceKind: "user_review";
+            collectionRunId: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            sourceObservationId: components["schemas"]["Uuid"];
+            /** @constant */
+            sourcePointer: "/valueJson/keyword";
+            collectedAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            providerDataAsOf: string | null;
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+            limitation: string | null;
+            /** @constant */
+            scopeBasis: "provider_collection_scope";
+            scopeLimitation: string;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
+            /** @description Customer-safe label for the bounded public review corpus; not review body or author data. */
+            evidenceLabel: string;
+            /** @description SHA-256 fingerprint for the immutable public source record. */
+            sourceRecordHash: string;
+            /** @enum {string} */
+            reviewPlatform: "app_store" | "g2" | "capterra" | "other";
+            /** Format: uri */
+            sourceUrl: string | null;
+        };
         GrowthMapKeywordManualOccurrence: {
             occurrenceId: components["schemas"]["Uuid"];
             /**
@@ -2176,8 +3203,8 @@ export interface components {
             marketCode: components["schemas"]["MarketCode"];
             languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
         };
-        /** @description Exact immutable source occurrence. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation. */
-        GrowthMapKeywordSourceOccurrence: components["schemas"]["GrowthMapKeywordCsvImportOccurrence"] | components["schemas"]["GrowthMapKeywordDataForSeoRankedOccurrence"] | components["schemas"]["GrowthMapKeywordGscTopQueryOccurrence"] | components["schemas"]["GrowthMapKeywordManualOccurrence"];
+        /** @description Exact immutable source occurrence. Interview summaries and public user reviews remain distinct source authorities. Their customer projection contains de-identified evidence labels and immutable fingerprints, never participant identities, review authors, or full source text. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation. */
+        GrowthMapKeywordSourceOccurrence: components["schemas"]["GrowthMapKeywordCsvImportOccurrence"] | components["schemas"]["GrowthMapKeywordDataForSeoRankedOccurrence"] | components["schemas"]["GrowthMapKeywordGscTopQueryOccurrence"] | components["schemas"]["GrowthMapKeywordInterviewSummaryOccurrence"] | components["schemas"]["GrowthMapKeywordUserReviewOccurrence"] | components["schemas"]["GrowthMapKeywordManualOccurrence"];
         GrowthMapKeywordVolumeMetric: {
             snapshotId: components["schemas"]["Uuid"];
             observationId: components["schemas"]["Uuid"];
@@ -2317,6 +3344,221 @@ export interface components {
         };
         GrowthMapKeywordDetailHttpResponse: {
             data: components["schemas"]["GrowthMapKeywordDetailResponse"];
+        };
+        GrowthMapKeywordRankMappedPage: {
+            sitePageId: components["schemas"]["Uuid"];
+            /** Format: uri */
+            normalizedUrl: string;
+        };
+        /** @description Immutable normalized Observation lineage. Provider, metric, grade, and value pointer must be one canonical combination; provider data-as-of cannot follow observedAt. */
+        GrowthMapKeywordRankPoint: {
+            occurrenceId: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            provider: "dataforseo" | "gsc";
+            /** @enum {string} */
+            metric: "absolute_rank" | "gsc_28d_average_position";
+            value: number;
+            valuePointer: string;
+            observedAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            providerDataAsOf: string | null;
+            /** @enum {string} */
+            grade: "A" | "B";
+            limitation: string;
+        };
+        /** @description One provider-specific metric ordered oldest to newest. Every point must match the containing provider and metric and have a unique Observation/value-pointer identity. */
+        GrowthMapKeywordRankSeries: {
+            /** @enum {string} */
+            provider: "dataforseo" | "gsc";
+            /** @enum {string} */
+            metric: "absolute_rank" | "gsc_28d_average_position";
+            points: components["schemas"]["GrowthMapKeywordRankPoint"][];
+            interpretation: string;
+        };
+        /** @description One verified Change Receipt for the exact canonical mapped page; a Delivery Receipt is not content-change evidence. */
+        GrowthMapKeywordContentChangeMarker: {
+            changeReceiptId: components["schemas"]["Uuid"];
+            publicationAttemptId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            attemptKind: "publish" | "rollback";
+            artifactId: components["schemas"]["Uuid"];
+            artifactRevision: number;
+            targetRef: string;
+            /** Format: uri */
+            liveCanonicalUrl: string;
+            changedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description Exact server-owned trailing 90-day UTC window. */
+        GrowthMapKeywordRankWindow: {
+            startedAt: components["schemas"]["Timestamp"];
+            endedAt: components["schemas"]["Timestamp"];
+            /** @constant */
+            days: 90;
+        };
+        /** @description Rank points and verified change markers stay inside the declared window and are ordered oldest to newest. Change markers require one exact mapped page; absent rank series requires unavailable coverage. */
+        GrowthMapKeywordRankHistory: {
+            projectId: components["schemas"]["Uuid"];
+            keywordId: components["schemas"]["Uuid"];
+            mappedPage: components["schemas"]["GrowthMapKeywordRankMappedPage"] | null;
+            window: components["schemas"]["GrowthMapKeywordRankWindow"];
+            series: components["schemas"]["GrowthMapKeywordRankSeries"][];
+            changeMarkers: components["schemas"]["GrowthMapKeywordContentChangeMarker"][];
+            coverage: components["schemas"]["GrowthMapCoverage"];
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        GrowthMapKeywordRankHistoryHttpResponse: {
+            data: components["schemas"]["GrowthMapKeywordRankHistory"];
+        };
+        /** @description Immutable participant facts from one exact current Keyword governance decision. */
+        KeywordRelationParticipantSnapshot: {
+            keywordId: components["schemas"]["Uuid"];
+            displayKeyword: string;
+            normalizedKeyword: string;
+            governanceRevision: number;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
+            intent: string;
+            topicNodeId: components["schemas"]["Uuid"] | null;
+            topicModelRevision: number | null;
+            mappedSitePageId: components["schemas"]["Uuid"];
+        };
+        /** @description Available carries exactly one overlap value; unavailable carries exactly one honest limitation. */
+        KeywordRelationSerpOverlapSignal: {
+            /** @enum {string} */
+            availability: "available" | "unavailable";
+            value: number | null;
+            limitation: string | null;
+        };
+        /** @description Same page, reviewed Intent, market, and language are eligibility boundaries; Topic and lexical/SERP overlap are supporting evidence. */
+        KeywordRelationCandidateSignals: {
+            /** @constant */
+            sameConfirmedMappedPage: true;
+            /** @constant */
+            sameReviewedIntent: true;
+            /** @constant */
+            sameMarket: true;
+            /** @constant */
+            sameLanguage: true;
+            sameConfirmedTopic: boolean;
+            lexicalTokenOverlap: number;
+            serpOverlap: components["schemas"]["KeywordRelationSerpOverlapSignal"];
+        };
+        /** @description Append-only candidate evidence for one canonical ascending Keyword UUID pair. */
+        KeywordRelationCandidate: {
+            candidateId: components["schemas"]["Uuid"];
+            relationId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            candidateRevision: number;
+            /** @constant */
+            ruleVersion: "keyword-relation.1.0.0";
+            keywordA: components["schemas"]["KeywordRelationParticipantSnapshot"];
+            keywordB: components["schemas"]["KeywordRelationParticipantSnapshot"];
+            signals: components["schemas"]["KeywordRelationCandidateSignals"];
+            evidenceHash: string;
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        /** @enum {string} */
+        KeywordRelationDecisionKind: "primary_supporting" | "keep_separate" | "park_secondary" | "needs_research";
+        /** @description Only primary_supporting identifies the exact primary and supporting Keyword pair. */
+        KeywordRelationDecision: {
+            decisionId: components["schemas"]["Uuid"];
+            relationId: components["schemas"]["Uuid"];
+            candidateId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            relationRevision: number;
+            decisionKind: components["schemas"]["KeywordRelationDecisionKind"];
+            primaryKeywordId: components["schemas"]["Uuid"] | null;
+            supportingKeywordId: components["schemas"]["Uuid"] | null;
+            reason: string;
+            decidedBy: components["schemas"]["Uuid"];
+            decidedAt: components["schemas"]["Timestamp"];
+        };
+        /** @enum {string} */
+        KeywordRelationStaleReason: "candidate_superseded" | "keyword_unavailable" | "governance_revision_changed" | "mapping_changed" | "intent_changed" | "market_changed" | "language_changed";
+        /** @enum {string} */
+        KeywordRelationCandidateState: "current" | "stale";
+        /** @enum {string} */
+        KeywordRelationDecisionState: "none" | "active" | "stale";
+        /** @enum {string} */
+        KeywordRelationDisplayState: "possible_duplicate" | "folded" | "kept_separate" | "parked_secondary" | "needs_research" | "stale";
+        /** @description Only an active decision for the exact current candidate may fold a supporting Keyword; stale evidence restores it to the visible list. */
+        GrowthMapKeywordRelation: {
+            projectId: components["schemas"]["Uuid"];
+            relationId: components["schemas"]["Uuid"];
+            candidate: components["schemas"]["KeywordRelationCandidate"];
+            candidateState: components["schemas"]["KeywordRelationCandidateState"];
+            staleReasons: components["schemas"]["KeywordRelationStaleReason"][];
+            currentRelationRevision: number;
+            decision: components["schemas"]["KeywordRelationDecision"] | null;
+            decisionState: components["schemas"]["KeywordRelationDecisionState"];
+            displayState: components["schemas"]["KeywordRelationDisplayState"];
+            isEffectivelyFolded: boolean;
+            primaryKeywordId: components["schemas"]["Uuid"] | null;
+            supportingKeywordId: components["schemas"]["Uuid"] | null;
+        };
+        /** @description Exact-candidate compare-and-swap decision. Actor identity and time are server-owned. */
+        DecideKeywordRelationRequest: {
+            expectedRelationRevision: number;
+            candidateId: components["schemas"]["Uuid"];
+            decisionKind: components["schemas"]["KeywordRelationDecisionKind"];
+            primaryKeywordId: components["schemas"]["Uuid"] | null;
+            supportingKeywordId: components["schemas"]["Uuid"] | null;
+            reason: string;
+        };
+        KeywordRelationDecisionResult: {
+            data: components["schemas"]["GrowthMapKeywordRelation"];
+            replayed: boolean;
+        };
+        KeywordRelationListPageMeta: {
+            limit: number;
+            nextCursor: string | null;
+            hasNext: boolean;
+            coverage: components["schemas"]["GrowthMapCoverage"];
+        };
+        /** @description Bounded project-scoped relation page; relation identities are unique and every row shares this project. */
+        KeywordRelationListResponse: {
+            projectId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapKeywordRelation"][];
+            meta: components["schemas"]["KeywordRelationListPageMeta"];
+        };
+        KeywordRelationDetailResponse: {
+            projectId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapKeywordRelation"];
+        };
+        KeywordRelationRefreshResponse: {
+            projectId: components["schemas"]["Uuid"];
+            eligiblePairCount: number;
+            createdRelationCount: number;
+            createdCandidateCount: number;
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        KeywordRelationListHttpResponse: {
+            data: components["schemas"]["KeywordRelationListResponse"];
+        };
+        KeywordRelationDetailHttpResponse: {
+            data: components["schemas"]["KeywordRelationDetailResponse"];
+        };
+        KeywordRelationRefreshHttpResponse: {
+            data: components["schemas"]["KeywordRelationRefreshResponse"];
+        };
+        KeywordRelationDecisionHttpResponse: {
+            data: components["schemas"]["KeywordRelationDecisionResult"];
+        };
+        /** @description Human Keyword review bound to one exact governance revision. Topic labels, actor facts, timestamps, provenance, and source history are server-owned. */
+        ReviewKeywordRequest: {
+            expectedGovernanceRevision: number;
+            /** @enum {string} */
+            status: "candidate" | "approved" | "excluded" | "parked";
+            intent: string | null;
+            buyerStage: string | null;
+            topicNodeId: components["schemas"]["Uuid"] | null;
+            topicModelRevision: number | null;
+            /** @enum {string} */
+            mappingDecision: "unassigned" | "existing_page" | "new_asset";
+            mappedSitePageId: components["schemas"]["Uuid"] | null;
+            reason: string;
         };
         /** @enum {string} */
         GrowthMapCompetitorReviewStatus: "candidate" | "approved" | "excluded";
@@ -2484,6 +3726,120 @@ export interface components {
         };
         GrowthMapCompetitorDetailHttpResponse: {
             data: components["schemas"]["GrowthMapCompetitorDetailResponse"];
+        };
+        UpdateCompetitorMonitorRequest: {
+            expectedRevision: number;
+            enabled: boolean;
+            /** @constant */
+            frequency: "monthly";
+        };
+        CompetitorMonitorConfig: {
+            enabled: boolean;
+            /** @constant */
+            frequency: "monthly";
+            revision: number;
+            updatedAt: components["schemas"]["Timestamp"];
+        };
+        CompetitorMonitorScope: {
+            market: string;
+            languageTag: string;
+            topicModelRevision: number;
+        };
+        CompetitorMonitorOpportunityUpdate: {
+            /** @constant */
+            state: "ready";
+            /** @constant */
+            growthMapSection: "competitor_library";
+            sourceRef: string;
+        };
+        /** @description previousRank minus currentRank equals improvement and must be strictly greater than five. */
+        CompetitorMonitorRankGainSignal: {
+            signalId: components["schemas"]["Uuid"];
+            competitorId: components["schemas"]["Uuid"];
+            detectedAt: components["schemas"]["Timestamp"];
+            currentSnapshotId: components["schemas"]["Uuid"];
+            previousSnapshotId: components["schemas"]["Uuid"];
+            topicNodeId: components["schemas"]["Uuid"];
+            topicLabel: string;
+            limitation: string | null;
+            opportunityUpdate: components["schemas"]["CompetitorMonitorOpportunityUpdate"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rank_gain";
+            keywordId: components["schemas"]["Uuid"];
+            keyword: string;
+            previousRank: number;
+            currentRank: number;
+            improvement: number;
+        };
+        /** @description A URL first observed in two complete comparable ranked-keyword snapshots; this is not publication-date evidence. */
+        CompetitorMonitorNewContentSignal: {
+            signalId: components["schemas"]["Uuid"];
+            competitorId: components["schemas"]["Uuid"];
+            detectedAt: components["schemas"]["Timestamp"];
+            currentSnapshotId: components["schemas"]["Uuid"];
+            previousSnapshotId: components["schemas"]["Uuid"];
+            topicNodeId: components["schemas"]["Uuid"];
+            topicLabel: string;
+            limitation: string;
+            opportunityUpdate: components["schemas"]["CompetitorMonitorOpportunityUpdate"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "new_content_overlap";
+            /** Format: uri */
+            url: string;
+            matchedKeywordIds: components["schemas"]["Uuid"][];
+            overlapRatio: number;
+            /** @constant */
+            publicationEvidence: "first_observed_in_ranked_keywords";
+        };
+        CompetitorMonitorSignal: components["schemas"]["CompetitorMonitorRankGainSignal"] | components["schemas"]["CompetitorMonitorNewContentSignal"];
+        /** @description Approved Competitor Library entry with explicit real collection and comparison state. */
+        CompetitorMonitorItem: {
+            competitorId: components["schemas"]["Uuid"];
+            domain: components["schemas"]["ProductProfileCompetitorDomain"];
+            name: string | null;
+            relationship: components["schemas"]["GrowthMapCompetitorRelationship"];
+            analysisScopes: components["schemas"]["ProductProfileCompetitorAnalysisScope"][];
+            /** @enum {string} */
+            eligibility: "eligible" | "ineligible" | "unavailable";
+            /** @enum {string} */
+            collectionState: "never_collected" | "collecting" | "collected" | "unavailable";
+            /** @enum {string} */
+            evaluationState: "pending" | "baseline" | "available" | "unavailable";
+            lastCollectionAt: components["schemas"]["Timestamp"] | null;
+            nextCollectionAt: components["schemas"]["Timestamp"] | null;
+            limitation: string | null;
+            recentSignals: components["schemas"]["CompetitorMonitorSignal"][];
+        };
+        /** @description Scope is null only when project-level authority is unavailable; GET never creates settings or schedules work. */
+        CompetitorMonitorResponse: {
+            projectId: components["schemas"]["Uuid"];
+            config: components["schemas"]["CompetitorMonitorConfig"] | null;
+            scope: components["schemas"]["CompetitorMonitorScope"] | null;
+            /** @enum {string} */
+            availability: "available" | "unavailable";
+            limitation: string | null;
+            competitors: components["schemas"]["CompetitorMonitorItem"][];
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        CompetitorMonitorHttpResponse: {
+            data: components["schemas"]["CompetitorMonitorResponse"];
+        };
+        CompetitorMonitorConfigHttpResponse: {
+            data: components["schemas"]["CompetitorMonitorConfig"];
+        };
+        /** @description Optimistic Competitor review. Immutable origins and server-owned actor/provenance facts cannot be changed by this request. */
+        ReviewCompetitorRequest: {
+            expectedRevision: number;
+            name: string | null;
+            reviewStatus: components["schemas"]["GrowthMapCompetitorReviewStatus"];
+            relationship: components["schemas"]["GrowthMapCompetitorRelationship"] | null;
+            analysisScope: components["schemas"]["ProductProfileCompetitorAnalysisScope"][];
         };
         CreateDiagnosticRunRequest: {
             /** @description Must include a current-project crawl snapshot; omitted optional datasets use latest eligible snapshots only when explicitly selected by UI. */
@@ -2938,6 +4294,626 @@ export interface components {
         ActionRecheckResultsHttpResponse: {
             data: components["schemas"]["ActionRecheckResultsResponse"];
         };
+        PublicationCommandIdempotencyKey: string;
+        /**
+         * @description Customer selection for a publish preview. Artifact, provider plan, remote state,
+         *     checksums, expiry and actor facts are resolved exclusively by the service.
+         */
+        IssuePublicationPreviewRequest: {
+            destinationRef: components["schemas"]["Uuid"];
+            expectedDestinationRevision: number;
+            approvalEventId: components["schemas"]["Uuid"];
+            idempotencyKey: components["schemas"]["PublicationCommandIdempotencyKey"];
+        };
+        /**
+         * @description Customer selection for a rollback preview. Current remote state and the resolved
+         *     rollback plan remain server-owned.
+         */
+        IssuePublicationRollbackPreviewRequest: {
+            destinationRef: components["schemas"]["Uuid"];
+            expectedDestinationRevision: number;
+            sourcePublicationAttemptId: components["schemas"]["Uuid"];
+            sourceChangeReceiptId: components["schemas"]["Uuid"];
+            idempotencyKey: components["schemas"]["PublicationCommandIdempotencyKey"];
+        };
+        /** @description Opaque URL-path-safe token minted by the publication preview authority. */
+        PublicationPreviewRef: string;
+        PublicationRemotePreconditionMatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "must_match";
+            revision: string;
+        };
+        PublicationRemotePreconditionMissing: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "must_not_exist";
+            revision: null;
+        };
+        PublicationRemotePrecondition: components["schemas"]["PublicationRemotePreconditionMatch"] | components["schemas"]["PublicationRemotePreconditionMissing"];
+        GitHubPublicationRollbackPlan: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            providerKind: "github";
+            /** @constant */
+            strategy: "github_revert_pr";
+            priorRemoteRevision: string;
+            expectedCurrentRemoteRevision: string;
+            facts: components["schemas"]["PublicationRemoteFacts"];
+        };
+        WordPressPublicationRollbackPlan: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            providerKind: "wordpress";
+            /** @constant */
+            strategy: "wordpress_restore_revision";
+            priorRemoteRevision: string;
+            expectedCurrentRemoteRevision: string;
+            facts: components["schemas"]["PublicationRemoteFacts"];
+        };
+        PublicationRollbackPlan: components["schemas"]["GitHubPublicationRollbackPlan"] | components["schemas"]["WordPressPublicationRollbackPlan"];
+        /**
+         * @description Customer-safe frozen publish lineage. previewChecksum equals artifactContentHash,
+         *     rollbackPlan provider equals providerKind, and expiresAt is later than createdAt.
+         */
+        IssuePublicationPreviewResponse: {
+            previewEventId: components["schemas"]["Uuid"];
+            previewRef: components["schemas"]["PublicationPreviewRef"];
+            /** @constant */
+            eventKind: "issued";
+            factsSchemaVersion: string;
+            /** @constant */
+            previewKind: "publish";
+            siteId: components["schemas"]["Uuid"];
+            destinationId: components["schemas"]["Uuid"];
+            destinationRef: components["schemas"]["Uuid"];
+            destinationRevision: number;
+            providerKind: components["schemas"]["PublicationProviderKind"];
+            targetRef: string;
+            actionId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"];
+            artifactRevisionId: components["schemas"]["Uuid"];
+            artifactRevision: number;
+            artifactContentHash: components["schemas"]["PublicationChecksum"];
+            artifactApprovalEventId: components["schemas"]["Uuid"];
+            sourcePublicationAttemptId: null;
+            sourceChangeReceiptId: null;
+            remotePrecondition: components["schemas"]["PublicationRemotePrecondition"];
+            rollbackPlan: components["schemas"]["PublicationRollbackPlan"];
+            previewChecksum: components["schemas"]["PublicationChecksum"];
+            contentChecksum: components["schemas"]["PublicationChecksum"];
+            factsHash: components["schemas"]["PublicationChecksum"];
+            expiresAt: components["schemas"]["Timestamp"];
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        /**
+         * @description Customer-safe frozen rollback lineage. It requires an exact matching remote revision
+         *     and binds the source publication attempt and verified Change Receipt.
+         */
+        IssuePublicationRollbackPreviewResponse: {
+            previewEventId: components["schemas"]["Uuid"];
+            previewRef: components["schemas"]["PublicationPreviewRef"];
+            /** @constant */
+            eventKind: "issued";
+            factsSchemaVersion: string;
+            /** @constant */
+            previewKind: "rollback";
+            siteId: components["schemas"]["Uuid"];
+            destinationId: components["schemas"]["Uuid"];
+            destinationRef: components["schemas"]["Uuid"];
+            destinationRevision: number;
+            providerKind: components["schemas"]["PublicationProviderKind"];
+            targetRef: string;
+            actionId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"];
+            artifactRevisionId: components["schemas"]["Uuid"];
+            artifactRevision: number;
+            artifactContentHash: components["schemas"]["PublicationChecksum"];
+            artifactApprovalEventId: components["schemas"]["Uuid"];
+            sourcePublicationAttemptId: components["schemas"]["Uuid"];
+            sourceChangeReceiptId: components["schemas"]["Uuid"];
+            remotePrecondition: components["schemas"]["PublicationRemotePrecondition"];
+            rollbackPlan: components["schemas"]["PublicationRollbackPlan"];
+            previewChecksum: components["schemas"]["PublicationChecksum"];
+            contentChecksum: components["schemas"]["PublicationChecksum"];
+            factsHash: components["schemas"]["PublicationChecksum"];
+            expiresAt: components["schemas"]["Timestamp"];
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        RevokePublicationPreviewRequest: {
+            reason: string;
+            idempotencyKey: components["schemas"]["PublicationCommandIdempotencyKey"];
+        };
+        RevokePublicationPreviewResponse: {
+            terminalEventId: components["schemas"]["Uuid"];
+            /** @constant */
+            eventKind: "revoked";
+            supersededPreviewEventId: components["schemas"]["Uuid"];
+            previewRef: components["schemas"]["PublicationPreviewRef"];
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        IssuePublicationPreviewHttpResponse: {
+            data: components["schemas"]["IssuePublicationPreviewResponse"];
+        };
+        IssuePublicationRollbackPreviewHttpResponse: {
+            data: components["schemas"]["IssuePublicationRollbackPreviewResponse"];
+        };
+        RevokePublicationPreviewHttpResponse: {
+            data: components["schemas"]["RevokePublicationPreviewResponse"];
+        };
+        /** @description Lower-case SHA-256 identity or provider-content checksum. */
+        PublicationChecksum: string;
+        /**
+         * Format: uri
+         * @description Bounded HTTP(S) URL without embedded credentials.
+         */
+        PublicationHttpUrl: string;
+        /** @enum {string} */
+        PublicationProviderKind: "github" | "wordpress";
+        /** @description Provider-owned immutable receipt facts. */
+        PublicationRemoteFacts: {
+            [key: string]: unknown;
+        };
+        /**
+         * @description Display and audit lineage for a provider-accepted delivery. This receipt does not
+         *     start the Measurement outcome clock.
+         */
+        PublicationDeliveryReceipt: {
+            id: components["schemas"]["Uuid"];
+            providerKind: components["schemas"]["PublicationProviderKind"];
+            providerRequestId: string | null;
+            remoteScopeRef: string;
+            remoteObjectId: string;
+            remoteRevision: string;
+            deliveryUrl: components["schemas"]["PublicationHttpUrl"] | null;
+            artifactContentHash: components["schemas"]["PublicationChecksum"];
+            contentChecksum: components["schemas"]["PublicationChecksum"];
+            remoteFacts: components["schemas"]["PublicationRemoteFacts"];
+            observedAt: components["schemas"]["Timestamp"];
+            /** @constant */
+            receiptKind: "delivery_receipt";
+            predecessorDeliveryReceiptId: null;
+            /** @enum {string} */
+            remoteObjectKind: "github_pull_request" | "wordpress_post";
+            liveCanonicalUrl: null;
+            /** @enum {string} */
+            verificationState: "provider_accepted" | "pending" | "unavailable";
+            evidenceRefs: string[];
+            limitation: string | null;
+        };
+        /** @description Verified live change that starts the Measurement outcome clock. */
+        PublicationChangeReceipt: {
+            id: components["schemas"]["Uuid"];
+            providerKind: components["schemas"]["PublicationProviderKind"];
+            providerRequestId: string | null;
+            remoteScopeRef: string;
+            remoteObjectId: string;
+            remoteRevision: string;
+            deliveryUrl: components["schemas"]["PublicationHttpUrl"] | null;
+            artifactContentHash: components["schemas"]["PublicationChecksum"];
+            contentChecksum: components["schemas"]["PublicationChecksum"];
+            remoteFacts: components["schemas"]["PublicationRemoteFacts"];
+            observedAt: components["schemas"]["Timestamp"];
+            /** @constant */
+            receiptKind: "change_receipt";
+            predecessorDeliveryReceiptId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            remoteObjectKind: "github_merge" | "wordpress_revision";
+            liveCanonicalUrl: components["schemas"]["PublicationHttpUrl"];
+            /** @constant */
+            verificationState: "verified_live";
+            evidenceRefs: string[];
+            limitation: null;
+        };
+        /** @enum {string} */
+        MeasurementState: "technical_verified" | "observed" | "insufficient_data" | "unavailable" | "regressed";
+        /** @enum {string} */
+        MeasurementObservationState: "observed" | "insufficient_data" | "unavailable" | "regressed";
+        /** @description Absolute half-open provider collection interval; endAt is later than startAt. */
+        MeasurementWindowInterval: {
+            startAt: components["schemas"]["Timestamp"];
+            endAt: components["schemas"]["Timestamp"];
+        };
+        /** @description Valid IANA timezone used to resolve the absolute intervals. */
+        MeasurementTimezone: string;
+        MeasurementTarget: {
+            /** @constant */
+            kind: "url";
+            targetRef: string;
+            sitePageId: components["schemas"]["Uuid"];
+        };
+        GscMeasurementSourceSnapshot: {
+            /** @constant */
+            provider: "gsc";
+            sourceRef: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            coveredWindow: components["schemas"]["MeasurementWindowInterval"];
+            observedAt: components["schemas"]["Timestamp"];
+            freshness: components["schemas"]["SourceFreshness"];
+        };
+        Ga4MeasurementSourceSnapshot: {
+            /** @constant */
+            provider: "ga4";
+            sourceRef: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            coveredWindow: components["schemas"]["MeasurementWindowInterval"];
+            observedAt: components["schemas"]["Timestamp"];
+            freshness: components["schemas"]["SourceFreshness"];
+        };
+        GeoMeasurementSourceSnapshot: {
+            /** @constant */
+            provider: "geo";
+            sourceRef: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            coveredWindow: components["schemas"]["MeasurementWindowInterval"];
+            observedAt: components["schemas"]["Timestamp"];
+            freshness: components["schemas"]["SourceFreshness"];
+        };
+        MeasurementCountMetricPair: {
+            baseline: number | null;
+            outcome: number | null;
+        };
+        MeasurementRatioMetricPair: {
+            baseline: number | null;
+            outcome: number | null;
+        };
+        MeasurementPositiveMetricPair: {
+            baseline: number | null;
+            outcome: number | null;
+        };
+        GscMeasurementSampleSize: {
+            baseline: number | null;
+            outcome: number | null;
+            /** @constant */
+            unit: "impressions";
+            /** @enum {string} */
+            coverage: "complete" | "partial" | "none";
+        };
+        GscMeasurementMetrics: {
+            clicks: components["schemas"]["MeasurementCountMetricPair"];
+            impressions: components["schemas"]["MeasurementCountMetricPair"];
+            ctr: components["schemas"]["MeasurementRatioMetricPair"];
+            averagePosition: components["schemas"]["MeasurementPositiveMetricPair"];
+        };
+        GscMeasurementDimension: {
+            /** @constant */
+            provider: "gsc";
+            state: components["schemas"]["MeasurementObservationState"];
+            baselineSource: components["schemas"]["GscMeasurementSourceSnapshot"] | null;
+            outcomeSource: components["schemas"]["GscMeasurementSourceSnapshot"] | null;
+            sampleSize: components["schemas"]["GscMeasurementSampleSize"];
+            limitation: string | null;
+            metrics: components["schemas"]["GscMeasurementMetrics"];
+        };
+        /** @enum {string} */
+        MeasurementCountingMethod: "once_per_event" | "once_per_session" | "once_per_user";
+        DirectConversionDefinition: {
+            conversionDefinitionId: components["schemas"]["Uuid"];
+            /** @constant */
+            kind: "direct";
+            eventNames: string[];
+            countingMethod: components["schemas"]["MeasurementCountingMethod"];
+            /** @constant */
+            attributionBoundary: "ga4_reported_primary_touchpoint";
+            lookbackWindowDays: number;
+        };
+        AssistedConversionDefinition: {
+            conversionDefinitionId: components["schemas"]["Uuid"];
+            /** @constant */
+            kind: "assisted";
+            eventNames: string[];
+            countingMethod: components["schemas"]["MeasurementCountingMethod"];
+            /** @constant */
+            attributionBoundary: "path_touchpoint_not_primary";
+            lookbackWindowDays: number;
+        };
+        MeasurementUtmIdentity: {
+            utmIdentityId: components["schemas"]["Uuid"];
+            source: string;
+            medium: string;
+            campaign: string;
+            content: string;
+        };
+        Ga4MeasurementSampleSize: {
+            baseline: number | null;
+            outcome: number | null;
+            /** @constant */
+            unit: "sessions";
+            /** @enum {string} */
+            coverage: "complete" | "partial" | "none";
+        };
+        Ga4MeasurementMetrics: {
+            sessions: components["schemas"]["MeasurementCountMetricPair"];
+            engagedSessions: components["schemas"]["MeasurementCountMetricPair"];
+            directConversions: components["schemas"]["MeasurementCountMetricPair"];
+            assistedConversions: components["schemas"]["MeasurementCountMetricPair"];
+        };
+        Ga4CampaignMetrics: {
+            sessions: components["schemas"]["MeasurementCountMetricPair"];
+            directConversions: components["schemas"]["MeasurementCountMetricPair"];
+            assistedConversions: components["schemas"]["MeasurementCountMetricPair"];
+        };
+        Ga4CampaignMeasurement: {
+            identity: components["schemas"]["MeasurementUtmIdentity"];
+            metrics: components["schemas"]["Ga4CampaignMetrics"];
+        };
+        Ga4MeasurementDimension: {
+            /** @constant */
+            provider: "ga4";
+            state: components["schemas"]["MeasurementObservationState"];
+            baselineSource: components["schemas"]["Ga4MeasurementSourceSnapshot"] | null;
+            outcomeSource: components["schemas"]["Ga4MeasurementSourceSnapshot"] | null;
+            sampleSize: components["schemas"]["Ga4MeasurementSampleSize"];
+            limitation: string | null;
+            directConversionDefinition: components["schemas"]["DirectConversionDefinition"] | null;
+            assistedConversionDefinition: components["schemas"]["AssistedConversionDefinition"] | null;
+            metrics: components["schemas"]["Ga4MeasurementMetrics"];
+            campaigns: components["schemas"]["Ga4CampaignMeasurement"][];
+        };
+        GeoMeasurementSampleSize: {
+            baseline: number | null;
+            outcome: number | null;
+            /** @constant */
+            unit: "tracked_queries";
+            /** @enum {string} */
+            coverage: "complete" | "partial" | "none";
+        };
+        GeoMeasurementMetrics: {
+            trackedQueries: components["schemas"]["MeasurementCountMetricPair"];
+            citedQueries: components["schemas"]["MeasurementCountMetricPair"];
+            citations: components["schemas"]["MeasurementCountMetricPair"];
+            citationRate: components["schemas"]["MeasurementRatioMetricPair"];
+        };
+        GeoMeasurementDimension: {
+            /** @constant */
+            provider: "geo";
+            state: components["schemas"]["MeasurementObservationState"];
+            baselineSource: components["schemas"]["GeoMeasurementSourceSnapshot"] | null;
+            outcomeSource: components["schemas"]["GeoMeasurementSourceSnapshot"] | null;
+            sampleSize: components["schemas"]["GeoMeasurementSampleSize"];
+            limitation: string | null;
+            metrics: components["schemas"]["GeoMeasurementMetrics"];
+        };
+        MeasurementDimensions: {
+            gsc: components["schemas"]["GscMeasurementDimension"];
+            ga4: components["schemas"]["Ga4MeasurementDimension"];
+            geo: components["schemas"]["GeoMeasurementDimension"];
+        };
+        /**
+         * @description Customer command containing only the verified Change Receipt identity and replay key.
+         *     Every target, window, provider, metric, schedule and result fact is server-resolved.
+         */
+        CreateMeasurementWindowRequest: {
+            changeReceiptId: components["schemas"]["Uuid"];
+            idempotencyKey: string;
+        };
+        MeasurementWindowAccepted: {
+            measurementWindowId: components["schemas"]["Uuid"];
+            asyncRunId: components["schemas"]["Uuid"];
+            /** @constant */
+            state: "pending";
+            replayed: boolean;
+        };
+        MeasurementWindowAcceptedHttpResponse: {
+            data: components["schemas"]["MeasurementWindowAccepted"];
+        };
+        /**
+         * @description Immutable observational result comparing two absolute collection windows. The
+         *     verified Change Receipt starts the outcome clock; a Delivery Receipt is timeline
+         *     context only. Every nullable missing metric retains an explicit state and limitation.
+         */
+        MeasurementWindow: {
+            measurementWindowId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            target: components["schemas"]["MeasurementTarget"];
+            actionId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"];
+            artifactRevisionId: components["schemas"]["Uuid"];
+            artifactRevision: number;
+            artifactContentHash: components["schemas"]["PublicationChecksum"];
+            publicationAttemptId: components["schemas"]["Uuid"];
+            verifiedChangeReceipt: components["schemas"]["PublicationChangeReceipt"];
+            timelineDeliveryReceipt: components["schemas"]["PublicationDeliveryReceipt"] | null;
+            beforeWindow: components["schemas"]["MeasurementWindowInterval"];
+            afterWindow: components["schemas"]["MeasurementWindowInterval"];
+            timezone: components["schemas"]["MeasurementTimezone"];
+            url: components["schemas"]["PublicationHttpUrl"];
+            canonicalUrl: components["schemas"]["PublicationHttpUrl"];
+            /** @constant */
+            interpretation: "observational_non_causal";
+            state: components["schemas"]["MeasurementState"];
+            technicalVerificationRef: components["schemas"]["Uuid"] | null;
+            limitation: string | null;
+            dimensions: components["schemas"]["MeasurementDimensions"];
+            recordedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description Exact-target immutable Measurement Window history, ordered newest first. */
+        MeasurementWindowHistoryResponse: {
+            projectId: components["schemas"]["Uuid"];
+            target: components["schemas"]["MeasurementTarget"];
+            windows: components["schemas"]["MeasurementWindow"][];
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        MeasurementWindowHistoryHttpResponse: {
+            data: components["schemas"]["MeasurementWindowHistoryResponse"];
+        };
+        /**
+         * @description Project-wide immutable Measurement Window feed. Windows remain separate per URL target
+         *     and are ordered by recordedAt and measurement identity descending.
+         */
+        MeasurementWindowRecentResponse: {
+            projectId: components["schemas"]["Uuid"];
+            windows: components["schemas"]["MeasurementWindow"][];
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        MeasurementWindowRecentHttpResponse: {
+            data: components["schemas"]["MeasurementWindowRecentResponse"];
+        };
+        /**
+         * @description One immutable DataForSEO absolute-rank fact. The provider exposes no separate
+         *     data-as-of timestamp, so providerDataAsOf remains null and the limitation is explicit.
+         */
+        MeasurementDataForSeoAbsoluteRankPoint: {
+            occurrenceId: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            provider: "dataforseo";
+            /** @constant */
+            metric: "absolute_rank";
+            value: number;
+            /** @constant */
+            valuePointer: "/valueJson/currentRank";
+            observedAt: components["schemas"]["Timestamp"];
+            providerDataAsOf: null;
+            /** @constant */
+            grade: "B";
+            limitation: string;
+        };
+        /** @enum {string} */
+        MeasurementKeywordRankState: "observed" | "insufficient_data" | "unavailable";
+        /** @enum {string} */
+        MeasurementKeywordRankTrend: "improved" | "regressed" | "unchanged" | "unavailable";
+        /**
+         * @description Positive rankImprovement means the smaller absolute rank improved. A missing
+         *     before or after observation requires an unavailable trend and explicit limitation.
+         */
+        MeasurementTargetKeywordRank: {
+            keywordId: components["schemas"]["Uuid"];
+            displayKeyword: string;
+            normalizedKeyword: string;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
+            topicNodeId: components["schemas"]["Uuid"];
+            topicLabel: string;
+            topicModelRevision: number;
+            state: components["schemas"]["MeasurementKeywordRankState"];
+            baselineObservation: components["schemas"]["MeasurementDataForSeoAbsoluteRankPoint"] | null;
+            outcomeObservation: components["schemas"]["MeasurementDataForSeoAbsoluteRankPoint"] | null;
+            rankImprovement: number | null;
+            trend: components["schemas"]["MeasurementKeywordRankTrend"];
+            limitation: string | null;
+        };
+        /**
+         * @description Exact-page target Keyword comparison inside the server-owned Measurement Window.
+         *     Keywords are unique and stably ordered; coverage reflects only complete two-window
+         *     comparisons and generatedAt cannot precede the outcome window.
+         */
+        MeasurementTargetKeywordRanks: {
+            projectId: components["schemas"]["Uuid"];
+            measurementWindowId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"];
+            canonicalUrl: components["schemas"]["PublicationHttpUrl"];
+            beforeWindow: components["schemas"]["MeasurementWindowInterval"];
+            afterWindow: components["schemas"]["MeasurementWindowInterval"];
+            /** @constant */
+            interpretation: "dataforseo_absolute_rank_observational_non_causal";
+            keywords: components["schemas"]["MeasurementTargetKeywordRank"][];
+            coverage: components["schemas"]["GrowthMapCoverage"];
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        MeasurementTargetKeywordRanksHttpResponse: {
+            data: components["schemas"]["MeasurementTargetKeywordRanks"];
+        };
+        /** @enum {string} */
+        GeoKnownPlatform: "chatgpt" | "perplexity" | "google_ai_overview" | "gemini" | "claude" | "copilot";
+        GeoCitationPlatform: {
+            /** @constant */
+            kind: "known";
+            key: components["schemas"]["GeoKnownPlatform"];
+        } | {
+            /** @constant */
+            kind: "other";
+            providerKey: string;
+        };
+        GeoCitationCollector: {
+            /** @enum {string} */
+            kind: "vendor_api" | "browser_probe" | "manual_verified";
+            providerKey: string;
+            version: string;
+        };
+        GeoBoundedEvidence: {
+            excerpt: string;
+            contentHash: string;
+            selector: string;
+        };
+        /**
+         * @description An inference requires an explicit non-causal limitation at runtime. No causal reason
+         *     or why-it-was-cited field exists in this contract.
+         */
+        GeoEvidenceStatement: {
+            /** @enum {string} */
+            classification: "observation" | "inference";
+            statement: string;
+            evidence: components["schemas"]["GeoBoundedEvidence"];
+            limitation: string | null;
+        };
+        /** @enum {string} */
+        GeoCitationState: "cited" | "mentioned" | "unseen" | "unavailable";
+        GeoCitationOccurrenceEvidence: {
+            id: components["schemas"]["Uuid"];
+            citationUrl: components["schemas"]["PublicationHttpUrl"];
+            citationOrdinal: number;
+            answerEvidenceExcerpt: string;
+            citedPageExcerpt: string;
+            citedPageContentHash: string;
+            citedParagraphHash: string;
+            citedParagraphSelector: string;
+            citedParagraphIndex: number | null;
+            /** @constant */
+            evidenceClassification: "direct_observation";
+        };
+        GeoCitationQueryEvidence: {
+            id: components["schemas"]["Uuid"];
+            query: string;
+            platform: components["schemas"]["GeoCitationPlatform"];
+            model: string;
+            collector: components["schemas"]["GeoCitationCollector"];
+            collectedAt: components["schemas"]["Timestamp"];
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
+            citationState: components["schemas"]["GeoCitationState"];
+            answerEvidence: components["schemas"]["GeoBoundedEvidence"] | null;
+            limitation: string | null;
+            citations: components["schemas"]["GeoCitationOccurrenceEvidence"][];
+            evidenceStatements?: components["schemas"]["GeoEvidenceStatement"][];
+        };
+        GeoCitationEvidencePhase: {
+            sourceConnectionId: components["schemas"]["Uuid"];
+            snapshotId: components["schemas"]["Uuid"];
+            normalizedObservationId: components["schemas"]["Uuid"];
+            queries: components["schemas"]["GeoCitationQueryEvidence"][];
+        };
+        /**
+         * @description One measured URL's server-frozen GEO evidence. Missing or one-sided phases require an
+         *     explicit limitation at runtime; structural changes remain observational and non-causal.
+         */
+        GeoCitationEvidenceResponse: {
+            projectId: components["schemas"]["Uuid"];
+            siteId: components["schemas"]["Uuid"];
+            measurementWindowId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"];
+            canonicalUrl: components["schemas"]["PublicationHttpUrl"];
+            /** @constant */
+            interpretation: "observational_non_causal";
+            phases: {
+                baseline: components["schemas"]["GeoCitationEvidencePhase"] | null;
+                outcome: components["schemas"]["GeoCitationEvidencePhase"] | null;
+            };
+            limitation: string | null;
+        };
+        GeoCitationEvidenceHttpResponse: {
+            data: components["schemas"]["GeoCitationEvidenceResponse"];
+        };
         Evidence: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
@@ -3043,6 +5019,10 @@ export interface components {
             analysisInvocationId?: components["schemas"]["Uuid"];
         });
         SubjectRef: {
+            /** @constant */
+            type: "competitor";
+            value: components["schemas"]["Uuid"];
+        } | {
             /** @enum {string} */
             type: "url" | "site" | "page_set" | "http_status" | "canonical_issue" | "keyword_cluster" | "user_agent";
             value: string;
@@ -3139,6 +5119,168 @@ export interface components {
             reason: string;
             note?: string | null;
         } | unknown | unknown | unknown;
+        ActionExecutionProgress: {
+            stepDefinitionId: components["schemas"]["Uuid"];
+            stepDefinitionVersion: number;
+            completedSteps: number;
+            totalSteps: number;
+        };
+        ManualActionExecutionBlockerInput: {
+            code: string;
+            summary: string;
+            unlockCondition: string;
+        };
+        BlockActionExecutionStateRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "blocked";
+            phase: string;
+            nextStep: string | null;
+            blocker: components["schemas"]["ManualActionExecutionBlockerInput"];
+            progress: null;
+            expectedRevision: number;
+        };
+        StartActionExecutionStateRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "in_progress";
+            phase: string;
+            nextStep: string | null;
+            blocker: null;
+            progress: components["schemas"]["ActionExecutionProgress"] | null;
+            expectedRevision: number;
+        };
+        CompleteActionExecutionStateRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "completed";
+            phase: string;
+            nextStep: null;
+            blocker: null;
+            progress: null;
+            expectedRevision: number;
+        };
+        UpdateActionExecutionStateRequest: components["schemas"]["BlockActionExecutionStateRequest"] | components["schemas"]["StartActionExecutionStateRequest"] | components["schemas"]["CompleteActionExecutionStateRequest"];
+        RecordActionExecutionStateResult: {
+            event: components["schemas"]["ActionExecutionStateEvent"];
+            replayed: boolean;
+        };
+        ActionExecutionBlocker: {
+            code: string;
+            summary: string;
+            unlockCondition: string;
+            ownerId: components["schemas"]["Uuid"] | null;
+            /** @enum {string} */
+            sourceKind: "qa_claim" | "provider_readiness" | "approval" | "dependency" | "async_failure" | "manual";
+            sourceRef: string | null;
+            /** Format: date-time */
+            observedAt: string;
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unknown";
+        };
+        BlockedActionExecutionStateEvent: {
+            eventId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            actionId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"] | null;
+            revision: number;
+            expectedRevision: number;
+            /** @enum {string} */
+            transitionKind: "state_transition" | "state_update";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "blocked";
+            phase: string;
+            nextStep: string | null;
+            blocker: components["schemas"]["ActionExecutionBlocker"];
+            progress: null;
+            idempotencyKey: string;
+            actorId: components["schemas"]["Uuid"];
+            occurredAt: components["schemas"]["Timestamp"];
+        };
+        InProgressActionExecutionStateEvent: {
+            eventId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            actionId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"] | null;
+            revision: number;
+            expectedRevision: number;
+            /** @enum {string} */
+            transitionKind: "state_transition" | "state_update";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "in_progress";
+            phase: string;
+            nextStep: string | null;
+            blocker: null;
+            progress: components["schemas"]["ActionExecutionProgress"] | null;
+            idempotencyKey: string;
+            actorId: components["schemas"]["Uuid"];
+            occurredAt: components["schemas"]["Timestamp"];
+        };
+        CompletedActionExecutionStateEvent: {
+            eventId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            actionId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"] | null;
+            revision: number;
+            expectedRevision: number;
+            /** @enum {string} */
+            transitionKind: "state_transition" | "state_update";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "completed";
+            phase: string;
+            nextStep: null;
+            blocker: null;
+            progress: null;
+            idempotencyKey: string;
+            actorId: components["schemas"]["Uuid"];
+            occurredAt: components["schemas"]["Timestamp"];
+        };
+        ActionExecutionStateEvent: components["schemas"]["BlockedActionExecutionStateEvent"] | components["schemas"]["InProgressActionExecutionStateEvent"] | components["schemas"]["CompletedActionExecutionStateEvent"];
+        /**
+         * @description One exact delivery execution stream. artifactId null is Action-level; a UUID
+         *     is that Artifact's independent stream. Empty history means no recorded execution,
+         *     never a value inferred from legacy Action plan/review status.
+         */
+        ActionExecutionStateTimeline: {
+            actionId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"] | null;
+            current: components["schemas"]["ActionExecutionStateEvent"] | null;
+            history: components["schemas"]["ActionExecutionStateEvent"][];
+        };
+        ActionExecutionStateTimelineHttpResponse: {
+            data: components["schemas"]["ActionExecutionStateTimeline"];
+        };
+        /** @description Exact current execution fact for one Artifact queue card. */
+        ActionExecutionStateBatchItem: {
+            actionId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"];
+            current: components["schemas"]["ActionExecutionStateEvent"] | null;
+        };
+        ActionExecutionStateBatch: {
+            projectId: components["schemas"]["Uuid"];
+            items: components["schemas"]["ActionExecutionStateBatchItem"][];
+        };
+        ActionExecutionStateBatchHttpResponse: {
+            data: components["schemas"]["ActionExecutionStateBatch"];
+        };
+        ActionExecutionStateUpdateHttpResponse: {
+            data: components["schemas"]["RecordActionExecutionStateResult"];
+        };
         CreateArtifactRequest: {
             artifactType: components["schemas"]["ArtifactType"];
             /**
@@ -3193,6 +5335,95 @@ export interface components {
         };
         ArtifactDetailResponse: {
             data: components["schemas"]["Artifact"];
+        };
+        /** @description Customer intent only; durable acknowledgement identity, actor and time are server-owned. */
+        PublicationRevisionAcknowledgementInput: {
+            /** @constant */
+            acknowledged: true;
+            /** @constant */
+            acknowledgementScope: "exact_artifact_revision_for_publication";
+        };
+        PublicationRevisionCustomerAcknowledgement: {
+            customerAcknowledgementId: components["schemas"]["Uuid"];
+            actorId: components["schemas"]["Uuid"];
+            acknowledgedAt: components["schemas"]["Timestamp"];
+            /** @constant */
+            acknowledgementScope: "exact_artifact_revision_for_publication";
+        };
+        /**
+         * @description Customer command for the exact Revision and QA version they reviewed. Content hashes,
+         *     QA facts, reviewer identity and durable acknowledgement facts are server-resolved.
+         */
+        ApproveArtifactRevisionRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            eventKind: "approved";
+            artifactRevisionId: components["schemas"]["Uuid"];
+            expectedArtifactRevision: number;
+            expectedQaGateVersion: string;
+            customerAcknowledgementInput: components["schemas"]["PublicationRevisionAcknowledgementInput"];
+        };
+        InvalidateArtifactApprovalRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            eventKind: "revoked" | "superseded";
+            supersedesApprovalEventId: components["schemas"]["Uuid"];
+            reason: string;
+        };
+        AppendArtifactApprovalEventRequest: components["schemas"]["ApproveArtifactRevisionRequest"] | components["schemas"]["InvalidateArtifactApprovalRequest"];
+        ApprovedArtifactApprovalEvent: {
+            approvalEventId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            eventKind: "approved";
+            supersedesApprovalEventId: null;
+            eventActorId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"];
+            artifactRevisionId: components["schemas"]["Uuid"];
+            artifactRevision: number;
+            artifactContentHash: components["schemas"]["PublicationChecksum"];
+            reviewerActorId: components["schemas"]["Uuid"];
+            qaGateVersion: string;
+            qaGateSnapshot: {
+                [key: string]: unknown;
+            };
+            qaGateSnapshotHash: components["schemas"]["PublicationChecksum"];
+            customerAcknowledgement: components["schemas"]["PublicationRevisionCustomerAcknowledgement"];
+            reason: null;
+            recordedAt: components["schemas"]["Timestamp"];
+        };
+        TerminalArtifactApprovalEvent: {
+            approvalEventId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            eventKind: "revoked" | "superseded";
+            supersedesApprovalEventId: components["schemas"]["Uuid"];
+            eventActorId: components["schemas"]["Uuid"];
+            artifactId: components["schemas"]["Uuid"];
+            artifactRevisionId: components["schemas"]["Uuid"];
+            artifactRevision: number;
+            artifactContentHash: components["schemas"]["PublicationChecksum"];
+            reviewerActorId: null;
+            qaGateVersion: string;
+            qaGateSnapshot: {
+                [key: string]: unknown;
+            };
+            qaGateSnapshotHash: components["schemas"]["PublicationChecksum"];
+            customerAcknowledgement: components["schemas"]["PublicationRevisionCustomerAcknowledgement"];
+            reason: string;
+            recordedAt: components["schemas"]["Timestamp"];
+        };
+        ArtifactApprovalEvent: components["schemas"]["ApprovedArtifactApprovalEvent"] | components["schemas"]["TerminalArtifactApprovalEvent"];
+        ArtifactApprovalEventHttpResponse: {
+            data: components["schemas"]["ArtifactApprovalEvent"];
         };
         UpdateArtifactRequest: {
             baseRevision: number;
@@ -3257,6 +5488,57 @@ export interface components {
         ReportResponse: {
             data: components["schemas"]["Report"];
         };
+        /** @description Three consecutive canonical monthly checkpoints where each adjacent GSC average-position delta is strictly worse by more than five places. */
+        OverviewContentDecayRankTrend: {
+            olderMonth: string;
+            previousMonth: string;
+            currentMonth: string;
+            olderPosition: number;
+            previousPosition: number;
+            currentPosition: number;
+            /** @description The first adjacent monthly average-position increase; a larger position is worse. */
+            firstDecline: number;
+            /** @description The second adjacent monthly average-position increase; a larger position is worse. */
+            secondDecline: number;
+        };
+        /** @description Two consecutive canonical monthly checkpoints whose trailing-28-day GSC clicks declined strictly more than twenty percent. */
+        OverviewContentDecayTrafficTrend: {
+            previousMonth: string;
+            currentMonth: string;
+            previousClicks: number;
+            currentClicks: number;
+            /** @description Latest trailing-28-day clicks change, strictly below -20 percent. */
+            changeRatio: number;
+        };
+        /** @description Customer-readable advice to review one exact frozen Growth Map URL. It is a read-only projection and is not a Finding, Action, or claim that review work has been executed. */
+        OverviewContentDecayAlert: {
+            sitePageId: components["schemas"]["Uuid"];
+            /** Format: uri */
+            normalizedUrl: string;
+            detectedAt: components["schemas"]["Timestamp"];
+            currentMonth: string;
+            triggers: ("rank_decline" | "traffic_decline")[];
+            rankTrend: components["schemas"]["OverviewContentDecayRankTrend"] | null;
+            trafficTrend: components["schemas"]["OverviewContentDecayTrafficTrend"] | null;
+            sourceSnapshotIds: components["schemas"]["Uuid"][];
+        };
+        /** @description Read-only Overview projection over immutable GSC facts for the exact frozen Growth Map URL inventory. Each month contributes one canonical snapshot whose metric remains its trailing 28-day window, not a fabricated calendar-month sum. Missing, partial, or ambiguous facts never become zero. Monthly scheduling and push delivery are not connected, so this schema cannot claim automated execution. */
+        OverviewContentDecayMonitor: {
+            /** @constant */
+            version: "content-decay-monitor.v1";
+            /** @constant */
+            projectionMode: "read_time";
+            /** @constant */
+            scheduleState: "not_configured";
+            status: components["schemas"]["Availability"];
+            /** @description Persisted provider or project IANA timezone; UTC only as an explicitly disclosed fallback. */
+            timezone: string;
+            /** @enum {string} */
+            timezoneSource: "provider" | "project" | "fallback";
+            latestCheckpointMonth: string | null;
+            limitations: string[];
+            alerts: components["schemas"]["OverviewContentDecayAlert"][];
+        };
         OverviewView: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3269,9 +5551,25 @@ export interface components {
             /** @description Exact latest readable diagnostic run used to select the Overview work queue; null when no frozen audit exists. */
             frozenDiagnosticRunId: components["schemas"]["Uuid"] | null;
             topActions: components["schemas"]["Action"][];
+            /** @description Still-active Findings from the exact frozen audit that have had no Action or customer decision for at least fourteen complete days, ordered by longest wait, priority, then stable Finding identity. */
+            decisionReminders: components["schemas"]["OverviewDecisionReminder"][];
+            contentDecayMonitor: components["schemas"]["OverviewContentDecayMonitor"];
             latestSnapshot: components["schemas"]["DataSnapshot"] | null;
             topActionEvidence: components["schemas"]["Evidence"][];
             deliveryFocus: components["schemas"]["OverviewDeliveryFocus"] | null;
+        };
+        /** @description Read-only decision reminder derived from persistent Finding/Action authorities. It is not a second opportunity record. */
+        OverviewDecisionReminder: {
+            findingId: components["schemas"]["Uuid"];
+            sitePageId: components["schemas"]["Uuid"] | null;
+            summary: string;
+            summaryLocale: string;
+            severity: components["schemas"]["PriorityBand"];
+            /** @enum {string} */
+            reviewState: "unreviewed" | "needs_more_data";
+            firstSeenAt: components["schemas"]["Timestamp"];
+            lastSeenAt: components["schemas"]["Timestamp"];
+            staleForDays: number;
         };
         OverviewDeliveryFocus: {
             artifactId: components["schemas"]["Uuid"];
@@ -3384,15 +5682,19 @@ export interface components {
         ProjectId: components["schemas"]["Uuid"];
         SitePageId: components["schemas"]["Uuid"];
         KeywordId: components["schemas"]["Uuid"];
+        KeywordRelationId: components["schemas"]["Uuid"];
         CompetitorId: components["schemas"]["Uuid"];
         AuditModuleId: components["schemas"]["AuditModuleId"];
         OpportunityId: components["schemas"]["Uuid"];
+        PublicationPreviewEventId: components["schemas"]["Uuid"];
+        PublicationPreviewRef: components["schemas"]["PublicationPreviewRef"];
         ProductProfileCandidateId: components["schemas"]["Uuid"];
         SourceConnectionId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
         FindingId: components["schemas"]["Uuid"];
         ActionId: components["schemas"]["Uuid"];
         ArtifactId: components["schemas"]["Uuid"];
+        MeasurementWindowId: components["schemas"]["Uuid"];
         FlowShadowRunId: components["schemas"]["Uuid"];
         ExportId: components["schemas"]["Uuid"];
         GoogleProvider: "gsc" | "ga4";
@@ -4266,6 +6568,214 @@ export interface operations {
             503: components["responses"]["DependencyUnavailable"];
         };
     };
+    getProjectAuditInternalLinkMap: {
+        parameters: {
+            query?: {
+                /** @description Optional exact SitePage identity used to select one URL's inbound evidence and governed recommendations. Repeated scalar query parameters are rejected. */
+                sitePageId?: components["schemas"]["Uuid"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Frozen site graph and, when selected, one exact URL's Internal Link Map detail. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapInternalLinkMapHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditBacklinks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Traceable backlink sources, page facts, approved-competitor comparison, and evidence-linked opportunities. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapBacklinkHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditTopicModelWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current confirmed Topic authority and optional editable successor. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicModelWorkspaceHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditTopicModelInsights: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Confirmed Topic coverage, or an explicit unavailable state before the first confirmation. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapTopicModelInsightsHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    beginProjectAuditTopicModelDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BeginTopicModelDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Growth Map Topic workspace with its unique draft. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicModelWorkspaceHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    patchProjectAuditTopicModelDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchTopicModelDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical Growth Map Topic workspace after the edit. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicModelWorkspaceHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    confirmProjectAuditTopicModelDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmTopicModelRequest"];
+            };
+        };
+        responses: {
+            /** @description Growth Map Topic workspace with the newly confirmed authority. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicModelWorkspaceHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
     listProjectAuditKeywords: {
         parameters: {
             query?: {
@@ -4324,6 +6834,191 @@ export interface operations {
             503: components["responses"]["DependencyUnavailable"];
         };
     };
+    reviewProjectAuditKeyword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                keywordId: components["parameters"]["KeywordId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewKeywordRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical Keyword detail after the governance decision. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapKeywordDetailHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditKeywordRankHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                keywordId: components["parameters"]["KeywordId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Traceable Keyword rank history for the fixed 90-day window. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapKeywordRankHistoryHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    listProjectAuditKeywordRelations: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque base64url cursor returned by the previous page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description One to fifty unique stable Keyword IDs from the currently visible Keyword Library page. */
+                keywordId?: components["schemas"]["Uuid"][];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current and stale Keyword Relation projections for this cursor page. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeywordRelationListHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    refreshProjectAuditKeywordRelations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded refresh counts; an exact evidence replay creates no duplicate candidate. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeywordRelationRefreshHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditKeywordRelation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                relationId: components["parameters"]["KeywordRelationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selected Keyword Relation projection. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeywordRelationDetailHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    decideProjectAuditKeywordRelation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                relationId: components["parameters"]["KeywordRelationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideKeywordRelationRequest"];
+            };
+        };
+        responses: {
+            /** @description Current Keyword Relation and whether this command was an exact replay. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeywordRelationDecisionHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
     listProjectAuditCompetitors: {
         parameters: {
             query?: {
@@ -4379,6 +7074,97 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    reviewProjectAuditCompetitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                competitorId: components["parameters"]["CompetitorId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewCompetitorRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical Competitor detail after the governance decision. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapCompetitorDetailHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectAuditCompetitorMonitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 竞品库当前真实采集状态、最近信号与下次月度采集时间。 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitorMonitorHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    updateProjectAuditCompetitorMonitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCompetitorMonitorRequest"];
+            };
+        };
+        responses: {
+            /** @description 更新后的月度监控设置。 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitorMonitorConfigHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };
@@ -4515,6 +7301,107 @@ export interface operations {
             429: components["responses"]["RateLimited"];
         };
     };
+    getArtifactExecutionStateBatch: {
+        parameters: {
+            query: {
+                /** @description Unique exact Artifact identities currently loaded in the queue. */
+                artifactId: components["schemas"]["Uuid"][];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current immutable event, or explicit absence, for every requested Artifact. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionExecutionStateBatchHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getActionExecutionStateTimeline: {
+        parameters: {
+            query?: {
+                /** @description Exact Artifact execution stream; omit for the independent Action-level stream. */
+                artifactId?: components["schemas"]["Uuid"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                actionId: components["parameters"]["ActionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Complete ascending history and current event for the exact stream. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionExecutionStateTimelineHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    updateActionExecutionState: {
+        parameters: {
+            query?: {
+                /** @description Exact Artifact execution stream; omit for the independent Action-level stream. */
+                artifactId?: components["schemas"]["Uuid"];
+            };
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                actionId: components["parameters"]["ActionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateActionExecutionStateRequest"];
+            };
+        };
+        responses: {
+            /** @description Server-authored immutable event, including exact-replay status. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionExecutionStateUpdateHttpResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
     listProjectArtifacts: {
         parameters: {
             query?: {
@@ -4634,6 +7521,43 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
+        };
+    };
+    appendArtifactApprovalEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                artifactId: components["parameters"]["ArtifactId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppendArtifactApprovalEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Server-authored immutable approval timeline event. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactApprovalEventHttpResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     getProjectReport: {
@@ -4853,6 +7777,271 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    issuePublicationPreview: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssuePublicationPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Exact customer-safe publication preview lineage issued. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuePublicationPreviewHttpResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    issuePublicationRollbackPreview: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssuePublicationRollbackPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Exact customer-safe rollback preview lineage issued. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuePublicationRollbackPreviewHttpResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    revokePublicationPreview: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                previewEventId: components["parameters"]["PublicationPreviewEventId"];
+                previewRef: components["parameters"]["PublicationPreviewRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokePublicationPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Terminal revocation event appended or idempotently replayed. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokePublicationPreviewHttpResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectRecentMeasurementWindows: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Complete immutable Measurement Windows from across the project, newest first. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeasurementWindowRecentHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectMeasurementTargetKeywordRanks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                measurementWindowId: components["parameters"]["MeasurementWindowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Governed target Keyword rank evidence for the exact Measurement Window. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeasurementTargetKeywordRanksHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectMeasurementGeoCitations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                measurementWindowId: components["parameters"]["MeasurementWindowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable GEO citation evidence for the exact Measurement Window. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoCitationEvidenceHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getProjectMeasurementWindowHistory: {
+        parameters: {
+            query: {
+                sitePageId: components["schemas"]["Uuid"];
+                /** @description Must be the exact canonical target identity site-page://{sitePageId}. */
+                targetRef: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable observational Measurement Window history for the exact target. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeasurementWindowHistoryHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    createProjectMeasurementWindow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMeasurementWindowRequest"];
+            };
+        };
+        responses: {
+            /** @description The server-frozen Measurement Window and delayed run were accepted or exactly replayed. */
+            202: {
+                headers: {
+                    Location: string;
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeasurementWindowAcceptedHttpResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };

@@ -8,17 +8,37 @@ import {
 } from "./growth-map.ts";
 import { ProductProfileCompetitorAnalysisScope } from "./product-profile.ts";
 
-const MAX_SAFE_REVISION = Number.MAX_SAFE_INTEGER;
+/** PostgreSQL `integer` upper bound used by persisted governance revisions. */
+export const MAX_POSTGRES_INTEGER_REVISION = 2_147_483_647;
+/**
+ * Largest compare-and-swap value that can be advanced by exactly one without
+ * overflowing the persisted PostgreSQL `integer` column.
+ */
+export const MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION =
+  MAX_POSTGRES_INTEGER_REVISION - 1;
 const NonNegativeRevision = z
   .number()
   .int()
   .nonnegative()
-  .max(MAX_SAFE_REVISION);
-const PositiveRevision = z.number().int().positive().max(MAX_SAFE_REVISION);
+  .max(MAX_POSTGRES_INTEGER_REVISION);
+const PositiveRevision = z
+  .number()
+  .int()
+  .positive()
+  .max(MAX_POSTGRES_INTEGER_REVISION);
+const IncrementableKeywordGovernanceRevision = NonNegativeRevision.max(
+  MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION,
+);
+const IncrementableDatabaseRevision = NonNegativeRevision.max(
+  MAX_POSTGRES_INTEGER_REVISION - 1,
+);
 const TopicLabel = z.string().trim().min(1).max(200);
 const TopicDescription = z.string().trim().min(1).max(2000).nullable();
 const ClassificationLabel = z.string().trim().min(1).max(100);
-const DecisionReason = z.string().trim().min(1).max(2000);
+// The append-only Topic/Keyword decision ledgers enforce a minimum of three
+// trimmed characters. Keep the HTTP contract at least as strict so a request
+// cannot pass validation and then fail only at the persistence boundary.
+const DecisionReason = z.string().trim().min(3).max(2000);
 const LegacyClusterKey = z.string().trim().min(1).max(200);
 const Sha256Hex = z
   .string()
@@ -153,6 +173,8 @@ export type TopicNodeSuccessorRelationship = z.infer<
 const TopicModelRevisionCommonShape = {
   projectId: Uuid,
   topicModelRevision: PositiveRevision,
+  editRevision: NonNegativeRevision,
+  rootTopicNodeId: Uuid.nullable(),
   nodes: z.array(TopicNodeRevision).max(500),
   aliases: z.array(TopicClusterAlias).max(1000),
   successorRelationships: z
@@ -195,6 +217,13 @@ function addTopicModelTopologyIssues(
       message: "A confirmed Topic Model must contain at least one node",
     });
   }
+  if (model.state === "confirmed" && model.rootTopicNodeId === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["rootTopicNodeId"],
+      message: "A confirmed Topic Model must declare one root Topic Node",
+    });
+  }
 
   const createdAt = Date.parse(model.createdAt);
   const terminalAt = Date.parse(
@@ -235,6 +264,53 @@ function addTopicModelTopologyIssues(
     }
     nodeById.set(node.topicNodeId, node);
   });
+
+  if (model.rootTopicNodeId !== null) {
+    const root = nodeById.get(model.rootTopicNodeId);
+    if (!root) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["rootTopicNodeId"],
+        message: "The Topic root must exist in the same model revision",
+      });
+    } else if (root.parentTopicNodeId !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["rootTopicNodeId"],
+        message: "The Topic root cannot have a parent",
+      });
+    } else if (root.lifecycleState !== "active") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["rootTopicNodeId"],
+        message: "The Topic root must remain active",
+      });
+    } else {
+      model.nodes.forEach((node, index) => {
+        const visited = new Set<string>();
+        let current: TopicNodeRevision | undefined = node;
+        while (
+          current !== undefined &&
+          current.topicNodeId !== model.rootTopicNodeId
+        ) {
+          if (visited.has(current.topicNodeId)) break;
+          visited.add(current.topicNodeId);
+          current =
+            current.parentTopicNodeId === null
+              ? undefined
+              : nodeById.get(current.parentTopicNodeId);
+        }
+        if (current?.topicNodeId !== model.rootTopicNodeId) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["nodes", index, "parentTopicNodeId"],
+            message:
+              "Every Topic Node must be reachable from the declared root",
+          });
+        }
+      });
+    }
+  }
 
   model.nodes.forEach((node, index) => {
     if (
@@ -395,6 +471,90 @@ export const TopicModelRevision = z
 export type TopicModelRevision = z.infer<typeof TopicModelRevision>;
 
 /**
+ * Starts one customer-editable draft from the exact latest confirmed
+ * revision. Zero is the honest first-model sentinel. Generation provenance,
+ * evidence, actor identity, timestamps, node identities and aliases are
+ * resolved by the server and therefore are not accepted here.
+ */
+export const BeginTopicModelDraftRequest = z
+  .object({
+    expectedLatestConfirmedRevision: IncrementableDatabaseRevision,
+    reason: DecisionReason,
+  })
+  .strict();
+export type BeginTopicModelDraftRequest = z.infer<
+  typeof BeginTopicModelDraftRequest
+>;
+
+/**
+ * One exact Growth Map Topic workspace. A draft is always the immediate
+ * successor of the latest confirmed model and never replaces it in the read
+ * projection before confirmation.
+ */
+export const TopicModelWorkspaceProjection = z
+  .object({
+    projectId: Uuid,
+    latestConfirmed: ConfirmedTopicModelRevision.nullable(),
+    draft: DraftTopicModelRevision.nullable(),
+    generatedAt: IsoDateTime,
+  })
+  .strict()
+  .superRefine((workspace, ctx) => {
+    if (
+      workspace.latestConfirmed !== null &&
+      workspace.latestConfirmed.projectId !== workspace.projectId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["latestConfirmed", "projectId"],
+        message: "The confirmed Topic Model must share the workspace project",
+      });
+    }
+    if (
+      workspace.draft !== null &&
+      workspace.draft.projectId !== workspace.projectId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["draft", "projectId"],
+        message: "The Topic Model draft must share the workspace project",
+      });
+    }
+    if (
+      workspace.draft !== null &&
+      workspace.draft.topicModelRevision !==
+        (workspace.latestConfirmed?.topicModelRevision ?? 0) + 1
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["draft", "topicModelRevision"],
+        message:
+          "The Topic Model draft must immediately follow the latest confirmed revision",
+      });
+    }
+
+    const generatedAt = Date.parse(workspace.generatedAt);
+    const latestModelAt =
+      workspace.draft?.updatedAt ??
+      workspace.latestConfirmed?.confirmedAt ??
+      null;
+    if (
+      latestModelAt !== null &&
+      generatedAt < Date.parse(latestModelAt)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["generatedAt"],
+        message:
+          "The Topic workspace cannot be generated before its latest model state",
+      });
+    }
+  });
+export type TopicModelWorkspaceProjection = z.infer<
+  typeof TopicModelWorkspaceProjection
+>;
+
+/**
  * Historical references are replayable without silently re-attributing old
  * evidence. Version 1 accepts only the legacy label; every version 2 reference
  * freezes stable identity, exact model revision, and the label observed then.
@@ -449,6 +609,19 @@ const RenameTopicNodeIntent = z
   })
   .strict();
 
+/**
+ * Customer-facing "delete" is a historical retirement. The stable identity
+ * and every confirmed revision remain replayable; only the draft lifecycle
+ * changes and affected Keyword assignments return to review.
+ */
+const RetireTopicNodeIntent = z
+  .object({
+    kind: z.literal("retire"),
+    topicNodeId: Uuid,
+    affectedKeywordReviewState: z.literal("unreviewed"),
+  })
+  .strict();
+
 const SplitTopicNodeIntent = z
   .object({
     kind: z.literal("split"),
@@ -479,6 +652,7 @@ export const TopicNodeDraftIntent = z
     CreateTopicNodeIntent,
     UpdateTopicNodeIntent,
     RenameTopicNodeIntent,
+    RetireTopicNodeIntent,
     SplitTopicNodeIntent,
     MergeTopicNodeIntent,
   ])
@@ -501,7 +675,8 @@ export type TopicNodeDraftIntent = z.infer<
 
 export const PatchTopicModelDraftRequest = z
   .object({
-    expectedRevision: NonNegativeRevision,
+    topicModelRevision: PositiveRevision,
+    expectedEditRevision: IncrementableDatabaseRevision,
     reason: DecisionReason,
     intents: z.array(TopicNodeDraftIntent).min(1).max(100),
   })
@@ -512,7 +687,8 @@ export type PatchTopicModelDraftRequest = z.infer<
 
 export const ConfirmTopicModelRequest = z
   .object({
-    expectedRevision: NonNegativeRevision,
+    topicModelRevision: PositiveRevision,
+    expectedEditRevision: NonNegativeRevision,
     reason: DecisionReason,
   })
   .strict();
@@ -555,7 +731,7 @@ export type KeywordReviewDecisionOrigin = z.infer<
 >;
 
 export const KeywordAssignmentInvalidation = z
-  .enum(["topic_split", "topic_merge"])
+  .enum(["topic_split", "topic_merge", "topic_retire"])
   .nullable();
 export type KeywordAssignmentInvalidation = z.infer<
   typeof KeywordAssignmentInvalidation
@@ -634,7 +810,7 @@ function addKeywordProjectionIssues(
       code: "custom",
       path: ["mappingReviewState"],
       message:
-        "A split or merge must return the affected keyword to unreviewed",
+        "A Topic split, merge, or retirement must return the affected keyword to unreviewed",
     });
   }
 }
@@ -710,7 +886,7 @@ export const KeywordReviewDecision = z
         code: "custom",
         path: ["decisionOrigin"],
         message:
-          "Only a system split/merge invalidation can return an assignment to unreviewed",
+          "Only a system Topic invalidation can return an assignment to unreviewed",
       });
     }
   });
@@ -774,7 +950,7 @@ export type KeywordGovernanceCurrentProjection = z.infer<
  */
 export const ReviewKeywordRequest = z
   .object({
-    expectedGovernanceRevision: NonNegativeRevision,
+    expectedGovernanceRevision: IncrementableKeywordGovernanceRevision,
     status: KeywordStatus,
     intent: ClassificationLabel.nullable(),
     buyerStage: ClassificationLabel.nullable(),
@@ -843,7 +1019,7 @@ const CompetitorAnalysisScope = z
  */
 export const ReviewCompetitorRequest = z
   .object({
-    expectedRevision: NonNegativeRevision,
+    expectedRevision: IncrementableDatabaseRevision,
     name: z.string().trim().min(1).max(160).nullable(),
     reviewStatus: GrowthMapCompetitorReviewStatus,
     relationship: GrowthMapCompetitorRelationship.nullable(),

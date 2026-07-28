@@ -144,6 +144,66 @@ export interface OverviewDeliveryFocus {
   readonly updatedAt: string;
 }
 
+/** A current frozen-audit Finding that still needs a yes/no decision. */
+export interface OverviewDecisionReminder {
+  readonly findingId: string;
+  readonly sitePageId: string | null;
+  readonly summary: string;
+  readonly summaryLocale: string;
+  readonly severity: OverviewPriorityBand;
+  readonly reviewState: "unreviewed" | "needs_more_data";
+  readonly firstSeenAt: string;
+  readonly lastSeenAt: string;
+  readonly staleForDays: number;
+}
+
+export interface OverviewContentDecayRankTrend {
+  readonly olderMonth: string;
+  readonly previousMonth: string;
+  readonly currentMonth: string;
+  readonly olderPosition: number;
+  readonly previousPosition: number;
+  readonly currentPosition: number;
+  readonly firstDecline: number;
+  readonly secondDecline: number;
+}
+
+export interface OverviewContentDecayTrafficTrend {
+  readonly previousMonth: string;
+  readonly currentMonth: string;
+  readonly previousClicks: number;
+  readonly currentClicks: number;
+  readonly changeRatio: number;
+}
+
+export interface OverviewContentDecayAlert {
+  readonly sitePageId: string;
+  readonly normalizedUrl: string;
+  readonly detectedAt: string;
+  readonly currentMonth: string;
+  readonly triggers: readonly ("rank_decline" | "traffic_decline")[];
+  readonly rankTrend: OverviewContentDecayRankTrend | null;
+  readonly trafficTrend: OverviewContentDecayTrafficTrend | null;
+  readonly sourceSnapshotIds: readonly string[];
+}
+
+/**
+ * Read-only monthly-checkpoint projection. `not_configured` is intentional:
+ * Overview currently evaluates durable facts on read and does not claim a
+ * scheduler or push notification that the product has not connected.
+ */
+export interface OverviewContentDecayMonitor {
+  readonly version: "content-decay-monitor.v1";
+  readonly projectionMode: "read_time";
+  readonly scheduleState: "not_configured";
+  readonly status: "available" | "partial" | "unavailable";
+  readonly timezone: string;
+  readonly timezoneSource: "provider" | "project" | "fallback";
+  readonly latestCheckpointMonth: string | null;
+  readonly limitations: readonly string[];
+  readonly alerts: readonly OverviewContentDecayAlert[];
+}
+
 /** The `overview` workspace projection (spec §11.3). */
 export interface OverviewView {
   readonly view: "overview";
@@ -153,6 +213,8 @@ export interface OverviewView {
   /** Exact latest readable frozen audit used to select `topActions`. */
   readonly frozenDiagnosticRunId: string | null;
   readonly topActions: readonly OverviewAction[];
+  readonly decisionReminders: readonly OverviewDecisionReminder[];
+  readonly contentDecayMonitor: OverviewContentDecayMonitor;
   readonly latestSnapshot: OverviewSnapshot | null;
   readonly topActionEvidence: readonly OverviewEvidence[];
   readonly deliveryFocus: OverviewDeliveryFocus | null;

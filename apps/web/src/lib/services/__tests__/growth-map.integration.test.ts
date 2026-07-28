@@ -42,6 +42,7 @@ import {
 } from "@sf/db";
 import {
   FINDING_REGISTRY,
+  GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
 } from "@sf/engine";
@@ -543,6 +544,11 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       },
       snapshots: [crawlSnapshot, gscSnapshot, ga4Snapshot],
       deliveryLocale: "en-US",
+      governance: {
+        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+        keywordClusters: [],
+        competitors: [],
+      },
     });
     const runId = randomUUID();
     await handle.db.insert(asyncRuns).values({

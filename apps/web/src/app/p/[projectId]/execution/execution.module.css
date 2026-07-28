@@ -743,10 +743,11 @@
   overflow-wrap: anywhere;
 }
 
-.researchSourceFacts a {
+.researchSourceLink {
   color: var(--sf-cobalt-text);
   text-decoration: underline;
   text-underline-offset: 2px;
+  overflow-wrap: anywhere;
 }
 
 .researchSourceSummary {

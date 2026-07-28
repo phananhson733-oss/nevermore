@@ -262,10 +262,13 @@ export class FindingsRepository extends Repository {
       domain?: string | null;
       reviewState?: string | null;
       excludedReviewStates?: readonly string[];
+      lastSeenRunId?: string | null;
+      ruleIds?: readonly string[];
     },
   ): Promise<FindingListPage> {
     const keyset = opts.cursor ? decodeCursor(opts.cursor) : null;
     if (opts.cursor && !keyset) return { rows: [], nextCursor: null };
+    if (opts.ruleIds?.length === 0) return { rows: [], nextCursor: null };
     const after =
       keyset != null
         ? or(
@@ -288,6 +291,12 @@ export class FindingsRepository extends Repository {
     const excludedReviewStatesFilter = opts.excludedReviewStates?.length
       ? notInArray(findings.review_state, [...opts.excludedReviewStates])
       : undefined;
+    const lastSeenRunFilter = opts.lastSeenRunId != null
+      ? eq(findings.last_seen_run_id, opts.lastSeenRunId)
+      : undefined;
+    const ruleIdsFilter = opts.ruleIds
+      ? inArray(findings.rule_id, [...opts.ruleIds])
+      : undefined;
 
     const rows = (await this.exec
       .select()
@@ -299,6 +308,8 @@ export class FindingsRepository extends Repository {
           domainFilter,
           reviewStateFilter,
           excludedReviewStatesFilter,
+          lastSeenRunFilter,
+          ruleIdsFilter,
           after,
         ),
       )

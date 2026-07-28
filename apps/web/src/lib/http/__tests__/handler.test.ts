@@ -398,6 +398,18 @@ describe("HTTP request completion metrics", () => {
     expect(
       apiRouteTemplate(`${prefix}/customer-secret-site-page/evidence`),
     ).toBe("/api/mvp/:unknown");
+    expect(
+      apiRouteTemplate(
+        "https://example.test/api/mvp/projects/customer-project/audit/internal-link-map?sitePageId=customer-secret-site-page",
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/audit/internal-link-map",
+    );
+    expect(
+      apiRouteTemplate(
+        "https://example.test/api/mvp/projects/customer-project/audit/backlinks",
+      ),
+    ).toBe("/api/mvp/projects/:projectId/audit/backlinks");
   });
 
   it("recognizes Keyword Library reads without logging the selected Keyword id", () => {
@@ -410,9 +422,31 @@ describe("HTTP request completion metrics", () => {
     expect(apiRouteTemplate(`${prefix}/customer-secret-keyword`)).toBe(
       "/api/mvp/projects/:projectId/audit/keywords/:keywordId",
     );
+    expect(
+      apiRouteTemplate(
+        `${prefix}/customer-secret-keyword/rank-history`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/audit/keywords/:keywordId/rank-history",
+    );
     expect(apiRouteTemplate(`${prefix}/customer-secret-keyword/history`)).toBe(
       "/api/mvp/:unknown",
     );
+  });
+
+  it("recognizes Keyword Relation governance without logging relation ids", () => {
+    const prefix =
+      "https://example.test/api/mvp/projects/customer-project/audit/keyword-relations";
+
+    expect(apiRouteTemplate(prefix)).toBe(
+      "/api/mvp/projects/:projectId/audit/keyword-relations",
+    );
+    expect(apiRouteTemplate(`${prefix}/customer-secret-relation`)).toBe(
+      "/api/mvp/projects/:projectId/audit/keyword-relations/:relationId",
+    );
+    expect(
+      apiRouteTemplate(`${prefix}/customer-secret-relation/history`),
+    ).toBe("/api/mvp/:unknown");
   });
 
   it("recognizes Competitor Library reads without logging the selected Competitor id", () => {
@@ -427,6 +461,30 @@ describe("HTTP request completion metrics", () => {
     );
     expect(
       apiRouteTemplate(`${prefix}/customer-secret-competitor/history`),
+    ).toBe("/api/mvp/:unknown");
+  });
+
+  it("recognizes Topic Model workspace and commands without logging project ids", () => {
+    const prefix =
+      "https://example.test/api/mvp/projects/customer-secret-project/audit/topic-model";
+
+    expect(apiRouteTemplate(prefix)).toBe(
+      "/api/mvp/projects/:projectId/audit/topic-model",
+    );
+    expect(apiRouteTemplate(`${prefix}/draft`)).toBe(
+      "/api/mvp/projects/:projectId/audit/topic-model/draft",
+    );
+    expect(apiRouteTemplate(`${prefix}/insights`)).toBe(
+      "/api/mvp/projects/:projectId/audit/topic-model/insights",
+    );
+    expect(apiRouteTemplate(`${prefix}/draft/confirm`)).toBe(
+      "/api/mvp/projects/:projectId/audit/topic-model/draft/confirm",
+    );
+    expect(apiRouteTemplate(`${prefix}/customer-secret`)).toBe(
+      "/api/mvp/:unknown",
+    );
+    expect(
+      apiRouteTemplate(`${prefix}/draft/confirm/customer-secret`),
     ).toBe("/api/mvp/:unknown");
   });
 
@@ -490,8 +548,24 @@ describe("HTTP request completion metrics", () => {
   });
 
   it("recognizes governed publication command and history routes without logging attempt ids", () => {
-    const attempts =
-      "https://example.test/api/mvp/projects/customer-secret-project/publications/attempts";
+    const publications =
+      "https://example.test/api/mvp/projects/customer-secret-project/publications";
+    const previews = `${publications}/previews`;
+    const attempts = `${publications}/attempts`;
+
+    expect(apiRouteTemplate(previews)).toBe(
+      "/api/mvp/projects/:projectId/publications/previews",
+    );
+    expect(apiRouteTemplate(`${previews}/rollback`)).toBe(
+      "/api/mvp/projects/:projectId/publications/previews/rollback",
+    );
+    expect(
+      apiRouteTemplate(
+        `${previews}/customer-secret-preview-event/customer-secret-preview-ref/revoke`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/publications/previews/:previewEventId/:previewRef/revoke",
+    );
 
     expect(apiRouteTemplate(attempts)).toBe(
       "/api/mvp/projects/:projectId/publications/attempts",
@@ -524,9 +598,40 @@ describe("HTTP request completion metrics", () => {
       ),
     ).toBe("/api/mvp/:unknown");
     expect(
-      apiRouteTemplate(
-        "https://example.test/api/mvp/projects/customer-secret-project/publications",
-      ),
+      apiRouteTemplate(publications),
     ).toBe("/api/mvp/:unknown");
+    expect(
+      apiRouteTemplate(`${previews}/customer-secret-preview-event/revoke`),
+    ).toBe("/api/mvp/:unknown");
+  });
+
+  it("recognizes Results and Measurement Window routes without logging project ids or query values", () => {
+    const prefix =
+      "https://example.test/api/mvp/projects/customer-secret-project";
+
+    expect(apiRouteTemplate(`${prefix}/results`)).toBe(
+      "/api/mvp/projects/:projectId/results",
+    );
+    expect(
+      apiRouteTemplate(
+        `${prefix}/measurement-windows?sitePageId=customer-secret-page&targetRef=customer-secret-target`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/measurement-windows",
+    );
+    expect(
+      apiRouteTemplate(
+        `${prefix}/measurement-windows/recent?limit=customer-secret`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/measurement-windows/recent",
+    );
+    expect(
+      apiRouteTemplate(
+        `${prefix}/measurement-windows/customer-secret-window/keyword-ranks`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/measurement-windows/:measurementWindowId/keyword-ranks",
+    );
   });
 });

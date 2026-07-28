@@ -12,6 +12,10 @@ import {
   startRetentionCleanupLoop,
   type RetentionCleanupLoop,
 } from "./handlers/retention-cleanup.ts";
+import {
+  startCompetitorMonitorSchedulerLoop,
+  type CompetitorMonitorSchedulerLoop,
+} from "./competitor-monitor/scheduler.ts";
 
 export const WORKER_MAINTENANCE_STOP_TIMEOUT_MS = 5_000;
 
@@ -21,7 +25,11 @@ export interface WorkerMaintenanceOptions {
   readonly signal?: AbortSignal;
 }
 
-type MaintenanceLoopName = "retention" | "orphan" | "recovery";
+type MaintenanceLoopName =
+  | "competitor-monitor"
+  | "retention"
+  | "orphan"
+  | "recovery";
 
 interface MaintenanceLoopStop {
   readonly name: MaintenanceLoopName;
@@ -63,6 +71,7 @@ export class WorkerMaintenanceStartCleanupError extends Error {
 
 export interface WorkerMaintenance {
   readonly recovery: RunRecoveryLoop;
+  readonly competitorMonitor: CompetitorMonitorSchedulerLoop;
   readonly orphanCleanup: OrphanCleanupLoop;
   readonly retentionCleanup: RetentionCleanupLoop;
   stop(): Promise<void>;
@@ -89,6 +98,7 @@ export async function startWorkerMaintenance(
   );
   const startedLoops: MaintenanceLoopStop[] = [];
   let recovery: RunRecoveryLoop | undefined;
+  let competitorMonitor: CompetitorMonitorSchedulerLoop | undefined;
   let retentionCleanup: RetentionCleanupLoop | undefined;
   let orphanCleanup: OrphanCleanupLoop | undefined;
 
@@ -108,6 +118,24 @@ export async function startWorkerMaintenance(
         startedRecovery,
         undefined,
         undefined,
+        undefined,
+        stopTimeoutMs,
+      );
+    }
+
+    const startedCompetitorMonitor =
+      startCompetitorMonitorSchedulerLoop(ctx);
+    competitorMonitor = startedCompetitorMonitor;
+    startedLoops.push({
+      name: "competitor-monitor",
+      stop: () => startedCompetitorMonitor.stop(),
+    });
+    if (options.signal?.aborted) {
+      return createWorkerMaintenance(
+        startedRecovery,
+        startedCompetitorMonitor,
+        undefined,
+        undefined,
         stopTimeoutMs,
       );
     }
@@ -121,6 +149,7 @@ export async function startWorkerMaintenance(
     if (options.signal?.aborted) {
       return createWorkerMaintenance(
         startedRecovery,
+        startedCompetitorMonitor,
         startedRetentionCleanup,
         undefined,
         stopTimeoutMs,
@@ -136,6 +165,7 @@ export async function startWorkerMaintenance(
 
     return createWorkerMaintenance(
       startedRecovery,
+      startedCompetitorMonitor,
       startedRetentionCleanup,
       startedOrphanCleanup,
       stopTimeoutMs,
@@ -148,6 +178,7 @@ export async function startWorkerMaintenance(
     ) {
       return createWorkerMaintenance(
         recovery,
+        competitorMonitor,
         retentionCleanup,
         orphanCleanup,
         stopTimeoutMs,
@@ -157,6 +188,7 @@ export async function startWorkerMaintenance(
     if (failedLoops.length > 0 && recovery !== undefined) {
       const partial = createWorkerMaintenance(
         recovery,
+        competitorMonitor,
         retentionCleanup,
         orphanCleanup,
         stopTimeoutMs,
@@ -189,15 +221,22 @@ export function getWorkerMaintenanceFromStartError(
 
 function createWorkerMaintenance(
   recovery: RunRecoveryLoop,
+  competitorMonitor: CompetitorMonitorSchedulerLoop | undefined,
   retentionCleanup: RetentionCleanupLoop | undefined,
   orphanCleanup: OrphanCleanupLoop | undefined,
   stopTimeoutMs: number,
 ): WorkerMaintenance {
   const resolvedRetention = retentionCleanup ?? STOPPED_STORAGE_LOOP;
   const resolvedOrphan = orphanCleanup ?? STOPPED_STORAGE_LOOP;
+  const resolvedCompetitorMonitor =
+    competitorMonitor ?? STOPPED_STORAGE_LOOP;
   const allLoops: readonly MaintenanceLoopStop[] = [
     { name: "retention", stop: () => resolvedRetention.stop() },
     { name: "orphan", stop: () => resolvedOrphan.stop() },
+    {
+      name: "competitor-monitor",
+      stop: () => resolvedCompetitorMonitor.stop(),
+    },
     { name: "recovery", stop: () => recovery.stop() },
   ];
   let stopPromise: Promise<void> | null = null;
@@ -216,6 +255,7 @@ function createWorkerMaintenance(
 
   return {
     recovery,
+    competitorMonitor: resolvedCompetitorMonitor,
     orphanCleanup: resolvedOrphan,
     retentionCleanup: resolvedRetention,
     stop,

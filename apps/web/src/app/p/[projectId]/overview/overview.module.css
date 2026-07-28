@@ -588,12 +588,31 @@
   background: var(--sf-coral-soft);
 }
 
+.decisionIcon[data-kind="decision_due"] {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+}
+
+.decisionIcon[data-kind="content_decay"] {
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+}
+
 .decisionKind {
   color: var(--sf-muted);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.03em;
   line-height: 1.35;
+}
+
+.decayPage {
+  color: var(--sf-muted);
+  font-family: var(--sf-font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .decisionRow > a {

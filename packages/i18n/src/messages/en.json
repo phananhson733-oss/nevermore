@@ -603,6 +603,15 @@
         "queueSyncing": "Aligning the work queue with the current frozen audit…",
         "queueRunMismatch": "The audit changed while this page was loading. Work cards remain hidden until both reads match.",
         "queueUnavailable": "The work queue is unavailable until a frozen audit can be identified.",
+        "decisionDue": "Decision due · untouched for {days} days",
+        "decideOpportunityLabel": "Decide whether to proceed: {summary}",
+        "decay": {
+          "detected": "{month} monthly decay warning",
+          "reviewSuggested": "Content review recommended",
+          "rankSignal": "average position fell {first} / {second} places in two consecutive months",
+          "trafficSignal": "latest 28-day clicks fell {percent}% month over month",
+          "openLabel": "Open the page recommended for content review in Growth Map: {page}"
+        },
         "resultUnavailable": "No verified before/after result yet",
         "resultUnavailableDescription": "A source snapshot is not a growth Result. This appears after a traceable recheck compares a baseline with the current state.",
         "resultVerified": "Verified recheck · {state}",
@@ -949,6 +958,70 @@
       "competitors": {
         "label": "Competitor library",
         "description": "Relationships, scope, and evidence"
+      },
+      "backlinks": {
+        "label": "Backlink growth",
+        "description": "Links, referring domains, and gaps"
+      }
+    },
+    "backlinks": {
+      "eyebrow": "Backlink Growth Path",
+      "title": "See where off-site authority comes from and what to strengthen next",
+      "description": "Primary-site, page, and approved-competitor backlink facts stay on one traceable evidence chain. Source scopes are never blended and missing data is never filled with zero.",
+      "loading": "Reading backlink and referring-domain evidence…",
+      "error": "The Backlink growth path could not be read. Try again.",
+      "unavailableTitle": "No readable backlink evidence yet",
+      "unavailableBoundary": "Estimated values never replace missing evidence. Real provider, CSV, or search-derived snapshots appear here after collection.",
+      "capturedAt": "Captured {date}",
+      "siteSummary": "Primary-site backlink overview",
+      "currentSite": "Primary site",
+      "backlinks": "Backlinks",
+      "referringDomains": "Referring domains",
+      "domainRating": "Domain Rating",
+      "domainAuthority": "Domain Authority",
+      "providerTotal": "Provider index total",
+      "observedCount": "Records observed in this source",
+      "metricUnavailable": "Not provided",
+      "notCollected": "No verifiable data",
+      "providerOnly": "Shown only for real provider data",
+      "providerObserved": "Provider observation",
+      "dataBoundary": "Data scope",
+      "opportunityEyebrow": "Growth Opportunities",
+      "opportunityTitle": "Backlink opportunities worth addressing",
+      "noOpportunity": "No backlink opportunity was triggered within the current evidence scope.",
+      "severity": {
+        "high": "High priority",
+        "medium": "Medium priority"
+      },
+      "siteLevelOpportunity": "Site-level opportunity",
+      "openPage": "Open page",
+      "awaitingExecution": "Review before execution",
+      "openExecution": "Open execution task",
+      "pagesEyebrow": "Page Distribution",
+      "pagesTitle": "How backlinks are distributed across pages",
+      "noPages": "The current snapshot does not provide page-level backlink data.",
+      "competitorEyebrow": "Approved Competitors",
+      "competitorTitle": "Compare approved competitors on one scope",
+      "comparisonReady": "Only the same {provider} and nearby collection windows are compared.",
+      "domainEyebrow": "Referring Domains",
+      "domainTitle": "Leading referring domains and target pages",
+      "observedLinks": "{count, plural, one {# observed link} other {# observed links}}",
+      "authorityNotProvided": "DR / DA not provided",
+      "sourceEyebrow": "Evidence Sources",
+      "sourceTitle": "Where each number comes from",
+      "traceability": "View source identity",
+      "rowCount": "{count, plural, one {# snapshot row} other {# snapshot rows}}",
+      "connectionBoundary": "Backlink providers, manual CSV, and search-derived discovery are built-in Growth Map evidence sources, not new customer connections. Customer-visible connections remain GSC, GA4, and GitHub.",
+      "source": {
+        "provider_import": "Provider import",
+        "manual_csv": "Manual CSV",
+        "search_derived": "Search-derived discovery"
+      },
+      "provider": {
+        "ahrefs": "Ahrefs",
+        "moz": "Moz",
+        "manual_csv": "CSV",
+        "search_derived": "Built-in discovery"
       }
     },
     "realDataOnly": "Library records",
@@ -972,7 +1045,13 @@
       "competitorAiCitationWriterUnavailable": "No data is available: Competitor Library v1 does not yet have AI citation data.",
       "competitorCandidate": "This Competitor is awaiting review and is not yet included in analysis.",
       "competitorExcluded": "This Competitor has been excluded from the approved analysis scope.",
-      "competitorSourceApprovedReviewPending": "The Product Profile source is approved, but this Competitor Library record is still awaiting review."
+      "competitorSourceApprovedReviewPending": "The Product Profile source is approved, but this Competitor Library record is still awaiting review.",
+      "rankNoObservations": "No verifiable canonical rank observations are available in the latest 90 days.",
+      "rankNoCanonicalPage": "This Keyword is not mapped to one canonical existing page, so verified content-change markers cannot be shown.",
+      "rankSinglePoint": "At least one rank metric has only one observation, so a trend cannot yet be established.",
+      "rankMissingProviderTimestamp": "At least one rank observation has no provider data-as-of timestamp.",
+      "rankDataForSeoAbsolute": "DataForSEO shows an absolute provider rank observation and does not provide a data-as-of timestamp.",
+      "rankGscRollingAverage": "GSC shows a rolling 28-day impression-weighted average position, not an absolute SERP rank."
     },
     "keywordLibrary": {
       "loadingLibrary": "Loading the Keyword Library…",
@@ -999,6 +1078,275 @@
         "status": "Status",
         "source": "Real source / collected at"
       },
+      "relations": {
+        "toolbarLabel": "Keyword duplicate relations",
+        "toolbarTitle": "Duplicate governance",
+        "toolbarDescription": "The system checks candidates that share a page, search intent, market, and language. Folded supporting Keywords remain visible beneath the primary Keyword.",
+        "loading": "Checking duplicate relations on this page…",
+        "ready": "{count} candidate pairs on this page; {collapsed} supporting Keywords folded",
+        "empty": "No duplicate candidates found on this page",
+        "refresh": "Run detection again",
+        "refreshing": "Detecting…",
+        "refreshError": "Duplicate-relation detection failed. Existing Keywords remain available.",
+        "retry": "Retry",
+        "badge": "{count} duplicate relations",
+        "openAria": "Review {count} duplicate relations for “{keyword}”",
+        "supportingLabel": "Supporting Keywords",
+        "offPagePrimary": "This Keyword is assigned to primary Keyword “{keyword}”. The primary is on another page, so this row remains visible here.",
+        "dialogEyebrow": "Keyword relations",
+        "dialogTitle": "Review duplicate Keywords",
+        "dialogDescription": "Decide using the confirmed page, reviewed intent, market, and language. Every decision is versioned and can be reviewed again.",
+        "dialogKeywordDescription": "Review duplicate candidates related to “{keyword}”. Every decision is versioned and can be reviewed again.",
+        "close": "Close duplicate-Keyword review",
+        "candidateCount": "{count} candidate pairs",
+        "pairTitle": "Candidate pair",
+        "candidateCurrent": "Evidence current",
+        "candidateStale": "Evidence stale",
+        "displayState": {
+          "possible_duplicate": "Awaiting review",
+          "folded": "Folded",
+          "kept_separate": "Kept separate",
+          "parked_secondary": "Secondary parked",
+          "needs_research": "More research needed",
+          "stale": "Detection required"
+        },
+        "evidenceTitle": "Decision evidence",
+        "samePage": "Same confirmed page",
+        "sameIntent": "Same reviewed intent: {intent}",
+        "marketLanguage": "{market} · {language}",
+        "sameTopic": "Same confirmed topic",
+        "topicNotConfirmed": "Topic relation not confirmed",
+        "lexicalOverlap": "{value}% lexical overlap",
+        "serpOverlap": "{value}% SERP overlap",
+        "serpUnavailable": "No canonical SERP-overlap data",
+        "decisionTitle": "Review decision",
+        "decisionDescription": "Choose how this pair is represented and tracked in the Keyword Library.",
+        "decision": {
+          "primary_supporting": {
+            "label": "Set primary + supporting",
+            "description": "Keep the primary row and fold the supporting Keyword beneath it by default."
+          },
+          "keep_separate": {
+            "label": "Keep both independent",
+            "description": "Continue showing and tracking both Keywords independently."
+          },
+          "park_secondary": {
+            "label": "Park the secondary Keyword",
+            "description": "Keep the relation record but remove it from the current priority queue."
+          },
+          "needs_research": {
+            "label": "Needs more research",
+            "description": "Wait for SERP evidence or manual research before deciding."
+          }
+        },
+        "primaryTitle": "Choose the primary Keyword",
+        "primaryHint": "The other Keyword will become the supporting Keyword.",
+        "reason": "Review note",
+        "reasonHelp": "Record the basis for this decision so the team can review it later.",
+        "reasonPlaceholder": "Explain this decision in at least 3 characters.",
+        "defaultReason": "Reviewed using the current page, intent, market, and language evidence.",
+        "save": "Save decision",
+        "saving": "Saving…",
+        "saved": "Decision saved. The Keyword list has been updated.",
+        "replayed": "This decision was already saved; the latest result is now synchronized.",
+        "conflict": "Another review updated this relation. The latest version has been loaded; please confirm again.",
+        "decisionError": "The decision could not be saved. Please try again.",
+        "staleNotice": "The candidate evidence is stale. Run detection again before reviewing it.",
+        "invalidDecision": "Add a review note and choose a valid primary Keyword when folding.",
+        "currentDecision": "Current decision: {decision}",
+        "revision": "Relation revision {revision}",
+        "staleReason": {
+          "candidate_superseded": "Newer candidate evidence exists",
+          "keyword_unavailable": "A Keyword is unavailable",
+          "governance_revision_changed": "Keyword review revision changed",
+          "mapping_changed": "Page mapping changed",
+          "intent_changed": "Search intent changed",
+          "market_changed": "Target market changed",
+          "language_changed": "Language changed"
+        }
+      },
+      "topicMap": {
+        "step": "Step 0 · Keyword governance foundation",
+        "gatewayTitle": "The Topic Map decides how Keywords enter growth paths",
+        "gatewayDescription": "Confirm the central topic and parent-child structure first, then use the published structure to identify content coverage, gaps, and intent conflicts.",
+        "gateway": {
+          "status": "Structure status",
+          "topics": "Active topics",
+          "coverageGaps": "Coverage gaps",
+          "conflicts": "Intent conflicts"
+        },
+        "status": {
+          "draft": "Draft awaiting publication",
+          "confirmed": "Published",
+          "unavailable": "Not established"
+        },
+        "loading": "Loading the Topic Map…",
+        "manage": "Manage Topic Map",
+        "gatewayActionHint": "Structure editing, Keyword coverage, and version history",
+        "workspaceError": "The Topic Map workspace could not be read.",
+        "insightsError": "The structure is available, but Keyword coverage insights could not be read.",
+        "retry": "Retry",
+        "dialogEyebrow": "Keyword Library · Step 0",
+        "dialogTitle": "Topic Map",
+        "dialogDescription": "Establish the product's central topic and hierarchy as the shared authority for Keyword intake, content coverage, and conflict decisions.",
+        "close": "Close Topic Map",
+        "draftRevision": "Draft v{revision} · edit {edit}",
+        "confirmedRevision": "Published v{revision}",
+        "publishedAuthority": "The published structure is shown; coverage metrics come from the same confirmed version.",
+        "draftAuthority": "A draft is being edited. Coverage metrics still come from the latest published version and are not changed early.",
+        "refresh": "Refresh",
+        "beginFirstDraft": "Create first version",
+        "beginDraft": "Edit new version",
+        "confirm": "Confirm and publish",
+        "structureEyebrow": "Product topic structure",
+        "structureTitle": "Central topic and child nodes",
+        "activeTopicCount": "{count} active topics",
+        "emptyStructureTitle": "This draft has no topics yet",
+        "emptyStructureDescription": "Create a root topic first, then add product capability, use-case, and problem-space topics beneath it.",
+        "createRoot": "Create root topic",
+        "tree": {
+          "label": "Topic Map tree",
+          "noPublishedMetrics": "Draft node · coverage calculated after publication",
+          "nodeSummary": "{keywords} Keywords · {pages} existing content items"
+        },
+        "historyTitle": "Historical topics ({count})",
+        "historyDescription": "Delete, split, and merge preserve history. Previous nodes remain traceable records.",
+        "selectTopicTitle": "Select a topic",
+        "selectTopicDescription": "Choose a node from the structure to see Keyword coverage, existing content, conflicts, and editing actions.",
+        "activeTopic": "Active topic",
+        "retiredTopic": "Historical topic",
+        "actionsLabel": "Topic editing actions",
+        "action": {
+          "create": "Create child",
+          "edit": "Edit structure",
+          "rename": "Rename",
+          "split": "Split",
+          "merge": "Merge",
+          "retire": "Delete / retire"
+        },
+        "retireRootBlocked": "The root topic cannot be deleted; restructure it with split or merge.",
+        "retireChildrenBlocked": "Move, split, or retire active child topics first.",
+        "coverageState": {
+          "empty": "No Keywords",
+          "uncovered": "Uncovered",
+          "partial": "Partially covered",
+          "covered": "Covered",
+          "conflict": "Conflict",
+          "draft": "Draft node",
+          "unavailable": "Metrics unavailable"
+        },
+        "insightUnavailableTitle": "No published coverage decision",
+        "insightUnavailableDescription": "Coverage metrics only use a confirmed Topic Map. The system recalculates them after publication.",
+        "metric": {
+          "keywords": "Keywords",
+          "mappedPages": "Existing content",
+          "reviewPending": "Keywords awaiting review",
+          "conflicts": "Intent conflicts"
+        },
+        "mapping": {
+          "existing": "{count} Keywords point to existing pages",
+          "newAsset": "{count} Keywords need new content",
+          "unassigned": "{count} Keywords are unassigned"
+        },
+        "node": {
+          "parent": "Parent topic",
+          "root": "Root topic",
+          "description": "Topic description",
+          "intentEnvelope": "Search-intent envelope"
+        },
+        "notAvailable": "Not available",
+        "retiredHistoryTitle": "Historical identity is preserved",
+        "retiredHistoryDescription": "This topic no longer participates in current coverage decisions, but previous versions, evidence, and successor relationships remain traceable.",
+        "successorKind": {
+          "split_into": "Split into “{label}”",
+          "merged_into": "Merged into “{label}”"
+        },
+        "editor": {
+          "eyebrow": "Versioned edit",
+          "cancel": "Cancel",
+          "saving": "Saving…",
+          "begin": {
+            "title": "Create an editable draft",
+            "description": "The draft starts from the current published version. A first version begins with an empty structure.",
+            "submit": "Start editing",
+            "authority": "Starting a draft does not change the published coverage decisions customers currently see."
+          },
+          "create": {
+            "title": "Create topic",
+            "description": "Add a stable topic node to the current product topic structure.",
+            "submit": "Create topic"
+          },
+          "edit": {
+            "title": "Edit structure and definition",
+            "description": "Adjust the parent topic, description, and permitted search intents.",
+            "submit": "Save changes"
+          },
+          "rename": {
+            "title": "Rename topic",
+            "description": "The label changes while stable identity and historical references remain intact.",
+            "submit": "Save new name"
+          },
+          "split": {
+            "title": "Split topic",
+            "description": "Split an over-broad topic into at least two successor topics.",
+            "submit": "Split topic"
+          },
+          "merge": {
+            "title": "Merge topics",
+            "description": "Choose at least one other topic and create one new shared successor.",
+            "submit": "Merge topics"
+          },
+          "retire": {
+            "title": "Delete / retire topic",
+            "description": "Stop using this topic in the current structure without erasing any history.",
+            "submit": "Confirm delete / retire",
+            "history": "After publication, affected Keywords return to awaiting review. Historical nodes, versions, and evidence are not lost."
+          },
+          "confirm": {
+            "title": "Confirm and publish Topic Map",
+            "description": "Make this draft the new Keyword governance authority and recalculate coverage, gaps, and conflicts.",
+            "submit": "Confirm publication",
+            "authority": "Publication makes this structure the sole new confirmed version and refreshes Keyword and content-coverage decisions."
+          }
+        },
+        "field": {
+          "label": "Topic name",
+          "newLabel": "New name",
+          "parent": "Parent topic",
+          "description": "Topic description",
+          "intentEnvelope": "Search-intent envelope",
+          "intentEnvelopeHelp": "Separate values with commas, for example: Informational, Commercial.",
+          "firstRoot": "This is the first node in the draft and will become the root topic.",
+          "rootFixed": "The root topic must remain at the top of the structure.",
+          "successorLabels": "Successor topic names",
+          "successorLabelsHelp": "Enter one name per line, with at least two lines.",
+          "successorLabelsPlaceholder": "Implementation and setup\nWorkflow automation",
+          "mergedLabel": "Merged topic name",
+          "mergeSources": "Choose topics to merge",
+          "reason": "Change note",
+          "reasonHelp": "Record the basis for this structural decision in at least 3 characters."
+        },
+        "defaultReason": {
+          "create": "Create or extend the Topic Map using the current product and Keyword scope.",
+          "edit": "Adjust the Topic definition and hierarchy using the current product structure.",
+          "rename": "Update the Topic label to use more accurate customer language.",
+          "split": "This Topic is too broad and should become clearer growth paths.",
+          "merge": "These Topics overlap in intent and content boundaries and should share one scope.",
+          "retire": "This Topic no longer participates in current growth decisions; preserve and retire its history.",
+          "confirm": "The current Topic structure has been reviewed and can become the new Keyword governance authority."
+        },
+        "validation": {
+          "reason": "Enter a change note with at least 3 characters.",
+          "form": "Check the required fields, Topic relationships, and change note.",
+          "confirm": "The draft needs at least one Topic and a valid publication note."
+        },
+        "conflict": "Another editor changed this draft. The latest version is being refreshed; review it before submitting again.",
+        "draftChangedNotice": "The Topic draft changed, so the editor was closed and synchronized to the latest version. Review it before continuing.",
+        "dismissNotice": "Dismiss draft update notice",
+        "mutationError": "This Topic Map change could not be saved.",
+        "generatedAt": "Workspace updated {date}",
+        "historyGuarantee": "Stable identities and historical versions are never deleted"
+      },
       "marketLanguage": "Market and language",
       "marketLanguageValue": "{market} · {language}",
       "queryKind": {
@@ -1020,6 +1368,8 @@
         "csv_import": "CSV import",
         "dataforseo_ranked": "DataForSEO ranked Keywords",
         "gsc_top_query": "GSC top query",
+        "interview_summary": "Interview summary",
+        "user_review": "User review",
         "manual": "Manual record"
       },
       "scopeBasisLabel": "Scope basis",
@@ -1051,6 +1401,92 @@
         "approved": "Approved",
         "rejected": "Rejected"
       },
+      "review": {
+        "open": "Review / edit",
+        "saved": "Review synchronized",
+        "eyebrow": "Keyword governance",
+        "title": "Review “{keyword}”",
+        "description": "Confirm the Keyword status, search intent, buyer stage, published Topic, and landing page. Saving refreshes the Keyword Library, Topic coverage, and duplicate relations.",
+        "close": "Close Keyword review",
+        "classificationTitle": "Business classification",
+        "classificationDescription": "Use explicit choices to complete the review. Existing non-standard classifications remain available and are never rewritten silently.",
+        "topicTitle": "Bind a confirmed Topic",
+        "topicDescription": "Topics can only be selected from stable nodes in the latest published Topic Map; labels cannot be entered manually.",
+        "mappingTitle": "Choose the growth destination",
+        "mappingDescription": "After confirming a Topic, map to one canonical SitePage or create a new content asset.",
+        "field": {
+          "status": "Keyword status",
+          "intent": "Search intent",
+          "buyerStage": "Buyer stage",
+          "topic": "Published Topic",
+          "mappingDecision": "Page mapping decision",
+          "sitePage": "Canonical page",
+          "reason": "Review note"
+        },
+        "status": {
+          "candidate": "Candidate",
+          "approved": "Approved",
+          "excluded": "Excluded",
+          "parked": "Parked"
+        },
+        "intent": {
+          "informational": "Informational",
+          "commercial": "Commercial evaluation",
+          "transactional": "Transactional",
+          "navigational": "Brand / navigational"
+        },
+        "buyerStage": {
+          "awareness": "Awareness",
+          "consideration": "Consideration",
+          "decision": "Decision",
+          "retention": "Adoption and retention"
+        },
+        "unclassified": "Leave unclassified",
+        "topicLoading": "Loading published Topics…",
+        "topicError": "Published Topics could not be read, so Topic assignments cannot be changed safely.",
+        "retry": "Retry",
+        "noConfirmedTopic": "No published Topic Map is available. The Keyword can remain unassigned, but the product cannot claim a Topic or page assignment.",
+        "topicUnassigned": "Leave Topic unassigned",
+        "coverageState": {
+          "empty": "No Keywords",
+          "uncovered": "Uncovered",
+          "partial": "Partially covered",
+          "covered": "Covered",
+          "conflict": "Intent conflict"
+        },
+        "confirmedTopicRevision": "Published Topic Map · v{revision}",
+        "topicMetrics": {
+          "keywords": "Keywords",
+          "pages": "Existing pages",
+          "conflicts": "Intent conflicts"
+        },
+        "mappingDecision": {
+          "unassigned": "Leave unassigned",
+          "existing_page": "Map to an existing page",
+          "new_asset": "Create a new content asset"
+        },
+        "selectSitePage": "Select a canonical page",
+        "sitePagesTruncated": "This menu contains the first 100 loaded canonical pages. Locate the URL in Pages & Opportunities first if it is not listed.",
+        "sitePagesError": "The page library could not be read. An existing assignment can be retained, but an unverified new page cannot be selected.",
+        "reasonHelp": "Record why this classification and mapping decision was made (at least 3 characters).",
+        "defaultReason": "Reviewed using the current product, Keyword evidence, and published Topic Map.",
+        "conflictConfirmTitle": "The selected Topic has an intent conflict",
+        "conflictConfirmDescription": "“{topic}” currently has competing pages or intents. The first submission was stopped; confirm explicitly if this Keyword should still be assigned to it.",
+        "unknownTopic": "Selected Topic",
+        "backToEdit": "Back to edit",
+        "confirmConflictAndSave": "Confirm conflict and save",
+        "validation": {
+          "topicRequired": "An existing page or new content asset requires a published Topic first.",
+          "pageRequired": "Select a canonical page.",
+          "form": "Check the status, Topic, page mapping, and review note."
+        },
+        "revisionConflict": "Another reviewer updated this Keyword. The latest version has been loaded; review it before submitting again.",
+        "saveError": "The Keyword review could not be saved. Please try again.",
+        "revision": "Current governance revision {revision}",
+        "cancel": "Cancel",
+        "save": "Save review",
+        "saving": "Saving…"
+      },
       "metricsEyebrow": "Keyword metrics",
       "metricsTitle": "Keyword metrics",
       "metricsDescription": "Available values include their update time. Missing values include a short reason.",
@@ -1066,6 +1502,53 @@
       "metricObservation": "Observation",
       "metricPointer": "Canonical field pointer",
       "viewMetricSourceDetails": "View metric source details",
+      "rankHistory": {
+        "eyebrow": "Rank monitoring",
+        "title": "90-day rank trend",
+        "description": "Only real observations are shown. Unobserved dates stay empty—no values are filled or inferred.",
+        "loading": "Reading rank observations from the latest 90 days…",
+        "error": "This Keyword's rank trend could not be read. The rest of its detail remains available.",
+        "window": "{start} to {end}",
+        "coverage": "Data coverage",
+        "unavailableTitle": "No rank trend yet",
+        "unavailableDescription": "There are no canonical rank observations to plot. Connected or refreshed data will appear here.",
+        "axisRank": "Rank (smaller numbers appear higher)",
+        "series": {
+          "dataforseo": "DataForSEO absolute rank",
+          "gsc": "GSC 28-day average position"
+        },
+        "seriesDescription": {
+          "dataforseo": "An absolute rank observation in search results.",
+          "gsc": "A rolling 28-day impression-weighted average position, not an absolute rank."
+        },
+        "metric": {
+          "absolute_rank": "Absolute rank",
+          "gsc_28d_average_position": "28-day impression-weighted average position"
+        },
+        "verifiedChanges": "Verified content changes",
+        "changeNote": "Markers show when a verified publish or rollback occurred. They do not claim that the change caused a rank movement.",
+        "noChanges": "No verified content changes match the current canonical page in this window.",
+        "attemptKind": {
+          "publish": "Publish",
+          "rollback": "Rollback"
+        },
+        "changeItem": "{kind} · content revision {revision}",
+        "changeTime": "Effective time",
+        "viewDataTable": "View accessible data table",
+        "tableCaption": "Rank observations from the latest 90 days",
+        "table": {
+          "source": "Source",
+          "metric": "Metric",
+          "observedAt": "Observed at",
+          "providerDataAsOf": "Provider data as of",
+          "rank": "Rank",
+          "grade": "Evidence grade",
+          "limitation": "Data note"
+        },
+        "notProvided": "Not provided",
+        "chartTitle": "90-day rank observations for {keyword}",
+        "chartDescription": "The chart contains {seriesCount} independent metrics and {pointCount} real observations. Smaller rank numbers appear higher."
+      },
       "sourcesEyebrow": "Data sources",
       "sourcesTitle": "Source records",
       "sourcesDescription": "Source type and update time stay visible. Expand a record to see IDs and field pointers.",
@@ -1073,10 +1556,22 @@
       "providerDataAsOf": "Provider data as of",
       "notProvided": "Not provided by the source",
       "occurrenceId": "Source record ID",
+      "collectionRunId": "Collection run ID",
       "snapshotId": "Snapshot ID",
       "observationId": "Observation ID",
       "sourcePointer": "Source field pointer",
       "importPreviewId": "Import preview ID",
+      "evidenceLabel": "Evidence summary",
+      "sourceRecordHash": "Source record fingerprint",
+      "reviewPlatformLabel": "Review platform",
+      "reviewPlatform": {
+        "app_store": "App Store",
+        "g2": "G2",
+        "capterra": "Capterra",
+        "other": "Other public review platform"
+      },
+      "openPublicReviewSource": "Open public review source",
+      "deidentifiedEvidenceNotice": "Only the de-identified evidence summary and immutable source fingerprint are shown. Participant identities, review authors, and full text are never projected here.",
       "scopeLimitation": "Scope limitation",
       "sourceLimitation": "Source limitation",
       "notAvailable": "No data available",
@@ -1097,6 +1592,7 @@
       "originOccurrencesOnPage": "Origin records on this page",
       "coverageLabel": "Data coverage",
       "manageSources": "Manage data sources",
+      "editProfileCompetitors": "Complete product profile / add Competitor",
       "listLabel": "Competitor list",
       "loadedCount": "{count, plural, one {# Competitor loaded on this page} other {# Competitors loaded on this page}}",
       "paginationLabel": "Competitor Library pagination",
@@ -1190,10 +1686,76 @@
       "observedAt": "Observed at",
       "viewRecordDetails": "View record details",
       "competitorId": "Competitor ID",
-      "revision": "Record revision"
+      "revision": "Record revision",
+      "monitor": {
+        "eyebrow": "Monthly changes",
+        "title": "Competitor content and ranking changes",
+        "description": "Compares only approved Competitors in the primary Site's single market, language, and latest confirmed Topic using real monthly data.",
+        "loading": "Reading monthly Competitor changes…",
+        "error": "Monthly Competitor changes could not be read.",
+        "retry": "Read again",
+        "status": {
+          "not_configured": "Not configured",
+          "paused": "Paused",
+          "collecting": "Collecting",
+          "awaiting_baseline": "Awaiting first collection",
+          "baseline": "Baseline established",
+          "available": "Comparable",
+          "partial": "Partially comparable",
+          "unavailable": "Unavailable"
+        },
+        "stateDescription": {
+          "not_configured": "Monthly monitoring is not configured, so no comparison is available.",
+          "paused": "Monitoring is paused. Historical data remains, but no new collection is scheduled.",
+          "collecting": "Real data is being collected. No conclusion is produced before collection completes.",
+          "awaiting_baseline": "The first real collection is not complete, so a comparison baseline cannot be established.",
+          "baseline": "The first real collection establishes a baseline only. Changes are evaluated after the next comparable collection.",
+          "available": "Comparable data is available for this period.",
+          "partial": "Only part of this period is comparable. Unobserved data is not inferred.",
+          "unavailable": "Required history, source lineage, or a comparable time window is missing, so no conclusion is produced."
+        },
+        "sourceAndFrequency": "Source and frequency",
+        "monthly": "Once per month",
+        "settingsLabel": "Competitor monitoring settings",
+        "frequencyLabel": "Update frequency",
+        "onlySupportedCadence": "The only currently supported real collection cadence",
+        "enable": "Enable monthly monitoring",
+        "pause": "Pause monitoring",
+        "saving": "Saving…",
+        "saved": "Monitoring settings updated.",
+        "conflict": "Another team member updated these settings. Refresh the canonical state and try again.",
+        "saveError": "Monitoring settings could not be saved. The existing state was not replaced.",
+        "refreshState": "Refresh state",
+        "confirmedScope": "Confirmed analysis scope",
+        "topicRevision": "Topic revision {revision}",
+        "lastCollection": "Latest collection",
+        "nextCollection": "Next scheduled collection",
+        "unavailableValue": "Unavailable",
+        "notInConfirmedScope": "This Competitor is not in the confirmed monthly monitoring scope.",
+        "signalListLabel": "Competitor change evidence",
+        "rankSignal": "Keyword ranking gain",
+        "contentSignal": "Topic content change",
+        "rankSummary": "Rank {previous} → {current}, up {improvement} positions",
+        "contentSummary": "First comparable observation: {keywordCount} confirmed keywords overlap · {overlap}",
+        "topicLabel": "Confirmed Topic",
+        "detectedAt": "Detected at",
+        "evidenceSource": "Evidence source",
+        "viewEvidence": "View immutable evidence",
+        "currentSnapshot": "Current Snapshot",
+        "previousSnapshot": "Previous Snapshot",
+        "signalId": "Change record ID",
+        "opportunityUpdateReady": "This change is ready as Growth Map opportunity-update evidence.",
+        "openOpportunityUpdate": "Open opportunity update",
+        "noThresholdSignals": "No newly observed change reached the alert threshold in this comparable period.",
+        "executionTitle": "Carry this evidence into the existing execution flow",
+        "executionDescription": "Continue in Execution to produce a Content Brief, English Blog, or fix task. A change is not presented here as an already-created task.",
+        "openExecution": "Open Execution"
+      }
     },
     "loadingPortfolio": "Reading the real URL portfolio…",
     "loadingDetail": "Reading the selected URL evidence chain…",
+    "auditUnavailableTitle": "No URL audit result yet",
+    "auditUnavailableDescription": "There is no frozen audit to display. Confirm Crawl collection, complete and confirm the Product Profile, then run a growth audit. Demo data is never substituted for real results.",
     "portfolioError": "The URL portfolio could not be read. Try again.",
     "detailError": "This URL detail could not be read. Try again.",
     "runProvenance": "Audit provenance for this page",
@@ -1345,6 +1907,80 @@
     "traceabilityDescription": "These IDs point to immutable Snapshots and Observations that created this page identity and its metrics; no guessed URL relation is included.",
     "pageSnapshotSource": "Crawl PageSnapshot",
     "pageSnapshot": "Page snapshot",
+    "internalLinkMap": {
+      "eyebrow": "Site link architecture · frozen Crawl",
+      "title": "Internal Link Map",
+      "description": "This view contains only pages and directed links observed in the frozen Crawl. Counts are observed facts; recommendations use the confirmed Topic authority and never turn missing data into zero.",
+      "loading": "Reading this URL's internal-link relationships…",
+      "error": "This URL's Internal Link Map is temporarily unavailable. Other audit evidence remains available.",
+      "retry": "Read again",
+      "unavailable": "There is not enough frozen Crawl authority to build an Internal Link Map.",
+      "selectionUnavailable": "The returned data does not belong to the currently selected URL. The previous URL's link data has been withheld; read again.",
+      "summary": {
+        "label": "Internal Link Map summary",
+        "siteNodes": "Site page nodes",
+        "observedEdges": "Observed directed edges",
+        "inbound": "Observed inbound links",
+        "outbound": "Observed outbound links"
+      },
+      "selectedStatus": "Selected page link state",
+      "unknownCounts": "The Crawl is incomplete, so missing directions are not shown as zero.",
+      "status": {
+        "connected": "Connected both ways",
+        "one_way": "One-way connected",
+        "orphan": "Orphan page",
+        "unknown": "Insufficient data"
+      },
+      "graph": {
+        "eyebrow": "Real nodes and edges",
+        "title": "Selected URL neighborhood",
+        "visible": "Showing {nodes} nodes · {edges} edges",
+        "nodesLabel": "Local page nodes for the selected URL",
+        "edgesLabel": "Real internal-link edges for the selected URL",
+        "selected": "Current URL",
+        "reciprocal": "Reciprocal",
+        "oneWay": "One way",
+        "emptyComplete": "The complete Crawl observed no internal link between this URL and another page.",
+        "emptyPartial": "The partial Crawl observed no neighboring link yet; this does not establish that the page is orphaned.",
+        "truncated": "The local neighborhood contains {nodes} nodes and {edges} edges. Only the readable subset is shown; use the summary for the site-level edge total."
+      },
+      "inbound": {
+        "eyebrow": "Inbound evidence",
+        "title": "Pages that currently link here",
+        "count": "{count} source pages",
+        "listLabel": "Real inbound sources for the current URL",
+        "emptyComplete": "The complete Crawl observed no inbound link.",
+        "emptyPartial": "The partial Crawl has not observed an inbound link yet. This is not a claim of zero links or an orphan page.",
+        "anchor": "Anchor: {anchor}",
+        "anchorUnavailable": "Anchor text not collected",
+        "rel": "rel={rel}",
+        "observation": "Observation · {id}",
+        "truncated": "{count} observed source pages exist; only the first items are shown."
+      },
+      "recommendations": {
+        "eyebrow": "Executable link opportunities",
+        "title": "Where to add an internal link",
+        "count": "{count} recommendations",
+        "authority": "Recommendations require the same confirmed Topic and a direction not observed in the frozen Crawl. Draft Topics and similar-looking URLs are excluded.",
+        "listLabel": "Internal-link recommendations from confirmed Topic authority",
+        "addLink": "Add link",
+        "topicRevision": "Topic v{revision}",
+        "unavailable": "There is no confirmed Topic or exact page mapping, so no speculative recommendation is generated.",
+        "empty": "The current confirmed Topic authority yields no verifiable link recommendation.",
+        "executionRefs": "Findings and Actions linked to this recommendation",
+        "role": {
+          "target": "Target page",
+          "source": "Source page"
+        },
+        "findingRef": "Finding · {id}",
+        "actionPending": "Action not created",
+        "reviewFinding": "Review and create link task",
+        "openAction": "Open Action",
+        "noExecution": "No canonical Finding or Action is linked to this recommendation yet.",
+        "truncated": "Showing {shown} of {total} recommendations. The remaining recommendations stay in the dataset."
+      },
+      "generatedAt": "Internal Link Map generated"
+    },
     "ids": {
       "observation": "Observation ID",
       "evidence": "Evidence ID",
@@ -1512,6 +2148,39 @@
     "actionBinding": "Action binding",
     "findingBinding": "Finding binding",
     "manualHandoff": "Artifacts remain operator-controlled: saving creates a revision and no change is published automatically.",
+    "executionState": {
+      "title": "Delivery execution",
+      "queueSummary": "Current delivery execution state",
+      "batchLoadError": "Delivery execution states are temporarily unavailable. Plan or draft status is not used as a substitute.",
+      "loading": "Reading execution records…",
+      "loadError": "This deliverable's execution records could not be loaded.",
+      "emptyTitle": "No execution record yet",
+      "emptyHint": "This deliverable has no state event. The plan status is not used as a substitute.",
+      "status": {
+        "blocked": "Blocked",
+        "inProgress": "In progress",
+        "completed": "Completed"
+      },
+      "phase": "Current phase",
+      "phaseValue": {
+        "waitingForAuthorization": "Waiting for authorization",
+        "waitingForApproval": "Waiting for approval",
+        "waitingForReview": "Waiting for review",
+        "implementation": "Implementing the fix",
+        "technicalFix": "Technical fix",
+        "drafting": "Preparing content",
+        "qualityReview": "Quality review",
+        "delivery": "Delivery and publishing",
+        "verification": "Verifying the result",
+        "completed": "Completed"
+      },
+      "progress": "Step progress",
+      "progressValue": "{completed} of {total} steps completed",
+      "blocker": "Current blocker",
+      "unlockCondition": "Unlock condition",
+      "nextStep": "Next step",
+      "historyCount": "{count} immutable state record(s) retained"
+    },
     "summaryTitle": "Output summary",
     "statOutputs": "Total outputs",
     "statReady": "Ready for handoff",
@@ -1691,6 +2360,7 @@
         "drawerTitle": "Full sources and evidence",
         "drawerSubtitle": "{count} source(s) returned for this run, listed exactly as the payload carried them.",
         "unavailable": "Not provided for this source",
+        "openSource": "Open source in a new window: {label}",
         "noSources": "This run returned no research sources.",
         "availability": {
           "available": "Available",
@@ -2042,8 +2712,9 @@
   },
   "results": {
     "pageTitle": "Results",
-    "title": "Recheck results",
-    "lead": "Compare the confirmed action's technical condition across the prior run and a fresh recheck. This surface reports technical conditions only.",
+    "pageLead": "Review GSC, GA4, and UTM performance before and after publication for each URL. Every value keeps its source window, and observed movement is not presented as causation.",
+    "title": "Technical recheck record",
+    "lead": "This section verifies the confirmed Action's technical condition only. Traffic, rank, and conversion movement comes from the fixed-window observations above.",
     "emptyTitle": "No recheck yet",
     "emptyBody": "Run a recheck on a confirmed action to compare its prior and current technical condition here.",
     "priorLabel": "Prior run observed",
@@ -2063,6 +2734,176 @@
       "resolved": "Resolved",
       "unchanged": "Unchanged",
       "unknown": "Unknown"
+    },
+    "measurement": {
+      "eyebrow": "Before / after audit",
+      "title": "URL results and UTM audit",
+      "lead": "A verified Change Receipt separates the 28-day baseline and 28-day outcome windows. URLs remain independent so unrelated pages are never collapsed into a synthetic total.",
+      "recordCount": "{count, plural, =1 {# URL record} other {# URL records}}",
+      "loading": "Reading verifiable before-and-after records…",
+      "errorTitle": "Results records are temporarily unavailable",
+      "errorBody": "The technical recheck and client report remain available. Retry the fixed GSC, GA4, and UTM windows.",
+      "retry": "Read again",
+      "emptyTitle": "No comparable before-and-after window yet",
+      "emptyBody": "After a deliverable is published with a verified Change Receipt, the system waits for a complete outcome window and then shows the observed movement here.",
+      "selectorLabel": "Choose a URL results record",
+      "selectorTitle": "Tracked URLs",
+      "selectorLead": "Choose a URL to switch the evidence, time windows, and metrics shown on the right.",
+      "detailEyebrow": "Current URL",
+      "beforeWindow": "Before window",
+      "afterWindow": "After window",
+      "changeVerifiedAt": "Publication verified",
+      "recordedAt": "Result recorded",
+      "receiptVerified": "Verified {provider} change receipt",
+      "receiptStartsClock": "The Change Receipt starts the result clock; a Delivery Receipt is timeline context only.",
+      "openReceipt": "Open publication evidence",
+      "gscTitle": "Organic search",
+      "gscDescription": "Fixed Google Search Console windows. A smaller average-position value is better.",
+      "ga4Title": "Visits and conversions",
+      "ga4Description": "Fixed Google Analytics 4 windows, with direct and assisted conversions kept separate.",
+      "geoTitle": "GEO / AI citations",
+      "geoDescription": "Attribution appears only after a verifiable platform, cited passage, and query source are connected.",
+      "notAvailable": "Unavailable",
+      "sampleUnavailable": "Sample unavailable",
+      "sampleComparison": "Sample: {baseline} → {outcome}",
+      "nonCausal": "These results are observed movement in fixed time windows. They do not claim that one article, code fix, or publication independently caused all movement.",
+      "technicalVerification": "Technical condition recheck:",
+      "limitations": "{count, plural, =1 {# data limitation} other {# data limitations}}",
+      "openCanonicalUrl": "Open current page",
+      "windowState": {
+        "technical_verified": "Technical condition verified",
+        "observed": "Observed",
+        "insufficient_data": "Insufficient data",
+        "unavailable": "Unavailable",
+        "regressed": "Regressed"
+      },
+      "observationState": {
+        "observed": "Observed",
+        "insufficient_data": "Insufficient data",
+        "unavailable": "Unavailable",
+        "regressed": "Regressed"
+      },
+      "sampleCoverage": {
+        "complete": "Complete sample",
+        "partial": "Partial sample",
+        "none": "No sample"
+      },
+      "deliveryProvider": {
+        "github": "GitHub",
+        "wordpress": "WordPress"
+      },
+      "table": {
+        "metric": "Metric",
+        "before": "Before",
+        "after": "After",
+        "change": "Change"
+      },
+      "metric": {
+        "gscClicks": "Organic clicks",
+        "gscImpressions": "Organic impressions",
+        "gscCtr": "Click-through rate",
+        "gscAveragePosition": "Average position",
+        "ga4Sessions": "Sessions",
+        "ga4EngagedSessions": "Engaged sessions",
+        "ga4DirectConversions": "Direct conversions",
+        "ga4AssistedConversions": "Assisted conversions",
+        "geoTrackedQueries": "Tracked queries",
+        "geoCitedQueries": "Cited queries",
+        "geoCitations": "AI citations",
+        "geoCitationRate": "AI citation rate"
+      },
+      "campaign": {
+        "title": "UTM Campaign before / after",
+        "lead": "Each UTM identity keeps its Sessions, direct conversions, and assisted conversions separate rather than blending Campaigns into one growth number.",
+        "count": "{count, plural, =1 {# Campaign} other {# Campaigns}}",
+        "empty": "No verifiable UTM Campaign record exists for this window; sitewide traffic is not substituted.",
+        "identity": "Campaign / source"
+      },
+      "targetKeywordRanks": {
+        "title": "Target Keyword ranks",
+        "lead": "Compares only confirmed target Keywords for this URL using DataForSEO absolute rank. GSC average position remains a separate metric above.",
+        "loading": "Reading fixed-window target Keyword ranks…",
+        "error": "Target Keyword ranks are temporarily unavailable. GSC average position and estimates are not substituted.",
+        "retry": "Read again",
+        "emptyTitle": "No comparable target Keyword for this URL",
+        "emptyBody": "After the Topic Map and page targets are confirmed, real DataForSEO observations enter the before-and-after comparison here.",
+        "notAvailable": "Unavailable",
+        "improvedBy": "Up {count} places",
+        "regressedBy": "Down {count} places",
+        "unchanged": "Unchanged",
+        "generatedAt": "Rank evidence generated {value}",
+        "limitations": "{count, plural, =1 {# rank-data limitation} other {# rank-data limitations}}",
+        "nonCausal": "Rank movement is observed across two fixed windows and does not claim that one deliverable independently caused the change.",
+        "limitation": {
+          "noConfirmedTopicMap": "No confirmed Topic Map is available, so this page has no governed target Keyword set.",
+          "noConfirmedTargets": "No confirmed target Keywords are mapped to this exact page.",
+          "noCompleteComparisons": "No target Keyword has a real DataForSEO absolute-rank observation in both measurement windows.",
+          "partialComparisons": "Some target Keywords are missing a DataForSEO absolute-rank observation in one or both measurement windows.",
+          "noProviderDataAsOf": "DataForSEO absolute rank is compared by collection observation time because the provider does not expose a separate data-as-of timestamp.",
+          "unknown": "This rank evidence currently has a data limitation; estimates and ranks from another URL are not substituted."
+        },
+        "coverage": {
+          "available": "Complete",
+          "partial": "Partial",
+          "stale": "Stale",
+          "unavailable": "Unavailable"
+        },
+        "table": {
+          "keyword": "Target Keyword",
+          "topic": "Topic",
+          "before": "Before absolute rank",
+          "after": "After absolute rank",
+          "change": "Change"
+        }
+      },
+      "geoEvidence": {
+        "lead": "Shows real AI queries, platforms, collectors, and direct citation evidence for this URL's fixed before-and-after windows. Missing observations remain unavailable rather than becoming zero.",
+        "loading": "Reading GEO / AI citation evidence…",
+        "error": "GEO / AI citation evidence is temporarily unavailable. Mocked or estimated values are not substituted.",
+        "retry": "Read again",
+        "phase": {
+          "baseline": "Before citation evidence",
+          "outcome": "After citation evidence"
+        },
+        "phaseUnavailable": "Unavailable",
+        "phaseUnavailableBody": "This fixed window has no verifiable query and citation snapshot yet.",
+        "phaseSummary": "{queries, plural, =1 {# query} other {# queries}} · {citations, plural, =1 {# direct citation} other {# direct citations}}",
+        "citationState": {
+          "cited": "Directly cited",
+          "mentioned": "Mentioned, not cited",
+          "unseen": "Not seen",
+          "unavailable": "Collection unavailable"
+        },
+        "platform": {
+          "chatgpt": "ChatGPT",
+          "perplexity": "Perplexity",
+          "google_ai_overview": "Google AI Overview",
+          "gemini": "Gemini",
+          "claude": "Claude",
+          "copilot": "Microsoft Copilot"
+        },
+        "otherPlatform": "Other platform · {provider}",
+        "platformLabel": "AI platform",
+        "modelLabel": "Model / product version",
+        "collectorLabel": "Collector / version",
+        "collectedAt": "Collected at",
+        "marketLanguage": "Market / language",
+        "answerExcerpt": "Answer evidence excerpt",
+        "citationOrdinal": "Direct citation #{ordinal}",
+        "openCitation": "Open cited page",
+        "answerCitationExcerpt": "Citation context in the answer",
+        "citedPageExcerpt": "Cited-page excerpt",
+        "paragraphIdentity": "Cited-paragraph identity",
+        "noDirectCitation": "This observation has no direct citation. A mention or inference is not counted as one.",
+        "structureTitle": "Structural differences: cited vs. uncited content",
+        "structureBoundary": "Only evidence-bounded observations or inferences are shown; structural differences are not presented as causes of citation.",
+        "structureClassification": {
+          "observation": "Direct observation",
+          "inference": "Bounded inference"
+        },
+        "structureEvidenceExcerpt": "Structural evidence excerpt",
+        "nonCausal": "These are independent observations from two fixed windows. Structural differences may be evidence-bounded observations or inferences, but cannot explain why a citation occurred or claim that one publication caused the change."
+      }
     }
   }
 }

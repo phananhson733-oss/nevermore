@@ -1,24 +1,42 @@
-import type { GrowthOpportunity as GrowthOpportunityDto } from "@sf/contracts";
+import {
+  RULE_OPPORTUNITY_PROJECTION,
+  SearchQueryEvidence as SearchQueryEvidenceSchema,
+  type GrowthOpportunity as GrowthOpportunityDto,
+  type SearchQueryEvidence as SearchQueryEvidenceDto,
+} from "@sf/contracts";
 import {
   ActionsRepository,
+  contentHash,
+  EvidenceRepository,
   FindingsRepository,
   FindingTargetsRepository,
   GrowthMapReadRepository,
+  ObservationsRepository,
   ProjectsRepository,
   TopicClusterReadRepository,
   type ActionRow,
+  type CanonicalValue,
   type Executor,
   type FindingRow,
   type FindingTargetRow,
   type GrowthMapReadableRunRow,
+  type ObservationRow,
   type ProjectScope,
   type TopicClusterSupportingFindingRow,
   type WorkspaceScope,
 } from "@sf/db";
+import {
+  parseGovernanceProjectionV1,
+  type GovernanceKeywordFactV1,
+  type GovernanceProjectionV1,
+} from "@sf/engine";
 import type { UiLocale } from "@sf/i18n";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
-import { loadEvidenceByFinding } from "./diagnostic-load";
+import {
+  toEvidenceDto,
+  type EvidenceDto,
+} from "./diagnostic-mappers";
 import { assertValidTimestampUuidListCursor } from "./list-cursor";
 import {
   buildOpportunity,
@@ -26,8 +44,13 @@ import {
   primaryTopicClusterKey,
   type OpportunityActionInput,
   type OpportunityFindingInput,
+  type OpportunityGovernedCompetitorRelationInput,
+  type OpportunityGovernedQueryRelationInput,
+  type OpportunityGrowthRelationEvidenceInput,
+  type OpportunityGrowthRelationScope,
   type OpportunityTargetInput,
 } from "./opportunities-projection";
+import { isStale } from "./source-mappers";
 import {
   groupTopicClusterSupportRows,
   type TopicClusterSupportRow,
@@ -43,6 +66,30 @@ import {
 
 export const MAX_OPPORTUNITY_PAGE_SIZE = 100;
 const DEFAULT_OPPORTUNITY_PAGE_SIZE = 50;
+const OPPORTUNITY_RULE_IDS = Object.freeze(
+  Object.keys(RULE_OPPORTUNITY_PROJECTION),
+);
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const SHA_256 = /^[a-f0-9]{64}$/u;
+const FRESHNESS_POLICY_PROVIDERS = new Set(["crawl", "gsc", "ga4", "csv"]);
+const CONTENT_GAP_COMPETITOR_SCOPES = new Set([
+  "keyword_gap",
+  "content",
+  "serp_visibility",
+]);
+
+interface FrozenRelationSnapshot {
+  readonly snapshotId: string;
+  readonly provider: string;
+  readonly capturedAt: string;
+}
+
+interface FrozenGrowthRelationAuthority {
+  readonly scope: OpportunityGrowthRelationScope;
+  readonly governance: GovernanceProjectionV1;
+  readonly snapshotsById: ReadonlyMap<string, FrozenRelationSnapshot>;
+}
 
 /** Request-bound opportunity read scope; UI locale controls chrome copy only. */
 export interface OpportunityReadScope extends WorkspaceScope {
@@ -128,6 +175,482 @@ function toTopicClusterSupportRow(
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readFrozenGrowthRelationAuthority(
+  projectId: string,
+  run: GrowthMapReadableRunRow,
+): FrozenGrowthRelationAuthority | null {
+  if (!SHA_256.test(run.input_hash)) return null;
+  const manifest = run.input_manifest;
+  try {
+    if (
+      contentHash(manifest as unknown as CanonicalValue) !== run.input_hash
+    ) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  if (
+    manifest["projectId"] !== projectId ||
+    manifest["siteId"] !== run.site_id ||
+    !Array.isArray(manifest["snapshots"])
+  ) {
+    return null;
+  }
+
+  let governance: GovernanceProjectionV1;
+  try {
+    governance = parseGovernanceProjectionV1(manifest["governance"]);
+  } catch {
+    return null;
+  }
+
+  const snapshotsById = new Map<string, FrozenRelationSnapshot>();
+  for (const raw of manifest["snapshots"]) {
+    if (!isRecord(raw)) return null;
+    const snapshotId = raw["snapshotId"];
+    const provider = raw["provider"];
+    const capturedAt = raw["capturedAt"];
+    const availability = raw["availability"];
+    if (
+      typeof snapshotId !== "string" ||
+      !UUID.test(snapshotId) ||
+      typeof provider !== "string" ||
+      provider.trim().length === 0 ||
+      provider !== provider.trim() ||
+      typeof capturedAt !== "string" ||
+      !Number.isFinite(Date.parse(capturedAt)) ||
+      (availability !== "available" && availability !== "partial") ||
+      snapshotsById.has(snapshotId)
+    ) {
+      return null;
+    }
+    snapshotsById.set(snapshotId, { snapshotId, provider, capturedAt });
+  }
+
+  return {
+    scope: {
+      projectId,
+      siteId: run.site_id,
+      diagnosticRunId: run.id,
+      diagnosticInputHash: run.input_hash,
+    },
+    governance,
+    snapshotsById,
+  };
+}
+
+/**
+ * A Finding identity spans runs, so its full evidence history is too broad for
+ * an Opportunity projected from the latest readable run. Keep the run
+ * predicate on the relation table and verify the selected Evidence rows again
+ * before mapping them.
+ */
+async function loadCurrentRunEvidenceByFinding(
+  exec: Executor,
+  scope: ProjectScope,
+  diagnosticRunId: string,
+  findingIds: readonly string[],
+): Promise<Map<string, EvidenceDto[]>> {
+  const result = new Map<string, EvidenceDto[]>();
+  const uniqueFindingIds = [...new Set(findingIds)];
+  for (const findingId of uniqueFindingIds) result.set(findingId, []);
+  if (uniqueFindingIds.length === 0) return result;
+
+  const repository = new EvidenceRepository(exec);
+  const links = await repository.listForFindings(scope, uniqueFindingIds, {
+    diagnosticRunId,
+  });
+  const evidenceIds = [...new Set(links.map((link) => link.evidence_id))];
+  const rows = await repository.findByIds(scope, evidenceIds);
+  const byId = new Map<string, EvidenceDto>();
+  for (const row of rows) {
+    if (row.diagnostic_run_id !== diagnosticRunId) continue;
+    try {
+      byId.set(row.id, toEvidenceDto(row));
+    } catch {
+      // A persisted unknown/invalid typed SubjectRef cannot be promoted into
+      // the public contract or used as Opportunity authority.
+    }
+  }
+  for (const link of links) {
+    const evidence = byId.get(link.evidence_id);
+    if (evidence) result.get(link.finding_id)?.push(evidence);
+  }
+  return result;
+}
+
+type ParsedNullableMetric = {
+  readonly valid: boolean;
+  readonly value: number | null;
+};
+
+function nullableMetric(
+  value: Record<string, unknown>,
+  key: string,
+  accepts: (metric: number) => boolean,
+): ParsedNullableMetric {
+  if (!Object.hasOwn(value, key) || value[key] === null) {
+    return { valid: true, value: null };
+  }
+  const metric = value[key];
+  return typeof metric === "number" &&
+    Number.isFinite(metric) &&
+    accepts(metric)
+    ? { valid: true, value: metric }
+    : { valid: false, value: null };
+}
+
+function exactSearchQueryEvidence(
+  keyword: GovernanceKeywordFactV1,
+  observation: ObservationRow,
+  snapshot: FrozenRelationSnapshot,
+  now: number,
+): SearchQueryEvidenceDto | null {
+  if (
+    keyword.queryKind !== "search_query" ||
+    (observation.provider !== "csv" &&
+      observation.provider !== "dataforseo") ||
+    observation.provider !== snapshot.provider ||
+    observation.metric_key !== "csv.keyword_gap.v1" ||
+    observation.subject_type !== "keyword_cluster" ||
+    observation.site_page_id !== null ||
+    observation.availability !== "available" ||
+    observation.method !== "observed" ||
+    observation.support !== "context" ||
+    !sameInstant(observation.observed_at, snapshot.capturedAt) ||
+    (observation.provider === "csv"
+      ? observation.origin !== "user_provided" ||
+        observation.grade !== "C"
+      : observation.origin !== "vendor_observation" ||
+        observation.grade !== "B") ||
+    !isRecord(observation.value_json)
+  ) {
+    return null;
+  }
+
+  const value = observation.value_json;
+  if (
+    value["keyword"] !== keyword.displayKeyword ||
+    value["clusterKey"] !== keyword.clusterKey ||
+    value["marketCode"] !== keyword.marketCode ||
+    value["languageCode"] !== keyword.languageTag
+  ) {
+    return null;
+  }
+
+  const monthlyVolume = nullableMetric(
+    value,
+    "searchVolume",
+    (metric) => metric >= 0,
+  );
+  const keywordDifficulty = nullableMetric(
+    value,
+    "keywordDifficulty",
+    (metric) => metric >= 0 && metric <= 100,
+  );
+  const organicRank = nullableMetric(
+    value,
+    "currentRank",
+    (metric) => metric > 0,
+  );
+  if (
+    !monthlyVolume.valid ||
+    !keywordDifficulty.valid ||
+    !organicRank.valid
+  ) {
+    return null;
+  }
+
+  const freshness = FRESHNESS_POLICY_PROVIDERS.has(observation.provider)
+    ? isStale(observation.provider, snapshot.capturedAt, now)
+      ? "stale"
+      : "current"
+    : "unknown";
+  const parsed = SearchQueryEvidenceSchema.safeParse({
+    queryKind: "search",
+    observationId: observation.id,
+    snapshotId: observation.snapshot_id,
+    query: keyword.displayKeyword,
+    marketCode: keyword.marketCode,
+    languageCode: keyword.languageTag,
+    sourceProvider: observation.provider,
+    observedAt: observation.observed_at,
+    freshness,
+    limitation: observation.limitation,
+    metrics: {
+      monthlyVolume: monthlyVolume.value,
+      keywordDifficulty: keywordDifficulty.value,
+      organicRank: organicRank.value,
+      // The registered csv.keyword_gap.v1 projection has no GSC traffic
+      // counters. Extra JSON members cannot be promoted into those fields.
+      impressions: null,
+      clicks: null,
+    },
+  });
+  return parsed.success ? parsed.data : null;
+}
+
+function sameInstant(left: string, right: string): boolean {
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+  return (
+    Number.isFinite(leftTime) &&
+    Number.isFinite(rightTime) &&
+    leftTime === rightTime
+  );
+}
+
+function queryEvidenceRows(
+  authority: FrozenGrowthRelationAuthority,
+  findingId: string,
+  evidence: readonly EvidenceDto[],
+  observationsById: ReadonlyMap<string, ObservationRow>,
+  now: number,
+): OpportunityGovernedQueryRelationInput[] {
+  const evidenceBySnapshotProvider = new Map<string, EvidenceDto[]>();
+  for (const item of evidence) {
+    if (
+      item.snapshotId === null ||
+      item.collectionRunId === null ||
+      item.analysisInvocationId !== null ||
+      item.method !== "observed" ||
+      item.support !== "supports" ||
+      (item.availability !== "available" && item.availability !== "partial")
+    ) {
+      continue;
+    }
+    const key = JSON.stringify([item.snapshotId, item.sourceProvider]);
+    const rows = evidenceBySnapshotProvider.get(key) ?? [];
+    rows.push(item);
+    evidenceBySnapshotProvider.set(key, rows);
+  }
+
+  const relations: OpportunityGovernedQueryRelationInput[] = [];
+  for (const cluster of authority.governance.keywordClusters) {
+    for (const keyword of cluster.keywords) {
+      // Governance currently freezes generative query identity/classification,
+      // but the source registry has no normalized answer-sample observation
+      // carrying the four GenerativeQueryEvidence metrics. Such facts remain
+      // honestly empty until that canonical observation authority exists.
+      if (
+        keyword.clusterKey !== cluster.clusterKey ||
+        keyword.status !== "approved" ||
+        keyword.mappingReviewState !== "confirmed" ||
+        keyword.queryKind !== "search_query"
+      ) {
+        continue;
+      }
+      for (const occurrence of keyword.occurrenceRefs) {
+        if (
+          occurrence.snapshotId === null ||
+          occurrence.observationId === null
+        ) {
+          continue;
+        }
+        const snapshot = authority.snapshotsById.get(occurrence.snapshotId);
+        const observation = observationsById.get(occurrence.observationId);
+        if (!snapshot || !observation) continue;
+        if (
+          observation.project_id !== authority.scope.projectId ||
+          observation.snapshot_id !== occurrence.snapshotId ||
+          observation.id !== occurrence.observationId
+        ) {
+          continue;
+        }
+        const queryEvidence = exactSearchQueryEvidence(
+          keyword,
+          observation,
+          snapshot,
+          now,
+        );
+        if (!queryEvidence) continue;
+        const linkedEvidence =
+          evidenceBySnapshotProvider.get(
+            JSON.stringify([observation.snapshot_id, observation.provider]),
+          ) ?? [];
+        for (const linked of linkedEvidence) {
+          if (
+            linked.origin !== observation.origin ||
+            linked.grade !== observation.grade ||
+            !sameInstant(linked.observedAt, observation.observed_at)
+          ) {
+            continue;
+          }
+          relations.push({
+            ...authority.scope,
+            findingId,
+            evidenceId: linked.id,
+            keywordEntityId: keyword.keywordEntityId,
+            keywordRevision: keyword.revision,
+            queryEvidence,
+          });
+        }
+      }
+    }
+  }
+  return relations;
+}
+
+function competitorEvidenceRows(
+  authority: FrozenGrowthRelationAuthority,
+  finding: FindingRow,
+  targets: readonly OpportunityTargetInput[],
+  evidence: readonly EvidenceDto[],
+): OpportunityGovernedCompetitorRelationInput[] {
+  if (finding.rule_id !== "CONTENT-GAP-011") return [];
+  const clusterKey = primaryTopicClusterKey(targets);
+  if (clusterKey === null) return [];
+  const linkedEvidence = evidence.filter(
+    (item) =>
+      item.sourceProvider === "system" &&
+      item.origin === "derived" &&
+      item.method === "computed" &&
+      item.support === "context" &&
+      (item.availability === "available" ||
+        item.availability === "partial") &&
+      item.snapshotId === null &&
+      item.collectionRunId === null &&
+      item.analysisInvocationId === null &&
+      item.subjectRefs.some(
+        (subject) =>
+          subject.type === "keyword_cluster" && subject.value === clusterKey,
+      ),
+  );
+  if (linkedEvidence.length === 0) return [];
+
+  const eligibleCompetitors = new Map(
+    authority.governance.competitors
+      .filter(
+        (competitor) =>
+          competitor.reviewStatus === "approved" &&
+          competitor.relationship !== null &&
+          competitor.analysisScopes.some((scope) =>
+            CONTENT_GAP_COMPETITOR_SCOPES.has(scope),
+          ),
+      )
+      .map((competitor) => [competitor.competitorEntityId, competitor] as const),
+  );
+  const relations: OpportunityGovernedCompetitorRelationInput[] = [];
+  for (const linked of linkedEvidence) {
+    // This typed identity set is the sole binding authority. Never widen from
+    // every approved competitor and never recover identifiers from claim text.
+    const explicitlyBoundCompetitorIds = new Set(
+      linked.subjectRefs
+        .filter(
+          (subject) =>
+            subject.type === "competitor" && UUID.test(subject.value),
+        )
+        .map((subject) => subject.value),
+    );
+    for (const competitorEntityId of [...explicitlyBoundCompetitorIds].sort()) {
+      const competitor = eligibleCompetitors.get(competitorEntityId);
+      if (!competitor) continue;
+      for (const origin of competitor.originRefs) {
+        relations.push({
+          ...authority.scope,
+          findingId: finding.id,
+          evidenceId: linked.id,
+          competitorEntityId: competitor.competitorEntityId,
+          competitorRevision: competitor.revision,
+          originOccurrenceId: origin.occurrenceId,
+        });
+      }
+    }
+  }
+  return relations;
+}
+
+async function loadGrowthRelationEvidenceByFinding(
+  exec: Executor,
+  scope: ProjectScope,
+  run: GrowthMapReadableRunRow,
+  findings: readonly FindingRow[],
+  targetsByFinding: ReadonlyMap<string, readonly OpportunityTargetInput[]>,
+  evidenceByFinding: ReadonlyMap<string, readonly EvidenceDto[]>,
+  now: number,
+): Promise<Map<string, OpportunityGrowthRelationEvidenceInput>> {
+  const authority = readFrozenGrowthRelationAuthority(scope.projectId, run);
+  if (!authority) return new Map();
+
+  // A query relation also needs a current Finding-owned Evidence row from the
+  // same Snapshot. Intersect before reading observations so unrelated frozen
+  // library history cannot widen this bounded Opportunity read.
+  const findingEvidenceSnapshotIds = new Set(
+    [...evidenceByFinding.values()].flatMap((rows) =>
+      rows.flatMap((row) => (row.snapshotId === null ? [] : [row.snapshotId])),
+    ),
+  );
+  const snapshotIds = [
+    ...new Set(
+      authority.governance.keywordClusters.flatMap((cluster) =>
+        cluster.keywords.flatMap((keyword) =>
+          keyword.occurrenceRefs.flatMap((occurrence) =>
+            occurrence.snapshotId !== null &&
+            authority.snapshotsById.has(occurrence.snapshotId) &&
+            findingEvidenceSnapshotIds.has(occurrence.snapshotId)
+              ? [occurrence.snapshotId]
+              : [],
+          ),
+        ),
+      ),
+    ),
+  ].sort();
+  const observations =
+    snapshotIds.length === 0
+      ? []
+      : await new ObservationsRepository(exec).listBySnapshotIds(
+          scope,
+          snapshotIds,
+        );
+  const observationsById = new Map<string, ObservationRow>();
+  const conflictingIds = new Set<string>();
+  for (const observation of observations) {
+    if (
+      observation.workspace_id !== scope.workspaceId ||
+      observation.project_id !== scope.projectId ||
+      !authority.snapshotsById.has(observation.snapshot_id) ||
+      conflictingIds.has(observation.id)
+    ) {
+      continue;
+    }
+    if (observationsById.has(observation.id)) {
+      observationsById.delete(observation.id);
+      conflictingIds.add(observation.id);
+      continue;
+    }
+    observationsById.set(observation.id, observation);
+  }
+
+  const result = new Map<string, OpportunityGrowthRelationEvidenceInput>();
+  for (const finding of findings) {
+    const evidence = evidenceByFinding.get(finding.id) ?? [];
+    const targets = targetsByFinding.get(finding.id) ?? [];
+    result.set(finding.id, {
+      scope: authority.scope,
+      governance: authority.governance,
+      queryRelations: queryEvidenceRows(
+        authority,
+        finding.id,
+        evidence,
+        observationsById,
+        now,
+      ),
+      competitorRelations: competitorEvidenceRows(
+        authority,
+        finding,
+        targets,
+        evidence,
+      ),
+    });
+  }
+  return result;
+}
+
 /**
  * One bounded TopicCluster read for a whole Opportunity page. The cluster keys
  * come from `primaryTopicClusterKey`, so this never loads a cluster no
@@ -201,6 +724,8 @@ async function listOpportunitiesInSnapshot(
     limit: opts.limit,
     cursor: opts.cursor,
     activeOnly: true,
+    lastSeenRunId: run.id,
+    ruleIds: OPPORTUNITY_RULE_IDS,
   });
   const runFindings = page.rows.filter(
     (finding) =>
@@ -213,9 +738,10 @@ async function listOpportunitiesInSnapshot(
     run.id,
     findingIds,
   );
-  const evidenceByFinding = await loadEvidenceByFinding(
+  const evidenceByFinding = await loadCurrentRunEvidenceByFinding(
     exec,
     projectScope,
+    run.id,
     findingIds,
   );
   const actionRows = await new GrowthMapReadRepository(exec).listActiveActions(
@@ -242,18 +768,35 @@ async function listOpportunitiesInSnapshot(
       ),
     ],
   );
+  const growthRelationsByFinding =
+    await loadGrowthRelationEvidenceByFinding(
+      exec,
+      projectScope,
+      run,
+      runFindings,
+      targetInputsByFinding,
+      evidenceByFinding,
+      now,
+    );
 
   const data: GrowthOpportunityDto[] = [];
   for (const finding of runFindings) {
     const action = actionByFinding.get(finding.id);
+    const growthRelationEvidence = growthRelationsByFinding.get(finding.id);
     const opportunity = buildOpportunity({
       finding: toFindingInput(finding),
       targets: targetInputsByFinding.get(finding.id) ?? [],
       evidence: evidenceByFinding.get(finding.id) ?? [],
       action: action ? toActionInput(action) : null,
+      projectId,
+      siteId: run.site_id,
       diagnosticRunId: run.id,
+      diagnosticInputHash: run.input_hash,
       now,
       topicClusterRows,
+      ...(growthRelationEvidence === undefined
+        ? {}
+        : { growthRelationEvidence }),
     });
     if (opportunity) data.push(opportunity);
   }
@@ -323,9 +866,12 @@ async function getOpportunityInSnapshot(
     run.id,
     [finding.id],
   );
-  const evidenceByFinding = await loadEvidenceByFinding(exec, projectScope, [
-    finding.id,
-  ]);
+  const evidenceByFinding = await loadCurrentRunEvidenceByFinding(
+    exec,
+    projectScope,
+    run.id,
+    [finding.id],
+  );
   const action = await new ActionsRepository(exec).findActiveByFinding(
     projectScope,
     finding.id,
@@ -339,15 +885,32 @@ async function getOpportunityInSnapshot(
     run.id,
     clusterKey === null ? [] : [clusterKey],
   );
+  const growthRelationEvidence = (
+    await loadGrowthRelationEvidenceByFinding(
+      exec,
+      projectScope,
+      run,
+      [finding],
+      new Map([[finding.id, targetInputs]]),
+      evidenceByFinding,
+      now,
+    )
+  ).get(finding.id);
 
   const opportunity = buildOpportunity({
     finding: toFindingInput(finding),
     targets: targetInputs,
     evidence: evidenceByFinding.get(finding.id) ?? [],
     action: action ? toActionInput(action) : null,
+    projectId,
+    siteId: run.site_id,
     diagnosticRunId: run.id,
+    diagnosticInputHash: run.input_hash,
     now,
     topicClusterRows,
+    ...(growthRelationEvidence === undefined
+      ? {}
+      : { growthRelationEvidence }),
   });
   if (!opportunity) {
     throw new ProblemError(

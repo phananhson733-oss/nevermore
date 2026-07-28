@@ -15,6 +15,7 @@ export type ProblemCode =
   | "AUTH_REQUIRED"
   // 404
   | "NOT_FOUND"
+  | "GROWTH_MAP_AUDIT_NOT_FOUND"
   // 409
   | "VERSION_CONFLICT"
   | "STALE_REVISION"
@@ -50,6 +51,7 @@ export const PROBLEM_STATUS: Record<ProblemCode, number> = {
   OAUTH_STATE_EXPIRED: 400,
   AUTH_REQUIRED: 401,
   NOT_FOUND: 404,
+  GROWTH_MAP_AUDIT_NOT_FOUND: 404,
   VERSION_CONFLICT: 409,
   STALE_REVISION: 409,
   IDEMPOTENCY_KEY_REUSED: 409,
@@ -104,6 +106,7 @@ const TITLES: Partial<Record<ProblemCode, string>> = {
   BAD_REQUEST: "Bad request",
   AUTH_REQUIRED: "Authentication required",
   NOT_FOUND: "Not found",
+  GROWTH_MAP_AUDIT_NOT_FOUND: "Growth Map audit not found",
   VALIDATION_ERROR: "Validation failed",
   VERSION_CONFLICT: "Version conflict",
   STALE_REVISION: "Stale revision",

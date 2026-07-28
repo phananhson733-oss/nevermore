@@ -71,7 +71,7 @@ describeDb("restore drill schema agreement", () => {
     );
 
     expect(describeColumns(parsed)).toEqual(describeColumns(live));
-    expect(live.size).toBe(44);
+    expect(live.size).toBe(62);
   });
 
   it("orders every integrity probe by the primary key PostgreSQL declares", async () => {

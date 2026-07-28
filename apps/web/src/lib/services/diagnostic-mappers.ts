@@ -1,4 +1,5 @@
 import type { ActionRow, FindingRow } from "@sf/db";
+import { competitorEntityIdFromSubjectRef } from "@sf/engine";
 
 /**
  * Diagnostic-domain row → DTO mappers (spec §8, §9, §11). Shapes match the
@@ -12,6 +13,7 @@ const SUBJECT_TYPES = [
   "canonical_issue",
   "page_set",
   "keyword_cluster",
+  "competitor",
   "user_agent",
   "site",
 ] as const;
@@ -29,9 +31,17 @@ export function parseSubjectRef(raw: string): SubjectRefDto {
   const idx = raw.indexOf(":");
   if (idx > 0) {
     const prefix = raw.slice(0, idx);
+    if (prefix === "competitor") {
+      const competitorEntityId = competitorEntityIdFromSubjectRef(raw);
+      if (competitorEntityId === null) {
+        throw new TypeError("invalid competitor subject reference");
+      }
+      return { type: prefix, value: competitorEntityId };
+    }
     if ((SUBJECT_TYPES as readonly string[]).includes(prefix)) {
       return { type: prefix, value: raw.slice(idx + 1) };
     }
+    throw new TypeError("unsupported subject reference type");
   }
   return { type: "url", value: raw };
 }

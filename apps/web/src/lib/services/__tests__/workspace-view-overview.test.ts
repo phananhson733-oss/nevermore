@@ -5,7 +5,10 @@ import type {
   FindingDto,
 } from "@/lib/services/diagnostic-mappers";
 import type { DataSnapshotDto } from "@/lib/services/source-mappers";
-import { buildOverviewHighlights } from "@/lib/services/workspace-view";
+import {
+  buildOverviewDecisionReminders,
+  buildOverviewHighlights,
+} from "@/lib/services/workspace-view";
 
 const NOW = "2026-07-18T12:00:00.000Z";
 
@@ -185,10 +188,79 @@ describe("buildOverviewHighlights", () => {
       }),
     ).toEqual({
       topActions: [],
+      decisionReminders: [],
       latestSnapshot: null,
       topActionEvidence: [],
       deliveryFocus: null,
     });
+  });
+
+  it("surfaces an exact-current Finding after fourteen complete untouched days", () => {
+    const stale = {
+      ...finding("finding-stale", "evidence-stale"),
+      reviewState: "unreviewed",
+      firstSeenAt: "2026-07-06T12:00:00.000Z",
+      lastSeenAt: "2026-07-20T12:00:00.000Z",
+      summary: "The onboarding topic opportunity still needs a decision.",
+      summaryLocale: "en",
+    };
+
+    expect(
+      buildOverviewDecisionReminders({
+        findings: [stale],
+        actions: [],
+        currentRunFindingIds: new Set([stale.id]),
+        sitePageByFindingId: new Map([
+          [stale.id, "00000000-0000-4000-8000-000000000091"],
+        ]),
+        asOf: "2026-07-20T12:00:00.000Z",
+      }),
+    ).toEqual([
+      {
+        findingId: stale.id,
+        sitePageId: "00000000-0000-4000-8000-000000000091",
+        summary: stale.summary,
+        summaryLocale: "en",
+        severity: "high",
+        reviewState: "unreviewed",
+        firstSeenAt: stale.firstSeenAt,
+        lastSeenAt: stale.lastSeenAt,
+        staleForDays: 14,
+      },
+    ]);
+  });
+
+  it("never reminds for handled, non-current, invalid, or younger Findings", () => {
+    const stale = {
+      ...finding("finding-stale", "evidence-stale"),
+      reviewState: "needs_more_data",
+      firstSeenAt: "2026-07-01T12:00:00.000Z",
+      lastSeenAt: "2026-07-20T12:00:00.000Z",
+    };
+    const young = {
+      ...stale,
+      id: "finding-young",
+      firstSeenAt: "2026-07-07T12:00:01.000Z",
+    };
+    const future = {
+      ...stale,
+      id: "finding-future",
+      lastSeenAt: "2026-07-21T12:00:00.000Z",
+    };
+    const nonCurrent = { ...stale, id: "finding-non-current" };
+
+    expect(
+      buildOverviewDecisionReminders({
+        findings: [stale, young, future, nonCurrent],
+        actions: [action("already-decided", stale.id, "high")],
+        currentRunFindingIds: new Set([
+          stale.id,
+          young.id,
+          future.id,
+        ]),
+        asOf: "2026-07-20T12:00:00.000Z",
+      }),
+    ).toEqual([]);
   });
 
   it("returns at most three customer work cards from the exact frozen audit Finding set", () => {

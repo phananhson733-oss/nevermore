@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  TrendingDown,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -26,8 +27,11 @@ import {
   useProductProfile,
   useWorkspaceView,
   type OverviewAction,
+  type OverviewContentDecayAlert,
+  type OverviewDecisionReminder,
   type OverviewView,
 } from "@/lib/api";
+import { ApiError } from "@/lib/api/client";
 import {
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
   useCreateGrowthAuditRun,
@@ -44,6 +48,7 @@ import {
   buildPortfolioSummary,
   buildVerifiedResultSummary,
   overviewGrowthMapHref,
+  selectAuthoritativeGrowthMapRead,
   selectProjectWorkItemsForFrozenRun,
   shouldRefreshFrozenRunPair,
   selectTopOpportunityFinding,
@@ -164,10 +169,12 @@ function TopOpportunity({
   projectId,
   topPage,
   topFinding,
+  auditUnavailable,
 }: {
   readonly projectId: string;
   readonly topPage: GrowthMapUrlPortfolioItem | null;
   readonly topFinding: GrowthMapUrlFinding | null;
+  readonly auditUnavailable: boolean;
 }) {
   const t = useTranslations("overview.customer");
   const tReview = useTranslations("reviewState");
@@ -176,8 +183,16 @@ function TopOpportunity({
   if (!topPage || !topFinding) {
     return (
       <EmptyBlock
-        title={t("priority.noOpportunity")}
-        description={t("priority.noOpportunityDescription")}
+        title={
+          auditUnavailable
+            ? t("portfolio.unavailable")
+            : t("priority.noOpportunity")
+        }
+        description={
+          auditUnavailable
+            ? t("portfolio.unavailableDescription")
+            : t("priority.noOpportunityDescription")
+        }
         href={href}
         action={t("actions.openGrowthMap")}
       />
@@ -259,16 +274,119 @@ function ProjectWorkRow({
   );
 }
 
+function DecisionReminderRow({
+  projectId,
+  reminder,
+}: {
+  readonly projectId: string;
+  readonly reminder: OverviewDecisionReminder;
+}) {
+  const t = useTranslations("overview.customer");
+  const href = overviewGrowthMapHref(
+    projectId,
+    reminder.sitePageId,
+    reminder.findingId,
+  );
+  return (
+    <li className={styles.decisionRow} data-decision-reminder="">
+      <span className={styles.decisionIcon} data-kind="decision_due">
+        <CircleAlert aria-hidden="true" size={18} />
+      </span>
+      <div>
+        <span className={styles.decisionKind}>
+          {t("priority.decisionDue", { days: reminder.staleForDays })}
+        </span>
+        <strong lang={reminder.summaryLocale}>{reminder.summary}</strong>
+      </div>
+      <Link
+        href={href}
+        aria-label={t("priority.decideOpportunityLabel", {
+          summary: reminder.summary,
+        })}
+      >
+        <ArrowRight aria-hidden="true" size={18} />
+      </Link>
+    </li>
+  );
+}
+
+function alertPageLabel(normalizedUrl: string): string {
+  try {
+    const parsed = new URL(normalizedUrl);
+    return `${parsed.pathname}${parsed.search}` || "/";
+  } catch {
+    return normalizedUrl;
+  }
+}
+
+function ContentDecayAlertRow({
+  projectId,
+  alert,
+}: {
+  readonly projectId: string;
+  readonly alert: OverviewContentDecayAlert;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("overview.customer");
+  const page = alertPageLabel(alert.normalizedUrl);
+  const number = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 1,
+  });
+  const signals: string[] = [];
+  if (alert.rankTrend) {
+    signals.push(
+      t("priority.decay.rankSignal", {
+        first: number.format(alert.rankTrend.firstDecline),
+        second: number.format(alert.rankTrend.secondDecline),
+      }),
+    );
+  }
+  if (alert.trafficTrend) {
+    signals.push(
+      t("priority.decay.trafficSignal", {
+        percent: number.format(
+          Math.abs(alert.trafficTrend.changeRatio) * 100,
+        ),
+      }),
+    );
+  }
+  const href = overviewGrowthMapHref(projectId, alert.sitePageId);
+  return (
+    <li className={styles.decisionRow} data-content-decay-alert="">
+      <span className={styles.decisionIcon} data-kind="content_decay">
+        <TrendingDown aria-hidden="true" size={18} />
+      </span>
+      <div>
+        <span className={styles.decisionKind}>
+          {t("priority.decay.detected", { month: alert.currentMonth })}
+          {signals.length > 0 ? ` · ${signals.join(" · ")}` : null}
+        </span>
+        <strong>{t("priority.decay.reviewSuggested")}</strong>
+        <code className={styles.decayPage}>{page}</code>
+      </div>
+      <Link
+        href={href}
+        aria-label={t("priority.decay.openLabel", { page })}
+      >
+        <ArrowRight aria-hidden="true" size={18} />
+      </Link>
+    </li>
+  );
+}
+
 type WorkRunState = "loading" | "ready" | "mismatch" | "unavailable";
 
 function PrioritySection({
   projectId,
   projectWork,
+  decisionReminders,
+  contentDecayAlerts,
   workRunState,
   topPage,
   topFinding,
   resultPage,
   detailRunMismatch,
+  auditUnavailable,
   portfolioPending,
   detailPending,
   portfolioError,
@@ -277,11 +395,14 @@ function PrioritySection({
 }: {
   readonly projectId: string;
   readonly projectWork: readonly OverviewAction[];
+  readonly decisionReminders: readonly OverviewDecisionReminder[];
+  readonly contentDecayAlerts: readonly OverviewContentDecayAlert[];
   readonly workRunState: WorkRunState;
   readonly topPage: GrowthMapUrlPortfolioItem | null;
   readonly topFinding: GrowthMapUrlFinding | null;
   readonly resultPage: GrowthMapUrlPortfolioItem | null;
   readonly detailRunMismatch: boolean;
+  readonly auditUnavailable: boolean;
   readonly portfolioPending: boolean;
   readonly detailPending: boolean;
   readonly portfolioError: unknown;
@@ -291,6 +412,22 @@ function PrioritySection({
   const t = useTranslations("overview.customer");
   const tDelta = useTranslations("growthMap.delta");
   const verifiedResult = buildVerifiedResultSummary(resultPage);
+  const visibleDecayAlerts = contentDecayAlerts.slice(0, 3);
+  const visibleReminders = decisionReminders.slice(
+    0,
+    Math.max(0, 3 - visibleDecayAlerts.length),
+  );
+  const visibleProjectWork = projectWork.slice(
+    0,
+    Math.max(
+      0,
+      3 - visibleDecayAlerts.length - visibleReminders.length,
+    ),
+  );
+  const visibleQueueCount =
+    visibleDecayAlerts.length +
+    visibleReminders.length +
+    visibleProjectWork.length;
 
   return (
     <section className={`${styles.card} ${styles.priorityCard}`}>
@@ -319,6 +456,7 @@ function PrioritySection({
           projectId={projectId}
           topPage={topPage}
           topFinding={topFinding}
+          auditUnavailable={auditUnavailable}
         />
       )}
 
@@ -326,7 +464,7 @@ function PrioritySection({
         <strong>{t("priority.queueTitle")}</strong>
         <span>
           {workRunState === "ready"
-            ? t("priority.queueCount", { count: projectWork.length })
+            ? t("priority.queueCount", { count: visibleQueueCount })
             : "—"}
         </span>
       </div>
@@ -347,11 +485,25 @@ function PrioritySection({
         <p className={styles.secondaryEmpty}>
           {t("priority.queueUnavailable")}
         </p>
-      ) : projectWork.length === 0 ? (
+      ) : visibleQueueCount === 0 ? (
         <p className={styles.secondaryEmpty}>{t("priority.queueEmpty")}</p>
       ) : (
         <ol className={styles.decisionList}>
-          {projectWork.map((action) => (
+          {visibleDecayAlerts.map((alert) => (
+            <ContentDecayAlertRow
+              key={`${alert.sitePageId}:${alert.currentMonth}`}
+              projectId={projectId}
+              alert={alert}
+            />
+          ))}
+          {visibleReminders.map((reminder) => (
+            <DecisionReminderRow
+              key={reminder.findingId}
+              projectId={projectId}
+              reminder={reminder}
+            />
+          ))}
+          {visibleProjectWork.map((action) => (
             <ProjectWorkRow
               key={action.id}
               projectId={projectId}
@@ -820,10 +972,17 @@ export function OverviewClient({
   const t = useTranslations("overview.customer");
   const workspaceQuery = useWorkspaceView(projectId, "overview", initialView);
   const portfolioQuery = useGrowthMapUrls(projectId, { limit: 100 });
-  const portfolioRunId = portfolioQuery.data?.diagnosticRunId ?? null;
-  const topPage = selectTopPortfolioItem(portfolioQuery.data?.data ?? []);
+  const auditUnavailable =
+    portfolioQuery.error instanceof ApiError &&
+    portfolioQuery.error.code === "GROWTH_MAP_AUDIT_NOT_FOUND";
+  const portfolioResponse = selectAuthoritativeGrowthMapRead(
+    portfolioQuery.data,
+    portfolioQuery.isError,
+  );
+  const portfolioRunId = portfolioResponse?.diagnosticRunId ?? null;
+  const topPage = selectTopPortfolioItem(portfolioResponse?.data ?? []);
   const resultPage = selectTopPortfolioItem(
-    (portfolioQuery.data?.data ?? []).filter(
+    (portfolioResponse?.data ?? []).filter(
       (item) => item.delta.availability === "available",
     ),
   );
@@ -831,13 +990,17 @@ export function OverviewClient({
     projectId,
     topPage?.sitePageId ?? null,
   );
-  const detailRunId = detailQuery.data?.diagnosticRunId ?? null;
+  const detailResponse = selectAuthoritativeGrowthMapRead(
+    detailQuery.data,
+    detailQuery.isError || auditUnavailable,
+  );
+  const detailRunId = detailResponse?.diagnosticRunId ?? null;
   const detailRunMismatch =
     portfolioRunId !== null &&
     detailRunId !== null &&
     detailRunId !== portfolioRunId;
   const topFinding = selectTopOpportunityFinding(
-    detailQuery.data?.data,
+    detailResponse?.data,
     portfolioRunId,
   );
   const sourcesQuery = useProjectSources(projectId);
@@ -958,18 +1121,25 @@ export function OverviewClient({
         <PrioritySection
           projectId={projectId}
           projectWork={projectWork}
+          decisionReminders={view.decisionReminders}
+          contentDecayAlerts={view.contentDecayMonitor.alerts}
           workRunState={workRunState}
           topPage={topPage}
           topFinding={topFinding}
           resultPage={resultPage}
           detailRunMismatch={detailRunMismatch}
+          auditUnavailable={auditUnavailable}
           portfolioPending={portfolioQuery.isPending}
           detailPending={
             detailQuery.isPending ||
             (detailRunMismatch &&
               (detailQuery.isFetching || portfolioQuery.isFetching))
           }
-          portfolioError={portfolioQuery.error ?? detailQuery.error}
+          portfolioError={
+            auditUnavailable
+              ? detailQuery.error
+              : (portfolioQuery.error ?? detailQuery.error)
+          }
           onRetry={() => {
             attemptedDetailPortfolioRunRef.current = null;
             void portfolioQuery.refetch();
@@ -987,10 +1157,10 @@ export function OverviewClient({
         />
         <PortfolioSection
           projectId={projectId}
-          response={portfolioQuery.data}
+          response={portfolioResponse}
           topPage={topPage}
           pending={portfolioQuery.isPending}
-          error={portfolioQuery.error}
+          error={auditUnavailable ? null : portfolioQuery.error}
           onRetry={() => void portfolioQuery.refetch()}
         />
         <SourcesSection

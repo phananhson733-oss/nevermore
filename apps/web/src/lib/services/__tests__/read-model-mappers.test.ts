@@ -66,10 +66,18 @@ describe("diagnostic read-model mappers", () => {
       type: "http_status",
       value: "503",
     });
-    expect(parseSubjectRef("unknown:value")).toEqual({
-      type: "url",
-      value: "unknown:value",
+    expect(
+      parseSubjectRef("competitor:20000000-0000-4000-8000-000000004001"),
+    ).toEqual({
+      type: "competitor",
+      value: "20000000-0000-4000-8000-000000004001",
     });
+    expect(() => parseSubjectRef("unknown:value")).toThrow(
+      "unsupported subject reference type",
+    );
+    expect(() => parseSubjectRef("competitor:not-a-uuid")).toThrow(
+      "invalid competitor subject reference",
+    );
     expect(parseSubjectRef("/pricing")).toEqual({
       type: "url",
       value: "/pricing",

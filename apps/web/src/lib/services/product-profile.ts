@@ -21,6 +21,7 @@ import {
 } from "@sf/contracts";
 import {
   AsyncRunsRepository,
+  canonicalUtcTimestamptz,
   contentHash,
   IcpProfilesRepository,
   ProjectsRepository,
@@ -164,7 +165,7 @@ function parseDraftRow(
     status: "draft",
     profile: profile.data,
     contentHash: row.content_hash,
-    createdAt: row.created_at,
+    createdAt: canonicalUtcTimestamptz(row.created_at),
     isCurrent: row.id === currentProfileId,
     isConfirmed: false,
   });
@@ -184,7 +185,7 @@ function parseConfirmedRow(
     status: "complete",
     profile: profile.data,
     contentHash: row.content_hash,
-    createdAt: row.created_at,
+    createdAt: canonicalUtcTimestamptz(row.created_at),
     isCurrent: row.id === currentProfileId,
     isConfirmed: true,
   });

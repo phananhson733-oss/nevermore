@@ -16,7 +16,7 @@ import { withRunContext, type WorkerContext } from "../context.ts";
 import {
   DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
   DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED_SUMMARY,
-  supportsCurrentDiagnosticExecutor,
+  supportsDiagnosticExecutorVersion,
 } from "../diagnostic/executor-version.ts";
 
 export const RUN_RECOVERY_INTERVAL_MS = 60_000;
@@ -98,6 +98,8 @@ const COLLECTION_QUEUE_BY_PROVIDER: Readonly<Record<string, QueueName>> = {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LEGACY_CONTRACT_VERSION = "0.2.0";
+const PUBLICATION_CONTRACT_VERSION = "publication.0.4.0";
+const MEASUREMENT_CONTRACT_VERSION = "measurement.0.1.0";
 
 type JobContractFailure = {
   readonly code: "UNSUPPORTED_JOB_CONTRACT" | "JOB_CONTRACT_MISMATCH";
@@ -137,6 +139,10 @@ export function queueForRun(
       return "export.bundle";
     case "content_shadow":
       return "content-shadow";
+    case "publication":
+      return "publication";
+    case "measurement":
+      return "measurement";
     default:
       return null;
   }
@@ -173,6 +179,7 @@ export async function prepareRunDelivery<T extends CanonicalJobPayload>(
   const contractFailure = validateJobContract(
     job.data.contractVersion,
     prepared.contract_version,
+    prepared.kind,
   );
   if (contractFailure) {
     let reconciled = false;
@@ -606,6 +613,7 @@ async function findCanonicalJobs(
     const contractFailure = validateJobContract(
       candidate.data.contractVersion,
       run.contract_version,
+      run.kind,
     );
     if (contractFailure) return { jobs: [], contractFailure };
   }
@@ -618,7 +626,7 @@ function jobMatchesRun(
 ): boolean {
   return (
     jobMatchesRunIdentity(job, run) &&
-    isSupportedJobContract(job.data.contractVersion) &&
+    isSupportedJobContract(job.data.contractVersion, run.kind) &&
     job.data.contractVersion === run.contract_version
   );
 }
@@ -665,8 +673,9 @@ function isRecord(value: unknown): value is CanonicalJobPayload {
 function validateJobContract(
   jobContractVersion: unknown,
   runContractVersion: string,
+  runKind: string,
 ): JobContractFailure | null {
-  if (!isSupportedJobContract(jobContractVersion)) {
+  if (!isSupportedJobContract(jobContractVersion, runKind)) {
     return {
       code: "UNSUPPORTED_JOB_CONTRACT",
       summary: "The queue job uses an unsupported contract version.",
@@ -681,7 +690,16 @@ function validateJobContract(
   return null;
 }
 
-function isSupportedJobContract(value: unknown): value is string {
+function isSupportedJobContract(
+  value: unknown,
+  runKind: string,
+): value is string {
+  if (runKind === "publication") {
+    return value === PUBLICATION_CONTRACT_VERSION;
+  }
+  if (runKind === "measurement") {
+    return value === MEASUREMENT_CONTRACT_VERSION;
+  }
   return value === CONTRACT_VERSION || value === LEGACY_CONTRACT_VERSION;
 }
 
@@ -702,7 +720,9 @@ async function hasUnsupportedDiagnosticExecutor(
     run.id,
   );
   throwIfRecoveryAborted(signal);
-  return diagnostic !== null && !supportsCurrentDiagnosticExecutor(diagnostic);
+  return (
+    diagnostic !== null && !supportsDiagnosticExecutorVersion(diagnostic)
+  );
 }
 
 async function terminalize(

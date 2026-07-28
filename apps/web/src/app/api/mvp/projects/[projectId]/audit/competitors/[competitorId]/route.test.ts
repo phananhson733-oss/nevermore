@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
+import { ProblemError } from "@sf/observability";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getProjectAuditCompetitor: vi.fn(),
+  reviewProjectAuditCompetitor: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({
@@ -14,9 +16,10 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/services/growth-map-competitors", () => ({
   getProjectAuditCompetitor: mocks.getProjectAuditCompetitor,
+  reviewProjectAuditCompetitor: mocks.reviewProjectAuditCompetitor,
 }));
 
-const { GET } = await import("./route");
+const { GET, PATCH } = await import("./route");
 
 const projectId = "00000000-0000-4000-8000-000000000003";
 const competitorId = "00000000-0000-4000-8000-000000000004";
@@ -36,11 +39,48 @@ function invoke(selectedCompetitorId = competitorId) {
   );
 }
 
+const review = {
+  expectedRevision: 2,
+  name: "Reviewed Competitor",
+  reviewStatus: "approved",
+  relationship: "benchmark",
+  analysisScope: ["positioning"],
+} as const;
+
+function invokePatch(
+  body: unknown = review,
+  selectedCompetitorId = competitorId,
+) {
+  return PATCH(
+    new NextRequest(
+      `http://localhost/api/mvp/projects/${projectId}/audit/competitors/${selectedCompetitorId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "X-Request-Id": "request-review-growth-map-competitor",
+        },
+        body: JSON.stringify(body),
+      },
+    ),
+    {
+      params: Promise.resolve({
+        projectId,
+        competitorId: selectedCompetitorId,
+      }),
+    },
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getProjectAuditCompetitor.mockResolvedValue({
     projectId,
     data: { competitorId },
+  });
+  mocks.reviewProjectAuditCompetitor.mockResolvedValue({
+    projectId,
+    data: { competitorId, revision: 3 },
   });
 });
 
@@ -67,5 +107,88 @@ describe("GET selected Growth Map Competitor", () => {
     expect(body).toMatchObject({ code: "NOT_FOUND", status: 404 });
     expect(JSON.stringify(body)).not.toContain("customer-private-competitor");
     expect(mocks.getProjectAuditCompetitor).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH selected Growth Map Competitor review", () => {
+  it("passes only the strict review contract and operator scope to the service", async () => {
+    const response = await invokePatch();
+
+    expect(response.status).toBe(200);
+    expect(mocks.reviewProjectAuditCompetitor).toHaveBeenCalledWith(
+      { workspaceId: "00000000-0000-4000-8000-000000000002" },
+      projectId,
+      competitorId,
+      review,
+    );
+    await expect(response.json()).resolves.toEqual({
+      data: {
+        projectId,
+        data: { competitorId, revision: 3 },
+      },
+    });
+  });
+
+  it("rejects incoherent or widened payloads before service access", async () => {
+    const response = await invokePatch({
+      ...review,
+      relationship: null,
+      customerPrivateField: "must-not-pass",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+    expect(JSON.stringify(body)).not.toContain("must-not-pass");
+    expect(mocks.reviewProjectAuditCompetitor).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed Competitor id before body or service access", async () => {
+    const response = await invokePatch(review, "customer-private-competitor");
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+    });
+    expect(mocks.reviewProjectAuditCompetitor).not.toHaveBeenCalled();
+  });
+
+  it("preserves structured revision conflicts from the service", async () => {
+    mocks.reviewProjectAuditCompetitor.mockRejectedValueOnce(
+      new ProblemError(
+        "STALE_REVISION",
+        "Competitor review revision is stale.",
+        {
+          current: {
+            kind: "revision_conflict",
+            resource: "competitor_review",
+            projectId,
+            resourceId: competitorId,
+            expectedRevision: 2,
+            currentRevision: 4,
+          },
+        },
+      ),
+    );
+
+    const response = await invokePatch();
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "STALE_REVISION",
+      status: 409,
+      current: {
+        kind: "revision_conflict",
+        resource: "competitor_review",
+        projectId,
+        resourceId: competitorId,
+        expectedRevision: 2,
+        currentRevision: 4,
+      },
+    });
   });
 });

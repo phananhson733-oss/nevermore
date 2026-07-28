@@ -48,6 +48,7 @@ import {
 } from "@sf/db";
 import {
   FINDING_REGISTRY,
+  GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
   findingKey,
@@ -1695,6 +1696,11 @@ async function seedDiagnosticRun(
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
+    governance: {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [],
+    },
   };
   await handle.db.insert(asyncRuns).values({
     id: runId,

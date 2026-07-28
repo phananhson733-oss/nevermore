@@ -67,6 +67,40 @@ describe("Growth Map list input boundary", () => {
     expect(snapshots).toHaveBeenCalledTimes(1);
   });
 
+  it("distinguishes a missing project from a project with no completed Growth Map audit", async () => {
+    const findProject = vi
+      .spyOn(ProjectsRepository.prototype, "findById")
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: projectId } as never);
+    const findRun = vi
+      .spyOn(GrowthMapReadRepository.prototype, "findLatestReadableRun")
+      .mockResolvedValue(null);
+
+    await expect(
+      listProjectAuditUrls(
+        scope,
+        projectId,
+        { limit: 50, cursor: null },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    expect(findRun).not.toHaveBeenCalled();
+
+    await expect(
+      listProjectAuditUrls(
+        scope,
+        projectId,
+        { limit: 50, cursor: null },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "GROWTH_MAP_AUDIT_NOT_FOUND",
+      status: 404,
+    });
+    expect(findProject).toHaveBeenCalledTimes(2);
+    expect(findRun).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     "customer-private-malformed-keyset",
     "2026-02-31T00:00:00.000Z 00000000-0000-4000-8000-000000000003",

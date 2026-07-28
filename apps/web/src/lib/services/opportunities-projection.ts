@@ -1,15 +1,24 @@
 import {
+  GenerativeQueryEvidence as GenerativeQueryEvidenceSchema,
   GrowthOpportunity,
   RULE_OPPORTUNITY_PROJECTION,
+  SearchQueryEvidence as SearchQueryEvidenceSchema,
   resolveRuleOpportunityWorkShape,
+  type GenerativeQueryEvidence as GenerativeQueryEvidenceDto,
   type GrowthOpportunity as GrowthOpportunityDto,
   type OpportunityActionSummary,
   type OpportunityEvidenceTrace,
   type OpportunityOwnedAsset,
   type OpportunityRuleId,
   type PrimaryOpportunityTarget,
+  type SearchQueryEvidence as SearchQueryEvidenceDto,
 } from "@sf/contracts";
 import { canonicalUtcTimestamptz } from "@sf/db";
+import {
+  parseGovernanceProjectionV1,
+  type GovernanceKeywordFactV1,
+  type GovernanceProjectionV1,
+} from "@sf/engine";
 import type { EvidenceDto } from "./diagnostic-mappers";
 import { isStale } from "./source-mappers";
 import {
@@ -88,6 +97,74 @@ export interface OpportunityActionInput {
   readonly id: string;
   readonly sourceFindingId: string;
   readonly status: string;
+}
+
+/**
+ * Scope repeated on each resolved relation row. The repetition is deliberate:
+ * callers commonly batch query/competitor evidence for a whole page, and the
+ * pure projector must be able to discard a leaked row rather than trusting the
+ * batch container to have applied Project/Site/Run predicates correctly.
+ */
+export interface OpportunityGrowthRelationScope {
+  readonly projectId: string;
+  readonly siteId: string;
+  readonly diagnosticRunId: string;
+  /** Exact hash of the immutable input manifest used by this diagnostic run. */
+  readonly diagnosticInputHash: string;
+}
+
+/**
+ * One canonical query observation joined to the reviewed Keyword identity that
+ * the current diagnostic run froze. `evidenceId` links the relation back to
+ * Finding-owned Evidence; the Snapshot/Observation lineage remains inside the
+ * typed query evidence rather than being reconstructed from prose.
+ */
+export interface OpportunityGovernedQueryRelationInput
+  extends OpportunityGrowthRelationScope {
+  readonly findingId: string;
+  readonly evidenceId: string;
+  readonly keywordEntityId: string;
+  readonly keywordRevision: number;
+  readonly queryEvidence:
+    | SearchQueryEvidenceDto
+    | GenerativeQueryEvidenceDto;
+}
+
+/**
+ * One explicit Finding-to-competitor relation. The Opportunity emits the stable
+ * Competitor Entity id, while `originOccurrenceId` proves that the exact
+ * approved identity was present in this diagnostic run's frozen governance.
+ */
+export interface OpportunityGovernedCompetitorRelationInput
+  extends OpportunityGrowthRelationScope {
+  readonly findingId: string;
+  readonly evidenceId: string;
+  readonly competitorEntityId: string;
+  readonly competitorRevision: number;
+  readonly originOccurrenceId: string;
+}
+
+/**
+ * Authority bundle for keyword and competitor relations. The governance value
+ * is parsed again at this read boundary: malformed or non-current input fails
+ * closed to honest empty relations and never suppresses an otherwise valid
+ * Opportunity.
+ */
+export interface OpportunityGrowthRelationEvidenceInput {
+  /**
+   * Identity of the frozen governance envelope. This second scope check keeps
+   * even lineage-free manual competitor origins tied to the current run input.
+   */
+  readonly scope: OpportunityGrowthRelationScope;
+  readonly governance: GovernanceProjectionV1;
+  readonly queryRelations: readonly OpportunityGovernedQueryRelationInput[];
+  readonly competitorRelations: readonly OpportunityGovernedCompetitorRelationInput[];
+}
+
+export interface ProjectedOpportunityGrowthRelations {
+  readonly searchQueries: SearchQueryEvidenceDto[];
+  readonly generativeQueries: GenerativeQueryEvidenceDto[];
+  readonly competitorRefs: string[];
 }
 
 export interface ResolvedPrimaryTarget {
@@ -261,6 +338,263 @@ function uniqueLimitations(
   return [...seen].slice(0, 200);
 }
 
+function emptyGrowthRelations(): ProjectedOpportunityGrowthRelations {
+  return {
+    searchQueries: [],
+    generativeQueries: [],
+    competitorRefs: [],
+  };
+}
+
+function compareAscii(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function relationMatchesScope(
+  relation: OpportunityGrowthRelationScope,
+  scope: OpportunityGrowthRelationScope,
+): boolean {
+  return (
+    relation.projectId === scope.projectId &&
+    relation.siteId === scope.siteId &&
+    relation.diagnosticRunId === scope.diagnosticRunId &&
+    relation.diagnosticInputHash === scope.diagnosticInputHash
+  );
+}
+
+function keywordSupportsPrimaryTarget(
+  keyword: GovernanceKeywordFactV1,
+  primary: ResolvedPrimaryTarget,
+): boolean {
+  if (primary.targetKind === "keyword_cluster") {
+    return keyword.clusterKey === primary.targetRef;
+  }
+  return (
+    primary.ownedAsset !== null &&
+    keyword.mappingDecision === "existing_page" &&
+    keyword.mappedSitePageId === primary.ownedAsset.sitePageId
+  );
+}
+
+function queryHasFrozenLineage(
+  keyword: GovernanceKeywordFactV1,
+  query: SearchQueryEvidenceDto | GenerativeQueryEvidenceDto,
+): boolean {
+  return (
+    keyword.occurrenceRefs.some(
+      (ref) =>
+        ref.snapshotId === query.snapshotId &&
+        ref.observationId === query.observationId,
+    ) ||
+    keyword.metricRefs.some(
+      (ref) =>
+        ref.snapshotId === query.snapshotId &&
+        ref.observationId === query.observationId,
+    )
+  );
+}
+
+function querySortKey(
+  query: SearchQueryEvidenceDto | GenerativeQueryEvidenceDto,
+): readonly string[] {
+  return [
+    query.query.normalize("NFKC").toLowerCase(),
+    query.marketCode,
+    query.languageCode,
+    query.snapshotId,
+    query.observationId,
+  ];
+}
+
+function compareQueryEvidence(
+  left: SearchQueryEvidenceDto | GenerativeQueryEvidenceDto,
+  right: SearchQueryEvidenceDto | GenerativeQueryEvidenceDto,
+): number {
+  const leftKey = querySortKey(left);
+  const rightKey = querySortKey(right);
+  for (let index = 0; index < leftKey.length; index += 1) {
+    const compared = compareAscii(leftKey[index]!, rightKey[index]!);
+    if (compared !== 0) return compared;
+  }
+  return 0;
+}
+
+/**
+ * Project reviewed Keyword/Competitor evidence into the three relation fields
+ * already present on GrowthOpportunity.
+ *
+ * A relation is admitted only when all four authority layers agree:
+ * - the row belongs to the current Project/Site/DiagnosticRun and Finding;
+ * - it links to traceable Finding-owned Evidence;
+ * - its entity id + revision + review state exist in the frozen governance;
+ * - query observations (or competitor origins) match exact frozen lineage.
+ *
+ * Missing or malformed authority deliberately returns empty arrays. No live
+ * library read, prose parsing, mock metric, or inferred competitor is accepted.
+ */
+export function projectOpportunityGrowthRelations(input: {
+  readonly scope: OpportunityGrowthRelationScope | null;
+  readonly findingId: string;
+  readonly primary: ResolvedPrimaryTarget;
+  readonly evidenceSummary: readonly OpportunityEvidenceTrace[];
+  readonly relationEvidence: OpportunityGrowthRelationEvidenceInput | undefined;
+}): ProjectedOpportunityGrowthRelations {
+  if (input.scope === null || input.relationEvidence === undefined) {
+    return emptyGrowthRelations();
+  }
+  if (
+    input.scope.projectId.trim().length === 0 ||
+    input.scope.siteId.trim().length === 0 ||
+    input.scope.diagnosticRunId.trim().length === 0 ||
+    !/^[a-f0-9]{64}$/u.test(input.scope.diagnosticInputHash) ||
+    !relationMatchesScope(input.relationEvidence.scope, input.scope)
+  ) {
+    return emptyGrowthRelations();
+  }
+
+  let governance: GovernanceProjectionV1;
+  try {
+    governance = parseGovernanceProjectionV1(
+      input.relationEvidence.governance,
+    );
+  } catch {
+    return emptyGrowthRelations();
+  }
+
+  const linkedEvidenceIds = new Set<string>();
+  for (const trace of input.evidenceSummary) {
+    if (trace.traceKind === "evidence" && trace.support !== "contradicts") {
+      linkedEvidenceIds.add(trace.evidenceId);
+    }
+  }
+  const keywordById = new Map<string, GovernanceKeywordFactV1>();
+  for (const cluster of governance.keywordClusters) {
+    for (const keyword of cluster.keywords) {
+      // A mismatched outer cluster/fact cluster is retained by the governance
+      // contract for historical accuracy, but it is not an eligible current
+      // Opportunity relation.
+      if (keyword.clusterKey === cluster.clusterKey) {
+        keywordById.set(keyword.keywordEntityId, keyword);
+      }
+    }
+  }
+
+  type QueryEvidence = SearchQueryEvidenceDto | GenerativeQueryEvidenceDto;
+  const queryByIdentity = new Map<
+    string,
+    { readonly value: QueryEvidence; readonly serialized: string }
+  >();
+  const conflictingQueryIdentities = new Set<string>();
+
+  for (const relation of input.relationEvidence.queryRelations) {
+    if (
+      !relationMatchesScope(relation, input.scope) ||
+      relation.findingId !== input.findingId ||
+      !linkedEvidenceIds.has(relation.evidenceId)
+    ) {
+      continue;
+    }
+    const keyword = keywordById.get(relation.keywordEntityId);
+    if (
+      !keyword ||
+      keyword.revision !== relation.keywordRevision ||
+      keyword.status !== "approved" ||
+      keyword.mappingReviewState !== "confirmed" ||
+      !keywordSupportsPrimaryTarget(keyword, input.primary)
+    ) {
+      continue;
+    }
+
+    const parsed =
+      relation.queryEvidence.queryKind === "search"
+        ? SearchQueryEvidenceSchema.safeParse(relation.queryEvidence)
+        : relation.queryEvidence.queryKind === "generative"
+          ? GenerativeQueryEvidenceSchema.safeParse(relation.queryEvidence)
+          : null;
+    if (!parsed?.success) continue;
+    const query = parsed.data;
+    const expectedKind =
+      keyword.queryKind === "search_query" ? "search" : "generative";
+    if (
+      query.queryKind !== expectedKind ||
+      query.query !== keyword.displayKeyword ||
+      query.marketCode !== keyword.marketCode ||
+      query.languageCode !== keyword.languageTag ||
+      !queryHasFrozenLineage(keyword, query)
+    ) {
+      continue;
+    }
+
+    // One aggregate Observation may contain multiple governed queries at
+    // distinct source pointers, so Observation id alone is not an identity.
+    // Keyword Entity + exact lineage is stable and still detects conflicting
+    // payloads for the same canonical query relation.
+    const identity = JSON.stringify([
+      relation.keywordEntityId,
+      query.queryKind,
+      query.snapshotId,
+      query.observationId,
+    ]);
+    if (conflictingQueryIdentities.has(identity)) continue;
+    const serialized = JSON.stringify(query);
+    const existing = queryByIdentity.get(identity);
+    if (existing && existing.serialized !== serialized) {
+      // The same immutable Observation id cannot truthfully carry two payloads.
+      // Drop both candidates so input order can never decide the projection.
+      queryByIdentity.delete(identity);
+      conflictingQueryIdentities.add(identity);
+      continue;
+    }
+    if (!existing) queryByIdentity.set(identity, { value: query, serialized });
+  }
+
+  const searchQueries: SearchQueryEvidenceDto[] = [];
+  const generativeQueries: GenerativeQueryEvidenceDto[] = [];
+  for (const { value } of queryByIdentity.values()) {
+    if (value.queryKind === "search") searchQueries.push(value);
+    else generativeQueries.push(value);
+  }
+  searchQueries.sort(compareQueryEvidence);
+  generativeQueries.sort(compareQueryEvidence);
+
+  const competitorById = new Map(
+    governance.competitors.map((competitor) => [
+      competitor.competitorEntityId,
+      competitor,
+    ]),
+  );
+  const competitorRefs = new Set<string>();
+  for (const relation of input.relationEvidence.competitorRelations) {
+    if (
+      !relationMatchesScope(relation, input.scope) ||
+      relation.findingId !== input.findingId ||
+      !linkedEvidenceIds.has(relation.evidenceId)
+    ) {
+      continue;
+    }
+    const competitor = competitorById.get(relation.competitorEntityId);
+    if (
+      !competitor ||
+      competitor.revision !== relation.competitorRevision ||
+      competitor.reviewStatus !== "approved" ||
+      competitor.relationship === null ||
+      competitor.analysisScopes.length === 0 ||
+      !competitor.originRefs.some(
+        (ref) => ref.occurrenceId === relation.originOccurrenceId,
+      )
+    ) {
+      continue;
+    }
+    competitorRefs.add(competitor.competitorEntityId);
+  }
+
+  return {
+    searchQueries: searchQueries.slice(0, 500),
+    generativeQueries: generativeQueries.slice(0, 500),
+    competitorRefs: [...competitorRefs].sort(compareAscii).slice(0, 100),
+  };
+}
+
 /**
  * Assemble one traceable Opportunity and re-validate it against the contract.
  * Returns null when the Finding is not surfaceable (ignored, no resolved
@@ -271,8 +605,18 @@ export function buildOpportunity(input: {
   readonly targets: readonly OpportunityTargetInput[];
   readonly evidence: readonly EvidenceDto[];
   readonly action: OpportunityActionInput | null;
+  /** Current read scope; required before any growth relation can be admitted. */
+  readonly projectId?: string;
+  readonly siteId?: string;
   readonly diagnosticRunId: string;
+  /** Input-manifest identity for the current diagnostic run. */
+  readonly diagnosticInputHash?: string;
   readonly now: number;
+  /**
+   * Frozen governance plus canonical, Finding-linked relation rows. Omission is
+   * backward-compatible and intentionally projects honest empty relations.
+   */
+  readonly growthRelationEvidence?: OpportunityGrowthRelationEvidenceInput;
   /**
    * TopicCluster read-model rows keyed by cluster label. Only a Finding whose
    * primary target IS a keyword cluster can draw supporting Findings from it;
@@ -311,6 +655,23 @@ export function buildOpportunity(input: {
           input.finding.id,
         )
       : null;
+  const growthRelations = projectOpportunityGrowthRelations({
+    scope:
+      input.projectId === undefined ||
+      input.siteId === undefined ||
+      input.diagnosticInputHash === undefined
+        ? null
+        : {
+            projectId: input.projectId,
+            siteId: input.siteId,
+            diagnosticRunId: input.diagnosticRunId,
+            diagnosticInputHash: input.diagnosticInputHash,
+          },
+    findingId: input.finding.id,
+    primary,
+    evidenceSummary,
+    relationEvidence: input.growthRelationEvidence,
+  });
   const base = {
     opportunityKey: deriveOpportunityKey({
       primaryTarget: primary.primaryTarget,
@@ -322,9 +683,9 @@ export function buildOpportunity(input: {
     primaryTarget: primary.primaryTarget,
     targetRef: primary.targetRef,
     evidenceSummary,
-    searchQueries: [],
-    generativeQueries: [],
-    competitorRefs: [],
+    searchQueries: growthRelations.searchQueries,
+    generativeQueries: growthRelations.generativeQueries,
+    competitorRefs: growthRelations.competitorRefs,
     currentOwnedAsset: primary.ownedAsset,
     supportingFindingIds: clusterSupport ? [...clusterSupport.findingIds] : [],
     lenses: [projection.lens],

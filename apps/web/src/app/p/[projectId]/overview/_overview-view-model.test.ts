@@ -13,6 +13,7 @@ import {
   buildPortfolioSummary,
   buildVerifiedResultSummary,
   overviewGrowthMapHref,
+  selectAuthoritativeGrowthMapRead,
   selectTopOpportunityFinding,
   selectTopPortfolioItem,
   selectProjectWorkItemsForFrozenRun,
@@ -23,6 +24,22 @@ const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
 const SITE_ID = "00000000-0000-4000-8000-000000000002";
 const RUN_ID = "00000000-0000-4000-8000-000000000003";
 const SNAPSHOT_ID = "00000000-0000-4000-8000-000000000004";
+
+describe("authoritative Growth Map query data", () => {
+  it("discards retained successful data after a refetch fails", () => {
+    const previouslySuccessful = {
+      diagnosticRunId: RUN_ID,
+      data: [{ sitePageId: SITE_ID }],
+    };
+
+    expect(
+      selectAuthoritativeGrowthMapRead(previouslySuccessful, true),
+    ).toBeUndefined();
+    expect(
+      selectAuthoritativeGrowthMapRead(previouslySuccessful, false),
+    ).toBe(previouslySuccessful);
+  });
+});
 
 function portfolioItem(
   sitePageId: string,
@@ -496,6 +513,15 @@ describe("Overview customer projection", () => {
       ),
     ).toBe(
       `/p/${PROJECT_ID}/growth-map?object=pages&selectedSitePageId=00000000-0000-4000-8000-000000000071`,
+    );
+    expect(
+      overviewGrowthMapHref(
+        PROJECT_ID,
+        "00000000-0000-4000-8000-000000000071",
+        "00000000-0000-4000-8000-000000000072",
+      ),
+    ).toBe(
+      `/p/${PROJECT_ID}/growth-map?object=pages&selectedSitePageId=00000000-0000-4000-8000-000000000071&findingId=00000000-0000-4000-8000-000000000072`,
     );
   });
 });

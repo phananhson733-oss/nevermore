@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
   KeywordOccurrencesRepository,
+  MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL,
   MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
   normalizeKeywordIdentity,
   type CanonicalKeywordOccurrenceInput,
@@ -296,6 +297,93 @@ describe("KeywordOccurrencesRepository", () => {
     expect(compiled.sql).not.toMatch(/volume|rank|current_url|competitor_rank/i);
   });
 
+  it("keeps interview summaries and public user reviews as distinct canonical occurrence kinds", async () => {
+    const db = new FakeExecutor();
+    db.enqueue(
+      {
+        rows: [
+          {
+            occurrence_id: "00000000-0000-4000-8000-000000000013",
+            entity_id: "00000000-0000-4000-8000-000000000011",
+          },
+        ],
+      },
+      {
+        rows: [
+          {
+            occurrence_id: "00000000-0000-4000-8000-000000000014",
+            entity_id: "00000000-0000-4000-8000-000000000011",
+          },
+        ],
+      },
+    );
+    const repo = new KeywordOccurrencesRepository(db as never);
+    const interviewObservationId =
+      "00000000-0000-4000-8000-000000000021";
+    const reviewObservationId =
+      "00000000-0000-4000-8000-000000000022";
+
+    await repo.upsertIntoLibrary(scope, {
+      ...occurrence(),
+      normalizedObservationId: interviewObservationId,
+      sourceKind: "interview_summary",
+      scopeBasis: "user_provided",
+      sourceRef:
+        `observation:${interviewObservationId}#/valueJson/keyword`,
+      providerDataAsOf: "2026-07-20T00:00:00.000Z",
+    });
+    await repo.upsertIntoLibrary(scope, {
+      ...occurrence(),
+      normalizedObservationId: reviewObservationId,
+      sourceKind: "user_review",
+      scopeBasis: "provider_collection_scope",
+      sourceRef:
+        `observation:${reviewObservationId}#/valueJson/keyword`,
+      providerDataAsOf: "2026-07-21T00:00:00.000Z",
+    });
+
+    const executeCalls = db.calls.filter(
+      (call) => call.method === "execute",
+    );
+    expect(executeCalls).toHaveLength(2);
+    const interviewSql = new PgDialect().sqlToQuery(
+      executeCalls[0]?.args[0] as never,
+    );
+    const reviewSql = new PgDialect().sqlToQuery(
+      executeCalls[1]?.args[0] as never,
+    );
+    expect(interviewSql.params).toEqual(
+      expect.arrayContaining(["interview_summary", "user_provided"]),
+    );
+    expect(reviewSql.params).toEqual(
+      expect.arrayContaining([
+        "user_review",
+        "provider_collection_scope",
+      ]),
+    );
+  });
+
+  it("rejects an interview or user-review occurrence that borrows the other source scope", async () => {
+    const db = new FakeExecutor();
+    const repo = new KeywordOccurrencesRepository(db as never);
+
+    await expect(
+      repo.upsertIntoLibrary(scope, {
+        ...occurrence(),
+        sourceKind: "interview_summary",
+        scopeBasis: "provider_collection_scope",
+      } as unknown as KeywordOccurrenceInput),
+    ).rejects.toThrow(/scopeBasis/i);
+    await expect(
+      repo.upsertIntoLibrary(scope, {
+        ...occurrence(),
+        sourceKind: "user_review",
+        scopeBasis: "user_provided",
+      } as unknown as KeywordOccurrenceInput),
+    ).rejects.toThrow(/scopeBasis/i);
+    expect(db.calls).toEqual([]);
+  });
+
   it("returns a bounded project-scoped provenance page with an opaque cursor", async () => {
     const db = new FakeExecutor();
     const rows = [
@@ -328,6 +416,50 @@ describe("KeywordOccurrencesRepository", () => {
     expect(db.last("limit").args).toEqual([2]);
   });
 
+  it("batch-loads bounded occurrence history for many entities in one project-scoped query", async () => {
+    const db = new FakeExecutor();
+    const firstEntityId = "00000000-0000-4000-8000-000000000020";
+    const secondEntityId = "00000000-0000-4000-8000-000000000021";
+    const rows = [
+      {
+        keyword_entity_id: firstEntityId,
+        id: "00000000-0000-4000-8000-000000000030",
+      },
+      {
+        keyword_entity_id: secondEntityId,
+        id: "00000000-0000-4000-8000-000000000031",
+      },
+    ];
+    db.enqueue({ rows });
+    const repo = new KeywordOccurrencesRepository(db as never);
+
+    await expect(
+      repo.listForEntityIds(scope, [secondEntityId, firstEntityId], {
+        limitPerEntity: MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
+        totalLimit: MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL,
+      }),
+    ).resolves.toEqual(rows);
+
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.sql).toMatch(/row_number\(\) over\s*\(\s*partition by/iu);
+    expect(compiled.sql).toContain('"workspace_id" = $');
+    expect(compiled.sql).toContain('"project_id" = $');
+    expect(compiled.sql).toContain('"archived_at" is null');
+    expect(compiled.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        firstEntityId,
+        secondEntityId,
+        MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
+        MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL + 1,
+      ]),
+    );
+    expect(db.calls.filter((call) => call.method === "execute")).toHaveLength(1);
+  });
+
   it("fails closed on invalid cursors and oversized pages before SQL", async () => {
     const db = new FakeExecutor();
     const repo = new KeywordOccurrencesRepository(db as never);
@@ -346,6 +478,29 @@ describe("KeywordOccurrencesRepository", () => {
         { limit: MAX_KEYWORD_OCCURRENCE_PAGE_SIZE + 1, cursor: null },
       ),
     ).rejects.toThrow(/limit/i);
+    await expect(
+      repo.listForEntityIds(
+        scope,
+        [
+          "00000000-0000-4000-8000-000000000020",
+          "00000000-0000-4000-8000-000000000020",
+        ],
+        {
+          limitPerEntity: 1,
+          totalLimit: 2,
+        },
+      ),
+    ).rejects.toThrow(/unique|duplicate/i);
+    await expect(
+      repo.listForEntityIds(
+        scope,
+        ["00000000-0000-4000-8000-000000000020"],
+        {
+          limitPerEntity: MAX_KEYWORD_OCCURRENCE_PAGE_SIZE + 1,
+          totalLimit: 2,
+        },
+      ),
+    ).rejects.toThrow(/limitPerEntity/i);
     expect(db.calls).toEqual([]);
   });
 });

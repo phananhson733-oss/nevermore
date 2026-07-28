@@ -465,7 +465,11 @@ describe("contentGapRule (CONTENT-GAP-011)", () => {
         expect.objectContaining({
           sourceProvider: "system",
           support: "context",
-          subjectRefs: ["keyword_cluster:project-management"],
+          subjectRefs: [
+            "keyword_cluster:project-management",
+            `competitor:${zetaId}`,
+            `competitor:${alphaId}`,
+          ],
           observedAt: GOVERNANCE_LAST_SEEN_AT,
           limitation: expect.stringContaining(
             "no independent timestamp",
@@ -474,6 +478,7 @@ describe("contentGapRule (CONTENT-GAP-011)", () => {
       ]),
     );
     expect(JSON.stringify(candidate.evidence)).not.toContain(positioningOnlyId);
+    expect(JSON.stringify(candidate.evidence)).not.toContain(candidateId);
     expect(
       candidate.evidence.find(
         (evidence) =>

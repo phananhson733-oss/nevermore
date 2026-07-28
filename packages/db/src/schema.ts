@@ -1263,6 +1263,1233 @@ export const flowShadowQaGates = app.table("flow_shadow_qa_gates", {
 });
 
 // ---------------------------------------------------------------------------
+// 45. artifact_approval_events  (append-only exact-revision approval ledger)
+// ---------------------------------------------------------------------------
+export const artifactApprovalEvents = app.table("artifact_approval_events", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  artifact_id: uuid()
+    .notNull()
+    .references(() => executionArtifacts.id),
+  artifact_revision_id: uuid()
+    .notNull()
+    .references(() => artifactRevisions.id),
+  artifact_revision: integer().notNull(),
+  artifact_content_hash: text().notNull(),
+  event_kind: text().notNull(),
+  supersedes_approval_event_id: uuid().references(
+    (): AnyPgColumn => artifactApprovalEvents.id,
+  ),
+  supersedes_approval_event_kind: text(),
+  event_actor_id: uuid().notNull(),
+  reviewer_actor_id: uuid(),
+  qa_gate_version: text().notNull(),
+  qa_gate_snapshot: jsonb().$type<JsonObject>().notNull(),
+  qa_gate_snapshot_hash: text().notNull(),
+  customer_acknowledgement: jsonb().$type<JsonObject>().notNull(),
+  customer_acknowledgement_hash: text().notNull(),
+  reason: text(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 46. delivery_authorization_grants  (scoped encrypted provider authority)
+// ---------------------------------------------------------------------------
+export const deliveryAuthorizationGrants = app.table(
+  "delivery_authorization_grants",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    site_id: uuid()
+      .notNull()
+      .references(() => sites.id),
+    provider_kind: text().notNull(),
+    purpose: text().notNull(),
+    state: text().notNull().default("ready"),
+    destination_ref: uuid(),
+    destination_revision: integer(),
+    target_ref: text(),
+    requested_scope: jsonb().$type<JsonObject>().notNull(),
+    requested_scope_hash: text().notNull(),
+    authorization_snapshot: jsonb().$type<JsonObject>().notNull(),
+    authorization_snapshot_hash: text().notNull(),
+    encrypted_payload: bytea(),
+    cipher_version: smallint(),
+    key_version: text(),
+    secret_metadata: jsonb()
+      .$type<JsonObject>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    expires_at: tz(),
+    consumed_at: tz(),
+    revoked_at: tz(),
+    revoked_by: uuid(),
+    revocation_reason: text(),
+    created_by: uuid().notNull(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 47. publication_destinations  (append-only delivery-connection revisions)
+// ---------------------------------------------------------------------------
+export const publicationDestinations = app.table("publication_destinations", {
+  id: uuid().primaryKey().defaultRandom(),
+  destination_ref: uuid().notNull(),
+  revision: integer().notNull(),
+  supersedes_id: uuid().references(
+    (): AnyPgColumn => publicationDestinations.id,
+  ),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  provider_kind: text().notNull(),
+  target_ref: text().notNull(),
+  state: text().notNull(),
+  authorization_grant_id: uuid()
+    .notNull()
+    .references(() => deliveryAuthorizationGrants.id),
+  provider_scope: jsonb().$type<JsonObject>().notNull(),
+  provider_scope_hash: text().notNull(),
+  authorization_snapshot: jsonb().$type<JsonObject>().notNull(),
+  authorization_snapshot_hash: text().notNull(),
+  readiness_observation: jsonb().$type<JsonObject>().notNull(),
+  limitation: text(),
+  created_by: uuid().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 48. publication_preview_events  (append-only publish/rollback authority)
+// ---------------------------------------------------------------------------
+export const publicationPreviewEvents = app.table(
+  "publication_preview_events",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    preview_ref: text().notNull(),
+    event_kind: text().notNull(),
+    supersedes_preview_event_id: uuid().references(
+      (): AnyPgColumn => publicationPreviewEvents.id,
+    ),
+    supersedes_preview_event_kind: text(),
+    preview_kind: text().notNull(),
+    facts_schema_version: text().notNull(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    site_id: uuid()
+      .notNull()
+      .references(() => sites.id),
+    destination_id: uuid()
+      .notNull()
+      .references(() => publicationDestinations.id),
+    destination_ref: uuid().notNull(),
+    destination_revision: integer().notNull(),
+    provider_kind: text().notNull(),
+    target_ref: text().notNull(),
+    action_id: uuid()
+      .notNull()
+      .references(() => actions.id),
+    artifact_id: uuid()
+      .notNull()
+      .references(() => executionArtifacts.id),
+    artifact_revision_id: uuid()
+      .notNull()
+      .references(() => artifactRevisions.id),
+    artifact_revision: integer().notNull(),
+    artifact_content_hash: text().notNull(),
+    artifact_approval_event_id: uuid()
+      .notNull()
+      .references(() => artifactApprovalEvents.id),
+    artifact_approval_event_kind: text().notNull(),
+    source_publication_attempt_id: uuid().references(
+      (): AnyPgColumn => publicationAttempts.id,
+    ),
+    source_change_receipt_id: uuid().references(
+      (): AnyPgColumn => publicationReceipts.id,
+    ),
+    provider_plan: jsonb().$type<JsonObject>().notNull(),
+    remote_precondition: jsonb().$type<JsonObject>().notNull(),
+    rollback_plan: jsonb().$type<JsonObject>().notNull(),
+    preview_checksum: text().notNull(),
+    content_checksum: text().notNull(),
+    facts_hash: text().notNull(),
+    expires_at: tz().notNull(),
+    event_actor_id: uuid().notNull(),
+    idempotency_key: text().notNull(),
+    request_hash: text().notNull(),
+    reason: text(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 49. publication_attempts  (append-only external-write reservation ledger)
+// ---------------------------------------------------------------------------
+export const publicationAttempts = app.table("publication_attempts", {
+  id: uuid().primaryKey().defaultRandom(),
+  attempt_kind: text().notNull(),
+  source_publication_attempt_id: uuid().references(
+    (): AnyPgColumn => publicationAttempts.id,
+  ),
+  source_change_receipt_id: uuid().references(
+    (): AnyPgColumn => publicationReceipts.id,
+  ),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  async_run_id: uuid()
+    .notNull()
+    .references(() => asyncRuns.id),
+  destination_id: uuid()
+    .notNull()
+    .references(() => publicationDestinations.id),
+  destination_ref: uuid().notNull(),
+  destination_revision: integer().notNull(),
+  provider_kind: text().notNull(),
+  target_ref: text().notNull(),
+  action_id: uuid()
+    .notNull()
+    .references(() => actions.id),
+  artifact_id: uuid()
+    .notNull()
+    .references(() => executionArtifacts.id),
+  artifact_revision_id: uuid()
+    .notNull()
+    .references(() => artifactRevisions.id),
+  approved_artifact_revision: integer().notNull(),
+  approved_artifact_content_hash: text().notNull(),
+  publication_approval_event_id: uuid().references(
+    () => artifactApprovalEvents.id,
+  ),
+  publication_approval_event_kind: text(),
+  source_approval_event_id: uuid().references(
+    () => artifactApprovalEvents.id,
+  ),
+  source_approval_event_kind: text(),
+  side_effect_class: text().notNull(),
+  authorization_grant_id: uuid()
+    .notNull()
+    .references(() => deliveryAuthorizationGrants.id),
+  authorization_purpose: text().notNull(),
+  authorization_snapshot: jsonb().$type<JsonObject>().notNull(),
+  authorization_snapshot_hash: text().notNull(),
+  preview_event_id: uuid()
+    .notNull()
+    .references(() => publicationPreviewEvents.id),
+  preview_event_kind: text().notNull(),
+  preview_facts_hash: text().notNull(),
+  preview_ref: text().notNull(),
+  preview_checksum: text().notNull(),
+  content_checksum: text().notNull(),
+  remote_precondition: jsonb().$type<JsonObject>().notNull(),
+  rollback_plan: jsonb().$type<JsonObject>().notNull(),
+  idempotency_key: text().notNull(),
+  request_hash: text().notNull(),
+  requested_by: uuid().notNull(),
+  requested_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 50. publication_receipts  (append-only provider/live verification facts)
+// ---------------------------------------------------------------------------
+export const publicationReceipts = app.table("publication_receipts", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  publication_attempt_id: uuid()
+    .notNull()
+    .references(() => publicationAttempts.id),
+  receipt_kind: text().notNull(),
+  predecessor_delivery_receipt_id: uuid().references(
+    (): AnyPgColumn => publicationReceipts.id,
+  ),
+  provider_kind: text().notNull(),
+  provider_request_id: text(),
+  remote_scope_ref: text().notNull(),
+  remote_object_kind: text().notNull(),
+  remote_object_id: text().notNull(),
+  remote_revision: text().notNull(),
+  delivery_url: text(),
+  live_canonical_url: text(),
+  artifact_content_hash: text().notNull(),
+  content_checksum: text().notNull(),
+  verification_state: text().notNull(),
+  remote_facts: jsonb().$type<JsonObject>().notNull(),
+  evidence_refs: jsonb().$type<JsonArray>().notNull(),
+  limitation: text(),
+  observed_at: tz().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 51. measurement_windows  (append-only Change Receipt outcome anchors)
+// ---------------------------------------------------------------------------
+export const measurementWindows = app.table("measurement_windows", {
+  id: uuid().primaryKey(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  async_run_id: uuid()
+    .notNull()
+    .references(() => asyncRuns.id),
+  target_kind: text().notNull(),
+  target_ref: text().notNull(),
+  site_page_id: uuid()
+    .notNull()
+    .references(() => sitePages.id),
+  action_id: uuid()
+    .notNull()
+    .references(() => actions.id),
+  artifact_id: uuid()
+    .notNull()
+    .references(() => executionArtifacts.id),
+  artifact_revision_id: uuid()
+    .notNull()
+    .references(() => artifactRevisions.id),
+  artifact_revision: integer().notNull(),
+  artifact_content_hash: text().notNull(),
+  content_checksum: text().notNull(),
+  publication_attempt_id: uuid()
+    .notNull()
+    .references(() => publicationAttempts.id),
+  verified_change_receipt_id: uuid()
+    .notNull()
+    .references(() => publicationReceipts.id),
+  timeline_delivery_receipt_id: uuid().references(
+    () => publicationReceipts.id,
+  ),
+  before_start_at: tz().notNull(),
+  before_end_at: tz().notNull(),
+  after_start_at: tz().notNull(),
+  after_end_at: tz().notNull(),
+  timezone: text().notNull(),
+  url: text().notNull(),
+  canonical_url: text().notNull(),
+  interpretation: text().notNull(),
+  state: text().notNull(),
+  technical_verification_ref: uuid(),
+  limitation: text(),
+  result_hash: text().notNull(),
+  recorded_at: tz().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 52. measurement_gsc_dimensions  (canonical GSC before/after projection)
+// ---------------------------------------------------------------------------
+export const measurementGscDimensions = app.table(
+  "measurement_gsc_dimensions",
+  {
+    measurement_window_id: uuid()
+      .primaryKey()
+      .references(() => measurementWindows.id),
+    workspace_id: uuid().notNull(),
+    project_id: uuid().notNull(),
+    state: text().notNull(),
+    baseline_source_ref: uuid(),
+    baseline_snapshot_id: uuid()
+      .references(() => dataSnapshots.id),
+    baseline_observation_id: uuid()
+      .references(() => normalizedObservations.id),
+    baseline_covered_window: jsonb().$type<JsonObject>(),
+    baseline_observed_at: tz(),
+    baseline_freshness: text(),
+    outcome_source_ref: uuid(),
+    outcome_snapshot_id: uuid()
+      .references(() => dataSnapshots.id),
+    outcome_observation_id: uuid()
+      .references(() => normalizedObservations.id),
+    outcome_covered_window: jsonb().$type<JsonObject>(),
+    outcome_observed_at: tz(),
+    outcome_freshness: text(),
+    sample_baseline: bigint({ mode: "number" }),
+    sample_outcome: bigint({ mode: "number" }),
+    sample_unit: text().notNull(),
+    coverage: text().notNull(),
+    limitation: text(),
+    clicks_baseline: bigint({ mode: "number" }),
+    clicks_outcome: bigint({ mode: "number" }),
+    impressions_baseline: bigint({ mode: "number" }),
+    impressions_outcome: bigint({ mode: "number" }),
+    ctr_baseline: numeric({ mode: "number" }),
+    ctr_outcome: numeric({ mode: "number" }),
+    average_position_baseline: numeric({ mode: "number" }),
+    average_position_outcome: numeric({ mode: "number" }),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 53. measurement_ga4_dimensions  (canonical GA4 before/after projection)
+// ---------------------------------------------------------------------------
+export const measurementGa4Dimensions = app.table(
+  "measurement_ga4_dimensions",
+  {
+    measurement_window_id: uuid()
+      .primaryKey()
+      .references(() => measurementWindows.id),
+    workspace_id: uuid().notNull(),
+    project_id: uuid().notNull(),
+    state: text().notNull(),
+    baseline_source_ref: uuid(),
+    baseline_snapshot_id: uuid()
+      .references(() => dataSnapshots.id),
+    baseline_observation_id: uuid()
+      .references(() => normalizedObservations.id),
+    baseline_covered_window: jsonb().$type<JsonObject>(),
+    baseline_observed_at: tz(),
+    baseline_freshness: text(),
+    outcome_source_ref: uuid(),
+    outcome_snapshot_id: uuid()
+      .references(() => dataSnapshots.id),
+    outcome_observation_id: uuid()
+      .references(() => normalizedObservations.id),
+    outcome_covered_window: jsonb().$type<JsonObject>(),
+    outcome_observed_at: tz(),
+    outcome_freshness: text(),
+    sample_baseline: bigint({ mode: "number" }),
+    sample_outcome: bigint({ mode: "number" }),
+    sample_unit: text().notNull(),
+    coverage: text().notNull(),
+    limitation: text(),
+    direct_conversion_definition_id: uuid(),
+    direct_event_names: text().array(),
+    direct_counting_method: text(),
+    direct_attribution_boundary: text(),
+    direct_lookback_window_days: integer(),
+    assisted_conversion_definition_id: uuid(),
+    assisted_event_names: text().array(),
+    assisted_counting_method: text(),
+    assisted_attribution_boundary: text(),
+    assisted_lookback_window_days: integer(),
+    sessions_baseline: bigint({ mode: "number" }),
+    sessions_outcome: bigint({ mode: "number" }),
+    engaged_sessions_baseline: bigint({ mode: "number" }),
+    engaged_sessions_outcome: bigint({ mode: "number" }),
+    direct_conversions_baseline: bigint({ mode: "number" }),
+    direct_conversions_outcome: bigint({ mode: "number" }),
+    assisted_conversions_baseline: bigint({ mode: "number" }),
+    assisted_conversions_outcome: bigint({ mode: "number" }),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 54. measurement_geo_dimensions  (governed GEO before/after projection)
+// ---------------------------------------------------------------------------
+export const measurementGeoDimensions = app.table(
+  "measurement_geo_dimensions",
+  {
+    measurement_window_id: uuid()
+      .primaryKey()
+      .references(() => measurementWindows.id),
+    workspace_id: uuid().notNull(),
+    project_id: uuid().notNull(),
+    state: text().notNull(),
+    baseline_source_ref: uuid(),
+    baseline_snapshot_id: uuid()
+      .references(() => dataSnapshots.id),
+    baseline_observation_id: uuid()
+      .references(() => normalizedObservations.id),
+    baseline_covered_window: jsonb().$type<JsonObject>(),
+    baseline_observed_at: tz(),
+    baseline_freshness: text(),
+    outcome_source_ref: uuid(),
+    outcome_snapshot_id: uuid()
+      .references(() => dataSnapshots.id),
+    outcome_observation_id: uuid()
+      .references(() => normalizedObservations.id),
+    outcome_covered_window: jsonb().$type<JsonObject>(),
+    outcome_observed_at: tz(),
+    outcome_freshness: text(),
+    sample_baseline: bigint({ mode: "number" }),
+    sample_outcome: bigint({ mode: "number" }),
+    sample_unit: text().notNull(),
+    coverage: text().notNull(),
+    limitation: text(),
+    tracked_queries_baseline: bigint({ mode: "number" }),
+    tracked_queries_outcome: bigint({ mode: "number" }),
+    cited_queries_baseline: bigint({ mode: "number" }),
+    cited_queries_outcome: bigint({ mode: "number" }),
+    citations_baseline: bigint({ mode: "number" }),
+    citations_outcome: bigint({ mode: "number" }),
+    citation_rate_baseline: numeric({ mode: "number" }),
+    citation_rate_outcome: numeric({ mode: "number" }),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 55. measurement_utm_identities  (stable exact UTM tuple)
+// ---------------------------------------------------------------------------
+export const measurementUtmIdentities = app.table(
+  "measurement_utm_identities",
+  {
+    id: uuid().primaryKey(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    source: text().notNull(),
+    medium: text().notNull(),
+    campaign: text().notNull(),
+    content: text().notNull(),
+    identity_hash: text().notNull(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 56. measurement_ga4_campaigns  (optional UTM rows for one GA4 dimension)
+// ---------------------------------------------------------------------------
+export const measurementGa4Campaigns = app.table(
+  "measurement_ga4_campaigns",
+  {
+    measurement_window_id: uuid()
+      .notNull()
+      .references(() => measurementWindows.id),
+    utm_identity_id: uuid()
+      .notNull()
+      .references(() => measurementUtmIdentities.id),
+    workspace_id: uuid().notNull(),
+    project_id: uuid().notNull(),
+    sessions_baseline: bigint({ mode: "number" }),
+    sessions_outcome: bigint({ mode: "number" }),
+    direct_conversions_baseline: bigint({ mode: "number" }),
+    direct_conversions_outcome: bigint({ mode: "number" }),
+    assisted_conversions_baseline: bigint({ mode: "number" }),
+    assisted_conversions_outcome: bigint({ mode: "number" }),
+    created_at: tz().notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.measurement_window_id, t.utm_identity_id],
+    }),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// 57. topic_model_revisions  (draft/confirmed Topic topology revisions)
+// ---------------------------------------------------------------------------
+export const topicModelRevisions = app.table("topic_model_revisions", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  revision: integer().notNull(),
+  edit_revision: integer().notNull().default(0),
+  status: text().notNull(),
+  // The SQL authority uses a deferred same-model composite FK because a model
+  // and its root node are inserted together. Keep the query model nullable and
+  // let the migration enforce the stronger cross-row invariant.
+  root_topic_node_id: uuid(),
+  generation_basis: jsonb()
+    .$type<JsonObject>()
+    .notNull()
+    .default(sql`'{}'::jsonb`),
+  evidence_refs: jsonb()
+    .$type<JsonArray>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  content_hash: text(),
+  created_by: uuid().notNull(),
+  created_at: tz().notNull().defaultNow(),
+  updated_at: tz().notNull().defaultNow(),
+  confirmed_by: uuid(),
+  confirmed_at: tz(),
+});
+
+// ---------------------------------------------------------------------------
+// 58. topic_node_identities  (stable Topic ids across model revisions)
+// ---------------------------------------------------------------------------
+export const topicNodeIdentities = app.table("topic_node_identities", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  created_in_revision: integer().notNull(),
+  initial_cluster_key: text().notNull(),
+  created_by: uuid().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 59. topic_node_revisions  (labels/hierarchy/intent in one Topic model)
+// ---------------------------------------------------------------------------
+export const topicNodeRevisions = app.table("topic_node_revisions", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  topic_node_id: uuid()
+    .notNull()
+    .references(() => topicNodeIdentities.id),
+  topic_model_revision: integer().notNull(),
+  parent_topic_node_id: uuid().references(() => topicNodeIdentities.id),
+  label: text().notNull(),
+  description: text(),
+  intent_envelope: jsonb()
+    .$type<JsonArray>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  lifecycle_state: text().notNull().default("active"),
+  created_by: uuid().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 60. topic_cluster_aliases  (inclusive historical cluster resolution)
+// ---------------------------------------------------------------------------
+export const topicClusterAliases = app.table("topic_cluster_aliases", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  topic_node_id: uuid()
+    .notNull()
+    .references(() => topicNodeIdentities.id),
+  legacy_cluster_key: text().notNull(),
+  valid_from_revision: integer().notNull(),
+  valid_to_revision: integer(),
+  alias_kind: text().notNull(),
+  is_current: boolean().notNull(),
+  created_by: uuid(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 61. topic_node_successors  (append-only split/merge navigation edges)
+// ---------------------------------------------------------------------------
+export const topicNodeSuccessors = app.table("topic_node_successors", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  predecessor_topic_node_id: uuid()
+    .notNull()
+    .references(() => topicNodeIdentities.id),
+  successor_topic_node_id: uuid()
+    .notNull()
+    .references(() => topicNodeIdentities.id),
+  topic_model_revision: integer().notNull(),
+  successor_kind: text().notNull(),
+  created_by: uuid().notNull(),
+  reason: text().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 62. keyword_review_decisions  (append-only Topic-aware review authority)
+// ---------------------------------------------------------------------------
+export const keywordReviewDecisions = app.table("keyword_review_decisions", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  keyword_entity_id: uuid()
+    .notNull()
+    .references(() => keywordEntities.id),
+  governance_revision: integer().notNull(),
+  decision_origin: text().notNull(),
+  status: text().notNull(),
+  intent: text(),
+  buyer_stage: text(),
+  topic_node_id: uuid().references(() => topicNodeIdentities.id),
+  topic_model_revision: integer(),
+  cluster_key_at_decision: text(),
+  mapping_decision: text().notNull(),
+  mapped_site_page_id: uuid().references(() => sitePages.id),
+  review_state: text().notNull(),
+  assignment_invalidated_by: text(),
+  decided_by: uuid(),
+  reason: text().notNull(),
+  decided_at: tz().notNull(),
+  reviewed_projection: jsonb().$type<JsonObject>().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 63. keyword_relation_identities  (stable unordered Keyword pair)
+// ---------------------------------------------------------------------------
+export const keywordRelationIdentities = app.table(
+  "keyword_relation_identities",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    keyword_a_id: uuid()
+      .notNull()
+      .references(() => keywordEntities.id),
+    keyword_b_id: uuid()
+      .notNull()
+      .references(() => keywordEntities.id),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 64. keyword_relation_candidates  (append-only duplicate evidence)
+// ---------------------------------------------------------------------------
+export const keywordRelationCandidates = app.table(
+  "keyword_relation_candidates",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    relation_id: uuid()
+      .notNull()
+      .references(() => keywordRelationIdentities.id),
+    candidate_revision: integer().notNull().default(1),
+    rule_version: text().notNull(),
+    keyword_a_id: uuid()
+      .notNull()
+      .references(() => keywordEntities.id),
+    keyword_a_display_keyword: text().notNull(),
+    keyword_a_normalized_keyword: text().notNull(),
+    keyword_a_governance_revision: integer().notNull(),
+    keyword_a_topic_node_id: uuid().references(
+      () => topicNodeIdentities.id,
+    ),
+    keyword_a_topic_model_revision: integer(),
+    keyword_b_id: uuid()
+      .notNull()
+      .references(() => keywordEntities.id),
+    keyword_b_display_keyword: text().notNull(),
+    keyword_b_normalized_keyword: text().notNull(),
+    keyword_b_governance_revision: integer().notNull(),
+    keyword_b_topic_node_id: uuid().references(
+      () => topicNodeIdentities.id,
+    ),
+    keyword_b_topic_model_revision: integer(),
+    mapped_site_page_id: uuid()
+      .notNull()
+      .references(() => sitePages.id),
+    normalized_intent: text().notNull(),
+    market: text().notNull(),
+    language_tag: text().notNull(),
+    same_confirmed_topic: boolean().notNull(),
+    lexical_token_overlap: numeric({
+      precision: 6,
+      scale: 5,
+      mode: "number",
+    }).notNull(),
+    serp_overlap_availability: text().notNull(),
+    serp_overlap: numeric({
+      precision: 6,
+      scale: 5,
+      mode: "number",
+    }),
+    serp_overlap_limitation: text(),
+    evidence_hash: text()
+      .notNull()
+      .default(sql`repeat('0', 64)`),
+    generated_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 65. keyword_relation_decisions  (append-only fold/review decisions)
+// ---------------------------------------------------------------------------
+export const keywordRelationDecisions = app.table(
+  "keyword_relation_decisions",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    relation_id: uuid()
+      .notNull()
+      .references(() => keywordRelationIdentities.id),
+    candidate_id: uuid()
+      .notNull()
+      .references(() => keywordRelationCandidates.id),
+    relation_revision: integer().notNull(),
+    decision_kind: text().notNull(),
+    primary_keyword_id: uuid().references(() => keywordEntities.id),
+    supporting_keyword_id: uuid().references(
+      () => keywordEntities.id,
+    ),
+    reason: text().notNull(),
+    decided_by: uuid().notNull(),
+    decided_at: tz().notNull(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 66. action_execution_step_definitions  (append-only progress authority)
+// ---------------------------------------------------------------------------
+export const actionExecutionStepDefinitions = app.table(
+  "action_execution_step_definitions",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    action_id: uuid()
+      .notNull()
+      .references(() => actions.id),
+    artifact_id: uuid().references(() => executionArtifacts.id),
+    definition_key: text().notNull(),
+    definition_version: integer().notNull(),
+    steps: jsonb()
+      .$type<Array<{ key: string; label: string }>>()
+      .notNull(),
+    step_count: integer().notNull(),
+    definition_hash: text().notNull(),
+    idempotency_key: text().notNull(),
+    request_hash: text().notNull(),
+    created_by: uuid().notNull(),
+    created_at: tz().notNull(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 67. action_execution_state_events  (append-only Action/Artifact state)
+// ---------------------------------------------------------------------------
+export const actionExecutionStateEvents = app.table(
+  "action_execution_state_events",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    action_id: uuid()
+      .notNull()
+      .references(() => actions.id),
+    artifact_id: uuid().references(() => executionArtifacts.id),
+    revision: integer().notNull(),
+    expected_revision: integer().notNull(),
+    state: text().notNull(),
+    transition_kind: text().notNull(),
+    phase: text().notNull(),
+    next_step: text(),
+    blocker_code: text(),
+    blocker_summary: text(),
+    unlock_condition: text(),
+    blocker_owner_id: uuid(),
+    blocker_source_kind: text(),
+    blocker_source_ref: text(),
+    blocker_observed_at: tz(),
+    blocker_freshness: text(),
+    step_definition_id: uuid().references(
+      () => actionExecutionStepDefinitions.id,
+    ),
+    step_definition_version: integer(),
+    completed_steps: integer(),
+    total_steps: integer(),
+    idempotency_key: text().notNull(),
+    request_hash: text().notNull(),
+    actor_id: uuid().notNull(),
+    occurred_at: tz().notNull(),
+    created_at: tz().notNull(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 68. competitor_monitor_settings  (Growth Map competitor-library cadence)
+// ---------------------------------------------------------------------------
+export const competitorMonitorSettings = app.table(
+  "competitor_monitor_settings",
+  {
+    project_id: uuid()
+      .primaryKey()
+      .references(() => clientProjects.id),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    enabled: boolean().notNull(),
+    frequency: text().notNull(),
+    revision: integer().notNull(),
+    updated_by: uuid().notNull(),
+    created_at: tz().notNull().defaultNow(),
+    updated_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 69. competitor_monitor_runs  (typed DataForSEO CollectionRun lineage)
+// ---------------------------------------------------------------------------
+export const competitorMonitorRuns = app.table(
+  "competitor_monitor_runs",
+  {
+    id: uuid()
+      .primaryKey()
+      .references(() => collectionRuns.id),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    competitor_id: uuid()
+      .notNull()
+      .references(() => competitorEntities.id),
+    analysis_scopes: text().array().notNull(),
+    settings_revision: integer().notNull(),
+    topic_model_revision: integer().notNull(),
+    target_domain: text().notNull(),
+    market: text().notNull(),
+    language_tag: text().notNull(),
+    scheduled_for: tz().notNull(),
+    previous_monitor_run_id: uuid().references(
+      (): AnyPgColumn => competitorMonitorRuns.id,
+    ),
+    previous_snapshot_id: uuid().references(() => dataSnapshots.id),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 70. competitor_monitor_evaluations  (one immutable evaluation per run)
+// ---------------------------------------------------------------------------
+export const competitorMonitorEvaluations = app.table(
+  "competitor_monitor_evaluations",
+  {
+    monitor_run_id: uuid()
+      .primaryKey()
+      .references(() => competitorMonitorRuns.id),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    competitor_id: uuid()
+      .notNull()
+      .references(() => competitorEntities.id),
+    evaluation_state: text().notNull(),
+    result_snapshot_id: uuid()
+      .notNull()
+      .references(() => dataSnapshots.id),
+    previous_snapshot_id: uuid().references(() => dataSnapshots.id),
+    limitation: text(),
+    evaluated_at: tz().notNull(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 71. competitor_monitor_signals  (Growth Map evidence/opportunity basis)
+// ---------------------------------------------------------------------------
+export const competitorMonitorSignals = app.table(
+  "competitor_monitor_signals",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    competitor_id: uuid()
+      .notNull()
+      .references(() => competitorEntities.id),
+    monitor_run_id: uuid()
+      .notNull()
+      .references(() => competitorMonitorEvaluations.monitor_run_id),
+    signal_kind: text().notNull(),
+    topic_node_id: uuid()
+      .notNull()
+      .references(() => topicNodeIdentities.id),
+    topic_model_revision: integer().notNull(),
+    keyword_entity_id: uuid().references(() => keywordEntities.id),
+    content_url: text(),
+    matched_keyword_ids: uuid().array(),
+    overlap_ratio: numeric({ mode: "number" }),
+    publication_evidence: text(),
+    previous_rank: numeric({ mode: "number" }),
+    current_rank: numeric({ mode: "number" }),
+    improvement: numeric({ mode: "number" }),
+    previous_snapshot_id: uuid()
+      .notNull()
+      .references(() => dataSnapshots.id),
+    current_snapshot_id: uuid()
+      .notNull()
+      .references(() => dataSnapshots.id),
+    limitation: text(),
+    detected_at: tz().notNull(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 72. geo_query_observations  (immutable per-query GEO answer evidence)
+// ---------------------------------------------------------------------------
+export const geoQueryObservations = app.table(
+  "geo_query_observations",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    site_id: uuid()
+      .notNull()
+      .references(() => sites.id),
+    snapshot_id: uuid()
+      .notNull()
+      .references(() => dataSnapshots.id),
+    normalized_observation_id: uuid()
+      .notNull()
+      .references(() => normalizedObservations.id),
+    site_page_id: uuid()
+      .notNull()
+      .references(() => sitePages.id),
+    canonical_url: text().notNull(),
+    market_code: text().notNull(),
+    language_tag: text().notNull(),
+    query_text: text().notNull(),
+    query_hash: text().notNull(),
+    platform_kind: text().notNull(),
+    platform_key: text().notNull(),
+    model: text().notNull(),
+    collector_kind: text().notNull(),
+    collector_provider_key: text().notNull(),
+    collector_version: text().notNull(),
+    collected_at: tz().notNull(),
+    citation_state: text().notNull(),
+    answer_evidence_excerpt: text(),
+    answer_content_hash: text(),
+    answer_selector: text(),
+    evidence_statements: jsonb()
+      .$type<JsonArray>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    limitation: text(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 73. geo_citation_occurrences  (direct citation and cited-paragraph facts)
+// ---------------------------------------------------------------------------
+export const geoCitationOccurrences = app.table(
+  "geo_citation_occurrences",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    site_id: uuid()
+      .notNull()
+      .references(() => sites.id),
+    snapshot_id: uuid()
+      .notNull()
+      .references(() => dataSnapshots.id),
+    normalized_observation_id: uuid()
+      .notNull()
+      .references(() => normalizedObservations.id),
+    query_observation_id: uuid()
+      .notNull()
+      .references(() => geoQueryObservations.id),
+    site_page_id: uuid()
+      .notNull()
+      .references(() => sitePages.id),
+    canonical_url: text().notNull(),
+    citation_url: text().notNull(),
+    citation_ordinal: integer().notNull(),
+    answer_evidence_excerpt: text().notNull(),
+    cited_page_excerpt: text().notNull(),
+    cited_page_content_hash: text().notNull(),
+    cited_paragraph_hash: text().notNull(),
+    cited_paragraph_selector: text().notNull(),
+    cited_paragraph_index: integer(),
+    evidence_classification: text().notNull(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 74. backlink_authority_snapshots  (immutable Growth Map source authority)
+// ---------------------------------------------------------------------------
+export const backlinkAuthoritySnapshots = app.table(
+  "backlink_authority_snapshots",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    site_id: uuid()
+      .notNull()
+      .references(() => sites.id),
+    competitor_id: uuid().references(() => competitorEntities.id),
+    subject_kind: text().notNull(),
+    source_kind: text().notNull(),
+    provider: text().notNull(),
+    captured_at: tz().notNull(),
+    availability: text().notNull(),
+    index_scope: text().notNull(),
+    total_backlinks: bigint({ mode: "number" }),
+    total_referring_domains: bigint({ mode: "number" }),
+    observed_backlinks: bigint({ mode: "number" }),
+    observed_referring_domains: bigint({ mode: "number" }),
+    authority_metric_kind: text(),
+    authority_metric_value: numeric({
+      precision: 6,
+      scale: 2,
+      mode: "number",
+    }),
+    source_ref: text().notNull(),
+    checksum: text().notNull(),
+    row_count: bigint({ mode: "number" }).notNull(),
+    import_preview_id: uuid().references(() => importPreviews.id),
+    limitation: text(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 75. backlink_facts  (immutable source URL -> target URL observations)
+// ---------------------------------------------------------------------------
+export const backlinkFacts = app.table("backlink_facts", {
+  id: uuid().primaryKey().defaultRandom(),
+  snapshot_id: uuid()
+    .notNull()
+    .references(() => backlinkAuthoritySnapshots.id),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  referring_domain: text().notNull(),
+  source_url: text().notNull(),
+  target_url: text().notNull(),
+  target_site_page_id: uuid().references(() => sitePages.id),
+  source_authority_metric_kind: text(),
+  source_authority_metric_value: numeric({
+    precision: 6,
+    scale: 2,
+    mode: "number",
+  }),
+  link_kind: text().notNull().default("unknown"),
+  source_ref: text().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 76. backlink_page_metrics  (exact persisted page-level source counts)
+// ---------------------------------------------------------------------------
+export const backlinkPageMetrics = app.table(
+  "backlink_page_metrics",
+  {
+    snapshot_id: uuid()
+      .notNull()
+      .references(() => backlinkAuthoritySnapshots.id),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    site_id: uuid()
+      .notNull()
+      .references(() => sites.id),
+    site_page_id: uuid()
+      .notNull()
+      .references(() => sitePages.id),
+    title: text(),
+    backlink_count: bigint({ mode: "number" }).notNull(),
+    referring_domain_count: bigint({ mode: "number" }).notNull(),
+    metric_semantics: text().notNull(),
+    created_at: tz().notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.snapshot_id, table.site_page_id],
+    }),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Aggregate schema (consumed by drizzle(pool, { schema })).
 // ---------------------------------------------------------------------------
 export const schema = {
@@ -1310,4 +2537,36 @@ export const schema = {
   flowShadowRuns,
   flowShadowResearchPacks,
   flowShadowQaGates,
+  artifactApprovalEvents,
+  deliveryAuthorizationGrants,
+  publicationDestinations,
+  publicationPreviewEvents,
+  publicationAttempts,
+  publicationReceipts,
+  measurementWindows,
+  measurementGscDimensions,
+  measurementGa4Dimensions,
+  measurementGeoDimensions,
+  measurementUtmIdentities,
+  measurementGa4Campaigns,
+  topicModelRevisions,
+  topicNodeIdentities,
+  topicNodeRevisions,
+  topicClusterAliases,
+  topicNodeSuccessors,
+  keywordReviewDecisions,
+  keywordRelationIdentities,
+  keywordRelationCandidates,
+  keywordRelationDecisions,
+  actionExecutionStepDefinitions,
+  actionExecutionStateEvents,
+  competitorMonitorSettings,
+  competitorMonitorRuns,
+  competitorMonitorEvaluations,
+  competitorMonitorSignals,
+  geoQueryObservations,
+  geoCitationOccurrences,
+  backlinkAuthoritySnapshots,
+  backlinkFacts,
+  backlinkPageMetrics,
 } as const;

@@ -25,7 +25,9 @@ export type QueueName =
   | "profile.synthesize"
   | "artifact.generate"
   | "export.bundle"
-  | "content-shadow";
+  | "content-shadow"
+  | "publication"
+  | "measurement";
 
 interface QueueConfig {
   /** Job execution timeout (spec §13.1). */
@@ -103,6 +105,21 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
     retryBackoff: true,
     heartbeatSeconds: 60,
   },
+  // Publication can cross the external-write boundary. An unknown provider
+  // result must reconcile by permanent attempt/idempotency lineage; pg-boss
+  // must never blindly replay the write.
+  publication: {
+    expireInSeconds: 600,
+    retryLimit: 0,
+    retryBackoff: false,
+    heartbeatSeconds: 60,
+  },
+  measurement: {
+    expireInSeconds: 600,
+    retryLimit: 3,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
 };
 
 export const QUEUE_NAMES = Object.keys(QUEUE_CONFIG) as QueueName[];
@@ -117,6 +134,11 @@ export interface RunJobPayload {
   readonly projectId: string;
   readonly contractVersion: string;
   [key: string]: unknown;
+}
+
+export interface EnqueueRunOptions {
+  /** Absolute provider-settlement time; relative strings/numbers are forbidden. */
+  readonly startAfter?: Date;
 }
 
 export interface BossOptions {
@@ -184,9 +206,18 @@ export async function enqueueRunInTx(
   tx: DbTx,
   queue: QueueName,
   payload: RunJobPayload,
+  options: EnqueueRunOptions = {},
 ): Promise<string> {
+  if (
+    options.startAfter !== undefined &&
+    (!(options.startAfter instanceof Date) ||
+      !Number.isFinite(options.startAfter.getTime()))
+  ) {
+    throw new TypeError("startAfter must be a valid absolute Date");
+  }
   const jobId = await boss.send(queue, payload, {
     id: payload.runId,
+    ...(options.startAfter ? { startAfter: options.startAfter } : {}),
     db: fromDrizzle(tx, sql),
   });
   // pg-boss reports an id/singleton conflict as null. Treat that as an enqueue

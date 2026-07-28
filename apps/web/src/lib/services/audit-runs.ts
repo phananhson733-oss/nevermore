@@ -28,6 +28,7 @@ import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
 import { buildDiagnosticFrozenInput } from "./diagnostics";
+import { freezeDiagnosticGovernance } from "./diagnostic-governance";
 import { isPostgresUniqueViolation } from "./db-errors";
 import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
 
@@ -304,6 +305,7 @@ export async function createGrowthAuditRun(
         currentProject,
         body,
       );
+      const governance = await freezeDiagnosticGovernance(tx, projectScope);
 
       const frozen = buildDiagnosticFrozenInput({
         projectId,
@@ -311,6 +313,7 @@ export async function createGrowthAuditRun(
         icp: inputs.icp,
         snapshots: [inputs.crawlSnapshot],
         deliveryLocale: body.outputLocale,
+        governance,
       });
       const capabilityManifestHash = contentHash({
         capabilityId: CAPABILITY_ID,
@@ -399,7 +402,7 @@ export async function createGrowthAuditRun(
         location: statusUrl,
         replayed: false,
       };
-    });
+    }, { isolationLevel: "repeatable read" });
   } catch (error) {
     if (isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")) {
       const winnerKey = await idem.find(

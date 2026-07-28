@@ -11,6 +11,7 @@ import type {
   GrowthMapCompetitorDetailResponse as GrowthMapCompetitorDetailResponseZod,
   GrowthMapCompetitorLibraryResponse as GrowthMapCompetitorLibraryResponseZod,
 } from "./zod/growth-map.ts";
+import type { ReviewCompetitorRequest as ReviewCompetitorRequestZod } from "./zod/keyword-governance.ts";
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends
@@ -26,6 +27,8 @@ type RequiredKeys<Value> = {
 
 type CompetitorListOperation = operations["listProjectAuditCompetitors"];
 type CompetitorDetailOperation = operations["getProjectAuditCompetitor"];
+type CompetitorReviewOperation =
+  operations["reviewProjectAuditCompetitor"];
 type CompetitorListQuery = NonNullable<
   CompetitorListOperation["parameters"]["query"]
 >;
@@ -33,6 +36,8 @@ type CompetitorListHttpResponse =
   CompetitorListOperation["responses"][200]["content"]["application/json"];
 type CompetitorDetailHttpResponse =
   CompetitorDetailOperation["responses"][200]["content"]["application/json"];
+type CompetitorReviewRequest =
+  CompetitorReviewOperation["requestBody"]["content"]["application/json"];
 type CompetitorPage =
   components["schemas"]["GrowthMapCompetitorLibraryResponse"];
 type CompetitorPageMeta =
@@ -220,11 +225,10 @@ type _ListIsReadOnly = Expect<
     undefined
   >
 >;
-type _DetailIsReadOnly = Expect<
+type _DetailHasNoOtherMutation = Expect<
   Equal<
     | CompetitorDetailPath["post"]
     | CompetitorDetailPath["put"]
-    | CompetitorDetailPath["patch"]
     | CompetitorDetailPath["delete"]
     | CompetitorDetailPath["head"]
     | CompetitorDetailPath["options"]
@@ -232,14 +236,24 @@ type _DetailIsReadOnly = Expect<
     undefined
   >
 >;
+type _DetailHasReviewPatch = Expect<
+  Equal<CompetitorDetailPath["patch"] extends undefined ? true : false, false>
+>;
+type _ReviewRequestMatchesRuntimeContract = Expect<
+  Equal<CompetitorReviewRequest, ReviewCompetitorRequestZod>
+>;
 
 const generated = readFileSync(
   new URL("./generated/openapi.ts", import.meta.url),
   "utf8",
 );
+const openapi = readFileSync(
+  new URL("../../../openapi/mvp.yaml", import.meta.url),
+  "utf8",
+);
 
 describe("Competitor Library generated OpenAPI contract", () => {
-  it("publishes only the implemented cursor-page and exact-detail reads", () => {
+  it("publishes the implemented cursor read, detail read, and governed review", () => {
     expect(generated).toContain(
       '"/projects/{projectId}/audit/competitors": {',
     );
@@ -251,6 +265,9 @@ describe("Competitor Library generated OpenAPI contract", () => {
     );
     expect(generated).toContain(
       'get: operations["getProjectAuditCompetitor"];',
+    );
+    expect(generated).toContain(
+      'patch: operations["reviewProjectAuditCompetitor"];',
     );
   });
 
@@ -275,6 +292,12 @@ describe("Competitor Library generated OpenAPI contract", () => {
     );
     expect(generated).toContain(
       'valuePointer: "/valueJson/aiCitationInsight";',
+    );
+  });
+
+  it("keeps Competitor CAS input incrementable inside PostgreSQL integer storage", () => {
+    expect(openapi).toMatch(
+      /ReviewCompetitorRequest:[\s\S]*?expectedRevision:\s*\n\s*type: integer\s*\n\s*minimum: 0\s*\n\s*maximum: 2147483646/u,
     );
   });
 });

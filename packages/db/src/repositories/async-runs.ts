@@ -16,7 +16,9 @@ export type RunKind =
   | "artifact_generation"
   | "export"
   | "product_profile_synthesis"
-  | "content_shadow";
+  | "content_shadow"
+  | "publication"
+  | "measurement";
 export type RunStatus =
   | "queued"
   | "running"
@@ -115,7 +117,9 @@ export class AsyncRunsRepository extends Repository {
           ('artifact_generation'::text),
           ('export'::text),
           ('product_profile_synthesis'::text),
-          ('content_shadow'::text)
+          ('content_shadow'::text),
+          ('publication'::text),
+          ('measurement'::text)
       )
       select
         run_kinds.kind,
@@ -178,6 +182,7 @@ export class AsyncRunsRepository extends Repository {
 
   /** Insert a queued run inside the atomic enqueue transaction (spec §13.2). */
   async insertQueued(values: {
+    runId?: string;
     workspaceId: string;
     projectId: string;
     kind: RunKind;
@@ -190,16 +195,21 @@ export class AsyncRunsRepository extends Repository {
      */
     contractVersion: string;
     requestPayload?: Record<string, unknown>;
+    resultType?: string;
+    resultId?: string;
   }): Promise<AsyncRunRow> {
     const [row] = await this.exec
       .insert(asyncRuns)
       .values({
+        ...(values.runId ? { id: values.runId } : {}),
         workspace_id: values.workspaceId,
         project_id: values.projectId,
         kind: values.kind,
         active_key: values.activeKey,
         initiated_by: values.initiatedBy,
         contract_version: values.contractVersion,
+        ...(values.resultType ? { result_type: values.resultType } : {}),
+        ...(values.resultId ? { result_id: values.resultId } : {}),
         ...(values.requestPayload
           ? { request_payload: values.requestPayload }
           : {}),
@@ -221,6 +231,35 @@ export class AsyncRunsRepository extends Repository {
           projectPredicate(asyncRuns, scope),
           eq(asyncRuns.active_key, activeKey),
           sql`${asyncRuns.status} in ('queued','running')`,
+        ),
+      )
+      .limit(1);
+    return (rows[0] as AsyncRunRow | undefined) ?? null;
+  }
+
+  /**
+   * Permanent Measurement command replay. Unlike `findActive`, this reads every
+   * terminal state because an Idempotency-Key never becomes reusable.
+   */
+  async findMeasurementByIdempotency(
+    scope: ProjectScope,
+    idempotencyKey: string,
+  ): Promise<AsyncRunRow | null> {
+    if (
+      idempotencyKey.length < 1 ||
+      idempotencyKey.length > 128 ||
+      !/^[ -~]+$/u.test(idempotencyKey)
+    ) {
+      return null;
+    }
+    const rows = await this.exec
+      .select()
+      .from(asyncRuns)
+      .where(
+        and(
+          projectPredicate(asyncRuns, scope),
+          eq(asyncRuns.kind, "measurement"),
+          sql`${asyncRuns.request_payload} ->> ${"idempotencyKey"} = ${idempotencyKey}`,
         ),
       )
       .limit(1);
@@ -493,7 +532,9 @@ function runKind(value: unknown): RunKind | null {
     value === "artifact_generation" ||
     value === "export" ||
     value === "product_profile_synthesis" ||
-    value === "content_shadow"
+    value === "content_shadow" ||
+    value === "publication" ||
+    value === "measurement"
     ? value
     : null;
 }

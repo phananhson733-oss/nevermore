@@ -87,7 +87,7 @@ if (tool === "pg_dump") {
   if (command.includes("from pg_database")) {
     process.stdout.write((readState().exists ? "yes" : "no") + "\t1\n");
   } else if (command.includes("count(*)::text")) {
-    for (const match of command.matchAll(/select '([a-z_]+)' as key/g)) {
+    for (const match of command.matchAll(/select '([a-z0-9_]+)' as key/g)) {
       process.stdout.write(match[1] + "\t0\n");
     }
   } else if (command.startsWith("copy (")) {

@@ -43,15 +43,14 @@ import {
   type FindingSummaryClientOptions,
 } from "@sf/artifacts";
 import {
-  ALL_RULES,
   DiagnosticContext,
-  PROMPT_SET_VERSION,
-  RULE_SET_VERSION,
+  parseGovernanceProjectionV1,
   parseIcp,
   runPipeline,
   type CoverageInput,
   type DatasetAvailability,
   type FindingSummaryGenerator,
+  type GovernanceProjectionV1,
   type ObservationView,
   type RunFinding,
 } from "@sf/engine";
@@ -84,7 +83,8 @@ import { runtimeFailureMetadata } from "../runtime-failure.ts";
 import {
   DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
   DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED_SUMMARY,
-  supportsCurrentDiagnosticExecutor,
+  resolveDiagnosticExecutor,
+  type DiagnosticExecutor,
 } from "./executor-version.ts";
 import { materializeAuditModules } from "../audit/run-full-audit.ts";
 
@@ -356,6 +356,7 @@ interface ManifestIcp {
 interface FrozenDiagnosticManifest {
   readonly icp: ManifestIcp;
   readonly snapshots: readonly ManifestSnapshot[];
+  readonly governance?: GovernanceProjectionV1;
 }
 
 export interface EvidenceLineage {
@@ -682,6 +683,7 @@ const MANIFEST_KEYS = [
   "siteId",
   "snapshots",
 ] as const;
+const GOVERNANCE_MANIFEST_KEYS = [...MANIFEST_KEYS, "governance"] as const;
 const ICP_MANIFEST_KEYS = ["contentHash", "id", "version"] as const;
 const SNAPSHOT_MANIFEST_KEYS = [
   "availability",
@@ -796,19 +798,27 @@ function readManifestSnapshots(
 
 function readFrozenDiagnosticManifest(
   diagnostic: DiagnosticRunRow,
+  executor: DiagnosticExecutor,
 ): FrozenDiagnosticManifest {
   const manifest = diagnostic.input_manifest;
+  const hasGovernance = Object.hasOwn(manifest, "governance");
+  const governanceShapeMatches =
+    executor.governance === "required" ? hasGovernance : !hasGovernance;
   if (
-    !hasExactKeys(manifest, MANIFEST_KEYS) ||
+    !governanceShapeMatches ||
+    !hasExactKeys(
+      manifest,
+      executor.governance === "required"
+        ? GOVERNANCE_MANIFEST_KEYS
+        : MANIFEST_KEYS,
+    ) ||
     contentHash(manifest as unknown as CanonicalValue) !==
       diagnostic.input_hash ||
     manifest["projectId"] !== diagnostic.project_id ||
     manifest["siteId"] !== diagnostic.site_id ||
     manifest["ruleSetVersion"] !== diagnostic.rule_set_version ||
     manifest["promptSetVersion"] !== diagnostic.prompt_set_version ||
-    manifest["deliveryLocale"] !== diagnostic.output_locale ||
-    diagnostic.rule_set_version !== RULE_SET_VERSION ||
-    diagnostic.prompt_set_version !== PROMPT_SET_VERSION
+    manifest["deliveryLocale"] !== diagnostic.output_locale
   ) {
     throw new Error("frozen diagnostic manifest does not match its run");
   }
@@ -833,7 +843,14 @@ function readFrozenDiagnosticManifest(
     throw new Error("frozen ICP manifest does not match its run");
   }
 
-  return { icp, snapshots: readManifestSnapshots(manifest) };
+  const governance = executor.governance === "required"
+    ? parseGovernanceProjectionV1(manifest["governance"])
+    : undefined;
+  return {
+    icp,
+    snapshots: readManifestSnapshots(manifest),
+    ...(governance === undefined ? {} : { governance }),
+  };
 }
 
 function validateFrozenSnapshotSelection(
@@ -1413,7 +1430,8 @@ export async function runDiagnostic(
     });
     return;
   }
-  if (!supportsCurrentDiagnosticExecutor(diagRun)) {
+  const executor = resolveDiagnosticExecutor(diagRun);
+  if (executor === null) {
     await runs.setTerminal(attempt, {
       status: "failed",
       lastErrorCode: DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
@@ -1429,6 +1447,7 @@ export async function runDiagnostic(
       diagRun,
       claimed.initiated_by,
       attempt,
+      executor,
     );
     if (result === null) return;
     ctx.logger.info("diagnostic_done", {
@@ -1470,8 +1489,9 @@ async function computeAndPersist(
   diagRun: DiagnosticRunRow,
   actorId: string,
   attempt: RunAttempt,
+  executor: DiagnosticExecutor,
 ): Promise<{ status: "completed" | "partial"; findingCount: number } | null> {
-  const frozenManifest = readFrozenDiagnosticManifest(diagRun);
+  const frozenManifest = readFrozenDiagnosticManifest(diagRun, executor);
   const manifestSnaps = frozenManifest.snapshots;
   const snapshotIds = manifestSnaps.map((s) => s.snapshotId);
   const actualSnapshots = await new DataSnapshotsRepository(ctx.db).findByIds(
@@ -1539,6 +1559,9 @@ async function computeAndPersist(
     deliveryLocale: diagRun.output_locale,
     observations,
     coverage,
+    ...(frozenManifest.governance === undefined
+      ? {}
+      : { governance: frozenManifest.governance }),
     availabilityByProvider,
     capturedAt,
   });
@@ -1551,7 +1574,7 @@ async function computeAndPersist(
   const pipeline = await runPipeline({
     projectId: scope.projectId,
     ctx: diagCtx,
-    rules: ALL_RULES,
+    rules: executor.rules,
     deliveryLocale: diagRun.output_locale,
     discrepancySubjectRefs: [
       ...new Set(discrepancyRows.map((row) => row.subject_ref)),

@@ -353,9 +353,9 @@ test("URL, entropy, identifier, client path, and retention guards reject unsafe 
   );
 });
 
-test("inventory covers exactly the 44 app tables and explicit object metadata", () => {
-  assert.equal(APP_TABLES.length, 44);
-  assert.equal(new Set(APP_TABLES).size, 44);
+test("inventory covers exactly the 67 app tables and explicit object metadata", () => {
+  assert.equal(APP_TABLES.length, 67);
+  assert.equal(new Set(APP_TABLES).size, 67);
   for (const table of [
     "capability_runs",
     "audit_runs",
@@ -369,6 +369,29 @@ test("inventory covers exactly the 44 app tables and explicit object metadata", 
     "flow_shadow_runs",
     "flow_shadow_research_packs",
     "flow_shadow_qa_gates",
+    "delivery_authorization_grants",
+    "artifact_approval_events",
+    "publication_destinations",
+    "publication_preview_events",
+    "publication_attempts",
+    "publication_receipts",
+    "measurement_windows",
+    "measurement_gsc_dimensions",
+    "measurement_ga4_dimensions",
+    "measurement_geo_dimensions",
+    "measurement_utm_identities",
+    "measurement_ga4_campaigns",
+    "topic_model_revisions",
+    "topic_node_identities",
+    "topic_node_revisions",
+    "topic_cluster_aliases",
+    "topic_node_successors",
+    "keyword_review_decisions",
+    "keyword_relation_identities",
+    "keyword_relation_candidates",
+    "keyword_relation_decisions",
+    "action_execution_step_definitions",
+    "action_execution_state_events",
   ]) {
     assert.ok(APP_TABLES.includes(table), `missing restore inventory table ${table}`);
   }
@@ -404,12 +427,74 @@ test("inventory covers exactly the 44 app tables and explicit object metadata", 
     ),
     "missing page snapshot integrity probe",
   );
+  assert.ok(
+    INTEGRITY_PROBES.some(
+      (probe) =>
+        probe.table === "publication_attempts" &&
+        probe.columns.includes("approved_artifact_content_hash") &&
+        probe.columns.includes("content_checksum"),
+    ),
+    "missing publication attempt Artifact/bytes integrity probe",
+  );
+  assert.ok(
+    INTEGRITY_PROBES.some(
+      (probe) =>
+        probe.table === "publication_receipts" &&
+        probe.columns.includes("artifact_content_hash") &&
+        probe.columns.includes("content_checksum"),
+    ),
+    "missing publication receipt Artifact/bytes integrity probe",
+  );
+  assert.ok(
+    INTEGRITY_PROBES.some(
+      (probe) =>
+        probe.table === "publication_preview_events" &&
+        probe.columns.includes("facts_hash") &&
+        probe.columns.includes("content_checksum"),
+    ),
+    "missing publication preview authority integrity probe",
+  );
+  assert.ok(
+    INTEGRITY_PROBES.some(
+      (probe) =>
+        probe.table === "measurement_windows" &&
+        probe.columns.includes("artifact_content_hash") &&
+        probe.columns.includes("content_checksum") &&
+        probe.columns.includes("result_hash"),
+    ),
+    "missing immutable measurement integrity probe",
+  );
+  assert.ok(
+    INTEGRITY_PROBES.some(
+      (probe) =>
+        probe.table === "keyword_relation_candidates" &&
+        probe.columns.includes("evidence_hash"),
+    ),
+    "missing Keyword Relation candidate evidence hash integrity probe",
+  );
+  assert.ok(
+    INTEGRITY_PROBES.some(
+      (probe) =>
+        probe.table === "action_execution_step_definitions" &&
+        probe.columns.includes("definition_hash") &&
+        probe.columns.includes("request_hash"),
+    ),
+    "missing Action Step Definition integrity probe",
+  );
+  assert.ok(
+    INTEGRITY_PROBES.some(
+      (probe) =>
+        probe.table === "action_execution_state_events" &&
+        probe.columns.includes("request_hash"),
+    ),
+    "missing Action Execution event request hash integrity probe",
+  );
 });
 
 test("the drill inventories every table the migration chain creates", () => {
   const catalogTables = [...SCHEMA_CATALOG.keys()].sort();
 
-  assert.equal(catalogTables.length, 44);
+  assert.equal(catalogTables.length, 67);
   assert.deepEqual(
     [...APP_TABLES].sort(),
     catalogTables,
@@ -733,7 +818,7 @@ test("runRestoreDrill verifies then drops only its generated target and writes s
   assert.equal(jsonReport.cleanup.targetDatabaseDropped, true);
   assert.equal(jsonReport.cleanup.targetDatabaseAbsentAfterCleanup, true);
   assert.equal(jsonReport.cleanup.dumpDirectoryRemoved, true);
-  assert.equal(jsonReport.verification.appTableCount, 44);
+  assert.equal(jsonReport.verification.appTableCount, 67);
   assert.equal(jsonReport.verification.canonicalChecksumAlgorithm, "sha256");
   assert.doesNotMatch(JSON.stringify(jsonReport), /super-secret|postgres:\/\//);
   assert.doesNotMatch(markdownReport, /super-secret|postgres:\/\//);
@@ -880,6 +965,11 @@ test("forward-only replay selection matches the application migration runner", (
     "/migrations/0009_async_run_contract_version.sql",
     "/migrations/0014_product_profile_synthesis.sql",
     "/migrations/0021_content_shadow_invocation_task.sql",
+    "/migrations/0022_publication_foundation.sql",
+    "/migrations/0023_measurement_windows.sql",
+    "/migrations/0024_keyword_governance_foundation.sql",
+    "/migrations/0025_keyword_relation_governance.sql",
+    "/migrations/0026_action_execution_state.sql",
   ];
 
   assert.deepEqual(pendingMigrationPaths(paths, null), paths);
@@ -889,7 +979,23 @@ test("forward-only replay selection matches the application migration runner", (
     paths.slice(1),
   );
   assert.deepEqual(
-    pendingMigrationPaths(paths, "0021_content_shadow_invocation_task"),
+    pendingMigrationPaths(paths, "0022_publication_foundation"),
+    paths.slice(4),
+  );
+  assert.deepEqual(
+    pendingMigrationPaths(paths, "0023_measurement_windows"),
+    paths.slice(5),
+  );
+  assert.deepEqual(
+    pendingMigrationPaths(paths, "0024_keyword_governance_foundation"),
+    paths.slice(6),
+  );
+  assert.deepEqual(
+    pendingMigrationPaths(paths, "0025_keyword_relation_governance"),
+    paths.slice(7),
+  );
+  assert.deepEqual(
+    pendingMigrationPaths(paths, "0026_action_execution_state"),
     [],
   );
 });
@@ -948,7 +1054,7 @@ test("default PostgreSQL process adapters run through a private fake client tool
     const state = await fake.readState();
 
     assert.equal(result.status, "passed");
-    assert.equal(report.verification.appTableCount, 44);
+    assert.equal(report.verification.appTableCount, 67);
     assert.equal(report.verification.migrationReplay, "passed");
     assert.equal(report.verification.schemaSmoke, "passed");
     assert.equal(report.cleanup.targetDatabaseDropped, true);

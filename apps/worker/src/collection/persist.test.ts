@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AsyncRunsRepository,
   CollectionRunsRepository,
+  CompetitorMonitorRepository,
   CompetitorsRepository,
   DataSnapshotsRepository,
   ImportPreviewsRepository,
@@ -142,6 +143,10 @@ beforeEach(() => {
     ProviderDiscrepanciesRepository.prototype,
     "detectForSnapshot",
   ).mockResolvedValue([]);
+  vi.spyOn(
+    CompetitorMonitorRepository.prototype,
+    "findMonitorRun",
+  ).mockResolvedValue(null);
   vi.spyOn(DataSnapshotsRepository.prototype, "insert").mockResolvedValue({
     id: "snapshot-1",
   } as never);
@@ -225,6 +230,110 @@ beforeEach(() => {
 });
 
 describe("persistCollectionResult transaction outcomes", () => {
+  it("keeps competitor monitoring inside Growth Map evidence without polluting customer projections", async () => {
+    const monitorRun = {
+      ...collectionRun,
+      source_connection_id: csvSourceConnectionId,
+      provider: "dataforseo",
+      operation: "keyword_gap_import",
+      method_version: "dataforseo.ranked_keywords.v1",
+    } as CollectionRunRow;
+    const monitorOutcome = {
+      ...outcome,
+      raw: {},
+      providerUsage: { rowsReceived: 1 },
+      summary: {
+        collectionScope: {
+          target: "competitor.example",
+          marketCode: "US",
+          languageTag: "en-US",
+        },
+      },
+    } satisfies CollectionOutcome;
+    vi.mocked(DataSnapshotsRepository.prototype.insert).mockResolvedValueOnce({
+      id: "snapshot-1",
+      workspace_id: attempt.workspaceId,
+      project_id: attempt.projectId,
+      site_id: monitorRun.site_id,
+      collection_run_id: monitorRun.id,
+      source_connection_id: csvSourceConnectionId,
+      provider: "dataforseo",
+      dataset_key: "dataforseo.ranked_keywords.v1",
+      schema_version: "0.2.0",
+      method_version: "dataforseo.ranked_keywords.v1",
+      captured_at: capturedAt,
+      source_window: sourceWindow,
+      availability: "available",
+      limitation: "fixture",
+      raw_object_key: uploadedKey,
+      row_count: 1,
+      checksum: "sha256",
+      summary: monitorOutcome.summary,
+      created_at: capturedAt,
+    });
+    vi.mocked(
+      CompetitorMonitorRepository.prototype.findMonitorRun,
+    ).mockResolvedValueOnce({
+      id: monitorRun.id,
+      workspace_id: attempt.workspaceId,
+      project_id: attempt.projectId,
+      competitor_id: "competitor-1",
+      analysis_scopes: ["content", "serp_visibility"],
+      topic_model_revision: 4,
+      target_domain: "competitor.example",
+      market: "US",
+      language_tag: "en-US",
+      previous_monitor_run_id: null,
+      previous_snapshot_id: null,
+    });
+    vi.spyOn(
+      CompetitorMonitorRepository.prototype,
+      "findSnapshotMetadata",
+    ).mockResolvedValue({
+      id: "snapshot-1",
+      captured_at: capturedAt,
+      availability: "available",
+    });
+    const evaluation = vi
+      .spyOn(
+        CompetitorMonitorRepository.prototype,
+        "insertEvaluation",
+      )
+      .mockResolvedValue();
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({
+        collectionRun: monitorRun,
+        datasetKey: "dataforseo.ranked_keywords.v1",
+        outcome: monitorOutcome,
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(evaluation).toHaveBeenCalledWith(
+      expect.objectContaining({ state: "baseline", signals: [] }),
+    );
+    expect(
+      KeywordOccurrencesRepository.prototype.upsertIntoLibrary,
+    ).not.toHaveBeenCalled();
+    expect(CompetitorsRepository.prototype.upsertOrigin).not.toHaveBeenCalled();
+    expect(
+      ProviderDiscrepanciesRepository.prototype.detectForSnapshot,
+    ).not.toHaveBeenCalled();
+    expect(
+      SourceConnectionsRepository.prototype.setLastSnapshot,
+    ).not.toHaveBeenCalled();
+    expect(
+      ProjectsRepository.prototype.setReadyToDiagnoseIfEligible,
+    ).not.toHaveBeenCalled();
+    expect(evaluation.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(AsyncRunsRepository.prototype.setTerminal).mock
+        .invocationCallOrder[0]!,
+    );
+  });
+
   it("projects canonical persisted CSV Observations into the Keyword Library before terminalizing", async () => {
     const csvRun = {
       ...collectionRun,

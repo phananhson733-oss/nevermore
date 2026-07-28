@@ -1558,6 +1558,46 @@ describe("Growth Map Keyword Library contracts", () => {
       marketCode: "US",
       languageTag: "en-US",
     };
+    const interviewSummaryOccurrence = {
+      occurrenceId: "10000000-0000-4000-8000-000000000071",
+      sourceKind: "interview_summary",
+      collectionRunId: "10000000-0000-4000-8000-000000000073",
+      snapshotId: ids.gscOnlySnapshot,
+      sourceObservationId: ids.gscOnlyObservation,
+      sourcePointer: "/valueJson/keyword",
+      collectedAt: "2026-07-21T08:08:00Z",
+      providerDataAsOf: "2026-07-18T00:00:00Z",
+      freshness: "current",
+      limitation: null,
+      scopeBasis: "user_provided",
+      scopeLimitation:
+        "The Keyword comes from a customer-approved, de-identified interview summary rather than a verbatim transcript.",
+      marketCode: "US",
+      languageTag: "en-US",
+      evidenceLabel: "Q2 customer onboarding interviews",
+      sourceRecordHash: "a".repeat(64),
+    };
+    const userReviewOccurrence = {
+      occurrenceId: "10000000-0000-4000-8000-000000000072",
+      sourceKind: "user_review",
+      collectionRunId: "10000000-0000-4000-8000-000000000074",
+      snapshotId: ids.metricSnapshot,
+      sourceObservationId: ids.metricObservation,
+      sourcePointer: "/valueJson/keyword",
+      collectedAt: "2026-07-21T08:09:00Z",
+      providerDataAsOf: "2026-07-19T00:00:00Z",
+      freshness: "current",
+      limitation: null,
+      scopeBasis: "provider_collection_scope",
+      scopeLimitation:
+        "The Keyword comes from a bounded public G2 review collection and does not represent every review on the platform.",
+      marketCode: "US",
+      languageTag: "en-US",
+      evidenceLabel: "RelayOps public review corpus",
+      sourceRecordHash: "b".repeat(64),
+      reviewPlatform: "g2",
+      sourceUrl: "https://www.g2.com/products/relayops/reviews",
+    };
 
     expect(
       GrowthMapKeywordLibraryResponse.safeParse({
@@ -1569,6 +1609,8 @@ describe("Growth Map Keyword Library contracts", () => {
               keywordSourceOccurrence(),
               manualOccurrence,
               csvOccurrence,
+              interviewSummaryOccurrence,
+              userReviewOccurrence,
             ],
           },
         ],
@@ -1660,6 +1702,21 @@ describe("Growth Map Keyword Library contracts", () => {
         },
       ],
       [{ ...gscOccurrence, scopeLimitation: null }],
+      [
+        {
+          ...interviewSummaryOccurrence,
+          participantName: "Must never reach a Keyword row",
+        },
+      ],
+      [{ ...interviewSummaryOccurrence, sourceRecordHash: "not-a-hash" }],
+      [
+        {
+          ...userReviewOccurrence,
+          reviewBody: "The complete public review must not be projected.",
+        },
+      ],
+      [{ ...userReviewOccurrence, sourceUrl: "http://example.com/review" }],
+      [{ ...userReviewOccurrence, reviewPlatform: "unknown_platform" }],
       [
         {
           ...keywordSourceOccurrence(),

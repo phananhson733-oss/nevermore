@@ -83,6 +83,42 @@ type _OverviewFrozenDiagnosticRun = Expect<
     components["schemas"]["Uuid"] | null
   >
 >;
+type _OverviewDecisionReminders = Expect<
+  Equal<
+    components["schemas"]["OverviewView"]["decisionReminders"],
+    components["schemas"]["OverviewDecisionReminder"][]
+  >
+>;
+type _OverviewContentDecayMonitor = Expect<
+  Equal<
+    components["schemas"]["OverviewView"]["contentDecayMonitor"],
+    components["schemas"]["OverviewContentDecayMonitor"]
+  >
+>;
+type _ContentDecayProjectionMode = Expect<
+  Equal<
+    components["schemas"]["OverviewContentDecayMonitor"]["projectionMode"],
+    "read_time"
+  >
+>;
+type _ContentDecayScheduleState = Expect<
+  Equal<
+    components["schemas"]["OverviewContentDecayMonitor"]["scheduleState"],
+    "not_configured"
+  >
+>;
+type _ContentDecayTriggers = Expect<
+  Equal<
+    components["schemas"]["OverviewContentDecayAlert"]["triggers"][number],
+    "rank_decline" | "traffic_decline"
+  >
+>;
+type _OverviewReminderReviewState = Expect<
+  Equal<
+    components["schemas"]["OverviewDecisionReminder"]["reviewState"],
+    "unreviewed" | "needs_more_data"
+  >
+>;
 // Stop gate §19.4: the workspace aggregate serves exactly the one view a
 // shipped screen consumes. If this union widens again, that is a deliberate
 // contract change, not drift.
@@ -93,6 +129,49 @@ type _ReadableExportSchemaVersions = Expect<
   Equal<
     ExportSchemaVersion,
     "signalframe.service-bundle.0.2.0" | "signalframe.service-bundle.0.3.0"
+  >
+>;
+type _SubjectRefType = Expect<
+  Equal<
+    components["schemas"]["SubjectRef"]["type"],
+    | "url"
+    | "site"
+    | "competitor"
+    | "page_set"
+    | "http_status"
+    | "canonical_issue"
+    | "keyword_cluster"
+    | "user_agent"
+  >
+>;
+type _RunKinds = Expect<
+  Equal<
+    components["schemas"]["RunKind"],
+    | "collection"
+    | "product_profile_synthesis"
+    | "diagnostic"
+    | "artifact_generation"
+    | "export"
+    | "content_shadow"
+    | "publication"
+    | "measurement"
+  >
+>;
+type AsyncRunResult = NonNullable<
+  components["schemas"]["AsyncRun"]["resultRef"]
+>;
+type _AsyncRunResultKinds = Expect<
+  Equal<
+    AsyncRunResult["type"],
+    | "collection_run"
+    | "product_profile_run"
+    | "icp_profile"
+    | "diagnostic_run"
+    | "artifact"
+    | "export"
+    | "flow_shadow_run"
+    | "publication_attempt"
+    | "measurement_window"
   >
 >;
 
@@ -157,6 +236,17 @@ describe("generated OpenAPI discriminator literals", () => {
   it("keeps historical 0.2 export read DTOs compatible with current 0.3 exports", () => {
     expect(generated).toContain(
       'schemaVersion: "signalframe.service-bundle.0.2.0" | "signalframe.service-bundle.0.3.0";',
+    );
+  });
+
+  it("keeps competitor evidence as an explicit SubjectRef type", () => {
+    const start = generated.indexOf("        SubjectRef:");
+    const end = generated.indexOf("        Finding:", start);
+    const subjectRefSchema = generated.slice(start, end);
+
+    expect(subjectRefSchema).toContain('type: "competitor";');
+    expect(subjectRefSchema).toContain(
+      'value: components["schemas"]["Uuid"];',
     );
   });
 });

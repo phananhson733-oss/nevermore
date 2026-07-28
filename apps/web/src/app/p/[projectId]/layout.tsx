@@ -17,11 +17,6 @@ import {
 } from "@/lib/services/project-shell";
 import { CurrentPageLabel, ProjectNav } from "./_nav.tsx";
 import { ProjectSwitcher } from "./_project-switcher.tsx";
-import {
-  E2E_PROJECT_ID,
-  e2eProjectShellProjection,
-  shouldUseE2eProjectShell,
-} from "./_e2e-shell.ts";
 import styles from "./layout.module.css";
 
 /**
@@ -41,14 +36,19 @@ export default async function ProjectLayout({
 }) {
   const { projectId } = await params;
 
-  const mockShell = shouldUseE2eProjectShell(process.env, projectId);
-  let shell: ProjectShellProjection | null;
-  if (mockShell) {
-    shell = e2eProjectShellProjection(E2E_PROJECT_ID);
-  } else {
+  let shell: ProjectShellProjection | null = null;
+  if (process.env.NODE_ENV === "development") {
+    const { loadE2eProjectShell } = await import("./_e2e-shell.ts");
+    shell = await loadE2eProjectShell(process.env, projectId);
+  }
+
+  if (!shell) {
     const operator = await getOperatorContext();
     if (!operator) notFound();
-    shell = await getProjectShell({ workspaceId: operator.workspaceId }, projectId);
+    shell = await getProjectShell(
+      { workspaceId: operator.workspaceId },
+      projectId,
+    );
   }
   if (!shell) notFound();
 

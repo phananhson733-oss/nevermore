@@ -84,6 +84,7 @@ import {
   type ArtifactLifecycle,
   type HumanReviewState,
 } from "./_review-view.ts";
+import { safeResearchSourceHref } from "./_safe-research-url.ts";
 import styles from "./execution.module.css";
 
 const DASH = "—";
@@ -443,6 +444,7 @@ function AllSourcesDrawer({
           <ul className={styles.drawerSourceList}>
             {sources.map((source) => {
               const capturedAt = formatUtcTimestamp(source.capturedAt, locale);
+              const sourceHref = safeResearchSourceHref(source.url);
               return (
                 <li key={source.id} className={styles.drawerSourceItem}>
                   <div className={styles.researchSourceHead}>
@@ -465,7 +467,23 @@ function AllSourcesDrawer({
                     </div>
                     <div>
                       <dt>{t("research.fields.url")}</dt>
-                      <dd>{source.url ?? t("research.unavailable")}</dd>
+                      <dd>
+                        {sourceHref === null ? (
+                          t("research.unavailable")
+                        ) : (
+                          <a
+                            className={styles.researchSourceLink}
+                            href={sourceHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={t("research.openSource", {
+                              label: source.label,
+                            })}
+                          >
+                            {source.url}
+                          </a>
+                        )}
+                      </dd>
                     </div>
                     <div>
                       <dt>{t("research.fields.capturedAt")}</dt>
@@ -556,6 +574,7 @@ function CompactPageSourceRow({
   const t = useTranslations("studio.qa");
   const locale = useLocale();
   const capturedAt = formatUtcTimestamp(source.capturedAt, locale);
+  const sourceHref = safeResearchSourceHref(source.url);
 
   return (
     <article className={styles.researchSource} data-research-source-card="">
@@ -588,7 +607,23 @@ function CompactPageSourceRow({
         </div>
         <div>
           <dt>{t("research.fields.url")}</dt>
-          <dd>{source.url ?? t("research.unavailable")}</dd>
+          <dd>
+            {sourceHref === null ? (
+              t("research.unavailable")
+            ) : (
+              <a
+                className={styles.researchSourceLink}
+                href={sourceHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={t("research.openSource", {
+                  label: source.label,
+                })}
+              >
+                {source.url}
+              </a>
+            )}
+          </dd>
         </div>
       </dl>
 

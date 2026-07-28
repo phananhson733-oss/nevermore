@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BeginTopicModelDraftRequest,
   ConfirmTopicModelRequest,
   KeywordGovernanceCurrentProjection,
   KeywordGovernanceRevisionConflict,
@@ -7,12 +8,15 @@ import {
   KeywordMappingReviewState,
   KeywordReviewDecision,
   KeywordStatus,
+  MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION,
+  MAX_POSTGRES_INTEGER_REVISION,
   PatchTopicModelDraftRequest,
   ReviewCompetitorRequest,
   ReviewKeywordRequest,
   TopicClusterAlias,
   TopicModelRevision,
   TopicModelState,
+  TopicModelWorkspaceProjection,
   TopicNodeIdentity,
   TopicNodeRevision,
   TopicReference,
@@ -56,6 +60,8 @@ const currentAlias = {
 const confirmedModel = {
   projectId: ids.project,
   topicModelRevision: 2,
+  editRevision: 4,
+  rootTopicNodeId: ids.node,
   state: "confirmed",
   nodes: [nodeRevision],
   aliases: [currentAlias],
@@ -65,6 +71,20 @@ const confirmedModel = {
   confirmedAt: "2026-07-27T08:30:00Z",
   confirmedBy: ids.actor,
   contentHash: "a".repeat(64),
+} as const;
+
+const draftModel = {
+  projectId: ids.project,
+  topicModelRevision: 3,
+  editRevision: 0,
+  rootTopicNodeId: ids.node,
+  state: "draft",
+  nodes: [{ ...nodeRevision, topicModelRevision: 3 }],
+  aliases: [currentAlias],
+  successorRelationships: [],
+  createdAt: "2026-07-27T10:00:00Z",
+  createdBy: ids.actor,
+  updatedAt: "2026-07-27T10:30:00Z",
 } as const;
 
 const confirmedKeywordDecision = {
@@ -208,6 +228,8 @@ describe("stable and versioned Topic contracts", () => {
     const draft = {
       projectId: ids.project,
       topicModelRevision: 3,
+      editRevision: 0,
+      rootTopicNodeId: ids.node,
       state: "draft",
       nodes: [nodeRevision, {
         ...nodeRevision,
@@ -270,6 +292,51 @@ describe("stable and versioned Topic contracts", () => {
       TopicModelRevision.safeParse({
         ...confirmedModel,
         nodes: cycle,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires one declared root and makes every confirmed node reachable from it", () => {
+    const child = {
+      ...nodeRevision,
+      topicNodeId: ids.parentNode,
+      parentTopicNodeId: ids.node,
+    };
+    expect(
+      TopicModelRevision.safeParse({
+        ...confirmedModel,
+        nodes: [nodeRevision, child],
+      }).success,
+    ).toBe(true);
+    expect(
+      TopicModelRevision.safeParse({
+        ...confirmedModel,
+        rootTopicNodeId: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      TopicModelRevision.safeParse({
+        ...confirmedModel,
+        rootTopicNodeId: ids.parentNode,
+        nodes: [nodeRevision, child],
+      }).success,
+    ).toBe(false);
+    expect(
+      TopicModelRevision.safeParse({
+        ...confirmedModel,
+        nodes: [
+          { ...nodeRevision, lifecycleState: "superseded" },
+          child,
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      TopicModelRevision.safeParse({
+        ...confirmedModel,
+        nodes: [
+          nodeRevision,
+          { ...child, parentTopicNodeId: null },
+        ],
       }).success,
     ).toBe(false);
   });
@@ -367,9 +434,70 @@ describe("stable and versioned Topic contracts", () => {
 });
 
 describe("Topic Model mutation requests", () => {
-  it("accepts bounded create, update, rename, split, and merge intents", () => {
+  it("starts only from an exact confirmed revision and accepts no server-authored facts", () => {
     const request = {
-      expectedRevision: 2,
+      expectedLatestConfirmedRevision: 2,
+      reason: "Open a reviewed Topic Model draft for the next planning cycle.",
+    };
+
+    expect(BeginTopicModelDraftRequest.parse(request)).toEqual(request);
+    expect(
+      BeginTopicModelDraftRequest.safeParse({
+        ...request,
+        actorId: ids.actor,
+      }).success,
+    ).toBe(false);
+    expect(
+      BeginTopicModelDraftRequest.safeParse({
+        ...request,
+        generationBasis: { origin: "browser" },
+      }).success,
+    ).toBe(false);
+    expect(
+      BeginTopicModelDraftRequest.safeParse({
+        ...request,
+        clusterKey: "browser-authored-alias",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps the latest confirmed model visible while one immediate successor draft is edited", () => {
+    const projection = {
+      projectId: ids.project,
+      latestConfirmed: confirmedModel,
+      draft: draftModel,
+      generatedAt: "2026-07-27T10:31:00Z",
+    };
+
+    expect(TopicModelWorkspaceProjection.parse(projection)).toEqual(
+      projection,
+    );
+    expect(
+      TopicModelWorkspaceProjection.safeParse({
+        ...projection,
+        draft: { ...draftModel, topicModelRevision: 4 },
+      }).success,
+    ).toBe(false);
+    expect(
+      TopicModelWorkspaceProjection.safeParse({
+        ...projection,
+        generatedAt: "2026-07-27T10:29:59Z",
+      }).success,
+    ).toBe(false);
+    expect(
+      TopicModelWorkspaceProjection.safeParse({
+        projectId: ids.project,
+        latestConfirmed: null,
+        draft: { ...draftModel, topicModelRevision: 1 },
+        generatedAt: "2026-07-27T10:31:00Z",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts bounded create, update, rename, retire, split, and merge intents", () => {
+    const request = {
+      topicModelRevision: 3,
+      expectedEditRevision: 2,
       reason: "Refine the confirmed topic structure without rewriting history.",
       intents: [
         {
@@ -388,6 +516,11 @@ describe("Topic Model mutation requests", () => {
           kind: "rename",
           topicNodeId: ids.parentNode,
           label: "Adoption strategy",
+        },
+        {
+          kind: "retire",
+          topicNodeId: ids.node,
+          affectedKeywordReviewState: "unreviewed",
         },
         {
           kind: "split",
@@ -425,17 +558,33 @@ describe("Topic Model mutation requests", () => {
     expect(PatchTopicModelDraftRequest.parse(request)).toEqual(request);
   });
 
-  it("rejects empty updates, unsafe split/merge, and free-text cluster writes", () => {
+  it("rejects empty updates, unsafe retirement/split/merge, and free-text cluster writes", () => {
     expect(
       PatchTopicModelDraftRequest.safeParse({
-        expectedRevision: 2,
+        topicModelRevision: 3,
+        expectedEditRevision: 2,
         reason: "Empty update.",
         intents: [{ kind: "update", topicNodeId: ids.node }],
       }).success,
     ).toBe(false);
     expect(
       PatchTopicModelDraftRequest.safeParse({
-        expectedRevision: 2,
+        topicModelRevision: 3,
+        expectedEditRevision: 2,
+        reason: "Unsafe retirement.",
+        intents: [
+          {
+            kind: "retire",
+            topicNodeId: ids.node,
+            affectedKeywordReviewState: "confirmed",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      PatchTopicModelDraftRequest.safeParse({
+        topicModelRevision: 3,
+        expectedEditRevision: 2,
         reason: "Unsafe split.",
         intents: [
           {
@@ -456,7 +605,8 @@ describe("Topic Model mutation requests", () => {
     ).toBe(false);
     expect(
       PatchTopicModelDraftRequest.safeParse({
-        expectedRevision: 2,
+        topicModelRevision: 3,
+        expectedEditRevision: 2,
         reason: "Unsafe merge.",
         intents: [
           {
@@ -475,7 +625,8 @@ describe("Topic Model mutation requests", () => {
     ).toBe(false);
     expect(
       PatchTopicModelDraftRequest.safeParse({
-        expectedRevision: 2,
+        topicModelRevision: 3,
+        expectedEditRevision: 2,
         reason: "No legacy labels in new writes.",
         intents: [
           {
@@ -492,11 +643,13 @@ describe("Topic Model mutation requests", () => {
   it("keeps confirm commands strict and server metadata out of client input", () => {
     expect(
       ConfirmTopicModelRequest.parse({
-        expectedRevision: 3,
+        topicModelRevision: 3,
+        expectedEditRevision: 4,
         reason: "The reviewed draft is ready to become immutable.",
       }),
     ).toEqual({
-      expectedRevision: 3,
+      topicModelRevision: 3,
+      expectedEditRevision: 4,
       reason: "The reviewed draft is ready to become immutable.",
     });
 
@@ -508,7 +661,8 @@ describe("Topic Model mutation requests", () => {
     ]) {
       expect(
         ConfirmTopicModelRequest.safeParse({
-          expectedRevision: 3,
+          topicModelRevision: 3,
+          expectedEditRevision: 4,
           reason: "Server metadata is not client-authored.",
           ...forbidden,
         }).success,
@@ -574,6 +728,17 @@ describe("Keyword Review decisions and current projection", () => {
         decisionOrigin: "system_suggestion",
         decidedBy: null,
         reason: "The assigned Topic was merged; the keyword must be reviewed.",
+      }).success,
+    ).toBe(true);
+    expect(
+      KeywordReviewDecision.safeParse({
+        ...confirmedKeywordDecision,
+        governanceRevision: 4,
+        mappingReviewState: "unreviewed",
+        assignmentInvalidatedBy: "topic_retire",
+        decisionOrigin: "system_suggestion",
+        decidedBy: null,
+        reason: "The assigned Topic was retired; the keyword must be reviewed.",
       }).success,
     ).toBe(true);
   });
@@ -689,6 +854,32 @@ describe("Keyword Review decisions and current projection", () => {
     expect(
       ReviewKeywordRequest.safeParse({
         ...request,
+        expectedGovernanceRevision:
+          MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION,
+      }).success,
+    ).toBe(true);
+    expect(
+      ReviewKeywordRequest.safeParse({
+        ...request,
+        expectedGovernanceRevision:
+          MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION + 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      ReviewKeywordRequest.safeParse({
+        ...request,
+        reason: "no",
+      }).success,
+    ).toBe(false);
+    expect(
+      ReviewKeywordRequest.safeParse({
+        ...request,
+        reason: "yes",
+      }).success,
+    ).toBe(true);
+    expect(
+      ReviewKeywordRequest.safeParse({
+        ...request,
         topicModelRevision: undefined,
       }).success,
     ).toBe(false);
@@ -784,7 +975,13 @@ describe("revision conflicts", () => {
     expect(
       KeywordGovernanceRevisionConflict.safeParse({
         ...conflict,
-        currentRevision: Number.MAX_SAFE_INTEGER + 1,
+        currentRevision: MAX_POSTGRES_INTEGER_REVISION,
+      }).success,
+    ).toBe(true);
+    expect(
+      KeywordGovernanceRevisionConflict.safeParse({
+        ...conflict,
+        currentRevision: MAX_POSTGRES_INTEGER_REVISION + 1,
       }).success,
     ).toBe(false);
   });
@@ -801,6 +998,20 @@ describe("competitor governance write contract", () => {
     } as const;
 
     expect(ReviewCompetitorRequest.parse(request)).toEqual(request);
+    expect(
+      ReviewCompetitorRequest.safeParse({
+        ...request,
+        expectedRevision:
+          MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION,
+      }).success,
+    ).toBe(true);
+    expect(
+      ReviewCompetitorRequest.safeParse({
+        ...request,
+        expectedRevision:
+          MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION + 1,
+      }).success,
+    ).toBe(false);
     expect(
       ReviewCompetitorRequest.safeParse({
         ...request,

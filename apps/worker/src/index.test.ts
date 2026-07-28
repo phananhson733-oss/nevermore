@@ -14,6 +14,8 @@ const mocked = vi.hoisted(() => ({
   registerProfileSynthesizeHandler: vi.fn(),
   registerArtifactHandlers: vi.fn(),
   registerContentShadowHandler: vi.fn(),
+  registerPublicationHandler: vi.fn(),
+  registerMeasurementHandler: vi.fn(),
   startWorkerMaintenance: vi.fn(),
   getWorkerMaintenanceFromStartError: vi.fn(),
   startWorkerHealthSnapshotLoop: vi.fn(),
@@ -46,6 +48,12 @@ vi.mock("./handlers/profile-synthesize.ts", () => ({
 }));
 vi.mock("./handlers/content-shadow.ts", () => ({
   registerContentShadowHandler: mocked.registerContentShadowHandler,
+}));
+vi.mock("./handlers/publication.ts", () => ({
+  registerPublicationHandler: mocked.registerPublicationHandler,
+}));
+vi.mock("./handlers/measurement.ts", () => ({
+  registerMeasurementHandler: mocked.registerMeasurementHandler,
 }));
 vi.mock("./handlers/artifact.ts", () => ({
   registerArtifactHandlers: mocked.registerArtifactHandlers,
@@ -146,6 +154,12 @@ function configureSuccessfulBoot(order: string[]) {
   mocked.registerContentShadowHandler.mockImplementation(async () => {
     order.push("content-shadow");
   });
+  mocked.registerPublicationHandler.mockImplementation(async () => {
+    order.push("publication");
+  });
+  mocked.registerMeasurementHandler.mockImplementation(async () => {
+    order.push("measurement");
+  });
   mocked.startWorkerMaintenance.mockImplementation(async () => {
     order.push("maintenance.start");
     return maintenance;
@@ -210,6 +224,8 @@ describe("worker bootstrap lifecycle", () => {
       "profile.synthesize",
       "artifact",
       "content-shadow",
+      "publication",
+      "measurement",
       "maintenance.start",
       "readiness.acquire",
       "health.start",
@@ -531,6 +547,8 @@ describe("worker bootstrap lifecycle", () => {
       expect(mocked.registerProfileSynthesizeHandler).not.toHaveBeenCalled();
       expect(mocked.registerArtifactHandlers).not.toHaveBeenCalled();
       expect(mocked.registerContentShadowHandler).not.toHaveBeenCalled();
+      expect(mocked.registerPublicationHandler).not.toHaveBeenCalled();
+      expect(mocked.registerMeasurementHandler).not.toHaveBeenCalled();
       expect(mocked.startWorkerMaintenance).not.toHaveBeenCalled();
       expect(mocked.acquireWorkerReadinessLease).not.toHaveBeenCalled();
       expect(resources.boss.stop).toHaveBeenCalledTimes(1);

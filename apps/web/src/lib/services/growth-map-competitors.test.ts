@@ -4,14 +4,20 @@ import {
   type CompetitorEntityRow,
   type CompetitorOriginRow,
 } from "@sf/db";
+import {
+  MAX_POSTGRES_INTEGER_REVISION,
+  type ReviewCompetitorRequest,
+} from "@sf/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ getDb: vi.fn() }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 
-const { getProjectAuditCompetitor, listProjectAuditCompetitors } = await import(
-  "./growth-map-competitors.ts"
-);
+const {
+  getProjectAuditCompetitor,
+  listProjectAuditCompetitors,
+  reviewProjectAuditCompetitor,
+} = await import("./growth-map-competitors.ts");
 
 const ids = {
   workspace: "10000000-0000-4000-8000-000000000001",
@@ -863,5 +869,414 @@ describe("Growth Map Competitor Library read service", () => {
         new FakeExecutor() as never,
       ),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+describe("Growth Map Competitor Library review service", () => {
+  const review: ReviewCompetitorRequest = {
+    expectedRevision: 2,
+    name: "Reviewed Competitor",
+    reviewStatus: "approved",
+    relationship: "benchmark",
+    analysisScope: ["positioning"],
+  };
+
+  function reviewedEntity(
+    overrides: Partial<CompetitorEntityRow> = {},
+  ): CompetitorEntityRow {
+    return entity({
+      name: review.name,
+      review_status: review.reviewStatus,
+      relationship: review.relationship,
+      analysis_scope: [...review.analysisScope],
+      revision: review.expectedRevision + 1,
+      last_observed_at: null,
+      origin_count: 1,
+      ...overrides,
+    });
+  }
+
+  function arrangeReviewedDetail(
+    find: ReturnType<typeof vi.spyOn>,
+    selected: CompetitorEntityRow,
+  ): FakeExecutor {
+    find.mockResolvedValueOnce(selected as never);
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      manualOrigin({ source_name: review.name }),
+    ]);
+    return new FakeExecutor();
+  }
+
+  it("writes one scoped optimistic review and returns the canonical detail projection", async () => {
+    activeProject(null);
+    const find = vi
+      .spyOn(CompetitorsRepository.prototype, "findById")
+      .mockResolvedValueOnce(
+        entity({
+          last_observed_at: null,
+          origin_count: 1,
+        }),
+      );
+    const repositoryReview = vi
+      .spyOn(CompetitorsRepository.prototype, "review")
+      .mockResolvedValue(reviewedEntity());
+    const exec = arrangeReviewedDetail(find, reviewedEntity());
+
+    const response = await reviewProjectAuditCompetitor(
+      scope,
+      ids.project,
+      ids.competitor,
+      review,
+      exec as never,
+    );
+
+    expect(repositoryReview).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ids.competitor,
+      review,
+    );
+    expect(response).toMatchObject({
+      projectId: ids.project,
+      data: {
+        competitorId: ids.competitor,
+        name: review.name,
+        reviewStatus: "approved",
+        relationship: "benchmark",
+        analysisScope: ["positioning"],
+        revision: 3,
+      },
+    });
+  });
+
+  it("runs the production write and canonical response read in one transaction", async () => {
+    activeProject(null);
+    const find = vi
+      .spyOn(CompetitorsRepository.prototype, "findById")
+      .mockResolvedValueOnce(
+        entity({
+          last_observed_at: null,
+          origin_count: 1,
+        }),
+      );
+    vi.spyOn(CompetitorsRepository.prototype, "review").mockResolvedValue(
+      reviewedEntity(),
+    );
+    const exec = arrangeReviewedDetail(find, reviewedEntity());
+    const transaction = vi.fn(
+      async (callback: (selected: FakeExecutor) => Promise<unknown>) =>
+        callback(exec),
+    );
+    mocks.getDb.mockReturnValue({ db: { transaction } });
+
+    const response = await reviewProjectAuditCompetitor(
+      scope,
+      ids.project,
+      ids.competitor,
+      review,
+    );
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(response.data.revision).toBe(review.expectedRevision + 1);
+  });
+
+  it("rejects an invalid internal review command before project or repository access", async () => {
+    const project = vi.spyOn(ProjectsRepository.prototype, "findById");
+    const repositoryReview = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "review",
+    );
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        {
+          ...review,
+          relationship: null,
+        } as ReviewCompetitorRequest,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+    expect(project).not.toHaveBeenCalled();
+    expect(repositoryReview).not.toHaveBeenCalled();
+  });
+
+  it("rejects a competitor revision that cannot be incremented before project access", async () => {
+    const project = vi.spyOn(ProjectsRepository.prototype, "findById");
+    const repositoryReview = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "review",
+    );
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        {
+          ...review,
+          expectedRevision: MAX_POSTGRES_INTEGER_REVISION,
+        },
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+    expect(project).not.toHaveBeenCalled();
+    expect(repositoryReview).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed competitor id before project access", async () => {
+    const project = vi.spyOn(ProjectsRepository.prototype, "findById");
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        "customer-private-competitor",
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    expect(project).not.toHaveBeenCalled();
+  });
+
+  it("treats the exact current review as an idempotent no-op", async () => {
+    activeProject(null);
+    const current = reviewedEntity({ revision: review.expectedRevision });
+    const find = vi
+      .spyOn(CompetitorsRepository.prototype, "findById")
+      .mockResolvedValueOnce(current);
+    const repositoryReview = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "review",
+    );
+    const exec = arrangeReviewedDetail(find, current);
+
+    const response = await reviewProjectAuditCompetitor(
+      scope,
+      ids.project,
+      ids.competitor,
+      review,
+      exec as never,
+    );
+
+    expect(repositoryReview).not.toHaveBeenCalled();
+    expect(response.data.revision).toBe(review.expectedRevision);
+  });
+
+  it("converges a safe retry when the immediately following revision already contains the same review", async () => {
+    activeProject(null);
+    const applied = reviewedEntity();
+    const find = vi
+      .spyOn(CompetitorsRepository.prototype, "findById")
+      .mockResolvedValueOnce(
+        entity({ last_observed_at: null, origin_count: 1 }),
+      )
+      .mockResolvedValueOnce(applied);
+    vi.spyOn(CompetitorsRepository.prototype, "review").mockResolvedValue(null);
+    const exec = arrangeReviewedDetail(find, applied);
+
+    const response = await reviewProjectAuditCompetitor(
+      scope,
+      ids.project,
+      ids.competitor,
+      review,
+      exec as never,
+    );
+
+    expect(response.data.revision).toBe(review.expectedRevision + 1);
+  });
+
+  it("recognizes an already-applied immediate retry before attempting another write", async () => {
+    activeProject(null);
+    const applied = reviewedEntity();
+    const find = vi
+      .spyOn(CompetitorsRepository.prototype, "findById")
+      .mockResolvedValueOnce(applied);
+    const repositoryReview = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "review",
+    );
+    const exec = arrangeReviewedDetail(find, applied);
+
+    const response = await reviewProjectAuditCompetitor(
+      scope,
+      ids.project,
+      ids.competitor,
+      review,
+      exec as never,
+    );
+
+    expect(repositoryReview).not.toHaveBeenCalled();
+    expect(response.data.revision).toBe(review.expectedRevision + 1);
+  });
+
+  it("returns a conflict when the review CAS loses to a different command", async () => {
+    activeProject(null);
+    vi.spyOn(CompetitorsRepository.prototype, "findById")
+      .mockResolvedValueOnce(
+        entity({ last_observed_at: null, origin_count: 1 }),
+      )
+      .mockResolvedValueOnce(
+        entity({
+          name: "Other Review",
+          revision: 3,
+          last_observed_at: null,
+          origin_count: 1,
+        }),
+      );
+    vi.spyOn(CompetitorsRepository.prototype, "review").mockResolvedValue(null);
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "STALE_REVISION",
+      status: 409,
+      current: {
+        kind: "revision_conflict",
+        resource: "competitor_review",
+        expectedRevision: 2,
+        currentRevision: 3,
+      },
+    });
+  });
+
+  it("fails closed when the repository returns a cross-scope review result", async () => {
+    activeProject(null);
+    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValueOnce(
+      entity({ last_observed_at: null, origin_count: 1 }),
+    );
+    vi.spyOn(CompetitorsRepository.prototype, "review").mockResolvedValue(
+      reviewedEntity({ workspace_id: "20000000-0000-4000-8000-000000000001" }),
+    );
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("fails closed before writing when the scoped entity read drifts across workspaces", async () => {
+    activeProject(null);
+    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValue(
+      entity({
+        workspace_id: "20000000-0000-4000-8000-000000000001",
+        last_observed_at: null,
+        origin_count: 1,
+      }),
+    );
+    const repositoryReview = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "review",
+    );
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+    expect(repositoryReview).not.toHaveBeenCalled();
+  });
+
+  it("returns a structured stale-revision conflict without attempting a write", async () => {
+    activeProject(null);
+    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValue(
+      entity({ revision: 4 }),
+    );
+    const repositoryReview = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "review",
+    );
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "STALE_REVISION",
+      status: 409,
+      current: {
+        kind: "revision_conflict",
+        resource: "competitor_review",
+        projectId: ids.project,
+        resourceId: ids.competitor,
+        expectedRevision: 2,
+        currentRevision: 4,
+      },
+    });
+    expect(repositoryReview).not.toHaveBeenCalled();
+  });
+
+  it("maps disappearance after a lost CAS to the same non-enumerating 404", async () => {
+    activeProject(null);
+    vi.spyOn(CompetitorsRepository.prototype, "findById")
+      .mockResolvedValueOnce(
+        entity({ last_observed_at: null, origin_count: 1 }),
+      )
+      .mockResolvedValueOnce(null);
+    vi.spyOn(CompetitorsRepository.prototype, "review").mockResolvedValue(null);
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+  });
+
+  it("keeps missing, foreign, and archived competitors non-enumerating", async () => {
+    activeProject(null);
+    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValue(
+      null,
+    );
+    const repositoryReview = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "review",
+    );
+
+    await expect(
+      reviewProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    expect(repositoryReview).not.toHaveBeenCalled();
   });
 });

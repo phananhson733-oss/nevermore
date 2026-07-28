@@ -1,7 +1,11 @@
+import { ReviewCompetitorRequest } from "@sf/contracts";
 import { operatorRoute } from "@/lib/http/handler";
 import { ok } from "@/lib/http/respond";
-import { parseUuidParam } from "@/lib/http/validate";
-import { getProjectAuditCompetitor } from "@/lib/services/growth-map-competitors";
+import { parseJsonBody, parseUuidParam } from "@/lib/http/validate";
+import {
+  getProjectAuditCompetitor,
+  reviewProjectAuditCompetitor,
+} from "@/lib/services/growth-map-competitors";
 
 /** Exact stable Competitor detail inside the current operator workspace/project. */
 export const GET = operatorRoute<{
@@ -15,6 +19,25 @@ export const GET = operatorRoute<{
     { workspaceId: ctx.operator.workspaceId },
     id,
     selectedCompetitorId,
+  );
+
+  return ok(result, ctx.requestId);
+});
+
+/** Optimistic Competitor governance review; immutable origin lineage is unchanged. */
+export const PATCH = operatorRoute<{
+  projectId: string;
+  competitorId: string;
+}>(async (request, ctx, routeCtx) => {
+  const { projectId, competitorId } = await routeCtx.params;
+  const id = parseUuidParam(projectId);
+  const selectedCompetitorId = parseUuidParam(competitorId);
+  const body = await parseJsonBody(request, ReviewCompetitorRequest);
+  const result = await reviewProjectAuditCompetitor(
+    { workspaceId: ctx.operator.workspaceId },
+    id,
+    selectedCompetitorId,
+    body,
   );
 
   return ok(result, ctx.requestId);

@@ -1,11 +1,23 @@
 import {
   AsyncRunsRepository,
+  ContentDecayMonitorRepository,
   GrowthMapReadRepository,
+  MAX_CONTENT_DECAY_PAGE_LOOKUP,
   MAX_GROWTH_MAP_URL_PAGE_SIZE,
   type Executor,
   type ProjectScope,
   type WorkspaceScope,
 } from "@sf/db";
+import {
+  buildContentDecayMonitor,
+  compareContentDecayAlerts,
+  resolveContentDecayTimeZone,
+  type ContentDecayAvailability,
+  type ContentDecayMonitor,
+  type ContentDecayObservationCandidate,
+  type ContentDecayPage,
+  type ContentDecaySnapshotCandidate,
+} from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import { getDb } from "@/lib/db";
 import { getProject } from "./projects";
@@ -128,9 +140,29 @@ export interface OverviewView {
   activeRuns: AsyncRunDto[];
   frozenDiagnosticRunId: string | null;
   topActions: ActionDto[];
+  decisionReminders: OverviewDecisionReminderDto[];
+  contentDecayMonitor: ContentDecayMonitor;
   latestSnapshot: DataSnapshotDto | null;
   topActionEvidence: EvidenceDto[];
   deliveryFocus: OverviewDeliveryFocusDto | null;
+}
+
+/**
+ * One still-active Finding that has remained without any Action or customer
+ * review decision for at least fourteen complete days. This is a read
+ * projection over the persistent Finding/Action authorities, not a second
+ * opportunity store.
+ */
+export interface OverviewDecisionReminderDto {
+  findingId: string;
+  sitePageId: string | null;
+  summary: string;
+  summaryLocale: string;
+  severity: "critical" | "high" | "medium" | "low";
+  reviewState: "unreviewed" | "needs_more_data";
+  firstSeenAt: string;
+  lastSeenAt: string;
+  staleForDays: number;
 }
 
 /**
@@ -148,6 +180,7 @@ export interface OverviewDeliveryFocusDto {
 
 export interface OverviewHighlights {
   topActions: ActionDto[];
+  decisionReminders: OverviewDecisionReminderDto[];
   latestSnapshot: DataSnapshotDto | null;
   topActionEvidence: EvidenceDto[];
   deliveryFocus: OverviewDeliveryFocusDto | null;
@@ -160,8 +193,109 @@ const PRIORITY_ORDER: Readonly<Record<string, number>> = {
   low: 3,
 };
 
+export const OVERVIEW_STALE_DECISION_DAYS = 14;
+export const OVERVIEW_MAX_DECISION_REMINDERS = 3;
+export const OVERVIEW_MAX_CONTENT_DECAY_ALERTS = 3;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1_000;
+const CONTENT_DECAY_LOOKBACK_DAYS = 150;
+
 function priorityRank(priorityBand: string): number {
   return PRIORITY_ORDER[priorityBand] ?? Number.MAX_SAFE_INTEGER;
+}
+
+function reminderSeverity(
+  severity: string,
+): OverviewDecisionReminderDto["severity"] | null {
+  return severity === "critical" ||
+    severity === "high" ||
+    severity === "medium" ||
+    severity === "low"
+    ? severity
+    : null;
+}
+
+function reminderReviewState(
+  reviewState: string,
+): OverviewDecisionReminderDto["reviewState"] | null {
+  return reviewState === "unreviewed" ||
+    reviewState === "needs_more_data"
+    ? reviewState
+    : null;
+}
+
+/**
+ * Project one bounded, deterministic reminder queue from canonical persistent
+ * Findings. Invalid/future chronology is omitted rather than converted into a
+ * fabricated age. Any Action, including a completed or dismissed one, proves
+ * that the opportunity already received a decision and suppresses the
+ * reminder.
+ */
+export function buildOverviewDecisionReminders(input: {
+  readonly findings: readonly FindingDto[];
+  readonly actions: readonly ActionDto[];
+  readonly currentRunFindingIds: ReadonlySet<string>;
+  readonly sitePageByFindingId?: ReadonlyMap<string, string>;
+  readonly asOf: string;
+}): OverviewDecisionReminderDto[] {
+  const asOfTime = Date.parse(input.asOf);
+  if (!Number.isFinite(asOfTime)) return [];
+
+  const findingIdsWithActions = new Set(
+    input.actions.map((action) => action.findingId),
+  );
+  return input.findings
+    .flatMap((finding): OverviewDecisionReminderDto[] => {
+      const severity = reminderSeverity(finding.severity);
+      const reviewState = reminderReviewState(finding.reviewState);
+      if (
+        !finding.active ||
+        !input.currentRunFindingIds.has(finding.id) ||
+        findingIdsWithActions.has(finding.id) ||
+        severity === null ||
+        reviewState === null
+      ) {
+        return [];
+      }
+
+      const firstSeenAt = Date.parse(finding.firstSeenAt);
+      const lastSeenAt = Date.parse(finding.lastSeenAt);
+      if (
+        !Number.isFinite(firstSeenAt) ||
+        !Number.isFinite(lastSeenAt) ||
+        firstSeenAt > lastSeenAt ||
+        lastSeenAt > asOfTime
+      ) {
+        return [];
+      }
+      const staleForDays = Math.floor(
+        (asOfTime - firstSeenAt) / MILLISECONDS_PER_DAY,
+      );
+      if (staleForDays < OVERVIEW_STALE_DECISION_DAYS) return [];
+
+      return [
+        {
+          findingId: finding.id,
+          sitePageId:
+            input.sitePageByFindingId?.get(finding.id) ?? null,
+          summary: finding.summary,
+          summaryLocale: finding.summaryLocale,
+          severity,
+          reviewState,
+          firstSeenAt: finding.firstSeenAt,
+          lastSeenAt: finding.lastSeenAt,
+          staleForDays,
+        },
+      ];
+    })
+    .sort((left, right) => {
+      const age = right.staleForDays - left.staleForDays;
+      if (age !== 0) return age;
+      const severity =
+        priorityRank(left.severity) - priorityRank(right.severity);
+      if (severity !== 0) return severity;
+      return left.findingId.localeCompare(right.findingId);
+    })
+    .slice(0, OVERVIEW_MAX_DECISION_REMINDERS);
 }
 
 function latestSnapshot(
@@ -206,6 +340,8 @@ export function buildOverviewHighlights(input: {
   readonly findings: readonly FindingDto[];
   readonly artifacts: readonly ArtifactDto[];
   readonly currentRunFindingIds?: ReadonlySet<string>;
+  readonly sitePageByFindingId?: ReadonlyMap<string, string>;
+  readonly asOf?: string;
 }): OverviewHighlights {
   const exactRunActions = input.currentRunFindingIds
     ? input.actions.filter((action) =>
@@ -236,6 +372,18 @@ export function buildOverviewHighlights(input: {
 
   return {
     topActions,
+    decisionReminders:
+      input.currentRunFindingIds && input.asOf
+        ? buildOverviewDecisionReminders({
+            findings: input.findings,
+            actions: input.actions,
+            currentRunFindingIds: input.currentRunFindingIds,
+            ...(input.sitePageByFindingId
+              ? { sitePageByFindingId: input.sitePageByFindingId }
+              : {}),
+            asOf: input.asOf,
+          })
+        : [],
     latestSnapshot: latestSnapshot(input.snapshots),
     topActionEvidence: uniqueEvidence(sourceFinding?.evidence ?? []),
     deliveryFocus: artifact
@@ -259,6 +407,9 @@ export function buildOverviewHighlights(input: {
 interface FrozenAuditMembership {
   readonly diagnosticRunId: string | null;
   readonly findingIds: ReadonlySet<string>;
+  readonly sitePageByFindingId: ReadonlyMap<string, string>;
+  readonly siteId: string | null;
+  readonly pages: readonly ContentDecayPage[];
 }
 
 async function loadLatestFrozenAuditMembership(
@@ -267,9 +418,19 @@ async function loadLatestFrozenAuditMembership(
 ): Promise<FrozenAuditMembership> {
   const repository = new GrowthMapReadRepository(exec);
   const run = await repository.findLatestReadableRun(projectScope);
-  if (!run) return { diagnosticRunId: null, findingIds: new Set() };
+  if (!run) {
+    return {
+      diagnosticRunId: null,
+      findingIds: new Set(),
+      sitePageByFindingId: new Map(),
+      siteId: null,
+      pages: [],
+    };
+  }
 
   const findingIds = new Set<string>();
+  const sitePageByFindingId = new Map<string, string>();
+  const pagesById = new Map<string, ContentDecayPage>();
   const seenCursors = new Set<string>();
   let cursor: string | null = null;
   let pageCount = 0;
@@ -285,10 +446,39 @@ async function loadLatestFrozenAuditMembership(
       run.id,
       page.rows.map((row) => row.site_page_id),
     );
-    targets.forEach((target) => findingIds.add(target.finding_id));
+    page.rows.forEach((row) => {
+      if (
+        typeof row.site_page_id === "string" &&
+        typeof row.normalized_url === "string" &&
+        !pagesById.has(row.site_page_id)
+      ) {
+        pagesById.set(row.site_page_id, {
+          sitePageId: row.site_page_id,
+          normalizedUrl: row.normalized_url,
+        });
+      }
+    });
+    targets.forEach((target) => {
+      findingIds.add(target.finding_id);
+      if (
+        typeof target.site_page_id === "string" &&
+        !sitePageByFindingId.has(target.finding_id)
+      ) {
+        sitePageByFindingId.set(
+          target.finding_id,
+          target.site_page_id,
+        );
+      }
+    });
 
     if (page.nextCursor === null) {
-      return { diagnosticRunId: run.id, findingIds };
+      return {
+        diagnosticRunId: run.id,
+        findingIds,
+        sitePageByFindingId,
+        siteId: typeof run.site_id === "string" ? run.site_id : null,
+        pages: [...pagesById.values()],
+      };
     }
     if (
       page.nextCursor === cursor ||
@@ -304,6 +494,150 @@ async function loadLatestFrozenAuditMembership(
     seenCursors.add(page.nextCursor);
     cursor = page.nextCursor;
   }
+}
+
+function monitorAvailability(value: string): ContentDecayAvailability {
+  return value === "available" ||
+    value === "partial" ||
+    value === "unavailable"
+    ? value
+    : "unavailable";
+}
+
+function emptyContentDecayMonitor(asOf: string): ContentDecayMonitor {
+  return buildContentDecayMonitor({
+    asOf,
+    timeZone: resolveContentDecayTimeZone({
+      providerTimeZone: null,
+      projectTimeZone: null,
+    }),
+    pages: [],
+    snapshots: [],
+    observations: [],
+  });
+}
+
+/**
+ * Read-only content-decay projection over immutable GSC facts for the exact
+ * latest frozen Growth Map URL inventory. It intentionally does not create a
+ * Finding/Action from a GET. The pure engine boundary is reusable by a future
+ * monthly scheduler, whose absence remains explicit in the returned metadata.
+ */
+export async function loadOverviewContentDecayMonitor(
+  exec: Executor,
+  projectScope: ProjectScope,
+  authority: {
+    readonly siteId: string | null;
+    readonly pages: readonly ContentDecayPage[];
+  },
+  asOf: string,
+): Promise<ContentDecayMonitor> {
+  const asOfTime = Date.parse(asOf);
+  if (
+    authority.siteId === null ||
+    authority.pages.length === 0 ||
+    !Number.isFinite(asOfTime)
+  ) {
+    return emptyContentDecayMonitor(asOf);
+  }
+
+  const repository = new ContentDecayMonitorRepository(exec);
+  const startedAt = new Date(
+    asOfTime - CONTENT_DECAY_LOOKBACK_DAYS * MILLISECONDS_PER_DAY,
+  ).toISOString();
+  const checkpointRows = await repository.listMonthlyCheckpoints(
+    projectScope,
+    {
+      siteId: authority.siteId,
+      startedAt,
+      endedAt: new Date(asOfTime).toISOString(),
+    },
+  );
+  const latestCheckpoint = checkpointRows[0] ?? null;
+  const timeZone = resolveContentDecayTimeZone({
+    providerTimeZone: latestCheckpoint?.providerTimeZone ?? null,
+    // Project has no persisted confirmed timezone field today. Market/locale
+    // must never be reinterpreted as one; the pure resolver discloses UTC.
+    projectTimeZone: null,
+  });
+  const snapshots: ContentDecaySnapshotCandidate[] = checkpointRows.map(
+    (row) => ({
+      snapshotId: row.snapshotId,
+      provider: row.provider,
+      datasetKey: row.datasetKey,
+      methodVersion: row.methodVersion,
+      availability: monitorAvailability(row.availability),
+      capturedAt: row.capturedAt,
+      sourceWindow: row.sourceWindow,
+    }),
+  );
+  if (snapshots.length === 0) {
+    return buildContentDecayMonitor({
+      asOf,
+      timeZone,
+      pages: authority.pages,
+      snapshots,
+      observations: [],
+    });
+  }
+
+  const snapshotIds = snapshots.map((snapshot) => snapshot.snapshotId);
+  const batchResults: ContentDecayMonitor[] = [];
+  for (
+    let offset = 0;
+    offset < authority.pages.length;
+    offset += MAX_CONTENT_DECAY_PAGE_LOOKUP
+  ) {
+    const pages = authority.pages.slice(
+      offset,
+      offset + MAX_CONTENT_DECAY_PAGE_LOOKUP,
+    );
+    const rows = await repository.listPageObservations(
+      projectScope,
+      snapshotIds,
+      pages.map((page) => page.sitePageId),
+    );
+    const observations: ContentDecayObservationCandidate[] = rows.map(
+      (row) => ({
+        observationId: row.observationId,
+        snapshotId: row.snapshotId,
+        sitePageId: row.sitePageId,
+        subjectRef: row.subjectRef,
+        provider: row.provider,
+        metricKey: row.metricKey,
+        availability: monitorAvailability(row.availability),
+        observedAt: row.observedAt,
+        current28d: row.current28d,
+      }),
+    );
+    batchResults.push(
+      buildContentDecayMonitor({
+        asOf,
+        timeZone,
+        pages,
+        snapshots,
+        observations,
+      }),
+    );
+  }
+
+  const status: ContentDecayAvailability = batchResults.some(
+    (result) => result.status === "unavailable",
+  )
+    ? "unavailable"
+    : batchResults.some((result) => result.status === "partial")
+      ? "partial"
+      : "available";
+  const first = batchResults[0] ?? emptyContentDecayMonitor(asOf);
+  return {
+    ...first,
+    status,
+    limitations: [...new Set(batchResults.flatMap((item) => item.limitations))],
+    alerts: batchResults
+      .flatMap((item) => item.alerts)
+      .sort(compareContentDecayAlerts)
+      .slice(0, OVERVIEW_MAX_CONTENT_DECAY_ALERTS),
+  };
 }
 
 /**
@@ -330,6 +664,7 @@ export async function getWorkspaceView(
     async (tx): Promise<WorkspaceView> => {
       const projectScope = { workspaceId: scope.workspaceId, projectId };
       const project = await getProject(scope, projectId, tx);
+      const asOf = new Date().toISOString();
       let overviewCoverage: CoverageDto | null | undefined;
       // One PostgreSQL transaction executor is shared by every reader. Run
       // the loaders sequentially so a failed/capped paginator cannot leave
@@ -341,6 +676,12 @@ export async function getWorkspaceView(
       const frozenAudit = await loadLatestFrozenAuditMembership(
         tx,
         projectScope,
+      );
+      const contentDecayMonitor = await loadOverviewContentDecayMonitor(
+        tx,
+        projectScope,
+        frozenAudit,
+        asOf,
       );
       const findings = await loadCompleteWorkspaceResource(
         "Overview",
@@ -406,6 +747,8 @@ export async function getWorkspaceView(
         findings,
         artifacts,
         currentRunFindingIds: frozenAudit.findingIds,
+        sitePageByFindingId: frozenAudit.sitePageByFindingId,
+        asOf,
       });
       return {
         view,
@@ -413,6 +756,7 @@ export async function getWorkspaceView(
         coverage: overviewCoverage ?? EMPTY_COVERAGE,
         activeRuns: activeRunRows.map(toAsyncRunDto),
         frozenDiagnosticRunId: frozenAudit.diagnosticRunId,
+        contentDecayMonitor,
         ...highlights,
       };
     },

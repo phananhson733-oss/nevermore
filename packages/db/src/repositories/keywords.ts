@@ -1,4 +1,15 @@
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import { clientProjects, keywordEntities } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
@@ -50,6 +61,10 @@ export interface KeywordEntityListOptions {
   readonly market?: string | null;
 }
 
+export interface DiagnosticKeywordEntityReadOptions {
+  readonly limit: number;
+}
+
 export interface KeywordReviewMappingInput {
   readonly expectedRevision: number;
   readonly status: KeywordStatus;
@@ -62,6 +77,8 @@ export interface KeywordReviewMappingInput {
 }
 
 export const MAX_KEYWORD_ENTITY_PAGE_SIZE = 100;
+/** 5,000 accepted facts plus one overflow sentinel. */
+export const MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ = 5_001;
 /** Safety ceiling for one frozen keyword identity set (search + generative). */
 export const MAX_KEYWORD_ENTITY_BATCH = 500;
 const UUID =
@@ -143,6 +160,42 @@ function activeProjectPredicate(scope: ProjectScope) {
 }
 
 export class KeywordsRepository extends Repository {
+  async listDiagnosticEligible(
+    scope: ProjectScope,
+    options: DiagnosticKeywordEntityReadOptions,
+  ): Promise<KeywordEntityRow[]> {
+    if (
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ
+    ) {
+      throw new RangeError(
+        `limit must be between 1 and ${MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ}`,
+      );
+    }
+    return (await this.exec
+      .select(entitySelection)
+      .from(keywordEntities)
+      .innerJoin(
+        clientProjects,
+        and(
+          eq(clientProjects.id, keywordEntities.project_id),
+          eq(clientProjects.workspace_id, keywordEntities.workspace_id),
+        ),
+      )
+      .where(
+        and(
+          projectPredicate(keywordEntities, scope),
+          activeProjectPredicate(scope),
+          eq(keywordEntities.status, "approved"),
+          eq(keywordEntities.mapping_review_state, "confirmed"),
+          isNotNull(keywordEntities.cluster_key),
+        ),
+      )
+      .orderBy(asc(keywordEntities.id))
+      .limit(options.limit)) as KeywordEntityRow[];
+  }
+
   async listByProject(
     scope: ProjectScope,
     options: KeywordEntityListOptions,

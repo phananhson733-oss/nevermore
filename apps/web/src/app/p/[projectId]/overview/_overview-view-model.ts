@@ -23,6 +23,18 @@ const REVIEW_RANK = {
   ignored: 3,
 } as const;
 
+/**
+ * TanStack Query retains the last successful `data` when a later refetch
+ * fails. Growth Map reads are authoritative snapshots, so an errored refetch
+ * must hide that retained payload instead of presenting it as current truth.
+ */
+export function selectAuthoritativeGrowthMapRead<T>(
+  data: T | undefined,
+  isError: boolean,
+): T | undefined {
+  return isError ? undefined : data;
+}
+
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -292,8 +304,10 @@ export function buildPortfolioSummary(
 export function overviewGrowthMapHref(
   projectId: string,
   sitePageId: string | null,
+  findingId: string | null = null,
 ): string {
   const params = new URLSearchParams({ object: "pages" });
   if (sitePageId) params.set("selectedSitePageId", sitePageId);
+  if (findingId) params.set("findingId", findingId);
   return `/p/${projectId}/growth-map?${params.toString()}`;
 }

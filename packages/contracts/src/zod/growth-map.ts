@@ -17,6 +17,24 @@ import {
 
 const BoundedText = z.string().trim().min(1).max(2000);
 const BoundedLabel = z.string().trim().min(1).max(500);
+const KeywordEvidenceLabel = z.string().trim().min(1).max(200);
+const KeywordEvidenceRecordHash = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/u, "Must be a lowercase SHA-256 hex digest");
+const KeywordEvidenceHttpsUrl = z
+  .string()
+  .trim()
+  .url()
+  .max(2048)
+  .refine((value) => {
+    try {
+      return new URL(value).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, {
+    message: "Keyword evidence URL must use HTTPS",
+  });
 const NullableBoundedLabel = BoundedLabel.nullable();
 const NullableLimitation = BoundedText.nullable();
 const JsonPointer = z
@@ -1054,6 +1072,8 @@ export const GrowthMapKeywordSourceKind = z.enum([
   "csv_import",
   "dataforseo_ranked",
   "gsc_top_query",
+  "interview_summary",
+  "user_review",
   "manual",
 ]);
 export type GrowthMapKeywordSourceKind = z.infer<
@@ -1097,6 +1117,41 @@ const GrowthMapKeywordSourceOccurrenceObject = z.discriminatedUnion(
           .regex(/^\/valueJson\/topQueries\/[0-9]+\/query$/),
         scopeBasis: z.literal("project_context"),
         scopeLimitation: BoundedText,
+      })
+      .strict(),
+    z
+      .object({
+        ...KeywordSourceOccurrenceCommonShape,
+        sourceKind: z.literal("interview_summary"),
+        collectionRunId: Uuid,
+        snapshotId: Uuid,
+        sourceObservationId: Uuid,
+        sourcePointer: z.literal("/valueJson/keyword"),
+        scopeBasis: z.literal("user_provided"),
+        scopeLimitation: BoundedText,
+        evidenceLabel: KeywordEvidenceLabel,
+        sourceRecordHash: KeywordEvidenceRecordHash,
+      })
+      .strict(),
+    z
+      .object({
+        ...KeywordSourceOccurrenceCommonShape,
+        sourceKind: z.literal("user_review"),
+        collectionRunId: Uuid,
+        snapshotId: Uuid,
+        sourceObservationId: Uuid,
+        sourcePointer: z.literal("/valueJson/keyword"),
+        scopeBasis: z.literal("provider_collection_scope"),
+        scopeLimitation: BoundedText,
+        evidenceLabel: KeywordEvidenceLabel,
+        sourceRecordHash: KeywordEvidenceRecordHash,
+        reviewPlatform: z.enum([
+          "app_store",
+          "g2",
+          "capterra",
+          "other",
+        ]),
+        sourceUrl: KeywordEvidenceHttpsUrl.nullable(),
       })
       .strict(),
     z
@@ -1376,6 +1431,10 @@ function keywordSourceIdentity(
       return `${occurrence.sourceKind}:${occurrence.snapshotId}:${occurrence.sourceObservationId}:${occurrence.sourcePointer}`;
     case "gsc_top_query":
       return `${occurrence.sourceKind}:${occurrence.snapshotId}:${occurrence.sourceObservationId}:${occurrence.sourcePointer}`;
+    case "interview_summary":
+      return `${occurrence.sourceKind}:${occurrence.collectionRunId}:${occurrence.snapshotId}:${occurrence.sourceObservationId}:${occurrence.sourcePointer}:${occurrence.sourceRecordHash}`;
+    case "user_review":
+      return `${occurrence.sourceKind}:${occurrence.collectionRunId}:${occurrence.snapshotId}:${occurrence.sourceObservationId}:${occurrence.sourcePointer}:${occurrence.sourceRecordHash}`;
     case "manual":
       return `${occurrence.sourceKind}:${occurrence.occurrenceId}`;
   }
@@ -1593,6 +1652,270 @@ export const GrowthMapKeywordDetailResponse =
   });
 export type GrowthMapKeywordDetailResponse = z.infer<
   typeof GrowthMapKeywordDetailResponse
+>;
+
+export const GrowthMapKeywordRankMetric = z.enum([
+  "absolute_rank",
+  "gsc_28d_average_position",
+]);
+export type GrowthMapKeywordRankMetric = z.infer<
+  typeof GrowthMapKeywordRankMetric
+>;
+
+export const GrowthMapKeywordRankProvider = z.enum([
+  "dataforseo",
+  "gsc",
+]);
+export type GrowthMapKeywordRankProvider = z.infer<
+  typeof GrowthMapKeywordRankProvider
+>;
+
+export const GrowthMapKeywordRankPoint = z
+  .object({
+    occurrenceId: Uuid,
+    snapshotId: Uuid,
+    observationId: Uuid,
+    provider: GrowthMapKeywordRankProvider,
+    metric: GrowthMapKeywordRankMetric,
+    value: z.number().finite().positive(),
+    valuePointer: GrowthMapCanonicalObservationValuePointer,
+    observedAt: IsoDateTime,
+    providerDataAsOf: IsoDateTime.nullable(),
+    grade: z.enum(["A", "B"]),
+    limitation: BoundedText,
+  })
+  .strict()
+  .superRefine((point, ctx) => {
+    const expected =
+      point.provider === "dataforseo"
+        ? {
+            metric: "absolute_rank",
+            grade: "B",
+            pointer: "/valueJson/currentRank",
+          }
+        : {
+            metric: "gsc_28d_average_position",
+            grade: "A",
+            pointer: /^\/valueJson\/topQueries\/[0-9]+\/position$/u,
+          };
+    if (point.metric !== expected.metric) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["metric"],
+        message: "Rank metric must match its canonical provider definition",
+      });
+    }
+    if (point.grade !== expected.grade) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["grade"],
+        message: "Rank evidence grade must match its canonical provider",
+      });
+    }
+    const pointerMatches =
+      typeof expected.pointer === "string"
+        ? point.valuePointer === expected.pointer
+        : expected.pointer.test(point.valuePointer);
+    if (!pointerMatches) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["valuePointer"],
+        message: "Rank point must use its canonical Observation value pointer",
+      });
+    }
+    if (
+      point.providerDataAsOf !== null &&
+      Date.parse(point.providerDataAsOf) > Date.parse(point.observedAt)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["providerDataAsOf"],
+        message: "Provider data-as-of time cannot follow observation time",
+      });
+    }
+  });
+export type GrowthMapKeywordRankPoint = z.infer<
+  typeof GrowthMapKeywordRankPoint
+>;
+
+export const GrowthMapKeywordRankSeries = z
+  .object({
+    provider: GrowthMapKeywordRankProvider,
+    metric: GrowthMapKeywordRankMetric,
+    points: z.array(GrowthMapKeywordRankPoint).min(1).max(500),
+    interpretation: BoundedText,
+  })
+  .strict()
+  .superRefine((series, ctx) => {
+    const identities = new Set<string>();
+    let previous = Number.NEGATIVE_INFINITY;
+    series.points.forEach((point, index) => {
+      if (
+        point.provider !== series.provider ||
+        point.metric !== series.metric
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["points", index],
+          message: "Every rank point must match its containing series",
+        });
+      }
+      const observedAt = Date.parse(point.observedAt);
+      if (observedAt < previous) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["points", index, "observedAt"],
+          message: "Rank points must be ordered from oldest to newest",
+        });
+      }
+      previous = observedAt;
+      const identity = `${point.observationId}:${point.valuePointer}`;
+      if (identities.has(identity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["points", index, "observationId"],
+          message: "Rank Observation value pointers must be unique",
+        });
+      }
+      identities.add(identity);
+    });
+  });
+export type GrowthMapKeywordRankSeries = z.infer<
+  typeof GrowthMapKeywordRankSeries
+>;
+
+export const GrowthMapKeywordContentChangeMarker = z
+  .object({
+    changeReceiptId: Uuid,
+    publicationAttemptId: Uuid,
+    attemptKind: z.enum(["publish", "rollback"]),
+    artifactId: Uuid,
+    artifactRevision: z.number().int().positive(),
+    targetRef: z.string().trim().min(1).max(2048),
+    liveCanonicalUrl: z.string().trim().url().max(2048),
+    changedAt: IsoDateTime,
+  })
+  .strict();
+export type GrowthMapKeywordContentChangeMarker = z.infer<
+  typeof GrowthMapKeywordContentChangeMarker
+>;
+
+const GrowthMapKeywordRankWindow = z
+  .object({
+    startedAt: IsoDateTime,
+    endedAt: IsoDateTime,
+    days: z.literal(90),
+  })
+  .strict()
+  .superRefine((window, ctx) => {
+    const expectedStart = Date.parse(window.endedAt) - 90 * 24 * 60 * 60 * 1000;
+    if (Date.parse(window.startedAt) !== expectedStart) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["startedAt"],
+        message: "Rank history is one exact trailing 90-day UTC window",
+      });
+    }
+  });
+
+export const GrowthMapKeywordRankHistory = z
+  .object({
+    projectId: Uuid,
+    keywordId: Uuid,
+    mappedPage: z
+      .object({
+        sitePageId: Uuid,
+        normalizedUrl: z.string().trim().url().max(2048),
+      })
+      .strict()
+      .nullable(),
+    window: GrowthMapKeywordRankWindow,
+    series: z.array(GrowthMapKeywordRankSeries).max(2),
+    changeMarkers: z
+      .array(GrowthMapKeywordContentChangeMarker)
+      .max(200),
+    coverage: GrowthMapCoverage,
+    generatedAt: IsoDateTime,
+  })
+  .strict()
+  .superRefine((history, ctx) => {
+    const windowStart = Date.parse(history.window.startedAt);
+    const windowEnd = Date.parse(history.window.endedAt);
+    const seriesIdentities = new Set<string>();
+    history.series.forEach((series, seriesIndex) => {
+      const identity = `${series.provider}:${series.metric}`;
+      if (seriesIdentities.has(identity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["series", seriesIndex],
+          message: "Rank series identities must be unique",
+        });
+      }
+      seriesIdentities.add(identity);
+      series.points.forEach((point, pointIndex) => {
+        const observedAt = Date.parse(point.observedAt);
+        if (observedAt < windowStart || observedAt > windowEnd) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["series", seriesIndex, "points", pointIndex, "observedAt"],
+            message: "Rank points must remain inside the declared window",
+          });
+        }
+      });
+    });
+
+    const receiptIds = new Set<string>();
+    let previousMarker = Number.NEGATIVE_INFINITY;
+    history.changeMarkers.forEach((marker, index) => {
+      const changedAt = Date.parse(marker.changedAt);
+      if (changedAt < windowStart || changedAt > windowEnd) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["changeMarkers", index, "changedAt"],
+          message: "Content changes must remain inside the declared window",
+        });
+      }
+      if (changedAt < previousMarker) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["changeMarkers", index, "changedAt"],
+          message: "Content changes must be ordered from oldest to newest",
+        });
+      }
+      previousMarker = changedAt;
+      if (receiptIds.has(marker.changeReceiptId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["changeMarkers", index, "changeReceiptId"],
+          message: "Change Receipt markers must be unique",
+        });
+      }
+      receiptIds.add(marker.changeReceiptId);
+    });
+    if (history.mappedPage === null && history.changeMarkers.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["changeMarkers"],
+        message: "Content change markers require one canonical mapped page",
+      });
+    }
+    if (history.series.length === 0 && history.coverage.availability !== "unavailable") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["coverage", "availability"],
+        message: "Missing rank series must be reported as unavailable",
+      });
+    }
+    if (Date.parse(history.generatedAt) < windowEnd) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["generatedAt"],
+        message: "Rank history cannot be generated before its window closes",
+      });
+    }
+  });
+export type GrowthMapKeywordRankHistory = z.infer<
+  typeof GrowthMapKeywordRankHistory
 >;
 
 export const GrowthMapCompetitorReviewStatus = z.enum([

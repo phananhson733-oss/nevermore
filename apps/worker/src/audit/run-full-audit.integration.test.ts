@@ -40,7 +40,12 @@ import {
   type PgBoss,
   type ProjectScope,
 } from "@sf/db";
-import { findingKey, PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import {
+  findingKey,
+  GOVERNANCE_PROJECTION_VERSION,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import type { Logger } from "@sf/observability";
 import {
   CRAWL_DATASET_KEY,
@@ -266,6 +271,11 @@ async function seedAuditRun(handle: DbHandle): Promise<AuditSeed> {
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
+    governance: {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [],
+    },
   };
   const runId = randomUUID();
   await handle.db.insert(asyncRuns).values({

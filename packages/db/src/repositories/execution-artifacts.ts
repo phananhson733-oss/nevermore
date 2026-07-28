@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import {
   analysisInvocations,
   artifactRevisions,
@@ -122,6 +122,24 @@ export class ExecutionArtifactsRepository extends Repository {
       )
       .limit(1);
     return (rows[0] as ArtifactRow | undefined) ?? null;
+  }
+
+  /** Read a bounded explicit Artifact identity set in one scoped query. */
+  async listByIds(
+    scope: ProjectScope,
+    ids: readonly string[],
+  ): Promise<ArtifactRow[]> {
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length === 0) return [];
+    return (await this.exec
+      .select()
+      .from(executionArtifacts)
+      .where(
+        and(
+          projectPredicate(executionArtifacts, scope),
+          inArray(executionArtifacts.id, uniqueIds),
+        ),
+      )) as ArtifactRow[];
   }
 
   /** Lock one artifact row for an atomic no-op / compare-and-swap decision. */

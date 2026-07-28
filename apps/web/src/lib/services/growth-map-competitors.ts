@@ -1,12 +1,15 @@
 import {
   GrowthMapCompetitorDetailResponse,
   GrowthMapCompetitorLibraryResponse,
+  KeywordGovernanceRevisionConflict,
   ProductProfileCompetitorCandidate,
   ProductProfileFieldProvenance,
+  ReviewCompetitorRequest as ReviewCompetitorRequestSchema,
   type GrowthMapCompetitorLibraryItem,
   type GrowthMapCompetitorOriginOccurrence,
   type GrowthMapCoverage,
   type ProductProfileEvidenceRef,
+  type ReviewCompetitorRequest,
 } from "@sf/contracts";
 import {
   CompetitorsRepository,
@@ -154,6 +157,27 @@ function projectNotFound(): never {
 
 function competitorNotFound(): never {
   throw new ProblemError("NOT_FOUND", "Competitor not found.");
+}
+
+function competitorRevisionConflict(
+  projectId: string,
+  competitorId: string,
+  expectedRevision: number,
+  currentRevision: number,
+): never {
+  const current = KeywordGovernanceRevisionConflict.parse({
+    kind: "revision_conflict",
+    resource: "competitor_review",
+    projectId,
+    resourceId: competitorId,
+    expectedRevision,
+    currentRevision,
+  });
+  throw new ProblemError(
+    "STALE_REVISION",
+    "Competitor review revision is stale; refetch and retry.",
+    { current },
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -968,5 +992,152 @@ export async function getProjectAuditCompetitor(
   return getDb().db.transaction(
     (tx) => detailInSnapshot(tx, scope, projectId, competitorId),
     { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
+}
+
+function sameReview(
+  entity: CompetitorEntityRow,
+  review: ReviewCompetitorRequest,
+): boolean {
+  return (
+    entity.name === review.name &&
+    entity.review_status === review.reviewStatus &&
+    entity.relationship === review.relationship &&
+    entity.analysis_scope.length === review.analysisScope.length &&
+    entity.analysis_scope.every(
+      (value, index) => value === review.analysisScope[index],
+    )
+  );
+}
+
+function isImmediatelyAppliedReview(
+  entity: CompetitorEntityRow,
+  review: ReviewCompetitorRequest,
+): boolean {
+  return (
+    entity.revision === review.expectedRevision + 1 &&
+    sameReview(entity, review)
+  );
+}
+
+function validateReviewedEntity(
+  entity: CompetitorEntityRow,
+  scope: ProjectScope,
+  competitorId: string,
+  review: ReviewCompetitorRequest,
+): void {
+  validateEntity(entity, scope);
+  if (
+    entity.id !== competitorId ||
+    !isImmediatelyAppliedReview(entity, review)
+  ) {
+    corruptCompetitorLibrary();
+  }
+}
+
+async function reviewInSnapshot(
+  exec: Executor,
+  workspaceScope: WorkspaceScope,
+  projectId: string,
+  competitorId: string,
+  review: ReviewCompetitorRequest,
+): Promise<ReturnType<typeof GrowthMapCompetitorDetailResponse.parse>> {
+  await loadActiveProject(exec, workspaceScope, projectId);
+  const scope = { workspaceId: workspaceScope.workspaceId, projectId };
+  const repository = new CompetitorsRepository(exec);
+  const current = await repository.findById(scope, competitorId);
+  if (!current) return competitorNotFound();
+  validateEntity(current, scope);
+  if (current.id !== competitorId) return corruptCompetitorLibrary();
+
+  if (current.revision !== review.expectedRevision) {
+    if (isImmediatelyAppliedReview(current, review)) {
+      return detailInSnapshot(
+        exec,
+        workspaceScope,
+        projectId,
+        competitorId,
+      );
+    }
+    return competitorRevisionConflict(
+      projectId,
+      competitorId,
+      review.expectedRevision,
+      current.revision,
+    );
+  }
+
+  // Repeating the exact current decision is a true no-op: immutable origin
+  // history remains untouched and the governance revision does not advance.
+  if (sameReview(current, review)) {
+    return detailInSnapshot(
+      exec,
+      workspaceScope,
+      projectId,
+      competitorId,
+    );
+  }
+
+  const updated = await repository.review(scope, competitorId, review);
+  if (updated) {
+    validateReviewedEntity(updated, scope, competitorId, review);
+    return detailInSnapshot(
+      exec,
+      workspaceScope,
+      projectId,
+      competitorId,
+    );
+  }
+
+  // The CAS may lose to the same command. Only the immediately following
+  // revision with byte-for-byte governance values is an idempotent retry; a
+  // later equal-looking revision could hide intervening decisions (ABA).
+  const afterConflict = await repository.findById(scope, competitorId);
+  if (!afterConflict) return competitorNotFound();
+  validateEntity(afterConflict, scope);
+  if (afterConflict.id !== competitorId) return corruptCompetitorLibrary();
+  if (isImmediatelyAppliedReview(afterConflict, review)) {
+    return detailInSnapshot(
+      exec,
+      workspaceScope,
+      projectId,
+      competitorId,
+    );
+  }
+  return competitorRevisionConflict(
+    projectId,
+    competitorId,
+    review.expectedRevision,
+    afterConflict.revision,
+  );
+}
+
+/** Review only Competitor governance; immutable origin lineage is never edited. */
+export async function reviewProjectAuditCompetitor(
+  scope: WorkspaceScope,
+  projectId: string,
+  competitorId: string,
+  body: ReviewCompetitorRequest,
+  exec?: Executor,
+): Promise<ReturnType<typeof GrowthMapCompetitorDetailResponse.parse>> {
+  if (!UUID.test(competitorId)) return competitorNotFound();
+  const parsed = ReviewCompetitorRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Competitor review failed validation.",
+    );
+  }
+  if (exec) {
+    return reviewInSnapshot(
+      exec,
+      scope,
+      projectId,
+      competitorId,
+      parsed.data,
+    );
+  }
+  return getDb().db.transaction((tx) =>
+    reviewInSnapshot(tx, scope, projectId, competitorId, parsed.data),
   );
 }

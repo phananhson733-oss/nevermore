@@ -5,8 +5,51 @@ SET search_path = app, public;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 44 THEN
-    RAISE EXCEPTION 'expected exactly 44 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 76 THEN
+    RAISE EXCEPTION 'expected exactly 76 app tables';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.columns
+    WHERE table_schema = 'app'
+      AND (
+        (table_name = 'publication_attempts'
+          AND column_name IN (
+            'approved_artifact_content_hash',
+            'preview_checksum',
+            'content_checksum'
+          ))
+        OR
+        (table_name = 'publication_receipts'
+          AND column_name IN (
+            'artifact_content_hash',
+            'content_checksum'
+          ))
+        OR
+        (table_name = 'measurement_windows'
+          AND column_name IN (
+            'artifact_content_hash',
+            'content_checksum',
+            'result_hash'
+          ))
+        OR
+        (table_name = 'keyword_relation_candidates'
+          AND column_name = 'evidence_hash')
+      )
+      AND is_nullable = 'NO'
+      AND data_type = 'text'
+  ) <> 9 THEN
+    RAISE EXCEPTION 'publication, measurement, and Keyword Relation hash lineage columns are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.columns
+    WHERE table_schema = 'app'
+      AND table_name = 'topic_model_revisions'
+      AND column_name IN ('edit_revision', 'updated_at')
+      AND is_nullable = 'NO'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Topic Model draft CAS columns are incomplete';
   END IF;
   IF (
     SELECT count(*)
@@ -68,10 +111,35 @@ BEGIN
         'flow_shadow_runs_action_idx',
         'flow_shadow_runs_content_hash_idx',
         'flow_shadow_research_packs_run_idx',
-        'flow_shadow_qa_gates_run_idx'
+        'flow_shadow_qa_gates_run_idx',
+        'delivery_authorization_grants_project_state_idx',
+        'artifact_approval_events_one_approval_per_revision_idx',
+        'artifact_approval_events_one_terminal_per_event_idx',
+        'artifact_approval_events_artifact_timeline_idx',
+        'publication_destinations_project_ref_revision_idx',
+        'publication_destinations_one_consuming_grant_idx',
+        'publication_preview_events_issued_ref_idx',
+        'publication_preview_events_one_terminal_per_event_idx',
+        'publication_preview_events_project_ref_timeline_idx',
+        'publication_preview_events_artifact_destination_idx',
+        'publication_attempts_target_timeline_idx',
+        'publication_attempts_source_idx',
+        'publication_receipts_attempt_timeline_idx',
+        'measurement_windows_target_history_idx',
+        'measurement_windows_change_window_idx',
+        'measurement_ga4_campaigns_window_idx',
+        'topic_model_revisions_project_created_idx',
+        'topic_model_revisions_one_draft_idx',
+        'topic_node_revisions_project_model_idx',
+        'topic_cluster_aliases_current_label_idx',
+        'topic_cluster_aliases_node_history_idx',
+        'topic_node_successors_predecessor_idx',
+        'topic_node_successors_successor_idx',
+        'keyword_review_decisions_project_decided_idx',
+        'keyword_review_decisions_topic_idx'
       ]::text[])
-  ) <> 56 THEN
-    RAISE EXCEPTION 'expected all 56 named app indexes';
+  ) <> 81 THEN
+    RAISE EXCEPTION 'expected all 81 named app indexes';
   END IF;
   IF (
     SELECT count(*)
@@ -149,10 +217,47 @@ BEGIN
         'flow_shadow_research_packs_provenance_guard',
         'flow_shadow_research_packs_append_only',
         'flow_shadow_qa_gates_provenance_guard',
-        'flow_shadow_qa_gates_append_only'
+        'flow_shadow_qa_gates_append_only',
+        'delivery_authorization_grants_transition_guard',
+        'delivery_authorization_grants_no_delete',
+        'artifact_approval_events_lineage_guard',
+        'artifact_approval_events_append_only',
+        'publication_destinations_lineage_guard',
+        'publication_destinations_append_only',
+        'publication_preview_events_lineage_guard',
+        'publication_preview_events_append_only',
+        'publication_attempts_lineage_guard',
+        'publication_attempts_append_only',
+        'publication_receipts_lineage_guard',
+        'publication_receipts_append_only',
+        'measurement_windows_lineage_guard',
+        'measurement_windows_completeness_guard',
+        'measurement_windows_append_only',
+        'measurement_gsc_dimensions_lineage_guard',
+        'measurement_gsc_dimensions_append_only',
+        'measurement_ga4_dimensions_lineage_guard',
+        'measurement_ga4_dimensions_append_only',
+        'measurement_geo_dimensions_lineage_guard',
+        'measurement_geo_dimensions_append_only',
+        'measurement_utm_identities_scope_guard',
+        'measurement_utm_identities_append_only',
+        'measurement_ga4_campaigns_lineage_guard',
+        'measurement_ga4_campaigns_append_only',
+        'keyword_review_decisions_projection_guard',
+        'topic_model_revisions_mutation_guard',
+        'topic_model_revisions_topology_guard',
+        'topic_node_identities_creation_guard',
+        'topic_node_identities_append_only',
+        'topic_node_revisions_mutation_guard',
+        'topic_node_revisions_parent_cycle_guard',
+        'topic_cluster_aliases_window_guard',
+        'topic_cluster_aliases_retention_guard',
+        'topic_node_successors_cycle_guard',
+        'topic_node_successors_append_only',
+        'keyword_review_decisions_append_only'
       ]::text[])
-  ) <> 69 THEN
-    RAISE EXCEPTION 'expected all 69 app triggers';
+  ) <> 106 THEN
+    RAISE EXCEPTION 'expected all 106 app triggers';
   END IF;
   IF (
     SELECT count(DISTINCT procedure.proname)
@@ -176,10 +281,30 @@ BEGIN
         'enforce_competitor_origin_lineage',
         'upsert_competitor_origin',
         'enforce_flow_shadow_run_provenance',
-        'enforce_flow_shadow_child_provenance'
+        'enforce_flow_shadow_child_provenance',
+        'enforce_delivery_authorization_grant_transition',
+        'enforce_artifact_approval_event_lineage',
+        'enforce_publication_destination_lineage',
+        'enforce_publication_preview_event_lineage',
+        'enforce_publication_attempt_lineage',
+        'enforce_publication_receipt_lineage',
+        'enforce_measurement_window_lineage',
+        'enforce_measurement_dimension_lineage',
+        'enforce_measurement_window_completeness',
+        'enforce_measurement_utm_identity_scope',
+        'enforce_measurement_ga4_campaign_lineage',
+        'enforce_keyword_review_projection',
+        'enforce_topic_model_revision_mutation',
+        'validate_confirmed_topic_model_topology',
+        'enforce_topic_node_identity_creation',
+        'enforce_topic_node_revision_mutation',
+        'prevent_topic_parent_cycle',
+        'prevent_topic_alias_window_overlap',
+        'enforce_topic_cluster_alias_retention',
+        'prevent_topic_successor_cycle'
       ]::text[])
-  ) <> 18 THEN
-    RAISE EXCEPTION 'expected all 18 runtime routines';
+  ) <> 38 THEN
+    RAISE EXCEPTION 'expected all 38 runtime routines';
   END IF;
 END;
 $$;
@@ -774,19 +899,24 @@ VALUES (
   '00000000-0000-4000-8000-000000000301',
   '00000000-0000-4000-8000-000000000401',
   1,
-  'mvp.rules.0.2.1',
+  'mvp.rules.0.2.2',
   'mvp.prompts.0.2.0',
   'en',
   jsonb_build_object(
     'projectId', '00000000-0000-4000-8000-000000000201',
     'siteId', '00000000-0000-4000-8000-000000000301',
-    'ruleSetVersion', 'mvp.rules.0.2.1',
+    'ruleSetVersion', 'mvp.rules.0.2.2',
     'promptSetVersion', 'mvp.prompts.0.2.0',
     'deliveryLocale', 'en',
     'icp', jsonb_build_object(
       'id', '00000000-0000-4000-8000-000000000401',
       'version', 1,
       'contentHash', repeat('1', 64)
+    ),
+    'governance', jsonb_build_object(
+      'projectionVersion', 'growth-governance.1.0.0',
+      'keywordClusters', '[]'::jsonb,
+      'competitors', '[]'::jsonb
     ),
     'snapshots',
     jsonb_build_array(
@@ -920,6 +1050,48 @@ VALUES (
   'TECH-LINKGRAPH-005',
   2,
   'technical_seo',
+  'candidate',
+  NULL,
+  '{}'::jsonb,
+  1
+);
+
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.diagnostic_run_rules (
+      diagnostic_run_id, rule_id, rule_version, domain,
+      status, reason, metrics, duration_ms
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000602',
+      'CONTENT-GAP-011',
+      1,
+      'content_intent',
+      'candidate',
+      NULL,
+      '{}'::jsonb,
+      1
+    );
+  EXCEPTION WHEN check_violation THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'current diagnostic accepted the legacy Content Gap rule version';
+  END IF;
+END;
+$$;
+
+INSERT INTO app.diagnostic_run_rules (
+  diagnostic_run_id, rule_id, rule_version, domain,
+  status, reason, metrics, duration_ms
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000602',
+  'CONTENT-GAP-011',
+  2,
+  'content_intent',
   'candidate',
   NULL,
   '{}'::jsonb,
@@ -1552,6 +1724,475 @@ $$;
 UPDATE app.execution_artifacts
 SET status = 'ready'
 WHERE id = '00000000-0000-4000-8000-000000001201';
+
+-- Publication freezes the JCS Artifact identity separately from the exact
+-- UTF-8 bytes submitted to and observed at the provider.
+DO $$
+DECLARE
+  rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.delivery_authorization_grants (
+      id, workspace_id, project_id, site_id, provider_kind, purpose, state,
+      requested_scope, requested_scope_hash, authorization_snapshot,
+      authorization_snapshot_hash, secret_metadata, expires_at, consumed_at,
+      created_by
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000001311',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      'github',
+      'connector_configuration',
+      'consumed',
+      '{"providerKind":"github","repositoryId":101}'::jsonb,
+      repeat('7', 64),
+      '{"purpose":"connector_configuration"}'::jsonb,
+      repeat('6', 64),
+      '{}'::jsonb,
+      now() - interval '1 hour',
+      now(),
+      '00000000-0000-4000-8000-000000000101'
+    );
+  EXCEPTION WHEN check_violation THEN
+    rejected := true;
+  END;
+
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'authorization grant accepted consumption after expiry';
+  END IF;
+END;
+$$;
+
+INSERT INTO app.delivery_authorization_grants (
+  id, workspace_id, project_id, site_id, provider_kind, purpose, state,
+  destination_ref, destination_revision, target_ref, requested_scope,
+  requested_scope_hash, authorization_snapshot, authorization_snapshot_hash,
+  secret_metadata, created_by
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001301',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  'github',
+  'connector_configuration',
+  'ready',
+  '00000000-0000-4000-8000-000000001302',
+  1,
+  '/smoke-ticket/',
+  '{"providerKind":"github","repositoryId":101}'::jsonb,
+  repeat('9', 64),
+  '{"purpose":"connector_configuration","destinationRevision":1}'::jsonb,
+  repeat('a', 64),
+  '{}'::jsonb,
+  '00000000-0000-4000-8000-000000000101'
+);
+
+INSERT INTO app.publication_destinations (
+  id, destination_ref, revision, workspace_id, project_id, site_id,
+  provider_kind, target_ref, state, authorization_grant_id, provider_scope,
+  provider_scope_hash, authorization_snapshot, authorization_snapshot_hash,
+  readiness_observation, created_by
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001303',
+  '00000000-0000-4000-8000-000000001302',
+  1,
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  'github',
+  '/smoke-ticket/',
+  'ready',
+  '00000000-0000-4000-8000-000000001301',
+  '{"providerKind":"github","repositoryId":101,"contentPath":"content/smoke-ticket.md"}'::jsonb,
+  repeat('b', 64),
+  '{"purpose":"connector_configuration","destinationRevision":1}'::jsonb,
+  repeat('a', 64),
+  '{"permissionProbe":"passed"}'::jsonb,
+  '00000000-0000-4000-8000-000000000101'
+);
+
+INSERT INTO app.artifact_approval_events (
+  id, workspace_id, project_id, artifact_id, artifact_revision_id,
+  artifact_revision, artifact_content_hash, event_kind, event_actor_id,
+  reviewer_actor_id, qa_gate_version, qa_gate_snapshot,
+  qa_gate_snapshot_hash, customer_acknowledgement,
+  customer_acknowledgement_hash
+)
+SELECT
+  '00000000-0000-4000-8000-000000001304',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000001201',
+  revision.id,
+  2,
+  repeat('8', 64),
+  'approved',
+  '00000000-0000-4000-8000-000000000101',
+  '00000000-0000-4000-8000-000000000101',
+  'smoke.qa.v1',
+  '{"passed":true}'::jsonb,
+  repeat('c', 64),
+  jsonb_build_object(
+    'customerAcknowledgementId',
+    '00000000-0000-4000-8000-000000001305',
+    'actorId',
+    '00000000-0000-4000-8000-000000000101',
+    'acknowledgedAt',
+    '2026-07-27T12:00:00.000Z',
+    'acknowledgementScope',
+    'publication'
+  ),
+  repeat('d', 64)
+FROM app.artifact_revisions revision
+WHERE revision.artifact_id =
+  '00000000-0000-4000-8000-000000001201'
+  AND revision.revision = 2;
+
+INSERT INTO app.publication_preview_events (
+  id, preview_ref, event_kind, preview_kind, facts_schema_version,
+  workspace_id, project_id, site_id, destination_id, destination_ref,
+  destination_revision, provider_kind, target_ref, action_id, artifact_id,
+  artifact_revision_id, artifact_revision, artifact_content_hash,
+  artifact_approval_event_id, artifact_approval_event_kind, provider_plan,
+  remote_precondition, rollback_plan, preview_checksum, content_checksum,
+  facts_hash, expires_at, event_actor_id, idempotency_key, request_hash
+)
+SELECT
+  '00000000-0000-4000-8000-000000001312',
+  'prv_smoke_ticket_revision_2_0000000000000000',
+  'issued',
+  'publish',
+  'publication-preview-facts.v1',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000001303',
+  '00000000-0000-4000-8000-000000001302',
+  1,
+  'github',
+  '/smoke-ticket/',
+  '00000000-0000-4000-8000-000000001101',
+  '00000000-0000-4000-8000-000000001201',
+  revision.id,
+  2,
+  repeat('8', 64),
+  '00000000-0000-4000-8000-000000001304',
+  'approved',
+  '{"providerKind":"github"}'::jsonb,
+  '{"kind":"must_match","revision":"main"}'::jsonb,
+  '{"providerKind":"github","strategy":"github_revert_pr"}'::jsonb,
+  repeat('8', 64),
+  encode(
+    digest(
+      convert_to('# Smoke ticket revision two', 'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  ),
+  repeat('2', 64),
+  now() + interval '30 minutes',
+  '00000000-0000-4000-8000-000000000101',
+  'publication-preview-smoke-ticket',
+  repeat('3', 64)
+FROM app.artifact_revisions revision
+WHERE revision.artifact_id =
+  '00000000-0000-4000-8000-000000001201'
+  AND revision.revision = 2;
+
+INSERT INTO app.delivery_authorization_grants (
+  id, workspace_id, project_id, site_id, provider_kind, purpose, state,
+  destination_ref, destination_revision, target_ref, requested_scope,
+  requested_scope_hash, authorization_snapshot, authorization_snapshot_hash,
+  secret_metadata, expires_at, created_by
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001306',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  'github',
+  'publish',
+  'ready',
+  '00000000-0000-4000-8000-000000001302',
+  1,
+  '/smoke-ticket/',
+  '{"providerKind":"github","repositoryId":101}'::jsonb,
+  repeat('e', 64),
+  '{"purpose":"publish","destinationRevision":1}'::jsonb,
+  repeat('f', 64),
+  '{}'::jsonb,
+  now() + interval '1 hour',
+  '00000000-0000-4000-8000-000000000101'
+);
+
+INSERT INTO app.async_runs (
+  id, workspace_id, project_id, kind, status, active_key, result_type,
+  result_id, initiated_by
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001307',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  'publication',
+  'queued',
+  'publication:00000000-0000-4000-8000-000000001302:/smoke-ticket/',
+  'publication_attempt',
+  '00000000-0000-4000-8000-000000001308',
+  '00000000-0000-4000-8000-000000000101'
+);
+
+INSERT INTO app.publication_attempts (
+  id, attempt_kind, preview_event_id, preview_event_kind, preview_facts_hash,
+  workspace_id, project_id, site_id, async_run_id,
+  destination_id, destination_ref, destination_revision, provider_kind,
+  target_ref, action_id, artifact_id, artifact_revision_id,
+  approved_artifact_revision, approved_artifact_content_hash,
+  publication_approval_event_id, publication_approval_event_kind,
+  side_effect_class, authorization_grant_id, authorization_purpose,
+  authorization_snapshot, authorization_snapshot_hash, preview_ref,
+  preview_checksum, content_checksum, remote_precondition, rollback_plan,
+  idempotency_key, request_hash, requested_by
+)
+SELECT
+  '00000000-0000-4000-8000-000000001308',
+  'publish',
+  '00000000-0000-4000-8000-000000001312',
+  'issued',
+  repeat('2', 64),
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000001307',
+  '00000000-0000-4000-8000-000000001303',
+  '00000000-0000-4000-8000-000000001302',
+  1,
+  'github',
+  '/smoke-ticket/',
+  '00000000-0000-4000-8000-000000001101',
+  '00000000-0000-4000-8000-000000001201',
+  revision.id,
+  2,
+  repeat('8', 64),
+  '00000000-0000-4000-8000-000000001304',
+  'approved',
+  'external_write',
+  '00000000-0000-4000-8000-000000001306',
+  'publish',
+  '{"purpose":"publish","destinationRevision":1}'::jsonb,
+  repeat('f', 64),
+  'prv_smoke_ticket_revision_2_0000000000000000',
+  repeat('8', 64),
+  encode(
+    digest(
+      convert_to('# Smoke ticket revision two', 'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  ),
+  '{"kind":"must_match","revision":"main"}'::jsonb,
+  '{"providerKind":"github","strategy":"github_revert_pr"}'::jsonb,
+  'publication-smoke-ticket',
+  repeat('1', 64),
+  '00000000-0000-4000-8000-000000000101'
+FROM app.artifact_revisions revision
+WHERE revision.artifact_id =
+  '00000000-0000-4000-8000-000000001201'
+  AND revision.revision = 2;
+
+UPDATE app.delivery_authorization_grants
+SET state = 'consumed', consumed_at = now()
+WHERE id = '00000000-0000-4000-8000-000000001306';
+
+INSERT INTO app.publication_receipts (
+  id, workspace_id, project_id, site_id, publication_attempt_id,
+  receipt_kind, provider_kind, provider_request_id, remote_scope_ref,
+  remote_object_kind, remote_object_id, remote_revision, delivery_url,
+  artifact_content_hash, content_checksum, verification_state, remote_facts,
+  evidence_refs, observed_at
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001309',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000001308',
+  'delivery_receipt',
+  'github',
+  'smoke-request-delivery',
+  'github:repository:101:pull-request:42',
+  'github_pull_request',
+  '42',
+  'head-sha',
+  'https://github.example.test/pull/42',
+  repeat('8', 64),
+  encode(
+    digest(
+      convert_to('# Smoke ticket revision two', 'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  ),
+  'provider_accepted',
+  '{"headSha":"head-sha"}'::jsonb,
+  '[]'::jsonb,
+  now()
+);
+
+DO $$
+DECLARE
+  rejected_artifact_hash boolean := false;
+  rejected_bytes_hash boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.publication_receipts (
+      workspace_id, project_id, site_id, publication_attempt_id,
+      receipt_kind, predecessor_delivery_receipt_id, provider_kind,
+      provider_request_id, remote_scope_ref, remote_object_kind,
+      remote_object_id, remote_revision, delivery_url, live_canonical_url,
+      artifact_content_hash, content_checksum, verification_state,
+      remote_facts, evidence_refs, observed_at
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000001308',
+      'change_receipt',
+      '00000000-0000-4000-8000-000000001309',
+      'github',
+      'smoke-request-change-artifact-mismatch',
+      'github:repository:101:pull-request:42',
+      'github_merge',
+      '42',
+      'merge-sha',
+      'https://github.example.test/pull/42',
+      'https://example.com/smoke-ticket/',
+      repeat('7', 64),
+      encode(
+        digest(
+          convert_to('# Smoke ticket revision two', 'UTF8'),
+          'sha256'
+        ),
+        'hex'
+      ),
+      'verified_live',
+      '{"mergedSha":"merge-sha"}'::jsonb,
+      '["evidence://smoke/live"]'::jsonb,
+      now() + interval '1 second'
+    );
+  EXCEPTION WHEN check_violation THEN
+    rejected_artifact_hash := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.publication_receipts (
+      workspace_id, project_id, site_id, publication_attempt_id,
+      receipt_kind, predecessor_delivery_receipt_id, provider_kind,
+      provider_request_id, remote_scope_ref, remote_object_kind,
+      remote_object_id, remote_revision, delivery_url, live_canonical_url,
+      artifact_content_hash, content_checksum, verification_state,
+      remote_facts, evidence_refs, observed_at
+    )
+    VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000001308',
+      'change_receipt',
+      '00000000-0000-4000-8000-000000001309',
+      'github',
+      'smoke-request-change-bytes-mismatch',
+      'github:repository:101:pull-request:42',
+      'github_merge',
+      '42',
+      'merge-sha',
+      'https://github.example.test/pull/42',
+      'https://example.com/smoke-ticket/',
+      repeat('8', 64),
+      repeat('6', 64),
+      'verified_live',
+      '{"mergedSha":"merge-sha"}'::jsonb,
+      '["evidence://smoke/live"]'::jsonb,
+      now() + interval '1 second'
+    );
+  EXCEPTION WHEN check_violation THEN
+    rejected_bytes_hash := true;
+  END;
+
+  IF NOT rejected_artifact_hash OR NOT rejected_bytes_hash THEN
+    RAISE EXCEPTION 'publication receipt accepted a mismatched Artifact or provider bytes hash';
+  END IF;
+END;
+$$;
+
+INSERT INTO app.publication_receipts (
+  id, workspace_id, project_id, site_id, publication_attempt_id,
+  receipt_kind, predecessor_delivery_receipt_id, provider_kind,
+  provider_request_id, remote_scope_ref, remote_object_kind,
+  remote_object_id, remote_revision, delivery_url, live_canonical_url,
+  artifact_content_hash, content_checksum, verification_state, remote_facts,
+  evidence_refs, observed_at
+)
+VALUES (
+  '00000000-0000-4000-8000-000000001310',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000001308',
+  'change_receipt',
+  '00000000-0000-4000-8000-000000001309',
+  'github',
+  'smoke-request-change',
+  'github:repository:101:pull-request:42',
+  'github_merge',
+  '42',
+  'merge-sha',
+  'https://github.example.test/pull/42',
+  'https://example.com/smoke-ticket/',
+  repeat('8', 64),
+  encode(
+    digest(
+      convert_to('# Smoke ticket revision two', 'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  ),
+  'verified_live',
+  '{"mergedSha":"merge-sha"}'::jsonb,
+  '["evidence://smoke/live"]'::jsonb,
+  now() + interval '2 seconds'
+);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.publication_attempts attempt
+    JOIN app.publication_receipts delivery
+      ON delivery.publication_attempt_id = attempt.id
+     AND delivery.receipt_kind = 'delivery_receipt'
+    JOIN app.publication_receipts change
+      ON change.publication_attempt_id = attempt.id
+     AND change.receipt_kind = 'change_receipt'
+    WHERE attempt.id = '00000000-0000-4000-8000-000000001308'
+      AND attempt.approved_artifact_content_hash = repeat('8', 64)
+      AND attempt.preview_checksum = attempt.approved_artifact_content_hash
+      AND attempt.content_checksum <> attempt.approved_artifact_content_hash
+      AND delivery.artifact_content_hash =
+        attempt.approved_artifact_content_hash
+      AND delivery.content_checksum = attempt.content_checksum
+      AND change.artifact_content_hash =
+        attempt.approved_artifact_content_hash
+      AND change.content_checksum = attempt.content_checksum
+  ) THEN
+    RAISE EXCEPTION 'publication Artifact identity and provider bytes lineage was not preserved';
+  END IF;
+END;
+$$;
 
 DO $$
 DECLARE
@@ -2974,6 +3615,7 @@ BEGIN
       AND conname = 'diagnostic_runs_rule_set_version_check'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.0%'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.1%'
+      AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.2%'
   ) THEN
     RAISE EXCEPTION 'diagnostic rule-set compatibility is stale';
   END IF;
@@ -3107,9 +3749,388 @@ BEGIN
     RAISE EXCEPTION 'Finding target runtime routines are incomplete';
   END IF;
   IF (
+    SELECT count(*)
+    FROM information_schema.tables
+    WHERE table_schema = 'app'
+      AND table_name IN (
+        'keyword_relation_identities',
+        'keyword_relation_candidates',
+        'keyword_relation_decisions'
+      )
+      AND table_type = 'BASE TABLE'
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Keyword Relation governance tables are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname IN (
+        'keyword_relation_identities_keyword_a_idx',
+        'keyword_relation_identities_keyword_b_idx',
+        'keyword_relation_candidates_latest_idx',
+        'keyword_relation_decisions_latest_idx'
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'Keyword Relation governance indexes are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger
+    WHERE NOT tgisinternal
+      AND tgname IN (
+        'keyword_relation_candidates_insert_guard',
+        'keyword_relation_identities_append_only',
+        'keyword_relation_candidates_append_only',
+        'keyword_relation_decisions_insert_guard',
+        'keyword_relation_decisions_append_only'
+      )
+  ) <> 5 THEN
+    RAISE EXCEPTION 'Keyword Relation governance triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT proname)
+    FROM pg_proc
+    WHERE pronamespace = 'app'::regnamespace
+      AND proname IN (
+        'normalize_keyword_relation_semantic',
+        'keyword_relation_token_overlap',
+        'keyword_relation_candidate_stale_reasons',
+        'enforce_keyword_relation_candidate_insert',
+        'enforce_keyword_relation_decision_insert'
+      )
+  ) <> 5 THEN
+    RAISE EXCEPTION 'Keyword Relation governance routines are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.tables
+    WHERE table_schema = 'app'
+      AND table_name IN (
+        'action_execution_step_definitions',
+        'action_execution_state_events'
+      )
+      AND table_type = 'BASE TABLE'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Action Execution authority tables are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname IN (
+        'action_execution_step_definitions_scope_idx',
+        'action_execution_state_events_current_idx'
+      )
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Action Execution authority indexes are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger
+    WHERE NOT tgisinternal
+      AND tgname IN (
+        'action_execution_step_definitions_insert_guard',
+        'action_execution_step_definitions_append_only',
+        'action_execution_state_events_insert_guard',
+        'action_execution_state_events_append_only'
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'Action Execution authority triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT proname)
+    FROM pg_proc
+    WHERE pronamespace = 'app'::regnamespace
+      AND proname IN (
+        'enforce_action_execution_step_definition_insert',
+        'enforce_action_execution_state_insert'
+      )
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Action Execution authority routines are incomplete';
+  END IF;
+  IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0021_content_shadow_invocation_task' THEN
+  ) IS DISTINCT FROM '0030_backlink_growth_path' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.tables
+    WHERE table_schema = 'app'
+      AND table_name IN (
+        'competitor_monitor_settings',
+        'competitor_monitor_runs',
+        'competitor_monitor_evaluations',
+        'competitor_monitor_signals'
+      )
+      AND table_type = 'BASE TABLE'
+  ) <> 4 THEN
+    RAISE EXCEPTION 'Competitor Monitor authority tables are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname IN (
+        'competitor_monitor_runs_competitor_created_idx',
+        'competitor_monitor_evaluations_competitor_time_idx',
+        'competitor_monitor_signals_competitor_time_idx',
+        'competitor_monitor_signals_rank_unique_idx',
+        'competitor_monitor_signals_content_unique_idx'
+      )
+  ) <> 5 THEN
+    RAISE EXCEPTION 'Competitor Monitor authority indexes are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger
+    WHERE NOT tgisinternal
+      AND tgname IN (
+        'competitor_monitor_runs_insert_guard',
+        'competitor_monitor_evaluations_insert_guard',
+        'competitor_monitor_signals_insert_guard',
+        'competitor_monitor_runs_append_only',
+        'competitor_monitor_evaluations_append_only',
+        'competitor_monitor_signals_append_only'
+      )
+  ) <> 6 THEN
+    RAISE EXCEPTION 'Competitor Monitor authority triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT proname)
+    FROM pg_proc
+    WHERE pronamespace = 'app'::regnamespace
+      AND proname IN (
+        'enforce_competitor_monitor_run_insert',
+        'enforce_competitor_monitor_evaluation_insert',
+        'enforce_competitor_monitor_signal_insert'
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Competitor Monitor authority routines are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.tables
+    WHERE table_schema = 'app'
+      AND table_name IN (
+        'geo_query_observations',
+        'geo_citation_occurrences'
+      )
+      AND table_type = 'BASE TABLE'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'GEO citation authority tables are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname IN (
+        'geo_query_observations_identity_idx',
+        'geo_query_observations_normalized_idx',
+        'geo_citation_occurrences_query_idx'
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'GEO citation authority indexes are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger
+    WHERE NOT tgisinternal
+      AND tgname IN (
+        'geo_normalized_observations_lineage_guard',
+        'geo_normalized_observations_completeness_guard',
+        'geo_query_observations_insert_guard',
+        'geo_query_observations_completeness_guard',
+        'geo_query_observations_append_only',
+        'geo_citation_occurrences_insert_guard',
+        'geo_citation_occurrences_completeness_guard',
+        'geo_citation_occurrences_append_only'
+      )
+  ) <> 8 THEN
+    RAISE EXCEPTION 'GEO citation authority triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT proname)
+    FROM pg_proc
+    WHERE pronamespace = 'app'::regnamespace
+      AND proname IN (
+        'enforce_geo_normalized_observation_insert',
+        'enforce_geo_query_observation_insert',
+        'enforce_geo_citation_occurrence_insert',
+        'enforce_geo_evidence_completeness'
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'GEO citation authority routines are incomplete';
+  END IF;
+  IF position(
+    '''voc''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.source_connections'::regclass
+        AND constraint_row.conname = 'source_connections_provider_check'
+    )
+  ) IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'VOC must remain an internal source rather than a customer-managed connection';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_constraint constraint_row
+    WHERE (
+      constraint_row.conrelid = 'app.collection_runs'::regclass
+      AND (
+        (
+          constraint_row.conname = 'collection_runs_provider_check'
+          AND pg_get_constraintdef(constraint_row.oid) LIKE '%voc%'
+        )
+        OR (
+          constraint_row.conname = 'collection_runs_operation_check'
+          AND pg_get_constraintdef(constraint_row.oid)
+            LIKE '%keyword_evidence_collection%'
+        )
+      )
+    )
+    OR (
+      constraint_row.conrelid = 'app.data_snapshots'::regclass
+      AND constraint_row.conname IN (
+        'data_snapshots_provider_check',
+        'data_snapshots_dataset_key_check'
+      )
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%voc%'
+    )
+    OR (
+      constraint_row.conrelid = 'app.normalized_observations'::regclass
+      AND constraint_row.conname = 'normalized_observations_provider_check'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%voc%'
+    )
+    OR (
+      constraint_row.conrelid = 'app.keyword_occurrences'::regclass
+      AND constraint_row.conname = 'keyword_occurrences_source_kind_check'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%interview_summary%'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%user_review%'
+    )
+  ) <> 6 THEN
+    RAISE EXCEPTION 'VOC Keyword evidence constraints are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger trigger_row
+    JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
+    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'app'
+      AND NOT trigger_row.tgisinternal
+      AND trigger_row.tgname IN (
+        'collection_runs_voc_provenance_guard',
+        'data_snapshots_voc_provenance_guard',
+        'normalized_observations_voc_provenance_guard',
+        'keyword_occurrences_voc_lineage_guard'
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'VOC Keyword evidence triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT procedure.proname)
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname IN (
+        'enforce_voc_collection_run_provenance',
+        'enforce_voc_data_snapshot_provenance',
+        'enforce_voc_keyword_evidence_observation',
+        'enforce_voc_keyword_occurrence_lineage'
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'VOC Keyword evidence routines are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.tables
+    WHERE table_schema = 'app'
+      AND table_name IN (
+        'backlink_authority_snapshots',
+        'backlink_facts',
+        'backlink_page_metrics'
+      )
+      AND table_type = 'BASE TABLE'
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Backlink Growth Map authority tables are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname IN (
+        'backlink_authority_identity_idx',
+        'backlink_authority_subject_source_idx',
+        'backlink_facts_target_page_idx',
+        'backlink_facts_referring_domain_idx',
+        'backlink_page_metrics_page_idx'
+      )
+  ) <> 5 THEN
+    RAISE EXCEPTION 'Backlink Growth Map authority indexes are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger trigger_row
+    JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
+    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'app'
+      AND NOT trigger_row.tgisinternal
+      AND trigger_row.tgname IN (
+        'backlink_authority_snapshots_insert_guard',
+        'backlink_facts_insert_guard',
+        'backlink_page_metrics_insert_guard',
+        'backlink_authority_snapshots_append_only',
+        'backlink_facts_append_only',
+        'backlink_page_metrics_append_only'
+      )
+  ) <> 6 THEN
+    RAISE EXCEPTION 'Backlink Growth Map authority triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT procedure.proname)
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname IN (
+        'enforce_backlink_authority_snapshot_insert',
+        'enforce_backlink_fact_insert',
+        'enforce_backlink_page_metric_insert'
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Backlink Growth Map authority routines are incomplete';
+  END IF;
+  IF position(
+    '''backlink_v1''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.import_previews'::regclass
+        AND constraint_row.conname = 'import_previews_template_id_check'
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'Backlink CSV template is missing from governed import previews';
+  END IF;
+  IF position(
+    'ahrefs' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.source_connections'::regclass
+        AND constraint_row.conname = 'source_connections_provider_check'
+    )
+  ) <> 0 OR position(
+    'moz' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.source_connections'::regclass
+        AND constraint_row.conname = 'source_connections_provider_check'
+    )
+  ) <> 0 OR position(
+    'backlink' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.source_connections'::regclass
+        AND constraint_row.conname = 'source_connections_provider_check'
+    )
+  ) <> 0 THEN
+    RAISE EXCEPTION 'Backlink providers must remain built-in Growth Map evidence rather than customer-managed connections';
   END IF;
 END;
 $$;

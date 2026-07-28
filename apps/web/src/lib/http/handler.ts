@@ -68,6 +68,8 @@ export function apiRouteTemplate(rawUrl: string): string {
       resource === "findings" ||
       resource === "actions" ||
       resource === "artifacts" ||
+      resource === "results" ||
+      resource === "measurement-windows" ||
       resource === "report" ||
       resource === "exports" ||
       resource === "sources")
@@ -90,12 +92,38 @@ export function apiRouteTemplate(rawUrl: string): string {
   ) {
     return `${base}/product-profile/competitors/:candidateId`;
   }
+  if (resource === "audit" && segments[3] === "topic-model") {
+    const topicModel = `${base}/audit/topic-model`;
+    if (segments.length === 4) return topicModel;
+    if (segments.length === 5 && segments[4] === "insights") {
+      return `${topicModel}/insights`;
+    }
+    if (segments.length === 5 && segments[4] === "draft") {
+      return `${topicModel}/draft`;
+    }
+    if (
+      segments.length === 6 &&
+      segments[4] === "draft" &&
+      segments[5] === "confirm"
+    ) {
+      return `${topicModel}/draft/confirm`;
+    }
+  }
+  if (resource === "audit" && segments[3] === "keyword-relations") {
+    const keywordRelations = `${base}/audit/keyword-relations`;
+    if (segments.length === 4) return keywordRelations;
+    if (segments.length === 5) {
+      return `${keywordRelations}/:relationId`;
+    }
+  }
   if (
     resource === "audit" &&
     segments.length === 4 &&
     (segments[3] === "urls" ||
       segments[3] === "keywords" ||
-      segments[3] === "competitors")
+      segments[3] === "competitors" ||
+      segments[3] === "internal-link-map" ||
+      segments[3] === "backlinks")
   ) {
     return `${base}/audit/${segments[3]}`;
   }
@@ -113,6 +141,14 @@ export function apiRouteTemplate(rawUrl: string): string {
           ? ":keywordId"
           : ":competitorId";
     return `${base}/audit/${segments[3]}/${parameter}`;
+  }
+  if (
+    resource === "audit" &&
+    segments.length === 6 &&
+    segments[3] === "keywords" &&
+    segments[5] === "rank-history"
+  ) {
+    return `${base}/audit/keywords/:keywordId/rank-history`;
   }
   if (
     segments.length === 4 &&
@@ -157,6 +193,30 @@ export function apiRouteTemplate(rawUrl: string): string {
     segments[4] === "approval"
   ) {
     return `${base}/artifacts/:artifactId/approval`;
+  }
+  if (
+    resource === "measurement-windows" &&
+    segments.length === 4 &&
+    segments[3] === "recent"
+  ) {
+    return `${base}/measurement-windows/recent`;
+  }
+  if (
+    resource === "measurement-windows" &&
+    segments.length === 5 &&
+    segments[4] === "keyword-ranks"
+  ) {
+    return `${base}/measurement-windows/:measurementWindowId/keyword-ranks`;
+  }
+  if (resource === "publications" && segments[3] === "previews") {
+    const previews = `${base}/publications/previews`;
+    if (segments.length === 4) return previews;
+    if (segments.length === 5 && segments[4] === "rollback") {
+      return `${previews}/rollback`;
+    }
+    if (segments.length === 7 && segments[6] === "revoke") {
+      return `${previews}/:previewEventId/:previewRef/revoke`;
+    }
   }
   if (resource === "publications" && segments[3] === "attempts") {
     const attempts = `${base}/publications/attempts`;

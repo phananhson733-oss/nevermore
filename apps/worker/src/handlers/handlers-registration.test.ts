@@ -6,7 +6,9 @@ import { registerArtifactHandlers } from "./artifact.ts";
 import { registerContentShadowHandler } from "./content-shadow.ts";
 import { registerCollectHandlers } from "./collect.ts";
 import { registerDiagnoseHandler } from "./diagnose.ts";
+import { registerMeasurementHandler } from "./measurement.ts";
 import { registerProfileSynthesizeHandler } from "./profile-synthesize.ts";
+import { registerPublicationHandler } from "./publication.ts";
 import { prepareRunDelivery } from "./recovery.ts";
 
 // This suite verifies only pg-boss registration options and queue names. Keep
@@ -21,6 +23,9 @@ vi.mock("../content-shadow/run-content-shadow.ts", () => ({
 }));
 vi.mock("../product-profile/run-product-profile-synthesis.ts", () => ({
   runProductProfileSynthesis: vi.fn(),
+}));
+vi.mock("../measurement/run-measurement.ts", () => ({
+  runMeasurement: vi.fn(),
 }));
 vi.mock("./recovery.ts", () => ({
   prepareRunDelivery: vi.fn(
@@ -46,8 +51,10 @@ describe("worker handler registration", () => {
     await registerProfileSynthesizeHandler(ctx);
     await registerArtifactHandlers(ctx);
     await registerContentShadowHandler(ctx);
+    await registerPublicationHandler(ctx, vi.fn(async () => undefined));
+    await registerMeasurementHandler(ctx, vi.fn(async () => undefined));
 
-    expect(work).toHaveBeenCalledTimes(10);
+    expect(work).toHaveBeenCalledTimes(12);
     expect(work.mock.calls.map((call) => call[0])).toEqual([
       "collect.crawl",
       "collect.gsc",
@@ -59,6 +66,8 @@ describe("worker handler registration", () => {
       "artifact.generate",
       "export.bundle",
       "content-shadow",
+      "publication",
+      "measurement",
     ]);
     for (const call of work.mock.calls) {
       expect(call[1]).toEqual({ includeMetadata: true });

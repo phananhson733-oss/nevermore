@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION } from "@sf/contracts";
 import {
   clientProjects,
   competitorEntities,
@@ -156,8 +157,16 @@ export interface CompetitorReviewInput {
   readonly analysisScope: readonly CompetitorAnalysisScope[];
 }
 
+export interface CompetitorOriginBatchOptions {
+  readonly limitPerEntity: number;
+  readonly totalLimit: number;
+}
+
 export const MAX_COMPETITOR_PAGE_SIZE = 100;
 export const MAX_COMPETITOR_ORIGIN_PAGE_SIZE = 100;
+export const MAX_COMPETITOR_ORIGIN_BATCH_TOTAL = 2_000;
+/** 500 accepted facts plus one overflow sentinel. */
+export const MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ = 501;
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -205,7 +214,7 @@ const originCount = sql<number>`(
 )`;
 
 /** Safety ceiling for one frozen competitor identity set. */
-export const MAX_COMPETITOR_ENTITY_BATCH = 50;
+export const MAX_COMPETITOR_ENTITY_BATCH = 500;
 
 const competitorSelection = {
   id: competitorEntities.id,
@@ -264,6 +273,44 @@ function activeProjectPredicate(scope: ProjectScope) {
 
 function assertUuid(value: string, label: string): void {
   if (!UUID.test(value)) throw new RangeError(`${label} must be a UUID`);
+}
+
+function assertOriginBatch(
+  competitorIds: readonly string[],
+  options: CompetitorOriginBatchOptions,
+): string[] {
+  if (competitorIds.length > MAX_COMPETITOR_ENTITY_BATCH) {
+    throw new RangeError(
+      `competitorIds must contain at most ${MAX_COMPETITOR_ENTITY_BATCH} ids`,
+    );
+  }
+  const unique = new Set<string>();
+  for (const competitorId of competitorIds) {
+    assertUuid(competitorId, "competitorId");
+    if (unique.has(competitorId)) {
+      throw new RangeError("competitorIds must contain unique ids");
+    }
+    unique.add(competitorId);
+  }
+  if (
+    !Number.isSafeInteger(options.limitPerEntity) ||
+    options.limitPerEntity < 1 ||
+    options.limitPerEntity > MAX_COMPETITOR_ORIGIN_PAGE_SIZE
+  ) {
+    throw new RangeError(
+      `limitPerEntity must be between 1 and ${MAX_COMPETITOR_ORIGIN_PAGE_SIZE}`,
+    );
+  }
+  if (
+    !Number.isSafeInteger(options.totalLimit) ||
+    options.totalLimit < 1 ||
+    options.totalLimit > MAX_COMPETITOR_ORIGIN_BATCH_TOTAL
+  ) {
+    throw new RangeError(
+      `totalLimit must be between 1 and ${MAX_COMPETITOR_ORIGIN_BATCH_TOTAL}`,
+    );
+  }
+  return [...unique].sort();
 }
 
 function assertName(name: string | null): void {
@@ -415,10 +462,12 @@ function assertOriginInput(input: CompetitorOriginInput): void {
 function assertReviewInput(input: CompetitorReviewInput): void {
   if (
     !Number.isSafeInteger(input.expectedRevision) ||
-    input.expectedRevision < 0
+    input.expectedRevision < 0 ||
+    input.expectedRevision >
+      MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION
   ) {
     throw new RangeError(
-      "expectedRevision must be a non-negative safe integer",
+      "expectedRevision must be inside the incrementable PostgreSQL integer range",
     );
   }
   assertName(input.name);
@@ -523,6 +572,33 @@ function originParameters(input: CompetitorOriginInput) {
 }
 
 export class CompetitorsRepository extends Repository {
+  async listDiagnosticEligible(
+    scope: ProjectScope,
+    options: { readonly limit: number },
+  ): Promise<CompetitorEntityRow[]> {
+    if (
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ
+    ) {
+      throw new RangeError(
+        `limit must be between 1 and ${MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ}`,
+      );
+    }
+    return (await this.exec
+      .select(competitorSelection)
+      .from(competitorEntities)
+      .where(
+        and(
+          projectPredicate(competitorEntities, scope),
+          activeProjectPredicate(scope),
+          eq(competitorEntities.review_status, "approved"),
+        ),
+      )
+      .orderBy(asc(competitorEntities.domain), asc(competitorEntities.id))
+      .limit(options.limit)) as CompetitorEntityRow[];
+  }
+
   async upsertOrigin(
     scope: ProjectScope,
     input: CompetitorOriginInput,
@@ -701,6 +777,98 @@ export class CompetitorsRepository extends Repository {
         desc(competitorOriginOccurrences.id),
       )
       .limit(limit)) as CompetitorOriginRow[];
+  }
+
+  /**
+   * One project-scoped origin read for a frozen competitor set. A per-entity
+   * window and an outer sentinel bound both corrupt histories and total
+   * manifest size without issuing one query per competitor.
+   */
+  async listOriginsForCompetitorIds(
+    scope: ProjectScope,
+    competitorIds: readonly string[],
+    options: CompetitorOriginBatchOptions,
+  ): Promise<CompetitorOriginRow[]> {
+    const ids = assertOriginBatch(competitorIds, options);
+    if (ids.length === 0) return [];
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      with ranked_competitor_origins as (
+        select
+          ${competitorOriginOccurrences.id} as id,
+          ${competitorOriginOccurrences.workspace_id} as workspace_id,
+          ${competitorOriginOccurrences.project_id} as project_id,
+          ${competitorOriginOccurrences.competitor_id} as competitor_id,
+          ${competitorOriginOccurrences.origin_kind} as origin_kind,
+          ${competitorOriginOccurrences.source_name} as source_name,
+          ${competitorOriginOccurrences.product_profile_id} as product_profile_id,
+          ${competitorOriginOccurrences.profile_version} as profile_version,
+          ${competitorOriginOccurrences.candidate_id} as candidate_id,
+          ${competitorOriginOccurrences.field_provenance_path} as field_provenance_path,
+          ${competitorOriginOccurrences.evidence_refs} as evidence_refs,
+          ${competitorOriginOccurrences.source_review_status} as source_review_status,
+          ${competitorOriginOccurrences.source_relationship} as source_relationship,
+          ${competitorOriginOccurrences.source_analysis_scope} as source_analysis_scope,
+          ${competitorOriginOccurrences.data_snapshot_id} as data_snapshot_id,
+          ${competitorOriginOccurrences.normalized_observation_id} as normalized_observation_id,
+          ${competitorOriginOccurrences.import_preview_id} as import_preview_id,
+          ${competitorOriginOccurrences.source_pointer} as source_pointer,
+          ${competitorOriginOccurrences.manual_entry_id} as manual_entry_id,
+          ${competitorOriginOccurrences.observed_at}::text as observed_at,
+          ${competitorOriginOccurrences.created_at}::text as created_at,
+          row_number() over (
+            partition by ${competitorOriginOccurrences.competitor_id}
+            order by
+              ${competitorOriginOccurrences.observed_at} desc nulls last,
+              ${competitorOriginOccurrences.created_at} desc,
+              ${competitorOriginOccurrences.id} desc
+          ) as entity_row_number
+        from ${competitorOriginOccurrences}
+        inner join ${competitorEntities}
+          on ${competitorEntities.id} = ${competitorOriginOccurrences.competitor_id}
+         and ${competitorEntities.workspace_id} = ${competitorOriginOccurrences.workspace_id}
+         and ${competitorEntities.project_id} = ${competitorOriginOccurrences.project_id}
+        inner join ${clientProjects}
+          on ${clientProjects.id} = ${competitorOriginOccurrences.project_id}
+         and ${clientProjects.workspace_id} = ${competitorOriginOccurrences.workspace_id}
+        where ${competitorOriginOccurrences.workspace_id} = ${scope.workspaceId}
+          and ${competitorOriginOccurrences.project_id} = ${scope.projectId}
+          and ${clientProjects.archived_at} is null
+          and ${competitorOriginOccurrences.competitor_id} in (
+            ${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}
+          )
+      )
+      select
+        id,
+        workspace_id,
+        project_id,
+        competitor_id,
+        origin_kind,
+        source_name,
+        product_profile_id,
+        profile_version,
+        candidate_id,
+        field_provenance_path,
+        evidence_refs,
+        source_review_status,
+        source_relationship,
+        source_analysis_scope,
+        data_snapshot_id,
+        normalized_observation_id,
+        import_preview_id,
+        source_pointer,
+        manual_entry_id,
+        observed_at,
+        created_at
+      from ranked_competitor_origins
+      where entity_row_number <= ${options.limitPerEntity}
+      order by
+        competitor_id asc,
+        observed_at desc nulls last,
+        created_at desc,
+        id desc
+      limit ${options.totalLimit + 1}
+    `);
+    return result.rows as unknown as CompetitorOriginRow[];
   }
 
   /** Null means stale revision, absent entity, foreign scope, or archived project. */

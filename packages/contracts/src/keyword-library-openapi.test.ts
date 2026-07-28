@@ -11,6 +11,7 @@ import type {
   GrowthMapKeywordDetailResponse as GrowthMapKeywordDetailResponseZod,
   GrowthMapKeywordLibraryResponse as GrowthMapKeywordLibraryResponseZod,
 } from "./zod/growth-map.ts";
+import type { ReviewKeywordRequest as ReviewKeywordRequestZod } from "./zod/keyword-governance.ts";
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends
@@ -26,6 +27,7 @@ type RequiredKeys<Value> = {
 
 type KeywordListOperation = operations["listProjectAuditKeywords"];
 type KeywordDetailOperation = operations["getProjectAuditKeyword"];
+type KeywordReviewOperation = operations["reviewProjectAuditKeyword"];
 type KeywordListQuery = NonNullable<
   KeywordListOperation["parameters"]["query"]
 >;
@@ -33,6 +35,8 @@ type KeywordListHttpResponse =
   KeywordListOperation["responses"][200]["content"]["application/json"];
 type KeywordDetailHttpResponse =
   KeywordDetailOperation["responses"][200]["content"]["application/json"];
+type KeywordReviewRequest =
+  KeywordReviewOperation["requestBody"]["content"]["application/json"];
 type KeywordItem = components["schemas"]["GrowthMapKeywordLibraryItem"];
 type KeywordSourceOccurrence =
   components["schemas"]["GrowthMapKeywordSourceOccurrence"];
@@ -98,7 +102,12 @@ type _KeywordLanguageTagUsesCanonicalContract = Expect<
 type _SourceKinds = Expect<
   Equal<
     KeywordSourceOccurrence["sourceKind"],
-    "csv_import" | "dataforseo_ranked" | "gsc_top_query" | "manual"
+    | "csv_import"
+    | "dataforseo_ranked"
+    | "gsc_top_query"
+    | "interview_summary"
+    | "user_review"
+    | "manual"
   >
 >;
 type _MappedTargetKinds = Expect<
@@ -159,11 +168,10 @@ type _ListHasNoMutation = Expect<
     undefined
   >
 >;
-type _DetailHasNoMutation = Expect<
+type _DetailHasNoOtherMutation = Expect<
   Equal<
     | KeywordDetailPath["post"]
     | KeywordDetailPath["put"]
-    | KeywordDetailPath["patch"]
     | KeywordDetailPath["delete"]
     | KeywordDetailPath["head"]
     | KeywordDetailPath["options"]
@@ -171,14 +179,24 @@ type _DetailHasNoMutation = Expect<
     undefined
   >
 >;
+type _DetailHasReviewPatch = Expect<
+  Equal<KeywordDetailPath["patch"] extends undefined ? true : false, false>
+>;
+type _ReviewRequestMatchesRuntimeContract = Expect<
+  Equal<KeywordReviewRequest, ReviewKeywordRequestZod>
+>;
 
 const generated = readFileSync(
   new URL("./generated/openapi.ts", import.meta.url),
   "utf8",
 );
+const openapi = readFileSync(
+  new URL("../../../openapi/mvp.yaml", import.meta.url),
+  "utf8",
+);
 
 describe("Keyword Library generated OpenAPI contract", () => {
-  it("publishes only the implemented cursor-page and exact-detail reads", () => {
+  it("publishes the implemented cursor read, detail read, and governed review", () => {
     expect(generated).toContain(
       '"/projects/{projectId}/audit/keywords": {',
     );
@@ -191,6 +209,9 @@ describe("Keyword Library generated OpenAPI contract", () => {
     expect(generated).toContain(
       'get: operations["getProjectAuditKeyword"];',
     );
+    expect(generated).toContain(
+      'patch: operations["reviewProjectAuditKeyword"];',
+    );
   });
 
   it("preserves source and mapped-target discriminator wire literals", () => {
@@ -198,6 +219,8 @@ describe("Keyword Library generated OpenAPI contract", () => {
       ["sourceKind", "csv_import"],
       ["sourceKind", "dataforseo_ranked"],
       ["sourceKind", "gsc_top_query"],
+      ["sourceKind", "interview_summary"],
+      ["sourceKind", "user_review"],
       ["sourceKind", "manual"],
       ["kind", "unassigned"],
       ["kind", "existing_page"],
@@ -205,6 +228,24 @@ describe("Keyword Library generated OpenAPI contract", () => {
     ] as const) {
       expect(generated).toContain(`${property}: "${literal}";`);
     }
+  });
+
+  it("keeps interview summaries and public reviews separate without exposing raw people or review text", () => {
+    expect(openapi).toContain(
+      "interview_summary: '#/components/schemas/GrowthMapKeywordInterviewSummaryOccurrence'",
+    );
+    expect(openapi).toContain(
+      "user_review: '#/components/schemas/GrowthMapKeywordUserReviewOccurrence'",
+    );
+    expect(openapi).toMatch(
+      /GrowthMapKeywordInterviewSummaryOccurrence:[\s\S]*?collectionRunId:[\s\S]*?sourceRecordHash:[\s\S]*?GrowthMapKeywordUserReviewOccurrence:/u,
+    );
+    expect(openapi).toMatch(
+      /GrowthMapKeywordUserReviewOccurrence:[\s\S]*?collectionRunId:[\s\S]*?reviewPlatform:[\s\S]*?enum: \[app_store, g2, capterra, other\]/u,
+    );
+    expect(openapi).not.toMatch(
+      /GrowthMapKeyword(?:InterviewSummary|UserReview)Occurrence:[\s\S]*?(participantName|reviewAuthor|reviewBody|transcript):/u,
+    );
   });
 
   it("keeps every metric attached to its canonical Observation pointer", () => {
@@ -218,5 +259,11 @@ describe("Keyword Library generated OpenAPI contract", () => {
     ]) {
       expect(generated).toContain(`valuePointer: "${pointer}";`);
     }
+  });
+
+  it("keeps Keyword CAS input incrementable inside PostgreSQL integer storage", () => {
+    expect(openapi).toMatch(
+      /ReviewKeywordRequest:[\s\S]*?expectedGovernanceRevision:\s*\n\s*type: integer\s*\n\s*minimum: 0\s*\n\s*maximum: 2147483646[\s\S]*?topicModelRevision:\s*\n\s*type: \[integer, 'null'\]\s*\n\s*minimum: 1\s*\n\s*maximum: 2147483647/u,
+    );
   });
 });

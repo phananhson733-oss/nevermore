@@ -2,6 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   KeywordsRepository,
+  MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
   type KeywordEntityRow,
 } from "./keywords.ts";
@@ -142,6 +143,39 @@ describe("KeywordsRepository", () => {
     expect(predicate.params).toContain("US");
   });
 
+  it("reads only approved, confirmed, clustered diagnostic facts with one sentinel", async () => {
+    const db = new FakeExecutor();
+    const approved = {
+      ...entity,
+      status: "approved",
+      mapping_review_state: "confirmed",
+      cluster_key: "customer-onboarding",
+      mapping_revision: 1,
+    } as const satisfies KeywordEntityRow;
+    db.enqueue([approved]);
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(
+      repo.listDiagnosticEligible(scope, {
+        limit: MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
+      }),
+    ).resolves.toEqual([approved]);
+
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"workspace_id" = $');
+    expect(predicate.sql).toContain('"project_id" = $');
+    expect(predicate.sql).toContain('"cluster_key" is not null');
+    expect(predicate.sql).toContain('"archived_at" is null');
+    expect(predicate.params).toEqual(
+      expect.arrayContaining(["approved", "confirmed"]),
+    );
+    expect(db.last("limit").args).toEqual([
+      MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
+    ]);
+  });
+
   it("returns null for a foreign, archived or absent detail within the SQL scope", async () => {
     const db = new FakeExecutor();
     db.enqueue([]);
@@ -236,6 +270,11 @@ describe("KeywordsRepository", () => {
       repo.listByProject(scope, {
         limit: MAX_KEYWORD_ENTITY_PAGE_SIZE + 1,
         cursor: null,
+      }),
+    ).rejects.toThrow(/limit/i);
+    await expect(
+      repo.listDiagnosticEligible(scope, {
+        limit: MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ + 1,
       }),
     ).rejects.toThrow(/limit/i);
     expect(db.calls).toEqual([]);

@@ -1,25 +1,50 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type {
+  CompetitorMonitorItem,
+  CompetitorMonitorResponse,
+  GrowthMapKeywordLibraryItem,
+  GrowthMapKeywordRankHistory,
+  GrowthMapKeywordRelation,
+  GrowthMapInternalLinkMap,
   GrowthMapKeywordNumericMetric,
+  GrowthMapTopicModelInsights,
   GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
+  TopicModelWorkspaceProjection,
 } from "@sf/contracts";
 import { ApiError } from "@/lib/api";
 import {
   GROWTH_MAP_OBJECT_MODES,
   GROWTH_MAP_DETAIL_STATES,
+  buildBeginTopicModelDraftCommand,
+  buildConfirmTopicModelCommand,
+  buildKeywordRankChartModel,
+  buildKeywordGovernanceReviewCommand,
+  buildKeywordRelationDecisionCommand,
+  buildKeywordRelationPageProjection,
+  buildInternalLinkMapProjection,
+  buildPatchTopicModelDraftCommand,
+  buildTopicMapProjection,
+  buildTopicNodeCreateIntent,
+  buildTopicNodeMergeIntent,
+  buildTopicNodeRenameIntent,
+  buildTopicNodeRetireIntent,
+  buildTopicNodeSplitIntent,
+  buildTopicNodeUpdateIntent,
   buildGrowthMapReviewCommand,
   findMetricObservation,
   growthMapLocationHref,
   growthMapDetailAllowsFindingReview,
   competitorDetailReadState,
+  competitorMonitorDisplayState,
   competitorLibraryReadState,
   growthMapPlatformLimitationKey,
   rememberGrowthMapCursorPredecessor,
   resolveGrowthMapCursorPredecessor,
   keywordMetricPresentation,
   keywordDetailReadState,
+  keywordTopicNeedsConflictConfirmation,
   keywordLibraryReadState,
   metricValueLabelKey,
   metricPresentation,
@@ -30,7 +55,9 @@ import {
   resolveVisibleCompetitorSelection,
   resolveVisibleKeywordSelection,
   safeExternalPageUrl,
+  selectCompetitorMonitorItem,
   shouldShowGrowthMapReviewError,
+  topicNodeAllowedParentIds,
   uniqueMetricSources,
 } from "./_growth-map-view-model.ts";
 
@@ -43,7 +70,497 @@ const IDS = {
   observation: "11111111-1111-4111-8111-111111111111",
   snapshot: "22222222-2222-4222-8222-222222222222",
   sitePage: "33333333-3333-4333-8333-333333333333",
+  sitePageB: "33333333-3333-4333-8333-333333333334",
+  sitePageC: "33333333-3333-4333-8333-333333333335",
+  relation: "88888888-8888-4888-8888-888888888888",
+  candidate: "99999999-9999-4999-8999-999999999999",
+  keywordA: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+  keywordB: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+  keywordC: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+  decision: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4",
+  actor: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5",
+  topic: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6",
+  topicRoot: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7",
+  topicChild: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa8",
+  topicGrandchild: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9",
+  topicSuccessor: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+  project: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
+  internalLinkFinding: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+  internalLinkSourceFinding: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4",
+  internalLinkTopic: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb5",
+  competitorA: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+  competitorB: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
 } as const;
+
+function competitorMonitorItem(
+  overrides: Partial<CompetitorMonitorItem> = {},
+): CompetitorMonitorItem {
+  return {
+    competitorId: IDS.competitorA,
+    domain: "alpha.example",
+    name: "Alpha",
+    relationship: "direct",
+    analysisScopes: ["keyword_gap", "content"],
+    eligibility: "eligible",
+    collectionState: "collected",
+    evaluationState: "available",
+    lastCollectionAt: "2026-07-28T08:00:00.000Z",
+    nextCollectionAt: "2026-08-28T08:00:00.000Z",
+    limitation: null,
+    recentSignals: [],
+    ...overrides,
+  };
+}
+
+function competitorMonitorResponse(
+  overrides: Partial<CompetitorMonitorResponse> = {},
+): CompetitorMonitorResponse {
+  return {
+    projectId: IDS.project,
+    config: {
+      enabled: true,
+      frequency: "monthly",
+      revision: 1,
+      updatedAt: "2026-07-28T08:00:00.000Z",
+    },
+    scope: {
+      market: "US",
+      languageTag: "en-US",
+      topicModelRevision: 3,
+    },
+    availability: "available",
+    limitation: null,
+    competitors: [
+      competitorMonitorItem(),
+      competitorMonitorItem({
+        competitorId: IDS.competitorB,
+        domain: "beta.example",
+        name: "Beta",
+        evaluationState: "baseline",
+        limitation:
+          "A first immutable snapshot exists; one comparable monthly snapshot is still required.",
+      }),
+    ],
+    generatedAt: "2026-07-28T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function internalLinkMapFixture(): GrowthMapInternalLinkMap {
+  const customerUrl = "https://example.test/customer-onboarding/";
+  const pricingUrl = "https://example.test/pricing/";
+  const resourcesUrl = "https://example.test/resources/";
+  const inboundEdge: GrowthMapInternalLinkMap["graph"]["edges"][number] = {
+    sourceCanonicalUrl: pricingUrl,
+    targetCanonicalUrl: customerUrl,
+    sourceSitePageIds: [IDS.sitePageB],
+    targetSitePageIds: [IDS.sitePage],
+    facts: [
+      {
+        observationId: IDS.observation,
+        sourceSitePageId: IDS.sitePageB,
+        anchorText: "Customer onboarding",
+        rel: null,
+      },
+    ],
+    reciprocal: false,
+  };
+
+  return {
+    projectId: IDS.project,
+    diagnosticRunId: IDS.snapshot,
+    crawlSnapshot: {
+      snapshotId: IDS.snapshot,
+      capturedAt: "2026-07-28T08:00:00.000Z",
+      availability: "available",
+      limitation: null,
+    },
+    coverage: {
+      availability: "available",
+      crawlCompleteness: "complete",
+      limitations: [],
+    },
+    graph: {
+      nodes: [
+        {
+          canonicalUrl: customerUrl,
+          sitePageIds: [IDS.sitePage],
+          title: "Customer onboarding",
+          inboundCount: 1,
+          outboundCount: 0,
+          status: "one_way",
+          executionRefs: [
+            {
+              findingId: IDS.internalLinkFinding,
+              actionId: IDS.action,
+            },
+          ],
+        },
+        {
+          canonicalUrl: pricingUrl,
+          sitePageIds: [IDS.sitePageB],
+          title: "Pricing",
+          inboundCount: 0,
+          outboundCount: 1,
+          status: "one_way",
+          executionRefs: [],
+        },
+        {
+          canonicalUrl: resourcesUrl,
+          sitePageIds: [IDS.sitePageC],
+          title: "Resources",
+          inboundCount: 0,
+          outboundCount: 0,
+          status: "orphan",
+          executionRefs: [
+            {
+              findingId: IDS.internalLinkFinding,
+              actionId: IDS.action,
+            },
+            {
+              findingId: IDS.internalLinkSourceFinding,
+              actionId: null,
+            },
+          ],
+        },
+      ],
+      edges: [inboundEdge],
+      totalEdgeCount: 1,
+      edgesTruncated: false,
+    },
+    selectedPage: {
+      selectedSitePageId: IDS.sitePage,
+      canonicalUrl: customerUrl,
+      inboundSources: [inboundEdge],
+      recommendationCoverage: {
+        availability: "available",
+        limitations: [],
+      },
+      recommendations: [
+        {
+          sourceCanonicalUrl: resourcesUrl,
+          sourceSitePageIds: [IDS.sitePageC],
+          targetCanonicalUrl: customerUrl,
+          targetSitePageIds: [IDS.sitePage],
+          basis: {
+            kind: "same_confirmed_topic",
+            topicNodeId: IDS.internalLinkTopic,
+            topicModelRevision: 3,
+            topicLabel: "Customer onboarding",
+          },
+          explanation:
+            "来源页与目标页属于同一个已确认 Topic，且冻结 Crawl 中未观察到该方向的内链。",
+        },
+      ],
+      totalRecommendationCount: 1,
+      recommendationsTruncated: false,
+    },
+    generatedAt: "2026-07-28T08:05:00.000Z",
+  };
+}
+
+function keywordItem(
+  keywordId: string,
+  displayKeyword: string,
+): GrowthMapKeywordLibraryItem {
+  return { keywordId, displayKeyword } as GrowthMapKeywordLibraryItem;
+}
+
+function keywordRelation(): GrowthMapKeywordRelation {
+  const participant = (
+    keywordId: string,
+    displayKeyword: string,
+  ) => ({
+    keywordId,
+    displayKeyword,
+    normalizedKeyword: displayKeyword.toLowerCase(),
+    governanceRevision: 2,
+    marketCode: "US",
+    languageTag: "en-US",
+    intent: "Commercial",
+    topicNodeId: IDS.topic,
+    topicModelRevision: 1,
+    mappedSitePageId: IDS.sitePage,
+  });
+  const candidate = {
+    candidateId: IDS.candidate,
+    relationId: IDS.relation,
+    projectId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    candidateRevision: 1,
+    ruleVersion: "keyword-relation.1.0.0" as const,
+    keywordA: participant(IDS.keywordA, "Customer onboarding"),
+    keywordB: participant(
+      IDS.keywordB,
+      "Customer onboarding automation",
+    ),
+    signals: {
+      sameConfirmedMappedPage: true as const,
+      sameReviewedIntent: true as const,
+      sameMarket: true as const,
+      sameLanguage: true as const,
+      sameConfirmedTopic: true,
+      lexicalTokenOverlap: 0.67,
+      serpOverlap: {
+        availability: "unavailable" as const,
+        value: null,
+        limitation:
+          "Canonical SERP-overlap observations are not available yet.",
+      },
+    },
+    evidenceHash: "a".repeat(64),
+    generatedAt: "2026-07-28T00:00:00.000Z",
+  };
+  return {
+    projectId: candidate.projectId,
+    relationId: IDS.relation,
+    candidate,
+    candidateState: "current",
+    staleReasons: [],
+    currentRelationRevision: 1,
+    decision: {
+      decisionId: IDS.decision,
+      relationId: IDS.relation,
+      candidateId: IDS.candidate,
+      projectId: candidate.projectId,
+      relationRevision: 1,
+      decisionKind: "primary_supporting",
+      primaryKeywordId: IDS.keywordA,
+      supportingKeywordId: IDS.keywordB,
+      reason: "Use one primary Keyword and retain supporting evidence.",
+      decidedBy: IDS.actor,
+      decidedAt: "2026-07-28T00:05:00.000Z",
+    },
+    decisionState: "active",
+    displayState: "folded",
+    isEffectivelyFolded: true,
+    primaryKeywordId: IDS.keywordA,
+    supportingKeywordId: IDS.keywordB,
+  };
+}
+
+function topicNode(
+  topicNodeId: string,
+  parentTopicNodeId: string | null,
+  label: string,
+  topicModelRevision = 1,
+  lifecycleState: "active" | "superseded" = "active",
+) {
+  return {
+    projectId: IDS.project,
+    topicNodeId,
+    topicModelRevision,
+    parentTopicNodeId,
+    label,
+    description: `${label} description`,
+    intentEnvelope: ["Commercial"],
+    lifecycleState,
+  };
+}
+
+function confirmedTopicWorkspace(): TopicModelWorkspaceProjection {
+  return {
+    projectId: IDS.project,
+    latestConfirmed: {
+      projectId: IDS.project,
+      topicModelRevision: 1,
+      editRevision: 2,
+      rootTopicNodeId: IDS.topicRoot,
+      nodes: [
+        topicNode(IDS.topicRoot, null, "Customer onboarding"),
+        topicNode(
+          IDS.topicChild,
+          IDS.topicRoot,
+          "Onboarding automation",
+        ),
+      ],
+      aliases: [],
+      successorRelationships: [],
+      createdAt: "2026-07-20T00:00:00.000Z",
+      createdBy: IDS.actor,
+      state: "confirmed",
+      confirmedAt: "2026-07-21T00:00:00.000Z",
+      confirmedBy: IDS.actor,
+      contentHash: "c".repeat(64),
+    },
+    draft: null,
+    generatedAt: "2026-07-21T00:01:00.000Z",
+  };
+}
+
+function draftTopicWorkspace(): TopicModelWorkspaceProjection {
+  const confirmed = confirmedTopicWorkspace();
+  return {
+    ...confirmed,
+    draft: {
+      projectId: IDS.project,
+      topicModelRevision: 2,
+      editRevision: 4,
+      rootTopicNodeId: IDS.topicRoot,
+      nodes: [
+        topicNode(
+          IDS.topicRoot,
+          null,
+          "Customer operations",
+          2,
+        ),
+        topicNode(
+          IDS.topicChild,
+          IDS.topicRoot,
+          "Onboarding automation",
+          2,
+        ),
+        topicNode(
+          IDS.topicGrandchild,
+          IDS.topicChild,
+          "Workflow templates",
+          2,
+        ),
+      ],
+      aliases: [],
+      successorRelationships: [],
+      createdAt: "2026-07-22T00:00:00.000Z",
+      createdBy: IDS.actor,
+      state: "draft",
+      updatedAt: "2026-07-22T00:05:00.000Z",
+    },
+    generatedAt: "2026-07-22T00:06:00.000Z",
+  };
+}
+
+function topicInsights(): GrowthMapTopicModelInsights {
+  return {
+    projectId: IDS.project,
+    topicModelRevision: 1,
+    nodes: [
+      {
+        projectId: IDS.project,
+        topicNodeId: IDS.topicRoot,
+        topicModelRevision: 1,
+        label: "Customer onboarding",
+        keywordCount: 2,
+        approvedKeywordCount: 1,
+        reviewPendingKeywordCount: 1,
+        existingPageKeywordCount: 0,
+        newAssetKeywordCount: 1,
+        unassignedKeywordCount: 1,
+        mappedPageCount: 0,
+        conflictingIntentCount: 0,
+        coverageState: "uncovered",
+        limitation: "No existing page covers the confirmed Topic.",
+      },
+      {
+        projectId: IDS.project,
+        topicNodeId: IDS.topicChild,
+        topicModelRevision: 1,
+        label: "Onboarding automation",
+        keywordCount: 2,
+        approvedKeywordCount: 2,
+        reviewPendingKeywordCount: 0,
+        existingPageKeywordCount: 2,
+        newAssetKeywordCount: 0,
+        unassignedKeywordCount: 0,
+        mappedPageCount: 2,
+        conflictingIntentCount: 1,
+        coverageState: "conflict",
+        limitation: "Two mapped pages compete for the same intent.",
+      },
+    ],
+    coverage: {
+      availability: "partial",
+      limitations: ["One or more Topics require review."],
+    },
+    generatedAt: "2026-07-21T00:01:00.000Z",
+  };
+}
+
+function rankHistory(): GrowthMapKeywordRankHistory {
+  return {
+    projectId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    keywordId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    mappedPage: {
+      sitePageId: IDS.sitePage,
+      normalizedUrl: "https://example.com/customer-onboarding/",
+    },
+    window: {
+      startedAt: "2026-04-22T00:00:00.000Z",
+      endedAt: "2026-07-21T00:00:00.000Z",
+      days: 90,
+    },
+    series: [
+      {
+        provider: "dataforseo",
+        metric: "absolute_rank",
+        interpretation: "Absolute Google organic rank observed by DataForSEO.",
+        points: [
+          {
+            occurrenceId: "10000000-0000-4000-8000-000000000001",
+            snapshotId: "10000000-0000-4000-8000-000000000002",
+            observationId: "10000000-0000-4000-8000-000000000003",
+            provider: "dataforseo",
+            metric: "absolute_rank",
+            value: 18,
+            valuePointer: "/valueJson/currentRank",
+            observedAt: "2026-04-22T00:00:00.000Z",
+            providerDataAsOf: null,
+            grade: "B",
+            limitation: "The provider does not expose data-as-of time.",
+          },
+          {
+            occurrenceId: "10000000-0000-4000-8000-000000000004",
+            snapshotId: "10000000-0000-4000-8000-000000000005",
+            observationId: "10000000-0000-4000-8000-000000000006",
+            provider: "dataforseo",
+            metric: "absolute_rank",
+            value: 6,
+            valuePointer: "/valueJson/currentRank",
+            observedAt: "2026-07-21T00:00:00.000Z",
+            providerDataAsOf: null,
+            grade: "B",
+            limitation: "The provider does not expose data-as-of time.",
+          },
+        ],
+      },
+      {
+        provider: "gsc",
+        metric: "gsc_28d_average_position",
+        interpretation:
+          "GSC rolling 28-day impression-weighted average position.",
+        points: [
+          {
+            occurrenceId: "20000000-0000-4000-8000-000000000001",
+            snapshotId: "20000000-0000-4000-8000-000000000002",
+            observationId: "20000000-0000-4000-8000-000000000003",
+            provider: "gsc",
+            metric: "gsc_28d_average_position",
+            value: 12.5,
+            valuePointer: "/valueJson/topQueries/0/position",
+            observedAt: "2026-06-06T00:00:00.000Z",
+            providerDataAsOf: "2026-06-05T00:00:00.000Z",
+            grade: "A",
+            limitation: "This is a rolling average.",
+          },
+        ],
+      },
+    ],
+    changeMarkers: [
+      {
+        changeReceiptId: "30000000-0000-4000-8000-000000000001",
+        publicationAttemptId: "30000000-0000-4000-8000-000000000002",
+        attemptKind: "publish",
+        artifactId: IDS.artifact,
+        artifactRevision: 3,
+        targetRef: "customer-onboarding",
+        liveCanonicalUrl: "https://example.com/customer-onboarding/",
+        changedAt: "2026-06-06T00:00:00.000Z",
+      },
+    ],
+    coverage: {
+      availability: "partial",
+      limitations: ["GSC is a rolling average."],
+    },
+    generatedAt: "2026-07-21T00:00:00.000Z",
+  };
+}
 
 function apiError(
   code: string,
@@ -99,6 +616,99 @@ function metric(
 }
 
 describe("Growth Map view model", () => {
+  it("keeps Internal Link Map inside the selected URL with real edges and Finding/Action references", () => {
+    const projection = buildInternalLinkMapProjection(
+      internalLinkMapFixture(),
+      IDS.sitePage,
+    );
+
+    expect(projection.kind).toBe("ready");
+    if (projection.kind !== "ready") return;
+    expect(projection.selectedNode).toMatchObject({
+      canonicalUrl: "https://example.test/customer-onboarding/",
+      inboundCount: 1,
+      outboundCount: 0,
+      status: "one_way",
+    });
+    expect(projection.graph).toMatchObject({
+      totalNodeCount: 3,
+      totalEdgeCount: 1,
+      returnedEdgeCount: 1,
+      edgesTruncated: false,
+    });
+    expect(projection.neighborhood.edges).toHaveLength(1);
+    expect(
+      projection.neighborhood.nodes.map((node) => node.canonicalUrl),
+    ).toEqual([
+      "https://example.test/customer-onboarding/",
+      "https://example.test/pricing/",
+      "https://example.test/resources/",
+    ]);
+    expect(projection.inboundSources[0]?.facts[0]).toMatchObject({
+      observationId: IDS.observation,
+      anchorText: "Customer onboarding",
+    });
+    expect(projection.recommendations[0]?.executionRefs).toEqual([
+      {
+        role: "target",
+        findingId: IDS.internalLinkFinding,
+        actionId: IDS.action,
+      },
+      {
+        role: "source",
+        findingId: IDS.internalLinkFinding,
+        actionId: IDS.action,
+      },
+      {
+        role: "source",
+        findingId: IDS.internalLinkSourceFinding,
+        actionId: null,
+      },
+    ]);
+  });
+
+  it("never shows the first URL's Internal Link Map after a different URL is selected", () => {
+    expect(
+      buildInternalLinkMapProjection(
+        internalLinkMapFixture(),
+        IDS.sitePageB,
+      ),
+    ).toEqual({
+      kind: "selection_unavailable",
+      coverage: {
+        availability: "available",
+        crawlCompleteness: "complete",
+        limitations: [],
+      },
+    });
+  });
+
+  it("preserves unavailable Internal Link authority without synthesizing zero counts", () => {
+    const unavailable: GrowthMapInternalLinkMap = {
+      projectId: IDS.project,
+      diagnosticRunId: null,
+      crawlSnapshot: null,
+      coverage: {
+        availability: "unavailable",
+        crawlCompleteness: "unavailable",
+        limitations: ["当前项目没有可读取的已完成诊断。"],
+      },
+      graph: {
+        nodes: [],
+        edges: [],
+        totalEdgeCount: 0,
+        edgesTruncated: false,
+      },
+      selectedPage: null,
+      generatedAt: "2026-07-28T08:05:00.000Z",
+    };
+
+    expect(buildInternalLinkMapProjection(unavailable, IDS.sitePage)).toEqual({
+      kind: "unavailable",
+      coverage: unavailable.coverage,
+    });
+  });
+
   it("keeps Audit Evidence and Opportunity Review as selected-object detail states", () => {
     expect(GROWTH_MAP_DETAIL_STATES).toEqual([
       "audit_evidence",
@@ -113,10 +723,12 @@ describe("Growth Map view model", () => {
       "pages",
       "keywords",
       "competitors",
+      "backlinks",
     ]);
     expect(normalizeGrowthMapObjectMode(null)).toBe("pages");
     expect(normalizeGrowthMapObjectMode("unknown")).toBe("pages");
     expect(normalizeGrowthMapObjectMode("competitors")).toBe("competitors");
+    expect(normalizeGrowthMapObjectMode("backlinks")).toBe("backlinks");
   });
 
   it("replaces selectedSitePageId on every URL selection while preserving current state", () => {
@@ -208,6 +820,467 @@ describe("Growth Map view model", () => {
     expect(resolveVisibleKeywordSelection("stale", [])).toBeNull();
   });
 
+  it("collapses only an active supporting Keyword and keeps its name under the primary row", () => {
+    const projection = buildKeywordRelationPageProjection(
+      [
+        keywordItem(IDS.keywordA, "Customer onboarding"),
+        keywordItem(
+          IDS.keywordB,
+          "Customer onboarding automation",
+        ),
+        keywordItem(IDS.keywordC, "Customer onboarding checklist"),
+      ],
+      [keywordRelation()],
+    );
+
+    expect(
+      projection.visibleItems.map((entry) => entry.item.keywordId),
+    ).toEqual([IDS.keywordA, IDS.keywordC]);
+    expect(projection.collapsedSupportingKeywordIds).toEqual([
+      IDS.keywordB,
+    ]);
+    expect(projection.visibleItems[0]).toMatchObject({
+      relations: [{ relationId: IDS.relation }],
+      supportingKeywords: [
+        {
+          relationId: IDS.relation,
+          keywordId: IDS.keywordB,
+          displayKeyword: "Customer onboarding automation",
+        },
+      ],
+    });
+  });
+
+  it("restores a stale supporting Keyword instead of applying an obsolete fold", () => {
+    const folded = keywordRelation();
+    const stale: GrowthMapKeywordRelation = {
+      ...folded,
+      candidateState: "stale",
+      staleReasons: ["mapping_changed"],
+      decisionState: "stale",
+      displayState: "stale",
+      isEffectivelyFolded: false,
+      primaryKeywordId: null,
+      supportingKeywordId: null,
+    };
+    const projection = buildKeywordRelationPageProjection(
+      [
+        keywordItem(IDS.keywordA, "Customer onboarding"),
+        keywordItem(
+          IDS.keywordB,
+          "Customer onboarding automation",
+        ),
+      ],
+      [stale],
+    );
+
+    expect(
+      projection.visibleItems.map((entry) => entry.item.keywordId),
+    ).toEqual([IDS.keywordA, IDS.keywordB]);
+    expect(projection.collapsedSupportingKeywordIds).toEqual([]);
+    expect(
+      projection.relationsByKeywordId.get(IDS.keywordB)?.[0]
+        ?.displayState,
+    ).toBe("stale");
+  });
+
+  it("keeps a supporting row visible when its primary is outside this cursor page", () => {
+    const relation = keywordRelation();
+    const projection = buildKeywordRelationPageProjection(
+      [
+        keywordItem(
+          IDS.keywordB,
+          "Customer onboarding automation",
+        ),
+      ],
+      [relation],
+    );
+
+    expect(projection.visibleItems).toHaveLength(1);
+    expect(projection.visibleItems[0]?.offPagePrimary).toEqual({
+      relationId: IDS.relation,
+      keywordId: IDS.keywordA,
+      displayKeyword: "Customer onboarding",
+    });
+    expect(projection.collapsedSupportingKeywordIds).toEqual([]);
+  });
+
+  it("builds all four strict CAS decisions from current server facts", () => {
+    const relation = {
+      ...keywordRelation(),
+      currentRelationRevision: 3,
+    };
+    expect(
+      buildKeywordRelationDecisionCommand(
+        relation,
+        "primary_supporting",
+        IDS.keywordB,
+        "  Use the longer phrase as primary.  ",
+      ),
+    ).toEqual({
+      expectedRelationRevision: 3,
+      candidateId: IDS.candidate,
+      decisionKind: "primary_supporting",
+      primaryKeywordId: IDS.keywordB,
+      supportingKeywordId: IDS.keywordA,
+      reason: "Use the longer phrase as primary.",
+    });
+
+    for (const decisionKind of [
+      "keep_separate",
+      "park_secondary",
+      "needs_research",
+    ] as const) {
+      expect(
+        buildKeywordRelationDecisionCommand(
+          relation,
+          decisionKind,
+          IDS.keywordA,
+          "Customer reviewed this duplicate candidate.",
+        ),
+      ).toMatchObject({
+        expectedRelationRevision: 3,
+        candidateId: IDS.candidate,
+        decisionKind,
+        primaryKeywordId: null,
+        supportingKeywordId: null,
+      });
+    }
+  });
+
+  it("refuses stale, invalid-primary, or empty relation decisions", () => {
+    const relation = keywordRelation();
+    expect(
+      buildKeywordRelationDecisionCommand(
+        relation,
+        "primary_supporting",
+        IDS.keywordC,
+        "Use a primary.",
+      ),
+    ).toBeNull();
+    expect(
+      buildKeywordRelationDecisionCommand(
+        relation,
+        "keep_separate",
+        null,
+        " ",
+      ),
+    ).toBeNull();
+    expect(
+      buildKeywordRelationDecisionCommand(
+        { ...relation, candidateState: "stale" },
+        "needs_research",
+        null,
+        "Needs more evidence.",
+      ),
+    ).toBeNull();
+  });
+
+  it("projects a confirmed Topic tree with real coverage gaps and conflicts", () => {
+    const projection = buildTopicMapProjection(
+      confirmedTopicWorkspace(),
+      topicInsights(),
+      IDS.topicChild,
+    );
+
+    expect(projection.structureAuthority).toBe("confirmed");
+    expect(projection.confirmedInsightRevision).toBe(1);
+    expect(projection.selectedNodeId).toBe(IDS.topicChild);
+    expect(projection.roots).toHaveLength(1);
+    expect(projection.roots[0]).toMatchObject({
+      node: { topicNodeId: IDS.topicRoot, label: "Customer onboarding" },
+      depth: 0,
+      insight: { coverageState: "uncovered", keywordCount: 2 },
+      children: [
+        {
+          node: { topicNodeId: IDS.topicChild },
+          depth: 1,
+          insight: { coverageState: "conflict", mappedPageCount: 2 },
+        },
+      ],
+    });
+    expect(projection.summary).toEqual({
+      keywordCount: 4,
+      mappedPageCount: 2,
+      coverageGapCount: 1,
+      conflictCount: 1,
+    });
+  });
+
+  it("shows draft structure while keeping insights on the confirmed revision", () => {
+    const projection = buildTopicMapProjection(
+      draftTopicWorkspace(),
+      topicInsights(),
+      IDS.topicGrandchild,
+    );
+
+    expect(projection.structureAuthority).toBe("draft");
+    expect(projection.confirmedInsightRevision).toBe(1);
+    expect(projection.roots[0]?.node.label).toBe("Customer operations");
+    expect(projection.roots[0]?.insight?.label).toBe(
+      "Customer onboarding",
+    );
+    expect(
+      projection.roots[0]?.children[0]?.children[0]?.insight,
+    ).toBeNull();
+    expect(projection.summary.keywordCount).toBe(4);
+  });
+
+  it("represents a missing confirmed Topic Model as unavailable instead of zero data", () => {
+    const workspace: TopicModelWorkspaceProjection = {
+      projectId: IDS.project,
+      latestConfirmed: null,
+      draft: null,
+      generatedAt: "2026-07-21T00:00:00.000Z",
+    };
+    const insights: GrowthMapTopicModelInsights = {
+      projectId: IDS.project,
+      topicModelRevision: null,
+      nodes: [],
+      coverage: {
+        availability: "unavailable",
+        limitations: ["No confirmed Topic Model is available."],
+      },
+      generatedAt: "2026-07-21T00:00:00.000Z",
+    };
+
+    const projection = buildTopicMapProjection(workspace, insights);
+    expect(projection.structureAuthority).toBe("unavailable");
+    expect(projection.confirmedInsightRevision).toBeNull();
+    expect(projection.roots).toEqual([]);
+    expect(projection.selectedNodeId).toBeNull();
+    expect(
+      buildBeginTopicModelDraftCommand(
+        workspace,
+        "Create the first governed Topic Map.",
+      ),
+    ).toEqual({
+      expectedLatestConfirmedRevision: 0,
+      reason: "Create the first governed Topic Map.",
+    });
+  });
+
+  it("keeps retired nodes outside the active tree with successor history intact", () => {
+    const workspace = draftTopicWorkspace();
+    const draft = workspace.draft;
+    if (draft === null) throw new Error("Expected a draft fixture.");
+    const retiredWorkspace: TopicModelWorkspaceProjection = {
+      ...workspace,
+      draft: {
+        ...draft,
+        nodes: [
+          draft.nodes[0]!,
+          {
+            ...draft.nodes[1]!,
+            lifecycleState: "superseded",
+          },
+          topicNode(
+            IDS.topicSuccessor,
+            IDS.topicRoot,
+            "Lifecycle automation",
+            2,
+          ),
+        ],
+        successorRelationships: [
+          {
+            kind: "split_into",
+            sourceTopicNodeId: IDS.topicChild,
+            successorTopicNodeId: IDS.topicSuccessor,
+            topicModelRevision: 2,
+          },
+        ],
+      },
+    };
+
+    const projection = buildTopicMapProjection(
+      retiredWorkspace,
+      topicInsights(),
+      IDS.topicChild,
+    );
+    expect(
+      projection.activeNodes.map((node) => node.topicNodeId),
+    ).toEqual([IDS.topicRoot, IDS.topicSuccessor]);
+    expect(projection.supersededNodes).toMatchObject([
+      { topicNodeId: IDS.topicChild, lifecycleState: "superseded" },
+    ]);
+    expect(projection.selectedNodeId).toBe(IDS.topicChild);
+  });
+
+  it("excludes a Topic and its descendants from legal parent choices", () => {
+    const draft = draftTopicWorkspace().draft;
+    if (draft === null) throw new Error("Expected a draft fixture.");
+
+    expect(topicNodeAllowedParentIds(draft, IDS.topicChild)).toEqual([
+      IDS.topicRoot,
+    ]);
+    expect(topicNodeAllowedParentIds(draft, IDS.topicRoot)).toEqual([]);
+  });
+
+  it("builds all six strict Topic intents and exact draft CAS commands", () => {
+    const input = {
+      parentTopicNodeId: IDS.topicRoot,
+      label: "Implementation",
+      description: "Setup and adoption.",
+      intentEnvelope: ["Commercial"],
+    } as const;
+    const create = buildTopicNodeCreateIntent(input);
+    const update = buildTopicNodeUpdateIntent(IDS.topicChild, {
+      parentTopicNodeId: IDS.topicRoot,
+      description: "Updated scope.",
+      intentEnvelope: ["Informational"],
+    });
+    const rename = buildTopicNodeRenameIntent(
+      IDS.topicChild,
+      "Workflow automation",
+    );
+    const split = buildTopicNodeSplitIntent(IDS.topicChild, [
+      { ...input, label: "Implementation" },
+      { ...input, label: "Optimization" },
+    ]);
+    const merge = buildTopicNodeMergeIntent(
+      [IDS.topicChild, IDS.topicGrandchild],
+      { ...input, label: "Automation platform" },
+    );
+    const retire = buildTopicNodeRetireIntent(IDS.topicChild);
+
+    expect(
+      [create, update, rename, split, merge, retire].map(
+        (intent) => intent?.kind,
+      ),
+    ).toEqual(["create", "update", "rename", "split", "merge", "retire"]);
+    expect(retire).toEqual({
+      kind: "retire",
+      topicNodeId: IDS.topicChild,
+      affectedKeywordReviewState: "unreviewed",
+    });
+    expect(split).toMatchObject({
+      affectedKeywordReviewState: "unreviewed",
+      successors: [{ label: "Implementation" }, { label: "Optimization" }],
+    });
+    expect(merge).toMatchObject({
+      sourceTopicNodeIds: [IDS.topicChild, IDS.topicGrandchild],
+      affectedKeywordReviewState: "unreviewed",
+    });
+
+    const workspace = draftTopicWorkspace();
+    const draft = workspace.draft;
+    if (draft === null || retire === null) {
+      throw new Error("Expected valid Topic command fixtures.");
+    }
+    expect(
+      buildBeginTopicModelDraftCommand(
+        confirmedTopicWorkspace(),
+        "  Begin a reviewed revision.  ",
+      ),
+    ).toEqual({
+      expectedLatestConfirmedRevision: 1,
+      reason: "Begin a reviewed revision.",
+    });
+    expect(
+      buildPatchTopicModelDraftCommand(
+        draft,
+        "  Retire obsolete scope.  ",
+        [retire],
+      ),
+    ).toEqual({
+      topicModelRevision: 2,
+      expectedEditRevision: 4,
+      reason: "Retire obsolete scope.",
+      intents: [retire],
+    });
+    expect(
+      buildConfirmTopicModelCommand(
+        draft,
+        "  Publish the reviewed structure.  ",
+      ),
+    ).toEqual({
+      topicModelRevision: 2,
+      expectedEditRevision: 4,
+      reason: "Publish the reviewed structure.",
+    });
+    expect(
+      buildPatchTopicModelDraftCommand(draft, " ", [retire]),
+    ).toBeNull();
+    expect(buildTopicNodeUpdateIntent(IDS.topicChild, {})).toBeNull();
+    expect(
+      buildTopicNodeSplitIntent(IDS.topicChild, [
+        { ...input, label: "Only one successor" },
+      ]),
+    ).toBeNull();
+    expect(
+      buildTopicNodeMergeIntent([IDS.topicChild], input),
+    ).toBeNull();
+  });
+
+  it("keeps Topic Map as Keyword Library Step 0 inside the existing Growth Map", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("<TopicMapGateway projectId={projectId} />");
+    expect(source).toContain("useGrowthMapTopicModelWorkspace(projectId)");
+    expect(source).toContain("useGrowthMapTopicModelInsights(projectId)");
+    expect(source).toContain("useBeginGrowthMapTopicModelDraft(projectId)");
+    expect(source).toContain("usePatchGrowthMapTopicModelDraft(projectId)");
+    expect(source).toContain("useConfirmGrowthMapTopicModelDraft(projectId)");
+    for (const action of [
+      "buildTopicNodeCreateIntent(",
+      "buildTopicNodeUpdateIntent(",
+      "buildTopicNodeRenameIntent(",
+      "buildTopicNodeSplitIntent(",
+      "buildTopicNodeMergeIntent(",
+      "buildTopicNodeRetireIntent(",
+    ]) {
+      expect(source).toContain(action);
+    }
+    expect(source).toContain('role="tree"');
+    expect(source).toContain("handleTopicTreeKeyDown");
+    expect(source).toContain('event.key === "ArrowDown"');
+    expect(source).toContain('event.key === "ArrowLeft"');
+    expect(source).toContain("tabStopNodeId");
+    expect(source).toContain(
+      "`no-draft:${workspace?.latestConfirmed?.topicModelRevision ?? 0}`",
+    );
+    expect(source).toContain("draftChangedNotice");
+    expect(source).toContain('role="dialog"');
+  });
+
+  it("keeps duplicate governance inside the current Keyword Library with an accessible versioned review dialog", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("useGrowthMapKeywordRelations(projectId");
+    expect(source).toContain("buildKeywordRelationPageProjection(");
+    expect(source).toContain(
+      "useRefreshGrowthMapKeywordRelations(projectId)",
+    );
+    expect(source).toContain(
+      "useDecideGrowthMapKeywordRelation(projectId)",
+    );
+    expect(source).toContain(
+      "entries={relationProjection.visibleItems}",
+    );
+    expect(source).toContain('role="dialog"');
+    expect(source).toContain('aria-modal="true"');
+    expect(source).toContain(
+      "buildKeywordRelationDecisionCommand(",
+    );
+    for (const decisionKind of [
+      "primary_supporting",
+      "keep_separate",
+      "park_secondary",
+      "needs_research",
+    ]) {
+      expect(source).toContain(`"${decisionKind}"`);
+    }
+    expect(source).toMatch(
+      /automaticRelationRefreshProjectRef\.current = projectId;\s+refreshRelations\(\);/,
+    );
+  });
+
   it("keeps Keyword Library loading, error, empty, and real rows distinct", () => {
     expect(
       keywordLibraryReadState({ isPending: true, isError: false, itemCount: 0 }),
@@ -265,6 +1338,155 @@ describe("Growth Map view model", () => {
         isError: false,
       }),
     ).toBe("ready");
+  });
+
+  it("builds a Keyword review only from the latest confirmed Topic identity and revision", () => {
+    const detail = {
+      projectId: IDS.project,
+      keywordId: IDS.keywordA,
+      revision: 7,
+    } as GrowthMapKeywordLibraryItem;
+    const insights = topicInsights();
+    const command = buildKeywordGovernanceReviewCommand(detail, insights, {
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: IDS.topicChild,
+      mappingDecision: "existing_page",
+      mappedSitePageId: IDS.sitePage,
+      reason: "Confirm the governed Topic and canonical landing page.",
+    });
+
+    expect(command).toEqual({
+      expectedGovernanceRevision: 7,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: IDS.topicChild,
+      topicModelRevision: 1,
+      mappingDecision: "existing_page",
+      mappedSitePageId: IDS.sitePage,
+      reason: "Confirm the governed Topic and canonical landing page.",
+    });
+    expect(
+      keywordTopicNeedsConflictConfirmation(insights, IDS.topicChild),
+    ).toBe(true);
+  });
+
+  it("rejects stale or invented Topic assignments and mappings without a confirmed Topic", () => {
+    const detail = {
+      projectId: IDS.project,
+      keywordId: IDS.keywordA,
+      revision: 7,
+    } as GrowthMapKeywordLibraryItem;
+    const base = {
+      status: "approved" as const,
+      intent: "commercial",
+      buyerStage: "consideration",
+      mappingDecision: "new_asset" as const,
+      mappedSitePageId: "",
+      reason: "Confirm the governed Topic before execution.",
+    };
+
+    expect(
+      buildKeywordGovernanceReviewCommand(detail, topicInsights(), {
+        ...base,
+        topicNodeId: IDS.topicGrandchild,
+      }),
+    ).toBeNull();
+    expect(
+      buildKeywordGovernanceReviewCommand(detail, null, {
+        ...base,
+        topicNodeId: "",
+      }),
+    ).toBeNull();
+    expect(
+      keywordTopicNeedsConflictConfirmation(
+        topicInsights(),
+        IDS.topicGrandchild,
+      ),
+    ).toBe(false);
+
+    expect(
+      buildKeywordGovernanceReviewCommand(detail, null, {
+        ...base,
+        status: "parked",
+        topicNodeId: "",
+        mappingDecision: "unassigned",
+      }),
+    ).toEqual({
+      expectedGovernanceRevision: 7,
+      status: "parked",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: null,
+      topicModelRevision: null,
+      mappingDecision: "unassigned",
+      mappedSitePageId: null,
+      reason: "Confirm the governed Topic before execution.",
+    });
+  });
+
+  it("builds two separate rank series from real points without filling gaps", () => {
+    const model = buildKeywordRankChartModel(rankHistory());
+
+    expect(model).not.toBeNull();
+    expect(model?.series.map((series) => series.provider)).toEqual([
+      "dataforseo",
+      "gsc",
+    ]);
+    expect(model?.series[0]?.points).toHaveLength(2);
+    expect(model?.series[1]?.points).toHaveLength(1);
+    expect(model?.series[0]?.polylinePoints?.split(" ")).toHaveLength(2);
+    expect(model?.series[1]?.polylinePoints).toBeNull();
+    expect(
+      model?.series.flatMap((series) =>
+        series.points.map((point) => point.observedAt),
+      ),
+    ).toEqual([
+      "2026-04-22T00:00:00.000Z",
+      "2026-07-21T00:00:00.000Z",
+      "2026-06-06T00:00:00.000Z",
+    ]);
+  });
+
+  it("places a smaller rank visually higher and keeps time gaps proportional", () => {
+    const model = buildKeywordRankChartModel(rankHistory());
+    const absolute = model?.series[0]?.points ?? [];
+
+    expect(absolute[1]?.value).toBeLessThan(absolute[0]?.value ?? 0);
+    expect(absolute[1]?.y).toBeLessThan(absolute[0]?.y ?? 0);
+    expect(absolute[0]?.x).toBe(model?.plot.left);
+    expect(absolute[1]?.x).toBe(model?.plot.right);
+  });
+
+  it("projects verified Change Receipts as independent markers", () => {
+    const model = buildKeywordRankChartModel(rankHistory());
+
+    expect(model?.changeMarkers).toEqual([
+      expect.objectContaining({
+        changeReceiptId: "30000000-0000-4000-8000-000000000001",
+        attemptKind: "publish",
+        artifactRevision: 3,
+      }),
+    ]);
+    expect(model?.changeMarkers[0]?.x).toBeGreaterThan(model?.plot.left ?? 0);
+    expect(model?.changeMarkers[0]?.x).toBeLessThan(model?.plot.right ?? 0);
+  });
+
+  it("returns no chart model when no canonical rank observations exist", () => {
+    const history = rankHistory();
+    expect(
+      buildKeywordRankChartModel({
+        ...history,
+        series: [],
+        changeMarkers: [],
+        coverage: {
+          availability: "unavailable",
+          limitations: ["No canonical observations."],
+        },
+      }),
+    ).toBeNull();
   });
 
   it("keeps Competitor Library loading, error, empty, and real rows distinct", () => {
@@ -338,6 +1560,92 @@ describe("Growth Map view model", () => {
     ).toBe("ready");
   });
 
+  it("selects monitor evidence by the exact Competitor ID without falling back to another row", () => {
+    const response = competitorMonitorResponse();
+
+    expect(
+      selectCompetitorMonitorItem(response, IDS.competitorB)?.domain,
+    ).toBe("beta.example");
+    expect(
+      selectCompetitorMonitorItem(response, IDS.competitorA)?.domain,
+    ).toBe("alpha.example");
+    expect(
+      selectCompetitorMonitorItem(
+        response,
+        "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      ),
+    ).toBeNull();
+    expect(selectCompetitorMonitorItem(response, null)).toBeNull();
+  });
+
+  it("keeps honest Competitor monitor states distinct instead of converting missing evidence to zero", () => {
+    const ready = competitorMonitorResponse();
+    const item = ready.competitors[0]!;
+
+    expect(competitorMonitorDisplayState(ready, item)).toBe("available");
+    expect(
+      competitorMonitorDisplayState(
+        competitorMonitorResponse({ config: null }),
+        item,
+      ),
+    ).toBe("not_configured");
+    expect(
+      competitorMonitorDisplayState(
+        competitorMonitorResponse({
+          config: {
+            enabled: false,
+            frequency: "monthly",
+            revision: 2,
+            updatedAt: "2026-07-28T08:00:00.000Z",
+          },
+        }),
+        item,
+      ),
+    ).toBe("paused");
+    expect(
+      competitorMonitorDisplayState(
+        ready,
+        competitorMonitorItem({
+          collectionState: "collecting",
+          evaluationState: "pending",
+        }),
+      ),
+    ).toBe("collecting");
+    expect(
+      competitorMonitorDisplayState(
+        ready,
+        competitorMonitorItem({
+          collectionState: "never_collected",
+          evaluationState: "pending",
+        }),
+      ),
+    ).toBe("awaiting_baseline");
+    expect(
+      competitorMonitorDisplayState(ready, ready.competitors[1]!),
+    ).toBe("baseline");
+    expect(
+      competitorMonitorDisplayState(
+        ready,
+        competitorMonitorItem({
+          limitation: "Only part of the comparable keyword set was observed.",
+        }),
+      ),
+    ).toBe("partial");
+    expect(
+      competitorMonitorDisplayState(
+        competitorMonitorResponse({
+          scope: null,
+          availability: "unavailable",
+          limitation:
+            "The primary Site market and confirmed Topic are unavailable.",
+          competitors: [],
+        }),
+        null,
+      ),
+    ).toBe("unavailable");
+    expect(competitorMonitorDisplayState(ready, null)).toBe("unavailable");
+  });
+
   it("recognizes only stable platform limitations for localized chrome", () => {
     const cases = [
       [
@@ -372,6 +1680,14 @@ describe("Growth Map view model", () => {
         "A Product Profile source is approved, but this stable Competitor Library entity is still awaiting its own review.",
         "competitorSourceApprovedReviewPending",
       ],
+      [
+        "No canonical rank observations are available in the exact trailing 90-day UTC window.",
+        "rankNoObservations",
+      ],
+      [
+        "GSC position is a rolling 28-day impression-weighted average, not an absolute SERP rank.",
+        "rankGscRollingAverage",
+      ],
     ] as const;
 
     for (const [limitation, key] of cases) {
@@ -380,6 +1696,24 @@ describe("Growth Map view model", () => {
     expect(
       growthMapPlatformLimitationKey("Customer-authored limitation text."),
     ).toBeNull();
+  });
+
+  it("keeps rank-history loading and error states inside the selected Keyword detail", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      "const rankHistoryQuery = useGrowthMapKeywordRankHistory(",
+    );
+    expect(source).toContain("<KeywordRankHistorySection");
+    expect(source).toMatch(
+      /const readState = keywordDetailReadState\(\{\s+selectedKeywordId,\s+isPending: detailQuery\.isPending,\s+isError: detailQuery\.isError,/,
+    );
+    expect(source).not.toMatch(
+      /keywordDetailReadState\(\{[\s\S]{0,180}rankHistoryQuery/,
+    );
   });
 
   it("repairs only an explicit stale Keyword deep link after the cursor page loads", () => {

@@ -1,4 +1,7 @@
 import {
+  KeywordGovernanceConflictError,
+  KeywordGovernanceIntegrityError,
+  KeywordGovernanceRepository,
   KeywordOccurrencesRepository,
   KeywordsRepository,
   ProjectsRepository,
@@ -17,9 +20,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 
-const { getProjectAuditKeyword, listProjectAuditKeywords } = await import(
-  "./growth-map-keywords.ts"
-);
+const {
+  getProjectAuditKeyword,
+  listProjectAuditKeywords,
+  reviewProjectAuditKeyword,
+} = await import("./growth-map-keywords.ts");
 
 const ids = {
   workspace: "10000000-0000-4000-8000-000000000001",
@@ -31,6 +36,9 @@ const ids = {
   sitePage: "10000000-0000-4000-8000-000000000007",
   importPreview: "10000000-0000-4000-8000-000000000008",
   collectionRun: "10000000-0000-4000-8000-000000000010",
+  actor: "10000000-0000-4000-8000-000000000011",
+  topicNode: "10000000-0000-4000-8000-000000000012",
+  decision: "10000000-0000-4000-8000-000000000013",
 } as const;
 
 const scope = { workspaceId: ids.workspace };
@@ -231,6 +239,67 @@ function mockProject(active = true) {
     workspace_id: ids.workspace,
     archived_at: active ? null : capturedAt,
   } as never);
+}
+
+function reviewedGovernance() {
+  const reason = "Confirmed against the exact Topic Model revision.";
+  return {
+    decision: {
+      decisionId: ids.decision,
+      projectId: ids.project,
+      keywordId: ids.keyword,
+      governanceRevision: 3,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: ids.topicNode,
+      topicModelRevision: 3,
+      mappingDecision: "existing_page",
+      mappedSitePageId: ids.sitePage,
+      mappingReviewState: "confirmed",
+      assignmentInvalidatedBy: null,
+      reason,
+      decisionOrigin: "user",
+      decidedBy: ids.actor,
+      decidedAt: capturedAt,
+    },
+    projection: {
+      currentDecisionId: ids.decision,
+      projectId: ids.project,
+      keywordId: ids.keyword,
+      governanceRevision: 3,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: ids.topicNode,
+      topicModelRevision: 3,
+      mappingDecision: "existing_page",
+      mappedSitePageId: ids.sitePage,
+      mappingReviewState: "confirmed",
+      assignmentInvalidatedBy: null,
+      mappingRevision: 3,
+      executionState: "ready",
+      reason,
+      updatedAt: capturedAt,
+    },
+    clusterKey: "Customer Onboarding",
+    reviewedProjection: {
+      projectId: ids.project,
+      keywordId: ids.keyword,
+      governanceRevision: 3,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: ids.topicNode,
+      topicModelRevision: 3,
+      clusterKey: "Customer Onboarding",
+      mappingDecision: "existing_page",
+      mappedSitePageId: ids.sitePage,
+      mappingReviewState: "confirmed",
+      assignmentInvalidatedBy: null,
+      earlierHistoryAvailable: false,
+    },
+  } as const;
 }
 
 function arrangeList(input: {
@@ -533,6 +602,225 @@ describe("Growth Map Keyword Library read service", () => {
     });
   });
 
+  it("projects interview summaries and public reviews as distinct, de-identified source evidence", async () => {
+    const evidenceAsOf = "2026-07-20T00:00:00.000Z";
+    const sharedValue = {
+      keyword: "customer onboarding software",
+      marketCode: "US",
+      languageCode: "en-US",
+      providerDataAsOf: evidenceAsOf,
+      evidenceLabel: "Q2 customer onboarding research",
+      sourceRecordHash: "a".repeat(64),
+      participantName: "must-not-leak",
+      reviewBody: "must-not-leak",
+    };
+    const interview = arrangeList({
+      occurrence: occurrence({
+        source_kind: "interview_summary",
+        scope_basis: "user_provided",
+        provider_data_as_of: evidenceAsOf,
+      }),
+      observations: [
+        dataForSeoObservation({
+          provider: "voc",
+          metric_key: "voc.keyword_evidence.v1",
+          origin: "user_provided",
+          grade: "C",
+          value_json: sharedValue,
+        }),
+      ],
+      snapshots: [
+        dataForSeoSnapshot({
+          provider: "voc",
+          dataset_key: "voc.interview_summary.v1",
+          source_connection_id: null,
+          summary: {
+            keywordEvidenceScope: {
+              sourceKind: "interview_summary",
+              basis: "customer_research",
+              marketCode: "US",
+              languageTag: "en-US",
+            },
+            timing: {
+              collectedAt: capturedAt,
+              dataAsOf: evidenceAsOf,
+            },
+          },
+        }),
+      ],
+      collectionRuns: [
+        collectionRun({
+          provider: "voc",
+          operation: "keyword_evidence_collection",
+          method_version: "voc.interview_summary.v1",
+          source_connection_id: null,
+        }),
+      ],
+    });
+
+    const interviewResponse = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        now: new Date("2026-07-22T09:00:00.000Z"),
+      },
+      interview as never,
+    );
+    expect(interviewResponse.data[0]?.sourceOccurrences[0]).toMatchObject({
+      sourceKind: "interview_summary",
+      collectionRunId: ids.collectionRun,
+      evidenceLabel: "Q2 customer onboarding research",
+      sourceRecordHash: "a".repeat(64),
+      scopeBasis: "user_provided",
+      freshness: "current",
+    });
+    expect(JSON.stringify(interviewResponse)).not.toMatch(
+      /participantName|reviewBody|must-not-leak/u,
+    );
+
+    vi.restoreAllMocks();
+    const review = arrangeList({
+      occurrence: occurrence({
+        source_kind: "user_review",
+        scope_basis: "provider_collection_scope",
+        provider_data_as_of: evidenceAsOf,
+      }),
+      observations: [
+        dataForSeoObservation({
+          provider: "voc",
+          metric_key: "voc.keyword_evidence.v1",
+          origin: "direct_public",
+          grade: "B",
+          value_json: {
+            ...sharedValue,
+            evidenceLabel: "RelayOps public review corpus",
+            sourceRecordHash: "b".repeat(64),
+            reviewPlatform: "g2",
+            sourceUrl:
+              "https://www.g2.com/products/relayops/reviews",
+          },
+        }),
+      ],
+      snapshots: [
+        dataForSeoSnapshot({
+          provider: "voc",
+          dataset_key: "voc.user_review.v1",
+          source_connection_id: null,
+          summary: {
+            keywordEvidenceScope: {
+              sourceKind: "user_review",
+              basis: "public_review_platform",
+              marketCode: "US",
+              languageTag: "en-US",
+              reviewPlatform: "g2",
+            },
+            timing: {
+              collectedAt: capturedAt,
+              dataAsOf: evidenceAsOf,
+            },
+          },
+        }),
+      ],
+      collectionRuns: [
+        collectionRun({
+          provider: "voc",
+          operation: "keyword_evidence_collection",
+          method_version: "voc.user_review.v1",
+          source_connection_id: null,
+        }),
+      ],
+    });
+    const reviewResponse = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        now: new Date("2026-07-22T09:00:00.000Z"),
+      },
+      review as never,
+    );
+    expect(reviewResponse.data[0]?.sourceOccurrences[0]).toMatchObject({
+      sourceKind: "user_review",
+      collectionRunId: ids.collectionRun,
+      evidenceLabel: "RelayOps public review corpus",
+      sourceRecordHash: "b".repeat(64),
+      reviewPlatform: "g2",
+      sourceUrl: "https://www.g2.com/products/relayops/reviews",
+      scopeBasis: "provider_collection_scope",
+      freshness: "current",
+    });
+    expect(JSON.stringify(reviewResponse)).not.toMatch(
+      /participantName|reviewBody|must-not-leak/u,
+    );
+  });
+
+  it("fails closed when an interview and a public review borrow each other's provenance", async () => {
+    const evidenceAsOf = "2026-07-20T00:00:00.000Z";
+    const exec = arrangeList({
+      occurrence: occurrence({
+        source_kind: "interview_summary",
+        scope_basis: "user_provided",
+        provider_data_as_of: evidenceAsOf,
+      }),
+      observations: [
+        dataForSeoObservation({
+          provider: "voc",
+          metric_key: "voc.keyword_evidence.v1",
+          origin: "direct_public",
+          grade: "B",
+          value_json: {
+            keyword: "customer onboarding software",
+            marketCode: "US",
+            languageCode: "en-US",
+            providerDataAsOf: evidenceAsOf,
+            evidenceLabel: "Public review evidence",
+            sourceRecordHash: "c".repeat(64),
+            reviewPlatform: "g2",
+          },
+        }),
+      ],
+      snapshots: [
+        dataForSeoSnapshot({
+          provider: "voc",
+          dataset_key: "voc.interview_summary.v1",
+          source_connection_id: null,
+          summary: {
+            keywordEvidenceScope: {
+              sourceKind: "interview_summary",
+              basis: "customer_research",
+              marketCode: "US",
+              languageTag: "en-US",
+            },
+            timing: {
+              collectedAt: capturedAt,
+              dataAsOf: evidenceAsOf,
+            },
+          },
+        }),
+      ],
+      collectionRuns: [
+        collectionRun({
+          provider: "voc",
+          operation: "keyword_evidence_collection",
+          method_version: "voc.interview_summary.v1",
+          source_connection_id: null,
+        }),
+      ],
+    });
+
+    await expect(
+      listProjectAuditKeywords(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+  });
+
   it("keeps a manual occurrence first-class without fabricated provider lineage", async () => {
     mockProject();
     vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
@@ -618,9 +906,82 @@ describe("Growth Map Keyword Library read service", () => {
     ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
   });
 
-  it("returns project-scoped detail and not-found for an absent Keyword", async () => {
+  it("returns detail from the append-only governance authority, including the canonical Topic identity and server-resolved name", async () => {
     mockProject();
-    vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(null);
+    const current = reviewedGovernance();
+    const legacyEntity = entity({
+      status: "approved",
+      intent: "commercial",
+      buyer_stage: "consideration",
+      cluster_key: "Customer Onboarding",
+      mapping_decision: "existing_page",
+      mapped_site_page_id: ids.sitePage,
+      mapping_review_state: "confirmed",
+      mapping_revision: 3,
+    });
+    const findCurrent = vi
+      .spyOn(KeywordGovernanceRepository.prototype, "findCurrent")
+      .mockResolvedValue(current);
+    vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(
+      legacyEntity,
+    );
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({
+      rows: [occurrence()],
+      nextCursor: null,
+    });
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
+      sitePage(),
+    ] as never);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+
+    const response = await getProjectAuditKeyword(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(findCurrent).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ids.keyword,
+    );
+    expect(response.data).toMatchObject({
+      status: "approved",
+      revision: 3,
+      intent: "commercial",
+      buyerStage: "consideration",
+      cluster: {
+        clusterId: ids.topicNode,
+        name: "Customer Onboarding",
+      },
+      classificationLimitations: { cluster: null },
+      mappedTarget: {
+        kind: "existing_page",
+        sitePageId: ids.sitePage,
+        revision: 3,
+        reason: current.projection.reason,
+      },
+    });
+  });
+
+  it("returns not-found only when the governance authority says the scoped Keyword is absent", async () => {
+    mockProject();
+    const findEntity = vi.spyOn(
+      KeywordsRepository.prototype,
+      "findById",
+    );
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "findCurrent",
+    ).mockResolvedValue(null);
 
     await expect(
       getProjectAuditKeyword(
@@ -630,7 +991,35 @@ describe("Growth Map Keyword Library read service", () => {
         new FakeExecutor() as never,
       ),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(findEntity).not.toHaveBeenCalled();
   });
+
+  it.each([
+    "CURRENT_DECISION_MISSING",
+    "CURRENT_DECISION_DIVERGED",
+    "LEGACY_PROJECTION_DIVERGED",
+  ] as const)(
+    "fails closed when detail governance authority reports %s",
+    async (code) => {
+      mockProject();
+      vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "findCurrent",
+      ).mockRejectedValue(new KeywordGovernanceIntegrityError(code));
+
+      await expect(
+        getProjectAuditKeyword(
+          scope,
+          ids.project,
+          ids.keyword,
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toMatchObject({
+        code: "DEPENDENCY_UNAVAILABLE",
+        status: 503,
+      });
+    },
+  );
 
   it.each([
     "customer-private-malformed-keyset",
@@ -683,5 +1072,271 @@ describe("Growth Map Keyword Library read service", () => {
 
     await expect(read()).rejects.toBe(sentinel);
     expect(transaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Growth Map Keyword governance review service", () => {
+  const review = {
+    expectedGovernanceRevision: 2,
+    status: "approved",
+    intent: "commercial",
+    buyerStage: "consideration",
+    topicNodeId: ids.topicNode,
+    topicModelRevision: 3,
+    mappingDecision: "existing_page",
+    mappedSitePageId: ids.sitePage,
+    reason: "Confirmed against the exact Topic Model revision.",
+  } as const;
+  const reviewScope = {
+    workspaceId: ids.workspace,
+    actorId: ids.actor,
+  };
+
+  function arrangeReviewedDetail() {
+    mockProject();
+    const reviewed = entity({
+      status: "approved",
+      intent: "commercial",
+      buyer_stage: "consideration",
+      cluster_key: "Customer Onboarding",
+      mapping_decision: "existing_page",
+      mapped_site_page_id: ids.sitePage,
+      mapping_review_state: "confirmed",
+      mapping_revision: 3,
+    });
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "reviewKeyword",
+    ).mockResolvedValue({
+      ...reviewedGovernance(),
+      replayed: false,
+    });
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "findCurrent",
+    ).mockResolvedValue(reviewedGovernance());
+    vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(
+      reviewed,
+    );
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({
+      rows: [occurrence()],
+      nextCursor: null,
+    });
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
+      sitePage(),
+    ] as never);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+    return exec;
+  }
+
+  it("writes one server-actor-scoped review and returns the canonical detail projection", async () => {
+    const exec = arrangeReviewedDetail();
+    const repositoryReview = vi.mocked(
+      KeywordGovernanceRepository.prototype.reviewKeyword,
+    );
+
+    const response = await reviewProjectAuditKeyword(
+      reviewScope,
+      ids.project,
+      ids.keyword,
+      review,
+      exec as never,
+    );
+
+    expect(repositoryReview).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ids.keyword,
+      ids.actor,
+      review,
+    );
+    expect(response).toMatchObject({
+      projectId: ids.project,
+      data: {
+        keywordId: ids.keyword,
+        status: "approved",
+        intent: "commercial",
+        buyerStage: "consideration",
+        cluster: {
+          clusterId: ids.topicNode,
+          name: "Customer Onboarding",
+        },
+        mappedTarget: {
+          kind: "existing_page",
+          sitePageId: ids.sitePage,
+          revision: 3,
+          reason: review.reason,
+        },
+      },
+    });
+  });
+
+  it("keeps production write and canonical response read in one transaction", async () => {
+    const exec = arrangeReviewedDetail();
+    const transaction = vi.fn(
+      async (callback: (selected: FakeExecutor) => Promise<unknown>) =>
+        callback(exec),
+    );
+    mocks.getDb.mockReturnValue({ db: { transaction } });
+
+    const response = await reviewProjectAuditKeyword(
+      reviewScope,
+      ids.project,
+      ids.keyword,
+      review,
+    );
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(response.data.mappedTarget?.revision).toBe(3);
+  });
+
+  it("rejects an invalid internal command before repository access", async () => {
+    const repositoryReview = vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "reviewKeyword",
+    );
+
+    await expect(
+      reviewProjectAuditKeyword(
+        reviewScope,
+        ids.project,
+        ids.keyword,
+        { ...review, reason: "no" },
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+    expect(repositoryReview).not.toHaveBeenCalled();
+  });
+
+  it("returns a typed stale-revision conflict without leaking repository internals", async () => {
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "reviewKeyword",
+    ).mockRejectedValue(
+      new KeywordGovernanceConflictError(
+        "REVISION_CONFLICT",
+        review.expectedGovernanceRevision,
+        4,
+      ),
+    );
+
+    await expect(
+      reviewProjectAuditKeyword(
+        reviewScope,
+        ids.project,
+        ids.keyword,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "STALE_REVISION",
+      status: 409,
+      current: {
+        kind: "revision_conflict",
+        resource: "keyword_review",
+        projectId: ids.project,
+        resourceId: ids.keyword,
+        expectedRevision: 2,
+        currentRevision: 4,
+      },
+    });
+  });
+
+  it.each([
+    new KeywordGovernanceConflictError("REVISION_CONFLICT"),
+    new KeywordGovernanceConflictError(
+      "REVISION_CONFLICT",
+      review.expectedGovernanceRevision,
+      null,
+    ),
+    new KeywordGovernanceConflictError(
+      "REVISION_CONFLICT",
+      review.expectedGovernanceRevision,
+      review.expectedGovernanceRevision,
+    ),
+    new KeywordGovernanceConflictError(
+      "REVISION_CONFLICT",
+      review.expectedGovernanceRevision + 1,
+      review.expectedGovernanceRevision + 2,
+    ),
+  ])(
+    "fails closed instead of fabricating invalid revision-conflict facts",
+    async (repositoryError) => {
+      vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "reviewKeyword",
+      ).mockRejectedValue(repositoryError);
+
+      await expect(
+        reviewProjectAuditKeyword(
+          reviewScope,
+          ids.project,
+          ids.keyword,
+          review,
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toMatchObject({
+        code: "DEPENDENCY_UNAVAILABLE",
+        status: 503,
+      });
+    },
+  );
+
+  it.each([
+    ["KEYWORD_NOT_FOUND", "NOT_FOUND", 404],
+    ["SITE_PAGE_NOT_FOUND", "NOT_FOUND", 404],
+    ["TOPIC_ASSIGNMENT_INVALID", "VALIDATION_ERROR", 422],
+  ] as const)(
+    "maps %s to the customer-safe %s boundary",
+    async (repositoryCode, code, status) => {
+      vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "reviewKeyword",
+      ).mockRejectedValue(
+        new KeywordGovernanceConflictError(repositoryCode),
+      );
+
+      await expect(
+        reviewProjectAuditKeyword(
+          reviewScope,
+          ids.project,
+          ids.keyword,
+          review,
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toMatchObject({ code, status });
+    },
+  );
+
+  it("fails closed when the persisted decision projection is corrupt", async () => {
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "reviewKeyword",
+    ).mockRejectedValue(
+      new KeywordGovernanceIntegrityError("CURRENT_DECISION_DIVERGED"),
+    );
+
+    await expect(
+      reviewProjectAuditKeyword(
+        reviewScope,
+        ids.project,
+        ids.keyword,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
   });
 });

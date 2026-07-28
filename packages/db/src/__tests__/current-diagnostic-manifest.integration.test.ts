@@ -299,7 +299,15 @@ describeDb("current diagnostic manifest snapshot selection", () => {
     };
   }
 
-  async function insertDiagnostic(snapshots: readonly FrozenSnapshot[]) {
+  async function insertDiagnostic(
+    snapshots: readonly FrozenSnapshot[],
+    options: {
+      readonly ruleSetVersion?: "mvp.rules.0.2.1" | "mvp.rules.0.2.2";
+      readonly governance?: CanonicalValue;
+    } = {},
+  ) {
+    const ruleSetVersion =
+      options.ruleSetVersion ?? "mvp.rules.0.2.1";
     const run = await new AsyncRunsRepository(handle.db).insertQueued({
       workspaceId: fixture.workspaceId,
       projectId: fixture.projectId,
@@ -324,7 +332,7 @@ describeDb("current diagnostic manifest snapshot selection", () => {
     const inputManifest: { readonly [key: string]: CanonicalValue } = {
       projectId: fixture.projectId,
       siteId: fixture.siteId,
-      ruleSetVersion: "mvp.rules.0.2.1",
+      ruleSetVersion,
       promptSetVersion: "mvp.prompts.0.2.0",
       deliveryLocale: "en",
       icp: {
@@ -333,6 +341,9 @@ describeDb("current diagnostic manifest snapshot selection", () => {
         contentHash: fixture.icpContentHash,
       },
       snapshots: frozenSnapshots,
+      ...(options.governance === undefined
+        ? {}
+        : { governance: options.governance }),
     };
     return new DiagnosticRunsRepository(handle.db).insert({
       runId: run.id,
@@ -341,7 +352,7 @@ describeDb("current diagnostic manifest snapshot selection", () => {
       siteId: fixture.siteId,
       icpProfileId: fixture.icpProfileId,
       icpProfileVersion: 1,
-      ruleSetVersion: "mvp.rules.0.2.1",
+      ruleSetVersion,
       promptSetVersion: "mvp.prompts.0.2.0",
       outputLocale: "en",
       inputManifest,
@@ -370,5 +381,74 @@ describeDb("current diagnostic manifest snapshot selection", () => {
     await expect(
       insertDiagnostic([crawl, csv, secondCsv, dataforseo]),
     ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+  });
+
+  it("requires a canonical governance envelope for 0.2.2 and maps only CONTENT-GAP-011 to v2", async () => {
+    const crawl = await insertSnapshot("crawl");
+    const governance = {
+      projectionVersion: "growth-governance.1.0.0",
+      keywordClusters: [],
+      competitors: [],
+    } as const satisfies CanonicalValue;
+
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.2",
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.2",
+        governance: {
+          ...governance,
+          projectionVersion: "growth-governance.2.0.0",
+        },
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.2",
+        governance: {
+          ...governance,
+          liveDatabaseFallback: true,
+        },
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+
+    const diagnostic = await insertDiagnostic([crawl], {
+      ruleSetVersion: "mvp.rules.0.2.2",
+      governance,
+    });
+    expect(diagnostic).toMatchObject({
+      rule_set_version: "mvp.rules.0.2.2",
+      input_manifest: { governance },
+    });
+
+    await expect(
+      handle.pool.query(
+        `INSERT INTO app.diagnostic_run_rules (
+           diagnostic_run_id, rule_id, rule_version, domain,
+           status, reason, metrics, duration_ms
+         ) VALUES ($1, 'CONTENT-GAP-011', 1, 'content_intent',
+                   'candidate', NULL, '{}'::jsonb, 1)`,
+        [diagnostic.id],
+      ),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+
+    await expect(
+      handle.pool.query(
+        `INSERT INTO app.diagnostic_run_rules (
+           diagnostic_run_id, rule_id, rule_version, domain,
+           status, reason, metrics, duration_ms
+         ) VALUES
+           ($1, 'CONTENT-GAP-011', 2, 'content_intent',
+            'candidate', NULL, '{}'::jsonb, 1),
+           ($1, 'TECH-LINKGRAPH-005', 2, 'technical_seo',
+            'candidate', NULL, '{}'::jsonb, 1),
+           ($1, 'SEARCH-CTR-004', 1, 'search_performance',
+            'candidate', NULL, '{}'::jsonb, 1)`,
+        [diagnostic.id],
+      ),
+    ).resolves.toMatchObject({ rowCount: 3 });
   });
 });

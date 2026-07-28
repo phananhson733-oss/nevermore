@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
+import { shouldRetryApiQuery } from "@/lib/api/client";
 
 /**
  * Client providers. TanStack Query owns server-state; it is never copied into a
@@ -14,7 +15,7 @@ export function Providers({ children }: { children: ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 30_000,
-            retry: 1,
+            retry: shouldRetryApiQuery,
             refetchOnWindowFocus: false,
           },
         },

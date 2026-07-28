@@ -121,6 +121,7 @@ function row(
     version?: number;
     status?: "draft" | "complete";
     hash?: string;
+    createdAt?: string;
   } = {},
 ) {
   return {
@@ -132,7 +133,7 @@ function row(
     profile,
     content_hash: options.hash ?? "a".repeat(64),
     created_by: ids.actor,
-    created_at: createdAt,
+    created_at: options.createdAt ?? createdAt,
   };
 }
 
@@ -254,6 +255,19 @@ describe("getProductProfileWorkspace", () => {
     await expect(
       service.getProductProfileWorkspace(scope, ids.project),
     ).resolves.toMatchObject({ activeSynthesisRun: null });
+  });
+
+  it("normalizes PostgreSQL timestamptz text before returning a profile DTO", async () => {
+    mocks.projectFind.mockResolvedValue(project());
+    mocks.profileFind.mockResolvedValue(
+      row(draft(), { createdAt: "2026-07-22 17:04:27.563162+08" }),
+    );
+
+    const result = await service.getProductProfileWorkspace(scope, ids.project);
+
+    expect(result.currentProfile?.createdAt).toBe(
+      "2026-07-22T09:04:27.563162Z",
+    );
   });
 
   it("maps one confirmed row explicitly as both current and confirmed", async () => {

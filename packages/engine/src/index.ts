@@ -114,7 +114,37 @@ export { ctrBenchmark, ctrThreshold } from "./util/ctr-benchmark.ts";
 export { matchIntent, pageFieldBag, intentTokens } from "./util/intent-match.ts";
 export { hasProofBlock, isProofBlock } from "./util/proof-block.ts";
 export { isCommercialUrl, isPriorityUrl, priorityUrlSet } from "./util/page-role.ts";
+export {
+  competitorEntityIdFromSubjectRef,
+  competitorEntitySubjectRef,
+} from "./subject-ref.ts";
+
+export {
+  buildContentDecayMonitor,
+  compareContentDecayAlerts,
+  CONTENT_DECAY_MONITOR_VERSION,
+  CONTENT_DECAY_RANK_THRESHOLD,
+  CONTENT_DECAY_TRAFFIC_THRESHOLD,
+  resolveContentDecayTimeZone,
+} from "./content-decay-monitor.ts";
+export type {
+  ContentDecayAlert,
+  ContentDecayAvailability,
+  ContentDecayMonitor,
+  ContentDecayObservationCandidate,
+  ContentDecayPage,
+  ContentDecayRankTrend,
+  ContentDecaySnapshotCandidate,
+  ContentDecayTimeZoneResolution,
+  ContentDecayTrafficTrend,
+  ContentDecayTrigger,
+} from "./content-decay-monitor.ts";
 
 // The 11-rule registry (`ALL_RULES`) is assembled in ./rules/index.ts once the
 // rule modules land; re-exported here.
-export { ALL_RULES } from "./rules/index.ts";
+export {
+  ALL_RULES,
+  LEGACY_ALL_RULES,
+  LEGACY_RULE_SET_VERSION,
+  rulesForRuleSetVersion,
+} from "./rules/index.ts";

@@ -13,7 +13,11 @@ import {
 } from "@sf/db";
 import type { DbHandle } from "@sf/db/client";
 import { asyncRuns } from "@sf/db/schema";
-import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import {
   CRAWL_METHOD_VERSION,
   METRIC_CRAWL_PAGE,
@@ -191,6 +195,11 @@ export async function seedCurrentCrawlDiagnostic(
     icp: input.icp,
     snapshots: [snapshot],
     deliveryLocale: input.outputLocale ?? "en",
+    governance: {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [],
+    },
   });
   await new DiagnosticRunsRepository(handle.db).insert({
     runId,

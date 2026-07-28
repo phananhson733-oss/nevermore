@@ -3,11 +3,13 @@ import {
   AsyncRunsRepository,
   AuditRunsRepository,
   CapabilityRunsRepository,
+  CompetitorsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   IcpProfilesRepository,
   IdempotencyRepository,
+  KeywordsRepository,
   ProjectsRepository,
   SitesRepository,
   type DataSnapshotRow,
@@ -140,6 +142,14 @@ function mockHappyPathInputs() {
   vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
     crawlSnapshot,
   ]);
+  vi.spyOn(
+    KeywordsRepository.prototype,
+    "listDiagnosticEligible",
+  ).mockResolvedValue([]);
+  vi.spyOn(
+    CompetitorsRepository.prototype,
+    "listDiagnosticEligible",
+  ).mockResolvedValue([]);
 }
 
 beforeEach(() => {
@@ -289,13 +299,24 @@ describe("createGrowthAuditRun contract", () => {
       replayed: false,
       resourceRef: { type: "audit_run", id: auditRunId },
     });
-    expect(mocks.db.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.db.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "repeatable read",
+    });
     expect(insertQueued).toHaveBeenCalledTimes(1);
     expect(insertQueued.mock.calls[0]?.[0]).toMatchObject({
       kind: "diagnostic",
       activeKey: "growth_audit",
     });
     expect(diagnosticInsert).toHaveBeenCalledTimes(1);
+    expect(diagnosticInsert.mock.calls[0]?.[0]).toMatchObject({
+      inputManifest: {
+        governance: {
+          projectionVersion: "growth-governance.1.0.0",
+          keywordClusters: [],
+          competitors: [],
+        },
+      },
+    });
     expect(capabilityCreate).toHaveBeenCalledTimes(1);
     expect(capabilityCreate.mock.calls[0]?.[0]).toMatchObject({
       capabilityId: "growth-audit",

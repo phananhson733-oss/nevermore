@@ -6,6 +6,7 @@ import {
   MeasurementWindowAccepted,
   MeasurementWindowHistoryResponse,
   MeasurementWindowInterval,
+  MeasurementWindowRecentResponse,
 } from "./measurement.ts";
 
 const ids = {
@@ -202,31 +203,21 @@ const observedGa4 = {
   ],
 };
 
-const insufficientGeo = {
+const unavailableGeo = {
   provider: "geo" as const,
-  state: "insufficient_data" as const,
-  baselineSource: source(
-    "geo",
-    ids.geoSource,
-    ids.geoBaseline,
-    beforeWindow,
-  ),
-  outcomeSource: source(
-    "geo",
-    ids.geoSource,
-    ids.geoOutcome,
-    afterWindow,
-  ),
+  state: "unavailable" as const,
+  baselineSource: null,
+  outcomeSource: null,
   sampleSize: {
-    baseline: 4,
-    outcome: 4,
+    baseline: null,
+    outcome: null,
     unit: "tracked_queries" as const,
-    coverage: "partial" as const,
+    coverage: "none" as const,
   },
   limitation:
-    "Only four governed prompts were observed in each window; no causal conclusion is supported.",
+    "No canonical GEO observation writer is configured for this project.",
   metrics: {
-    trackedQueries: { baseline: 4, outcome: 4 },
+    trackedQueries: { baseline: null, outcome: null },
     citedQueries: { baseline: null, outcome: null },
     citations: { baseline: null, outcome: null },
     citationRate: { baseline: null, outcome: null },
@@ -266,7 +257,7 @@ function measurementWindow() {
     dimensions: {
       gsc: observedGsc,
       ga4: observedGa4,
-      geo: insufficientGeo,
+      geo: unavailableGeo,
     },
     recordedAt: "2026-07-16T01:00:00Z",
   };
@@ -493,27 +484,41 @@ describe("immutable measurement window", () => {
     }
   });
 
-  it("requires baseline and outcome Snapshot IDs to differ within every matching provider dimension", () => {
+  it("allows one canonical GSC row to supply both phases but requires distinct GA4 snapshots", () => {
     const base = measurementWindow();
 
-    for (const dimension of ["gsc", "ga4", "geo"] as const) {
-      expect(
-        MeasurementWindow.safeParse({
-          ...base,
-          dimensions: {
-            ...base.dimensions,
-            [dimension]: {
-              ...base.dimensions[dimension],
-              outcomeSource: {
-                ...base.dimensions[dimension].outcomeSource,
-                snapshotId:
-                  base.dimensions[dimension].baselineSource.snapshotId,
-              },
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          gsc: {
+            ...base.dimensions.gsc,
+            outcomeSource: {
+              ...base.dimensions.gsc.outcomeSource,
+              snapshotId:
+                base.dimensions.gsc.baselineSource.snapshotId,
             },
           },
-        }).success,
-      ).toBe(false);
-    }
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          ga4: {
+            ...base.dimensions.ga4,
+            outcomeSource: {
+              ...base.dimensions.ga4.outcomeSource,
+              snapshotId:
+                base.dimensions.ga4.baselineSource.snapshotId,
+            },
+          },
+        },
+      }).success,
+    ).toBe(false);
 
     expect(
       MeasurementWindow.safeParse({
@@ -534,6 +539,33 @@ describe("immutable measurement window", () => {
 
   it("requires source coverage windows and observations to match the fixed baseline/outcome windows", () => {
     const base = measurementWindow();
+    const canonicalFiftySixDayWindow = {
+      startAt: "2026-05-21T00:00:00Z",
+      endAt: "2026-07-16T00:00:00Z",
+    };
+
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          gsc: {
+            ...base.dimensions.gsc,
+            baselineSource: {
+              ...base.dimensions.gsc.baselineSource,
+              coveredWindow: canonicalFiftySixDayWindow,
+              observedAt: "2026-07-16T00:00:00Z",
+            },
+            outcomeSource: {
+              ...base.dimensions.gsc.outcomeSource,
+              snapshotId:
+                base.dimensions.gsc.baselineSource.snapshotId,
+              coveredWindow: canonicalFiftySixDayWindow,
+            },
+          },
+        },
+      }).success,
+    ).toBe(true);
 
     expect(
       MeasurementWindow.safeParse({
@@ -690,6 +722,8 @@ describe("immutable measurement window", () => {
     const unavailable = {
       ...base.dimensions.gsc,
       state: "unavailable" as const,
+      baselineSource: null,
+      outcomeSource: null,
       sampleSize: {
         baseline: null,
         outcome: null,
@@ -749,13 +783,32 @@ describe("immutable measurement window", () => {
 
   it("requires insufficient data to carry partial/none coverage and a limitation", () => {
     const base = measurementWindow();
+    const insufficient = {
+      ...base.dimensions.gsc,
+      state: "insufficient_data" as const,
+      outcomeSource: null,
+      sampleSize: {
+        baseline: 4200,
+        outcome: null,
+        unit: "impressions" as const,
+        coverage: "partial" as const,
+      },
+      limitation:
+        "Only the canonical baseline GSC snapshot exists; the outcome window is missing.",
+      metrics: {
+        clicks: { baseline: 210, outcome: null },
+        impressions: { baseline: 4200, outcome: null },
+        ctr: { baseline: 0.05, outcome: null },
+        averagePosition: { baseline: 14.2, outcome: null },
+      },
+    };
 
     expect(
       MeasurementWindow.safeParse({
         ...base,
         dimensions: {
           ...base.dimensions,
-          geo: { ...base.dimensions.geo, limitation: null },
+          gsc: { ...insufficient, limitation: null },
         },
       }).success,
     ).toBe(false);
@@ -764,11 +817,108 @@ describe("immutable measurement window", () => {
         ...base,
         dimensions: {
           ...base.dimensions,
-          geo: {
-            ...base.dimensions.geo,
+          gsc: {
+            ...insufficient,
             sampleSize: {
-              ...base.dimensions.geo.sampleSize,
+              ...insufficient.sampleSize,
               coverage: "complete",
+            },
+          },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          gsc: insufficient,
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          gsc: {
+            ...insufficient,
+            baselineSource: null,
+          },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("does not require fabricated GA4 conversion-definition UUIDs for unavailable or insufficient data", () => {
+    const base = measurementWindow();
+    const unavailable = {
+      ...base.dimensions.ga4,
+      state: "unavailable" as const,
+      baselineSource: null,
+      outcomeSource: null,
+      directConversionDefinition: null,
+      assistedConversionDefinition: null,
+      sampleSize: {
+        baseline: null,
+        outcome: null,
+        unit: "sessions" as const,
+        coverage: "none" as const,
+      },
+      limitation: "GA4 is not connected.",
+      metrics: {
+        sessions: { baseline: null, outcome: null },
+        engagedSessions: { baseline: null, outcome: null },
+        directConversions: { baseline: null, outcome: null },
+        assistedConversions: { baseline: null, outcome: null },
+      },
+      campaigns: [],
+    };
+    const insufficient = {
+      ...base.dimensions.ga4,
+      state: "insufficient_data" as const,
+      outcomeSource: null,
+      directConversionDefinition: null,
+      assistedConversionDefinition: null,
+      sampleSize: {
+        baseline: 360,
+        outcome: null,
+        unit: "sessions" as const,
+        coverage: "partial" as const,
+      },
+      limitation:
+        "Only a canonical baseline session observation exists; conversion definitions are not governed.",
+      metrics: {
+        sessions: { baseline: 360, outcome: null },
+        engagedSessions: { baseline: 240, outcome: null },
+        directConversions: { baseline: null, outcome: null },
+        assistedConversions: { baseline: null, outcome: null },
+      },
+      campaigns: [],
+    };
+
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: { ...base.dimensions, ga4: unavailable },
+      }).success,
+    ).toBe(true);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: { ...base.dimensions, ga4: insufficient },
+      }).success,
+    ).toBe(true);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          ga4: {
+            ...insufficient,
+            metrics: {
+              ...insufficient.metrics,
+              directConversions: { baseline: 1, outcome: null },
             },
           },
         },
@@ -779,18 +929,22 @@ describe("immutable measurement window", () => {
   it("requires none coverage to have null samples and null metrics even when state is insufficient_data", () => {
     const base = measurementWindow();
     const noneCoverage = {
-      ...base.dimensions.geo,
+      ...base.dimensions.gsc,
+      state: "insufficient_data" as const,
+      outcomeSource: null,
       sampleSize: {
         baseline: null,
         outcome: null,
-        unit: "tracked_queries" as const,
+        unit: "impressions" as const,
         coverage: "none" as const,
       },
+      limitation:
+        "A canonical baseline exists but it contains no usable rows.",
       metrics: {
-        trackedQueries: { baseline: null, outcome: null },
-        citedQueries: { baseline: null, outcome: null },
-        citations: { baseline: null, outcome: null },
-        citationRate: { baseline: null, outcome: null },
+        clicks: { baseline: null, outcome: null },
+        impressions: { baseline: null, outcome: null },
+        ctr: { baseline: null, outcome: null },
+        averagePosition: { baseline: null, outcome: null },
       },
     };
 
@@ -799,7 +953,7 @@ describe("immutable measurement window", () => {
         ...base,
         dimensions: {
           ...base.dimensions,
-          geo: noneCoverage,
+          gsc: noneCoverage,
         },
       }).success,
     ).toBe(true);
@@ -808,7 +962,7 @@ describe("immutable measurement window", () => {
         ...base,
         dimensions: {
           ...base.dimensions,
-          geo: {
+          gsc: {
             ...noneCoverage,
             sampleSize: {
               ...noneCoverage.sampleSize,
@@ -824,11 +978,11 @@ describe("immutable measurement window", () => {
         ...base,
         dimensions: {
           ...base.dimensions,
-          geo: {
+          gsc: {
             ...noneCoverage,
             metrics: {
               ...noneCoverage.metrics,
-              trackedQueries: { baseline: 4, outcome: 4 },
+              clicks: { baseline: 4, outcome: 4 },
             },
           },
         },
@@ -909,6 +1063,94 @@ describe("immutable measurement window", () => {
     ).toBe(true);
   });
 
+  it("allows GEO only when its state reflects actual canonical phase lineage", () => {
+    const base = measurementWindow();
+
+    expect(MeasurementWindow.safeParse(base).success).toBe(true);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          geo: {
+            ...base.dimensions.geo,
+            state: "insufficient_data",
+            baselineSource: source(
+              "geo",
+              ids.geoSource,
+              ids.geoBaseline,
+              beforeWindow,
+            ),
+            sampleSize: {
+              baseline: 12,
+              outcome: null,
+              unit: "tracked_queries",
+              coverage: "partial",
+            },
+            metrics: {
+              trackedQueries: { baseline: 12, outcome: null },
+              citedQueries: { baseline: 3, outcome: null },
+              citations: { baseline: 4, outcome: null },
+              citationRate: { baseline: 0.25, outcome: null },
+            },
+            limitation:
+              "Only a canonical baseline GEO snapshot exists.",
+          },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          geo: {
+            provider: "geo",
+            state: "observed",
+            baselineSource: source(
+              "geo",
+              ids.geoSource,
+              ids.geoBaseline,
+              beforeWindow,
+            ),
+            outcomeSource: source(
+              "geo",
+              ids.geoSource,
+              ids.geoOutcome,
+              afterWindow,
+            ),
+            sampleSize: {
+              baseline: 12,
+              outcome: 12,
+              unit: "tracked_queries",
+              coverage: "partial",
+            },
+            metrics: {
+              trackedQueries: { baseline: 12, outcome: 12 },
+              citedQueries: { baseline: 3, outcome: 5 },
+              citations: { baseline: 4, outcome: 7 },
+              citationRate: { baseline: 0.25, outcome: 5 / 12 },
+            },
+            limitation:
+              "Point-in-time AI answers are observational and do not establish causality.",
+          },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      MeasurementWindow.safeParse({
+        ...base,
+        dimensions: {
+          ...base.dimensions,
+          geo: {
+            ...base.dimensions.geo,
+            limitation: null,
+          },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("binds direct and assisted conversion definitions to distinct explicit attribution boundaries", () => {
     const base = measurementWindow();
 
@@ -981,8 +1223,8 @@ describe("immutable measurement window", () => {
           state,
           dimensions: {
             ...base.dimensions,
-            geo: {
-              ...base.dimensions.geo,
+            gsc: {
+              ...base.dimensions.gsc,
               state: "regressed",
             },
           },
@@ -1032,6 +1274,107 @@ describe("historical projection", () => {
       MeasurementWindowHistoryResponse.safeParse({
         ...response,
         target: { ...response.target, sitePageId: ids.site },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("project recent measurement projection", () => {
+  const newerId = "90000000-0000-4000-8000-000000000026";
+  const olderId = "90000000-0000-4000-8000-000000000025";
+  const otherSitePageId =
+    "90000000-0000-4000-8000-000000000027";
+
+  function recentResponse() {
+    const newest = {
+      ...measurementWindow(),
+      measurementWindowId: newerId,
+      target: {
+        kind: "url" as const,
+        targetRef: `site-page://${ids.sitePage}`,
+        sitePageId: ids.sitePage,
+      },
+    };
+    const older = {
+      ...measurementWindow(),
+      measurementWindowId: olderId,
+      target: {
+        kind: "url" as const,
+        targetRef: `site-page://${otherSitePageId}`,
+        sitePageId: otherSitePageId,
+      },
+      recordedAt: "2026-07-16T00:30:00Z",
+    };
+    return {
+      projectId: ids.project,
+      windows: [newest, older],
+      generatedAt: "2026-07-16T02:00:00Z",
+    };
+  }
+
+  it("accepts bounded full windows from different targets newest-first", () => {
+    const response = recentResponse();
+
+    expect(MeasurementWindowRecentResponse.parse(response)).toEqual(
+      response,
+    );
+  });
+
+  it("rejects project-scope, identity, time, and stable-order drift", () => {
+    const response = recentResponse();
+    const newest = response.windows[0]!;
+    const older = response.windows[1]!;
+    const sameTimeLowerId = {
+      ...older,
+      recordedAt: newest.recordedAt,
+    };
+
+    for (const invalid of [
+      {
+        ...response,
+        projectId: ids.site,
+      },
+      {
+        ...response,
+        windows: [newest, newest],
+      },
+      {
+        ...response,
+        windows: [older, newest],
+      },
+      {
+        ...response,
+        windows: [sameTimeLowerId, newest],
+      },
+      {
+        ...response,
+        generatedAt: "2026-07-16T00:45:00Z",
+      },
+    ]) {
+      expect(
+        MeasurementWindowRecentResponse.safeParse(invalid).success,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects more than 100 windows and fabricated aggregate fields", () => {
+    const response = recentResponse();
+
+    expect(
+      MeasurementWindowRecentResponse.safeParse({
+        ...response,
+        windows: Array.from({ length: 101 }, (_, index) => ({
+          ...response.windows[0],
+          measurementWindowId: `90000000-0000-4000-8000-${String(
+            index + 100,
+          ).padStart(12, "0")}`,
+        })),
+      }).success,
+    ).toBe(false);
+    expect(
+      MeasurementWindowRecentResponse.safeParse({
+        ...response,
+        aggregateLift: 42,
       }).success,
     ).toBe(false);
   });
