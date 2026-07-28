@@ -58,6 +58,63 @@ const recordedAt = "2026-07-22T13:00:00.000Z";
 const canonicalUrl =
   "https://measurement-integration.example/customer-onboarding/";
 
+async function cleanupWorkspaceFixture(
+  handle: DbHandle,
+  workspaceId: string,
+): Promise<void> {
+  const client = await handle.pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL session_replication_role = replica");
+
+    const workspaceRelations = await client.query<{
+      qualified_name: string;
+    }>(
+      `
+        SELECT format('%I.%I', namespace.nspname, relation.relname)
+          AS qualified_name
+        FROM pg_catalog.pg_class relation
+        JOIN pg_catalog.pg_namespace namespace
+          ON namespace.oid = relation.relnamespace
+        JOIN pg_catalog.pg_attribute attribute
+          ON attribute.attrelid = relation.oid
+        WHERE namespace.nspname = 'app'
+          AND relation.relkind IN ('r', 'p')
+          AND attribute.attname = 'workspace_id'
+          AND attribute.attnum > 0
+          AND NOT attribute.attisdropped
+        ORDER BY relation.relname
+      `,
+    );
+
+    for (const relation of workspaceRelations.rows) {
+      await client.query(
+        `DELETE FROM ${relation.qualified_name} WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+    }
+    await client.query("DELETE FROM app.workspaces WHERE id = $1", [
+      workspaceId,
+    ]);
+
+    await client.query("SET LOCAL session_replication_role = origin");
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const residualWorkspace = await handle.pool.query(
+    "SELECT 1 FROM app.workspaces WHERE id = $1",
+    [workspaceId],
+  );
+  if (residualWorkspace.rowCount !== 0) {
+    throw new Error("measurement integration fixture cleanup was incomplete");
+  }
+}
+
 describeDb("measurement window repository and database invariants", () => {
   let handle: DbHandle;
   const ids = {
@@ -588,7 +645,16 @@ describeDb("measurement window repository and database invariants", () => {
   });
 
   afterAll(async () => {
-    await handle?.end();
+    try {
+      if (handle) {
+        // This fixture deliberately bypasses authority triggers to isolate the
+        // measurement contract. Remove only its random workspace before the
+        // shared CI database is handed to the backup/restore recovery drill.
+        await cleanupWorkspaceFixture(handle, ids.workspace);
+      }
+    } finally {
+      await handle?.end();
+    }
   });
 
   function window(measurementWindowId: string): MeasurementWindow {
