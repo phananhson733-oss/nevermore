@@ -53,7 +53,11 @@ import {
   QA_RULE_ORDER,
   QA_RULE_SEVERITY,
 } from "@sf/flow-shadow";
-import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import {
   createContentShadowRun,
@@ -238,6 +242,11 @@ async function seedShadowFixture(handle: DbHandle): Promise<ShadowFixture> {
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
+    governance: {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [],
+    },
     icp: { id: icpProfileId, version: 1, contentHash: icpContentHash },
     snapshots: [
       {

@@ -469,12 +469,10 @@ async function runDiagnosisAndConfirmFinding(
   ).toBeVisible();
   await expectNoDocumentOverflow(page);
 
-  // Before the first diagnostic the portfolio read is the server's real 404
-  // error state (not an empty list), and no provenance band exists yet. Pin
-  // both so the post-terminal recovery below is proven to be a transition.
-  await expect(
-    page.getByText("The URL portfolio could not be read. Try again."),
-  ).toBeVisible();
+  // Before the first diagnostic, a missing frozen audit is a valid empty state
+  // rather than a transport failure. Pin it, together with the absent
+  // provenance band, so the post-terminal recovery below proves the transition.
+  await expect(page.getByText("No URL audit result yet")).toBeVisible();
   await expect(page.getByLabel("Audit provenance for this page")).toHaveCount(
     0,
   );
@@ -498,14 +496,12 @@ async function runDiagnosisAndConfirmFinding(
       .getByText("Completed", { exact: true }),
   ).toBeVisible({ timeout: 45_000 });
 
-  // The pre-diagnosis 404 pinned above must now resolve into the readable
-  // portfolio, with the error state gone entirely.
+  // The pre-diagnosis empty state pinned above must now resolve into the
+  // readable portfolio.
   await expect(page.getByLabel("Audit provenance for this page")).toBeVisible({
     timeout: 15_000,
   });
-  await expect(
-    page.getByText("The URL portfolio could not be read. Try again."),
-  ).toHaveCount(0);
+  await expect(page.getByText("No URL audit result yet")).toHaveCount(0);
 
   // Select the URL that carries the TECH-HTTP-001 Finding (the /gone page).
   await page.getByRole("button").filter({ hasText: "/gone" }).first().click();

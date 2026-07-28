@@ -11,9 +11,14 @@ import type {
   GrowthMapCoverage,
   GrowthMapUrlMetricObservation,
 } from "@sf/contracts";
+import {
+  LEGACY_RULE_SET_VERSION,
+  parseGovernanceProjectionV1,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import { isStale } from "./source-mappers";
 
-const MANIFEST_KEYS = [
+const LEGACY_MANIFEST_KEYS = [
   "deliveryLocale",
   "icp",
   "projectId",
@@ -21,6 +26,10 @@ const MANIFEST_KEYS = [
   "ruleSetVersion",
   "siteId",
   "snapshots",
+] as const;
+const CURRENT_MANIFEST_KEYS = [
+  ...LEGACY_MANIFEST_KEYS,
+  "governance",
 ] as const;
 const ICP_KEYS = ["contentHash", "id", "version"] as const;
 const SNAPSHOT_KEYS = [
@@ -223,6 +232,29 @@ function hasExactKeys(
   );
 }
 
+function validateManifestAuthority(
+  manifest: Record<string, unknown>,
+  ruleSetVersion: string,
+): void {
+  if (ruleSetVersion === RULE_SET_VERSION) {
+    if (!hasExactKeys(manifest, CURRENT_MANIFEST_KEYS)) {
+      invalidFrozenRun();
+    }
+    try {
+      parseGovernanceProjectionV1(manifest["governance"]);
+    } catch {
+      invalidFrozenRun();
+    }
+    return;
+  }
+  if (
+    ruleSetVersion !== LEGACY_RULE_SET_VERSION ||
+    !hasExactKeys(manifest, LEGACY_MANIFEST_KEYS)
+  ) {
+    invalidFrozenRun();
+  }
+}
+
 function requiredString(
   value: Record<string, unknown>,
   key: string,
@@ -269,13 +301,13 @@ export function validateGrowthMapFrozenRun(
   scope: { readonly workspaceId: string; readonly projectId: string },
 ): FrozenGrowthMapRun {
   const manifest = run.input_manifest;
+  validateManifestAuthority(manifest, run.rule_set_version);
   if (
     run.workspace_id !== scope.workspaceId ||
     run.project_id !== scope.projectId ||
     !READABLE_RUN_STATUSES.has(run.run_status) ||
     run.run_completed_at === null ||
     !isTimestamptzInstant(run.run_completed_at) ||
-    !hasExactKeys(manifest, MANIFEST_KEYS) ||
     contentHash(manifest as CanonicalValue) !== run.input_hash ||
     manifest["projectId"] !== run.project_id ||
     manifest["siteId"] !== run.site_id ||

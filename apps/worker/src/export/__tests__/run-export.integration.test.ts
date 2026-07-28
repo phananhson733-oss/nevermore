@@ -27,6 +27,7 @@ import {
 } from "@sf/db";
 import {
   FINDING_REGISTRY,
+  GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
 } from "@sf/engine";
@@ -511,6 +512,11 @@ function exportDiagnosticManifest(
         availability: snapshot.availability,
       },
     ],
+    governance: {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [],
+    },
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",

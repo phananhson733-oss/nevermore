@@ -24,8 +24,13 @@ const DATABASE_URL = requireSafeTestDatabaseUrl(
 
 export default defineConfig({
   testDir: "./e2e",
-  // Database-free critical-flow specs have their own isolated server/config.
-  testIgnore: ["**/*.mock.spec.ts"],
+  // Database-free critical-flow specs and the standalone customer Artifact
+  // each have their own isolated server/config. Do not collect either suite
+  // against the real Next.js application server.
+  testIgnore: [
+    "**/*.mock.spec.ts",
+    "**/complete-customer-artifact.spec.ts",
+  ],
   // The dev-auth workspace is a shared singleton and the specs mutate the same
   // Postgres, so run serially rather than fully parallel to keep runs deterministic.
   fullyParallel: false,

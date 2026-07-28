@@ -1,7 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDbHandle, type DbHandle } from "../client.ts";
+import { listMigrationFiles } from "../migrate.ts";
 import { TopicClusterResolverRepository } from "../repositories/topic-cluster-resolver.ts";
 import {
   TopicModelConflictError,
@@ -9,16 +11,71 @@ import {
 } from "../repositories/topic-models.ts";
 import { requireSafeTestDatabaseUrl } from "../test-database-safety.ts";
 
-const DATABASE_URL = process.env["DATABASE_URL"];
-const describeDb = DATABASE_URL ? describe : describe.skip;
+const SHARED_DATABASE_URL = process.env["DATABASE_URL"];
+const describeDb = SHARED_DATABASE_URL ? describe : describe.skip;
+const DATABASE_NAME =
+  `signalframe_ci_keyword_governance_${randomBytes(6).toString("hex")}`;
+const DATABASE_NAME_PATTERN =
+  /^signalframe_ci_keyword_governance_[a-f0-9]{12}$/u;
+const MIGRATION_FILE = "0024_keyword_governance_foundation.sql";
 const MIGRATION_SQL = readFileSync(
-  new URL(
-    "../../migrations/0024_keyword_governance_foundation.sql",
-    import.meta.url,
-  ),
+  new URL(`../../migrations/${MIGRATION_FILE}`, import.meta.url),
   "utf8",
 );
 const LEGACY_TIME = "2026-07-23T08:00:00.000Z";
+
+function databaseIdentifier(): string {
+  if (!DATABASE_NAME_PATTERN.test(DATABASE_NAME)) {
+    throw new Error("generated database name failed the disposable-name policy");
+  }
+  return `"${DATABASE_NAME}"`;
+}
+
+function sharedDatabaseUrl(): string {
+  return requireSafeTestDatabaseUrl(
+    SHARED_DATABASE_URL,
+    "DATABASE_URL",
+  );
+}
+
+function disposableDatabaseUrl(): string {
+  const url = new URL(sharedDatabaseUrl());
+  url.pathname = `/${DATABASE_NAME}`;
+  return requireSafeTestDatabaseUrl(
+    url.toString(),
+    "keyword governance database URL",
+  );
+}
+
+function maintenanceUrl(): string {
+  const url = new URL(sharedDatabaseUrl());
+  url.pathname = "/postgres";
+  return url.toString();
+}
+
+async function withMaintenanceClient(
+  run: (client: pg.Client) => Promise<void>,
+): Promise<void> {
+  const client = new pg.Client({ connectionString: maintenanceUrl() });
+  await client.connect();
+  try {
+    await run(client);
+  } finally {
+    await client.end();
+  }
+}
+
+async function applyMigration(
+  client: pg.Client,
+  migrationFile: string,
+): Promise<void> {
+  await client.query(
+    readFileSync(
+      new URL(`../../migrations/${migrationFile}`, import.meta.url),
+      "utf8",
+    ),
+  );
+}
 
 interface ProjectFixture {
   readonly workspaceId: string;
@@ -178,6 +235,7 @@ async function createLegacyKeyword(
 
 describeDb("0024 keyword governance foundation", () => {
   let handle: DbHandle;
+  let databaseCreated = false;
   let primary: ProjectFixture;
   let sameWorkspaceProject: ProjectFixture;
   let otherWorkspaceProject: ProjectFixture;
@@ -191,8 +249,40 @@ describeDb("0024 keyword governance foundation", () => {
   let revisionTwoSecondIdentityId: string;
 
   beforeAll(async () => {
-    requireSafeTestDatabaseUrl(DATABASE_URL);
-    handle = createDbHandle(DATABASE_URL!);
+    await withMaintenanceClient(async (client) => {
+      await client.query(
+        `CREATE DATABASE ${databaseIdentifier()} TEMPLATE template0`,
+      );
+      databaseCreated = true;
+    });
+
+    const migrationFiles = listMigrationFiles();
+    const migrationIndex = migrationFiles.indexOf(MIGRATION_FILE);
+    expect(migrationIndex).toBeGreaterThan(0);
+    expect(migrationFiles[migrationIndex - 1]).toBe(
+      "0023_measurement_windows.sql",
+    );
+
+    const migrationClient = new pg.Client({
+      connectionString: disposableDatabaseUrl(),
+    });
+    await migrationClient.connect();
+    try {
+      for (const migrationFile of migrationFiles.slice(0, migrationIndex)) {
+        await applyMigration(migrationClient, migrationFile);
+      }
+      await expect(
+        migrationClient.query<{ migration_version: string }>(
+          "SELECT migration_version FROM app.schema_migration_version",
+        ),
+      ).resolves.toMatchObject({
+        rows: [{ migration_version: "0023_measurement_windows" }],
+      });
+    } finally {
+      await migrationClient.end();
+    }
+
+    handle = createDbHandle(disposableDatabaseUrl());
 
     primary = await createProject(handle, { withPage: true });
     sameWorkspaceProject = await createProject(handle, {
@@ -304,15 +394,31 @@ describeDb("0024 keyword governance foundation", () => {
       },
     );
 
-    // The integration bootstrap has already advanced its migration projection.
-    // Replaying this unpublished, idempotent migration after legacy fixtures is
-    // how this suite proves the actual pre-0024 backfill rather than fabricating
-    // post-migration rows that merely resemble it.
+    // Apply 0024 exactly once over an authentic 0023 schema populated with
+    // legacy fixtures. The suite owns this database, so proving the backfill
+    // cannot downgrade the shared integration database's migration projection.
     await handle.pool.query(MIGRATION_SQL);
+    await expect(
+      handle.pool.query<{ migration_version: string }>(
+        "SELECT migration_version FROM app.schema_migration_version",
+      ),
+    ).resolves.toMatchObject({
+      rows: [{ migration_version: "0024_keyword_governance_foundation" }],
+    });
   });
 
   afterAll(async () => {
-    await handle?.end();
+    try {
+      await handle?.end();
+    } finally {
+      if (databaseCreated) {
+        await withMaintenanceClient(async (client) => {
+          await client.query(
+            `DROP DATABASE IF EXISTS ${databaseIdentifier()} WITH (FORCE)`,
+          );
+        });
+      }
+    }
   });
 
   it("backfills one stable Topic identity per distinct reviewed cluster label", async () => {

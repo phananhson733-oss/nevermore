@@ -34,82 +34,55 @@ import {
   sep,
 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildSchemaCatalog } from "./schema-catalog.mjs";
 
 const SCRIPT_REPO_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "..",
 );
 
-const PRODUCT_VERSION = "0.3.0";
-const CONTRACT_VERSION = "2026-07-21";
-const RULE_SET_VERSION = "mvp.rules.0.2.1";
-const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
+function parseRoot(argv) {
+  if (argv.length === 0) return SCRIPT_REPO_ROOT;
+  if (argv.length === 2 && argv[0] === "--root" && argv[1]) {
+    return resolve(argv[1]);
+  }
+  throw new Error(
+    "usage: node scripts/verify-implementation.mjs [--root <repository>]",
+  );
+}
+
+const root = parseRoot(process.argv.slice(2));
+const ACTIVE_LOCK_PATH = "scripts/spec-v0.4-lock.json";
+let ACTIVE_LOCK;
+try {
+  ACTIVE_LOCK = JSON.parse(
+    readFileSync(resolve(root, ACTIVE_LOCK_PATH), "utf8"),
+  );
+} catch (error) {
+  throw new Error(
+    `${ACTIVE_LOCK_PATH} is not readable JSON: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
+if (
+  ACTIVE_LOCK.lockFormat !== 3 ||
+  ACTIVE_LOCK.authorityVersion !== "0.4.0" ||
+  ACTIVE_LOCK.authorityStatus !== "active" ||
+  ACTIVE_LOCK.normative !== true
+) {
+  throw new Error(
+    `${ACTIVE_LOCK_PATH} must identify the active normative v0.4 authority`,
+  );
+}
+
+const PRODUCT_VERSION = ACTIVE_LOCK.productVersion;
+const CONTRACT_VERSION = ACTIVE_LOCK.contractVersion;
+const RULE_SET_VERSION = ACTIVE_LOCK.ruleSetVersion;
+const PROMPT_SET_VERSION = ACTIVE_LOCK.promptSetVersion;
 const BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.3.0";
 const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 
-const EXPECTED_OPENAPI_OPERATIONS = [
-  "listProjects",
-  "createProject",
-  "getProject",
-  "getProjectContext",
-  "updateProjectContext",
-  "getProjectProductProfile",
-  "updateProductProfileDraft",
-  "createProductProfileSynthesisRun",
-  "reviewProductProfileCompetitor",
-  "addProductProfileCompetitor",
-  "confirmProductProfile",
-  "getProjectWorkspaceView",
-  "listProjectSources",
-  "connectProjectSource",
-  "handleGoogleOAuthCallback",
-  "importProjectSourceFile",
-  "disconnectProjectSource",
-  "createCollectionRun",
-  "listProjectSnapshots",
-  "getProjectRun",
-  "createDiagnosticRun",
-  "createGrowthAuditRun",
-  "createContentShadowRun",
-  "listContentShadowRuns",
-  "getContentShadowRun",
-  "reviewContentShadowRevision",
-  "createActionRecheck",
-  "listProjectAuditUrls",
-  "getProjectAuditUrl",
-  "listProjectAuditKeywords",
-  "getProjectAuditKeyword",
-  "listProjectAuditCompetitors",
-  "getProjectAuditCompetitor",
-  "getProjectGrowthAudit",
-  "getProjectAuditModule",
-  "listProjectOpportunities",
-  "getProjectOpportunity",
-  "getProjectResults",
-  "listProjectFindings",
-  "reviewProjectFinding",
-  "listProjectActions",
-  "updateProjectAction",
-  "listProjectArtifacts",
-  "createActionArtifact",
-  "getProjectArtifact",
-  "updateProjectArtifact",
-  "getProjectReport",
-  "createProjectExport",
-  "getProjectExport",
-];
-
-const EXPECTED_ASYNC_OPERATIONS = [
-  "createProductProfileSynthesisRun",
-  "importProjectSourceFile",
-  "createCollectionRun",
-  "createDiagnosticRun",
-  "createGrowthAuditRun",
-  "createContentShadowRun",
-  "createActionRecheck",
-  "createActionArtifact",
-  "createProjectExport",
-];
+const EXPECTED_OPENAPI_OPERATIONS = ACTIVE_LOCK.apiOperations;
+const EXPECTED_ASYNC_OPERATIONS = ACTIVE_LOCK.asyncOperations;
 
 const EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS = [
   {
@@ -159,80 +132,11 @@ const INTEGRATION_SETUP_FILE =
 const INTEGRATION_SETUP_CONFIG_PATH =
   "./packages/db/src/integration-test-setup.ts";
 
-const EXPECTED_TABLES = [
-  "workspaces",
-  "operator_profiles",
-  "client_projects",
-  "sites",
-  "icp_profiles",
-  "source_connections",
-  "source_credentials",
-  "oauth_intents",
-  "import_previews",
-  "async_runs",
-  "collection_runs",
-  "data_snapshots",
-  "normalized_observations",
-  "provider_discrepancies",
-  "diagnostic_runs",
-  "diagnostic_run_rules",
-  "analysis_invocations",
-  "evidence",
-  "findings",
-  "finding_observations",
-  "finding_review_events",
-  "actions",
-  "action_override_audit",
-  "execution_artifacts",
-  "artifact_revisions",
-  "export_bundles",
-  "idempotency_keys",
-  "telemetry_events",
-  "capability_runs",
-  "audit_runs",
-  "audit_module_results",
-  "site_pages",
-  "page_snapshots",
-  "product_profile_runs",
-  "product_profile_invocation_attempts",
-  "finding_targets",
-  "keyword_occurrences",
-  "keyword_entities",
-  "keyword_entity_sources",
-  "competitor_entities",
-  "competitor_origin_occurrences",
-  "flow_shadow_runs",
-  "flow_shadow_research_packs",
-  "flow_shadow_qa_gates",
-];
-
-const EXPECTED_RULES = [
-  "TECH-HTTP-001",
-  "TECH-CANONICAL-002",
-  "TECH-LINKGRAPH-005",
-  "SEARCH-CTR-004",
-  "SEARCH-DECAY-002",
-  "CONTENT-COVERAGE-001",
-  "CONTENT-GAP-011",
-  "CRO-PATH-001",
-  "CRO-LANDING-003",
-  "GEO-ENTITY-001",
-  "GEO-CRAWLER-002",
-];
-
-const EXPECTED_RULE_VERSIONS = new Map([
-  ["TECH-HTTP-001", 2],
-  ["TECH-CANONICAL-002", 2],
-  ["TECH-LINKGRAPH-005", 2],
-  ["SEARCH-CTR-004", 1],
-  ["SEARCH-DECAY-002", 1],
-  ["CONTENT-COVERAGE-001", 1],
-  ["CONTENT-GAP-011", 1],
-  ["CRO-PATH-001", 1],
-  ["CRO-LANDING-003", 1],
-  ["GEO-ENTITY-001", 1],
-  ["GEO-CRAWLER-002", 1],
-]);
+const EXPECTED_TABLES = ACTIVE_LOCK.tables;
+const EXPECTED_RULES = ACTIVE_LOCK.rules;
+const EXPECTED_RULE_VERSIONS = new Map(
+  Object.entries(ACTIVE_LOCK.ruleVersions),
+);
 
 const WORKSPACE_PACKAGES = [
   "package.json",
@@ -265,16 +169,6 @@ function fail(message) {
 function invariant(condition, message) {
   if (!condition) fail(message);
 }
-
-function parseRoot(argv) {
-  if (argv.length === 0) return SCRIPT_REPO_ROOT;
-  if (argv.length === 2 && argv[0] === "--root" && argv[1]) {
-    return resolve(argv[1]);
-  }
-  fail("usage: node scripts/verify-implementation.mjs [--root <repository>]");
-}
-
-const root = parseRoot(process.argv.slice(2));
 
 function fromRoot(relativePath) {
   return resolve(root, relativePath);
@@ -317,6 +211,21 @@ function assertExactOrder(actual, expected, label) {
     actual.every((value, index) => value === expected[index]),
     `${label} order drift (expected ${expected.join(" -> ")}; got ${actual.join(" -> ")})`,
   );
+}
+
+function yamlComponentSchemaBlock(source, schemaName) {
+  const lines = source.split("\n");
+  const header = `    ${schemaName}:`;
+  const start = lines.findIndex((line) => line === header);
+  invariant(start >= 0, `OpenAPI component schema is missing: ${schemaName}`);
+  let end = start + 1;
+  while (
+    end < lines.length &&
+    !/^ {4}[A-Za-z_][A-Za-z0-9_]*:\s*$/.test(lines[end])
+  ) {
+    end += 1;
+  }
+  return lines.slice(start, end).join("\n");
 }
 
 function formatError(error) {
@@ -535,6 +444,7 @@ function checkOpenApi() {
   const keywordDetailPath = document.paths?.[keywordDetailPathName];
   const keywordList = keywordListPath?.get;
   const keywordDetail = keywordDetailPath?.get;
+  const keywordReview = keywordDetailPath?.patch;
   invariant(
     keywordList?.operationId === "listProjectAuditKeywords",
     "Growth Map Keyword list path/operationId drift",
@@ -543,6 +453,10 @@ function checkOpenApi() {
     keywordDetail?.operationId === "getProjectAuditKeyword",
     "Growth Map Keyword detail path/operationId drift",
   );
+  invariant(
+    keywordReview?.operationId === "reviewProjectAuditKeyword",
+    "Growth Map Keyword review path/operationId drift",
+  );
   assertExactSet(
     Object.keys(keywordListPath ?? {}).filter((key) => HTTP_METHODS.has(key)),
     ["get"],
@@ -550,7 +464,7 @@ function checkOpenApi() {
   );
   assertExactSet(
     Object.keys(keywordDetailPath ?? {}).filter((key) => HTTP_METHODS.has(key)),
-    ["get"],
+    ["get", "patch"],
     "Growth Map Keyword detail methods",
   );
   const keywordListParameterRefs = (keywordList.parameters ?? []).map(
@@ -577,14 +491,31 @@ function checkOpenApi() {
     ],
     "Growth Map Keyword detail parameters",
   );
+  assertExactSet(
+    (keywordReview.parameters ?? []).map((parameter) => parameter.$ref),
+    [
+      "#/components/parameters/ProjectId",
+      "#/components/parameters/KeywordId",
+    ],
+    "Growth Map Keyword review parameters",
+  );
+  invariant(
+    keywordReview.requestBody?.required === true &&
+      keywordReview.requestBody?.content?.["application/json"]?.schema?.$ref ===
+        "#/components/schemas/ReviewKeywordRequest",
+    "Growth Map Keyword review must require the governed review request",
+  );
   invariant(
     keywordList.responses?.["200"]?.content?.["application/json"]?.schema
       ?.$ref ===
       "#/components/schemas/GrowthMapKeywordLibraryHttpResponse" &&
       keywordDetail.responses?.["200"]?.content?.["application/json"]
         ?.schema?.$ref ===
+        "#/components/schemas/GrowthMapKeywordDetailHttpResponse" &&
+      keywordReview.responses?.["200"]?.content?.["application/json"]?.schema
+        ?.$ref ===
         "#/components/schemas/GrowthMapKeywordDetailHttpResponse",
-    "Growth Map Keyword reads must return the standard HTTP envelope around the complete read model",
+    "Growth Map Keyword reads and review must return the standard HTTP envelope around the complete read model",
   );
   invariant(
     keywordList.responses?.["422"]?.$ref ===
@@ -592,8 +523,14 @@ function checkOpenApi() {
       keywordList.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable" &&
       keywordDetail.responses?.["503"]?.$ref ===
+        "#/components/responses/DependencyUnavailable" &&
+      keywordReview.responses?.["409"]?.$ref ===
+        "#/components/responses/Conflict" &&
+      keywordReview.responses?.["422"]?.$ref ===
+        "#/components/responses/ValidationError" &&
+      keywordReview.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable",
-    "Growth Map Keyword reads must expose cursor validation and fail-closed dependency errors",
+    "Growth Map Keyword reads and review must expose validation, optimistic concurrency, and fail-closed dependency errors",
   );
 
   const keywordSchemas = document.components?.schemas ?? {};
@@ -614,7 +551,14 @@ function checkOpenApi() {
   );
   assertExactSet(
     Object.keys(keywordSourceOccurrence?.discriminator?.mapping ?? {}),
-    ["csv_import", "dataforseo_ranked", "gsc_top_query", "manual"],
+    [
+      "csv_import",
+      "dataforseo_ranked",
+      "gsc_top_query",
+      "interview_summary",
+      "user_review",
+      "manual",
+    ],
     "Growth Map Keyword source occurrence discriminator drift",
   );
   assertExactSet(
@@ -623,6 +567,8 @@ function checkOpenApi() {
       "#/components/schemas/GrowthMapKeywordCsvImportOccurrence",
       "#/components/schemas/GrowthMapKeywordDataForSeoRankedOccurrence",
       "#/components/schemas/GrowthMapKeywordGscTopQueryOccurrence",
+      "#/components/schemas/GrowthMapKeywordInterviewSummaryOccurrence",
+      "#/components/schemas/GrowthMapKeywordUserReviewOccurrence",
       "#/components/schemas/GrowthMapKeywordManualOccurrence",
     ],
     "Growth Map Keyword source occurrence discriminator drift",
@@ -735,14 +681,34 @@ function checkOpenApi() {
         "#/components/schemas/GrowthMapCoverage",
     "Growth Map Keyword item must retain bounded source lineage and explicit coverage",
   );
-  const canonicalKeywordLanguageReferences =
-    source.match(
-      /languageTag: \{ \$ref: '#\/components\/schemas\/GrowthMapLibraryLanguageTag' \}/g,
-    ) ?? [];
-  invariant(
-    canonicalKeywordLanguageReferences.length === 5,
-    `Growth Map Keyword canonical language-tag reference drift: expected 5 references, found ${canonicalKeywordLanguageReferences.length}`,
-  );
+  const canonicalKeywordLanguageSchemas = [
+    "GrowthMapKeywordCsvImportOccurrence",
+    "GrowthMapKeywordDataForSeoRankedOccurrence",
+    "GrowthMapKeywordGscTopQueryOccurrence",
+    "GrowthMapKeywordInterviewSummaryOccurrence",
+    "GrowthMapKeywordUserReviewOccurrence",
+    "GrowthMapKeywordManualOccurrence",
+    "GrowthMapKeywordLibraryItem",
+    "KeywordRelationParticipantSnapshot",
+    "MeasurementTargetKeywordRank",
+    "GeoCitationQueryEvidence",
+  ];
+  for (const schemaName of canonicalKeywordLanguageSchemas) {
+    const rawSchema = yamlComponentSchemaBlock(source, schemaName);
+    const directAliasReferences =
+      rawSchema.match(
+        /^ {8}languageTag: \{ \$ref: '#\/components\/schemas\/GrowthMapLibraryLanguageTag' \}\s*$/gm,
+      ) ?? [];
+    invariant(
+      directAliasReferences.length === 1,
+      `${schemaName}.languageTag must directly reference the canonical GrowthMapLibraryLanguageTag alias in raw OpenAPI`,
+    );
+    invariant(
+      keywordSchemas[schemaName]?.properties?.languageTag?.$ref ===
+        "#/components/schemas/LocaleCode",
+      `${schemaName}.languageTag must resolve through the canonical alias to LocaleCode in bundled OpenAPI`,
+    );
+  }
 
   const keywordMetrics = keywordSchemas.GrowthMapKeywordMetrics;
   assertExactSet(
@@ -808,6 +774,7 @@ function checkOpenApi() {
   const competitorDetailPath = document.paths?.[competitorDetailPathName];
   const competitorList = competitorListPath?.get;
   const competitorDetail = competitorDetailPath?.get;
+  const competitorReview = competitorDetailPath?.patch;
   invariant(
     competitorList?.operationId === "listProjectAuditCompetitors",
     "Growth Map Competitor list path/operationId drift",
@@ -815,6 +782,10 @@ function checkOpenApi() {
   invariant(
     competitorDetail?.operationId === "getProjectAuditCompetitor",
     "Growth Map Competitor detail path/operationId drift",
+  );
+  invariant(
+    competitorReview?.operationId === "reviewProjectAuditCompetitor",
+    "Growth Map Competitor review path/operationId drift",
   );
   assertExactSet(
     Object.keys(competitorListPath ?? {}).filter((key) =>
@@ -827,7 +798,7 @@ function checkOpenApi() {
     Object.keys(competitorDetailPath ?? {}).filter((key) =>
       HTTP_METHODS.has(key),
     ),
-    ["get"],
+    ["get", "patch"],
     "Growth Map Competitor detail methods",
   );
   const competitorListParameterRefs = (
@@ -858,6 +829,22 @@ function checkOpenApi() {
     ],
     "Growth Map Competitor detail parameters",
   );
+  assertExactSet(
+    (competitorReview?.parameters ?? []).map(
+      (parameter) => parameter.$ref,
+    ),
+    [
+      "#/components/parameters/ProjectId",
+      "#/components/parameters/CompetitorId",
+    ],
+    "Growth Map Competitor review parameters",
+  );
+  invariant(
+    competitorReview?.requestBody?.required === true &&
+      competitorReview.requestBody?.content?.["application/json"]?.schema
+        ?.$ref === "#/components/schemas/ReviewCompetitorRequest",
+    "Growth Map Competitor review must require the governed review request",
+  );
   invariant(
     competitorList?.responses?.["200"]?.content?.["application/json"]
       ?.schema?.$ref ===
@@ -865,8 +852,12 @@ function checkOpenApi() {
       competitorDetail?.responses?.["200"]?.content?.[
         "application/json"
       ]?.schema?.$ref ===
+        "#/components/schemas/GrowthMapCompetitorDetailHttpResponse" &&
+      competitorReview?.responses?.["200"]?.content?.[
+        "application/json"
+      ]?.schema?.$ref ===
         "#/components/schemas/GrowthMapCompetitorDetailHttpResponse",
-    "Growth Map Competitor reads must return the standard HTTP envelope around the complete read model",
+    "Growth Map Competitor reads and review must return the standard HTTP envelope around the complete read model",
   );
   invariant(
     competitorList?.responses?.["422"]?.$ref ===
@@ -874,8 +865,14 @@ function checkOpenApi() {
       competitorList.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable" &&
       competitorDetail?.responses?.["503"]?.$ref ===
+        "#/components/responses/DependencyUnavailable" &&
+      competitorReview?.responses?.["409"]?.$ref ===
+        "#/components/responses/Conflict" &&
+      competitorReview?.responses?.["422"]?.$ref ===
+        "#/components/responses/ValidationError" &&
+      competitorReview?.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable",
-    "Growth Map Competitor reads must expose cursor validation and fail-closed dependency errors",
+    "Growth Map Competitor reads and review must expose validation, optimistic concurrency, and fail-closed dependency errors",
   );
 
   const competitorSchemas = document.components?.schemas ?? {};
@@ -1216,11 +1213,13 @@ function checkOpenApi() {
   );
 
   const asyncOperations = operations.filter(
-    (operation) => operation.responses["202"] !== undefined,
+    (operation) =>
+      operation.responses["202"]?.$ref ===
+      "#/components/responses/AsyncAccepted",
   );
   invariant(
     asyncOperations.length === EXPECTED_ASYNC_OPERATIONS.length,
-    `expected ${EXPECTED_ASYNC_OPERATIONS.length} async 202 operations, found ${asyncOperations.length}`,
+    `expected ${EXPECTED_ASYNC_OPERATIONS.length} shared AsyncAccepted operations, found ${asyncOperations.length}`,
   );
   assertExactSet(
     asyncOperations.map((operation) => operation.operationId),
@@ -1234,6 +1233,26 @@ function checkOpenApi() {
       `${operation.operationId} must use the shared AsyncAccepted 202 response`,
     );
   }
+  const dedicatedAcceptedOperations = operations.filter(
+    (operation) =>
+      operation.responses["202"] !== undefined &&
+      operation.responses["202"]?.$ref !==
+        "#/components/responses/AsyncAccepted",
+  );
+  assertExactSet(
+    dedicatedAcceptedOperations.map((operation) => operation.operationId),
+    ["createProjectMeasurementWindow"],
+    "OpenAPI dedicated typed 202 operationIds",
+  );
+  const measurementAccepted =
+    dedicatedAcceptedOperations[0]?.responses["202"]?.content?.[
+      "application/json"
+    ]?.schema?.$ref;
+  invariant(
+    measurementAccepted ===
+      "#/components/schemas/MeasurementWindowAcceptedHttpResponse",
+    "createProjectMeasurementWindow must retain its dedicated typed accepted response",
+  );
 
   const asyncData =
     document.components?.schemas?.AsyncAcceptedResponse?.properties?.data;
@@ -1370,6 +1389,19 @@ async function checkWebProxyImplementation() {
 
   const proxy = read(WEB_PROXY_FILE);
   invariant(
+    /import\s*\{\s*updateSession\s*\}\s*from\s*["']@\/lib\/supabase\/refresh["'];?/.test(
+      proxy,
+    ),
+    "src/proxy.ts must refresh and verify the Supabase session at the production boundary",
+  );
+  invariant(
+    /const\s+PUBLIC_PAGES\s*=\s*\[\s*["']\/login["']\s*\]/.test(proxy) &&
+      /const\s+PUBLIC_API_PREFIXES\s*=\s*\[\s*["']\/api\/mvp\/health["']\s*\]/.test(
+        proxy,
+      ),
+    "only login and health may bypass the authenticated page boundary",
+  );
+  invariant(
     /import\s*\{\s*buildContentSecurityPolicy\s*\}\s*from\s*["']\.\.\/security-headers\.ts["'];?/.test(
       proxy,
     ),
@@ -1501,16 +1533,39 @@ async function checkWebProxyImplementation() {
     /if\s*\(\s*isDevAuthEnabled\(\)\s*\)/.test(proxy),
     "the proxy auth bypass must remain behind the shared local-development gate",
   );
-  const e2eShell = read("apps/web/src/app/p/[projectId]/_e2e-shell.ts");
   invariant(
-    /isLoopbackDevelopmentRuntime\s*\(\s*env\s*\)/.test(e2eShell) &&
-      /env\[\s*["']SF_E2E_MOCK_API["']\s*\]\s*===\s*["']true["']/.test(
-        e2eShell,
-      ),
-    "the mock project shell must remain behind the loopback-development gate",
+    /const\s+session\s*=\s*await\s+updateSession\s*\(\s*request\s*,\s*overrides\s*\)/s.test(
+      proxy,
+    ) &&
+      /userPresent\s*=\s*session\.user\s*!==\s*null/.test(proxy),
+    "production requests must derive page authentication from refreshed Supabase user state",
+  );
+  invariant(
+    /if\s*\(\s*!userPresent\s*&&\s*!isPublicPage\s*\)[\s\S]*?url\.pathname\s*=\s*["']\/login["'][\s\S]*?loginRedirectTarget\s*\(\s*request\s*\)/s.test(
+      proxy,
+    ),
+    "unauthenticated pages must redirect to login with a sanitized return target",
+  );
+  invariant(
+    /createSupabaseServerClient\s*\(\s*\)[\s\S]*?supabase\.auth\.getUser\s*\(\s*\)/s.test(
+      session,
+    ),
+    "operator resolution must verify the authenticated user with Supabase Auth",
+  );
+  invariant(
+    /async\s+function\s+findOperator\s*\([^)]*userId[^)]*\)[\s\S]*?\.from\s*\(\s*operatorProfiles\s*\)[\s\S]*?\.where\s*\(\s*eq\s*\(\s*operatorProfiles\.user_id\s*,\s*userId\s*\)\s*\)/s.test(
+      session,
+    ),
+    "production operator resolution must require a pre-provisioned operator profile",
+  );
+  invariant(
+    /const\s+userId\s*=\s*await\s+getAuthUserId\s*\(\s*\)[\s\S]*?if\s*\(\s*!userId\s*\)\s*return\s+null\s*;[\s\S]*?return\s+findOperator\s*\(\s*userId\s*\)/s.test(
+      session,
+    ),
+    "non-development sessions must fail closed before resolving pre-provisioned membership",
   );
 
-  return "web boundary: src/proxy.ts propagates nonce CSP without production unsafe relaxations";
+  return "web boundary: Supabase session refresh + pre-provisioned operator membership + nonce CSP, with dev auth fail-closed outside exact loopback development";
 }
 
 function stripCodeComments(source) {
@@ -1698,18 +1753,14 @@ function checkDatabaseContract() {
     )
     .sort();
   invariant(migrationFiles.length > 0, "at least one SQL migration is required");
+  const migrationSources = migrationFiles.map((fileName) => ({
+    name: fileName,
+    sql: read(`packages/db/migrations/${fileName}`),
+  }));
   const migration = stripSqlComments(
-    migrationFiles
-      .map((fileName) =>
-        read(`packages/db/migrations/${fileName}`),
-      )
-      .join("\n"),
+    migrationSources.map(({ sql }) => sql).join("\n"),
   );
-  const tables = [
-    ...migration.matchAll(
-      /\bCREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.([a-z][a-z0-9_]*)\s*\(/gi,
-    ),
-  ].map((match) => match[1]);
+  const tables = [...buildSchemaCatalog(migrationSources).keys()];
   invariant(
     tables.length === EXPECTED_TABLES.length,
     `expected ${EXPECTED_TABLES.length} app tables in the migrations, found ${tables.length}`,

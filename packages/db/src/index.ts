@@ -234,6 +234,7 @@ export {
 export type { TopicClusterSupportingFindingRow } from "./repositories/topic-clusters.ts";
 export {
   KeywordsRepository,
+  LegacyKeywordReviewDisabledError,
   MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
   MAX_KEYWORD_ENTITY_BATCH,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,

@@ -1,5 +1,11 @@
 import type { Page, Route } from "@playwright/test";
 import {
+  CONTENT_SHADOW_ADAPTER_CONTRACT_VERSION,
+  CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
+  ContentShadowRunResponse,
+  type ContentShadowRunResponse as ContentShadowRunResponseDto,
+} from "../packages/contracts/src/zod/content-shadow.ts";
+import {
   E2E_CANONICAL_ACTION_ID,
   E2E_CANONICAL_FINDING_ID,
   E2E_CONTENT_FINDING_ID,
@@ -230,8 +236,10 @@ function technicalAction() {
   };
 }
 
-function runProjection(state: ContentVerticalState) {
-  return {
+export function contentShadowRunResponseFixture(
+  state: Pick<ContentVerticalState, "draftRevision" | "draftStatus">,
+): ContentShadowRunResponseDto {
+  return ContentShadowRunResponse.parse({
     flowShadowRunId: RUN_ID,
     projectId: E2E_PROJECT_ID,
     siteId: E2E_SITE_ID,
@@ -239,8 +247,8 @@ function runProjection(state: ContentVerticalState) {
     status: "completed",
     phase: "complete",
     contentHash: CONTENT_HASH,
-    projectionVersion: "content-shadow.0.3.2",
-    flowAdapterVersion: "content-shadow-adapter.0.3.0",
+    projectionVersion: CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
+    flowAdapterVersion: CONTENT_SHADOW_ADAPTER_CONTRACT_VERSION,
     outputLocale: "en",
     createdAt: NOW,
     source: {
@@ -267,6 +275,37 @@ function runProjection(state: ContentVerticalState) {
         targetKeywords: ["onboarding analytics", "activation drop-off"],
         pageAssignment: "existing_page",
       },
+      researchContext: {
+        firstPartyPageSnapshots: [],
+        searchKeywordFacts: [
+          {
+            id: KEYWORD_ENTITY_ID,
+            display: "onboarding analytics",
+            market: "US",
+            language: "en",
+            intent: "informational",
+            buyerStage: "consideration",
+            cluster: "onboarding",
+            mapping: {
+              decision: "existing_page",
+              mappedSitePageId: null,
+              reviewState: "confirmed",
+              revision: 1,
+            },
+            lastSeen: NOW,
+            evidenceRefs: [],
+          },
+        ],
+        generativeKeywordFacts: [],
+        competitorFacts: [],
+        externalTargets: [],
+        contentPolicy: {
+          brandConstraints: [],
+          complianceConstraints: [],
+          prohibitedTerms: [],
+          claimRestrictions: [],
+        },
+      },
     },
     research: {
       packId: PACK_ID,
@@ -274,19 +313,53 @@ function runProjection(state: ContentVerticalState) {
         {
           kind: "content_brief",
           ref: BRIEF_ARTIFACT_ID,
+          label: `Content brief revision ${BRIEF_REVISION}`,
+          url: null,
+          availability: "available",
           authorityTier: "A",
+          capturedAt: NOW,
+          contentHash: CONTENT_HASH,
+          contentHashMethod: "sha256_normalized_text",
+          contentTruncated: false,
+          excerpt:
+            "Explain how onboarding analytics expose activation drop-off.",
+          excerptTruncated: false,
+          metrics: null,
+          evidenceRefs: [],
           limitation: "The confirmed content brief revision.",
         },
         {
           kind: "search_query",
           ref: KEYWORD_ENTITY_ID,
+          label: "onboarding analytics",
+          url: null,
+          availability: "available",
           authorityTier: "B",
+          capturedAt: NOW,
+          contentHash: null,
+          contentHashMethod: null,
+          contentTruncated: false,
+          excerpt: null,
+          excerptTruncated: false,
+          metrics: null,
+          evidenceRefs: [],
           limitation: "Identity only; this pack carries no search metric.",
         },
         {
           kind: "first_party_site",
           ref: "https://example.test",
+          label: "Example Test",
+          url: "https://example.test",
+          availability: "available",
           authorityTier: "A",
+          capturedAt: NOW,
+          contentHash: null,
+          contentHashMethod: null,
+          contentTruncated: false,
+          excerpt: null,
+          excerptTruncated: false,
+          metrics: null,
+          evidenceRefs: [],
           limitation: "First-party identity only.",
         },
       ],
@@ -300,6 +373,17 @@ function runProjection(state: ContentVerticalState) {
       status: state.draftStatus,
       currentRevision: state.draftRevision,
       contentText: DRAFT_BODY,
+      revisionHistory: [
+        {
+          revision: state.draftRevision,
+          contentHash: CONTENT_HASH,
+          generatedBy: CONTENT_SHADOW_ADAPTER_CONTRACT_VERSION,
+          editorId: null,
+          note: null,
+          validationErrorCount: 0,
+          createdAt: NOW,
+        },
+      ],
     },
     qa: {
       gateId: GATE_ID,
@@ -311,7 +395,7 @@ function runProjection(state: ContentVerticalState) {
       claims: VERTICAL_CLAIMS,
       evaluatedAt: NOW,
     },
-  };
+  });
 }
 
 async function fulfill(route: Route, body: unknown, status = 200) {
@@ -451,11 +535,11 @@ export async function installContentVerticalApi(
   );
 
   await page.route(`**${BASE}/content-shadow-runs/${RUN_ID}`, async (route) => {
-    await fulfill(route, { data: runProjection(state) });
+    await fulfill(route, { data: contentShadowRunResponseFixture(state) });
   });
 
   await page.route(`**${BASE}/content-shadow-runs?**`, async (route) => {
-    const projection = runProjection(state);
+    const projection = contentShadowRunResponseFixture(state);
     await fulfill(
       route,
       listEnvelope([

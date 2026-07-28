@@ -1,5 +1,11 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import {
+  CONTENT_SHADOW_ADAPTER_CONTRACT_VERSION,
+  CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
+  ContentShadowRunResponse,
+  type ContentShadowRunResponse as ContentShadowRunResponseDto,
+} from "../packages/contracts/src/zod/content-shadow.ts";
+import {
   E2E_CANONICAL_ACTION_ID,
   E2E_PROJECT_ID,
   E2E_SITE_ID,
@@ -37,6 +43,7 @@ const ASYNC_RUN_ID = "00000000-0000-4000-8000-000000000902";
 const DRAFT_ARTIFACT_ID = "00000000-0000-4000-8000-000000000903";
 const FINDING_ID = "00000000-0000-4000-8000-000000000904";
 const BRIEF_ARTIFACT_ID = "00000000-0000-4000-8000-000000000905";
+const KEYWORD_ENTITY_ID = "00000000-0000-4000-8000-000000000907";
 const CONTENT_HASH =
   "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
 const NOW = "2026-07-25T00:00:00.000Z";
@@ -78,7 +85,7 @@ interface Recorded {
 
 function draftHistory(scenario: Scenario) {
   return Array.from({ length: scenario.artifactRevision }, (_, index) => {
-    const revision = index + 1;
+    const revision = scenario.artifactRevision - index;
     return {
       revision,
       contentHash: `${CONTENT_HASH.slice(0, 56)}${String(revision).padStart(8, "0")}`,
@@ -147,8 +154,8 @@ function briefArtifact() {
   };
 }
 
-function runProjection(scenario: Scenario) {
-  return {
+function runProjection(scenario: Scenario): ContentShadowRunResponseDto {
+  return ContentShadowRunResponse.parse({
     flowShadowRunId: RUN_ID,
     projectId: E2E_PROJECT_ID,
     siteId: E2E_SITE_ID,
@@ -156,8 +163,8 @@ function runProjection(scenario: Scenario) {
     status: "completed",
     phase: "complete",
     contentHash: CONTENT_HASH,
-    projectionVersion: "content-shadow.0.3.2",
-    flowAdapterVersion: "content-shadow-adapter.0.3.0",
+    projectionVersion: CONTENT_SHADOW_CAPABILITY_CONTRACT_VERSION,
+    flowAdapterVersion: CONTENT_SHADOW_ADAPTER_CONTRACT_VERSION,
     outputLocale: "en",
     createdAt: NOW,
     source: {
@@ -172,7 +179,7 @@ function runProjection(scenario: Scenario) {
       competitorEntityIds: [],
       searchCluster: {
         clusterKey: "onboarding",
-        keywordEntityIds: ["00000000-0000-4000-8000-000000000907"],
+        keywordEntityIds: [KEYWORD_ENTITY_ID],
       },
       generativeQueryEntityIds: [],
       firstParty: {
@@ -183,6 +190,37 @@ function runProjection(scenario: Scenario) {
         briefSections: ["Objective", "Evidence"],
         targetKeywords: ["onboarding analytics", "activation drop-off"],
         pageAssignment: "existing_page",
+      },
+      researchContext: {
+        firstPartyPageSnapshots: [],
+        searchKeywordFacts: [
+          {
+            id: KEYWORD_ENTITY_ID,
+            display: "onboarding analytics",
+            market: "US",
+            language: "en",
+            intent: "informational",
+            buyerStage: "consideration",
+            cluster: "onboarding",
+            mapping: {
+              decision: "existing_page",
+              mappedSitePageId: null,
+              reviewState: "confirmed",
+              revision: 1,
+            },
+            lastSeen: NOW,
+            evidenceRefs: [],
+          },
+        ],
+        generativeKeywordFacts: [],
+        competitorFacts: [],
+        externalTargets: [],
+        contentPolicy: {
+          brandConstraints: [],
+          complianceConstraints: [],
+          prohibitedTerms: [],
+          claimRestrictions: [],
+        },
       },
     },
     research: {
@@ -197,7 +235,10 @@ function runProjection(scenario: Scenario) {
           authorityTier: "A",
           capturedAt: NOW,
           contentHash: CONTENT_HASH,
+          contentHashMethod: "sha256_normalized_text",
+          contentTruncated: false,
           excerpt: "Defines the audience and allowed evidence boundaries.",
+          excerptTruncated: false,
           metrics: null,
           evidenceRefs: ["brief-revision:3"],
           limitation: "The confirmed content brief revision.",
@@ -231,7 +272,7 @@ function runProjection(scenario: Scenario) {
       claims: scenario.claims,
       evaluatedAt: NOW,
     },
-  };
+  });
 }
 
 async function fulfill(route: Route, body: unknown, status = 200) {

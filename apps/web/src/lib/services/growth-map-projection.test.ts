@@ -1,4 +1,9 @@
 import { canonicalize, contentHash, sha256Hex, type CanonicalValue } from "@sf/db";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  LEGACY_RULE_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import { describe, expect, it } from "vitest";
 import {
   customerFacingGrowthMapFindingTitle,
@@ -48,7 +53,10 @@ function snapshot(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function runAndSnapshots() {
+function runAndSnapshots(
+  ruleSetVersion: typeof RULE_SET_VERSION | typeof LEGACY_RULE_SET_VERSION =
+    RULE_SET_VERSION,
+) {
   const crawl = snapshot();
   const gsc = snapshot({
     id: ids.gsc,
@@ -73,9 +81,18 @@ function runAndSnapshots() {
       sourceWindow: row.source_window,
       availability: row.availability,
     })),
-    ruleSetVersion: "rules.v1",
+    ruleSetVersion,
     promptSetVersion: "prompts.v1",
     deliveryLocale: "zh-CN",
+    ...(ruleSetVersion === RULE_SET_VERSION
+      ? {
+          governance: {
+            projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+            keywordClusters: [],
+            competitors: [],
+          },
+        }
+      : {}),
   };
   return {
     snapshots,
@@ -86,7 +103,7 @@ function runAndSnapshots() {
       site_id: ids.site,
       icp_profile_id: ids.icp,
       icp_profile_version: 2,
-      rule_set_version: "rules.v1",
+      rule_set_version: ruleSetVersion,
       prompt_set_version: "prompts.v1",
       output_locale: "zh-CN",
       input_manifest: manifest,
@@ -146,6 +163,107 @@ describe("Growth Map frozen read boundary", () => {
         projectId: ids.project,
       }).crawlSnapshotId,
     ).toBe(ids.crawl);
+  });
+
+  it("retains the exact legacy 0.2.1 manifest replay boundary", () => {
+    const fixture = runAndSnapshots(LEGACY_RULE_SET_VERSION);
+
+    expect(
+      validateGrowthMapFrozenRun(
+        fixture.run,
+        fixture.snapshots,
+        { workspaceId: ids.workspace, projectId: ids.project },
+      ).crawlSnapshotId,
+    ).toBe(ids.crawl);
+    expect(fixture.run.input_manifest).not.toHaveProperty("governance");
+  });
+
+  it("requires a canonical governance projection for the current rule set", () => {
+    const fixture = runAndSnapshots();
+    const { governance: _governance, ...missingGovernance } =
+      fixture.run.input_manifest;
+    const malformedGovernanceManifests = [
+      missingGovernance,
+      {
+        ...fixture.run.input_manifest,
+        governance: {
+          projectionVersion: "growth-governance.999.0.0",
+          keywordClusters: [],
+          competitors: [],
+        },
+      },
+      {
+        ...fixture.run.input_manifest,
+        governance: {
+          projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+          keywordClusters: [],
+        },
+      },
+      {
+        ...fixture.run.input_manifest,
+        governance: {
+          projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+          keywordClusters: [],
+          competitors: [],
+          surprise: true,
+        },
+      },
+    ];
+
+    for (const manifest of malformedGovernanceManifests) {
+      expect(() =>
+        validateGrowthMapFrozenRun(
+          {
+            ...fixture.run,
+            input_manifest: manifest,
+            input_hash: contentHash(manifest as CanonicalValue),
+          },
+          fixture.snapshots,
+          { workspaceId: ids.workspace, projectId: ids.project },
+        ),
+      ).toThrow(/frozen Growth Map/i);
+    }
+  });
+
+  it("rejects governance on the legacy manifest and rejects unknown rule sets", () => {
+    const legacyFixture = runAndSnapshots(LEGACY_RULE_SET_VERSION);
+    const legacyWithGovernance = {
+      ...legacyFixture.run.input_manifest,
+      governance: {
+        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+        keywordClusters: [],
+        competitors: [],
+      },
+    };
+    expect(() =>
+      validateGrowthMapFrozenRun(
+        {
+          ...legacyFixture.run,
+          input_manifest: legacyWithGovernance,
+          input_hash: contentHash(legacyWithGovernance as CanonicalValue),
+        },
+        legacyFixture.snapshots,
+        { workspaceId: ids.workspace, projectId: ids.project },
+      ),
+    ).toThrow(/frozen Growth Map/i);
+
+    const currentFixture = runAndSnapshots();
+    const unknownRuleSetManifest = {
+      ...currentFixture.run.input_manifest,
+      ruleSetVersion: "mvp.rules.999.0.0",
+    };
+    expect(() =>
+      validateGrowthMapFrozenRun(
+        {
+          ...currentFixture.run,
+          rule_set_version: "mvp.rules.999.0.0",
+          input_manifest: unknownRuleSetManifest,
+          input_hash: contentHash(unknownRuleSetManifest as CanonicalValue),
+        },
+        currentFixture.snapshots,
+        { workspaceId: ids.workspace, projectId: ids.project },
+      ),
+    ).toThrow(/frozen Growth Map/i);
   });
 
   it("accepts equivalent offset renderings while still rejecting instant drift", () => {
@@ -228,14 +346,24 @@ describe("Growth Map frozen read boundary", () => {
         ),
       },
       {
-        run: {
-          ...fixture.run,
-          input_manifest: { ...fixture.run.input_manifest, surprise: true },
-        },
+        run: (() => {
+          const manifest = {
+            ...fixture.run.input_manifest,
+            surprise: true,
+          };
+          return {
+            ...fixture.run,
+            input_manifest: manifest,
+            input_hash: contentHash(manifest as CanonicalValue),
+          };
+        })(),
         snapshots: fixture.snapshots,
       },
       {
-        run: { ...fixture.run, run_status: "running" },
+        run: {
+          ...fixture.run,
+          run_status: "running",
+        },
         snapshots: fixture.snapshots,
       },
       {

@@ -33,6 +33,7 @@ import {
 import {
   ALL_RULES,
   DiagnosticContext,
+  GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
   parseIcp,
@@ -262,6 +263,11 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
           availability: snapshot.availability,
         },
       ],
+      governance: {
+        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+        keywordClusters: [],
+        competitors: [],
+      },
       ruleSetVersion: RULE_SET_VERSION,
       promptSetVersion: PROMPT_SET_VERSION,
       deliveryLocale: "en",

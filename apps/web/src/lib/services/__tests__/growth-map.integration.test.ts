@@ -642,7 +642,7 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
     const definitionFinding = await insertFinding({
       name: "definition",
       ruleId: "CONTENT-GAP-011",
-      ruleVersion: 1,
+      ruleVersion: 2,
       summary: "The keyword cluster has no corresponding content.",
       severity: "medium",
       reviewState: "unreviewed",

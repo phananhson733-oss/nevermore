@@ -9,6 +9,7 @@ RUN npm install --global corepack@0.34.5 && corepack enable pnpm
 
 # Copy workspace manifests first so dependency installation remains cacheable.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY patches/ patches/
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/artifacts/package.json packages/artifacts/package.json

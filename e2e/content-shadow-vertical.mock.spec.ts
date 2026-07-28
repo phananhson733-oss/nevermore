@@ -209,8 +209,12 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   // 5a. RESEARCH: the frozen records are counted, and the limitation that makes
   //     them frozen is printed rather than implied.
   await expect(rail).toContainText("Frozen records");
-  await expect(rail).toContainText("Citable outside sources");
-  await expect(rail).toContainText("0 — no outside retrieval this run");
+  await expect(rail).toContainText(
+    "0 page source(s) can support an external claim",
+  );
+  await expect(rail).toContainText(
+    "3 additional identity or metric records remain traceable",
+  );
   await expect(rail).not.toContainText("SignalFrame");
   await expect(rail).toContainText(
     "no external source was retrieved or graded",

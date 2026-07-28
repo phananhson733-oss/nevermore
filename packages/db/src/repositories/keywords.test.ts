@@ -2,6 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   KeywordsRepository,
+  LegacyKeywordReviewDisabledError,
   MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
   type KeywordEntityRow,
@@ -191,51 +192,22 @@ describe("KeywordsRepository", () => {
     expect(predicate.params).toContain(entity.id);
   });
 
-  it("updates review and Existing Page mapping only at the expected revision", async () => {
+  it("fails closed for the retired ledger-less review command", async () => {
     const db = new FakeExecutor();
-    db.enqueue([
-      {
-        ...entity,
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(
+      repo.reviewAndMap(scope, entity.id, {
+        expectedRevision: 0,
         status: "approved",
-        mapping_decision: "existing_page",
-        mapped_site_page_id: "00000000-0000-4000-8000-000000000030",
-        mapping_review_state: "confirmed",
-        mapping_revision: 1,
-      },
-    ]);
-    const repo = new KeywordsRepository(db as never);
-
-    const updated = await repo.reviewAndMap(scope, entity.id, {
-      expectedRevision: 0,
-      status: "approved",
-      intent: "commercial",
-      buyerStage: "consideration",
-      clusterKey: "customer-onboarding",
-      mappingDecision: "existing_page",
-      mappedSitePageId: "00000000-0000-4000-8000-000000000030",
-      mappingReviewState: "confirmed",
-    });
-
-    expect(updated?.mapping_revision).toBe(1);
-    expect(db.last("set").args[0]).toEqual(
-      expect.objectContaining({
-        mapping_revision: 1,
-        mapping_decision: "existing_page",
-        mapped_site_page_id: "00000000-0000-4000-8000-000000000030",
+        intent: "commercial",
+        buyerStage: "consideration",
+        clusterKey: "customer-onboarding",
+        mappingDecision: "existing_page",
+        mappedSitePageId: "00000000-0000-4000-8000-000000000030",
+        mappingReviewState: "confirmed",
       }),
-    );
-    const predicate = new PgDialect().sqlToQuery(
-      db.last("where").args[0] as never,
-    );
-    expect(predicate.sql).toContain('"mapping_revision" = $');
-    expect(predicate.sql).toContain('"archived_at" is null');
-  });
-
-  it("returns null on an optimistic revision conflict", async () => {
-    const db = new FakeExecutor();
-    db.enqueue([]);
-    const repo = new KeywordsRepository(db as never);
-
+    ).rejects.toEqual(expect.any(LegacyKeywordReviewDisabledError));
     await expect(
       repo.reviewAndMap(scope, entity.id, {
         expectedRevision: 4,
@@ -247,25 +219,19 @@ describe("KeywordsRepository", () => {
         mappedSitePageId: null,
         mappingReviewState: "confirmed",
       }),
-    ).resolves.toBeNull();
+    ).rejects.toMatchObject({
+      code: "LEGACY_KEYWORD_REVIEW_DISABLED",
+      message: expect.stringMatching(
+        /KeywordGovernanceRepository\.reviewKeyword/u,
+      ),
+    });
+    expect(db.calls).toEqual([]);
   });
 
-  it("rejects incoherent mappings and unbounded filters before SQL", async () => {
+  it("rejects unbounded read filters before SQL", async () => {
     const db = new FakeExecutor();
     const repo = new KeywordsRepository(db as never);
 
-    await expect(
-      repo.reviewAndMap(scope, entity.id, {
-        expectedRevision: 0,
-        status: "approved",
-        intent: null,
-        buyerStage: null,
-        clusterKey: null,
-        mappingDecision: "new_asset",
-        mappedSitePageId: "00000000-0000-4000-8000-000000000030",
-        mappingReviewState: "confirmed",
-      }),
-    ).rejects.toThrow(/mappedSitePageId/i);
     await expect(
       repo.listByProject(scope, {
         limit: MAX_KEYWORD_ENTITY_PAGE_SIZE + 1,

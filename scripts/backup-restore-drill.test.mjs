@@ -47,6 +47,7 @@ import {
  * on before any stub gets a chance to accept it.
  */
 const SCHEMA_CATALOG = await loadSchemaCatalog();
+const AUTHORITATIVE_APP_TABLE_COUNT = SCHEMA_CATALOG.size;
 
 const SOURCE_URL =
   "postgres://local_user:super-secret@localhost:5432/signalframe_ci";
@@ -353,9 +354,9 @@ test("URL, entropy, identifier, client path, and retention guards reject unsafe 
   );
 });
 
-test("inventory covers exactly the 67 app tables and explicit object metadata", () => {
-  assert.equal(APP_TABLES.length, 67);
-  assert.equal(new Set(APP_TABLES).size, 67);
+test("inventory covers the authoritative app tables and explicit object metadata", () => {
+  assert.equal(APP_TABLES.length, AUTHORITATIVE_APP_TABLE_COUNT);
+  assert.equal(new Set(APP_TABLES).size, AUTHORITATIVE_APP_TABLE_COUNT);
   for (const table of [
     "capability_runs",
     "audit_runs",
@@ -392,6 +393,11 @@ test("inventory covers exactly the 67 app tables and explicit object metadata", 
     "keyword_relation_decisions",
     "action_execution_step_definitions",
     "action_execution_state_events",
+    "geo_query_observations",
+    "geo_citation_occurrences",
+    "backlink_authority_snapshots",
+    "backlink_facts",
+    "backlink_page_metrics",
   ]) {
     assert.ok(APP_TABLES.includes(table), `missing restore inventory table ${table}`);
   }
@@ -494,7 +500,7 @@ test("inventory covers exactly the 67 app tables and explicit object metadata", 
 test("the drill inventories every table the migration chain creates", () => {
   const catalogTables = [...SCHEMA_CATALOG.keys()].sort();
 
-  assert.equal(catalogTables.length, 67);
+  assert.equal(catalogTables.length, AUTHORITATIVE_APP_TABLE_COUNT);
   assert.deepEqual(
     [...APP_TABLES].sort(),
     catalogTables,
@@ -818,7 +824,10 @@ test("runRestoreDrill verifies then drops only its generated target and writes s
   assert.equal(jsonReport.cleanup.targetDatabaseDropped, true);
   assert.equal(jsonReport.cleanup.targetDatabaseAbsentAfterCleanup, true);
   assert.equal(jsonReport.cleanup.dumpDirectoryRemoved, true);
-  assert.equal(jsonReport.verification.appTableCount, 67);
+  assert.equal(
+    jsonReport.verification.appTableCount,
+    AUTHORITATIVE_APP_TABLE_COUNT,
+  );
   assert.equal(jsonReport.verification.canonicalChecksumAlgorithm, "sha256");
   assert.doesNotMatch(JSON.stringify(jsonReport), /super-secret|postgres:\/\//);
   assert.doesNotMatch(markdownReport, /super-secret|postgres:\/\//);
@@ -1054,7 +1063,10 @@ test("default PostgreSQL process adapters run through a private fake client tool
     const state = await fake.readState();
 
     assert.equal(result.status, "passed");
-    assert.equal(report.verification.appTableCount, 67);
+    assert.equal(
+      report.verification.appTableCount,
+      AUTHORITATIVE_APP_TABLE_COUNT,
+    );
     assert.equal(report.verification.migrationReplay, "passed");
     assert.equal(report.verification.schemaSmoke, "passed");
     assert.equal(report.cleanup.targetDatabaseDropped, true);

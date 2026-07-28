@@ -1,19 +1,28 @@
 {
   "schemaVersion": 1,
   "active": {
-    "version": "0.3.0",
+    "version": "0.4.0",
     "status": "active",
     "normative": true,
-    "authorityRoot": "authority/implementation-spec-v0.3",
-    "lockPath": "scripts/spec-v0.3-lock.json"
+    "authorityRoot": "authority/implementation-spec-v0.4",
+    "lockPath": "scripts/spec-v0.4-lock.json"
   },
-  "candidates": [
+  "history": [
     {
-      "version": "0.4.0",
-      "status": "candidate",
+      "version": "0.3.0",
+      "status": "historical",
       "normative": false,
-      "authorityRoot": "authority/implementation-spec-v0.4",
-      "lockPath": "scripts/spec-v0.4-candidate-lock.json"
+      "authorityRoot": "authority/implementation-spec-v0.3",
+      "lockPath": "scripts/spec-v0.3-lock.json"
+    }
+  ],
+  "historicalDesignInputs": [
+    {
+      "label": "v0.4 publication candidate before atomic promotion",
+      "status": "historical",
+      "normative": false,
+      "executable": false,
+      "path": "authority/implementation-spec-v0.4/historical-publication-candidate"
     }
   ]
 }

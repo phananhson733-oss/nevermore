@@ -170,7 +170,15 @@ test("Studio exposes artifact and action next pages", async ({ page }) => {
   const secondArtifact = artifactFixture(2, secondAction.id, "content_brief");
 
   await page.route(`**${API_BASE}/actions**`, async (route) => {
-    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    const url = new URL(route.request().url());
+    if (
+      route.request().method() !== "GET" ||
+      url.pathname !== `${API_BASE}/actions`
+    ) {
+      await route.fallback();
+      return;
+    }
+    const cursor = url.searchParams.get("cursor");
     await json(
       route,
       cursor === null
@@ -179,7 +187,15 @@ test("Studio exposes artifact and action next pages", async ({ page }) => {
     );
   });
   await page.route(`**${API_BASE}/artifacts**`, async (route) => {
-    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    const url = new URL(route.request().url());
+    if (
+      route.request().method() !== "GET" ||
+      url.pathname !== `${API_BASE}/artifacts`
+    ) {
+      await route.fallback();
+      return;
+    }
+    const cursor = url.searchParams.get("cursor");
     await json(
       route,
       cursor === null
@@ -222,12 +238,26 @@ test("Studio guards hero generation and card regeneration while the editor is di
   const action = actionFixture(1, "Guarded generation action");
   const artifact = artifactFixture(1, action.id, "technical_ticket");
 
-  await page.route(`**${API_BASE}/actions**`, (route) =>
-    json(route, listEnvelope([action], null)),
-  );
-  await page.route(`**${API_BASE}/artifacts**`, (route) =>
-    json(route, listEnvelope([artifact], null)),
-  );
+  await page.route(`**${API_BASE}/actions**`, async (route) => {
+    if (
+      route.request().method() !== "GET" ||
+      new URL(route.request().url()).pathname !== `${API_BASE}/actions`
+    ) {
+      await route.fallback();
+      return;
+    }
+    await json(route, listEnvelope([action], null));
+  });
+  await page.route(`**${API_BASE}/artifacts**`, async (route) => {
+    if (
+      route.request().method() !== "GET" ||
+      new URL(route.request().url()).pathname !== `${API_BASE}/artifacts`
+    ) {
+      await route.fallback();
+      return;
+    }
+    await json(route, listEnvelope([artifact], null));
+  });
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   const content = page.getByRole("textbox", { name: "Content" });
@@ -297,12 +327,26 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   const firstArtifact = artifactFixture(1, firstAction.id, "technical_ticket");
   const secondArtifact = artifactFixture(2, secondAction.id, "content_brief");
 
-  await page.route(`**${API_BASE}/actions**`, (route) =>
-    json(route, listEnvelope([firstAction, secondAction], null)),
-  );
-  await page.route(`**${API_BASE}/artifacts**`, (route) =>
-    json(route, listEnvelope([firstArtifact, secondArtifact], null)),
-  );
+  await page.route(`**${API_BASE}/actions**`, async (route) => {
+    if (
+      route.request().method() !== "GET" ||
+      new URL(route.request().url()).pathname !== `${API_BASE}/actions`
+    ) {
+      await route.fallback();
+      return;
+    }
+    await json(route, listEnvelope([firstAction, secondAction], null));
+  });
+  await page.route(`**${API_BASE}/artifacts**`, async (route) => {
+    if (
+      route.request().method() !== "GET" ||
+      new URL(route.request().url()).pathname !== `${API_BASE}/artifacts`
+    ) {
+      await route.fallback();
+      return;
+    }
+    await json(route, listEnvelope([firstArtifact, secondArtifact], null));
+  });
 
   await page.goto(`/p/${E2E_PROJECT_ID}/results`);
   await page.getByRole("link", { name: "Execution", exact: true }).click();

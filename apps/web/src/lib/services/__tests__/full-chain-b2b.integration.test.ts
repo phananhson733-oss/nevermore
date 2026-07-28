@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CONTRACT_VERSION } from "@sf/contracts";
+import { RULE_SET_VERSION } from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import {
   ActionsRepository,
@@ -637,7 +638,7 @@ describeDb(
       expect(serviceBundle.manifest["schemaVersion"]).toBe(
         "signalframe.service-bundle.0.3.0",
       );
-      expect(serviceBundle.manifest["ruleSetVersion"]).toBe("mvp.rules.0.2.1");
+      expect(serviceBundle.manifest["ruleSetVersion"]).toBe(RULE_SET_VERSION);
     });
 
     it("the service_bundle INCLUDES the internal diagnostic detail (spec §10.5)", () => {

@@ -680,6 +680,54 @@ describe("KeywordGovernanceRepository", () => {
     expect(absentDb.all("select")).toHaveLength(1);
   });
 
+  it("accepts an actorless system ingestion suggestion but still requires an actor for a user decision", async () => {
+    const systemDb = new FakeExecutor();
+    systemDb.enqueue(
+      [keyword],
+      [
+        {
+          ...baseline,
+          decision_origin: "system_suggestion",
+          decided_by: null,
+          reason: "Keyword ingestion generated the initial candidate decision.",
+        },
+      ],
+    );
+
+    await expect(
+      new KeywordGovernanceRepository(
+        systemDb as never,
+        clock,
+      ).findCurrent(scope, ids.keyword),
+    ).resolves.toMatchObject({
+      decision: {
+        decisionOrigin: "system_suggestion",
+        decidedBy: null,
+      },
+    });
+
+    const userDb = new FakeExecutor();
+    userDb.enqueue(
+      [keyword],
+      [
+        {
+          ...baseline,
+          decision_origin: "user",
+          decided_by: null,
+        },
+      ],
+    );
+    await expect(
+      new KeywordGovernanceRepository(
+        userDb as never,
+        clock,
+      ).findCurrent(scope, ids.keyword),
+    ).rejects.toMatchObject({
+      name: "KeywordGovernanceIntegrityError",
+      code: "CURRENT_DECISION_DIVERGED",
+    });
+  });
+
   it("reads a retired Topic assignment as blocked, append-only review authority", async () => {
     const retiredProjection = {
       projectId: ids.project,

@@ -427,6 +427,14 @@ test("Studio retries the same run after a transient status outage", async ({
   await page.route(
     `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
     async (route) => {
+      if (
+        route.request().method() !== "GET" ||
+        new URL(route.request().url()).pathname !==
+          `/api/mvp/projects/${E2E_PROJECT_ID}/artifacts`
+      ) {
+        await route.fallback();
+        return;
+      }
       artifactReads += 1;
       await route.fulfill({
         status: 200,
@@ -618,7 +626,11 @@ test("Studio adopts a cross-tab active generation from the refreshed artifact pr
   await page.route(
     `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
     async (route) => {
-      if (route.request().method() !== "GET") {
+      if (
+        route.request().method() !== "GET" ||
+        new URL(route.request().url()).pathname !==
+          `/api/mvp/projects/${E2E_PROJECT_ID}/artifacts`
+      ) {
         await route.fallback();
         return;
       }
@@ -742,7 +754,11 @@ test("Studio releases a 409 recovery fence when the canonical run has already se
   await page.route(
     `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
     async (route) => {
-      if (route.request().method() !== "GET") {
+      if (
+        route.request().method() !== "GET" ||
+        new URL(route.request().url()).pathname !==
+          `/api/mvp/projects/${E2E_PROJECT_ID}/artifacts`
+      ) {
         await route.fallback();
         return;
       }
@@ -848,7 +864,11 @@ test("Studio fences a locally queued generation before artifact projection catch
   await page.route(
     `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
     async (route) => {
-      if (route.request().method() !== "GET") {
+      if (
+        route.request().method() !== "GET" ||
+        new URL(route.request().url()).pathname !==
+          `/api/mvp/projects/${E2E_PROJECT_ID}/artifacts`
+      ) {
         await route.fallback();
         return;
       }
@@ -1544,7 +1564,11 @@ test("Studio keeps the 409 fence across a route change while the projection is i
   await page.route(
     `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
     async (route) => {
-      if (route.request().method() !== "GET") {
+      if (
+        route.request().method() !== "GET" ||
+        new URL(route.request().url()).pathname !==
+          `/api/mvp/projects/${E2E_PROJECT_ID}/artifacts`
+      ) {
         await route.fallback();
         return;
       }

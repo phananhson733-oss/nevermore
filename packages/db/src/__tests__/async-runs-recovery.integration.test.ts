@@ -202,6 +202,7 @@ describeDb("async run delivery recovery", () => {
       "content_shadow",
       "diagnostic",
       "export",
+      "measurement",
       "product_profile_synthesis",
       "publication",
     ]);

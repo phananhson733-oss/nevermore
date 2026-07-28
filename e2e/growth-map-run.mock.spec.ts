@@ -404,9 +404,10 @@ test.describe("growth map diagnosis trigger", () => {
     await expect(page.getByLabel("Audit provenance for this page")).toHaveCount(
       0,
     );
-    // The settled 404 costs exactly two list reads: the initial fetch plus
-    // the QueryClient's single global retry.
-    expect(reads.auditListReads).toHaveLength(2);
+    // A settled client error is not transient: the QueryClient must not retry
+    // the 404 portfolio read. The first diagnosis control remains available
+    // over that single honest error response.
+    expect(reads.auditListReads).toHaveLength(1);
     const run = runButton(page);
     await expect(run).toBeEnabled();
     await run.click();
@@ -420,7 +421,7 @@ test.describe("growth map diagnosis trigger", () => {
     await expect(
       page.getByText("The URL portfolio could not be read. Try again."),
     ).toBeVisible();
-    expect(reads.auditListReads).toHaveLength(2);
+    expect(reads.auditListReads).toHaveLength(1);
 
     await expect(
       statusRegion(page).getByText("Completed", { exact: true }),
@@ -434,9 +435,9 @@ test.describe("growth map diagnosis trigger", () => {
       page.getByText("The URL portfolio could not be read. Try again."),
     ).toHaveCount(0);
     // Exactly one terminal refresh read, and it does not repeat.
-    await expect.poll(() => reads.auditListReads.length).toBe(3);
+    await expect.poll(() => reads.auditListReads.length).toBe(2);
     await page.waitForTimeout(500);
-    expect(reads.auditListReads).toHaveLength(3);
+    expect(reads.auditListReads).toHaveLength(2);
     // Pill retained, control unlocked, session label flipped to re-run.
     await expect(
       statusRegion(page).getByText("Completed", { exact: true }),

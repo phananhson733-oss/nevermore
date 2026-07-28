@@ -32,11 +32,14 @@ import {
   ExportBundlesRepository,
   FindingTargetsRepository,
   ImportPreviewsRepository,
+  KeywordGovernanceRepository,
+  KeywordOccurrencesRepository,
   ObservationsRepository,
   PageSnapshotsRepository,
   ProjectsRepository,
   SitePagesRepository,
   SourceConnectionsRepository,
+  TopicModelsRepository,
   contentHash,
   type CanonicalValue,
   type ObservationInsert,
@@ -849,7 +852,7 @@ async function seedFullProviderSnapshots(
   fixture: VerticalFixture,
 ): Promise<string[]> {
   const capturedAt = new Date().toISOString();
-  return Promise.all([
+  const snapshotIds = await Promise.all([
     seedProviderSnapshot(handle, scope, siteId, origin, actor, capturedAt, {
       provider: "gsc",
       connectionType: "oauth",
@@ -879,6 +882,120 @@ async function seedFullProviderSnapshots(
       limitation: "Keyword demand is supplied by a deterministic CSV fixture.",
     }),
   ]);
+  await seedReviewedKeywordGovernance(
+    handle,
+    scope,
+    actor,
+    snapshotIds[2]!,
+    fixture,
+    capturedAt,
+  );
+  return snapshotIds;
+}
+
+async function seedReviewedKeywordGovernance(
+  handle: DbHandle,
+  scope: ProjectScope,
+  actor: string,
+  csvSnapshotId: string,
+  fixture: VerticalFixture,
+  capturedAt: string,
+): Promise<void> {
+  const observations = (
+    await new ObservationsRepository(handle.db).listBySnapshotIds(
+      scope,
+      [csvSnapshotId],
+    )
+  ).filter(
+    (observation) =>
+      observation.provider === "csv" &&
+      observation.metric_key === METRIC_CSV_KEYWORD_GAP,
+  );
+  if (observations.length !== 10) {
+    throw new Error("full-chain fixture requires ten CSV keyword observations");
+  }
+
+  const occurrences = new KeywordOccurrencesRepository(handle.db);
+  const keywordEntityIds: string[] = [];
+  for (const observation of observations) {
+    const projection = observation.value_json as CsvKeywordProjection;
+    if (
+      projection.clusterKey !== fixture.keywordCluster ||
+      projection.marketCode !== "US" ||
+      projection.languageCode !== "en"
+    ) {
+      throw new Error("full-chain CSV keyword governance fixture drifted");
+    }
+    const normalizedKeyword = projection.keyword
+      .normalize("NFKC")
+      .trim()
+      .replace(/\s+/gu, " ")
+      .toLowerCase();
+    const created = await occurrences.upsertIntoLibrary(scope, {
+      manualEntryId: null,
+      dataSnapshotId: csvSnapshotId,
+      normalizedObservationId: observation.id,
+      displayKeyword: projection.keyword,
+      normalizedKeyword,
+      market: projection.marketCode,
+      languageTag: projection.languageCode,
+      queryKind: "search_query",
+      sourceKind: "csv_import",
+      scopeBasis: "user_provided",
+      sourcePointer: "/valueJson/keyword",
+      sourceRef: `observation:${observation.id}#/valueJson/keyword`,
+      collectedAt: capturedAt,
+      providerDataAsOf: null,
+    });
+    keywordEntityIds.push(created.entityId);
+  }
+
+  const topics = new TopicModelsRepository(handle.db);
+  const draft = await topics.beginDraftFromLatestConfirmed(
+    scope,
+    actor,
+    {
+      expectedLatestConfirmedRevision: 0,
+      reason: "Create the reviewed Topic for the full-chain fixture.",
+    },
+  );
+  const edited = await topics.patchDraft(scope, actor, {
+    topicModelRevision: draft.topicModelRevision,
+    expectedEditRevision: draft.editRevision,
+    reason: "Add the keyword-gap Topic used by the diagnostic fixture.",
+    intents: [
+      {
+        kind: "create",
+        parentTopicNodeId: null,
+        label: fixture.keywordCluster,
+        description: "Reviewed keyword demand for the golden full chain.",
+        intentEnvelope: ["Commercial"],
+      },
+    ],
+  });
+  const confirmed = await topics.confirmDraft(scope, actor, {
+    topicModelRevision: edited.topicModelRevision,
+    expectedEditRevision: edited.editRevision,
+    reason: "Confirm the Topic before reviewing fixture Keywords.",
+  });
+  if (confirmed.rootTopicNodeId === null) {
+    throw new Error("full-chain Topic fixture did not produce a root");
+  }
+
+  const governance = new KeywordGovernanceRepository(handle.db);
+  for (const keywordEntityId of keywordEntityIds) {
+    await governance.reviewKeyword(scope, keywordEntityId, actor, {
+      expectedGovernanceRevision: 0,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: confirmed.rootTopicNodeId,
+      topicModelRevision: confirmed.topicModelRevision,
+      mappingDecision: "new_asset",
+      mappedSitePageId: null,
+      reason: "Approve the deterministic full-chain keyword fixture.",
+    });
+  }
 }
 
 // --- the shared common chain: seed → diagnose → confirm → artifact ----------

@@ -689,6 +689,40 @@ export async function installCriticalFlowApi(
       return;
     }
 
+    const actionExecutionStateMatch =
+      method === "GET"
+        ? path.match(
+            new RegExp(
+              `^${BASE}/actions/([^/]+)/execution-state$`,
+            ),
+          )
+        : null;
+    if (actionExecutionStateMatch !== null) {
+      const actionId = decodeURIComponent(actionExecutionStateMatch[1] ?? "");
+      const artifactId = url.searchParams.get("artifactId");
+      if (actionId !== action.id || artifactId !== artifact.id) {
+        await json(
+          route,
+          problem(
+            "EXECUTION_STATE_STREAM_NOT_FOUND",
+            "The requested Action and Artifact do not identify the fixture execution stream.",
+            404,
+          ),
+          404,
+        );
+        return;
+      }
+      await json(route, {
+        data: {
+          actionId: action.id,
+          artifactId: artifact.id,
+          current: null,
+          history: [],
+        },
+      });
+      return;
+    }
+
     if (method === "GET" && path === `${BASE}/artifacts`) {
       await json(route, listEnvelope([artifact]));
       return;

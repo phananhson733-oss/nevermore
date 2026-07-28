@@ -175,9 +175,30 @@ jobs:
         run: pnpm test:coverage
 
       - name: Run PostgreSQL backup and restore recovery drill
+        id: restore_drill
         env:
           RESTORE_DRILL_REPORT_DIR: ${{ runner.temp }}/restore-drill-evidence
         run: pnpm restore:drill
+
+      # A failed/skipped drill may legitimately have no report, so the upload
+      # below must not hide the primary failure with a second artifact error.
+      # Conversely, a green drill is not green unless it produced durable
+      # evidence for review.
+      - name: Require evidence from a successful restore drill
+        if: ${{ always() && steps.restore_drill.outcome == 'success' }}
+        shell: bash
+        env:
+          RESTORE_DRILL_REPORT_DIR: ${{ runner.temp }}/restore-drill-evidence
+        run: |
+          shopt -s nullglob
+          evidence_files=(
+            "$RESTORE_DRILL_REPORT_DIR"/*.json
+            "$RESTORE_DRILL_REPORT_DIR"/*.md
+          )
+          if (( ${#evidence_files[@]} == 0 )); then
+            echo "::error::Restore drill succeeded without JSON or Markdown evidence."
+            exit 1
+          fi
 
       - name: Preserve redacted restore drill evidence
         if: ${{ always() }}
@@ -187,7 +208,7 @@ jobs:
           path: |
             ${{ runner.temp }}/restore-drill-evidence/*.json
             ${{ runner.temp }}/restore-drill-evidence/*.md
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Install Chromium for real responsive and a11y E2E

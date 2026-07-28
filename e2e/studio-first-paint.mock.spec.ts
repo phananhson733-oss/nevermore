@@ -36,7 +36,11 @@ test("Studio renders artifacts before actions and defers project metadata", asyn
 
   try {
     await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
-    await expect.poll(() => actionReads).toBe(1);
+    // The canonical Execution mount has two independent consumers under the
+    // Action resource: the queue's Action list and the selected Artifact's
+    // immutable execution-state timeline. Both may be slow without hiding the
+    // already usable Artifact projection.
+    await expect.poll(() => actionReads).toBe(2);
 
     // Artifact data is already usable, so an unrelated slow action lookup must
     // not replace the whole screen with a loading state.

@@ -1,7 +1,7 @@
 import type pg from "pg";
 
 export const LATEST_APP_MIGRATION =
-  "0031_pgcrypto_digest_compatibility" as const;
+  "0032_keyword_initial_governance" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 

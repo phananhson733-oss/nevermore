@@ -22,6 +22,14 @@ const MIGRATIONS_DIR = join(
   "migrations",
 );
 
+/**
+ * PostgreSQL advisory locks live in a shared, database-local namespace. These
+ * two stable int32 keys spell "SF" / "MIGR" in hexadecimal and identify the
+ * authoritative schema migration runner without depending on any app schema
+ * object that may not exist yet.
+ */
+export const MIGRATION_LOCK_KEYS = [0x5346, 0x4d49_4752] as const;
+
 export function listMigrationFiles(): string[] {
   return readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql") && f !== "schema-smoke.sql")
@@ -53,7 +61,18 @@ export async function runMigrations(
   const client = new pg.Client({ connectionString });
   await client.connect();
   const applied: string[] = [];
+  let lockAcquired = false;
+  let primaryFailure: { readonly error: unknown } | undefined;
+  let cleanupFailure: { readonly error: unknown } | undefined;
   try {
+    // The session lock must cover both the version read and the complete
+    // forward-only loop. Otherwise two fresh processes can observe the same
+    // version and race on a later migration's non-idempotent DDL.
+    await client.query("SELECT pg_advisory_lock($1, $2)", [
+      ...MIGRATION_LOCK_KEYS,
+    ]);
+    lockAcquired = true;
+
     const currentVersion = await readAppliedMigrationVersion(client);
     for (const file of listMigrationFiles()) {
       const version = file.replace(/\.sql$/u, "");
@@ -63,8 +82,34 @@ export async function runMigrations(
       await client.query(sql);
       applied.push(file);
     }
+  } catch (error: unknown) {
+    primaryFailure = { error };
   } finally {
-    await client.end();
+    try {
+      if (lockAcquired) {
+        await client.query("SELECT pg_advisory_unlock($1, $2) AS released", [
+          ...MIGRATION_LOCK_KEYS,
+        ]);
+      }
+    } catch (error: unknown) {
+      cleanupFailure = { error };
+    } finally {
+      try {
+        await client.end();
+      } catch (error: unknown) {
+        cleanupFailure ??= { error };
+      }
+    }
+  }
+
+  // Preserve the migration/acquisition failure as the primary error. The CLI
+  // boundary below continues to serialize either primary or cleanup failures
+  // through the same fixed, redacted event.
+  if (primaryFailure) {
+    throw primaryFailure.error;
+  }
+  if (cleanupFailure) {
+    throw cleanupFailure.error;
   }
   return applied;
 }

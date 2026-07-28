@@ -342,7 +342,17 @@ describeDb("Growth Map Keyword Library real Postgres projection", () => {
         local.keywordId,
         tx,
       );
-      expect(detail).toEqual({ projectId: local.projectId, data: item });
+      expect(detail).toEqual({
+        projectId: local.projectId,
+        data: {
+          ...item,
+          mappedTarget: {
+            ...item.mappedTarget,
+            reason:
+              "Keyword ingestion generated the initial candidate decision.",
+          },
+        },
+      });
 
       const serialized = JSON.stringify({ list, detail });
       expect(serialized).not.toContain(foreign.projectId);

@@ -2,6 +2,7 @@ import {
   ActionsRepository,
   AsyncRunsRepository,
   CapabilityRunsRepository,
+  canonicalUtcTimestamptz,
   CompetitorsRepository,
   contentHash,
   DiagnosticRunsRepository,
@@ -242,7 +243,7 @@ function keywordFact(row: KeywordEntityRow) {
       reviewState: row.mapping_review_state,
       revision: row.mapping_revision,
     },
-    lastSeen: row.last_seen_at,
+    lastSeen: canonicalUtcTimestamptz(row.last_seen_at),
     // Keyword identities currently carry no claim-level evidence ledger. An
     // empty array is explicit absence; no synthetic evidence id is invented.
     evidenceRefs: [],
@@ -605,7 +606,7 @@ export async function loadContentShadowInputs(
         url: page.normalized_url,
         urlHash: page.normalized_url_hash,
         contentHash: page.content_hash,
-        capturedAt: page.captured_at,
+        capturedAt: canonicalUtcTimestamptz(page.captured_at),
       })),
     searchKeywordFacts: keywordRows.map(keywordFact),
     generativeKeywordFacts: generativeRows.map(keywordFact),
@@ -1316,6 +1317,15 @@ export function projectContentShadowRevisionHistory(
     );
   }
   const projected = rows.map((row) => {
+    let createdAt: string;
+    try {
+      createdAt = canonicalUtcTimestamptz(row.created_at);
+    } catch {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "The Content Shadow revision ledger is unreadable.",
+      );
+    }
     if (!Array.isArray(row.validation_errors)) {
       throw new ProblemError(
         "DEPENDENCY_UNAVAILABLE",
@@ -1329,7 +1339,7 @@ export function projectContentShadowRevisionHistory(
       editorId: row.editor_id,
       note: row.note,
       validationErrorCount: row.validation_errors.length,
-      createdAt: row.created_at,
+      createdAt,
     };
   });
   const parsed = ContentShadowDraft.shape.revisionHistory.safeParse(projected);

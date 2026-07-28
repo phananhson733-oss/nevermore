@@ -57,6 +57,8 @@ const CRAWL_SNAPSHOT_ID = "00000000-0000-4000-8000-0000000000ca";
 const PAGE_SNAPSHOT_ID = "00000000-0000-4000-8000-0000000000cb";
 const SITE_ORIGIN = "https://acme.example";
 const CONVERSION_URL = "https://acme.example/demo";
+const POSTGRES_TIMESTAMP = "2026-07-25 08:00:00+08";
+const CANONICAL_TIMESTAMP = "2026-07-25T00:00:00.000Z";
 
 const action = {
   id: ACTION_ID,
@@ -210,7 +212,7 @@ beforeEach(() => {
       normalized_url: `${SITE_ORIGIN}/growth`,
       normalized_url_hash: "a".repeat(64),
       content_hash: "b".repeat(64),
-      captured_at: "2026-07-25T00:00:00.000Z",
+      captured_at: POSTGRES_TIMESTAMP,
       site_id: "site-1",
     },
   ] as never);
@@ -231,7 +233,7 @@ beforeEach(() => {
         mapped_site_page_id: "00000000-0000-4000-8000-0000000000cc",
         mapping_review_state: "confirmed",
         mapping_revision: 2,
-        last_seen_at: "2026-07-25T00:00:00.000Z",
+        last_seen_at: POSTGRES_TIMESTAMP,
       })) as never,
   );
 });
@@ -417,6 +419,36 @@ describe("buildContentShadowFrozenInput observation separation", () => {
     ).toBe(
       buildContentShadowFrozenInput({ inputs, outputLocale: "en" }).contentHash,
     );
+  });
+
+  it("canonicalizes every PostgreSQL research timestamp before strict round-trip projection", async () => {
+    const loaded = await loadContentShadowInputs(
+      exec,
+      scope,
+      projectId,
+      body,
+    );
+    const frozen = buildContentShadowFrozenInput({
+      inputs: loaded,
+      outputLocale: "en",
+    });
+    const research = frozen.manifest.researchContext;
+
+    expect(
+      research.firstPartyPageSnapshots.map((snapshot) => snapshot.capturedAt),
+    ).toEqual([CANONICAL_TIMESTAMP]);
+    expect(
+      [
+        ...research.searchKeywordFacts,
+        ...research.generativeKeywordFacts,
+      ].map((keyword) => keyword.lastSeen),
+    ).toEqual([CANONICAL_TIMESTAMP, CANONICAL_TIMESTAMP]);
+    expect(
+      projectContentShadowFrozenInputs(
+        frozen.manifest as unknown as Record<string, unknown>,
+        FINDING_ID,
+      ).researchContext,
+    ).toEqual(research);
   });
 });
 
@@ -1032,14 +1064,18 @@ describe("Task 6 governed research context", () => {
         editor_id: null,
         note: null,
         validation_errors: [],
-        created_at: "2026-07-25T01:00:00.000Z",
+        created_at: "2026-07-25 09:00:00+08",
       },
     ];
 
     expect(projectContentShadowRevisionHistory(rows as never)).toEqual([
       expect.objectContaining({ revision: 3, validationErrorCount: 0 }),
       expect.objectContaining({ revision: 2, validationErrorCount: 1 }),
-      expect.objectContaining({ revision: 1, validationErrorCount: 0 }),
+      expect.objectContaining({
+        revision: 1,
+        validationErrorCount: 0,
+        createdAt: "2026-07-25T01:00:00.000Z",
+      }),
     ]);
     expect(() =>
       projectContentShadowRevisionHistory([...rows].reverse() as never),
@@ -1050,6 +1086,11 @@ describe("Task 6 governed research context", () => {
     expect(() =>
       projectContentShadowRevisionHistory([rows[0], rows[1]] as never),
     ).toThrow(/incomplete/i);
+    expect(() =>
+      projectContentShadowRevisionHistory([
+        { ...rows[2], created_at: "2026-07-25" },
+      ] as never),
+    ).toThrow(/revision ledger is unreadable/i);
   });
 });
 

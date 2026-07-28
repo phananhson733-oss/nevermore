@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
+  E2E_ARTIFACT_ID,
+  E2E_CANONICAL_ACTION_ID,
   E2E_PROJECT_ID,
   installCriticalFlowApi,
   recheckResultsFixture,
@@ -20,6 +22,68 @@ test.beforeEach(async ({ page }) => {
       { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
     ]);
   api = await installCriticalFlowApi(page);
+});
+
+test("execution-state mock accepts only the canonical Action and Artifact stream", async ({
+  page,
+}) => {
+  await page.goto("/login");
+
+  const responses = await page.evaluate(
+    async ({ projectId, actionId, artifactId }) => {
+      const base = `/api/mvp/projects/${projectId}`;
+      const get = async (path: string) => {
+        const response = await fetch(path);
+        return {
+          status: response.status,
+          body: (await response.json()) as unknown,
+        };
+      };
+
+      return {
+        canonical: await get(
+          `${base}/actions/${actionId}/execution-state?artifactId=${artifactId}`,
+        ),
+        missingArtifact: await get(
+          `${base}/actions/${actionId}/execution-state`,
+        ),
+        wrongAction: await get(
+          `${base}/actions/00000000-0000-4000-8000-000000000399/execution-state?artifactId=${artifactId}`,
+        ),
+        wrongArtifact: await get(
+          `${base}/actions/${actionId}/execution-state?artifactId=00000000-0000-4000-8000-000000000499`,
+        ),
+      };
+    },
+    {
+      projectId: E2E_PROJECT_ID,
+      actionId: E2E_CANONICAL_ACTION_ID,
+      artifactId: E2E_ARTIFACT_ID,
+    },
+  );
+
+  expect(responses.canonical).toEqual({
+    status: 200,
+    body: {
+      data: {
+        actionId: E2E_CANONICAL_ACTION_ID,
+        artifactId: E2E_ARTIFACT_ID,
+        current: null,
+        history: [],
+      },
+    },
+  });
+  for (const response of [
+    responses.missingArtifact,
+    responses.wrongAction,
+    responses.wrongArtifact,
+  ]) {
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({
+      status: 404,
+      code: "EXECUTION_STATE_STREAM_NOT_FOUND",
+    });
+  }
 });
 
 test("customer surfaces render GenGrowth and the default first paint remains zh-CN", async ({
@@ -532,8 +596,9 @@ test("Results uses the first repeated outputLocale query for the first report re
 /**
  * R3 blueprint D3: the Results heading tree is fixed and asserted by
  * role/name, not by counting h1 elements. The screen owns the only h1; the
- * recheck block and the report document projectName are h2 siblings; the
- * numbered report sections are h3 under the document; action cards are h4.
+ * technical recheck record and the report document projectName are h2
+ * siblings; the numbered report sections are h3 under the document; action
+ * cards are h4.
  */
 test("Results owns one h1 and the report document nests under it (D3)", async ({
   page,
@@ -568,7 +633,10 @@ test("Results owns one h1 and the report document nests under it (D3)", async ({
   await expect(levelOneHeadings).toHaveText("Results");
   await expect(page.locator("h1")).toHaveCount(1);
   await expect(
-    main.getByRole("heading", { name: "Recheck results", level: 2 }),
+    main.getByRole("heading", {
+      name: "Technical recheck record",
+      level: 2,
+    }),
   ).toBeVisible();
   await expect(
     document.getByRole("heading", { name: "E2E Critical Flow", level: 2 }),
@@ -621,7 +689,9 @@ test("print media keeps the report document and hides the Results screen chrome 
     name: "Results",
     level: 1,
   });
-  const recheckHeading = page.getByText("Recheck results", { exact: true });
+  const recheckHeading = page.getByText("Technical recheck record", {
+    exact: true,
+  });
   const observedLabel = page.getByText("Prior run observed", { exact: true });
   const rail = page.locator("[data-report-manifest-rail]");
   await expect(screenHeading).toBeVisible();

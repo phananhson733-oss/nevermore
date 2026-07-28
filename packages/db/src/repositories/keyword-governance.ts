@@ -499,8 +499,10 @@ function assertDecisionRowShape(row: KeywordDecisionRow): void {
       !UUID.test(row.mapped_site_page_id)) ||
     (row.assignment_invalidated_by !== null &&
       row.review_state !== "unreviewed") ||
-    (row.decision_origin === "migration_baseline") !==
-      (row.decided_by === null) ||
+    (row.decision_origin === "migration_baseline" &&
+      row.decided_by !== null) ||
+    (row.decision_origin === "user" &&
+      row.decided_by === null) ||
     (row.decided_by !== null && !UUID.test(row.decided_by)) ||
     (row.decision_origin === "user" &&
       (row.review_state !== "confirmed" ||

@@ -126,9 +126,23 @@ test("Studio monitors concurrent artifact runs and refreshes each terminal outco
   let allowAComplete = false;
 
   await page.route(`**${API_BASE}/actions**`, async (route) => {
+    if (
+      route.request().method() !== "GET" ||
+      new URL(route.request().url()).pathname !== `${API_BASE}/actions`
+    ) {
+      await route.fallback();
+      return;
+    }
     await json(route, listEnvelope([actionA, actionB]));
   });
   await page.route(`**${API_BASE}/artifacts**`, async (route) => {
+    if (
+      route.request().method() !== "GET" ||
+      new URL(route.request().url()).pathname !== `${API_BASE}/artifacts`
+    ) {
+      await route.fallback();
+      return;
+    }
     artifactReads += 1;
     const artifactACompleted = allowAComplete && runAReads >= 2;
     const artifactBFailed = runBReads >= 1;

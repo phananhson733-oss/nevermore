@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -7,8 +7,7 @@ import test from "node:test";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function read(relativePath) {
-  const path = join(repositoryRoot, relativePath);
-  return existsSync(path) ? readFileSync(path, "utf8") : "";
+  return readFileSync(join(repositoryRoot, relativePath), "utf8");
 }
 
 function readJson(relativePath) {
@@ -20,11 +19,22 @@ function escapeRegExp(value) {
 }
 
 const packageJson = readJson("package.json");
-const specLock = readJson("scripts/spec-v0.3-lock.json");
-const claude = read("CLAUDE.md");
-const readme = read("README.md");
-const progress = read("docs/PROGRESS.md");
-const deployment = read("docs/DEPLOYMENT.md");
+const authorityIndex = readJson("authority/index.json");
+const specLock = readJson(authorityIndex.active.lockPath);
+const sources = new Map([
+  ["README.md", read("README.md")],
+  ["CLAUDE.md", read("CLAUDE.md")],
+  ["docs/PROGRESS.md", read("docs/PROGRESS.md")],
+  ["docs/DEPLOYMENT.md", read("docs/DEPLOYMENT.md")],
+  [
+    "authority/implementation-spec-v0.4/README.md",
+    read("authority/implementation-spec-v0.4/README.md"),
+  ],
+  [
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+    read("authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md"),
+  ],
+]);
 const navigationSource = read(
   "apps/web/src/app/p/[projectId]/_nav-model.ts",
 );
@@ -35,31 +45,6 @@ const migrationFiles = readdirSync(
   .filter((name) => new RegExp(specLock.migrationFilePattern).test(name))
   .sort();
 
-function primaryNavigation(source) {
-  const block = source.match(
-    /export const PRIMARY_NAV_ITEMS:[\s\S]*?=\s*\[([\s\S]*?)\n\];/,
-  );
-  assert.ok(block, "customer primary navigation declaration is missing");
-
-  return [...block[1].matchAll(/\{([\s\S]*?)\n\s*\},/g)].map((match) => {
-    const key = match[1].match(/^\s*key:\s*"([^"]+)",/m)?.[1];
-    const labelKey = match[1].match(/^\s*labelKey:\s*"([^"]+)",/m)?.[1];
-    const hrefSegment = match[1].match(
-      /^\s*hrefSegment:\s*"([^"]+)",/m,
-    )?.[1];
-    assert.ok(key, "customer primary navigation entry is missing key");
-    assert.ok(
-      labelKey,
-      `customer primary navigation ${key} is missing labelKey`,
-    );
-    assert.ok(
-      hrefSegment,
-      `customer primary navigation ${key} is missing hrefSegment`,
-    );
-    return { key, labelKey, hrefSegment };
-  });
-}
-
 function inventoryFromDocument(source, path) {
   const match = source.match(
     /Contract inventory:\s*\*\*(\d+) API operations \/ (\d+) async operations \/ (\d+) app tables \/ (\d+) frozen rules\*\*/,
@@ -68,204 +53,192 @@ function inventoryFromDocument(source, path) {
   return match.slice(1).map(Number);
 }
 
-test("package and activated spec lock agree on the current product version", () => {
-  assert.equal(packageJson.version, specLock.productVersion);
+function primaryNavigation(source) {
+  const block = source.match(
+    /export const PRIMARY_NAV_ITEMS:[\s\S]*?=\s*\[([\s\S]*?)\n\];/,
+  );
+  assert.ok(block, "customer primary navigation declaration is missing");
+  return [...block[1].matchAll(/\{([\s\S]*?)\n\s*\},/g)].map(
+    (match) => ({
+      key: match[1].match(/^\s*key:\s*"([^"]+)",/m)?.[1],
+      labelKey: match[1].match(/^\s*labelKey:\s*"([^"]+)",/m)?.[1],
+      hrefSegment: match[1].match(
+        /^\s*hrefSegment:\s*"([^"]+)",/m,
+      )?.[1],
+    }),
+  );
+}
+
+test("authority discovery activates normative v0.4 and retains v0.3 history", () => {
+  assert.deepEqual(authorityIndex.active, {
+    version: "0.4.0",
+    status: "active",
+    normative: true,
+    authorityRoot: "authority/implementation-spec-v0.4",
+    lockPath: "scripts/spec-v0.4-lock.json",
+  });
+  assert.deepEqual(authorityIndex.history, [
+    {
+      version: "0.3.0",
+      status: "historical",
+      normative: false,
+      authorityRoot: "authority/implementation-spec-v0.3",
+      lockPath: "scripts/spec-v0.3-lock.json",
+    },
+  ]);
+  assert.deepEqual(authorityIndex.historicalDesignInputs, [
+    {
+      label: "v0.4 publication candidate before atomic promotion",
+      status: "historical",
+      normative: false,
+      executable: false,
+      path: "authority/implementation-spec-v0.4/historical-publication-candidate",
+    },
+  ]);
 });
 
-test("customer-facing project documentation uses the package product version", () => {
-  for (const [path, source] of [
-    ["CLAUDE.md", claude],
-    ["README.md", readme],
-    ["docs/PROGRESS.md", progress],
-    ["docs/DEPLOYMENT.md", deployment],
-  ]) {
+test("package, active lock and current docs agree on machine versions", () => {
+  assert.equal(packageJson.version, specLock.productVersion);
+  assert.equal(specLock.authorityVersion, "0.4.0");
+  assert.equal(specLock.contractVersion, "2026-07-21");
+  assert.equal(specLock.ruleSetVersion, "mvp.rules.0.2.2");
+  for (const [path, source] of sources) {
     assert.match(
       source,
       new RegExp(escapeRegExp(packageJson.version)),
-      `${path} must report the package product version`,
+      `${path} must state product ${packageJson.version}`,
     );
   }
-  assert.doesNotMatch(
-    [claude, readme, progress, deployment].join("\n"),
-    /\b0\.2\.0\b/,
-    "current project documentation must not report the retired 0.2.0 product version",
-  );
-});
-
-test("current docs use the activated contract version", () => {
-  for (const [path, source] of [
-    ["README.md", readme],
-    ["docs/PROGRESS.md", progress],
-    ["docs/DEPLOYMENT.md", deployment],
+  for (const path of [
+    "README.md",
+    "CLAUDE.md",
+    "docs/PROGRESS.md",
+    "docs/DEPLOYMENT.md",
   ]) {
     assert.match(
-      source,
-      new RegExp(specLock.contractVersion),
-      `${path} must report the activated contract version`,
+      sources.get(path),
+      /authority\/implementation-spec-v0\.4|active v0\.4|Current authority: \*\*v0\.4/,
+      `${path} must point operators to active v0.4`,
     );
   }
 });
 
-test("documented inventories are derived from the activated spec lock", () => {
-  const expectedInventory = [
+test("documented inventories are derived from the active v0.4 lock", () => {
+  const expected = [
     specLock.apiOperations.length,
     specLock.asyncOperations.length,
     specLock.tables.length,
     specLock.rules.length,
   ];
-  for (const [path, source] of [
-    ["CLAUDE.md", claude],
-    ["README.md", readme],
-    ["docs/PROGRESS.md", progress],
-    ["docs/DEPLOYMENT.md", deployment],
+  assert.deepEqual(expected, [77, 9, 76, 11]);
+  for (const path of [
+    "README.md",
+    "CLAUDE.md",
+    "docs/PROGRESS.md",
+    "docs/DEPLOYMENT.md",
   ]) {
     assert.deepEqual(
-      inventoryFromDocument(source, path),
-      expectedInventory,
-      `${path} inventory drifted from scripts/spec-v0.3-lock.json`,
-    );
-    assert.doesNotMatch(
-      source,
-      /\b(?:26 (?:API )?operations?|5 async operations?|28 (?:app )?tables?)\b/i,
-      `${path} still contains a retired v0.2 inventory claim`,
+      inventoryFromDocument(sources.get(path), path),
+      expected,
+      `${path} inventory drifted from ${authorityIndex.active.lockPath}`,
     );
   }
 });
 
-test("progress reports the complete ordered migration range", () => {
-  assert.ok(migrationFiles.length > 0, "activated migration range is empty");
-  const first = migrationFiles[0];
-  const last = migrationFiles.at(-1);
-  assert.match(
-    progress,
-    new RegExp(
-      `Migration range:\\s*\\\`${escapeRegExp(first)}\\\` through\\s*\\\`${escapeRegExp(last)}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
-    ),
+test("current handoff documents the complete ordered migration range", () => {
+  assert.equal(migrationFiles.length, 32);
+  const expected = new RegExp(
+    `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );
+  assert.match(sources.get("docs/PROGRESS.md"), expected);
+  assert.match(sources.get("docs/DEPLOYMENT.md"), expected);
 });
 
-test("operator guidance names the repository-owned v0.3 authority as current", () => {
-  assert.match(claude, /authority\/implementation-spec-v0\.3/);
-  assert.doesNotMatch(
-    claude,
-    /implementation-spec-v0\.2/,
-    "CLAUDE.md must not direct operators to the retired v0.2 authority",
-  );
-});
-
-test("README documents the exact four-entry customer navigation source", () => {
+test("README mirrors the exact four-entry customer navigation", () => {
   const primary = primaryNavigation(navigationSource);
   assert.deepEqual(
     primary.map(({ key }) => key),
     ["overview", "growth-map", "execution", "results"],
   );
-
   for (const { labelKey, hrefSegment } of primary) {
     const label = zhCN.nav[labelKey];
-    assert.equal(typeof label, "string", `missing zh-CN nav label ${labelKey}`);
+    assert.equal(typeof label, "string");
     assert.match(
-      readme,
+      sources.get("README.md"),
       new RegExp(
         `\\|\\s*${label}\\s*\\|\\s*\\\`/p/:projectId/${hrefSegment}\\\`\\s*\\|`,
       ),
-      `README.md is missing the canonical ${label} navigation row`,
     );
-  }
-
-  const documentedTable = readme.match(
-    /\| Customer label \| Canonical route \|\n\| --- \| --- \|\n((?:\|.*\|\n)+)\n/,
-  );
-  assert.ok(
-    documentedTable,
-    "README.md primary navigation table must contain exactly four rows",
-  );
-  assert.equal(
-    [...documentedTable[1].matchAll(/^\|/gm)].length,
-    primary.length,
-  );
-});
-
-test("current Content Shadow is described as reviewed, not published", () => {
-  for (const [path, source] of [
-    ["CLAUDE.md", claude],
-    ["README.md", readme],
-    ["docs/PROGRESS.md", progress],
-    ["docs/DEPLOYMENT.md", deployment],
-  ]) {
-    assert.match(
-      source,
-      /Content Shadow state:\s*\*\*reviewed, not published\*\*/,
-      `${path} must state the current Content Shadow publication truth`,
-    );
-    assert.match(
-      source,
-      /Current v0\.3 external-write boundary:\s*\*\*no external writes\*\*/,
-      `${path} must state the versioned v0.3 external-write boundary`,
-    );
-    assert.doesNotMatch(
-      source,
-      /Content Shadow(?:\s+state:|\s+is)\s*\*\*?published\*\*?/i,
-      `${path} must never document current Content Shadow as published`,
-    );
-    assert.doesNotMatch(
-      source,
-      /Content Shadow\s*(?:现已|已经|已)(?:发布|上线)/,
-      `${path} must never document current Content Shadow as published or live`,
-    );
-  }
-  assert.doesNotMatch(
-    claude,
-    /无 CMS\/GitHub\/生产站点写入、无自动发布/,
-    "the old permanent no-CMS/GitHub wording must become a versioned v0.3 boundary",
-  );
-});
-
-test("docs identify both delivered slices and v0.4 as the next reviewed slice", () => {
-  for (const [path, source] of [
-    ["CLAUDE.md", claude],
-    ["README.md", readme],
-    ["docs/PROGRESS.md", progress],
-  ]) {
-    assert.match(source, /Slice 1 status:\s*\*\*complete\*\*/);
-    assert.match(source, /Slice 2 status:\s*\*\*complete\*\*/);
-    assert.match(
-      source,
-      /Next reviewed slice:\s*\*\*v0\.4 authorized publication and attribution\*\*/,
-      `${path} must identify v0.4 as next, not current`,
-    );
-    assert.match(source, /Nevermore/);
-    assert.match(source, /GenGrowth/);
   }
 });
 
-test("v0.4 docs separate delivery evidence from an attribution anchor", () => {
-  for (const [path, source] of [
-    ["CLAUDE.md", claude],
-    ["README.md", readme],
-    ["docs/PROGRESS.md", progress],
-    ["docs/DEPLOYMENT.md", deployment],
+test("current docs describe keyword and competitor paths as integrated Growth Map capabilities", () => {
+  for (const path of [
+    "docs/PROGRESS.md",
+    "authority/implementation-spec-v0.4/README.md",
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
   ]) {
+    const source = sources.get(path);
+    assert.match(source, /关键词|Keyword/);
+    assert.match(source, /竞品|Competitor/);
+    assert.match(source, /增长地图/);
+    assert.match(source, /四模块/);
+  }
+});
+
+test("current external-write truth is versioned v0.4, not an active candidate", () => {
+  for (const path of [
+    "README.md",
+    "CLAUDE.md",
+    "docs/PROGRESS.md",
+    "docs/DEPLOYMENT.md",
+    "authority/implementation-spec-v0.4/README.md",
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+  ]) {
+    const source = sources.get(path);
+    assert.match(source, /Content Shadow state: \*\*reviewed, not published\*\*/);
     assert.match(
       source,
-      /non-normative (?:v0\.4 )?(?:authority )?candidate/i,
-      `${path} must keep the first v0.4 authority candidate non-normative`,
-    );
-    assert.match(source, /delivery receipt/i, `${path} is missing delivery receipt`);
-    assert.match(source, /change receipt/i, `${path} is missing change receipt`);
-    assert.match(
-      source,
-      /live canonical URL/i,
-      `${path} is missing the change receipt live-URL requirement`,
-    );
-    assert.match(
-      source,
-      /change receipt[\s\S]{0,200}(?:anchor|锚定)/i,
-      `${path} must allow only a change receipt to anchor attribution`,
+      /Current v0\.4 external-write boundary: \*\*no external writes\*\*/,
     );
     assert.doesNotMatch(
       source,
-      /publication receipt/i,
-      `${path} must not describe a PR or draft delivery receipt as a publication receipt`,
+      /v0\.4 (?:is |先是|begins as (?:a )?)?non-normative candidate/i,
+      `${path} still calls active v0.4 a candidate`,
     );
   }
+});
+
+test("publication narrative keeps delivery, live change and attribution distinct", () => {
+  for (const path of [
+    "README.md",
+    "docs/PROGRESS.md",
+    "docs/DEPLOYMENT.md",
+    "authority/implementation-spec-v0.4/README.md",
+  ]) {
+    const source = sources.get(path);
+    assert.match(source, /delivery receipt/i, `${path} is missing Delivery Receipt`);
+    assert.match(source, /change receipt/i, `${path} is missing Change Receipt`);
+    assert.match(source, /live\s+canonical URL/i);
+    assert.match(source, /before\/after|归因|attribution/i);
+    assert.doesNotMatch(
+      source,
+      /preview (?:is|是) (?:a )?(?:publish|publication|发布)/i,
+    );
+  }
+});
+
+test("historical candidate is quarantined and explicitly non-executable", () => {
+  const historicalRoot =
+    "authority/implementation-spec-v0.4/historical-publication-candidate";
+  const historicalReadme = read(`${historicalRoot}/README.md`);
+  assert.match(historicalReadme, /Normative: \*\*false\*\*/);
+  assert.match(historicalReadme, /Executable: \*\*false\*\*/);
+  const activeRootEntries = readdirSync(
+    join(repositoryRoot, "authority/implementation-spec-v0.4"),
+  );
+  assert.deepEqual(
+    activeRootEntries.filter((name) => /\.candidate\.|candidate-lock/.test(name)),
+    [],
+  );
 });

@@ -1,15 +1,15 @@
 # Nevermore / GenGrowth Progress
 
-Updated: **2026-07-27**
+Updated: **2026-07-28**
 
 This is the current authority and verification handoff for the Nevermore
 repository and its customer-facing GenGrowth product. It replaces the retired
 v0.2 progress narrative. It deliberately separates commands rerun on the current
 convergence worktree from older evidence recorded in checked-in stop gates.
 
-## Candidate identity and authority
+## Active identity and authority
 
-- Integration branch: `codex/complete-customer-artifact-v04`
+- Integration branch: `codex/content-research-quality-v04`
 - Final v0.3 baseline already integrated into `main`:
   `1f3a2daebc8d426a58eb236d2ac3409d1d6bbbb2`
 - Complete customer Artifact verification anchor before this progress-only
@@ -21,11 +21,11 @@ convergence worktree from older evidence recorded in checked-in stop gates.
   `/Users/wzb/.config/superpowers/worktrees/signalframe-mvp-app/unified-growth-opportunity-v03`
 - Product version: **0.3.0**
 - Contract version: **2026-07-21**
-- Active authority: `authority/implementation-spec-v0.3/`
-- Machine lock: `scripts/spec-v0.3-lock.json`
+- Active authority: `authority/implementation-spec-v0.4/`
+- Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0021_content_shadow_invocation_task.sql` (**21 ordered migrations**)
-- Contract inventory: **49 API operations / 9 async operations / 44 app tables / 11 frozen rules**
+  `0032_keyword_initial_governance.sql` (**32 ordered migrations**)
+- Contract inventory: **77 API operations / 9 async operations / 76 app tables / 11 frozen rules**
 
 The Artifact verification anchor above is the exact commit inspected before
 this progress-only change. A tracked file cannot contain the hash of the commit
@@ -64,20 +64,21 @@ binds human review to an exact revision.
 
 Content Shadow state: **reviewed, not published**
 
-Current v0.3 external-write boundary: **no external writes**
+Current v0.4 external-write boundary: **no external writes**
 
-The active v0.3 contract has no GitHub, WordPress, CMS, Vercel, Cloudflare, or
+The active v0.4 contract has no GitHub, WordPress, CMS, Vercel, Cloudflare, or
 customer-production-site write and no post-publication attribution. Internal
-Content Shadow persistence is implemented; external publication is not. Any
-publish/attribution interaction in customer collateral is scenario-only unless
-and until a later machine contract and the correct provider receipts prove
-otherwise.
+Content Shadow, approval, publication-preview and Measurement Window persistence
+are implemented; the current 77 operations still do not execute an external
+provider write. A preview or Delivery Receipt is not a live change. Only a
+verified Change Receipt with a live canonical URL may anchor observation.
 
-Customer Artifact checkpoint: **complete**
+Historical customer Artifact checkpoint: **complete, not production data**
 
-The complete Chinese-first customer Artifact is now generated from repository-
-owned source under `docs/artifact-src/`; the historical visualization directory
-is provenance-only and is not a build or verification input. The generated
+The complete Chinese-first customer Artifact is generated from repository-owned
+source under `docs/artifact-src/`; it remains deterministic test and review
+collateral, not a production data fallback. The historical visualization
+directory is provenance-only and is not a build or verification input. The generated
 interactive Artifact and product manual use one canonical scenario model:
 
 - **12 URLs**, each selectable with URL-specific detail and result status;
@@ -99,28 +100,53 @@ Cross-module jumps retain the exact target through reload, Back, and Forward.
 The standalone files have no network dependencies and no Nevermore,
 compatibility-name, workstation-path, or internal-audience exposure.
 
-Next implementation slice: **governed external research and content quality**
+Current implementation surface: **complete four-module workbench（完整四模块工作台）**
 
-The next sequence closes frozen external source retrieval, first-party page
-content, duplicate-content detection, factual-claim fail-closed behavior,
-brand/claim restrictions, research metrics, and complete Revision history
-before publication authority is promoted.
+The active surface includes frozen external research, first-party content,
+content-quality gates, Keyword/Competitor governance, Topic/Internal
+Link/Backlink/GEO growth paths, execution state, durable approval, publication
+preview authority and immutable measurement windows.
 
-Next reviewed slice: **v0.4 authorized publication and attribution**
+Next reviewed slice: **authorized provider external writes**
 
-v0.4 begins as a non-normative candidate and must not alter the shared OpenAPI
-or migration chain before its routes, repositories, workers, and adapters are
-ready for atomic promotion. A GitHub pull request or WordPress Draft yields a
-delivery receipt; it does not prove publication. Only a separate change receipt
-that confirms merge/publish and records the live canonical URL may anchor
-GSC/GA4/UTM before/after attribution. Those capabilities are not part of the
-current v0.3 operation, async, or table counts.
+v0.4 is now active/normative. Its pre-promotion publication candidate is
+quarantined under `authority/implementation-spec-v0.4/historical-publication-candidate/`
+as non-normative, non-executable audit input. A later external-write slice must
+atomically add provider adapter, worker, remote precondition, reconciliation,
+rollback, route/OpenAPI, migration and tests before a customer control becomes
+active.
 
-## Fresh verification on the final v0.3 candidate
+## Current production facts
+
+- Public source repository:
+  `https://github.com/phananhson733-oss/nevermore`
+- Customer origin: `https://app.gengrowth.ai`
+- Vercel project: `nevermore`
+- Railway project/service: `signalframe` / production `worker`
+- Supabase project: `nevermore-production`, `gengrowth` organization,
+  `us-east-1`
+- Production data paths: GSC, GA4, Crawl and DataForSEO; new or unconnected
+  projects remain honestly empty and never fall back to the historical
+  Artifact scenario.
+
+The deployed baseline before the current CI convergence was
+`2b74511c6c3a67e33c8174f455607b37e76ed63d`. A tracked file cannot embed the
+hash of the commit containing its own final edits; the release SHA must still
+be read from `git rev-parse HEAD`, GitHub Actions, Vercel
+`/api/mvp/health/version` and Railway startup logs and must agree.
+
+The previous Supabase project is inactive rather than deleted and has a
+restore backup. Production operator creation remains an Owner-controlled
+provisioning step: a Supabase Auth user also needs the intended
+`app.operator_profiles` membership before authenticated four-module smoke can
+be completed.
+
+## Historical verification on the final v0.3 candidate
 
 “Fresh” means the command was rerun against the verification anchor above. It
 does not mean a hosted provider, production database, or deployed origin was
-exercised.
+exercised. The table below is retained historical evidence, not a claim that
+the expanded active v0.4 surface has the same counts or currently green CI.
 
 | Gate | Fresh result |
 | --- | --- |
@@ -167,16 +193,16 @@ These stop-gate numbers describe their recorded commits and environments. They
 do not replace a final CI run, deployed-origin smoke, or provider evidence for a
 new release SHA.
 
-## Remaining hosted, provider, recovery, and Owner gates
+## Remaining release, provider, recovery, and Owner gates
 
 Local implementation evidence is not enough to call the product production- or
 pilot-ready. The following remain external gates unless a release handoff binds
 sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
-2. Back up and restore-verify the intended production database, then apply and
-   replay-check all ordered migrations through `0021`; historical proof through
-   `0009` does not prove the v0.3 Slice 1/2 migrations are hosted.
+2. Preserve and restore-verify the production backup, then re-check all ordered
+   migrations through `0032`; historical proof through `0021` does not prove
+   the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live
    worker lease.
@@ -192,22 +218,22 @@ sanitized evidence to the exact candidate SHA:
    including Supabase PITR and separate private-object byte evidence.
 9. Complete the Owner walkthrough for Chinese/English and B2B/B2C outputs,
    limitations, evidence, priorities, Actions, Artifacts, and exports.
-10. Treat GitHub/WordPress delivery and change-receipt-anchored attribution as
-    v0.4 work. Keep its first authority draft non-normative and leave shared
-    OpenAPI/migrations unchanged until routes, repositories, workers, adapters,
-    contracts, migrations, rollback, and tests can be promoted atomically. A PR
-    or WordPress Draft is only delivery evidence; attribution requires a later
-    merge/publish-confirmed change receipt with a live canonical URL.
+10. Treat real GitHub/WordPress provider writes as a later atomic authority
+    expansion. v0.4 already freezes approval, preview, receipt lineage and
+    Measurement Window contracts, but a PR or WordPress Draft remains delivery
+    evidence; attribution requires a later merge/publish-confirmed Change
+    Receipt with a live canonical URL.
 
 Until those gates are closed, the honest release statement is:
 
-> v0.3 local implementation and repository acceptance evidence are available;
-> hosted, provider, recovery, and Owner launch evidence remain release gates.
+> v0.4 is the active complete four-module authority and the production topology
+> is deployed; the final green CI SHA, intended operator walkthrough and any
+> provider-specific evidence remain explicit release gates.
 
 ## Resume safely
 
 - Read this file, `README.md`, `CLAUDE.md`, `docs/DEPLOYMENT.md`, and
-  `authority/implementation-spec-v0.3/README.md`.
+  `authority/implementation-spec-v0.4/README.md`.
 - Run `pnpm verify:docs`, `pnpm verify:authority`, `pnpm verify:spec`, and
   `pnpm implementation:check` before changing the normative surface.
 - Never run database-backed tests against a hosted database. Use an explicit,

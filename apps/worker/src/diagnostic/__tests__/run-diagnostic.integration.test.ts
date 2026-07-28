@@ -52,6 +52,8 @@ import {
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
   findingKey,
+  parseGovernanceProjectionV1,
+  type GovernanceProjectionV1,
   type RuleId,
 } from "@sf/engine";
 import {
@@ -392,64 +394,69 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
         mkPage({ fetchUrl: `${seed.origin}/pricing`, title: "Pricing" }),
       ),
     ]);
+    const uniqueCsvKeyword = keywordGap({
+      keyword: "project portfolio planning",
+      clusterKey: "project management",
+      searchVolume: 50,
+      currentUrl: null,
+      currentRank: null,
+      competitorDomain: "competitor.example",
+      competitorRank: 7,
+      marketCode: "US",
+      languageCode: "en",
+    });
+    const overlappingCsvKeywords = Array.from({ length: 10 }, (_, index) =>
+      keywordGap({
+        keyword: `project management workflow ${index}`,
+        clusterKey: "project management",
+        searchVolume: 900,
+        currentUrl: null,
+        currentRank: null,
+        competitorDomain: "competitor.example",
+        competitorRank: 4 + index,
+        marketCode: "US",
+        languageCode: "en",
+      }),
+    );
     const csvSnapshot = await seedSnapshot(
       handle,
       seed,
-      [
-        keywordGap({
-          keyword: "project portfolio planning",
+      [uniqueCsvKeyword, ...overlappingCsvKeywords],
+      "csv",
+    );
+    const dataForSeoKeywords = Array.from({ length: 10 }, (_, index) =>
+      keywordGap(
+        {
+          keyword: `project management workflow ${index}`,
           clusterKey: "project management",
-          searchVolume: 50,
-          currentUrl: null,
-          currentRank: null,
-          competitorDomain: "competitor.example",
-          competitorRank: 7,
+          searchVolume: 100,
+          currentUrl: `${seed.origin}/workflow`,
+          currentRank: 8 + index,
+          competitorDomain: null,
+          competitorRank: null,
           marketCode: "US",
           languageCode: "en",
-        }),
-        ...Array.from({ length: 10 }, (_, index) =>
-          keywordGap({
-            keyword: `project management workflow ${index}`,
-            clusterKey: "project management",
-            searchVolume: 900,
-            currentUrl: null,
-            currentRank: null,
-            competitorDomain: "competitor.example",
-            competitorRank: 4 + index,
-            marketCode: "US",
-            languageCode: "en",
-          }),
-        ),
-      ],
-      "csv",
+        },
+        "dataforseo",
+      ),
     );
     const dataForSeoSnapshot = await seedSnapshot(
       handle,
       seed,
-      Array.from({ length: 10 }, (_, index) =>
-        keywordGap(
-          {
-            keyword: `project management workflow ${index}`,
-            clusterKey: "project management",
-            searchVolume: 100,
-            currentUrl: `${seed.origin}/workflow`,
-            currentRank: 8 + index,
-            competitorDomain: null,
-            competitorRank: null,
-            marketCode: "US",
-            languageCode: "en",
-          },
-          "dataforseo",
-        ),
-      ),
+      dataForSeoKeywords,
       "dataforseo",
     );
+    const governance = governanceForKeywordGapRows([
+      uniqueCsvKeyword,
+      ...dataForSeoKeywords,
+    ]);
     const runId = await seedDiagnosticRun(
       handle,
       seed,
       icpId,
       manifestOf([crawlSnapshot, csvSnapshot, dataForSeoSnapshot]),
       "queued",
+      governance,
     );
 
     await runDiagnostic(ctx, {
@@ -1677,6 +1684,11 @@ async function seedDiagnosticRun(
   icpProfileId: string,
   inputManifest: Record<string, unknown>,
   status: "queued" | "completed",
+  governance: GovernanceProjectionV1 = parseGovernanceProjectionV1({
+    projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+    keywordClusters: [],
+    competitors: [],
+  }),
 ): Promise<string> {
   const runId = randomUUID();
   const icp = await new IcpProfilesRepository(handle.db).findById(
@@ -1696,11 +1708,7 @@ async function seedDiagnosticRun(
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
-    governance: {
-      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
-      keywordClusters: [],
-      competitors: [],
-    },
+    governance,
   };
   await handle.db.insert(asyncRuns).values({
     id: runId,
@@ -1824,6 +1832,59 @@ function manifestOf(snapshots: readonly SeededSnapshot[]): Record<string, unknow
       sourceWindow: snapshot.sourceWindow,
     })),
   };
+}
+
+function governanceForKeywordGapRows(
+  observations: readonly ObservationInsert[],
+): GovernanceProjectionV1 {
+  const projections = observations.map(
+    (observation) => observation.valueJson as CsvKeywordProjection,
+  );
+  const clusterKey = projections[0]?.clusterKey;
+  if (
+    clusterKey === undefined ||
+    projections.some((projection) => projection.clusterKey !== clusterKey)
+  ) {
+    throw new Error("governance fixture requires one keyword cluster");
+  }
+  return parseGovernanceProjectionV1({
+    projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+    keywordClusters: [
+      {
+        clusterKey,
+        keywords: projections.map((projection) => ({
+          keywordEntityId: randomUUID(),
+          displayKeyword: projection.keyword,
+          normalizedKeyword: projection.keyword
+            .normalize("NFKC")
+            .trim()
+            .replace(/\s+/gu, " ")
+            .toLowerCase(),
+          marketCode: projection.marketCode,
+          languageTag: projection.languageCode,
+          revision: 1,
+          status: "approved",
+          queryKind: "search_query",
+          intent: "commercial",
+          buyerStage: "consideration",
+          clusterKey,
+          mappingDecision: "new_asset",
+          mappedSitePageId: null,
+          mappingReviewState: "confirmed",
+          lastSeenAt: OBSERVED_AT,
+          occurrenceRefs: [
+            {
+              occurrenceId: randomUUID(),
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+          metricRefs: [],
+        })),
+      },
+    ],
+    competitors: [],
+  });
 }
 
 /** An English ICP whose single conversion target is the (commercial) pricing page. */

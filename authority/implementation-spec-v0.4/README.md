@@ -1,88 +1,147 @@
-# Nevermore Publication and Attribution Authority v0.4 — Review Candidate
+# Nevermore / GenGrowth 完整增长工作台 — Active Authority v0.4
 
-状态：**candidate**
+状态：**active**
 
-规范性：**non-normative**
+规范性：**normative**
 
-候选版本：**0.4.0**
+Authority 版本：**0.4.0**
 
-当前 active authority：[`../implementation-spec-v0.3/`](../implementation-spec-v0.3/)
+当前产品版本：**0.3.0**
 
-本目录冻结 Nevermore 下一阶段授权交付的评审候选，不是已发布的产品事实。它不会激活任何 HTTP operation、数据库迁移、运行时 package、GitHub/WordPress 外部写入或 Results 归因。当前 `package.json`、共享 `openapi/mvp.yaml`、生成客户端、active migrations、`scripts/spec-v0.3-lock.json` 与 v0.3 verifier 仍以 v0.3 为唯一 normative machine surface。
+合同版本：**2026-07-21**
 
-只有 Task 8 将 working routes、repositories、workers、provider adapters、迁移、共享 OpenAPI、generated contracts、rollback/recovery、测试和正式 v0.4 lock **原子地**落入同一个实现变更后，本候选才可以被重新审核并晋升。目录存在本身不构成晋升。
+本目录是 Nevermore 仓库中 GenGrowth 四模块客户工作台的当前唯一机器权威。
+`authority/index.json` 指向本目录与 `scripts/spec-v0.4-lock.json`；v0.3
+保留为历史快照，不再约束当前实现。
 
-## 候选文件顺序
+当前机器面精确包含 **77 个 operation、9 个 shared async operation、76 张应用表、11 条规则**。
+第十个返回 `202` 的 `createProjectMeasurementWindow` 使用专用、强类型的
+`MeasurementWindowAcceptedHttpResponse`，不冒充共享 `AsyncAccepted`；verifier
+会同时冻结这条例外。规则集为 `mvp.rules.0.2.2`，其中
+`CONTENT-GAP-011` 为 version 2。
 
-1. [`openapi.candidate.yaml`](openapi.candidate.yaml)：拟议 HTTP 请求、响应、状态和错误边界。
-2. [`schema.candidate.sql`](schema.candidate.sql)：拟议 append-only publication persistence；不可作为 migration 执行。
-3. [`provider-boundaries.md`](provider-boundaries.md)：GitHub App 与 WordPress 授权、能力探测、交付、reconciliation、撤销和回滚边界。
-4. [`repository-invariants.md`](repository-invariants.md)：approval、并发、幂等 replay、rollback 与 receipt lineage 的事务强约束。
-5. [`acceptance-matrix.md`](acceptance-matrix.md)：必须在晋升前由直接测试证明的正向、拒绝和诚实状态。
-6. [`scripts/verify-candidate.mjs`](scripts/verify-candidate.mjs)：仅验证候选自身和未晋升边界，不替代 active v0.3 verifier。
-7. [`../../scripts/spec-v0.4-candidate-lock.json`](../../scripts/spec-v0.4-candidate-lock.json)：候选文件哈希、拟议 inventory 和 active/candidate 身份锁。
+## 权威文件
 
-## 唯一 canonical lifecycle
+按冲突优先级读取：
 
-候选继续扩展同一条链，而不创建第二套内容、目标或结果 truth：
+1. [MVP-IMPLEMENTATION-SPEC.md](MVP-IMPLEMENTATION-SPEC.md)：四模块产品模型、数据诚实性、授权边界和验收不变量。
+2. [openapi.yaml](openapi.yaml)：当前 77 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
+3. [schema.sql](schema.sql)：由 32 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
+4. [schemas/service-bundle-manifest.schema.json](schemas/service-bundle-manifest.schema.json)：导出 bundle manifest 机器合同。
+5. [scripts/schema-smoke.sql](scripts/schema-smoke.sql)：当前数据库约束 smoke；必须与应用迁移目录中的 smoke 字节一致。
+6. [scripts/verify-spec.mjs](scripts/verify-spec.mjs)：authority、active lock 与当前实现的强一致性验证器。
+7. [`../../scripts/spec-v0.4-lock.json`](../../scripts/spec-v0.4-lock.json)：inventory、版本、规则版本与 reviewed file hash 的激活锁。
+
+晋升前的 publication candidate 已完整移动到
+[historical-publication-candidate/](historical-publication-candidate/)，并明确标记为
+non-normative、not executable。它只保留审计线索，不是第二套 OpenAPI/SQL/lock；
+active verifier 禁止 candidate machine file 留在本目录根部。
+
+`schema.sql` 不是第二套手写 DDL。以下命令按文件名排序读取
+`packages/db/migrations/0001_init.sql` 至
+`0032_keyword_initial_governance.sql`，验证每个 migration 的事务框架与
+`schema_migration_version`，再生成带精确边界 marker 的完整 SQL：
+
+```bash
+node authority/implementation-spec-v0.4/scripts/generate-schema.mjs
+```
+
+authority verifier 会独立重新生成并逐字比较，所以修改 migration 而忘记更新
+authority 会失败；直接编辑 `schema.sql` 也会失败。表 inventory 同时通过
+`scripts/schema-catalog.mjs` 解析，`CREATE TABLE app.*` 与
+`CREATE TABLE IF NOT EXISTS app.*` 都会被识别。
+
+## 当前客户产品：固定四模块
+
+GenGrowth 面向中文客户提供中文优先工作台；客户的海外市场、英文关键词和英文
+Blog 正文继续保留对应英语内容。顶层导航只包含：
+
+| 模块 | 客户问题 | 当前 canonical truth |
+| --- | --- | --- |
+| 概览 | 现在是什么情况、下一步做什么 | 已确认 Product Profile/ICP、真实数据连接、URL 组合、当前 Opportunity 与全项目工作 |
+| 增长地图 | 哪些页面、关键词、竞品和增长路径值得处理 | 多 URL 审计、Technical/Search/Content/CRO/GEO signals、关键词治理与关系、竞品来源/审核/动态监控、Topic Model、内链、外链 |
+| 执行中心 | 应该交付什么、如何审核 | Finding → Action → execution state → Artifact/Revision → approval；包含 Brief、英文 Blog、Metadata、Technical/Code 类交付 |
+| 效果追踪 | 上线前后发生了什么 | 只从 immutable Measurement Window 展示 GSC/GA4/UTM/GEO 的 before/after observation，并保留 publication Change Receipt 锚点和限制 |
+
+关键词库与竞品库是增长地图的内置判断依据，不是独立第五模块，也不是离线
+Artifact。URL、关键词、竞品、Topic、Action、Artifact 与 Results 都必须来自
+canonical repository 或显式 `unavailable/no_data` 状态；生产界面不得用 mock
+数字补空。
+
+## 真实数据与诚实性
+
+- GSC、GA4、Crawl 与 DataForSEO 是分析数据来源。连接状态不等于数据可用；
+  只有已完成且作用域匹配的 immutable Snapshot/Observation 才能支持结论。
+- Sitemap、站内解析、规则计算、关键词关系、竞品监控与 GEO/Backlink 模型是
+  内置能力，不作为需要客户连接的外部数据卡重复展示。
+- `unavailable` 不等于 `0`；缺失 volume、rank、click、conversion、citation
+  等必须返回 nullable unavailable 与 limitation。
+- 所有 Evidence 保留 workspace/project/site/run/snapshot/observation lineage；
+  LLM 生成内容不能伪装 observed evidence。
+- Product Profile/ICP 从客户提交的核心 URL 与基础业务信息开始，系统可以基于
+  冻结 Crawl 证据形成可审核草稿；用户确认前不得把推断当最终画像。
+
+## 执行、授权、发布和 Results 边界
+
+当前主链是：
 
 ```text
-Project
-→ Snapshot / Observation
+Project / confirmed Product Profile
+→ immutable Snapshot / Observation
 → Evidence
-→ Finding Review
-→ Action
-→ durable Artifact Approval Event for an exact Artifact Revision
-→ authorized Publication Attempt
-→ Delivery Receipt
-→ verified provider merge/publish + live canonical URL
-→ Change Receipt
-→ Recheck / Outcome Observation
+→ Finding + review
+→ Action + execution state timeline
+→ Artifact Revision + QA
+→ durable approval event
+→ server-issued publication/rollback preview authority
+→ verified Change Receipt anchor
+→ immutable Measurement Window
 → Results
 ```
 
-- `target_ref` 只引用 Action/Finding 已拥有的 canonical target；publication 表不得复制、修正或取代 target 定义。
-- `execution_artifacts.status = ready` 与 `updated_at` 都不是批准事实。`artifact_approval_events` 用 append-only `approved | revoked | superseded` 事件冻结精确 `artifact_revision_id`、revision、content hash、QA gate snapshot 与客户 acknowledgement。每个事件的实际操作人记录为 `eventActorId`；只有 `approved` 事件具有 `reviewerActorId`，terminal event 通过 source approval 保留原 reviewer lineage。
-- project/artifact-scoped approval-events GET/POST 是该 ledger 的唯一候选 HTTP 边界：event actor 来自已认证 session，服务端重读 canonical Artifact Revision 并验证 revision/hash/QA；跨 scope、hash 不一致、terminal actor 缺失或重复终止事件 fail closed。
-- approval POST 只提交 revision identity、必要 optimistic preconditions 和客户 acknowledgement；Artifact content hash、QA snapshot/hash 由服务端从 canonical revision 与 QA authority 生成。publication POST 只提交 `approvalEventId` 获取 Artifact/revision/hash，不接受这些事实的客户端副本。
-- 客户端只提交 server-issued `authorizationGrantRef`、approval event id 与 preview/rollback-plan 引用；authorization snapshot、capability facts 和 resolved rollback plan 均由服务端重读、验证并冻结，不能接收客户端自述。
-- `async_runs` remains status truth。publication attempt 只冻结请求、授权、preview、rollback、远端 precondition 和 provider 响应事实。
-- Task 8 的同一原子 migration 必须保留所有现有 `async_runs.kind/result_type` 值，并新增唯一稳定轴 `kind = publication`、`result_type = publication_attempt`；queued/running/completed/failed 继续只由 canonical async run 表达。
-- 一个 GitHub PR、WordPress Draft 或 Scheduled post 只产生 `delivery_receipt`，客户状态仍为 `pending`；候选不存在 `delivered` 状态。
-- 只有先存在同 attempt、同 provider、同 content checksum、同 `remoteScopeRef` 的 `delivery_receipt`，并且 GitHub merge 与真实部署 URL 均验证，或 WordPress 状态为 `publish` 且 live canonical URL 通过验证，才可产生带 `predecessorDeliveryReceiptId` 的 `change_receipt`。
-- receipt 本身不证明 traffic、ranking、conversion、revenue 或 GEO improvement。任何正向 Results 必须来自后续独立、不可变、有时间窗与限制说明的 Observation。
+v0.4 已激活 publication authority persistence、精确 Artifact approval、preview /
+rollback preview、receipt lineage 与 Measurement Window 合同。**当前 active
+HTTP surface 仍不包含执行 GitHub/WordPress 外部写入的 publication-attempt
+operation**：preview 不是发布，Delivery Receipt 不是 live change，只有经过
+provider 与 live canonical URL 验证的 Change Receipt 才能锚定观察窗口。
+任何未实现 provider adapter 或权限必须明确显示 unavailable，不能把计划状态
+渲染为已发布。
 
-## 冻结的请求边界
+Content Shadow state: **reviewed, not published**
 
-每个 publication attempt 必须同时冻结：
+Current v0.4 external-write boundary: **no external writes**
 
-- `workspaceId`、`projectId`、`siteId` 和 project/site-scoped destination revision；
-- canonical `targetRef`、Action、Artifact、`approvedArtifactRevision` 和 `approvedArtifactContentHash`；
-- publish 的当前 durable `publicationApproval`（不得已有后续 revocation / supersession）与 publish authorization snapshot；
-- provider kind `github | wordpress`；
-- `sideEffectClass: external_write`；
-- `previewRef` 和 preview checksum；
-- `idempotencyKey` 与 canonical request hash；
-- `remotePrecondition`（精确当前 remote revision，或明确 must-not-exist）；
-- provider-specific rollback plan。
-- `attemptKind = publish | rollback`；rollback 必须冻结同 scope/provider/target 的 `sourcePublicationAttemptId`，且源 attempt 已有 verified Change Receipt。其 `sourceApproval` 仅是历史 lineage，可以后来已 revoked/superseded；rollback 必须另行生成当前 `authorizationPurpose=rollback` 的授权、客户 acknowledgement、preview 与 expected current remote revision，绝不复用原 publish authorization。
+后续若加入真正的 GitHub PR、WordPress publish、自动 PR merge 或 CMS 写入，
+必须在同一提交更新 route、worker/provider adapter、OpenAPI、migration、
+generated contract、authority、lock、回滚/幂等测试与客户状态，不得只改文案。
 
-任一项缺失、过期、跨项目、被撤销或不可用时都必须在外部写入前 fail closed。Idempotency-Key 继续沿用 active 合同的 1–128 位 printable ASCII 边界；原 key + 原 hash 的 same-hash replay 永远只读返回同一 attempt/run/receipts，不再调用 provider；相同 key 不同 hash 返回冲突；旧 payload 换新 key 必须重新校验当前 destination、approval、preview、authorization 与 remote revision。`app.idempotency_keys` 仍负责共享 HTTP 窗口内的请求幂等；publication attempt 的永久唯一约束是在该共享记录过期后继续防止 external-write 重放，属于补强而不是替代。并发互斥继续由 canonical `async_runs.active_key` 与 `async_runs_one_active_key_idx` 提供，publication 表不得创造第二个 active status。
+## 安全边界
 
-## 客户可见诚实状态
+- 浏览器只通过 same-origin `/api/mvp` 访问数据。
+- Supabase Auth session 必须解析到预配置的 `app.operator_profiles`；生产环境不
+  自动创建 workspace membership。
+- `app` schema 对 `anon` / `authenticated` 撤权；repository 查询始终携带
+  `workspaceId + projectId`，跨租户资源返回 404。
+- `SF_DEV_AUTH` 只有在显式 development、精确 loopback origin 与本地开关同时
+  成立时可用；production/staging/test 均 fail closed。
+- 每次 provider/crawl 网络访问遵守 URL 安全、DNS/IP 重验、重定向上限与凭据
+  隔离；密钥不得进入浏览器、日志、telemetry、Artifact 或导出。
 
-- `pending`：授权或 delivery 已发生，但尚未验证 live change。
-- `changed`：存在满足 delivery predecessor 与 provider/live verification 的 Change Receipt；这不是正向 Results。
-- `unavailable`：provider、权限、credential、remote precondition 或 live verification 当前不可用，并附具体原因。
-- `revoked`：授权被撤销；新的外部写入禁止，历史 receipt 保留。
-- rollback 是新的显式授权请求和独立 attempt，不是删除或改写历史 receipt。
+## 验证
 
-候选不允许 active-looking customer control。Task 8 真实实现前，GitHub 仍是 planned delivery connector；WordPress 只可在未来 publication destination flow 中出现，不能变成第四个顶层分析数据源。
-
-## 机器发现与候选验证
-
-[`../index.json`](../index.json) 明确 v0.3 是唯一 active/normative authority，v0.4 只是 non-normative candidate。候选报告可用以下命令生成；它同时拒绝候选进入共享 OpenAPI、active lock、migration 或 runtime：
+从仓库根目录执行：
 
 ```bash
-node authority/implementation-spec-v0.4/scripts/verify-candidate.mjs --report
+pnpm verify:authority
+pnpm verify:spec
+pnpm verify:spec:test
+pnpm implementation:check
+pnpm contracts:check
+pnpm openapi:lint
+git diff --check
 ```
+
+`verify:spec` 只有在以下四层同时一致时通过：active discovery、reviewed lock、
+authority package、当前实现。verifier 自测会故意制造 OpenAPI、migration、
+schema、rule version、hash 和 active-pointer drift 并要求失败；重新计算 lock
+不是 CI 的自动行为，必须作为显式 authority 变更接受审核。

@@ -10,8 +10,15 @@
   },
   "pnpm": {
     "overrides": {
+      "brace-expansion@1.1.16": "5.0.8",
+      "brace-expansion@2.1.2": "5.0.8",
+      "brace-expansion@5.0.7": "5.0.8",
+      "sharp@<0.35.3": "0.35.3",
       "postcss@<8.5.10": "8.5.19",
       "js-yaml@<4.3.0": "4.3.0"
+    },
+    "patchedDependencies": {
+      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch"
     }
   },
   "scripts": {
@@ -34,9 +41,9 @@
     "test:e2e:real": "playwright test --config=playwright.config.ts",
     "test:e2e:mock": "playwright test --config=playwright.mock.config.ts",
     "verify:docs": "node --test scripts/verify-docs-consistency.test.mjs",
-    "verify:authority": "node authority/implementation-spec-v0.3/scripts/verify-spec.mjs",
+    "verify:authority": "node authority/implementation-spec-v0.4/scripts/verify-spec.mjs",
     "verify:spec": "node scripts/verify-spec-lock.mjs",
-    "verify:spec:test": "node --test scripts/verify-docs-consistency.test.mjs scripts/verify-spec-lock.test.mjs scripts/verify-implementation-source.test.mjs authority/implementation-spec-v0.3/scripts/verify-spec.test.mjs",
+    "verify:spec:test": "node --test scripts/verify-docs-consistency.test.mjs scripts/verify-spec-lock.test.mjs scripts/verify-implementation-source.test.mjs authority/implementation-spec-v0.4/scripts/verify-spec.test.mjs",
     "openapi:lint": "redocly lint openapi/mvp.yaml --config openapi/redocly.yaml",
     "contracts:generate": "pnpm --filter @sf/contracts generate",
     "contracts:check": "pnpm --filter @sf/contracts check",

@@ -1,35 +1,38 @@
-# Nevermore v0.3 deployment decision — GenGrowth on Vercel + Supabase + Railway
+# Nevermore v0.4 deployment decision — GenGrowth on Vercel + Supabase + Railway
 
 Nevermore is the internal repository and system of record; GenGrowth is the
 customer-facing brand, and its approved production origin is
-`https://app.gengrowth.ai`. The current candidate is product `0.3.0`, contract
-`2026-07-21`, backed by `authority/implementation-spec-v0.3/`.
+`https://app.gengrowth.ai`. The current active authority is product `0.3.0`,
+contract `2026-07-21`, backed by
+`authority/implementation-spec-v0.4/`.
 
-Contract inventory: **49 API operations / 9 async operations / 44 app tables / 11 frozen rules**
+Contract inventory: **77 API operations / 9 async operations / 76 app tables / 11 frozen rules**
 
 Content Shadow state: **reviewed, not published**
 
-Current v0.3 external-write boundary: **no external writes**
+Current v0.4 external-write boundary: **no external writes**
 
-This is a versioned v0.3 fact, not a permanent product prohibition. The current
+This is a versioned v0.4 fact, not a permanent product prohibition. The current
 deployment must not write to GitHub, WordPress, another CMS, Vercel, Cloudflare,
 or a customer production site, and it must not claim post-publication
 attribution.
 
-Next reviewed slice: **v0.4 authorized publication and attribution**
+Current authority: **v0.4 complete four-module workbench**
 
-v0.4 must begin as a non-normative authority candidate without changing the
-shared OpenAPI or migration chain. It becomes normative only when authority,
-routes, repositories, workers, adapters, generated contracts, migrations,
-rollback/reconciliation, and tests can be promoted atomically. A GitHub pull
-request or WordPress Draft produces a **delivery receipt**, not proof that a
-change is live. Only a separate **change receipt** that confirms merge/publish
-and records the live canonical URL may anchor attribution.
+v0.4 has atomically activated Keyword/Competitor governance, execution state,
+durable approval, publication/rollback preview authority, receipt lineage and
+immutable Measurement Windows. Its 77 operations still do not include a real
+GitHub/WordPress external-write command. A GitHub pull request or WordPress
+Draft produces a **delivery receipt**, not proof that a change is live. Only a
+separate **change receipt** that confirms merge/publish and records the live
+canonical URL may anchor attribution.
 
-The repository contains ordered migrations `0001` through `0021`. Historical
-production evidence through `0009` does not prove that the Slice 1/2 migrations
-through `0021` are hosted; every release must back up, restore-verify, apply,
-and replay-check the complete candidate chain before traffic promotion.
+Migration range: `0001_init.sql` through `0032_keyword_initial_governance.sql` (**32 ordered migrations**)
+
+Historical production evidence through `0021` does not prove that the active
+v0.4 migrations through `0032` are hosted; every release must back up,
+restore-verify, apply, and replay-check the complete active chain before
+traffic promotion.
 
 ## Approved production topology (Owner decision, 2026-07-20)
 
@@ -40,6 +43,12 @@ The Owner approved the following topology for the current production release:
 | Next.js web and `/api/mvp` routes | **Vercel** | One web deployment at `https://app.gengrowth.ai` |
 | Auth, PostgreSQL and private object storage | **Supabase** | One production project shared by web and worker |
 | Persistent pg-boss consumer | **Railway Hobby** | One always-on worker service; no web service, domain or HTTP healthcheck |
+
+Current production resources are the public GitHub repository
+`https://github.com/phananhson733-oss/nevermore`, Vercel project `nevermore`,
+Railway project/service `signalframe` / `worker`, and Supabase project
+`nevermore-production` in the `gengrowth` organization, `us-east-1`. The
+previous Supabase project is inactive and backed up rather than deleted.
 
 This dated Owner decision supersedes frozen implementation-spec §3.2 for this
 production release. The frozen spec's Railway `web` + `worker` shared-image

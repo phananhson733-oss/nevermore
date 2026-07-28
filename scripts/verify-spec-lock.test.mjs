@@ -15,8 +15,11 @@ import test from "node:test";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const verifier = join(repositoryRoot, "scripts/verify-spec-lock.mjs");
-const activatedLock = JSON.parse(
-  readFileSync(join(repositoryRoot, "scripts/spec-v0.3-lock.json"), "utf8"),
+const activeIndex = JSON.parse(
+  readFileSync(join(repositoryRoot, "authority/index.json"), "utf8"),
+);
+const activeLock = JSON.parse(
+  readFileSync(join(repositoryRoot, activeIndex.active.lockPath), "utf8"),
 );
 
 const REQUIRED_AUTHORITY_FILES = [
@@ -26,199 +29,258 @@ const REQUIRED_AUTHORITY_FILES = [
   "schema.sql",
   "schemas/service-bundle-manifest.schema.json",
   "scripts/schema-smoke.sql",
+  "scripts/generate-schema.mjs",
   "scripts/verify-spec.mjs",
+  "scripts/verify-spec.test.mjs",
+  "historical-publication-candidate/README.md",
+  "historical-publication-candidate/acceptance-matrix.md",
+  "historical-publication-candidate/openapi.candidate.yaml",
+  "historical-publication-candidate/provider-boundaries.md",
+  "historical-publication-candidate/repository-invariants.md",
+  "historical-publication-candidate/schema.candidate.sql",
+  "historical-publication-candidate/scripts/verify-candidate.mjs",
+  "historical-publication-candidate/scripts/verify-candidate.test.mjs",
+  "historical-publication-candidate/spec-v0.4-candidate-lock.json",
 ];
 
 const REQUIRED_IMPLEMENTATION_FILES = [
+  "package.json",
+  "patches/brace-expansion@5.0.8.patch",
+  "authority/index.json",
   "openapi/mvp.yaml",
   "packages/contracts/src/generated/openapi.ts",
   "schemas/service-bundle-manifest.schema.json",
   "packages/db/migrations/schema-smoke.sql",
+  "scripts/spec-authority-lib.mjs",
+  "scripts/generate-spec-v0.4-lock.mjs",
   "scripts/verify-implementation.mjs",
+  "scripts/verify-implementation-source.test.mjs",
+  "scripts/verify-spec-lock.mjs",
+  "scripts/verify-spec-lock.test.mjs",
+  "scripts/verify-docs-consistency.test.mjs",
+  "README.md",
+  "CLAUDE.md",
+  "docs/PROGRESS.md",
+  "docs/DEPLOYMENT.md",
 ];
 
-function sha256(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
-}
+const ASYNC_OPERATIONS = [
+  "createProductProfileSynthesisRun",
+  "importProjectSourceFile",
+  "createCollectionRun",
+  "createDiagnosticRun",
+  "createGrowthAuditRun",
+  "createContentShadowRun",
+  "createActionRecheck",
+  "createActionArtifact",
+  "createProjectExport",
+];
 
-function write(root, relativePath, contents) {
+const RULES = [
+  ["TECH-HTTP-001", 2],
+  ["TECH-CANONICAL-002", 2],
+  ["TECH-LINKGRAPH-005", 2],
+  ["SEARCH-CTR-004", 1],
+  ["SEARCH-DECAY-002", 1],
+  ["CONTENT-COVERAGE-001", 1],
+  ["CONTENT-GAP-011", 2],
+  ["CRO-PATH-001", 1],
+  ["CRO-LANDING-003", 1],
+  ["GEO-ENTITY-001", 1],
+  ["GEO-CRAWLER-002", 1],
+];
+
+function write(root, relativePath, contents = `${relativePath}\n`) {
   const path = join(root, relativePath);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, contents);
   return path;
 }
 
-function makeFixture(t, options = {}) {
-  const root = mkdtempSync(join(tmpdir(), "spec-lock-fixture-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+function sha256(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
 
-  write(root, "package.json", JSON.stringify({ version: "0.3.0" }));
-  const implementationOpenApi = write(
+function hashMap(root, base, paths) {
+  return Object.fromEntries(
+    paths.map((relativePath) => [
+      relativePath,
+      sha256(join(root, base, relativePath)),
+    ]),
+  );
+}
+
+function fixtureOpenApi() {
+  const remaining = Array.from(
+    { length: 77 - ASYNC_OPERATIONS.length },
+    (_, index) => `fixtureOperation${String(index + 1).padStart(2, "0")}`,
+  );
+  return [
+    "openapi: 3.1.0",
+    "info:",
+    "  title: fixture",
+    "  version: 0.3.0",
+    "paths:",
+    ...[...ASYNC_OPERATIONS, ...remaining].flatMap(
+      (operationId, index) => [
+        `  /fixture/${index}:`,
+        "    post:",
+        `      operationId: ${operationId}`,
+        "      responses:",
+        ...(ASYNC_OPERATIONS.includes(operationId)
+          ? index % 2 === 0
+            ? [
+                "        '202': { $ref: '#/components/responses/AsyncAccepted' }",
+              ]
+            : [
+                "        '202':",
+                "          $ref: '#/components/responses/AsyncAccepted'",
+              ]
+          : ["        '200': { description: ok }"]),
+      ],
+    ),
+    "",
+  ].join("\n");
+}
+
+function fixtureMigration(tables) {
+  return [
+    "BEGIN;",
+    "CREATE SCHEMA IF NOT EXISTS app;",
+    ...tables.map((table, index) =>
+      index % 2 === 0
+        ? `CREATE TABLE IF NOT EXISTS app.${table} (id uuid PRIMARY KEY);`
+        : `CREATE TABLE app.${table} (id uuid PRIMARY KEY);`,
+    ),
+    "CREATE OR REPLACE VIEW app.schema_migration_version AS",
+    "  SELECT '0001_fixture'::text AS migration_version;",
+    "COMMIT;",
+    "",
+  ].join("\n");
+}
+
+function makeFixture(t, options = {}) {
+  const root = mkdtempSync(join(tmpdir(), "spec-v04-lock-fixture-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const lockPath = options.lockPath ?? "scripts/custom-v04-lock.json";
+  const authorityRoot = "authority/active";
+  const tables =
+    options.tables ??
+    Array.from({ length: 76 }, (_, index) => `table_${index + 1}`);
+  const openapi = fixtureOpenApi();
+
+  for (const path of REQUIRED_AUTHORITY_FILES) {
+    write(root, join(authorityRoot, path));
+  }
+  write(root, join(authorityRoot, "openapi.yaml"), openapi);
+  write(
     root,
-    "openapi/mvp.yaml",
+    join(authorityRoot, "scripts/verify-spec.mjs"),
     [
-      "openapi: 3.1.0",
-      "info:",
-      "  title: fixture",
-      "  version: 0.3.0",
-      "paths:",
-      "  /projects:",
-      "    get:",
-      "      operationId: listProjects",
-      "      responses:",
-      "        '200':",
-      "          description: ok",
+      'import { writeFileSync } from "node:fs";',
+      'import { join } from "node:path";',
+      'const index = process.argv.indexOf("--app-root");',
+      'if (index === -1 || !process.argv[index + 1]) process.exit(9);',
+      'writeFileSync(join(process.argv[index + 1], "authority-ran"), "yes");',
       "",
     ].join("\n"),
   );
+
+  for (const path of REQUIRED_IMPLEMENTATION_FILES) {
+    write(root, path);
+  }
+  write(root, "package.json", '{"version":"0.3.0"}\n');
+  write(root, "openapi/mvp.yaml", openapi);
   write(
-    root,
-    "packages/contracts/src/zod/health.ts",
-    'export const CONTRACT_VERSION = "2026-07-21";\n',
-  );
-  const generatedOpenApi = write(
-    root,
-    "packages/contracts/src/generated/openapi.ts",
-    "// generated fixture contract\n",
-  );
-  const implementationBundleSchema = write(
-    root,
-    "schemas/service-bundle-manifest.schema.json",
-    '{"schema":"fixture"}\n',
-  );
-  const implementationSchemaSmoke = write(
-    root,
-    "packages/db/migrations/schema-smoke.sql",
-    "BEGIN; ROLLBACK;\n",
-  );
-  const implementationVerifier = write(
     root,
     "scripts/verify-implementation.mjs",
     [
       'import { writeFileSync } from "node:fs";',
       'import { join } from "node:path";',
-      'const rootIndex = process.argv.indexOf("--root");',
-      'if (rootIndex === -1 || !process.argv[rootIndex + 1]) process.exit(8);',
-      'writeFileSync(join(process.argv[rootIndex + 1], "implementation-ran"), "yes");',
+      'const index = process.argv.indexOf("--root");',
+      'if (index === -1 || !process.argv[index + 1]) process.exit(8);',
+      'writeFileSync(join(process.argv[index + 1], "implementation-ran"), "yes");',
       "",
     ].join("\n"),
   );
   write(
     root,
-    "packages/engine/src/rules/fixture.ts",
-    [
-      "export const fixtureRule = {",
-      '  id: "TECH-HTTP-001",',
-      "  version: 2,",
-      '  domain: "technical_seo",',
-      "  requiredDatasets: [],",
-      '  evaluate() { return { status: "pass" }; },',
-      "} satisfies DiagnosticRule;",
-      "",
-    ].join("\n"),
+    "packages/db/migrations/0001_fixture.sql",
+    fixtureMigration(tables),
   );
-
-  const migrations = options.migrations ?? {
-    "0001_init.sql":
-      "CREATE TABLE IF NOT EXISTS app.workspaces (id uuid PRIMARY KEY);\n",
-    "0010_growth_audit_slice1.sql":
-      "CREATE TABLE IF NOT EXISTS app.capability_runs (async_run_id uuid PRIMARY KEY);\n",
-  };
-  for (const [name, sql] of Object.entries(migrations)) {
-    write(root, `packages/db/migrations/${name}`, sql);
+  write(root, "packages/db/migrations/schema-smoke.sql", "BEGIN; ROLLBACK;\n");
+  for (const [index, [id, version]] of RULES.entries()) {
+    write(
+      root,
+      `packages/engine/src/rules/rule-${index}.ts`,
+      [
+        `export const fixture${index}Rule = {`,
+        `  id: "${id}",`,
+        `  version: ${version},`,
+        '  domain: "technical_seo",',
+        "} satisfies DiagnosticRule;",
+        "",
+      ].join("\n"),
+    );
   }
 
-  const tables = options.tables ?? ["workspaces", "capability_runs"];
+  const index = {
+    schemaVersion: 1,
+    active: {
+      version: "0.4.0",
+      status: "active",
+      normative: true,
+      authorityRoot,
+      lockPath,
+    },
+    history: [
+      {
+        version: "0.3.0",
+        status: "historical",
+        normative: false,
+        authorityRoot: "authority/implementation-spec-v0.3",
+        lockPath: "scripts/spec-v0.3-lock.json",
+      },
+    ],
+    historicalDesignInputs: [
+      {
+        label: "v0.4 publication candidate before atomic promotion",
+        status: "historical",
+        normative: false,
+        executable: false,
+        path: "authority/implementation-spec-v0.4/historical-publication-candidate",
+      },
+    ],
+  };
+  write(root, "authority/index.json", `${JSON.stringify(index, null, 2)}\n`);
 
-  // The verifier compares the counts the authority states IN PROSE against the
-  // lock, so a fixture authority has to state them the way the real one does.
-  // Derived from this fixture's own lock values rather than written out, so the
-  // stub cannot drift from the lock it is paired with — which is the exact
-  // failure the prose check exists to catch.
-  const authorityReadme = write(
-    root,
-    "authority/README.md",
-    `fixture authority: OpenAPI 精确声明 1 个 operation 与 0 个 async operation，确定性规则为 1 条规则，总数为 ${tables.length} 张应用表。\n`,
-  );
-  const authoritySpec = write(
-    root,
-    "authority/MVP-IMPLEMENTATION-SPEC.md",
-    `# Fixture implementation specification\n\n1 operationId、0 async operation、${tables.length} table、1 条规则。\n`,
-  );
-  const authoritySchema = write(
-    root,
-    "authority/schema.sql",
-    "CREATE SCHEMA IF NOT EXISTS app;\n",
-  );
-  const authorityVerifier = write(
-    root,
-    "authority/scripts/verify-spec.mjs",
-    [
-      'import { writeFileSync } from "node:fs";',
-      'import { join } from "node:path";',
-      'const appRootIndex = process.argv.indexOf("--app-root");',
-      'if (appRootIndex === -1 || !process.argv[appRootIndex + 1]) process.exit(9);',
-      'writeFileSync(join(process.argv[appRootIndex + 1], "authority-ran"), "yes");',
-      "",
-    ].join("\n"),
-  );
-  const authorityOpenApi = write(
-    root,
-    "authority/openapi.yaml",
-    readFileSync(implementationOpenApi),
-  );
-  const authorityBundleSchema = write(
-    root,
-    "authority/schemas/service-bundle-manifest.schema.json",
-    readFileSync(implementationBundleSchema),
-  );
-  const authoritySchemaSmoke = write(
-    root,
-    "authority/scripts/schema-smoke.sql",
-    readFileSync(implementationSchemaSmoke),
-  );
-
+  const operationIds = [
+    ...openapi.matchAll(/^\s+operationId:\s*([a-z][A-Za-z0-9]+)$/gm),
+  ].map((match) => match[1]);
   const lock = {
-    lockFormat: 2,
+    lockFormat: 3,
+    authorityVersion: "0.4.0",
+    authorityStatus: "active",
+    normative: true,
     productVersion: "0.3.0",
     contractVersion: "2026-07-21",
-    authorityRoot: "authority",
+    ruleSetVersion: "mvp.rules.0.2.2",
+    promptSetVersion: "mvp.prompts.0.2.0",
+    authorityRoot,
+    lockPath,
     migrationDirectory: "packages/db/migrations",
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
-    authorityFiles: {
-      "README.md": sha256(authorityReadme),
-      "MVP-IMPLEMENTATION-SPEC.md": sha256(authoritySpec),
-      "openapi.yaml": sha256(authorityOpenApi),
-      "schema.sql": sha256(authoritySchema),
-      "schemas/service-bundle-manifest.schema.json": sha256(
-        authorityBundleSchema,
-      ),
-      "scripts/schema-smoke.sql": sha256(authoritySchemaSmoke),
-      "scripts/verify-spec.mjs": sha256(authorityVerifier),
-    },
-    implementationFiles: {
-      "openapi/mvp.yaml": sha256(implementationOpenApi),
-      "packages/contracts/src/generated/openapi.ts": sha256(generatedOpenApi),
-      "schemas/service-bundle-manifest.schema.json": sha256(
-        implementationBundleSchema,
-      ),
-      "packages/db/migrations/schema-smoke.sql": sha256(
-        implementationSchemaSmoke,
-      ),
-      "scripts/verify-implementation.mjs": sha256(implementationVerifier),
-    },
-    apiOperations: ["listProjects"],
-    asyncOperations: [],
+    migrationHead: "0001_fixture",
+    authorityFiles: hashMap(root, authorityRoot, REQUIRED_AUTHORITY_FILES),
+    implementationFiles: hashMap(root, "", REQUIRED_IMPLEMENTATION_FILES),
+    apiOperations: operationIds,
+    asyncOperations: ASYNC_OPERATIONS,
     tables,
-    rules: ["TECH-HTTP-001"],
-    ruleVersions: {
-      "TECH-HTTP-001": 2,
-    },
+    rules: RULES.map(([id]) => id),
+    ruleVersions: Object.fromEntries(RULES),
   };
-  const lockPath = options.lockPath ?? "scripts/custom-lock.json";
   write(root, lockPath, `${JSON.stringify(lock, null, 2)}\n`);
-
-  return { root, lock, lockPath };
+  return { root, lock, lockPath, authorityRoot, tables };
 }
 
 function writeLock(fixture, lock = fixture.lock) {
@@ -229,68 +291,57 @@ function writeLock(fixture, lock = fixture.lock) {
   );
 }
 
-function runVerifier(fixture, extraArguments = []) {
+function runVerifier(fixture, extra = []) {
   return spawnSync(
     process.execPath,
-    [verifier, "--root", fixture.root, ...extraArguments],
+    [verifier, "--root", fixture.root, ...extra],
     { encoding: "utf8" },
   );
 }
 
-test("freezes the activated traceable audit surface at 49 operations, nine async commands, and 44 tables", () => {
-  assert.equal(activatedLock.apiOperations.length, 49);
-  assert.equal(activatedLock.asyncOperations.length, 9);
-  assert.equal(activatedLock.tables.length, 44);
-
+test("freezes the complete active v0.4 surface", () => {
+  assert.equal(activeIndex.active.version, "0.4.0");
+  assert.equal(activeLock.apiOperations.length, 77);
+  assert.equal(activeLock.asyncOperations.length, 9);
+  assert.equal(activeLock.tables.length, 76);
+  assert.equal(activeLock.rules.length, 11);
+  assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.2");
+  assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
   for (const operationId of [
-    "getProjectProductProfile",
-    "updateProductProfileDraft",
-    "createProductProfileSynthesisRun",
-    "reviewProductProfileCompetitor",
-    "addProductProfileCompetitor",
-    "confirmProductProfile",
-    "listProjectAuditUrls",
-    "getProjectAuditUrl",
-    "listProjectAuditKeywords",
-    "getProjectAuditKeyword",
-    "listProjectAuditCompetitors",
-    "getProjectAuditCompetitor",
-    "createContentShadowRun",
-    "listContentShadowRuns",
-    "getContentShadowRun",
-    "reviewContentShadowRevision",
+    "getProjectAuditBacklinks",
+    "listProjectAuditKeywordRelations",
+    "getProjectAuditCompetitorMonitor",
+    "getArtifactExecutionStateBatch",
+    "issuePublicationPreview",
+    "createProjectMeasurementWindow",
   ]) {
-    assert.ok(
-      activatedLock.apiOperations.includes(operationId),
-      `${operationId} is missing from the activated lock`,
-    );
+    assert.ok(activeLock.apiOperations.includes(operationId));
   }
-
-  assert.ok(
-    activatedLock.asyncOperations.includes("createProductProfileSynthesisRun"),
-  );
-  assert.ok(activatedLock.asyncOperations.includes("createContentShadowRun"));
   for (const table of [
-    "product_profile_runs",
-    "product_profile_invocation_attempts",
-    "finding_targets",
-    "flow_shadow_runs",
-    "flow_shadow_research_packs",
-    "flow_shadow_qa_gates",
+    "publication_preview_events",
+    "measurement_windows",
+    "keyword_relation_candidates",
+    "action_execution_state_events",
+    "competitor_monitor_signals",
+    "backlink_facts",
   ]) {
-    assert.ok(
-      activatedLock.tables.includes(table),
-      `${table} is missing from the activated lock`,
-    );
+    assert.ok(activeLock.tables.includes(table));
   }
 });
 
-test("accepts a caller-supplied lock and scans the complete ordered migration set", (t) => {
+test("uses authority/index.json to discover the default active lock", (t) => {
+  const fixture = makeFixture(t, {
+    lockPath: "scripts/spec-v0.4-lock.json",
+  });
+  const result = runVerifier(fixture);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Spec lock passed: active authority 0\.4\.0/);
+});
+
+test("accepts the reviewed fixture and executes both downstream verifiers", (t) => {
   const fixture = makeFixture(t);
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /2 tables/);
   assert.equal(readFileSync(join(fixture.root, "authority-ran"), "utf8"), "yes");
   assert.equal(
     readFileSync(join(fixture.root, "implementation-ran"), "utf8"),
@@ -298,169 +349,147 @@ test("accepts a caller-supplied lock and scans the complete ordered migration se
   );
 });
 
-test("uses scripts/spec-v0.3-lock.json as the activated default lock path", (t) => {
-  const fixture = makeFixture(t, { lockPath: "scripts/spec-v0.3-lock.json" });
-  const result = runVerifier(fixture);
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Spec lock passed/);
-});
-
-test("rejects a current v0.3 lock downgraded to lockFormat 1", (t) => {
+test("rejects a 202 that does not reference the exact shared AsyncAccepted response", (t) => {
   const fixture = makeFixture(t);
-  const downgradedLock = {
-    ...fixture.lock,
-    lockFormat: 1,
-  };
-  delete downgradedLock.implementationFiles;
-  write(
-    fixture.root,
-    fixture.lockPath,
-    `${JSON.stringify(downgradedLock, null, 2)}\n`,
-  );
-
-  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /lockFormat 2 is required for product version 0\.3\.0/i);
-});
-
-test("rejects an explicitly supplied legacy v1 lock before it can bypass implementation equality", (t) => {
-  const fixture = makeFixture(t);
-  write(
-    fixture.root,
-    "package.json",
-    `${JSON.stringify({ version: "0.2.0" })}\n`,
-  );
-  write(
-    fixture.root,
-    "authority/openapi.yaml",
-    `${readFileSync(join(fixture.root, "openapi/mvp.yaml"), "utf8")}x-authority-only: true\n`,
-  );
-  write(
-    fixture.root,
-    "authority/scripts/verify-spec.mjs",
-    "process.exit(0);\n",
-  );
-
-  const legacyLock = {
-    ...fixture.lock,
-    lockFormat: 1,
-    productVersion: "0.2.0",
-    authorityFiles: {
-      ...fixture.lock.authorityFiles,
-      "openapi.yaml": sha256(join(fixture.root, "authority/openapi.yaml")),
-      "scripts/verify-spec.mjs": sha256(
-        join(fixture.root, "authority/scripts/verify-spec.mjs"),
+  for (const [relativePath, lockSection, lockKey] of [
+    [
+      "openapi/mvp.yaml",
+      fixture.lock.implementationFiles,
+      "openapi/mvp.yaml",
+    ],
+    [
+      `${fixture.authorityRoot}/openapi.yaml`,
+      fixture.lock.authorityFiles,
+      "openapi.yaml",
+    ],
+  ]) {
+    const path = join(fixture.root, relativePath);
+    write(
+      fixture.root,
+      relativePath,
+      readFileSync(path, "utf8").replace(
+        "'202': { $ref: '#/components/responses/AsyncAccepted' }",
+        "'202': { $ref: '#/components/responses/MeasurementWindowAccepted' }",
       ),
-    },
-  };
-  delete legacyLock.implementationFiles;
-  write(
-    fixture.root,
-    fixture.lockPath,
-    `${JSON.stringify(legacyLock, null, 2)}\n`,
-  );
-
+    );
+    lockSection[lockKey] = sha256(path);
+  }
+  writeLock(fixture);
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /legacy lockFormat 1 cannot verify activated v0\.3 authority/i);
+  assert.match(
+    result.stderr,
+    /createProductProfileSynthesisRun must retain shared AsyncAccepted/i,
+  );
 });
 
-test("rejects a table declared by the lock but absent from every migration", (t) => {
-  const fixture = makeFixture(t, {
-    tables: ["workspaces", "capability_runs", "audit_runs"],
-  });
+test("rejects a downgraded lock format", (t) => {
+  const fixture = makeFixture(t);
+  writeLock(fixture, { ...fixture.lock, lockFormat: 2 });
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /requires lockFormat 3/i);
+});
 
+test("rejects an active discovery pointer that differs from the lock", (t) => {
+  const fixture = makeFixture(t);
+  const indexPath = join(fixture.root, "authority/index.json");
+  const index = JSON.parse(readFileSync(indexPath, "utf8"));
+  index.active.authorityRoot = "authority/wrong";
+  write(
+    fixture.root,
+    "authority/index.json",
+    `${JSON.stringify(index, null, 2)}\n`,
+  );
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /authorityRoot/);
+});
+
+test("rejects a table removed from the ordered migration chain", (t) => {
+  const fixture = makeFixture(t);
+  const path = join(
+    fixture.root,
+    "packages/db/migrations/0001_fixture.sql",
+  );
+  write(
+    fixture.root,
+    "packages/db/migrations/0001_fixture.sql",
+    readFileSync(path, "utf8").replace(
+      `CREATE TABLE app.${fixture.tables.at(-1)} (id uuid PRIMARY KEY);\n`,
+      "",
+    ),
+  );
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /application tables drifted/i);
 });
 
-test("rejects a table created by more than one ordered migration", (t) => {
-  const fixture = makeFixture(t, {
-    migrations: {
-      "0001_init.sql":
-        "CREATE TABLE IF NOT EXISTS app.workspaces (id uuid PRIMARY KEY);\n",
-      "0010_growth_audit.sql":
-        "CREATE TABLE IF NOT EXISTS app.workspaces (id uuid PRIMARY KEY);\n",
-    },
-    tables: ["workspaces"],
-  });
-  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /table workspaces is created by multiple migrations/i);
-});
-
 test("rejects duplicate migration ordinals", (t) => {
-  const fixture = makeFixture(t, {
-    migrations: {
-      "0010_growth_audit.sql":
-        "CREATE TABLE IF NOT EXISTS app.audit_runs (id uuid PRIMARY KEY);\n",
-      "0010_other.sql":
-        "CREATE TABLE IF NOT EXISTS app.site_pages (id uuid PRIMARY KEY);\n",
-    },
-    tables: ["audit_runs", "site_pages"],
-  });
+  const fixture = makeFixture(t);
+  write(
+    fixture.root,
+    "packages/db/migrations/0001_duplicate.sql",
+    [
+      "BEGIN;",
+      "CREATE OR REPLACE VIEW app.schema_migration_version AS",
+      "  SELECT '0001_duplicate'::text AS migration_version;",
+      "COMMIT;",
+      "",
+    ].join("\n"),
+  );
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /duplicate migration ordinal 0010/i);
+  assert.match(result.stderr, /duplicate migration ordinal 0001/i);
 });
 
-test("rejects an authority file whose content no longer matches the lock", (t) => {
+test("rejects a migration without exact transactional identity", (t) => {
   const fixture = makeFixture(t);
-  write(fixture.root, "authority/README.md", "changed after review\n");
+  write(
+    fixture.root,
+    "packages/db/migrations/0001_fixture.sql",
+    "CREATE TABLE app.unframed (id uuid PRIMARY KEY);\n",
+  );
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /must begin with BEGIN/i);
+});
 
+test("rejects an authority file changed after lock review", (t) => {
+  const fixture = makeFixture(t);
+  write(
+    fixture.root,
+    `${fixture.authorityRoot}/README.md`,
+    "changed after review\n",
+  );
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /authority file drifted/i);
 });
 
-for (const relativePath of REQUIRED_AUTHORITY_FILES) {
-  test(`rejects a lock missing the required authority hash for ${relativePath}`, (t) => {
-    const fixture = makeFixture(t);
-    delete fixture.lock.authorityFiles[relativePath];
-    writeLock(fixture);
-
-    const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, new RegExp(`authorityFiles is missing ${relativePath.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}`, "i"));
-  });
-}
-
-for (const relativePath of REQUIRED_IMPLEMENTATION_FILES) {
-  test(`rejects a lock missing the required implementation hash for ${relativePath}`, (t) => {
-    const fixture = makeFixture(t);
-    delete fixture.lock.implementationFiles[relativePath];
-    writeLock(fixture);
-
-    const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, new RegExp(`implementationFiles is missing ${relativePath.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}`, "i"));
-  });
-}
-
-test("rejects a diagnostic rule version that drifts from the frozen lock", (t) => {
+test("rejects a required hash removed from the active lock", (t) => {
   const fixture = makeFixture(t);
-  const rulePath = join(
+  delete fixture.lock.authorityFiles["schema.sql"];
+  writeLock(fixture);
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /authorityFiles paths drifted/i);
+});
+
+test("rejects CONTENT-GAP rule version drift", (t) => {
+  const fixture = makeFixture(t);
+  const path = join(
     fixture.root,
-    "packages/engine/src/rules/fixture.ts",
+    "packages/engine/src/rules/rule-6.ts",
   );
   write(
     fixture.root,
-    "packages/engine/src/rules/fixture.ts",
-    readFileSync(rulePath, "utf8").replace("version: 2", "version: 999"),
+    "packages/engine/src/rules/rule-6.ts",
+    readFileSync(path, "utf8").replace("version: 2", "version: 999"),
   );
-
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /TECH-HTTP-001.*version.*2/is);
+  assert.match(result.stderr, /CONTENT-GAP-011 rule version drifted from 2/i);
 });
 
 test("rejects a tampered implementation verifier before executing it", (t) => {
@@ -468,61 +497,70 @@ test("rejects a tampered implementation verifier before executing it", (t) => {
   write(
     fixture.root,
     "scripts/verify-implementation.mjs",
-    'throw new Error("tampered verifier");\n',
+    'throw new Error("tampered");\n',
   );
-
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
   assert.notEqual(result.status, 0);
   assert.match(
     result.stderr,
-    /implementation file drifted.*scripts\/verify-implementation\.mjs/is,
+    /implementation file drifted.*verify-implementation\.mjs/is,
   );
 });
 
-test("rejects a hash-pinned implementation verifier that throws", (t) => {
+test("rejects a dependency patch changed after lock review", (t) => {
   const fixture = makeFixture(t);
-  const verifierPath = write(
+  write(
+    fixture.root,
+    "patches/brace-expansion@5.0.8.patch",
+    "tampered dependency patch\n",
+  );
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /implementation file drifted.*patches\/brace-expansion@5\.0\.8\.patch/is,
+  );
+});
+
+test("rejects a missing dependency patch", (t) => {
+  const fixture = makeFixture(t);
+  rmSync(
+    join(fixture.root, "patches/brace-expansion@5.0.8.patch"),
+    { force: true },
+  );
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /implementation file is missing: patches\/brace-expansion@5\.0\.8\.patch/i,
+  );
+});
+
+test("rejects a hash-pinned downstream verifier that fails", (t) => {
+  const fixture = makeFixture(t);
+  const path = write(
     fixture.root,
     "scripts/verify-implementation.mjs",
-    'throw new Error("fixture implementation verifier exploded");\n',
+    'throw new Error("fixture implementation exploded");\n',
   );
   fixture.lock.implementationFiles["scripts/verify-implementation.mjs"] =
-    sha256(verifierPath);
+    sha256(path);
   writeLock(fixture);
-
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /fixture implementation verifier exploded/i);
-  assert.match(result.stderr, /implementation verifier failed/i);
+  assert.match(result.stderr, /fixture implementation exploded/i);
+  assert.match(result.stderr, /clone-local implementation verifier failed/i);
 });
 
-test("rejects non-operation implementation OpenAPI drift", (t) => {
+test("rejects OpenAPI drift even when operation ids are unchanged", (t) => {
   const fixture = makeFixture(t);
-  const openApiPath = join(fixture.root, "openapi/mvp.yaml");
+  const path = join(fixture.root, "openapi/mvp.yaml");
   write(
     fixture.root,
     "openapi/mvp.yaml",
-    readFileSync(openApiPath, "utf8").replace("version: 0.3.0", "version: 9.9.9"),
+    readFileSync(path, "utf8").replace("version: 0.3.0", "version: 9.9.9"),
   );
-
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /implementation file drifted.*openapi\/mvp\.yaml/is);
-});
-
-test("rejects generated contract drift independently of OpenAPI operations", (t) => {
-  const fixture = makeFixture(t);
-  write(
-    fixture.root,
-    "packages/contracts/src/generated/openapi.ts",
-    "// stale generated fixture contract\n",
-  );
-
-  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
-
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /implementation file drifted.*generated\/openapi\.ts/is);
 });

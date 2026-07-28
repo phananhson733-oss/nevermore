@@ -26,6 +26,7 @@ import {
   CapabilityRunsRepository,
   CollectionRunsRepository,
   contentHash,
+  canonicalUtcTimestamptz,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   EvidenceRepository,
@@ -60,7 +61,11 @@ import {
   extractContentBriefOutline,
   LLMError,
 } from "@sf/artifacts";
-import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../../context.ts";
 import { reconcileActiveRuns } from "../../handlers/recovery.ts";
@@ -334,6 +339,11 @@ async function seedDiagnosticRun(
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
+    governance: {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [],
+    },
     icp: {
       id: base.icpProfileId,
       version: 1,
@@ -427,7 +437,7 @@ async function seedShadowChain(
   const { scope, actorId, siteId } = base;
   const diagnostic = await seedDiagnosticRun(db, base);
   const diagnosticRunId = diagnostic.runId;
-  const capturedAt = diagnostic.capturedAt;
+  const capturedAt = canonicalUtcTimestamptz(diagnostic.capturedAt);
 
   const finding = await new FindingsRepository(db).insert({
     workspaceId: scope.workspaceId,
@@ -1500,7 +1510,12 @@ describeDb("runContentShadow", () => {
   it("fails with input drift when a frozen keyword's mapping decision moves", async () => {
     const fixture = await seedShadowChain(handle);
     await handle.pool.query(
-      "UPDATE app.keyword_entities SET mapping_decision = 'unassigned', mapped_site_page_id = NULL, mapping_revision = mapping_revision + 1 WHERE id = $1",
+      `UPDATE app.keyword_entities
+       SET mapping_decision = 'unassigned',
+           mapped_site_page_id = NULL,
+           mapping_revision = mapping_revision + 1,
+           updated_at = updated_at + interval '1 second'
+       WHERE id = $1`,
       [fixture.keywordId],
     );
 
@@ -1529,7 +1544,11 @@ describeDb("runContentShadow", () => {
   it("fails with input drift when a frozen keyword leaves the frozen cluster", async () => {
     const fixture = await seedShadowChain(handle);
     await handle.pool.query(
-      "UPDATE app.keyword_entities SET cluster_key = 'other-cluster', mapping_revision = mapping_revision + 1 WHERE id = $1",
+      `UPDATE app.keyword_entities
+       SET cluster_key = 'other-cluster',
+           mapping_revision = mapping_revision + 1,
+           updated_at = updated_at + interval '1 second'
+       WHERE id = $1`,
       [fixture.keywordId],
     );
 

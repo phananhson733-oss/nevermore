@@ -11,13 +11,14 @@ Current product version: **0.3.0**
 Current contract version: **2026-07-21**
 
 The active repository-owned authority is
-[`authority/implementation-spec-v0.3/`](authority/implementation-spec-v0.3/).
-The machine lock is [`scripts/spec-v0.3-lock.json`](scripts/spec-v0.3-lock.json).
+[`authority/implementation-spec-v0.4/`](authority/implementation-spec-v0.4/).
+The machine lock is [`scripts/spec-v0.4-lock.json`](scripts/spec-v0.4-lock.json).
 
-Contract inventory: **49 API operations / 9 async operations / 44 app tables / 11 frozen rules**
+Contract inventory: **77 API operations / 9 async operations / 76 app tables / 11 frozen rules**
 
-Do not predeclare v0.4 routes, migrations, or operations in the v0.3 machine
-surface.
+The v0.3 authority remains a historical snapshot. Any further route, migration,
+or operation must be promoted atomically through the active v0.4 authority and
+lock.
 
 ## Current customer product
 
@@ -70,27 +71,26 @@ writes with frozen lineage.
 
 Content Shadow state: **reviewed, not published**
 
-Current v0.3 external-write boundary: **no external writes**
+Current v0.4 external-write boundary: **no external writes**
 
-That boundary is a statement about the active v0.3 contract, not a permanent
-product prohibition. GenGrowth v0.3 does not write to GitHub, WordPress, a CMS,
+That boundary is a statement about the active v0.4 contract, not a permanent
+product prohibition. GenGrowth currently does not write to GitHub, WordPress, a CMS,
 Vercel, Cloudflare, or a customer production site; it has no published state or
 post-publication attribution claim. Scenario-only customer collateral must say
 so explicitly and cannot be used as evidence that a provider write occurred.
 
-Next reviewed slice: **v0.4 authorized publication and attribution**
+Current authority: **v0.4 complete four-module workbench**
 
-The next slice begins as a **non-normative v0.4 candidate**. It must not alter
-the shared OpenAPI or migration chain while routes, repositories, workers, and
-provider adapters are still absent. Promotion to normative authority is atomic:
-authority, routes, repositories, workers, adapters, migrations, generated
-contracts, rollback behavior, and tests land together.
+The active v0.4 authority includes keyword and competitor governance, execution
+state, durable approval, publication/rollback preview authority, receipt
+lineage, and immutable measurement windows. It does not yet include an external
+publication-attempt HTTP operation or a GitHub/WordPress provider write.
 
 A GitHub pull request or WordPress Draft produces a **delivery receipt** only;
 neither proves that a customer-visible change is live. A separate **change
 receipt** requires verified merge/publish completion and the live canonical URL.
 Only that change receipt may anchor GSC/GA4/UTM before/after attribution. None of
-these receipts or operations is a shipped v0.3 capability.
+these receipt facts may be synthesized from a preview or an Artifact status.
 
 ## Development
 

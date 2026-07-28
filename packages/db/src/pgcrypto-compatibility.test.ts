@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 const migrationSql = readFileSync(
   new URL(
@@ -92,7 +93,7 @@ describe("0031 pgcrypto digest compatibility", () => {
       "6bc55c2be22e768cdca86865ec8f910f2d81e10ffdea5fb3a4610240b52473ae",
     );
     expect(smokeSql).toContain(
-      "IS DISTINCT FROM '0031_pgcrypto_digest_compatibility'",
+      `IS DISTINCT FROM '${LATEST_APP_MIGRATION}'`,
     );
   });
 });

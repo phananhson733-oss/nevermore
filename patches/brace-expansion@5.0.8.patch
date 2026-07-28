@@ -1,0 +1,45 @@
+diff --git a/dist/commonjs/index.js b/dist/commonjs/index.js
+index be9df86be09c7655787a65c55ae6da01858894c3..86538906ade823b33da583ca6265346ab527f325 100644
+--- a/dist/commonjs/index.js
++++ b/dist/commonjs/index.js
+@@ -260,4 +260,16 @@ function expand_(str, max, maxLength, isTop) {
+     }
+     return acc;
+ }
++// `minimatch` 3.x and 5.x consume brace-expansion's historical CommonJS
++// callable export, while newer minimatch releases consume the named `expand`
++// export (and minimatch 9.x reads a transpiled default export). Keep all three
++// shapes available so the patched 5.x implementation can safely replace the
++// vulnerable 1.x, 2.x, and 5.x release lines without changing their callers.
++module.exports = Object.assign(expand, {
++    default: expand,
++    expand,
++    EXPANSION_MAX: exports.EXPANSION_MAX,
++    EXPANSION_MAX_LENGTH: exports.EXPANSION_MAX_LENGTH,
++});
++Object.defineProperty(module.exports, "__esModule", { value: true });
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/dist/esm/index.d.ts b/dist/esm/index.d.ts
+index f3e2de9d87e1ce462517e49f35733bed8bdf85af..6c84d87835182d0670981dc15f488c2a7d061c98 100644
+--- a/dist/esm/index.d.ts
++++ b/dist/esm/index.d.ts
+@@ -5,4 +5,5 @@ export type BraceExpansionOptions = {
+     maxLength?: number;
+ };
+ export declare function expand(str: string, options?: BraceExpansionOptions): string[];
++export default expand;
+ //# sourceMappingURL=index.d.ts.map
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+index 6dc0392fc0feedb811e63d70a30be2736af17a3a..d32fc364a6faf46c969e48e139a4db6e0f53bdfe 100644
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -256,4 +256,8 @@ function expand_(str, max, maxLength, isTop) {
+     }
+     return acc;
+ }
++// minimatch 9.x imports the historical default export from its ESM build,
++// while minimatch 10.x consumes the modern named export. Preserve both shapes
++// when replacing the vulnerable 2.x release used by minimatch 9.x.
++export default expand;
+ //# sourceMappingURL=index.js.map

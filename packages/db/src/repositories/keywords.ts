@@ -8,7 +8,6 @@ import {
   isNull,
   lt,
   or,
-  sql,
 } from "drizzle-orm";
 import { clientProjects, keywordEntities } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
@@ -81,8 +80,6 @@ export const MAX_KEYWORD_ENTITY_PAGE_SIZE = 100;
 export const MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ = 5_001;
 /** Safety ceiling for one frozen keyword identity set (search + generative). */
 export const MAX_KEYWORD_ENTITY_BATCH = 500;
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MARKET = /^[A-Z]{2}$/u;
 
 const entitySelection = {
@@ -108,46 +105,14 @@ const entitySelection = {
   updated_at: keywordEntities.updated_at,
 } as const;
 
-function assertOptionalBounded(
-  value: string | null,
-  label: string,
-  max: number,
-): void {
-  if (
-    value !== null &&
-    (value.length < 1 || value.length > max || value.trim() !== value)
-  ) {
-    throw new RangeError(
-      `${label} must be null or 1 to ${max} trimmed characters`,
-    );
-  }
-}
+export class LegacyKeywordReviewDisabledError extends Error {
+  readonly code = "LEGACY_KEYWORD_REVIEW_DISABLED";
 
-function assertReviewInput(input: KeywordReviewMappingInput): void {
-  if (
-    !Number.isSafeInteger(input.expectedRevision) ||
-    input.expectedRevision < 0
-  ) {
-    throw new RangeError(
-      "expectedRevision must be a non-negative safe integer",
+  constructor() {
+    super(
+      "KeywordsRepository.reviewAndMap is retired; use KeywordGovernanceRepository.reviewKeyword so every review writes the append-only Decision ledger.",
     );
-  }
-  assertOptionalBounded(input.intent, "intent", 100);
-  assertOptionalBounded(input.buyerStage, "buyerStage", 100);
-  assertOptionalBounded(input.clusterKey, "clusterKey", 200);
-  if (
-    input.mappingDecision === "existing_page" &&
-    (input.mappedSitePageId === null || !UUID.test(input.mappedSitePageId))
-  ) {
-    throw new RangeError("mappedSitePageId is required for existing_page");
-  }
-  if (
-    input.mappingDecision !== "existing_page" &&
-    input.mappedSitePageId !== null
-  ) {
-    throw new RangeError(
-      "mappedSitePageId must be null unless mapping is existing_page",
-    );
+    this.name = "LegacyKeywordReviewDisabledError";
   }
 }
 
@@ -325,40 +290,19 @@ export class KeywordsRepository extends Repository {
       )) as KeywordEntityRow[];
   }
 
-  /** Optimistic review/mapping command. Null means stale, absent or archived. */
+  /**
+   * @deprecated Keyword governance became append-only authority in migration
+   * 0024. This legacy signature has no actor, reason or Topic revision and
+   * therefore cannot create a truthful Keyword Review Decision.
+   */
   async reviewAndMap(
     scope: ProjectScope,
     entityId: string,
     input: KeywordReviewMappingInput,
   ): Promise<KeywordEntityRow | null> {
-    assertReviewInput(input);
-    const rows = (await this.exec
-      .update(keywordEntities)
-      .set({
-        status: input.status,
-        intent: input.intent,
-        buyer_stage: input.buyerStage,
-        cluster_key: input.clusterKey,
-        mapping_decision: input.mappingDecision,
-        mapped_site_page_id: input.mappedSitePageId,
-        mapping_review_state: input.mappingReviewState,
-        mapping_revision: input.expectedRevision + 1,
-      })
-      .where(
-        and(
-          projectPredicate(keywordEntities, scope),
-          eq(keywordEntities.id, entityId),
-          eq(keywordEntities.mapping_revision, input.expectedRevision),
-          sql`exists (
-            select 1
-            from ${clientProjects}
-            where ${clientProjects.id} = ${scope.projectId}
-              and ${clientProjects.workspace_id} = ${scope.workspaceId}
-              and ${clientProjects.archived_at} is null
-          )`,
-        ),
-      )
-      .returning(entitySelection)) as KeywordEntityRow[];
-    return rows[0] ?? null;
+    void scope;
+    void entityId;
+    void input;
+    throw new LegacyKeywordReviewDisabledError();
   }
 }

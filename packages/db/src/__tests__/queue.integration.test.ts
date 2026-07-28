@@ -11,6 +11,7 @@ import {
   startBoss,
 } from "../queue.ts";
 import { asyncRuns, clientProjects, workspaces } from "../schema.ts";
+import { APP_TABLES } from "../../../../scripts/backup-restore-drill.mjs";
 
 const DATABASE_URL = process.env["DATABASE_URL"];
 const describeDb = DATABASE_URL ? describe : describe.skip;
@@ -61,18 +62,20 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
     return Number(res.rows[0]?.c ?? 0);
   };
 
-  it("AC-004: pg-boss owns a separate schema; app has exactly 49 tables", async () => {
+  it("AC-004: pg-boss owns a separate schema; app matches the authority inventory", async () => {
     const pgbossSchema = await handle.pool.query(
       `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
       [PGBOSS_SCHEMA],
     );
     expect(pgbossSchema.rowCount).toBe(1);
 
-    const appTables = await handle.pool.query<{ c: string }>(
-      `SELECT count(*)::int AS c FROM information_schema.tables
+    const appTables = await handle.pool.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'app' AND table_type = 'BASE TABLE'`,
     );
-    expect(Number(appTables.rows[0]!.c)).toBe(49);
+    expect(appTables.rows.map((row) => row.table_name).sort()).toEqual(
+      [...APP_TABLES].sort(),
+    );
 
     // No pgboss table leaked into the app schema.
     const leaked = await handle.pool.query<{ c: string }>(

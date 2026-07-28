@@ -134,6 +134,11 @@ export const APP_TABLES = [
   "competitor_monitor_runs",
   "competitor_monitor_evaluations",
   "competitor_monitor_signals",
+  "geo_query_observations",
+  "geo_citation_occurrences",
+  "backlink_authority_snapshots",
+  "backlink_facts",
+  "backlink_page_metrics",
 ];
 
 /**

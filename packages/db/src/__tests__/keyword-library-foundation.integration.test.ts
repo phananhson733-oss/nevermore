@@ -7,8 +7,16 @@ import {
   type CanonicalKeywordOccurrenceInput,
   type ManualKeywordOccurrenceInput,
 } from "../repositories/keyword-occurrences.ts";
-import { KeywordsRepository } from "../repositories/keywords.ts";
+import {
+  KeywordGovernanceIntegrityError,
+  KeywordGovernanceRepository,
+} from "../repositories/keyword-governance.ts";
+import {
+  KeywordsRepository,
+  LegacyKeywordReviewDisabledError,
+} from "../repositories/keywords.ts";
 import { normalizedUrlHash } from "../repositories/site-pages.ts";
+import { TopicModelsRepository } from "../repositories/topic-models.ts";
 import { requireSafeTestDatabaseUrl } from "../test-database-safety.ts";
 
 const DATABASE_URL = process.env["DATABASE_URL"];
@@ -18,6 +26,7 @@ const CAPTURED_AT = "2026-07-22T08:00:00.000Z";
 interface SourceFixture {
   readonly workspaceId: string;
   readonly projectId: string;
+  readonly actorId: string;
   readonly siteId: string;
   readonly snapshotId: string;
   readonly observationId: string;
@@ -215,6 +224,7 @@ async function createSourceFixture(
   return {
     workspaceId,
     projectId,
+    actorId,
     siteId,
     snapshotId,
     observationId,
@@ -417,6 +427,91 @@ function occurrence(
   };
 }
 
+async function createConfirmedKeywordTopic(
+  handle: DbHandle,
+  fixture: SourceFixture,
+  label: string,
+): Promise<{
+  readonly topicNodeId: string;
+  readonly topicModelRevision: number;
+}> {
+  const scope = {
+    workspaceId: fixture.workspaceId,
+    projectId: fixture.projectId,
+  };
+  const topics = new TopicModelsRepository(handle.db);
+  const draft = await topics.beginDraftFromLatestConfirmed(
+    scope,
+    fixture.actorId,
+    {
+      expectedLatestConfirmedRevision: 0,
+      reason: "Create the reviewed Topic for the Keyword library fixture.",
+    },
+  );
+  const edited = await topics.patchDraft(scope, fixture.actorId, {
+    topicModelRevision: draft.topicModelRevision,
+    expectedEditRevision: draft.editRevision,
+    reason: "Add the canonical Keyword library Topic.",
+    intents: [
+      {
+        kind: "create",
+        parentTopicNodeId: null,
+        label,
+        description: "Confirmed Topic for Keyword governance integration.",
+        intentEnvelope: ["Commercial"],
+      },
+    ],
+  });
+  const confirmed = await topics.confirmDraft(
+    scope,
+    fixture.actorId,
+    {
+      topicModelRevision: edited.topicModelRevision,
+      expectedEditRevision: edited.editRevision,
+      reason: "Confirm the Topic before reviewing the Keyword.",
+    },
+  );
+  if (confirmed.rootTopicNodeId === null) {
+    throw new Error("Keyword library fixture did not produce a Topic root");
+  }
+  return {
+    topicNodeId: confirmed.rootTopicNodeId,
+    topicModelRevision: confirmed.topicModelRevision,
+  };
+}
+
+async function reviewAsNewAsset(
+  handle: DbHandle,
+  fixture: SourceFixture,
+  keywordEntityId: string,
+  clusterKey: string,
+): Promise<void> {
+  const topic = await createConfirmedKeywordTopic(
+    handle,
+    fixture,
+    clusterKey,
+  );
+  await new KeywordGovernanceRepository(handle.db).reviewKeyword(
+    {
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+    },
+    keywordEntityId,
+    fixture.actorId,
+    {
+      expectedGovernanceRevision: 0,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: topic.topicNodeId,
+      topicModelRevision: topic.topicModelRevision,
+      mappingDecision: "new_asset",
+      mappedSitePageId: null,
+      reason: "Approve the Keyword as a governed new content asset.",
+    },
+  );
+}
+
 describeDb("keyword library database foundation", () => {
   let handle: DbHandle;
 
@@ -448,6 +543,7 @@ describeDb("keyword library database foundation", () => {
       occurrences: string;
       entities: string;
       memberships: string;
+      decisions: string;
       provider_data_as_of: string | null;
     }>(
       `SELECT
@@ -457,6 +553,8 @@ describeDb("keyword library database foundation", () => {
            WHERE project_id = $1) AS entities,
          (SELECT count(*) FROM app.keyword_entity_sources
            WHERE project_id = $1) AS memberships,
+         (SELECT count(*) FROM app.keyword_review_decisions
+           WHERE project_id = $1) AS decisions,
          (SELECT provider_data_as_of::text FROM app.keyword_occurrences
            WHERE project_id = $1 LIMIT 1) AS provider_data_as_of`,
       [fixture.projectId],
@@ -466,9 +564,45 @@ describeDb("keyword library database foundation", () => {
         occurrences: "1",
         entities: "1",
         memberships: "1",
+        decisions: "1",
         provider_data_as_of: null,
       },
     ]);
+
+    const current = await new KeywordGovernanceRepository(
+      handle.db,
+    ).findCurrent(scope, results[0]!.entityId);
+    expect(current).toMatchObject({
+      decision: {
+        governanceRevision: 0,
+        decisionOrigin: "system_suggestion",
+        status: "candidate",
+        intent: null,
+        buyerStage: null,
+        topicNodeId: null,
+        topicModelRevision: null,
+        mappingDecision: "unassigned",
+        mappedSitePageId: null,
+        mappingReviewState: "unreviewed",
+        assignmentInvalidatedBy: null,
+        decidedBy: null,
+      },
+      clusterKey: null,
+      reviewedProjection: {
+        governanceRevision: 0,
+        status: "candidate",
+        intent: null,
+        buyerStage: null,
+        topicNodeId: null,
+        topicModelRevision: null,
+        clusterKey: null,
+        mappingDecision: "unassigned",
+        mappedSitePageId: null,
+        mappingReviewState: "unreviewed",
+        assignmentInvalidatedBy: null,
+        earlierHistoryAvailable: false,
+      },
+    });
 
     const columns = await handle.pool.query<{ column_name: string }>(
       `SELECT column_name
@@ -499,16 +633,13 @@ describeDb("keyword library database foundation", () => {
     const occurrences = new KeywordOccurrencesRepository(handle.db);
     const keywords = new KeywordsRepository(handle.db);
     const first = await occurrences.upsertIntoLibrary(scope, occurrence(fixture));
-    const mapped = await keywords.reviewAndMap(scope, first.entityId, {
-      expectedRevision: 0,
-      status: "approved",
-      intent: "commercial",
-      buyerStage: "consideration",
-      clusterKey: "customer-onboarding",
-      mappingDecision: "new_asset",
-      mappedSitePageId: null,
-      mappingReviewState: "confirmed",
-    });
+    await reviewAsNewAsset(
+      handle,
+      fixture,
+      first.entityId,
+      "customer-onboarding",
+    );
+    const mapped = await keywords.findById(scope, first.entityId);
     expect(mapped).toMatchObject({
       cluster_key: "customer-onboarding",
       mapping_decision: "new_asset",
@@ -684,6 +815,13 @@ describeDb("keyword library database foundation", () => {
     const replay = await repo.upsertIntoLibrary(scope, input);
     expect(created.occurrenceId).toBe(manualEntryId);
     expect(replay).toEqual(created);
+    await expectPgCode(
+      repo.upsertIntoLibrary(scope, {
+        ...input,
+        collectedAt: "2026-07-22T08:00:01.000Z",
+      }),
+      "23514",
+    );
 
     const stored = await handle.pool.query<{
       id: string;
@@ -709,6 +847,13 @@ describeDb("keyword library database foundation", () => {
         scope_basis: "manual",
       },
     ]);
+    const decisionCount = await handle.pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+       FROM app.keyword_review_decisions
+       WHERE keyword_entity_id = $1`,
+      [created.entityId],
+    );
+    expect(decisionCount.rows).toEqual([{ count: "1" }]);
 
     await expectPgCode(
       handle.pool.query(
@@ -775,6 +920,55 @@ describeDb("keyword library database foundation", () => {
     );
   });
 
+  it("does not disguise a nonzero entity with a missing ledger as an initial ingestion decision", async () => {
+    const fixture = await createSourceFixture(handle);
+    const corruptEntityId = randomUUID();
+    await handle.pool.query(
+      `INSERT INTO app.keyword_entities (
+         id, workspace_id, project_id, display_keyword, normalized_keyword,
+         market, language_tag, query_kind, mapping_revision,
+         first_seen_at, last_seen_at
+       ) VALUES ($1,$2,$3,$4,$5,'US','en-US','search_query',3,$6,$6)`,
+      [
+        corruptEntityId,
+        fixture.workspaceId,
+        fixture.projectId,
+        "Customer Onboarding Software",
+        "customer onboarding software",
+        CAPTURED_AT,
+      ],
+    );
+
+    const scope = {
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+    };
+    await expect(
+      new KeywordOccurrencesRepository(handle.db).upsertIntoLibrary(
+        scope,
+        occurrence(fixture),
+      ),
+    ).resolves.toMatchObject({ entityId: corruptEntityId });
+
+    const decisions = await handle.pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+       FROM app.keyword_review_decisions
+       WHERE workspace_id = $1
+         AND project_id = $2
+         AND keyword_entity_id = $3`,
+      [fixture.workspaceId, fixture.projectId, corruptEntityId],
+    );
+    expect(decisions.rows).toEqual([{ count: "0" }]);
+    await expect(
+      new KeywordGovernanceRepository(handle.db).findCurrent(
+        scope,
+        corruptEntityId,
+      ),
+    ).rejects.toMatchObject(
+      new KeywordGovernanceIntegrityError("CURRENT_DECISION_MISSING"),
+    );
+  });
+
   it("fails closed for cross-project provenance, mapping and archived projects", async () => {
     const local = await createSourceFixture(handle);
     const foreign = await createSourceFixture(handle, {
@@ -818,7 +1012,33 @@ describeDb("keyword library database foundation", () => {
       ),
       "23514",
     );
-    await expectPgCode(
+    const topic = await createConfirmedKeywordTopic(
+      handle,
+      local,
+      "customer-onboarding",
+    );
+    await expect(
+      new KeywordGovernanceRepository(handle.db).reviewKeyword(
+        localScope,
+        created.entityId,
+        local.actorId,
+        {
+          expectedGovernanceRevision: 0,
+          status: "approved",
+          intent: null,
+          buyerStage: null,
+          topicNodeId: topic.topicNodeId,
+          topicModelRevision: topic.topicModelRevision,
+          mappingDecision: "existing_page",
+          mappedSitePageId: foreign.sitePageId,
+          reason: "Attempt a governed mapping to a foreign project page.",
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "SITE_PAGE_NOT_FOUND",
+    });
+
+    await expect(
       keywords.reviewAndMap(localScope, created.entityId, {
         expectedRevision: 0,
         status: "approved",
@@ -829,8 +1049,7 @@ describeDb("keyword library database foundation", () => {
         mappedSitePageId: foreign.sitePageId,
         mappingReviewState: "confirmed",
       }),
-      "23514",
-    );
+    ).rejects.toEqual(expect.any(LegacyKeywordReviewDisabledError));
 
     await handle.pool.query(
       "UPDATE app.client_projects SET archived_at = now() WHERE id = $1",
@@ -867,17 +1086,14 @@ describeDb("keyword library database foundation", () => {
       scope,
       occurrence(fixture),
     );
+    await reviewAsNewAsset(
+      handle,
+      fixture,
+      created.entityId,
+      "customer-onboarding",
+    );
     await expect(
-      keywords.reviewAndMap(scope, created.entityId, {
-        expectedRevision: 0,
-        status: "approved",
-        intent: "commercial",
-        buyerStage: "consideration",
-        clusterKey: "customer-onboarding",
-        mappingDecision: "new_asset",
-        mappedSitePageId: null,
-        mappingReviewState: "confirmed",
-      }),
+      keywords.findById(scope, created.entityId),
     ).resolves.toMatchObject({
       mapping_decision: "new_asset",
       mapped_site_page_id: null,

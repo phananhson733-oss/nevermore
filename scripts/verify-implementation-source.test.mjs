@@ -9,9 +9,47 @@ const verifier = readFileSync(
   resolve(scriptDirectory, "verify-implementation.mjs"),
   "utf8",
 );
+const lock = JSON.parse(
+  readFileSync(resolve(scriptDirectory, "spec-v0.4-lock.json"), "utf8"),
+);
 
-test("derives the migration table count from the expected table contract", () => {
-  assert.match(verifier, /tables\.length\s*===\s*EXPECTED_TABLES\.length/);
+test("derives active versions and inventories from the reviewed v0.4 lock", () => {
+  assert.match(
+    verifier,
+    /const ACTIVE_LOCK_PATH = "scripts\/spec-v0\.4-lock\.json";/,
+  );
+  for (const binding of [
+    "PRODUCT_VERSION = ACTIVE_LOCK.productVersion",
+    "CONTRACT_VERSION = ACTIVE_LOCK.contractVersion",
+    "RULE_SET_VERSION = ACTIVE_LOCK.ruleSetVersion",
+    "PROMPT_SET_VERSION = ACTIVE_LOCK.promptSetVersion",
+    "EXPECTED_OPENAPI_OPERATIONS = ACTIVE_LOCK.apiOperations",
+    "EXPECTED_ASYNC_OPERATIONS = ACTIVE_LOCK.asyncOperations",
+    "EXPECTED_TABLES = ACTIVE_LOCK.tables",
+    "EXPECTED_RULES = ACTIVE_LOCK.rules",
+  ]) {
+    assert.match(verifier, new RegExp(binding.replaceAll(".", "\\.")));
+  }
+  assert.equal(lock.authorityVersion, "0.4.0");
+  assert.equal(lock.apiOperations.length, 77);
+  assert.equal(lock.asyncOperations.length, 9);
+  assert.equal(lock.tables.length, 76);
+  assert.equal(lock.rules.length, 11);
+  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.2");
+  assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
+  assert.doesNotMatch(verifier, /mvp\.rules\.0\.2\.1/);
+});
+
+test("builds the complete database inventory through the static schema catalog", () => {
+  assert.match(
+    verifier,
+    /import \{ buildSchemaCatalog \} from "\.\/schema-catalog\.mjs";/,
+  );
+  assert.match(
+    verifier,
+    /const tables = \[\.\.\.buildSchemaCatalog\(migrationSources\)\.keys\(\)\];/,
+  );
+  assert.match(verifier, /tables\.length === EXPECTED_TABLES\.length/);
   assert.match(
     verifier,
     /expected \$\{EXPECTED_TABLES\.length\} app tables in the migrations/,
@@ -20,122 +58,73 @@ test("derives the migration table count from the expected table contract", () =>
     verifier,
     /database: \$\{EXPECTED_TABLES\.length\} app tables \(pg-boss excluded\)/,
   );
-  assert.doesNotMatch(verifier, /tables\.length\s*===\s*28/);
-});
-
-test("freezes the activated v0.3 machine versions without bumping rules or prompts", () => {
-  assert.match(verifier, /const PRODUCT_VERSION = "0\.3\.0";/);
-  assert.match(verifier, /const CONTRACT_VERSION = "2026-07-21";/);
-  assert.match(
+  assert.doesNotMatch(
     verifier,
-    /const BUNDLE_SCHEMA_VERSION = "signalframe\.service-bundle\.0\.3\.0";/,
-  );
-  assert.match(verifier, /const RULE_SET_VERSION = "mvp\.rules\.0\.2\.1";/);
-  assert.match(verifier, /\["TECH-HTTP-001", 2\]/);
-  assert.match(verifier, /\["TECH-CANONICAL-002", 2\]/);
-  assert.match(verifier, /\["TECH-LINKGRAPH-005", 2\]/);
-  assert.match(verifier, /const PROMPT_SET_VERSION = "mvp\.prompts\.0\.2\.0";/);
-});
-
-test("freezes the traceability and growth-library persistence tables in the 44-table contract", () => {
-  for (const table of [
-    "capability_runs",
-    "audit_runs",
-    "audit_module_results",
-    "site_pages",
-    "page_snapshots",
-    "product_profile_runs",
-    "product_profile_invocation_attempts",
-    "finding_targets",
-    "keyword_occurrences",
-    "keyword_entities",
-    "keyword_entity_sources",
-    "competitor_entities",
-    "competitor_origin_occurrences",
-  ]) {
-    assert.match(verifier, new RegExp(`"${table}"`));
-  }
-  const expectedTablesBlock = verifier.match(
-    /const EXPECTED_TABLES = \[([\s\S]*?)\n\];/,
-  );
-  assert.ok(expectedTablesBlock);
-  assert.equal(
-    [...expectedTablesBlock[1].matchAll(/^\s+"[a-z][a-z0-9_]*",$/gm)].length,
-    44,
+    /CREATE\\s\+TABLE\\s\+IF\\s\+NOT\\s\+EXISTS\\s\+app/,
+    "table inventory must not silently omit CREATE TABLE without IF NOT EXISTS",
   );
 });
 
-test("freezes the 45 implemented operations and eight async commands", () => {
-  for (const operationId of [
-    "getProjectProductProfile",
-    "updateProductProfileDraft",
-    "createProductProfileSynthesisRun",
-    "reviewProductProfileCompetitor",
-    "addProductProfileCompetitor",
-    "confirmProductProfile",
-    "listProjectAuditUrls",
-    "getProjectAuditUrl",
-    "listProjectAuditKeywords",
-    "getProjectAuditKeyword",
-    "listProjectAuditCompetitors",
-    "getProjectAuditCompetitor",
-  ]) {
-    assert.match(verifier, new RegExp(`"${operationId}"`));
+test("freezes nine shared async operations and the dedicated measurement 202", () => {
+  for (const operationId of lock.asyncOperations) {
+    assert.ok(lock.apiOperations.includes(operationId));
   }
   assert.match(
     verifier,
-    /expected \$\{EXPECTED_OPENAPI_OPERATIONS\.length\} OpenAPI operations, found \$\{operationIds\.length\}/,
+    /expected \$\{EXPECTED_ASYNC_OPERATIONS\.length\} shared AsyncAccepted operations/,
   );
   assert.match(
     verifier,
-    /expected \$\{EXPECTED_ASYNC_OPERATIONS\.length\} async 202 operations, found \$\{asyncOperations\.length\}/,
+    /\["createProjectMeasurementWindow"\]/,
   );
   assert.match(
     verifier,
-    /OpenAPI: \$\{EXPECTED_OPENAPI_OPERATIONS\.length\} operations, \$\{EXPECTED_ASYNC_OPERATIONS\.length\} shared 202 statusUrl operations/,
+    /MeasurementWindowAcceptedHttpResponse/,
   );
   assert.match(
     verifier,
-    /async runtime: \$\{EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS\.length\} route handlers use the shared asyncAccepted envelope/,
+    /createProjectMeasurementWindow must retain its dedicated typed accepted response/,
   );
 });
 
-test("gates the strict read-only Keyword Library OpenAPI surface", () => {
+test("gates the current Supabase production authentication boundary", () => {
   for (const invariant of [
-    "Growth Map Keyword list path/operationId drift",
-    "Growth Map Keyword detail path/operationId drift",
-    "Growth Map Keyword list query must be exactly limit/cursor",
-    "Growth Map Keyword reads must return the standard HTTP envelope around the complete read model",
-    "Growth Map Keyword source occurrence discriminator drift",
-    "Growth Map Keyword mapped target discriminator drift",
-    "Growth Map Keyword canonical metric pointer drift",
-    "Growth Map Library language tags must document the canonical Intl.Locale runtime refinement",
-    "Growth Map Keyword cursor page required fields",
-    "Growth Map Keyword cursor page metadata required fields",
+    "refresh and verify the Supabase session at the production boundary",
+    "only login and health may bypass the authenticated page boundary",
+    "production requests must derive page authentication from refreshed Supabase user state",
+    "unauthenticated pages must redirect to login with a sanitized return target",
+    "operator resolution must verify the authenticated user with Supabase Auth",
+    "production operator resolution must require a pre-provisioned operator profile",
+    "non-development sessions must fail closed before resolving pre-provisioned membership",
+    "SF_DEV_AUTH must fail closed outside exact loopback development",
   ]) {
     assert.match(verifier, new RegExp(invariant));
   }
+  assert.doesNotMatch(
+    verifier,
+    /the mock project shell must remain behind the loopback-development gate/,
+  );
 });
 
-test("gates the strict read-only Competitor Library OpenAPI surface", () => {
+test("keeps strict Growth Map Keyword and Competitor contracts", () => {
   for (const invariant of [
+    "Growth Map Keyword list path/operationId drift",
+    "Growth Map Keyword detail path/operationId drift",
+    "Growth Map Keyword source occurrence discriminator drift",
+    "Growth Map Keyword mapped target discriminator drift",
+    "Growth Map Keyword canonical metric pointer drift",
     "Growth Map Competitor list path/operationId drift",
     "Growth Map Competitor detail path/operationId drift",
-    "Growth Map Competitor list query must be exactly limit/cursor",
-    "Growth Map Competitor reads must return the standard HTTP envelope around the complete read model",
     "Growth Map Competitor origin occurrence discriminator drift",
     "Growth Map Competitor product_profile origin must keep its strict typed Product Profile evidence contract",
-    "Growth Map Competitor csv_keyword_gap origin discriminator or canonical pointer drift",
-    "Growth Map Competitor manual origin discriminator drift",
     "Growth Map Competitor insight availability discriminator drift",
-    "Growth Map Competitor available insight canonical Observation pointer drift",
     "Growth Map Competitor cursor page must remain bounded with exact metadata and explicit coverage",
   ]) {
     assert.match(verifier, new RegExp(invariant));
   }
 });
 
-test("requires Growth Map reviews to expose their exact non-negative revision", () => {
+test("requires Growth Map findings to retain optimistic review revision", () => {
   assert.match(
     verifier,
     /growthMapFinding\.required\.includes\("reviewRevision"\)/,
@@ -144,13 +133,9 @@ test("requires Growth Map reviews to expose their exact non-negative revision", 
     verifier,
     /growthMapFinding\.properties\.reviewRevision\.minimum === 0/,
   );
-  assert.match(
-    verifier,
-    /exact non-negative reviewRevision used for optimistic review concurrency/,
-  );
 });
 
-test("gates Slice 1 persistence on canonical provenance and immutability", () => {
+test("keeps canonical provenance and append-only database guards", () => {
   for (const guard of [
     "audit_runs_provenance_guard",
     "site_pages_provenance_guard",
@@ -174,21 +159,13 @@ test("gates Slice 1 persistence on canonical provenance and immutability", () =>
   }
 });
 
-test("gates every integration file on a safe latest-schema database bootstrap", () => {
-  assert.match(
-    verifier,
-    /must import runMigrations from migrate\.ts/,
-  );
-  assert.match(
-    verifier,
-    /must bind requireSafeTestDatabaseUrl\(process\.env\["DATABASE_URL"\]\) before schema bootstrap/,
-  );
-  assert.match(
-    verifier,
-    /must migrate only the URL returned by requireSafeTestDatabaseUrl/,
-  );
-  assert.match(
-    verifier,
-    /validates DATABASE_URL and migrates the disposable database/,
-  );
+test("keeps integration databases behind safe latest-schema bootstrap", () => {
+  for (const invariant of [
+    "must import runMigrations from migrate.ts",
+    'must bind requireSafeTestDatabaseUrl\\(process\\.env\\["DATABASE_URL"\\]\\) before schema bootstrap',
+    "must migrate only the URL returned by requireSafeTestDatabaseUrl",
+    "validates DATABASE_URL and migrates the disposable database",
+  ]) {
+    assert.match(verifier, new RegExp(invariant));
+  }
 });

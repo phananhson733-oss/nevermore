@@ -266,9 +266,11 @@ test("proves the technical opportunity vertical without any lift claim", async (
 
   // ---- Results: prior-vs-new comparison, technical condition only -----------
   await navLink(page, 3).click();
-  const results = page.getByRole("region", { name: "Recheck results" });
+  const results = page.getByRole("region", {
+    name: "Technical recheck record",
+  });
   await expect(
-    results.getByRole("heading", { name: "Recheck results" }),
+    results.getByRole("heading", { name: "Technical recheck record" }),
   ).toBeVisible();
   await expect(results.getByText("Prior run observed")).toBeVisible();
   await expect(results.getByText("Recheck observed")).toBeVisible();
@@ -289,14 +291,18 @@ test("proves the technical opportunity vertical without any lift claim", async (
   // The recheck compared two immutable runs and preserved the prior run id.
   const resultsText = (await results.innerText()).toLowerCase();
   expect(resultsText).toContain("technical");
-  // It makes no traffic, rank, revenue, or AI-citation lift claim.
-  for (const forbidden of [
-    "traffic",
-    "revenue",
-    "ranking",
-    "citation",
-    "lift",
-  ]) {
+  // The customer-facing record names the metrics it deliberately excludes;
+  // mentioning that boundary is not itself a lift claim. Keep the explicit
+  // separation, then reject positive movement language and out-of-scope
+  // commercial/AI claims.
+  expect(resultsText).toContain("technical condition only");
+  expect(resultsText).toContain(
+    "traffic, rank, and conversion movement comes from the fixed-window observations above",
+  );
+  expect(resultsText).not.toMatch(
+    /(traffic|rank(?:ing)?|revenue|citation).{0,32}(increased|improved|grew|lifted)/u,
+  );
+  for (const forbidden of ["revenue", "citation", "lift"]) {
     expect(resultsText, `results must not claim ${forbidden}`).not.toContain(
       forbidden,
     );
