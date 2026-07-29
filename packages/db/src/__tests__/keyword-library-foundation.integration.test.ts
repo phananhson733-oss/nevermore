@@ -624,6 +624,177 @@ describeDb("keyword library database foundation", () => {
     );
   });
 
+  it("keeps Topic invalidation decisions monotonic when the governed Keyword instant is ahead of every host clock", async () => {
+    const fixture = await createSourceFixture(handle, {
+      projectName: "Future Keyword invalidation",
+    });
+    const scope = {
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+    };
+    const topic = await createConfirmedKeywordTopic(
+      handle,
+      fixture,
+      "customer-onboarding",
+    );
+    const keywordId = randomUUID();
+    const futureGovernedInstant = "2999-07-28T08:00:00.000Z";
+    await handle.pool.query(
+      `INSERT INTO app.keyword_entities (
+         id, workspace_id, project_id, display_keyword, normalized_keyword,
+         market, language_tag, query_kind, first_seen_at, last_seen_at,
+         created_at, updated_at
+       ) VALUES (
+         $1,$2,$3,'Future Topic Assignment','future topic assignment',
+         'US','en-US','search_query',$4,$4,$5,$5
+       )`,
+      [
+        keywordId,
+        fixture.workspaceId,
+        fixture.projectId,
+        CAPTURED_AT,
+        futureGovernedInstant,
+      ],
+    );
+
+    const reviewed = await new KeywordGovernanceRepository(
+      handle.db,
+    ).reviewKeyword(scope, keywordId, fixture.actorId, {
+      expectedGovernanceRevision: 0,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: topic.topicNodeId,
+      topicModelRevision: topic.topicModelRevision,
+      mappingDecision: "new_asset",
+      mappedSitePageId: null,
+      reason: "Govern the future-dated Keyword before a Topic split.",
+    });
+    expect(reviewed).toMatchObject({
+      replayed: false,
+      decision: { governanceRevision: 1 },
+      projection: { governanceRevision: 1 },
+    });
+
+    const topics = new TopicModelsRepository(handle.db);
+    const draft = await topics.beginDraftFromLatestConfirmed(
+      scope,
+      fixture.actorId,
+      {
+        expectedLatestConfirmedRevision: topic.topicModelRevision,
+        reason: "Split the future-dated governed Keyword Topic.",
+      },
+    );
+    const split = await topics.patchDraft(scope, fixture.actorId, {
+      topicModelRevision: draft.topicModelRevision,
+      expectedEditRevision: draft.editRevision,
+      reason: "Create two executable successor Topics.",
+      intents: [
+        {
+          kind: "split",
+          sourceTopicNodeId: topic.topicNodeId,
+          affectedKeywordReviewState: "unreviewed",
+          successors: [
+            {
+              parentTopicNodeId: null,
+              label: "Onboarding automation",
+              description: "Automation-led onboarding demand.",
+              intentEnvelope: ["commercial"],
+            },
+            {
+              parentTopicNodeId: null,
+              label: "Onboarding operations",
+              description: "Operational onboarding demand.",
+              intentEnvelope: ["informational"],
+            },
+          ],
+        },
+      ],
+    });
+    await expect(
+      topics.confirmDraft(scope, fixture.actorId, {
+        topicModelRevision: split.topicModelRevision,
+        expectedEditRevision: split.editRevision,
+        reason: "Confirm the split and invalidate the old assignment.",
+      }),
+    ).resolves.toMatchObject({
+      state: "confirmed",
+      topicModelRevision: split.topicModelRevision,
+    });
+
+    const decisions = await handle.pool.query<{
+      governance_revision: number;
+      decision_origin: string;
+      assignment_invalidated_by: string | null;
+      decision_decided_at: string;
+      advances: boolean | null;
+    }>(
+      `SELECT
+         governance_revision,
+         decision_origin,
+         assignment_invalidated_by,
+         decided_at::text AS decision_decided_at,
+         decided_at > lag(decided_at) OVER (
+           ORDER BY governance_revision
+         ) AS advances
+       FROM app.keyword_review_decisions
+       WHERE workspace_id = $1
+         AND project_id = $2
+         AND keyword_entity_id = $3
+       ORDER BY governance_revision`,
+      [fixture.workspaceId, fixture.projectId, keywordId],
+    );
+    expect(decisions.rows.map((row) => ({
+      governanceRevision: row.governance_revision,
+      decisionOrigin: row.decision_origin,
+      assignmentInvalidatedBy: row.assignment_invalidated_by,
+      advances: row.advances,
+    }))).toEqual([
+      {
+        governanceRevision: 0,
+        decisionOrigin: "system_suggestion",
+        assignmentInvalidatedBy: null,
+        advances: null,
+      },
+      {
+        governanceRevision: 1,
+        decisionOrigin: "user",
+        assignmentInvalidatedBy: null,
+        advances: true,
+      },
+      {
+        governanceRevision: 2,
+        decisionOrigin: "system_suggestion",
+        assignmentInvalidatedBy: "topic_split",
+        advances: true,
+      },
+    ]);
+
+    const entity = await handle.pool.query<{
+      mapping_revision: number;
+      mapping_review_state: string;
+      entity_updated_at: string;
+    }>(
+      `SELECT
+         mapping_revision,
+         mapping_review_state,
+         updated_at::text AS entity_updated_at
+       FROM app.keyword_entities
+       WHERE workspace_id = $1
+         AND project_id = $2
+         AND id = $3`,
+      [fixture.workspaceId, fixture.projectId, keywordId],
+    );
+    expect(entity.rows).toHaveLength(1);
+    expect(entity.rows[0]).toMatchObject({
+      mapping_revision: 2,
+      mapping_review_state: "unreviewed",
+    });
+    expect(entity.rows[0]?.entity_updated_at).toBe(
+      decisions.rows[2]?.decision_decided_at,
+    );
+  });
+
   it("keeps cluster outside stable identity and retains every source occurrence", async () => {
     const fixture = await createSourceFixture(handle);
     const scope = {

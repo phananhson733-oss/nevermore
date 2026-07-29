@@ -529,6 +529,10 @@ describe("TopicModelsRepository", () => {
 
   it("atomically invalidates current Keyword assignments when a retired draft is confirmed", async () => {
     const now = "2026-07-28T04:00:00.000Z";
+    const databaseInvalidationInstant =
+      "2026-07-28 04:00:00.000001+00";
+    const canonicalDatabaseInvalidationInstant =
+      "2026-07-28T04:00:00.000001Z";
     const retiredChild = {
       ...childRow,
       lifecycle_state: "superseded",
@@ -619,7 +623,10 @@ describe("TopicModelsRepository", () => {
       previousNodes,
       aliases,
       [],
-      [{ id: ids.keyword }],
+      [{
+        id: ids.keyword,
+        updated_at: databaseInvalidationInstant,
+      }],
       [],
       currentNodes,
       aliases,
@@ -656,30 +663,37 @@ describe("TopicModelsRepository", () => {
       ]),
     });
 
-    expect(
-      db
-        .all("set")
-        .map((call) => call.args[0])
-        .find(
-          (value) =>
-            (value as { mapping_review_state?: unknown })
-              .mapping_review_state === "unreviewed",
-        ),
-    ).toMatchObject({
+    const invalidationUpdate = db
+      .all("set")
+      .map((call) => call.args[0])
+      .find(
+        (value) =>
+          (value as { mapping_review_state?: unknown })
+            .mapping_review_state === "unreviewed",
+      ) as Record<string, unknown> | undefined;
+    expect(invalidationUpdate).toMatchObject({
       mapping_review_state: "unreviewed",
       mapping_revision: 8,
-      updated_at: now,
     });
-    expect(
-      db
-        .all("values")
-        .map((call) => call.args[0])
-        .find(
-          (value) =>
-            (value as { assignment_invalidated_by?: unknown })
-              .assignment_invalidated_by === "topic_retire",
-        ),
-    ).toMatchObject({
+    const invalidationInstant = new PgDialect().sqlToQuery(
+      invalidationUpdate!["updated_at"] as never,
+    );
+    expect(invalidationInstant.sql).toContain("greatest");
+    expect(invalidationInstant.sql).toContain("clock_timestamp()");
+    expect(invalidationInstant.sql).toContain(
+      "interval '1 microsecond'",
+    );
+    expect(invalidationInstant.params).toEqual([]);
+
+    const invalidationDecision = db
+      .all("values")
+      .map((call) => call.args[0])
+      .find(
+        (value) =>
+          (value as { assignment_invalidated_by?: unknown })
+            .assignment_invalidated_by === "topic_retire",
+      );
+    expect(invalidationDecision).toMatchObject({
       id: ids.invalidationDecision,
       keyword_entity_id: ids.keyword,
       governance_revision: 8,
@@ -689,6 +703,8 @@ describe("TopicModelsRepository", () => {
       assignment_invalidated_by: "topic_retire",
       decided_by: ids.actor,
       reason: "Confirm the reviewed Topic retirement.",
+      decided_at: canonicalDatabaseInvalidationInstant,
+      created_at: canonicalDatabaseInvalidationInstant,
       reviewed_projection: expect.objectContaining({
         assignmentInvalidatedBy: "topic_retire",
         mappingReviewState: "unreviewed",

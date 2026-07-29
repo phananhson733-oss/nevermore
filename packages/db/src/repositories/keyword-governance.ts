@@ -19,7 +19,6 @@ import type { DbTx } from "../client.ts";
 import {
   canonicalUtcTimestamptz,
   isTimestamptzInstant,
-  sameTimestamptzInstant,
 } from "../instant.ts";
 import {
   clientProjects,
@@ -134,6 +133,11 @@ export class KeywordGovernanceIntegrityError extends Error {
 
 export interface KeywordGovernanceClock {
   readonly newId: () => string;
+  /**
+   * Retained for constructor compatibility. Review instants are chosen by
+   * PostgreSQL so an application-host clock can never move governance
+   * authority backwards.
+   */
   readonly now: () => string;
 }
 
@@ -953,16 +957,11 @@ export class KeywordGovernanceRepository extends Repository {
     }
 
     const decisionId = this.clock.newId();
-    const clockInstant = this.clock.now();
-    if (
-      !UUID.test(decisionId) ||
-      !isTimestamptzInstant(clockInstant)
-    ) {
+    if (!UUID.test(decisionId)) {
       throw new KeywordGovernanceIntegrityError(
         "SERVER_FACT_INVALID",
       );
     }
-    const decidedAt = canonicalUtcTimestamptz(clockInstant);
     const governanceRevision = input.expectedGovernanceRevision + 1;
     const reviewedProjection: KeywordGovernanceReviewedProjection = {
       projectId: scope.projectId,
@@ -993,7 +992,10 @@ export class KeywordGovernanceRepository extends Repository {
         mapped_site_page_id: input.mappedSitePageId,
         mapping_review_state: "confirmed",
         mapping_revision: governanceRevision,
-        updated_at: decidedAt,
+        updated_at: sql`greatest(
+          clock_timestamp(),
+          ${keywordEntities.updated_at} + interval '1 microsecond'
+        )`,
       })
       .where(
         and(
@@ -1020,12 +1022,13 @@ export class KeywordGovernanceRepository extends Repository {
     if (
       !updated ||
       updated.mapping_revision !== governanceRevision ||
-      !sameTimestamptzInstant(updated.updated_at, decidedAt)
+      !isTimestamptzInstant(updated.updated_at)
     ) {
       throw new KeywordGovernanceIntegrityError(
         "CAS_UPDATE_FAILED",
       );
     }
+    const decidedAt = canonicalUtcTimestamptz(updated.updated_at);
 
     await exec.insert(keywordReviewDecisions).values({
       id: decisionId,

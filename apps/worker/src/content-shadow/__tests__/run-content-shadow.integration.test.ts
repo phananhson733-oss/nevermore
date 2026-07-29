@@ -1188,6 +1188,8 @@ describeDb("runContentShadow", () => {
   it("hands back the claimed draft artifact when queue recovery terminalizes the run", async () => {
     const fixture = await seedShadowChain(handle);
     const artifacts = new ExecutionArtifactsRepository(handle.db);
+    const recoveryNow = new Date("2026-07-28T21:00:00.000Z");
+    const staleStartedAt = new Date("2026-07-28T20:59:59.999Z");
     // The worker claimed the draft and then the process died: no queue job
     // survives, so the recovery sweep — not the runner — owns the compensation.
     const claimed = await artifacts.insert({
@@ -1202,13 +1204,17 @@ describeDb("runContentShadow", () => {
     });
     expect(claimed.status).toBe("generating");
     await handle.pool.query(
-      "UPDATE app.async_runs SET status = 'running', started_at = now(), attempt_count = 1 WHERE id = $1",
-      [fixture.asyncRunId],
+      "UPDATE app.async_runs SET status = 'running', started_at = $1, attempt_count = 1 WHERE id = $2",
+      [staleStartedAt, fixture.asyncRunId],
     );
 
     await reconcileActiveRuns(
       { ...ctx, boss: RECOVERY_BOSS as unknown as WorkerContext["boss"] },
-      { scope: fixture.scope, missingAfterMs: 0 },
+      {
+        scope: fixture.scope,
+        now: recoveryNow,
+        missingAfterMs: 0,
+      },
     );
 
     const run = await new AsyncRunsRepository(handle.db).findById(

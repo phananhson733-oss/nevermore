@@ -551,16 +551,22 @@ test("Studio generation errors expose stable code and request ID without raw pro
   await page.getByLabel("Generation mode").selectOption("structured_llm");
   await page.getByRole("button", { name: "Generate", exact: true }).click();
 
+  const generationProblem = canvas.getByLabel("Error details");
+  await expect(generationProblem).toHaveCount(1);
   await expect(
-    page.getByText("Something went wrong", { exact: true }),
+    canvas.getByText("Something went wrong", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Error code", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("DEPENDENCY_UNAVAILABLE", { exact: true }),
+    generationProblem.getByText("Error code", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Request ID", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("frontend-error-e2e", { exact: true }),
+    generationProblem.getByText("DEPENDENCY_UNAVAILABLE", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    generationProblem.getByText("Request ID", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    generationProblem.getByText("frontend-error-e2e", { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("main")).not.toContainText(
     "raw model-provider credential",
@@ -569,6 +575,7 @@ test("Studio generation errors expose stable code and request ID without raw pro
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect.poll(() => createAttempts).toBe(2);
   await expect.poll(() => api.artifactCreateRequests.length).toBe(1);
+  await expect(generationProblem).toHaveCount(0);
 });
 
 test("Studio adopts a cross-tab active generation from the refreshed artifact projection", async ({
@@ -952,6 +959,14 @@ test("zh-CN Studio keeps server validation detail out of localized feedback", as
   page,
 }) => {
   const rawMessage = "Server-only English artifact validation detail.";
+  await page.context().addCookies([
+    {
+      name: "sf_ui_locale",
+      value: "zh-CN",
+      domain: "localhost",
+      path: "/",
+    },
+  ]);
   await page.route(
     `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts/00000000-0000-4000-8000-000000000401`,
     async (route) => {
@@ -968,7 +983,7 @@ test("zh-CN Studio keeps server validation detail out of localized feedback", as
   );
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
-  await page.getByRole("button", { name: "简体中文" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await page.getByRole("button", { name: "打开", exact: true }).click();
   await page.getByLabel("内容").fill("更新后的执行物内容");
   await page.getByRole("button", { name: "保存版本" }).click();

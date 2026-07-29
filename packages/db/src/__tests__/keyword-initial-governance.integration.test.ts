@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDbHandle, type DbHandle } from "../client.ts";
+import { canonicalUtcTimestamptz } from "../instant.ts";
 import { listMigrationFiles } from "../migrate.ts";
 import {
   KeywordGovernanceIntegrityError,
@@ -146,6 +147,8 @@ describeDb("0032 initial Keyword Review authority", () => {
   const nonzeroKeywordId = randomUUID();
   const nondefaultKeywordId = randomUUID();
   const postMigrationKeywordId = randomUUID();
+  const futureKeywordId = randomUUID();
+  const futureGovernedInstant = "2999-07-28T08:00:00.000Z";
 
   beforeAll(async () => {
     await withMaintenanceClient(async (client) => {
@@ -385,7 +388,25 @@ describeDb("0032 initial Keyword Review authority", () => {
     ]);
   });
 
-  it("preserves one explicit governed instant and rejects review mutation without a monotonic instant", async () => {
+  it("uses one DB-authoritative instant for concurrent and successive reviews even when the prior instant is in the future", async () => {
+    await handle.pool.query(
+      `INSERT INTO app.keyword_entities (
+         id, workspace_id, project_id, display_keyword, normalized_keyword,
+         market, language_tag, query_kind, first_seen_at, last_seen_at,
+         created_at, updated_at
+       ) VALUES (
+         $1,$2,$3,'Future Governed Candidate','future governed candidate',
+         'US','en-US','search_query',
+         '2026-07-28T08:00:00.000Z','2026-07-28T08:00:00.000Z',
+         $4,$4
+       )`,
+      [
+        futureKeywordId,
+        workspaceId,
+        projectId,
+        futureGovernedInstant,
+      ],
+    );
     await expect(
       handle.pool.query(
         `UPDATE app.keyword_entities
@@ -393,63 +414,137 @@ describeDb("0032 initial Keyword Review authority", () => {
          WHERE workspace_id = $1
            AND project_id = $2
            AND id = $3`,
-        [workspaceId, projectId, postMigrationKeywordId],
+        [workspaceId, projectId, futureKeywordId],
       ),
     ).rejects.toMatchObject({ code: "23514" });
 
-    const decidedAt = "2030-07-28T08:00:01.000Z";
-    const reviewed = await new KeywordGovernanceRepository(handle.db, {
-      newId: randomUUID,
-      now: () => decidedAt,
-    }).reviewKeyword(
-      { workspaceId, projectId },
-      postMigrationKeywordId,
-      actorId,
-      {
-        expectedGovernanceRevision: 0,
-        status: "excluded",
-        intent: null,
-        buyerStage: null,
-        topicNodeId: null,
-        topicModelRevision: null,
-        mappingDecision: "unassigned",
-        mappedSitePageId: null,
-        reason: "Exclude the deterministic ingestion candidate.",
-      },
+    const scope = { workspaceId, projectId };
+    const initialReview = {
+      expectedGovernanceRevision: 0,
+      status: "excluded",
+      intent: null,
+      buyerStage: null,
+      topicNodeId: null,
+      topicModelRevision: null,
+      mappingDecision: "unassigned",
+      mappedSitePageId: null,
+      reason: "Exclude the deterministic ingestion candidate.",
+    } as const;
+    const concurrent = await Promise.all([
+      new KeywordGovernanceRepository(handle.db).reviewKeyword(
+        scope,
+        futureKeywordId,
+        actorId,
+        initialReview,
+      ),
+      new KeywordGovernanceRepository(handle.db).reviewKeyword(
+        scope,
+        futureKeywordId,
+        actorId,
+        initialReview,
+      ),
+    ]);
+    expect(concurrent.map((review) => review.replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(concurrent[0]?.decision.decidedAt).toBe(
+      concurrent[1]?.decision.decidedAt,
+    );
+    expect(concurrent[0]?.projection.updatedAt).toBe(
+      concurrent[0]?.decision.decidedAt,
     );
 
-    expect(reviewed).toMatchObject({
+    const successive = await new KeywordGovernanceRepository(
+      handle.db,
+    ).reviewKeyword(scope, futureKeywordId, actorId, {
+      ...initialReview,
+      expectedGovernanceRevision: 1,
+      status: "parked",
+      reason: "Park after the concurrent exclusion review.",
+    });
+    expect(successive).toMatchObject({
+      replayed: false,
       decision: {
-        governanceRevision: 1,
+        governanceRevision: 2,
         decisionOrigin: "user",
-        decidedAt,
       },
       projection: {
-        governanceRevision: 1,
-        updatedAt: decidedAt,
+        governanceRevision: 2,
       },
     });
-    const instants = await handle.pool.query<{
-      entity_updated_at: string;
+    expect(successive.projection.updatedAt).toBe(
+      successive.decision.decidedAt,
+    );
+
+    await expect(
+      new KeywordGovernanceRepository(handle.db).reviewKeyword(
+        scope,
+        futureKeywordId,
+        actorId,
+        initialReview,
+      ),
+    ).rejects.toMatchObject({
+      name: "KeywordGovernanceConflictError",
+      code: "REVISION_CONFLICT",
+      expectedRevision: 0,
+      currentRevision: 2,
+    });
+
+    const decisions = await handle.pool.query<{
+      governance_revision: number;
       decision_decided_at: string;
+      advances: boolean | null;
     }>(
       `SELECT
-         entity.updated_at::text AS entity_updated_at,
-         decision.decided_at::text AS decision_decided_at
-       FROM app.keyword_entities entity
-       JOIN app.keyword_review_decisions decision
-         ON decision.workspace_id = entity.workspace_id
-        AND decision.project_id = entity.project_id
-        AND decision.keyword_entity_id = entity.id
-        AND decision.governance_revision = entity.mapping_revision
-       WHERE entity.workspace_id = $1
-         AND entity.project_id = $2
-         AND entity.id = $3`,
-      [workspaceId, projectId, postMigrationKeywordId],
+         governance_revision,
+         decided_at::text AS decision_decided_at,
+         decided_at > lag(decided_at) OVER (
+           ORDER BY governance_revision
+         ) AS advances
+       FROM app.keyword_review_decisions
+       WHERE workspace_id = $1
+         AND project_id = $2
+         AND keyword_entity_id = $3
+       ORDER BY governance_revision`,
+      [workspaceId, projectId, futureKeywordId],
     );
-    expect(instants.rows).toHaveLength(1);
-    expect(instants.rows[0]?.entity_updated_at).toBe(
-      instants.rows[0]?.decision_decided_at,
+    expect(decisions.rows.map((row) => ({
+      governanceRevision: row.governance_revision,
+      advances: row.advances,
+    }))).toEqual([
+      { governanceRevision: 0, advances: null },
+      { governanceRevision: 1, advances: true },
+      { governanceRevision: 2, advances: true },
+    ]);
+
+    const entity = await handle.pool.query<{
+      mapping_revision: number;
+      entity_updated_at: string;
+    }>(
+      `SELECT
+         mapping_revision,
+         updated_at::text AS entity_updated_at
+       FROM app.keyword_entities
+       WHERE workspace_id = $1
+         AND project_id = $2
+         AND id = $3`,
+      [workspaceId, projectId, futureKeywordId],
+    );
+    expect(entity.rows).toHaveLength(1);
+    expect(entity.rows[0]?.mapping_revision).toBe(2);
+    expect(entity.rows[0]?.entity_updated_at).toBe(
+      decisions.rows[2]?.decision_decided_at,
+    );
+    expect(concurrent[0]?.decision.decidedAt).toBe(
+      canonicalUtcTimestamptz(
+        decisions.rows[1]!.decision_decided_at,
+      ),
+    );
+    expect(successive.decision.decidedAt).toBe(
+      canonicalUtcTimestamptz(
+        decisions.rows[2]!.decision_decided_at,
+      ),
     );
   });
 });

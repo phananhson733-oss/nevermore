@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 import { publicFixtureOrigin, seedProject } from "./fixtures.ts";
 
 function projectApiRequests(page: Page): string[] {
@@ -8,6 +8,66 @@ function projectApiRequests(page: Page): string[] {
     if (url.pathname.startsWith("/api/mvp/projects/")) urls.push(url.pathname);
   });
   return urls;
+}
+
+interface HeldProjectGrowthMapNavigations {
+  waitForRequest(): Promise<void>;
+  release(): Promise<void>;
+}
+
+async function holdProjectGrowthMapNavigations(
+  page: Page,
+  projectId: string,
+): Promise<HeldProjectGrowthMapNavigations> {
+  const pattern = new RegExp(`/p/${projectId}/growth-map(?:\\?|$)`);
+  let intercepted = 0;
+  let active = 0;
+  let releaseGate: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  const handler = async (route: Route): Promise<void> => {
+    const url = new URL(route.request().url());
+    if (!url.searchParams.has("_rsc")) {
+      await route.continue();
+      return;
+    }
+    intercepted += 1;
+    active += 1;
+    try {
+      await gate;
+      try {
+        await route.continue();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("Route is already handled")) throw error;
+      }
+    } finally {
+      active -= 1;
+    }
+  };
+  await page.route(pattern, handler);
+
+  return {
+    async waitForRequest(): Promise<void> {
+      await expect
+        .poll(() => intercepted, {
+          message:
+            "project switch did not overlap a held Growth Map RSC request",
+        })
+        .toBeGreaterThan(0);
+    },
+    async release(): Promise<void> {
+      releaseGate?.();
+      await expect
+        .poll(() => active, {
+          message:
+            "held project Growth Map RSC routes did not finish after release",
+        })
+        .toBe(0);
+      await page.unroute(pattern, handler);
+    },
+  };
 }
 
 test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-010)", async ({
@@ -102,21 +162,27 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   await expect(heroA).not.toContainText("Isolation Project B");
   await expect(heroB).not.toContainText("Isolation Project A");
 
-  // These two navigations were a Promise.all. Sequenced deliberately: probed
-  // in isolation, the /report compat redirect resolves cleanly (307 ->
-  // /results, goto settles), but racing it against the sources navigation in
-  // a second tab of the same dev server aborts one navigation
-  // deterministically (first-compile contention). Isolation is about state,
-  // not simultaneity, so the claim is unchanged; the goto still tolerates
-  // exactly the abort error with the URL assertion below as the arrival
-  // signal.
+  // These two navigations were a Promise.all. Sequence both navigation AND
+  // client-readiness deliberately: `goto()` settles after the Sources document
+  // load, while its project-scoped React Query read can still be in flight.
+  // Starting the Results navigation at that point makes the two projections
+  // compete even though the first page has not become observable yet. Establish
+  // Sources readiness before navigating the sibling tab, then assert it remains
+  // visible after Results arrives. This keeps the isolation claim cross-tab
+  // without coupling it to unrelated request timing.
+  const sourceGridA = pageA.locator("[data-source-grid]");
   await pageA.goto(`/p/${projectA.projectId}/sources`);
+  await expect(sourceGridA).toBeVisible();
+
+  // Probed in isolation, the /report compat redirect resolves cleanly (307 ->
+  // /results, goto settles), but an aborted compatibility navigation is still
+  // tolerated exactly when the canonical URL below proves arrival.
   await pageB.goto(`/p/${projectB.projectId}/report`).catch((error) => {
     if (!String(error).includes("ERR_ABORTED")) throw error;
   });
   await pageB.waitForURL(`**/p/${projectB.projectId}/results`);
   await Promise.all([
-    expect(pageA.locator("[data-source-grid]")).toBeVisible(),
+    expect(sourceGridA).toBeVisible(),
     expect(pageB.locator("[data-report-page]")).toBeVisible(),
   ]);
 
@@ -144,4 +210,66 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   expect(requestsB.every((path) => path.includes(projectB.projectId))).toBe(true);
 
   await Promise.all([pageA.close(), pageB.close()]);
+});
+
+test("switching projects cannot replay a pending Growth Map query into the next project", async ({
+  context,
+  page,
+  request,
+}) => {
+  const [projectA, projectB] = await Promise.all([
+    seedProject(request, {
+      clientName: "Pending Navigation Client",
+      projectName: "Pending Navigation A",
+      siteUrl: publicFixtureOrigin("pending-navigation-a"),
+    }),
+    seedProject(request, {
+      clientName: "Pending Navigation Client",
+      projectName: "Pending Navigation B",
+      siteUrl: publicFixtureOrigin("pending-navigation-b"),
+    }),
+  ]);
+  await context.addCookies([
+    { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
+  ]);
+
+  const projectAUrl = `/p/${projectA.projectId}/growth-map`;
+  const projectBUrl = `/p/${projectB.projectId}/growth-map`;
+  await page.goto(projectAUrl);
+  const growthMap = page.locator("[data-growth-map-page]");
+  await expect(growthMap).toBeVisible();
+  await growthMap.evaluate((element, projectId) => {
+    element.setAttribute("data-project-instance-probe", projectId);
+  }, projectA.projectId);
+  const held = await holdProjectGrowthMapNavigations(page, projectA.projectId);
+
+  try {
+    await page
+      .getByRole("navigation", { name: "Growth Map objects" })
+      .getByRole("button", { name: /^Keyword library/ })
+      .click({ noWaitAfter: true });
+    await held.waitForRequest();
+    await expect(growthMap).toHaveAttribute("data-navigation-pending", "");
+
+    await page
+      .getByRole("combobox", { name: "Switch project" })
+      .selectOption(projectB.projectId, { noWaitAfter: true });
+    await page.waitForURL(`**${projectBUrl}`);
+  } finally {
+    await held.release();
+  }
+
+  await expect(page.locator("[data-growth-map-page]")).not.toHaveAttribute(
+    "data-navigation-pending",
+    "",
+  );
+  await expect(page.locator("[data-growth-map-page]")).not.toHaveAttribute(
+    "data-project-instance-probe",
+    projectA.projectId,
+  );
+  await expect(
+    page.getByRole("combobox", { name: "Switch project" }),
+  ).toHaveValue(projectB.projectId);
+  await expect(page).toHaveURL(projectBUrl);
+  expect(new URL(page.url()).search).toBe("");
 });

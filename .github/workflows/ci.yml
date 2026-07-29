@@ -3,12 +3,24 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      update_linux_visual_baselines:
+        description: >-
+          Generate Ubuntu visual baseline candidates for review. Never deploy
+          from this manual capture run.
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Manual Linux candidate capture is a review-only side lane. It must never
+  # cancel (or be cancelled by) the push / pull_request validation for the same
+  # ref, while repeated runs of the same event may still supersede each other.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -223,7 +235,28 @@ jobs:
           pnpm db:migrate
 
       - name: Run database-backed responsive and a11y E2E
+        if: >-
+          ${{ github.event_name != 'workflow_dispatch' ||
+          !inputs.update_linux_visual_baselines }}
         run: pnpm test:e2e:real
+
+      - name: Generate Linux visual baseline candidates
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' &&
+          inputs.update_linux_visual_baselines }}
+        run: pnpm test:e2e:real --update-snapshots
+
+      - name: Preserve Linux visual baseline candidates
+        if: >-
+          ${{ always() && github.event_name == 'workflow_dispatch' &&
+          inputs.update_linux_visual_baselines }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-visual-baseline-candidates-${{ github.run_id }}
+          path: >-
+            e2e/real-vertical-chains.spec.ts-snapshots/*-chromium-linux.png
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Preserve failed real browser visual comparisons
         if: ${{ failure() }}

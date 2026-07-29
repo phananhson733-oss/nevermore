@@ -7682,6 +7682,31 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
     [router, startNavigationTransition],
   );
 
+  useEffect(() => {
+    if (isNavigationPending) return;
+
+    const retainedSearch = navigationJournal.current.requestedSearch;
+    if (retainedSearch === canonicalLocationSearch) return;
+
+    // Next can discard a child selection requested while an object-tab RSC
+    // navigation is still settling. The journal deliberately retains that
+    // later intent; once the router is idle, replay it so the canonical URL
+    // cannot remain behind an already-rendered optimistic row/detail.
+    const retainedHref =
+      retainedSearch === "" ? pathname : `${pathname}?${retainedSearch}`;
+    startNavigationTransition(() => {
+      setOptimisticLocationSearch(retainedSearch);
+      router.replace(retainedHref, { scroll: false });
+    });
+  }, [
+    canonicalLocationSearch,
+    isNavigationPending,
+    pathname,
+    router,
+    setOptimisticLocationSearch,
+    startNavigationTransition,
+  ]);
+
   const navigation = useMemo<GrowthMapNavigationController>(
     () => ({
       isPending: isNavigationPending,

@@ -12,9 +12,10 @@ let api: CriticalFlowApiState;
 
 /** This spec asserts BOTH locales. The default UI locale is zh-CN
  *  (`packages/i18n/src/config.ts:6`), so its English assertions would otherwise
- *  be reading a Chinese page. The base locale is selected explicitly here; the
- *  tests that assert Chinese chrome still click the in-app locale switch, so
- *  neither half rides on the default. */
+ *  be reading a Chinese page. The base locale is selected explicitly here, and
+ *  the Studio localization case overrides it before navigation so neither half
+ *  rides on the default. The locale switch interaction itself is covered by the
+ *  project-navigation case below. */
 test.beforeEach(async ({ page }) => {
   await page
     .context()
@@ -305,8 +306,21 @@ test("artifact edit surfaces a stale-revision conflict without overwriting", asy
 test("Studio chrome localizes to zh-CN without translating action content", async ({
   page,
 }) => {
+  // Select the locale before the request so the server-rendered first paint is
+  // already Chinese. Clicking the SSR locale switch immediately after `goto`
+  // can beat React hydration on a cold CI runner; that click has no handler and
+  // is silently lost. This case owns Studio's localized chrome/content claim,
+  // while the project-navigation case above owns the live switch interaction.
+  await page.context().addCookies([
+    {
+      name: "sf_ui_locale",
+      value: "zh-CN",
+      domain: "localhost",
+      path: "/",
+    },
+  ]);
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
-  await page.getByRole("button", { name: "简体中文" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
 
   const hero = page.locator("[data-studio-page-hero]");
   const queue = page.locator("[data-studio-queue]");

@@ -136,7 +136,8 @@ const scope = {
 };
 
 const now = "2026-07-28T09:30:00.000Z";
-const databaseNow = "2026-07-28 09:30:00+00";
+const databaseNow = "2026-07-28 09:30:00.000001+00";
+const canonicalDatabaseNow = "2026-07-28T09:30:00.000001Z";
 const clock = {
   newId: () => ids.newDecision,
   now: () => now,
@@ -265,7 +266,7 @@ describe("KeywordGovernanceRepository", () => {
       reason: review.reason,
       decisionOrigin: "user",
       decidedBy: ids.actor,
-      decidedAt: now,
+      decidedAt: canonicalDatabaseNow,
     });
     expect(result.projection).toEqual({
       currentDecisionId: ids.newDecision,
@@ -284,7 +285,7 @@ describe("KeywordGovernanceRepository", () => {
       mappingRevision: 4,
       executionState: "ready",
       reason: review.reason,
-      updatedAt: now,
+      updatedAt: canonicalDatabaseNow,
     });
     expect(result.reviewedProjection).toEqual({
       projectId: ids.project,
@@ -320,7 +321,8 @@ describe("KeywordGovernanceRepository", () => {
     expect(lockIndex).toBeGreaterThanOrEqual(0);
     expect(rowLockIndex).toBeGreaterThan(lockIndex);
     expect(db.last("for").args).toEqual(["update"]);
-    expect(db.last("set").args[0]).toEqual({
+    const updateSet = db.last("set").args[0] as Record<string, unknown>;
+    expect(updateSet).toMatchObject({
       status: "approved",
       intent: "commercial",
       buyer_stage: "consideration",
@@ -329,8 +331,15 @@ describe("KeywordGovernanceRepository", () => {
       mapped_site_page_id: ids.page,
       mapping_review_state: "confirmed",
       mapping_revision: 4,
-      updated_at: now,
     });
+    const updateInstant = sqlFor({
+      method: "updated_at",
+      args: [updateSet["updated_at"]],
+    });
+    expect(updateInstant.sql).toContain("greatest");
+    expect(updateInstant.sql).toContain("clock_timestamp()");
+    expect(updateInstant.sql).toContain("interval '1 microsecond'");
+    expect(updateInstant.params).toEqual([]);
     expect(db.last("values").args[0]).toEqual({
       id: ids.newDecision,
       workspace_id: ids.workspace,
@@ -350,7 +359,7 @@ describe("KeywordGovernanceRepository", () => {
       assignment_invalidated_by: null,
       decided_by: ids.actor,
       reason: review.reason,
-      decided_at: now,
+      decided_at: canonicalDatabaseNow,
       reviewed_projection: result.reviewedProjection,
     });
 

@@ -1389,7 +1389,6 @@ export class TopicModelsRepository extends Repository {
     currentNodes: readonly NodeRow[],
     previousNodes: readonly NodeRow[],
     reason: string,
-    now: string,
   ): Promise<void> {
     const successorRows = await this.loadSuccessors(
       exec,
@@ -1505,7 +1504,10 @@ export class TopicModelsRepository extends Repository {
         .set({
           mapping_review_state: "unreviewed",
           mapping_revision: governanceRevision,
-          updated_at: now,
+          updated_at: sql`greatest(
+            clock_timestamp(),
+            ${keywordEntities.updated_at} + interval '1 microsecond'
+          )`,
         })
         .where(
           and(
@@ -1517,12 +1519,22 @@ export class TopicModelsRepository extends Repository {
             ),
           ),
         )
-        .returning({ id: keywordEntities.id });
-      if (!updated[0]) {
+        .returning({
+          id: keywordEntities.id,
+          updated_at: keywordEntities.updated_at,
+        });
+      const invalidatedKeyword = updated[0];
+      if (
+        !invalidatedKeyword ||
+        !isTimestamptzInstant(invalidatedKeyword.updated_at)
+      ) {
         throw new TopicModelIntegrityError(
           "KEYWORD_INVALIDATION_CAS_FAILED",
         );
       }
+      const decidedAt = canonicalUtcTimestamptz(
+        invalidatedKeyword.updated_at,
+      );
       await exec.insert(keywordReviewDecisions).values({
         id: this.newId(),
         workspace_id: scope.workspaceId,
@@ -1542,9 +1554,9 @@ export class TopicModelsRepository extends Repository {
         assignment_invalidated_by: invalidatedBy,
         decided_by: actorId,
         reason,
-        decided_at: now,
+        decided_at: decidedAt,
         reviewed_projection: reviewedProjection,
-        created_at: now,
+        created_at: decidedAt,
       });
     }
   }
@@ -1629,7 +1641,6 @@ export class TopicModelsRepository extends Repository {
       nodes,
       previousNodes,
       input.reason,
-      facts.now,
     );
 
     const draftProjection = await this.projectModel(exec, scope, draft);
