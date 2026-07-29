@@ -62,17 +62,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
   useId,
   useMemo,
-  useOptimistic,
   useRef,
   useState,
-  useTransition,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -172,14 +170,6 @@ import {
   type KeywordGovernanceReviewDraft,
   type TopicMapTreeNode,
 } from "./_growth-map-view-model.ts";
-import {
-  createGrowthMapNavigationJournal,
-  observeGrowthMapCanonicalSearch,
-  recordGrowthMapNavigationHref,
-  requestGrowthMapNavigation,
-  settleGrowthMapNavigation,
-  type GrowthMapNavigationPatch,
-} from "./_growth-map-navigation.ts";
 import styles from "./growth-map.module.css";
 import { BacklinkGrowthPath } from "./_backlink-growth-path.tsx";
 
@@ -236,6 +226,8 @@ const KEYWORD_REVIEW_BUYER_STAGES = [
   "decision",
   "retention",
 ] as const;
+
+type GrowthMapNavigationPatch = Parameters<typeof growthMapLocationHref>[2];
 
 interface GrowthMapNavigationController {
   readonly isPending: boolean;
@@ -7622,98 +7614,42 @@ function CompetitorLibraryPane({
 export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("growthMap");
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const canonicalLocationSearch = searchParams.toString();
-  const [isNavigationPending, startNavigationTransition] = useTransition();
-  const navigationJournal = useRef(
-    createGrowthMapNavigationJournal(canonicalLocationSearch),
-  );
-  if (navigationJournal.current.canonicalSearch !== canonicalLocationSearch) {
-    navigationJournal.current = observeGrowthMapCanonicalSearch(
-      navigationJournal.current,
-      canonicalLocationSearch,
-    );
-  }
-  if (!isNavigationPending) {
-    navigationJournal.current = settleGrowthMapNavigation(
-      navigationJournal.current,
-      canonicalLocationSearch,
-    );
-  }
-  const [optimisticLocationSearch, setOptimisticLocationSearch] = useOptimistic(
-    canonicalLocationSearch,
-    (_currentSearch, requestedSearch: string) => requestedSearch,
-  );
-  const optimisticSearchParams = useMemo(
-    () => new URLSearchParams(optimisticLocationSearch),
-    [optimisticLocationSearch],
-  );
+  const locationSearch = searchParams.toString();
   const mode = normalizeGrowthMapObjectMode(
-    optimisticSearchParams.get("object"),
+    searchParams.get("object"),
   );
 
   const requestNavigation = useCallback(
     (patch: GrowthMapNavigationPatch): void => {
-      const request = requestGrowthMapNavigation(
-        navigationJournal.current,
+      // Every Growth Map interaction changes only same-page query state. Next
+      // patches the native History API so replaceState updates useSearchParams
+      // without an RSC round trip. Reading window.location here makes rapid
+      // clicks compose from the latest committed browser intent synchronously.
+      const href = growthMapLocationHref(
         pathname,
+        window.location.search.slice(1),
         patch,
       );
-      navigationJournal.current = request.journal;
-      startNavigationTransition(() => {
-        setOptimisticLocationSearch(request.search);
-        router.replace(request.href, { scroll: false });
-      });
+      window.history.replaceState(null, "", href);
     },
-    [pathname, router, setOptimisticLocationSearch, startNavigationTransition],
+    [pathname],
   );
 
   const replaceCanonicalHref = useCallback(
     (href: string): void => {
-      navigationJournal.current = recordGrowthMapNavigationHref(
-        navigationJournal.current,
-        href,
-      );
-      startNavigationTransition(() => {
-        router.replace(href, { scroll: false });
-      });
+      window.history.replaceState(null, "", href);
     },
-    [router, startNavigationTransition],
+    [],
   );
-
-  useEffect(() => {
-    if (isNavigationPending) return;
-
-    const retainedSearch = navigationJournal.current.requestedSearch;
-    if (retainedSearch === canonicalLocationSearch) return;
-
-    // Next can discard a child selection requested while an object-tab RSC
-    // navigation is still settling. The journal deliberately retains that
-    // later intent; once the router is idle, replay it so the canonical URL
-    // cannot remain behind an already-rendered optimistic row/detail.
-    const retainedHref =
-      retainedSearch === "" ? pathname : `${pathname}?${retainedSearch}`;
-    startNavigationTransition(() => {
-      setOptimisticLocationSearch(retainedSearch);
-      router.replace(retainedHref, { scroll: false });
-    });
-  }, [
-    canonicalLocationSearch,
-    isNavigationPending,
-    pathname,
-    router,
-    setOptimisticLocationSearch,
-    startNavigationTransition,
-  ]);
 
   const navigation = useMemo<GrowthMapNavigationController>(
     () => ({
-      isPending: isNavigationPending,
+      isPending: false,
       request: requestNavigation,
       replaceCanonicalHref,
     }),
-    [isNavigationPending, replaceCanonicalHref, requestNavigation],
+    [replaceCanonicalHref, requestNavigation],
   );
 
   const tabItems = useMemo(
@@ -7733,7 +7669,6 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
     <div
       className={styles.page}
       data-growth-map-page=""
-      data-navigation-pending={isNavigationPending ? "" : undefined}
     >
       <header className={styles.hero}>
         <div className={styles.heroText}>
@@ -7756,7 +7691,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
       <nav
         className={styles.objectTabs}
         aria-label={t("objectNavLabel")}
-        aria-busy={isNavigationPending}
+        aria-busy={false}
       >
         {tabItems.map(({ key, Icon }) => (
           <button
@@ -7779,19 +7714,19 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
       {mode === "pages" ? (
         <PortfolioPane
           projectId={projectId}
-          locationSearch={optimisticLocationSearch}
+          locationSearch={locationSearch}
           navigation={navigation}
         />
       ) : mode === "keywords" ? (
         <KeywordLibraryPane
           projectId={projectId}
-          locationSearch={optimisticLocationSearch}
+          locationSearch={locationSearch}
           navigation={navigation}
         />
       ) : mode === "competitors" ? (
         <CompetitorLibraryPane
           projectId={projectId}
-          locationSearch={optimisticLocationSearch}
+          locationSearch={locationSearch}
           navigation={navigation}
         />
       ) : (

@@ -84,19 +84,21 @@ Keyword governance 和 Worker recovery 的上下文相互污染。
 
 ## 3. 实际修改
 
-### 3.1 Growth Map：保留最后一次真实用户意图
+### 3.1 Growth Map：同步保留最后一次真实用户意图
 
 [Growth Map client](../../apps/web/src/app/p/[projectId]/growth-map/_growth-map.tsx)
-在 Next RSC transition 空闲后，检查 journal 中仍被保留的最后一次查询。
-如果 canonical URL 落后于已经渲染的 optimistic row/detail，则重放最后
-一次 intent，保持 URL、选中行、详情、指标和 Finding identity 一致。
+最初曾通过 Next RSC transition、optimistic row/detail 与 intent journal
+重放最后一次查询；该机制在快速点击时仍可能被较早的异步响应覆盖。此实现已于
+2026-07-29 退役。当前同页 Growth Map 查询状态使用 Next App Router 支持的
+native History API 同步写入 URL，使地址、选中行、详情、指标和 Finding
+identity 在同一次客户意图中更新。
 
-对应的 Real E2E 会真正 hold `_rsc` 请求，而不是只做无竞争的点击 smoke：
+对应的 Real E2E 断言整个同页交互不会发出 `_rsc` 请求，并覆盖：
 
 - Pages → Keywords → Competitors → Pages 快速往返；
 - URL A → B → A；
-- 释放旧响应后，地址、选中行、detail、metrics 和 Finding 均以最后
-  intent 为准。
+- Keyword、Competitor 与 URL 行选择均保持零 `_rsc`；
+- 地址、选中行、detail、metrics 和 Finding 均以最后一次 intent 为准。
 
 ### 3.2 Project isolation：保留 readiness，并新增跨项目 pending 边界证明
 
@@ -109,7 +111,9 @@ Sources 投影真实可见，再让项目 B 经过 `/report → /results`，最�
 
 1. 进入项目 A Growth Map；
 2. 在 A 的 DOM 根写入 instance probe；
-3. hold A 的真实 `_rsc` 响应并确认 `data-navigation-pending`；
+3. 历史实现曾 hold A 的真实 `_rsc` 响应并确认
+   `data-navigation-pending`；该异步同页导航已于 2026-07-29 退役，
+   当前 Growth Map 查询状态使用同步 History API；
 4. 通过真实项目切换器进入项目 B；
 5. 释放 A；
 6. 验证 B 的 DOM 已替换、switcher 为 B、URL 精确为 B 的 Growth Map，
@@ -138,6 +142,10 @@ layout 才保留状态。因此该 P2 被 Codex reviewer 和 ChatGPT Pro 双方�
 navigation case 覆盖。
 
 ### 3.4 CI：Linux visual candidate 是独立 review lane
+
+> **历史记录，已于 2026-07-29 退役。** 下述 authenticated App
+> candidate lane 已删除，不得恢复；客户视觉权威仅为仓库自有 GenGrowth
+> Artifact。
 
 [CI workflow](../../.github/workflows/ci.yml) 新增显式
 `workflow_dispatch.update_linux_visual_baselines`：

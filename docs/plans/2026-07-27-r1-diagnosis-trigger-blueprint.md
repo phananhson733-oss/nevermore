@@ -37,7 +37,8 @@ agent 的唯一权威;v2 修订吸收了 codex 第二意见的 6 项 P1 + 8 项 
   重新绑定既有 `--gm-*`。允许新 class 自身的 media query(820px/560px 断点适配)。
 - 允许**新增**:`growth-map/_run-diagnosis.tsx`、`growth-map/_run-diagnosis-view-model.ts`、
   `growth-map/_run-diagnosis-view-model.test.ts`(命名可微调,数量与职责不变)。
-- 其余 growth-map 文件(`_growth-map-view-model.ts`、`_growth-map-navigation.ts`、
+- 其余 growth-map 文件(`_growth-map-view-model.ts`、历史
+  `_growth-map-navigation.ts`〔已于 2026-07-29 由同步 History API 取代〕、
   `_evidence-refs-disclosure.tsx`、`page.tsx`…)一行不改。
 
 ### 1b. 整个任务的精确文件 allowlist

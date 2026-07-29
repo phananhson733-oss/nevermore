@@ -791,6 +791,21 @@ describe("Growth Map view model", () => {
     );
   });
 
+  it("keeps same-page Growth Map selection out of asynchronous RSC navigation", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('window.history.replaceState(null, "", href)');
+    expect(source).toContain("window.location.search.slice(1)");
+    expect(source).not.toContain("useRouter");
+    expect(source).not.toContain("useOptimistic");
+    expect(source).not.toContain("useTransition");
+    expect(source).not.toContain("data-navigation-pending");
+    expect(source).not.toContain("_growth-map-navigation");
+  });
+
   it("keeps Competitor detail constrained to the visible cursor page", () => {
     expect(
       resolveVisibleCompetitorSelection("competitor-b", [

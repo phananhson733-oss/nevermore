@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -93,6 +93,36 @@ const nextConfig = read("apps/web/next.config.ts");
 assert.match(nextConfig, /outputFileTracingRoot:\s*monorepoRoot/);
 
 const ciWorkflow = read(".github/workflows/ci.yml");
+const obsoleteVisualBaselineDirectory = join(
+  root,
+  "e2e",
+  "real-vertical-chains.spec.ts-snapshots",
+);
+const obsoleteVisualBaselines = existsSync(obsoleteVisualBaselineDirectory)
+  ? readdirSync(obsoleteVisualBaselineDirectory).filter((entry) =>
+      /^canonical-relayops-.*\.png$/.test(entry),
+    )
+  : [];
+assert.deepEqual(
+  obsoleteVisualBaselines,
+  [],
+  "the authenticated App must not regain a second canonical visual baseline; the repository-owned GenGrowth customer Artifact is the sole customer-visible authority",
+);
+assert.doesNotMatch(
+  read("e2e/real-vertical-chains.spec.ts"),
+  /canonical-relayops-|assertCanonicalVisualRegression|toHaveScreenshot/,
+  "real data E2E must verify behavior without defining an alternate customer visual authority",
+);
+assert.doesNotMatch(
+  read("playwright.config.ts"),
+  /canonical-relayops-|real-vertical-chains\.spec\.ts-snapshots/,
+  "the authenticated-App Playwright harness must not restore the retired real-vertical-chains visual baseline",
+);
+assert.doesNotMatch(
+  ciWorkflow,
+  /update_linux_visual_baselines|test:e2e:real\s+--update-snapshots|real-vertical-chains\.spec\.ts-snapshots/,
+  "CI must not regenerate the retired authenticated-App visual baseline",
+);
 // Anchored to end-of-line: `pnpm verify:spec:test` also matches an unanchored
 // `pnpm verify:spec`, so without the anchor the gate itself could be dropped
 // from CI while its test suite alone kept this assertion green.

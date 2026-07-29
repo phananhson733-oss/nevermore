@@ -43,21 +43,7 @@ export default defineConfig({
     ? [["./e2e/real-global-teardown.ts"], ["github"], ["list"]]
     : [["./e2e/real-global-teardown.ts"], ["list"]],
   timeout: 60_000,
-  expect: {
-    timeout: 10_000,
-    toHaveScreenshot: {
-      // Playwright documents that browser rendering and font metrics vary by
-      // host OS. Keep separately reviewed baselines per platform while a small
-      // pixel ratio absorbs rasterisation noise within the same platform.
-      pathTemplate:
-        "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}-{platform}{ext}",
-      threshold: 0.2,
-      maxDiffPixelRatio: 0.02,
-      animations: "disabled",
-      caret: "hide",
-      scale: "css",
-    },
-  },
+  expect: { timeout: 10_000 },
   use: {
     baseURL: BASE_URL,
     trace: "on-first-retry",

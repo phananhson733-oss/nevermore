@@ -16,7 +16,6 @@ import {
   type APIRequestContext,
   type Locator,
   type Page,
-  type Route,
 } from "@playwright/test";
 import { createDbHandle, type DbHandle } from "../packages/db/src/index.ts";
 import type { WorkerShutdownResult } from "../apps/worker/src/shutdown-coordinator.ts";
@@ -320,94 +319,37 @@ function objectModeButton(page: Page, label: string): Locator {
     .getByRole("button", { name: new RegExp(`^${label}`) });
 }
 
-interface HeldGrowthMapNavigations {
-  waitForRequest(): Promise<void>;
-  release(): Promise<void>;
-}
-
-async function holdGrowthMapNavigations(
-  page: Page,
-  projectId: string,
-): Promise<HeldGrowthMapNavigations> {
-  const pattern = new RegExp(`/p/${projectId}/growth-map(?:\\?|$)`);
-  let intercepted = 0;
-  let active = 0;
-  let releaseGate: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    releaseGate = resolve;
+function trackGrowthMapRscRequests(page: Page): () => number {
+  let count = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (
+      url.pathname.endsWith("/growth-map") &&
+      url.searchParams.has("_rsc")
+    ) {
+      count += 1;
+    }
   });
-  const handler = async (route: Route): Promise<void> => {
-    const url = new URL(route.request().url());
-    if (!url.searchParams.has("_rsc")) {
-      await route.continue();
-      return;
-    }
-    intercepted += 1;
-    active += 1;
-    try {
-      // Hold before forwarding so the final request still receives the exact
-      // server payload. Next may cancel superseded RSC requests while a newer
-      // intent is pending; those routes are already handled by cancellation.
-      await gate;
-      try {
-        await route.continue();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes("Route is already handled")) throw error;
-      }
-    } finally {
-      active -= 1;
-    }
-  };
-  await page.route(pattern, handler);
-
-  return {
-    async waitForRequest(): Promise<void> {
-      await expect
-        .poll(() => intercepted, {
-          message: "rapid navigation did not overlap a held canonical RSC request",
-        })
-        .toBeGreaterThan(0);
-    },
-    async release(): Promise<void> {
-      releaseGate?.();
-      await expect
-        .poll(() => active, {
-          message: "held Growth Map RSC routes did not finish after release",
-        })
-        .toBe(0);
-      await page.unroute(pattern, handler);
-    },
-  };
+  return () => count;
 }
 
-async function rapidObjectModeRoundTrip(
-  page: Page,
-  projectId: string,
-): Promise<void> {
+async function rapidObjectModeRoundTrip(page: Page): Promise<void> {
   const pages = objectModeButton(page, "Pages & opportunities");
   const keywords = objectModeButton(page, "Keyword library");
   const competitors = objectModeButton(page, "Competitor library");
-  const held = await holdGrowthMapNavigations(page, projectId);
 
-  try {
-    // Hold every real Next RSC response, then issue the whole Pages -> Keywords
-    // -> Competitors -> Pages round trip. These assertions therefore exercise
-    // the reported pending window rather than merely checking eventual state.
-    await keywords.click({ noWaitAfter: true });
-    await competitors.click({ noWaitAfter: true });
-    await pages.click({ noWaitAfter: true });
-    await held.waitForRequest();
-
-    await expect(pages).toHaveAttribute("aria-pressed", "true");
-    await expect(pages).toHaveAttribute("aria-current", "page");
-    await expect(keywords).toHaveAttribute("aria-pressed", "false");
-    await expect(keywords).not.toHaveAttribute("aria-current", "page");
-    await expect(competitors).toHaveAttribute("aria-pressed", "false");
-    await expect(competitors).not.toHaveAttribute("aria-current", "page");
-  } finally {
-    await held.release();
-  }
+  // Growth Map object state is same-page query state. Exercise three rapid
+  // clicks without waiting for a server navigation; the final browser URL and
+  // rendered pane must both retain the latest customer intent.
+  await keywords.click();
+  await competitors.click();
+  await pages.click();
+  await expect(pages).toHaveAttribute("aria-pressed", "true");
+  await expect(pages).toHaveAttribute("aria-current", "page");
+  await expect(keywords).toHaveAttribute("aria-pressed", "false");
+  await expect(keywords).not.toHaveAttribute("aria-current", "page");
+  await expect(competitors).toHaveAttribute("aria-pressed", "false");
+  await expect(competitors).not.toHaveAttribute("aria-current", "page");
   await expect
     .poll(() => new URL(page.url()).searchParams.get("object"), {
       message: "rapid object-tab round trip did not keep Pages as latest intent",
@@ -420,36 +362,26 @@ async function rapidObjectModeRoundTrip(
 
 async function rapidUrlSelectionRoundTrip(input: {
   readonly page: Page;
-  readonly projectId: string;
   readonly pageA: GrowthMapUrlDetail;
   readonly pageB: GrowthMapUrlDetail;
   readonly findingA: GrowthMapUrlFinding;
   readonly findingB: GrowthMapUrlFinding;
 }): Promise<void> {
-  const { page, projectId, pageA, pageB, findingA, findingB } = input;
+  const { page, pageA, pageB, findingA, findingB } = input;
   const rowA = exactPortfolioRow(page, pageA.normalizedUrl);
   const rowB = exactPortfolioRow(page, pageB.normalizedUrl);
-  const held = await holdGrowthMapNavigations(page, projectId);
 
-  try {
-    // Start from canonical A, then hold the real RSC responses while requesting
-    // B -> A. The final A row and detail must already be exact in the pending
-    // window, before either navigation response can rewrite the client state.
-    await rowB.click({ noWaitAfter: true });
-    await rowA.click({ noWaitAfter: true });
-    await held.waitForRequest();
-    await expect(rowA).toHaveAttribute("aria-pressed", "true");
-    await expect(rowB).toHaveAttribute("aria-pressed", "false");
-    const detail = page.locator('aside[aria-label="Selected URL detail"]');
-    await expect(
-      detail.getByTitle(pageA.sitePageId, { exact: true }),
-    ).toBeVisible();
-    await expect(
-      detail.getByTitle(findingB.findingId, { exact: true }),
-    ).toHaveCount(0);
-  } finally {
-    await held.release();
-  }
+  await rowB.click();
+  await rowA.click();
+  await expect(rowA).toHaveAttribute("aria-pressed", "true");
+  await expect(rowB).toHaveAttribute("aria-pressed", "false");
+  const detail = page.locator('aside[aria-label="Selected URL detail"]');
+  await expect(
+    detail.getByTitle(pageA.sitePageId, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    detail.getByTitle(findingB.findingId, { exact: true }),
+  ).toHaveCount(0);
 
   await assertExactSelection({
     page,
@@ -539,6 +471,11 @@ async function assertKeywordLibraryTraceability(input: {
   const row = list
     .getByText(item.displayKeyword, { exact: true })
     .locator("xpath=ancestor::button[1]");
+  // The first visible Keyword is intentionally rendered as an implicit
+  // selection when the URL has no selectedKeywordId. This assertion makes the
+  // acceptance test exercise a real row change instead of mistaking that
+  // fallback presentation for a successful click-driven navigation.
+  await expect(row).toHaveAttribute("aria-pressed", "false");
   await row.click();
   await expect(row).toHaveAttribute("aria-pressed", "true");
   await expect
@@ -956,7 +893,9 @@ test.describe.serial("real Growth Map selected-page identity", () => {
     if (!csvSnapshot) {
       throw new Error("real Growth Map fixture lost its CSV Snapshot identity");
     }
-    const keyword = keywordLibrary.data.find((item) =>
+    // Skip the implicit first-row fallback so the browser must persist an
+    // explicit, different Keyword identity into the address and detail panel.
+    const keyword = keywordLibrary.data.slice(1).find((item) =>
       item.sourceOccurrences.some(
         (occurrence) =>
           occurrence.sourceKind === "csv_import" &&
@@ -1005,6 +944,7 @@ test.describe.serial("real Growth Map selected-page identity", () => {
         name: "Find the next growth opportunity, page by real page.",
       }),
     ).toBeVisible();
+    const growthMapRscRequestCount = trackGrowthMapRscRequests(page);
     await switchObjectMode(page, "Keyword library", "keywords");
     await assertKeywordLibraryTraceability({
       page,
@@ -1012,6 +952,10 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       expectedCount: keywordLibrary.data.length,
       csvSnapshotId: csvSnapshot.id,
     });
+    expect(
+      growthMapRscRequestCount(),
+      "Keyword row selection must remain client-side query state",
+    ).toBe(0);
     await switchObjectMode(page, "Competitor library", "competitors");
     await assertCompetitorLibraryTraceability({
       page,
@@ -1019,11 +963,15 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       expectedCount: competitorLibrary.data.length,
       csvSnapshotId: csvSnapshot.id,
     });
+    expect(
+      growthMapRscRequestCount(),
+      "Competitor row selection must remain client-side query state",
+    ).toBe(0);
     await switchObjectMode(page, "Pages & opportunities", "pages");
     await expect(
       page.getByRole("list", { name: "URLs and opportunities" }),
     ).toBeVisible();
-    await rapidObjectModeRoundTrip(page, projectId);
+    await rapidObjectModeRoundTrip(page);
     await switchObjectMode(page, "Competitor library", "competitors");
     await expect(
       page.getByRole("list", { name: "Competitor list" }),
@@ -1044,14 +992,21 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       expectedFinding: findingA,
       otherFinding: findingB,
     });
+    expect(
+      growthMapRscRequestCount(),
+      "URL row selection must remain client-side query state",
+    ).toBe(0);
     await rapidUrlSelectionRoundTrip({
       page,
-      projectId,
       pageA: detailA,
       pageB: detailB,
       findingA,
       findingB,
     });
+    expect(
+      growthMapRscRequestCount(),
+      "rapid URL row selection must not reintroduce an RSC race",
+    ).toBe(0);
     await assertExactSelection({
       page,
       expected: detailB,

@@ -47,7 +47,8 @@ packages/i18n/src/messages/en.json
 packages/i18n/src/messages/zh-CN.json
 e2e/mock-api.ts
 e2e/action-override.mock.spec.ts                                         新增
-e2e/real-vertical-chains.spec.ts-snapshots/canonical-relayops-studio-*.png(如需重采)
+# 已于 2026-07-29 退役：不得重采 authenticated App 快照；
+# 客户视觉权威仅为 docs/artifact-src/ 及其确定性生成物。
 ```
 
 overview / growth-map / sources 一行不碰;服务端零改动;R1 已落地的新文件不碰。

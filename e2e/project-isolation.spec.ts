@@ -1,5 +1,7 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { publicFixtureOrigin, seedProject } from "./fixtures.ts";
+
+const COLD_PROJECT_PROJECTION_TIMEOUT_MS = 20_000;
 
 function projectApiRequests(page: Page): string[] {
   const urls: string[] = [];
@@ -8,66 +10,6 @@ function projectApiRequests(page: Page): string[] {
     if (url.pathname.startsWith("/api/mvp/projects/")) urls.push(url.pathname);
   });
   return urls;
-}
-
-interface HeldProjectGrowthMapNavigations {
-  waitForRequest(): Promise<void>;
-  release(): Promise<void>;
-}
-
-async function holdProjectGrowthMapNavigations(
-  page: Page,
-  projectId: string,
-): Promise<HeldProjectGrowthMapNavigations> {
-  const pattern = new RegExp(`/p/${projectId}/growth-map(?:\\?|$)`);
-  let intercepted = 0;
-  let active = 0;
-  let releaseGate: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    releaseGate = resolve;
-  });
-  const handler = async (route: Route): Promise<void> => {
-    const url = new URL(route.request().url());
-    if (!url.searchParams.has("_rsc")) {
-      await route.continue();
-      return;
-    }
-    intercepted += 1;
-    active += 1;
-    try {
-      await gate;
-      try {
-        await route.continue();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes("Route is already handled")) throw error;
-      }
-    } finally {
-      active -= 1;
-    }
-  };
-  await page.route(pattern, handler);
-
-  return {
-    async waitForRequest(): Promise<void> {
-      await expect
-        .poll(() => intercepted, {
-          message:
-            "project switch did not overlap a held Growth Map RSC request",
-        })
-        .toBeGreaterThan(0);
-    },
-    async release(): Promise<void> {
-      releaseGate?.();
-      await expect
-        .poll(() => active, {
-          message:
-            "held project Growth Map RSC routes did not finish after release",
-        })
-        .toBe(0);
-      await page.unroute(pattern, handler);
-    },
-  };
 }
 
 test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-010)", async ({
@@ -172,7 +114,9 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   // without coupling it to unrelated request timing.
   const sourceGridA = pageA.locator("[data-source-grid]");
   await pageA.goto(`/p/${projectA.projectId}/sources`);
-  await expect(sourceGridA).toBeVisible();
+  await expect(sourceGridA).toBeVisible({
+    timeout: COLD_PROJECT_PROJECTION_TIMEOUT_MS,
+  });
 
   // Probed in isolation, the /report compat redirect resolves cleanly (307 ->
   // /results, goto settles), but an aborted compatibility navigation is still
@@ -182,8 +126,12 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   });
   await pageB.waitForURL(`**/p/${projectB.projectId}/results`);
   await Promise.all([
-    expect(sourceGridA).toBeVisible(),
-    expect(pageB.locator("[data-report-page]")).toBeVisible(),
+    expect(sourceGridA).toBeVisible({
+      timeout: COLD_PROJECT_PROJECTION_TIMEOUT_MS,
+    }),
+    expect(pageB.locator("[data-report-page]")).toBeVisible({
+      timeout: COLD_PROJECT_PROJECTION_TIMEOUT_MS,
+    }),
   ]);
 
   expect(pageA.url()).toContain(`/p/${projectA.projectId}/sources`);
@@ -212,7 +160,7 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   await Promise.all([pageA.close(), pageB.close()]);
 });
 
-test("switching projects cannot replay a pending Growth Map query into the next project", async ({
+test("switching projects cannot carry Growth Map query state into the next project", async ({
   context,
   page,
   request,
@@ -241,28 +189,31 @@ test("switching projects cannot replay a pending Growth Map query into the next 
   await growthMap.evaluate((element, projectId) => {
     element.setAttribute("data-project-instance-probe", projectId);
   }, projectA.projectId);
-  const held = await holdProjectGrowthMapNavigations(page, projectA.projectId);
+  let growthMapRscRequests = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (
+      url.pathname === projectAUrl &&
+      url.searchParams.has("_rsc")
+    ) {
+      growthMapRscRequests += 1;
+    }
+  });
 
-  try {
-    await page
-      .getByRole("navigation", { name: "Growth Map objects" })
-      .getByRole("button", { name: /^Keyword library/ })
-      .click({ noWaitAfter: true });
-    await held.waitForRequest();
-    await expect(growthMap).toHaveAttribute("data-navigation-pending", "");
+  await page
+    .getByRole("navigation", { name: "Growth Map objects" })
+    .getByRole("button", { name: /^Keyword library/ })
+    .click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("object"))
+    .toBe("keywords");
+  expect(growthMapRscRequests).toBe(0);
 
-    await page
-      .getByRole("combobox", { name: "Switch project" })
-      .selectOption(projectB.projectId, { noWaitAfter: true });
-    await page.waitForURL(`**${projectBUrl}`);
-  } finally {
-    await held.release();
-  }
+  await page
+    .getByRole("combobox", { name: "Switch project" })
+    .selectOption(projectB.projectId);
+  await page.waitForURL(`**${projectBUrl}`);
 
-  await expect(page.locator("[data-growth-map-page]")).not.toHaveAttribute(
-    "data-navigation-pending",
-    "",
-  );
   await expect(page.locator("[data-growth-map-page]")).not.toHaveAttribute(
     "data-project-instance-probe",
     projectA.projectId,

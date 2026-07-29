@@ -3473,6 +3473,11 @@ one `role="status"` — the run-pair mismatch notice. The stable-state signal
 therefore rejects not only loading states but the incoherent-read state, which
 must never become a baseline.
 
+> Historical evidence only: these authenticated-App baselines were retired on
+> 2026-07-29 and must not be regenerated or treated as customer visual
+> authority. The repository-owned GenGrowth Artifact is the sole visual
+> authority.
+
 **The baselines were reminted on both platforms** — 18 files, 9 per platform
 (`canonical-relayops-{overview,sources,studio}-{wide,desktop,mobile}`), minted
 with `--update-snapshots=missing` on a fresh disposable database after

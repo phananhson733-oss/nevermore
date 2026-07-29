@@ -21,7 +21,9 @@ Owner 裁决(任务 #12):stop gate §14.8 R3 按「恢复入口」处理。本�
   运行中再点会**卸载正在轮询的 ExportStatus 且丢失 exportId**(v1「原样迁移」已废,见 D5)。
 - mock 三条路由已存在(`mock-api.ts` report ~:595 / exports ~:613 / export-bundle
   ~:630;export detail 首次 GET 即 completed —— D8 要扩)。
-- 视觉基线实际是 **3 张 darwin + 3 张 linux** 的 `canonical-relayops-report-*`
+- 历史视觉基线曾是 **3 张 darwin + 3 张 linux** 的
+  `canonical-relayops-report-*`；该 authenticated App 基线已于
+  2026-07-29 退役，禁止重采或恢复，客户视觉权威仅为 GenGrowth Artifact。
   (wide/desktop/mobile),不是 6+6。`_results.tsx` 的 prior/currentObservedAt 直接渲染
   在 `<dd>`,现有 mask(`<time>` 与 `report-dynamic-value`)盖不住 → 必须加 mask 锚点。
 - N-1:results/report/hooks/export-service 全在冻结面外;`globals.css` 的 shell print
@@ -49,7 +51,7 @@ e2e/frontend-error-states.mock.spec.ts                                   复活 
 e2e/a11y.spec.ts                                                         D3/D9 点名适配
 e2e/project-isolation.spec.ts                                            仅断言加强时
 e2e/real-vertical-chains.spec.ts                                         screen 名 + mask
-e2e/real-vertical-chains.spec.ts-snapshots/canonical-relayops-{report,results}-*.png
+# 已退役：不得恢复 authenticated App visual snapshots。
 ```
 
 overview / growth-map / sources / globals.css / shell 组件一行不碰。`report/page.tsx`
