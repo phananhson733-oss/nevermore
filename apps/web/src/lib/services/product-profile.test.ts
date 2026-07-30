@@ -223,6 +223,7 @@ describe("getProductProfileWorkspace", () => {
       currentProfile: null,
       confirmedProfile: null,
       activeSynthesisRun: null,
+      activeCrawlRun: null,
     });
   });
 
@@ -237,6 +238,10 @@ describe("getProductProfileWorkspace", () => {
     expect(mocks.activeFind).toHaveBeenCalledWith(
       { workspaceId: ids.workspace, projectId: ids.project },
       "product-profile:synthesis",
+    );
+    expect(mocks.activeFind).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      "collect:crawl:site_graph",
     );
     expect(result.currentProfile).toMatchObject({
       id: ids.current,
@@ -255,6 +260,28 @@ describe("getProductProfileWorkspace", () => {
     await expect(
       service.getProductProfileWorkspace(scope, ids.project),
     ).resolves.toMatchObject({ activeSynthesisRun: null });
+  });
+
+  it("returns the canonical active Crawl so onboarding can recover after refresh", async () => {
+    mocks.projectFind.mockResolvedValue(project());
+    mocks.profileFind.mockResolvedValue(row(draft()));
+    mocks.activeFind.mockImplementation(async (_scope, activeKey) =>
+      activeKey === "collect:crawl:site_graph"
+        ? activeRun("collection", "running")
+        : null,
+    );
+
+    await expect(
+      service.getProductProfileWorkspace(scope, ids.project),
+    ).resolves.toMatchObject({
+      activeSynthesisRun: null,
+      activeCrawlRun: {
+        id: ids.run,
+        kind: "collection",
+        status: "running",
+        resultRef: null,
+      },
+    });
   });
 
   it("normalizes PostgreSQL timestamptz text before returning a profile DTO", async () => {
@@ -317,12 +344,42 @@ describe("getProductProfileWorkspace", () => {
       currentProfile: null,
       confirmedProfile: null,
       activeSynthesisRun: null,
+      activeCrawlRun: null,
     });
     expect(mocks.profileFind).not.toHaveBeenCalled();
   });
 });
 
 describe("updateProductProfileDraft", () => {
+  it("records customer model and growth objective edits with server-owned userEdit provenance", () => {
+    const updated = service.applyProductProfileEditablePatch(draft(), {
+      customerModel: "b2b",
+      growthObjectives: [
+        "increase_signups",
+        "generate_qualified_leads",
+      ],
+    });
+
+    expect(updated).toMatchObject({
+      customerModel: "b2b",
+      growthObjectives: [
+        "increase_signups",
+        "generate_qualified_leads",
+      ],
+    });
+    for (const path of ["/customerModel", "/growthObjectives"]) {
+      expect(
+        updated.fieldProvenance.find((entry) => entry.path === path),
+      ).toMatchObject({
+        derivation: "declared",
+        confidence: "high",
+        evidenceRefs: [{ kind: "userEdit" }],
+        limitation: expect.stringContaining("not independently observed"),
+        observedAt: null,
+      });
+    }
+  });
+
   it("rewrites patched provenance and missing/conflict markers without inventing evidence", async () => {
     const customerEdited = service.applyProductProfileEditablePatch(draft(), {
       productName: "Observed name",

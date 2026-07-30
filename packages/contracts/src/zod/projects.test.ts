@@ -66,6 +66,50 @@ describe("product-profile create request", () => {
     });
   });
 
+  it("accepts declared product identity, market, customer model, and bounded growth objectives", () => {
+    expect(
+      CreateProjectRequest.parse({
+        ...productProfileBody("https://example.com/products/growth"),
+        productName: "  RelayOps  ",
+        customerModel: "b2b",
+        primaryMarket: "US",
+        growthObjectives: [
+          "increase_signups",
+          "generate_qualified_leads",
+          "increase_ai_visibility",
+        ],
+      }),
+    ).toEqual({
+      mode: "product_profile",
+      productUrl: "https://example.com/products/growth",
+      productName: "RelayOps",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: [
+        "increase_signups",
+        "generate_qualified_leads",
+        "increase_ai_visibility",
+      ],
+    });
+  });
+
+  it("rejects invalid or duplicate declared onboarding choices", () => {
+    const valid = productProfileBody("https://example.com/product");
+    for (const request of [
+      { ...valid, productName: "   " },
+      { ...valid, customerModel: "enterprise" },
+      { ...valid, primaryMarket: "usa" },
+      { ...valid, growthObjectives: [] },
+      {
+        ...valid,
+        growthObjectives: ["increase_signups", "increase_signups"],
+      },
+      { ...valid, growthObjectives: ["invented_objective"] },
+    ]) {
+      expect(CreateProjectRequest.safeParse(request).success).toBe(false);
+    }
+  });
+
   it.each([
     "ftp://example.com/product",
     "https://user:password@example.com/product",

@@ -78,6 +78,18 @@ function requestHash(
       mode: body.mode,
       productUrl: body.productUrl,
       businessHint: body.businessHint ?? null,
+      ...(body.productName === undefined
+        ? {}
+        : { productName: body.productName }),
+      ...(body.customerModel === undefined
+        ? {}
+        : { customerModel: body.customerModel }),
+      ...(body.primaryMarket === undefined
+        ? {}
+        : { primaryMarket: body.primaryMarket }),
+      ...(body.growthObjectives === undefined
+        ? {}
+        : { growthObjectives: [...body.growthObjectives] }),
     });
   }
   return contentHash({
@@ -202,6 +214,13 @@ describe("createProject", () => {
       productUrl:
         "https://Example.com:443/products/growth/?utm_source=demo&plan=pro",
       businessHint: "Hybrid B2B and B2C growth workspace",
+      productName: "RelayOps",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: [
+        "increase_signups",
+        "generate_qualified_leads",
+      ],
     };
     const guard = vi.fn(async (url: string) => ({
       ...safeVerdict,
@@ -221,8 +240,8 @@ describe("createProject", () => {
     );
     expect(ProjectsRepository.prototype.insert).toHaveBeenCalledWith({
       workspaceId: scope.workspaceId,
-      clientName: "example.com",
-      projectName: "example.com",
+      clientName: "RelayOps",
+      projectName: "RelayOps",
       defaultDeliveryLocale: "en",
       createdBy: actorId,
     });
@@ -230,7 +249,7 @@ describe("createProject", () => {
       expect.objectContaining({
         origin: "https://example.com",
         host: "example.com",
-        marketCodes: [],
+        marketCodes: ["US"],
         languageCodes: [],
       }),
     );
@@ -248,11 +267,46 @@ describe("createProject", () => {
           sourcePageUrl: "https://example.com/products/growth/?plan=pro",
           sourceSnapshotId: null,
           analysisInvocationId: null,
-          productName: null,
-          targetMarkets: [],
+          productName: "RelayOps",
+          customerModel: "b2b",
+          growthObjectives: [
+            "increase_signups",
+            "generate_qualified_leads",
+          ],
+          targetMarkets: [{ marketCode: "US", priority: "primary" }],
           targetAudiences: [],
           competitorCandidates: [],
           businessHint: "Hybrid B2B and B2C growth workspace",
+          fieldProvenance: expect.arrayContaining([
+            expect.objectContaining({
+              path: "/productName",
+              derivation: "declared",
+              evidenceRefs: [
+                expect.objectContaining({ kind: "userEdit" }),
+              ],
+            }),
+            expect.objectContaining({
+              path: "/customerModel",
+              derivation: "declared",
+              evidenceRefs: [
+                expect.objectContaining({ kind: "userEdit" }),
+              ],
+            }),
+            expect.objectContaining({
+              path: "/targetMarkets",
+              derivation: "declared",
+              evidenceRefs: [
+                expect.objectContaining({ kind: "userEdit" }),
+              ],
+            }),
+            expect.objectContaining({
+              path: "/growthObjectives",
+              derivation: "declared",
+              evidenceRefs: [
+                expect.objectContaining({ kind: "userEdit" }),
+              ],
+            }),
+          ]),
         }),
       }),
     );
@@ -264,6 +318,62 @@ describe("createProject", () => {
     expect(result.project.contextStatus).toBe("draft");
     expect(result.project.confirmedIcpProfileVersion).toBeNull();
     expect(result.location).toBe(`/p/${projectRow.id}/context`);
+    expect(IdempotencyRepository.prototype.begin).toHaveBeenCalledWith(
+      expect.objectContaining({ requestHash: requestHash(body) }),
+    );
+  });
+
+  it("treats each declared onboarding field as part of idempotent command identity", async () => {
+    const original: CreateProjectRequest = {
+      mode: "product_profile",
+      productUrl: "https://example.com/product",
+      productName: "RelayOps",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: ["increase_signups"],
+    };
+    const changed: CreateProjectRequest = {
+      ...original,
+      growthObjectives: ["increase_revenue"],
+    };
+    const guard = vi.fn(async () => safeVerdict);
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValueOnce(
+      completedIdempotency(original),
+    );
+
+    await expect(
+      createProject(scope, actorId, idempotencyKey, changed, guard),
+    ).rejects.toMatchObject({
+      code: "IDEMPOTENCY_KEY_REUSED",
+      status: 409,
+    });
+    expect(guard).not.toHaveBeenCalled();
+  });
+
+  it("preserves the historical URL-first request hash when new declarations are omitted", async () => {
+    const historicalBody: CreateProjectRequest = {
+      mode: "product_profile",
+      productUrl: "https://example.com/product",
+    };
+    const guard = vi.fn(async () => safeVerdict);
+
+    await createProject(
+      scope,
+      actorId,
+      idempotencyKey,
+      historicalBody,
+      guard,
+    );
+
+    expect(IdempotencyRepository.prototype.begin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestHash: contentHash({
+          mode: "product_profile",
+          productUrl: "https://example.com/product",
+          businessHint: null,
+        }),
+      }),
+    );
   });
 
   it("replays a completed idempotent create before any DNS or reachability checks", async () => {

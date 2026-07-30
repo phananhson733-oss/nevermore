@@ -45,6 +45,7 @@ import { toAsyncRunDto, type AsyncRunDto } from "./runs";
 /** One queued/running Product Profile synthesis per project. */
 export const PRODUCT_PROFILE_SYNTHESIS_ACTIVE_KEY =
   "product-profile:synthesis" as const;
+const PRODUCT_PROFILE_CRAWL_ACTIVE_KEY = "collect:crawl:site_graph" as const;
 
 const PROFILE_UNIQUE_CONSTRAINTS = [
   "icp_profiles_project_id_version_key",
@@ -78,11 +79,18 @@ export type ActiveProductProfileSynthesisRun = AsyncRunDto & {
   readonly resultRef: null;
 };
 
+export type ActiveProductProfileCrawlRun = AsyncRunDto & {
+  readonly kind: "collection";
+  readonly status: "queued" | "running";
+  readonly resultRef: null;
+};
+
 export interface ProductProfileWorkspace {
   readonly projectId: string;
   readonly currentProfile: ProductProfileRowDto | null;
   readonly confirmedProfile: ConfirmedProductProfileRowDto | null;
   readonly activeSynthesisRun: ActiveProductProfileSynthesisRun | null;
+  readonly activeCrawlRun: ActiveProductProfileCrawlRun | null;
 }
 
 function pointerToken(value: PropertyKey): string {
@@ -210,6 +218,25 @@ function activeSynthesisRun(
   };
 }
 
+function activeCrawlRun(
+  row: AsyncRunRow | null,
+): ActiveProductProfileCrawlRun | null {
+  if (
+    row?.kind !== "collection" ||
+    (row.status !== "queued" && row.status !== "running") ||
+    row.result_type !== null ||
+    row.result_id !== null
+  ) {
+    return null;
+  }
+  return {
+    ...toAsyncRunDto(row),
+    kind: "collection",
+    status: row.status,
+    resultRef: null,
+  };
+}
+
 /** Read only formally versioned Product Profile rows; legacy opaque ICP stays hidden. */
 export async function getProductProfileWorkspace(
   scope: WorkspaceScope,
@@ -225,13 +252,17 @@ export async function getProductProfileWorkspace(
     project.confirmed_icp_profile_id,
   ].filter((id): id is string => id !== null);
   const uniqueIds = [...new Set(profileIds)];
-  const [rows, active] = await Promise.all([
+  const [rows, activeSynthesis, activeCrawl] = await Promise.all([
     Promise.all(
       uniqueIds.map((id) => new IcpProfilesRepository(db).findById(scoped, id)),
     ),
     new AsyncRunsRepository(db).findActive(
       scoped,
       PRODUCT_PROFILE_SYNTHESIS_ACTIVE_KEY,
+    ),
+    new AsyncRunsRepository(db).findActive(
+      scoped,
+      PRODUCT_PROFILE_CRAWL_ACTIVE_KEY,
     ),
   ]);
   const byId = new Map(
@@ -262,7 +293,8 @@ export async function getProductProfileWorkspace(
     projectId,
     currentProfile,
     confirmedProfile,
-    activeSynthesisRun: activeSynthesisRun(active),
+    activeSynthesisRun: activeSynthesisRun(activeSynthesis),
+    activeCrawlRun: activeCrawlRun(activeCrawl),
   };
 }
 

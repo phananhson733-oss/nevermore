@@ -36,6 +36,11 @@ const FNV1A_128_OFFSET_BASIS =
 const FNV1A_128_PRIME = 0x0000000001000000000000000000013bn;
 const UINT128_MASK = (1n << 128n) - 1n;
 const semanticPathSet = new Set<string>(PRODUCT_PROFILE_SEMANTIC_PATHS);
+const BASE_ONLY_CUSTOMER_FACT_PATHS = new Set([
+  "/businessHint",
+  "/customerModel",
+  "/growthObjectives",
+]);
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -79,8 +84,47 @@ function isWithinPath(path: string, parent: string): boolean {
   return path === parent || path.startsWith(`${parent}/`);
 }
 
-function hasUserEdit(entry: ProductProfileFieldProvenance): boolean {
+function hasCustomerEditEvidence(
+  entry: ProductProfileFieldProvenance,
+): boolean {
   return entry.evidenceRefs.some((ref) => ref.kind === "userEdit");
+}
+
+/**
+ * A synthesis run may add canonical evidence around a customer-authored fact,
+ * but it must never replace the fact itself. `declared` covers values supplied
+ * during onboarding, while the explicit `userEdit` evidence check keeps a
+ * later contradicted customer input protected as well. A `declaredHint`
+ * reference alone is not enough: inferred model output may legitimately cite
+ * the business hint without becoming a customer-authored fact.
+ */
+function isCustomerAuthored(entry: ProductProfileFieldProvenance): boolean {
+  return entry.derivation === "declared" || hasCustomerEditEvidence(entry);
+}
+
+/**
+ * Canonical evidence belongs to one synthesis invocation. When a previously
+ * contradicted customer declaration survives into a new run, carry the
+ * declaration forward without retaining stale canonical references; the
+ * current candidate can re-author a contradiction against the new lineage.
+ */
+function customerProvenanceForCurrentLineage(
+  entry: ProductProfileFieldProvenance,
+): ProductProfileFieldProvenance {
+  if (entry.derivation !== "contradicted") return entry;
+  const declaredRefs = entry.evidenceRefs.filter(
+    (ref) => ref.kind === "userEdit",
+  );
+  if (declaredRefs.length === 0) return entry;
+  return {
+    path: entry.path,
+    derivation: "declared",
+    confidence: "high",
+    evidenceRefs: declaredRefs,
+    limitation:
+      "Customer-authored value preserved; prior contradictory evidence belongs to an earlier synthesis lineage.",
+    observedAt: null,
+  };
 }
 
 function parsePageEvidence(
@@ -376,20 +420,24 @@ export function buildProductProfileDraft(
   validateSemanticCandidate(input.candidate, base.businessHint, pageEvidence);
 
   const provenance = new Map<string, ProductProfileFieldProvenance>();
-  const businessHintProvenance = base.fieldProvenance.find(
-    (entry) => entry.path === "/businessHint",
-  );
-  if (businessHintProvenance) {
-    provenance.set(businessHintProvenance.path, businessHintProvenance);
+  for (const entry of base.fieldProvenance) {
+    if (BASE_ONLY_CUSTOMER_FACT_PATHS.has(entry.path)) {
+      provenance.set(entry.path, entry);
+    }
   }
 
   const isCustomerProtected = (path: SemanticPath): boolean =>
     base.fieldProvenance.some(
-      (entry) => isWithinPath(entry.path, path) && hasUserEdit(entry),
+      (entry) => isWithinPath(entry.path, path) && isCustomerAuthored(entry),
     );
   const preserveSubtreeProvenance = (path: SemanticPath): void => {
     for (const entry of base.fieldProvenance) {
-      if (isWithinPath(entry.path, path)) provenance.set(entry.path, entry);
+      if (isWithinPath(entry.path, path)) {
+        provenance.set(
+          entry.path,
+          customerProvenanceForCurrentLineage(entry),
+        );
+      }
     }
   };
   const infer = (path: string, grounding: Grounding): void => {
@@ -510,20 +558,27 @@ export function buildProductProfileDraft(
   }
 
   const preserveAllCompetitors = base.fieldProvenance.some(
-    (entry) => entry.path === "/competitorCandidates" && hasUserEdit(entry),
+    (entry) =>
+      entry.path === "/competitorCandidates" && isCustomerAuthored(entry),
   );
   if (preserveAllCompetitors) {
     const topLevel = base.fieldProvenance.find(
       (entry) => entry.path === "/competitorCandidates",
     );
-    if (topLevel) provenance.set(topLevel.path, topLevel);
+    if (topLevel) {
+      provenance.set(
+        topLevel.path,
+        customerProvenanceForCurrentLineage(topLevel),
+      );
+    }
   }
   const competitorCandidates: ProductProfileCompetitorCandidate[] = [];
   const preservedDomains = new Set<string>();
   base.competitorCandidates.forEach((competitor, previousIndex) => {
     const prefix = `/competitorCandidates/${previousIndex}`;
     const customerAuthored = base.fieldProvenance.some(
-      (entry) => isWithinPath(entry.path, prefix) && hasUserEdit(entry),
+      (entry) =>
+        isWithinPath(entry.path, prefix) && isCustomerAuthored(entry),
     );
     const preserve =
       preserveAllCompetitors ||
@@ -542,7 +597,7 @@ export function buildProductProfileDraft(
     for (const entry of base.fieldProvenance) {
       if (isWithinPath(entry.path, prefix)) {
         const remapped = remapCompetitorProvenance(
-          entry,
+          customerProvenanceForCurrentLineage(entry),
           previousIndex,
           nextIndex,
         );
@@ -636,6 +691,12 @@ export function buildProductProfileDraft(
     generatedAt,
     businessHint: base.businessHint,
     productName,
+    ...(base.customerModel === undefined
+      ? {}
+      : { customerModel: base.customerModel }),
+    ...(base.growthObjectives === undefined
+      ? {}
+      : { growthObjectives: [...base.growthObjectives] }),
     oneLiner,
     category,
     productType,

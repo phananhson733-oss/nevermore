@@ -11,6 +11,7 @@ const IDS = {
   site: "11111111-1111-4111-8111-111111111111",
   snapshot: "22222222-2222-4222-8222-222222222222",
   invocation: "33333333-3333-4333-8333-333333333333",
+  secondInvocation: "33333333-3333-4333-8333-444444444444",
   pageOne: "44444444-4444-4444-8444-444444444444",
   pageTwo: "55555555-5555-4555-8555-555555555555",
   reviewedCompetitor: "66666666-6666-4666-8666-666666666666",
@@ -92,6 +93,20 @@ function userEditProvenance(
     confidence: "high",
     evidenceRefs: [{ evidenceRefId, kind: "userEdit" }],
     limitation: "Customer-reviewed value.",
+    observedAt: null,
+  };
+}
+
+function declaredHintProvenance(
+  path: string,
+  evidenceRefId: string,
+): ProductProfileFieldProvenance {
+  return {
+    path,
+    derivation: "declared",
+    confidence: "high",
+    evidenceRefs: [{ evidenceRefId, kind: "declaredHint" }],
+    limitation: "Declared during product setup; not independently observed.",
     observedAt: null,
   };
 }
@@ -345,6 +360,97 @@ describe("buildProductProfileDraft", () => {
     ).toEqual(["analysisInvocation", "pageSnapshot"]);
   });
 
+  it("does not promote a model inference that cites the business hint into a customer-authored fact", () => {
+    const starting = base("B2B customer onboarding workflow software");
+    const hintedCandidate = emptyCandidate();
+    hintedCandidate.productName = {
+      value: "Hint-derived model name",
+      confidence: "medium",
+      sourcePageKeys: [],
+      usesBusinessHint: true,
+    };
+    hintedCandidate.unknownPaths = hintedCandidate.unknownPaths.filter(
+      (path) => path !== "/productName",
+    );
+    const hinted = build(hintedCandidate, { base: starting });
+    const replacementCandidate = emptyCandidate();
+    replacementCandidate.productName = {
+      value: "Name observed on the product page",
+      confidence: "high",
+      sourcePageKeys: ["page-1"],
+      usesBusinessHint: false,
+    };
+    replacementCandidate.unknownPaths =
+      replacementCandidate.unknownPaths.filter(
+        (path) => path !== "/productName",
+      );
+
+    const replaced = build(replacementCandidate, {
+      base: hinted,
+      analysisInvocationId: IDS.secondInvocation,
+    });
+
+    expect(hinted.fieldProvenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "/productName",
+          derivation: "inferred",
+          evidenceRefs: expect.arrayContaining([
+            expect.objectContaining({ kind: "declaredHint" }),
+          ]),
+        }),
+      ]),
+    );
+    expect(replaced.productName).toBe("Name observed on the product page");
+    expect(
+      replaced.fieldProvenance
+        .find((entry) => entry.path === "/productName")
+        ?.evidenceRefs.map((ref) => ref.kind),
+    ).toEqual(["analysisInvocation", "pageSnapshot"]);
+  });
+
+  it("preserves base-only customer model and growth objectives without adding them to older drafts", () => {
+    const starting = createInitialProductProfileDraft({
+      sourceSiteId: IDS.site,
+      sourcePageUrl: "https://relayops.com/product",
+      customerModel: "b2b",
+      growthObjectives: [
+        "generate_qualified_leads",
+        "increase_organic_traffic",
+      ],
+    });
+    const customerModelProvenance = starting.fieldProvenance.find(
+      (entry) => entry.path === "/customerModel",
+    );
+    const growthObjectivesProvenance = starting.fieldProvenance.find(
+      (entry) => entry.path === "/growthObjectives",
+    );
+
+    const result = build(emptyCandidate(), {
+      base: starting,
+      pageEvidence: {},
+    });
+    const legacyResult = build(emptyCandidate(), { pageEvidence: {} });
+
+    expect(result.customerModel).toBe("b2b");
+    expect(result.growthObjectives).toEqual([
+      "generate_qualified_leads",
+      "increase_organic_traffic",
+    ]);
+    expect(
+      result.fieldProvenance.find(
+        (entry) => entry.path === "/customerModel",
+      ),
+    ).toEqual(customerModelProvenance);
+    expect(
+      result.fieldProvenance.find(
+        (entry) => entry.path === "/growthObjectives",
+      ),
+    ).toEqual(growthObjectivesProvenance);
+    expect(Object.hasOwn(legacyResult, "customerModel")).toBe(false);
+    expect(Object.hasOwn(legacyResult, "growthObjectives")).toBe(false);
+  });
+
   it("retains a customer-edited top-level value and its subtree provenance", () => {
     const starting = ProductProfileDraft.parse({
       ...base(),
@@ -371,6 +477,131 @@ describe("buildProductProfileDraft", () => {
     expect(
       result.fieldProvenance.find((entry) => entry.path === "/productName"),
     ).toEqual(userEditProvenance("/productName"));
+  });
+
+  it("retains onboarding-declared product name and target markets over model replacements", () => {
+    const productNameProvenance = declaredHintProvenance(
+      "/productName",
+      "aaaaaaaa-1111-4111-8111-111111111111",
+    );
+    const targetMarketProvenance = declaredHintProvenance(
+      "/targetMarkets/0",
+      "aaaaaaaa-2222-4222-8222-222222222222",
+    );
+    const starting = ProductProfileDraft.parse({
+      ...base(),
+      productName: "Customer-declared name",
+      targetMarkets: [{ marketCode: "CA", priority: "primary" }],
+      fieldProvenance: [productNameProvenance, targetMarketProvenance],
+      missingFields: base().missingFields.filter(
+        (path) => path !== "/productName" && path !== "/targetMarkets",
+      ),
+    });
+    const semanticCandidate = emptyCandidate();
+    semanticCandidate.productName = {
+      value: "Model replacement",
+      confidence: "high",
+      sourcePageKeys: ["page-1"],
+      usesBusinessHint: false,
+    };
+    semanticCandidate.targetMarkets = [
+      {
+        marketCode: "US",
+        priority: "primary",
+        confidence: "high",
+        sourcePageKeys: ["page-2"],
+        usesBusinessHint: false,
+      },
+    ];
+    semanticCandidate.unknownPaths = semanticCandidate.unknownPaths.filter(
+      (path) => path !== "/productName" && path !== "/targetMarkets",
+    );
+
+    const result = build(semanticCandidate, { base: starting });
+
+    expect(result.productName).toBe("Customer-declared name");
+    expect(result.targetMarkets).toEqual([
+      { marketCode: "CA", priority: "primary" },
+    ]);
+    expect(result.fieldProvenance).toEqual([
+      productNameProvenance,
+      targetMarketProvenance,
+    ]);
+    expect(result.missingFields).not.toEqual(
+      expect.arrayContaining(["/productName", "/targetMarkets"]),
+    );
+  });
+
+  it("keeps a declared value protected after canonical evidence marks it contradicted", () => {
+    const starting = ProductProfileDraft.parse({
+      ...base(),
+      productName: "Customer-declared name",
+      fieldProvenance: [
+        userEditProvenance(
+          "/productName",
+          "aaaaaaaa-1111-4111-8111-111111111111",
+        ),
+      ],
+      missingFields: base().missingFields.filter(
+        (path) => path !== "/productName",
+      ),
+    });
+    const conflictingCandidate = emptyCandidate();
+    conflictingCandidate.conflicts = [
+      {
+        path: "/productName",
+        explanation: "The crawl uses a different public product name.",
+        confidence: "high",
+        sourcePageKeys: ["page-1"],
+        usesBusinessHint: false,
+      },
+    ];
+    conflictingCandidate.unknownPaths =
+      conflictingCandidate.unknownPaths.filter(
+        (path) => path !== "/productName",
+      );
+    const contradicted = build(conflictingCandidate, { base: starting });
+    const replacementCandidate = emptyCandidate();
+    replacementCandidate.productName = {
+      value: "Model replacement after contradiction",
+      confidence: "high",
+      sourcePageKeys: ["page-2"],
+      usesBusinessHint: false,
+    };
+    replacementCandidate.unknownPaths =
+      replacementCandidate.unknownPaths.filter(
+        (path) => path !== "/productName",
+      );
+
+    const replay = build(replacementCandidate, {
+      base: contradicted,
+      analysisInvocationId: IDS.secondInvocation,
+    });
+
+    expect(
+      contradicted.fieldProvenance.find(
+        (entry) => entry.path === "/productName",
+      ),
+    ).toMatchObject({
+      derivation: "contradicted",
+      evidenceRefs: expect.arrayContaining([
+        expect.objectContaining({ kind: "userEdit" }),
+        expect.objectContaining({ kind: "analysisInvocation" }),
+      ]),
+    });
+    expect(replay.productName).toBe("Customer-declared name");
+    expect(
+      replay.fieldProvenance.find(
+        (entry) => entry.path === "/productName",
+      ),
+    ).toMatchObject({
+      derivation: "declared",
+      confidence: "high",
+      evidenceRefs: [
+        expect.objectContaining({ kind: "userEdit" }),
+      ],
+      observedAt: null,
+    });
   });
 
   it("retains customer-edited collection subtrees, including a user-added competitor pool", () => {

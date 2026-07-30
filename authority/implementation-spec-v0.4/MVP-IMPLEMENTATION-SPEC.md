@@ -37,7 +37,9 @@ Model 均属于增长地图的增长路径与判断依据。它们不创建额�
 
 ## 1. 产品画像与项目上下文
 
-1. 客户输入核心 URL 与能可靠回答的基础业务信息。
+1. 客户输入核心 URL 与能可靠回答的基础业务信息；URL-first 创建可声明产品名、
+   B2B/B2C/混合客户模式、单一主要市场和有限集合的增长目标。这些值只作为
+   可追溯、可编辑的 declared facts，不得冒充 Crawl、DFS 或 AI 观察结果。
 2. Crawl 生成 immutable Snapshot、PageSnapshot 与 Observation。
 3. Product Profile synthesis 只可引用冻结证据，输出可审核的产品类别、商业
    模式、目标市场、ICP/JTBD、价值主张、转化目标和竞品候选。

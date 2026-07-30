@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { mapProjectFieldErrors } from "./_form-errors";
+import {
+  buildCreateProductRequest,
+  validateNewProductValues,
+  type NewProductFormValues,
+} from "./_form-values";
 
 describe("mapProjectFieldErrors", () => {
   const messages = {
     productUrlInvalid: "localized-product-url",
+    requiredField: "localized-required",
+    growthObjectivesRequired: "localized-objective",
     createError: "localized-create-error",
   } as const;
 
@@ -24,12 +31,20 @@ describe("mapProjectFieldErrors", () => {
       mapProjectFieldErrors(
         [
           { pointer: "/businessHint" },
+          { pointer: "/productName" },
+          { pointer: "/customerModel" },
+          { pointer: "/primaryMarket" },
+          { pointer: "/growthObjectives" },
         ],
         messages,
       ),
     ).toEqual({
       fieldErrors: {
         businessHint: "localized-create-error",
+        productName: "localized-required",
+        customerModel: "localized-required",
+        primaryMarket: "localized-required",
+        growthObjectives: "localized-objective",
       },
       generalError: null,
     });
@@ -44,6 +59,60 @@ describe("mapProjectFieldErrors", () => {
     ).toEqual({
       fieldErrors: {},
       generalError: "localized-create-error",
+    });
+  });
+});
+
+const validValues: NewProductFormValues = {
+  productName: "  RelayOps  ",
+  productUrl: " https://relayops.example/product ",
+  customerModel: "b2b",
+  primaryMarket: "US",
+  growthObjectives: ["increase_signups", "generate_qualified_leads"],
+  businessHint: "  Customer onboarding operations.  ",
+};
+
+describe("new product customer inputs", () => {
+  it("requires the small set of customer-known setup facts", () => {
+    expect(
+      validateNewProductValues({
+        productName: "",
+        productUrl: "",
+        customerModel: "",
+        primaryMarket: "",
+        growthObjectives: [],
+        businessHint: "",
+      }),
+    ).toEqual({
+      productName: "required",
+      productUrl: "required",
+      customerModel: "required",
+      primaryMarket: "required",
+      growthObjectives: "objective_required",
+    });
+  });
+
+  it("rejects credentials and fragments without trying to audit the URL", () => {
+    expect(
+      validateNewProductValues({
+        ...validValues,
+        productUrl: "https://user:secret@example.com/product#private",
+      }),
+    ).toEqual({ productUrl: "invalid_url" });
+  });
+
+  it("normalizes the product command while preserving multiple selected objectives", () => {
+    expect(buildCreateProductRequest(validValues)).toEqual({
+      mode: "product_profile",
+      productName: "RelayOps",
+      productUrl: "https://relayops.example/product",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: [
+        "increase_signups",
+        "generate_qualified_leads",
+      ],
+      businessHint: "Customer onboarding operations.",
     });
   });
 });

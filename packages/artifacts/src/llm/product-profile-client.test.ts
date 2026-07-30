@@ -6,6 +6,7 @@ import {
   MAX_PRODUCT_PROFILE_JSON_LD_TYPES,
   MAX_PRODUCT_PROFILE_PAGES,
   MAX_PRODUCT_PROFILE_PARAGRAPHS,
+  PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
   createOpenAIProductProfileClient,
   prepareProductProfileSynthesis,
@@ -223,6 +224,15 @@ function requestBody(fetchImpl: ReturnType<typeof vi.fn>): {
 
 function promptContext(fetchImpl: ReturnType<typeof vi.fn>): {
   readonly businessHint: string | null;
+  readonly declaredContext?: {
+    readonly productName?: string;
+    readonly customerModel?: string;
+    readonly growthObjectives?: readonly string[];
+    readonly targetMarkets?: ReadonlyArray<{
+      readonly marketCode: string;
+      readonly priority: string;
+    }>;
+  };
   readonly pages: ReadonlyArray<Record<string, unknown>>;
 } {
   const body = requestBody(fetchImpl);
@@ -272,6 +282,125 @@ describe("OpenAIProductProfileClient", () => {
         input({ pages: [page({ title: "Different allowlisted title" })] }),
       ).inputHash,
     ).not.toBe(first.inputHash);
+  });
+
+  it("hashes and sends bounded declared planning context while keeping legacy input optional", async () => {
+    const declaredContext = {
+      productName: "RelayOps",
+      customerModel: "b2b" as const,
+      growthObjectives: [
+        "generate_qualified_leads" as const,
+        "increase_organic_traffic" as const,
+      ],
+      targetMarkets: [
+        { marketCode: "US" as const, priority: "primary" as const },
+        { marketCode: "CA" as const, priority: "secondary" as const },
+      ],
+    };
+    const legacy = prepareProductProfileSynthesis(input());
+    const declared = prepareProductProfileSynthesis(
+      input({ declaredContext }),
+    );
+    const changedObjective = prepareProductProfileSynthesis(
+      input({
+        declaredContext: {
+          ...declaredContext,
+          growthObjectives: ["increase_signups"],
+        },
+      }),
+    );
+    const fetchImpl = vi.fn().mockResolvedValue(chatResponse(EMPTY_CANDIDATE));
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl,
+    });
+
+    await client.synthesizeProductProfile(input({ declaredContext }));
+
+    expect(declared.inputHash).not.toBe(legacy.inputHash);
+    expect(changedObjective.inputHash).not.toBe(declared.inputHash);
+    expect(promptContext(fetchImpl).declaredContext).toEqual(
+      declaredContext,
+    );
+    expect(requestBody(fetchImpl).messages[0]!.content).toContain(
+      "it is not website evidence and cannot ground a conclusion",
+    );
+    expect(() =>
+      prepareProductProfileSynthesis(
+        input({ declaredContext: {} }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "CONFIG_INVALID" }));
+    expect(() =>
+      prepareProductProfileSynthesis(
+        input({
+          declaredContext: {
+            customerModel: "enterprise" as never,
+          },
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "CONFIG_INVALID" }));
+  });
+
+  it("executes queued 0.3.0 work with the exact legacy prompt and invocation label", async () => {
+    const legacyFetch = vi.fn().mockResolvedValue(chatResponse(EMPTY_CANDIDATE));
+    const currentFetch = vi.fn().mockResolvedValue(chatResponse(EMPTY_CANDIDATE));
+    const legacyClient = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      promptSetVersion: PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+      fetchImpl: legacyFetch,
+    });
+    const currentClient = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      promptSetVersion: PRODUCT_PROFILE_PROMPT_SET_VERSION,
+      fetchImpl: currentFetch,
+    });
+
+    const [legacy, current] = await Promise.all([
+      legacyClient.synthesizeProductProfile(input()),
+      currentClient.synthesizeProductProfile(input()),
+    ]);
+    const legacyRequest = requestBody(legacyFetch);
+    const currentRequest = requestBody(currentFetch);
+
+    expect(
+      createHash("sha256")
+        .update(legacyRequest.messages[0]!.content, "utf8")
+        .digest("hex"),
+    ).toBe("6a9770cfe4319e9176cd3445089ff53c7f9251e62e1a24077f19f3ce163a69ef");
+    expect(legacyRequest.messages[0]!.content).not.toContain(
+      "declaredContext contains",
+    );
+    expect(currentRequest.messages[0]!.content).toContain(
+      "declaredContext contains",
+    );
+    expect(legacyRequest.messages[1]!.content).toBe(
+      currentRequest.messages[1]!.content,
+    );
+    expect(legacy.invocation.promptSetVersion).toBe(
+      PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+    );
+    expect(current.invocation.promptSetVersion).toBe(
+      PRODUCT_PROFILE_PROMPT_SET_VERSION,
+    );
+    expect(legacy.invocation.inputHash).toBe(
+      prepareProductProfileSynthesis(
+        input(),
+        PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+      ).inputHash,
+    );
+    expect(() =>
+      prepareProductProfileSynthesis(
+        input({
+          declaredContext: {
+            productName: "Must not enter a legacy prompt",
+          },
+        }),
+        PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+      ),
+    ).toThrow(expect.objectContaining({ code: "CONFIG_INVALID" }));
   });
 
   it("preflight is deterministic and enforces the same page bounds and page-1 identity guard", () => {
@@ -332,6 +461,13 @@ describe("OpenAIProductProfileClient", () => {
     ).toThrow(expect.objectContaining({ code: "CONFIG_INVALID" }));
     expect(() =>
       createOpenAIProductProfileClient({ apiKey: "test-key", model: " " }),
+    ).toThrow(expect.objectContaining({ code: "CONFIG_INVALID" }));
+    expect(() =>
+      createOpenAIProductProfileClient({
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        promptSetVersion: "product-profile.0.2.0" as never,
+      }),
     ).toThrow(expect.objectContaining({ code: "CONFIG_INVALID" }));
     expect(productProfilePageKeyForIndex(0)).toBe("page-1");
     expect(() => productProfilePageKeyForIndex(-1)).toThrow(
@@ -500,6 +636,9 @@ describe("OpenAIProductProfileClient", () => {
       input({
         sourcePageUrl: oversizedPage.subjectUrl,
         businessHint: `${injected} authorization: Bearer ${secret}`,
+        declaredContext: {
+          productName: `${injected} password=${secret}`,
+        },
         pages,
       }),
     );
@@ -527,6 +666,7 @@ describe("OpenAIProductProfileClient", () => {
     );
     const context = promptContext(fetchImpl);
     expect(context.pages).toHaveLength(MAX_PRODUCT_PROFILE_PAGES);
+    expect(context.declaredContext?.productName).toContain("[redacted]");
     expect(context.pages[0]).toEqual(
       expect.objectContaining({ pageKey: "page-1" }),
     );
@@ -729,6 +869,12 @@ describe("OpenAIProductProfileClient", () => {
       _label === "business-hint reference when no hint was supplied"
         ? {
             sourcePageUrl: "https://relayops.com/product",
+            declaredContext: {
+              productName: "Customer-declared RelayOps",
+              customerModel: "b2b",
+              growthObjectives: ["generate_qualified_leads"],
+              targetMarkets: [{ marketCode: "US", priority: "primary" }],
+            },
             pages: [page(), page()],
           }
         : input({ pages: [page(), page()] });

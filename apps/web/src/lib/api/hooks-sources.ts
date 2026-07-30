@@ -319,6 +319,28 @@ export function analysisRefreshRunIdFromError(error: unknown): string | null {
 }
 
 /**
+ * Adopt the winning project run after a 409 only when both untrusted pointers
+ * identify this exact project and run. Product onboarding uses this for Crawl
+ * and Product Profile synthesis because both expose the same run-status URL.
+ */
+export function activeProjectRunIdFromError(
+  error: unknown,
+  projectId: string,
+): string | null {
+  if (!(error instanceof ApiError) || error.code !== "RUN_ALREADY_ACTIVE") {
+    return null;
+  }
+  const runId = error.problem.current?.["runId"];
+  const statusUrl = error.problem.current?.["statusUrl"];
+  if (!validRunId(runId) || !validRunId(projectId)) return null;
+  const expected = `/api/mvp/projects/${projectId}/runs/${runId}`;
+  return statusUrl === expected ? runId : null;
+}
+
+/** Compatibility name retained for existing collection callers. */
+export const collectionRunIdFromError = activeProjectRunIdFromError;
+
+/**
  * A terminal Analysis Refresh can replace every evidence and audit/growth
  * projection. Prefix invalidation covers locale/detail suffixes without knowing
  * which page happens to be mounted.

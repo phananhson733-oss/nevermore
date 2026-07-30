@@ -143,7 +143,7 @@
   "newProject": {
     "eyebrow": "PRODUCT · ICP",
     "title": "Add a product",
-    "subtitle": "Enter the product URL and confirmed facts. Complete the Product Profile and ICP next, then connect GSC, GA4, and DataForSEO.",
+    "subtitle": "Start with the product and growth goal. GenGrowth then collects the site and drafts an editable Product Profile, ICP, and competitor set.",
     "shell": {
       "productTitle": "Add product",
       "productDetail": "Build the profile from a URL",
@@ -152,25 +152,73 @@
       "status": "Product required"
     },
     "fields": {
+      "choose": "Select…",
+      "productName": {
+        "label": "Product name",
+        "placeholder": "For example: GenGrowth",
+        "help": "Use the product or brand name customers and your team recognize."
+      },
       "productUrl": {
         "label": "Product URL",
         "placeholder": "https://www.example.com/product",
-        "help": "Use the homepage or representative product page. It becomes the Product Profile and Crawl starting point."
+        "help": "Use the homepage or representative product page. GenGrowth starts learning the product here."
+      },
+      "customerModel": {
+        "label": "Customer model",
+        "help": "Choose the primary paying-customer model. You can revise it in the Product Profile.",
+        "options": {
+          "b2b": "B2B · Business customers",
+          "b2c": "B2C · Consumers",
+          "hybrid": "Hybrid · Business and consumer"
+        }
+      },
+      "primaryMarket": {
+        "label": "Primary target market",
+        "help": "Choose the overseas market with the highest current priority.",
+        "options": {
+          "US": "United States",
+          "GB": "United Kingdom",
+          "CA": "Canada",
+          "AU": "Australia",
+          "SG": "Singapore",
+          "DE": "Germany",
+          "FR": "France",
+          "JP": "Japan",
+          "KR": "South Korea",
+          "AE": "United Arab Emirates",
+          "IN": "India",
+          "BR": "Brazil"
+        }
+      },
+      "growthObjectives": {
+        "label": "Primary growth goals",
+        "help": "Start with the one or two goals that matter most. They guide downstream opportunity planning.",
+        "options": {
+          "increase_signups": "Increase sign-ups",
+          "generate_qualified_leads": "Generate qualified leads",
+          "increase_organic_traffic": "Grow organic search traffic",
+          "increase_ai_visibility": "Improve AI / GEO visibility",
+          "improve_conversion": "Improve conversion",
+          "increase_revenue": "Increase revenue",
+          "enter_new_markets": "Enter new markets"
+        }
       },
       "businessHint": {
-        "label": "Product and customer context (optional)",
+        "label": "Additional business context (optional)",
         "placeholder": "For example: onboarding automation for customer operations teams at mid-market B2B SaaS companies in North America.",
-        "help": "Enter only confirmed facts. Product identity, business model, markets, and ICP remain editable next."
+        "help": "Add only confirmed details the website may not reveal. Everything remains editable."
       }
     },
     "nextStep": {
-      "title": "Next: complete the Product Profile and ICP",
-      "detail": "Creation opens the editable profile. Confirm it before connecting GSC and GA4; the platform runs Crawl and DataForSEO."
+      "title": "Next: generate the initial Product Profile",
+      "detail": "GenGrowth collects the site and drafts an editable ICP and competitor set. Review them before connecting GSC, GA4, and DataForSEO."
     },
-    "createButton": "Create product and fill profile",
-    "creating": "Creating Product Profile…",
+    "createButton": "Create and generate initial profile",
+    "creating": "Creating product…",
     "createError": "We couldn't create the product. Check the inputs and try again.",
-    "productUrlInvalid": "Enter a public http(s) product URL without credentials or a fragment."
+    "productUrlInvalid": "Enter a public http(s) product URL without credentials or a fragment.",
+    "requiredField": "Complete or select this field.",
+    "growthObjectivesRequired": "Select at least one primary growth goal."
   },
   "productProfile": {
     "heroEyebrow": "PRODUCT PROFILE · ICP",
@@ -179,7 +227,8 @@
       "detail": "Reading the current customer-reviewed profile and its evidence state."
     },
     "errors": {
-      "loadTitle": "Product Profile could not be loaded"
+      "loadTitle": "Product Profile could not be loaded",
+      "loadDetail": "This Product Profile is temporarily unavailable. Please try again shortly."
     },
     "empty": {
       "title": "No formal Product Profile yet",
@@ -197,9 +246,9 @@
       "addProduct": "Add product and fill profile",
       "edit": "Edit Product Profile",
       "connectData": "Connect live data",
-      "synthesize": "Generate from site evidence",
+      "synthesize": "Regenerate initial profile",
       "synthesizing": "Generating…",
-      "runCrawl": "Collect site evidence",
+      "runCrawl": "Collect site information again",
       "addCompetitor": "Add competitor",
       "reviewCompetitor": "Review / correct",
       "confirm": "Confirm Product Profile",
@@ -230,6 +279,8 @@
     "fields": {
       "businessHint": "Initial business context",
       "productName": "Product name",
+      "customerModel": "Customer model",
+      "growthObjectives": "Primary growth goals",
       "oneLiner": "One-line positioning",
       "category": "Product category",
       "productType": "Product type",
@@ -250,6 +301,20 @@
       "barriers": "Decision barriers",
       "qualificationSignals": "Qualification signals",
       "disqualifiers": "Disqualifiers"
+    },
+    "customerModels": {
+      "b2b": "B2B · Business customers",
+      "b2c": "B2C · Consumers",
+      "hybrid": "Hybrid · Business and consumer"
+    },
+    "growthObjectives": {
+      "increase_signups": "Increase sign-ups",
+      "generate_qualified_leads": "Generate qualified leads",
+      "increase_organic_traffic": "Grow organic search traffic",
+      "increase_ai_visibility": "Improve AI / GEO visibility",
+      "improve_conversion": "Improve conversion",
+      "increase_revenue": "Increase revenue",
+      "enter_new_markets": "Enter new markets"
     },
     "editor": {
       "eyebrow": "CUSTOMER REVIEW",
@@ -295,16 +360,31 @@
       "saved": "Product Profile saved",
       "savedDetail": "A new customer-edited draft version is now current.",
       "saveFailed": "Product Profile was not saved",
-      "synthesisQueued": "Evidence analysis queued",
-      "synthesisQueuedDetail": "The frozen Crawl snapshot is being analyzed. Progress below comes from the real run.",
+      "autoSynthesisStarted": "Preparing the initial Product Profile",
+      "autoSynthesisStartedDetail": "GenGrowth first checks available site data and automatically collects it when needed.",
+      "synthesisQueued": "The initial profile is being generated",
+      "synthesisQueuedDetail": "GenGrowth is using collected site data to draft the Product Profile, ICP, and competitor candidates.",
+      "synthesisAlreadyRunning": "The initial profile is already being generated",
+      "synthesisAlreadyRunningDetail": "GenGrowth resumed the active task and will refresh this page when it finishes.",
       "synthesisComplete": "Product Profile generated",
       "synthesisCompleteDetail": "The current draft now reflects the completed frozen-evidence analysis. Review it before confirmation.",
       "synthesisFailed": "Product Profile generation could not start or finish",
+      "autoCrawlPreparing": "Preparing site collection",
+      "autoCrawlPreparingDetail": "No usable site data is available yet, so GenGrowth will collect it now.",
       "crawlQueued": "Site collection queued",
-      "crawlQueuedDetail": "Crawl is collecting the product URL and same-site pages. Generation will not retry automatically.",
+      "crawlQueuedDetail": "GenGrowth is collecting the product and same-site pages, then will continue initial profile generation automatically.",
+      "autoCrawlQueuedDetail": "GenGrowth is collecting the product and same-site pages, then will generate the Product Profile, ICP, and competitor candidates.",
+      "crawlAlreadyRunning": "Site collection is already running",
+      "crawlAlreadyRunningDetail": "GenGrowth resumed the active collection task and will continue profile generation when it finishes.",
       "crawlComplete": "Site evidence is ready",
-      "crawlCompleteDetail": "Review the collection result, then explicitly retry Product Profile generation.",
+      "crawlCompleteDetail": "Site collection finished. GenGrowth is now generating the Product Profile, ICP, and competitor candidates.",
+      "crawlReadyDetail": "Site collection is complete.",
       "crawlFailed": "Site evidence collection failed",
+      "crawlInsufficient": "No usable product page was found",
+      "crawlInsufficientDetail": "Confirm that the Product URL is publicly accessible, or collect the site again before retrying.",
+      "progressUnavailable": "Task progress is temporarily unavailable",
+      "progressUnavailableDetail": "A network or service interruption may have occurred. Retry shortly; GenGrowth will not create duplicate work.",
+      "retryDetail": "This action did not complete. Please try again shortly.",
       "runEnded": "The run ended with status {status}.",
       "competitorSaved": "Competitor pool updated",
       "competitorSavedDetail": "The customer review was saved in a new Product Profile version.",
@@ -314,16 +394,16 @@
       "confirmFailed": "Product Profile could not be confirmed"
     },
     "run": {
-      "synthesisTitle": "Generating Product Profile from frozen evidence",
-      "crawlTitle": "Collecting current site evidence",
+      "synthesisTitle": "Generating the Product Profile, ICP, and competitor candidates",
+      "crawlTitle": "Collecting site information",
       "statuses": {
         "queued": "Queued",
         "running": "Running"
       }
     },
     "recovery": {
-      "title": "A current Crawl snapshot is required",
-      "detail": "Collect the real product page and same-site evidence first. When the run finishes, generation remains a separate customer action."
+      "title": "Site information needs to be collected again",
+      "detail": "Confirm that the Product URL is publicly accessible and retry. GenGrowth will continue initial profile generation automatically."
     },
     "sections": {
       "identity": {
@@ -347,8 +427,8 @@
         "title": "The comparison set used for SEO / GEO analysis"
       },
       "evidence": {
-        "eyebrow": "FACTUAL BASIS",
-        "title": "Where this Product Profile came from"
+        "eyebrow": "COMPLETION STATUS",
+        "title": "Site collection and initial profile"
       }
     },
     "markets": {
@@ -385,18 +465,39 @@
       }
     },
     "evidence": {
-      "source": "Product source URL",
-      "snapshot": "Frozen Crawl snapshot",
-      "invocation": "Analysis invocation",
-      "generatedAt": "Generated at",
-      "notFrozen": "No frozen snapshot yet",
-      "notGenerated": "No analysis invocation yet",
-      "provenance": "{count} field provenance anchors",
-      "missing": "{count} missing fields",
+      "source": "Product page",
+      "websiteStatus": "Site information",
+      "profileStatus": "Initial profile",
+      "generatedAt": "Last generated",
+      "websiteReady": "Collected and used for analysis",
+      "websiteCollecting": "Collecting",
+      "websiteWaiting": "Waiting for first collection",
+      "profileReady": "Generated and ready for review",
+      "profileGenerating": "Generating",
+      "profileWaiting": "Waiting for site collection",
+      "notGeneratedYet": "Not generated yet",
+      "confirmedFacts": "{count} facts with evidence",
+      "pendingFacts": "{count} items to confirm",
       "conflicts": "{count} conflicts",
-      "reviewDetails": "Review unresolved fields",
-      "missingTitle": "Missing",
-      "conflictTitle": "Conflicting"
+      "reviewDetails": "Review what still needs confirmation",
+      "missingTitle": "To confirm",
+      "conflictTitle": "Conflicting information",
+      "fieldNames": {
+        "businessHint": "Business context",
+        "productName": "Product name",
+        "customerModel": "Customer model",
+        "growthObjectives": "Primary growth goals",
+        "oneLiner": "One-line positioning",
+        "category": "Product category",
+        "productType": "Product type",
+        "businessModels": "Business model",
+        "valueProposition": "Value proposition",
+        "coreFeatures": "Core features",
+        "primaryMarket": "Target markets",
+        "primaryIcp": "Primary ICP",
+        "competitors": "Competitor candidates",
+        "other": "Other product information"
+      }
     },
     "confirmation": {
       "eyebrow": "CUSTOMER DECISION",

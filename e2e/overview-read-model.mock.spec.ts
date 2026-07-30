@@ -61,6 +61,7 @@ interface ProductProfileWorkspaceFixture {
   readonly currentProfile: ConfirmedProductProfileRowDto | null;
   readonly confirmedProfile: ConfirmedProductProfileRowDto | null;
   readonly activeSynthesisRun: null;
+  readonly activeCrawlRun: null;
 }
 
 interface OverviewScenario {
@@ -453,6 +454,7 @@ function readyScenario(): OverviewScenario {
       currentProfile: confirmedProfile,
       confirmedProfile,
       activeSynthesisRun: null,
+      activeCrawlRun: null,
     },
   };
 }
@@ -474,6 +476,7 @@ function emptyScenario(): OverviewScenario {
       currentProfile: null,
       confirmedProfile: null,
       activeSynthesisRun: null,
+      activeCrawlRun: null,
     },
   };
 }
@@ -509,6 +512,7 @@ function partialScenario(): OverviewScenario {
       currentProfile: null,
       confirmedProfile: null,
       activeSynthesisRun: null,
+      activeCrawlRun: null,
     },
   };
 }

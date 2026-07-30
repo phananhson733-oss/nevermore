@@ -117,19 +117,26 @@ describeDb("createProject (AC-007)", () => {
         productUrl:
           "https://Profile.Example.com/products/growth/?utm_source=demo&plan=pro",
         businessHint: "A hybrid B2B and B2C growth product",
+        productName: "Profile Growth",
+        customerModel: "hybrid",
+        primaryMarket: "US",
+        growthObjectives: [
+          "increase_organic_traffic",
+          "enter_new_markets",
+        ],
       },
       safeGuard,
     );
     expect(result.location).toBe(`/p/${result.project.id}/context`);
 
     expect(result.project).toMatchObject({
-      clientName: "profile.example.com",
-      projectName: "profile.example.com",
+      clientName: "Profile Growth",
+      projectName: "Profile Growth",
       contextStatus: "draft",
       site: {
         origin: "https://profile.example.com",
         host: "profile.example.com",
-        marketCodes: [],
+        marketCodes: ["US"],
         languageCodes: [],
       },
     });
@@ -166,8 +173,13 @@ describeDb("createProject (AC-007)", () => {
           "https://profile.example.com/products/growth/?plan=pro",
         sourceSnapshotId: null,
         analysisInvocationId: null,
-        productName: null,
-        targetMarkets: [],
+        productName: "Profile Growth",
+        customerModel: "hybrid",
+        growthObjectives: [
+          "increase_organic_traffic",
+          "enter_new_markets",
+        ],
+        targetMarkets: [{ marketCode: "US", priority: "primary" }],
         targetAudiences: [],
         competitorCandidates: [],
       }),

@@ -29,13 +29,16 @@ import {
   MAX_PRODUCT_PROFILE_HEADINGS,
   MAX_PRODUCT_PROFILE_JSON_LD_TYPES,
   MAX_PRODUCT_PROFILE_PARAGRAPHS,
+  PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
   prepareProductProfileSynthesis,
   productProfilePageKeyForIndex,
   type AnalysisInvocationRecord,
   type ProductProfileClientOptions,
+  type ProductProfileDeclaredContext,
   type ProductProfilePageDescriptor,
   type ProductProfilePageKeyMapEntry,
+  type ProductProfilePromptSetVersion,
   type ProductProfileSemanticCandidateEnvelope,
   type ProductProfileSynthesisClient,
   type ProductProfileSynthesisInput,
@@ -98,6 +101,18 @@ const INVOCATION_IDENTITY_MISMATCH = "INVOCATION_IDENTITY_MISMATCH";
 const PROVIDER_OUTCOME_UNKNOWN = "PROVIDER_OUTCOME_UNKNOWN";
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
 
+function productProfilePromptSetVersion(
+  value: string,
+): ProductProfilePromptSetVersion {
+  if (
+    value === PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION ||
+    value === PRODUCT_PROFILE_PROMPT_SET_VERSION
+  ) {
+    return value;
+  }
+  invalidInput();
+}
+
 type FrozenPageRow = Awaited<
   ReturnType<PageSnapshotsRepository["findByIdsWithSitePageIdentity"]>
 >[number];
@@ -122,6 +137,64 @@ class ProductProfileResultError extends Error {
     super("Product Profile synthesis result is invalid");
     this.name = "ProductProfileResultError";
   }
+}
+
+function pathIsWithin(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}/`);
+}
+
+function isCustomerAuthoredProvenance(
+  entry: ProductProfileDraft["fieldProvenance"][number],
+): boolean {
+  return (
+    entry.derivation === "declared" ||
+    entry.evidenceRefs.some((ref) => ref.kind === "userEdit")
+  );
+}
+
+function hasCustomerAuthoredFact(
+  profile: ProductProfileDraft,
+  root: string,
+): boolean {
+  return profile.fieldProvenance.some(
+    (entry) =>
+      pathIsWithin(entry.path, root) && isCustomerAuthoredProvenance(entry),
+  );
+}
+
+/**
+ * Project only customer-authored planning facts into the external-model input.
+ * These values remain distinct from `businessHint`: the response contract has
+ * no way to cite them as evidence, so they can guide prioritization without
+ * laundering a declaration into an observed website fact.
+ */
+export function buildProductProfileDeclaredContext(
+  profile: ProductProfileDraft,
+): ProductProfileDeclaredContext | undefined {
+  const context: ProductProfileDeclaredContext = {
+    ...(profile.productName !== null &&
+    hasCustomerAuthoredFact(profile, "/productName")
+      ? { productName: profile.productName }
+      : {}),
+    ...(profile.customerModel !== undefined &&
+    hasCustomerAuthoredFact(profile, "/customerModel")
+      ? { customerModel: profile.customerModel }
+      : {}),
+    ...(profile.growthObjectives !== undefined &&
+    profile.growthObjectives.length > 0 &&
+    hasCustomerAuthoredFact(profile, "/growthObjectives")
+      ? { growthObjectives: [...profile.growthObjectives] }
+      : {}),
+    ...(profile.targetMarkets.length > 0 &&
+    hasCustomerAuthoredFact(profile, "/targetMarkets")
+      ? {
+          targetMarkets: profile.targetMarkets.map((market) => ({
+            ...market,
+          })),
+        }
+      : {}),
+  };
+  return Object.keys(context).length === 0 ? undefined : context;
 }
 
 function invalidInput(): never {
@@ -164,7 +237,9 @@ function validateLedger(
     ledger.id !== runId ||
     !sameScope(ledger, scope) ||
     ledger.synthesis_version !== PRODUCT_PROFILE_SYNTHESIS_VERSION ||
-    ledger.prompt_set_version !== PRODUCT_PROFILE_PROMPT_SET_VERSION ||
+    (ledger.prompt_set_version !==
+      PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION &&
+      ledger.prompt_set_version !== PRODUCT_PROFILE_PROMPT_SET_VERSION) ||
     ledger.result_icp_profile_id !== null ||
     !SHA256_HEX.test(ledger.input_hash) ||
     contentHash(ledger.input_manifest as CanonicalValue) !== ledger.input_hash
@@ -834,11 +909,19 @@ export async function runProductProfileSynthesis(
     return;
   }
 
+  const promptSetVersion = productProfilePromptSetVersion(
+    frozen.ledger.prompt_set_version,
+  );
+  const declaredContext =
+    promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION
+      ? buildProductProfileDeclaredContext(frozen.base)
+      : undefined;
   const providerInput: ProductProfileSynthesisInput = {
     sourcePageUrl: frozen.manifest.sourcePageUrl,
     ...(frozen.base.businessHint === null
       ? {}
       : { businessHint: frozen.base.businessHint }),
+    ...(declaredContext === undefined ? {} : { declaredContext }),
     pages: frozen.descriptors,
   };
   const createClient =
@@ -846,10 +929,14 @@ export async function runProductProfileSynthesis(
   let client: ProductProfileSynthesisClient;
   let preflight: ReturnType<typeof prepareProductProfileSynthesis>;
   try {
-    preflight = prepareProductProfileSynthesis(providerInput);
+    preflight = prepareProductProfileSynthesis(
+      providerInput,
+      promptSetVersion,
+    );
     client = createClient({
       apiKey: ctx.openai.apiKey,
       model: ctx.openai.model,
+      promptSetVersion,
       ...(ctx.openai.baseUrl ? { baseUrl: ctx.openai.baseUrl } : {}),
       ...(ctx.openai.authScheme
         ? { authScheme: ctx.openai.authScheme }
