@@ -367,7 +367,7 @@
 
 .identityGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--sf-border);
@@ -403,6 +403,27 @@
   margin-top: 26px;
   padding-left: 20px;
   border-left: 3px solid var(--sf-coral);
+}
+
+.goalBlock {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+  padding: 18px 20px;
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+  background: var(--sf-cobalt-soft);
+}
+
+.goalBlock > span {
+  color: var(--sf-cobalt-text);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.goalBlock .valueList {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .statement p {
@@ -664,11 +685,17 @@
 
 .evidenceGrid strong {
   color: var(--sf-white);
+  font-family: var(--sf-font-body);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.evidenceGrid > div:first-child strong {
   font-family: var(--sf-font-mono);
   font-size: 13px;
   font-weight: 550;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
 }
 
 .evidenceCounts {
@@ -710,8 +737,8 @@
 
 .evidenceDetails .valueList li {
   color: rgba(255, 255, 255, 0.78);
-  font-family: var(--sf-font-mono);
-  font-size: 13px;
+  font-family: var(--sf-font-body);
+  font-size: 15px;
 }
 
 .reviewRail {

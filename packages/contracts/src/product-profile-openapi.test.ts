@@ -14,6 +14,9 @@ type Expect<Value extends true> = Value;
 
 type ActiveSynthesisRun =
   components["schemas"]["ProductProfileActiveSynthesisRun"];
+type CreateProductProfileProject =
+  components["schemas"]["ProductProfileCreateProjectRequest"];
+type DraftProfile = components["schemas"]["ProductProfileDraft"];
 type ConfirmedProfile = components["schemas"]["ConfirmedProductProfile"];
 type ProductProfileWorkspaceResponse =
   operations["getProjectProductProfile"]["responses"][200]["content"]["application/json"];
@@ -48,6 +51,42 @@ type _ConfirmResponseRow = Expect<
   >
 >;
 type _NoServerOwnedEditableKeys = Expect<Equal<ForbiddenEditableKeys, never>>;
+type _CreateCustomerModel = Expect<
+  Equal<
+    CreateProductProfileProject["customerModel"],
+    components["schemas"]["ProductProfileCustomerModel"] | undefined
+  >
+>;
+type _CreateGrowthObjectives = Expect<
+  Equal<
+    CreateProductProfileProject["growthObjectives"],
+    components["schemas"]["ProductProfileGrowthObjective"][] | undefined
+  >
+>;
+type _DraftCustomerModel = Expect<
+  Equal<
+    DraftProfile["customerModel"],
+    components["schemas"]["ProductProfileCustomerModel"] | undefined
+  >
+>;
+type _DraftGrowthObjectives = Expect<
+  Equal<
+    DraftProfile["growthObjectives"],
+    components["schemas"]["ProductProfileGrowthObjective"][] | undefined
+  >
+>;
+type _EditableCustomerModel = Expect<
+  Equal<
+    EditablePatch["customerModel"],
+    components["schemas"]["ProductProfileCustomerModel"] | undefined
+  >
+>;
+type _EditableGrowthObjectives = Expect<
+  Equal<
+    EditablePatch["growthObjectives"],
+    components["schemas"]["ProductProfileGrowthObjective"][] | undefined
+  >
+>;
 type _ConfirmedProductName = Expect<
   Equal<ConfirmedProfile["productName"], string>
 >;
@@ -74,17 +113,57 @@ const generated = readFileSync(
   new URL("./generated/openapi.ts", import.meta.url),
   "utf8",
 );
+const openapi = readFileSync(
+  new URL("../../../openapi/mvp.yaml", import.meta.url),
+  "utf8",
+);
 
 describe("Product Profile generated OpenAPI contract", () => {
-  it("keeps active synthesis and confirmed rows narrow in generated clients", () => {
+  it("keeps active onboarding runs and confirmed rows narrow in generated clients", () => {
     expect(generated).toContain(
       'kind: "product_profile_synthesis";',
     );
     expect(generated).toContain(
       'activeSynthesisRun: components["schemas"]["ProductProfileActiveSynthesisRun"] | null;',
     );
+    expect(generated).toContain('kind: "collection";');
+    expect(generated).toContain(
+      'activeCrawlRun: components["schemas"]["ProductProfileActiveCrawlRun"] | null;',
+    );
     expect(generated).toContain(
       'confirmedProfile: components["schemas"]["ConfirmedProductProfileRowDto"] | null;',
     );
+    expect(generated).toContain(
+      'customerModel?: components["schemas"]["ProductProfileCustomerModel"];',
+    );
+    expect(generated).toContain(
+      'growthObjectives?: components["schemas"]["ProductProfileGrowthObjective"][];',
+    );
+  });
+
+  it("documents URL-first declarations and the mode-dependent project location", () => {
+    const createStart = openapi.indexOf("operationId: createProject");
+    const createEnd = openapi.indexOf("operationId:", createStart + 1);
+    const createOperation = openapi.slice(createStart, createEnd);
+    const requestStart = openapi.indexOf(
+      "ProductProfileCreateProjectRequest:",
+    );
+    const requestEnd = openapi.indexOf(
+      "ProductProfileCustomerModel:",
+      requestStart,
+    );
+    const requestSchema = openapi.slice(requestStart, requestEnd);
+
+    expect(createOperation).toContain(
+      "^/p/[0-9a-f-]+/(?:overview|context)$",
+    );
+    for (const field of [
+      "productName:",
+      "customerModel:",
+      "primaryMarket:",
+      "growthObjectives:",
+    ]) {
+      expect(requestSchema).toContain(field);
+    }
   });
 });

@@ -28,7 +28,9 @@ export {
   createOpenAIProductProfileClient,
   prepareProductProfileSynthesis,
   productProfilePageKeyForIndex,
+  PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
+  PRODUCT_PROFILE_SUPPORTED_PROMPT_SET_VERSIONS,
   PRODUCT_PROFILE_SEMANTIC_PATHS,
   MAX_PRODUCT_PROFILE_PAGES,
   MAX_PRODUCT_PROFILE_H1,
@@ -39,8 +41,10 @@ export {
 } from "./llm/product-profile-client.ts";
 export type {
   ProductProfileClientOptions,
+  ProductProfileDeclaredContext,
   ProductProfilePageDescriptor,
   ProductProfilePageKeyMapEntry,
+  ProductProfilePromptSetVersion,
   ProductProfileSemanticCandidateEnvelope,
   ProductProfileSynthesisClient,
   ProductProfileSynthesisInput,

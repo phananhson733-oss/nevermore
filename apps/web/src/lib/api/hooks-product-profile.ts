@@ -63,6 +63,13 @@ export interface ProductProfileWorkspace {
         readonly resultRef: null;
       })
     | null;
+  readonly activeCrawlRun:
+    | (ProductProfileRun & {
+        readonly kind: "collection";
+        readonly status: "queued" | "running";
+        readonly resultRef: null;
+      })
+    | null;
 }
 
 export interface ProductProfileAsyncAccepted {

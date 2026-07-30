@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { IsoDateTime, MarketCode, Uuid } from "./common.ts";
+import { CustomerModel } from "./icp.ts";
 import {
   ProductProfileBusinessHint,
+  ProductProfileGrowthObjective,
+  ProductProfileProductName,
   ProductProfileProductUrl,
 } from "./projects.ts";
 
@@ -31,6 +34,10 @@ const UniqueShortTextList = z
   .array(ShortText)
   .max(100)
   .refine(unique, "Values must be unique");
+const ProductProfileGrowthObjectives = z
+  .array(ProductProfileGrowthObjective)
+  .max(ProductProfileGrowthObjective.options.length)
+  .refine(unique, "growthObjectives must be unique");
 
 export const ProductProfileConfidence = z.enum([
   "high",
@@ -307,7 +314,9 @@ const ProductProfileShape = {
   analysisInvocationId: Uuid.nullable(),
   generatedAt: IsoDateTime.nullable(),
   businessHint: ProductProfileBusinessHint.nullable(),
-  productName: z.string().trim().min(1).max(160).nullable(),
+  productName: ProductProfileProductName.nullable(),
+  customerModel: CustomerModel.optional(),
+  growthObjectives: ProductProfileGrowthObjectives.optional(),
   oneLiner: z.string().trim().min(1).max(1000).nullable(),
   category: z.string().trim().min(1).max(160).nullable(),
   productType: z.string().trim().min(1).max(160).nullable(),
@@ -384,6 +393,8 @@ const ProductProfileObject = z.object(ProductProfileShape).strict();
 const ProductProfileSemanticFields = [
   { key: "businessHint", path: "/businessHint", optional: true },
   { key: "productName", path: "/productName", optional: false },
+  { key: "customerModel", path: "/customerModel", optional: true },
+  { key: "growthObjectives", path: "/growthObjectives", optional: true },
   { key: "oneLiner", path: "/oneLiner", optional: false },
   { key: "category", path: "/category", optional: false },
   { key: "productType", path: "/productType", optional: false },
@@ -412,7 +423,11 @@ function pathIsWithin(path: string, root: string): boolean {
 }
 
 function semanticValueIsEmpty(value: unknown): boolean {
-  return value === null || (Array.isArray(value) && value.length === 0);
+  return (
+    value === undefined ||
+    value === null ||
+    (Array.isArray(value) && value.length === 0)
+  );
 }
 
 function hasFactProvenance(
@@ -577,7 +592,9 @@ export type ProductProfileDraft = z.infer<typeof ProductProfileDraft>;
 export const ProductProfileEditablePatch = z
   .object({
     businessHint: ProductProfileBusinessHint.nullable(),
-    productName: z.string().trim().min(1).max(160).nullable(),
+    productName: ProductProfileProductName.nullable(),
+    customerModel: CustomerModel,
+    growthObjectives: ProductProfileGrowthObjectives,
     oneLiner: z.string().trim().min(1).max(1000).nullable(),
     category: z.string().trim().min(1).max(160).nullable(),
     productType: z.string().trim().min(1).max(160).nullable(),
@@ -895,6 +912,12 @@ export interface InitialProductProfileDraftInput {
   readonly sourceSiteId: string;
   readonly sourcePageUrl: string;
   readonly businessHint?: string;
+  readonly productName?: string;
+  readonly customerModel?: z.input<typeof CustomerModel>;
+  readonly primaryMarket?: z.input<typeof MarketCode>;
+  readonly growthObjectives?: readonly z.input<
+    typeof ProductProfileGrowthObjective
+  >[];
 }
 
 const FNV1A_128_OFFSET_BASIS =
@@ -934,33 +957,81 @@ export function createInitialProductProfileDraft(
     input.businessHint === undefined
       ? null
       : ProductProfileBusinessHint.parse(input.businessHint);
+  const productName =
+    input.productName === undefined
+      ? null
+      : ProductProfileProductName.parse(input.productName);
+  const customerModel =
+    input.customerModel === undefined
+      ? undefined
+      : CustomerModel.parse(input.customerModel);
+  const primaryMarket =
+    input.primaryMarket === undefined
+      ? undefined
+      : MarketCode.parse(input.primaryMarket);
+  const growthObjectives =
+    input.growthObjectives === undefined
+      ? undefined
+      : ProductProfileGrowthObjectives.min(1).parse(input.growthObjectives);
 
-  const fieldProvenance: ProductProfileFieldProvenance[] =
-    businessHint === null
+  const declaredProvenance = (
+    path: string,
+    value: unknown,
+    kind: "declaredHint" | "userEdit",
+  ): ProductProfileFieldProvenance => ({
+    path,
+    derivation: "declared",
+    confidence: "high",
+    evidenceRefs: [
+      {
+        evidenceRefId: deterministicEvidenceRefId(
+          JSON.stringify([
+            PRODUCT_PROFILE_SCHEMA_VERSION,
+            sourceSiteId,
+            sourcePageUrl,
+            path,
+            value,
+          ]),
+        ),
+        kind,
+      },
+    ],
+    limitation: "Declared by the user; not independently observed.",
+    observedAt: null,
+  });
+
+  const fieldProvenance: ProductProfileFieldProvenance[] = [
+    ...(businessHint === null
+      ? []
+      : [declaredProvenance("/businessHint", businessHint, "declaredHint")]),
+    ...(productName === null
+      ? []
+      : [declaredProvenance("/productName", productName, "userEdit")]),
+    ...(customerModel === undefined
+      ? []
+      : [declaredProvenance("/customerModel", customerModel, "userEdit")]),
+    ...(primaryMarket === undefined
       ? []
       : [
-          {
-            path: "/businessHint",
-            derivation: "declared",
-            confidence: "high",
-            evidenceRefs: [
-              {
-                evidenceRefId: deterministicEvidenceRefId(
-                  JSON.stringify([
-                    PRODUCT_PROFILE_SCHEMA_VERSION,
-                    sourceSiteId,
-                    sourcePageUrl,
-                    "/businessHint",
-                    businessHint,
-                  ]),
-                ),
-                kind: "declaredHint",
-              },
-            ],
-            limitation: "Declared by the user; not independently observed.",
-            observedAt: null,
-          },
-        ];
+          declaredProvenance("/targetMarkets", [
+            { marketCode: primaryMarket, priority: "primary" },
+          ], "userEdit"),
+        ]),
+    ...(growthObjectives === undefined
+      ? []
+      : [
+          declaredProvenance(
+            "/growthObjectives",
+            growthObjectives,
+            "userEdit",
+          ),
+        ]),
+  ];
+  const missingFields = INITIAL_PRODUCT_PROFILE_MISSING_FIELDS.filter(
+    (path) =>
+      !(path === "/productName" && productName !== null) &&
+      !(path === "/targetMarkets" && primaryMarket !== undefined),
+  );
 
   return ProductProfileDraft.parse({
     profileSchemaVersion: PRODUCT_PROFILE_SCHEMA_VERSION,
@@ -970,18 +1041,23 @@ export function createInitialProductProfileDraft(
     analysisInvocationId: null,
     generatedAt: null,
     businessHint,
-    productName: null,
+    productName,
+    ...(customerModel === undefined ? {} : { customerModel }),
+    ...(growthObjectives === undefined ? {} : { growthObjectives }),
     oneLiner: null,
     category: null,
     productType: null,
     businessModels: [],
     valueProposition: null,
     coreFeatures: [],
-    targetMarkets: [],
+    targetMarkets:
+      primaryMarket === undefined
+        ? []
+        : [{ marketCode: primaryMarket, priority: "primary" }],
     targetAudiences: [],
     competitorCandidates: [],
     fieldProvenance,
-    missingFields: [...INITIAL_PRODUCT_PROFILE_MISSING_FIELDS],
+    missingFields,
     conflictingFields: [],
   });
 }

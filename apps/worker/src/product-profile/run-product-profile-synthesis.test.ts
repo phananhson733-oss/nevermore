@@ -13,6 +13,7 @@ import {
   sha256Hex,
   toRunAttempt,
   type AsyncRunRow,
+  type CanonicalValue,
   type DataSnapshotRow,
   type IcpProfileRow,
   type ProductProfileRunRow,
@@ -25,12 +26,14 @@ import {
   MAX_PRODUCT_PROFILE_HEADINGS,
   MAX_PRODUCT_PROFILE_JSON_LD_TYPES,
   MAX_PRODUCT_PROFILE_PARAGRAPHS,
+  PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
   prepareProductProfileSynthesis,
   type AnalysisInvocationRecord,
   type ProductProfilePageDescriptor,
   type ProductProfileSemanticCandidateEnvelope,
   type ProductProfileSynthesisInput,
+  type ProductProfileSynthesisResult,
 } from "@sf/artifacts";
 import {
   createInitialProductProfileDraft,
@@ -43,6 +46,7 @@ import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
 import {
   buildBoundedProductProfilePageDescriptor,
+  buildProductProfileDeclaredContext,
   retainExactlyGroundedCompetitors,
   runProductProfileSynthesis,
 } from "./run-product-profile-synthesis.ts";
@@ -99,8 +103,18 @@ const baseProfile = createInitialProductProfileDraft({
   sourceSiteId: IDS.site,
   sourcePageUrl,
   businessHint: "B2B workflow software",
+  productName: "Customer-declared Acme",
+  customerModel: "b2b",
+  primaryMarket: "US",
+  growthObjectives: [
+    "generate_qualified_leads",
+    "increase_organic_traffic",
+  ],
 });
-const baseContentHash = contentHash({ status: "draft", profile: baseProfile });
+const baseContentHash = contentHash({
+  status: "draft",
+  profile: baseProfile as unknown as CanonicalValue,
+});
 
 const manifest: ProductProfileSynthesisInputManifest = {
   schemaVersion: PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
@@ -288,6 +302,15 @@ const invocation = {
     ...(baseProfile.businessHint === null
       ? {}
       : { businessHint: baseProfile.businessHint }),
+    declaredContext: {
+      productName: "Customer-declared Acme",
+      customerModel: "b2b",
+      growthObjectives: [
+        "generate_qualified_leads",
+        "increase_organic_traffic",
+      ],
+      targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    },
     pages: [buildBoundedProductProfilePageDescriptor(manifest.pages[0]!, extract)],
   }).inputHash,
   outputHash: sha256Hex(JSON.stringify(candidate())),
@@ -350,11 +373,15 @@ const ctx = {
   logger,
 } as unknown as WorkerContext;
 
-const synthesizeProductProfile = vi.fn(async (_input: ProductProfileSynthesisInput) => ({
-  candidate: candidate(),
-  pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
-  invocation,
-}));
+const synthesizeProductProfile = vi.fn(
+  async (
+    _input: ProductProfileSynthesisInput,
+  ): Promise<ProductProfileSynthesisResult> => ({
+    candidate: candidate(),
+    pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+    invocation,
+  }),
+);
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -530,6 +557,60 @@ describe("buildBoundedProductProfilePageDescriptor", () => {
   });
 });
 
+describe("buildProductProfileDeclaredContext", () => {
+  it("projects only customer-authored base facts and stays absent for legacy or inferred-only profiles", () => {
+    expect(buildProductProfileDeclaredContext(baseProfile)).toEqual({
+      productName: "Customer-declared Acme",
+      customerModel: "b2b",
+      growthObjectives: [
+        "generate_qualified_leads",
+        "increase_organic_traffic",
+      ],
+      targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    });
+
+    const legacy = createInitialProductProfileDraft({
+      sourceSiteId: IDS.site,
+      sourcePageUrl,
+      businessHint: "Legacy profile with no declared planning facts",
+    });
+    expect(buildProductProfileDeclaredContext(legacy)).toBeUndefined();
+
+    expect(
+      buildProductProfileDeclaredContext({
+        ...legacy,
+        productName: "Model-inferred name",
+        fieldProvenance: [
+          {
+            path: "/productName",
+            derivation: "inferred",
+            confidence: "high",
+            evidenceRefs: [
+              {
+                evidenceRefId: IDS.invocation,
+                kind: "analysisInvocation",
+                analysisInvocationId: IDS.invocation,
+              },
+              {
+                evidenceRefId: IDS.actor,
+                kind: "declaredHint",
+              },
+            ],
+            limitation: null,
+            observedAt: generatedAt,
+          },
+        ],
+        missingFields: legacy.missingFields.filter(
+          (path) => path !== "/productName",
+        ),
+        sourceSnapshotId: IDS.snapshot,
+        analysisInvocationId: IDS.invocation,
+        generatedAt,
+      }),
+    ).toBeUndefined();
+  });
+});
+
 describe("runProductProfileSynthesis", () => {
   const dependencies = {
     createClient: vi.fn(() => ({ synthesizeProductProfile })),
@@ -576,12 +657,22 @@ describe("runProductProfileSynthesis", () => {
     expect(dependencies.createClient).toHaveBeenCalledWith(expect.objectContaining({
       apiKey: "openai-key",
       model: "gpt-test",
+      promptSetVersion: PRODUCT_PROFILE_PROMPT_SET_VERSION,
     }));
     expect(synthesizeProductProfile).toHaveBeenCalledTimes(1);
     const modelInput = synthesizeProductProfile.mock.calls[0]![0];
     expect(modelInput).toEqual({
       sourcePageUrl,
       businessHint: "B2B workflow software",
+      declaredContext: {
+        productName: "Customer-declared Acme",
+        customerModel: "b2b",
+        growthObjectives: [
+          "generate_qualified_leads",
+          "increase_organic_traffic",
+        ],
+        targetMarkets: [{ marketCode: "US", priority: "primary" }],
+      },
       pages: [expect.objectContaining({
         pageSnapshotId: IDS.pageSnapshot,
         fetchUrl: sourcePageUrl,
@@ -629,6 +720,118 @@ describe("runProductProfileSynthesis", () => {
     });
     expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toMatch(
       /B2B workflow|Acme Product|raw\.json|inputHash|outputHash/,
+    );
+  });
+
+  it("finishes a queued 0.3.0 ledger through the exact legacy client path", async () => {
+    const legacyBase = createInitialProductProfileDraft({
+      sourceSiteId: IDS.site,
+      sourcePageUrl,
+      businessHint: "Pre-deploy B2B workflow software",
+    });
+    const legacyBaseHash = contentHash({
+      status: "draft",
+      profile: legacyBase as unknown as CanonicalValue,
+    });
+    const legacyManifest: ProductProfileSynthesisInputManifest = {
+      ...manifest,
+      baseProfile: {
+        ...manifest.baseProfile,
+        contentHash: legacyBaseHash,
+      },
+    };
+    const legacyProviderInput: ProductProfileSynthesisInput = {
+      sourcePageUrl,
+      businessHint: "Pre-deploy B2B workflow software",
+      pages: [
+        buildBoundedProductProfilePageDescriptor(
+          legacyManifest.pages[0]!,
+          extract,
+        ),
+      ],
+    };
+    const legacyProviderHash = prepareProductProfileSynthesis(
+      legacyProviderInput,
+      PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+    ).inputHash;
+    const legacyInvocation = {
+      ...invocation,
+      promptSetVersion: PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+      inputHash: legacyProviderHash,
+    };
+    const legacyReservation = {
+      ...reservation,
+      prompt_set_version: PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+      input_hash: legacyProviderHash,
+    };
+    vi.mocked(
+      ProductProfileRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce({
+      ...ledger,
+      base_icp_profile_content_hash: legacyBaseHash,
+      prompt_set_version: PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+      input_manifest: legacyManifest,
+      input_hash: contentHash(legacyManifest),
+    });
+    vi.mocked(IcpProfilesRepository.prototype.findById).mockResolvedValueOnce({
+      ...baseRow,
+      profile: legacyBase,
+      content_hash: legacyBaseHash,
+    });
+    vi.mocked(
+      ProductProfileInvocationAttemptsRepository.prototype.reserve,
+    ).mockResolvedValueOnce({
+      kind: "reserved",
+      reservation: legacyReservation,
+    });
+    vi.mocked(
+      ProductProfileInvocationAttemptsRepository.prototype.finalizeWithInvocation,
+    ).mockResolvedValueOnce({
+      kind: "finalized",
+      reservation: {
+        ...legacyReservation,
+        status: "succeeded",
+        analysis_invocation_id: IDS.invocation,
+        provider_returned_at: generatedAt,
+        finalized_at: generatedAt,
+      },
+      invocationId: IDS.invocation,
+    });
+    synthesizeProductProfile.mockResolvedValueOnce({
+      candidate: candidate(),
+      pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+      invocation: legacyInvocation,
+    });
+
+    await runProductProfileSynthesis(
+      ctx,
+      { runId: IDS.run, ...scope },
+      dependencies,
+    );
+
+    expect(dependencies.createClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptSetVersion: PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+      }),
+    );
+    expect(synthesizeProductProfile).toHaveBeenCalledWith(
+      legacyProviderInput,
+    );
+    expect(synthesizeProductProfile.mock.calls[0]![0]).not.toHaveProperty(
+      "declaredContext",
+    );
+    expect(
+      ProductProfileInvocationAttemptsRepository.prototype.reserve,
+    ).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({
+        promptSetVersion: PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+        inputHash: legacyProviderHash,
+      }),
+    );
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
     );
   });
 
@@ -693,7 +896,7 @@ describe("runProductProfileSynthesis", () => {
   it("rejects a frozen complete base profile before any provider work", async () => {
     const completeBaseHash = contentHash({
       status: "complete",
-      profile: baseProfile,
+      profile: baseProfile as unknown as CanonicalValue,
     });
     const completeManifest = {
       ...manifest,

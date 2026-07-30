@@ -2110,6 +2110,7 @@ export async function installGrowthVerticalApi(
           currentProfile: confirmedProfile,
           confirmedProfile,
           activeSynthesisRun: null,
+          activeCrawlRun: null,
         },
       });
       return;
@@ -2120,6 +2121,7 @@ export async function installGrowthVerticalApi(
         currentProfile: confirmedProfile,
         confirmedProfile,
         activeSynthesisRun: null,
+        activeCrawlRun: null,
       },
     });
   });

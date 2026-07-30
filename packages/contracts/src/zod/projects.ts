@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { Bcp47Locale, MarketCode } from "./common.ts";
-import { CompleteIcpProfileInput, DraftIcpProfilePatch } from "./icp.ts";
+import {
+  CompleteIcpProfileInput,
+  CustomerModel,
+  DraftIcpProfilePatch,
+} from "./icp.ts";
 
 /**
  * Project + context request schemas (spec §6.1, §6.2; OpenAPI `CreateProjectRequest`,
@@ -132,6 +136,30 @@ export type ProductProfileBusinessHint = z.infer<
   typeof ProductProfileBusinessHint
 >;
 
+export const ProductProfileProductName = z.string().trim().min(1).max(160);
+export type ProductProfileProductName = z.infer<
+  typeof ProductProfileProductName
+>;
+
+export const ProductProfileGrowthObjective = z.enum([
+  "increase_signups",
+  "generate_qualified_leads",
+  "increase_organic_traffic",
+  "increase_ai_visibility",
+  "improve_conversion",
+  "increase_revenue",
+  "enter_new_markets",
+]);
+export type ProductProfileGrowthObjective = z.infer<
+  typeof ProductProfileGrowthObjective
+>;
+
+const ProductProfileCreateGrowthObjectives = z
+  .array(ProductProfileGrowthObjective)
+  .min(1)
+  .max(ProductProfileGrowthObjective.options.length)
+  .refine(unique, "growthObjectives must be unique");
+
 export const ProductProfileProductUrl = z
   .url()
   .max(2048)
@@ -146,6 +174,10 @@ export const ProductProfileCreateProjectRequest = z
     mode: z.literal("product_profile"),
     productUrl: ProductProfileProductUrl,
     businessHint: ProductProfileBusinessHint.optional(),
+    productName: ProductProfileProductName.optional(),
+    customerModel: CustomerModel.optional(),
+    primaryMarket: MarketCode.optional(),
+    growthObjectives: ProductProfileCreateGrowthObjectives.optional(),
   })
   .strict();
 export type ProductProfileCreateProjectRequest = z.infer<

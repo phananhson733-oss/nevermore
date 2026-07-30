@@ -21,6 +21,7 @@ import {
 import {
   CompetitorsRepository,
   contentHash,
+  type CanonicalValue,
   type DbTx,
 } from "@sf/db";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
@@ -256,7 +257,10 @@ async function createConfirmedProfile(
       ${version},
       'complete',
       ${profile},
-      ${contentHash({ status: "complete", profile })},
+      ${contentHash({
+        status: "complete",
+        profile: profile as unknown as CanonicalValue,
+      })},
       ${project.actorId}
     )`);
   await db.execute(sql`UPDATE app.client_projects

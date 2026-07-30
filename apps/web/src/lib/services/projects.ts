@@ -7,6 +7,7 @@ import {
   SitesRepository,
   SourceConnectionsRepository,
   TelemetryRepository,
+  type CanonicalValue,
   type Db,
   type DbTx,
   type IcpProfileRow,
@@ -71,6 +72,18 @@ function createProjectRequestHash(body: CreateProjectWireRequest): string {
       mode: body.mode,
       productUrl: body.productUrl,
       businessHint: body.businessHint ?? null,
+      ...(body.productName === undefined
+        ? {}
+        : { productName: body.productName }),
+      ...(body.customerModel === undefined
+        ? {}
+        : { customerModel: body.customerModel }),
+      ...(body.primaryMarket === undefined
+        ? {}
+        : { primaryMarket: body.primaryMarket }),
+      ...(body.growthObjectives === undefined
+        ? {}
+        : { growthObjectives: [...body.growthObjectives] }),
     });
   }
   return contentHash({
@@ -299,7 +312,7 @@ export async function createProject(
     // display identity available. It is replaceable after profile review and
     // is not an inferred company or product name.
     const initialDisplayName = productProfileMode
-      ? normalized.host
+      ? (body.productName ?? normalized.host)
       : legacyBody!.clientName;
 
     const project = await projects.insert({
@@ -318,7 +331,11 @@ export async function createProject(
       projectId: project.id,
       origin: normalized.origin,
       host: normalized.host,
-      marketCodes: productProfileMode ? [] : [...legacyBody!.marketCodes],
+      marketCodes: productProfileMode
+        ? body.primaryMarket === undefined
+          ? []
+          : [body.primaryMarket]
+        : [...legacyBody!.marketCodes],
       languageCodes: productProfileMode
         ? []
         : [...legacyBody!.siteLanguageCodes],
@@ -348,6 +365,18 @@ export async function createProject(
         ...(body.businessHint === undefined
           ? {}
           : { businessHint: body.businessHint }),
+        ...(body.productName === undefined
+          ? {}
+          : { productName: body.productName }),
+        ...(body.customerModel === undefined
+          ? {}
+          : { customerModel: body.customerModel }),
+        ...(body.primaryMarket === undefined
+          ? {}
+          : { primaryMarket: body.primaryMarket }),
+        ...(body.growthObjectives === undefined
+          ? {}
+          : { growthObjectives: body.growthObjectives }),
       });
       initialProfile = await icpProfiles.insertVersion({
         workspaceId: scope.workspaceId,
@@ -355,7 +384,10 @@ export async function createProject(
         version: 1,
         status: "draft",
         profile,
-        contentHash: contentHash({ status: "draft", profile }),
+        contentHash: contentHash({
+          status: "draft",
+          profile: profile as unknown as CanonicalValue,
+        }),
         createdBy: actorId,
       });
       await projects.setCurrentIcpProfile(
@@ -371,12 +403,24 @@ export async function createProject(
       actorId,
       properties: {
         createMode: productProfileMode ? "product_profile" : "legacy",
-        marketCount: productProfileMode ? 0 : legacyBody!.marketCodes.length,
+        marketCount: productProfileMode
+          ? body.primaryMarket === undefined
+            ? 0
+            : 1
+          : legacyBody!.marketCodes.length,
         languageCount: productProfileMode
           ? 0
           : legacyBody!.siteLanguageCodes.length,
         businessHintDeclared:
           productProfileMode && body.businessHint !== undefined,
+        productNameDeclared:
+          productProfileMode && body.productName !== undefined,
+        customerModelDeclared:
+          productProfileMode && body.customerModel !== undefined,
+        growthObjectiveCount:
+          productProfileMode && body.growthObjectives !== undefined
+            ? body.growthObjectives.length
+            : 0,
       },
     });
 

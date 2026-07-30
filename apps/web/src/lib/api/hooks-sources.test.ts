@@ -3,7 +3,9 @@ import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./client";
 import {
+  activeProjectRunIdFromError,
   analysisRefreshRunIdFromError,
+  collectionRunIdFromError,
   createAnalysisRefreshRun,
   createCollectionRun,
   invalidateAnalysisRefreshTerminalQueries,
@@ -107,6 +109,58 @@ describe("Customer collection Sources API", () => {
       "Direct collection supports only crawl, gsc, and ga4 providers.",
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("adopts only the active Crawl run pointer for the current project", () => {
+    expect(
+      collectionRunIdFromError(
+        problem("RUN_ALREADY_ACTIVE", {
+          runId,
+          statusUrl: `/api/mvp/projects/${projectId}/runs/${runId}`,
+        }),
+        projectId,
+      ),
+    ).toBe(runId);
+
+    expect(
+      collectionRunIdFromError(
+        problem("RUN_ALREADY_ACTIVE", {
+          runId,
+          statusUrl: `/api/mvp/projects/00000000-0000-4000-8000-000000000099/runs/${runId}`,
+        }),
+        projectId,
+      ),
+    ).toBeNull();
+    expect(
+      collectionRunIdFromError(
+        problem("DEPENDENCY_UNAVAILABLE", {
+          runId,
+          statusUrl: `/api/mvp/projects/${projectId}/runs/${runId}`,
+        }),
+        projectId,
+      ),
+    ).toBeNull();
+  });
+
+  it("uses the same strict project-run boundary for synthesis adoption", () => {
+    expect(
+      activeProjectRunIdFromError(
+        problem("RUN_ALREADY_ACTIVE", {
+          runId,
+          statusUrl: `/api/mvp/projects/${projectId}/runs/${runId}`,
+        }),
+        projectId,
+      ),
+    ).toBe(runId);
+    expect(
+      activeProjectRunIdFromError(
+        problem("RUN_ALREADY_ACTIVE", {
+          runId,
+          statusUrl: `/api/mvp/projects/${projectId}/product-profile/runs/${runId}`,
+        }),
+        projectId,
+      ),
+    ).toBeNull();
   });
 });
 

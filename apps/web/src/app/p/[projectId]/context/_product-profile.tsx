@@ -32,11 +32,13 @@ import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
+  CustomerModel,
   ProductProfileCompetitorAnalysisScope,
   ProductProfileCompetitorCandidate,
   ProductProfileCompetitorRelationship,
   ProductProfileCompetitorReviewStatus,
   ProductProfileDraft,
+  ProductProfileGrowthObjective,
   UpdateProductProfileDraftRequest,
 } from "@sf/contracts";
 import {
@@ -51,6 +53,7 @@ import {
   useUpdateProductProfileDraft,
 } from "@/lib/api";
 import {
+  activeProjectRunIdFromError,
   useCreateCollectionRun,
   useProjectRun,
 } from "@/lib/api/hooks-sources";
@@ -72,6 +75,13 @@ import {
   PRODUCT_TYPES,
   type EditorState,
 } from "./_product-profile-editor";
+import {
+  automaticSynthesisKey,
+  claimOnce,
+  customerProfileFieldKey,
+  shouldStartCrawlForMissingSnapshot,
+  type ProductProfileSynthesisOrigin,
+} from "./_product-profile-onboarding";
 import styles from "./_product-profile.module.css";
 
 const MARKET_CODES = [
@@ -115,6 +125,16 @@ const BUSINESS_MODEL_MESSAGE_KEYS = {
   Services: "services",
   Advertising: "advertising",
 } as const satisfies Record<(typeof BUSINESS_MODELS)[number], string>;
+const CUSTOMER_MODELS = ["b2b", "b2c", "hybrid"] as const satisfies readonly CustomerModel[];
+const GROWTH_OBJECTIVES = [
+  "increase_signups",
+  "generate_qualified_leads",
+  "increase_organic_traffic",
+  "increase_ai_visibility",
+  "improve_conversion",
+  "increase_revenue",
+  "enter_new_markets",
+] as const satisfies readonly ProductProfileGrowthObjective[];
 
 function productTypeMessageKey(value: string): string | null {
   return (PRODUCT_TYPES as readonly string[]).includes(value)
@@ -132,28 +152,17 @@ type Feedback = {
   readonly tone: "success" | "error" | "progress";
   readonly title: string;
   readonly detail: string;
-  readonly code?: string;
-  readonly requestId?: string;
 };
 
 function isTerminal(status: string | undefined): boolean {
   return ["completed", "partial", "failed", "cancelled"].includes(status ?? "");
 }
 
-function errorFeedback(error: unknown, fallback: string): Feedback {
-  if (error instanceof ApiError) {
-    return {
-      tone: "error",
-      title: fallback,
-      detail: error.message,
-      code: error.code,
-      requestId: error.problem.requestId,
-    };
-  }
+function errorFeedback(title: string, detail: string): Feedback {
   return {
     tone: "error",
-    title: fallback,
-    detail: error instanceof Error ? error.message : fallback,
+    title,
+    detail,
   };
 }
 
@@ -428,6 +437,46 @@ function ProfileEditor({
                   <span>{t("fields.category")}</span>
                   <input value={state.category} onChange={(event) => set("category", event.target.value)} />
                 </label>
+              </div>
+              <label className={styles.field}>
+                <span>{t("fields.customerModel")}</span>
+                <select
+                  value={state.customerModel}
+                  onChange={(event) =>
+                    set("customerModel", event.target.value as CustomerModel)
+                  }
+                >
+                  <option value="" disabled>{t("editor.choose")}</option>
+                  {CUSTOMER_MODELS.map((model) => (
+                    <option key={model} value={model}>
+                      {t(`customerModels.${model}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className={styles.field}>
+                <span>{t("fields.growthObjectives")}</span>
+                <div className={styles.checkGrid}>
+                  {GROWTH_OBJECTIVES.map((objective) => (
+                    <label key={objective} className={styles.checkChoice}>
+                      <input
+                        type="checkbox"
+                        checked={state.growthObjectives.includes(objective)}
+                        onChange={(event) =>
+                          set(
+                            "growthObjectives",
+                            event.target.checked
+                              ? [...state.growthObjectives, objective]
+                              : state.growthObjectives.filter(
+                                  (item) => item !== objective,
+                                ),
+                          )
+                        }
+                      />
+                      <span>{t(`growthObjectives.${objective}`)}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
               <label className={styles.field}>
                 <span>{t("fields.oneLiner")}</span>
@@ -716,17 +765,136 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const [crawlRunId, setCrawlRunId] = useState("");
   const [crawlRequired, setCrawlRequired] = useState(false);
   const completedRuns = useRef(new Set<string>());
+  const failedPolls = useRef(new Set<string>());
+  const automaticAttempts = useRef(new Set<string>());
+  const postCrawlAttempts = useRef(new Set<string>());
+  const synthesisRequestInFlight = useRef(false);
+  const crawlRequestInFlight = useRef(false);
   const overlayTrigger = useRef<HTMLButtonElement | null>(null);
   const workspace = workspaceQuery.data;
   const view = workspace ? buildProductProfileViewModel(workspace) : null;
   const profile = view?.profile ?? null;
   const row = view?.row ?? null;
   const activeSynthesisId = workspace?.activeSynthesisRun?.id ?? synthesisRunId;
+  const activeCrawlId = workspace?.activeCrawlRun?.id ?? crawlRunId;
   const synthesisRun = useProductProfileRun(projectId, activeSynthesisId);
-  const crawlRun = useProjectRun(projectId, crawlRunId);
+  const crawlRun = useProjectRun(projectId, activeCrawlId);
+  const createSynthesisRun = synthesisMutation.mutateAsync;
+  const createCrawlRun = crawlMutation.mutateAsync;
   const regionNames = useMemo(
     () => new Intl.DisplayNames([locale], { type: "region" }),
     [locale],
+  );
+
+  const startCrawl = useCallback(
+    async (automatic: boolean): Promise<void> => {
+      if (crawlRequestInFlight.current) return;
+      crawlRequestInFlight.current = true;
+      setCrawlRequired(true);
+      try {
+        const accepted = await createCrawlRun({ provider: "crawl" });
+        setCrawlRunId(accepted.run.id);
+        setFeedback({
+          tone: "progress",
+          title: t("feedback.crawlQueued"),
+          detail: automatic
+            ? t("feedback.autoCrawlQueuedDetail")
+            : t("feedback.crawlQueuedDetail"),
+        });
+      } catch (error) {
+        const activeRunId = activeProjectRunIdFromError(error, projectId);
+        if (activeRunId) {
+          setCrawlRunId(activeRunId);
+          setFeedback({
+            tone: "progress",
+            title: t("feedback.crawlAlreadyRunning"),
+            detail: t("feedback.crawlAlreadyRunningDetail"),
+          });
+        } else {
+          setFeedback(
+            errorFeedback(
+              t("feedback.crawlFailed"),
+              t("feedback.retryDetail"),
+            ),
+          );
+        }
+      } finally {
+        crawlRequestInFlight.current = false;
+      }
+    },
+    [createCrawlRun, projectId, t],
+  );
+
+  const startSynthesis = useCallback(
+    async (
+      baseVersion: number,
+      origin: ProductProfileSynthesisOrigin,
+    ): Promise<void> => {
+      if (synthesisRequestInFlight.current) return;
+      synthesisRequestInFlight.current = true;
+      try {
+        const accepted = await createSynthesisRun({ baseVersion });
+        setSynthesisRunId(accepted.run.id);
+        setFeedback({
+          tone: "progress",
+          title: t("feedback.synthesisQueued"),
+          detail: t("feedback.synthesisQueuedDetail"),
+        });
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          error.code === "CRAWL_SNAPSHOT_REQUIRED"
+        ) {
+          setCrawlRequired(true);
+          if (shouldStartCrawlForMissingSnapshot(origin)) {
+            setFeedback({
+              tone: "progress",
+              title: t("feedback.autoCrawlPreparing"),
+              detail: t("feedback.autoCrawlPreparingDetail"),
+            });
+            await startCrawl(true);
+          } else {
+            setFeedback(
+              errorFeedback(
+                t("feedback.crawlInsufficient"),
+                t("feedback.crawlInsufficientDetail"),
+              ),
+            );
+          }
+        } else if (
+          error instanceof ApiError &&
+          error.code === "RUN_ALREADY_ACTIVE"
+        ) {
+          const activeRunId = activeProjectRunIdFromError(error, projectId);
+          if (activeRunId) {
+            setSynthesisRunId(activeRunId);
+            setFeedback({
+              tone: "progress",
+              title: t("feedback.synthesisAlreadyRunning"),
+              detail: t("feedback.synthesisAlreadyRunningDetail"),
+            });
+            await invalidateProductProfileQueries(queryClient, projectId);
+          } else {
+            setFeedback(
+              errorFeedback(
+                t("feedback.synthesisFailed"),
+                t("feedback.retryDetail"),
+              ),
+            );
+          }
+        } else {
+          setFeedback(
+            errorFeedback(
+              t("feedback.synthesisFailed"),
+              t("feedback.retryDetail"),
+            ),
+          );
+        }
+      } finally {
+        synthesisRequestInFlight.current = false;
+      }
+    },
+    [createSynthesisRun, projectId, queryClient, startCrawl, t],
   );
 
   useEffect(() => {
@@ -738,14 +906,12 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     if (run.status === "completed") {
       setFeedback({ tone: "success", title: t("feedback.synthesisComplete"), detail: t("feedback.synthesisCompleteDetail") });
     } else {
-      setFeedback({
-        tone: "error",
-        title: t("feedback.synthesisFailed"),
-        detail:
-          run.lastError?.summary ||
-          t("feedback.runEnded", { status: run.status }),
-        ...(run.lastError?.code ? { code: run.lastError.code } : {}),
-      });
+      setFeedback(
+        errorFeedback(
+          t("feedback.synthesisFailed"),
+          t("feedback.retryDetail"),
+        ),
+      );
     }
   }, [projectId, queryClient, synthesisRun.data, t]);
 
@@ -757,24 +923,116 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     void invalidateProductProfileQueries(queryClient, projectId);
     if (run.status === "completed" || run.status === "partial") {
       setCrawlRequired(false);
-      setFeedback({ tone: "success", title: t("feedback.crawlComplete"), detail: t("feedback.crawlCompleteDetail") });
+      const retryKey = `${run.id}:${row?.id ?? ""}:${row?.version ?? ""}`;
+      if (
+        row?.status === "draft" &&
+        profile?.generatedAt === null &&
+        claimOnce(postCrawlAttempts.current, retryKey)
+      ) {
+        automaticAttempts.current.add(`${row.id}:${row.version}`);
+        setFeedback({
+          tone: "progress",
+          title: t("feedback.crawlComplete"),
+          detail: t("feedback.crawlCompleteDetail"),
+        });
+        void startSynthesis(row.version, "after_crawl");
+      } else {
+        setFeedback({
+          tone: "success",
+          title: t("feedback.crawlComplete"),
+          detail: t("feedback.crawlReadyDetail"),
+        });
+      }
     } else {
-      setFeedback({
-        tone: "error",
-        title: t("feedback.crawlFailed"),
-        detail:
-          run.lastError?.summary ||
-          t("feedback.runEnded", { status: run.status }),
-        ...(run.lastError?.code ? { code: run.lastError.code } : {}),
-      });
+      setCrawlRequired(true);
+      setFeedback(
+        errorFeedback(t("feedback.crawlFailed"), t("feedback.retryDetail")),
+      );
     }
-  }, [crawlRun.data, projectId, queryClient, t]);
+  }, [
+    crawlRun.data,
+    profile?.generatedAt,
+    projectId,
+    queryClient,
+    row?.id,
+    row?.status,
+    row?.version,
+    startSynthesis,
+    t,
+  ]);
+
+  useEffect(() => {
+    if (
+      !activeSynthesisId ||
+      !synthesisRun.isError ||
+      !claimOnce(failedPolls.current, `synthesis:${activeSynthesisId}`)
+    ) {
+      return;
+    }
+    setSynthesisRunId("");
+    void invalidateProductProfileQueries(queryClient, projectId);
+    setFeedback(
+      errorFeedback(
+        t("feedback.progressUnavailable"),
+        t("feedback.progressUnavailableDetail"),
+      ),
+    );
+  }, [
+    activeSynthesisId,
+    projectId,
+    queryClient,
+    synthesisRun.isError,
+    t,
+  ]);
+
+  useEffect(() => {
+    if (
+      !activeCrawlId ||
+      !crawlRun.isError ||
+      !claimOnce(failedPolls.current, `crawl:${activeCrawlId}`)
+    ) {
+      return;
+    }
+    setCrawlRunId("");
+    setCrawlRequired(true);
+    setFeedback(
+      errorFeedback(
+        t("feedback.progressUnavailable"),
+        t("feedback.progressUnavailableDetail"),
+      ),
+    );
+  }, [activeCrawlId, crawlRun.isError, t]);
+
+  const autoKey = automaticSynthesisKey({
+    rowId: row?.id ?? null,
+    version: row?.version ?? null,
+    status: row?.status ?? null,
+    generatedAt: profile?.generatedAt ?? null,
+    activeSynthesisRunId: activeSynthesisId || null,
+    crawlRunId: activeCrawlId,
+  });
+
+  useEffect(() => {
+    if (
+      autoKey === null ||
+      row?.status !== "draft" ||
+      !claimOnce(automaticAttempts.current, autoKey)
+    ) {
+      return;
+    }
+    setFeedback({
+      tone: "progress",
+      title: t("feedback.autoSynthesisStarted"),
+      detail: t("feedback.autoSynthesisStartedDetail"),
+    });
+    void startSynthesis(row.version, "initial");
+  }, [autoKey, row?.status, row?.version, startSynthesis, t]);
 
   if (workspaceQuery.isPending) {
     return <div className={styles.statePanel} role="status"><LoaderCircle className={styles.spin} aria-hidden="true" /><h1>{t("loading.title")}</h1><p>{t("loading.detail")}</p></div>;
   }
   if (workspaceQuery.isError) {
-    return <div className={styles.statePanel} role="alert"><AlertTriangle aria-hidden="true" /><h1>{t("errors.loadTitle")}</h1><p>{workspaceQuery.error.message}</p><button type="button" className={styles.primaryButton} onClick={() => void workspaceQuery.refetch()}>{t("actions.retry")}</button></div>;
+    return <div className={styles.statePanel} role="alert"><AlertTriangle aria-hidden="true" /><h1>{t("errors.loadTitle")}</h1><p>{t("errors.loadDetail")}</p><button type="button" className={styles.primaryButton} onClick={() => void workspaceQuery.refetch()}>{t("actions.retry")}</button></div>;
   }
   if (!workspace || !view || !profile || !row) {
     return (
@@ -801,6 +1059,42 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     const key = businessModelMessageKey(model);
     return key ? t(`editor.businessModels.${key}`) : model;
   });
+  const localizedGrowthObjectives = (profile.growthObjectives ?? []).map(
+    (objective) => t(`growthObjectives.${objective}`),
+  );
+  const confirmedFactCount = new Set(
+    profile.fieldProvenance
+      .filter((entry) =>
+        ["declared", "observed", "computed", "inferred"].includes(
+          entry.derivation,
+        ),
+      )
+      .map((entry) => entry.path),
+  ).size;
+  const missingFieldLabels = [
+    ...new Set(
+      profile.missingFields.map((pointer) =>
+        t(`evidence.fieldNames.${customerProfileFieldKey(pointer)}`),
+      ),
+    ),
+  ];
+  const conflictingFieldLabels = [
+    ...new Set(
+      profile.conflictingFields.map((pointer) =>
+        t(`evidence.fieldNames.${customerProfileFieldKey(pointer)}`),
+      ),
+    ),
+  ];
+  const websiteEvidenceState = view.evidence.sourceSnapshotId
+    ? t("evidence.websiteReady")
+    : activeCrawlId
+      ? t("evidence.websiteCollecting")
+      : t("evidence.websiteWaiting");
+  const initialProfileState = view.evidence.analysisInvocationId
+    ? t("evidence.profileReady")
+    : activeRun
+      ? t("evidence.profileGenerating")
+      : t("evidence.profileWaiting");
   const sourceConnectionsAllowed = workspace.confirmedProfile !== null;
   const fact = (path: string) => getFieldFactState(profile, path);
   const rememberTrigger = (trigger: HTMLButtonElement) => {
@@ -827,31 +1121,10 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       await updateMutation.mutateAsync({ baseVersion: currentRow.version, patch });
       closeEditor();
       setFeedback({ tone: "success", title: t("feedback.saved"), detail: t("feedback.savedDetail") });
-    } catch (error) {
-      setFeedback(errorFeedback(error, t("feedback.saveFailed")));
-    }
-  }
-
-  async function synthesize() {
-    try {
-      const accepted = await synthesisMutation.mutateAsync({
-        baseVersion: currentRow.version,
-      });
-      setSynthesisRunId(accepted.run.id);
-      setFeedback({ tone: "progress", title: t("feedback.synthesisQueued"), detail: t("feedback.synthesisQueuedDetail") });
-    } catch (error) {
-      if (error instanceof ApiError && error.code === "CRAWL_SNAPSHOT_REQUIRED") setCrawlRequired(true);
-      setFeedback(errorFeedback(error, t("feedback.synthesisFailed")));
-    }
-  }
-
-  async function startCrawl() {
-    try {
-      const accepted = await crawlMutation.mutateAsync({ provider: "crawl" });
-      setCrawlRunId(accepted.run.id);
-      setFeedback({ tone: "progress", title: t("feedback.crawlQueued"), detail: t("feedback.crawlQueuedDetail") });
-    } catch (error) {
-      setFeedback(errorFeedback(error, t("feedback.crawlFailed")));
+    } catch {
+      setFeedback(
+        errorFeedback(t("feedback.saveFailed"), t("feedback.retryDetail")),
+      );
     }
   }
 
@@ -880,8 +1153,13 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       }
       closeCompetitorEditor();
       setFeedback({ tone: "success", title: t("feedback.competitorSaved"), detail: t("feedback.competitorSavedDetail") });
-    } catch (error) {
-      setFeedback(errorFeedback(error, t("feedback.competitorFailed")));
+    } catch {
+      setFeedback(
+        errorFeedback(
+          t("feedback.competitorFailed"),
+          t("feedback.retryDetail"),
+        ),
+      );
     }
   }
 
@@ -890,8 +1168,10 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       await confirmMutation.mutateAsync({ baseVersion: currentRow.version });
       closeConfirmation();
       router.push(`/p/${projectId}/sources`);
-    } catch (error) {
-      setFeedback(errorFeedback(error, t("feedback.confirmFailed")));
+    } catch {
+      setFeedback(
+        errorFeedback(t("feedback.confirmFailed"), t("feedback.retryDetail")),
+      );
     }
   }
 
@@ -918,14 +1198,14 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
               {t("actions.connectData")}
             </Link>
           ) : null}
-          {editable ? <button type="button" className={styles.primaryButton} onClick={() => void synthesize()} disabled={synthesisMutation.isPending || Boolean(activeRun)}><Sparkles size={16} aria-hidden="true" />{activeRun ? t("actions.synthesizing") : t("actions.synthesize")}</button> : null}
+          {editable ? <button type="button" className={styles.primaryButton} onClick={() => void startSynthesis(currentRow.version, "manual")} disabled={synthesisMutation.isPending || Boolean(activeRun)}><Sparkles size={16} aria-hidden="true" />{activeRun ? t("actions.synthesizing") : t("actions.synthesize")}</button> : null}
         </div>
       </header>
 
       {feedback ? (
         <section className={styles.feedback} data-tone={feedback.tone} role={feedback.tone === "error" ? "alert" : "status"}>
           {feedback.tone === "success" ? <CheckCircle2 aria-hidden="true" /> : feedback.tone === "progress" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
-          <div><strong>{feedback.title}</strong><p>{feedback.detail}</p>{feedback.code ? <small>{feedback.code}{feedback.requestId ? ` · ${feedback.requestId}` : ""}</small> : null}</div>
+          <div><strong>{feedback.title}</strong><p>{feedback.detail}</p></div>
           <button type="button" className={styles.iconButton} onClick={() => setFeedback(null)} aria-label={t("actions.close")}><X size={19} aria-hidden="true" /></button>
         </section>
       ) : null}
@@ -933,18 +1213,18 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       {activeRun ? (
         <section className={styles.runPanel} aria-live="polite">
           <LoaderCircle className={styles.spin} aria-hidden="true" />
-          <div><strong>{t("run.synthesisTitle")}</strong><p>{t(`run.statuses.${activeRun.status}`)} · {activeRun.progress.phase}</p></div>
+          <div><strong>{t("run.synthesisTitle")}</strong><p>{t(`run.statuses.${activeRun.status}`)}</p></div>
           <span>{activeRun.progress.total === null ? activeRun.progress.current : `${activeRun.progress.current}/${activeRun.progress.total}`}</span>
         </section>
       ) : null}
       {crawlRun.data && !isTerminal(crawlRun.data.status) ? (
-        <section className={styles.runPanel} aria-live="polite"><RefreshCw className={styles.spin} aria-hidden="true" /><div><strong>{t("run.crawlTitle")}</strong><p>{t(`run.statuses.${crawlRun.data.status as "queued" | "running"}`)} · {crawlRun.data.progress.phase}</p></div><span>{crawlRun.data.progress.total === null ? crawlRun.data.progress.current : `${crawlRun.data.progress.current}/${crawlRun.data.progress.total}`}</span></section>
+        <section className={styles.runPanel} aria-live="polite"><RefreshCw className={styles.spin} aria-hidden="true" /><div><strong>{t("run.crawlTitle")}</strong><p>{t(`run.statuses.${crawlRun.data.status as "queued" | "running"}`)}</p></div><span>{crawlRun.data.progress.total === null ? crawlRun.data.progress.current : `${crawlRun.data.progress.current}/${crawlRun.data.progress.total}`}</span></section>
       ) : null}
-      {crawlRequired ? (
+      {crawlRequired && (!activeCrawlId || crawlRun.isError) ? (
         <section className={styles.recoveryPanel}>
           <Database aria-hidden="true" />
           <div><strong>{t("recovery.title")}</strong><p>{t("recovery.detail")}</p></div>
-          <button type="button" className={styles.primaryButton} onClick={() => void startCrawl()} disabled={crawlMutation.isPending || Boolean(crawlRunId)}>{t("actions.runCrawl")}</button>
+          <button type="button" className={styles.primaryButton} onClick={() => void startCrawl(false)} disabled={crawlMutation.isPending}>{t("actions.runCrawl")}</button>
         </section>
       ) : null}
 
@@ -964,6 +1244,18 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
                     : <MissingValue />}
                 </strong>
               </div>
+              <div>
+                <span>{t("fields.customerModel")}</span>
+                <strong>
+                  {profile.customerModel
+                    ? t(`customerModels.${profile.customerModel}`)
+                    : <MissingValue />}
+                </strong>
+              </div>
+            </div>
+            <div className={styles.goalBlock}>
+              <span>{t("fields.growthObjectives")}</span>
+              <ValueList values={localizedGrowthObjectives} />
             </div>
             <div className={styles.statement}><span>{t("fields.valueProposition")}</span><p>{profile.valueProposition ?? <MissingValue />}</p></div>
           </section>
@@ -1010,12 +1302,12 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             <SectionHeading eyebrow={t("sections.evidence.eyebrow")} title={t("sections.evidence.title")} />
             <div className={styles.evidenceGrid}>
               <div><span>{t("evidence.source")}</span><strong>{profile.sourcePageUrl}</strong></div>
-              <div><span>{t("evidence.snapshot")}</span><strong>{view.evidence.sourceSnapshotId ?? t("evidence.notFrozen")}</strong></div>
-              <div><span>{t("evidence.invocation")}</span><strong>{view.evidence.analysisInvocationId ?? t("evidence.notGenerated")}</strong></div>
-              <div><span>{t("evidence.generatedAt")}</span><strong>{formatDate(view.evidence.generatedAt, locale) ?? t("states.unconfirmed")}</strong></div>
+              <div><span>{t("evidence.websiteStatus")}</span><strong>{websiteEvidenceState}</strong></div>
+              <div><span>{t("evidence.profileStatus")}</span><strong>{initialProfileState}</strong></div>
+              <div><span>{t("evidence.generatedAt")}</span><strong>{formatDate(view.evidence.generatedAt, locale) ?? t("evidence.notGeneratedYet")}</strong></div>
             </div>
-            <div className={styles.evidenceCounts}><span>{t("evidence.provenance", { count: view.evidence.provenanceCount })}</span><span data-warning={view.evidence.missingCount > 0}>{t("evidence.missing", { count: view.evidence.missingCount })}</span><span data-warning={view.evidence.conflictCount > 0}>{t("evidence.conflicts", { count: view.evidence.conflictCount })}</span></div>
-            {(profile.missingFields.length || profile.conflictingFields.length) ? <details className={styles.evidenceDetails}><summary>{t("evidence.reviewDetails")}</summary>{profile.missingFields.length ? <div><strong>{t("evidence.missingTitle")}</strong><ValueList values={profile.missingFields} /></div> : null}{profile.conflictingFields.length ? <div><strong>{t("evidence.conflictTitle")}</strong><ValueList values={profile.conflictingFields} /></div> : null}</details> : null}
+            <div className={styles.evidenceCounts}><span>{t("evidence.confirmedFacts", { count: confirmedFactCount })}</span><span data-warning={missingFieldLabels.length > 0}>{t("evidence.pendingFacts", { count: missingFieldLabels.length })}</span><span data-warning={conflictingFieldLabels.length > 0}>{t("evidence.conflicts", { count: conflictingFieldLabels.length })}</span></div>
+            {(missingFieldLabels.length || conflictingFieldLabels.length) ? <details className={styles.evidenceDetails}><summary>{t("evidence.reviewDetails")}</summary>{missingFieldLabels.length ? <div><strong>{t("evidence.missingTitle")}</strong><ValueList values={missingFieldLabels} /></div> : null}{conflictingFieldLabels.length ? <div><strong>{t("evidence.conflictTitle")}</strong><ValueList values={conflictingFieldLabels} /></div> : null}</details> : null}
           </section>
         </div>
 

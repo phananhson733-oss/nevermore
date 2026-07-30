@@ -1845,7 +1845,10 @@ describeDb("Product Profile synthesis persistence", () => {
           version: 40,
           status: "draft",
           profile: parsed,
-          contentHash: contentHash({ status: "draft", profile: parsed }),
+          contentHash: contentHash({
+            status: "draft",
+            profile: parsed,
+          } as unknown as CanonicalValue),
           createdBy: fixture.actorId,
         }),
         "23514",
@@ -1926,7 +1929,10 @@ describeDb("Product Profile synthesis persistence", () => {
         version: 40,
         status: "draft",
         profile: validProfile,
-        contentHash: contentHash({ status: "draft", profile: validProfile }),
+        contentHash: contentHash({
+          status: "draft",
+          profile: validProfile,
+        } as unknown as CanonicalValue),
         createdBy: fixture.actorId,
       }),
     ).resolves.toMatchObject({ version: 40, profile: validProfile });
