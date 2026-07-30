@@ -40,6 +40,7 @@ afterEach(() => {
 });
 
 function configurePersistence() {
+  vi.stubEnv("CONSENT_PERSISTENCE_ENABLED", "true");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "public-anon-key");
 }
@@ -90,8 +91,26 @@ describe("POST /api/consent persistence boundary", () => {
   });
 
   it("returns an honest local-only 202 when persistence is not configured", async () => {
+    vi.stubEnv("CONSENT_PERSISTENCE_ENABLED", "");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      data: {
+        recorded: false,
+        reason: "persistence_not_configured",
+      },
+    });
+    expect(mocks.createServerSupabaseClient).not.toHaveBeenCalled();
+  });
+
+  it("keeps blog Supabase configuration local-only without explicit consent opt-in", async () => {
+    vi.stubEnv("CONSENT_PERSISTENCE_ENABLED", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "public-anon-key");
 
     const response = await POST(request());
 

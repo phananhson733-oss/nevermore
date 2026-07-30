@@ -3,6 +3,7 @@
 // @pos    -- keeps cookie preferences functional when marketing persistence is not configured
 
 export interface ConsentPersistenceEnvironment {
+  readonly CONSENT_PERSISTENCE_ENABLED?: string;
   readonly NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
   readonly NEXT_PUBLIC_SUPABASE_URL?: string;
 }
@@ -11,7 +12,8 @@ export function hasConsentPersistenceConfig(
   environment: ConsentPersistenceEnvironment,
 ): boolean {
   return Boolean(
-    environment.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
+    environment.CONSENT_PERSISTENCE_ENABLED?.trim().toLowerCase() === "true" &&
+      environment.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
       environment.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
   );
 }

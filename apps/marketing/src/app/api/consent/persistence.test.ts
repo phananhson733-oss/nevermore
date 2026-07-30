@@ -6,15 +6,23 @@ import {
 } from "./persistence.ts";
 
 describe("consent persistence availability", () => {
-  it("requires both public Supabase values before creating a client", () => {
+  it("requires an explicit opt-in plus both public Supabase values", () => {
     expect(hasConsentPersistenceConfig({})).toBe(false);
     expect(
       hasConsentPersistenceConfig({
+        CONSENT_PERSISTENCE_ENABLED: "true",
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
       }),
     ).toBe(false);
     expect(
       hasConsentPersistenceConfig({
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: "publishable",
+        NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+      }),
+    ).toBe(false);
+    expect(
+      hasConsentPersistenceConfig({
+        CONSENT_PERSISTENCE_ENABLED: "true",
         NEXT_PUBLIC_SUPABASE_ANON_KEY: "publishable",
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
       }),
