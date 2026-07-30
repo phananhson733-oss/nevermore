@@ -94,7 +94,7 @@ export function buildSeoAuditPayload(probe: SeoAuditProbe): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       scope: "single_raw_page_and_standard_support_files",
       completedAt: probe.scannedAt,
     },

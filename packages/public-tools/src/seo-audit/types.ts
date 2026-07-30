@@ -23,7 +23,8 @@ export type SeoAuditResourceState =
   | "empty"
   | "server_error"
   | "fetch_error"
-  | "too_large";
+  | "too_large"
+  | "decode_error";
 
 export interface SeoAuditPageProbe {
   readonly requestedUrl: string;
@@ -33,6 +34,7 @@ export interface SeoAuditPageProbe {
   readonly redirectChain: readonly string[];
   readonly contentType: string | null;
   readonly bodyComplete: boolean;
+  readonly decodeReliable: boolean;
   readonly robotsNoindex: boolean | null;
   readonly title: string | null;
   readonly metaDescription: string | null;
@@ -41,10 +43,14 @@ export interface SeoAuditPageProbe {
   readonly h1Count: number;
   readonly headingOutline: readonly string[];
   readonly wordCount: number;
-  readonly internalLinkCount: number;
+  readonly viewportConfigured: boolean | null;
+  readonly hasMetaRefresh: boolean | null;
+  /** Count of the four deliberately projected response security headers. */
+  readonly securityHeadersPresent: number;
   readonly socialMetaTagsPresent: number;
   readonly jsonLdBlockCount: number;
   readonly jsonLdErrorCount: number;
+  readonly jsonLdScanComplete: boolean;
 }
 
 export interface SeoAuditResourceProbe {

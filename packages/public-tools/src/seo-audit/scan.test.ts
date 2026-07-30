@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   PublicResourceFetchOptions,
   PublicResourceResult,
-} from "@sf/sources";
+} from "@sf/sources/public-http";
 import {
   scanSeoAuditSite,
   SeoAuditScanError,
@@ -22,6 +22,13 @@ const ok = (
   redirectChain: [],
   contentType: "text/html; charset=utf-8",
   xRobotsTag: null,
+  securityHeaders: {
+    strictTransportSecurity: false,
+    contentSecurityPolicy: false,
+    xContentTypeOptions: false,
+    xFrameOptions: false,
+  },
+  decodeState: "utf8",
   body,
   bytes: new TextEncoder().encode(body).byteLength,
   bodyComplete: true,
@@ -53,6 +60,7 @@ describe("scanSeoAuditSite", () => {
             '<html lang="en"><head>',
             "<title>Acme evidence-led growth operating system</title>",
             '<meta name="description" content="A sufficiently descriptive summary for the public health map fixture and its deterministic checks.">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
             '<meta property="og:title" content="Acme">',
             '<meta property="og:description" content="Acme growth">',
             '<meta property="og:image" content="/og.png">',
@@ -69,6 +77,12 @@ describe("scanSeoAuditSite", () => {
             finalUrl: "https://www.acme.com/",
             redirectChain: ["https://www.acme.com/"],
             firstStatus: 301,
+            securityHeaders: {
+              strictTransportSecurity: true,
+              contentSecurityPolicy: true,
+              xContentTypeOptions: true,
+              xFrameOptions: true,
+            },
           },
         );
       },
@@ -88,7 +102,9 @@ describe("scanSeoAuditSite", () => {
       robotsNoindex: false,
       htmlLang: "en",
       h1Count: 1,
-      internalLinkCount: 3,
+      viewportConfigured: true,
+      hasMetaRefresh: false,
+      securityHeadersPresent: 4,
       socialMetaTagsPresent: 4,
       jsonLdBlockCount: 1,
       jsonLdErrorCount: 0,
@@ -103,6 +119,62 @@ describe("scanSeoAuditSite", () => {
     ]);
     expect(calls[1]?.options.allowedOrigin).toBe("https://www.acme.com");
     expect(calls[2]?.options.allowedOrigin).toBe("https://www.acme.com");
+  });
+
+  it("captures viewport and meta-refresh facts without crawling the site", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          "<html><head>",
+          '<meta name="viewport" content="width=device-width, initial-scale=1">',
+          '<meta http-equiv="refresh" content="0;url=https://acme.com/new">',
+          "</head><body>Acme</body></html>",
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.viewportConfigured).toBe(true);
+    expect(result.page.hasMetaRefresh).toBe(true);
+  });
+
+  it("does not call an empty refresh directive a redirect", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        '<html><head><meta http-equiv="refresh" content=""></head></html>',
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.hasMetaRefresh).toBe(false);
   });
 
   it("throws a stable timeout only when the submitted page transport fails", async () => {
@@ -164,6 +236,30 @@ describe("scanSeoAuditSite", () => {
     expect(result.sitemap.state).toBe("parsed");
   });
 
+  it("treats a gone standard sitemap path as missing, not a server failure", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "", {
+          finalStatus: 410,
+          firstStatus: 410,
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, "<html><body>Acme</body></html>");
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.sitemap.state).toBe("missing");
+  });
+
   it("reports when complete robots rules block the submitted page", async () => {
     const fetchResource: SeoAuditFetchResource = async (url) => {
       if (url.endsWith("/robots.txt")) {
@@ -220,5 +316,674 @@ describe("scanSeoAuditSite", () => {
     expect(result.page.h1Count).toBe(0);
     expect(result.page.headingOutline).toEqual([]);
     expect(result.page.socialMetaTagsPresent).toBe(0);
+  });
+
+  it("finds noindex across repeated robots and googlebot meta tags", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          "<html><head>",
+          '<meta name="robots" content="index, follow">',
+          '<meta name="googlebot" content="noindex">',
+          "</head><body>Acme</body></html>",
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.robotsNoindex).toBe(true);
+  });
+
+  it("does not let comment-looking script text hide a real robots directive", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          "<html><head>",
+          '<script>const marker = "<!--";</script>',
+          '<meta name="robots" content="noindex">',
+          "</head><body>Acme</body></html>",
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.robotsNoindex).toBe(true);
+  });
+
+  it("keeps raw-text stripping when an opening tag has an unquoted quote", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          '<html><head><script data-x=bar"baz>',
+          '<meta name="robots" content="noindex">',
+          "</script></head><body>Acme</body></html>",
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.robotsNoindex).toBe(false);
+  });
+
+  it("does not expose a fake robots directive inside an incomplete quoted opening tag", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          '<html><head><script foo="unterminated>',
+          '<meta name="robots" content="noindex">',
+          "</script></head><body>Acme</body></html>",
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.robotsNoindex).toBe(false);
+  });
+
+  it.each([
+    [
+      "textarea text",
+      '<textarea><meta name="robots" content="noindex"></textarea>',
+    ],
+    [
+      "title text",
+      '<title><meta name="robots" content="noindex"></title>',
+    ],
+    [
+      "another element's quoted attribute",
+      '<div data-fixture=\'<meta name="robots" content="noindex">\'>Acme</div>',
+    ],
+    [
+      "plaintext text state",
+      '<plaintext></plaintext><meta name="robots" content="noindex">',
+    ],
+  ])("does not treat meta-looking markup in %s as robots evidence", async (_label, body) => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, `<html><head>${body}</head><body>Acme</body></html>`);
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.robotsNoindex).toBe(false);
+  });
+
+  it.each([
+    [
+      "title RCDATA",
+      '<title>Acme</title foo><meta name="robots" content="noindex">',
+    ],
+    [
+      "textarea RCDATA",
+      '<textarea>Acme</textarea foo><meta name="robots" content="noindex">',
+    ],
+    [
+      "xmp raw text",
+      '<xmp>Acme</xmp/><meta name="robots" content="noindex">',
+    ],
+  ])("observes a real robots meta after an appropriate %s end tag", async (_label, body) => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, `<html><head>${body}</head><body>Acme</body></html>`);
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.robotsNoindex).toBe(true);
+  });
+
+  it("does not accept whitespace between an end-tag slash and name", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        '<html><head><title>Acme</ title><meta name="robots" content="noindex"></head></html>',
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.robotsNoindex).toBe(false);
+  });
+
+  it.each([
+    [
+      "a double quote",
+      '<title>Acme</title foo=bar"baz><meta name=robots content=noindex>',
+      "Acme",
+    ],
+    [
+      "a single quote",
+      "<textarea>Acme</textarea foo=bar'baz><meta name=robots content=noindex>",
+      null,
+    ],
+  ])(
+    "keeps %s inside an unquoted end-tag attribute value",
+    async (_label, body, expectedTitle) => {
+      const fetchResource: SeoAuditFetchResource = async (url) => {
+        if (url.endsWith("/robots.txt")) {
+          return ok(url, "User-agent: *", { contentType: "text/plain" });
+        }
+        if (url.endsWith("/sitemap.xml")) {
+          return ok(url, "<urlset></urlset>", {
+            contentType: "application/xml",
+          });
+        }
+        return ok(url, `<html><head>${body}</head><body>Acme</body></html>`);
+      };
+
+      const result = await scanSeoAuditSite(
+        "https://acme.com/",
+        {},
+        fetchResource,
+      );
+
+      expect(result.page).toMatchObject({
+        robotsNoindex: true,
+        title: expectedTitle,
+      });
+    },
+  );
+
+  it("keeps meta and JSON-LD looking content after plaintext in text state", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          "<html><head><plaintext></plaintext>",
+          '<meta name="robots" content="noindex">',
+          '<script type="application/ld+json">{bad}</script>',
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      robotsNoindex: false,
+      jsonLdBlockCount: 0,
+      jsonLdErrorCount: 0,
+      jsonLdScanComplete: true,
+    });
+  });
+
+  it("ignores X-Robots-Tag noindex scoped to an unrelated crawler", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, "<html><body>Acme</body></html>", {
+        xRobotsTag: "otherbot: noindex",
+      });
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.robotsNoindex).toBe(false);
+  });
+
+  it("does not derive document facts from an unreliably decoded page", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, "", {
+        decodeState: "unsupported_charset",
+        contentType: "text/html; charset=iso-8859-1",
+      });
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      decodeReliable: false,
+      title: null,
+      h1Count: 0,
+      robotsNoindex: null,
+    });
+  });
+
+  it("does not parse a missing Content-Type body as HTML evidence", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        "<html><head><title>Not confirmed HTML</title></head><body><h1>Hidden</h1></body></html>",
+        { contentType: null },
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      title: null,
+      h1Count: 0,
+      robotsNoindex: null,
+    });
+  });
+
+  it("counts only closed JSON-LD blocks from a truncated response", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        '<html><head><script type="application/ld+json">{"@type":',
+        { bodyComplete: false, decodeState: "utf8_prefix" },
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      bodyComplete: false,
+      jsonLdBlockCount: 0,
+      jsonLdErrorCount: 0,
+      jsonLdScanComplete: false,
+    });
+  });
+
+  it.each([
+    [
+      "a comment",
+      '<!-- <script type="application/ld+json">{bad}</script> -->',
+    ],
+    [
+      "a regular script string",
+      '<script>const fixture = \'<script type="application/ld+json">{bad}</script>\';</script>',
+    ],
+  ])("ignores JSON-LD-looking markup inside %s", async (_label, body) => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, `<html><body>${body}</body></html>`);
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      jsonLdBlockCount: 0,
+      jsonLdErrorCount: 0,
+      jsonLdScanComplete: true,
+    });
+  });
+
+  it("keeps text-state projection when an opening tag has an unquoted quote", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          '<html><body><textarea data-x=bar"baz>',
+          '<script type="application/ld+json">{bad}</script>',
+          "</textarea></body></html>",
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      jsonLdBlockCount: 0,
+      jsonLdErrorCount: 0,
+      jsonLdScanComplete: true,
+    });
+  });
+
+  it("stops JSON-LD evidence scanning inside an incomplete quoted opening tag", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          "<html><body><textarea foo='unterminated>",
+          '<script type="application/ld+json">{bad}</script>',
+          "</textarea></body></html>",
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      jsonLdBlockCount: 0,
+      jsonLdErrorCount: 0,
+      jsonLdScanComplete: false,
+    });
+  });
+
+  it.each([
+    [
+      "a data-type attribute",
+      '<script data-type="application/ld+json">{bad}</script>',
+    ],
+    [
+      "textarea text",
+      '<textarea><script type="application/ld+json">{bad}</script></textarea>',
+    ],
+    [
+      "another element's quoted attribute",
+      '<div data-fixture=\'<script type="application/ld+json">{bad}</script>\'>Acme</div>',
+    ],
+  ])("ignores JSON-LD-looking markup inside %s", async (_label, body) => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, `<html><body>${body}</body></html>`);
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      jsonLdBlockCount: 0,
+      jsonLdErrorCount: 0,
+      jsonLdScanComplete: true,
+    });
+  });
+
+  it("reports malformed JSON-LD from an actual script type attribute", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        '<html><body><script type="application/ld+json">{bad}</script></body></html>',
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      jsonLdBlockCount: 0,
+      jsonLdErrorCount: 1,
+      jsonLdScanComplete: true,
+    });
+  });
+
+  it("marks the JSON-LD projection incomplete when a 101st block exists", async () => {
+    const blocks = [
+      ...Array.from(
+        { length: 100 },
+        () =>
+          '<script type="application/ld+json">{"@type":"Thing"}</script>',
+      ),
+      '<script type="application/ld+json">{bad}</script>',
+    ].join("");
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, `<html><head>${blocks}</head><body>Acme</body></html>`);
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page).toMatchObject({
+      jsonLdBlockCount: 100,
+      jsonLdErrorCount: 0,
+      jsonLdScanComplete: false,
+    });
+  });
+
+  it.each([
+    ["truncated", false, null],
+    ["complete malformed HTML", true, false],
+  ])(
+    "ignores robots meta inside an unclosed comment on a %s response",
+    async (_label, bodyComplete, expectedNoindex) => {
+      const fetchResource: SeoAuditFetchResource = async (url) => {
+        if (url.endsWith("/robots.txt")) {
+          return ok(url, "User-agent: *", { contentType: "text/plain" });
+        }
+        if (url.endsWith("/sitemap.xml")) {
+          return ok(url, "<urlset></urlset>", {
+            contentType: "application/xml",
+          });
+        }
+        return ok(
+          url,
+          '<html><head><!-- <meta name="googlebot" content="noindex">',
+          {
+            bodyComplete,
+            decodeState: bodyComplete ? "utf8" : "utf8_prefix",
+          },
+        );
+      };
+
+      const result = await scanSeoAuditSite(
+        "https://acme.com/",
+        {},
+        fetchResource,
+      );
+
+      expect(result.page.robotsNoindex).toBe(expectedNoindex);
+    },
+  );
+
+  it("keeps an unreliably decoded robots response as unverified evidence", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "", {
+          contentType: "text/plain; charset=iso-8859-1",
+          decodeState: "unsupported_charset",
+        });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(url, "<html><body>Acme</body></html>");
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.robots.state).toBe("decode_error");
+    expect(result.robotsPageAllowed).toBeNull();
   });
 });

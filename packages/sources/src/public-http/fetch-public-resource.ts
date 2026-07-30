@@ -24,6 +24,24 @@ export type PublicResourceErrorCode =
   | "redirect_limit"
   | "timeout";
 
+export type PublicResourceDecodeState =
+  | "utf8"
+  | "utf8_prefix"
+  | "unsupported_charset"
+  | "invalid_utf8";
+
+/**
+ * A deliberately small, non-sensitive projection of response headers that
+ * matter to a public page-health check. Arbitrary response headers are not
+ * retained because they can contain deployment-specific or sensitive values.
+ */
+export interface PublicResourceSecurityHeaders {
+  readonly strictTransportSecurity: boolean;
+  readonly contentSecurityPolicy: boolean;
+  readonly xContentTypeOptions: boolean;
+  readonly xFrameOptions: boolean;
+}
+
 export interface PublicResourceSuccess {
   readonly kind: "ok";
   readonly requestedUrl: string;
@@ -33,8 +51,14 @@ export interface PublicResourceSuccess {
   readonly redirectChain: readonly string[];
   readonly contentType: string | null;
   readonly xRobotsTag: string | null;
+  readonly securityHeaders: PublicResourceSecurityHeaders;
   readonly body: string;
   readonly bytes: number;
+  /**
+   * Describes whether the retained bytes could be decoded without silently
+   * substituting characters or guessing a declared non-UTF-8 encoding.
+   */
+  readonly decodeState: PublicResourceDecodeState;
   /**
    * False means `body` is only the bounded response prefix. Consumers may use
    * observed positive facts, but must not infer that a tag/value is absent.
@@ -83,9 +107,20 @@ export interface PublicResourceFetchDependencies {
 }
 
 interface BoundedBody {
-  readonly body: string;
+  readonly data: Uint8Array;
   readonly bytes: number;
   readonly complete: boolean;
+}
+
+function securityHeaders(
+  headers: Headers,
+): PublicResourceSecurityHeaders {
+  return {
+    strictTransportSecurity: headers.has("strict-transport-security"),
+    contentSecurityPolicy: headers.has("content-security-policy"),
+    xContentTypeOptions: headers.has("x-content-type-options"),
+    xFrameOptions: headers.has("x-frame-options"),
+  };
 }
 
 type SignalRace<T> =
@@ -196,7 +231,9 @@ async function readBoundedBody(
   maxBodyBytes: number,
 ): Promise<BoundedBody> {
   const stream = response.body;
-  if (!stream) return { body: "", bytes: 0, complete: true };
+  if (!stream) {
+    return { data: new Uint8Array(), bytes: 0, complete: true };
+  }
 
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
@@ -260,10 +297,54 @@ async function readBoundedBody(
     offset += chunk.byteLength;
   }
   return {
-    body: new TextDecoder().decode(combined),
+    data: combined,
     bytes,
     complete,
   };
+}
+
+function declaredCharset(contentType: string | null): string | null {
+  if (!contentType) return null;
+  const match = contentType.match(
+    /(?:^|;)\s*charset\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s]+))/i,
+  );
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? null)
+    ?.trim()
+    .toLowerCase() ?? null;
+}
+
+function decodeBoundedBody(
+  bounded: BoundedBody,
+  contentType: string | null,
+): { readonly body: string; readonly state: PublicResourceDecodeState } {
+  const charset = declaredCharset(contentType);
+  if (
+    charset !== null &&
+    charset !== "utf-8" &&
+    charset !== "utf8" &&
+    charset !== "us-ascii"
+  ) {
+    return { body: "", state: "unsupported_charset" };
+  }
+  if (
+    charset === "us-ascii" &&
+    bounded.data.some((byte) => byte > 0x7f)
+  ) {
+    return { body: "", state: "invalid_utf8" };
+  }
+
+  try {
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    const body = bounded.complete
+      ? decoder.decode(bounded.data)
+      : decoder.decode(bounded.data, { stream: true });
+    return {
+      body,
+      state: bounded.complete ? "utf8" : "utf8_prefix",
+    };
+  } catch {
+    return { body: "", state: "invalid_utf8" };
+  }
 }
 
 function errorCode(error: unknown, signal: AbortSignal): PublicResourceErrorCode {
@@ -436,6 +517,8 @@ export async function fetchPublicResource(
               };
             }
             const bounded = bodyRace.value;
+            const contentType = response.headers.get("content-type");
+            const decoded = decodeBoundedBody(bounded, contentType);
             return {
               kind: "ok",
               requestedUrl: initialUrl,
@@ -443,10 +526,12 @@ export async function fetchPublicResource(
               firstStatus,
               finalStatus: response.status,
               redirectChain,
-              contentType: response.headers.get("content-type"),
+              contentType,
               xRobotsTag: response.headers.get("x-robots-tag"),
-              body: bounded.body,
+              securityHeaders: securityHeaders(response.headers),
+              body: decoded.body,
               bytes: bounded.bytes,
+              decodeState: decoded.state,
               bodyComplete: bounded.complete,
             };
           }
@@ -486,6 +571,8 @@ export async function fetchPublicResource(
           };
         }
         const bounded: BoundedBody = bodyRace.value;
+        const contentType = response.headers.get("content-type");
+        const decoded = decodeBoundedBody(bounded, contentType);
         return {
           kind: "ok",
           requestedUrl: initialUrl,
@@ -493,10 +580,12 @@ export async function fetchPublicResource(
           firstStatus,
           finalStatus: response.status,
           redirectChain,
-          contentType: response.headers.get("content-type"),
+          contentType,
           xRobotsTag: response.headers.get("x-robots-tag"),
-          body: bounded.body,
+          securityHeaders: securityHeaders(response.headers),
+          body: decoded.body,
           bytes: bounded.bytes,
+          decodeState: decoded.state,
           bodyComplete: bounded.complete,
         };
       } finally {

@@ -7,6 +7,7 @@ import type {
   SeoAuditSeverity,
   SeoAuditStatus,
 } from "./types.ts";
+import { subjectUrlOf } from "@sf/sources/canonical-url";
 
 interface CatalogEntry {
   readonly id: string;
@@ -16,7 +17,7 @@ interface CatalogEntry {
 }
 
 const CATALOG: readonly CatalogEntry[] = [
-  { id: "homepage_status", module: "crawlability", severity: "critical", weight: 4 },
+  { id: "page_status", module: "crawlability", severity: "critical", weight: 4 },
   { id: "indexability", module: "crawlability", severity: "critical", weight: 4 },
   { id: "robots_access", module: "crawlability", severity: "high", weight: 2 },
   { id: "sitemap", module: "crawlability", severity: "high", weight: 2 },
@@ -25,15 +26,37 @@ const CATALOG: readonly CatalogEntry[] = [
   { id: "html_content_type", module: "technical", severity: "high", weight: 2 },
   { id: "canonical", module: "technical", severity: "high", weight: 3 },
   { id: "html_lang", module: "technical", severity: "low", weight: 1 },
+  { id: "viewport", module: "technical", severity: "medium", weight: 2 },
+  { id: "meta_refresh", module: "technical", severity: "medium", weight: 2 },
+  {
+    id: "security_headers",
+    module: "technical",
+    severity: "medium",
+    weight: 2,
+  },
   { id: "title", module: "on_page", severity: "high", weight: 3 },
   { id: "meta_description", module: "on_page", severity: "medium", weight: 2 },
   { id: "h1", module: "on_page", severity: "high", weight: 3 },
   { id: "heading_order", module: "on_page", severity: "low", weight: 1 },
   { id: "text_depth", module: "content", severity: "medium", weight: 2 },
-  { id: "internal_links", module: "content", severity: "medium", weight: 2 },
   { id: "social_meta", module: "content", severity: "low", weight: 1 },
   { id: "json_ld", module: "structured_data", severity: "medium", weight: 2 },
 ] as const;
+
+const DOCUMENT_CHECK_IDS = new Set([
+  "indexability",
+  "canonical",
+  "html_lang",
+  "title",
+  "meta_description",
+  "h1",
+  "heading_order",
+  "text_depth",
+  "viewport",
+  "meta_refresh",
+  "social_meta",
+  "json_ld",
+]);
 
 function observed(
   source: SeoAuditEvidenceSource,
@@ -60,7 +83,8 @@ function bodyUnknown(probe: SeoAuditProbe): boolean {
   return (
     probe.page.statusCode < 200 ||
     probe.page.statusCode >= 300 ||
-    isHtml(probe.page.contentType) === false ||
+    isHtml(probe.page.contentType) !== true ||
+    !probe.page.decodeReliable ||
     !probe.page.bodyComplete
   );
 }
@@ -70,13 +94,14 @@ function checkStatus(id: string, probe: SeoAuditProbe): SeoAuditStatus {
   const html = isHtml(page.contentType);
   const incomplete = !page.bodyComplete;
   switch (id) {
-    case "homepage_status":
+    case "page_status":
       if (page.statusCode >= 200 && page.statusCode < 300) return "pass";
       if (page.statusCode >= 400) return "fail";
       return "warning";
     case "indexability":
-      if (page.robotsNoindex === true) return "fail";
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
+      if (page.robotsNoindex === true) return "fail";
+      if (!page.decodeReliable) return "unverified";
       if (page.robotsNoindex === false) return "pass";
       return "unverified";
     case "robots_access":
@@ -108,23 +133,43 @@ function checkStatus(id: string, probe: SeoAuditProbe): SeoAuditStatus {
       return html ? "pass" : "fail";
     case "canonical":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false || (!page.canonical && incomplete)) return "unverified";
+      if (!page.decodeReliable) return "unverified";
+      if (html !== true || (!page.canonical && incomplete)) return "unverified";
       if (!page.canonical) return "warning";
-      return page.canonical === page.finalUrl ? "pass" : "fail";
+      return subjectUrlOf(page.canonical) === subjectUrlOf(page.finalUrl)
+        ? "pass"
+        : "fail";
     case "html_lang":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false || (!page.htmlLang && incomplete)) return "unverified";
+      if (!page.decodeReliable) return "unverified";
+      if (html !== true || (!page.htmlLang && incomplete)) return "unverified";
       return page.htmlLang ? "pass" : "warning";
+    case "viewport":
+      if (bodyUnknown(probe)) return "unverified";
+      if (page.viewportConfigured === true) return "pass";
+      if (page.viewportConfigured === false) return "warning";
+      return "unverified";
+    case "meta_refresh":
+      if (bodyUnknown(probe)) return "unverified";
+      if (page.hasMetaRefresh === true) return "warning";
+      if (page.hasMetaRefresh === false) return "pass";
+      return "unverified";
+    case "security_headers":
+      if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
+      if (new URL(page.finalUrl).protocol !== "https:") return "unverified";
+      return page.securityHeadersPresent === 4 ? "pass" : "warning";
     case "title":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false || (!page.title && incomplete)) return "unverified";
+      if (!page.decodeReliable) return "unverified";
+      if (html !== true || (!page.title && incomplete)) return "unverified";
       if (!page.title) return "fail";
       return page.title.length >= 30 && page.title.length <= 60
         ? "pass"
         : "warning";
     case "meta_description":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false || (!page.metaDescription && incomplete)) {
+      if (!page.decodeReliable) return "unverified";
+      if (html !== true || (!page.metaDescription && incomplete)) {
         return "unverified";
       }
       if (!page.metaDescription) return "fail";
@@ -134,8 +179,9 @@ function checkStatus(id: string, probe: SeoAuditProbe): SeoAuditStatus {
         : "warning";
     case "h1":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false) return "unverified";
-      if (incomplete) return page.h1Count > 1 ? "fail" : "unverified";
+      if (!page.decodeReliable) return "unverified";
+      if (html !== true) return "unverified";
+      if (incomplete) return page.h1Count > 1 ? "warning" : "unverified";
       if (page.h1Count === 0) return "fail";
       return page.h1Count === 1 ? "pass" : "warning";
     case "heading_order":
@@ -145,21 +191,15 @@ function checkStatus(id: string, probe: SeoAuditProbe): SeoAuditStatus {
       return headingsAreOrdered(page.headingOutline) ? "pass" : "warning";
     case "text_depth":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false) return "unverified";
+      if (!page.decodeReliable) return "unverified";
+      if (html !== true) return "unverified";
       if (incomplete) return page.wordCount >= 500 ? "pass" : "unverified";
       if (page.wordCount >= 500) return "pass";
       return page.wordCount >= 200 ? "warning" : "fail";
-    case "internal_links":
-      if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false) return "unverified";
-      if (incomplete) {
-        return page.internalLinkCount >= 3 ? "pass" : "unverified";
-      }
-      if (page.internalLinkCount >= 3) return "pass";
-      return page.internalLinkCount > 0 ? "warning" : "fail";
     case "social_meta":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false) return "unverified";
+      if (!page.decodeReliable) return "unverified";
+      if (html !== true) return "unverified";
       if (incomplete) {
         return page.socialMetaTagsPresent === 4 ? "pass" : "unverified";
       }
@@ -167,8 +207,10 @@ function checkStatus(id: string, probe: SeoAuditProbe): SeoAuditStatus {
       return "warning";
     case "json_ld":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (html === false) return "unverified";
+      if (!page.decodeReliable) return "unverified";
+      if (html !== true) return "unverified";
       if (page.jsonLdErrorCount > 0) return "fail";
+      if (incomplete || !page.jsonLdScanComplete) return "unverified";
       if (page.jsonLdBlockCount > 0) return "pass";
       return "unverified";
     default:
@@ -184,21 +226,44 @@ function limitation(
   if (id === "sitemap" && probe.sitemap.state === "missing") {
     return "standard_path_only";
   }
-  if (id === "json_ld" && probe.page.jsonLdBlockCount === 0) {
-    return "static_html_cannot_prove_rendered_absence";
+  if (
+    id === "security_headers" &&
+    new URL(probe.page.finalUrl).protocol !== "https:"
+  ) {
+    return "https_required_for_hsts";
+  }
+  if (
+    status === "unverified" &&
+    DOCUMENT_CHECK_IDS.has(id) &&
+    !probe.page.decodeReliable
+  ) {
+    return "response_decode_unreliable";
   }
   if (status === "unverified" && !probe.page.bodyComplete) {
     return "response_body_truncated";
   }
-  if (status === "unverified" && isHtml(probe.page.contentType) === false) {
+  if (status === "unverified" && isHtml(probe.page.contentType) !== true) {
     return "html_body_unavailable";
+  }
+  if (id === "json_ld" && !probe.page.jsonLdScanComplete) {
+    return "projection_limit_reached";
+  }
+  if (id === "json_ld" && probe.page.jsonLdBlockCount === 0) {
+    return "static_html_cannot_prove_rendered_absence";
   }
   if (
     status === "unverified" &&
-    (probe.robots.state === "fetch_error" ||
-      probe.sitemap.state === "fetch_error")
+    ((id === "robots_access" && probe.robots.state === "fetch_error") ||
+      (id === "sitemap" && probe.sitemap.state === "fetch_error"))
   ) {
     return "resource_fetch_unavailable";
+  }
+  if (
+    status === "unverified" &&
+    ((id === "robots_access" && probe.robots.state === "decode_error") ||
+      (id === "sitemap" && probe.sitemap.state === "decode_error"))
+  ) {
+    return "resource_decode_unreliable";
   }
   return null;
 }
@@ -206,7 +271,7 @@ function limitation(
 function evidence(id: string, probe: SeoAuditProbe): readonly SeoAuditEvidence[] {
   const { page, robots, sitemap } = probe;
   switch (id) {
-    case "homepage_status":
+    case "page_status":
       return observed("submitted_page_static", [
         { label: "status_code", value: page.statusCode },
       ]);
@@ -214,6 +279,7 @@ function evidence(id: string, probe: SeoAuditProbe): readonly SeoAuditEvidence[]
       return observed("submitted_page_static", [
         { label: "robots_noindex", value: page.robotsNoindex },
         { label: "body_complete", value: page.bodyComplete },
+        { label: "decode_reliable", value: page.decodeReliable },
       ]);
     case "robots_access":
       return observed("robots_txt", [
@@ -237,6 +303,7 @@ function evidence(id: string, probe: SeoAuditProbe): readonly SeoAuditEvidence[]
     case "html_content_type":
       return observed("submitted_page_static", [
         { label: "content_type", value: page.contentType },
+        { label: "decode_reliable", value: page.decodeReliable },
       ]);
     case "canonical":
       return observed("submitted_page_static", [
@@ -246,6 +313,21 @@ function evidence(id: string, probe: SeoAuditProbe): readonly SeoAuditEvidence[]
     case "html_lang":
       return observed("submitted_page_static", [
         { label: "html_lang", value: page.htmlLang },
+      ]);
+    case "viewport":
+      return observed("submitted_page_static", [
+        { label: "viewport_configured", value: page.viewportConfigured },
+      ]);
+    case "meta_refresh":
+      return observed("submitted_page_static", [
+        { label: "meta_refresh_present", value: page.hasMetaRefresh },
+      ]);
+    case "security_headers":
+      return observed("submitted_page_static", [
+        {
+          label: "security_headers_present",
+          value: page.securityHeadersPresent,
+        },
       ]);
     case "title":
       return observed("submitted_page_static", [
@@ -273,10 +355,6 @@ function evidence(id: string, probe: SeoAuditProbe): readonly SeoAuditEvidence[]
       return observed("submitted_page_static", [
         { label: "static_word_count", value: page.wordCount },
       ]);
-    case "internal_links":
-      return observed("submitted_page_static", [
-        { label: "static_internal_links", value: page.internalLinkCount },
-      ]);
     case "social_meta":
       return observed("submitted_page_static", [
         {
@@ -288,6 +366,7 @@ function evidence(id: string, probe: SeoAuditProbe): readonly SeoAuditEvidence[]
       return observed("submitted_page_static", [
         { label: "json_ld_blocks", value: page.jsonLdBlockCount },
         { label: "malformed_blocks", value: page.jsonLdErrorCount },
+        { label: "scan_complete", value: page.jsonLdScanComplete },
       ]);
     default:
       return [];

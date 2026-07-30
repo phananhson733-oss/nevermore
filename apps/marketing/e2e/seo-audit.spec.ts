@@ -4,7 +4,7 @@ const mockedPayload = {
   data: {
     run: {
       tool: "seo_audit",
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       mode: "public_preview",
       scope: "single_raw_page_and_standard_support_files",
       persistence: "none",
@@ -35,6 +35,51 @@ const mockedPayload = {
           ],
           limitation: "standard_path_only",
         },
+        {
+          id: "canonical",
+          module: "technical",
+          status: "fail",
+          severity: "high",
+          weight: 3,
+          evidence: [
+            {
+              label: "canonical_url",
+              value: "https://acme.com/",
+              source: "submitted_page_static",
+            },
+          ],
+          limitation: null,
+        },
+        {
+          id: "title",
+          module: "on_page",
+          status: "warning",
+          severity: "high",
+          weight: 3,
+          evidence: [
+            {
+              label: "title_length",
+              value: 18,
+              source: "submitted_page_static",
+            },
+          ],
+          limitation: null,
+        },
+        {
+          id: "security_headers",
+          module: "technical",
+          status: "warning",
+          severity: "medium",
+          weight: 2,
+          evidence: [
+            {
+              label: "security_headers_present",
+              value: 1,
+              source: "submitted_page_static",
+            },
+          ],
+          limitation: null,
+        },
       ],
       modules: [
         {
@@ -47,7 +92,7 @@ const mockedPayload = {
           coveragePercent: 75,
           checks: [
             {
-              id: "homepage_status",
+              id: "page_status",
               module: "crawlability",
               status: "pass",
               severity: "critical",
@@ -150,9 +195,59 @@ test("renders the bilingual tool shell and an evidence-led mocked report", async
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Checks one page plus robots.txt and sitemap.xml. No login, persistence, or full-site crawl.",
+      "Checks one public page plus robots.txt and sitemap.xml. No login, Search Console data, persistence, or full-site crawl.",
     ),
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Run free check" }),
+  ).toHaveAttribute("href", "#seo-audit-tool");
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "What each part of the health map tells you",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "Use this as a first, evidence-led pass",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "How the health map reaches a finding",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "What this preview will not tell you",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "Frequently asked questions",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 3, name: /\?$/ }),
+  ).toHaveCount(8);
+  const faqSchema = await page
+    .locator('script[type="application/ld+json"]')
+    .evaluateAll((scripts) =>
+      scripts
+        .map((script) => JSON.parse(script.textContent ?? "{}"))
+        .find((value) => value["@type"] === "FAQPage"),
+    );
+  expect(faqSchema.mainEntity).toHaveLength(8);
+  await expect(
+    page.getByRole("link", { name: "Browse free tools" }),
+  ).toHaveAttribute("href", "/en/tools");
+  await expect(
+    page.getByRole("link", { name: "Read the programmatic SEO guide" }),
+  ).toHaveAttribute("href", "/en/blog/programmatic-seo-at-scale");
 
   await page.route("**/api/tools/seo-audit", async (route) => {
     await route.fulfill({
@@ -164,18 +259,74 @@ test("renders the bilingual tool shell and an evidence-led mocked report", async
   await page.getByLabel("Website URL").fill("acme.com");
   await page.getByRole("button", { name: "Run free check" }).click();
 
-  await expect(page.getByText("Measured page health")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "What to fix first" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Start with XML sitemap. This run measured 75% of the weighted evidence.",
+    ),
+  ).toBeVisible();
   await expect(page.getByText("75", { exact: true }).first()).toBeVisible();
   await expect(
-    page.getByText("75% weighted coverage · 2 / 3 checks measured"),
+    page.getByText("Measurement coverage 75% · 2 / 3 checks · site coverage: 1 URL"),
   ).toBeVisible();
-  await page.getByText("XML sitemap", { exact: true }).last().click();
-  await expect(page.getByText("Standard sitemap.xml path")).toBeVisible();
+  await expect(
+    page.getByText(
+      "This is not a website health, ranking, or full-site score.",
+    ),
+  ).toBeVisible();
+
+  const priority = page.getByTestId("seo-audit-priority-1");
+  await expect(priority.getByText("XML sitemap", { exact: true })).toBeVisible();
+  await expect(priority.getByText("High severity")).toBeVisible();
+  await expect(
+    priority.getByText(
+      "Publish a valid XML sitemap at /sitemap.xml containing canonical, indexable URLs.",
+    ),
+  ).toBeVisible();
+  await expect(
+    priority.getByText(
+      "Publish the change, rerun this URL, and compare the same observed evidence.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-testid^="seo-audit-priority-"]'),
+  ).toHaveCount(3);
+  await expect(
+    page.getByTestId("seo-audit-result-stages").getByText("01 Observation"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("seo-audit-result-stages").getByText("04 Artifact"),
+  ).toBeVisible();
+
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "Single-page signal map",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-testid^="seo-audit-module-"]'),
+  ).toHaveCount(5);
+  const crawlability = page.getByTestId(
+    "seo-audit-module-crawlability",
+  );
+  await expect(crawlability.getByText("75% coverage")).toBeVisible();
+  await crawlability
+    .getByText("Crawlability & indexation", { exact: true })
+    .click();
+  const sitemapCheck = crawlability.getByTestId("seo-audit-check-sitemap");
+  await sitemapCheck.getByText("XML sitemap", { exact: true }).click();
+  await expect(
+    sitemapCheck.getByText("Standard sitemap.xml path"),
+  ).toBeVisible();
   await expect(
     page.getByText(
       "Only /sitemap.xml was checked. Another sitemap may be declared elsewhere.",
     ),
   ).toBeVisible();
+  await expect(sitemapCheck.getByText("How to verify")).toBeVisible();
 
   await page.goto("/zh/tools/seo-audit");
   await expect(
@@ -185,6 +336,66 @@ test("renders the bilingual tool shell and an evidence-led mocked report", async
     }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "免费检测" })).toBeVisible();
+});
+
+test("keeps incomplete results honest and readable on a mobile viewport", async ({
+  page,
+}) => {
+  const longFinalUrl =
+    "https://www.acme.com/research/technical-seo/very-long-diagnostic-path-that-must-wrap-without-expanding-the-mobile-viewport?campaign=public-audit-preview&source=experience-tool";
+  const incompletePayload = {
+    data: {
+      ...mockedPayload.data,
+      result: {
+        ...mockedPayload.data.result,
+        finalUrl: longFinalUrl,
+        score: null,
+        priorities: [],
+      },
+    },
+  };
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/tools/seo-audit", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(incompletePayload),
+    });
+  });
+
+  await page.goto("/en/tools/seo-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run free check" }).click();
+
+  const summary = page.getByTestId("seo-audit-summary");
+  await expect(
+    summary.getByText(
+      "No measured fail or warning signals surfaced in this preview. This run measured 75% of the weighted evidence.",
+    ),
+  ).toBeVisible();
+  await expect(summary.getByText("--", { exact: true })).toBeVisible();
+  await expect(summary.getByText(longFinalUrl, { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "No measured fail or warning signals surfaced. Review coverage and unverified evidence before treating the page as healthy.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-testid^="seo-audit-priority-"]'),
+  ).toHaveCount(0);
+  await expect(
+    page
+      .getByTestId("seo-audit-module-crawlability")
+      .getByText("Not verified · 1"),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
 });
 
 test("rejects malformed requests without making an outbound scan", async ({
