@@ -1452,6 +1452,26 @@ describe("crawlSite", () => {
     expect(raw.pages[0]?.subjectUrl).toBe("https://example.com/");
   });
 
+  it("counts robots, sitemap documents, and page fetches in the trusted request cap", async () => {
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () => text(ROBOTS_TXT),
+      "https://example.com/sitemap.xml": () => xml(SITEMAP_XML),
+      "https://example.com/": () => html(HOME_HTML),
+    });
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+      maxRequests: 2,
+    });
+
+    expect(calls).toEqual([
+      "https://example.com/robots.txt",
+      "https://example.com/sitemap.xml",
+    ]);
+    expect(raw.stopReason).toBe("max_requests");
+    expect(raw.availability).toBe("partial");
+  });
+
   it("keeps request identity while using the final redirect URL as the relative-link base", async () => {
     const robotsBody =
       "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml";

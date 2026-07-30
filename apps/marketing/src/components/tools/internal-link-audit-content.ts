@@ -1,5 +1,5 @@
 // @input  -- supported marketing locale
-// @output -- typed bilingual copy for the P0-2 Internal Link Audit page and demo
+// @output -- typed bilingual copy for the P0-2 public Internal Link Audit page
 // @pos    -- single content authority shared by the P0-2 server page and client tool
 
 export type InternalLinkAuditLocale = "en" | "zh";
@@ -113,40 +113,40 @@ const EN: InternalLinkAuditContent = {
   metaDescription:
     "Audit your internal link structure in one crawl. Find broken links, orphan pages, and the pages your own site is starving. Free, no sign-up.",
   schemaDescription:
-    "Interactive fixed-data demonstration of GenGrowth's internal link audit. It does not crawl the submitted website, connect Search Console, or save data.",
+    "A bounded public internal link audit that crawls static same-origin HTML, respects robots.txt, and does not store the submitted URL or report.",
   schemaFeatures: [
-    "Fixed fictional 42-page sample",
-    "10 representative interactive graph nodes",
-    "Example orphan, deep-page, and broken-link findings",
-    "No live website crawl",
-    "No Search Console connection or data storage",
+    "Real bounded same-origin static-HTML crawl",
+    "Up to 25 collected pages and depth 4 per request",
+    "Observed orphan candidates, deep pages, and unresolved targets",
+    "Robots.txt and sitemap-aware collection",
+    "No Search Console connection or persistent data storage",
   ],
   breadcrumb: "Internal Link Audit",
-  eyebrow: "Free internal link audit · interactive demo",
+  eyebrow: "Free internal link audit · bounded public crawl",
   title: "Internal Link Audit",
   subtitle:
     "One crawl shows every internal link on your site — the broken ones, the pages nothing points to, and the sections quietly starved of the authority you already have.",
   primaryCta: "Run my internal link audit free",
   trustLine: "Free · No sign-up · No software to install · Any public website",
   demoBanner:
-    "Interactive mock: this version demonstrates the workflow with a fixed sample. It does not crawl your website or save the URL.",
+    "This public tool performs a transient, bounded crawl of static same-origin HTML. It respects robots.txt, stores no report, and never changes your website.",
   formLabel: "Website URL",
   placeholder: "yourdomain.com",
-  startCrawl: "Start demo crawl",
-  running: "Building the demo link graph…",
+  startCrawl: "Run internal link audit",
+  running: "Building your bounded link graph…",
   inputHelp:
-    "The production tool will read public HTML only — no Search Console, ownership verification, account, or site changes.",
+    "The tool reads public HTML only — no Search Console, ownership verification, account, or site changes.",
   mockScope:
-    "This milestone uses a fixed 42-page sample. The production free-crawl limit is not set yet, so we do not invent one here.",
+    "Each request is capped at 25 pages, depth 4, and a 40-second crawl budget. A partial report says so explicitly.",
   invalidUrl: "Enter a public domain or HTTP(S) URL.",
   stages: [
     "Reading homepage and sitemap entry points",
     "Mapping page-to-page HTML links",
     "Prioritizing structural gaps",
   ],
-  demoResultLabel: "Fixed demo result",
+  demoResultLabel: "Bounded crawl result",
   demoResultBody:
-    "Your URL previews the interaction only. Every metric below comes from petwise.example, a fictional 42-page sample — not from the site you entered.",
+    "Every metric below is generated from the static-HTML pages collected for the URL you entered in this request.",
   result: {
     summaryEyebrow: "Five-second answer",
     summaryTitle: "Two orphan pages deserve attention before the deeper cluster gaps",
@@ -158,7 +158,7 @@ const EN: InternalLinkAuditContent = {
     priorityFixes: "Ready-to-review fixes",
     graphTitle: "Site relationship map",
     graphBody:
-      "This view shows 10 representative nodes from the fixed 42-page sample. Node size indicates demo structural importance. Lines are observed HTML links. Select a node to inspect evidence and a suggested next action.",
+      "This view shows pages collected in this bounded crawl. Lines are observed same-origin HTML links. Select a node to inspect the recorded structural evidence and its limitations.",
     filterAll: "All nodes",
     filterPillars: "Pillars",
     filterOrphans: "Orphans",
@@ -173,9 +173,9 @@ const EN: InternalLinkAuditContent = {
     anchorText: "Suggested anchor",
     verify: "How to verify",
     selectPrompt: "Choose a node or finding to inspect its evidence.",
-    sampleLabel: "Demo sample",
+    sampleLabel: "Crawl scope",
     fixedData:
-      "10 graph nodes · sample totals 42 pages / 118 links · no real crawl",
+      "Real bounded crawl · static HTML · same origin · no stored report",
     fourPartTitle: "From finding to a fix you can review",
     observation: "Observation",
     observationBody:
@@ -210,7 +210,7 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "4. Carry reviewed fixes into your plan",
-      body: "The future full product can move approved findings into the Site Structure & Internal Links step; this public demo does not create a project.",
+      body: "Review the evidence before making changes. The public tool does not create a project or alter your website.",
     },
   ],
   findsEyebrow: "What it finds",
@@ -327,7 +327,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "How many pages will it crawl for free?",
       answer:
-        "The production limit has not been approved yet. This interactive demo uses a fixed 42-page fictional sample and does not present that sample size as a real plan limit.",
+        "The public audit collects up to 25 pages with depth 4 and a 40-second budget. It returns a partial-coverage notice when a safety boundary stops it early.",
     },
     {
       question: "How often should I audit internal links?",
@@ -352,7 +352,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "Can I export the results?",
       answer:
-        "The planned real-crawl version will export the link map and prioritized findings. This mock milestone deliberately does not generate a file or claim that a CSV exists.",
+        "Not in this public preview. It shows a transient visual report only and does not claim to create or store a CSV export.",
     },
   ],
   relatedEyebrow: "Continue exploring",
@@ -380,36 +380,36 @@ const ZH: InternalLinkAuditContent = {
   metaDescription:
     "通过一次内链审计发现断链、孤岛页面、深层页面和被站内结构饿死的重要内容；免费体验，无需登录或安装软件。",
   schemaDescription:
-    "GenGrowth 内链审计的固定数据交互演示；不会抓取用户输入的网站，不连接 Search Console，也不会保存数据。",
+    "GenGrowth 内链审计会在明确预算内抓取同源静态 HTML、遵守 robots.txt，并且不保存提交的 URL 或报告。",
   schemaFeatures: [
-    "固定的虚构 42 页面样本",
-    "10 个代表性可交互图节点",
-    "孤岛、深层页面与断链示例发现",
-    "不执行真实网站抓取",
-    "不连接 Search Console、不保存数据",
+    "真实的受限同源静态 HTML 抓取",
+    "每次最多采集 25 页、最深 4 层",
+    "候选孤岛、深层页面与未验证目标",
+    "感知 robots.txt 与 Sitemap 的采集",
+    "不连接 Search Console、不持久化保存数据",
   ],
   breadcrumb: "内链审计",
-  eyebrow: "免费内链审计 · 可交互演示",
+  eyebrow: "免费内链审计 · 受限公开抓取",
   title: "内链审计",
   subtitle:
     "一次看清站内页面之间的关系：哪些链接已经失效、哪些页面没有任何入口，以及哪些重要内容没有获得你的网站本来可以传递的权重。",
   primaryCta: "免费运行内链审计",
   trustLine: "免费 · 无需登录 · 无需安装 · 适用于公开网站",
   demoBanner:
-    "交互式 Mock：当前版本用固定样本演示完整流程，不会抓取你输入的网站，也不会保存 URL。",
+    "本公开工具会在明确预算内临时抓取同源静态 HTML、遵守 robots.txt，不保存报告，也不会修改你的网站。",
   formLabel: "网站 URL",
   placeholder: "yourdomain.com",
-  startCrawl: "开始演示抓取",
-  running: "正在构建演示关系图…",
+  startCrawl: "开始内链审计",
+  running: "正在构建受限关系图…",
   inputHelp:
-    "正式版本只读取公开 HTML，不连接 Search Console、不要求所有权验证，也不会修改网站。",
+    "工具仅读取公开 HTML，不连接 Search Console、不要求所有权验证，也不会修改网站。",
   mockScope:
-    "本阶段使用固定的 42 页面样本。正式免费抓取上限尚未确认，因此这里不会编造一个数字。",
+    "每次请求最多采集 25 页、深度 4 层、抓取预算 40 秒。如遇安全边界提前结束，结果会明确标注覆盖不完整。",
   invalidUrl: "请输入公开域名或 HTTP(S) URL。",
   stages: ["读取首页与 Sitemap 入口", "建立页面之间的 HTML 链接关系", "排序结构缺口"],
-  demoResultLabel: "固定演示结果",
+  demoResultLabel: "受限抓取结果",
   demoResultBody:
-    "你输入的 URL 只用于预览交互。下方全部指标来自虚构的 petwise.example 42 页面样本，并非对你输入网站的真实分析。",
+    "下方全部指标来自本次为你输入 URL 采集的静态 HTML 页面。",
   result: {
     summaryEyebrow: "5 秒结论",
     summaryTitle: "先处理两个有明确来源页的孤岛，再修复更深层的簇内缺口",
@@ -421,7 +421,7 @@ const ZH: InternalLinkAuditContent = {
     priorityFixes: "可审核修复项",
     graphTitle: "站点关系图",
     graphBody:
-      "当前视图展示固定 42 页面样本中的 10 个代表节点。节点大小表示演示结构重要度，连线表示已观测 HTML 内链。选择节点即可查看证据和下一步动作。",
+      "当前视图展示本次受限抓取采集到的页面。连线表示已观测到的同源 HTML 内链。选择节点即可查看记录到的结构证据和解释边界。",
     filterAll: "全部节点",
     filterPillars: "Pillar",
     filterOrphans: "孤岛",
@@ -436,16 +436,16 @@ const ZH: InternalLinkAuditContent = {
     anchorText: "建议锚文本",
     verify: "如何复验",
     selectPrompt: "请选择一个节点或问题，查看对应证据。",
-    sampleLabel: "演示样本",
+    sampleLabel: "抓取范围",
     fixedData:
-      "10 个图节点 · 样本总计 42 页面 / 118 条链接 · 未真实抓取",
+      "真实受限抓取 · 静态 HTML · 同源 · 不保存报告",
     fourPartTitle: "从发现问题到可审核的修复动作",
     observation: "Observation",
     observationBody:
-      "/app-setup-guide 在样本中有 0 条 HTML 入链、2 条出链，并存在于演示 Sitemap。",
+      "结果会列出候选页面的观测入链、出链和 Sitemap 归属。",
     diagnosis: "Diagnosis",
     diagnosisBody:
-      "该页面能通过 Sitemap 被发现，但在本样本中没有获得任何站内权重；本演示没有检查只由 JavaScript 生成的链接。",
+      "Sitemap 可发现但未见 HTML 入链的页面会被标为候选；只由 JavaScript 生成的链接不在当前抓取范围内。",
     recommendation: "Recommendation",
     recommendationBody:
       "从 /wifi-feeders 与 /best-smart-feeders 的首次设置段落增加上下文链接。",
@@ -473,7 +473,7 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "4. 将审核后的修复推进计划",
-      body: "未来完整产品可以把确认后的发现带入“网站结构与内链”步骤；当前公开演示不会创建项目。",
+      body: "请先复核证据再执行调整。公开工具不会创建项目，也不会修改你的网站。",
     },
   ],
   findsEyebrow: "能发现什么",
@@ -579,7 +579,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "需要连接 Search Console 或验证网站吗？",
       answer:
-        "不需要。正式 P0-2 读取公开页面，不需要 OAuth、验证文件或所有权；当前阶段则完全不会请求任何网站。",
+        "不需要。工具读取公开页面，不需要 OAuth、验证文件或所有权，也不会修改网站。",
     },
     {
       question: "它能找到孤岛页面吗？",
@@ -589,7 +589,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "免费会抓取多少页面？",
       answer:
-        "正式上限尚未批准。本交互演示使用固定的 42 页面虚构样本，也不会把这个样本数冒充成真实套餐限制。",
+        "公开审计每次最多采集 25 页、最深 4 层、抓取预算 40 秒。如安全边界提前停止，结果会标注覆盖不完整。",
     },
     {
       question: "多久应该做一次内链审计？",
@@ -614,7 +614,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "可以导出结果吗？",
       answer:
-        "计划中的真实抓取版本会导出关系图和优先修复项；当前 Mock 明确不生成文件，也不会声称已经有 CSV。",
+        "当前公开预览不提供导出。它只展示瞬时可视化报告，也不会声称已经创建或保存 CSV。",
     },
   ],
   relatedEyebrow: "继续探索",

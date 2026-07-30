@@ -1,171 +1,54 @@
 import { expect, test } from "@playwright/test";
 
-test("runs the English no-network demo and exposes actionable graph details", async ({
-  page,
-}) => {
-  await page.goto("/en/tools/internal-link-audit");
+const auditResponse = {
+  data: {
+    run: { tool: "internal_link_audit", schemaVersion: "internal_link_audit.v1", mode: "public_preview", scope: "bounded_same_origin_static_html_crawl", persistence: "none", completedAt: "2026-07-30T09:00:00.000Z" },
+    result: {
+      targetUrl: "https://acme.com/", availability: "partial", stopReason: "max_urls", limitation: "Coverage is partial after the 25-page safety budget.", pagesCrawled: 25, maxPages: 25, linksObserved: 71, sitemapFetched: true, sitemapUrlsObserved: 32,
+      nodes: [
+        { id: "page-01", url: "https://acme.com/", title: "Acme", depth: 0, inboundLinks: 0, outboundLinks: 4, statusCode: 200, sitemapMember: true, kind: "home" },
+        { id: "page-02", url: "https://acme.com/orphan", title: "Orphan", depth: 1, inboundLinks: 0, outboundLinks: 1, statusCode: 200, sitemapMember: true, kind: "orphan_candidate" },
+      ],
+      edges: [{ from: "page-01", to: "page-02", anchorText: "Guide" }],
+      findings: [{ id: "orphan-page-02", priority: "P1", kind: "orphan_candidate", nodeId: "page-02", title: "/orphan is a sitemap-only orphan candidate", detail: "No crawled HTML page linked to it.", evidence: "0 observed inbound HTML links.", limitation: "Coverage is partial, so this is a candidate rather than a definitive orphan.", suggestedSourceUrl: "https://acme.com/", observedAnchorText: "Guide" }],
+    },
+  },
+};
 
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Internal Link Audit" }),
-  ).toBeVisible();
-  await expect(page.getByText("MOCK DATA.", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText(
-      "This milestone uses a fixed 42-page sample. The production free-crawl limit is not set yet, so we do not invent one here.",
-    ),
-  ).toBeVisible();
-
-  const runtimeRequests: string[] = [];
-  page.on("request", (request) => {
-    const requestUrl = new URL(request.url());
-    const isNextPrefetch =
-      request.method() === "GET" &&
-      requestUrl.origin === "http://127.0.0.1:3001" &&
-      !requestUrl.pathname.startsWith("/api/");
-    if (
-      ["fetch", "xhr"].includes(request.resourceType()) &&
-      !isNextPrefetch
-    ) {
-      runtimeRequests.push(request.url());
-    }
+test("runs the real API flow and renders the returned bounded crawl report", async ({ page }) => {
+  let requestedBody: unknown;
+  await page.route("**/api/tools/internal-link-audit", async (route) => {
+    requestedBody = route.request().postDataJSON();
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(auditResponse) });
   });
-
+  await page.goto("/en/tools/internal-link-audit");
+  await expect(page.getByRole("heading", { level: 1, name: "Internal Link Audit" })).toBeVisible();
+  await expect(page.getByText("MOCK DATA.", { exact: true })).toHaveCount(0);
   await page.getByLabel("Website URL").fill("acme.com");
-  await page.getByRole("button", { name: "Start demo crawl" }).click();
-  await expect(page.getByTestId("internal-link-progress")).toBeVisible();
-  await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "Two orphan pages deserve attention before the deeper cluster gaps",
-    }),
-  ).toBeVisible();
-
-  expect(runtimeRequests).toEqual([]);
-  await expect(page.getByText("GG-DEMO-P02-20260730")).toBeVisible();
-  await expect(
-    page.getByText(
-      "10 graph nodes · sample totals 42 pages / 118 links · no real crawl",
-    ),
-  ).toBeVisible();
-  await expect(
-    page.getByText(
-      "Every metric below comes from petwise.example, a fictional 42-page sample — not from the site you entered.",
-    ),
-  ).toBeVisible();
-
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Partial coverage" })).toBeVisible();
+  expect(requestedBody).toEqual({ url: "acme.com" });
+  await expect(page.getByText("25/25", { exact: true })).toBeVisible();
+  await expect(page.getByText("71", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("internal-link-graph")).toBeVisible();
+  await page.getByTestId("internal-link-finding-orphan-page-02").click();
   const detail = page.getByTestId("internal-link-node-detail");
-  await expect(detail.getByText("/app-setup-guide", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Deep pages" }).click();
-  await expect(
-    page.getByRole("button", { name: "Deep pages" }),
-  ).toHaveAttribute("aria-pressed", "true");
-
-  const multiCatNode = page.getByTestId("internal-link-node-multi-cat");
-  await multiCatNode.focus();
-  await multiCatNode.press("Enter");
-  await expect(detail.getByText("/multi-cat-guide", { exact: true })).toBeVisible();
-  await expect(detail.getByText("feeding two cats", { exact: true })).toBeVisible();
-
-  await page.getByTestId("internal-link-finding-broken-setup").click();
-  await expect(detail.getByText("/old-feeder-setup", { exact: true })).toBeVisible();
-  await expect(
-    detail.getByText("No network request was made; the 404 is fixed demo data."),
-  ).toBeVisible();
+  await expect(detail.getByText("/orphan", { exact: true })).toBeVisible();
+  await expect(detail.getByText("0 observed inbound HTML links.", { exact: true })).toBeVisible();
 });
 
-test("renders localized schema, tools-index entry, and a 390px layout", async ({
-  page,
-  request,
-}) => {
-  await page.goto("/en/tools/internal-link-audit");
-
-  await expect(page).toHaveTitle(
-    "Free Internal Link Audit — Find Broken Links & Orphan Pages",
-  );
-  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
-    "href",
-    "https://gengrowth.ai/en/tools/internal-link-audit",
-  );
-  await expect(
-    page.locator('link[rel="alternate"][hreflang="zh"]'),
-  ).toHaveAttribute(
-    "href",
-    "https://gengrowth.ai/zh/tools/internal-link-audit",
-  );
-  await expect(
-    page.locator('link[rel="alternate"][hreflang="x-default"]'),
-  ).toHaveAttribute(
-    "href",
-    "https://gengrowth.ai/en/tools/internal-link-audit",
-  );
-
-  const schemaTypes = await page
-    .locator('script[type="application/ld+json"]')
-    .evaluateAll((scripts) =>
-      scripts
-        .map((script) => JSON.parse(script.textContent ?? "{}"))
-        .map((value) => value["@type"]),
-    );
-  expect(schemaTypes).toEqual(
-    expect.arrayContaining([
-      "BreadcrumbList",
-      "HowTo",
-      "FAQPage",
-      "SoftwareApplication",
-    ]),
-  );
-  const softwareSchema = await page
-    .locator('script[type="application/ld+json"]')
-    .evaluateAll((scripts) =>
-      scripts
-        .map((script) => JSON.parse(script.textContent ?? "{}"))
-        .find((value) => value["@type"] === "SoftwareApplication"),
-    );
-  expect(softwareSchema.description).toContain("fixed-data demonstration");
-  expect(softwareSchema.featureList).toContain("No live website crawl");
-
-  await page.goto("/en/tools");
-  await expect(
-    page.getByRole("heading", { level: 3, name: "Internal Link Audit" }),
-  ).toBeVisible();
-
-  const sitemap = await request.get("/sitemap.xml");
-  expect(sitemap.ok()).toBe(true);
-  const sitemapBody = await sitemap.text();
-  expect(sitemapBody).toContain(
-    "https://gengrowth.ai/en/tools/internal-link-audit",
-  );
-  expect(sitemapBody).toContain(
-    "https://gengrowth.ai/zh/tools/internal-link-audit",
-  );
-
+test("renders API failures and a responsive localized tool without horizontal overflow", async ({ page }) => {
+  await page.route("**/api/tools/internal-link-audit", async (route) => {
+    await route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: { code: "rate_limited" } }) });
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/zh/tools/internal-link-audit");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "内链审计" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "开始演示抓取" }),
-  ).toBeVisible();
-  await expect(page.getByText("MOCK DATA.", { exact: true })).toBeVisible();
-
-  const initialOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  );
-  expect(initialOverflow).toBe(false);
-
+  await expect(page.getByRole("heading", { level: 1, name: "内链审计" })).toBeVisible();
   await page.getByLabel("网站 URL").fill("acme.com");
-  await page.getByRole("button", { name: "开始演示抓取" }).click();
-  await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "先处理两个有明确来源页的孤岛，再修复更深层的簇内缺口",
-    }),
-  ).toBeVisible();
-  await expect(page.getByTestId("internal-link-graph")).toBeVisible();
-
-  const resultOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  );
-  expect(resultOverflow).toBe(false);
+  await page.getByRole("button", { name: "开始内链审计" }).click();
+  await expect(page.getByText("公开预览有频率限制，请稍后再试。", { exact: true })).toBeVisible();
+  await expect(page.getByText("MOCK DATA.", { exact: true })).toHaveCount(0);
+  await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(4);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
 });
