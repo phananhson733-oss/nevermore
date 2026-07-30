@@ -1,4 +1,5 @@
 export * from "./url-safety/index.ts";
+export * from "./public-http/index.ts";
 export { normalizeSiteOrigin } from "./origin.ts";
 export type { NormalizedOrigin } from "./origin.ts";
 export { createSiteOriginProbe, probeSiteOrigin } from "./site-origin-probe.ts";

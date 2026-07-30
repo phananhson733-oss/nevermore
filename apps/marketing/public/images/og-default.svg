@@ -1,0 +1,7 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#131314"/>
+  <rect x="0" y="0" width="1200" height="4" fill="#D97757"/>
+  <text x="600" y="280" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="72" font-weight="600" fill="#F0EDE8">GenGrowth</text>
+  <text x="600" y="350" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="28" fill="#9B9690">Automated Growth Operating System</text>
+  <text x="600" y="400" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="20" fill="#D97757">gengrowth.com</text>
+</svg>

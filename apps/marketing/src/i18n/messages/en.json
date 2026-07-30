@@ -1,0 +1,1113 @@
+{
+  "common": {
+    "joinWaitlist": "Subscribe",
+    "learnMore": "Learn More",
+    "backToHome": "Back to Home",
+    "home": "Home"
+  },
+  "nav": {
+    "features": "Features",
+    "blog": "Blog",
+    "templates": "Templates",
+    "about": "About",
+    "contact": "Contact",
+    "glossary": "Glossary",
+    "pricing": "Pricing"
+  },
+  "footer": {
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "cookies": "Cookie Notice",
+    "copyright": "Copyright/DMCA",
+    "cookiePreferences": "Cookie Preferences",
+    "glossary": "Glossary",
+    "tools": "Free Tools",
+    "compare": "Compare",
+    "useCases": "Use Cases",
+    "rights": "© 2026 GenGrowth. All rights reserved.",
+    "playbooks": "Playbooks"
+  },
+  "home": {
+    "hero": {
+      "title": "Automated Growth, Starting from User #1",
+      "subtitle": "Minimal Input. Auto Decisions. Explainable. Self-Optimizing.",
+      "cta": "Start Free Trial",
+      "socialProof": "Trusted by 237 product teams across 14 countries"
+    },
+    "stats": {
+      "stat1Number": "4",
+      "stat1Label": "inputs to launch your growth engine",
+      "stat2Number": "6",
+      "stat2Label": "dimensions of data integrity verification",
+      "stat3Number": "100%",
+      "stat3Label": "channel-isolated attribution accuracy"
+    },
+    "painPoints": {
+      "title": "Growth Teams Are Stuck",
+      "card1Title": "Too Much Manual Work",
+      "card1Desc": "Spending 20+ hours weekly on repetitive SEO audits, social scheduling, and attribution reports.",
+      "card2Title": "Attribution is a Black Box",
+      "card2Desc": "Traffic comes but you can't explain why. Channels overlap, data conflicts, decisions lack evidence.",
+      "card3Title": "Strategy by Gut Feeling",
+      "card3Desc": "No systematic way to discover opportunities, score strategies, or prioritize by expected ROI.",
+      "card4Title": "No Self-Optimization Loop",
+      "card4Desc": "Teams repeat work, but the system does not learn what to expand, iterate, or pause."
+    },
+    "solution": {
+      "definition": "Growth automation is a system that helps product teams run, measure, and optimize growth experiments automatically — so you can focus on strategy, not manual execution.",
+      "title": "One System, Full Automation",
+      "subtitle": "From 4 inputs to automated discovery, strategy, execution, and optimization.",
+      "step1": "Minimal Input",
+      "step2": "Auto Discovery",
+      "step3": "Strategy Engine",
+      "step4": "Action & Attribute",
+      "step5": "Self-Optimize"
+    },
+    "capabilities": {
+      "title": "Core Capabilities",
+      "card1Title": "Auto Discovery",
+      "card1Desc": "Site audit, keyword opportunities, competitor gaps — all automatic.",
+      "card2Title": "Strategy Engine",
+      "card2Desc": "3+ strategy candidates with scores, ROI tags, and evidence chains.",
+      "card3Title": "Attribution Loop",
+      "card3Desc": "UTM fingerprinting, channel isolation, and data integrity verification.",
+      "viewAll": "Explore All Features →"
+    },
+    "socialProof": {
+      "title": "Built in Public, Proven by Process",
+      "subtitle": "We publish weekly experiment logs, decisions, and attribution evidence before claiming outcomes.",
+      "cta": "View Weekly Logs →",
+      "earlyUsers": "UTM fingerprinting with channel isolation",
+      "communityTitle": "Zero competitors offer this attribution",
+      "communitySub": "No other AI growth tool measures what actually works",
+      "rhythmTitle": "Weekly Experiment Recap",
+      "rhythmSub": "Hypothesis → Action → Attribution → Decision"
+    },
+    "bottomCta": {
+      "title": "Ready to Automate Your Growth?",
+      "subtitle": "Subscribe to get early access and weekly experiment reports.",
+      "cta": "Subscribe"
+    }
+  },
+  "waitlist": {
+    "emailLabel": "Work Email",
+    "emailPlaceholder": "you@company.com",
+    "submit": "Get Early Access",
+    "submitting": "Subscribing...",
+    "successTitle": "You're on the list!",
+    "successDesc": "We'll send you early access, weekly growth experiment reports, and a 7-day free trial. Join 237 product teams already using GenGrowth.",
+    "duplicateError": "You've already subscribed!",
+    "genericError": "Something went wrong. Please try again.",
+    "nameLabel": "Name (optional)",
+    "companyLabel": "Company (optional)",
+    "roleLabel": "Role (optional)",
+    "rolePlaceholder": "Select a role",
+    "roleFounder": "Founder",
+    "rolePM": "Product Manager",
+    "roleOperator": "Growth Operator",
+    "roleAnalyst": "Data Analyst",
+    "saveProfile": "Save",
+    "skip": "Skip"
+  },
+  "features": {
+    "hero": {
+      "title": "One System, Full-Stack Growth Automation",
+      "subtitle": "Six core capabilities that turn minimal input into measurable growth."
+    },
+    "discovery": {
+      "title": "Auto Discovery",
+      "desc": "Input your URL — the system automatically scans site structure, content gaps, keyword opportunities, and competitor positions. No manual audit needed.",
+      "f1": "Automatic sitemap & page structure analysis",
+      "f2": "Keyword opportunity clusters with intent classification",
+      "f3": "Competitor gap detection",
+      "f4": "Equivalent CPC & monthly savings estimation",
+      "faq1Q": "What data sources does Auto Discovery use?",
+      "faq1A": "It automatically reads your sitemap, robots.txt, page structure, and search performance data from connected sources like Google Search Console. No manual upload required.",
+      "faq2Q": "How often does discovery refresh?",
+      "faq2A": "Discovery supports daily refresh cycles. The system re-scans when new data becomes available or when triggered by optimization decisions.",
+      "cta": "See how Auto Discovery works for your product",
+      "howItWorksTitle": "How it works",
+      "howItWorks": {
+        "step1": "Enter your product URL — the system scans site structure, content, and search performance",
+        "step2": "AI identifies keyword gaps, competitor positions, and untapped opportunities",
+        "step3": "Review prioritized opportunity list ranked by expected ROI"
+      },
+      "relatedReading": "Read more about SEO & Content Growth"
+    },
+    "strategy": {
+      "title": "Strategy Engine",
+      "desc": "The system generates 3+ strategy candidates, each with a transparent score breakdown, ROI tags, and a \"Why this strategy?\" evidence chain.",
+      "f1": "Multi-factor weighted scoring across ROI, historical performance, competitive gaps, technical health, and risk",
+      "f2": "\"Why this strategy?\" evidence chain for every candidate",
+      "f3": "Parallel strategy support with conflict detection",
+      "faq1Q": "How is the strategy score calculated?",
+      "faq1A": "The score is calculated using a proprietary multi-factor model that weighs ROI potential, historical success patterns, competitive gap size, technical health indicators, and risk factors. All dimensions are normalized to 0-100.",
+      "faq2Q": "Can I override the recommended strategy?",
+      "faq2A": "Yes. You can override any strategy ranking with a reason. The system tracks the override and compares outcomes after 7 and 14 days.",
+      "cta": "See how Strategy Engine works for your product",
+      "howItWorksTitle": "How it works",
+      "howItWorks": {
+        "step1": "System generates strategy portfolios based on discovered opportunities",
+        "step2": "Each strategy includes evidence chain, scoring, and expected impact",
+        "step3": "Approve, modify, or override strategies with full audit trail"
+      },
+      "relatedReading": "Read more about Experiment-Driven Growth"
+    },
+    "execution": {
+      "title": "Execution Orchestration",
+      "desc": "Approved strategies automatically become batched task queues — SEO, social, and link building. Social-First probes validate topics before SEO scales up.",
+      "f1": "Batched task queues with priority and dependencies",
+      "f2": "Social-First probing before SEO scale-up",
+      "f3": "Batch-0 fast-track for validated topics (2x baseline)",
+      "f4": "One-click approval with override logging",
+      "faq1Q": "What is Social-First probing?",
+      "faq1A": "Before scaling SEO production, the system publishes test posts on Reddit/X to validate topic demand. Topics that hit 2x baseline engagement are fast-tracked to Batch-0 priority.",
+      "faq2Q": "What does Batch-0 mean?",
+      "faq2A": "Batch-0 is the highest priority queue. Topics validated through social probes skip the regular batch queue and get produced first.",
+      "cta": "See how Execution works for your product",
+      "howItWorksTitle": "How it works",
+      "howItWorks": {
+        "step1": "Approved strategies are automatically queued for execution",
+        "step2": "System orchestrates SEO, social, and link-building tasks in parallel",
+        "step3": "Monitor progress in real-time with automated status updates"
+      },
+      "relatedReading": "Read more about Growth Automation"
+    },
+    "attribution": {
+      "title": "Attribution Loop",
+      "desc": "Every action gets a UTM fingerprint. Channels are physically isolated. Data integrity is automatically verified before any decision is made.",
+      "f1": "UTM fingerprinting: utm_term = agent_id_batch_id",
+      "f2": "Channel isolation between SEO and social",
+      "f3": "Automated data integrity verification (schema, coverage, pipeline)",
+      "f4": "Failed experiments auto-generate postmortem reports",
+      "faq1Q": "How does channel isolation work?",
+      "faq1A": "Every action gets a unique UTM fingerprint (utm_term = agent_id_batch_id). SEO and social traffic are physically separated in attribution, with automatic conflict detection.",
+      "faq2Q": "What happens when an experiment fails?",
+      "faq2A": "The system automatically generates a postmortem report analyzing three layers: exposure (was it seen?), intent (was it relevant?), and conversion (did they act?).",
+      "cta": "See how Attribution works for your product",
+      "howItWorksTitle": "How it works",
+      "howItWorks": {
+        "step1": "Every action is tagged with channel-isolated attribution markers",
+        "step2": "System measures actual impact against predicted outcomes",
+        "step3": "Clear evidence chain shows which strategy drove which result"
+      },
+      "relatedReading": "Read more about Attribution & Measurement"
+    },
+    "optimization": {
+      "title": "Self-Optimization",
+      "desc": "The system automatically decides: expand what works, iterate what's close, pause what fails. Every decision is explainable with threshold comparisons.",
+      "f1": "Three actions: expand / iterate / pause",
+      "f2": "Scale-up requires score ≥ threshold for 2 consecutive windows",
+      "f3": "Successful patterns auto-saved as Playbook templates",
+      "f4": "Anti-patterns recorded for future avoidance",
+      "faq1Q": "How does the system decide to expand, iterate, or pause?",
+      "faq1A": "Based on strategy scores and thresholds: score ≥ scale-up threshold for 2 consecutive windows → expand; between iterate and scale-up threshold → iterate; below pause threshold or 2 consecutive declines → pause.",
+      "faq2Q": "Are Playbook templates reusable across products?",
+      "faq2A": "Yes. Successful patterns are automatically saved as Playbook templates with applicable conditions, so they can be applied to new products with similar characteristics.",
+      "cta": "See how Self-Optimization works for your product",
+      "howItWorksTitle": "How it works",
+      "howItWorks": {
+        "step1": "System analyzes attribution data to identify winning patterns",
+        "step2": "Winning strategies are automatically expanded, underperformers paused",
+        "step3": "Insights compound into Playbook templates for future use"
+      },
+      "relatedReading": "Read more about Experiment-Driven Growth"
+    },
+    "governance": {
+      "title": "Governance & Compliance",
+      "desc": "Every override is tracked with reason and impact. Legal docs are versioned. OAuth tokens are encrypted with audit trails.",
+      "f1": "Override tracking: who / when / why / what / scope",
+      "f2": "Legal document versioning with effective dates",
+      "f3": "OAuth-only social auth (no passwords), minimal scopes",
+      "f4": "Publishing safety gate: AI-generate + human-approve by default",
+      "faq1Q": "What gets logged when I make an override?",
+      "faq1A": "Every override records: who made it, when, why (mandatory reason), what changed, the scope of impact, and score snapshots before and after.",
+      "faq2Q": "How are OAuth tokens protected?",
+      "faq2A": "Tokens are encrypted at rest, stored with minimal scopes, and include full audit trails. Expired tokens auto-refresh; revocation is one-click. No passwords are ever stored.",
+      "cta": "See how Governance works for your product",
+      "howItWorksTitle": "How it works",
+      "howItWorks": {
+        "step1": "All decisions are logged with role-based access controls",
+        "step2": "Human overrides are tracked with mandatory reason and impact assessment",
+        "step3": "Full audit trail ensures compliance and accountability"
+      },
+      "relatedReading": "Read more about Growth Automation"
+    }
+  },
+  "templates": {
+    "hero": {
+      "title": "Reusable Playbooks, Transparent Methods",
+      "subtitle": "We publish the framework and decisions first, then let results accumulate in public logs."
+    },
+    "framework": {
+      "title": "How Experiments Run",
+      "step1": "Hypothesis",
+      "step1Desc": "Topic selection & goal definition",
+      "step2": "Action",
+      "step2Desc": "SEO/Social execution batches",
+      "step3": "Attribution",
+      "step3Desc": "Channel contribution & conflict checks",
+      "step4": "Decision",
+      "step4Desc": "expand / iterate / pause"
+    },
+    "playbooks": {
+      "title": "Playbook Templates",
+      "pb1Title": "SEO Scale-Up Playbook",
+      "pb1Desc": "High-intent keywords identified, social probes validated",
+      "pb2Title": "Social-First Probe Playbook",
+      "pb2Desc": "New product, unvalidated topics, pre-SEO phase",
+      "pb3Title": "Link Building Starter Playbook",
+      "pb3Desc": "Existing content assets, brand mentions detected"
+    },
+    "experiments": {
+      "title": "Follow Live Experiment Logs",
+      "desc": "Weekly logs are published on Blog and social channels with evidence-first format.",
+      "blogCta": "Open Blog Logs →",
+      "xCta": "Follow on X →",
+      "linkedinCta": "Follow on LinkedIn →"
+    }
+  },
+  "blog": {
+    "title": "Blog",
+    "allPosts": "All Posts",
+    "readMore": "Read more →",
+    "minRead": "min read",
+    "published": "Published",
+    "updated": "Updated",
+    "noPosts": "No posts yet. Check back soon!",
+    "categories": {
+      "case_study": "Case Study",
+      "methodology": "Methodology",
+      "weekly_review": "Weekly Review",
+      "experiment_log": "Experiment Log"
+    },
+    "pillars": {
+      "all": "All Topics",
+      "growth_automation": "Growth Automation",
+      "experiment_driven": "Experiment-Driven",
+      "attribution": "Attribution",
+      "seo_content": "SEO & Content",
+      "customer_stories": "Customer Stories"
+    },
+    "categoryPages": {
+      "case-study": {
+        "title": "Case Studies",
+        "description": "Real growth stories and experiment outcomes from product teams."
+      },
+      "methodology": {
+        "title": "Methodology",
+        "description": "Growth frameworks, mental models, and systematic approaches."
+      },
+      "weekly-review": {
+        "title": "Weekly Reviews",
+        "description": "Weekly experiment logs with hypothesis, action, attribution, and decisions."
+      },
+      "experiment-log": {
+        "title": "Experiment Logs",
+        "description": "Detailed records of individual growth experiments and their results."
+      }
+    },
+    "authorBio": {
+      "name": "GenGrowth Team",
+      "title": "Growth Automation Engineers",
+      "bio": "We build tools that help product teams automate growth experiments."
+    },
+    "relatedArticles": {
+      "title": "Related Articles"
+    }
+  },
+  "cookie": {
+    "title": "We use cookies",
+    "description": "We use cookies to improve your experience. You can choose which types to allow.",
+    "acceptAll": "Accept All",
+    "necessaryOnly": "Necessary Only",
+    "preferences": "Preferences",
+    "save": "Save Preferences",
+    "necessary": "Necessary",
+    "necessaryDesc": "Essential for website functionality. Always enabled.",
+    "analytics": "Analytics",
+    "analyticsDesc": "Help us understand how visitors use our site.",
+    "marketing": "Marketing",
+    "marketingDesc": "Used for advertising and recommendation tracking."
+  },
+  "about": {
+    "hero": {
+      "title": "About GenGrowth",
+      "subtitle": "We believe growth should be transparent, systematic, and human-centered. GenGrowth is an AI-powered growth operating system that replaces guesswork with evidence-driven strategy."
+    },
+    "principles": {
+      "title": "Our Design Principles",
+      "minimalInput": {
+        "title": "Minimal Input First",
+        "desc": "Minimal Input First is the principle that the system should only ask for what cannot be auto-inferred. We believe the best tool is one that does the most with the least user effort."
+      },
+      "autoStrategy": {
+        "title": "Auto Strategy First",
+        "desc": "Auto Strategy First is the approach where the system proposes strategies and humans approve or override. Decisions start with AI recommendations backed by evidence."
+      },
+      "evidence": {
+        "title": "Evidence Traceable",
+        "desc": "Evidence Traceable means every recommendation has a source and calculation. No black-box decisions — every suggestion shows its reasoning."
+      },
+      "signalDriven": {
+        "title": "Signal-Driven Iteration",
+        "desc": "Signal-Driven Iteration is the practice of triggering actions based on results, not fixed schedules. The system responds to what the data says, not the calendar."
+      },
+      "override": {
+        "title": "Override Without Losing Control",
+        "desc": "Override Without Losing Control ensures that human overrides are tracked with impact assessment. You stay in charge while maintaining a clear audit trail."
+      },
+      "reusable": {
+        "title": "Cross-Product Reusable",
+        "desc": "Cross-Product Reusable means successful patterns automatically become Playbook templates. What works for one product can accelerate growth for the next."
+      },
+      "openSource": {
+        "title": "Open Source Inspired",
+        "desc": "Open Source Inspired, Minimal Adaptation is our commitment to learning from best practices while keeping the MVP lean and focused."
+      }
+    },
+    "founder": {
+      "title": "Why We're Building This",
+      "quote": "Most growth tools give you dashboards and data, but leave the hardest part — deciding what to do next — entirely to you. We built GenGrowth because we believe AI should do the heavy lifting of analysis and strategy, while keeping humans in control of every decision. Growth shouldn't require a 10-person team or a six-figure budget. It should be systematic, transparent, and accessible to every ambitious team.",
+      "attribution": "— The GenGrowth Team"
+    }
+  },
+  "contact": {
+    "hero": {
+      "title": "Get in Touch",
+      "subtitle": "Have a question, partnership idea, or just want to say hello? We'd love to hear from you."
+    },
+    "form": {
+      "nameLabel": "Name",
+      "namePlaceholder": "Your name",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "messageLabel": "Message",
+      "messagePlaceholder": "Tell us what's on your mind (at least 10 characters)",
+      "submit": "Send Message",
+      "submitting": "Sending...",
+      "successTitle": "Message Sent!",
+      "successDesc": "Thank you for reaching out. We'll get back to you as soon as possible.",
+      "genericError": "Something went wrong. Please try again later."
+    }
+  },
+  "legal": {
+    "comingSoon": "Document coming soon",
+    "privacy": {
+      "title": "Privacy Policy"
+    },
+    "terms": {
+      "title": "Terms of Service"
+    },
+    "cookies": {
+      "title": "Cookie Policy"
+    },
+    "copyright": {
+      "title": "Copyright Notice"
+    }
+  },
+  "trial": {
+    "modalTitle": "Start Free Trial",
+    "modalDesc": "4 steps, 2 minutes to configure your product",
+    "contactTitle": "Contact Information",
+    "contactDesc": "Leave your email and we'll send you a trial invitation.",
+    "emailLabel": "Work Email",
+    "emailPlaceholder": "you@company.com",
+    "nameLabel": "Name (optional)",
+    "namePlaceholder": "Your name",
+    "submitTrial": "Submit Trial Request",
+    "submitting": "Submitting...",
+    "successTitle": "Trial Request Submitted!",
+    "successDesc": "We'll review your request and get back to you within 24 hours with early access and a 7-day free trial.",
+    "duplicateError": "You've already submitted a trial request!",
+    "genericError": "Something went wrong. Please try again.",
+    "emailInvalid": "Please enter a valid email address"
+  },
+  "glossary": {
+    "title": "Growth Glossary",
+    "subtitle": "Essential terms and concepts for product teams building growth systems.",
+    "termCount": "{count} terms",
+    "allCategories": "All",
+    "metrics": "Metrics",
+    "strategy": "Strategy",
+    "technical": "Technical",
+    "methodology": "Methodology",
+    "readMore": "Learn more",
+    "termPage": {
+      "whyItMatters": "Why It Matters for Your Growth",
+      "relatedTerms": "Related Terms",
+      "relatedFeature": "How GenGrowth Helps",
+      "cta": "Let GenGrowth handle this automatically for your product",
+      "backToGlossary": "Back to Glossary"
+    }
+  },
+  "tools": {
+    "title": "Free Growth Tools",
+    "subtitle": "Practical calculators and utilities for product teams running growth experiments.",
+    "abTest": {
+      "title": "A/B Test Sample Size Calculator",
+      "description": "Calculate the required sample size for your A/B test based on baseline conversion rate, minimum detectable effect, and statistical parameters.",
+      "pageTitle": "A/B Test Sample Size Calculator",
+      "pageSubtitle": "Calculate the required sample size for statistically significant A/B test results.",
+      "baselineRate": "Baseline Conversion Rate (%)",
+      "mde": "Minimum Detectable Effect (%)",
+      "significance": "Statistical Significance",
+      "power": "Statistical Power",
+      "dailyTraffic": "Daily Traffic (optional)",
+      "results": "Results",
+      "samplePerVariation": "Sample Size Per Variation",
+      "totalSample": "Total Sample Size",
+      "estimatedDuration": "Estimated Duration",
+      "days": "days",
+      "howItWorks": "How to Use This Calculator",
+      "step1": "Enter your current conversion rate as the baseline",
+      "step2": "Set the minimum improvement you want to detect",
+      "step3": "Choose your statistical confidence level and review the results",
+      "faq1q": "What is a good sample size for an A/B test?",
+      "faq1a": "It depends on your baseline conversion rate and the effect you want to detect. Use this calculator with your actual numbers for an accurate estimate.",
+      "faq2q": "What is Minimum Detectable Effect?",
+      "faq2a": "MDE is the smallest relative improvement in conversion rate that your test can reliably detect. A 20% MDE means you want to detect at least a 20% relative lift.",
+      "faq3q": "How long should I run my A/B test?",
+      "faq3a": "Divide the total sample size by your daily traffic. Most tests need 2-4 weeks for reliable results."
+    },
+    "roi": {
+      "title": "Growth ROI Calculator",
+      "description": "Estimate the ROI of automating your growth workflow — see projected time savings, cost reduction, and revenue impact.",
+      "pageTitle": "Growth Automation ROI Calculator",
+      "pageSubtitle": "Estimate the return on investment from automating your growth workflow.",
+      "monthlyTraffic": "Monthly Traffic",
+      "conversionRate": "Current Conversion Rate (%)",
+      "revenuePerCustomer": "Average Revenue per Customer ($)",
+      "manualHours": "Hours on Manual Growth/Week",
+      "hourlyCost": "Hourly Cost of Growth Team ($)",
+      "results": "Your ROI Estimate",
+      "timeSaved": "Time Saved",
+      "costSavings": "Cost Savings",
+      "conversionLift": "Projected Conversion Lift",
+      "additionalRevenue": "Additional Revenue",
+      "roi": "ROI",
+      "payback": "Payback Period",
+      "hoursPerMonth": "hours/month",
+      "perMonth": "/month",
+      "months": "months",
+      "chartTitle": "Before vs After Automation",
+      "manual": "Manual",
+      "automated": "Automated",
+      "howItWorks": "How to Use This Calculator",
+      "step1": "Enter your current traffic and conversion metrics",
+      "step2": "Add your team's manual growth work hours and cost",
+      "step3": "Review the projected savings and ROI from automation",
+      "faq1q": "How accurate is this ROI estimate?",
+      "faq1a": "This calculator uses industry averages for automation efficiency (70% time reduction, 15% conversion improvement). Actual results vary based on your product and implementation.",
+      "faq2q": "What costs does the ROI calculation include?",
+      "faq2a": "It includes time savings from reduced manual work and projected revenue from conversion improvements, compared against the cost of GenGrowth.",
+      "faq3q": "What is the assumed conversion improvement?",
+      "faq3a": "The calculator assumes a 15% relative improvement in conversion rate, which is a conservative estimate based on growth automation benchmarks."
+    },
+    "seoAudit": {
+      "title": "Website Health Map",
+      "description": "Scan a homepage, robots.txt, and sitemap.xml for measurable SEO issues, evidence, and prioritized fixes.",
+      "metaTitle": "Free SEO Audit & Website Health Map -- GenGrowth",
+      "metaDescription": "Run a fast, evidence-led homepage SEO check covering crawlability, technical signals, on-page basics, extractability, and static structured data.",
+      "pageTitle": "See the SEO signals search engines can actually read",
+      "pageSubtitle": "A fast website health map built from real homepage, robots.txt, and sitemap.xml measurements. Every result shows its evidence, coverage, and limits.",
+      "eyebrow": "Free SEO diagnostic",
+      "formLabel": "Website URL",
+      "placeholder": "example.com",
+      "submit": "Run free check",
+      "running": "Scanning homepage signals...",
+      "scopeShort": "Checks one page plus robots.txt and sitemap.xml. No login, persistence, or full-site crawl.",
+      "errors": {
+        "invalid_url": "Enter a public website URL.",
+        "invalid_request": "Send one valid website URL and try again.",
+        "payload_too_large": "The request is larger than this tool accepts.",
+        "unsupported_media_type": "This request format is not supported.",
+        "scan_failed": "We could not scan this site right now. Check that it is publicly reachable and try again.",
+        "scan_timeout": "The site did not respond within this preview's time limit.",
+        "scan_in_progress": "A scan from this network is already running. Wait a moment and try again.",
+        "rate_limited": "Too many scans from this network. Try again shortly.",
+        "unknown": "Something went wrong. Try again."
+      },
+      "resultsTitle": "Measured homepage health",
+      "scoreLabel": "Measured score",
+      "coverage": "{measured} / {total} checks measured",
+      "priorities": "Top priorities",
+      "recommendationLabel": "What to do",
+      "notAvailable": "Not available",
+      "modules": {
+        "crawlability": "Crawlability & indexation",
+        "technical": "Technical foundation",
+        "on_page": "On-page signals",
+        "content": "Content & extractability",
+        "structured_data": "Structured data & AI readability"
+      },
+      "statuses": {
+        "pass": "Pass",
+        "warning": "Watch",
+        "fail": "Fix",
+        "unverified": "Not verified"
+      },
+      "checks": {
+        "homepage_status": {
+          "title": "Homepage response",
+          "recommendation": "Restore a successful 200 response for the submitted page before optimizing other signals."
+        },
+        "indexability": {
+          "title": "Indexability directive",
+          "recommendation": "Remove unintended noindex directives from pages that should appear in search."
+        },
+        "robots_access": {
+          "title": "Robots.txt readability",
+          "recommendation": "Publish a readable robots.txt and review broad disallow rules before search crawlers revisit."
+        },
+        "sitemap": {
+          "title": "XML sitemap",
+          "recommendation": "Publish a valid XML sitemap at /sitemap.xml containing canonical, indexable URLs."
+        },
+        "https": {
+          "title": "HTTPS delivery",
+          "recommendation": "Serve the canonical site over HTTPS and redirect HTTP traffic to it."
+        },
+        "redirects": {
+          "title": "Redirect path",
+          "recommendation": "Link directly to the final URL and remove avoidable redirect hops."
+        },
+        "html_content_type": {
+          "title": "HTML response type",
+          "recommendation": "Return the page as HTML so search crawlers can parse its document-level signals."
+        },
+        "canonical": {
+          "title": "Canonical alignment",
+          "recommendation": "Declare one self-referencing canonical URL using the final HTTPS host and page path."
+        },
+        "html_lang": {
+          "title": "HTML language",
+          "recommendation": "Set a valid lang attribute on the html element for the page language."
+        },
+        "title": {
+          "title": "Title tag",
+          "recommendation": "Write one descriptive, page-specific title of roughly 30 to 60 characters."
+        },
+        "meta_description": {
+          "title": "Meta description",
+          "recommendation": "Add a specific description that explains the page value in about 70 to 160 characters."
+        },
+        "h1": {
+          "title": "Primary heading",
+          "recommendation": "Use one clear H1 that states the page's primary topic."
+        },
+        "heading_order": {
+          "title": "Heading hierarchy",
+          "recommendation": "Keep heading levels sequential so crawlers and assistive technology can follow the structure."
+        },
+        "text_depth": {
+          "title": "Static text extractability",
+          "recommendation": "Expose enough useful main content in crawlable HTML to explain the product, audience, and outcome."
+        },
+        "internal_links": {
+          "title": "Static internal discovery",
+          "recommendation": "Expose descriptive HTML links to important product, proof, pricing, and resource pages."
+        },
+        "social_meta": {
+          "title": "Social preview metadata",
+          "recommendation": "Add complete Open Graph and Twitter Card metadata for reliable shared previews."
+        },
+        "json_ld": {
+          "title": "Static JSON-LD evidence",
+          "recommendation": "Validate the rendered page with a rich-results tool; add accurate schema only if it is truly absent."
+        }
+      },
+      "evidence": {
+        "status_code": "HTTP status",
+        "robots_noindex": "Noindex detected",
+        "body_complete": "Complete response read",
+        "resource_state": "Resource state",
+        "final_protocol": "Final protocol",
+        "redirect_hops": "Redirect hops",
+        "content_type": "Content type",
+        "canonical_url": "Canonical URL",
+        "html_lang": "HTML language",
+        "title_length": "Title length",
+        "description_length": "Description length",
+        "h1_count": "H1 count",
+        "heading_outline": "Heading outline",
+        "static_word_count": "Static word count",
+        "static_internal_links": "Static internal links",
+        "social_tags_present": "Social tags present",
+        "json_ld_blocks": "JSON-LD blocks",
+        "malformed_blocks": "Malformed blocks"
+      },
+      "sources": {
+        "homepage_static": "Homepage raw response",
+        "robots_txt": "Standard robots.txt path",
+        "sitemap_xml": "Standard sitemap.xml path"
+      },
+      "limitationLabel": "Evidence limit",
+      "limitations": {
+        "standard_path_only": "Only /sitemap.xml was checked. Another sitemap may be declared elsewhere.",
+        "static_html_cannot_prove_rendered_absence": "The raw response cannot prove that JavaScript-rendered structured data is absent.",
+        "response_body_truncated": "The response exceeded the bounded read, so absence and complete counts were not inferred.",
+        "html_body_unavailable": "The response was not identifiable as an HTML document.",
+        "resource_fetch_unavailable": "The standard resource could not be measured in this run."
+      },
+      "methodEyebrow": "Evidence before advice",
+      "howTitle": "How this fast check works",
+      "step1Title": "Validate the public target",
+      "step1Text": "The URL and every redirect are checked against private and reserved network ranges.",
+      "step2Title": "Measure bounded sources",
+      "step2Text": "We read the submitted page, robots.txt, and sitemap.xml with strict time and response-size limits.",
+      "step3Title": "Score only observed checks",
+      "step3Text": "Unverified checks stay outside the score and every actionable result keeps its observed evidence.",
+      "ctaTitle": "Need the whole site, not one page?",
+      "ctaBody": "GenGrowth's full Website Audit adds multi-page crawling, rendered evidence, performance data, history, and an execution-ready fix queue.",
+      "ctaButton": "Open GenGrowth",
+      "faq1q": "Is this a complete SEO audit?",
+      "faq1a": "No. It is a fast static check of one submitted page plus robots.txt and sitemap.xml. It does not claim full-site, ranking, backlink, Search Console, or browser-rendered coverage.",
+      "faq2q": "Why can structured data show as not verified?",
+      "faq2a": "Many sites inject JSON-LD with JavaScript. A static fetch can confirm markup it sees, but it cannot safely prove that rendered markup is absent.",
+      "faq3q": "Does a high score guarantee rankings?",
+      "faq3a": "No. The score summarizes only measured technical and on-page signals. Search demand, content quality, competition, authority, and actual indexation require additional evidence."
+    },
+    "semrush": "Semrush",
+    "cms": "CMS",
+    "gsc": "Google Search Console",
+    "screaming_frog": "Screaming Frog",
+    "ahrefs": "Ahrefs",
+    "email_outreach": "Email Outreach Tool",
+    "social_scheduler": "Social Scheduling Tool",
+    "lighthouse": "Lighthouse",
+    "crux": "CrUX",
+    "schema_validator": "Schema Validator",
+    "media_database": "Media Database",
+    "axe": "axe Accessibility",
+    "security_scanner": "Security Scanner",
+    "dev_tools": "Browser Dev Tools"
+  },
+  "compare": {
+    "title": "Compare GenGrowth",
+    "subtitle": "See how GenGrowth compares to alternative approaches and tools.",
+    "bestForHeading": "Best For",
+    "faqHeading": "Frequently Asked Questions",
+    "cta": "Try GenGrowth Free",
+    "ctaSubtitle": "See the difference for yourself.",
+    "backToCompare": "Back to Compare",
+    "manual-growth": {
+      "competitor": "Manual Growth",
+      "heroTitle": "GenGrowth vs Manual Growth",
+      "heroDescription": "Compare automated growth with GenGrowth against traditional manual growth operations requiring a full team.",
+      "tldr": "GenGrowth automates the entire growth loop (discovery, strategy, execution, attribution, optimization) that manually costs $400K-600K/year in team salaries and 20+ hours/week of repetitive work.",
+      "dimensions": {
+        "discovery": {
+          "name": "Opportunity Discovery",
+          "gengrowth": "AI-powered auto-scan of keywords, competitors, and gaps",
+          "competitor": "Manual research across multiple tools, weeks of work"
+        },
+        "strategy": {
+          "name": "Strategy Generation",
+          "gengrowth": "Evidence-based AI strategies with ROI projections",
+          "competitor": "Gut feeling, spreadsheets, team debates"
+        },
+        "execution": {
+          "name": "Execution",
+          "gengrowth": "Automated parallel multi-channel execution",
+          "competitor": "Manual, one channel at a time, 20+ hrs/week"
+        },
+        "attribution": {
+          "name": "Attribution",
+          "gengrowth": "Channel-isolated automatic attribution loop",
+          "competitor": "Spreadsheet guesswork, no clear attribution"
+        },
+        "optimization": {
+          "name": "Optimization",
+          "gengrowth": "Self-optimizing closed loop, continuous",
+          "competitor": "Trial and error, monthly reviews at best"
+        },
+        "cost": {
+          "name": "Annual Cost",
+          "gengrowth": "GenGrowth subscription",
+          "competitor": "$400K-600K/year for a 3-5 person growth team"
+        }
+      },
+      "bestFor": {
+        "gengrowth": {
+          "item1": "Solo founders and small teams without growth headcount",
+          "item2": "Teams that want data-driven decisions, not gut feelings",
+          "item3": "Organizations seeking 24/7 automated growth execution"
+        },
+        "competitor": {
+          "item1": "Enterprises with established growth teams wanting full manual control",
+          "item2": "Companies in highly regulated industries requiring human review of every action",
+          "item3": "Teams that prefer building proprietary growth infrastructure"
+        }
+      },
+      "faqs": {
+        "faq1": {
+          "q": "Can GenGrowth fully replace a growth team?",
+          "a": "GenGrowth automates the operational aspects of growth marketing -- strategy generation, content creation, multi-channel execution, and optimization. For early-stage teams or solo operators, it can serve as the primary growth engine. Larger organizations may use it to augment their existing team."
+        },
+        "faq2": {
+          "q": "How quickly can I see results after switching from manual growth?",
+          "a": "Most users see their first automated strategies generated within minutes of setup. Execution results typically begin appearing within 1-2 weeks. The optimization loop becomes more effective over time as the system accumulates performance data."
+        },
+        "faq3": {
+          "q": "What happens if I want to customize the AI-generated strategies?",
+          "a": "GenGrowth generates strategies as proposals that you can review, approve, modify, or reject before execution. You maintain full control. The system learns from your approval patterns to better align future strategies with your preferences."
+        }
+      }
+    },
+    "okara-ai-cmo": {
+      "competitor": "Okara AI CMO",
+      "heroTitle": "GenGrowth vs Okara AI CMO",
+      "heroDescription": "Compare GenGrowth's full-loop automation with Okara AI CMO's suggestion-only approach to growth marketing.",
+      "tldr": "Okara AI CMO ($99/mo) provides marketing suggestions and tracks AI visibility across Google AI, ChatGPT, Perplexity, Gemini, and Copilot. GenGrowth goes further: it executes strategies, measures results, and self-optimizes -- not just suggests.",
+      "dimensions": {
+        "discovery": {
+          "name": "Opportunity Discovery",
+          "gengrowth": "Automated keyword, competitor, and gap analysis",
+          "competitor": "AI-powered suggestions and recommendations"
+        },
+        "strategy": {
+          "name": "Strategy Generation",
+          "gengrowth": "Evidence-based strategies with execution plans",
+          "competitor": "Marketing suggestions without execution roadmap"
+        },
+        "execution": {
+          "name": "Execution",
+          "gengrowth": "Automated multi-channel execution (SEO, social, outreach)",
+          "competitor": "No execution -- suggestions only, you do the work"
+        },
+        "attribution": {
+          "name": "Attribution",
+          "gengrowth": "Channel-isolated automatic attribution",
+          "competitor": "No attribution tracking"
+        },
+        "optimization": {
+          "name": "Optimization",
+          "gengrowth": "Self-optimizing closed loop based on results",
+          "competitor": "No self-optimization, manual iteration"
+        },
+        "cost": {
+          "name": "GEO / AI Visibility",
+          "gengrowth": "GEO integrated into scoring and strategy generation",
+          "competitor": "Tracks AI visibility across Google AI, ChatGPT, Perplexity, Gemini, and Copilot"
+        }
+      },
+      "bestFor": {
+        "gengrowth": {
+          "item1": "Teams wanting end-to-end automation from discovery to optimization",
+          "item2": "Products needing execution, not just recommendations",
+          "item3": "Growth teams that want a closed-loop system with measurable ROI"
+        },
+        "competitor": {
+          "item1": "Teams with execution capacity who just need strategic direction",
+          "item2": "Companies focused primarily on AI platform visibility tracking",
+          "item3": "Marketing leaders wanting AI-powered CMO-level suggestions"
+        }
+      },
+      "faqs": {
+        "faq1": {
+          "q": "Does Okara AI CMO execute marketing strategies?",
+          "a": "No. Okara AI CMO provides suggestions and recommendations but does not execute them. You need your own team or tools to implement the suggested strategies. GenGrowth handles both strategy generation and automated execution."
+        },
+        "faq2": {
+          "q": "How does GEO tracking differ between the two?",
+          "a": "Okara tracks your brand visibility across Google AI, ChatGPT, Perplexity, Gemini, and Copilot. GenGrowth integrates GEO signals directly into its scoring and strategy engine, using AI visibility data to inform and optimize growth strategies."
+        },
+        "faq3": {
+          "q": "Can I use both GenGrowth and Okara together?",
+          "a": "Yes. Some teams use Okara for AI visibility monitoring while using GenGrowth for the full growth execution loop. However, GenGrowth's built-in GEO integration may make a separate tool redundant for most use cases."
+        }
+      }
+    },
+    "babylovegrowth": {
+      "competitor": "BabyLoveGrowth",
+      "heroTitle": "GenGrowth vs BabyLoveGrowth",
+      "heroDescription": "Compare GenGrowth's intelligent growth automation with BabyLoveGrowth's content-and-links package approach.",
+      "tldr": "BabyLoveGrowth ($99/mo) offers 30 articles/month and a 2,500-site link exchange network plus Reddit posting. GenGrowth provides the full loop: discovery, strategy, execution, attribution, and optimization -- without SEO-risky link exchanges.",
+      "dimensions": {
+        "discovery": {
+          "name": "Opportunity Discovery",
+          "gengrowth": "AI-powered keyword, competitor, and gap analysis",
+          "competitor": "No discovery phase -- fixed content package"
+        },
+        "strategy": {
+          "name": "Strategy Framework",
+          "gengrowth": "Evidence-based strategies with ROI projections",
+          "competitor": "No strategy framework -- preset deliverables"
+        },
+        "execution": {
+          "name": "Execution",
+          "gengrowth": "Multi-channel: SEO, social, outreach with quality control",
+          "competitor": "30 articles/month + 2,500-site link exchange + Reddit"
+        },
+        "attribution": {
+          "name": "Attribution",
+          "gengrowth": "Channel-isolated automatic attribution",
+          "competitor": "No attribution tracking"
+        },
+        "optimization": {
+          "name": "Optimization",
+          "gengrowth": "Self-optimizing closed loop",
+          "competitor": "No optimization loop, fixed deliverables"
+        },
+        "cost": {
+          "name": "SEO Risk",
+          "gengrowth": "White-hat strategies, no link schemes",
+          "competitor": "2,500-site link exchange carries Google penalty risk"
+        }
+      },
+      "bestFor": {
+        "gengrowth": {
+          "item1": "Teams wanting intelligent, data-driven growth -- not just volume",
+          "item2": "Products that need attribution to understand what actually works",
+          "item3": "Companies that want sustainable SEO without link scheme risks"
+        },
+        "competitor": {
+          "item1": "Teams that just want high-volume content output regardless of strategy",
+          "item2": "Products in niches where link exchanges are less risky",
+          "item3": "Budget-conscious teams that want a simple, predictable deliverable package"
+        }
+      },
+      "faqs": {
+        "faq1": {
+          "q": "Are link exchanges risky for SEO?",
+          "a": "Google's guidelines explicitly warn against link schemes including reciprocal link exchanges at scale. A 2,500-site link exchange network could trigger algorithmic or manual penalties. GenGrowth uses white-hat link building strategies that align with search engine guidelines."
+        },
+        "faq2": {
+          "q": "Does BabyLoveGrowth provide growth strategy?",
+          "a": "BabyLoveGrowth delivers a fixed package of 30 articles, link exchanges, and Reddit posts per month. There is no discovery phase, no strategy framework, and no optimization based on results. GenGrowth builds strategies based on your specific product, market, and performance data."
+        },
+        "faq3": {
+          "q": "Can BabyLoveGrowth attribute results to specific actions?",
+          "a": "No. BabyLoveGrowth does not include attribution tracking. You cannot determine which articles, links, or Reddit posts drove traffic or conversions. GenGrowth attributes every result to its source strategy and channel."
+        }
+      }
+    },
+    "ahrefs": {
+      "competitor": "Ahrefs",
+      "heroTitle": "GenGrowth vs Ahrefs",
+      "heroDescription": "Compare GenGrowth's automated growth execution with Ahrefs' industry-leading SEO analysis and research toolkit.",
+      "tldr": "Ahrefs ($129-$449/mo) is the gold standard for SEO analysis -- largest backlink database, keyword research, site audits. GenGrowth takes Ahrefs-style insights and adds what Ahrefs does not: automated strategy generation, execution, attribution, and optimization.",
+      "dimensions": {
+        "discovery": {
+          "name": "Discovery / Research",
+          "gengrowth": "Automated opportunity discovery with actionable next steps",
+          "competitor": "Industry-leading backlink DB, keyword explorer, site audit"
+        },
+        "strategy": {
+          "name": "Strategy Generation",
+          "gengrowth": "AI generates executable strategies from discovered data",
+          "competitor": "Data and insights only -- you build the strategy"
+        },
+        "execution": {
+          "name": "Execution",
+          "gengrowth": "Automated multi-channel execution",
+          "competitor": "No execution capability -- analysis tool only"
+        },
+        "attribution": {
+          "name": "Attribution",
+          "gengrowth": "Channel-isolated automatic attribution",
+          "competitor": "Rank tracking and backlink monitoring, no attribution"
+        },
+        "optimization": {
+          "name": "Optimization",
+          "gengrowth": "Self-optimizing closed loop",
+          "competitor": "Manual -- you interpret data and adjust strategies yourself"
+        },
+        "cost": {
+          "name": "Pricing",
+          "gengrowth": "GenGrowth subscription (all-in-one)",
+          "competitor": "$129-$449/month for analysis features only"
+        }
+      },
+      "bestFor": {
+        "gengrowth": {
+          "item1": "Teams that want insights turned into executed growth strategies automatically",
+          "item2": "Solo operators who cannot afford separate analysis + execution tools + team",
+          "item3": "Products that need a closed loop from research to results"
+        },
+        "competitor": {
+          "item1": "SEO professionals who need the deepest backlink and keyword data available",
+          "item2": "Agencies managing many client sites that need granular research tools",
+          "item3": "Teams with execution capacity that just need best-in-class analysis"
+        }
+      },
+      "faqs": {
+        "faq1": {
+          "q": "Does GenGrowth replace Ahrefs entirely?",
+          "a": "GenGrowth and Ahrefs serve different purposes. Ahrefs excels at deep SEO research and has the largest backlink database. GenGrowth focuses on turning insights into automated execution. Some teams use both -- Ahrefs for deep research and GenGrowth for the execution loop."
+        },
+        "faq2": {
+          "q": "Can GenGrowth match Ahrefs' backlink database?",
+          "a": "Ahrefs has the industry's largest backlink index. GenGrowth's discovery engine focuses on actionable opportunities rather than raw data volume. For teams that need the deepest possible backlink data, Ahrefs remains the standard."
+        },
+        "faq3": {
+          "q": "Is Ahrefs worth it if I already have GenGrowth?",
+          "a": "It depends on your needs. If you need granular SEO research (specific keyword difficulty, competitor backlink profiles, content gap analysis), Ahrefs adds value. If your primary need is automated growth execution with built-in research, GenGrowth may be sufficient on its own."
+        }
+      }
+    },
+    "readComparison": "Read comparison"
+  },
+  "useCases": {
+    "title": "Use Cases",
+    "subtitle": "See how different product teams use GenGrowth to drive growth.",
+    "learnMore": "Learn more",
+    "backToUseCases": "Back to Use Cases",
+    "yourChallenge": "Your Challenge",
+    "howGenGrowthHelps": "How GenGrowth Solves This",
+    "gettingStarted": "Step-by-Step: Getting Started",
+    "expectedResults": "Results You Can Expect",
+    "cta": "Start growing your product with GenGrowth",
+    "saas": {
+      "title": "SaaS Product: From 0 to 1,000 Users",
+      "description": "How early-stage SaaS founders use GenGrowth to systematically acquire their first 1,000 users.",
+      "challenge": "You have built a great SaaS product but growth is slow. You are trying everything -- blog posts, social media, cold outreach -- but nothing compounds. Your small team spends 20+ hours per week on manual growth tasks with no clear attribution.",
+      "solution": "GenGrowth automates the entire growth loop for your SaaS: discovers untapped keyword opportunities, generates evidence-based strategies, executes SEO and social campaigns in parallel, and attributes every result to its source.",
+      "step1": "Enter your product URL and target regions",
+      "step2": "GenGrowth scans your site and identifies growth opportunities",
+      "step3": "Review and approve AI-generated strategies ranked by expected ROI",
+      "step4": "Watch automated execution across SEO, social, and outreach channels",
+      "results": "Early-stage SaaS teams using GenGrowth typically see 3-5x faster time to first 1,000 users compared to manual growth, with 70% less time spent on repetitive tasks."
+    },
+    "contentSite": {
+      "title": "Content Site: SEO Scale Growth",
+      "description": "How content-driven websites use GenGrowth to scale from hundreds to thousands of pages with systematic SEO.",
+      "challenge": "Your content site has good content but plateauing traffic. Manual keyword research, content planning, and SEO audits take too long. You know programmatic SEO could unlock massive growth, but you lack the engineering resources.",
+      "solution": "GenGrowth turns your content site into an SEO machine: auto-discovers keyword gaps and competitor positions, generates content strategies with evidence chains, and continuously optimizes based on actual ranking data.",
+      "step1": "Connect your site URL and Google Search Console data",
+      "step2": "GenGrowth maps your content gaps against competitor positions",
+      "step3": "Approve prioritized content and SEO strategies",
+      "step4": "Monitor automated execution and attribution-backed results",
+      "results": "Content sites using GenGrowth for SEO automation typically see 2-4x organic traffic growth within 3 months, with content production time reduced by 60%."
+    }
+  },
+  "pricing": {
+    "hero": {
+      "title": "Simple, Transparent Pricing",
+      "subtitle": "From discovery to optimization. Choose the level of automation that fits your growth stage."
+    },
+    "starter": {
+      "name": "Starter",
+      "price": "$99",
+      "period": "/month",
+      "description": "Discovery + Strategy",
+      "features": [
+        "Auto opportunity discovery",
+        "Strategy generation with scoring",
+        "Priority ranking",
+        "Weekly discovery reports",
+        "1 product"
+      ],
+      "cta": "Start Free Trial"
+    },
+    "pro": {
+      "name": "Pro",
+      "price": "$199",
+      "period": "/month",
+      "badge": "Most Popular",
+      "description": "Full Growth Loop",
+      "features": [
+        "Everything in Starter",
+        "Automated execution (SEO/Social/Link)",
+        "Channel-isolated attribution",
+        "6-dimension data integrity",
+        "Self-optimization loop",
+        "Social-First validation",
+        "3 products"
+      ],
+      "cta": "Start Free Trial"
+    },
+    "growth": {
+      "name": "Growth",
+      "price": "$299",
+      "period": "/month",
+      "description": "Scale + Knowledge",
+      "features": [
+        "Everything in Pro",
+        "Unlimited products",
+        "Playbook cross-product reuse",
+        "Competitor monitoring (weekly diff)",
+        "Priority support",
+        "Custom execution templates"
+      ],
+      "cta": "Start Free Trial"
+    },
+    "comparison": {
+      "title": "Compare Plans",
+      "feature": "Feature",
+      "rows": {
+        "discovery": "Auto opportunity discovery",
+        "strategyScoring": "Strategy generation with scoring",
+        "priorityRanking": "Priority ranking",
+        "weeklyReports": "Weekly discovery reports",
+        "automatedExecution": "Automated execution (SEO/Social/Link)",
+        "channelAttribution": "Channel-isolated attribution (UTM fingerprinting)",
+        "dataIntegrity": "6-dimension data integrity verification",
+        "selfOptimization": "Self-optimization loop",
+        "socialValidation": "Social-First validation",
+        "products": "Products",
+        "playbookReuse": "Playbook cross-product reuse",
+        "competitorMonitoring": "Competitor monitoring (weekly diff)",
+        "prioritySupport": "Priority support",
+        "customTemplates": "Custom execution templates"
+      },
+      "starterLabel": "Starter",
+      "proLabel": "Pro",
+      "growthLabel": "Growth",
+      "unlimited": "Unlimited"
+    },
+    "faq": {
+      "title": "Frequently Asked Questions",
+      "q1": {
+        "question": "Why is GenGrowth more expensive than Okara or BabyLoveGrowth?",
+        "answer": "At $99/month, those tools only provide suggestions. GenGrowth's Starter tier also starts at $99 for discovery and strategy. Our Pro and Growth tiers add what no competitor offers: automated execution, channel-isolated attribution, and self-optimization that learns from every experiment."
+      },
+      "q2": {
+        "question": "Can I switch plans?",
+        "answer": "Yes. Upgrade or downgrade anytime. Changes take effect at your next billing cycle."
+      },
+      "q3": {
+        "question": "Is there a free trial?",
+        "answer": "Yes. Every plan includes a 14-day free trial with full access."
+      },
+      "q4": {
+        "question": "What counts as a 'product'?",
+        "answer": "A product is one website or app you want to grow. Each product gets its own discovery engine, strategy portfolio, and execution queue."
+      },
+      "q5": {
+        "question": "Do I need technical knowledge?",
+        "answer": "No. GenGrowth requires only 4 inputs to get started: your URL, target region, growth goal, and primary conversion event. The system handles everything else."
+      }
+    },
+    "cta": {
+      "title": "Ready to Automate Your Growth?",
+      "subtitle": "Start with a 14-day free trial. No credit card required.",
+      "button": "Get Started"
+    }
+  },
+  "playbooks": {
+    "title": "Growth Playbooks",
+    "subtitle": "Battle-tested growth strategies, anonymized from real product data. Import any playbook directly into your GenGrowth workspace.",
+    "successRate": "Success Rate",
+    "industrySaas": "SaaS",
+    "industryContent": "Content",
+    "industryEcommerce": "E-commerce",
+    "industryDevtool": "Dev Tool",
+    "channelSeo": "SEO",
+    "channelSocial": "Social",
+    "channelLink": "Link Building",
+    "channelEmail": "Email",
+    "channelCommunity": "Community",
+    "goalTraffic": "Traffic",
+    "goalConversion": "Conversion",
+    "goalRetention": "Retention",
+    "steps": "Steps",
+    "applicableConditions": "Applicable Conditions",
+    "expectedResults": "Expected Results",
+    "relatedPlaybooks": "Related Playbooks",
+    "importCta": "Import to Your Product",
+    "waitlistCta": "Join Waitlist to Import",
+    "backToPlaybooks": "Back to Playbooks"
+  }
+}\n

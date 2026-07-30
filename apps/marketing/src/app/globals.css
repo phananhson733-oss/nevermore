@@ -1,0 +1,200 @@
+/* @input  — tailwindcss, tw-animate-css, shadcn/tailwind.css */
+/* @output — 全局 CSS 变量（品牌色、间距、圆角）和排版基线 */
+/* @pos    — 全局样式层，被 app/layout.tsx 引入，影响所有页面 */
+/* 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "DM Sans", "Noto Sans SC", system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* Brand colors — SPEC 8.2.1 */
+  --color-brand-bg: #131314;
+  --color-brand-bg-alt: #1A1A1C;
+  --color-brand-bg-light: #F5F0EB;
+  --color-brand-accent: #D97757;
+  --color-brand-accent-hover: #E08B6D;
+  --color-brand-accent-soft: rgba(217, 119, 87, 0.12);
+  --color-brand-accent-text: #E5956F; /* WCAG AA: ≥4.5:1 on #131314 for normal text */
+  --color-brand-accent-on-light: #A64F30; /* WCAG AA: ≥4.5:1 on #F5F0EB for normal text */
+  --color-brand-border: #2A2A2E;
+  --color-brand-success: #5BB98C;
+  --color-brand-warning: #D4A843;
+  --color-brand-error: #D95757;
+  --color-text-dark-primary: #F0EDE8;
+  --color-text-dark-secondary: #9B9690;
+  --color-text-light-primary: #1A1A1C;
+  --color-text-light-secondary: #6B6560;
+
+  /* Layout */
+  --max-width-content: 1200px;
+
+  /* Border radius */
+  --radius-card: 12px;
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: #131314;
+  --foreground: #F0EDE8;
+  --card: #1A1A1C;
+  --card-foreground: #F0EDE8;
+  --popover: #1A1A1C;
+  --popover-foreground: #F0EDE8;
+  --primary: #D97757;
+  --primary-foreground: #ffffff;
+  --secondary: #2A2A2E;
+  --secondary-foreground: #F0EDE8;
+  --muted: #2A2A2E;
+  --muted-foreground: #9B9690;
+  --accent: #D97757;
+  --accent-foreground: #ffffff;
+  --destructive: #D95757;
+  --border: #2A2A2E;
+  --input: #2A2A2E;
+  --ring: #D97757;
+  --chart-1: #D97757;
+  --chart-2: #5BB98C;
+  --chart-3: #D4A843;
+  --chart-4: #6B8EE0;
+  --chart-5: #B06DD6;
+  --sidebar: #1A1A1C;
+  --sidebar-foreground: #F0EDE8;
+  --sidebar-primary: #D97757;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #2A2A2E;
+  --sidebar-accent-foreground: #F0EDE8;
+  --sidebar-border: #2A2A2E;
+  --sidebar-ring: #D97757;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  /* Typography — SPEC 8.2.3
+     Uses --font-display so marketing ( /[locale]/* ) renders Space Grotesk
+     and product ( /app/* ) gets DM Sans via app-theme.css override. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
+
+  h1 {
+    font-size: clamp(2.5rem, 5vw, 3.5rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  h2 {
+    font-size: clamp(1.75rem, 3.5vw, 2.25rem);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  p {
+    font-size: clamp(1rem, 1.5vw, 1.125rem);
+    line-height: 1.7;
+  }
+
+  /* Scrollbar — Dashboard */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-brand-border);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a3a3e;
+  }
+}
+
+/* Dashboard utility animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes subtle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+.animate-slide-up {
+  animation: slide-up 0.35s ease-out both;
+}
+.animate-subtle-pulse {
+  animation: subtle-pulse 2.5s ease-in-out infinite;
+}
+
+/* Stagger children animation delays */
+.stagger-children > :nth-child(1) { animation-delay: 0ms; }
+.stagger-children > :nth-child(2) { animation-delay: 50ms; }
+.stagger-children > :nth-child(3) { animation-delay: 100ms; }
+.stagger-children > :nth-child(4) { animation-delay: 150ms; }
+.stagger-children > :nth-child(5) { animation-delay: 200ms; }
+.stagger-children > :nth-child(6) { animation-delay: 250ms; }
+.stagger-children > :nth-child(7) { animation-delay: 300ms; }
+.stagger-children > :nth-child(8) { animation-delay: 350ms; }
