@@ -83,10 +83,10 @@ export default defineConfig({
       SF_BLOB_DIR: "/tmp/signalframe-e2e-real-blobs",
       SF_DEV_AUTH: "true",
       // Next development mode restarts itself at 80% of V8's heap limit.
-      // This suite compiles the full authenticated app while also running a
-      // browser and worker, so the default ~4.5 GB limit can trigger a mid-test
-      // restart that discards form/selection state. Raising the limit avoids
-      // that restart without pre-allocating memory on the CI runner.
+      // Each isolated real-E2E group compiles authenticated routes while also
+      // running a browser and, for verticals, a worker. The default ~4.5 GB
+      // limit can trigger a mid-test restart that discards form/selection
+      // state; this gives each group headroom without pre-allocating memory.
       NODE_OPTIONS: "--max-old-space-size=6144",
       NEXT_DIST_DIR: ".next-e2e-real",
       PORT: String(PORT),

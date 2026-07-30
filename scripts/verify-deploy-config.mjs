@@ -21,7 +21,20 @@ assert.equal(
 );
 assert.equal(
   rootPackage.scripts?.["test:e2e:real"],
-  "playwright test --config=playwright.config.ts",
+  "pnpm test:e2e:real:surfaces && pnpm test:e2e:real:verticals && pnpm test:e2e:real:responsive",
+  "the real browser gate must isolate route-heavy suites in fresh Next processes",
+);
+assert.equal(
+  rootPackage.scripts?.["test:e2e:real:surfaces"],
+  "playwright test --config=playwright.config.ts e2e/a11y.spec.ts e2e/growth-map.real.spec.ts e2e/product-profile.real.spec.ts e2e/project-isolation.spec.ts",
+);
+assert.equal(
+  rootPackage.scripts?.["test:e2e:real:verticals"],
+  "playwright test --config=playwright.config.ts e2e/real-vertical-chains.spec.ts",
+);
+assert.equal(
+  rootPackage.scripts?.["test:e2e:real:responsive"],
+  "playwright test --config=playwright.config.ts e2e/responsive.spec.ts",
 );
 assert.equal(
   rootPackage.scripts?.["test:e2e:mock"],
