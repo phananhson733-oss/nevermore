@@ -1,5 +1,5 @@
 // @input  -- locale param, typed P0-2 copy, shared SEO and marketing layout primitives
-// @output -- localized Internal Link Audit landing page, JSON-LD, and interactive mock
+// @output -- localized Internal Link Audit landing page, JSON-LD, and bounded live crawl UI
 // @pos    -- SEO flagship route for the public P0-2 tool at /tools/internal-link-audit
 
 import Link from "next/link";

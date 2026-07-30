@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./canonical-url": "./src/canonical-url.ts",
+    "./crawl-public-preview": "./src/crawl/public-preview.ts",
     "./public-http": "./src/public-http/index.ts",
     "./url-safety": "./src/url-safety/index.ts"
   },

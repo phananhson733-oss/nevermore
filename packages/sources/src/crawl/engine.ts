@@ -50,6 +50,7 @@ const STOP_MAX_URLS = "max_urls";
 const STOP_MAX_DEPTH = "max_depth";
 const STOP_MAX_DURATION = "max_duration";
 const STOP_MAX_TOTAL_BYTES = "max_total_bytes";
+const STOP_MAX_REQUESTS = "max_requests";
 const STOP_ABORTED = "aborted";
 
 /** The crawl budget shape with widened numeric fields (CRAWL_BUDGET is assignable). */
@@ -64,12 +65,18 @@ export interface CrawlBudgetLimits {
   readonly minHostDelayMs: number;
 }
 
-/** Injectable seams (production uses the defaults). `budget` is TEST-ONLY. */
+/**
+ * Injectable seams. Production adapters use the default budget; trusted
+ * in-package public-preview wrappers may select a separate fixed profile.
+ * No public request path may forward a caller-controlled budget here.
+ */
 export interface CrawlEngineOptions {
   readonly guard?: (url: string) => Promise<UrlGuardResult>;
   readonly now?: () => number;
-  /** Test-only budget override; the adapter always uses the fixed CRAWL_BUDGET. */
+  /** Trusted internal budget override; callers must own a fixed preset. */
   readonly budget?: CrawlBudgetLimits;
+  /** Trusted cap across robots, sitemap documents, page fetches, and redirects. */
+  readonly maxRequests?: number;
 }
 
 /**
@@ -246,6 +253,7 @@ interface GuardedFetchDeps {
   readonly startMs: number;
   readonly wantBody: (contentType: string | null) => boolean;
   readonly decodedByteBudget: DecodedByteBudget;
+  readonly reserveRequest: () => boolean;
 }
 
 type GuardedFetch =
@@ -495,6 +503,7 @@ async function guardedFetch(
       cancelBody?.();
     });
     try {
+      if (!deps.reserveRequest()) return { kind: "run_limit" };
       if (budgetCancelled) return { kind: "run_limit" };
       if (signal.aborted) {
         return { kind: "aborted" };
@@ -642,7 +651,7 @@ interface Usage {
  * Crawl `params.origin` breadth-first and return a `CrawlRaw` site graph. Same
  * origin only; robots.txt (own crawler) respected; all `CRAWL_BUDGET` limits
  * enforced. `fetcher` is injected so tests drive fixtures offline; `options`
- * carries test-only seams.
+ * carries trusted internal seams.
  */
 export async function crawlSite(
   params: CrawlParams,
@@ -673,6 +682,16 @@ export async function crawlSite(
   };
 
   let stopReason: string | null = null;
+  let requestCount = 0;
+  const maxRequests = options.maxRequests ?? Number.MAX_SAFE_INTEGER;
+  const reserveRequest = (): boolean => {
+    if (requestCount >= maxRequests) {
+      stopReason ??= STOP_MAX_REQUESTS;
+      return false;
+    }
+    requestCount += 1;
+    return true;
+  };
   let hitDepthLimit = false;
   const deadlineHit = (): boolean => nowMs() - startMs >= budget.maxWallClockMs;
   const markOperationStop = (): boolean => {
@@ -746,6 +765,7 @@ export async function crawlSite(
     startMs,
     wantBody,
     decodedByteBudget,
+    reserveRequest,
   });
 
   // Guarded text fetch for robots.txt + sitemaps (any text/xml body accepted).

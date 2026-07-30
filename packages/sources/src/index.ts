@@ -141,6 +141,13 @@ export {
 export type { CrawlAdapterOptions } from "./crawl/adapter.ts";
 export { crawlSite, createDefaultCrawlFetcher } from "./crawl/engine.ts";
 export type { CrawlEngineOptions } from "./crawl/engine.ts";
+export {
+  crawlPublicSitePreview,
+  PUBLIC_PREVIEW_CRAWL_BUDGET,
+  PUBLIC_PREVIEW_MAX_REQUESTS,
+  PUBLIC_PREVIEW_CRAWL_USER_AGENT,
+} from "./crawl/public-preview.ts";
+export type { PublicPreviewCrawlOptions } from "./crawl/public-preview.ts";
 export { parsePage, directivesIndexable } from "./crawl/parse-page.ts";
 export type { ParsedPage } from "./crawl/parse-page.ts";
 export {
