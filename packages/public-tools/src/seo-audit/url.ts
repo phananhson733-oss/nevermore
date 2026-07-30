@@ -2,7 +2,7 @@ import { isIP } from "node:net";
 import {
   isBlockedHost,
   normaliseIpv4,
-} from "@sf/sources";
+} from "@sf/sources/url-safety";
 
 export type SeoAuditUrlResult =
   | { readonly ok: true; readonly url: string }

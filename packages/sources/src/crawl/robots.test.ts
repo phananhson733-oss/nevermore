@@ -77,4 +77,36 @@ describe("isPathAllowed", () => {
     const { groups } = parseRobots("", ORIGIN, false);
     expect(isPathAllowed(groups, "SignalFrameBot/0.2", "/anything")).toBe(true);
   });
+
+  it("honors the terminal $ anchor without treating it as a literal character", () => {
+    const { groups } = parseRobots(
+      "User-agent: *\nDisallow: /*.pdf$",
+      ORIGIN,
+      true,
+    );
+
+    expect(isPathAllowed(groups, "Googlebot", "/guide.pdf")).toBe(false);
+    expect(isPathAllowed(groups, "Googlebot", "/guide.pdf?download=1")).toBe(
+      true,
+    );
+  });
+
+  it("merges every dedicated group for the same user agent", () => {
+    const { groups } = parseRobots(
+      [
+        "User-agent: Googlebot",
+        "Disallow: /private/",
+        "",
+        "User-agent: Googlebot",
+        "Allow: /private/public/",
+      ].join("\n"),
+      ORIGIN,
+      true,
+    );
+
+    expect(isPathAllowed(groups, "Googlebot", "/private/secret")).toBe(false);
+    expect(isPathAllowed(groups, "Googlebot", "/private/public/guide")).toBe(
+      true,
+    );
+  });
 });

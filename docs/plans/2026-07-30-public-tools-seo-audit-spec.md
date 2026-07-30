@@ -99,8 +99,10 @@ header 或服务端路径。
 - 输入省略协议时补 `https://`；
 - 最长 2048 字符；
 - 只允许 `http:` / `https:`；
-- 禁止 userinfo、IP literal、localhost、`.local`、无 TLD 和已知 metadata
-  主机；
+- 禁止 userinfo、非 80/443 端口、IP literal、localhost、`.local`、无 TLD
+  和已知 metadata 主机；
+- 实际请求必须保留用户提交的 pathname、query 顺序和非根 trailing slash，
+  只删除不会发送给服务器的 fragment；
 - DNS 解析失败、超时、空结果或任一解析地址属于私网/保留/metadata 范围
   时 fail closed。
 
@@ -114,6 +116,9 @@ header 或服务端路径。
 4. 用自定义 undici dispatcher 在 TCP/TLS 连接时固定该 IP，同时保留原始
    hostname 作为 Host/SNI；
 5. 使用 `redirect: manual`，读取 Location 后重新执行 1—4。
+
+从 HTTPS 开始的页面不得降级重定向到 HTTP；重定向到 IP literal、非标准
+端口或非公开目标必须在下一次网络请求前阻断。
 
 只做 DNS 预检后调用普通 `fetch` 不合格，因为存在 DNS rebinding TOCTOU
 窗口。
@@ -130,6 +135,13 @@ header 或服务端路径。
 响应截断时允许使用确定性的 header/status 和已观测到的正向事实；任何
 依赖“全文未出现”或完整数量/比例的检查必须标记为 `unverified`。
 
+响应体仅在未声明 charset，或明确声明 UTF-8/UTF8/US-ASCII，且保留字节
+可以严格解码时才参与文档规则。US-ASCII 声明下任何大于 `0x7F` 的字节都
+是不可靠编码，不能按 UTF-8 接受。完整响应出现非法 UTF-8、或显式声明当前
+版本不支持的其他字符集时，文档规则标记为 `unverified`；截断的 UTF-8
+前缀仅保留完整码点，不以替换字符伪造证据。支持文件采用相同的解码可信度
+语义。
+
 ## 5. 规则、证据与评分
 
 健康地图固定分为五组：
@@ -144,9 +156,9 @@ V0 规则目录：
 
 | ID | 模块 | 主要证据 |
 | --- | --- | --- |
-| `homepage_status` | 抓取与索引 | 最终 HTTP 状态 |
+| `page_status` | 抓取与索引 | 最终 HTTP 状态 |
 | `indexability` | 抓取与索引 | X-Robots-Tag + 静态 meta robots |
-| `robots_access` | 抓取与索引 | `/robots.txt` 状态和可解析性 |
+| `robots_access` | 抓取与索引 | `/robots.txt` 状态、Googlebot 对提交路径的规则 |
 | `sitemap` | 抓取与索引 | `/sitemap.xml` 状态和 XML 根元素 |
 | `https` | 技术基础 | 最终 URL 协议 |
 | `redirects` | 技术基础 | 实际重定向 hop |
@@ -164,18 +176,25 @@ V0 规则目录：
 
 核心语义：
 
-- 页面 4xx/5xx 是一次成功完成的工具报告，`homepage_status=fail`；传输失败
+- 页面 4xx/5xx 是一次成功完成的工具报告，`page_status=fail`；传输失败
   才返回 API 错误。
 - `/sitemap.xml` 404 只说明标准路径未找到，记 `warning`，不能声称网站
   没有 sitemap。
-- 合法但不存在的 robots.txt 不等于阻塞抓取。
-- 静态响应中没有 JSON-LD 只能记 `unverified`；检测到 malformed block
-  才能记 `fail`。
-- 响应截断或非 HTML 时，依赖完整 body 的缺失、数量和比例规则为
-  `unverified`。
+- 合法但不存在的 robots.txt 不等于阻塞抓取；完整 robots.txt 必须按最长
+  匹配规则判断 Googlebot 对提交路径（含 query）的访问，不得只判断文件
+  “可解析”。
+- robots/sitemap 的超时、5xx 或被阻断重定向只影响对应检查并记
+  `unverified`，不能让支持文件故障变成整个页面的 SEO 失败。
+- 静态响应中没有 JSON-LD 只能记 `unverified`；检测到真实、闭合 script
+  元素中的 malformed JSON-LD block 才能记 `fail`。注释或其他 script
+  raw-text 中形似 JSON-LD 的字符串不是证据；最多解析 100 个真实 block，
+  若存在第 101 个候选则 projection 不完整，结果保持 `unverified`。
+- 响应解码不可信、响应截断或非 HTML 时，依赖 body 的文档事实，或依赖
+  完整 body 的缺失、数量和比例规则为 `unverified`。
 - `unverified` 不进入分母。其余按 `pass=1`、`warning=0.5`、`fail=0`
   乘权重计算，并四舍五入为 0—100。
-- 总分同时显示 `measuredChecks / totalChecks`，不能隐藏覆盖率。
+- 总分同时返回并显示 `measuredWeight / totalWeight` 计算的加权覆盖率，以及
+  `measuredChecks / totalChecks`；不能用少量已测项目制造看似完整的高分。
 
 ## 6. API 约束
 
@@ -183,6 +202,8 @@ V0 规则目录：
 - 请求体最多 4 KB，必须流式限制；
 - 每个 IP 每 10 分钟最多 5 次；
 - 每个 IP 同时最多 1 个运行；
+- 单 isolate 内最多保留 5,000 个活跃限流 bucket；清理过期项后仍满时，
+  对新 bucket fail closed；
 - 限流必须发生在发起网络请求之前；
 - 429 返回 `Retry-After`；
 - 所有响应 `Cache-Control: no-store`；
@@ -222,6 +243,9 @@ V0 规则目录：
 - redirect 每 hop 重新 guard、连接时 pinned IP、same-origin 资源约束；
 - timeout、body cap、dispatcher/reader 清理；
 - 截断/非 HTML/静态 JSON-LD 缺失的 `unverified` 语义；
+- HTML comment/raw-text 不产生 robots 或 JSON-LD 伪证据，JSON-LD 超过
+  100 个候选时 projection 保持不完整；
+- US-ASCII 声明下的非 ASCII 字节不得成为可靠文档事实；
 - sitemap 标准路径缺失只 warning；
 - 加权分数排除 unverified；
 - API content type、4 KB body、稳定错误、限流发生在网络前；
@@ -234,6 +258,8 @@ V0 规则目录：
 - `pnpm lint`
 - `pnpm test`
 - `pnpm build`
+- `pnpm verify:public-tools-boundary`（包含 worker/App/DB 依赖策略测试与
+  新鲜 production NFT trace）
 - 相关 Playwright E2E
 - `pnpm secrets:scan`
 - `git diff --check`

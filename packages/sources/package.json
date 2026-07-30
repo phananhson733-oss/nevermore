@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./canonical-url": "./src/canonical-url.ts",
+    "./public-http": "./src/public-http/index.ts",
+    "./url-safety": "./src/url-safety/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

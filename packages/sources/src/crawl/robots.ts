@@ -72,18 +72,26 @@ function productToken(userAgent: string): string {
 
 function groupForUserAgent(groups: readonly RobotsGroup[], userAgent: string): RobotsGroup | undefined {
   const token = productToken(userAgent);
-  return (
-    groups.find((group) => group.agents.includes(token)) ??
-    groups.find((group) => group.agents.includes("*"))
-  );
+  const dedicated = groups.filter((group) => group.agents.includes(token));
+  const selected =
+    dedicated.length > 0
+      ? dedicated
+      : groups.filter((group) => group.agents.includes("*"));
+  if (selected.length === 0) return undefined;
+  return {
+    agents: [token],
+    allow: selected.flatMap((group) => group.allow),
+    disallow: selected.flatMap((group) => group.disallow),
+  };
 }
 
 function globMatches(path: string, pattern: string): boolean {
-  const expression = pattern
+  const endAnchored = pattern.endsWith("$");
+  const body = endAnchored ? pattern.slice(0, -1) : pattern;
+  const expression = body
     .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*/g, ".*")
-    .replace(/\$$/, "$");
-  return new RegExp(`^${expression}`).test(path);
+    .replace(/\*/g, ".*");
+  return new RegExp(`^${expression}${endAnchored ? "$" : ""}`).test(path);
 }
 
 /**
@@ -148,16 +156,16 @@ export function parseRobots(
     for (const agent of group.agents) {
       if (seenAgents.has(agent)) continue;
       seenAgents.add(agent);
-      projectionGroups.push(projectionGroup(group, agent));
+      projectionGroups.push(
+        projectionGroup(groupForUserAgent(groups, agent) ?? group, agent),
+      );
     }
   }
 
-  const wildcard = groups.find((group) => group.agents.includes("*"));
   for (const bot of AI_BOT_USER_AGENTS) {
     const token = bot.toLowerCase();
     if (seenAgents.has(token)) continue;
-    const dedicated = groups.find((group) => group.agents.includes(token));
-    const source = dedicated ?? wildcard;
+    const source = groupForUserAgent(groups, token);
     seenAgents.add(token);
     projectionGroups.push({
       userAgent: bot,

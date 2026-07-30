@@ -26,6 +26,7 @@
     "test:e2e:real": "playwright test --config=playwright.config.ts",
     "test:e2e:mock": "playwright test --config=playwright.mock.config.ts",
     "verify:spec": "node scripts/verify-spec-lock.mjs",
+    "verify:public-tools-boundary": "node --test scripts/public-tools-boundary-policy.test.mjs && node scripts/check-public-tools-boundary.mjs",
     "openapi:lint": "redocly lint openapi/mvp.yaml --config openapi/redocly.yaml",
     "contracts:generate": "pnpm --filter @sf/contracts generate",
     "contracts:check": "pnpm --filter @sf/contracts check",

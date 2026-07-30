@@ -219,8 +219,111 @@ describe("fetchPublicResource", () => {
       body: "01234",
       bytes: 5,
       bodyComplete: false,
+      decodeState: "utf8_prefix",
     });
     expect(fixture.closed[0]).toHaveBeenCalledOnce();
+  });
+
+  it("does not interpret an explicitly unsupported charset as UTF-8", async () => {
+    const fixture = harness([
+      new Response(Uint8Array.of(0xe9), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=iso-8859-1" },
+      }),
+    ]);
+
+    const result = await fetchPublicResource(
+      "https://acme.test/",
+      {},
+      fixture.dependencies,
+    );
+
+    expect(result).toMatchObject({
+      kind: "ok",
+      body: "",
+      bodyComplete: true,
+      decodeState: "unsupported_charset",
+    });
+  });
+
+  it("marks invalid complete UTF-8 as unreliable instead of replacing bytes", async () => {
+    const fixture = harness([
+      new Response(Uint8Array.of(0xc3, 0x28), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+    ]);
+
+    const result = await fetchPublicResource(
+      "https://acme.test/",
+      {},
+      fixture.dependencies,
+    );
+
+    expect(result).toMatchObject({
+      kind: "ok",
+      body: "",
+      bodyComplete: true,
+      decodeState: "invalid_utf8",
+    });
+  });
+
+  it("accepts only actual ASCII bytes when US-ASCII is declared", async () => {
+    const fixture = harness([
+      new Response(Uint8Array.of(0x41, 0x53, 0x43, 0x49, 0x49), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=us-ascii" },
+      }),
+      new Response(Uint8Array.of(0xc3, 0xa9), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=us-ascii" },
+      }),
+    ]);
+
+    await expect(
+      fetchPublicResource(
+        "https://acme.test/ascii",
+        {},
+        fixture.dependencies,
+      ),
+    ).resolves.toMatchObject({
+      kind: "ok",
+      body: "ASCII",
+      decodeState: "utf8",
+    });
+    await expect(
+      fetchPublicResource(
+        "https://acme.test/non-ascii",
+        {},
+        fixture.dependencies,
+      ),
+    ).resolves.toMatchObject({
+      kind: "ok",
+      body: "",
+      decodeState: "invalid_utf8",
+    });
+  });
+
+  it("drops only an incomplete trailing code point from a bounded UTF-8 prefix", async () => {
+    const fixture = harness([
+      new Response(Uint8Array.of(0x3c, 0x70, 0x3e, 0xe2, 0x82, 0xac, 0x78), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+    ]);
+
+    const result = await fetchPublicResource(
+      "https://acme.test/",
+      { maxBodyBytes: 5 },
+      fixture.dependencies,
+    );
+
+    expect(result).toMatchObject({
+      kind: "ok",
+      body: "<p>",
+      bodyComplete: false,
+      decodeState: "utf8_prefix",
+    });
   });
 
   it("maps an aborted request to a stable timeout code", async () => {

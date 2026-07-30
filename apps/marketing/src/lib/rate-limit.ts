@@ -1,5 +1,5 @@
 // @input  -- key (user/ip scoped), max requests, window size in ms; request Headers (for IP extraction)
-// @output -- { allowed, remaining, resetAt, retryAfterSeconds } using in-memory fixed-window counter; lazy sweep when store > MAX_STORE_SIZE prevents memory leak (W3a.0b /review round 3 fix #6); extractClientIp(headers) hardened IP for per-IP buckets (shared single source — SV #165 Codex IP-spoofing fix)
+// @output -- { allowed, remaining, resetAt, retryAfterSeconds } using a fail-closed, size-bounded in-memory fixed-window counter; extractClientIp(headers) hardened IP for per-IP buckets (shared single source — SV #165 Codex IP-spoofing fix)
 // @pos    -- request rate limiter shared by API routes (SPEC 3.3 Phase 1.9)
 // Once this file is updated, update the header comment and the folder's _DIR.md
 //
@@ -25,9 +25,8 @@ const store: Map<string, BucketState> = new Map();
 
 // Anti memory-leak (round 3 fix #6): on a long-running Vercel Function
 // instance with churning user IDs, the Map grows unboundedly. When we exceed
-// this threshold, opportunistically sweep expired entries on the next set().
-// 5000 keys × ~64 bytes = ~320KB worst case before sweep — well below isolate
-// memory budget but still a useful ceiling.
+// this threshold, sweep expired entries and reject new bucket keys while all
+// existing buckets remain active. 5000 keys × ~64 bytes = ~320KB.
 const MAX_STORE_SIZE = 5_000;
 
 function sweepExpired(now: number): void {
@@ -36,6 +35,14 @@ function sweepExpired(now: number): void {
       store.delete(k);
     }
   }
+}
+
+function earliestBucketExpiry(now: number): number {
+  let earliest = Number.POSITIVE_INFINITY;
+  for (const bucket of store.values()) {
+    earliest = Math.min(earliest, bucket.windowStart + bucket.windowMs);
+  }
+  return Number.isFinite(earliest) ? earliest : now + 1_000;
 }
 
 export function checkRateLimit(
@@ -52,6 +59,18 @@ export function checkRateLimit(
     // every MAX_STORE_SIZE-th request, ~few ms at the limit.
     if (store.size >= MAX_STORE_SIZE) {
       sweepExpired(now);
+      if (store.size >= MAX_STORE_SIZE) {
+        const resetAt = earliestBucketExpiry(now);
+        return {
+          allowed: false,
+          remaining: 0,
+          resetAt,
+          retryAfterSeconds: Math.max(
+            1,
+            Math.ceil((resetAt - now) / 1_000),
+          ),
+        };
+      }
     }
     store.set(key, { windowStart: now, count: 1, windowMs });
     return {

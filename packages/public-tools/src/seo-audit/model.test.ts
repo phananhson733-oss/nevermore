@@ -13,6 +13,7 @@ function healthyPage(
     redirectChain: [],
     contentType: "text/html; charset=utf-8",
     bodyComplete: true,
+    decodeReliable: true,
     robotsNoindex: false,
     title: "Acme builds evidence-led growth systems",
     metaDescription:
@@ -26,6 +27,7 @@ function healthyPage(
     socialMetaTagsPresent: 4,
     jsonLdBlockCount: 1,
     jsonLdErrorCount: 0,
+    jsonLdScanComplete: true,
     ...overrides,
   };
 }
@@ -97,6 +99,42 @@ describe("SEO audit evidence and scoring", () => {
     expect(report.coveragePercent).toBeLessThan(100);
   });
 
+  it("keeps JSON-LD unverified when its bounded projection is incomplete", () => {
+    const report = buildSeoAuditReport(
+      probe({
+        page: healthyPage({
+          jsonLdBlockCount: 100,
+          jsonLdErrorCount: 0,
+          jsonLdScanComplete: false,
+        }),
+      }),
+    );
+    const jsonLd = report.modules
+      .flatMap((module) => module.checks)
+      .find((check) => check.id === "json_ld");
+
+    expect(jsonLd).toMatchObject({
+      status: "unverified",
+      limitation: "projection_limit_reached",
+    });
+  });
+
+  it("compares canonical URLs by stable subject identity", () => {
+    const report = buildSeoAuditReport(
+      probe({
+        page: healthyPage({
+          finalUrl: "https://acme.com/pricing/?utm_source=campaign",
+          canonical: "https://acme.com/pricing",
+        }),
+      }),
+    );
+    const canonical = report.modules
+      .flatMap((module) => module.checks)
+      .find((check) => check.id === "canonical");
+
+    expect(canonical?.status).toBe("pass");
+  });
+
   it("treats a missing standard sitemap path as a warning, not no sitemap", () => {
     const report = buildSeoAuditReport(
       probe({
@@ -159,9 +197,151 @@ describe("SEO audit evidence and scoring", () => {
     ]) {
       expect(byId.get(id)?.status, id).toBe("unverified");
     }
-    expect(byId.get("homepage_status")?.status).toBe("pass");
+    expect(byId.get("page_status")?.status).toBe("pass");
     expect(byId.get("https")?.status).toBe("pass");
     expect(byId.get("html_content_type")?.status).toBe("pass");
+  });
+
+  it("does not upgrade multiple observed H1s or a closed JSON-LD prefix to pass/fail when truncated", () => {
+    const report = buildSeoAuditReport(
+      probe({
+        page: healthyPage({
+          bodyComplete: false,
+          h1Count: 2,
+          jsonLdBlockCount: 1,
+          jsonLdErrorCount: 0,
+        }),
+      }),
+    );
+    const byId = new Map(
+      report.modules
+        .flatMap((module) => module.checks)
+        .map((check) => [check.id, check]),
+    );
+
+    expect(byId.get("h1")).toMatchObject({
+      status: "warning",
+      limitation: null,
+    });
+    expect(byId.get("json_ld")).toMatchObject({
+      status: "unverified",
+      limitation: "response_body_truncated",
+    });
+  });
+
+  it("does not derive document failures when Content-Type is missing", () => {
+    const report = buildSeoAuditReport(
+      probe({
+        page: healthyPage({
+          contentType: null,
+          robotsNoindex: null,
+          title: null,
+          metaDescription: null,
+          canonical: null,
+          htmlLang: null,
+          h1Count: 0,
+          headingOutline: [],
+          wordCount: 0,
+          internalLinkCount: 0,
+          socialMetaTagsPresent: 0,
+          jsonLdBlockCount: 0,
+        }),
+      }),
+    );
+    const byId = new Map(
+      report.modules
+        .flatMap((module) => module.checks)
+        .map((check) => [check.id, check]),
+    );
+
+    for (const id of [
+      "indexability",
+      "canonical",
+      "html_lang",
+      "title",
+      "meta_description",
+      "h1",
+      "heading_order",
+      "text_depth",
+      "internal_links",
+      "social_meta",
+      "json_ld",
+    ]) {
+      expect(byId.get(id)?.status, id).toBe("unverified");
+    }
+    expect(byId.get("html_content_type")?.status).toBe("unverified");
+  });
+
+  it("keeps document checks unverified when response decoding is unreliable", () => {
+    const report = buildSeoAuditReport(
+      probe({
+        page: healthyPage({
+          decodeReliable: false,
+          title: null,
+          metaDescription: null,
+          canonical: null,
+          htmlLang: null,
+          h1Count: 0,
+          headingOutline: [],
+          wordCount: 0,
+          internalLinkCount: 0,
+          socialMetaTagsPresent: 0,
+          jsonLdBlockCount: 0,
+          jsonLdErrorCount: 0,
+        }),
+      }),
+    );
+    const byId = new Map(
+      report.modules
+        .flatMap((module) => module.checks)
+        .map((check) => [check.id, check]),
+    );
+
+    for (const id of [
+      "indexability",
+      "canonical",
+      "html_lang",
+      "title",
+      "meta_description",
+      "h1",
+      "heading_order",
+      "text_depth",
+      "internal_links",
+      "social_meta",
+      "json_ld",
+    ]) {
+      expect(byId.get(id)?.status, id).toBe("unverified");
+      expect(byId.get(id)?.limitation, id).toBe(
+        "response_decode_unreliable",
+      );
+    }
+    expect(byId.get("html_content_type")?.limitation).toBeNull();
+  });
+
+  it("attributes support-resource decode failures only to their own checks", () => {
+    const report = buildSeoAuditReport(
+      probe({
+        robots: {
+          url: "https://acme.com/robots.txt",
+          state: "decode_error",
+          statusCode: 200,
+          bodyComplete: true,
+        },
+        robotsPageAllowed: null,
+      }),
+    );
+    const byId = new Map(
+      report.modules
+        .flatMap((module) => module.checks)
+        .map((check) => [check.id, check]),
+    );
+
+    expect(byId.get("robots_access")).toMatchObject({
+      status: "unverified",
+      limitation: "resource_decode_unreliable",
+    });
+    expect(byId.get("sitemap")?.status).toBe("pass");
+    expect(byId.get("sitemap")?.limitation).toBeNull();
   });
 
   it("keeps definitive header noindex and malformed JSON-LD failures on a prefix", () => {
@@ -196,7 +376,7 @@ describe("SEO audit evidence and scoring", () => {
     );
     const status = report.modules
       .flatMap((module) => module.checks)
-      .find((check) => check.id === "homepage_status");
+      .find((check) => check.id === "page_status");
 
     expect(status?.status).toBe("fail");
     expect(report.finalUrl).toBe("https://acme.com/");
@@ -205,6 +385,26 @@ describe("SEO audit evidence and scoring", () => {
         .flatMap((module) => module.checks)
         .find((check) => check.id === "title")?.status,
     ).toBe("unverified");
+  });
+
+  it("keeps indexability unverified on a non-2xx page even when noindex is observed", () => {
+    const report = buildSeoAuditReport(
+      probe({
+        page: healthyPage({
+          firstStatus: 404,
+          statusCode: 404,
+          robotsNoindex: true,
+        }),
+      }),
+    );
+    const byId = new Map(
+      report.modules
+        .flatMap((module) => module.checks)
+        .map((check) => [check.id, check]),
+    );
+
+    expect(byId.get("page_status")?.status).toBe("fail");
+    expect(byId.get("indexability")?.status).toBe("unverified");
   });
 
   it("does not turn support-file server errors into false SEO failures", () => {
