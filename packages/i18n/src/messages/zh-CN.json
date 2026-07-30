@@ -10,7 +10,7 @@
     "plan": "方案",
     "studio": "工作台",
     "report": "报告",
-    "newProject": "新建项目",
+    "newProject": "添加产品",
     "logout": "退出登录",
     "workspace": "工作台",
     "evidence": "证据与诊断",
@@ -141,23 +141,31 @@
     "magicLinkHint": "登录遇到问题？请联系管理员为你发送一次性登录链接。"
   },
   "newProject": {
+    "eyebrow": "产品与 ICP",
     "title": "添加产品",
-    "subtitle": "先填写产品 URL 和你已经确认的基础信息。创建后可手动完善产品画像与 ICP，再连接真实数据源。",
+    "subtitle": "填写产品 URL 和已确认的基础信息。创建后继续完善产品画像与 ICP，再连接 GSC、GA4 与 DataForSEO。",
+    "shell": {
+      "productTitle": "添加产品",
+      "productDetail": "从 URL 建立产品画像",
+      "modulesLocked": "添加产品后即可进入",
+      "workspace": "GenGrowth 工作区",
+      "status": "待添加产品"
+    },
     "fields": {
       "productUrl": {
         "label": "产品 URL",
         "placeholder": "https://www.example.com/product",
-        "help": "可以填写官网首页或最能代表产品的页面。系统会保留这个精确 URL 作为产品画像和后续 Crawl 的起点。"
+        "help": "填写官网首页或最能代表产品的页面；它将作为产品画像和 Crawl 的起点。"
       },
       "businessHint": {
         "label": "产品与客户背景（选填）",
         "placeholder": "例如：面向北美中型 B2B SaaS 客户运营团队的 onboarding automation 产品。",
-        "help": "只填写你已经确定的事实即可；产品名称、商业模式、目标市场和 ICP 可在下一步手动补充或修改。"
+        "help": "只填写已确认的事实；产品名称、商业模式、目标市场和 ICP 可在下一步修改。"
       }
     },
     "nextStep": {
-      "title": "下一步：手动完善产品画像与 ICP",
-      "detail": "创建后会直接进入可编辑画像。无需先运行 AI 探索或审计；你可以保存客户声明的信息，然后前往数据连接配置 GSC、GA4，并由系统使用 Crawl 与 DataForSEO。"
+      "title": "下一步：完善产品画像与 ICP",
+      "detail": "创建后直接进入可编辑画像；确认后再连接 GSC、GA4，Crawl 与 DataForSEO 由系统运行。"
     },
     "createButton": "创建产品并填写画像",
     "creating": "正在创建产品画像…",
@@ -686,6 +694,7 @@
     }
   },
   "appShell": {
+    "brandTagline": "海外增长工作台",
     "projectStage": "项目阶段",
     "localeSwitch": "切换语言",
     "switchProject": "切换项目",

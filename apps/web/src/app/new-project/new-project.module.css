@@ -1,37 +1,29 @@
-/*
- * New-project screen: a centered editorial column with a single form Card.
- * Two-up field grid collapses to one column on narrow viewports. All colors are
- * var(--sf-*) tokens.
- */
+/* Product entry lives inside the shared workbench and has one job: add a URL. */
 
 .page {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 48px 24px 80px;
+  width: min(100%, 920px);
 }
 
 .header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 28px;
-}
-.headerText {
-  min-width: 0;
+  max-width: 760px;
+  margin-bottom: 30px;
 }
 .title {
-  margin: 6px 0;
-  font-size: var(--sf-text-3xl);
+  margin: 8px 0 10px;
+  font-size: clamp(var(--sf-text-3xl), 4.2vw, 52px);
+  text-wrap: balance;
 }
 .subtitle {
   margin: 0;
   font-size: var(--sf-text-lg);
   color: var(--sf-muted);
+  line-height: 1.65;
+  text-wrap: pretty;
 }
 
 .form {
   display: flex;
+  width: min(100%, 820px);
   flex-direction: column;
   gap: 20px;
 }
@@ -50,10 +42,8 @@
 }
 
 .nextStep {
-  padding: 16px 18px;
-  border: 1px solid var(--sf-border);
-  border-radius: var(--sf-radius-control);
-  background: var(--sf-surface-deep);
+  padding-top: 18px;
+  border-top: 1px solid var(--sf-border);
 }
 .nextStep strong {
   display: block;
@@ -80,16 +70,16 @@
 
 .actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 12px;
 }
 .submit {
-  min-width: 168px;
+  min-width: 220px;
 }
 
 @media (max-width: 640px) {
-  .header {
-    flex-direction: column;
+  .title {
+    font-size: var(--sf-text-3xl);
   }
   .grid {
     grid-template-columns: minmax(0, 1fr);

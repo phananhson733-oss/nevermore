@@ -23,8 +23,9 @@ lock.
 ## Current customer product
 
 The Chinese-first GenGrowth workspace exposes exactly four primary project
-destinations. This table mirrors
-`apps/web/src/app/p/[projectId]/_nav-model.ts`:
+destinations. This table mirrors the shared navigation descriptor in
+`apps/web/src/components/app-shell/nav-model.ts`; the project route helper
+re-exports that descriptor for compatibility:
 
 | Customer label | Canonical route |
 | --- | --- |

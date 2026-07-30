@@ -1,8 +1,8 @@
 /*
- * Project app-shell layout. 252px dark sidebar + fluid content column. Colors
- * are var(--sf-*) tokens (opacity varies the muted states on the dark ink
- * sidebar). Below ~960px the grid collapses to a single column and the sidebar
- * becomes a top bar (its nav turns into a horizontal scroller — see nav.module.css).
+ * Shared GenGrowth app-shell layout. Both project routes and the zero-project
+ * product-entry route use this single visual implementation, so authenticated
+ * customer screens cannot drift into a second shell. Below ~960px the grid
+ * collapses to one column and the sidebar becomes a compact top bar.
  */
 
 .shell {
@@ -44,7 +44,18 @@
   flex-direction: column;
   gap: 10px;
   padding: 24px 16px 18px;
-  background: var(--sf-ink-950);
+  background:
+    radial-gradient(
+      circle at 12% 6%,
+      rgba(200, 239, 112, 0.18),
+      transparent 11rem
+    ),
+    radial-gradient(
+      circle at 100% 76%,
+      rgba(66, 169, 156, 0.12),
+      transparent 16rem
+    ),
+    var(--sf-ink-950);
   color: var(--sf-white);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   overflow-y: auto;
@@ -58,20 +69,28 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 8px;
-  margin-bottom: 10px;
+  gap: 12px;
+  padding: 0 8px 12px;
+  margin-bottom: 4px;
 }
 .brandMark {
   display: grid;
   flex: none;
   place-items: center;
-  width: 31px;
-  height: 31px;
+  width: 42px;
+  height: 42px;
   color: var(--sf-ink-950);
   background: var(--sf-mint-bright);
-  border-radius: 9px 9px 9px 3px;
-  box-shadow: inset 0 0 0 1px rgba(17, 25, 35, 0.12);
+  border-radius: 14px 14px 14px 5px;
+  box-shadow: inset 0 0 0 1px rgba(10, 45, 37, 0.18);
+  font-family: var(--sf-font-display);
+  font-size: 24px;
+  font-weight: 700;
+}
+.brandCopy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
 }
 .brandWord {
   font-family: var(--sf-font-display);
@@ -79,6 +98,13 @@
   font-weight: 620;
   letter-spacing: -0.035em;
   color: var(--sf-white);
+}
+.brandTagline {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: var(--sf-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .projectSwitcher {
@@ -106,10 +132,10 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  color: #1e3d8d;
+  color: var(--sf-ink-950);
   font-size: var(--sf-text-sm);
   font-weight: 800;
-  background: #d9e2ff;
+  background: #7bd8cf;
   border-radius: 10px;
 }
 .projectIdentity {
@@ -132,7 +158,7 @@
   font-weight: 750;
 }
 .projectIdentity span {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.58);
   font-size: var(--sf-text-xs);
 }
 .projectChevron {
@@ -171,9 +197,28 @@
   border-radius: 8px;
   text-decoration: none;
 }
-.newProjectLink:hover {
+a.newProjectLink:hover {
   color: var(--sf-white);
   background: rgba(255, 255, 255, 0.055);
+}
+
+.newProjectLinkActive {
+  color: var(--sf-white);
+  background: rgba(255, 255, 255, 0.095);
+}
+
+.newProjectControl {
+  cursor: default;
+}
+
+.newProjectControl:hover {
+  background: rgba(255, 255, 255, 0.075);
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.newProjectControl .projectAvatar {
+  color: var(--sf-ink-950);
+  background: var(--sf-mint-bright);
 }
 
 /* Counts are scoped to the canonical server projection. The visible chip is

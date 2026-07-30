@@ -81,9 +81,11 @@ test("desktop project cockpit exposes canonical progress and product chrome", as
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
 
-  await expect(
-    page.getByRole("progressbar", { name: "90-day program progress" }),
-  ).toHaveAttribute("aria-valuenow", "30");
+  const programProgress = page.getByRole("progressbar", {
+    name: "90-day program progress",
+  });
+  await expect(programProgress).toHaveAttribute("aria-valuemin", "1");
+  await expect(programProgress).toHaveAttribute("aria-valuenow", "30");
   await expect(page.getByText("Day 30 of 90", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Help" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
