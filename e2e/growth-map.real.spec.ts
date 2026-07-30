@@ -1041,14 +1041,20 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       shutdownResult = await worker?.stop();
       // This suite may run before the older real-chain file, whose explicit
       // freshness guard expects no prior pg-boss deliveries. Remove only jobs
-      // whose canonical async_run belongs to this disposable fixture project;
-      // application audit rows and jobs from every other project are preserved.
+      // whose canonical async_run belongs to this disposable fixture project.
+      // Analysis Refresh continuations intentionally have a fresh pg-boss id,
+      // so bind them through their immutable payload.runId as well as the
+      // initial job.id = async_runs.id delivery. Application audit rows and
+      // jobs from every other project are preserved.
       if (db && projectId) {
         await db.pool.query(
           `DELETE FROM pgboss.job AS job
             USING app.async_runs AS run
-           WHERE job.id = run.id
-             AND run.project_id = $1`,
+           WHERE run.project_id = $1
+             AND (
+               job.id = run.id
+               OR job.data ->> 'runId' = run.id::text
+             )`,
           [projectId],
         );
       }
