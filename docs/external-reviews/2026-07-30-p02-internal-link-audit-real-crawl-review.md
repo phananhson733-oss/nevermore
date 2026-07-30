@@ -41,16 +41,28 @@ The final implementation addresses those requirements as follows:
   homepage-click and ranking interpretations. An uncollected target is
   "unresolved", never called broken.
 
+## Review handoff status
+
+At the time this record was finalized, the ChatGPT Pro conversation had
+verified the supplied archive and produced the interim findings above, but its
+structured final verdict was still generating after repeated bounded waits.
+Those notes were therefore treated as review input, not as an approval. The
+changes and all validation below are the repository maintainer's independent
+acceptance evidence.
+
 ## Independent evidence
 
-The implementation was independently checked after those changes with:
+The implementation was independently checked after those changes in a clean
+detached worktree based on `origin/main` plus the integration commits, using a
+fresh `pnpm install --frozen-lockfile`, with:
 
 - source/public-tools/marketing type checks;
 - marketing lint and production build;
-- 54 focused source/model/handler tests;
+- 75 focused source/model/handler tests;
 - P02 Playwright API-fixture tests, including localized failure and mobile
   overflow coverage;
-- Public Tools static boundary policy; and
+- a static dependency-boundary check confirming no `@sf/db`, `@sf/worker`, or
+  `@sf/web` import from `packages/public-tools`; and
 - repository secret scan (74 redaction/scan tests).
 
 These are local validation results only. No Vercel deployment, live user crawl,
