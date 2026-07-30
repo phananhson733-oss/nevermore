@@ -35,11 +35,18 @@ import {
   verticalDefinition,
   type VerticalDefinition,
 } from "./real-chain-fixture.ts";
+import {
+  getRealE2eSegmentPaths,
+  requireRealE2eSegment,
+} from "./real-e2e-runtime.ts";
 
 const PORT = Number(process.env["E2E_PORT"] ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
 const DATABASE_URL = process.env["E2E_DATABASE_URL"];
-const BLOB_DIR = "/tmp/signalframe-e2e-real-blobs";
+const BLOB_DIR = getRealE2eSegmentPaths(
+  requireRealE2eSegment(process.env["REAL_E2E_SEGMENT"]),
+  process.env["REAL_E2E_INVOCATION_ID"] ?? "",
+).blobDir;
 const CLIENT_READ_MODEL_TIMEOUT_MS = 45_000;
 
 interface WorkerRuntime {

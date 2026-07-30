@@ -133,6 +133,21 @@ disposable loopback database whose name passes
 `packages/db/src/test-database-safety.ts`. Never point those commands at a
 hosted or shared database.
 
+The canonical real-browser command also requires the PostgreSQL `createdb` and
+`dropdb` clients:
+
+```bash
+E2E_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/signalframe_e2e_local \
+  pnpm test:e2e:real
+```
+
+The supplied URL is a guarded template, not the database the tests mutate. The
+runner derives separate invocation-scoped databases, ports, Next build
+directories, blob directories, and Playwright output directories for the light
+suite, AC-044, and AC-045. Each segment receives one non-retried attempt in a
+fresh Next process, and the runner only force-drops a database it created
+successfully.
+
 ## Evidence and release status
 
 [`docs/PROGRESS.md`](docs/PROGRESS.md) distinguishes checks freshly rerun on the

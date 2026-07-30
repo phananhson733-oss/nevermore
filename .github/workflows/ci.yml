@@ -217,15 +217,11 @@ jobs:
       - name: Install Chromium for real responsive and a11y E2E
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Prepare isolated database for real browser E2E
-        env:
-          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
-          PGPASSWORD: postgres
-        run: |
-          createdb --host 127.0.0.1 --port 5432 --username postgres signalframe_e2e_ci
-          pnpm db:migrate
-
-      - name: Run database-backed responsive and a11y E2E
+      # The canonical runner provisions and migrates a distinct disposable
+      # database, Next process, blob directory, output directory, and port for
+      # light real specs, AC-044, and AC-045. It force-drops every database in
+      # finally blocks and aggregates failures without skipping later segments.
+      - name: Run segmented database-backed responsive and a11y E2E
         run: pnpm test:e2e:real
 
       - name: Preserve failed real browser screenshots
@@ -236,14 +232,6 @@ jobs:
           path: test-results/**/*.png
           if-no-files-found: ignore
           retention-days: 3
-
-      - name: Drop isolated real browser E2E database
-        if: ${{ always() }}
-        env:
-          PGPASSWORD: postgres
-        run: >-
-          dropdb --if-exists --force --host 127.0.0.1 --port 5432
-          --username postgres signalframe_e2e_ci
 
   build-and-mock-e2e:
     name: Production build, worker image, and isolated mock E2E

@@ -2358,6 +2358,11 @@ function checkVendorManifest() {
 
 function checkE2eDatabaseSafety() {
   const realConfig = read("playwright.config.ts");
+  const realRuntime = read("e2e/real-e2e-runtime.ts");
+  const realRunner = read("e2e/run-real-e2e.ts");
+  const databaseSafety = read(
+    "packages/db/src/test-database-safety.ts",
+  );
   invariant(
     /requireSafeTestDatabaseUrl\s*\(\s*process\.env\["E2E_DATABASE_URL"\]/s.test(
       realConfig,
@@ -2372,6 +2377,82 @@ function checkE2eDatabaseSafety() {
     !/\bglobalTeardown\s*:/.test(realConfig) &&
       /\["\.\/e2e\/real-global-teardown\.ts"\]/.test(realConfig),
     "database-backed E2E cleanup must run as a reporter after webServer teardown",
+  );
+  invariant(
+    /REAL_E2E_SEGMENTS\s*=\s*\["light",\s*"ac044",\s*"ac045"\]\s+as const/.test(
+      realRuntime,
+    ),
+    "database-backed E2E must retain the light, AC-044, and AC-045 segments",
+  );
+  invariant(
+    /deriveRealE2eDatabaseUrl/.test(realRunner) &&
+      /for\s*\(\s*const\s+\[index,\s*segment\]\s+of\s+REAL_E2E_SEGMENTS\.entries\(\)\s*\)/.test(
+        realRunner,
+      ) &&
+      /finally\s*\{[\s\S]*?"dropdb"/.test(realRunner),
+    "database-backed E2E must provision, execute, and clean every isolated segment",
+  );
+  invariant(
+    /SEGMENT\s*===\s*"light"[\s\S]*?real-vertical-chains\.spec\.ts/.test(
+      realConfig,
+    ),
+    "the light real-E2E segment must exclude the heavy vertical-chain file",
+  );
+  invariant(
+    /getRealE2eSegmentPaths/.test(realConfig) &&
+      /REAL_E2E_INVOCATION_ID/.test(realConfig) &&
+      /outputDir:\s*SEGMENT_PATHS\.outputDir/.test(realConfig) &&
+      /SF_BLOB_DIR:\s*SEGMENT_PATHS\.blobDir/.test(realConfig) &&
+      /NEXT_DIST_DIR:\s*SEGMENT_PATHS\.distDirectoryName/.test(realConfig),
+    "every real-E2E invocation and segment must own its Next, blob, and Playwright output paths",
+  );
+  invariant(
+    /realE2eInvocationHash/.test(realRuntime) &&
+      /deriveRealE2eBasePort/.test(realRuntime) &&
+      /resourceKey\s*=\s*`\$\{invocationHash\}-\$\{validatedSegment\}`/.test(
+        realRuntime,
+      ) &&
+      /REAL_E2E_INVOCATION_ID:\s*invocationId/.test(realRunner),
+    "real-E2E non-database resources and default ports must be invocation scoped",
+  );
+  invariant(
+    /retries:\s*0\b/.test(realConfig) &&
+      /trace:\s*"retain-on-failure"/.test(realConfig),
+    "stateful real E2E must use one honest attempt while retaining failure traces",
+  );
+  invariant(
+    !/max-old-space-size/.test(realConfig),
+    "real E2E must solve Next memory accumulation with process isolation, not a heap bump",
+  );
+  invariant(
+    /CONNECTION_ROUTING_QUERY_PARAMETERS/.test(databaseSafety) &&
+      /hostaddr/.test(databaseSafety) &&
+      /servicefile/.test(databaseSafety),
+    "destructive test URLs must reject PostgreSQL query routing overrides",
+  );
+  invariant(
+    /INHERITED_POSTGRES_ROUTING_ENVIRONMENT/.test(realRunner) &&
+      /"PGHOSTADDR"/.test(realRunner) &&
+      /"PGSERVICE"/.test(realRunner) &&
+      /delete sanitized\[variableName\]/.test(realRunner),
+    "real-E2E children must not inherit ambient PostgreSQL routing",
+  );
+  invariant(
+    /let databaseCreated = false/.test(realRunner) &&
+      /databaseCreated = created/.test(realRunner) &&
+      /if \(databaseCreated\)\s*\{[\s\S]*?"dropdb"/.test(realRunner),
+    "real E2E must only delete a database it created successfully",
+  );
+  const vertical = read("e2e/real-vertical-chains.spec.ts");
+  const completeContext = vertical.match(
+    /async function completeContext\([\s\S]*?\n}\n\nasync function waitForRun/,
+  )?.[0];
+  invariant(
+    completeContext !== undefined &&
+      !/ECONNRESET|ECONNREFUSED|socket hang up|fetch failed|setTimeout/.test(
+        completeContext,
+      ),
+    "completeContext must expose a dead Next process instead of retrying HTTP mutations",
   );
 
   const mockConfig = read("playwright.mock.config.ts");
@@ -2392,7 +2473,7 @@ function checkE2eDatabaseSafety() {
     ),
     "E2E artifact cleanup reporter must remove artifacts from reporter.onEnd",
   );
-  return "E2E safety: guarded disposable DB, no unknown server reuse, ordered cleanup";
+  return "E2E safety: invocation-scoped DB/Next/blob/output/ports, one honest attempt, no unknown server reuse, ordered owned cleanup";
 }
 
 /**

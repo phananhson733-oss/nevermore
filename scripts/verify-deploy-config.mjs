@@ -21,20 +21,8 @@ assert.equal(
 );
 assert.equal(
   rootPackage.scripts?.["test:e2e:real"],
-  "pnpm test:e2e:real:surfaces && pnpm test:e2e:real:verticals && pnpm test:e2e:real:responsive",
-  "the real browser gate must isolate route-heavy suites in fresh Next processes",
-);
-assert.equal(
-  rootPackage.scripts?.["test:e2e:real:surfaces"],
-  "playwright test --config=playwright.config.ts e2e/a11y.spec.ts e2e/growth-map.real.spec.ts e2e/product-profile.real.spec.ts e2e/project-isolation.spec.ts",
-);
-assert.equal(
-  rootPackage.scripts?.["test:e2e:real:verticals"],
-  "playwright test --config=playwright.config.ts e2e/real-vertical-chains.spec.ts",
-);
-assert.equal(
-  rootPackage.scripts?.["test:e2e:real:responsive"],
-  "playwright test --config=playwright.config.ts e2e/responsive.spec.ts",
+  "tsx e2e/run-real-e2e.ts",
+  "the real E2E gate must use the segmented fresh-process/database orchestrator",
 );
 assert.equal(
   rootPackage.scripts?.["test:e2e:mock"],
@@ -106,6 +94,62 @@ const nextConfig = read("apps/web/next.config.ts");
 assert.match(nextConfig, /outputFileTracingRoot:\s*monorepoRoot/);
 
 const ciWorkflow = read(".github/workflows/ci.yml");
+const realE2eRuntime = read("e2e/real-e2e-runtime.ts");
+const realE2eRunner = read("e2e/run-real-e2e.ts");
+const realE2eConfig = read("playwright.config.ts");
+const testDatabaseSafety = read(
+  "packages/db/src/test-database-safety.ts",
+);
+assert.match(
+  realE2eRuntime,
+  /REAL_E2E_SEGMENTS\s*=\s*\["light",\s*"ac044",\s*"ac045"\]\s+as const/,
+  "the real E2E orchestrator must retain light, AC-044, and AC-045 segments",
+);
+assert.match(
+  realE2eRunner,
+  /for\s*\(\s*const\s+\[index,\s*segment\]\s+of\s+REAL_E2E_SEGMENTS\.entries\(\)\s*\)/,
+  "the real E2E runner must execute every canonical segment",
+);
+assert.match(
+  realE2eRunner,
+  /finally\s*\{[\s\S]*?"dropdb"/,
+  "every real E2E segment must force database cleanup from a finally block",
+);
+assert.match(
+  realE2eRunner,
+  /REAL_E2E_INVOCATION_ID:\s*invocationId/,
+  "every real E2E child must carry the invocation identity used for its resources",
+);
+assert.match(
+  realE2eRunner,
+  /INHERITED_POSTGRES_ROUTING_ENVIRONMENT[\s\S]*"PGHOSTADDR"[\s\S]*"PGSERVICE"/,
+  "real E2E must neutralize inherited PostgreSQL routing",
+);
+assert.match(
+  testDatabaseSafety,
+  /CONNECTION_ROUTING_QUERY_PARAMETERS[\s\S]*"hostaddr"[\s\S]*"servicefile"/,
+  "destructive test URLs must reject PostgreSQL routing query overrides",
+);
+assert.match(
+  realE2eConfig,
+  /retries:\s*0\b/,
+  "the stateful real E2E release gate must not reuse mutated state in retries",
+);
+assert.match(
+  realE2eConfig,
+  /trace:\s*"retain-on-failure"/,
+  "the single real E2E attempt must retain failure traces",
+);
+assert.doesNotMatch(
+  realE2eConfig,
+  /max-old-space-size/,
+  "fresh process isolation must not be replaced or obscured by a heap bump",
+);
+assert.doesNotMatch(
+  ciWorkflow,
+  /createdb[^\n]*signalframe_e2e_ci|dropdb[^\n]*signalframe_e2e_ci/,
+  "CI must delegate disposable real-E2E database ownership to the canonical runner",
+);
 const obsoleteVisualBaselineDirectory = join(
   root,
   "e2e",
