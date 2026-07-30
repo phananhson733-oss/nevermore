@@ -109,9 +109,9 @@ interface InternalLinkAuditContent {
 }
 
 const EN: InternalLinkAuditContent = {
-  metaTitle: "Free Internal Link Audit — Find Broken Links & Orphan Pages",
+  metaTitle: "Free Internal Link Audit — Find Orphan Candidates & Weak Internal Links",
   metaDescription:
-    "Audit your internal link structure in one crawl. Find broken links, orphan pages, and the pages your own site is starving. Free, no sign-up.",
+    "Audit your internal link structure in one bounded crawl. Find orphan candidates, weakly linked pages, deep pages, and unresolved targets. Free, no sign-up.",
   schemaDescription:
     "A bounded public internal link audit that crawls static same-origin HTML, respects robots.txt, and does not store the submitted URL or report.",
   schemaFeatures: [
@@ -125,7 +125,7 @@ const EN: InternalLinkAuditContent = {
   eyebrow: "Free internal link audit · bounded public crawl",
   title: "Internal Link Audit",
   subtitle:
-    "One crawl shows every internal link on your site — the broken ones, the pages nothing points to, and the sections quietly starved of the authority you already have.",
+    "One bounded crawl maps observed same-origin HTML links, pages with little observed support, sitemap-only orphan candidates, and targets that need a follow-up check.",
   primaryCta: "Run my internal link audit free",
   trustLine: "Free · No sign-up · No software to install · Any public website",
   demoBanner:
@@ -149,9 +149,9 @@ const EN: InternalLinkAuditContent = {
     "Every metric below is generated from the static-HTML pages collected for the URL you entered in this request.",
   result: {
     summaryEyebrow: "Five-second answer",
-    summaryTitle: "Two orphan pages deserve attention before the deeper cluster gaps",
+    summaryTitle: "Review bounded structural findings before changing your site",
     summaryBody:
-      "The sample contains four orphans, but two already have a natural source page and a clear editorial link position. Start there, then fix the broken target reached from a high-authority guide.",
+      "Use the observed evidence and its limitations to decide what to verify. This public preview never makes automatic changes to your site.",
     mappedPages: "Pages mapped",
     internalLinks: "HTML internal links",
     orphanPages: "Orphan pages",
@@ -163,7 +163,7 @@ const EN: InternalLinkAuditContent = {
     filterPillars: "Pillars",
     filterOrphans: "Orphans",
     filterDeep: "Deep pages",
-    filterBroken: "Broken targets",
+    filterBroken: "Unresolved targets",
     priorityTitle: "Highest-return fixes",
     priorityBody: "Ordered by source-page strength, structural gap, and edit clarity.",
     detailEyebrow: "Selected page",
@@ -179,34 +179,34 @@ const EN: InternalLinkAuditContent = {
     fourPartTitle: "From finding to a fix you can review",
     observation: "Observation",
     observationBody:
-      "/app-setup-guide has 0 inbound HTML links, 2 outbound links, and appears in the sample sitemap.",
+      "The report records observed inbound and outbound HTML links together with sitemap membership when available.",
     diagnosis: "Diagnosis",
     diagnosisBody:
-      "The page is discoverable through the sitemap but receives no internal authority in this sample. JavaScript-only links were not evaluated.",
+      "A sitemap-only page is a candidate, not a definitive orphan. JavaScript-only links and uncrawled pages are not evaluated.",
     recommendation: "Recommendation",
     recommendationBody:
-      "Add contextual links from /wifi-feeders and /best-smart-feeders where both pages already discuss initial app setup.",
+      "Review the observed source URL and anchor context, then choose an editorial change only if it fits the page and user journey.",
     artifact: "Artifact",
     artifactBody:
       "A review-ready link brief with source URL, target URL, insertion context, anchor suggestion, evidence limit, and a re-crawl check.",
-    exportPreview: "CSV export arrives with the real crawl",
+    exportPreview: "This public preview is a transient visual report; CSV export is not included.",
   },
   howEyebrow: "How it works",
   howTitle: "Four steps from a domain to a repair list",
   howIntro:
-    "The interface is already shaped around the evidence a production crawler must return. This milestone simulates those steps without sending a website request.",
+    "Enter a public website and receive a transient, bounded report based on the static same-origin HTML collected for this request.",
   howSteps: [
     {
       title: "1. Enter your domain",
-      body: "No verification, login, or plugin. In the real crawler, any publicly reachable site can be submitted.",
+      body: "No verification, login, or plugin. Submit any publicly reachable HTTP(S) website.",
     },
     {
       title: "2. We crawl and build the graph",
-      body: "The planned crawler starts from the homepage and sitemap, follows same-site HTML links, and records source, target, anchor, and link context.",
+      body: "The crawler starts from allowed site entry points, respects robots.txt, follows same-origin HTML links, and records bounded structural evidence.",
     },
     {
       title: "3. Review what the structure exposes",
-      body: "Orphans, broken targets, thin-linked sections, click depth, and authority concentration become visible as evidence-led findings.",
+      body: "Candidate orphans, pages with low observed inbound support, observed crawl depth, and unresolved targets are shown with their evidence limits.",
     },
     {
       title: "4. Carry reviewed fixes into your plan",
@@ -214,41 +214,41 @@ const EN: InternalLinkAuditContent = {
     },
   ],
   findsEyebrow: "What it finds",
-  findsTitle: "An internal link audit is more than a broken-link list",
+  findsTitle: "A bounded internal link audit shows structural evidence",
   findsIntro:
     "It inspects the connections between pages, not just the contents of one URL.",
   findings: [
     {
-      title: "Broken internal links",
-      body: "See the source page, failing target, and anchor text together, so you can fix the link instead of hunting for where it came from.",
+      title: "Unresolved internal targets",
+      body: "See a source page and observed anchor when a target was not collected. It is a follow-up check, not a claim that the target is broken.",
     },
     {
       title: "Orphan pages — the ones nothing links to",
       body: "Compare sitemap URLs with pages reached through internal HTML links. The gap is a candidate orphan, with the sitemap and rendering limits shown.",
     },
     {
-      title: "Orphans grouped by section",
-      body: "A generated tag archive and a disconnected product page are different problems. URL-pattern grouping separates structural risk from expected noise.",
+      title: "Observed sitemap coverage",
+      body: "The report shows whether a sitemap was collected and how many sitemap URLs were observed, so orphan candidates have visible scope limits.",
     },
     {
       title: "Pages with only one or two inbound links",
-      body: "These pages are not orphans, but they often rely on navigation or footer links and receive little contextual support from related content.",
+      body: "These pages are not necessarily orphans, but they have one or fewer observed inbound HTML links in this bounded crawl.",
     },
     {
-      title: "Where internal authority accumulates",
-      body: "Inbound relationships reveal the pages your architecture is quietly promoting. It is a structural proxy, not a claim to calculate Google PageRank.",
+      title: "Observed inbound relationships",
+      body: "Observed inbound HTML links make it easier to review which collected pages have structural support. This is not a PageRank calculation.",
     },
     {
-      title: "Anchor-text distribution",
-      body: "Grouped anchors reveal vague “click here” links and repeated templated language that gives readers and crawlers little context.",
+      title: "Source and anchor evidence",
+      body: "For an observed relationship, the report can show the source page and recorded anchor text to support a manual review.",
     },
     {
-      title: "Crawl depth from home",
-      body: "The shortest observed path shows which important pages sit more than three clicks from the homepage.",
+      title: "Observed crawl depth",
+      body: "Pages reached at depth three or more are highlighted. Sitemap entries can be seeds, so this is not presented as homepage-click depth.",
     },
     {
-      title: "Existing internal-link opportunities",
-      body: "For each orphan or thin-linked target, the result proposes related pages that already contain a natural editorial insertion point.",
+      title: "Review-ready findings",
+      body: "Each finding includes observed evidence and a limitation so you can decide what to verify before changing your site.",
     },
     {
       title: "A visual map of the structure",
@@ -268,7 +268,7 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "Where a crawl starts and stops",
-      body: "The production design starts from the homepage and sitemap, stays on the validated origin, respects robots.txt, and stops at an explicit page, time, or safety boundary.",
+      body: "The crawler stays on the validated origin, respects robots.txt, uses allowed site entry points, and stops at an explicit page, time, request, or safety boundary.",
     },
   ],
   limitsEyebrow: "Honest limits",
@@ -307,7 +307,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "What is an internal link audit?",
       answer:
-        "It crawls the connections between pages on one site and reports unreachable pages, broken targets, depth, anchor patterns, and where internal authority is concentrated.",
+        "It crawls static same-origin HTML connections and reports candidate orphans, low observed inbound support, observed crawl depth, and unresolved targets with clear limits.",
     },
     {
       question: "How is this different from an internal link checker?",
@@ -317,12 +317,12 @@ const EN: InternalLinkAuditContent = {
     {
       question: "Do I need Search Console or site verification?",
       answer:
-        "No. The production P0-2 design reads public pages and does not require OAuth, a verification file, or ownership. This milestone does not make any website request.",
+        "No. The public audit reads public pages and does not require OAuth, a verification file, or ownership. It makes a transient bounded request only after you submit a URL.",
     },
     {
       question: "Does this find orphan pages?",
       answer:
-        "The production design compares sitemap URLs with URLs reached through internal HTML links. A URL found only in the sitemap becomes a candidate orphan with its evidence limits attached.",
+        "The audit compares observed sitemap URLs with URLs reached through collected internal HTML links. A sitemap-only URL becomes a candidate orphan with evidence limits attached.",
     },
     {
       question: "How many pages will it crawl for free?",
@@ -335,9 +335,9 @@ const EN: InternalLinkAuditContent = {
         "Quarterly is enough for many sites, plus immediately after migrations, URL restructures, template changes, or large content releases.",
     },
     {
-      question: "Which broken links should I fix first?",
+      question: "Which findings should I review first?",
       answer:
-        "Start with broken links on strongly connected, frequently reached pages. They affect more journeys and waste a more valuable internal path than the same error on an isolated page.",
+        "Start with candidate orphans and low-inbound pages that matter to your site, then verify unresolved targets from important source pages. The report does not automatically confirm broken links.",
     },
     {
       question: "Should I fix every orphan page?",
@@ -347,7 +347,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "Will this work on a JavaScript-rendered site?",
       answer:
-        "Partially in the planned first crawler. Links injected by long-running client JavaScript may be missed, so unexpected orphan findings must be cross-checked.",
+        "Partially. The current crawler reads static HTML, so links injected by client JavaScript may be missed. Cross-check unexpected orphan candidates.",
     },
     {
       question: "Can I export the results?",
@@ -376,9 +376,9 @@ const EN: InternalLinkAuditContent = {
 };
 
 const ZH: InternalLinkAuditContent = {
-  metaTitle: "免费内链审计：发现断链、孤岛页面与结构缺口",
+  metaTitle: "免费内链审计：发现候选孤岛、低入链页面与结构缺口",
   metaDescription:
-    "通过一次内链审计发现断链、孤岛页面、深层页面和被站内结构饿死的重要内容；免费体验，无需登录或安装软件。",
+    "通过一次受限内链审计发现候选孤岛、低入链页面、观测抓取深度和待验证目标；免费体验，无需登录或安装软件。",
   schemaDescription:
     "GenGrowth 内链审计会在明确预算内抓取同源静态 HTML、遵守 robots.txt，并且不保存提交的 URL 或报告。",
   schemaFeatures: [
@@ -412,9 +412,9 @@ const ZH: InternalLinkAuditContent = {
     "下方全部指标来自本次为你输入 URL 采集的静态 HTML 页面。",
   result: {
     summaryEyebrow: "5 秒结论",
-    summaryTitle: "先处理两个有明确来源页的孤岛，再修复更深层的簇内缺口",
+    summaryTitle: "改动网站前，先复核有明确边界的结构发现",
     summaryBody:
-      "样本里共有 4 个孤岛，但其中 2 个已经找到自然的来源页面和正文插入位置；随后应修复高权重指南中指向失败目标的链接。",
+      "请根据观测证据及其限制决定需要复核什么。此公开预览不会自动修改你的网站。",
     mappedPages: "已映射页面",
     internalLinks: "HTML 内链",
     orphanPages: "孤岛页面",
@@ -426,7 +426,7 @@ const ZH: InternalLinkAuditContent = {
     filterPillars: "Pillar",
     filterOrphans: "孤岛",
     filterDeep: "深层页面",
-    filterBroken: "断链目标",
+    filterBroken: "未验证目标",
     priorityTitle: "最高收益修复",
     priorityBody: "按来源页强度、结构缺口和编辑清晰度排序。",
     detailEyebrow: "当前页面",
@@ -448,28 +448,28 @@ const ZH: InternalLinkAuditContent = {
       "Sitemap 可发现但未见 HTML 入链的页面会被标为候选；只由 JavaScript 生成的链接不在当前抓取范围内。",
     recommendation: "Recommendation",
     recommendationBody:
-      "从 /wifi-feeders 与 /best-smart-feeders 的首次设置段落增加上下文链接。",
+      "查看已观测到的来源 URL 与锚文本语境，仅在符合页面与用户旅程时决定是否进行编辑。",
     artifact: "Artifact",
     artifactBody:
       "形成一条可审核的补链任务：来源 URL、目标 URL、插入语境、锚文本建议、证据边界与复验条件。",
-    exportPreview: "真实抓取版本再提供 CSV 导出",
+    exportPreview: "此公开预览仅提供临时可视化报告，暂不包含 CSV 导出。",
   },
   howEyebrow: "使用流程",
   howTitle: "从一个域名到修复清单，只需四步",
   howIntro:
-    "界面已经按照正式爬虫未来必须返回的证据设计；本阶段只模拟这些步骤，不发出网站请求。",
+    "输入公开网站后，工具会针对本次请求临时采集同源静态 HTML，并返回有明确范围的结构报告。",
   howSteps: [
     {
       title: "1. 输入域名",
-      body: "无需验证、登录或安装插件。正式爬虫可以读取任何公开可访问的网站。",
+      body: "无需验证、登录或安装插件。可以提交任何公开可访问的 HTTP(S) 网站。",
     },
     {
       title: "2. 爬取并建立关系图",
-      body: "计划中的爬虫从首页与 Sitemap 出发，跟随同站 HTML 链接，并记录来源、目标、锚文本和链接位置。",
+      body: "爬虫从允许的网站入口开始，尊重 robots.txt，跟随同源 HTML 链接，并记录范围受限的结构证据。",
     },
     {
       title: "3. 查看结构暴露的问题",
-      body: "把孤岛、断链、低入链页面、点击深度和权重集中位置转换成带证据的发现。",
+      body: "把候选孤岛、低观测入链页面、观测抓取深度和未验证目标转换成带证据边界的发现。",
     },
     {
       title: "4. 将审核后的修复推进计划",
@@ -477,40 +477,40 @@ const ZH: InternalLinkAuditContent = {
     },
   ],
   findsEyebrow: "能发现什么",
-  findsTitle: "内链审计不只是检查 404",
+  findsTitle: "受限内链审计呈现可复核的结构证据",
   findsIntro: "它检查的是页面之间的连接，而不是单独某一个 URL 的内容。",
   findings: [
     {
-      title: "断开的站内链接",
-      body: "同时显示来源页、失败目标和锚文本，让你直接修复链接，而不是再去寻找它出现在哪里。",
+      title: "未验证的站内目标",
+      body: "当某个目标未被本次抓取采集到时，展示来源页与观测锚文本。它需要复核，不等同于断链。",
     },
     {
       title: "没有任何页面指向的孤岛",
       body: "对比 Sitemap URL 与通过站内 HTML 链接到达的页面；二者差集是候选孤岛，同时显示 Sitemap 与渲染边界。",
     },
     {
-      title: "按网站区块聚类孤岛",
-      body: "自动生成的标签页与失去入口的产品页不是同一种问题。按 URL 模式分组，才能区分结构风险和预期噪声。",
+      title: "已观测的 Sitemap 覆盖",
+      body: "报告会显示是否成功采集 Sitemap 及已观测 URL 数量，让候选孤岛的结论范围清晰可见。",
     },
     {
       title: "只有一两条入链的页面",
-      body: "它们不算孤岛，却经常只依赖导航或页尾，没有来自相关内容的上下文支持。",
+      body: "它们不一定是孤岛，但在本次受限抓取中只有一条或没有观测到的 HTML 入链。",
     },
     {
-      title: "站内权重实际集中在哪里",
-      body: "入链关系能说明网站结构正在重点推动哪些页面；这是结构代理指标，不声称计算 Google PageRank。",
+      title: "已观测的入链关系",
+      body: "观测到的 HTML 入链有助于复核哪些已采集页面获得结构支持；这不是 Google PageRank 计算。",
     },
     {
-      title: "锚文本分布",
-      body: "聚合锚文本可以发现“点击这里”这类无语义链接，以及大量重复的模板化用词。",
+      title: "来源页与锚文本证据",
+      body: "对于已观测关系，报告可展示来源页及记录到的锚文本，便于人工复核。",
     },
     {
-      title: "从首页出发的点击深度",
-      body: "最短观测路径能够标出距离首页超过三次点击的重要页面。",
+      title: "观测到的抓取深度",
+      body: "深度达到三层或以上的页面会被标出。Sitemap 条目可能作为种子，因此不把它表述为首页点击深度。",
     },
     {
-      title: "已经存在的补链机会",
-      body: "针对孤岛或低入链目标，建议已经包含自然编辑语境的相关来源页。",
+      title: "可复核的问题清单",
+      body: "每条发现都附有观测证据和限制条件，供你决定在改动网站前需要复核什么。",
     },
     {
       title: "完整结构的可视化地图",
@@ -530,7 +530,7 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "抓取从哪里开始、在哪里停止",
-      body: "正式设计从首页与 Sitemap 出发，限制在已验证同源，尊重 robots.txt，并在明确的页面数、时间或安全边界停止。",
+      body: "爬虫限制在已验证同源、尊重 robots.txt、使用允许的网站入口，并在明确的页面数、时间、请求数或安全边界停止。",
     },
   ],
   limitsEyebrow: "诚实边界",
@@ -569,12 +569,12 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "什么是内链审计？",
       answer:
-        "它抓取同一网站页面之间的连接，报告无法到达的页面、断链、点击深度、锚文本模式和站内权重集中位置。",
+        "它抓取同一网站的静态同源 HTML 连接，报告候选孤岛、低观测入链、观测抓取深度和未验证目标，并清楚说明边界。",
     },
     {
       question: "它和普通内链检查器有什么不同？",
       answer:
-        "检查器通常只判断链接是否可用；审计还会评估这些链接形成的结构，包括孤岛、连接薄弱的主题簇和补链机会。",
+        "检查器通常只判断链接是否可用；本工具聚焦这些链接形成的已观测结构，包括候选孤岛、低入链页面和待复核目标。",
     },
     {
       question: "需要连接 Search Console 或验证网站吗？",
@@ -584,7 +584,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "它能找到孤岛页面吗？",
       answer:
-        "正式设计会对比 Sitemap URL 与通过站内 HTML 链接到达的 URL；只存在于 Sitemap 的页面会成为候选孤岛，并携带证据边界。",
+        "工具会对比已观测 Sitemap URL 与通过已采集站内 HTML 链接到达的 URL；只存在于 Sitemap 的页面会成为候选孤岛，并携带证据边界。",
     },
     {
       question: "免费会抓取多少页面？",
@@ -597,9 +597,9 @@ const ZH: InternalLinkAuditContent = {
         "多数网站每季度一次即可；网站迁移、URL 重构、模板变更或大批量发布内容后应立即再检查一次。",
     },
     {
-      question: "应该先修哪些断链？",
+      question: "应该先复核哪些发现？",
       answer:
-        "优先修复出现在强连接、高频访问页面上的断链；同样的错误出现在孤立页面时，影响的用户路径和站内关系更少。",
+        "先看对业务重要的候选孤岛和低入链页面，再从重要来源页开始核实未验证目标。该报告不会自动确认断链。",
     },
     {
       question: "每个孤岛页面都应该补链接吗？",
@@ -609,7 +609,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "JavaScript 渲染的网站可以使用吗？",
       answer:
-        "计划中的第一版只能部分支持。长时间运行客户端 JavaScript 后才注入的链接可能漏抓，因此异常孤岛需要交叉验证。",
+        "只能部分支持。当前爬虫读取静态 HTML，客户端 JavaScript 注入的链接可能漏抓，因此异常候选孤岛需要交叉验证。",
     },
     {
       question: "可以导出结果吗？",
