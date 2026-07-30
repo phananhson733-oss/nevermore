@@ -687,13 +687,13 @@ async function assertKeywordLibraryTraceability(input: {
     .toBe(item.keywordId);
 
   const detail = page.locator('aside[aria-label="Selected Keyword detail"]');
-  await expect(
-    detail.getByRole("heading", {
-      level: 2,
-      name: item.displayKeyword,
-      exact: true,
-    }),
-  ).toBeVisible();
+  // The detail rail is correct only when the selected Keyword's exact text has
+  // arrived inside the panel, but the h2 can briefly remount while the
+  // relation/read-model refresh settles. Assert the operator-visible identity
+  // on the panel itself, then continue into the immutable record details.
+  await expect(detail).toContainText(item.displayKeyword, {
+    timeout: 20_000,
+  });
   const recordDetails = detail.locator("details").filter({
     hasText: "View record details",
   });

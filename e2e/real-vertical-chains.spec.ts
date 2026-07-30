@@ -798,12 +798,21 @@ async function verifyReportAndExport(
   await expect(page.locator("[data-report-document]")).toBeVisible({
     timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
   });
-  // URL-first creation deliberately uses the submitted host as the honest
-  // project identity until a separate project-renaming workflow exists. The
-  // confirmed Product Profile name remains inside the Product/ICP snapshot; it
-  // must not make this fixture pretend the project record was also renamed.
+  // The onboarding flow now persists the declared product name as the project
+  // display name up front. The report cover therefore leads with the declared
+  // Product Profile identity while still naming the submitted host beneath it.
+  const reportDocument = page.locator("[data-report-document]");
   await expect(
-    page.getByRole("heading", { name: new URL(definition.siteUrl).host }),
+    reportDocument.getByRole("heading", {
+      level: 2,
+      name: definition.productName,
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
+  await expect(
+    reportDocument.getByText(new URL(definition.siteUrl).host, {
+      exact: true,
+    }),
   ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
   const findings = page.getByRole("region", { name: "Findings" });
   await expect(
