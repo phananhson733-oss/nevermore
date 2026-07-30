@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 import { requireSafeTestDatabaseUrl } from "./packages/db/src/test-database-safety.ts";
+import {
+  getRealE2eSegmentPaths,
+  requireRealE2eSegment,
+} from "./e2e/real-e2e-runtime.ts";
 
 /**
  * Playwright E2E harness (spec §16, DoD AC-042/043/044/045). The web app boots
@@ -21,16 +25,11 @@ const DATABASE_URL = requireSafeTestDatabaseUrl(
   process.env["E2E_DATABASE_URL"],
   "E2E_DATABASE_URL",
 );
-const REAL_E2E_NODE_OPTIONS = [
-  process.env["NODE_OPTIONS"],
-  // Next dev restarts itself once heap usage crosses 80% of V8's limit. The
-  // isolated database-backed groups compile authenticated routes while also
-  // running a browser and, for verticals, a worker. Give each child enough
-  // headroom to finish without weakening any browser assertion.
-  "--max-old-space-size=6144",
-]
-  .filter(Boolean)
-  .join(" ");
+const SEGMENT = requireRealE2eSegment(process.env["REAL_E2E_SEGMENT"]);
+const SEGMENT_PATHS = getRealE2eSegmentPaths(
+  SEGMENT,
+  process.env["REAL_E2E_INVOCATION_ID"] ?? "",
+);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -40,13 +39,22 @@ export default defineConfig({
   testIgnore: [
     "**/*.mock.spec.ts",
     "**/complete-customer-artifact.spec.ts",
+    // The canonical runner gives each vertical chain a fresh Next process and
+    // a fresh database. Keep the heavy file out of the light segment while
+    // still allowing future real specs to join that segment automatically.
+    ...(SEGMENT === "light"
+      ? ["**/real-vertical-chains.spec.ts"]
+      : []),
   ],
   // The dev-auth workspace is a shared singleton and the specs mutate the same
   // Postgres, so run serially rather than fully parallel to keep runs deterministic.
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env["CI"],
-  retries: process.env["CI"] ? 1 : 0,
+  // Stateful real tests get exactly one honest attempt. A retry would reuse
+  // the same database and Next process and could turn partial mutation into a
+  // false green.
+  retries: 0,
   // Reporter onEnd runs after Playwright has stopped the webServer. The cleanup
   // reporter must not be a globalTeardown, which runs while Next is still live.
   reporter: process.env["CI"]
@@ -54,9 +62,10 @@ export default defineConfig({
     : [["./e2e/real-global-teardown.ts"], ["list"]],
   timeout: 60_000,
   expect: { timeout: 10_000 },
+  outputDir: SEGMENT_PATHS.outputDir,
   use: {
     baseURL: BASE_URL,
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [
@@ -90,10 +99,9 @@ export default defineConfig({
       RAW_IMPORT_BUCKET: "e2e-local-only",
       EXPORT_BUCKET: "e2e-local-only",
       SF_BLOB_BACKEND: "local",
-      SF_BLOB_DIR: "/tmp/signalframe-e2e-real-blobs",
+      SF_BLOB_DIR: SEGMENT_PATHS.blobDir,
       SF_DEV_AUTH: "true",
-      NEXT_DIST_DIR: ".next-e2e-real",
-      NODE_OPTIONS: REAL_E2E_NODE_OPTIONS,
+      NEXT_DIST_DIR: SEGMENT_PATHS.distDirectoryName,
       PORT: String(PORT),
     },
   },

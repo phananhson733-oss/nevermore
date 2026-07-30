@@ -68,6 +68,12 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   page,
   request,
 }) => {
+  // This is a deliberately complete customer journey across project creation,
+  // Product Profile editing/confirmation, Sources navigation, and scoped run
+  // recovery. Keep each assertion bounded by the shared 10s expect timeout,
+  // while allowing the whole real-DB journey enough time on a cold CI server.
+  test.setTimeout(120_000);
+
   const origin = publicFixtureOrigin(`product-profile-${randomUUID()}`);
   const productUrl = `${origin}/product`;
   await page.context().addCookies([

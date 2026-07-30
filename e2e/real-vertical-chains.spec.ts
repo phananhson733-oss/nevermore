@@ -22,11 +22,18 @@ import {
   type VerticalDefinition,
 } from "./real-chain-fixture.ts";
 import { ACTION_TEMPLATES } from "../packages/engine/src/index.ts";
+import {
+  getRealE2eSegmentPaths,
+  requireRealE2eSegment,
+} from "./real-e2e-runtime.ts";
 
 const PORT = Number(process.env["E2E_PORT"] ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
 const DATABASE_URL = process.env["E2E_DATABASE_URL"];
-const BLOB_DIR = "/tmp/signalframe-e2e-real-blobs";
+const BLOB_DIR = getRealE2eSegmentPaths(
+  requireRealE2eSegment(process.env["REAL_E2E_SEGMENT"]),
+  process.env["REAL_E2E_INVOCATION_ID"] ?? "",
+).blobDir;
 const CLIENT_READ_MODEL_TIMEOUT_MS = 45_000;
 const ASYNC_EXPORT_TIMEOUT_MS = 90_000;
 
@@ -227,42 +234,22 @@ async function completeContext(
   definition: VerticalDefinition,
 ): Promise<void> {
   const payload = completeContextBody(definition);
-
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      const current = await responseJson<
-        DataEnvelope<{ readonly version: number }>
-      >(
-        await request.get(`/api/mvp/projects/${projectId}/context`),
-        "read current context version",
-      );
-      const response = await request.patch(
-        `/api/mvp/projects/${projectId}/context`,
-        {
-          data: {
-            ...payload,
-            baseVersion: current.data.version,
-          },
-        },
-      );
-      await responseJson<DataEnvelope<unknown>>(response, "complete context");
-      return;
-    } catch (error) {
-      const message = String(error);
-      const transientRestart =
-        /ECONNRESET|ECONNREFUSED|socket hang up|fetch failed/i.test(message);
-      if (!transientRestart || attempt >= 2) {
-        throw error;
-      }
-      // The real E2E suite can cross Next's dev-server memory watermark late
-      // in the run. Re-read the current version after the process settles and
-      // retry the same complete payload; identical complete saves are a
-      // semantic no-op, so a post-restart replay stays honest.
-      await new Promise((resolve) =>
-        setTimeout(resolve, 1_500 * (attempt + 1)),
-      );
-    }
-  }
+  const current = await responseJson<
+    DataEnvelope<{ readonly version: number }>
+  >(
+    await request.get(`/api/mvp/projects/${projectId}/context`),
+    "read current context version",
+  );
+  const response = await request.patch(
+    `/api/mvp/projects/${projectId}/context`,
+    {
+      data: {
+        ...payload,
+        baseVersion: current.data.version,
+      },
+    },
+  );
+  await responseJson<DataEnvelope<unknown>>(response, "complete context");
 }
 
 async function waitForRun(
