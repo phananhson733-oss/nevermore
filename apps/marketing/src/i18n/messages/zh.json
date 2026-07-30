@@ -504,6 +504,10 @@
       "faq3q": "假设的转化提升是多少？",
       "faq3a": "计算器假设转化率相对提升 15%，这是基于增长自动化基准的保守估计。"
     },
+    "internalLinkAudit": {
+      "title": "内链审计",
+      "description": "绘制站内链接关系，发现孤岛页与深层页面，并把结构缺口转化为可审核的优先修复动作。"
+    },
     "seoAudit": {
       "title": "网站健康地图",
       "description": "检测首页、robots.txt 与 sitemap.xml 中可实测的 SEO 问题，并提供证据和优先修复建议。",

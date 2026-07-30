@@ -504,6 +504,10 @@
       "faq3q": "What is the assumed conversion improvement?",
       "faq3a": "The calculator assumes a 15% relative improvement in conversion rate, which is a conservative estimate based on growth automation benchmarks."
     },
+    "internalLinkAudit": {
+      "title": "Internal Link Audit",
+      "description": "Map internal links, expose orphan and deep pages, and turn structural gaps into prioritized, review-ready fixes."
+    },
     "seoAudit": {
       "title": "Website Health Map",
       "description": "Scan a homepage, robots.txt, and sitemap.xml for measurable SEO issues, evidence, and prioritized fixes.",

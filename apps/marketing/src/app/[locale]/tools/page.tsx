@@ -23,6 +23,12 @@ const TOOLS = [
     category: "analytics",
   },
   {
+    slug: "internal-link-audit",
+    titleKey: "internalLinkAudit.title",
+    descKey: "internalLinkAudit.description",
+    category: "seo",
+  },
+  {
     slug: "seo-audit",
     titleKey: "seoAudit.title",
     descKey: "seoAudit.description",
