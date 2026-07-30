@@ -21,6 +21,16 @@ const DATABASE_URL = requireSafeTestDatabaseUrl(
   process.env["E2E_DATABASE_URL"],
   "E2E_DATABASE_URL",
 );
+const REAL_E2E_NODE_OPTIONS = [
+  process.env["NODE_OPTIONS"],
+  // Next dev restarts itself once heap usage crosses 80% of V8's limit. The
+  // database-backed suite intentionally compiles every customer route in one
+  // long-lived process, so give that child enough headroom to finish both
+  // vertical chains without weakening any browser assertion.
+  "--max-old-space-size=5120",
+]
+  .filter(Boolean)
+  .join(" ");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -83,6 +93,7 @@ export default defineConfig({
       SF_BLOB_DIR: "/tmp/signalframe-e2e-real-blobs",
       SF_DEV_AUTH: "true",
       NEXT_DIST_DIR: ".next-e2e-real",
+      NODE_OPTIONS: REAL_E2E_NODE_OPTIONS,
       PORT: String(PORT),
     },
   },
