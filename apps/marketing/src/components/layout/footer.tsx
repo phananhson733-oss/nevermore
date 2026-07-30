@@ -29,8 +29,8 @@ export function Footer({
             </p>
             <p className="text-text-dark-secondary text-sm">
               {locale === "en"
-                ? "Automated Growth Operating System"
-                : "自动化增长操作系统"}
+                ? "Evidence-led SEO growth system"
+                : "证据驱动的 SEO 增长系统"}
             </p>
           </div>
 

@@ -1,5 +1,5 @@
-// @input  -- HeroSection(eager), 6 homepage block components(lazy)
-// @output -- HomePage client component (assembles 7 blocks, Hero uses openTrial, BottomCTA uses openWaitlist)
+// @input  -- HeroSection(eager), 8 homepage block components(lazy)
+// @output -- HomePage client component for the public-tools acquisition path
 // @pos    -- Homepage assembly layer, used by [locale]/page.tsx
 // Once this file is updated, update header comment and folder _DIR.md
 "use client";
@@ -7,9 +7,12 @@
 import dynamic from "next/dynamic";
 import { HeroSection } from "./hero-section";
 
-const StatsSection = dynamic(() =>
-  import("./stats-section").then((mod) => ({ default: mod.StatsSection })),
+const FreeAuditSection = dynamic(() =>
+  import("./free-audit-section").then((mod) => ({
+    default: mod.FreeAuditSection,
+  })),
 );
+
 const PainPointsSection = dynamic(() =>
   import("./pain-points-section").then((mod) => ({
     default: mod.PainPointsSection,
@@ -30,27 +33,28 @@ const SocialProofSection = dynamic(() =>
     default: mod.SocialProofSection,
   })),
 );
+const EditorialPreviewSection = dynamic(() =>
+  import("./editorial-preview-section").then((mod) => ({
+    default: mod.EditorialPreviewSection,
+  })),
+);
 const BottomCtaSection = dynamic(() =>
   import("./bottom-cta-section").then((mod) => ({
     default: mod.BottomCtaSection,
   })),
 );
 
-interface HomePageProps {
-  onOpenTrial?: () => void;
-  onOpenWaitlist?: () => void;
-}
-
-export function HomePage({ onOpenTrial, onOpenWaitlist }: HomePageProps) {
+export function HomePage() {
   return (
     <>
-      <HeroSection onOpenTrial={onOpenTrial} />
-      <StatsSection />
+      <HeroSection />
+      <FreeAuditSection />
       <PainPointsSection />
       <SolutionSection />
       <CapabilitiesPreview />
       <SocialProofSection />
-      <BottomCtaSection onOpenWaitlist={onOpenWaitlist} />
+      <EditorialPreviewSection />
+      <BottomCtaSection />
     </>
   );
 }

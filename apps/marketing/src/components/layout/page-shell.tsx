@@ -1,5 +1,5 @@
-// @input  -- Header, Footer, CookieBanner(lazy), TrialProvider, site config
-// @output -- PageShell client wrapper (routes product CTAs to the app and manages cookie state)
+// @input  -- Header, Footer, CookieBanner(lazy), siteConfig, TrialProvider
+// @output -- PageShell client wrapper (manages product handoff and Cookie modal state)
 // @pos    -- Global layout client layer, used by [locale]/layout.tsx
 // Once this file is updated, update header comment and folder _DIR.md
 "use client";
@@ -22,6 +22,8 @@ export function PageShell({ children }: { children: React.ReactNode }) {
 
   const ctxValue = useMemo(
     () => ({
+      // Legacy noindex pages still call this context. Send those CTAs to the
+      // product instead of opening an outdated trial or waitlist flow.
       openTrial: () => window.location.assign(siteConfig.appUrl),
       openWaitlist: () => window.location.assign(siteConfig.appUrl),
     }),
@@ -30,7 +32,7 @@ export function PageShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TrialProvider value={ctxValue}>
-      <Header onOpenWaitlist={ctxValue.openWaitlist} />
+      <Header />
       <main className="pt-16">{children}</main>
       <Footer onOpenCookiePreferences={() => setCookiePrefsOpen(true)} />
       <CookieBanner

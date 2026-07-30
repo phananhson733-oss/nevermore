@@ -1,6 +1,6 @@
 // @input  -- none (static schema data)
 // @output -- SoftwareApplication JSON-LD script tag
-// @pos    -- homepage structured data, helps Google understand GenGrowth as a software product
+// @pos    -- homepage structured data, aligned with the current public-tools and project-workflow positioning
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { safeJsonLd } from "./utils";
 
@@ -12,14 +12,13 @@ export function SoftwareApplicationJsonLd() {
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web",
     description:
-      "Automated Growth Operating System — from minimal input to measurable growth through AI-powered discovery, strategy, execution, attribution, and optimization.",
+      "Evidence-led SEO growth system that connects public diagnostics, keyword research, site structure, internal links, and authority work into one project workflow.",
     url: "https://gengrowth.ai",
-    offers: {
-      "@type": "Offer",
-      price: "0",
-      priceCurrency: "USD",
-      description: "7-day free trial",
-    },
+    featureList: [
+      "Free public SEO audit",
+      "Free public internal link audit",
+      "Connected SEO project workflow",
+    ],
     creator: {
       "@type": "Organization",
       name: "GenGrowth",

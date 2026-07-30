@@ -1,6 +1,6 @@
 // @input  — next-intl, framer-motion
-// @output — SocialProofSection 组件（公开构建信任 + 早期用户计数 + 社媒引用 + 实验节奏）
-// @pos    — 首页区块 6，深色背景，SPEC 2.5.2
+// @output — SocialProofSection 组件（证据优先的方法论承诺）
+// @pos    — 首页区块 6，深色背景
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
@@ -78,18 +78,18 @@ export function SocialProofSection() {
   const trustItems = [
     {
       icon: <FingerprintIcon />,
-      title: t("earlyUsers"),
-      sub: null,
+      title: t("evidenceTitle"),
+      sub: t("evidenceSub"),
     },
     {
       icon: <CommunityIcon />,
-      title: t("communityTitle"),
-      sub: t("communitySub"),
+      title: t("sequenceTitle"),
+      sub: t("sequenceSub"),
     },
     {
       icon: <RhythmIcon />,
-      title: t("rhythmTitle"),
-      sub: t("rhythmSub"),
+      title: t("limitsTitle"),
+      sub: t("limitsSub"),
     },
   ];
 

@@ -1,15 +1,17 @@
 // @input  — next-intl, blog data functions, BlogCard, generatePageMetadata, BreadcrumbJsonLd
-// @output — 博客列表页（分页 + 分类筛选 + SEO metadata + BreadcrumbList JSON-LD）
-// @pos    — 营销官网博客列表，对应 SPEC 2.7.3
+// @output — 博客列表页（话题筛选 + 工具续接 + SEO metadata + BreadcrumbList JSON-LD）
+// @pos    — 营销官网内容获客入口
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
-import { getTranslations } from "next-intl/server";
-import { getBlogPosts, getTotalPages } from "@/lib/blog";
+import { NextIntlClientProvider } from "next-intl";
+import { getMessages, getTranslations } from "next-intl/server";
+import { getAllBlogPosts, getBlogPosts, getTotalPages } from "@/lib/blog";
 import { BlogCard } from "@/components/blog/blog-card";
 import { generatePageMetadata } from "@/lib/seo";
 import { siteConfig } from "@/config/site";
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import Link from "next/link";
+import { COMPARISON_SLUGS } from "@/lib/mock/compare-content";
 
 const CATEGORIES = [
   "case_study",
@@ -26,6 +28,13 @@ const PILLARS = [
   "customer_stories",
 ] as const;
 
+const COMPARISON_QUESTION_KEYS = {
+  "manual-growth": "manualGrowth",
+  "okara-ai-cmo": "okaraAiCmo",
+  babylovegrowth: "babylovegrowth",
+  ahrefs: "ahrefs",
+} as const;
+
 export async function generateMetadata({
   params,
 }: {
@@ -33,11 +42,11 @@ export async function generateMetadata({
 }) {
   const { locale } = await params;
   return generatePageMetadata({
-    title: locale === "en" ? "Blog — GenGrowth" : "博客 — GenGrowth",
+    title: locale === "en" ? "Blog" : "博客",
     description:
       locale === "en"
-        ? "Case studies, methodology, weekly reviews, and experiment logs from the GenGrowth team."
-        : "来自 GenGrowth 团队的案例研究、方法论、周报和实验日志。",
+        ? "Evidence-led SEO methods, public-tool guides, and practical decision frameworks from the GenGrowth team."
+        : "来自 GenGrowth 团队的证据优先 SEO 方法、公开工具指南与可执行决策框架。",
     locale,
     path: "/blog",
   });
@@ -54,14 +63,34 @@ export default async function BlogPage({
   const { page: pageParam, category, pillar } = await searchParams;
   const page = Math.max(1, parseInt(pageParam || "1", 10));
   const t = await getTranslations({ locale, namespace: "blog" });
+  const messages = await getMessages();
+  const allPublishedPosts = await getAllBlogPosts({ locale });
 
-  const validCategory = CATEGORIES.includes(
+  const requestedCategory = CATEGORIES.includes(
     category as (typeof CATEGORIES)[number],
   )
     ? category
     : undefined;
-  const validPillar = PILLARS.includes(pillar as (typeof PILLARS)[number])
+  const requestedPillar = PILLARS.includes(pillar as (typeof PILLARS)[number])
     ? pillar
+    : undefined;
+  const availableCategories = CATEGORIES.filter((candidate) =>
+    allPublishedPosts.some((post) => post.category === candidate),
+  );
+  const availablePillars = PILLARS.filter((candidate) =>
+    allPublishedPosts.some((post) => post.pillar_slug === candidate),
+  );
+  // Old or hand-authored filter URLs should lead to useful published content,
+  // not an empty state merely because this topic has no current article.
+  const validCategory = availableCategories.includes(
+    requestedCategory as (typeof CATEGORIES)[number],
+  )
+    ? requestedCategory
+    : undefined;
+  const validPillar = availablePillars.includes(
+    requestedPillar as (typeof PILLARS)[number],
+  )
+    ? requestedPillar
     : undefined;
   const { posts, total } = await getBlogPosts({
     locale,
@@ -70,6 +99,20 @@ export default async function BlogPage({
     pillar: validPillar,
   });
   const totalPages = getTotalPages(total);
+  const comparisons = await Promise.all(
+    COMPARISON_SLUGS.map(async (slug) => {
+      const comparison = await getTranslations({
+        locale,
+        namespace: `compare.${slug}`,
+      });
+
+      return {
+        slug,
+        competitor: comparison("competitor"),
+        questionKey: COMPARISON_QUESTION_KEYS[slug],
+      };
+    }),
+  );
 
   return (
     <div className="bg-brand-bg min-h-screen py-20 md:py-28">
@@ -90,17 +133,19 @@ export default async function BlogPage({
           ]}
         />
 
-        {/* Page header */}
-        <div className="mb-12">
-          <h1 className="text-text-dark-primary font-bold text-[28px] md:text-[36px] tracking-[-0.02em] mb-3">
+        <header className="mb-12 border-b border-brand-border/60 pb-12 pt-7 md:pb-16 md:pt-12">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-accent-text">
+            {locale === "en" ? "Methods, decisions, and practical next steps" : "方法、决策与可执行的下一步"}
+          </p>
+          <h1 className="mt-4 text-[38px] font-bold leading-[1.02] tracking-[-0.04em] text-text-dark-primary md:text-[54px]">
             {t("title")}
           </h1>
-          <p className="text-text-dark-secondary text-[15px]">
+          <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-text-dark-secondary md:text-[17px]">
             {locale === "en"
-              ? "Insights, case studies, and experiment logs from our growth journey."
-              : "来自我们增长之旅的洞察、案例和实验日志。"}
+              ? "Read by topic, then move from the idea to a concrete diagnostic or a connected GenGrowth project."
+              : "按话题阅读，然后从一个想法走向具体诊断或一份连续的 GenGrowth 项目。"}
           </p>
-        </div>
+        </header>
 
         {/* Category filter tabs */}
         <div className="flex flex-wrap gap-2 mb-4 border-b border-brand-border/40 pb-4">
@@ -114,7 +159,7 @@ export default async function BlogPage({
           >
             {locale === "en" ? "All" : "全部"}
           </Link>
-          {CATEGORIES.map((cat) => (
+          {availableCategories.map((cat) => (
             <Link
               key={cat}
               href={`/${locale}/blog?category=${cat}${validPillar ? `&pillar=${validPillar}` : ""}`}
@@ -141,7 +186,7 @@ export default async function BlogPage({
           >
             {t("pillars.all")}
           </Link>
-          {PILLARS.map((p) => (
+          {availablePillars.map((p) => (
             <Link
               key={p}
               href={`/${locale}/blog?${validCategory ? `category=${validCategory}&` : ""}pillar=${p}`}
@@ -162,11 +207,13 @@ export default async function BlogPage({
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-14">
-              {posts.map((post) => (
-                <BlogCard key={post.id} post={post} />
-              ))}
-            </div>
+            <NextIntlClientProvider messages={{ blog: messages.blog }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-14">
+                {posts.map((post) => (
+                  <BlogCard key={post.id} post={post} />
+                ))}
+              </div>
+            </NextIntlClientProvider>
 
             {totalPages > 1 && (
               <nav className="flex justify-center gap-1">
@@ -193,6 +240,80 @@ export default async function BlogPage({
             )}
           </>
         )}
+
+        <section
+          id="comparisons"
+          className="mt-20 border-t border-brand-border/60 pt-12 md:pt-16"
+        >
+          <div className="max-w-2xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-accent-text">
+              {t("comparisons.eyebrow")}
+            </p>
+            <h2 className="mt-4 text-[28px] font-semibold leading-[1.08] tracking-[-0.035em] text-text-dark-primary md:text-[36px]">
+              {t("comparisons.title")}
+            </h2>
+            <p className="mt-4 text-[14px] leading-relaxed text-text-dark-secondary md:text-[15px]">
+              {t("comparisons.body")}
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {comparisons.map((comparison) => (
+              <article
+                key={comparison.slug}
+                id={`compare-${comparison.slug}`}
+                className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/40 p-5"
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-accent-text">
+                  {t("comparisons.cardLabel")}
+                </p>
+                <h3 className="mt-3 text-[18px] font-semibold tracking-[-0.025em] text-text-dark-primary">
+                  {locale === "en"
+                    ? `GenGrowth × ${comparison.competitor}`
+                    : `GenGrowth 与 ${comparison.competitor}`}
+                </h3>
+                <p className="mt-3 text-[13px] leading-relaxed text-text-dark-secondary">
+                  {t("comparisons.cardBody")}
+                </p>
+                <p className="mt-4 border-l-2 border-brand-accent/70 pl-3 text-[13px] font-medium leading-relaxed text-text-dark-primary">
+                  {t(`comparisons.questions.${comparison.questionKey}`)}
+                </p>
+                <details className="group mt-5 border-t border-brand-border/60 pt-4">
+                  <summary className="cursor-pointer text-[13px] font-semibold text-brand-accent-text marker:text-brand-accent-text">
+                    {t("comparisons.openChecklist")}
+                  </summary>
+                  <ol className="mt-3 list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-text-dark-secondary">
+                    <li>{t("comparisons.checklist.evidence")}</li>
+                    <li>{t("comparisons.checklist.workflow")}</li>
+                    <li>{t("comparisons.checklist.control")}</li>
+                  </ol>
+                </details>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-20 grid gap-5 rounded-3xl border border-brand-border/70 bg-brand-bg-alt/50 p-6 md:grid-cols-[1fr_auto] md:items-end md:p-8">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-accent-text">
+              {locale === "en" ? "Ready to apply a lesson?" : "准备把一个方法用起来？"}
+            </p>
+            <h2 className="mt-3 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+              {locale === "en" ? "Start with an evidence-led site diagnostic." : "先从基于证据的网站诊断开始。"}
+            </h2>
+            <p className="mt-3 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+              {locale === "en"
+                ? "The public audit and internal-link audit are free to run and do not require an account for the first result."
+                : "公开 SEO 审计和内链审计均可免费运行，获得第一个结果无需账号。"}
+            </p>
+          </div>
+          <Link
+            href={`/${locale}/tools`}
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+          >
+            {locale === "en" ? "Explore free tools" : "探索免费工具"}
+          </Link>
+        </section>
       </div>
     </div>
   );

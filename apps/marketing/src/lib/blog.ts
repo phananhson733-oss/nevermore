@@ -37,10 +37,15 @@ export function isValidCategorySlug(slug: string): slug is CategorySlug {
 }
 
 function isLegacySupabaseEnabled(): boolean {
-  if (process.env.BLOG_LEGACY_SUPABASE_ENABLED === "false") return false;
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  // The migration bridge is intentionally opt-in. Supabase credentials are
+  // also used by other marketing endpoints, so their presence must never make
+  // historical blog records silently reappear alongside canonical Markdown.
+  return (
+    process.env.BLOG_LEGACY_SUPABASE_ENABLED === "true" &&
+    Boolean(
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    )
   );
 }
 

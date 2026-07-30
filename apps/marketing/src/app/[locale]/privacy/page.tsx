@@ -15,15 +15,17 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  const document = await getLegalDocument("privacy", locale);
   return generatePageMetadata({
     title:
-      locale === "en" ? "Privacy Policy — GenGrowth" : "隐私政策 — GenGrowth",
+      locale === "en" ? "Privacy Policy" : "隐私政策",
     description:
       locale === "en"
         ? "How GenGrowth collects, uses, and protects your personal data."
         : "GenGrowth 如何收集、使用和保护您的个人数据。",
     locale,
     path: "/privacy",
+    noIndex: !document,
   });
 }
 

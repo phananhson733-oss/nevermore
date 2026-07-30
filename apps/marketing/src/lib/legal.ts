@@ -12,24 +12,27 @@ export async function getLegalDocument(
   docType: string,
   locale: string,
 ): Promise<LegalDocument | null> {
-  const supabase = getSupabase();
-  const today = new Date().toISOString().split("T")[0];
-  const { data, error } = await supabase
-    .from("legal_documents")
-    .select("*")
-    .eq("doc_type", docType)
-    .eq("locale", locale)
-    .eq("is_current", true)
-    .lte("effective_date", today)
-    .order("effective_date", { ascending: false })
-    .single();
+  try {
+    const supabase = getSupabase();
+    const today = new Date().toISOString().split("T")[0];
+    const { data, error } = await supabase
+      .from("legal_documents")
+      .select("*")
+      .eq("doc_type", docType)
+      .eq("locale", locale)
+      .eq("is_current", true)
+      .lte("effective_date", today)
+      .order("effective_date", { ascending: false })
+      .single();
 
-  if (error) {
-    // Error fetching legal document - return null to caller
+    if (error) return null;
+    return data as LegalDocument;
+  } catch {
+    // Legal documents are deployment-managed content. Missing optional database
+    // configuration must render the page's explicit fallback, never turn a
+    // Footer link into a 500 response.
     return null;
   }
-
-  return data as LegalDocument;
 }
 
 /**
@@ -38,17 +41,17 @@ export async function getLegalDocument(
 export async function getLegalVersions(
   documentId: string,
 ): Promise<LegalDocumentVersion[]> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("legal_document_versions")
-    .select("*")
-    .eq("document_id", documentId)
-    .order("effective_date", { ascending: false });
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("legal_document_versions")
+      .select("*")
+      .eq("document_id", documentId)
+      .order("effective_date", { ascending: false });
 
-  if (error) {
-    // Error fetching legal versions - return empty array
+    if (error) return [];
+    return (data as LegalDocumentVersion[]) || [];
+  } catch {
     return [];
   }
-
-  return (data as LegalDocumentVersion[]) || [];
 }

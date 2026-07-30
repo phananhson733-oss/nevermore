@@ -46,7 +46,7 @@ export async function GET(
   <channel>
     <title>${siteConfig.name} Blog</title>
     <link>${siteConfig.url}/${locale}/blog</link>
-    <description>Growth experiments, case studies, and methodology from ${siteConfig.name}</description>
+    <description>Evidence-led SEO methods, public-tool guides, and practical decision frameworks from ${siteConfig.name}</description>
     <language>${locale}</language>
     <atom:link href="${siteConfig.url}/${locale}/blog/rss.xml" rel="self" type="application/rss+xml" />
     ${items}

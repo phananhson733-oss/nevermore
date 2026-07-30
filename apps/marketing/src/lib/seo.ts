@@ -11,6 +11,7 @@ export function generatePageMetadata({
   locale,
   path,
   image,
+  noIndex = false,
 }: {
   title: string;
   description: string;
@@ -18,6 +19,8 @@ export function generatePageMetadata({
   path: string;
   /** Custom OG image URL; falls back to default brand image (SPEC 8.1.1) */
   image?: string;
+  /** Keep legacy or in-progress pages reachable without presenting them as canonical marketing pages. */
+  noIndex?: boolean;
 }): Metadata {
   const url = `${siteConfig.url}/${locale}${path}`;
   const alternateLocale = locale === "en" ? "zh" : "en";
@@ -57,5 +60,14 @@ export function generatePageMetadata({
       description,
       images: [ogImage],
     },
+    ...(noIndex
+      ? {
+          robots: {
+            index: false,
+            follow: false,
+            googleBot: { index: false, follow: false },
+          },
+        }
+      : {}),
   };
 }

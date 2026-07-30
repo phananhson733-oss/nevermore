@@ -1,5 +1,5 @@
 // @input  -- slug, title, description, category, locale props
-// @output -- ToolCard component (single tool card with category badge and link)
+// @output -- ToolCard component (single free-tool card with category and continuation label)
 // @pos    -- tools index page card, used in tools/page.tsx grid
 // once this file is updated, update header comments and _DIR.md in this folder
 "use client";
@@ -12,12 +12,15 @@ interface ToolCardProps {
   description: string;
   category: string;
   locale: string;
+  ctaLabel?: string;
 }
 
 const CATEGORY_LABELS: Record<string, Record<string, string>> = {
   testing: { en: "Testing", zh: "测试" },
   analytics: { en: "Analytics", zh: "分析" },
   seo: { en: "SEO", zh: "SEO" },
+  diagnosis: { en: "Website diagnosis", zh: "网站诊断" },
+  planning: { en: "Planning", zh: "规划" },
 };
 
 export function ToolCard({
@@ -26,6 +29,7 @@ export function ToolCard({
   description,
   category,
   locale,
+  ctaLabel,
 }: ToolCardProps) {
   const categoryLabel =
     CATEGORY_LABELS[category]?.[locale] ?? category;
@@ -56,7 +60,7 @@ export function ToolCard({
         {/* Footer: try it + arrow */}
         <div className="flex items-center justify-between text-[12px]">
           <span className="text-text-dark-secondary">
-            {locale === "en" ? "Try it free" : "免费使用"}
+            {ctaLabel ?? (locale === "en" ? "Try it free" : "免费使用")}
           </span>
           <span className="text-brand-accent-text opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0">
             &rarr;

@@ -1,18 +1,18 @@
-// @input  — next-intl, framer-motion, ui/button
-// @output — BottomCtaSection 组件（底部转化区块）
-// @pos    — 首页区块 7，深色背景，SPEC 2.5.2
+// @input  — next-intl, framer-motion, site config
+// @output — BottomCtaSection 组件（进入已登录产品的底部转化区块）
+// @pos    — 首页区块 7，深色背景
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
 import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
-import { Button } from "@/components/ui/button";
 import { fadeInUp } from "@/lib/animations";
+import { siteConfig } from "@/config/site";
 
 export function BottomCtaSection({
-  onOpenWaitlist,
+  onOpenWaitlist: _onOpenWaitlist,
 }: {
-  onOpenWaitlist?: () => void;
+  readonly onOpenWaitlist?: () => void;
 }) {
   const t = useTranslations("home.bottomCta");
 
@@ -47,13 +47,12 @@ export function BottomCtaSection({
           viewport={{ once: true }}
           transition={{ ...fadeInUp.transition, delay: 0.3 }}
         >
-          <Button
-            onClick={onOpenWaitlist}
-            size="lg"
-            className="bg-brand-accent hover:bg-brand-accent-hover text-white text-base px-8 h-12"
+          <a
+            href={siteConfig.appUrl}
+            className="inline-flex h-12 items-center justify-center rounded-xl bg-brand-accent px-8 text-base font-semibold text-white transition-colors hover:bg-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             {t("cta")}
-          </Button>
+          </a>
         </motion.div>
       </div>
     </section>

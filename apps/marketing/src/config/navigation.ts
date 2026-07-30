@@ -5,20 +5,15 @@
 import type { NavItem, FooterLink } from "@/types";
 
 export const headerNavItems: NavItem[] = [
-  { labelKey: "nav.features", href: "/features" },
-  { labelKey: "nav.pricing", href: "/pricing" },
+  { labelKey: "nav.tools", href: "/tools" },
   { labelKey: "nav.blog", href: "/blog" },
-  { labelKey: "nav.templates", href: "/templates" },
-  { labelKey: "nav.about", href: "/about" },
-  { labelKey: "nav.contact", href: "/contact" },
+  { labelKey: "nav.pricing", href: "/pricing" },
 ];
 
 export const footerResourceLinks: FooterLink[] = [
-  { labelKey: "footer.glossary", href: "/glossary" },
-  { labelKey: "footer.tools", href: "/tools" },
-  { labelKey: "footer.compare", href: "/compare" },
-  { labelKey: "footer.useCases", href: "/use-cases" },
-  { labelKey: "footer.playbooks", href: "/playbooks" },
+  { labelKey: "nav.tools", href: "/tools" },
+  { labelKey: "nav.blog", href: "/blog" },
+  { labelKey: "nav.pricing", href: "/pricing" },
 ];
 
 export const footerLegalLinks: FooterLink[] = [

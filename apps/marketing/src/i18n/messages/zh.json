@@ -1,11 +1,13 @@
 {
   "common": {
     "joinWaitlist": "订阅邮件",
+    "openApp": "打开 GenGrowth",
     "learnMore": "了解更多",
     "backToHome": "返回首页",
     "home": "首页"
   },
   "nav": {
+    "tools": "免费工具",
     "features": "核心能力",
     "blog": "博客",
     "templates": "示例模板",
@@ -29,64 +31,81 @@
   },
   "home": {
     "hero": {
-      "title": "自动化增长，从第一个用户开始",
-      "subtitle": "极简配置 / 自动决策 / 全程透明 / 持续进化",
-      "cta": "立即试用",
-      "socialProof": "已有 14 个国家 237 个产品团队在使用"
+      "eyebrow": "串联起来的 SEO 增长系统",
+      "title": "知道该修什么，也知道下一步做什么。",
+      "subtitle": "GenGrowth 将诊断、关键词研究、网站结构、内链和外链建设串成一条可执行的 SEO 工作流。",
+      "primaryCta": "开始使用 GenGrowth",
+      "secondaryCta": "探索免费工具",
+      "socialProof": "先用公开诊断验证，再让每一步自然衔接。"
     },
-    "stats": {
-      "stat1Number": "4",
-      "stat1Label": "项输入启动增长引擎",
-      "stat2Number": "6",
-      "stat2Label": "维数据完整性验证",
-      "stat3Number": "100%",
-      "stat3Label": "渠道隔离归因精度"
+    "freeAudit": {
+      "eyebrow": "先看证据，再给建议",
+      "title": "几分钟，获得一个有用的 SEO 信号",
+      "body": "输入公开 URL，即可检查页面、robots.txt 和 sitemap.xml；无需账号、站点所有权验证或连接 Search Console。",
+      "point1": "每项发现均展示可测量的问题与对应证据。",
+      "point2": "明确区分已检查的内容与公开扫描无法证明的内容。",
+      "point3": "把结果作为下一步的起点，而不是一个泛泛的总分。",
+      "fullReport": "了解完整 SEO 审计如何工作"
     },
     "painPoints": {
-      "title": "增长团队的困境",
-      "card1Title": "手动操作太多",
-      "card1Desc": "每周花 20+ 小时做重复的 SEO 审计、社媒排期和归因报告。",
-      "card2Title": "归因说不清",
-      "card2Desc": "流量来了但说不清为什么。渠道混杂、数据冲突、决策缺乏证据。",
-      "card3Title": "策略靠拍脑袋",
-      "card3Desc": "缺少系统化方法发现机会、评估策略并按预期 ROI 排优先级。",
-      "card4Title": "没有自优化闭环",
-      "card4Desc": "团队在重复执行，但系统不会学习该扩量、迭代还是暂停。"
+      "title": "不知道下一步时，SEO 工作会变得很难",
+      "card1Title": "验证周期太长",
+      "card1Desc": "等待排名变化时，每一个决策都像是在猜测。",
+      "card2Title": "待办没有先后顺序",
+      "card2Desc": "审计会发现几十个问题，却很少告诉你最该先处理什么。",
+      "card3Title": "工具之间没有上下文",
+      "card3Desc": "关键词、技术和外链工作变成分散表格，而不是同一份计划。",
+      "card4Title": "建议不是产出物",
+      "card4Desc": "只有能审阅、能执行的下一步，建议才真正有用。"
     },
     "solution": {
-      "definition": "增长自动化是一套帮助产品团队自动执行、衡量和优化增长实验的系统——让你专注于策略，而非手动操作。",
-      "title": "一个系统，全链路自动化",
-      "subtitle": "从 4 项输入到自动发现、策略生成、执行和优化。",
-      "step1": "极简配置",
-      "step2": "自动发现",
-      "step3": "策略引擎",
-      "step4": "动作与归因",
-      "step5": "自优化"
+      "definition": "从信号走向行动的可复用路径，而不是又一个孤立的 SEO 仪表盘。",
+      "title": "一个项目，一条清晰的 SEO 路径。",
+      "subtitle": "每个阶段都基于同一份项目上下文，让你从有价值的信号走向有序计划，而不必反复开始分析。",
+      "step1": "明确项目",
+      "step2": "建立关键词库",
+      "step3": "规划结构与内链",
+      "step4": "建设权威度"
     },
     "capabilities": {
-      "title": "核心能力",
-      "card1Title": "自动发现",
-      "card1Desc": "站点审计、关键词机会、竞品空白——全部自动完成。",
-      "card2Title": "策略引擎",
-      "card2Desc": "3 条以上候选策略，附带评分、ROI 标记和证据链。",
-      "card3Title": "归因闭环",
-      "card3Desc": "UTM 指纹、渠道隔离、数据完整性验收。",
-      "viewAll": "查看全部能力 →"
+      "eyebrow": "免费工具，连接下一步",
+      "title": "从项目卡住的地方开始",
+      "subtitle": "使用公开工具获得即时、基于证据的信号；然后在 GenGrowth 中沿用上下文继续推进。",
+      "auditTitle": "免费 SEO 审计",
+      "auditDesc": "无需账号，检查公开页面的 SEO 信号、robots.txt 与 sitemap.xml。",
+      "linksTitle": "内链审计",
+      "linksDesc": "绘制站点内链图谱，找出孤岛页、层级过深页和结构薄弱页。",
+      "cardCta": "运行工具",
+      "viewAll": "浏览全部免费工具 →"
     },
     "socialProof": {
-      "title": "透明运营，用过程证明实力",
-      "subtitle": "我们先公开每周实验日志、决策与归因证据，再宣称成果。",
-      "cta": "查看每周日志 →",
-      "earlyUsers": "UTM 指纹 + 渠道隔离归因",
-      "communityTitle": "零竞品具备同等归因能力",
-      "communitySub": "没有其他 AI 增长工具能衡量什么真正有效",
-      "rhythmTitle": "每周实验复盘",
-      "rhythmSub": "假设 → 动作 → 归因 → 决策"
+      "title": "SEO 建议应当展示它的推导过程",
+      "subtitle": "每个公开工具都让从观察到的信号到可执行动作的路径可见，并且不凭空制造确定性。",
+      "cta": "阅读 GenGrowth 方法论 →",
+      "evidenceTitle": "先观察，再建议",
+      "evidenceSub": "每个结果都说明了产生它的来源和证据。",
+      "sequenceTitle": "诊断也要有顺序",
+      "sequenceSub": "发现会形成有序的修复或规划路径，而不是平铺的清单。",
+      "limitsTitle": "限制保持可见",
+      "limitsSub": "未经验证的数据和扫描边界会与已测量的事实清晰分开。"
+    },
+    "editorial": {
+      "eyebrow": "方法库",
+      "title": "先理解决策，再运行工具。",
+      "body": "用简短、实用的文章理解一项 SEO 决策背后的证据，再直接进入能帮助你检查它的公开工具。",
+      "viewAll": "浏览博客",
+      "experimentTitle": "证据优先的增长实验",
+      "experimentBody": "用假设、一个核心指标、护栏指标和可复核的下一步构成实验。",
+      "linksTitle": "受限内链抓取到底能证明什么",
+      "linksBody": "将抓取解读为已观测到的结构，而不是全量覆盖承诺或 Google 排名结论。",
+      "auditTitle": "公开 SEO 审计的边界",
+      "auditBody": "在期待更多之前，先理解一个公开 URL、Sitemap 和 robots.txt 能展示什么。",
+      "read": "阅读方法"
     },
     "bottomCta": {
-      "title": "开始自动化您的增长",
-      "subtitle": "订阅邮件，获取早期访问与每周实验报告。",
-      "cta": "订阅邮件"
+      "title": "让你的下一条 SEO 发现变成行动力",
+      "subtitle": "打开 GenGrowth，在同一条工作流中串联项目、关键词、网站结构、内链与外链建设。",
+      "cta": "开始使用 GenGrowth"
     }
   },
   "waitlist": {
@@ -312,6 +331,25 @@
       "title": "增长自动化工程师",
       "bio": "我们构建帮助产品团队自动化增长实验的工具。"
     },
+    "comparisons": {
+      "eyebrow": "产品对比",
+      "title": "把产品对比放进方法与证据库。",
+      "body": "对比说明应和评估所需的方法与证据放在一起。请把这些内容当作评审提示，而不是打分表或放之四海皆准的结论。",
+      "cardLabel": "对比笔记",
+      "cardBody": "评估产品周围的工作流：它能观察什么、如何把发现变成决策，以及下一步如何保持可审阅。",
+      "openChecklist": "展开评估提示",
+      "checklist": {
+        "evidence": "哪些源数据可以直接查看，哪些结论仍然只是推断？",
+        "workflow": "一项发现如何变成具体、可审阅的下一步行动？",
+        "control": "哪些决策和执行步骤始终由你的团队掌控？"
+      },
+      "questions": {
+        "manualGrowth": "哪些重复的 SEO 工作应当保留人工处理，哪些值得交给可复用的系统？",
+        "okaraAiCmo": "你需要的是建议层、执行工作流，还是经过审慎组合的两者？",
+        "babylovegrowth": "内容与 SEO 工作流的哪些步骤需要明确证据和人工审核点？",
+        "ahrefs": "研究信号如何进入一份由你掌控、可审阅的行动计划？"
+      }
+    },
     "relatedArticles": {
       "title": "相关文章"
     }
@@ -442,8 +480,19 @@
     }
   },
   "tools": {
-    "title": "免费增长工具",
-    "subtitle": "为运行增长实验的产品团队提供的实用计算器和工具。",
+    "eyebrow": "从眼前的问题开始",
+    "title": "为下一步 SEO 决策准备的免费工具",
+    "subtitle": "先通过公开工具得到一个具体信号，再把工作带入同一份 GenGrowth 项目，而不是增加一张割裂的待办清单。",
+    "diagnoseEyebrow": "我有一个需要优化的网站",
+    "diagnoseTitle": "诊断是什么拖慢了网站",
+    "diagnoseBody": "从公开 URL 开始。这些工具只读取公开页面，获得第一个结果时无需账号或站点所有权验证。",
+    "planEyebrow": "我需要规划和衡量",
+    "planTitle": "让下一次实验更容易判断",
+    "planBody": "当你需要更快判断测试可信度和一项实验所需样本量时，可使用这个确定性计算器。",
+    "productCtaEyebrow": "从一个答案到完整路径",
+    "productCtaTitle": "你的 SEO 工作不该在每个工具处重新开始。",
+    "productCtaBody": "打开 GenGrowth，在一条连续路径中串联项目上下文、关键词研究、网站结构、内链与权威度建设。",
+    "productCta": "打开 GenGrowth",
     "abTest": {
       "title": "A/B 测试样本量计算器",
       "description": "根据基线转化率、最小可检测效应和统计参数，计算 A/B 测试所需的样本量。",
@@ -506,21 +555,23 @@
     },
     "internalLinkAudit": {
       "title": "内链审计",
-      "description": "绘制站内链接关系，发现孤岛页与深层页面，并把结构缺口转化为可审核的优先修复动作。"
+      "description": "无需账号。绘制站内链接关系，发现孤岛与深层页面，并把结构缺口转成按优先级排序、可审核的修复动作。"
     },
     "seoAudit": {
       "title": "网站健康地图",
-      "description": "检测首页、robots.txt 与 sitemap.xml 中可实测的 SEO 问题，并提供证据和优先修复建议。",
-      "metaTitle": "免费 SEO 审计与网站健康地图 -- GenGrowth",
-      "metaDescription": "快速检测首页的抓取、技术、页面基础、内容可提取性与静态结构化数据，并查看证据和检测边界。",
+      "description": "无需账号。检测一个公开页面、robots.txt 与 sitemap.xml 中可实测的 SEO 问题，并提供证据和优先修复建议。",
+      "metaTitle": "免费 SEO 审计与网站健康地图",
+      "metaDescription": "快速检测一个页面的抓取、技术、页面基础、内容可提取性与静态结构化数据，并查看证据和检测边界。",
       "pageTitle": "看清搜索引擎真正能读取的 SEO 信号",
-      "pageSubtitle": "基于首页、robots.txt 与 sitemap.xml 真实测量的网站健康地图。每个结论都展示证据、覆盖度和能力边界。",
+      "pageSubtitle": "基于提交页面、robots.txt 与 sitemap.xml 真实测量的网站健康地图。每个结论都展示证据、加权覆盖度和能力边界。",
       "eyebrow": "免费 SEO 诊断",
+      "heroCta": "开始免费检测",
+      "heroTrust": "无需登录或验证网站所有权；只读取一个公开页面及两个标准支持文件。",
       "formLabel": "网站 URL",
       "placeholder": "example.com",
       "submit": "免费检测",
-      "running": "正在检测首页信号...",
-      "scopeShort": "检测一个页面以及 robots.txt、sitemap.xml；无需登录，不持久化，也不冒充全站爬取。",
+      "running": "正在检测提交页面的信号...",
+      "scopeShort": "检测一个公开页面以及 robots.txt、sitemap.xml；无需登录，不使用 Search Console 数据，不持久化，也不冒充全站爬取。",
       "errors": {
         "invalid_url": "请输入可公开访问的网站 URL。",
         "invalid_request": "请提交一个有效的网站 URL 后重试。",
@@ -532,18 +583,55 @@
         "rate_limited": "当前网络检测次数过多，请稍后重试。",
         "unknown": "出现错误，请重试。"
       },
-      "resultsTitle": "首页实测健康度",
-      "scoreLabel": "实测得分",
-      "coverage": "已实测 {measured} / {total} 项",
+      "resultsTitle": "单页静态信号报告",
+      "summaryLabel": "先看检测边界",
+      "fixFirstTitle": "先修什么",
+      "summaryWithPriority": "先处理“{priority}”。本次获得了 {percent}% 的加权实测证据。",
+      "summaryWithoutPriority": "本次体验检测没有出现已实测的失败或警告信号；加权实测证据覆盖度为 {percent}%。",
+      "targetLabel": "检测对象",
+      "scopeBadge": "1 个公开页面 · 无 GSC · 无全站爬取",
+      "scoreLabel": "单页静态信号得分",
+      "coverage": "实测覆盖度 {percent}% · 已测 {measured} / {total} 项 · 网站覆盖范围：1 个 URL",
+      "scoreDisclaimer": "这不是网站健康度、排名或全站得分。",
+      "stageObservationTitle": "01 观测",
+      "stageObservationBody": "在固定的安全限制内，读取公开页面响应和两个标准支持文件。",
+      "stageDiagnosisTitle": "02 诊断",
+      "stageDiagnosisBody": "有 {attention} 个已测信号需要关注；未验证的信号不会进入诊断。",
+      "stageRecommendationTitle": "03 建议",
+      "stageRecommendationBody": "下方修复顺序展示前 {priorities} 个可执行事项。",
+      "stageArtifactTitle": "04 产物",
+      "stageArtifactBody": "将证据地图作为这个单一 URL 可复验的检测记录。",
       "priorities": "优先修复",
+      "priorityListTitle": "修复顺序",
+      "priorityListBody": "沿用审计规则中的严重性与权重排序；公共体验版只展示前三项。",
+      "noPriorities": "本次没有出现已实测的失败或警告信号。仍需先检查覆盖度和未验证证据，再判断页面是否健康。",
+      "observedEvidenceLabel": "实测证据",
+      "diagnosisLabel": "诊断",
+      "diagnosisText": "上述实测证据使该信号得到“{status}”结果。",
       "recommendationLabel": "建议动作",
+      "verificationLabel": "如何复验",
+      "verificationText": "发布修复后重新检测这个 URL，并对比同一条实测证据。",
+      "severityLabel": "{severity}级",
+      "severities": {
+        "critical": "致命",
+        "high": "高",
+        "medium": "中",
+        "low": "低"
+      },
+      "signalMapEyebrow": "问题集中位置",
+      "signalMapTitle": "单页信号地图",
+      "signalMapBody": "横向比较五个模块的得分、证据覆盖度和状态分布；展开任一行即可查看实测证据与下一步动作。",
+      "moduleScoreLabel": "实测得分",
+      "moduleCoverage": "覆盖度 {percent}%",
+      "checksMeasuredShort": "已实测 {measured} / {total} 项",
+      "noChecks": "该模块暂无检测项",
       "notAvailable": "暂无数据",
       "modules": {
         "crawlability": "抓取与索引",
         "technical": "技术基础",
         "on_page": "页面内信号",
         "content": "内容与可提取性",
-        "structured_data": "结构化数据与 AI 可读性"
+        "structured_data": "静态结构化数据"
       },
       "statuses": {
         "pass": "通过",
@@ -552,8 +640,8 @@
         "unverified": "未验证"
       },
       "checks": {
-        "homepage_status": {
-          "title": "首页响应",
+        "page_status": {
+          "title": "提交页面响应",
           "recommendation": "先恢复提交页面的 200 成功响应，再优化其他 SEO 信号。"
         },
         "indexability": {
@@ -561,8 +649,8 @@
           "recommendation": "移除应进入搜索结果页面上的意外 noindex 指令。"
         },
         "robots_access": {
-          "title": "Robots.txt 可读性",
-          "recommendation": "发布可读取的 robots.txt，并在搜索爬虫再次访问前检查过宽的 Disallow 规则。"
+          "title": "Googlebot 抓取权限",
+          "recommendation": "保持 robots.txt 可读取，并移除意外阻止 Googlebot 访问提交路径的规则。"
         },
         "sitemap": {
           "title": "XML 站点地图",
@@ -588,6 +676,18 @@
           "title": "HTML 语言",
           "recommendation": "在 html 元素上设置与页面语言一致的有效 lang 属性。"
         },
+        "viewport": {
+          "title": "移动端视口配置",
+          "recommendation": "添加 width=device-width 且 initial-scale=1 的 viewport 标签，再测试渲染后的移动端布局。"
+        },
+        "meta_refresh": {
+          "title": "HTML 刷新跳转",
+          "recommendation": "将 HTML 刷新跳转替换为合适的服务端重定向，或直接链接到 canonical URL。"
+        },
+        "security_headers": {
+          "title": "安全响应头存在性",
+          "recommendation": "检查缺失的传输和浏览器保护响应头；本体验版只检测是否存在，不评估策略质量。"
+        },
         "title": {
           "title": "Title 标签",
           "recommendation": "撰写一个描述明确且页面唯一的标题，长度建议约 30 至 60 个字符。"
@@ -608,10 +708,6 @@
           "title": "静态正文可提取性",
           "recommendation": "在可抓取 HTML 中提供足够的有效正文，说明产品、受众和价值结果。"
         },
-        "internal_links": {
-          "title": "静态内链发现",
-          "recommendation": "通过描述性 HTML 链接暴露重要的产品、证明、定价和资源页面。"
-        },
         "social_meta": {
           "title": "社交预览元数据",
           "recommendation": "补齐 Open Graph 与 Twitter Card 元数据，保证分享预览稳定。"
@@ -625,7 +721,9 @@
         "status_code": "HTTP 状态",
         "robots_noindex": "检测到 Noindex",
         "body_complete": "已读取完整响应",
+        "decode_reliable": "响应解码可信",
         "resource_state": "资源状态",
+        "page_allowed": "Googlebot 路径可访问",
         "final_protocol": "最终协议",
         "redirect_hops": "重定向跳数",
         "content_type": "内容类型",
@@ -636,13 +734,15 @@
         "h1_count": "H1 数量",
         "heading_outline": "标题层级",
         "static_word_count": "静态正文词数",
-        "static_internal_links": "静态内链数",
+        "viewport_configured": "视口配置正确",
+        "meta_refresh_present": "存在 HTML 刷新",
+        "security_headers_present": "已发现安全响应头数",
         "social_tags_present": "社交标签数",
         "json_ld_blocks": "JSON-LD 块",
         "malformed_blocks": "格式错误块"
       },
       "sources": {
-        "homepage_static": "首页原始响应",
+        "submitted_page_static": "提交页面原始响应",
         "robots_txt": "标准 robots.txt 路径",
         "sitemap_xml": "标准 sitemap.xml 路径"
       },
@@ -650,27 +750,95 @@
       "limitations": {
         "standard_path_only": "这里只检测 /sitemap.xml；网站可能在其他位置声明 Sitemap。",
         "static_html_cannot_prove_rendered_absence": "原始响应无法证明经 JavaScript 渲染后的结构化数据仍然缺失。",
+        "projection_limit_reached": "本次检测已达到受限的 JSON-LD 投影上限，因此没有继续评估后续数据块。",
         "response_body_truncated": "响应超过受限读取上限，因此不推断缺失，也不使用不完整的数量。",
+        "response_decode_unreliable": "响应无法按声明编码或有效 UTF-8 可靠解码，因此不推断文档检测项。",
         "html_body_unavailable": "该响应无法被识别为 HTML 文档。",
-        "resource_fetch_unavailable": "本次运行未能测量该标准资源。"
+        "resource_fetch_unavailable": "本次运行未能测量该标准资源。",
+        "resource_decode_unreliable": "本次运行无法可靠解码该标准资源。",
+        "https_required_for_hsts": "HTTP 尚未启用 HTTPS，HSTS 只在 HTTPS 后生效，因此不单独评估安全响应头存在性。"
       },
       "methodEyebrow": "先证据，后建议",
       "howTitle": "这项快速检测如何工作",
+      "howIntro": "一个提交的公开 URL 会变成一份有边界的修复摘要。工具会明确说明测到了什么，以及哪些内容无法安全推断。",
       "step1Title": "验证公开目标",
       "step1Text": "提交 URL 及每次重定向都会检查私网和保留网络地址。",
       "step2Title": "受限读取数据源",
       "step2Text": "在严格超时和响应体大小限制下读取页面、robots.txt 与 sitemap.xml。",
       "step3Title": "只为实测项评分",
       "step3Text": "未验证项不进入分数，每条可执行结论都保留实际观测证据。",
+      "signalsEyebrow": "连同边界一起阅读结果",
+      "signalsTitle": "健康地图的每个部分说明什么",
+      "signalsBody": "地图会把可测信号与推测分开，因此缺失或不完整的响应不会被包装成看似确定的建议。",
+      "signal1Title": "抓取与索引",
+      "signal1Body": "提交页面的响应状态、noindex 指令、Googlebot 对该路径的访问权限，以及标准 sitemap 路径。",
+      "signal2Title": "技术基础",
+      "signal2Body": "最终协议、重定向链、内容类型、canonical URL、语言、视口、HTML 刷新以及有限的安全响应头存在性。",
+      "signal3Title": "页面内信号",
+      "signal3Body": "抓取到的原始响应中可见的 title、meta description、H1 数量和标题层级。",
+      "signal4Title": "内容与可提取性",
+      "signal4Body": "静态文本深度和社交元数据；不据此判断内容质量、搜索意图或站点结构。",
+      "signal5Title": "静态结构化数据",
+      "signal5Body": "原始响应中完整闭合的 JSON-LD 数据块；JavaScript 渲染的标记会明确保留为未验证。",
+      "useCasesEyebrow": "何时适合做一次快速检测",
+      "useCasesTitle": "把它当作第一轮、以证据为先的排查",
+      "useCasesBody": "它服务于一个具体 URL 和明确的下一步动作，不会声称整个域名都健康。",
+      "useCase1Title": "发布重要页面之前",
+      "useCase1Body": "在请求搜索引擎重新访问前，先确认公开响应、canonical 基础项和静态页面信号。",
+      "useCase2Title": "页面似乎意外地难以被发现时",
+      "useCase2Body": "先检查可测的抓取与索引信号，再只在证据指向的地方投入更深度的工具。",
+      "useCase3Title": "委托全站审计之前",
+      "useCase3Body": "先获得一个 URL 的受限基线，再据此判断是否需要多页面爬取或渲染证据。",
+      "methodTransparencyEyebrow": "方法透明",
+      "methodTransparencyTitle": "健康地图如何得出一条发现",
+      "method1Title": "每次只测量相同的受限来源",
+      "method1Body": "V0 的输入仅是提交页面、其最终同源 robots.txt 与标准 sitemap.xml；工具不会悄悄扩大为全站爬取。",
+      "method2Title": "把证据和解释分开",
+      "method2Body": "每个状态都带有稳定的证据标签和来源，建议可以回到扫描器实际观察到的内容进行复核。",
+      "method3Title": "把不确定性排除在分数之外",
+      "method3Body": "遇到截断、非 HTML、不可用或无法可靠解码的响应时，相关项会保留为未验证，而不是制造虚假的通过或失败。",
+      "limitsEyebrow": "诚实边界",
+      "limitsTitle": "这项体验检测不会告诉你的事",
+      "limit1Title": "Google 是否已经收录该页面",
+      "limit1Body": "审计读取可能影响可索引性的技术信号，但无法观察 Google 的索引、抓取排期或 Search Console 数据。",
+      "limit2Title": "JavaScript 在原始响应之后新增了什么",
+      "limit2Body": "静态标记可以确认已出现的内容，但不能证明渲染后的元数据、链接或 JSON-LD 不存在。",
+      "limit3Title": "网站其余部分是否健康",
+      "limit3Body": "单页结果只是修复起点，不是全站爬取、性能评估、外链分析或内容质量结论。",
+      "comparison1Title": "何时应该先做单页检测",
+      "comparison1Body": "当你需要快速、可复验地了解一个即将发布、正在修复或需要排查的页面时，先用它获取答案，再决定是否值得做更深审计。",
+      "comparison2Title": "何时该进入完整 Website Audit",
+      "comparison2Body": "当证据指向一个 URL 之外的问题时，再使用完整产品：多页面关系、渲染输出、性能证据、历史和受管理的修复队列。",
+      "faqEyebrow": "常见问题",
+      "ctaEyebrow": "下一步",
       "ctaTitle": "需要看的不只是一个页面？",
       "ctaBody": "GenGrowth 完整 Website Audit 可增加多页面爬取、渲染证据、性能数据、历史对比和可执行修复队列。",
       "ctaButton": "打开 GenGrowth",
+      "faqTitle": "常见问题",
       "faq1q": "这是完整 SEO 审计吗？",
       "faq1a": "不是。这是对一个提交页面以及 robots.txt、sitemap.xml 的快速静态检测，不声称覆盖全站、排名、外链、Search Console 或浏览器渲染结果。",
       "faq2q": "为什么结构化数据可能显示“未验证”？",
       "faq2a": "许多网站通过 JavaScript 注入 JSON-LD。静态抓取可以确认看到的标记，但不能可靠证明渲染后仍然不存在。",
       "faq3q": "高分能保证排名吗？",
-      "faq3a": "不能。分数只汇总实际测得的技术与页面信号；搜索需求、内容质量、竞争、权威度和真实收录需要额外证据。"
+      "faq3a": "不能。分数只汇总实际测得的技术与页面信号；搜索需求、内容质量、竞争、权威度和真实收录需要额外证据。",
+      "faq4q": "网站健康地图免费吗？需要登录吗？",
+      "faq4a": "这个公开体验版免费，不需要登录或证明网站所有权。为保护服务会进行频率限制，但不会保存项目或扫描历史。",
+      "faq5q": "应该怎样理解分数和覆盖度？",
+      "faq5a": "分数只使用真正测到的检查项。覆盖度表示可获得的加权证据比例；未验证项会被排除，而不会被当作通过或失败。",
+      "faq6q": "robots.txt 检测能证明 Google 可以抓取整个网站吗？",
+      "faq6a": "不能。它只根据读取到的 robots.txt，评估 Googlebot 对提交 URL 路径的规则；不能证明全站发现、抓取预算、渲染或收录。",
+      "faq7q": "为什么某项会显示为“未验证”？",
+      "faq7a": "支持文件可能不可用，响应也可能不是 HTML、被截断或无法安全解码；有些信号只会在 JavaScript 运行后出现。报告会说明这个边界，而不是猜测。",
+      "faq8q": "完整的 GenGrowth Website Audit 多了什么？",
+      "faq8a": "完整产品可增加多页面爬取、渲染证据、性能数据、历史对比和可执行修复队列；这些能力不属于匿名单页体验版。",
+      "relatedToolsEyebrow": "继续诊断",
+      "relatedToolsTitle": "继续查看网站的内链结构",
+      "relatedToolsBody": "单页健康检查只能说明这个 URL 暴露出的信号；如果下一步问题是各个页面如何在全站范围内互相支持，可继续做内链审计。",
+      "relatedToolsCta": "运行内链审计",
+      "articlesEyebrow": "构建下一层能力",
+      "articlesTitle": "把发现变成证据驱动的决策",
+      "articlesBody": "阅读 GenGrowth 方法，了解如何界定一个信号、选择一个成功指标，并在不过度宣称证据的前提下决定下一步动作。",
+      "articlesCta": "阅读证据优先的增长实验"
     },
     "semrush": "Semrush",
     "cms": "CMS内容管理系统",
@@ -988,8 +1156,26 @@
   },
   "pricing": {
     "hero": {
-      "title": "简洁透明的定价",
-      "subtitle": "从发现到优化，选择适合你增长阶段的自动化级别。"
+      "eyebrow": "价值优先的定价方式",
+      "title": "先免费开始，持续使用时再付费。",
+      "subtitle": "公开工具会在你决定注册或付费之前给出一个有用的答案。完整产品的定价将以持续工作流的价值和运行成本为依据。"
+    },
+    "freeTools": {
+      "eyebrow": "现已可用",
+      "title": "免费公开工具",
+      "body": "输入公开 URL，即可获得即时、基于证据的诊断。第一个结果不是阉割 demo，也不是伪装成工具的销售闸门。",
+      "item1": "无需账号或站点所有权验证，即可运行单页 SEO 审计。",
+      "item2": "从公开可访问页面构建有明确边界的内链图谱。",
+      "item3": "当需要更快作出实验判断时，可使用规划计算器。",
+      "cta": "探索免费工具"
+    },
+    "product": {
+      "eyebrow": "GenGrowth 完整产品",
+      "title": "完整产品的定价仍在制定中",
+      "body": "我们不会发布暂定价格或还无法兑现的方案边界。完整工作流会把项目上下文、已保存工作、更深数据和持续运营放在一起。",
+      "principle": "定价原则",
+      "principleBody": "第一个有用的诊断保持开放；只有持续监控、更深数据、多站点工作或持续运营价值产生真实成本时才收费。",
+      "cta": "打开 GenGrowth"
     },
     "starter": {
       "name": "Starter",
@@ -1064,30 +1250,30 @@
     "faq": {
       "title": "常见问题",
       "q1": {
-        "question": "为什么 GenGrowth 比 Okara 或 BabyLoveGrowth 贵？",
-        "answer": "那些工具每月 $99 只提供建议。GenGrowth 的 Starter 方案同样 $99 起步，提供发现和策略功能。我们的 Pro 和 Growth 方案提供了竞品不具备的能力：自动化执行、渠道隔离归因，以及从每次实验中学习的自优化闭环。"
+      "question": "公开工具免费吗？",
+      "answer": "是的。当前公开 SEO 审计、内链审计和计算器均无需付费即可使用。每个工具都会清楚说明自己的技术范围与限制。"
       },
       "q2": {
-        "question": "可以切换方案吗？",
-        "answer": "可以。随时升级或降级，变更在下一个计费周期生效。"
+      "question": "完整产品的定价何时可用？",
+      "answer": "当完整工作流、使用边界和持续运行成本已定义到足以做出可靠承诺时，我们会发布定价。"
       },
       "q3": {
-        "question": "有免费试用吗？",
-        "answer": "有。所有方案均提供 14 天免费试用，可体验全部功能。"
+      "question": "运行公开诊断需要账号吗？",
+      "answer": "不需要。公开 SEO 审计和内链审计只读取公开页面；当工作需要保存、扩展或在产品中持续时，才需要账号。"
       },
       "q4": {
-        "question": "什么算一个「产品」？",
-        "answer": "一个产品是你想要增长的一个网站或应用。每个产品拥有独立的发现引擎、策略组合和执行队列。"
+      "question": "付费产品将覆盖什么价值？",
+      "answer": "计划中的付费层用于持续性工作，例如已保存的项目上下文、更深的数据、持续监控和多站点运营；而不是把第一个有用的结果锁在付费墙后。"
       },
       "q5": {
-        "question": "需要技术知识吗？",
-        "answer": "不需要。GenGrowth 只需 4 个输入即可启动：你的 URL、目标地区、增长目标和主要转化事件。系统会处理其余一切。"
+      "question": "我应该从哪里开始？",
+      "answer": "如果你已有网站，请从公开 SEO 审计或内链审计开始；如果你正在规划实验，可使用计算器，并在需要一份连续的项目工作流时进入 GenGrowth。"
       }
     },
     "cta": {
-      "title": "准备好自动化增长了吗？",
-      "subtitle": "14 天免费试用，无需信用卡。",
-      "button": "立即开始"
+      "title": "先得到一个真实信号，而不是先作出付费承诺",
+      "subtitle": "选择最符合眼前问题的免费工具。得到有用证据后，再决定是否继续进入完整产品。",
+      "button": "探索免费工具"
     }
   },
   "playbooks": {

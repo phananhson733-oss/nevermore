@@ -10,7 +10,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
 import { Menu } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -19,8 +18,9 @@ import {
 } from "@/components/ui/sheet";
 import { LanguageSwitcher } from "./language-switcher";
 import { headerNavItems } from "@/config/navigation";
+import { siteConfig } from "@/config/site";
 
-export function Header({ onOpenWaitlist }: { onOpenWaitlist: () => void }) {
+export function Header() {
   const t = useTranslations();
   const locale = useLocale();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -62,12 +62,12 @@ export function Header({ onOpenWaitlist }: { onOpenWaitlist: () => void }) {
         {/* Right */}
         <div className="flex items-center gap-4">
           <LanguageSwitcher />
-          <Button
-            onClick={onOpenWaitlist}
-            className="hidden md:inline-flex bg-brand-accent hover:bg-brand-accent-hover text-white text-sm"
+          <a
+            href={siteConfig.appUrl}
+            className="hidden rounded-lg bg-brand-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-hover md:inline-flex"
           >
-            {t("common.joinWaitlist")}
-          </Button>
+            {t("common.openApp")}
+          </a>
 
           {/* Mobile Menu */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -98,15 +98,13 @@ export function Header({ onOpenWaitlist }: { onOpenWaitlist: () => void }) {
                     {t(item.labelKey)}
                   </Link>
                 ))}
-                <Button
-                  onClick={() => {
-                    setMobileOpen(false);
-                    onOpenWaitlist();
-                  }}
-                  className="bg-brand-accent hover:bg-brand-accent-hover text-white mt-4"
+                <a
+                  href={siteConfig.appUrl}
+                  onClick={() => setMobileOpen(false)}
+                  className="mt-4 rounded-lg bg-brand-accent px-4 py-2 text-center font-semibold text-white transition-colors hover:bg-brand-accent-hover"
                 >
-                  {t("common.joinWaitlist")}
-                </Button>
+                  {t("common.openApp")}
+                </a>
               </nav>
             </SheetContent>
           </Sheet>

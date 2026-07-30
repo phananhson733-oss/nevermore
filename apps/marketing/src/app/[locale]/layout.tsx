@@ -1,5 +1,5 @@
 // @input  — i18n/routing, next-intl, Google Fonts (DM Sans, Space Grotesk, Noto Sans SC), PageShell
-// @output — <html>/<body> + NextIntlClientProvider + font CSS variables
+// @output — <html>/<body> + shell-scoped NextIntlClientProvider + font CSS variables
 // @pos    — 国际化布局层，渲染 HTML 外壳并注入翻译上下文和全局组件
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { NextIntlClientProvider } from "next-intl";
@@ -48,6 +48,15 @@ export default async function LocaleLayout({
     notFound();
   }
   const messages = await getMessages();
+  // Keep the global client boundary deliberately small. Route-level client
+  // surfaces provide their own namespace below this shell, so legacy content
+  // copy is not serialized into every public page.
+  const shellMessages = {
+    common: messages.common,
+    nav: messages.nav,
+    footer: messages.footer,
+    cookie: messages.cookie,
+  };
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
@@ -59,7 +68,7 @@ export default async function LocaleLayout({
         />
       </head>
       <body className={`${fontVars} font-sans antialiased`}>
-        <NextIntlClientProvider messages={messages}>
+        <NextIntlClientProvider messages={shellMessages}>
           <PageShell>{children}</PageShell>
         </NextIntlClientProvider>
       </body>

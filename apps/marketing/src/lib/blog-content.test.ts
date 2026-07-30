@@ -100,20 +100,24 @@ describe("repository-backed blog content", () => {
       "/en/blog/social-first-week-1",
       "/en/blog/what-is-growth-automation",
       "/en/blog/white-label-keyword-research",
+      "/en/blog/bounded-internal-link-crawl",
+      "/en/blog/public-seo-audit-boundaries",
       "/zh/blog/astrologywiki-case-study",
       "/zh/blog/growth-experiment-playbook",
       "/zh/blog/marketing-attribution-models",
       "/zh/blog/programmatic-seo-at-scale",
       "/zh/blog/social-first-week-1",
       "/zh/blog/what-is-growth-automation",
+      "/zh/blog/bounded-internal-link-crawl",
+      "/zh/blog/public-seo-audit-boundaries",
     ];
 
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(10);
-    expect(posts.filter((post) => post.locale === "zh")).toHaveLength(7);
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(12);
+    expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
     expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
-    expect(posts[0]?.slug).toBe("evidence-first-growth-experiments");
+    expect(posts[0]?.published_at).toBe("2026-07-30T00:00:00.000Z");
   });
 });

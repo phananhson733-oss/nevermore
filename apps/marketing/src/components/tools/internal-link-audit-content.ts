@@ -90,7 +90,7 @@ interface InternalLinkAuditContent {
   readonly audienceEyebrow: string;
   readonly audienceTitle: string;
   readonly audienceBody: string;
-  readonly comparisons: readonly ContentItem[];
+  readonly fitSignals: readonly ContentItem[];
   readonly faqEyebrow: string;
   readonly faqTitle: string;
   readonly faqs: readonly FaqItem[];
@@ -102,6 +102,7 @@ interface InternalLinkAuditContent {
   readonly readingEyebrow: string;
   readonly readingTitle: string;
   readonly readingItems: readonly string[];
+  readonly readingCta: string;
   readonly ctaEyebrow: string;
   readonly ctaTitle: string;
   readonly ctaBody: string;
@@ -291,7 +292,7 @@ const EN: InternalLinkAuditContent = {
   audienceTitle: "For sites whose structure no longer fits in one person’s head",
   audienceBody:
     "It becomes useful around dozens of pages, especially after a migration, a URL restructure, a large content batch, or template-generated publishing.",
-  comparisons: [
+  fitSignals: [
     {
       title: "Compared with Screaming Frog",
       body: "Screaming Frog is more complete for deep technical work and large crawls. This browser-based tool aims to remove installation and interpretation overhead by returning a prioritized repair brief.",
@@ -368,6 +369,7 @@ const EN: InternalLinkAuditContent = {
     "How to fix orphan pages without a desktop crawler",
     "Site architecture for SEO: depth, clusters, and crawl budget",
   ],
+  readingCta: "Read the evidence-first experiment method",
   ctaEyebrow: "Next step",
   ctaTitle: "Turn reviewed link fixes into a site-structure plan",
   ctaBody:
@@ -553,7 +555,7 @@ const ZH: InternalLinkAuditContent = {
   audienceTitle: "当网站结构已经无法全部记在一个人脑中",
   audienceBody:
     "网站达到几十个页面后就开始有价值，尤其适合迁移、URL 重构、大批量内容发布或模板自动生成页面之后。",
-  comparisons: [
+  fitSignals: [
     {
       title: "与 Screaming Frog 的区别",
       body: "Screaming Frog 更适合深度技术审计和大型抓取；这个浏览器工具的目标是减少安装和解读门槛，直接交付按优先级排序的修复简报。",
@@ -629,6 +631,7 @@ const ZH: InternalLinkAuditContent = {
     "不安装桌面爬虫，如何修复孤岛页面",
     "SEO 网站架构：点击深度、主题簇与抓取预算",
   ],
+  readingCta: "阅读证据优先的实验方法",
   ctaEyebrow: "下一步",
   ctaTitle: "把审核后的补链动作放进网站结构计划",
   ctaBody:

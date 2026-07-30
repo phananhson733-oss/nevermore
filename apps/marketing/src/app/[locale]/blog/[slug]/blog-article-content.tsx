@@ -1,8 +1,9 @@
 // @input  -- sanitize-html, blog post data (title, content, excerpt, author, dates, category, reading_time), related posts, case study metrics
-// @output -- BlogArticleContent component rendering article body with sanitized HTML and related articles
+// @output -- BlogArticleContent component with a topic-matched tool handoff, article body, and related articles
 // @pos    -- Extracted from blog [slug]/page.tsx, handles article rendering (SPEC 2.7.3)
 // once this file is updated, update header comments and _DIR.md in this folder
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import sanitizeHtml from "sanitize-html";
 import { AuthorBio } from "@/components/blog/author-bio";
 import { RelatedArticles } from "@/components/blog/related-articles";
@@ -24,6 +25,7 @@ interface BlogArticleContentProps {
     updated_at: string;
     hero_image?: string;
     hero_image_alt?: string;
+    pillar_slug?: string | null;
   };
   publishDate: string;
   updateDate: string | null;
@@ -53,6 +55,41 @@ const CONTENT_CLASSES = [
   "[&_blockquote]:border-l-2 [&_blockquote]:border-brand-accent/50 [&_blockquote]:pl-4 [&_blockquote]:my-6 [&_blockquote]:italic [&_blockquote]:text-text-dark-secondary",
 ].join(" ");
 
+function getTopToolRecommendation(
+  locale: string,
+  pillar: string | null | undefined,
+) {
+  if (pillar === "seo_content") {
+    return {
+      href: `/${locale}/tools/internal-link-audit`,
+      eyebrow: locale === "zh" ? "匹配的公开工具" : "Matched public tool",
+      title:
+        locale === "zh"
+          ? "用一份有边界的内链审计检查站点结构"
+          : "Check site structure with a bounded internal-link audit",
+      body:
+        locale === "zh"
+          ? "无需账号，直接从公开 HTML 链接中找出需要人工复核的结构线索。"
+          : "No account is required. Start from public HTML links and review the structural leads the crawl actually observed.",
+      cta: locale === "zh" ? "运行内链审计" : "Run an internal-link audit",
+    };
+  }
+
+  return {
+    href: `/${locale}/tools/seo-audit`,
+    eyebrow: locale === "zh" ? "匹配的公开工具" : "Matched public tool",
+    title:
+      locale === "zh"
+        ? "先用公开 SEO 审计验证一个网站信号"
+        : "Verify one site signal with a public SEO audit",
+    body:
+      locale === "zh"
+        ? "无需账号即可检查单个公开页面，并清楚区分已测量信号与工具边界。"
+        : "Check one public page without an account and keep measured signals separate from the tool's limits.",
+    cta: locale === "zh" ? "运行免费 SEO 审计" : "Run a free SEO audit",
+  };
+}
+
 export function BlogArticleContent({
   locale,
   post,
@@ -63,6 +100,7 @@ export function BlogArticleContent({
 }: BlogArticleContentProps) {
   const caseStudyMetrics =
     CASE_STUDY_METRICS_MAP[post.slug]?.[locale] ?? null;
+  const topTool = getTopToolRecommendation(locale, post.pillar_slug);
 
   return (
     <article>
@@ -126,6 +164,29 @@ export function BlogArticleContent({
         {post.excerpt}
       </p>
 
+      <aside className="mb-12 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/45 p-5 md:p-6">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-accent-text">
+          {topTool.eyebrow}
+        </p>
+        <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-xl">
+            <h2 className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary">
+              {topTool.title}
+            </h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-text-dark-secondary">
+              {topTool.body}
+            </p>
+          </div>
+          <Link
+            href={topTool.href}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-brand-accent/45 px-4 py-2.5 text-[12px] font-semibold text-brand-accent-text transition-colors hover:bg-brand-accent/10"
+          >
+            {topTool.cta}
+            <ArrowRight aria-hidden="true" className="size-3.5" />
+          </Link>
+        </div>
+      </aside>
+
       {/* Case study metrics (rendered for posts with metrics data) */}
       {caseStudyMetrics && (
         <CaseStudyMetrics metrics={caseStudyMetrics} locale={locale} />
@@ -144,6 +205,37 @@ export function BlogArticleContent({
           }),
         }}
       />
+
+      <section className="my-14 rounded-2xl border border-brand-accent/25 bg-brand-accent/[0.055] p-6 md:p-7">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-accent-text">
+          {locale === "zh" ? "把方法用在你的网站上" : "Put the method to work"}
+        </p>
+        <h2 className="mt-3 text-[22px] font-semibold tracking-[-0.025em] text-text-dark-primary">
+          {locale === "zh"
+            ? "先从一个可验证的 SEO 信号开始"
+            : "Start with one verifiable SEO signal"}
+        </h2>
+        <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-text-dark-secondary">
+          {locale === "zh"
+            ? "公开工具不需要账号。先获得一个带证据的诊断结果，再决定是否把工作带入完整项目。"
+            : "The public tools do not require an account. Get an evidence-led diagnostic first, then decide whether the work belongs in a full project."}
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link
+            href={`/${locale}/tools/seo-audit`}
+            className="inline-flex items-center gap-2 rounded-xl bg-brand-accent px-4 py-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+          >
+            {locale === "zh" ? "运行免费 SEO 审计" : "Run a free SEO audit"}
+            <ArrowRight aria-hidden="true" className="size-3.5" />
+          </Link>
+          <Link
+            href={`/${locale}/tools/internal-link-audit`}
+            className="inline-flex items-center gap-2 rounded-xl border border-brand-border px-4 py-2.5 text-[12px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/60"
+          >
+            {locale === "zh" ? "运行内链审计" : "Run an internal link audit"}
+          </Link>
+        </div>
+      </section>
 
       {/* Author bio */}
       <AuthorBio />

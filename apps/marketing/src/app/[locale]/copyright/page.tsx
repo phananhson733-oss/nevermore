@@ -15,15 +15,17 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  const document = await getLegalDocument("copyright", locale);
   return generatePageMetadata({
     title:
-      locale === "en" ? "Copyright Notice — GenGrowth" : "版权声明 — GenGrowth",
+      locale === "en" ? "Copyright Notice" : "版权声明",
     description:
       locale === "en"
         ? "Copyright and DMCA information for GenGrowth."
         : "GenGrowth 的版权与 DMCA 信息。",
     locale,
     path: "/copyright",
+    noIndex: !document,
   });
 }
 
