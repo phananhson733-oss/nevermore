@@ -82,6 +82,12 @@ export default defineConfig({
       SF_BLOB_BACKEND: "local",
       SF_BLOB_DIR: "/tmp/signalframe-e2e-real-blobs",
       SF_DEV_AUTH: "true",
+      // Next development mode restarts itself at 80% of V8's heap limit.
+      // This suite compiles the full authenticated app while also running a
+      // browser and worker, so the default ~4.5 GB limit can trigger a mid-test
+      // restart that discards form/selection state. Raising the limit avoids
+      // that restart without pre-allocating memory on the CI runner.
+      NODE_OPTIONS: "--max-old-space-size=6144",
       NEXT_DIST_DIR: ".next-e2e-real",
       PORT: String(PORT),
     },
